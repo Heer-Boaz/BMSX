@@ -3,7 +3,7 @@ import type { Size, vec3, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
-import { checkWebGLError, getFramebufferStatusString, getWebGLErrorString } from '../glview.helpers';
+import { checkWebGLError, generateDetailedDrawError, getFramebufferStatusString } from '../glview.helpers';
 import { BaseView, DrawMeshOptions } from '../view';
 import { Camera3D } from './camera3d';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
@@ -96,11 +96,15 @@ let weightBuffer3D: WebGLBuffer;
 let jointLocation3D: number;
 let weightLocation3D: number;
 let jointMatrixLocation3D: WebGLUniformLocation;
+let instanceMatricesLocation3D: WebGLUniformLocation;
+let viewProjectionLocation3D: WebGLUniformLocation;
+let useInstancingLocation3D: WebGLUniformLocation;
 let vao3D: WebGLVertexArrayObject | null = null;
 let vaoSkybox: WebGLVertexArrayObject | null = null;
 const MAX_JOINTS = 32;
 const jointMatrixArray = new Float32Array(MAX_JOINTS * 16);
 const identityMatrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+const MAX_INSTANCES = 64;
 const TEXTURE_UNIT_ALBEDO = 3;
 const TEXTURE_UNIT_NORMAL = 4;
 const TEXTURE_UNIT_METALLIC_ROUGHNESS = 5;
@@ -120,6 +124,55 @@ export const vertexShader3DCodeStr: string = vertexShader3DCode;
 export const fragmentShader3DCodeStr: string = gameShader3DCode;
 export const skyboxVertShaderCodeStr: string = skyboxVertCode;
 export const skyboxFragShaderCodeStr: string = skyboxFragCode;
+
+type AttribType = 'float' | 'int' | 'uint';
+
+function setAttribConstant(gl: WebGL2RenderingContext, loc: number, type: AttribType, values: number[]): void {
+    if (loc < 0) return;
+    switch (type) {
+        case 'float':
+            gl.vertexAttrib4f(loc, values[0] ?? 0, values[1] ?? 0, values[2] ?? 0, values[3] ?? 0);
+            break;
+        case 'int':
+            gl.vertexAttribI4i(loc, values[0] ?? 0, values[1] ?? 0, values[2] ?? 0, values[3] ?? 0);
+            break;
+        case 'uint':
+            gl.vertexAttribI4ui(loc, values[0] ?? 0, values[1] ?? 0, values[2] ?? 0, values[3] ?? 0);
+            break;
+    }
+}
+
+function disableAttribWithConstant(gl: WebGL2RenderingContext, loc: number, type: AttribType, values: number[]): void {
+    if (loc < 0) return;
+    gl.disableVertexAttribArray(loc);
+    setAttribConstant(gl, loc, type, values);
+}
+
+function bindOrDefault(
+    gl: WebGL2RenderingContext,
+    buffer: WebGLBuffer | undefined,
+    loc: number,
+    type: AttribType,
+    size: number,
+    componentType: GLenum,
+    normalize = false,
+    stride = 0,
+    offset = 0,
+    defaultValues: number[] = []
+): void {
+    if (loc < 0) return;
+    if (buffer) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        if (type === 'float') {
+            gl.vertexAttribPointer(loc, size, componentType, normalize, stride, offset);
+        } else {
+            gl.vertexAttribIPointer(loc, size, componentType, stride, offset);
+        }
+        gl.enableVertexAttribArray(loc);
+    } else {
+        disableAttribWithConstant(gl, loc, type, defaultValues);
+    }
+}
 
 function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
     let buffers = meshBufferCache.get(m);
@@ -388,6 +441,8 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
     // gl.uniformMatrix4fv(normalMatrixLocation3D, false, identityMatrix);
     // gl.uniformMatrix4fv(jointMatrixLocation3D, false, identityMatrix);
     // gl.uniform3fv(materialColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
+    gl.uniformMatrix4fv(viewProjectionLocation3D, false, identityMatrix);
+    gl.uniform1i(useInstancingLocation3D, 0);
     checkWebGLError('after other uniform values');
 }
 
@@ -446,7 +501,7 @@ export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
 
 export function drawSkybox(gl: WebGL2RenderingContext): void {
     glSwitchProgram(gl, skyboxProgram);
-    gl.bindVertexArray(vaoSkybox);  // ★ eigen VAO
+    gl.bindVertexArray(vaoSkybox);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
     gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
@@ -465,7 +520,7 @@ export function drawSkybox(gl: WebGL2RenderingContext): void {
 
     gl.drawArrays(gl.TRIANGLES, 0, 36);
     if (checkWebGLError('after drawSkybox')) {
-        // Handle the error
+        throw new Error('Failed to draw skybox');
     }
 }
 
@@ -552,6 +607,7 @@ export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
 }
 
 export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
+    gl.useProgram(gameShaderProgram3D);
     vertexPositionLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_position');
     texcoordLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_texcoord');
     normalLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_normal');
@@ -604,19 +660,76 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     jointMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_jointMatrices[0]')!;
     morphWeightLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphWeights[0]')!;
     cameraPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_cameraPos')!;
+    viewProjectionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_viewProjection')!;
+    useInstancingLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useInstancing')!;
+    instanceMatricesLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_instanceMatrices[0]')!;
     uploadCameraPosition(gl);
 }
 
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
+    gl.useProgram(skyboxProgram);
     skyboxPositionLocation = gl.getAttribLocation(skyboxProgram, 'a_position');
     skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
     skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
     skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
 }
 
-export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
-    if (meshesToDraw.length === 0) return;
+function cullAndSortMeshes(): { instancedGroups: Map<string, { mesh: Mesh; matrices: Float32Array[] }>; singles: DrawMeshOptions[] } {
+    if (meshesToDraw.length === 0) return { instancedGroups: new Map(), singles: [] };
 
+    const activeCamera = getActiveCamera();
+    activeCamera.viewProjectionMatrix; // ensure frustum planes are up to date
+
+    // Frustum culling
+    meshesToDraw = meshesToDraw.filter(({ mesh: m, matrix }) => {
+        if (m.boundingRadius === 0) return true;
+        const cx = matrix[12] + m.boundingCenter[0] * matrix[0] + m.boundingCenter[1] * matrix[4] + m.boundingCenter[2] * matrix[8];
+        const cy = matrix[13] + m.boundingCenter[0] * matrix[1] + m.boundingCenter[1] * matrix[5] + m.boundingCenter[2] * matrix[9];
+        const cz = matrix[14] + m.boundingCenter[0] * matrix[2] + m.boundingCenter[1] * matrix[6] + m.boundingCenter[2] * matrix[10];
+        const scaleX = Math.hypot(matrix[0], matrix[1], matrix[2]);
+        const scaleY = Math.hypot(matrix[4], matrix[5], matrix[6]);
+        const scaleZ = Math.hypot(matrix[8], matrix[9], matrix[10]);
+        const radius = m.boundingRadius * Math.max(scaleX, scaleY, scaleZ);
+        return activeCamera.isSphereInFrustum([cx, cy, cz] as vec3arr, radius);
+    });
+
+    // Sort by material signature and distance
+    const camPos = activeCamera.position;
+    const dist = (mat: Float32Array) => {
+        const dx = mat[12] - camPos.x;
+        const dy = mat[13] - camPos.y;
+        const dz = mat[14] - camPos.z;
+        return dx * dx + dy * dy + dz * dz;
+    };
+    meshesToDraw.sort((a, b) => {
+        const sa = a.mesh.materialSignature;
+        const sb = b.mesh.materialSignature;
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        return dist(a.matrix) - dist(b.matrix);
+    });
+
+    // Separate static meshes for instancing
+    const instancedGroups = new Map<string, { mesh: Mesh; matrices: Float32Array[] }>();
+    const singles: DrawMeshOptions[] = [];
+    for (const entry of meshesToDraw) {
+        const m = entry.mesh;
+        if (!m.hasSkinning && !m.hasMorphTargets) {
+            const key = `${m.materialSignature}_${m.positions.length}_${m.indices?.length ?? 0}`;
+            let group = instancedGroups.get(key);
+            if (!group) {
+                group = { mesh: m, matrices: [] };
+                instancedGroups.set(key, group);
+            }
+            group.matrices.push(entry.matrix);
+        } else {
+            singles.push(entry);
+        }
+    }
+
+    return { instancedGroups, singles };
+}
+
+function setupFramebufferAndViewport(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
     checkWebGLError("Before binding framebuffer and setting viewport");
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
@@ -625,11 +738,9 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         console.warn(`renderMeshBatch: framebuffer incomplete - ${getFramebufferStatusString(gl, fbStatus)}`);
     }
     checkWebGLError("After binding framebuffer and setting viewport");
+}
 
-    if (skyboxTexture) {
-        drawSkybox(gl);
-    }
-
+function setupRenderingState(gl: WebGL2RenderingContext): void {
     checkWebGLError("Before switching program");
     glSwitchProgram(gl, gameShaderProgram3D);
     checkWebGLError("After switching program");
@@ -640,152 +751,350 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     checkWebGLError("After setting camera uniforms");
 
     gl.bindVertexArray(vao3D);
+    checkWebGLError('After binding VAO');
 
-    // 1) Harde reset van alle attrib-arrays in dit VAO
+    // Reset defaults for all attributes
     const maxAttribs = gl.getParameter(gl.MAX_VERTEX_ATTRIBS) as number;
     for (let i = 0; i < maxAttribs; i++) gl.disableVertexAttribArray(i);
+    checkWebGLError('after disabling vertex attrib arrays');
 
-    // 2) Veilige defaults voor alle optionele attributen (float én integer)
-    // Tangent (vec4)
-    if (tangentLocation3D >= 0) gl.vertexAttrib4f(tangentLocation3D, 1, 0, 0, 1);
+    // Set safe defaults for all optional attributes (float and integer)
+    disableAttribWithConstant(gl, tangentLocation3D, 'float', [1, 0, 0, 1]);
+    checkWebGLError('after setting tangents');
+    for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+        disableAttribWithConstant(gl, morphPositionLocations3D[i], 'float', [0, 0, 0]);
+        disableAttribWithConstant(gl, morphNormalLocations3D[i], 'float', [0, 0, 0]);
+        disableAttribWithConstant(gl, morphTangentLocations3D[i], 'float', [0, 0, 0]);
+    }
+    checkWebGLError('after setting morphTangents');
+    disableAttribWithConstant(gl, jointLocation3D, 'uint', [0, 0, 0, 0]);
+    disableAttribWithConstant(gl, weightLocation3D, 'float', [1, 0, 0, 0]);
+    checkWebGLError('after setting weight');
+    disableAttribWithConstant(gl, atlas_idLocation3D, 'uint', [0, 0, 0, 0]);
+    checkWebGLError('after setting atlas_id');
+}
 
-    // Morphs (vec3)
-    for (let i = 0; i < 2; i++) {
-        if (morphPositionLocations3D[i] >= 0) gl.vertexAttrib3f(morphPositionLocations3D[i], 0, 0, 0);
-        if (morphNormalLocations3D[i] >= 0) gl.vertexAttrib3f(morphNormalLocations3D[i], 0, 0, 0);
-        if (morphTangentLocations3D[i] >= 0) gl.vertexAttrib3f(morphTangentLocations3D[i], 0, 0, 0);
+function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
+    if (m.gpuTextureAlbedo) {
+        const key = m.gpuTextureAlbedo;
+        const tex = $.texmanager.getTexture(key);
+        if (tex instanceof WebGLTexture && gl.isTexture(tex)) {
+            gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_ALBEDO);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
+            gl.uniform1i(useAlbedoTextureLocation3D, 1);
+        } else {
+            gl.uniform1i(useAlbedoTextureLocation3D, 0);
+        }
+    } else {
+        gl.uniform1i(useAlbedoTextureLocation3D, 0);
     }
 
-    // Skinning (uvec4 + vec4) — LET OP: integer-variant voor joints
-    if (jointLocation3D >= 0) gl.vertexAttribI4i(jointLocation3D, 0, 0, 0, 0);
-    if (weightLocation3D >= 0) gl.vertexAttrib4f(weightLocation3D, 1, 0, 0, 0);
+    if (m.gpuTextureNormal) {
+        const key = m.gpuTextureNormal;
+        const tex = $.texmanager.getTexture(key);
+        if (tex instanceof WebGLTexture && gl.isTexture(tex)) {
+            gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_NORMAL);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
+            gl.uniform1i(useNormalTextureLocation3D, 1);
+        } else {
+            gl.uniform1i(useNormalTextureLocation3D, 0);
+        }
+    } else {
+        gl.uniform1i(useNormalTextureLocation3D, 0);
+    }
 
-    // Atlas-id (uint) — integer-constant voor het geval je per-mesh geen buffer wilt zetten
-    if (atlas_idLocation3D >= 0) gl.vertexAttribI4i(atlas_idLocation3D, 0, 0, 0, 0); // we gebruiken straks toch size=1
+    if (m.gpuTextureMetallicRoughness) {
+        const key = m.gpuTextureMetallicRoughness;
+        const tex = $.texmanager.getTexture(key);
+        if (tex instanceof WebGLTexture && gl.isTexture(tex)) {
+            gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_METALLIC_ROUGHNESS);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
+            gl.uniform1i(useMetallicRoughnessTextureLocation3D, 1);
+        } else {
+            gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
+        }
+    } else {
+        gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
+    }
 
-    for (const { mesh: m, matrix, jointMatrices, morphWeights } of meshesToDraw) {
+    if (m.shadow) {
+        gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SHADOW_MAP);
+        gl.bindTexture(gl.TEXTURE_2D, m.shadow.map.texture);
+        gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
+        gl.uniformMatrix4fv(lightMatrixLocation3D, false, m.shadow.matrix);
+        gl.uniform1f(shadowStrengthLocation3D, m.shadow.strength);
+        gl.uniform1i(useShadowMapLocation3D, 1);
+    } else {
+        gl.uniform1i(useShadowMapLocation3D, 0);
+    }
+}
+
+function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<string, { mesh: Mesh; matrices: Float32Array[] }>): void {
+    if (instancedGroups.size === 0) return;
+
+    checkWebGLError('before setting useInstancing');
+    gl.uniform1i(useInstancingLocation3D, 1);
+    checkWebGLError('after setting useInstancing');
+
+    const activeCamera = getActiveCamera();
+    gl.uniformMatrix4fv(viewProjectionLocation3D, false, activeCamera.viewProjectionMatrix);
+    checkWebGLError('after setting viewProjectionMatrix');
+
+    for (const { mesh: m, matrices } of instancedGroups.values()) {
+        const buffers = getMeshBuffers(gl, m);
+
+        // Use bindOrDefault for cleaner vertex attribute binding
+        bindOrDefault(gl, buffers.vertex, vertexPositionLocation3D, 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 0]);
+        checkWebGLError('after setting vertexPosition');
+
+        bindOrDefault(gl, buffers.color, color_overrideLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 1, 1, 1]);
+        checkWebGLError('after setting color_override');
+
+        bindOrDefault(gl, buffers.atlas, atlas_idLocation3D, 'uint', 1, gl.UNSIGNED_BYTE, false, 0, 0, [0, 0, 0, 0]);
+        checkWebGLError('after setting atlas_id');
+
+        bindOrDefault(gl, buffers.texcoord, texcoordLocation3D, 'float', 2, gl.FLOAT, false, 0, 0, [0, 0]);
+        checkWebGLError('after setting texcoord');
+
+        bindOrDefault(gl, buffers.normal, normalLocation3D, 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 1]);
+        checkWebGLError('after setting normal');
+
+        bindOrDefault(gl, buffers.tangent, tangentLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 0, 0, 1]);
+        checkWebGLError('after setting tangent');
+
+        // Disable skinning and morph attributes for instanced meshes
+        disableAttribWithConstant(gl, jointLocation3D, 'uint', [0, 0, 0, 0]);
+        disableAttribWithConstant(gl, weightLocation3D, 'float', [1, 0, 0, 0]);
+        checkWebGLError('after disabling skinning and morph attributes');
+        for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+            disableAttribWithConstant(gl, morphPositionLocations3D[i], 'float', [0, 0, 0]);
+            disableAttribWithConstant(gl, morphNormalLocations3D[i], 'float', [0, 0, 0]);
+            disableAttribWithConstant(gl, morphTangentLocations3D[i], 'float', [0, 0, 0]);
+            checkWebGLError('after disabling morph attributes');
+        }
+        gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
+        jointMatrixArray.fill(0);
+        jointMatrixArray.set(identityMatrix, 0);
+        gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+        checkWebGLError('after setting jointMatrix');
+
+        const matColor = m.material?.color ?? [1, 1, 1, 1];
+        gl.uniform4fv(materialColorLocation3D, new Float32Array(matColor));
+        gl.uniform1f(metallicFactorLocation3D, m.material?.metallicFactor ?? 0.0);
+        gl.uniform1f(roughnessFactorLocation3D, m.material?.roughnessFactor ?? 0.0);
+        checkWebGLError('after setting metallic and roughness factors');
+
+        setMeshTextures(gl, m);
+        checkWebGLError('after setting textures');
+
+        for (let offset = 0; offset < matrices.length; offset += MAX_INSTANCES) {
+            const batchCount = Math.min(MAX_INSTANCES, matrices.length - offset);
+            const instanceData = new Float32Array(batchCount * 16);
+            for (let i = 0; i < batchCount; i++) instanceData.set(matrices[offset + i], i * 16);
+            gl.uniformMatrix4fv(instanceMatricesLocation3D, false, instanceData);
+            checkWebGLError('after setting instance matrices');
+            if (m.indices) {
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index!);
+                const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT :
+                    m.indices instanceof Uint8Array ? gl.UNSIGNED_BYTE : gl.UNSIGNED_SHORT;
+                gl.drawElementsInstanced(gl.TRIANGLES, m.indices.length, type, 0, batchCount);
+                checkWebGLError('after drawing indexed instances');
+            } else {
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+                gl.drawArraysInstanced(gl.TRIANGLES, 0, m.vertexCount, batchCount);
+                checkWebGLError('after drawing non-indexed instances');
+            }
+        }
+    }
+    gl.uniform1i(useInstancingLocation3D, 0);
+    checkWebGLError('after disabling instancing');
+}
+
+function setupMeshVertexAttributes(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers): void {
+    // Use bindOrDefault for cleaner vertex attribute binding
+    bindOrDefault(gl, buffers.vertex, vertexPositionLocation3D, 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 0]);
+    bindOrDefault(gl, buffers.color, color_overrideLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 1, 1, 1]);
+    bindOrDefault(gl, buffers.atlas, atlas_idLocation3D, 'uint', 1, gl.UNSIGNED_BYTE, false, 0, 0, [0, 0, 0, 0]);
+    bindOrDefault(gl, buffers.texcoord, texcoordLocation3D, 'float', 2, gl.FLOAT, false, 0, 0, [0, 0]);
+    bindOrDefault(gl, buffers.normal, normalLocation3D, 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 1]);
+    bindOrDefault(gl, buffers.tangent, tangentLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 0, 0, 1]);
+}
+
+function setupMeshSkinning(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, jointMatrices?: Float32Array[]): void {
+    // Joints / skinning
+    if (buffers.joint && buffers.weight && m.hasSkinning && jointMatrices) {
+        bindOrDefault(gl, buffers.joint, jointLocation3D, 'uint', 4, gl.UNSIGNED_SHORT, false, 0, 0, [0, 0, 0, 0]);
+        bindOrDefault(gl, buffers.weight, weightLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 0, 0, 0]);
+
+        jointMatrixArray.fill(0);
+        jointMatrixArray.set(identityMatrix, 0);
+        for (let i = 0; i < jointMatrices.length && i < MAX_JOINTS; i++) {
+            jointMatrixArray.set(jointMatrices[i], i * 16);
+        }
+        gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+    } else {
+        disableAttribWithConstant(gl, jointLocation3D, 'uint', [0, 0, 0, 0]);
+        disableAttribWithConstant(gl, weightLocation3D, 'float', [1, 0, 0, 0]);
+        jointMatrixArray.fill(0);
+        jointMatrixArray.set(identityMatrix, 0);
+        gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+    }
+}
+
+function setupMeshMorphTargets(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, morphWeights?: number[]): void {
+    // Morph targets
+    if (m.hasMorphTargets && buffers.morphPositions) {
+        if (m.morphPositions!.length > MAX_MORPH_TARGETS) {
+            console.warn(`Only first ${MAX_MORPH_TARGETS} morph targets supported`);
+        }
+        const weights = new Float32Array(MAX_MORPH_TARGETS);
+        const weightSource = morphWeights ?? m.morphWeights;
+        for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+            bindOrDefault(gl, buffers.morphPositions[i], morphPositionLocations3D[i], 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 0]);
+            bindOrDefault(gl, buffers.morphNormals?.[i], morphNormalLocations3D[i], 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 0]);
+            bindOrDefault(gl, buffers.morphTangents?.[i], morphTangentLocations3D[i], 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 0]);
+            weights[i] = weightSource[i] ?? 0;
+        }
+        gl.uniform1fv(morphWeightLocation3D, weights);
+    } else {
+        for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+            disableAttribWithConstant(gl, morphPositionLocations3D[i], 'float', [0, 0, 0]);
+            disableAttribWithConstant(gl, morphNormalLocations3D[i], 'float', [0, 0, 0]);
+            disableAttribWithConstant(gl, morphTangentLocations3D[i], 'float', [0, 0, 0]);
+        }
+        gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
+    }
+}
+
+function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
+    checkWebGLError("Before setting uniform values");
+    const matColor = m.material?.color ?? [1, 1, 1, 1];
+    gl.uniform4fv(materialColorLocation3D, new Float32Array(matColor));
+    gl.uniform1f(metallicFactorLocation3D, m.material?.metallicFactor ?? 0.0);
+    gl.uniform1f(roughnessFactorLocation3D, m.material?.roughnessFactor ?? 0.0);
+    checkWebGLError("After setting uniform values");
+}
+
+function setMeshTexturesForSingle(gl: WebGL2RenderingContext, m: Mesh): void {
+    checkWebGLError("Before setting texture uniforms");
+
+    // Albedo: Bind and set unit only if valid texture present
+    if (m.gpuTextureAlbedo) {
+        const key = m.gpuTextureAlbedo;
+        const texHandle = $.texmanager.getTexture(key);
+        if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
+            gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_ALBEDO);
+            gl.bindTexture(gl.TEXTURE_2D, texHandle);
+            gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
+            gl.uniform1i(useAlbedoTextureLocation3D, 1);
+        } else {
+            console.warn(`Invalid albedo texture: ${key}`);
+            gl.uniform1i(useAlbedoTextureLocation3D, 0);
+        }
+    } else {
+        gl.uniform1i(useAlbedoTextureLocation3D, 0);
+    }
+
+    // Normal: Similar
+    if (m.gpuTextureNormal) {
+        const key = m.gpuTextureNormal;
+        const texHandle = $.texmanager.getTexture(key);
+        if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
+            gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_NORMAL);
+            gl.bindTexture(gl.TEXTURE_2D, texHandle);
+            gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
+            gl.uniform1i(useNormalTextureLocation3D, 1);
+        } else {
+            gl.uniform1i(useNormalTextureLocation3D, 0);
+        }
+    } else {
+        gl.uniform1i(useNormalTextureLocation3D, 0);
+    }
+
+    // MetallicRoughness: Similar
+    if (m.gpuTextureMetallicRoughness) {
+        const key = m.gpuTextureMetallicRoughness;
+        const texHandle = $.texmanager.getTexture(key);
+        if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
+            gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_METALLIC_ROUGHNESS);
+            gl.bindTexture(gl.TEXTURE_2D, texHandle);
+            gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
+            gl.uniform1i(useMetallicRoughnessTextureLocation3D, 1);
+        } else {
+            gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
+        }
+    } else {
+        gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
+    }
+
+    // Shadow: Bind and set unit only if present (requires shader update below)
+    if (m.shadow) {
+        gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SHADOW_MAP);
+        gl.bindTexture(gl.TEXTURE_2D, m.shadow.map.texture);
+        gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
+        gl.uniformMatrix4fv(lightMatrixLocation3D, false, m.shadow.matrix);
+        gl.uniform1f(shadowStrengthLocation3D, m.shadow.strength);
+        gl.uniform1i(useShadowMapLocation3D, 1);
+    } else {
+        // gl.uniform1f(shadowStrengthLocation3D, 1.0);
+        gl.uniform1i(useShadowMapLocation3D, 0);
+    }
+    checkWebGLError("After setting texture uniforms");
+}
+
+function setMeshTransforms(gl: WebGL2RenderingContext, matrix: Float32Array): void {
+    checkWebGLError("Before calculating MVP and setting uniforms");
+    const activeCamera = getActiveCamera();
+    const mvp = bmat.multiply(activeCamera.viewProjectionMatrix, matrix);
+    gl.uniformMatrix4fv(mvpLocation3D, false, mvp);
+    gl.uniformMatrix4fv(modelLocation3D, false, matrix);
+    const normalMat = bmat.normalMatrix(matrix);
+    gl.uniformMatrix3fv(normalMatrixLocation3D, false, normalMat);
+    checkWebGLError("After calculating MVP and setting uniforms");
+}
+
+function drawMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, vertexCount: number, framebuffer: WebGLFramebuffer): void {
+    if (m.indices) {
+        checkWebGLError("Before drawing elements");
+        const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT :
+            m.indices instanceof Uint8Array ? gl.UNSIGNED_BYTE : gl.UNSIGNED_SHORT;
+
+        gl.drawElements(gl.TRIANGLES, m.indices.length, type, 0);
+        const drawError = checkWebGLError(`After drawing elements (count = ${m.indices.length})`);
+        if (drawError) {
+            console.error(generateDetailedDrawError(
+                gl, m, framebuffer, vertexCount, drawError,
+                color_overrideBuffer3D, atlas_idBuffer3D, jointBuffer3D, weightBuffer3D,
+                morphPositionBuffers3D, morphNormalBuffers3D, morphTangentBuffers3D,
+                vertexBuffer3D, texcoordBuffer3D, normalBuffer3D, tangentBuffer3D, indexBuffer3D,
+                albedoTextureLocation3D, normalTextureLocation3D, metallicRoughnessTextureLocation3D, shadowMapLocation3D,
+                useAlbedoTextureLocation3D, useNormalTextureLocation3D, useMetallicRoughnessTextureLocation3D, useShadowMapLocation3D,
+                morphWeightLocation3D, jointMatrixLocation3D,
+                TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_SHADOW_MAP,
+                jointMatrixArray, identityMatrix, getActiveCamera(), bmat
+            ));
+        }
+    } else {
+        checkWebGLError("Before drawing arrays");
+        gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+        if (checkWebGLError(`After drawing arrays(count = ${vertexCount})`)) {
+            throw new Error(`Mesh ${m.name} has no indices and drawArrays failed.Vertex count: ${vertexCount} `);
+        }
+    }
+}
+
+function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void {
+    for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) {
         checkWebGLError("Before processing mesh");
         const buffers = getMeshBuffers(gl, m);
         const vertexCount = m.vertexCount;
 
-        // Positions
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
-        gl.vertexAttribPointer(vertexPositionLocation3D, 3, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(vertexPositionLocation3D);
-
-        // Colors
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
-        gl.vertexAttribPointer(color_overrideLocation3D, 4, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(color_overrideLocation3D);
-
-        // Atlas ids
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.atlas);
-        gl.vertexAttribIPointer(atlas_idLocation3D, 1, gl.UNSIGNED_BYTE, 0, 0);
-        gl.enableVertexAttribArray(atlas_idLocation3D);
-
-        // Texcoords
-        if (buffers.texcoord) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoord);
-            gl.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(texcoordLocation3D);
-        } else {
-            gl.disableVertexAttribArray(texcoordLocation3D);
-        }
-
-        // Normals
-        if (buffers.normal) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
-            gl.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(normalLocation3D);
-        } else {
-            gl.disableVertexAttribArray(normalLocation3D);
-        }
-
-        // Tangents
-        if (buffers.tangent) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tangent);
-            gl.vertexAttribPointer(tangentLocation3D, 4, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(tangentLocation3D);
-        } else {
-            gl.disableVertexAttribArray(tangentLocation3D);
-            gl.vertexAttrib4f(tangentLocation3D, 1, 0, 0, 1);
-        }
-
-        // Joints / skinning
-        if (buffers.joint && buffers.weight && m.hasSkinning && jointMatrices) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint);
-            gl.vertexAttribIPointer(jointLocation3D, 4, gl.UNSIGNED_SHORT, 0, 0);
-            gl.enableVertexAttribArray(jointLocation3D);
-
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight);
-            gl.vertexAttribPointer(weightLocation3D, 4, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(weightLocation3D);
-
-            jointMatrixArray.fill(0);
-            jointMatrixArray.set(identityMatrix, 0);
-            for (let i = 0; i < jointMatrices.length && i < MAX_JOINTS; i++) {
-                jointMatrixArray.set(jointMatrices[i], i * 16);
-            }
-            gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
-        } else {
-            gl.disableVertexAttribArray(jointLocation3D);
-            gl.disableVertexAttribArray(weightLocation3D);
-            gl.vertexAttribI4ui(jointLocation3D, 0, 0, 0, 0);
-            gl.vertexAttrib4f(weightLocation3D, 1, 0, 0, 0);
-            jointMatrixArray.fill(0);
-            jointMatrixArray.set(identityMatrix, 0);
-            gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
-        }
-
-        // Morph targets
-        if (m.hasMorphTargets && buffers.morphPositions) {
-            if (m.morphPositions.length > MAX_MORPH_TARGETS) {
-                console.warn(`Only first ${MAX_MORPH_TARGETS} morph targets supported`);
-            }
-            const weights = new Float32Array(MAX_MORPH_TARGETS);
-            const weightSource = morphWeights ?? m.morphWeights;
-            for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
-                const posBuf = buffers.morphPositions[i];
-                const normBuf = buffers.morphNormals?.[i];
-                const tanBuf = buffers.morphTangents?.[i];
-                if (posBuf) {
-                    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-                    gl.vertexAttribPointer(morphPositionLocations3D[i], 3, gl.FLOAT, false, 0, 0);
-                    gl.enableVertexAttribArray(morphPositionLocations3D[i]);
-                    weights[i] = weightSource[i] ?? 0;
-                } else {
-                    gl.disableVertexAttribArray(morphPositionLocations3D[i]);
-                    gl.vertexAttrib3f(morphPositionLocations3D[i], 0, 0, 0);
-                }
-                if (normBuf) {
-                    gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
-                    gl.vertexAttribPointer(morphNormalLocations3D[i], 3, gl.FLOAT, false, 0, 0);
-                    gl.enableVertexAttribArray(morphNormalLocations3D[i]);
-                } else {
-                    gl.disableVertexAttribArray(morphNormalLocations3D[i]);
-                    gl.vertexAttrib3f(morphNormalLocations3D[i], 0, 0, 0);
-                }
-                if (tanBuf) {
-                    gl.bindBuffer(gl.ARRAY_BUFFER, tanBuf);
-                    gl.vertexAttribPointer(morphTangentLocations3D[i], 3, gl.FLOAT, false, 0, 0);
-                    gl.enableVertexAttribArray(morphTangentLocations3D[i]);
-                } else {
-                    gl.disableVertexAttribArray(morphTangentLocations3D[i]);
-                    gl.vertexAttrib3f(morphTangentLocations3D[i], 0, 0, 0);
-                }
-            }
-            gl.uniform1fv(morphWeightLocation3D, weights);
-        } else {
-            for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
-                gl.disableVertexAttribArray(morphPositionLocations3D[i]);
-                gl.vertexAttrib3f(morphPositionLocations3D[i], 0, 0, 0);
-                gl.disableVertexAttribArray(morphNormalLocations3D[i]);
-                gl.vertexAttrib3f(morphNormalLocations3D[i], 0, 0, 0);
-                gl.disableVertexAttribArray(morphTangentLocations3D[i]);
-                gl.vertexAttrib3f(morphTangentLocations3D[i], 0, 0, 0);
-            }
-            gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
-        }
+        setupMeshVertexAttributes(gl, m, buffers);
+        setupMeshSkinning(gl, m, buffers, jointMatrices);
+        setupMeshMorphTargets(gl, m, buffers, morphWeights);
 
         // Index buffer
         if (buffers.index) {
@@ -795,289 +1104,24 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         }
         checkWebGLError("After processing mesh");
 
-        checkWebGLError("Before setting uniform values");
-        const matColor = m.material?.color ?? [1, 1, 1, 1];
-        gl.uniform4fv(materialColorLocation3D, new Float32Array(matColor));
-        gl.uniform1f(metallicFactorLocation3D, m.material?.metallicFactor ?? 0.0);
-        gl.uniform1f(roughnessFactorLocation3D, m.material?.roughnessFactor ?? 0.0);
-        checkWebGLError("After setting uniform values");
+        setMeshMaterial(gl, m);
+        setMeshTexturesForSingle(gl, m);
+        setMeshTransforms(gl, matrix);
 
-        checkWebGLError("Before setting texture uniforms");
-        // Albedo: Bind and set unit only if valid texture present
-        if (m.gpuTextureAlbedo) {
-            const key = m.gpuTextureAlbedo;
-            const texHandle = $.texmanager.getTexture(key);
-            if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
-                gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_ALBEDO);
-                gl.bindTexture(gl.TEXTURE_2D, texHandle);
-                gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
-                gl.uniform1i(useAlbedoTextureLocation3D, 1);
-            } else {
-                console.warn(`Invalid albedo texture: ${key}`);
-                gl.uniform1i(useAlbedoTextureLocation3D, 0);
-            }
-        } else {
-            gl.uniform1i(useAlbedoTextureLocation3D, 0);
-        }
-
-        // Normal: Similar
-        if (m.gpuTextureNormal) {
-            const key = m.gpuTextureNormal;
-            const texHandle = $.texmanager.getTexture(key);
-            if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
-                gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_NORMAL);
-                gl.bindTexture(gl.TEXTURE_2D, texHandle);
-                gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
-                gl.uniform1i(useNormalTextureLocation3D, 1);
-            } else {
-                gl.uniform1i(useNormalTextureLocation3D, 0);
-            }
-        } else {
-            gl.uniform1i(useNormalTextureLocation3D, 0);
-        }
-
-        // MetallicRoughness: Similar
-        if (m.gpuTextureMetallicRoughness) {
-            const key = m.gpuTextureMetallicRoughness;
-            const texHandle = $.texmanager.getTexture(key);
-            if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
-                gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_METALLIC_ROUGHNESS);
-                gl.bindTexture(gl.TEXTURE_2D, texHandle);
-                gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
-                gl.uniform1i(useMetallicRoughnessTextureLocation3D, 1);
-            } else {
-                gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
-            }
-        } else {
-            gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
-        }
-
-        // Shadow: Bind and set unit only if present (requires shader update below)
-        if (m.shadow) {
-            gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SHADOW_MAP);
-            gl.bindTexture(gl.TEXTURE_2D, m.shadow.map.texture);
-            gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
-            gl.uniformMatrix4fv(lightMatrixLocation3D, false, m.shadow.matrix);
-            gl.uniform1f(shadowStrengthLocation3D, m.shadow.strength);
-            gl.uniform1i(useShadowMapLocation3D, 1);
-        } else {
-            // gl.uniform1f(shadowStrengthLocation3D, 1.0);
-            gl.uniform1i(useShadowMapLocation3D, 0);
-        }
-        checkWebGLError("After setting texture uniforms");
-
-        checkWebGLError("Before calculating MVP and setting uniforms");
-        const activeCamera = getActiveCamera();
-        const mvp = bmat.multiply(activeCamera.viewProjectionMatrix, matrix);
-        gl.uniformMatrix4fv(mvpLocation3D, false, mvp);
-        gl.uniformMatrix4fv(modelLocation3D, false, matrix);
-        const normalMat = bmat.normalMatrix(matrix);
-        gl.uniformMatrix3fv(normalMatrixLocation3D, false, normalMat);
-        checkWebGLError("After calculating MVP and setting uniforms");
-
-        if (m.indices) {
-            checkWebGLError("Before drawing elements");
-            const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT :
-                m.indices instanceof Uint8Array ? gl.UNSIGNED_BYTE : gl.UNSIGNED_SHORT;
-
-            gl.drawElements(gl.TRIANGLES, m.indices.length, type, 0);
-            const drawError = checkWebGLError(`After drawing elements (count = ${m.indices.length})`);
-            if (drawError) {
-                const typeToByteSize = {
-                    [gl.UNSIGNED_BYTE]: Uint8Array.BYTES_PER_ELEMENT,
-                    [gl.UNSIGNED_SHORT]: Uint16Array.BYTES_PER_ELEMENT,
-                    [gl.UNSIGNED_INT]: Uint32Array.BYTES_PER_ELEMENT,
-                }
-                const vertexType2String = (t: GLenum): string => {
-                    switch (t) {
-                        case gl.UNSIGNED_BYTE: return "UNSIGNED_BYTE";
-                        case gl.UNSIGNED_SHORT: return "UNSIGNED_SHORT";
-                        case gl.UNSIGNED_INT: return "UNSIGNED_INT";
-                        default: return "UNKNOWN";
-                    }
-                };
-                const getBufferData = (buffer: WebGLBuffer, t: GLenum, size: number): any => {
-                    const result: Uint8Array | Uint16Array | Float32Array = new (t === gl.FLOAT ? Float32Array : t === gl.UNSIGNED_BYTE ? Uint8Array : Uint16Array)(size);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-                    gl.getBufferSubData(gl.ARRAY_BUFFER, 0, result);
-                    return result;
-                };
-
-                const getGlBufferSize = (buffer: WebGLBuffer, target: GLenum = gl.ARRAY_BUFFER): number => {
-                    gl.bindBuffer(target, buffer);
-                    return gl.getBufferParameter(target, gl.BUFFER_SIZE);
-                };
-
-                // Additional state checks for common INVALID_OPERATION causes
-                const currentVAO = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
-                const vaoBound = !!currentVAO;
-                const currentElementBuffer = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
-                const elementBufferBound = !!currentElementBuffer;
-                const maxIndex = Math.max(...m.indices); // For clearer out-of-bounds diagnostics
-
-                // Read the data from the buffers for debugging
-                const colorData = getBufferData(color_overrideBuffer3D, gl.FLOAT, vertexCount * 4);
-                const atlasData = getBufferData(atlas_idBuffer3D, gl.UNSIGNED_BYTE, vertexCount);
-                const jointData = getBufferData(jointBuffer3D, gl.UNSIGNED_SHORT, vertexCount * 4);
-                const weightData = getBufferData(weightBuffer3D, gl.FLOAT, vertexCount * 4);
-                const morphPositionData = morphPositionBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
-                const morphNormalData = morphNormalBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
-                const morphTangentData = morphTangentBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
-                const jointMatrices = jointMatrixArray.length > 0 ? Array.from({ length: jointMatrixArray.length / 16 }, (_, i) => jointMatrixArray.slice(i * 16, (i + 1) * 16)) : null;
-                const positions = getBufferData(vertexBuffer3D, gl.FLOAT, vertexCount * 3);
-                const texcoords = m.hasTexcoords ? getBufferData(texcoordBuffer3D, gl.FLOAT, vertexCount * 2) : null;
-                const normals = m.hasNormals ? getBufferData(normalBuffer3D, gl.FLOAT, vertexCount * 3) : null;
-                const tangents = m.hasTangents ? getBufferData(tangentBuffer3D, gl.FLOAT, vertexCount * 4) : null;
-                const vertexData = {
-                    colorData: colorData,
-                    atlasData: atlasData,
-                    jointData: jointData,
-                    weightData: weightData,
-                    morphPositions: morphPositionData,
-                    morphNormals: morphNormalData,
-                    morphTangents: morphTangentData,
-                    positions: positions,
-                    texcoords: texcoords,
-                    normals: normals,
-                    tangents: tangents,
-                };
-
-                const bufferSize = {
-                    vertexBuffer3D: getGlBufferSize(vertexBuffer3D),
-                    indexBuffer3D: indexBuffer3D ? getGlBufferSize(indexBuffer3D, gl.ELEMENT_ARRAY_BUFFER) : 0,
-                    texcoordBuffer3D: m.hasTexcoords ? getGlBufferSize(texcoordBuffer3D) : 0,
-                    normalBuffer3D: m.hasNormals ? getGlBufferSize(normalBuffer3D) : 0,
-                    tangentBuffer3D: m.hasTangents ? getGlBufferSize(tangentBuffer3D) : 0,
-                    color_overrideBuffer3D: getGlBufferSize(color_overrideBuffer3D),
-                    atlas_idBuffer3D: getGlBufferSize(atlas_idBuffer3D),
-                    jointBuffer3D: m.hasSkinning ? getGlBufferSize(jointBuffer3D) : 0,
-                    weightBuffer3D: m.hasSkinning ? getGlBufferSize(weightBuffer3D) : 0,
-                    morphPositionBuffers3D: morphPositionBuffers3D.map(b => b ? getGlBufferSize(b) : 0),
-                    morphNormalBuffers3D: morphNormalBuffers3D.map(b => b ? getGlBufferSize(b) : 0),
-                    morphTangentBuffers3D: morphTangentBuffers3D.map(b => b ? getGlBufferSize(b) : 0),
-                };
-
-                const bufferSizeCorrectness = {
-                    vertexBuffer3D: bufferSize.vertexBuffer3D === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT,
-                    indexBuffer3D: indexBuffer3D ? bufferSize.indexBuffer3D === m.indices.length * typeToByteSize[type] : false,
-                    texcoordBuffer3D: m.hasTexcoords ? bufferSize.texcoordBuffer3D === vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT : true,
-                    normalBuffer3D: m.hasNormals ? bufferSize.normalBuffer3D === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true,
-                    tangentBuffer3D: m.hasTangents ? bufferSize.tangentBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT : true,
-                    color_overrideBuffer3D: bufferSize.color_overrideBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT,
-                    atlas_idBuffer3D: bufferSize.atlas_idBuffer3D === vertexCount * Uint8Array.BYTES_PER_ELEMENT,
-                    jointBuffer3D: m.hasSkinning ? bufferSize.jointBuffer3D === vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT : true,
-                    weightBuffer3D: m.hasSkinning ? bufferSize.weightBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT : true,
-                    morphPositionBuffers3D: morphPositionBuffers3D.map((b, i) => b ? bufferSize.morphPositionBuffers3D[i] === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true),
-                    morphNormalBuffers3D: morphNormalBuffers3D.map((b, i) => b ? bufferSize.morphNormalBuffers3D[i] === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true),
-                    morphTangentBuffers3D: morphTangentBuffers3D.map((b, i) => b ? bufferSize.morphTangentBuffers3D[i] === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true),
-                };
-
-                const bufferSizeCorrectnessReasons = {
-                    vertexBuffer3D: bufferSizeCorrectness.vertexBuffer3D ? 'yes' : `no, because ${bufferSize.vertexBuffer3D - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`,
-                    indexBuffer3D: indexBuffer3D ? (bufferSizeCorrectness.indexBuffer3D ? 'yes' : `no, because ${bufferSize.indexBuffer3D - m.indices.length * typeToByteSize[type]} bytes are missing`) : 'Unbound!',
-                    texcoordBuffer3D: m.hasTexcoords ? (bufferSizeCorrectness.texcoordBuffer3D ? 'yes' : `no, because ${bufferSize.texcoordBuffer3D - vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-                    normalBuffer3D: m.hasNormals ? (bufferSizeCorrectness.normalBuffer3D ? 'yes' : `no, because ${bufferSize.normalBuffer3D - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-                    tangentBuffer3D: m.hasTangents ? (bufferSizeCorrectness.tangentBuffer3D ? 'yes' : `no, because ${bufferSize.tangentBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-                    color_overrideBuffer3D: bufferSizeCorrectness.color_overrideBuffer3D ? 'yes' : `no, because ${bufferSize.color_overrideBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`,
-                    atlas_idBuffer3D: bufferSizeCorrectness.atlas_idBuffer3D ? 'yes' : `no, because ${bufferSize.atlas_idBuffer3D - vertexCount * Uint8Array.BYTES_PER_ELEMENT} bytes are missing`,
-                    jointBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.jointBuffer3D ? 'yes' : `no, because ${bufferSize.jointBuffer3D - vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-                    weightBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.weightBuffer3D ? 'yes' : `no, because ${bufferSize.weightBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-                    morphPositionBuffers3D: '[' + morphPositionBuffers3D.map((b, i) => b ? (bufferSizeCorrectness.morphPositionBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphPositionBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
-                    morphNormalBuffers3D: '[' + morphNormalBuffers3D.map((b, i) => b ? (bufferSize.morphNormalBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphNormalBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
-                    morphTangentBuffers3D: '[' + morphTangentBuffers3D.map((b, i) => b ? (bufferSize.morphTangentBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphTangentBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
-                };
-
-
-                console.error(`Mesh ${m.name} has indices but drawElements failed. Vertex count: ${vertexCount}, Indices length: ${m.indices.length}
-        Max index: ${maxIndex} (must be < ${vertexCount})
-
-        Indices-type: ${vertexType2String(type)} (${typeToByteSize[type]} bytes per index)
-        Vertex Buffer Size: ${bufferSize.vertexBuffer3D} bytes (${vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} expected)
-        Index Buffer Size: ${bufferSize.indexBuffer3D} bytes (${m.indices.length * typeToByteSize[type]} expected)
-        Valid indices: ${m.indices.every(i => i >= 0 && i < vertexCount)}
-        Buffer size correctness checks:
-${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${buffer}: ${result}`).join('\n')}
-
-        _________________________________________________________________
-        Draw Error: ${drawError}
-        WebGL error: ${getWebGLErrorString(gl, drawError)}
-        Framebuffer Created: ${framebuffer ? 'yes' : 'no'}
-        Framebuffer Bound: ${gl.getParameter(gl.FRAMEBUFFER_BINDING) === framebuffer ? 'yes' : 'no'}
-        Framebuffer status: ${getFramebufferStatusString(gl, gl.checkFramebufferStatus(gl.FRAMEBUFFER))}
-        VAO bound: ${vaoBound ? 'yes' : 'no'}
-        Element Array Buffer bound: ${elementBufferBound ? 'yes' : 'no'}
-        glTextureIndexes units reserved vs bound for Albedo: TEXTURE${TEXTURE_UNIT_ALBEDO}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), albedoTextureLocation3D)}, Normal: TEXTURE${TEXTURE_UNIT_NORMAL}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), normalTextureLocation3D)}, MetallicRoughness: TEXTURE${TEXTURE_UNIT_METALLIC_ROUGHNESS}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), metallicRoughnessTextureLocation3D)}, Shadow Map: TEXTURE${TEXTURE_UNIT_SHADOW_MAP}:TEXTURE${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), shadowMapLocation3D)}
-        glTextureIndex units correctly mapped: ${TEXTURE_UNIT_ALBEDO === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), albedoTextureLocation3D) &&
-                    TEXTURE_UNIT_NORMAL === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), normalTextureLocation3D) &&
-                    TEXTURE_UNIT_METALLIC_ROUGHNESS === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), metallicRoughnessTextureLocation3D) &&
-                    TEXTURE_UNIT_SHADOW_MAP === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), shadowMapLocation3D)}
-        glTextureUniforms set correctly (thus: value correctly maps to texture unit):
-        _________________________________________________________________
-        Material Color: ${JSON.stringify(matColor)}, Metallic Factor: ${m.material?.metallicFactor}, Roughness Factor: ${m.material?.roughnessFactor}
-        Texture Albedo: ${m.gpuTextureAlbedo ? `'${m.gpuTextureAlbedo}'` : 'none'}
-        Texture Normal: ${m.gpuTextureNormal ? `'${m.gpuTextureNormal}'` : 'none'}
-        Texture MetallicRoughness: ${m.gpuTextureMetallicRoughness ? `'${m.gpuTextureMetallicRoughness}'` : 'none'}
-        _________________________________________________________________
-        Colordata: ${JSON.stringify(colorData)}
-        Atlasdata: ${JSON.stringify(atlasData)}
-        Atlas ID: ${m.atlasId}
-        Has normals: ${m.hasNormals}
-        Has tangents: ${m.hasTangents}
-        Has texcoords: ${m.hasTexcoords}
-        Has skinning: ${m.hasSkinning}
-        _________________________________________________________________
-        Shadow: ${m.shadow ? 'yes' : 'no'}, Shadow Map: ${m.shadow?.map.texture ?? 'none'}, Shadow Strength: ${m.shadow?.strength ?? 'none'}
-        Shadow Matrix: ${m.shadow?.matrix ?? 'none'}
-        Joint Matrices: ${jointMatrices ? jointMatrices.map(j => JSON.stringify(j)).join(', ') : 'none'}
-        Morph Targets: ${m.hasMorphTargets ? m.morphPositions.length : 'none'}
-        Morph Weights: ${m.hasMorphTargets ? m.morphWeights.join(', ') : 'none'}
-        _________________________________________________________________
-        MVP: ${JSON.stringify(mvp)}
-        Model Matrix: ${JSON.stringify(matrix)}
-        Normal Matrix: ${JSON.stringify(normalMat)}
-        _________________________________________________________________
-        Bound Vertex Buffer ID: ${vertexBuffer3D ? 'yes' : 'no'}
-        Bound Texcoord Buffer ID: ${texcoordBuffer3D ? 'yes' : 'no'}
-        Bound Normal Buffer ID: ${normalBuffer3D ? 'yes' : 'no'}
-        Bound Tangent Buffer ID: ${tangentBuffer3D ? 'yes' : 'no'}
-        Bound Color Override Buffer ID: ${color_overrideBuffer3D ? 'yes' : 'no'}
-        Bound Atlas ID Buffer ID: ${atlas_idBuffer3D ? 'yes' : 'no'}
-        Bound Index Buffer ID: ${indexBuffer3D ? 'yes' : 'no'}
-        Bound Joint Buffer ID: ${jointBuffer3D ? 'yes' : 'no'}
-        Bound Weight Buffer ID: ${weightBuffer3D ? 'yes' : 'no'}
-        Bound Morph Position Buffers: ${morphPositionBuffers3D.map((b, i) => `${i}: ${b ? 'yes' : 'no'}`).join(', ')}
-        Bound Morph Normal Buffers: ${morphNormalBuffers3D.map((b, i) => `${i}: ${b ? 'yes' : 'no'}`).join(', ')}
-        Bound Morph Tangent Buffers: ${morphTangentBuffers3D.map((b, i) => `${i}: ${b ? 'yes' : 'no'}`).join(', ')}
-        _________________________________________________________________
-        Has Albedo Texture: ${m.gpuTextureAlbedo ? 'yes' : 'no'}
-        Use Albedo Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useAlbedoTextureLocation3D)}
-        Has Normal Texture: ${m.gpuTextureNormal ? 'yes' : 'no'}
-        Use Normal Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useNormalTextureLocation3D)}
-        Has Metallic Roughness Texture: ${m.gpuTextureMetallicRoughness ? 'yes' : 'no'}
-        Use Metallic Roughness Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useMetallicRoughnessTextureLocation3D)}
-        Has Shadow Map: ${m.shadow ? 'yes' : 'no'}
-        Use Shadow Map uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useShadowMapLocation3D)}
-        Has Morph Targets: ${m.hasMorphTargets ? 'yes' : 'no'}
-        Morph Weights uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), morphWeightLocation3D)}
-        Has Joint Matrices: ${m.hasSkinning && jointMatrices ? 'yes' : 'no'}
-        Joint Matrices uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), jointMatrixLocation3D)}
-        Has Joint Matrix Array: ${jointMatrixArray?.length > 0 ? 'yes' : 'no'}
-            Joint Matrix Array length: ${jointMatrixArray?.length / 16}
-            Joint Matrix Array data: ${JSON.stringify(jointData)}  // Reusing jointData
-        Joint Matrix Array: ${JSON.stringify(jointMatrixArray)}
-        _________________________________________________________________
-        Vertex Data: ${JSON.stringify(vertexData)}
-`);
-            }
-        } else {
-            checkWebGLError("Before drawing arrays");
-            gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
-            if (checkWebGLError(`After drawing arrays(count = ${vertexCount})`)) {
-                throw new Error(`Mesh ${m.name} has no indices and drawArrays failed.Vertex count: ${vertexCount} `);
-            }
-        }
+        drawMesh(gl, m, buffers, vertexCount, framebuffer);
         checkWebGLError(`After calculating MVP and drawing mesh: ${JSON.stringify(m)} `);
     }
+}
+
+export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
+    const { instancedGroups, singles } = cullAndSortMeshes();
+    if (instancedGroups.size === 0 && singles.length === 0) return;
+
+    setupFramebufferAndViewport(gl, framebuffer, canvasWidth, canvasHeight);
+    setupRenderingState(gl);
+
+    renderInstancedMeshes(gl, instancedGroups);
+    renderSingleMeshes(gl, singles, framebuffer);
 
     meshesToDraw = [];
 }

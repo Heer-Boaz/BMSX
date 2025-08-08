@@ -112,19 +112,17 @@ export function setupDefaultUniformValues(gl: WebGL2RenderingContext, defaultSca
 }
 
 export function setupBuffers(gl: WebGL2RenderingContext): void {
-    const buffers = {
-        vertex: glCreateBuffer(gl, spriteShaderData.vertexcoords),
-        texturecoord: glCreateBuffer(gl, spriteShaderData.texcoords),
-        z: glCreateBuffer(gl, spriteShaderData.zcoords),
-        color_override: glCreateBuffer(gl, spriteShaderData.color_override),
-        atlas_id: glCreateBuffer(gl, spriteShaderData.atlas_id),
-    };
+    const cvertexBuffer = glCreateBuffer(gl, spriteShaderData.vertexcoords);
+    const ctexcoordBuffer = glCreateBuffer(gl, spriteShaderData.texcoords);
+    const czBuffer = glCreateBuffer(gl, spriteShaderData.zcoords);
+    const ccolor_overrideBuffer = glCreateBuffer(gl, spriteShaderData.color_override);
+    const catlas_idBuffer = glCreateBuffer(gl, spriteShaderData.atlas_id);
 
-    vertexBuffer = buffers.vertex;
-    texcoordBuffer = buffers.texturecoord;
-    zBuffer = buffers.z;
-    color_overrideBuffer = buffers.color_override;
-    atlas_idBuffer = buffers.atlas_id;
+    vertexBuffer = cvertexBuffer;
+    texcoordBuffer = ctexcoordBuffer;
+    zBuffer = czBuffer;
+    color_overrideBuffer = ccolor_overrideBuffer;
+    atlas_idBuffer = catlas_idBuffer;
 }
 
 /**

@@ -235,9 +235,11 @@ export class GLView extends BaseView {
 	private setupBuffers(): void {
 		const gl = this.glctx;
 
+		checkWebGLError('before setupBuffers');
 		GLView2D.setupBuffers(gl);
 		GLView3D.setupBuffers3D(gl); // Set up buffers for 3D
 		GLView3D.createSkyboxBuffer(gl);
+		checkWebGLError('after setupBuffers');
 	}
 
 	/**

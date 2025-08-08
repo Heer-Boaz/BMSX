@@ -31,6 +31,7 @@ export class Camera3D {
     private _matricesNeedUpdate: boolean = true;
     private static readonly MAX_PITCH = Math.PI / 2 - 0.01;
     private _orbitTarget: vec3 = { x: 0, y: 0, z: 0 }; // Default orbit target
+    private _frustumPlanes: [number, number, number, number][] = [];
 
     constructor() {
         this._matricesNeedUpdate = true;
@@ -347,6 +348,35 @@ export class Camera3D {
             this._projectionMatrix = bmat.orthographic(-width / 2, width / 2, -height / 2, height / 2, this._near, this._far);
         }
         this._viewProjectionMatrix = bmat.multiply(this._projectionMatrix, this._viewMatrix);
+        this.extractFrustumPlanes();
         this._matricesNeedUpdate = false;
+    }
+
+    private extractFrustumPlanes(): void {
+        const m = this._viewProjectionMatrix;
+        this._frustumPlanes = [
+            [m[3] + m[0], m[7] + m[4], m[11] + m[8], m[15] + m[12]], // left
+            [m[3] - m[0], m[7] - m[4], m[11] - m[8], m[15] - m[12]], // right
+            [m[3] + m[1], m[7] + m[5], m[11] + m[9], m[15] + m[13]], // bottom
+            [m[3] - m[1], m[7] - m[5], m[11] - m[9], m[15] - m[13]], // top
+            [m[3] + m[2], m[7] + m[6], m[11] + m[10], m[15] + m[14]], // near
+            [m[3] - m[2], m[7] - m[6], m[11] - m[10], m[15] - m[14]], // far
+        ];
+        for (const p of this._frustumPlanes) {
+            const invLen = 1 / Math.hypot(p[0], p[1], p[2]);
+            p[0] *= invLen; p[1] *= invLen; p[2] *= invLen; p[3] *= invLen;
+        }
+    }
+
+    public isSphereInFrustum(center: vec3arr, radius: number): boolean {
+        if (this._matricesNeedUpdate) this.updateMatrices();
+        const bias = radius * 0.01; // small tolerance to avoid flicker at frustum edges
+        for (const p of this._frustumPlanes) {
+            const d = p[0] * center[0] + p[1] * center[1] + p[2] * center[2] + p[3];
+            if (d < -(radius + bias)) {
+                return false;
+            }
+        }
+        return true;
     }
 }

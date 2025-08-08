@@ -29,6 +29,8 @@ export class Mesh {
     public jointIndices?: Uint16Array;
     public jointWeights?: Float32Array;
     public name: string;
+    public boundingCenter: vec3arr = [0, 0, 0];
+    public boundingRadius: number = 0;
 
     constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: Color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array, meshname: string }) {
         this.name = opts?.meshname;
@@ -46,6 +48,7 @@ export class Mesh {
         this.morphWeights = opts?.morphWeights ?? [];
         this.jointIndices = opts?.jointIndices;
         this.jointWeights = opts?.jointWeights;
+        this.updateBounds();
     }
 
     public get vertexCount(): number {
@@ -82,6 +85,83 @@ export class Mesh {
 
     public get gpuTextureMetallicRoughness(): TextureKey | undefined {
         return this.material?.gpuTextures.metallicRoughness;
+    }
+
+    /**
+     * Signature identifying the GPU state needed to render this mesh's material.
+     * Used for batching to minimize texture and shader state changes.
+     */
+    public get materialSignature(): string {
+        return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}`;
+    }
+    /**
+     * Recalculate the mesh's bounding sphere in local space. Morph targets are
+     * taken into account so the bounds remain valid as animations deform the
+     * mesh. Call this again if vertex data changes at runtime.
+     */
+    public updateBounds(): void {
+        if (this.positions.length >= 3) {
+            const morphs = this.morphPositions ?? [];
+            let minX = Infinity, minY = Infinity, minZ = Infinity;
+            let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+            // Determine extreme positions considering all morph targets
+            for (let i = 0; i < this.positions.length; i += 3) {
+                let baseX = this.positions[i];
+                let baseY = this.positions[i + 1];
+                let baseZ = this.positions[i + 2];
+                let posX = baseX, posY = baseY, posZ = baseZ;
+                let negX = baseX, negY = baseY, negZ = baseZ;
+                for (const m of morphs) {
+                    const dx = m[i];
+                    const dy = m[i + 1];
+                    const dz = m[i + 2];
+                    if (dx > 0) posX += dx; else negX += dx;
+                    if (dy > 0) posY += dy; else negY += dy;
+                    if (dz > 0) posZ += dz; else negZ += dz;
+                }
+                if (posX > maxX) maxX = posX;
+                if (posY > maxY) maxY = posY;
+                if (posZ > maxZ) maxZ = posZ;
+                if (negX < minX) minX = negX;
+                if (negY < minY) minY = negY;
+                if (negZ < minZ) minZ = negZ;
+            }
+            this.boundingCenter = [
+                (minX + maxX) * 0.5,
+                (minY + maxY) * 0.5,
+                (minZ + maxZ) * 0.5,
+            ];
+            let maxDistSq = 0;
+            for (let i = 0; i < this.positions.length; i += 3) {
+                let baseX = this.positions[i];
+                let baseY = this.positions[i + 1];
+                let baseZ = this.positions[i + 2];
+                let posX = baseX, posY = baseY, posZ = baseZ;
+                let negX = baseX, negY = baseY, negZ = baseZ;
+                for (const m of morphs) {
+                    const dx = m[i];
+                    const dy = m[i + 1];
+                    const dz = m[i + 2];
+                    if (dx > 0) posX += dx; else negX += dx;
+                    if (dy > 0) posY += dy; else negY += dy;
+                    if (dz > 0) posZ += dz; else negZ += dz;
+                }
+                let dx = posX - this.boundingCenter[0];
+                let dy = posY - this.boundingCenter[1];
+                let dz = posZ - this.boundingCenter[2];
+                let distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq > maxDistSq) maxDistSq = distSq;
+                dx = negX - this.boundingCenter[0];
+                dy = negY - this.boundingCenter[1];
+                dz = negZ - this.boundingCenter[2];
+                distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq > maxDistSq) maxDistSq = distSq;
+            }
+            this.boundingRadius = Math.sqrt(maxDistSq);
+        } else {
+            this.boundingCenter = [0, 0, 0];
+            this.boundingRadius = 0;
+        }
     }
 
 }

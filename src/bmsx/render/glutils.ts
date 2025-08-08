@@ -30,6 +30,7 @@ export function buildQuadTexCoords(): Float32Array {
 }
 
 export function glCreateBuffer(gl: WebGL2RenderingContext, data?: Float32Array | Uint8Array): WebGLBuffer {
+    checkWebGLError('before createBuffer');
     const buffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, (data as any) ?? 0, gl.DYNAMIC_DRAW);
@@ -38,6 +39,7 @@ export function glCreateBuffer(gl: WebGL2RenderingContext, data?: Float32Array |
 }
 
 export function glCreateElementBuffer(gl: WebGL2RenderingContext, data?: Uint8Array | Uint16Array | Uint32Array): WebGLBuffer {
+    checkWebGLError('before createElementBuffer');
     const buffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, (data as any) ?? 0, gl.DYNAMIC_DRAW);

@@ -122,7 +122,7 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 					minify: true
 				})],
 				define: { 'process.env.NODE_ENV': '"production"' },
-				minify: true,
+				minify: false,
 				keepNames: true,
 				external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
 				treeShaking: true,
@@ -737,31 +737,31 @@ export async function generateRomAssets(resources: Resource[]) {
 					texBuffers.push(Buffer.from(buf));
 					imageOffsets.push({ start, end });
 				}
-                                const obj = {
-                                        meshes: parsed.meshes.map(m => ({
-                                                positions: m.positions,
-                                                texcoords: m.texcoords,
-                                                normals: m.normals,
-                                                tangents: m.tangents,
-                                                indices: m.indices,
-                                                indexComponentType: m.indexComponentType,
-                                                materialIndex: m.materialIndex,
-                                                morphPositions: m.morphPositions,
-                                                morphNormals: m.morphNormals,
-                                                morphTangents: m.morphTangents,
-                                                weights: m.weights,
-                                                jointIndices: m.jointIndices,
-                                                jointWeights: m.jointWeights,
-                                        })),
-                                        materials: parsed.materials,
-                                        animations: parsed.animations,
-                                        nodes: parsed.nodes,
-                                        skins: parsed.skins,
-                                        scenes: parsed.scenes,
-                                        scene: parsed.scene,
-                                        imageOffsets,
-                                        textures: parsed.textures,
-                                };
+				const obj = {
+					meshes: parsed.meshes.map(m => ({
+						positions: m.positions,
+						texcoords: m.texcoords,
+						normals: m.normals,
+						tangents: m.tangents,
+						indices: m.indices,
+						indexComponentType: m.indexComponentType,
+						materialIndex: m.materialIndex,
+						morphPositions: m.morphPositions,
+						morphNormals: m.morphNormals,
+						morphTangents: m.morphTangents,
+						weights: m.weights,
+						jointIndices: m.jointIndices,
+						jointWeights: m.jointWeights,
+					})),
+					materials: parsed.materials,
+					animations: parsed.animations,
+					nodes: parsed.nodes,
+					skins: parsed.skins,
+					scenes: parsed.scenes,
+					scene: parsed.scene,
+					imageOffsets,
+					textures: parsed.textures,
+				};
 				buffer = encodeBinary(obj);
 				const texture_buffer = Buffer.concat(texBuffers);
 				romAssets.push({ resid, resname, type, buffer, texture_buffer });

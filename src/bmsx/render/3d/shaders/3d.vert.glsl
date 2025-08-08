@@ -15,13 +15,15 @@ in vec3 a_morphTan0;
 in vec3 a_morphTan1;
 in uvec4 a_joints;
 in vec4 a_weights;
-
 uniform mat4 u_mvp; // Model-View-Projection matrix for transforming the vertex position
 uniform mat4 u_model; // Model matrix for transforming the vertex position
 uniform mat3 u_normalMatrix; // Normal matrix for transforming normals
 uniform float u_scale; // Scaling factor for the position
 uniform float u_morphWeights[2];
 uniform mat4 u_jointMatrices[32];
+uniform mat4 u_viewProjection;
+uniform bool u_useInstancing;
+uniform mat4 u_instanceMatrices[64];
 
 out vec2 v_texcoord; // Texture coordinates to pass to the fragment shader
 out vec4 v_color_override; // Color override to pass to the fragment shader
@@ -53,13 +55,16 @@ void main() {
     skinnedTangent = normalize(skinnedTangent - skinnedNormal * dot(skinnedNormal, skinnedTangent));
     vec3 skinnedBitangent = cross(skinnedNormal, skinnedTangent) * tanSign;
     vec3 scaledPosition = skinnedPos.xyz * u_scale; // Scale position before transformation
-    vec4 world = u_model * vec4(scaledPosition, 1.0); // Transform position to world space
-    gl_Position = u_mvp * vec4(scaledPosition, 1.0); // u_mvp = projection * view * model (column-major)
+    mat4 model = u_useInstancing ? u_instanceMatrices[gl_InstanceID] : u_model;
+    vec4 world = model * vec4(scaledPosition, 1.0); // Transform position to world space
+    mat4 mvp = u_useInstancing ? u_viewProjection * model : u_mvp;
+    gl_Position = mvp * vec4(scaledPosition, 1.0);
     v_worldPos = world.xyz; // Pass the world position to the fragment shader
     v_texcoord = a_texcoord; // Pass the texture coordinates to the fragment shader
     v_color_override = a_color_override; // Pass the color override to the fragment shader
     v_atlas_id = a_atlas_id; // Pass the atlas ID to the fragment shader
-    v_normal = u_normalMatrix * skinnedNormal; // Pass the normal vector to the fragment shader
-    v_tangent = u_normalMatrix * skinnedTangent;
-    v_bitangent = u_normalMatrix * skinnedBitangent;
+    mat3 nMat = u_useInstancing ? mat3(model) : u_normalMatrix;
+    v_normal = nMat * skinnedNormal; // Pass the normal vector to the fragment shader
+    v_tangent = nMat * skinnedTangent;
+    v_bitangent = nMat * skinnedBitangent;
 }
