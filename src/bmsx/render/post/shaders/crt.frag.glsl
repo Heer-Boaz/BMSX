@@ -17,13 +17,11 @@ uniform bool u_applyScanlines;
 uniform bool u_applyBlur;
 uniform bool u_applyGlow;
 uniform bool u_applyFringing;
-// uniform bool u_applyApertureMask;
 
 // --- Parameters ---
 uniform float u_noiseIntensity;      // 0..~0.5
 uniform vec3 u_colorBleed;          // small additive bias, linear space
 uniform float u_blurIntensity;       // 0..1 blend
-// uniform float u_blurFootprintPx;     // kernel step in source px (suggest 0.5..0.8)
 uniform vec3 u_glowColor;           // glow tint (linear)
 
 // ---- Constants ----
@@ -31,10 +29,12 @@ const vec3 LUMA = vec3(0.299, 0.587, 0.114);
 
 // scanlines & optics
 const float SCANLINE_INTERVAL = 1.0;    // one source row
+const float SCANLINE_AMPLITUDE = 0.25; // diepte; gemiddelde blijft 1.0
 const float SIGMA_DARK = 0.28;
 const float SIGMA_BRIGHT = 0.60;
 
-const float APERTURE_STRENGTH = 0.08;
+const float APERTURE_STRENGTH = 0.08;   // was 0.08
+// phosphor glow
 const float GLOW_BRIGHTNESS_CLAMP = 0.6;
 
 // fringing (chromatic aberration)
@@ -42,6 +42,9 @@ const float FRINGING_BASE_PX = 0.8;
 const float FRINGING_QUAD_COEF = 2.5;
 const float FRINGING_CONTRAST_COEF = 0.4;
 const float FRINGING_MIX = 0.22;
+
+const float FRINGING_OFFSET = 0.5;
+const float BLUR_FOOTPRINT_PX = 0.5;
 
 // 5x5 binomial-ish kernel (UN-normalized). Multiply by K_NORM per tap.
 const float K_NORM = 1.0 / 256.0;
@@ -51,11 +54,23 @@ in vec2 v_texcoord;
 out vec4 outputColor;
 
 // --- Helpers: gamma/linear ---
+// Set to 0 if your texture is already sampled in linear (e.g., SRGB8_A8 with auto decode),
+// or if your pipeline is entirely linear. Set to 1 if your texture is plain RGBA8 in sRGB.
+#define MANUAL_GAMMA 0
+
 vec3 toLinear(vec3 c) {
+#if MANUAL_GAMMA
     return pow(c, vec3(2.2));
+#else
+    return c;
+#endif
 }
 vec3 toSRGB(vec3 c) {
-    return pow(max(c, 0.0), vec3(1.0 / 2.2));
+#if MANUAL_GAMMA
+    return pow(max(c, 0.0), vec3(1.0/2.2));
+#else
+    return clamp(c, 0.0, 1.0);
+#endif
 }
 
 // --- Noise ---
@@ -103,15 +118,28 @@ BlurContrast applyBlurAndContrast(vec2 uv, vec2 texel, float footprintPx) {
     return BlurContrast(accum, abs(centerLum - neighAvg));
 }
 
-// --- Scanlines in source-pixel space ---
-vec3 applyScanlines(vec3 colorLinear, vec2 uv, vec2 srcPxRes) {
-    float y_src = uv.y * srcPxRes.y;
+// --- Scanlines: row-alternating, DC-preserving ---
+const float SCANLINE_DEPTH = 0.07; // 0..0.6   (higher = darker odd rows)
+
+vec3 applyScanlines(vec3 colorLinear, vec2 uv, vec2 srcPxRes)
+{
+    // integer source-row index
+    float row = floor(uv.y * srcPxRes.y);
+
+    // phase: +1 on even rows, -1 on odd rows (constant within a row)
+    float phase = cos(3.14159265359 * row);
+
+    // make deep rows shallower on very bright pixels
     float lum = dot(colorLinear, LUMA);
-    float sigma = mix(SCANLINE_INTERVAL * SIGMA_DARK, SCANLINE_INTERVAL * SIGMA_BRIGHT, clamp(lum, 0.0, 1.0));
-    float scanPos = mod(y_src + 0.5, SCANLINE_INTERVAL) - 0.5 * SCANLINE_INTERVAL;
-    float g = exp(-(scanPos * scanPos) / (2.0 * sigma * sigma));
-    g = pow(g, 0.8);
-    return colorLinear * g;
+    float A   = mix(SCANLINE_DEPTH, 0.12, clamp(lum, 0.0, 1.0)); // 0.12..SCANLINE_DEPTH
+
+    // row mask: even rows = 1.0, odd rows = 1.0 - A
+    float m = 1.0 - A * (0.5 - 0.5 * phase);
+
+    // DC normalization so average over two rows ≈ 1.0
+    m /= (1.0 - 0.5 * A);
+
+    return colorLinear * m;
 }
 
 // --- Aperture grille ---
@@ -139,7 +167,7 @@ void main() {
     BlurContrast bc;
     if (u_applyBlur || u_applyFringing) {
         // float fp = (u_blurFootprintPx > 0.0) ? u_blurFootprintPx : 0.75; // tighten if needed
-        bc = applyBlurAndContrast(v_texcoord, texel, 0.75);
+        bc = applyBlurAndContrast(v_texcoord, texel, BLUR_FOOTPRINT_PX);
     } else {
         bc.blurred = color;
         bc.contrast = 0.0;
@@ -150,7 +178,7 @@ void main() {
 
     // 3) lens (chromatic aberration / fringing)
     if (u_applyFringing) {
-        vec2 dUV = v_texcoord - 0.5;
+        vec2 dUV = v_texcoord - FRINGING_OFFSET;
         float d = length(dUV) / length(vec2(0.5));
         vec2 dir = (d > 0.0) ? (dUV / max(d, 1e-6)) : vec2(1.0, 0.0);
 

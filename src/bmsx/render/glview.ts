@@ -39,7 +39,8 @@ export class GLView extends BaseView {
 	private _noiseIntensity: number = 0.4;
 	private _colorBleed: vec3arr = [0.02, 0.0, 0.0];
 	private _blurIntensity: number = 0.6;
-	private _glowColor: vec3arr = [0.05, 0.02, 0.02];
+	// private _glowColor: vec3arr = [0.05, 0.02, 0.02];// warm white bloom
+	private _glowColor: vec3arr = [0.12, 0.10, 0.09];// warm white bloom
 
 	/**
 	 * Gets or sets a value indicating whether the CRT shader should apply noise.
