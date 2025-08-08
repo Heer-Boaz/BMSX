@@ -286,6 +286,7 @@ export class GLView extends BaseView {
 		gl.enable(gl.BLEND);
 		gl.enable(gl.CULL_FACE);
 		gl.cullFace(gl.BACK);
+		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // Set unpack alignment to 1 for tightly packed, odd‑width images
 	}
 
 	/**
@@ -532,7 +533,7 @@ export class GLView extends BaseView {
 
 		// Update the dynamic atlas texture with the new image
 		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, atlasImage.width, atlasImage.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, atlasImage);
+		glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
 	}
 
 	onResize(newSize: vec2): void {

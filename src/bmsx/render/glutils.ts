@@ -71,11 +71,11 @@ export function glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuf
  * @param offset The offset into the buffer to start updating.
  * @param data The new data to write into the buffer.
  */
-
 export function glUpdateBuffer(gl: WebGL2RenderingContext, buffer: WebGLBuffer, target: GLenum, offset: number, data: ArrayBufferView): void {
     gl.bindBuffer(target, buffer);
+    // Orphan the old storage to avoid GPU/CPU sync
+    gl.bufferData(target, data.byteLength, gl.STREAM_DRAW);
     gl.bufferSubData(target, offset, data);
-    checkWebGLError('updateBuffer');
 }
 
 export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -89,56 +89,50 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
     return shader;
 }
 
-export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: Size, glTextureIndex?: number): WebGLTexture {
-    const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
-    const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
-    const result = gl.createTexture()!;
-    gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
-    gl.bindTexture(gl.TEXTURE_2D, result);
-    if (img) {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    } else if (size) {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size.x, size.y, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    }
+export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: Size, unit = 0): WebGLTexture {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+
+
+    if (img) gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    else if (size) gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, size.x, size.y, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    // if (prevTex) {
-    //     gl.bindTexture(gl.TEXTURE_2D, prevTex);
-    //     gl.activeTexture(prevActive);
-    // }
-    // checkWebGLError('createTexture');
-    return result;
+    return tex;
 }
 
 export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContext, desc: TextureParams) {
-    const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
-    const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
-    const texture = gl.createTexture();
+    const tex = gl.createTexture()!;
     gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SHADOW_MAP);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.size.x, desc.size.y, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.size.x, desc.size.y, 0,
+        gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    const framebuffer = gl.createFramebuffer();
-    const prevFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, texture, 0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFramebuffer);
-    checkWebGLError('createShadowMapTextureAndFramebuffer');
-    // if (prevTex) {
-    //     gl.bindTexture(gl.TEXTURE_2D, prevTex);
-    //     gl.activeTexture(prevActive);
-    // }
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-        // throw new Error('Framebuffer is not complete');
+    const fbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0);
+
+    // IMPORTANT for depth‑only FBOs on iOS:
+    gl.drawBuffers([gl.NONE]);
+    gl.readBuffer(gl.NONE);
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error(`Shadow FBO incomplete: 0x${status.toString(16)}`);
     }
-    return { texture, framebuffer };
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { texture: tex, framebuffer: fbo };
 }
+
 
 export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureIndex: number, desc: TextureParams): WebGLTexture {
     const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
@@ -154,7 +148,7 @@ export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageB
         throw new Error(`Image has invalid dimensions: ${img.width}x${img.height}`);
     }
 
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
