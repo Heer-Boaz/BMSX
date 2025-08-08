@@ -203,6 +203,9 @@ export class GLView extends BaseView {
 		this.setDefaultUniformValues(); // Set the default uniform values for the game and CRT shaders, such as the scale, resolution vector, and texture location and flags (noise, color bleed, scanlines, blur, glow, fringing, etc.)
 		this.createFramebufferAndTexture(); // Create the framebuffer and texture for the post-processing shader, note that this also binds the framebuffer
 		this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
+		if (checkWebGLError('After init')) {
+			throw Error('Initialization of 2D/3D/CRT shaders failed!');
+		}
 	}
 
 	/**
@@ -222,7 +225,7 @@ export class GLView extends BaseView {
 		checkWebGLError('after 3D setupDefaultUniformValues');
 		const crtOptions: GLViewCRT.CRTShaderOptions = { applyNoise: this.applyNoise, applyColorBleed: this.applyColorBleed, applyScanlines: this.applyScanlines, applyBlur: this.applyBlur, applyGlow: this.applyGlow, applyFringing: this.applyFringing, blurIntensity: this.blurIntensity, noiseIntensity: this.noiseIntensity, colorBleed: this.colorBleed, glowColor: this.glowColor };
 
-		GLViewCRT.setDefaultUniformValues(gl, crtOptions); // Set the default uniform values for the CRT shader
+		GLViewCRT.setDefaultUniformValues(gl, to_vec2arr(this.offscreenCanvasSize), crtOptions); // Set the default uniform values for the CRT shader
 		checkWebGLError('after CRT setupDefaultUniformValues');
 	}
 
@@ -399,7 +402,7 @@ export class GLView extends BaseView {
 	@catchWebGLError
 	override clear(): void {
 		if (checkWebGLError('before clear')) {
-			throw new Error('WebGL error before clearing the canvas');
+			// throw new Error('WebGL error before clearing the canvas');
 		}
 		const gl = this.glctx;
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
