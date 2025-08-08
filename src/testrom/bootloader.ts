@@ -399,8 +399,6 @@ class CameraController extends GameObject {
     private cameras: CameraObject[];
     private idx = 0;
     private mouseControlsEnabled = false;
-    private lastMouseX = 0;
-    private lastMouseY = 0;
 
     constructor(...cams: CameraObject[]) {
         super('camctrl');
@@ -409,58 +407,74 @@ class CameraController extends GameObject {
     }
 
     private setupMouseControls(): void {
-        const canvas = document.querySelector('#gamescreen'); // Assuming your game canvas
+        const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
         if (!canvas) return;
 
-        // Mouse lock/unlock toggle (middle mouse button)
-        canvas.addEventListener('mousedown', (ev) => {
-            const e = <MouseEvent>ev;
-            if (e.button === 1) { // Middle mouse button
+        // Zorg dat deze flags bestaan
+        this.mouseControlsEnabled = false;
+
+        // Toggle met middle mouse (kan je evt. LMB maken)
+        canvas.addEventListener('mousedown', (e: MouseEvent) => {
+            if (e.button === 1) {
                 e.preventDefault();
                 this.toggleMouseControls();
             }
         });
 
-        // Mouse movement for camera rotation
-        canvas.addEventListener('mousemove', (ev) => {
-            const e = <MouseEvent>ev;
+        // Rotate alleen wanneer pointer lock actief is
+        canvas.addEventListener('mousemove', (e: MouseEvent) => {
             if (!this.mouseControlsEnabled) return;
 
-            const deltaX = e.movementX || (e.clientX - this.lastMouseX);
-            const deltaY = e.movementY || (e.clientY - this.lastMouseY);
-
-            this.lastMouseX = e.clientX;
-            this.lastMouseY = e.clientY;
+            // Gebruik ALLEEN raw deltas; geen fallback naar clientX/Y bij lock
+            const dx = e.movementX || 0;
+            const dy = e.movementY || 0;
 
             const camObj = $.model.getActiveCamera();
             if (!camObj) return;
 
-            const sensitivity = 0.002; // Mouse sensitivity
-            // Use the new mouseLook method for free-form camera
-            camObj.camera.mouseLook(deltaX * sensitivity, -deltaY * sensitivity);
+            // Radians per pixel; 0.002 is ok, maak desnoods runtime-tweakbaar
+            const sensitivity = 0.002;
+
+            // mouseLook(yawDelta, pitchDelta) – let op volgorde als jouw API anders is
+            camObj.camera.mouseLook(dx * sensitivity, -dy * sensitivity);
         });
 
-        // Pointer lock change handler
-        document.addEventListener('pointerlockchange', () => {
-            this.mouseControlsEnabled = document.pointerLockElement === canvas;
-            if (!this.mouseControlsEnabled) {
-                console.log('Mouse controls disabled - click middle mouse to re-enable');
-            } else {
-                console.log('Mouse controls enabled - move mouse to look around');
-            }
+        // Pointer lock lifecycle
+        const onLockChange = () => {
+            const locked = document.pointerLockElement === canvas;
+            this.mouseControlsEnabled = locked;
+
+            console.log(locked ? 'Mouse controls enabled' : 'Mouse controls disabled');
+        };
+
+        document.addEventListener('pointerlockchange', onLockChange);
+        document.addEventListener('pointerlockerror', () => {
+            this.mouseControlsEnabled = false;
+            console.warn('Pointer lock error');
         });
     }
 
     private toggleMouseControls(): void {
-        const canvas = document.querySelector('#gamescreen');
+        const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
         if (!canvas) return;
 
         if (!this.mouseControlsEnabled) {
-            canvas.requestPointerLock();
+            // Raw (unaccelerated) mouse als de browser het toelaat
+            const anyCanvas = canvas as any;
+            if (anyCanvas.requestPointerLock) {
+                try {
+                    anyCanvas.requestPointerLock({ unadjustedMovement: true });
+                } catch {
+                    canvas.requestPointerLock();
+                }
+            } else {
+                canvas.requestPointerLock();
+            }
         } else {
             document.exitPointerLock();
         }
     }
+
 
     override run(): void {
         const input = $.input.getPlayerInput(1);
@@ -500,13 +514,13 @@ class CameraController extends GameObject {
             if (down_pressed) cam.addPitch(-rotateSpeed);   // Look down
             if (left_pressed) cam.addYaw(-rotateSpeed);     // Turn left
             if (right_pressed) cam.addYaw(rotateSpeed);     // Turn right
-            if (panLeft_pressed) cam.panGround(-move, 0);   // Pan left
-            if (panRight_pressed) cam.panGround(move, 0);    // Pan right
         }
 
         // Movement (works in both modes)
         if (moveForward_pressed) cam.moveFreeform(move);    // Forward movement
         if (moveBackward_pressed) cam.moveFreeform(-move);  // Backward movement
+        if (panLeft_pressed) cam.panGround(-move, 0);   // Pan left
+        if (panRight_pressed) cam.panGround(move, 0);    // Pan right
 
         // Additional free-form movement (you can map these to other keys)
         // cam.strafeFreeform() for left/right strafe
@@ -514,17 +528,17 @@ class CameraController extends GameObject {
         // cam.flyUpDown() for camera-relative up/down
 
         // Debug output
-        if (up_pressed || down_pressed || left_pressed || right_pressed || moveForward_pressed || moveBackward_pressed) {
-            // Log which actions are pressed and show combos as one string
-            const forward = cam.getForwardVector();
-            console.log('Camera controls:');
-            console.log(`\tCamera - Up: ${up_pressed}, Down: ${down_pressed}, Left: ${left_pressed}, Right: ${right_pressed}`);
-            console.log(`\tCamera - Move Forward: ${moveForward_pressed}, Move Backward: ${moveBackward_pressed}`);
-            console.log(`\tCamera - Yaw: ${(cam.yaw * 180 / Math.PI).toFixed(1)}°, Pitch: ${(cam.pitch * 180 / Math.PI).toFixed(1)}°`);
-            console.log(`\tPosition: [${cam.position.x.toFixed(2)}, ${cam.position.y.toFixed(2)}, ${cam.position.z.toFixed(2)}]`);
-            console.log(`\tForward: [${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)}]`);
-            console.log(`\tFOV: ${cam.fov}°, Aspect: ${cam.aspect.toFixed(2)}`);
-        }
+        // if (up_pressed || down_pressed || left_pressed || right_pressed || moveForward_pressed || moveBackward_pressed) {
+        // Log which actions are pressed and show combos as one string
+        // const forward = cam.getForwardVector();
+        // console.log('Camera controls:');
+        // console.log(`\tCamera - Up: ${up_pressed}, Down: ${down_pressed}, Left: ${left_pressed}, Right: ${right_pressed}`);
+        // console.log(`\tCamera - Move Forward: ${moveForward_pressed}, Move Backward: ${moveBackward_pressed}`);
+        // console.log(`\tCamera - Yaw: ${(cam.yaw * 180 / Math.PI).toFixed(1)}°, Pitch: ${(cam.pitch * 180 / Math.PI).toFixed(1)}°`);
+        // console.log(`\tPosition: [${cam.position.x.toFixed(2)}, ${cam.position.y.toFixed(2)}, ${cam.position.z.toFixed(2)}]`);
+        // console.log(`\tForward: [${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)}]`);
+        // console.log(`\tFOV: ${cam.fov}°, Aspect: ${cam.aspect.toFixed(2)}`);
+        // }
     }
 }
 
