@@ -31,7 +31,7 @@ _global['h406A'] = (args: BootArgs): Promise<any> => {
     });
 };
 
-const actions = ['up', 'right', 'down', 'left', 'load', 'save', 'bla', 'blap'] as const;
+const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'load', 'save', 'bla', 'blap'] as const;
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -51,6 +51,8 @@ const keyboardInputMapping: MyKeyboardInputMapping = {
     'save': ['KeyZ'],           // Switch camera
     'bla': ['KeyW'],            // Move forward
     'blap': ['KeyS'],           // Move backward
+    'panleft': ['KeyA'],       // Pan left
+    'panright': ['KeyD'],      // Pan right
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
@@ -62,6 +64,8 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'save': ['b'],
     'bla': ['x'],
     'blap': ['y'],
+    'panleft': ['lb'],
+    'panright': ['rb']
 };
 
 @insavegame
@@ -486,6 +490,8 @@ class CameraController extends GameObject {
         let right_pressed = input.getActionState('right').pressed;
         let moveForward_pressed = input.getActionState('bla').pressed;
         let moveBackward_pressed = input.getActionState('blap').pressed;
+        let panLeft_pressed = input.getActionState('panleft').pressed;
+        let panRight_pressed = input.getActionState('panright').pressed;
 
         // Choose control mode based on mouse lock state
         if (!this.mouseControlsEnabled) {
@@ -494,6 +500,8 @@ class CameraController extends GameObject {
             if (down_pressed) cam.addPitch(-rotateSpeed);   // Look down
             if (left_pressed) cam.addYaw(-rotateSpeed);     // Turn left
             if (right_pressed) cam.addYaw(rotateSpeed);     // Turn right
+            if (panLeft_pressed) cam.panGround(-move, 0);   // Pan left
+            if (panRight_pressed) cam.panGround(move, 0);    // Pan right
         }
 
         // Movement (works in both modes)

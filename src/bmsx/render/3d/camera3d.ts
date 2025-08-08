@@ -95,9 +95,10 @@ export class Camera3D {
         // Get current offset from target
         const offset = bvec3.sub(this._position, target);
         const distance = bvec3.length(offset);
+        if (distance < 1e-8) return; // Too close to target
 
         // Convert current position to spherical coordinates relative to target
-        const currentYaw = Math.atan2(offset.x, offset.z);
+        const currentYaw = Math.atan2(offset.x, -offset.z);
         const currentPitch = Math.asin(offset.y / distance);
 
         // Apply deltas
@@ -136,6 +137,16 @@ export class Camera3D {
 
         this._matricesNeedUpdate = true;
     }
+
+    panGround(dx, dy) {
+        const right = this.getRightVector();
+        const up = { x: 0, y: 1, z: 0 };
+        this._position.x += right.x * dx + up.x * dy;
+        this._position.y += right.y * dx + up.y * dy;
+        this._position.z += right.z * dx + up.z * dy;
+        this._matricesNeedUpdate = true;
+    }
+
 
     /**
      * Blender-style zoom (move camera forward/backward along view direction).
