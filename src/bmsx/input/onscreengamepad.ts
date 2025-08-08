@@ -271,7 +271,7 @@ export class OnscreenGamepad implements InputHandler {
     public reset(except?: string[]): void {
         if (!except) {
             // Initialize the states of all gamepad buttons and axes
-            Input.BUTTON_IDS.forEach(buttonId => this.gamepadButtonStates[buttonId] = makeButtonState());
+            Input.BUTTON_IDS.forEach(buttonId => Object.assign(this.gamepadButtonStates[buttonId], makeButtonState()));
         }
         else {
             resetObject(this.gamepadButtonStates, except);

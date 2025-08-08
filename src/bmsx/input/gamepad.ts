@@ -256,12 +256,7 @@ export class GamepadInput implements InputHandler {
     public reset(except?: string[]): void {
         if (!except) {
             // Initialize the states of all gamepad buttons and axes
-            Object.values(this.gamepadButtonStates).forEach(state => {
-                state.pressed = false;
-                state.consumed = false;
-                state.presstime = null;
-                state.timestamp = performance.now();
-            });
+            Object.values(this.gamepadButtonStates).forEach(state => Object.assign(state, makeButtonState()));
         }
         else {
             resetObject(this.gamepadButtonStates, except);

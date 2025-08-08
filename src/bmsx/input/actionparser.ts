@@ -117,7 +117,14 @@ interface OpNode extends NodeBase { op: 'AND' | 'OR' | 'NOT'; left?: Node; right
  * @property name - The name of the action.
  * @property mods - A list of modifiers associated with the action.
  */
-interface ActNode extends NodeBase { name: string; mods: string[]; }
+interface ActNode extends NodeBase {
+	name: string;
+	mods: string[];
+	_edgeForJP: boolean; // positive press-like
+	_edgeForJR: boolean; // positive release-like
+	_edgeForWP: boolean; // positive press-like (same as JP)
+	_edgeForWR: boolean; // positive release-like (same as JR)
+}
 
 /**
  * Represents a function node in the AST.
@@ -328,8 +335,31 @@ class InputActionParser {
 			}
 			this.take(Tokens.Sym, ']'); // Ensure the closing square bracket is present
 		}
+
+		const node = { name, mods, _edgeForJP: false, _edgeForJR: false, _edgeForWP: false, _edgeForWR: false };
+		this.annotateActNode(node);
 		// Return an ActNode representing the parsed action
-		return { name, mods, eval: compileAction(name, mods) };
+		return { ...node, eval: compileAction(name, mods) };
+	}
+
+	private annotateActNode(n: Partial<ActNode>) {
+		// empty mods = implicit press-positive
+		if (n.mods.length === 0) {
+			n._edgeForJP = n._edgeForWP = true;
+			n._edgeForJR = n._edgeForWR = false;
+			return;
+		}
+		let pressPos = false, releasePos = false;
+		for (const m of n.mods) {
+			const neg = m.startsWith('!');
+			const raw = neg ? m.slice(1) : m;
+			const pressish = raw === 'p' || raw === 'j' || /^wp\{\d+}/.test(raw);
+			const releaseish = raw === 'jr' || /^wr\{\d+}/.test(raw);
+			if (pressish && !neg) pressPos = true;
+			if (releaseish && !neg) releasePos = true;
+		}
+		n._edgeForJP = n._edgeForWP = pressPos;
+		n._edgeForJR = n._edgeForWR = releasePos;
 	}
 }
 
@@ -362,6 +392,58 @@ function enforceRootModifiers(n: Node) {
 	};
 	// Start walking the AST from the root node
 	walk(n, false);
+}
+
+type EvalResult = { truth: boolean; leaves: ActNode[] };
+
+function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[]): EvalResult {
+	const leaves = out ?? []; // allow reuse of a scratch array
+
+	if ((node as ActNode).name !== undefined) {
+		const ok = node.eval(gs); // uses compileAction predicates
+		if (ok) leaves.push(node as ActNode);
+		return { truth: ok, leaves };
+	}
+
+	if ((node as OpNode).op) {
+		const o = node as OpNode;
+		if (o.op === 'NOT') {
+			const r = evalAndCollect(o.left!, gs, win);
+			return { truth: !r.truth, leaves }; // guards only; do not carry leaves
+		}
+		if (o.op === 'AND') {
+			const l = evalAndCollect(o.left!, gs, win, leaves);
+			if (!l.truth) return { truth: false, leaves };
+			const r = evalAndCollect(o.right!, gs, win, leaves);
+			return { truth: r.truth, leaves };
+		}
+		// OR with short-circuit
+		const l = evalAndCollect(o.left!, gs, win);
+		if (l.truth) return { truth: true, leaves: l.leaves };
+		const r = evalAndCollect(o.right!, gs, win);
+		return { truth: r.truth, leaves: r.leaves };
+	}
+
+	const f = node as FunNode;
+	if (f.fname === '&') {
+		let all = true;
+		const acc = out ?? [];
+		for (const a of f.args) {
+			const r = evalAndCollect(a, gs, win, acc);
+			if (!r.truth) { all = false; break; }
+		}
+		return { truth: all, leaves: all ? acc : (out ?? []) };
+	}
+	if (f.fname === '?') {
+		for (const a of f.args) {
+			const r = evalAndCollect(a, gs, win);
+			if (r.truth) return r; // first winning branch
+		}
+		return { truth: false, leaves: out ?? [] };
+	}
+
+	// For jp/jr/wp/wr, evaluate in helper using evalAndCollect again with proper window
+	return { truth: node.eval(gs), leaves: out ?? [] };
 }
 
 /**
@@ -520,40 +602,158 @@ function compileAction(name: string, mods: string[]): EvalFn {
  * @property &wp - Evaluates to true if all arguments were pressed within the specified window.
  */
 const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
-	'&': args => gs => args.every(a => a.eval(gs)), // evaluates to true if all arguments are true
-	'?': args => gs => args.some(a => a.eval(gs)), // evaluates to true if any argument is true
+	// Plain logical helpers (no edge semantics, no window)
+	'&': (args) => (gs) => {
+		for (let i = 0; i < args.length; i++) {
+			if (!args[i].eval(gs)) return false;
+		}
+		return true;
+	},
 
-	'&jp': args => gs => {
-		if (!args.every(a => a.eval(gs))) return false;                 // all predicates true
-		return args.every(a => gs((a as ActNode).name).justpressed);   // all just‑pressed
+	'?': (args) => (gs) => {
+		for (let i = 0; i < args.length; i++) {
+			if (args[i].eval(gs)) return true;
+		}
+		return false;
 	},
-	'?jp': args => gs => {
-		if (!args.every(a => a.eval(gs))) return false;            // gate: all must pass modifiers first
-		return args.some(a => gs((a as ActNode).name).justpressed);    // any just‑pressed
+
+	// --- Just-pressed (edge from positive press-like leaves) ---
+
+	'?jp': (args) => (gs) => {
+		let any = false;
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) continue;
+			any = true;
+			// At least one eligible contributing leaf is just-pressed
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForJP && gs(a.name).justpressed) return true;
+			}
+		}
+		return false && any; // if no eligible leaf matched
 	},
-	'&jr': args => gs => {
-		if (!args.every(predicate => predicate.eval(gs))) return false; // gate: all pass their modifiers
-		return args.every(a => gs((a as ActNode).name).justreleased);
+
+	'&jp': (args) => (gs) => {
+		// All args must be true, and for each arg, all eligible contributing leaves are just-pressed.
+		// (Switch to 'some' if you prefer permissive chords.)
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) return false;
+			let hasEligible = false;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForJP) {
+					hasEligible = true;
+					if (!gs(a.name).justpressed) return false;
+				}
+			}
+			if (!hasEligible) return false; // require at least one eligible leaf per arg
+		}
+		return true;
 	},
-	'?jr': args => gs => {
-		if (!args.every(predicate => predicate.eval(gs))) return false; // gate: all pass their modifiers
-		return args.some(a => gs((a as ActNode).name).justreleased);
+
+	// --- Just-released (edge from positive release-like leaves) ---
+
+	'?jr': (args) => (gs) => {
+		let any = false;
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) continue;
+			any = true;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForJR && gs(a.name).justreleased) return true;
+			}
+		}
+		return false && any;
 	},
-	'?wp': (args, win) => gs => {
-		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass their modifiers within window
-		return args.some(a => gs((a as ActNode).name, win).waspressed);  // any was‑pressed
+
+	'&jr': (args) => (gs) => {
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], gs, /*win*/ undefined, []);
+			if (!truth) return false;
+			let hasEligible = false;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForJR) {
+					hasEligible = true;
+					if (!gs(a.name).justreleased) return false;
+				}
+			}
+			if (!hasEligible) return false;
+		}
+		return true;
 	},
-	'&wp': (args, win) => gs => {
-		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass modifiers
-		return args.every(a => gs((a as ActNode).name, win).waspressed); // all were‑pressed
+
+	// --- Windowed press (edge from positive press-like leaves within 'win') ---
+
+	'?wp': (args, win) => (gs) => {
+		const g = (n: string, w?: number) => gs(n, win ?? w);
+		let any = false;
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
+			if (!truth) continue;
+			any = true;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForWP && g(a.name, win).waspressed) return true;
+			}
+		}
+		return false && any;
 	},
-	'?wr': (args, win) => gs => {
-		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass modifiers
-		return args.some(a => gs((a as ActNode).name, win).wasreleased); // any was‑released
+
+	'&wp': (args, win) => (gs) => {
+		const g = (n: string, w?: number) => gs(n, win ?? w);
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
+			if (!truth) return false;
+			let hasEligible = false;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForWP) {
+					hasEligible = true;
+					if (!g(a.name, win).waspressed) return false; // strict: all eligible leaves inside arg within window
+				}
+			}
+			if (!hasEligible) return false;
+		}
+		return true;
 	},
-	'&wr': (args, win) => gs => {
-		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass modifiers
-		return args.every(a => gs((a as ActNode).name, win).wasreleased); // all were‑released
+
+	// --- Windowed release (edge from positive release-like leaves within 'win') ---
+
+	'?wr': (args, win) => (gs) => {
+		const g = (n: string, w?: number) => gs(n, win ?? w);
+		let any = false;
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
+			if (!truth) continue;
+			any = true;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForWR && g(a.name, win).wasreleased) return true;
+			}
+		}
+		return false && any;
+	},
+
+	'&wr': (args, win) => (gs) => {
+		const g = (n: string, w?: number) => gs(n, win ?? w);
+		for (let i = 0; i < args.length; i++) {
+			const { truth, leaves } = evalAndCollect(args[i], g, win, []);
+			if (!truth) return false;
+			let hasEligible = false;
+			for (let j = 0; j < leaves.length; j++) {
+				const a = leaves[j] as ActNode as any;
+				if (a._edgeForWR) {
+					hasEligible = true;
+					if (!g(a.name, win).wasreleased) return false;
+				}
+			}
+			if (!hasEligible) return false;
+		}
+		return true;
 	},
 };
 
