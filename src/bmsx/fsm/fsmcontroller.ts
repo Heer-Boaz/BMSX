@@ -1,5 +1,6 @@
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
+import { ActiveStateMachines } from './fsmlibrary';
 import { type Stateful, type id2sstate } from './fsmtypes';
 import { State } from './state';
 import { StateDefinition } from './statedefinition';
@@ -69,8 +70,15 @@ export class StateMachineController {
 	 */
 	get definition(): StateDefinition { return this.current_machine.definition; }
 
-	constructor() {
+	constructor(fsm_id?: string, id?: string) {
 		this.statemachines = {};
+		this.add_statemachine(fsm_id ?? this.constructor.name, id);
+
+		// Get all active state machines with the same ID
+		const activeStateMachinesWithSameId = ActiveStateMachines.get(fsm_id) ?? [];
+
+		// Add the current machine to the list of active machines. We want to keep track of all active instances so that we can do hot-swapping!
+		ActiveStateMachines.set(fsm_id ?? this.constructor.name, [...activeStateMachinesWithSameId, this.current_machine]);
 	}
 
 	/**

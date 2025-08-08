@@ -302,6 +302,17 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 
             checkTransitions(stateDef.on);
             checkTransitions(stateDef.on_input);
+            for (const check of stateDef.run_checks ?? []) {
+                if (typeof check === 'string') {
+                    resolveStateDefPath(stateDef, check, statePath);
+                } else {
+                    if (typeof check.to === 'string') resolveStateDefPath(stateDef, check.to, statePath);
+                    if (typeof check.switch === 'string') resolveStateDefPath(stateDef, check.switch, statePath);
+                    if (typeof check.do === 'string') {
+                        console.warn(`Handler '${check.do}' referenced in '${statePath}' is missing`);
+                    }
+                }
+            }
 
             const handlers = [stateDef.run, stateDef.enter, stateDef.exit, stateDef.next, stateDef.end, stateDef.process_input];
             const handlerNames = ['run', 'enter', 'exit', 'next', 'end', 'process_input'];

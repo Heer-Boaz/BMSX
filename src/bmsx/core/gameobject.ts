@@ -623,8 +623,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.size = new_vec3(...DEFAULT_SIZE_VALUES);
 		this.disposeFlag = false;
 		// Create the state context that will be used to manage the state of the game object
-		this.sc = new StateMachineController();
-		this.sc.add_statemachine(fsm_id ?? this.constructor.name, this.id);
+		this.sc = new StateMachineController(fsm_id ?? this.constructor.name, this.id);
 	}
 
 	/**

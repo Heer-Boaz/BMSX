@@ -448,8 +448,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
     */
     public init_model_state_machines(derived_modelclass_constructor_name: string): this {
-        this.sc = new StateMachineController();
-        this.sc.add_statemachine(derived_modelclass_constructor_name, this.id);
+        this.sc = new StateMachineController(derived_modelclass_constructor_name, this.id);
         this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the model, and subscribe to all events that are defined in the state machine definitions
 
         return this; // Return the current instance of the BaseModel for chaining
