@@ -38,6 +38,10 @@ export interface GameInitArgs<M extends BaseModel = BaseModel, V extends BaseVie
 	startingGamepadIndex?: number | null;
 }
 
+const GAME_FPS = 50;
+const MAX_FRAME_DELTA = 250;  // ms
+const MAX_SUBSTEPS = 5;
+
 /**
  * Represents the main game loop and manages the game state.
  */
@@ -51,7 +55,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	/**
 	 * The target frames per second for the game.
 	 */
-	public targetFPS: number = 50;
+	public targetFPS: number = GAME_FPS;
 	/**
 	 * The update interval for the bmsx module.
 	 */
@@ -93,6 +97,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 	public get paused(): boolean { return this._paused; }
 	public set paused(value: boolean) {
+		if (this._paused === value) return; // No change
 		this._paused = value;
 		if (this._paused === true) {
 			SM.pause();
@@ -329,7 +334,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 		// Prevent the user from accidentally closing the game window if not in debug mode
 		if (!this.debug) {
-			window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
+			window.addEventListener('beforeunload', this.onBeforeUnload, true);
 		}
 
 		// Init the model to populate states (and do other init stuff) and
@@ -339,6 +344,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this.initialized = true; // Mark the game as initialized
 		return this; // Allow chaining
 	}
+
+	private onBeforeUnload = (e: BeforeUnloadEvent) => {
+		e.preventDefault();
+		e.returnValue = 'Are you sure you want to exit this awesome game?';
+	};
 
 	/**
 	 * Gets the current turn counter value.
@@ -359,6 +369,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this.running = true;
 		this.lastUpdate = performance.now();
 		this.last_gametick_time = performance.now();
+		this._turnCounter = 0;
 		this.animationFrameRequestid = window.requestAnimationFrame(this.run);
 	}
 
@@ -371,15 +382,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		const game = global.$;
 		const model = game.model;
 		model.run(deltaTime);
+		game._turnCounter++;
 		// --- Rewind snapshot logic ---
 		try {
 			const snapshot = model.save(false);
 			const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
-			// Write the compress % to the console
-			// if (game.debug) {
-			// 	const compressionRatio = (compressedSnapshot.length / snapshot.length) * 100;
-			// 	console.log(`Rewind snapshot compressed from ${snapshot.length} bytes to ${compressedSnapshot.length} bytes (${compressionRatio.toFixed(2)}% of original size)`);
-			// }
 			this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
 		} catch (e) {
 			console.warn('Rewind snapshot failed:', e);
@@ -396,30 +403,37 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * @param currentTime - The current time in milliseconds.
 	 * @returns void
 	 */
-	public run(currentTime: number): void {
-		const game = global.$;
-		if (!game.running) return;
+	private run = (currentTime: number): void => {
+		if (!this.running) return;
 
-		game.deltaTime = currentTime - game.lastUpdate;
-		game.lastUpdate = currentTime;
-		game.accumulatedTime += game.deltaTime;
+		this.deltaTime = Math.min(currentTime - this.lastUpdate, MAX_FRAME_DELTA);
+		this.lastUpdate = currentTime;
 
-		game.wasupdated = false;
-
-		while (game.accumulatedTime >= game.updateInterval) {
-			if (!game.paused) {
-				Input.instance.pollInput();
-				game.update(game.updateInterval);
-			}
-			game.accumulatedTime -= game.updateInterval;
+		if (this._paused) {
+			this.accumulatedTime = 0; // No backlog
+			this.animationFrameRequestid = window.requestAnimationFrame(this.run);
+			return;
 		}
 
-		if (game.wasupdated) {
-			game.view.drawgame();
+		this.accumulatedTime += this.deltaTime;
+		this.wasupdated = false;
+
+		let steps = 0;
+		while (this.accumulatedTime >= this.updateInterval && steps < MAX_SUBSTEPS) {
+			if (!this.paused) {
+				Input.instance.pollInput();
+				this.update(this.updateInterval);
+			}
+			this.accumulatedTime -= this.updateInterval;
+			++steps;
+		}
+
+		if (this.wasupdated) {
+			this.view.drawgame();
 			window.dispatchEvent(new Event('frame'));
 		}
 
-		game.animationFrameRequestid = window.requestAnimationFrame(game.run);
+		this.animationFrameRequestid = window.requestAnimationFrame(this.run);
 	}
 
 	/**
@@ -435,6 +449,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			SM.stopEffect();
 			SM.stopMusic();
 		});
+		window.removeEventListener('beforeunload', this.onBeforeUnload, true);
 	}
 
 	// --- Rewind API ---
