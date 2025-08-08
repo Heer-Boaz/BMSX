@@ -2,7 +2,6 @@
 precision mediump float;
 
 uniform sampler2D u_texture0;
-uniform sampler2D u_texture1;
 uniform sampler2D u_albedoTexture;
 uniform bool u_useAlbedoTexture;
 uniform sampler2D u_normalTexture;
@@ -33,8 +32,6 @@ uniform float u_pointLightRange[MAX_POINT_LIGHTS];
 uniform float u_pointLightIntensity[MAX_POINT_LIGHTS];
 
 in vec2 v_texcoord;
-in vec4 v_color_override;
-flat in uint v_atlas_id;
 in vec3 v_normal;
 in vec3 v_tangent;
 in vec3 v_bitangent;
@@ -81,21 +78,9 @@ float bayer(vec2 pos) {
 void main() {
     vec4 texColor;
     if (u_useAlbedoTexture) {
-        texColor = texture(u_albedoTexture, v_texcoord) * v_color_override;
+        texColor = texture(u_albedoTexture, v_texcoord);
     } else {
-        switch (v_atlas_id) {
-            case 0u:
-                texColor = texture(u_texture0, v_texcoord);
-                texColor *= v_color_override;
-                break;
-            case 1u:
-                texColor = texture(u_texture1, v_texcoord);
-                texColor *= v_color_override;
-                break;
-            default:
-                texColor = v_color_override;
-                break;
-        }
+        texColor = texture(u_texture0, v_texcoord);
     }
 
     vec3 normal = normalize(v_normal);

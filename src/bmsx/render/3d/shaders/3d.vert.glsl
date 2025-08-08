@@ -5,8 +5,6 @@ in vec3 a_position; // Vertex position in 3D space
 in vec2 a_texcoord; // Texture coordinates for the vertex
 in vec3 a_normal; // Normal vector for lighting calculations
 in vec4 a_tangent; // Tangent vector (xyz) and bitangent sign (w)
-in vec4 a_color_override; // Color override for the vertex
-in uint a_atlas_id; // Atlas ID for texture mapping
 in vec3 a_morphPos0;
 in vec3 a_morphPos1;
 in vec3 a_morphNorm0;
@@ -15,6 +13,10 @@ in vec3 a_morphTan0;
 in vec3 a_morphTan1;
 in uvec4 a_joints;
 in vec4 a_weights;
+layout(location=8) in vec4 a_i0;
+layout(location=9) in vec4 a_i1;
+layout(location=10) in vec4 a_i2;
+layout(location=11) in vec4 a_i3;
 uniform mat4 u_mvp; // Model-View-Projection matrix for transforming the vertex position
 uniform mat4 u_model; // Model matrix for transforming the vertex position
 uniform mat3 u_normalMatrix; // Normal matrix for transforming normals
@@ -23,11 +25,8 @@ uniform float u_morphWeights[2];
 uniform mat4 u_jointMatrices[32];
 uniform mat4 u_viewProjection;
 uniform bool u_useInstancing;
-uniform mat4 u_instanceMatrices[64];
 
 out vec2 v_texcoord; // Texture coordinates to pass to the fragment shader
-out vec4 v_color_override; // Color override to pass to the fragment shader
-flat out uint v_atlas_id; // Atlas ID to pass to the fragment shader
 out vec3 v_normal; // Normal vector to pass to the fragment shader
 out vec3 v_tangent; // Tangent vector in world space
 out vec3 v_bitangent; // Bitangent vector in world space
@@ -55,14 +54,13 @@ void main() {
     skinnedTangent = normalize(skinnedTangent - skinnedNormal * dot(skinnedNormal, skinnedTangent));
     vec3 skinnedBitangent = cross(skinnedNormal, skinnedTangent) * tanSign;
     vec3 scaledPosition = skinnedPos.xyz * u_scale; // Scale position before transformation
-    mat4 model = u_useInstancing ? u_instanceMatrices[gl_InstanceID] : u_model;
+    mat4 instanceM = mat4(a_i0, a_i1, a_i2, a_i3);
+    mat4 model = u_useInstancing ? instanceM : u_model;
     vec4 world = model * vec4(scaledPosition, 1.0); // Transform position to world space
     mat4 mvp = u_useInstancing ? u_viewProjection * model : u_mvp;
     gl_Position = mvp * vec4(scaledPosition, 1.0);
     v_worldPos = world.xyz; // Pass the world position to the fragment shader
     v_texcoord = a_texcoord; // Pass the texture coordinates to the fragment shader
-    v_color_override = a_color_override; // Pass the color override to the fragment shader
-    v_atlas_id = a_atlas_id; // Pass the atlas ID to the fragment shader
     mat3 nMat = u_useInstancing ? mat3(model) : u_normalMatrix;
     v_normal = nMat * skinnedNormal; // Pass the normal vector to the fragment shader
     v_tangent = nMat * skinnedTangent;

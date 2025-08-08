@@ -21,8 +21,6 @@ interface MeshBuffers {
     texcoord?: WebGLBuffer;
     normal?: WebGLBuffer;
     tangent?: WebGLBuffer;
-    color: WebGLBuffer;
-    atlas: WebGLBuffer;
     index?: WebGLBuffer;
     joint?: WebGLBuffer;
     weight?: WebGLBuffer;
@@ -39,8 +37,6 @@ const pointLights: Map<string, PointLight> = new Map();
 let gameShaderProgram3D: WebGLProgram;
 let vertexPositionLocation3D: number;
 let texcoordLocation3D: number;
-let color_overrideLocation3D: number;
-let atlas_idLocation3D: number;
 let normalLocation3D: number;
 let tangentLocation3D: number;
 let mvpLocation3D: WebGLUniformLocation;
@@ -76,10 +72,6 @@ let cameraPositionLocation3D: WebGLUniformLocation;
 let gl3D: WebGL2RenderingContext | null = null;
 let vertexBuffer3D: WebGLBuffer;
 let texcoordBuffer3D: WebGLBuffer;
-let texture0_location: WebGLUniformLocation;
-let texture1_location: WebGLUniformLocation;
-let color_overrideBuffer3D: WebGLBuffer;
-let atlas_idBuffer3D: WebGLBuffer;
 let normalBuffer3D: WebGLBuffer;
 let tangentBuffer3D: WebGLBuffer;
 let indexBuffer3D: WebGLBuffer;
@@ -96,7 +88,8 @@ let weightBuffer3D: WebGLBuffer;
 let jointLocation3D: number;
 let weightLocation3D: number;
 let jointMatrixLocation3D: WebGLUniformLocation;
-let instanceMatricesLocation3D: WebGLUniformLocation;
+let instanceMatrixBuffer3D: WebGLBuffer;
+let instanceMatrixLocations3D: number[];
 let viewProjectionLocation3D: WebGLUniformLocation;
 let useInstancingLocation3D: WebGLUniformLocation;
 let vao3D: WebGLVertexArrayObject | null = null;
@@ -179,9 +172,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
     if (buffers) return buffers;
 
     buffers = {
-        vertex: glCreateBuffer(gl),
-        color: glCreateBuffer(gl),
-        atlas: glCreateBuffer(gl)
+        vertex: glCreateBuffer(gl)
     };
 
     // Vertex positions
@@ -190,19 +181,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
 
     const vertexCount = m.vertexCount;
 
-    // Per-vertex color override
-    const colorData = new Float32Array(vertexCount * 4);
-    for (let i = 0; i < vertexCount; i++) {
-        colorData.set([m.color.r, m.color.g, m.color.b, m.color.a], i * 4);
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
-    gl.bufferData(gl.ARRAY_BUFFER, colorData, gl.STATIC_DRAW);
-
-    // Atlas id per vertex
-    const atlasData = new Uint8Array(vertexCount);
-    atlasData.fill(m.atlasId);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.atlas);
-    gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.STATIC_DRAW);
+    // Per-vertex color override and atlas removed
 
     // Optional attributes
     if (m.hasTexcoords) {
@@ -432,8 +411,6 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
     gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
     gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
     gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
-    gl.uniform1i(texture0_location, 0);
-    gl.uniform1i(texture1_location, 1);
     checkWebGLError('after texture uniforms');
     // gl.uniformMatrix4fv(lightMatrixLocation3D, false, identityMatrix);
     // gl.uniformMatrix4fv(mvpLocation3D, false, identityMatrix);
@@ -451,11 +428,10 @@ export function setupBuffers3D(gl: WebGL2RenderingContext): void {
     texcoordBuffer3D = glCreateBuffer(gl);
     normalBuffer3D = glCreateBuffer(gl);
     tangentBuffer3D = glCreateBuffer(gl);
-    color_overrideBuffer3D = glCreateBuffer(gl);
-    atlas_idBuffer3D = glCreateBuffer(gl);
     indexBuffer3D = glCreateElementBuffer(gl);
     jointBuffer3D = glCreateBuffer(gl);
     weightBuffer3D = glCreateBuffer(gl);
+    instanceMatrixBuffer3D = glCreateBuffer(gl);
     morphPositionBuffers3D = [
         glCreateBuffer(gl), glCreateBuffer(gl)
     ];
@@ -477,6 +453,8 @@ export function setupBuffers3D(gl: WebGL2RenderingContext): void {
         gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
     }
 
+    gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
+    gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * 16 * 4, gl.DYNAMIC_DRAW);
 }
 
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
@@ -530,8 +508,6 @@ export function setupGameShader3DLocations(gl: WebGL2RenderingContext): void {
     glSetupAttributeFloat(gl, texcoordBuffer3D, texcoordLocation3D, 2);
     glSetupAttributeFloat(gl, normalBuffer3D, normalLocation3D, 3);
     glSetupAttributeFloat(gl, tangentBuffer3D, tangentLocation3D, 4);
-    glSetupAttributeFloat(gl, color_overrideBuffer3D, color_overrideLocation3D, 4);
-    glSetupAttributeInt(gl, atlas_idBuffer3D, atlas_idLocation3D, 1);
     glSetupAttributeInt(gl, jointBuffer3D, jointLocation3D, 4, gl.UNSIGNED_SHORT);
     glSetupAttributeFloat(gl, weightBuffer3D, weightLocation3D, 4);
 
@@ -612,8 +588,6 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     texcoordLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_texcoord');
     normalLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_normal');
     tangentLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_tangent');
-    color_overrideLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_color_override');
-    atlas_idLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_atlas_id');
     morphPositionLocations3D = [
         gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos0'),
         gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos1'),
@@ -662,7 +636,12 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     cameraPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_cameraPos')!;
     viewProjectionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_viewProjection')!;
     useInstancingLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useInstancing')!;
-    instanceMatricesLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_instanceMatrices[0]')!;
+    instanceMatrixLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i1'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i2'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i3'),
+    ];
     uploadCameraPosition(gl);
 }
 
@@ -770,8 +749,6 @@ function setupRenderingState(gl: WebGL2RenderingContext): void {
     disableAttribWithConstant(gl, jointLocation3D, 'uint', [0, 0, 0, 0]);
     disableAttribWithConstant(gl, weightLocation3D, 'float', [1, 0, 0, 0]);
     checkWebGLError('after setting weight');
-    disableAttribWithConstant(gl, atlas_idLocation3D, 'uint', [0, 0, 0, 0]);
-    checkWebGLError('after setting atlas_id');
 }
 
 function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
@@ -843,18 +820,23 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
     gl.uniformMatrix4fv(viewProjectionLocation3D, false, activeCamera.viewProjectionMatrix);
     checkWebGLError('after setting viewProjectionMatrix');
 
+    gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
+    for (let i = 0; i < 4; i++) {
+        const loc = instanceMatrixLocations3D[i];
+        if (loc >= 0) {
+            gl.enableVertexAttribArray(loc);
+            gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 64, i * 16);
+            gl.vertexAttribDivisor(loc, 1);
+        }
+    }
+    checkWebGLError('after setting instance attributes');
+
     for (const { mesh: m, matrices } of instancedGroups.values()) {
         const buffers = getMeshBuffers(gl, m);
 
         // Use bindOrDefault for cleaner vertex attribute binding
         bindOrDefault(gl, buffers.vertex, vertexPositionLocation3D, 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 0]);
         checkWebGLError('after setting vertexPosition');
-
-        bindOrDefault(gl, buffers.color, color_overrideLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 1, 1, 1]);
-        checkWebGLError('after setting color_override');
-
-        bindOrDefault(gl, buffers.atlas, atlas_idLocation3D, 'uint', 1, gl.UNSIGNED_BYTE, false, 0, 0, [0, 0, 0, 0]);
-        checkWebGLError('after setting atlas_id');
 
         bindOrDefault(gl, buffers.texcoord, texcoordLocation3D, 'float', 2, gl.FLOAT, false, 0, 0, [0, 0]);
         checkWebGLError('after setting texcoord');
@@ -894,8 +876,9 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
             const batchCount = Math.min(MAX_INSTANCES, matrices.length - offset);
             const instanceData = new Float32Array(batchCount * 16);
             for (let i = 0; i < batchCount; i++) instanceData.set(matrices[offset + i], i * 16);
-            gl.uniformMatrix4fv(instanceMatricesLocation3D, false, instanceData);
-            checkWebGLError('after setting instance matrices');
+            gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData);
+            checkWebGLError('after uploading instance matrices');
             if (m.indices) {
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index!);
                 const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT :
@@ -909,6 +892,9 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
             }
         }
     }
+    for (const loc of instanceMatrixLocations3D) {
+        if (loc >= 0) gl.disableVertexAttribArray(loc);
+    }
     gl.uniform1i(useInstancingLocation3D, 0);
     checkWebGLError('after disabling instancing');
 }
@@ -916,8 +902,6 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 function setupMeshVertexAttributes(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers): void {
     // Use bindOrDefault for cleaner vertex attribute binding
     bindOrDefault(gl, buffers.vertex, vertexPositionLocation3D, 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 0]);
-    bindOrDefault(gl, buffers.color, color_overrideLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 1, 1, 1]);
-    bindOrDefault(gl, buffers.atlas, atlas_idLocation3D, 'uint', 1, gl.UNSIGNED_BYTE, false, 0, 0, [0, 0, 0, 0]);
     bindOrDefault(gl, buffers.texcoord, texcoordLocation3D, 'float', 2, gl.FLOAT, false, 0, 0, [0, 0]);
     bindOrDefault(gl, buffers.normal, normalLocation3D, 'float', 3, gl.FLOAT, false, 0, 0, [0, 0, 1]);
     bindOrDefault(gl, buffers.tangent, tangentLocation3D, 'float', 4, gl.FLOAT, false, 0, 0, [1, 0, 0, 1]);
@@ -1067,7 +1051,7 @@ function drawMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, ver
         if (drawError) {
             console.error(generateDetailedDrawError(
                 gl, m, framebuffer, vertexCount, drawError,
-                color_overrideBuffer3D, atlas_idBuffer3D, jointBuffer3D, weightBuffer3D,
+                jointBuffer3D, weightBuffer3D,
                 morphPositionBuffers3D, morphNormalBuffers3D, morphTangentBuffers3D,
                 vertexBuffer3D, texcoordBuffer3D, normalBuffer3D, tangentBuffer3D, indexBuffer3D,
                 albedoTextureLocation3D, normalTextureLocation3D, metallicRoughnessTextureLocation3D, shadowMapLocation3D,

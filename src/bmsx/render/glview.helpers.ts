@@ -173,8 +173,6 @@ export function generateDetailedDrawError(
     vertexCount: number,
     drawError: GLenum,
     // Buffer references
-    color_overrideBuffer3D: WebGLBuffer,
-    atlas_idBuffer3D: WebGLBuffer,
     jointBuffer3D: WebGLBuffer,
     weightBuffer3D: WebGLBuffer,
     morphPositionBuffers3D: WebGLBuffer[],
@@ -244,8 +242,6 @@ export function generateDetailedDrawError(
     const maxIndex = Math.max(...m.indices!); // For clearer out-of-bounds diagnostics
 
     // Read the data from the buffers for debugging
-    const colorData = getBufferData(color_overrideBuffer3D, gl.FLOAT, vertexCount * 4);
-    const atlasData = getBufferData(atlas_idBuffer3D, gl.UNSIGNED_BYTE, vertexCount);
     const jointData = getBufferData(jointBuffer3D, gl.UNSIGNED_SHORT, vertexCount * 4);
     const weightData = getBufferData(weightBuffer3D, gl.FLOAT, vertexCount * 4);
     const morphPositionData = morphPositionBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
@@ -257,8 +253,6 @@ export function generateDetailedDrawError(
     const normals = m.hasNormals ? getBufferData(normalBuffer3D, gl.FLOAT, vertexCount * 3) : null;
     const tangents = m.hasTangents ? getBufferData(tangentBuffer3D, gl.FLOAT, vertexCount * 4) : null;
     const vertexData = {
-        colorData: colorData,
-        atlasData: atlasData,
         jointData: jointData,
         weightData: weightData,
         morphPositions: morphPositionData,
@@ -276,8 +270,6 @@ export function generateDetailedDrawError(
         texcoordBuffer3D: m.hasTexcoords ? getGlBufferSize(texcoordBuffer3D) : 0,
         normalBuffer3D: m.hasNormals ? getGlBufferSize(normalBuffer3D) : 0,
         tangentBuffer3D: m.hasTangents ? getGlBufferSize(tangentBuffer3D) : 0,
-        color_overrideBuffer3D: getGlBufferSize(color_overrideBuffer3D),
-        atlas_idBuffer3D: getGlBufferSize(atlas_idBuffer3D),
         jointBuffer3D: m.hasSkinning ? getGlBufferSize(jointBuffer3D) : 0,
         weightBuffer3D: m.hasSkinning ? getGlBufferSize(weightBuffer3D) : 0,
         morphPositionBuffers3D: morphPositionBuffers3D.map(b => b ? getGlBufferSize(b) : 0),
@@ -291,8 +283,6 @@ export function generateDetailedDrawError(
         texcoordBuffer3D: m.hasTexcoords ? bufferSize.texcoordBuffer3D === vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT : true,
         normalBuffer3D: m.hasNormals ? bufferSize.normalBuffer3D === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true,
         tangentBuffer3D: m.hasTangents ? bufferSize.tangentBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT : true,
-        color_overrideBuffer3D: bufferSize.color_overrideBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT,
-        atlas_idBuffer3D: bufferSize.atlas_idBuffer3D === vertexCount * Uint8Array.BYTES_PER_ELEMENT,
         jointBuffer3D: m.hasSkinning ? bufferSize.jointBuffer3D === vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT : true,
         weightBuffer3D: m.hasSkinning ? bufferSize.weightBuffer3D === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT : true,
         morphPositionBuffers3D: morphPositionBuffers3D.map((b, i) => b ? bufferSize.morphPositionBuffers3D[i] === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT : true),
@@ -306,8 +296,6 @@ export function generateDetailedDrawError(
         texcoordBuffer3D: m.hasTexcoords ? (bufferSizeCorrectness.texcoordBuffer3D ? 'yes' : `no, because ${bufferSize.texcoordBuffer3D - vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
         normalBuffer3D: m.hasNormals ? (bufferSizeCorrectness.normalBuffer3D ? 'yes' : `no, because ${bufferSize.normalBuffer3D - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
         tangentBuffer3D: m.hasTangents ? (bufferSizeCorrectness.tangentBuffer3D ? 'yes' : `no, because ${bufferSize.tangentBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
-        color_overrideBuffer3D: bufferSizeCorrectness.color_overrideBuffer3D ? 'yes' : `no, because ${bufferSize.color_overrideBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`,
-        atlas_idBuffer3D: bufferSizeCorrectness.atlas_idBuffer3D ? 'yes' : `no, because ${bufferSize.atlas_idBuffer3D - vertexCount * Uint8Array.BYTES_PER_ELEMENT} bytes are missing`,
         jointBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.jointBuffer3D ? 'yes' : `no, because ${bufferSize.jointBuffer3D - vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
         weightBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.weightBuffer3D ? 'yes' : `no, because ${bufferSize.weightBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
         morphPositionBuffers3D: '[' + morphPositionBuffers3D.map((b, i) => b ? (bufferSize.morphPositionBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphPositionBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
@@ -349,9 +337,6 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
         Texture Normal: ${m.gpuTextureNormal ? `'${m.gpuTextureNormal}'` : 'none'}
         Texture MetallicRoughness: ${m.gpuTextureMetallicRoughness ? `'${m.gpuTextureMetallicRoughness}'` : 'none'}
         _________________________________________________________________
-        Colordata: ${JSON.stringify(colorData)}
-        Atlasdata: ${JSON.stringify(atlasData)}
-        Atlas ID: ${m.atlasId}
         Has normals: ${m.hasNormals}
         Has tangents: ${m.hasTangents}
         Has texcoords: ${m.hasTexcoords}
@@ -371,8 +356,6 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
         Bound Texcoord Buffer ID: ${texcoordBuffer3D ? 'yes' : 'no'}
         Bound Normal Buffer ID: ${normalBuffer3D ? 'yes' : 'no'}
         Bound Tangent Buffer ID: ${tangentBuffer3D ? 'yes' : 'no'}
-        Bound Color Override Buffer ID: ${color_overrideBuffer3D ? 'yes' : 'no'}
-        Bound Atlas ID Buffer ID: ${atlas_idBuffer3D ? 'yes' : 'no'}
         Bound Index Buffer ID: ${indexBuffer3D ? 'yes' : 'no'}
         Bound Joint Buffer ID: ${jointBuffer3D ? 'yes' : 'no'}
         Bound Weight Buffer ID: ${weightBuffer3D ? 'yes' : 'no'}
