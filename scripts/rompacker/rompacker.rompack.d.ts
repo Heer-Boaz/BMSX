@@ -15,6 +15,8 @@ interface RomPackerOptions {
 	useTextureAtlas: boolean;
 }
 
+export type resourcetype = asset_type | 'rommanifest' | 'romlabel' | 'fsm';
+
 export interface Resource {
 	filepath?: string;
 	name: string;
@@ -22,15 +24,13 @@ export interface Resource {
 	type: resourcetype;
 	id: number;
 	collisionType?: 'concave' | 'convex' | 'aabb';
-	datatype?: 'json' | 'yaml' | 'bin'; // If the resource is a data file, this indicates the type of data it contains
-	targetAtlasIndex?: number; // If this is not an atlas image, index of atlas this image belongs to
-	atlasid?: number; // If this is an atlas image, id (=index) of the atlas
+	datatype?: 'json' | 'yaml' | 'bin';
+	targetAtlasIndex?: number;
+	atlasid?: number;
 	buffer?: Buffer;
 	img?: any;
 	imgmeta?: ImgMeta;
 }
-
-export type resourcetype = asset_type | 'rommanifest' | 'romlabel';
 
 export interface RomManifest {
 	title?: string;

@@ -1,3 +1,4 @@
+import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { TextureKey } from '../render/texturemanager';
 
 /**
@@ -137,19 +138,19 @@ export interface GLTFMaterial {
 }
 
 export interface GLTFMesh {
-        positions: Float32Array;
-        texcoords?: Float32Array;
-        normals?: Float32Array | null;
-        tangents?: Float32Array | null;
-        indices?: Uint16Array | Uint32Array;
-        indexComponentType?: number;
-        materialIndex?: number;
-        morphPositions?: Float32Array[];
-        morphNormals?: Float32Array[];
-        morphTangents?: Float32Array[];
-        weights?: number[];
-        jointIndices?: Uint16Array;
-        jointWeights?: Float32Array;
+	positions: Float32Array;
+	texcoords?: Float32Array;
+	normals?: Float32Array | null;
+	tangents?: Float32Array | null;
+	indices?: Uint16Array | Uint32Array;
+	indexComponentType?: number;
+	materialIndex?: number;
+	morphPositions?: Float32Array[];
+	morphNormals?: Float32Array[];
+	morphTangents?: Float32Array[];
+	weights?: number[];
+	jointIndices?: Uint16Array;
+	jointWeights?: Float32Array;
 }
 
 export interface GLTFAnimationSampler {
@@ -171,41 +172,41 @@ export interface GLTFAnimation {
 
 export type Index2GpuTexture = Record<number, TextureKey>;
 export interface GLTFNode {
-        mesh?: number;
-        children?: number[];
-        translation?: vec3arr;
-        rotation?: [number, number, number, number];
-        scale?: vec3arr;
-        matrix?: Float32Array;
-        skin?: number;
-        /** Optional morph target weights for this node */
-        weights?: number[];
+	mesh?: number;
+	children?: number[];
+	translation?: vec3arr;
+	rotation?: [number, number, number, number];
+	scale?: vec3arr;
+	matrix?: Float32Array;
+	skin?: number;
+	/** Optional morph target weights for this node */
+	weights?: number[];
 }
 
 export interface GLTFScene {
-        nodes: number[];
+	nodes: number[];
 }
 
 export interface GLTFSkin {
-        joints: number[];
-        inverseBindMatrices?: Float32Array[];
+	joints: number[];
+	inverseBindMatrices?: Float32Array[];
 }
 
 export interface GLTFModel {
-        name: string;
-        meshes: GLTFMesh[];
-        materials?: GLTFMaterial[];
-        animations?: GLTFAnimation[];
+	name: string;
+	meshes: GLTFMesh[];
+	materials?: GLTFMaterial[];
+	animations?: GLTFAnimation[];
 	/** Mapping from texture index to image index */
 	textures?: number[];
-        imageURIs?: string[];
-        imageOffsets?: { start: number; end: number }[];
-        imageBuffers?: ArrayBuffer[];
-        gpuTextures?: Index2GpuTexture;
-        nodes?: GLTFNode[];
-        scenes?: GLTFScene[];
-        scene?: number;
-        skins?: GLTFSkin[];
+	imageURIs?: string[];
+	imageOffsets?: { start: number; end: number }[];
+	imageBuffers?: ArrayBuffer[];
+	gpuTextures?: Index2GpuTexture;
+	nodes?: GLTFNode[];
+	scenes?: GLTFScene[];
+	scene?: number;
+	skins?: GLTFSkin[];
 }
 
 export type OBJModel = GLTFModel;
@@ -217,6 +218,7 @@ export interface RomPack {
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string; // The loaded game code in the ROM pack.
+	fsm: id2fsm; // Reference to the loaded FSM assets in the ROM pack, including metadata.
 }
 
 /**
@@ -236,7 +238,7 @@ export interface ImgMeta {
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model';
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm';
 export type asset_id = string | number;
 
 /**
@@ -272,3 +274,4 @@ export type id2imgres = Record<asset_id, RomImgAsset>;
 export type id2model = Record<asset_id, GLTFModel>;
 export type id2data = Record<asset_id, any>;
 export type id2htmlimg = Record<asset_id, HTMLImageElement>;
+export type id2fsm = Record<asset_id, StateMachineBlueprint>;

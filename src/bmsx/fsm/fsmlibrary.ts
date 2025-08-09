@@ -1,6 +1,6 @@
 import type { EventScope } from "../core/eventemitter";
 import type { Identifier } from '../rompack/rompack';
-import { StateDefinitionBuilders } from "./fsmdecorators";
+import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import type { listed_sdef_event, StateEventDefinition, StateMachineBlueprint } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
@@ -11,7 +11,7 @@ import { StateDefinition, validateStateMachine } from './statedefinition';
 export var StateDefinitions: Record<string, StateDefinition>;
 export var ActiveStateMachines: Map<string, State<any>[]> = new Map();
 
-class HandlerRegistry {
+export class HandlerRegistry {
     private static _instance: HandlerRegistry;
     private map = new Map<string, AnyHandler>();
     register(id: string, fn: AnyHandler) { this.map.set(id, fn); }
@@ -25,8 +25,31 @@ class HandlerRegistry {
     }
 }
 
-// ---------- Diff-based, tree-aware migration ----------
+// assign-fsm-augment.ts (unchanged logic, now gets keys from decorator)
+export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set<string>) {
+    const reg = HandlerRegistry.instance;
+    const className = ctor.name || 'Anonymous';
+    const entries = getDeclaredFsmHandlers(ctor);
+    if (!entries.length || !linkedMachines?.size) return;
 
+    for (const { name: memberName, keys } of entries) {
+        for (const machine of linkedMachines) {
+            for (const key of keys) {
+                const id = `${machine}.handlers.${className}.${key}`;
+                const fn: AnyHandler = function (this: any, ...args) {
+                    let impl = this[memberName] ?? Object.getPrototypeOf(this)?.[memberName];
+                    if (typeof impl !== 'function') {
+                        throw new Error(`Registered FSM handler "${id}" is not callable (member: ${memberName})`);
+                    }
+                    return impl.apply(this, args);
+                };
+                reg.register(id, fn as any);
+            }
+        }
+    }
+}
+
+// ---------- Diff-based, tree-aware migration ----------
 export function migrateMachineDiff(root: State<any>, oldRootDef: StateDefinition | undefined, newRootDef: StateDefinition) {
     // Reconcile subtree shape (add/remove child State instances to match new defs)
     reconcileStateTree(root, oldRootDef, newRootDef);
@@ -200,6 +223,22 @@ export function setupFSMlibrary(): void {
         validateStateMachine(built);
         StateDefinitions[machine_name] = built;
         addEventsToDef(built);
+    }
+
+    for (const [key, bp] of Object.entries($.rom.fsm)) {
+        const machineName = key; // je hebt zowel id als naam keys
+        const def = createMachine(machineName as Identifier, bp);
+        walkAndHoist(machineName, def, HandlerRegistry.instance, [], true);
+        validateStateMachine(def);
+        // Hot-swap: vervang als bestond, anders voeg toe
+        const existed = !!StateDefinitions[machineName];
+        StateDefinitions[machineName] = def;
+        if (existed) {
+            for (const st of ActiveStateMachines.get(machineName) ?? []) {
+                // optioneel: migrate(st, def);
+            }
+        }
+        addEventsToDef(def); // jouw helper
     }
 }
 

@@ -36,6 +36,9 @@ const BOILERPLATE_RESOURCE_ID_DATA = `export enum DataId {
 const BOILERPLATE_RESOURCE_ID_MODEL = `export enum ModelId {
 	none = 'none',`;
 
+const BOILERPLATE_RESOURCE_ID_FSM = `export enum FsmId {
+	none = 'none',`;
+
 /**
 * Adds a file to an array of files.
 * @param {string} dirPath - The path of the directory containing the file.
@@ -407,8 +410,16 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.glb':
 			type = 'model';
 			break;
+		case '.fsm':
+		case '.fsm.json':
+		case '.fsm.yaml':
+		case '.fsm.yml':
+		case '.fsm.bin':
+			type = 'fsm';
+			break;
+
 	}
-	return { name: name, ext, type, collisionType, datatype };
+	return { name, ext, type, collisionType, datatype };
 }
 
 /**
@@ -436,6 +447,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	let sndid = 1;
 	let dataid = 1;
 	let modelid = 1;
+	let fsmid = 1;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		const filepath = arrayOfFiles[i];
 		const meta = getResMetaByFilename(filepath);
@@ -481,6 +493,10 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			case 'atlas':
 				// Atlas files are not real files, but we add them to the resource list in the next step
 				break;
+			case 'fsm':
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: fsmid });
+				++fsmid;
+				break;
 		}
 	}
 
@@ -524,12 +540,15 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 
 	checkDuplicateIds('image');
 	checkDuplicateIds('audio');
+	checkDuplicateIds('data');
 	checkDuplicateIds('model');
+	checkDuplicateIds('fsm');
 	checkDuplicateNames('data');
 	checkDuplicateNames('image');
 	checkDuplicateNames('audio');
 	checkDuplicateNames('data');
 	checkDuplicateNames('model');
+	checkDuplicateNames('fsm');
 
 	return result;
 }
@@ -598,12 +617,15 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 	const tssndout = new Array<string>();
 	const tsdataout = new Array<string>();
 	const tsmodelout = new Array<string>();
+	const tsfsmout = new Array<string>();
+
 	const metalist: Resource[] = await getResMetaList(respaths, rom_name)
 
 	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
 	tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
 	tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
+	tsfsmout.push(BOILERPLATE_RESOURCE_ID_FSM);
 
 	for (let i = 0; i < metalist.length; i++) {
 		const current = metalist[i];
@@ -625,6 +647,9 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 			case 'model':
 				tsmodelout.push(`${enum_member_to_add} `);
 				break;
+			case 'fsm':
+				tsfsmout.push(`${enum_member_to_add} `);
+				break;
 			case 'romlabel':
 				// Ignore this part
 				break;
@@ -638,8 +663,9 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 	tssndout.push("}\n");
 	tsdataout.push("}\n");
 	tsmodelout.push("}\n");
+	tsfsmout.push("}\n");
 
-	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout).join('\n');
+	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout, tsfsmout).join('\n');
 
 	const targetPath = respaths[0].replace('/res', '/resourceids.ts');
 	await writeFile(targetPath, total_output);
@@ -773,6 +799,28 @@ export async function generateRomAssets(resources: Resource[]) {
 				const baseAsset = { resid, resname, type, imgmeta, buffer };
 				romAssets.push({ ...baseAsset, });
 			}
+				break;
+			case 'fsm':
+				// buffer bevat JSON/YAML/bin
+				switch (res.datatype) {
+					case 'yaml': {
+						const yamlContent = res.buffer.toString('utf8');
+						const json = yaml.load(yamlContent);
+						buffer = encodeBinary(json); // StateMachineBlueprint -> bin
+						break;
+					}
+					case 'json': {
+						const json = JSON.parse(res.buffer.toString('utf8'));
+						buffer = encodeBinary(json);
+						break;
+					}
+					case 'bin':
+						// al binair via tool; laat zoals het is
+						break;
+					default:
+						throw new Error(`Unknown FSM data type "${res.datatype}" for resource "${resname}"`);
+				}
+				romAssets.push({ resid, resname, type, buffer });
 				break;
 			case 'rommanifest':
 				break;

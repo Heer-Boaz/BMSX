@@ -221,6 +221,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
         audio: {},
         model: {},
         data: {},
+        fsm: {},
         code: null
     };
 
@@ -367,7 +368,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
     return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
     switch (res.type) {
         case 'image':
         case 'atlas':
@@ -438,6 +439,18 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
                 throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
             }
             break;
+        case 'fsm': {
+            try {
+                const u8 = new Uint8Array(rom.slice(res.start, res.end));
+                const blueprint = decodeBinary(u8);
+                romResult.fsm[res.resid] = blueprint;
+                romResult.fsm[res.resname] = blueprint;
+            } catch (err: any) {
+                throw new Error(`Failed to load 'fsm' from rom: ${err.message}.`);
+            }
+            break;
+        }
+
         default:
             throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
     }
