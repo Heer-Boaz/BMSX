@@ -29,21 +29,33 @@ export function buildQuadTexCoords(): Float32Array {
     return textureCoordinates;
 }
 
+function generateByteLengthString(data?: ArrayBufferView): string {
+    if (data) {
+        return `data length: ${data.byteLength} bytes`;
+    }
+    return `data was 'undefined' and thus has a length of 0 bytes`;
+}
+
 export function glCreateBuffer(gl: WebGL2RenderingContext, data?: Float32Array | Uint8Array): WebGLBuffer {
-    checkWebGLError('before createBuffer');
+    checkWebGLError(`createBuffer ${generateByteLengthString(data)}`);
     const buffer = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, (data as any) ?? 0, gl.DYNAMIC_DRAW);
-    checkWebGLError('createBuffer');
+    checkWebGLError(`After creating buffer, before setting buffer data`);
+    if (data) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
+        checkWebGLError(`createBuffer -> bufferData ${generateByteLengthString(data)}`);
+    }
     return buffer;
 }
 
 export function glCreateElementBuffer(gl: WebGL2RenderingContext, data?: Uint8Array | Uint16Array | Uint32Array): WebGLBuffer {
-    checkWebGLError('before createElementBuffer');
+    checkWebGLError(`createElementBuffer ${generateByteLengthString(data)}`);
     const buffer = gl.createBuffer()!;
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, (data as any) ?? 0, gl.DYNAMIC_DRAW);
-    checkWebGLError('createElementBuffer');
+    if (data) {
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
+        checkWebGLError(`createElementBuffer -> bufferData ${generateByteLengthString(data)}`);
+    }
     return buffer;
 }
 
