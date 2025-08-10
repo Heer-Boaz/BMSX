@@ -5,13 +5,14 @@ import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { StateDefinition } from '../fsm/statedefinition';
 import { Input } from "../input/input";
+import { Camera3D } from '../render/3d/camera3d';
 import type { Identifier, Registerable, RegisterablePersistent } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from "./cameraobject";
 import { GameObject } from "./gameobject";
-import { LightObject } from "./lightobject";
+import { AmbientLightObject, LightObject } from "./lightobject";
 import { Registry } from "./registry";
 
 export interface SpaceObject {
@@ -233,8 +234,22 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         this.activeCameraId = id;
     }
 
-    public getActiveCamera(): CameraObject | null {
+    public get activeCameraObject(): CameraObject | null {
         return this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
+    }
+
+    public get activeCamera3D(): Camera3D | null {
+        return this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId).camera : null;
+    }
+
+    public get cameras(): CameraObject[] {
+        const result: CameraObject[] = [];
+        for (const space of this.spaces) {
+            for (const obj of space.objects) {
+                if (obj instanceof CameraObject) result.push(obj);
+            }
+        }
+        return result;
     }
 
     public getActiveLights(): LightObject[] {
@@ -245,6 +260,10 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             }
         }
         return result;
+    }
+
+    public get ambientLight(): AmbientLightObject | null {
+        return this.getActiveLights().find(light => light.type === 'ambient') as AmbientLightObject | null;
     }
 
     /**

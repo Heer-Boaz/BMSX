@@ -94,7 +94,7 @@ export function checkWebGLError(infoText: string): number {
         if (error !== gl.NO_ERROR) {
             // Throwing error so that it can be caught by the debugger via catching caught exceptions
             // This is useful for debugging WebGL errors in the browser console
-            throw new Error(`WebGL error occurred: ${infoText} ${getWebGLErrorString(gl, error)}`);
+            throw new Error(`WebGL error occurred: ${getWebGLErrorString(gl, error)}: ${infoText}`);
         }
     } catch (e) {
         // console.error(e);

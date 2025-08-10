@@ -11,6 +11,7 @@ import { BaseView, Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, Skyb
 
 import { AmbientLight, DirectionalLight, PointLight } from '..';
 import * as GLView3D from './3d/glview.3d';
+import * as GLViewSkybox from './3d/glview.skybox';
 import * as GLViewCRT from './post/glview.crt';
 
 type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
@@ -172,7 +173,6 @@ export class GLView extends BaseView {
 			preserveDrawingBuffer: false,
 			antialias: false,
 		}) as WebGL2RenderingContext;
-		GLView3D.init(this.glctx, this.offscreenCanvasSize);
 	}
 
 	/**
@@ -185,17 +185,19 @@ export class GLView extends BaseView {
 	 */
 	override init(): void {
 		super.init(); // Call the base init method to set up the canvas
+		GLView3D.init(this.glctx, this.offscreenCanvasSize);
+		GLViewSkybox.init(this.glctx);
 		this.setupGLContext(); // Set up the WebGL context
 		const gl = this.glctx;
 		GLView2D.createSpriteShaderPrograms(gl); // Create the game shader programs
 		GLView3D.createGameShaderPrograms3D(gl); // Create 3D shader program
-		GLView3D.createSkyboxProgram(gl);
+		GLViewSkybox.createSkyboxProgram(gl);
 		GLView2D.setupSpriteShaderLocations(gl); // Set up the vertex shader locations for the game shader program
 		GLView3D.setupVertexShaderLocations3D(gl); // Set up the vertex shader locations for the 3D shader
-		GLView3D.setupSkyboxLocations(gl);
+		GLViewSkybox.setupSkyboxLocations(gl);
 		this.setupBuffers(); // Set up the buffers for the game shader
 		GLView2D.setupSpriteLocations(gl); // Set up the game shader locations
-		GLView3D.setupGameShader3DLocations(gl); // Set up locations for 3D shader
+		// GLView3D.setupGameShader3DLocations(gl); // Set up locations for 3D shader
 		this.setupTextures(); // Set up the textures used by the shaders (such as the atlas texture and the post-processing shader texture)
 		GLViewCRT.createCRTShaderPrograms(gl); // Create the CRT shader programs
 		GLViewCRT.setupCRTShaderLocations(gl); // Set up the CRT shader locations
@@ -242,7 +244,7 @@ export class GLView extends BaseView {
 		checkWebGLError('before setupBuffers');
 		GLView2D.setupBuffers(gl);
 		GLView3D.setupBuffers3D(gl); // Set up buffers for 3D
-		GLView3D.createSkyboxBuffer(gl);
+		GLViewSkybox.createSkyboxBuffer(gl);
 		checkWebGLError('after setupBuffers');
 	}
 
@@ -268,7 +270,7 @@ export class GLView extends BaseView {
 
 	@catchWebGLError
 	public setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
-		GLView3D.setSkyboxImages(this.glctx, ids);
+		GLViewSkybox.setSkyboxImages(this.glctx, ids);
 	}
 
 	/**
@@ -366,9 +368,9 @@ export class GLView extends BaseView {
 		if (gl) {
 			GLViewCRT.handleResize(gl, this.canvas.width, this.canvas.height);
 			gl.useProgram(GLView2D.spriteShaderProgram); // Switch to the game shader program
-		}
 
-		GLView3D.camera.setAspect(this.offscreenCanvasSize.x / this.offscreenCanvasSize.y);
+			GLView3D.handleResize(gl, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
+		}
 
 		// Clear the needsResize flag
 		this.needsResize = false;
@@ -380,7 +382,7 @@ export class GLView extends BaseView {
 
 		const gl = this.glctx;
 
-		GLView3D.drawSkybox(gl);
+		GLViewSkybox.drawSkybox(gl);
 		GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
 		GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
 		// saveTextureToFile();
@@ -534,9 +536,5 @@ export class GLView extends BaseView {
 		// Update the dynamic atlas texture with the new image
 		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);
 		glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
-	}
-
-	onResize(newSize: vec2): void {
-		GLView3D.onResize(newSize);
 	}
 }

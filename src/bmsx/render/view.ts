@@ -1,12 +1,12 @@
 ﻿import { BFont } from '../core/font';
 import { GameOptions } from '../core/gameoptions';
+import type { Mesh } from '../core/mesh';
 import { Registry } from '../core/registry';
 import { copy_vector } from '../core/utils';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
-import type { Mesh } from '../core/mesh';
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -42,10 +42,10 @@ export class PixelData {
 }
 
 export interface DrawMeshOptions {
-        mesh: Mesh;
-        matrix: Float32Array;
-        jointMatrices?: Float32Array[];
-        morphWeights?: number[];
+	mesh: Mesh;
+	matrix: Float32Array;
+	jointMatrices?: Float32Array[];
+	morphWeights?: number[];
 }
 
 export interface SkyboxImageIds {

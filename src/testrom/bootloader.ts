@@ -429,7 +429,7 @@ class CameraController extends GameObject {
             const dx = e.movementX || 0;
             const dy = e.movementY || 0;
 
-            const camObj = $.model.getActiveCamera();
+            const camObj = $.model.activeCameraObject;
             if (!camObj) return;
 
             // Radians per pixel; 0.002 is ok, maak desnoods runtime-tweakbaar
@@ -490,7 +490,7 @@ class CameraController extends GameObject {
             if (extra) extra.active = !extra.active;
         }
 
-        const camObj = $.model.getActiveCamera();
+        const camObj = $.model.activeCameraObject;
         if (!camObj) return;
 
         const cam = camObj.camera;
