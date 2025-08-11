@@ -10,6 +10,13 @@ import { bmat } from './math3d';
 import fragShader3DCode from './shaders/3d.frag.glsl';
 import vertexShader3DCode from './shaders/3d.vert.glsl';
 
+const MAX_INSTANCES = 64;
+const INSTANCE_STRIDE_BYTES = 64; // 4 vec4
+const TEXTURE_UNIT_ALBEDO = 3;
+const TEXTURE_UNIT_NORMAL = 4;
+const TEXTURE_UNIT_METALLIC_ROUGHNESS = 5;
+export const TEXTURE_UNIT_SHADOW_MAP = 6;
+
 export let meshesToDraw: DrawMeshOptions[] = [];
 let lightsDirty: boolean = true;
 
@@ -37,8 +44,6 @@ interface MeshBuffers {
 const meshBufferCache = new WeakMap<Mesh, MeshBuffers>();
 
 // instancing upload helpers
-const MAX_INSTANCES = 64;
-const INSTANCE_STRIDE_BYTES = 64; // 4 vec4
 let instanceScratch = new Float32Array(MAX_INSTANCES * 16);
 
 // per-frame caches
@@ -177,10 +182,6 @@ function getVAOSignature(m: Mesh, instanced: boolean): string {
 		instanced ? 1 : 0,
 	].join(',');
 }
-const TEXTURE_UNIT_ALBEDO = 3;
-const TEXTURE_UNIT_NORMAL = 4;
-const TEXTURE_UNIT_METALLIC_ROUGHNESS = 5;
-export const TEXTURE_UNIT_SHADOW_MAP = 6;
 
 function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
 	let buffers = meshBufferCache.get(m);
