@@ -21,24 +21,28 @@ export let meshesToDraw: DrawMeshOptions[] = [];
 let lightsDirty: boolean = true;
 
 interface MeshBuffers {
-	vertex: WebGLBuffer;
-	texcoord?: WebGLBuffer;
-	normal?: WebGLBuffer;
-	tangent?: WebGLBuffer;
-	index?: WebGLBuffer;
-	joint?: WebGLBuffer;
-	weight?: WebGLBuffer;
-	morphPositions?: (WebGLBuffer | undefined)[];
-	morphNormals?: (WebGLBuffer | undefined)[];
-	morphTangents?: (WebGLBuffer | undefined)[];
+        vertex: WebGLBuffer;
+        texcoord?: WebGLBuffer;
+        normal?: WebGLBuffer;
+        tangent?: WebGLBuffer;
+        index?: WebGLBuffer;
+        joint?: WebGLBuffer;
+        weight?: WebGLBuffer;
+        morphPositions?: (WebGLBuffer | undefined)[];
+        morphNormals?: (WebGLBuffer | undefined)[];
+        morphTangents?: (WebGLBuffer | undefined)[];
 
-	// VAO caches
-	vao?: WebGLVertexArrayObject;            // non-instanced
-	vaoInstanced?: WebGLVertexArrayObject;   // instanced
-	vaoSig?: string;
-	vaoInstancedSig?: string;
-	indexType?: GLenum;
-	indexCount?: number;
+        // VAO caches
+        vao?: WebGLVertexArrayObject;            // non-instanced + morph
+        vaoNoMorph?: WebGLVertexArrayObject;     // non-instanced zonder morph
+        vaoInstanced?: WebGLVertexArrayObject;   // instanced + morph
+        vaoInstancedNoMorph?: WebGLVertexArrayObject; // instanced zonder morph
+        vaoSig?: string;
+        vaoNoMorphSig?: string;
+        vaoInstancedSig?: string;
+        vaoInstancedNoMorphSig?: string;
+        indexType?: GLenum;
+        indexCount?: number;
 }
 
 const meshBufferCache = new WeakMap<Mesh, MeshBuffers>();
@@ -72,15 +76,6 @@ let normalMatrixLocation3D: WebGLUniformLocation;
 let ditherLocation3D: WebGLUniformLocation;
 let ambientColorLocation3D: WebGLUniformLocation;
 let ambientIntensityLocation3D: WebGLUniformLocation;
-let dirLightDirectionLocation3D: WebGLUniformLocation;
-let dirLightColorLocation3D: WebGLUniformLocation;
-let dirLightIntensityLocation3D: WebGLUniformLocation;
-let numDirLightsLocation3D: WebGLUniformLocation;
-let pointLightPositionLocation3D: WebGLUniformLocation;
-let pointLightColorLocation3D: WebGLUniformLocation;
-let pointLightRangeLocation3D: WebGLUniformLocation;
-let pointLightIntensityLocation3D: WebGLUniformLocation;
-let numPointLightsLocation3D: WebGLUniformLocation;
 let materialColorLocation3D: WebGLUniformLocation;
 let shadowMapLocation3D: WebGLUniformLocation;
 let useShadowMapLocation3D: WebGLUniformLocation;
@@ -96,6 +91,29 @@ let useMetallicRoughnessTextureLocation3D: WebGLUniformLocation;
 let metallicFactorLocation3D: WebGLUniformLocation;
 let roughnessFactorLocation3D: WebGLUniformLocation;
 let cameraPositionLocation3D: WebGLUniformLocation;
+
+// uniform buffers voor lights
+const DIR_LIGHT_BINDING = 0;
+const POINT_LIGHT_BINDING = 1;
+let dirLightBuffer: WebGLBuffer;
+let pointLightBuffer: WebGLBuffer;
+let dirLightData: Float32Array;
+let dirLightCount: Int32Array;
+let pointLightData: Float32Array;
+let pointLightCount: Int32Array;
+
+// offsets binnen de UBO's (std140 layout)
+const DIR_LIGHT_HEADER = 4; // int + vec3 pad
+const DIR_LIGHT_STRIDE = MAX_DIR_LIGHTS * 4; // per vec4 array
+const DIR_LIGHT_DIRECTION_OFFSET = DIR_LIGHT_HEADER;
+const DIR_LIGHT_COLOR_OFFSET = DIR_LIGHT_DIRECTION_OFFSET + DIR_LIGHT_STRIDE;
+const DIR_LIGHT_INTENSITY_OFFSET = DIR_LIGHT_COLOR_OFFSET + DIR_LIGHT_STRIDE;
+
+const POINT_LIGHT_HEADER = 4;
+const POINT_LIGHT_STRIDE = MAX_POINT_LIGHTS * 4;
+const POINT_LIGHT_POSITION_OFFSET = POINT_LIGHT_HEADER;
+const POINT_LIGHT_COLOR_OFFSET = POINT_LIGHT_POSITION_OFFSET + POINT_LIGHT_STRIDE;
+const POINT_LIGHT_PARAM_OFFSET = POINT_LIGHT_COLOR_OFFSET + POINT_LIGHT_STRIDE;
 
 let morphPositionBuffers3D: WebGLBuffer[];
 let morphNormalBuffers3D: WebGLBuffer[];
@@ -171,16 +189,16 @@ function uploadMorphWeights(gl: WebGL2RenderingContext, weights: Float32Array | 
 	}
 }
 
-function getVAOSignature(m: Mesh, instanced: boolean): string {
-	const tangentSize = m.tangents ? (m.tangents.length === m.vertexCount * 4 ? 4 : 3) : 0;
-	return [
-		m.hasTexcoords ? 1 : 0,
-		m.hasNormals ? 1 : 0,
-		tangentSize,
-		m.hasSkinning ? 1 : 0,
-		m.hasMorphTargets ? 1 : 0,
-		instanced ? 1 : 0,
-	].join(',');
+function getVAOSignature(m: Mesh, instanced: boolean, morph: boolean): string {
+        const tangentSize = m.tangents ? (m.tangents.length === m.vertexCount * 4 ? 4 : 3) : 0;
+        return [
+                m.hasTexcoords ? 1 : 0,
+                m.hasNormals ? 1 : 0,
+                tangentSize,
+                m.hasSkinning ? 1 : 0,
+                morph ? 1 : 0,
+                instanced ? 1 : 0,
+        ].join(',');
 }
 
 function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
@@ -284,43 +302,46 @@ export function setAmbientLight(gl: WebGL2RenderingContext, light: AmbientLight)
 }
 
 export function uploadDirectionalLights(gl: WebGL2RenderingContext): void {
-	const lights = Array.from(directionalLights.values());
-	const count = Math.min(lights.length, MAX_DIR_LIGHTS);
-	const dirs = new Float32Array(MAX_DIR_LIGHTS * 3);
-	const cols = new Float32Array(MAX_DIR_LIGHTS * 3);
-	const intens = new Float32Array(MAX_DIR_LIGHTS);
-	for (let i = 0; i < count; i++) {
-		dirs.set(lights[i].orientation, i * 3);
-		cols.set(lights[i].color, i * 3);
-		intens[i] = lights[i].intensity;
-	}
-	gl.useProgram(gameShaderProgram3D);
-	gl.uniform1i(numDirLightsLocation3D, count);
-	gl.uniform3fv(dirLightDirectionLocation3D, dirs);
-	gl.uniform3fv(dirLightColorLocation3D, cols);
-	gl.uniform1fv(dirLightIntensityLocation3D, intens);
+        const lights = Array.from(directionalLights.values());
+        const count = Math.min(lights.length, MAX_DIR_LIGHTS);
+        dirLightData.fill(0);
+        dirLightCount[0] = count;
+        for (let i = 0; i < count; i++) {
+                let base = DIR_LIGHT_DIRECTION_OFFSET + i * 4;
+                dirLightData.set(lights[i].orientation, base);
+                dirLightData[base + 3] = 0;
+                base = DIR_LIGHT_COLOR_OFFSET + i * 4;
+                dirLightData.set(lights[i].color, base);
+                dirLightData[base + 3] = 0;
+                base = DIR_LIGHT_INTENSITY_OFFSET + i * 4;
+                dirLightData[base] = lights[i].intensity;
+        }
+        gl.bindBuffer(gl.UNIFORM_BUFFER, dirLightBuffer);
+        gl.bufferSubData(gl.UNIFORM_BUFFER, 0, dirLightData);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+        lightsDirty = true;
 }
 
 export function uploadPointLights(gl: WebGL2RenderingContext): void {
-	const lights = Array.from(pointLights.values());
-	const count = Math.min(lights.length, MAX_POINT_LIGHTS);
-	const pos = new Float32Array(MAX_POINT_LIGHTS * 3);
-	const col = new Float32Array(MAX_POINT_LIGHTS * 3);
-	const range = new Float32Array(MAX_POINT_LIGHTS);
-	const intens = new Float32Array(MAX_POINT_LIGHTS);
-	for (let i = 0; i < count; i++) {
-		pos.set(lights[i].pos, i * 3);
-		col.set(lights[i].color, i * 3);
-		range[i] = lights[i].range;
-		intens[i] = lights[i].intensity;
-	}
-	gl.useProgram(gameShaderProgram3D);
-	gl.uniform1i(numPointLightsLocation3D, count);
-	gl.uniform3fv(pointLightPositionLocation3D, pos);
-	gl.uniform3fv(pointLightColorLocation3D, col);
-	gl.uniform1fv(pointLightRangeLocation3D, range);
-	gl.uniform1fv(pointLightIntensityLocation3D, intens);
-	lightsDirty = true;
+        const lights = Array.from(pointLights.values());
+        const count = Math.min(lights.length, MAX_POINT_LIGHTS);
+        pointLightData.fill(0);
+        pointLightCount[0] = count;
+        for (let i = 0; i < count; i++) {
+                let base = POINT_LIGHT_POSITION_OFFSET + i * 4;
+                pointLightData.set(lights[i].pos!, base);
+                pointLightData[base + 3] = 1;
+                base = POINT_LIGHT_COLOR_OFFSET + i * 4;
+                pointLightData.set(lights[i].color!, base);
+                pointLightData[base + 3] = 0;
+                base = POINT_LIGHT_PARAM_OFFSET + i * 4;
+                pointLightData[base] = lights[i].range!;
+                pointLightData[base + 1] = lights[i].intensity;
+        }
+        gl.bindBuffer(gl.UNIFORM_BUFFER, pointLightBuffer);
+        gl.bufferSubData(gl.UNIFORM_BUFFER, 0, pointLightData);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+        lightsDirty = true;
 }
 
 export function addDirectionalLight(gl: WebGL2RenderingContext, id: Identifier, light: DirectionalLight): void {
@@ -405,18 +426,38 @@ export function setupBuffers3D(gl: WebGL2RenderingContext): void {
 	// When creating initial buffers in setupBuffers3D
 	const dummyMorphData = new Float32Array(24); // 8 vertices * 3 componentsR
 	// Repeat for all morph buffers
-	for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
-		gl.bindBuffer(gl.ARRAY_BUFFER, morphPositionBuffers3D[i]);
-		gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
-		gl.bindBuffer(gl.ARRAY_BUFFER, morphNormalBuffers3D[i]);
-		gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
-		gl.bindBuffer(gl.ARRAY_BUFFER, morphTangentBuffers3D[i]);
-		gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
-	}
+        for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, morphPositionBuffers3D[i]);
+                gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
+                gl.bindBuffer(gl.ARRAY_BUFFER, morphNormalBuffers3D[i]);
+                gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
+                gl.bindBuffer(gl.ARRAY_BUFFER, morphTangentBuffers3D[i]);
+                gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
+        }
+
+        // uniform buffers voor lights
+        const dirBlockIndex = gl.getUniformBlockIndex(gameShaderProgram3D, 'DirLightBlock');
+        const dirBlockSize = gl.getActiveUniformBlockParameter(gameShaderProgram3D, dirBlockIndex, gl.UNIFORM_BLOCK_DATA_SIZE) as number;
+        dirLightData = new Float32Array(dirBlockSize / 4);
+        dirLightCount = new Int32Array(dirLightData.buffer, 0, 1);
+        dirLightBuffer = glCreateBuffer(gl);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, dirLightBuffer);
+        gl.bufferData(gl.UNIFORM_BUFFER, dirBlockSize, gl.DYNAMIC_DRAW);
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, DIR_LIGHT_BINDING, dirLightBuffer);
+
+        const pointBlockIndex = gl.getUniformBlockIndex(gameShaderProgram3D, 'PointLightBlock');
+        const pointBlockSize = gl.getActiveUniformBlockParameter(gameShaderProgram3D, pointBlockIndex, gl.UNIFORM_BLOCK_DATA_SIZE) as number;
+        pointLightData = new Float32Array(pointBlockSize / 4);
+        pointLightCount = new Int32Array(pointLightData.buffer, 0, 1);
+        pointLightBuffer = glCreateBuffer(gl);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, pointLightBuffer);
+        gl.bufferData(gl.UNIFORM_BUFFER, pointBlockSize, gl.DYNAMIC_DRAW);
+        gl.bindBufferBase(gl.UNIFORM_BUFFER, POINT_LIGHT_BINDING, pointLightBuffer);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
 
 	// Alleen allocatie, geen attrib pointer/divisor hier!
-	gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
-	gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * 16 * 4, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
+        gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * 16 * 4, gl.DYNAMIC_DRAW);
 }
 
 export function createGameShaderPrograms3D(gl: WebGL2RenderingContext): void {
@@ -461,17 +502,12 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 	modelLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_model')!;
 	normalMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalMatrix')!;
 	ditherLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ditherIntensity')!;
-	ambientColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientColor')!;
-	ambientIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientIntensity')!;
-	dirLightDirectionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_dirLightDirection[0]')!;
-	dirLightColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_dirLightColor[0]')!;
-	dirLightIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_dirLightIntensity[0]')!;
-	numDirLightsLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_numDirLights')!;
-	pointLightPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightPosition[0]')!;
-	pointLightColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightColor[0]')!;
-	pointLightRangeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightRange[0]')!;
-	pointLightIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightIntensity[0]')!;
-	numPointLightsLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_numPointLights')!;
+        ambientColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientColor')!;
+        ambientIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientIntensity')!;
+        const dirBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'DirLightBlock');
+        const pointBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'PointLightBlock');
+        gl.uniformBlockBinding(gameShaderProgram3D, dirBlock, DIR_LIGHT_BINDING);
+        gl.uniformBlockBinding(gameShaderProgram3D, pointBlock, POINT_LIGHT_BINDING);
 	materialColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_materialColor')!;
 	shadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowMap')!;
 	useShadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useShadowMap')!;
@@ -499,7 +535,7 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 	];
 }
 
-function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean): WebGLVertexArrayObject {
+function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, morph: boolean): WebGLVertexArrayObject {
 	const vao = gl.createVertexArray()!;
 	gl.bindVertexArray(vao);
 
@@ -559,16 +595,23 @@ function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
 		if (weightLocation3D >= 0) { gl.disableVertexAttribArray(weightLocation3D); gl.vertexAttrib4f(weightLocation3D, 1, 0, 0, 0); }
 	}
 
-	// morph targets (alleen pointers; weights zijn uniform)
-	if (m.hasMorphTargets && buffers.morphPositions) {
-		for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, buffers.morphPositions.length); i++) {
-			const pLoc = morphPositionLocations3D[i]; const nLoc = morphNormalLocations3D[i]; const tLoc = morphTangentLocations3D[i];
-			const pBuf = buffers.morphPositions[i]; const nBuf = buffers.morphNormals?.[i]; const tBuf = buffers.morphTangents?.[i];
-			if (pBuf && pLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, pBuf); gl.vertexAttribPointer(pLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(pLoc); }
-			if (nBuf && nLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, nBuf); gl.vertexAttribPointer(nLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(nLoc); }
-			if (tBuf && tLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, tBuf); gl.vertexAttribPointer(tLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(tLoc); }
-		}
-	}
+        // morph targets (alleen pointers; weights zijn uniform)
+        if (morph && m.hasMorphTargets && buffers.morphPositions) {
+                for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, buffers.morphPositions.length); i++) {
+                        const pLoc = morphPositionLocations3D[i]; const nLoc = morphNormalLocations3D[i]; const tLoc = morphTangentLocations3D[i];
+                        const pBuf = buffers.morphPositions[i]; const nBuf = buffers.morphNormals?.[i]; const tBuf = buffers.morphTangents?.[i];
+                        if (pBuf && pLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, pBuf); gl.vertexAttribPointer(pLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(pLoc); }
+                        if (nBuf && nLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, nBuf); gl.vertexAttribPointer(nLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(nLoc); }
+                        if (tBuf && tLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, tBuf); gl.vertexAttribPointer(tLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(tLoc); }
+                }
+        } else {
+                for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+                        const pLoc = morphPositionLocations3D[i]; const nLoc = morphNormalLocations3D[i]; const tLoc = morphTangentLocations3D[i];
+                        if (pLoc >= 0) { gl.disableVertexAttribArray(pLoc); gl.vertexAttrib3f(pLoc, 0, 0, 0); }
+                        if (nLoc >= 0) { gl.disableVertexAttribArray(nLoc); gl.vertexAttrib3f(nLoc, 0, 0, 0); }
+                        if (tLoc >= 0) { gl.disableVertexAttribArray(tLoc); gl.vertexAttrib3f(tLoc, 0, 0, 0); }
+                }
+        }
 
 	// index
 	if (buffers.index) {
@@ -741,47 +784,64 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 	setUseInstancing(gl, true);
 	uploadJointPalette(gl, undefined, false);
 
-	for (const { mesh: m, matrices } of instancedGroups.values()) {
-		const buffers = getMeshBuffers(gl, m);
-		const sig = getVAOSignature(m, true);
-		if (buffers.vaoInstancedSig !== sig) {
-			if (buffers.vaoInstanced) gl.deleteVertexArray(buffers.vaoInstanced);
-			buffers.vaoInstanced = buildVAOForMesh(gl, m, buffers, true);
-			buffers.vaoInstancedSig = sig;
-		}
+        for (const { mesh: m, matrices } of instancedGroups.values()) {
+                const buffers = getMeshBuffers(gl, m);
+                const hasMorph = m.hasMorphTargets && (m.morphWeights?.some(w => w !== 0));
+                const sig = getVAOSignature(m, true, hasMorph);
+                let vao: WebGLVertexArrayObject;
+                if (hasMorph) {
+                        if (buffers.vaoInstancedSig !== sig) {
+                                if (buffers.vaoInstanced) gl.deleteVertexArray(buffers.vaoInstanced);
+                                buffers.vaoInstanced = buildVAOForMesh(gl, m, buffers, true, true);
+                                buffers.vaoInstancedSig = sig;
+                        }
+                        vao = buffers.vaoInstanced!;
+                } else {
+                        if (buffers.vaoInstancedNoMorphSig !== sig) {
+                                if (buffers.vaoInstancedNoMorph) gl.deleteVertexArray(buffers.vaoInstancedNoMorph);
+                                buffers.vaoInstancedNoMorph = buildVAOForMesh(gl, m, buffers, true, false);
+                                buffers.vaoInstancedNoMorphSig = sig;
+                        }
+                        vao = buffers.vaoInstancedNoMorph!;
+                }
 
-		// index info (cached)
-		const indexed = !!buffers.index;
-		const indexType = buffers.indexType!;
-		const indexCount = buffers.indexCount ?? m.indices?.length ?? 0;
+                // index info (cached)
+                const indexed = !!buffers.index;
+                const indexType = buffers.indexType!;
+                const indexCount = buffers.indexCount ?? m.indices?.length ?? 0;
 
-		// materiaal / textures
-		setMeshMaterial(gl, m);
-		setMeshTextures(gl, m);
+                // materiaal / textures
+                setMeshMaterial(gl, m);
+                setMeshTextures(gl, m);
 
-		// morph defaults
-		if (m.hasMorphTargets) {
-			const w = new Float32Array(MAX_MORPH_TARGETS);
-			const src = m.morphWeights ?? [];
-			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0;
-			uploadMorphWeights(gl, w);
-		} else {
-			uploadMorphWeights(gl, null);
-		}
+                // morph defaults
+                if (hasMorph) {
+                        const w = new Float32Array(MAX_MORPH_TARGETS);
+                        const src = m.morphWeights ?? [];
+                        for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0;
+                        uploadMorphWeights(gl, w);
+                } else {
+                        uploadMorphWeights(gl, null);
+                }
 
-		gl.bindVertexArray(buffers.vaoInstanced!);
-		for (let offset = 0; offset < matrices.length; offset += MAX_INSTANCES) {
-			const batchCount = Math.min(MAX_INSTANCES, matrices.length - offset);
-			// schrijf alleen de benodigde floats aan het begin van het al-gealloceerde buffer
-			for (let i = 0; i < batchCount; i++) instanceScratch.set(matrices[offset + i], i * 16);
-			gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
-			gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * 16));
-			if (indexed) gl.drawElementsInstanced(gl.TRIANGLES, indexCount, indexType, 0, batchCount);
-			else gl.drawArraysInstanced(gl.TRIANGLES, 0, m.vertexCount, batchCount);
-		}
-		gl.bindVertexArray(null);
-	}
-	setUseInstancing(gl, false);
+                gl.bindVertexArray(vao);
+                let prevBatchCount = -1;
+                for (let offset = 0; offset < matrices.length; offset += MAX_INSTANCES) {
+                        const batchCount = Math.min(MAX_INSTANCES, matrices.length - offset);
+                        // schrijf alleen de benodigde floats aan het begin van het al-gealloceerde buffer
+                        for (let i = 0; i < batchCount; i++) instanceScratch.set(matrices[offset + i], i * 16);
+                        gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
+                        if (batchCount !== prevBatchCount) {
+                                gl.bufferData(gl.ARRAY_BUFFER, batchCount * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
+                                prevBatchCount = batchCount;
+                        }
+                        gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * 16));
+                        if (indexed) gl.drawElementsInstanced(gl.TRIANGLES, indexCount, indexType, 0, batchCount);
+                        else gl.drawArraysInstanced(gl.TRIANGLES, 0, m.vertexCount, batchCount);
+                }
+                gl.bindVertexArray(null);
+        }
+        setUseInstancing(gl, false);
 }
 
 
@@ -794,48 +854,59 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 
 function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void {
 	setUseInstancing(gl, false);
-	for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) {
-		const buffers = getMeshBuffers(gl, m);
+        for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) {
+                const buffers = getMeshBuffers(gl, m);
+                const srcWeights = morphWeights ?? m.morphWeights ?? [];
+                const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0);
+                const sig = getVAOSignature(m, false, hasMorph);
+                let vao: WebGLVertexArrayObject;
+                if (hasMorph) {
+                        if (buffers.vaoSig !== sig) {
+                                if (buffers.vao) gl.deleteVertexArray(buffers.vao);
+                                buffers.vao = buildVAOForMesh(gl, m, buffers, false, true);
+                                buffers.vaoSig = sig;
+                        }
+                        vao = buffers.vao!;
+                } else {
+                        if (buffers.vaoNoMorphSig !== sig) {
+                                if (buffers.vaoNoMorph) gl.deleteVertexArray(buffers.vaoNoMorph);
+                                buffers.vaoNoMorph = buildVAOForMesh(gl, m, buffers, false, false);
+                                buffers.vaoNoMorphSig = sig;
+                        }
+                        vao = buffers.vaoNoMorph!;
+                }
 
-		const sig = getVAOSignature(m, false);
-		if (buffers.vaoSig !== sig) {
-			if (buffers.vao) gl.deleteVertexArray(buffers.vao);
-			buffers.vao = buildVAOForMesh(gl, m, buffers, false);
-			buffers.vaoSig = sig;
-		}
+                // skinning uniform
+                uploadJointPalette(gl, jointMatrices, m.hasSkinning);
 
-		// skinning uniform
-		uploadJointPalette(gl, jointMatrices, m.hasSkinning);
+                // morph weights
+                if (hasMorph) {
+                        const w = new Float32Array(MAX_MORPH_TARGETS);
+                        for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0;
+                        uploadMorphWeights(gl, w);
+                } else {
+                        uploadMorphWeights(gl, null);
+                }
 
-		// morph weights
-		if (m.hasMorphTargets) {
-			const w = new Float32Array(MAX_MORPH_TARGETS);
-			const src = morphWeights ?? m.morphWeights ?? [];
-			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0;
-			uploadMorphWeights(gl, w);
-		} else {
-			uploadMorphWeights(gl, null);
-		}
+                // materiaal & textures
+                setMeshMaterial(gl, m);
+                setMeshTextures(gl, m);
 
-		// materiaal & textures
-		setMeshMaterial(gl, m);
-		setMeshTextures(gl, m);
+                // transforms (normal-matrix cache per-frame op matrix-object)
+                let nrm = normalMatCache.get(matrix);
+                if (!nrm) { nrm = bmat.normalMatrix(matrix); normalMatCache.set(matrix, nrm); }
+                gl.uniformMatrix4fv(modelLocation3D, false, matrix);
+                gl.uniformMatrix3fv(normalMatrixLocation3D, false, nrm);
 
-		// transforms (normal-matrix cache per-frame op matrix-object)
-		let nrm = normalMatCache.get(matrix);
-		if (!nrm) { nrm = bmat.normalMatrix(matrix); normalMatCache.set(matrix, nrm); }
-		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
-		gl.uniformMatrix3fv(normalMatrixLocation3D, false, nrm);
-
-		// draw
-		gl.bindVertexArray(buffers.vao!);
-		if (buffers.index) {
-			gl.drawElements(gl.TRIANGLES, buffers.indexCount ?? m.indices!.length, buffers.indexType!, 0);
-		} else {
-			gl.drawArrays(gl.TRIANGLES, 0, m.vertexCount);
-		}
-		gl.bindVertexArray(null);
-	}
+                // draw
+                gl.bindVertexArray(vao);
+                if (buffers.index) {
+                        gl.drawElements(gl.TRIANGLES, buffers.indexCount ?? m.indices!.length, buffers.indexType!, 0);
+                } else {
+                        gl.drawArrays(gl.TRIANGLES, 0, m.vertexCount);
+                }
+                gl.bindVertexArray(null);
+        }
 }
 
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {

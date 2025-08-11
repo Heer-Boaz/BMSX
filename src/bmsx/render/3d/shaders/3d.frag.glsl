@@ -21,15 +21,20 @@ uniform vec3 u_ambientColor;
 uniform float u_ambientIntensity;
 const int MAX_DIR_LIGHTS = 4;
 const int MAX_POINT_LIGHTS = 4;
-uniform int u_numDirLights;
-uniform vec3 u_dirLightDirection[MAX_DIR_LIGHTS];
-uniform vec3 u_dirLightColor[MAX_DIR_LIGHTS];
-uniform float u_dirLightIntensity[MAX_DIR_LIGHTS];
-uniform int u_numPointLights;
-uniform vec3 u_pointLightPosition[MAX_POINT_LIGHTS];
-uniform vec3 u_pointLightColor[MAX_POINT_LIGHTS];
-uniform float u_pointLightRange[MAX_POINT_LIGHTS];
-uniform float u_pointLightIntensity[MAX_POINT_LIGHTS];
+layout(std140) uniform DirLightBlock {
+    int u_numDirLights;
+    vec3 _padDir;
+    vec4 u_dirLightDirection[MAX_DIR_LIGHTS];
+    vec4 u_dirLightColor[MAX_DIR_LIGHTS];
+    vec4 u_dirLightIntensity[MAX_DIR_LIGHTS];
+};
+layout(std140) uniform PointLightBlock {
+    int u_numPointLights;
+    vec3 _padPoint;
+    vec4 u_pointLightPosition[MAX_POINT_LIGHTS];
+    vec4 u_pointLightColor[MAX_POINT_LIGHTS];
+    vec4 u_pointLightParams[MAX_POINT_LIGHTS]; // x=range, y=intensity
+};
 
 in vec2 v_texcoord;
 in vec3 v_normal;
@@ -106,26 +111,26 @@ void main() {
     for (int i = 0; i < MAX_DIR_LIGHTS; i++) {
         if (i >= u_numDirLights)
             break;
-        vec3 lightDir = normalize(-u_dirLightDirection[i]);
+        vec3 lightDir = normalize(-u_dirLightDirection[i].xyz);
         float diff = max(dot(normal, lightDir), 0.0f);
         vec3 halfDir = normalize(lightDir + viewDir);
         float spec = pow(max(dot(normal, halfDir), 0.0f), 1.0f / (roughness * roughness + 0.001f));
-        vec3 lightCol = u_dirLightColor[i] * u_dirLightIntensity[i];
+        vec3 lightCol = u_dirLightColor[i].xyz * u_dirLightIntensity[i].x;
         lighting += diff * baseColor * lightCol + spec * F0 * lightCol;
     }
 
     for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
         if (i >= u_numPointLights)
             break;
-        vec3 lightVec = u_pointLightPosition[i] - v_worldPos;
+        vec3 lightVec = u_pointLightPosition[i].xyz - v_worldPos;
         float dist = length(lightVec);
-        if (dist < u_pointLightRange[i]) {
-            float attenuation = 1.0f - dist / u_pointLightRange[i];
+        if (dist < u_pointLightParams[i].x) {
+            float attenuation = 1.0f - dist / u_pointLightParams[i].x;
             vec3 lightDir = normalize(lightVec);
             float pdiff = max(dot(normal, lightDir), 0.0f);
             vec3 halfDir = normalize(lightDir + viewDir);
             float spec = pow(max(dot(normal, halfDir), 0.0f), 1.0f / (roughness * roughness + 0.001f));
-            vec3 lightCol = u_pointLightColor[i] * u_pointLightIntensity[i] * attenuation;
+            vec3 lightCol = u_pointLightColor[i].xyz * u_pointLightParams[i].y * attenuation;
             lighting += pdiff * baseColor * lightCol + spec * F0 * lightCol;
         }
     }
