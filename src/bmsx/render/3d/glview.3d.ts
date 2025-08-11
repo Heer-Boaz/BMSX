@@ -25,9 +25,11 @@ interface MeshBuffers {
 	morphNormals?: (WebGLBuffer | undefined)[];
 	morphTangents?: (WebGLBuffer | undefined)[];
 
-	// nieuw:
+	// VAO caches
 	vao?: WebGLVertexArrayObject;            // non-instanced
 	vaoInstanced?: WebGLVertexArrayObject;   // instanced
+	vaoSig?: string;
+	vaoInstancedSig?: string;
 	indexType?: GLenum;
 	indexCount?: number;
 }
@@ -60,7 +62,6 @@ let vertexPositionLocation3D: number;
 let texcoordLocation3D: number;
 let normalLocation3D: number;
 let tangentLocation3D: number;
-let mvpLocation3D: WebGLUniformLocation;
 let modelLocation3D: WebGLUniformLocation;
 let normalMatrixLocation3D: WebGLUniformLocation;
 let ditherLocation3D: WebGLUniformLocation;
@@ -109,6 +110,73 @@ const MAX_MORPH_TARGETS = 2;
 const MAX_JOINTS = 32;
 const jointMatrixArray = new Float32Array(MAX_JOINTS * 16);
 const identityMatrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+let lastSkinningEnabled = false;
+const lastJointMatrixArray = new Float32Array(MAX_JOINTS * 16);
+
+const zeroMorphWeights = new Float32Array(MAX_MORPH_TARGETS);
+let lastMorphEnabled = false;
+const lastMorphWeightArray = new Float32Array(MAX_MORPH_TARGETS);
+
+let lastUseInstancing = -1;
+
+function arraysEqual(a: Float32Array, b: Float32Array): boolean {
+	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+	return true;
+}
+
+function setUseInstancing(gl: WebGL2RenderingContext, enabled: boolean): void {
+	const val = enabled ? 1 : 0;
+	if (lastUseInstancing !== val) {
+		gl.uniform1i(useInstancingLocation3D, val);
+		lastUseInstancing = val;
+	}
+}
+
+function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] | undefined, hasSkinning: boolean): void {
+	if (hasSkinning && joints) {
+		jointMatrixArray.fill(0);
+		jointMatrixArray.set(identityMatrix, 0);
+		for (let i = 0; i < joints.length && i < MAX_JOINTS; i++) jointMatrixArray.set(joints[i], i * 16);
+		if (!lastSkinningEnabled || !arraysEqual(jointMatrixArray, lastJointMatrixArray)) {
+			gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+			lastSkinningEnabled = true;
+			lastJointMatrixArray.set(jointMatrixArray);
+		}
+	} else if (lastSkinningEnabled) {
+		jointMatrixArray.fill(0);
+		jointMatrixArray.set(identityMatrix, 0);
+		gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+		lastSkinningEnabled = false;
+		lastJointMatrixArray.set(jointMatrixArray);
+	}
+}
+
+function uploadMorphWeights(gl: WebGL2RenderingContext, weights: Float32Array | null): void {
+	if (weights) {
+		if (!lastMorphEnabled || !arraysEqual(weights, lastMorphWeightArray)) {
+			gl.uniform1fv(morphWeightLocation3D, weights);
+			lastMorphEnabled = true;
+			lastMorphWeightArray.set(weights);
+		}
+	} else if (lastMorphEnabled) {
+		gl.uniform1fv(morphWeightLocation3D, zeroMorphWeights);
+		lastMorphEnabled = false;
+		lastMorphWeightArray.set(zeroMorphWeights);
+	}
+}
+
+function getVAOSignature(m: Mesh, instanced: boolean): string {
+	const tangentSize = m.tangents ? (m.tangents.length === m.vertexCount * 4 ? 4 : 3) : 0;
+	return [
+		m.hasTexcoords ? 1 : 0,
+		m.hasNormals ? 1 : 0,
+		tangentSize,
+		m.hasSkinning ? 1 : 0,
+		m.hasMorphTargets ? 1 : 0,
+		instanced ? 1 : 0,
+	].join(',');
+}
 const TEXTURE_UNIT_ALBEDO = 3;
 const TEXTURE_UNIT_NORMAL = 4;
 const TEXTURE_UNIT_METALLIC_ROUGHNESS = 5;
@@ -309,7 +377,12 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
 	gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
 	checkWebGLError('after texture uniforms');
 	gl.uniformMatrix4fv(viewProjectionLocation3D, false, identityMatrix);
-	gl.uniform1i(useInstancingLocation3D, 0);
+	setUseInstancing(gl, false);
+	jointMatrixArray.fill(0); jointMatrixArray.set(identityMatrix, 0);
+	gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+	lastJointMatrixArray.set(jointMatrixArray); lastSkinningEnabled = false;
+	gl.uniform1fv(morphWeightLocation3D, zeroMorphWeights);
+	lastMorphWeightArray.set(zeroMorphWeights); lastMorphEnabled = false;
 	checkWebGLError('after other uniform values');
 }
 
@@ -384,7 +457,6 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 	];
 	jointLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_joints');
 	weightLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_weights');
-	mvpLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_mvp')!;
 	modelLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_model')!;
 	normalMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalMatrix')!;
 	ditherLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ditherIntensity')!;
@@ -595,6 +667,7 @@ function setupRenderingState(gl: WebGL2RenderingContext): void {
 	const activeCamera = $.model.activeCamera3D;
 	gl.uniform3fv(cameraPositionLocation3D, new Float32Array([activeCamera.position.x, activeCamera.position.y, activeCamera.position.z]));
 	gl.uniformMatrix4fv(viewProjectionLocation3D, false, activeCamera.viewProjectionMatrix);
+	setUseInstancing(gl, false);
 
 	if (lightsDirty) {
 		setAmbientLight(gl, $.model.ambientLight.light as AmbientLight);
@@ -664,15 +737,16 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
 
 function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<string, { mesh: Mesh; matrices: Float32Array[] }>): void {
 	if (instancedGroups.size === 0) return;
-
-	gl.uniform1i(useInstancingLocation3D, 1);
+	setUseInstancing(gl, true);
+	uploadJointPalette(gl, undefined, false);
 
 	for (const { mesh: m, matrices } of instancedGroups.values()) {
 		const buffers = getMeshBuffers(gl, m);
-
-		// VAO (instanced) lazy build
-		if (!buffers.vaoInstanced) {
+		const sig = getVAOSignature(m, true);
+		if (buffers.vaoInstancedSig !== sig) {
+			if (buffers.vaoInstanced) gl.deleteVertexArray(buffers.vaoInstanced);
 			buffers.vaoInstanced = buildVAOForMesh(gl, m, buffers, true);
+			buffers.vaoInstancedSig = sig;
 		}
 
 		// index info (cached)
@@ -685,7 +759,14 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 		setMeshTextures(gl, m);
 
 		// morph defaults
-		if (!m.hasMorphTargets) gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
+		if (m.hasMorphTargets) {
+			const w = new Float32Array(MAX_MORPH_TARGETS);
+			const src = m.morphWeights ?? [];
+			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0;
+			uploadMorphWeights(gl, w);
+		} else {
+			uploadMorphWeights(gl, null);
+		}
 
 		gl.bindVertexArray(buffers.vaoInstanced!);
 		for (let offset = 0; offset < matrices.length; offset += MAX_INSTANCES) {
@@ -699,8 +780,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 		}
 		gl.bindVertexArray(null);
 	}
-
-	gl.uniform1i(useInstancingLocation3D, 0);
+	setUseInstancing(gl, false);
 }
 
 
@@ -712,35 +792,28 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 }
 
 function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void {
+	setUseInstancing(gl, false);
 	for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) {
 		const buffers = getMeshBuffers(gl, m);
 
-		// VAO (non-instanced) lazy build
-		if (!buffers.vao) {
+		const sig = getVAOSignature(m, false);
+		if (buffers.vaoSig !== sig) {
+			if (buffers.vao) gl.deleteVertexArray(buffers.vao);
 			buffers.vao = buildVAOForMesh(gl, m, buffers, false);
+			buffers.vaoSig = sig;
 		}
 
 		// skinning uniform
-		if (m.hasSkinning && jointMatrices) {
-			jointMatrixArray.fill(0);
-			jointMatrixArray.set(identityMatrix, 0);
-			for (let i = 0; i < jointMatrices.length && i < MAX_JOINTS; i++) jointMatrixArray.set(jointMatrices[i], i * 16);
-			gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
-		} else {
-			// zet eenmalig identity palette (klein uniform); niet opnieuw elke draw als je wilt nog verder optimaliseren
-			jointMatrixArray.fill(0);
-			jointMatrixArray.set(identityMatrix, 0);
-			gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
-		}
+		uploadJointPalette(gl, jointMatrices, m.hasSkinning);
 
 		// morph weights
 		if (m.hasMorphTargets) {
 			const w = new Float32Array(MAX_MORPH_TARGETS);
 			const src = morphWeights ?? m.morphWeights ?? [];
 			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0;
-			gl.uniform1fv(morphWeightLocation3D, w);
+			uploadMorphWeights(gl, w);
 		} else {
-			gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
+			uploadMorphWeights(gl, null);
 		}
 
 		// materiaal & textures
@@ -750,9 +823,6 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
 		// transforms (normal-matrix cache per-frame op matrix-object)
 		let nrm = normalMatCache.get(matrix);
 		if (!nrm) { nrm = bmat.normalMatrix(matrix); normalMatCache.set(matrix, nrm); }
-		const activeCamera = $.model.activeCamera3D;
-		const mvp = bmat.multiply(activeCamera.viewProjectionMatrix, matrix);
-		gl.uniformMatrix4fv(mvpLocation3D, false, mvp);
 		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
 		gl.uniformMatrix3fv(normalMatrixLocation3D, false, nrm);
 

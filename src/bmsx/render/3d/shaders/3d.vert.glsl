@@ -17,7 +17,6 @@ layout(location=8) in vec4 a_i0;
 layout(location=9) in vec4 a_i1;
 layout(location=10) in vec4 a_i2;
 layout(location=11) in vec4 a_i3;
-uniform mat4 u_mvp; // Model-View-Projection matrix for transforming the vertex position
 uniform mat4 u_model; // Model matrix for transforming the vertex position
 uniform mat3 u_normalMatrix; // Normal matrix for transforming normals
 uniform float u_scale; // Scaling factor for the position
@@ -57,8 +56,7 @@ void main() {
     mat4 instanceM = mat4(a_i0, a_i1, a_i2, a_i3);
     mat4 model = u_useInstancing ? instanceM : u_model;
     vec4 world = model * vec4(scaledPosition, 1.0); // Transform position to world space
-    mat4 mvp = u_useInstancing ? u_viewProjection * model : u_mvp;
-    gl_Position = mvp * vec4(scaledPosition, 1.0);
+    gl_Position = u_viewProjection * model * vec4(scaledPosition, 1.0);
     v_worldPos = world.xyz; // Pass the world position to the fragment shader
     v_texcoord = a_texcoord; // Pass the texture coordinates to the fragment shader
     mat3 nMat = u_useInstancing ? mat3(model) : u_normalMatrix;
