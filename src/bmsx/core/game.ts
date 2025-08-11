@@ -41,6 +41,8 @@ export interface GameInitArgs<M extends BaseModel = BaseModel, V extends BaseVie
 const GAME_FPS = 50;
 const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
+const REWIND_BUFFER_ACTIVATED = true;
+const REWIND_BUFFER_WRITE_FREQUENCY = 10; // Frames
 
 /**
  * Represents the main game loop and manages the game state.
@@ -382,19 +384,22 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		const game = global.$;
 		const model = game.model;
 		model.run(deltaTime);
-		game._turnCounter++;
-		// --- Rewind snapshot logic ---
-		try {
-			const snapshot = model.save(false);
-			const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
-			this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
-		} catch (e) {
-			console.warn('Rewind snapshot failed:', e);
+
+		if (REWIND_BUFFER_ACTIVATED && (game._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
+			// --- Rewind snapshot logic ---
+			try {
+				const snapshot = model.save(false);
+				const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
+				this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
+			} catch (e) {
+				console.warn('Rewind snapshot failed:', e);
+			}
 		}
 		if (game.debug_runSingleFrameAndPause) {
 			game.debug_runSingleFrameAndPause = false;
 			game.paused = true;
 		}
+		game._turnCounter++;
 		game.wasupdated = true;
 	}
 
