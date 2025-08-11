@@ -220,16 +220,12 @@ export class GLView extends BaseView {
 	 */
 	private setDefaultUniformValues(): void {
 		const gl = this.glctx;
-		checkWebGLError('before 2D setupDefaultUniformValues');
 		GLView2D.setupDefaultUniformValues(gl, 2.0, to_vec2arr(this.offscreenCanvasSize)); // Set the default uniform values for the game shader
-		checkWebGLError('after 2D setupDefaultUniformValues');
 
 		GLView3D.setDefaultUniformValues(gl, 2.0);
-		checkWebGLError('after 3D setupDefaultUniformValues');
 		const crtOptions: GLViewCRT.CRTShaderOptions = { applyNoise: this.applyNoise, applyColorBleed: this.applyColorBleed, applyScanlines: this.applyScanlines, applyBlur: this.applyBlur, applyGlow: this.applyGlow, applyFringing: this.applyFringing, blurIntensity: this.blurIntensity, noiseIntensity: this.noiseIntensity, colorBleed: this.colorBleed, glowColor: this.glowColor };
 
 		GLViewCRT.setDefaultUniformValues(gl, to_vec2arr(this.offscreenCanvasSize), crtOptions); // Set the default uniform values for the CRT shader
-		checkWebGLError('after CRT setupDefaultUniformValues');
 	}
 
 	/**
@@ -237,22 +233,18 @@ export class GLView extends BaseView {
 	 * This method initializes the vertex, texture coordinate, z-coordinate, and color override buffers for the game shader.
 	 * The buffers are created and bound to the respective attributes in the shader program.
 	 */
-	@catchWebGLError
 	private setupBuffers(): void {
 		const gl = this.glctx;
 
-		checkWebGLError('before setupBuffers');
 		GLView2D.setupBuffers(gl);
 		GLView3D.setupBuffers3D(gl); // Set up buffers for 3D
 		GLViewSkybox.createSkyboxBuffer(gl);
-		checkWebGLError('after setupBuffers');
 	}
 
 	/**
 	 * Sets up the textures used in the game.
 	 * This method initializes the textures object and creates the atlas texture from the '_atlas' image in the ROM pack.
 	 */
-	@catchWebGLError
 	private setupTextures(): void {
 		// Initialize the textures object as an empty object.
 		// The object will contain all the textures used in the game and are accessed by their keys.
@@ -268,7 +260,6 @@ export class GLView extends BaseView {
 		};
 	}
 
-	@catchWebGLError
 	public setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
 		GLViewSkybox.setSkyboxImages(this.glctx, ids);
 	}
@@ -299,7 +290,6 @@ export class GLView extends BaseView {
 	 * @throws An error if the shader fails to compile.
 	 */
 
-	@catchWebGLError
 	/**
 	 * Creates a new framebuffer and texture.
 	 *
@@ -313,8 +303,6 @@ export class GLView extends BaseView {
 	private createFramebufferAndTexture(): void {
 		const gl = this.glctx;
 
-		checkWebGLError('before createFramebufferAndTexture');
-
 		// Delete the old framebuffer and texture if they exist
 		if (this.framebuffer) {
 			gl.deleteFramebuffer(this.framebuffer);
@@ -323,21 +311,15 @@ export class GLView extends BaseView {
 			gl.deleteTexture(this.textures['post_processing_source_texture']);
 		}
 
-		checkWebGLError('after delete old framebuffer and texture');
-
 		const width = this.offscreenCanvasSize.x;
 		const height = this.offscreenCanvasSize.y;
 
-		checkWebGLError('after get offscreen canvas size');
 		// Create a new texture
 		this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { x: width, y: height }, 8); // Use TEXTURE8 for the post-processing shader texture
-		checkWebGLError('after create post-processing texture');
 
-		checkWebGLError('after create post-processing texture');
 		// Create a new framebuffer
 		this.framebuffer = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-		checkWebGLError('after create framebuffer');
 
 		// Attach the texture to the framebuffer
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['post_processing_source_texture'], 0);
@@ -355,7 +337,6 @@ export class GLView extends BaseView {
 	 * Overrides the base class method to handle resizing of the canvas and viewport for WebGL rendering.
 	 * This method should be called whenever the canvas is resized.
 	 */
-	@catchWebGLError
 	override handleResize(this: GLView): void {
 		if (this.isRendering) {
 			// If a frame is currently being drawn, set the needsResize flag and return
@@ -403,26 +384,15 @@ export class GLView extends BaseView {
 	/**
 	 * Overrides the base class method to clear the WebGL canvas.
 	 */
-	@catchWebGLError
 	override clear(): void {
-		if (checkWebGLError('before clear')) {
-			// throw new Error('WebGL error before clearing the canvas');
-		}
 		const gl = this.glctx;
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		gl.clearDepth(1.0);
-		checkWebGLError('clearDepth');
 
 		// Clear the texture
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-		checkWebGLError('clearFramebuffer');
-
-		// Clear the screen
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-		checkWebGLError('clearScreen');
 	}
 
 	/**
@@ -433,7 +403,6 @@ export class GLView extends BaseView {
 	override drawImg(options: DrawImgOptions): void {
 		GLView2D.drawImg(this, options);
 	}
-
 
 	/**
 	 * Draws a rectangle on the canvas by drawing the borders of the rectangle using the white pixel image with the desired color.

@@ -334,3 +334,140 @@ export function quatToMat4(q: [number, number, number, number]): Float32Array {
     out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
     return out;
 }
+
+export const bmatNA = {
+    setIdentity(out: Mat4): Mat4 {
+        out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+        out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+        out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
+        out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+        return out;
+    },
+
+    // out = a * b  (out mag a of b zijn; we kopiëren a om overwrite te voorkomen)
+    // multiplyInto(out: Mat4, a: Mat4, b: Mat4): Mat4 {
+    //     const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3],
+    //         a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7],
+    //         a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11],
+    //         a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+    //     out[0] = a00 * b[0] + a01 * b[4] + a02 * b[8] + a03 * b[12];
+    //     out[1] = a00 * b[1] + a01 * b[5] + a02 * b[9] + a03 * b[13];
+    //     out[2] = a00 * b[2] + a01 * b[6] + a02 * b[10] + a03 * b[14];
+    //     out[3] = a00 * b[3] + a01 * b[7] + a02 * b[11] + a03 * b[15];
+
+    //     out[4] = a10 * b[0] + a11 * b[4] + a12 * b[8] + a13 * b[12];
+    //     out[5] = a10 * b[1] + a11 * b[5] + a12 * b[9] + a13 * b[13];
+    //     out[6] = a10 * b[2] + a11 * b[6] + a12 * b[10] + a13 * b[14];
+    //     out[7] = a10 * b[3] + a11 * b[7] + a12 * b[11] + a13 * b[15];
+
+    //     out[8] = a20 * b[0] + a21 * b[4] + a22 * b[8] + a23 * b[12];
+    //     out[9] = a20 * b[1] + a21 * b[5] + a22 * b[9] + a23 * b[13];
+    //     out[10] = a20 * b[2] + a21 * b[6] + a22 * b[10] + a23 * b[14];
+    //     out[11] = a20 * b[3] + a21 * b[7] + a22 * b[11] + a23 * b[15];
+
+    //     out[12] = a30 * b[0] + a31 * b[4] + a32 * b[8] + a33 * b[12];
+    //     out[13] = a30 * b[1] + a31 * b[5] + a32 * b[9] + a33 * b[13];
+    //     out[14] = a30 * b[2] + a31 * b[6] + a32 * b[10] + a33 * b[14];
+    //     out[15] = a30 * b[3] + a31 * b[7] + a32 * b[11] + a33 * b[15];
+    //     return out;
+    // },
+
+    multiplyInto(out: Mat4, a: Mat4, b: Mat4): Mat4 {
+        // out==a is veilig met dit loop-patroon; out==b NIET → cache b.
+        let bb: Float32Array | null = null;
+        if (out === b) { bb = new Float32Array(16); bb.set(b); b = bb; }
+
+        for (let i = 0; i < 4; ++i) {
+            const ai0 = a[i], ai1 = a[i + 4], ai2 = a[i + 8], ai3 = a[i + 12];
+            out[i] = ai0 * b[0] + ai1 * b[1] + ai2 * b[2] + ai3 * b[3];
+            out[i + 4] = ai0 * b[4] + ai1 * b[5] + ai2 * b[6] + ai3 * b[7];
+            out[i + 8] = ai0 * b[8] + ai1 * b[9] + ai2 * b[10] + ai3 * b[11];
+            out[i + 12] = ai0 * b[12] + ai1 * b[13] + ai2 * b[14] + ai3 * b[15];
+        }
+        return out;
+    },
+
+    // m *= T(x,y,z)
+    translateSelf(m: Mat4, x: number, y: number, z: number): Mat4 {
+        m[12] += m[0] * x + m[4] * y + m[8] * z;
+        m[13] += m[1] * x + m[5] * y + m[9] * z;
+        m[14] += m[2] * x + m[6] * y + m[10] * z;
+        m[15] += m[3] * x + m[7] * y + m[11] * z;
+        return m;
+    },
+
+    // m *= S(x,y,z)
+    scaleSelf(m: Mat4, x: number, y: number, z: number): Mat4 {
+        m[0] *= x; m[1] *= x; m[2] *= x; m[3] *= x;
+        m[4] *= y; m[5] *= y; m[6] *= y; m[7] *= y;
+        m[8] *= z; m[9] *= z; m[10] *= z; m[11] *= z;
+        return m;
+    },
+
+    // m *= Rx/Ry/Rz
+    rotateXSelf(m: Mat4, r: number): Mat4 {
+        const c = Math.cos(r), s = Math.sin(r);
+        const m4 = m[4], m5 = m[5], m6 = m[6], m7 = m[7],
+            m8 = m[8], m9 = m[9], m10 = m[10], m11 = m[11];
+        m[4] = m4 * c + m8 * s; m[5] = m5 * c + m9 * s; m[6] = m6 * c + m10 * s; m[7] = m7 * c + m11 * s;
+        m[8] = m8 * c - m4 * s; m[9] = m9 * c - m5 * s; m[10] = m10 * c - m6 * s; m[11] = m11 * c - m7 * s;
+        return m;
+    },
+    rotateYSelf(m: Mat4, r: number): Mat4 {
+        const c = Math.cos(r), s = Math.sin(r);
+        const m0 = m[0], m1 = m[1], m2 = m[2], m3 = m[3],
+            m8 = m[8], m9 = m[9], m10 = m[10], m11 = m[11];
+        m[0] = m0 * c - m8 * s; m[1] = m1 * c - m9 * s; m[2] = m2 * c - m10 * s; m[3] = m3 * c - m11 * s;
+        m[8] = m0 * s + m8 * c; m[9] = m1 * s + m9 * c; m[10] = m2 * s + m10 * c; m[11] = m3 * s + m11 * c;
+        return m;
+    },
+    rotateZSelf(m: Mat4, r: number): Mat4 {
+        const c = Math.cos(r), s = Math.sin(r);
+        const m0 = m[0], m1 = m[1], m2 = m[2], m3 = m[3],
+            m4 = m[4], m5 = m[5], m6 = m[6], m7 = m[7];
+        m[0] = m0 * c + m4 * s; m[1] = m1 * c + m5 * s; m[2] = m2 * c + m6 * s; m[3] = m3 * c + m7 * s;
+        m[4] = m4 * c - m0 * s; m[5] = m5 * c - m1 * s; m[6] = m6 * c - m2 * s; m[7] = m7 * c - m3 * s;
+        return m;
+    },
+
+    // Inverse-transpose 3x3 into out (exact, geen alloc)
+    normalMatrixInto(out: Float32Array, model: Float32Array): Float32Array {
+        const a00 = model[0], a01 = model[1], a02 = model[2];
+        const a10 = model[4], a11 = model[5], a12 = model[6];
+        const a20 = model[8], a21 = model[9], a22 = model[10];
+        const b01 = a22 * a11 - a12 * a21;
+        const b11 = -a22 * a10 + a12 * a20;
+        const b21 = a21 * a10 - a11 * a20;
+        let det = a00 * b01 + a01 * b11 + a02 * b21;
+        if (!det) { out.fill(0); return out; }
+        det = 1.0 / det;
+        const m00 = b01 * det, m01 = (-a22 * a01 + a02 * a21) * det, m02 = (a12 * a01 - a02 * a11) * det;
+        const m10 = b11 * det, m11 = (a22 * a00 - a02 * a20) * det, m12 = (-a12 * a00 + a02 * a10) * det;
+        const m20 = b21 * det, m21 = (-a21 * a00 + a01 * a20) * det, m22 = (a11 * a00 - a01 * a10) * det;
+        out[0] = m00; out[1] = m10; out[2] = m20;
+        out[3] = m01; out[4] = m11; out[5] = m21;
+        out[6] = m02; out[7] = m12; out[8] = m22;
+        return out;
+    },
+
+    // Inverse-transpose 3x3 into out (exact, geen alloc)
+    normalMatrixIntoOffset(out: Float32Array, model: Float32Array, offset: number): Float32Array {
+        const a00 = model[0], a01 = model[1], a02 = model[2];
+        const a10 = model[4], a11 = model[5], a12 = model[6];
+        const a20 = model[8], a21 = model[9], a22 = model[10];
+        const b01 = a22 * a11 - a12 * a21;
+        const b11 = -a22 * a10 + a12 * a20;
+        const b21 = a21 * a10 - a11 * a20;
+        let det = a00 * b01 + a01 * b11 + a02 * b21;
+        if (!det) { out.fill(0); return out; }
+        det = 1.0 / det;
+        const m00 = b01 * det, m01 = (-a22 * a01 + a02 * a21) * det, m02 = (a12 * a01 - a02 * a11) * det;
+        const m10 = b11 * det, m11 = (a22 * a00 - a02 * a20) * det, m12 = (-a12 * a00 + a02 * a10) * det;
+        const m20 = b21 * det, m21 = (-a21 * a00 + a01 * a20) * det, m22 = (a11 * a00 - a01 * a10) * det;
+        out[0 + offset] = m00; out[1 + offset] = m10; out[2 + offset] = m20;
+        out[3 + offset] = m01; out[4 + offset] = m11; out[5 + offset] = m21;
+        out[6 + offset] = m02; out[7 + offset] = m12; out[8 + offset] = m22;
+        return out;
+    }
+};

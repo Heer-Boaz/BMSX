@@ -1,4 +1,5 @@
 import { Area, Direction, Size, vec2, vec2arr, vec3, vec3arr, Vector } from '../rompack/rompack';
+import { excludeclassfromsavegame } from '../serializer/gameserializer';
 
 /**
  * Calculates the modulus of a number.
@@ -410,5 +411,33 @@ export function getOppositeDirection(dir: Direction): Direction {
             return 'right';
         default:
             return 'none';
+    }
+}
+
+// --- Pooling interface ---
+interface Pool<T> {
+    ensure(): T;
+    reset(): void;
+}
+
+// Growable pool for Float32Array buffers, which avoids frequent allocations and deallocations.
+@excludeclassfromsavegame // This class is excluded from savegame serialization
+export class Float32ArrayPool implements Pool<Float32Array> {
+    private pool: Float32Array[] = [];
+    private index: number = 0;
+
+    constructor(private arraySize: number) {
+        this.pool.push(new Float32Array(this.arraySize));
+    }
+
+    ensure(): Float32Array {
+        if (this.index >= this.pool.length) {
+            this.pool.push(new Float32Array(this.arraySize));
+        }
+        return this.pool[this.index++];
+    }
+
+    reset(): void {
+        this.index = 0;
     }
 }

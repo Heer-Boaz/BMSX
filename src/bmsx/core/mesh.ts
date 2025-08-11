@@ -1,6 +1,6 @@
 import { TransformComponent } from '../component/transformcomponent';
 import { Material } from '../render/3d/material';
-import { bmat, quatToMat4 } from '../render/3d/math3d';
+import { bmat, bmatNA, quatToMat4 } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import type { TextureKey } from '../render/texturemanager';
@@ -8,6 +8,7 @@ import type { Color, DrawMeshOptions } from '../render/view';
 import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, vec3arr } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
+import { Float32ArrayPool } from './utils';
 
 export class Mesh {
     public positions: Float32Array;
@@ -186,11 +187,14 @@ export abstract class MeshObject extends GameObject {
     private nodeDirty: boolean[] = [];
     private worldMatrices: Float32Array[] = [];
     private animationTime = 0;
+    private _base = new Float32Array(16);
+    private worldPool: Float32ArrayPool;
 
     constructor(id?: string, fsm_id?: string) {
         super(id, fsm_id);
         this.rotation ??= [0, 0, 0];
         this.scale ??= [1, 1, 1];
+        this.worldPool = new Float32ArrayPool(16);
     }
 
     /** Convenience getter returning the first mesh */
@@ -271,6 +275,7 @@ export abstract class MeshObject extends GameObject {
             for (const anim of this.meshModel.animations) {
                 for (const channel of anim.channels) {
                     const sampler = anim.samplers[channel.sampler];
+                    if (!sampler || !sampler.input || !sampler.output) continue; // TODO: SHOULD NOT BE REQUIRED, BUT LOADING FROM SERIALIZED STATE CAUSES ISSUES
                     const stride = sampler.output.length / sampler.input.length;
                     const comp = sampler.interpolation === 'CUBICSPLINE' ? stride / 3 : stride;
                     const value = this.sampleAnimation(sampler, this.animationTime, comp);
@@ -492,30 +497,40 @@ export abstract class MeshObject extends GameObject {
     }
 
     override paint(): void {
-        if (this.meshInstances.length === 0) return; // No mesh to draw
+        if (this.meshInstances.length === 0) return;
+
         const transform = this.getComponent(TransformComponent);
-        let base: Float32Array;
+        const base = this._base;
+
         if (transform) {
-            base = transform.getWorldMatrix();
+            base.set(transform.getWorldMatrix());
         } else {
-            base = bmat.identity();
-            base = bmat.translate(base, this.x, this.y, this.z);
-            base = bmat.rotateX(base, this.rotation[0]);
-            base = bmat.rotateY(base, this.rotation[1]);
-            base = bmat.rotateZ(base, this.rotation[2]);
-            base = bmat.scale(base, this.scale[0], this.scale[1], this.scale[2]);
+            bmatNA.setIdentity(base);
+            bmatNA.translateSelf(base, this.x, this.y, this.z);
+            bmatNA.rotateXSelf(base, this.rotation[0]);
+            bmatNA.rotateYSelf(base, this.rotation[1]);
+            bmatNA.rotateZSelf(base, this.rotation[2]);
+            bmatNA.scaleSelf(base, this.scale[0], this.scale[1], this.scale[2]);
         }
+
         for (const inst of this.meshInstances) {
             const mesh = inst.mesh;
+            if (!mesh) continue; // TODO: SHOULD NOT BE REQUIRED, BUT LOADING FROM SERIALIZED STATE CAUSES ISSUES
             if (!mesh.positions || mesh.positions.length === 0) continue;
-            const matrix = bmat.multiply(base, inst.matrix);
+
+            // world = base * inst.matrix (in-place, geen alloc)
+            const world = this.worldPool.ensure();
+            bmatNA.multiplyInto(world, base, inst.matrix);
+
             const options: DrawMeshOptions = {
                 mesh,
-                matrix,
+                matrix: world,
                 jointMatrices: inst.skinIndex !== undefined ? this.computeSkinMatrices(inst.skinIndex) : undefined,
                 morphWeights: inst.morphWeights,
             };
             $.view.drawMesh(options);
         }
+        this.worldPool.reset();
     }
+
 }

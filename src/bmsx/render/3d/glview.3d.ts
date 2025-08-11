@@ -1,18 +1,20 @@
 import type { Mesh } from '../../core/mesh';
+import { Float32ArrayPool } from '../../core/utils';
 import type { Size, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
-import { checkWebGLError, getFramebufferStatusString } from '../glview.helpers';
+import { getFramebufferStatusString } from '../glview.helpers';
 import { DrawMeshOptions } from '../view';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
-import { bmat } from './math3d';
+import { bmatNA } from './math3d';
 import fragShader3DCode from './shaders/3d.frag.glsl';
 import vertexShader3DCode from './shaders/3d.vert.glsl';
 
 const MAX_INSTANCES = 64;
 const INSTANCE_STRIDE_BYTES = 64; // 4 vec4
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
+const INSTANCE_STRIDE_NORMAL9 = 9;
 const TEXTURE_UNIT_ALBEDO = 3;
 const TEXTURE_UNIT_NORMAL = 4;
 const TEXTURE_UNIT_METALLIC_ROUGHNESS = 5;
@@ -49,10 +51,8 @@ interface MeshBuffers {
 const meshBufferCache = new WeakMap<Mesh, MeshBuffers>();
 
 // instancing upload helpers
-let instanceScratch = new Float32Array(MAX_INSTANCES * INSTANCE_STRIDE_FLOATS);
-
-// per-frame caches
-let normalMatCache = new WeakMap<Float32Array, Float32Array>();
+const instanceScratch = new Float32Array(MAX_INSTANCES * INSTANCE_STRIDE_FLOATS);
+const normal9Pool = new Float32ArrayPool(INSTANCE_STRIDE_NORMAL9);
 
 // simpele texture/material state cache
 const stateCache = {
@@ -380,7 +380,6 @@ export function clearLights(gl: WebGL2RenderingContext): void {
 
 export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number): void {
 	gl.useProgram(gameShaderProgram3D);
-	checkWebGLError('after useProgram');
 
 	gl.uniform1f(ditherLocation3D, 0.3);
 	gl.uniform3fv(ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
@@ -393,12 +392,10 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
 	gl.uniform1f(roughnessFactorLocation3D, 1.0);
 	gl.uniform1i(useShadowMapLocation3D, 0);
 	gl.uniform1f(shadowStrengthLocation3D, 0.5);
-	checkWebGLError('after shadow uniforms');
 	gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
 	gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
 	gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
 	gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
-	checkWebGLError('after texture uniforms');
 	gl.uniformMatrix4fv(viewProjectionLocation3D, false, identityMatrix);
 	setUseInstancing(gl, false);
 	jointMatrixArray.fill(0); jointMatrixArray.set(identityMatrix, 0);
@@ -406,7 +403,6 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
 	lastJointMatrixArray.set(jointMatrixArray); lastSkinningEnabled = false;
 	gl.uniform1fv(morphWeightLocation3D, zeroMorphWeights);
 	lastMorphWeightArray.set(zeroMorphWeights); lastMorphEnabled = false;
-	checkWebGLError('after other uniform values');
 }
 
 export function setupBuffers3D(gl: WebGL2RenderingContext): void {
@@ -695,14 +691,12 @@ function cullAndSortMeshes(): { instancedGroups: Map<string, { mesh: Mesh; matri
 }
 
 function setupFramebufferAndViewport(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
-	checkWebGLError("Before binding framebuffer and setting viewport");
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 	gl.viewport(0, 0, canvasWidth, canvasHeight);
 	const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
 	if (fbStatus !== gl.FRAMEBUFFER_COMPLETE) {
 		console.warn(`renderMeshBatch: framebuffer incomplete - ${getFramebufferStatusString(gl, fbStatus)}`);
 	}
-	checkWebGLError("After binding framebuffer and setting viewport");
 }
 
 function setupRenderingState(gl: WebGL2RenderingContext): void {
@@ -856,6 +850,7 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 
 function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void {
 	setUseInstancing(gl, false);
+	let index = 0;
 	for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) {
 		const buffers = getMeshBuffers(gl, m);
 		const srcWeights = morphWeights ?? m.morphWeights ?? [];
@@ -895,10 +890,10 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
 		setMeshTextures(gl, m);
 
 		// transforms (normal-matrix cache per-frame op matrix-object)
-		let nrm = normalMatCache.get(matrix);
-		if (!nrm) { nrm = bmat.normalMatrix(matrix); normalMatCache.set(matrix, nrm); }
 		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
-		gl.uniformMatrix3fv(normalMatrixLocation3D, false, nrm);
+		const normal9 = normal9Pool.ensure();
+		bmatNA.normalMatrixInto(normal9, matrix);
+		gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
 
 		// draw
 		gl.bindVertexArray(vao);
@@ -909,16 +904,15 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
 		}
 		gl.bindVertexArray(null);
 	}
+	normal9Pool.reset();
 }
 
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
-	normalMatCache = new WeakMap();
 	const { instancedGroups, singles } = cullAndSortMeshes();
 	if (instancedGroups.size === 0 && singles.length === 0) return;
 
 	setupFramebufferAndViewport(gl, framebuffer, canvasWidth, canvasHeight);
 	setupRenderingState(gl);
-	checkWebGLError(`After rendering state setup`);
 
 	renderInstancedMeshes(gl, instancedGroups);
 	renderSingleMeshes(gl, singles, framebuffer);

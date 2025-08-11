@@ -1,7 +1,6 @@
 import { Size } from '../rompack/rompack';
 import { TEXTURE_UNIT_SHADOW_MAP } from './3d/glview.3d';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
-import { checkWebGLError } from './glview.helpers';
 import { TextureParams } from './texturemanager';
 
 /**
@@ -29,6 +28,7 @@ export function buildQuadTexCoords(): Float32Array {
     return textureCoordinates;
 }
 
+// @ts-ignore
 function generateByteLengthString(data?: ArrayBufferView): string {
     if (data) {
         return `data length: ${data.byteLength} bytes`;
@@ -37,25 +37,18 @@ function generateByteLengthString(data?: ArrayBufferView): string {
 }
 
 export function glCreateBuffer(gl: WebGL2RenderingContext, data?: Float32Array | Uint8Array): WebGLBuffer {
-    checkWebGLError(`createBuffer ${generateByteLengthString(data)}`);
     const buffer = gl.createBuffer()!;
-    checkWebGLError(`After creating buffer, before setting buffer data`);
-    if (data) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
-        checkWebGLError(`createBuffer -> bufferData ${generateByteLengthString(data)}`);
-    }
+    if (!data) return buffer;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
     return buffer;
 }
 
 export function glCreateElementBuffer(gl: WebGL2RenderingContext, data?: Uint8Array | Uint16Array | Uint32Array): WebGLBuffer {
-    checkWebGLError(`createElementBuffer ${generateByteLengthString(data)}`);
     const buffer = gl.createBuffer()!;
-    if (data) {
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
-        checkWebGLError(`createElementBuffer -> bufferData ${generateByteLengthString(data)}`);
-    }
+    if (!data) return buffer;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
     return buffer;
 }
 
@@ -64,7 +57,6 @@ export function glSetupAttributeFloat(gl: WebGL2RenderingContext, buffer: WebGLB
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(location);
     gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-    checkWebGLError('setupAttributeFloat');
 }
 
 export function glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number, type: GLenum = gl.UNSIGNED_BYTE): void {
@@ -72,7 +64,6 @@ export function glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuf
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(location);
     gl.vertexAttribIPointer(location, size, type, 0, 0);
-    checkWebGLError('setupAttributeInt');
 }
 
 /**
@@ -97,7 +88,6 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
         throw Error(`Error compiling shader: ${gl.getShaderInfoLog(shader)} `);
     }
-    checkWebGLError('loadShader');
     return shader;
 }
 
@@ -147,10 +137,7 @@ export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContex
 
 
 export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureIndex: number, desc: TextureParams): WebGLTexture {
-    const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
-    const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
     gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
-
     const tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, tex);
     if (!img) {
@@ -166,17 +153,9 @@ export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageB
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
 
-    // if (prevTex) {
-    //     gl.bindTexture(gl.TEXTURE_2D, prevTex);
-    //     gl.activeTexture(prevActive);
-    // }
-    if (checkWebGLError('createTextureFromImage')) {
-        // throw new Error('Error creating texture from image');
-    }
     return tex;
 }
 
 export function glSwitchProgram(gl: WebGL2RenderingContext, program: WebGLProgram): void {
     gl.useProgram(program);
-    checkWebGLError('switchProgram');
 }

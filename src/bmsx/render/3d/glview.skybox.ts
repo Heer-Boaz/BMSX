@@ -1,5 +1,4 @@
 import { glLoadShader, glSwitchProgram } from '../glutils';
-import { checkWebGLError } from '../glview.helpers';
 import { BaseView } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
@@ -109,10 +108,6 @@ export function drawSkybox(gl: WebGL2RenderingContext): void {
     gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
     gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
     gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
-    checkWebGLError('before drawSkybox');
 
     gl.drawArrays(gl.TRIANGLES, 0, 36);
-    if (checkWebGLError('after drawSkybox')) {
-        throw new Error('Failed to draw skybox');
-    }
 }
