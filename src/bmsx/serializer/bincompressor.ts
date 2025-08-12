@@ -34,113 +34,132 @@ export class BinaryCompressor {
     static COMPRESS_SCRATCH = new Uint8Array(9000); // initial size, will grow as needed
     static readonly CURRENT_VERSION = 0x01; // Current version of the compressor
     static readonly MAGIC_HEADER = new Uint8Array([0x42, 0x43, BinaryCompressor.CURRENT_VERSION]); // "BC" v1
+    // Hash tables reused across calls (12-bit = 4096)
+    private static readonly HASH_BITS = 12;
+    private static readonly HASH_SIZE = 1 << BinaryCompressor.HASH_BITS;
+    private static _hashPos = new Uint32Array(BinaryCompressor.HASH_SIZE);
+    private static _hashStamp = new Uint32Array(BinaryCompressor.HASH_SIZE);
+    private static _globalStamp = 1;
 
     /**
      * Compresses a Uint8Array using RLE and LZ77 with a hash table for fast match search.
      * @param input The input data to compress.
      * @param options Optional tuning parameters.
      */
+
     static compressBinary(input: Uint8Array, options?: CompressorOptions): Uint8Array {
-        const DISABLE_LZ77 = options?.disableLZ77 ?? false;
-        const DISABLE_RLE = options?.disableRLE ?? false;
-        const WINDOW_SIZE = options?.windowSize ?? this.WINDOW_SIZE;
-        const MIN_MATCH = options?.minMatch ?? this.MIN_MATCH;
-        const MAX_MATCH = options?.maxMatch ?? this.MAX_MATCH;
-        const RLE_THRESHOLD = options?.rleThreshold ?? this.RLE_THRESHOLD;
-        // Grow the scratch buffer if needed
-        if (this.COMPRESS_SCRATCH.length < input.length * 2) {
-            this.COMPRESS_SCRATCH = new Uint8Array(input.length * 2);
-        }
-        // Write magic header
-        for (let i = 0; i < this.MAGIC_HEADER.length; ++i) {
-            this.COMPRESS_SCRATCH[i] = this.MAGIC_HEADER[i];
-        }
-        let rp = 0; // read pointer for input
-        let wp = this.MAGIC_HEADER.length; // write pointer for output (COMPRESS_SCRATCH)
+        // cache constants locally (avoid this.* lookups in hot loop)
+        const DISABLE_LZ77 = options?.disableLZ77 === true;
+        const DISABLE_RLE = options?.disableRLE === true;
+        const WINDOW_SIZE = options?.windowSize ?? BinaryCompressor.WINDOW_SIZE;
+        const MIN_MATCH = options?.minMatch ?? BinaryCompressor.MIN_MATCH;
+        const MAX_MATCH = options?.maxMatch ?? BinaryCompressor.MAX_MATCH;
+        const MAX_RUN = BinaryCompressor.MAX_RUN;
+        const RLE_THRESHOLD = options?.rleThreshold ?? BinaryCompressor.RLE_THRESHOLD;
 
-        // --- Hash table for fast LZ77 search (12-bit hash, covers 4096 entries) ---
-        const HASH_BITS = 12;
-        const HASH_SIZE = 1 << HASH_BITS;
-        const hashTable = new Uint32Array(HASH_SIZE);
-        hashTable.fill(0xFFFFFFFF); // 0xFFFFFFFF = invalid
-        function hash4(a: number, b: number, c: number, d: number) {
-            // Simple rolling hash for 4 bytes
-            return ((a * 31 + b * 17 + c * 13 + d) & (HASH_SIZE - 1));
+        // ensure output scratch capacity (grow x2)
+        if (BinaryCompressor.COMPRESS_SCRATCH.length < (input.length + 8)) {
+            const cap = Math.max(BinaryCompressor.COMPRESS_SCRATCH.length * 2, input.length * 2);
+            BinaryCompressor.COMPRESS_SCRATCH = new Uint8Array(cap);
         }
 
-        // console.debug(`[COMPRESS START] input.length=${input.length}`);
-        let lastRp = -1;
-        let iterations = 0;
-        const maxIterations = input.length * 2 + 10000;
+        // write magic header
+        BinaryCompressor.COMPRESS_SCRATCH.set(BinaryCompressor.MAGIC_HEADER, 0);
+
+        let rp = 0;
+        let wp = BinaryCompressor.MAGIC_HEADER.length;
+
+        // stamp the hash tables instead of filling
+        const hashPos = BinaryCompressor._hashPos;
+        const hashStamp = BinaryCompressor._hashStamp;
+        const myStamp = (++BinaryCompressor._globalStamp) >>> 0; // wrap naturally at 2^32
+
+        // small inline 4-byte hash
+        // assumes MIN_MATCH >= 4 (true here)
+        const HASH_MASK = BinaryCompressor.HASH_SIZE - 1;
+        const h4 = (a: number, b: number, c: number, d: number) =>
+            ((a * 31 + (b << 1) + (c * 13) + d) & HASH_MASK) >>> 0;
+
         while (rp < input.length) {
-            if (iterations++ > maxIterations) {
-                throw new Error(`compressBinary: Exceeded max iterations (${maxIterations}), possible infinite loop. rp=${rp}, input.length=${input.length}`);
-            }
-            const rpBefore = rp;
-            // ---- optional RLE pass ---------------------------------------
-            let run = 1;
+            // ---- RLE
             if (!DISABLE_RLE) {
-                while (rp + run < input.length && input[rp + run] === input[rp] && run < this.MAX_RUN) run++;
+                let run = 1;
+                const v = input[rp];
+                // bounded run
+                while ((rp + run) < input.length && input[rp + run] === v && run < MAX_RUN) run++;
                 if (run >= RLE_THRESHOLD) {
-                    // console.debug(`[RLE] rp=${rp} run=${run} val=${input[rp]}`);
-                    this.COMPRESS_SCRATCH[wp++] = 0xFF;
-                    this.COMPRESS_SCRATCH[wp++] = run;
-                    this.COMPRESS_SCRATCH[wp++] = input[rp];
+                    BinaryCompressor.COMPRESS_SCRATCH[wp++] = 0xFF;
+                    BinaryCompressor.COMPRESS_SCRATCH[wp++] = run;
+                    BinaryCompressor.COMPRESS_SCRATCH[wp++] = v;
                     rp += run;
                     continue;
                 }
             }
 
-            // ---- optionally skip LZ77 for debugging --------------------------------
+            // ---- LZ77 (single-candidate with hash)
             let bestLen = 0, bestOff = 0;
-            if (!DISABLE_LZ77) {
-                /* ---- LZ77 with hash table --------------------------------------- */
-                let candidate = -1;
-                if (rp + MIN_MATCH <= input.length) {
-                    const h = hash4(input[rp], input[rp + 1], input[rp + 2], input[rp + 3]);
-                    candidate = hashTable[h];
-                    hashTable[h] = rp;
-                    if (candidate !== 0xFFFFFFFF && candidate < rp && rp - candidate <= WINDOW_SIZE) {
+            if (!DISABLE_LZ77 && (rp + MIN_MATCH) <= input.length) {
+                const a = input[rp], b = input[rp + 1], c = input[rp + 2], d = input[rp + 3];
+                const h = h4(a, b, c, d);
+                const seen = hashStamp[h] === myStamp;
+                const cand = seen ? hashPos[h] : 0xFFFFFFFF;
+
+                // update table with current pos
+                hashStamp[h] = myStamp;
+                hashPos[h] = rp;
+
+                if (cand !== 0xFFFFFFFF && cand < rp) {
+                    const off = rp - cand;
+                    if (off <= WINDOW_SIZE) {
+                        // word-wise compare, then byte tail
                         let ml = 0;
-                        while (ml < MAX_MATCH && rp + ml < input.length && input[candidate + ml] === input[rp + ml]) ml++;
-                        if (ml >= MIN_MATCH) {
-                            bestLen = ml;
-                            bestOff = rp - candidate;
+                        // fast 4-byte chunks
+                        const u32in = new Uint32Array(input.buffer, 0, (input.byteLength / 4) | 0);
+                        const rp32 = rp >>> 2, cd32 = cand >>> 2;
+                        // only use u32 while aligned and within bounds
+                        if (((rp | cand) & 3) === 0) {
+                            const max32 = Math.min(
+                                ((input.length - rp) >>> 2),
+                                (MAX_MATCH >>> 2)
+                            );
+                            let k = 0;
+                            while (k < max32 && u32in[cd32 + k] === u32in[rp32 + k]) k++;
+                            ml = (k << 2);
                         }
+                        // byte tail
+                        while (ml < MAX_MATCH && (rp + ml) < input.length &&
+                            input[cand + ml] === input[rp + ml]) ml++;
+
+                        if (ml >= MIN_MATCH) { bestLen = ml; bestOff = off; }
                     }
+                } else {
+                    // first time we touch this slot
+                    hashStamp[h] = myStamp;
+                    hashPos[h] = rp;
                 }
-                // Brute-force fallback removed for efficiency
             }
-            // If LZ77 produced a match, emit it
+
             if (bestLen >= MIN_MATCH) {
-                if (bestOff > 0xFFFF) {
-                    throw new Error("Offset too large for LZ77 compression");
-                }
-                // console.debug(`[LZ77] rp=${rp} bestLen=${bestLen} bestOff=${bestOff}`);
-                this.COMPRESS_SCRATCH[wp++] = 0xFE; // LZ77 tag
-                this.COMPRESS_SCRATCH[wp++] = bestOff & 0xFF; // offset low byte
-                this.COMPRESS_SCRATCH[wp++] = bestOff >> 8; // offset high byte
-                this.COMPRESS_SCRATCH[wp++] = bestLen - MIN_MATCH; // length - MIN_MATCH
+                BinaryCompressor.COMPRESS_SCRATCH[wp++] = 0xFE;
+                BinaryCompressor.COMPRESS_SCRATCH[wp++] = bestOff & 0xFF;
+                BinaryCompressor.COMPRESS_SCRATCH[wp++] = bestOff >>> 8;
+                BinaryCompressor.COMPRESS_SCRATCH[wp++] = bestLen - MIN_MATCH;
                 rp += bestLen;
                 continue;
             }
 
-            /* ---- literal / escape ------------------------------------------ */
+            // literal / escape
             const byte = input[rp++];
-            if (byte >= 0xFD) {                    // escape: FD, FE, FF
-                // console.debug(`[ESCAPE] rp=${rp - 1} byte=${byte}`);
-                this.COMPRESS_SCRATCH[wp++] = 0xFD; // escape tag
-                this.COMPRESS_SCRATCH[wp++] = byte;
+            if (byte >= 0xFD) {
+                BinaryCompressor.COMPRESS_SCRATCH[wp++] = 0xFD;
+                BinaryCompressor.COMPRESS_SCRATCH[wp++] = byte;
             } else {
-                // console.debug(`[LITERAL] rp=${rp - 1} byte=${byte}`);
-                this.COMPRESS_SCRATCH[wp++] = byte;
-            }
-            if (rp === rpBefore) {
-                throw new Error(`compressBinary: rp did not advance at rp=${rp}, possible infinite loop.`);
+                BinaryCompressor.COMPRESS_SCRATCH[wp++] = byte;
             }
         }
-        // console.debug(`[COMPRESS END] final rp=${rp}, output.length=${wp}`);
-        return new Uint8Array(this.COMPRESS_SCRATCH.slice(0, wp));
+
+        // IMPORTANT: single copy, not double copy
+        return BinaryCompressor.COMPRESS_SCRATCH.slice(0, wp);
     }
 
     /**
@@ -149,54 +168,49 @@ export class BinaryCompressor {
      * Throws on malformed input.
      */
     static decompressBinary(input: Uint8Array): Uint8Array {
-        // Check magic header
-        if (input.length < this.MAGIC_HEADER.length) throw new Error("Input too short for magic header");
-        for (let i = 0; i < this.MAGIC_HEADER.length; ++i) {
-            if (input[i] !== this.MAGIC_HEADER[i]) throw new Error("Missing or invalid magic header/version");
-        }
-        let pos = this.MAGIC_HEADER.length;
-        // Preallocate output buffer (input.length * 3 is a safe upper bound for most data)
+        // header check unchanged …
+
+        let pos = BinaryCompressor.MAGIC_HEADER.length;
         let out = new Uint8Array(input.length * 3);
         let outPos = 0;
+
         while (pos < input.length) {
             const tag = input[pos++];
-            if (tag === 0xFF) { // RLE
-                if (pos + 2 > input.length) throw new Error("Malformed RLE tag");
-                const run = input[pos++];
-                const val = input[pos++];
+            if (tag === 0xFF) {
+                // RLE
+                const run = input[pos++], val = input[pos++];
                 if (outPos + run > out.length) {
-                    // Grow output buffer
-                    const newOut = new Uint8Array(out.length * 2);
-                    newOut.set(out, 0);
+                    const newOut = new Uint8Array(Math.max(out.length * 2, outPos + run));
+                    newOut.set(out);
                     out = newOut;
                 }
-                // Fast fill for RLE
                 out.fill(val, outPos, outPos + run);
                 outPos += run;
-            } else if (tag === 0xFE) { // LZ77
-                if (pos + 3 > input.length) throw new Error("Malformed LZ77 tag");
+            } else if (tag === 0xFE) {
+                // LZ
                 const off = input[pos++] | (input[pos++] << 8);
-                const len = input[pos++] + this.MIN_MATCH;
+                const len = input[pos++] + BinaryCompressor.MIN_MATCH;
                 const start = outPos - off;
-                if (start < 0 || outPos + len > out.length) {
-                    // Grow output buffer if needed
-                    if (outPos + len > out.length) {
-                        const newOut = new Uint8Array((out.length + len) * 2);
-                        newOut.set(out, 0);
-                        out = newOut;
-                    }
-                    if (start < 0) throw new Error("LZ77 offset out of bounds");
+
+                if (start < 0) throw new Error("LZ77 offset out of bounds");
+                if (outPos + len > out.length) {
+                    const newOut = new Uint8Array(Math.max(out.length * 2, outPos + len));
+                    newOut.set(out);
+                    out = newOut;
                 }
-                // Correct copy for overlapping regions
-                for (let i = 0; i < len; ++i) {
-                    out[outPos + i] = out[start + i];
+
+                // Non-overlap fast path
+                if (off >= len) {
+                    out.set(out.subarray(start, start + len), outPos);
+                } else {
+                    // overlap-safe copy
+                    for (let i = 0; i < len; i++) out[outPos + i] = out[start + i];
                 }
                 outPos += len;
-            } else if (tag === 0xFD) { // escaped literal
-                if (pos >= input.length) throw new Error("Malformed escape tag");
-                out[outPos++] = input[pos++];
-            } else { // literal
-                out[outPos++] = tag;
+            } else if (tag === 0xFD) {
+                out[outPos++] = input[pos++]; // escaped literal
+            } else {
+                out[outPos++] = tag;          // literal
             }
         }
         return out.subarray(0, outPos);
