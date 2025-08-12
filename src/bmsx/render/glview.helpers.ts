@@ -87,6 +87,12 @@ export function saveFramebufferToFile(): void {
 }
 
 export function checkWebGLError(infoText: string): number {
+    // NOTE:
+    // Calling gl.getError() synchronizes the WebGL command queue and clears the error flag.
+    // This can change the timing/order of error detection, and may mask or alter the manifestation
+    // of errors (e.g., INVALID_OPERATION due to incomplete textures or framebuffers).
+    // In some cases, this can make race/timing-related bugs harder to reproduce or debug,
+    // because the error may not occur at the original draw call anymore.
     let error = 0;
     try {
         const gl = ($.view as any).glctx as WebGLRenderingContext;

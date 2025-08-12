@@ -12,5 +12,6 @@ void main() {
     v_texcoord = a_position;
     mat4 view = mat4(mat3(u_view));
     vec4 pos = u_projection * view * vec4(a_position, 1.0);
-    gl_Position = pos.xyww;
+    gl_Position = pos;
+    gl_Position.z = gl_Position.w; // Force skybox to far plane
 }

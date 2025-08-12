@@ -1,24 +1,18 @@
 import { glLoadShader, glSwitchProgram } from '../glutils';
+import { checkWebGLError } from '../glview.helpers';
 import { BaseView } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
 
-export interface SkyboxFace {
-    id: string;
-    atlassed: boolean;
-    atlasId?: number;
-    texcoords?: number[];
-}
-
-
-let vaoSkybox: WebGLVertexArrayObject | null = null;
 const TEXTURE_UNIT_SKYBOX = 7;
+let vaoSkybox: WebGLVertexArrayObject | null = null;
 
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
 let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
 let skyboxTextureLocation: WebGLUniformLocation;
+
 export let skyboxBuffer: WebGLBuffer;
 export let skyboxTexture: WebGLTexture | null = null;
 
@@ -27,47 +21,119 @@ export function init(gl: WebGL2RenderingContext) {
 }
 
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
-    const positions = new Float32Array([
-        -1, -1, 1, 1, -1, 1, -1, 1, 1,
-        -1, 1, 1, 1, -1, 1, 1, 1, 1,
-        1, -1, -1, -1, -1, -1, 1, 1, -1,
-        -1, -1, -1, -1, 1, -1, 1, 1, -1,
-        -1, -1, -1, -1, -1, 1, -1, 1, -1,
-        -1, -1, 1, -1, 1, 1, -1, 1, -1,
-        1, -1, 1, 1, -1, -1, 1, 1, 1,
-        1, -1, -1, 1, 1, -1, 1, 1, 1,
-        -1, 1, 1, 1, 1, 1, -1, 1, -1,
-        -1, 1, -1, 1, 1, 1, 1, 1, -1,
-        -1, -1, -1, 1, -1, -1, -1, -1, 1,
-        -1, -1, 1, 1, -1, -1, 1, -1, 1,
+    // Inward-facing cube (CW vanaf buiten gezien, dus CCW vanaf binnen)
+    const p = new Float32Array([
+        // +Z (front)
+        -1, -1, 1, 1, 1, 1, 1, -1, 1,
+        -1, -1, 1, -1, 1, 1, 1, 1, 1,
+
+        // -Z (back)
+        -1, -1, -1, 1, 1, -1, -1, 1, -1,
+        -1, -1, -1, 1, -1, -1, 1, 1, -1,
+
+        // -X (left)
+        -1, -1, -1, -1, 1, 1, -1, -1, 1,
+        -1, -1, -1, -1, 1, -1, -1, 1, 1,
+
+        // +X (right)
+        1, -1, -1, 1, 1, 1, 1, 1, -1,
+        1, -1, -1, 1, -1, 1, 1, 1, 1,
+
+        // +Y (top)
+        -1, 1, -1, 1, 1, 1, -1, 1, 1,
+        -1, 1, -1, 1, 1, -1, 1, 1, 1,
+
+        // -Y (bottom)
+        -1, -1, -1, 1, -1, 1, 1, -1, -1,
+        -1, -1, -1, -1, -1, 1, 1, -1, 1,
     ]);
+
     skyboxBuffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, p, gl.STATIC_DRAW);
 }
 
 export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
-    // Instead of uploading images, store face info for shader sampling
-    const faces: Record<string, SkyboxFace> = {
-        posX: getSkyboxFace(ids.posX),
-        negX: getSkyboxFace(ids.negX),
-        posY: getSkyboxFace(ids.posY),
-        negY: getSkyboxFace(ids.negY),
-        posZ: getSkyboxFace(ids.posZ),
-        negZ: getSkyboxFace(ids.negZ),
-    };
-    (gl as any)._skyboxFaces = faces; // Store for use in drawSkybox or shader uniform upload
-}
+    // Create or update the cube map texture
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
+    skyboxTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
 
-function getSkyboxFace(id: string): SkyboxFace {
-    const asset = BaseView.imgassets[id];
-    if (!asset) throw new Error(`Skybox image '${id}' not found`);
-    return {
-        id,
-        atlassed: !!asset.imgmeta.atlassed,
-        atlasId: asset.imgmeta.atlasid,
-        texcoords: asset.imgmeta.texcoords,
-    };
+    const faces = [
+        { target: gl.TEXTURE_CUBE_MAP_POSITIVE_X, id: ids.posX },
+        { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_X, id: ids.negX },
+        { target: gl.TEXTURE_CUBE_MAP_POSITIVE_Y, id: ids.posY },
+        { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, id: ids.negY },
+        { target: gl.TEXTURE_CUBE_MAP_POSITIVE_Z, id: ids.posZ },
+        { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, id: ids.negZ },
+    ];
+
+    const atlas = BaseView.imgassets['_atlas']?.imgbin;
+
+    for (const face of faces) {
+        const asset = BaseView.imgassets[face.id];
+        if (!asset) throw new Error(`Skybox image '${face.id}' not found`);
+
+        let source: HTMLImageElement | HTMLCanvasElement | undefined = asset.imgbin;
+
+        // If the image was packed into an atlas, extract its region
+        if (!source && asset.imgmeta?.atlassed) {
+            if (!atlas) throw new Error('Texture atlas image not found');
+            const coords = asset.imgmeta.texcoords;
+            if (!coords) throw new Error(`No texture coordinates for atlassed image '${face.id}'`);
+
+            const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
+            const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
+            const minU = Math.min(...xs), maxU = Math.max(...xs);
+            const minV = Math.min(...ys), maxV = Math.max(...ys);
+
+            const sx = minU * atlas.width;
+            const sy = minV * atlas.height;
+            let sw = (maxU - minU) * atlas.width;
+            let sh = (maxV - minV) * atlas.height;
+
+            // Ensure that sw === sh
+            if (sw !== sh) {
+                // Ensure that we remain within the atlas bounds and that the texture is square
+                const size = Math.min(sw, sh, atlas.width, atlas.height);
+                sw = size;
+                sh = size;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = sw;
+            canvas.height = sh;
+            const ctx = canvas.getContext('2d')!;
+            ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
+            source = canvas;
+        }
+
+        if (!source) throw new Error(`Skybox image '${face.id}' has no image data`);
+        gl.texImage2D(face.target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+        // checkWebGLError('texImage2D');
+        console.log(`Skybox face ${face.id} loaded`);
+    }
+
+    // gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    // gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+    // Geen mipmaps gebruiken
+    // (als je ooit generateMipmap hebt geroepen: base/max-level vastzetten)
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
+
+    // Harde pixels
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    // Naadbehandeling aan randen
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+    // gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+    // checkWebGLError('texParameteri');
 }
 export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
     const program = gl.createProgram();
@@ -89,25 +155,39 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
     skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
     skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
     skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
+
+    // koppel sampler -> texture unit
+    gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
 }
 
-export function drawSkybox(gl: WebGL2RenderingContext): void {
+export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
+    if (!skyboxTexture) {
+        console.log('Skybox texture is not set');
+        return;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.viewport(0, 0, canvasWidth, canvasHeight);
+
+    checkWebGLError('before doing anything');
     glSwitchProgram(gl, skyboxProgram);
+    checkWebGLError('switchProgram');
     gl.bindVertexArray(vaoSkybox);
+    checkWebGLError('bindVertexArray');
 
     gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
+    checkWebGLError('bindBuffer');
     gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(skyboxPositionLocation);
+    checkWebGLError('vertexAttribPointer');
 
     const activeCamera = $.model.activeCamera3D;
     const view = activeCamera.viewMatrix.slice() as Float32Array;
     view[12] = 0; view[13] = 0; view[14] = 0;
     gl.uniformMatrix4fv(skyboxViewLocation, false, view);
     gl.uniformMatrix4fv(skyboxProjectionLocation, false, activeCamera.projectionMatrix);
-
-    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
-    gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
-    gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
+    checkWebGLError('uniformMatrix4fv');
 
     gl.drawArrays(gl.TRIANGLES, 0, 36);
+    checkWebGLError('drawArrays');
+    console.log('Skybox drawn');
 }

@@ -363,7 +363,7 @@ export class GLView extends BaseView {
 
 		const gl = this.glctx;
 
-		GLViewSkybox.drawSkybox(gl);
+		GLViewSkybox.drawSkybox(gl, this.framebuffer, this.canvas.width, this.canvas.height);
 		GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
 		GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
 		// saveTextureToFile();
