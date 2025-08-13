@@ -1,5 +1,4 @@
 import { glLoadShader, glSwitchProgram } from '../glutils';
-import { checkWebGLError } from '../glview.helpers';
 import { BaseView } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
@@ -20,32 +19,89 @@ export function init(gl: WebGL2RenderingContext) {
     vaoSkybox = gl.createVertexArray()!;
 }
 
+// export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
+//     // Inward-facing cube (CW vanaf buiten gezien, dus CCW vanaf binnen)
+//     const p = new Float32Array([
+//         // +Z (front)
+//         -1, -1, 1, 1, 1, 1, 1, -1, 1,
+//         -1, -1, 1, -1, 1, 1, 1, 1, 1,
+
+//         // -Z (back)
+//         -1, -1, -1, 1, 1, -1, -1, 1, -1,
+//         -1, -1, -1, 1, -1, -1, 1, 1, -1,
+
+//         // -X (left)
+//         -1, -1, -1, -1, 1, 1, -1, -1, 1,
+//         -1, -1, -1, -1, 1, -1, -1, 1, 1,
+
+//         // +X (right)
+//         1, -1, -1, 1, 1, 1, 1, 1, -1,
+//         1, -1, -1, 1, -1, 1, 1, 1, 1,
+
+//         // +Y (top)
+//         -1, 1, -1, 1, 1, 1, -1, 1, 1,
+//         -1, 1, -1, 1, 1, -1, 1, 1, 1,
+
+//         // -Y (bottom)
+//         -1, -1, -1, 1, -1, 1, 1, -1, -1,
+//         -1, -1, -1, -1, -1, 1, 1, -1, 1,
+//     ]);
+
+//     skyboxBuffer = gl.createBuffer()!;
+//     gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
+//     gl.bufferData(gl.ARRAY_BUFFER, p, gl.STATIC_DRAW);
+// }
+
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
-    // Inward-facing cube (CW vanaf buiten gezien, dus CCW vanaf binnen)
+    // CCW vanuit het centrum van de cube gezien (dus vertices in "normale" volgorde om naar binnen te kijken)
     const p = new Float32Array([
         // +Z (front)
-        -1, -1, 1, 1, 1, 1, 1, -1, 1,
-        -1, -1, 1, -1, 1, 1, 1, 1, 1,
+        -1, -1, 1,
+        1, -1, 1,
+        1, 1, 1,
+        -1, -1, 1,
+        1, 1, 1,
+        -1, 1, 1,
 
         // -Z (back)
-        -1, -1, -1, 1, 1, -1, -1, 1, -1,
-        -1, -1, -1, 1, -1, -1, 1, 1, -1,
+        1, -1, -1,
+        -1, -1, -1,
+        -1, 1, -1,
+        1, -1, -1,
+        -1, 1, -1,
+        1, 1, -1,
 
         // -X (left)
-        -1, -1, -1, -1, 1, 1, -1, -1, 1,
-        -1, -1, -1, -1, 1, -1, -1, 1, 1,
+        -1, -1, -1,
+        -1, -1, 1,
+        -1, 1, 1,
+        -1, -1, -1,
+        -1, 1, 1,
+        -1, 1, -1,
 
         // +X (right)
-        1, -1, -1, 1, 1, 1, 1, 1, -1,
-        1, -1, -1, 1, -1, 1, 1, 1, 1,
+        1, -1, 1,
+        1, -1, -1,
+        1, 1, -1,
+        1, -1, 1,
+        1, 1, -1,
+        1, 1, 1,
 
         // +Y (top)
-        -1, 1, -1, 1, 1, 1, -1, 1, 1,
-        -1, 1, -1, 1, 1, -1, 1, 1, 1,
+        -1, 1, 1,
+        1, 1, 1,
+        1, 1, -1,
+        -1, 1, 1,
+        1, 1, -1,
+        -1, 1, -1,
 
         // -Y (bottom)
-        -1, -1, -1, 1, -1, 1, 1, -1, -1,
-        -1, -1, -1, -1, -1, 1, 1, -1, 1,
+        -1, -1, -1,
+        1, -1, -1,
+        1, -1, 1,
+        -1, -1, -1,
+        1, -1, 1,
+        -1, -1, 1,
     ]);
 
     skyboxBuffer = gl.createBuffer()!;
@@ -110,8 +166,6 @@ export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string;
 
         if (!source) throw new Error(`Skybox image '${face.id}' has no image data`);
         gl.texImage2D(face.target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-        // checkWebGLError('texImage2D');
-        console.log(`Skybox face ${face.id} loaded`);
     }
 
     // gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -132,8 +186,6 @@ export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string;
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-    // gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
-    // checkWebGLError('texParameteri');
 }
 export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
     const program = gl.createProgram();
@@ -162,32 +214,22 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
 
 export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
     if (!skyboxTexture) {
-        console.log('Skybox texture is not set');
         return;
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
-
-    checkWebGLError('before doing anything');
+    gl.disable(gl.CULL_FACE);
     glSwitchProgram(gl, skyboxProgram);
-    checkWebGLError('switchProgram');
     gl.bindVertexArray(vaoSkybox);
-    checkWebGLError('bindVertexArray');
 
     gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
-    checkWebGLError('bindBuffer');
     gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(skyboxPositionLocation);
-    checkWebGLError('vertexAttribPointer');
 
     const activeCamera = $.model.activeCamera3D;
-    const view = activeCamera.viewMatrix.slice() as Float32Array;
-    view[12] = 0; view[13] = 0; view[14] = 0;
-    gl.uniformMatrix4fv(skyboxViewLocation, false, view);
-    gl.uniformMatrix4fv(skyboxProjectionLocation, false, activeCamera.projectionMatrix);
-    checkWebGLError('uniformMatrix4fv');
+    gl.uniformMatrix4fv(skyboxViewLocation, false, activeCamera.skyboxView());
+    gl.uniformMatrix4fv(skyboxProjectionLocation, false, activeCamera.projection);
 
     gl.drawArrays(gl.TRIANGLES, 0, 36);
-    checkWebGLError('drawArrays');
-    console.log('Skybox drawn');
+    gl.enable(gl.CULL_FACE);
 }

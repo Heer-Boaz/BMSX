@@ -11,6 +11,8 @@ import { bmatNA } from './math3d';
 import fragShader3DCode from './shaders/3d.frag.glsl';
 import vertexShader3DCode from './shaders/3d.vert.glsl';
 
+const BYTES_PER_FLOAT = 4;
+const COLUMN_BYTES = 4 * BYTES_PER_FLOAT; // 4 floats per kolom = 16 bytes
 const MAX_INSTANCES = 64;
 const INSTANCE_STRIDE_BYTES = 64; // 4 vec4
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
@@ -18,6 +20,7 @@ const INSTANCE_STRIDE_NORMAL9 = 9;
 const TEXTURE_UNIT_ALBEDO = 3;
 const TEXTURE_UNIT_NORMAL = 4;
 const TEXTURE_UNIT_METALLIC_ROUGHNESS = 5;
+const MAT4_FLOATS = 16;
 export const TEXTURE_UNIT_SHADOW_MAP = 6;
 
 export let meshesToDraw: DrawMeshOptions[] = [];
@@ -132,7 +135,8 @@ let viewProjectionLocation3D: WebGLUniformLocation;
 let useInstancingLocation3D: WebGLUniformLocation;
 const MAX_MORPH_TARGETS = 2;
 const MAX_JOINTS = 32;
-const jointMatrixArray = new Float32Array(MAX_JOINTS * INSTANCE_STRIDE_BYTES);
+const jointMatrixArray = new Float32Array(MAX_JOINTS * MAT4_FLOATS);
+
 const identityMatrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 let lastSkinningEnabled = false;
@@ -161,7 +165,9 @@ function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] |
 	if (hasSkinning && joints) {
 		jointMatrixArray.fill(0);
 		jointMatrixArray.set(identityMatrix, 0);
-		for (let i = 0; i < joints.length && i < MAX_JOINTS; i++) jointMatrixArray.set(joints[i], i * INSTANCE_STRIDE_BYTES);
+		for (let i = 0; i < joints.length && i < MAX_JOINTS; i++) {
+			jointMatrixArray.set(joints[i], i * MAT4_FLOATS);   // <-- 16, 32, 48, ...
+		}
 		if (!lastSkinningEnabled || !arraysEqual(jointMatrixArray, lastJointMatrixArray)) {
 			gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
 			lastSkinningEnabled = true;
@@ -175,6 +181,7 @@ function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] |
 		lastJointMatrixArray.set(jointMatrixArray);
 	}
 }
+
 
 function uploadMorphWeights(gl: WebGL2RenderingContext, weights: Float32Array | null): void {
 	if (weights) {
@@ -623,7 +630,11 @@ function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
 			const loc = locs[i];
 			if (loc >= 0) {
 				gl.enableVertexAttribArray(loc);
-				gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, INSTANCE_STRIDE_BYTES, i * INSTANCE_STRIDE_FLOATS);
+				gl.vertexAttribPointer(
+					loc, 4, gl.FLOAT, false,
+					INSTANCE_STRIDE_BYTES,            // stride blijft 64 bytes
+					i * COLUMN_BYTES                  // <-- offset in BYTES (0,16,32,48)
+				);
 				gl.vertexAttribDivisor(loc, 1);
 			}
 		}
@@ -638,7 +649,7 @@ function cullAndSortMeshes(): { instancedGroups: Map<string, { mesh: Mesh; matri
 	if (meshesToDraw.length === 0) return { instancedGroups: new Map(), singles: [] };
 
 	const activeCamera = $.model.activeCamera3D;
-	activeCamera.viewProjectionMatrix; // ensure frustum planes are up to date
+	activeCamera.viewProjection; // ensure frustum planes are up to date
 
 	// Frustum culling
 	meshesToDraw = meshesToDraw.filter(({ mesh: m, matrix }) => {
@@ -650,7 +661,7 @@ function cullAndSortMeshes(): { instancedGroups: Map<string, { mesh: Mesh; matri
 		const scaleY = Math.hypot(matrix[4], matrix[5], matrix[6]);
 		const scaleZ = Math.hypot(matrix[8], matrix[9], matrix[10]);
 		const radius = m.boundingRadius * Math.max(scaleX, scaleY, scaleZ);
-		return activeCamera.isSphereInFrustum([cx, cy, cz] as vec3arr, radius);
+		return activeCamera.sphereInFrustum([cx, cy, cz] as vec3arr, radius);
 	});
 
 	// Sort by material signature and distance
@@ -705,7 +716,8 @@ function setupRenderingState(gl: WebGL2RenderingContext): void {
 	// Alleen camera / viewProjection per frame
 	const activeCamera = $.model.activeCamera3D;
 	gl.uniform3fv(cameraPositionLocation3D, new Float32Array([activeCamera.position.x, activeCamera.position.y, activeCamera.position.z]));
-	gl.uniformMatrix4fv(viewProjectionLocation3D, false, activeCamera.viewProjectionMatrix);
+	gl.uniformMatrix4fv(viewProjectionLocation3D, false, activeCamera.viewProjection);
+
 	setUseInstancing(gl, false);
 
 	if (lightsDirty) {

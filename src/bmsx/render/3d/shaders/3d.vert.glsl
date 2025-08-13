@@ -59,7 +59,9 @@ void main() {
     gl_Position = u_viewProjection * model * vec4(scaledPosition, 1.0);
     v_worldPos = world.xyz; // Pass the world position to the fragment shader
     v_texcoord = a_texcoord; // Pass the texture coordinates to the fragment shader
-    mat3 nMat = u_useInstancing ? mat3(model) : u_normalMatrix;
+    mat3 upper = mat3(model);
+    mat3 nMat  = u_useInstancing ? transpose(inverse(upper)) : u_normalMatrix;
+    // mat3 nMat = u_useInstancing ? mat3(model) : u_normalMatrix;
     v_normal = nMat * skinnedNormal; // Pass the normal vector to the fragment shader
     v_tangent = nMat * skinnedTangent;
     v_bitangent = nMat * skinnedBitangent;

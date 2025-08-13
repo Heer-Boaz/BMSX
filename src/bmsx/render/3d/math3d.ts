@@ -1,8 +1,275 @@
 import type { vec3 } from '../../rompack/rompack';
 
+// math.ts — compacte, consistente math voor column-major mat4 (OpenGL-style)
+
+// render/3d/m4.ts
+// Minimal, consistent mat4 utils (column-major, right-multiply)
+
 export type Mat4 = Float32Array;
 
+export const M4 = {
+    // ----- creation -----
+    identity(): Mat4 {
+        const m = new Float32Array(16);
+        m[0] = 1; m[5] = 1; m[10] = 1; m[15] = 1;
+        return m;
+    },
+    setIdentity(out: Mat4): Mat4 {
+        out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+        out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+        out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
+        out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+        return out;
+    },
+
+    // ----- multiply -----
+    // out = a * b   (safe when out===a; not safe when out===b → copy b)
+    mulInto(out: Mat4, a: Mat4, b: Mat4): Mat4 {
+        let bb: Float32Array | undefined;
+        if (out === b) { bb = new Float32Array(16); bb.set(b); b = bb as Mat4; }
+        for (let i = 0; i < 4; ++i) {
+            const ai0 = a[i], ai1 = a[i + 4], ai2 = a[i + 8], ai3 = a[i + 12];
+            out[i] = ai0 * b[0] + ai1 * b[1] + ai2 * b[2] + ai3 * b[3];
+            out[i + 4] = ai0 * b[4] + ai1 * b[5] + ai2 * b[6] + ai3 * b[7];
+            out[i + 8] = ai0 * b[8] + ai1 * b[9] + ai2 * b[10] + ai3 * b[11];
+            out[i + 12] = ai0 * b[12] + ai1 * b[13] + ai2 * b[14] + ai3 * b[15];
+        }
+        return out;
+    },
+    mul(a: Mat4, b: Mat4): Mat4 { const out = new Float32Array(16); return M4.mulInto(out, a, b); },
+
+    // ----- in-place post-multiply by transforms (m = m * T/R/S) -----
+    translateSelf(m: Mat4, x: number, y: number, z: number): Mat4 {
+        m[12] += m[0] * x + m[4] * y + m[8] * z;
+        m[13] += m[1] * x + m[5] * y + m[9] * z;
+        m[14] += m[2] * x + m[6] * y + m[10] * z;
+        m[15] += m[3] * x + m[7] * y + m[11] * z;
+        return m;
+    },
+    scaleSelf(m: Mat4, x: number, y: number, z: number): Mat4 {
+        m[0] *= x; m[1] *= x; m[2] *= x; m[3] *= x;
+        m[4] *= y; m[5] *= y; m[6] *= y; m[7] *= y;
+        m[8] *= z; m[9] *= z; m[10] *= z; m[11] *= z;
+        return m;
+    },
+    rotateXSelf(m: Mat4, r: number): Mat4 {
+        const c = Math.cos(r), s = Math.sin(r);
+        const m4 = m[4], m5 = m[5], m6 = m[6], m7 = m[7],
+            m8 = m[8], m9 = m[9], m10 = m[10], m11 = m[11];
+        m[4] = m4 * c + m8 * s; m[5] = m5 * c + m9 * s; m[6] = m6 * c + m10 * s; m[7] = m7 * c + m11 * s;
+        m[8] = m8 * c - m4 * s; m[9] = m9 * c - m5 * s; m[10] = m10 * c - m6 * s; m[11] = m11 * c - m7 * s;
+        return m;
+    },
+    rotateYSelf(m: Mat4, r: number): Mat4 {
+        const c = Math.cos(r), s = Math.sin(r);
+        const m0 = m[0], m1 = m[1], m2 = m[2], m3 = m[3],
+            m8 = m[8], m9 = m[9], m10 = m[10], m11 = m[11];
+        m[0] = m0 * c - m8 * s; m[1] = m1 * c - m9 * s; m[2] = m2 * c - m10 * s; m[3] = m3 * c - m11 * s;
+        m[8] = m0 * s + m8 * c; m[9] = m1 * s + m9 * c; m[10] = m2 * s + m10 * c; m[11] = m3 * s + m11 * c;
+        return m;
+    },
+    rotateZSelf(m: Mat4, r: number): Mat4 {
+        const c = Math.cos(r), s = Math.sin(r);
+        const m0 = m[0], m1 = m[1], m2 = m[2], m3 = m[3],
+            m4 = m[4], m5 = m[5], m6 = m[6], m7 = m[7];
+        m[0] = m0 * c + m4 * s; m[1] = m1 * c + m5 * s; m[2] = m2 * c + m6 * s; m[3] = m3 * c + m7 * s;
+        m[4] = m4 * c - m0 * s; m[5] = m5 * c - m1 * s; m[6] = m6 * c - m2 * s; m[7] = m7 * c - m3 * s;
+        return m;
+    },
+
+    // ----- TRS helpers -----
+    quatToMat4(q: [number, number, number, number]): Mat4 {
+        let [x, y, z, w] = q;
+        const l = Math.hypot(x, y, z, w) || 1; x /= l; y /= l; z /= l; w /= l;
+        const xx = x * x, yy = y * y, zz = z * z, xy = x * y, xz = x * z, yz = y * z, wx = w * x, wy = w * y, wz = w * z;
+        const m = new Float32Array(16);
+        m[0] = 1 - 2 * (yy + zz); m[1] = 2 * (xy + wz); m[2] = 2 * (xz - wy); m[3] = 0;
+        m[4] = 2 * (xy - wz); m[5] = 1 - 2 * (xx + zz); m[6] = 2 * (yz + wx); m[7] = 0;
+        m[8] = 2 * (xz + wy); m[9] = 2 * (yz - wx); m[10] = 1 - 2 * (xx + yy); m[11] = 0;
+        m[12] = 0; m[13] = 0; m[14] = 0; m[15] = 1;
+        return m;
+    },
+    fromTRS(t: [number, number, number], q?: [number, number, number, number], s?: [number, number, number]): Mat4 {
+        const out = M4.identity();
+        if (t) M4.translateSelf(out, t[0], t[1], t[2]);
+        if (q) M4.mulInto(out, out, M4.quatToMat4(q));
+        if (s) M4.scaleSelf(out, s[0], s[1], s[2]);
+        return out;
+    },
+    // ====== Mat4 helpers (column-major, right-multiply) ======
+    perspective(fovRad: number, aspect: number, near: number, far: number): Mat4 {
+        const f = 1 / Math.tan(fovRad / 2), nf = 1 / (near - far);
+        const m = new Float32Array(16);
+        m[0] = f / aspect; m[5] = f; m[10] = (far + near) * nf; m[11] = -1; m[14] = 2 * far * near * nf; return m;
+    },
+
+    orthographic(l: number, r: number, b: number, t: number, n: number, f: number): Mat4 {
+        const lr = 1 / (l - r), bt = 1 / (b - t), nf = 1 / (n - f);
+        const m = new Float32Array(16);
+        m[0] = -2 * lr; m[5] = -2 * bt; m[10] = 2 * nf; m[12] = (l + r) * lr; m[13] = (t + b) * bt; m[14] = (f + n) * nf; m[15] = 1; return m;
+    },
+
+    // View matrix uit volledige, orthonormale basis en positie
+    viewFromBasis(pos: vec3, right: vec3, up: vec3, back: vec3): Mat4 {
+        const m = new Float32Array(16);
+        m[0] = right.x; m[1] = right.y; m[2] = right.z; m[3] = 0;
+        m[4] = up.x; m[5] = up.y; m[6] = up.z; m[7] = 0;
+        m[8] = back.x; m[9] = back.y; m[10] = back.z; m[11] = 0;
+        m[12] = -(right.x * pos.x + right.y * pos.y + right.z * pos.z);
+        m[13] = -(up.x * pos.x + up.y * pos.y + up.z * pos.z);
+        m[14] = -(back.x * pos.x + back.y * pos.y + back.z * pos.z);
+        m[15] = 1;
+        return m;
+    },
+
+    skyboxFromView(view: Mat4): Mat4 {
+        const m = view.slice() as Mat4;
+        m[12] = m[13] = m[14] = 0; return m;
+    },
+
+    // 3x3 normal matrix (inverse-transpose)
+    normal3(model: Mat4): Float32Array {
+        // snellere exacte 3x3 inverse-transpose (geen alloc binnenin)
+        const a00 = model[0], a01 = model[1], a02 = model[2];
+        const a10 = model[4], a11 = model[5], a12 = model[6];
+        const a20 = model[8], a21 = model[9], a22 = model[10];
+        const b01 = a22 * a11 - a12 * a21;
+        const b11 = -a22 * a10 + a12 * a20;
+        const b21 = a21 * a10 - a11 * a20;
+        let det = a00 * b01 + a01 * b11 + a02 * b21;
+        if (!det) { return new Float32Array(9); }
+        det = 1 / det;
+        const m00 = b01 * det, m01 = (-a22 * a01 + a02 * a21) * det, m02 = (a12 * a01 - a02 * a11) * det;
+        const m10 = b11 * det, m11 = (a22 * a00 - a02 * a20) * det, m12 = (-a12 * a00 + a02 * a10) * det;
+        const m20 = b21 * det, m21 = (-a21 * a00 + a01 * a20) * det, m22 = (a11 * a00 - a01 * a10) * det;
+        return new Float32Array([m00, m10, m20, m01, m11, m21, m02, m12, m22]);
+    },
+};
+
+
+// ====== Vec helpers ======
+export const V3 = {
+    of(x = 0, y = 0, z = 0): vec3 { return { x, y, z }; },
+    add(a: vec3, b: vec3): vec3 { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; },
+    sub(a: vec3, b: vec3): vec3 { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; },
+    scale(a: vec3, s: number): vec3 { return { x: a.x * s, y: a.y * s, z: a.z * s }; },
+    dot(a: vec3, b: vec3): number { return a.x * b.x + a.y * b.y + a.z * b.z; },
+    cross(a: vec3, b: vec3): vec3 {
+        return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+    },
+    len(a: vec3): number { return Math.hypot(a.x, a.y, a.z); },
+    norm(a: vec3): vec3 {
+        const L = V3.len(a) || 1; return { x: a.x / L, y: a.y / L, z: a.z / L };
+    },
+};
+
+
+// ====== Frustum helpers ======
+export type Plane = [number, number, number, number];
+export function extractFrustumPlanes(vp: Mat4): Plane[] {
+    const m = vp;
+    const P: Plane[] = [
+        [m[3] + m[0], m[7] + m[4], m[11] + m[8], m[15] + m[12]], // left
+        [m[3] - m[0], m[7] - m[4], m[11] - m[8], m[15] - m[12]], // right
+        [m[3] + m[1], m[7] + m[5], m[11] + m[9], m[15] + m[13]], // bottom
+        [m[3] - m[1], m[7] - m[5], m[11] - m[9], m[15] - m[13]], // top
+        [m[3] + m[2], m[7] + m[6], m[11] + m[10], m[15] + m[14]], // near
+        [m[3] - m[2], m[7] - m[6], m[11] - m[10], m[15] - m[14]], // far
+    ];
+    for (const p of P) {
+        const inv = 1 / Math.hypot(p[0], p[1], p[2]) || 1;
+        p[0] *= inv; p[1] *= inv; p[2] *= inv; p[3] *= inv;
+    }
+    return P;
+}
+export function sphereInFrustum(planes: Plane[], center: [number, number, number], radius: number): boolean {
+    const [x, y, z] = center;
+    const bias = radius * 0.01;
+    for (const p of planes) if (p[0] * x + p[1] * y + p[2] * z + p[3] < -(radius + bias)) return false;
+    return true;
+}
+
 export const bmat = {
+    // === CONSISTENTE VIEW HELPERS (column-major, right-multiply) ===
+    viewFromPosFwdUp(pos: [number, number, number],
+        fwd: [number, number, number],
+        upHint: [number, number, number]): Mat4 {
+        // Zorg voor orthonormale basis
+        let fx = fwd[0], fy = fwd[1], fz = fwd[2];
+        const fLen = Math.hypot(fx, fy, fz) || 1; fx /= fLen; fy /= fLen; fz /= fLen;
+        // z-as van cameramatrix wijst "naar achteren"
+        let zx = -fx, zy = -fy, zz = -fz;
+
+        // right = normalize(cross(upHint, z))
+        let rx = upHint[1] * zz - upHint[2] * zy;
+        let ry = upHint[2] * zx - upHint[0] * zz;
+        let rz = upHint[0] * zy - upHint[1] * zx;
+        const rLen = Math.hypot(rx, ry, rz) || 1; rx /= rLen; ry /= rLen; rz /= rLen;
+
+        // up   = cross(z, right)
+        let ux = zy * rz - zz * ry;
+        let uy = zz * rx - zx * rz;
+        let uz = zx * ry - zy * rx;
+
+        const [px, py, pz] = pos;
+        const out = new Float32Array(16);
+        out[0] = rx; out[1] = ry; out[2] = rz; out[3] = 0;
+        out[4] = ux; out[5] = uy; out[6] = uz; out[7] = 0;
+        out[8] = zx; out[9] = zy; out[10] = zz; out[11] = 0;
+        out[12] = -(rx * px + ry * py + rz * pz);
+        out[13] = -(ux * px + uy * py + uz * pz);
+        out[14] = -(zx * px + zy * py + zz * pz);
+        out[15] = 1;
+        return out;
+    },
+
+    /** FPS-stijl yaw/pitch naar view; yaw=0 kijkt -Z op wereld, right is horizontaal. */
+    // bmat.ts
+    viewFromYawPitch(pos: [number, number, number], yaw: number, pitch: number): Mat4 {
+        const cp = Math.cos(pitch), sp = Math.sin(pitch);
+        const cy = Math.cos(yaw), sy = Math.sin(yaw);
+
+        // Forward: yaw=0 kijkt langs -Z (OpenGL conventie)
+        const fx = sy * cp, fy = sp, fz = -cy * cp;
+
+        // Robuust: gebruik vaste wereld-up als referentie
+        let rx = 0 * fz - 1 * fy;   // cross(worldUp,[fx,fy,fz]) = [1,0,0]×? nee: worldUp=[0,1,0]
+        let ry = 1 * fx - 0 * fz;   // => [fz, 0, -fx] maar met juiste tekenen:
+        let rz = 0 * fy - 0 * fx;   // we schrijven het expliciet:
+        // Correct: right = normalize(cross(worldUp, forward))
+        rx = (1 * fz - 0 * fy);     // =  fz
+        ry = (0 * fx - 0 * fz);     // =  0
+        rz = (0 * fy - 1 * fx);     // = -fx
+        let rlen = Math.hypot(rx, ry, rz) || 1; rx /= rlen; ry /= rlen; rz /= rlen;
+
+        // Up = cross(forward, right)  (rechts-handig)
+        const ux = fy * rz - fz * ry;
+        const uy = fz * rx - fx * rz;
+        const uz = fx * ry - fy * rx;
+
+        // Z-as van cam wijst "naar achteren"
+        const zx = -fx, zy = -fy, zz = -fz;
+
+        const [px, py, pz] = pos;
+        const out = new Float32Array(16);
+        out[0] = rx; out[1] = ry; out[2] = rz; out[3] = 0;
+        out[4] = ux; out[5] = uy; out[6] = uz; out[7] = 0;
+        out[8] = zx; out[9] = zy; out[10] = zz; out[11] = 0;
+        out[12] = -(rx * px + ry * py + rz * pz);
+        out[13] = -(ux * px + uy * py + uz * pz);
+        out[14] = -(zx * px + zy * py + zz * pz);
+        out[15] = 1;
+        return out;
+    },
+
+
+    /** Alleen rotatie deel van een view (handig voor skybox). */
+    skyboxViewFromView(view: Mat4): Mat4 {
+        const out = view.slice() as Mat4;
+        out[12] = 0; out[13] = 0; out[14] = 0;
+        return out;
+    },
+
     identity(): Mat4 {
         const out = new Float32Array(16);
         out[0] = 1; out[5] = 1; out[10] = 1; out[15] = 1;
@@ -282,7 +549,7 @@ export const bquat = {
     conjugate(q: quat): quat {
         return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
     },
-    rotateVec3(q: quat, v: vec3): vec3 {
+    rotatevec3(q: quat, v: vec3): vec3 {
         const qv: quat = { x: v.x, y: v.y, z: v.z, w: 0 };
         const res = bquat.multiply(bquat.multiply(q, qv), bquat.conjugate(q));
         return { x: res.x, y: res.y, z: res.z };
@@ -336,6 +603,72 @@ export function quatToMat4(q: [number, number, number, number]): Float32Array {
 }
 
 export const bmatNA = {
+    // === NON-ALLOC VARIANTEN VAN VIEW ===
+    viewFromPosFwdUpInto(out: Mat4,
+        pos: [number, number, number],
+        fwd: [number, number, number],
+        upHint: [number, number, number]): Mat4 {
+        // normalize fwd
+        let fx = fwd[0], fy = fwd[1], fz = fwd[2];
+        const fLen = Math.hypot(fx, fy, fz) || 1; fx /= fLen; fy /= fLen; fz /= fLen;
+        let zx = -fx, zy = -fy, zz = -fz;
+
+        // right = normalize(cross(upHint, z))
+        let rx = upHint[1] * zz - upHint[2] * zy;
+        let ry = upHint[2] * zx - upHint[0] * zz;
+        let rz = upHint[0] * zy - upHint[1] * zx;
+        const rLen = Math.hypot(rx, ry, rz) || 1; rx /= rLen; ry /= rLen; rz /= rLen;
+
+        // up = cross(z, right)
+        let ux = zy * rz - zz * ry;
+        let uy = zz * rx - zx * rz;
+        let uz = zx * ry - zy * rx;
+
+        const px = pos[0], py = pos[1], pz = pos[2];
+        out[0] = rx; out[1] = ry; out[2] = rz; out[3] = 0;
+        out[4] = ux; out[5] = uy; out[6] = uz; out[7] = 0;
+        out[8] = zx; out[9] = zy; out[10] = zz; out[11] = 0;
+        out[12] = -(rx * px + ry * py + rz * pz);
+        out[13] = -(ux * px + uy * py + uz * pz);
+        out[14] = -(zx * px + zy * py + zz * pz);
+        out[15] = 1;
+        return out;
+    },
+
+    viewFromYawPitchInto(out: Mat4, pos: [number, number, number], yaw: number, pitch: number): Mat4 {
+        const cp = Math.cos(pitch), sp = Math.sin(pitch);
+        const cy = Math.cos(yaw), sy = Math.sin(yaw);
+
+        // Forward volgens OpenGL conventie: yaw=0 kijkt langs -Z
+        const fwd: [number, number, number] = [sy * cp, sp, -cy * cp];
+
+        // Gebruik vaste wereld-up voor robuustheid
+        const worldUp: [number, number, number] = [0, 1, 0];
+
+        // Orthonormale basis bouwen
+        let rx = worldUp[1] * fwd[2] - worldUp[2] * fwd[1];
+        let ry = worldUp[2] * fwd[0] - worldUp[0] * fwd[2];
+        let rz = worldUp[0] * fwd[1] - worldUp[1] * fwd[0];
+        const rLen = Math.hypot(rx, ry, rz) || 1; rx /= rLen; ry /= rLen; rz /= rLen;
+
+        const ux = fwd[1] * rx - fwd[2] * ry;
+        const uy = fwd[2] * rz - fwd[0] * rz; // let op: check hieronder
+        const uz = fwd[0] * ry - fwd[1] * rx;
+
+        return this.viewFromPosFwdUpInto(out, pos, fwd, [ux, uy, uz]);
+    },
+
+    // viewFromYawPitch(pos: [number, number, number], yaw: number, pitch: number): Mat4 {
+
+    //     return this.viewFromPosFwdUp(pos, fwd, [ux, uy, uz]);
+    // },
+
+    skyboxViewFromViewInto(out: Mat4, view: Mat4): Mat4 {
+        out.set(view);
+        out[12] = 0; out[13] = 0; out[14] = 0;
+        return out;
+    },
+
     setIdentity(out: Mat4): Mat4 {
         out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
         out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;

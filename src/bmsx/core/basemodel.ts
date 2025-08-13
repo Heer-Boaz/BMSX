@@ -5,7 +5,7 @@ import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { StateDefinition } from '../fsm/statedefinition';
 import { Input } from "../input/input";
-import { Camera3D } from '../render/3d/camera3d';
+import { Camera } from '../render/3d/camera3d';
 import type { Identifier, Registerable, RegisterablePersistent } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
@@ -238,7 +238,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         return this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
     }
 
-    public get activeCamera3D(): Camera3D | null {
+    public get activeCamera3D(): Camera | null {
         return this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId).camera : null;
     }
 

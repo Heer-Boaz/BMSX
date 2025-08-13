@@ -1,6 +1,6 @@
 import { TransformComponent } from '../component/transformcomponent';
 import { Material } from '../render/3d/material';
-import { bmat, bmatNA, quatToMat4 } from '../render/3d/math3d';
+import { bmat, M4, Mat4 } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import type { TextureKey } from '../render/texturemanager';
@@ -9,7 +9,6 @@ import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, vec
 import { insavegame, onload } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 import { Float32ArrayPool } from './utils';
-
 export class Mesh {
     public positions: Float32Array;
     public texcoords: Float32Array;
@@ -405,15 +404,13 @@ export abstract class MeshObject extends GameObject {
         if (this.meshModel.nodes && this.meshModel.scenes && this.meshModel.scenes.length > 0) {
             const scene = this.meshModel.scenes[this.meshModel.scene ?? 0];
             if (scene) {
-                for (const nodeIndex of scene.nodes) {
-                    this.traverse(nodeIndex, bmat.identity());
-                }
+                for (const nodeIndex of scene.nodes) this.traverse(nodeIndex, M4.identity());
             }
         } else {
             for (const [idx, mesh] of this.meshes.entries()) {
                 this.meshInstances.push({
                     mesh,
-                    matrix: bmat.identity(),
+                    matrix: M4.identity(),
                     nodeIndex: idx,
                     morphWeights: mesh.morphWeights.slice(),
                 });
@@ -421,7 +418,7 @@ export abstract class MeshObject extends GameObject {
         }
     }
 
-    private traverse(nodeIndex: number, parent: Float32Array): void {
+    private traverse(nodeIndex: number, parent: Mat4): void {
         if (!this.meshModel.nodes) return;
         const world = this.getWorldMatrix(nodeIndex, parent);
         const node: GLTFNode = this.meshModel.nodes[nodeIndex];
@@ -432,34 +429,40 @@ export abstract class MeshObject extends GameObject {
                 this.meshInstances.push({ mesh, matrix: world, skinIndex: node.skin, nodeIndex, morphWeights: weights });
             }
         }
-        if (node.children) {
-            for (const child of node.children) {
-                this.traverse(child, world);
-            }
-        }
+        if (node.children) for (const child of node.children) this.traverse(child, world);
     }
 
-    private computeSkinMatrices(skinIndex: number): Float32Array[] {
+    private getWorldMatrix(nodeIndex: number, parent: Mat4): Mat4 {
+        if (this.nodeDirty[nodeIndex]) {
+            const node: GLTFNode = this.meshModel.nodes![nodeIndex];
+            const local = node.matrix ? new Float32Array(node.matrix) : this.composeNodeMatrix(node);
+            // world = parent * local
+            const world = new Float32Array(16);
+            M4.mulInto(world, parent, local);
+            this.worldMatrices[nodeIndex] = world;
+            this.nodeDirty[nodeIndex] = false;
+        }
+        return this.worldMatrices[nodeIndex];
+    }
+
+    private composeNodeMatrix(node: GLTFNode): Mat4 {
+        const t = node.translation ?? [0, 0, 0];
+        const q = node.rotation ?? undefined; // [x,y,z,w]
+        const s = node.scale ?? [1, 1, 1];
+        return M4.fromTRS([t[0], t[1], t[2]], q as any, [s[0], s[1], s[2]]);
+    }
+
+    private computeSkinMatrices(skinIndex: number): Float32Array[] | undefined {
         const skin = this.meshModel.skins?.[skinIndex];
         if (!skin || skin.joints.length === 0) return undefined;
         const mats: Float32Array[] = [];
         for (let i = 0; i < skin.joints.length; i++) {
             const jointIdx = skin.joints[i];
             const jointWorld = this.worldMatrices[jointIdx];
-            const inv = skin.inverseBindMatrices?.[i] ?? bmat.identity();
-            mats.push(bmat.multiply(jointWorld, inv));
+            const inv = skin.inverseBindMatrices?.[i] ?? M4.identity();
+            mats.push(M4.mul(jointWorld, inv));
         }
         return mats;
-    }
-
-    private getWorldMatrix(nodeIndex: number, parent: Float32Array): Float32Array {
-        if (this.nodeDirty[nodeIndex]) {
-            const node: GLTFNode = this.meshModel.nodes![nodeIndex];
-            const local = node.matrix ? new Float32Array(node.matrix) : this.composeNodeMatrix(node);
-            this.worldMatrices[nodeIndex] = bmat.multiply(parent, local);
-            this.nodeDirty[nodeIndex] = false;
-        }
-        return this.worldMatrices[nodeIndex];
     }
 
     private markNodeDirty(index: number): void {
@@ -472,17 +475,6 @@ export abstract class MeshObject extends GameObject {
         mark(index);
     }
 
-    private composeNodeMatrix(node: GLTFNode): Float32Array {
-        let m = bmat.identity();
-        const t = node.translation ?? [0, 0, 0];
-        m = bmat.translate(m, t[0], t[1], t[2]);
-        if (node.rotation) {
-            m = bmat.multiply(m, quatToMat4(node.rotation));
-        }
-        const s = node.scale ?? [1, 1, 1];
-        m = bmat.scale(m, s[0], s[1], s[2]);
-        return m;
-    }
 
     public releaseModel(model: GLTFModel): void {
         $.texmanager.releaseModelTextures(model);
@@ -500,27 +492,26 @@ export abstract class MeshObject extends GameObject {
         if (this.meshInstances.length === 0) return;
 
         const transform = this.getComponent(TransformComponent);
-        const base = this._base;
+        const base = this._base; // Float32Array(16) hergebruikt
 
         if (transform) {
-            base.set(transform.getWorldMatrix());
+            base.set(transform.getWorldMatrix()); // aanname: column-major 4x4
         } else {
-            bmatNA.setIdentity(base);
-            bmatNA.translateSelf(base, this.x, this.y, this.z);
-            bmatNA.rotateXSelf(base, this.rotation[0]);
-            bmatNA.rotateYSelf(base, this.rotation[1]);
-            bmatNA.rotateZSelf(base, this.rotation[2]);
-            bmatNA.scaleSelf(base, this.scale[0], this.scale[1], this.scale[2]);
+            M4.setIdentity(base);
+            M4.translateSelf(base, this.x, this.y, this.z);
+            M4.rotateXSelf(base, this.rotation[0]);
+            M4.rotateYSelf(base, this.rotation[1]);
+            M4.rotateZSelf(base, this.rotation[2]);
+            M4.scaleSelf(base, this.scale[0], this.scale[1], this.scale[2]);
         }
 
         for (const inst of this.meshInstances) {
             const mesh = inst.mesh;
-            if (!mesh) continue; // TODO: SHOULD NOT BE REQUIRED, BUT LOADING FROM SERIALIZED STATE CAUSES ISSUES
-            if (!mesh.positions || mesh.positions.length === 0) continue;
+            if (!mesh || !mesh.positions || mesh.positions.length === 0) continue;
 
-            // world = base * inst.matrix (in-place, geen alloc)
+            // world = base * inst.matrix
             const world = this.worldPool.ensure();
-            bmatNA.multiplyInto(world, base, inst.matrix);
+            M4.mulInto(world, base, inst.matrix);
 
             const options: DrawMeshOptions = {
                 mesh,
@@ -530,7 +521,9 @@ export abstract class MeshObject extends GameObject {
             };
             $.view.drawMesh(options);
         }
+
         this.worldPool.reset();
     }
+
 
 }

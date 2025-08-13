@@ -108,6 +108,11 @@ export function to_vec2arr(v: vec2 | vec2arr): vec2arr {
 export function to_vec3(v: vec3 | vec3arr): vec3 {
     return Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : { x: v.x, y: v.y, z: v.z };
 }
+
+export function to_vec3arr(v: vec3 | vec3arr): vec3arr {
+    return Array.isArray(v) ? v : [v.x, v.y, v.z];
+}
+
 /**
  * Creates a copy of a Vector object.
  * @param toCopy - The Vector object to be copied.
