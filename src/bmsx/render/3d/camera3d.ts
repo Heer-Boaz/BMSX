@@ -1,96 +1,93 @@
 import { vec3 } from '../../rompack/rompack';
-import { extractFrustumPlanes, M4, Mat4, Plane, sphereInFrustum, V3 } from './math3d';
+import { extractFrustumPlanes, M4, Mat4, Plane, Q, Quat, sphereInFrustum, V3 } from './math3d';
 
 export class Camera {
-    // --- parameters ---
     position: vec3 = V3.of(0, 0, 0);
-    yaw = 0;                        // radians, yaw=0 kijkt langs -Z
-    pitch = 0;                      // radians
+
+    // Bewaar deze voor UI/serialisatie; intern sturen we met _q
+    yaw = 0;
+    pitch = 0;
+    roll = 0;
     static readonly MAX_PITCH = Math.PI / 2 - 1e-3;
 
-    fovDeg = 60;
-    aspect = 1;
-    near = 0.1;
-    far = 1000;
-    perspective = true;
+    fovDeg = 60; aspect = 1; near = 0.1; far = 1000; perspective = true;
 
-    // --- cached matrices ---
+    private _q: Quat = Q.ident();       // <-- bron van waarheid
     private _view: Mat4 = M4.identity();
     private _proj: Mat4 = M4.identity();
     private _vp: Mat4 = M4.identity();
     private _planes: Plane[] = [];
     private _dirty = true;
 
-    // ====== Orientation vectors (orthonormaal, no roll) ======
-    forward(): vec3 {
-        const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
-        const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-        // yaw=0 → kijk langs -Z
-        return { x: sy * cp, y: sp, z: -cy * cp };
-    }
-    right(): vec3 {
-        const f = this.forward();
-        // Flip cross: cross(f, world_up) instead of cross(world_up, f)
-        const r = V3.cross(f, { x: 0, y: 1, z: 0 });
-        const L = V3.len(r);
-        // Fallback with flipped sign for consistency (now positive cos/sin)
-        return L > 1e-6 ? V3.scale(r, 1 / L) : { x: Math.cos(this.yaw), y: 0, z: Math.sin(this.yaw) };
+    constructor() {
+        this.syncEulerToQuat(); // init _q vanuit yaw/pitch/roll = 0
     }
 
-    up(): vec3 {
-        const f = this.forward();
-        const r = this.right();
-        // Flip cross: cross(r, f) instead of cross(f, r)
-        return V3.norm(V3.cross(r, f));
+    // --- basis zonder direct Euler te gebruiken
+    private basis(): { r: vec3; u: vec3; f: vec3 } {
+        return Q.basis(this._q);
     }
 
-    // ====== Controls ======
+    // ====== Besturing ======
+
+    /** Flight-sim style: rotaties rond lokale assen (body axes). */
     mouseLook(dYaw: number, dPitch: number): void {
-        this.yaw += dYaw;
-        this.pitch = Math.max(-Camera.MAX_PITCH, Math.min(Camera.MAX_PITCH, this.pitch + dPitch));
+        const { r, u } = this.basis();
+        // q' = R_u(dYaw) * R_r(dPitch) * q
+        const qYaw = Q.fromAxisAngle(u, dYaw);
+        const qPitch = Q.fromAxisAngle(r, dPitch);
+        this._q = Q.norm(Q.mul(qYaw, Q.mul(qPitch, this._q)));
+        this.updateEulerFromQuat(); // alleen voor UI/clamps
         this._dirty = true;
     }
-    moveForward(dist: number): void {
-        const f = this.forward();
-        this.position = V3.add(this.position, V3.scale(f, dist));
+
+    /** Screen-space: rond actuele scherm-assen, roll blijft exact behouden. */
+    mouseLookScreen(dYaw: number, dPitch: number): void {
+        const { r, u } = this.basis(); // asjes inclusief huidige roll
+        const qYaw = Q.fromAxisAngle(u, dYaw);
+        const qPitch = Q.fromAxisAngle(r, dPitch);
+        this._q = Q.norm(Q.mul(qYaw, Q.mul(qPitch, this._q)));
+        this.updateEulerFromQuat(); // werkt yaw/pitch bij zonder roll te herleiden
         this._dirty = true;
     }
-    strafeRight(dist: number): void {
-        const r = this.right();
-        this.position = V3.add(this.position, V3.scale(r, dist));
+
+    addRoll(angle: number): void {
+        const { f } = this.basis();
+        const qRoll = Q.fromAxisAngle(f, angle);
+        this._q = Q.norm(Q.mul(qRoll, this._q));
+        this.roll += angle;               // numeriek bijhouden voor UI, niet afleiden
         this._dirty = true;
     }
-    flyUpDown(dist: number): void {
-        const u = this.up();
-        this.position = V3.add(this.position, V3.scale(u, dist));
+    setRoll(angle: number): void {
+        // zet absolute roll: verwijder eerst huidige roll, dan nieuwe toepassen
+        const { f } = this.basis();
+        const qUndo = Q.fromAxisAngle(f, -this.roll);
+        this._q = Q.mul(qUndo, this._q);
+        const qNew = Q.fromAxisAngle(f, angle);
+        this._q = Q.norm(Q.mul(qNew, this._q));
+        this.roll = angle;
         this._dirty = true;
     }
-    moveWorldUp(dist: number): void { // optioneel: pure wereld-Y
-        this.position.y += dist; this._dirty = true;
-    }
+
+    moveForward(d: number): void { const { f } = this.basis(); this.position = V3.add(this.position, V3.scale(f, d)); this._dirty = true; }
+    strafeRight(d: number): void { const { r } = this.basis(); this.position = V3.add(this.position, V3.scale(r, d)); this._dirty = true; }
+    flyUpDown(d: number): void { const { u } = this.basis(); this.position = V3.add(this.position, V3.scale(u, d)); this._dirty = true; }
+    moveWorldUp(d: number): void { this.position.y += d; this._dirty = true; }
 
     setAspect(a: number) { this.aspect = a; this._dirty = true; }
     setFov(deg: number) { this.fovDeg = deg; this._dirty = true; }
-    setClip(near: number, far: number) { this.near = near; this.far = far; this._dirty = true; }
+    setClip(n: number, f: number) { this.near = n; this.far = f; this._dirty = true; }
     usePerspective(on = true) { this.perspective = on; this._dirty = true; }
 
     // ====== Matrices ======
     private rebuild(): void {
-        // Basis opbouwen
-        const f = this.forward();
-        const r = this.right();
-        const u = this.up();
-        const back = V3.scale(f, -1); // camera Z wijst naar achteren
-
+        const { r, u, f } = this.basis();
+        const back = V3.scale(f, -1);
         this._view = M4.viewFromBasis(this.position, r, u, back);
 
-        if (this.perspective) {
-            this._proj = M4.perspective(this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far);
-        } else {
-            // Ortho: fovDeg = breedte; aspect = w/h
-            const w = this.fovDeg, h = w / this.aspect;
-            this._proj = M4.orthographic(-w / 2, w / 2, -h / 2, h / 2, this.near, this.far);
-        }
+        this._proj = this.perspective
+            ? M4.perspective(this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far)
+            : (() => { const w = this.fovDeg, h = w / this.aspect; return M4.orthographic(-w / 2, w / 2, -h / 2, h / 2, this.near, this.far); })();
 
         this._vp = M4.mul(this._proj, this._view);
         this._planes = extractFrustumPlanes(this._vp);
@@ -101,13 +98,50 @@ export class Camera {
     get projection(): Mat4 { if (this._dirty) this.rebuild(); return this._proj; }
     get viewProjection(): Mat4 { if (this._dirty) this.rebuild(); return this._vp; }
     get frustumPlanes(): Plane[] { if (this._dirty) this.rebuild(); return this._planes; }
-
-    // Skybox = alleen rotatie (geen translatie)
     skyboxView(): Mat4 { return M4.skyboxFromView(this.view); }
 
-    // Culling
     sphereInFrustum(center: [number, number, number], radius: number): boolean {
         if (this._dirty) this.rebuild();
         return sphereInFrustum(this._planes, center, radius);
     }
+
+    // ====== Euler <-> Quat sync (optioneel voor UI/serialisatie) ======
+
+    /** Init _q vanuit huidige yaw/pitch/roll (gebruik bij constructie/reset). */
+    private syncEulerToQuat(): void {
+        // volgorde: yaw (world-ish), pitch (rond lokale X), roll (rond forward)
+        // We bouwen hem via basis-assen:
+        let q = Q.ident();
+        // start met yaw om Y-wereld (redelijk voor init)
+        q = Q.mul(Q.fromAxisAngle(V3.of(0, 1, 0), this.yaw), q);
+        // pitch om lokale right
+        const r1 = Q.basis(q).r;
+        q = Q.mul(Q.fromAxisAngle(r1, this.pitch), q);
+        // roll om forward
+        const f1 = Q.basis(q).f;
+        q = Q.mul(Q.fromAxisAngle(f1, this.roll), q);
+        this._q = Q.norm(q);
+        this._dirty = true;
+    }
+
+    /** Werk yaw/pitch bij uit _q zonder roll te ‘afleiden’; houd continuïteit. */
+    private updateEulerFromQuat(): void {
+        const { f } = this.basis();
+        // Yaw = atan2(f.x, -f.z), Pitch = asin(f.y), met unwrap t.o.v. vorige waarden
+        const newYaw = Math.atan2(f.x, -f.z);
+        const newPitch = Math.asin(Math.max(-1, Math.min(1, f.y)));
+        this.yaw = unwrapAngle(this.yaw, newYaw);
+        this.pitch = clamp(newPitch, -Camera.MAX_PITCH, Camera.MAX_PITCH);
+        // roll NIET wijzigen — die wordt uitsluitend via addRoll/setRoll aangepast.
+    }
 }
+
+// Klein hulpspul onderaan camera.ts of in math3d.ts
+function unwrapAngle(prev: number, now: number): number {
+    // voorkom sprong van ~±π → kies dichtstbijzijnde equivalent
+    let d = now - prev;
+    while (d > Math.PI) d -= 2 * Math.PI;
+    while (d < -Math.PI) d += 2 * Math.PI;
+    return prev + d;
+}
+function clamp(x: number, a: number, b: number) { return Math.max(a, Math.min(b, x)); }

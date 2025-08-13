@@ -430,7 +430,7 @@ class CameraController extends GameObject {
 
             const cam = camObj.camera;
             const sens = 0.002;
-            cam.mouseLook(-dx * sens, -dy * sens); // prettige mapping            const after = cam.position;
+            cam.mouseLookScreen(-dx * sens, -dy * sens); // prettige mapping            const after = cam.position;
 
         });
 
@@ -507,15 +507,17 @@ class CameraController extends GameObject {
         //     // Keyboard rotation (when mouse is not locked)
         //     if (up_pressed) cam.addPitch(rotateSpeed);      // Look up
         //     if (down_pressed) cam.addPitch(-rotateSpeed);   // Look down
-        //     if (left_pressed) cam.addYaw(-rotateSpeed);     // Turn left
-        //     if (right_pressed) cam.addYaw(rotateSpeed);     // Turn right
+        // if (left_pressed) cam.addRoll(-rotateSpeed);
+        // if (right_pressed) cam.addRoll(rotateSpeed);
         // }
 
         // Movement (works in both modes)
         if (moveForward_pressed) cam.moveForward(move);    // Forward movement
         if (moveBackward_pressed) cam.moveForward(-move);  // Backward movement
-        if (panLeft_pressed) cam.strafeRight(-move);   // Pan left
-        if (panRight_pressed) cam.strafeRight(move);    // Pan right
+        if (panLeft_pressed) cam.addRoll(-rotateSpeed);
+        if (panRight_pressed) cam.addRoll(rotateSpeed);
+        // if (panLeft_pressed) cam.strafeRight(-move);   // Pan left
+        // if (panRight_pressed) cam.strafeRight(move);    // Pan right
 
         // Additional free-form movement (you can map these to other keys)
         // cam.strafeFreeform() for left/right strafe

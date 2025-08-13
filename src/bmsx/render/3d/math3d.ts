@@ -76,7 +76,6 @@ export const M4 = {
         m[4] = m4 * c - m0 * s; m[5] = m5 * c - m1 * s; m[6] = m6 * c - m2 * s; m[7] = m7 * c - m3 * s;
         return m;
     },
-
     // ----- TRS helpers -----
     quatToMat4(q: [number, number, number, number]): Mat4 {
         let [x, y, z, w] = q;
@@ -161,6 +160,23 @@ export const V3 = {
     norm(a: vec3): vec3 {
         const L = V3.len(a) || 1; return { x: a.x / L, y: a.y / L, z: a.z / L };
     },
+    rotateAroundAxis(v: vec3, axis: vec3, angle: number): vec3 {
+        // as = genormaliseerde as
+        const L = Math.hypot(axis.x, axis.y, axis.z) || 1;
+        const ax = axis.x / L, ay = axis.y / L, az = axis.z / L;
+        const c = Math.cos(angle), s = Math.sin(angle);
+        // v' = v*c + (a×v)*s + a*(a·v)*(1-c)
+        const crossX = ay * v.z - az * v.y;
+        const crossY = az * v.x - ax * v.z;
+        const crossZ = ax * v.y - ay * v.x;
+        const dot = ax * v.x + ay * v.y + az * v.z;
+        return {
+            x: v.x * c + crossX * s + ax * dot * (1 - c),
+            y: v.y * c + crossY * s + ay * dot * (1 - c),
+            z: v.z * c + crossZ * s + az * dot * (1 - c),
+        };
+    }
+
 };
 
 
@@ -601,6 +617,71 @@ export function quatToMat4(q: [number, number, number, number]): Float32Array {
     out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
     return out;
 }
+
+// ====== Quat helpers ======
+export type Quat = { x: number; y: number; z: number; w: number };
+
+export const Q = {
+    ident(): Quat { return { x: 0, y: 0, z: 0, w: 1 }; },
+
+    fromAxisAngle(axis: vec3, ang: number): Quat {
+        const a = V3.norm(axis); const h = ang * 0.5, s = Math.sin(h);
+        return { x: a.x * s, y: a.y * s, z: a.z * s, w: Math.cos(h) };
+    },
+
+    mul(a: Quat, b: Quat): Quat {
+        return {
+            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        };
+    },
+
+    norm(q: Quat): Quat {
+        const L = Math.hypot(q.x, q.y, q.z, q.w) || 1;
+        return { x: q.x / L, y: q.y / L, z: q.z / L, w: q.w / L };
+    },
+
+    // roteer vector met quaternion
+    rotateVec(q: Quat, v: vec3): vec3 {
+        // v' = q * (v,0) * q*
+        const x = v.x, y = v.y, z = v.z;
+        const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
+        // uv = 2 * cross(q.xyz, v)
+        const uvx = 2 * (qy * z - qz * y);
+        const uvy = 2 * (qz * x - qx * z);
+        const uvz = 2 * (qx * y - qy * x);
+        // uuv = cross(q.xyz, uv)
+        const uuvx = qy * uvz - qz * uvy;
+        const uuvy = qz * uvx - qx * uvz;
+        const uuvz = qx * uvy - qy * uvx;
+        // v' = v + uv*qw + uuv
+        return { x: x + uvx * qw + uuvx, y: y + uvy * qw + uuvy, z: z + uvz * qw + uuvz };
+    },
+
+    // basisvectoren uit q (rechts-handig, -Z is forward)
+    basis(q: Quat): { r: vec3; u: vec3; f: vec3 } {
+        const r = Q.rotateVec(q, V3.of(1, 0, 0));
+        const u = Q.rotateVec(q, V3.of(0, 1, 0));
+        const f = Q.rotateVec(q, V3.of(0, 0, -1)); // -Z kijkrichting
+        return { r: V3.norm(r), u: V3.norm(u), f: V3.norm(f) };
+    }
+};
+
+// ====== Veilige as-rotatie voor vec3 (Rodrigues) ======
+export function rotateAroundAxis(v: vec3, axis: vec3, ang: number): vec3 {
+    const a = V3.norm(axis);
+    const c = Math.cos(ang), s = Math.sin(ang);
+    const dot = V3.dot(a, v);
+    const cross = V3.cross(a, v);
+    return {
+        x: v.x * c + cross.x * s + a.x * dot * (1 - c),
+        y: v.y * c + cross.y * s + a.y * dot * (1 - c),
+        z: v.z * c + cross.z * s + a.z * dot * (1 - c),
+    };
+}
+
 
 export const bmatNA = {
     // === NON-ALLOC VARIANTEN VAN VIEW ===
