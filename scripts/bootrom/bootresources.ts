@@ -325,7 +325,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 
             return undefined;
         }
-        console.log(`Remapped texture for index ${index} to ${remapped}: ${imageBuffers?.[remapped].byteLength} bytes`);
+        // console.log(`Remapped texture for index ${index} to ${remapped}: ${imageBuffers?.[remapped].byteLength} bytes`);
         return remapped;
     }
 

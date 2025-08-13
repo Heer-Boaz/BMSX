@@ -1,5 +1,5 @@
 import {
-    AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt,
+    AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, TransformComponent, V3, WaitForActionCompletionDecorator, assign_bt,
     assign_fsm,
     attach_components,
     build_bt,
@@ -73,22 +73,18 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 class TestComponent extends Component {
     // Implement virtual methods
     override postprocessingUpdate() {
-        // console.log('TestComponent update');
     }
 
     // Implement event handlers
     @subscribesToParentScopedEvent('testEvent')
     onTestEvent() {
-        // console.log('TestComponent onTestEvent');
     }
 
     @subscribesToSelfScopedEvent('testEvent2')
     onTestEvent2() {
-        // console.log('TestComponent onTestEvent2');
     }
 
     onTestEvent3() {
-        // console.log('TestComponent onTestEvent3');
     }
 }
 
@@ -96,7 +92,6 @@ class TestComponent extends Component {
 class DerivedTestComponent extends TestComponent {
     override postprocessingUpdate() {
         super.postprocessingUpdate();
-        // console.log('DerivedTestComponent update');
     }
 }
 
@@ -331,6 +326,7 @@ class bclass extends SpriteObject {
         super('The B');
         this.imgid = BitmapId.b2;
         this.hitarea = new_area(0, 0, 14, 18);
+        this.visible = false;
     }
 
     override onspawn(spawningPos?: vec2): void {
@@ -432,11 +428,10 @@ class CameraController extends GameObject {
             const camObj = $.model.activeCameraObject;
             if (!camObj) return;
 
-            // Radians per pixel; 0.002 is ok, maak desnoods runtime-tweakbaar
-            const sensitivity = 0.002;
+            const cam = camObj.camera;
+            const sens = 0.002;
+            cam.mouseLook(-dx * sens, -dy * sens); // prettige mapping            const after = cam.position;
 
-            // mouseLook(yawDelta, pitchDelta) – let op volgorde als jouw API anders is
-            camObj.camera.mouseLook(dx * sensitivity, -dy * sensitivity);
         });
 
         // Pointer lock lifecycle
@@ -508,19 +503,19 @@ class CameraController extends GameObject {
         let panRight_pressed = input.getActionState('panright').pressed;
 
         // Choose control mode based on mouse lock state
-        if (!this.mouseControlsEnabled) {
-            // Keyboard rotation (when mouse is not locked)
-            if (up_pressed) cam.addPitch(rotateSpeed);      // Look up
-            if (down_pressed) cam.addPitch(-rotateSpeed);   // Look down
-            if (left_pressed) cam.addYaw(-rotateSpeed);     // Turn left
-            if (right_pressed) cam.addYaw(rotateSpeed);     // Turn right
-        }
+        // if (!this.mouseControlsEnabled) {
+        //     // Keyboard rotation (when mouse is not locked)
+        //     if (up_pressed) cam.addPitch(rotateSpeed);      // Look up
+        //     if (down_pressed) cam.addPitch(-rotateSpeed);   // Look down
+        //     if (left_pressed) cam.addYaw(-rotateSpeed);     // Turn left
+        //     if (right_pressed) cam.addYaw(rotateSpeed);     // Turn right
+        // }
 
         // Movement (works in both modes)
-        if (moveForward_pressed) cam.moveFreeform(move);    // Forward movement
-        if (moveBackward_pressed) cam.moveFreeform(-move);  // Backward movement
-        if (panLeft_pressed) cam.panGround(-move, 0);   // Pan left
-        if (panRight_pressed) cam.panGround(move, 0);    // Pan right
+        if (moveForward_pressed) cam.moveForward(move);    // Forward movement
+        if (moveBackward_pressed) cam.moveForward(-move);  // Backward movement
+        if (panLeft_pressed) cam.strafeRight(-move);   // Pan left
+        if (panRight_pressed) cam.strafeRight(move);    // Pan right
 
         // Additional free-form movement (you can map these to other keys)
         // cam.strafeFreeform() for left/right strafe
@@ -553,16 +548,6 @@ class gamemodel extends BaseModel {
             states: {
                 '#game_start': {
                     enter(this: gamemodel) {
-                        // Define a simple song as an array of note events.
-                        // const simpleSong = [
-                        //     { note: "C4", duration: 0.5 },
-                        //     { note: "E4", duration: 0.5 },
-                        //     { note: "G4", duration: 0.5 },
-                        //     { note: "C5", duration: 1.0 }
-                        // ];
-
-                        // Play the song using the piano instrument.
-                        // PSG.playSong(simpleSong, pianoInstrument);
                     },
                     run(this: gamemodel, s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         s.to('default');
@@ -616,15 +601,15 @@ class gamemodel extends BaseModel {
         }
 
         const cam1 = new CameraObject('cam1');
-        cam1.camera.setPosition([0, 0, 5]);
+        cam1.camera.position = V3.of(0, 0, 5);
         cam1.camera.setAspect(this.gamewidth / this.gameheight);
         // Camera starts looking toward negative Z by default (forward)
 
         const cam2 = new CameraObject('cam2');
-        cam2.camera.setPosition([5, 3, 5]);
+        cam2.camera.position = V3.of(5, 3, 5);
         cam2.camera.setAspect(this.gamewidth / this.gameheight);
-        cam2.camera.setYaw(-Math.PI * 0.75); // Turn to look roughly toward origin (-135 degrees)
-        cam2.camera.setPitch(-0.3); // Slight downward angle
+        // cam2.camera.setYaw(-Math.PI * 0.75); // Turn to look roughly toward origin (-135 degrees)
+        // cam2.camera.setPitch(-0.3); // Slight downward angle
 
         _model.spawn(cam1);
         _model.spawn(cam2);
@@ -640,12 +625,12 @@ class gamemodel extends BaseModel {
         _model.spawn(lamp);
 
         $.view.setSkybox({
-            posX: BitmapId.b2,
-            negX: BitmapId.b,
-            posY: BitmapId.b2,
-            negY: BitmapId.b,
-            posZ: BitmapId.b2,
-            negZ: BitmapId.b,
+            posX: BitmapId.skybox,
+            negX: BitmapId.skybox,
+            posY: BitmapId.skybox,
+            negY: BitmapId.skybox,
+            posZ: BitmapId.skybox,
+            negZ: BitmapId.skybox,
         });
 
         _model.spawn(new CameraController(cam1, cam2));
@@ -654,12 +639,10 @@ class gamemodel extends BaseModel {
     }
 
     public get gamewidth(): number {
-        // return MSX1ScreenWidth;
         return 320; // Adjusted for the new view size
     }
 
     public get gameheight(): number {
-        // return MSX1ScreenHeight;
         return 240; // Adjusted for the new view size
     }
 
