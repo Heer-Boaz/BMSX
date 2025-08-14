@@ -71,7 +71,7 @@ export class Camera {
 
     moveForward(d: number): void { const { f } = this.basis(); this.position = V3.add(this.position, V3.scale(f, d)); this._dirty = true; }
     strafeRight(d: number): void { const { r } = this.basis(); this.position = V3.add(this.position, V3.scale(r, d)); this._dirty = true; }
-    flyUpDown(d: number): void { const { u } = this.basis(); this.position = V3.add(this.position, V3.scale(u, d)); this._dirty = true; }
+    strafeUp(d: number): void { const { u } = this.basis(); this.position = V3.add(this.position, V3.scale(u, d)); this._dirty = true; }
     moveWorldUp(d: number): void { this.position.y += d; this._dirty = true; }
 
     setAspect(a: number) { this.aspect = a; this._dirty = true; }
