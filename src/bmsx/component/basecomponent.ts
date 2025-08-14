@@ -1,7 +1,7 @@
 import { EventEmitter, EventSubscription } from '../core/eventemitter';
 import { type GameObjectConstructorBaseOrAbstract } from '../core/gameobject';
 import { Registry } from '../core/registry';
-import type { Disposable, Identifiable, Identifier } from '../rompack/rompack';
+import type { Disposable, Identifiable, Identifier, Registerable } from '../rompack/rompack';
 import { AbstractConstructor } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 
@@ -121,6 +121,7 @@ export abstract class Component implements Identifiable {
      * @returns The parent component.
      */
     public get parent() { return Registry.instance.get(this.parentid); }
+    public parentAs<T extends Registerable>(): T | undefined { return Registry.instance.get<T>(this.parentid); }
     protected _enabled: boolean;
     /**
      * Sets the enabled state of the component. If the component is disabled, it will not be updated.
