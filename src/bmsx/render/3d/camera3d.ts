@@ -55,7 +55,7 @@ export class Camera {
         const { f } = this.basis();
         const qRoll = Q.fromAxisAngle(f, angle);
         this._q = Q.norm(Q.mul(qRoll, this._q));
-        this.roll += angle;               // numeriek bijhouden voor UI, niet afleiden
+        this.roll = wrapPi(this.roll + angle); // numeriek bijhouden voor UI, met grenzen
         this._dirty = true;
     }
     setRoll(angle: number): void {
@@ -65,7 +65,7 @@ export class Camera {
         this._q = Q.mul(qUndo, this._q);
         const qNew = Q.fromAxisAngle(f, angle);
         this._q = Q.norm(Q.mul(qNew, this._q));
-        this.roll = angle;
+        this.roll = wrapPi(angle);
         this._dirty = true;
     }
 
@@ -137,6 +137,11 @@ export class Camera {
 }
 
 // Klein hulpspul onderaan camera.ts of in math3d.ts
+function wrapPi(angle: number): number {
+    while (angle > Math.PI) angle -= 2 * Math.PI;
+    while (angle < -Math.PI) angle += 2 * Math.PI;
+    return angle;
+}
 function unwrapAngle(prev: number, now: number): number {
     // voorkom sprong van ~±π → kies dichtstbijzijnde equivalent
     let d = now - prev;
