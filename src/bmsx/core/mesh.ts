@@ -1,6 +1,6 @@
 import { TransformComponent } from '../component/transformcomponent';
 import { Material } from '../render/3d/material';
-import { bmat, M4, Mat4 } from '../render/3d/math3d';
+import { M4, Mat4 } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import type { TextureKey } from '../render/texturemanager';
@@ -257,7 +257,7 @@ export abstract class MeshObject extends GameObject {
         this.meshModel = meshModel;
         this.meshes = meshModel.meshes.map((m, i) => this.createMesh(m, meshModel, i));
         if (meshModel.nodes) {
-            this.worldMatrices = meshModel.nodes.map(() => bmat.identity());
+            this.worldMatrices = meshModel.nodes.map(() => M4.identity());
             this.nodeDirty = meshModel.nodes.map(() => true);
         } else {
             this.worldMatrices = [];

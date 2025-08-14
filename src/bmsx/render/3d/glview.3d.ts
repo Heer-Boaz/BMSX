@@ -7,7 +7,7 @@ import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
 import { getFramebufferStatusString } from '../glview.helpers';
 import { DrawMeshOptions } from '../view';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
-import { bmatNA } from './math3d';
+import { M4 } from './math3d';
 import fragShader3DCode from './shaders/3d.frag.glsl';
 import vertexShader3DCode from './shaders/3d.vert.glsl';
 
@@ -903,9 +903,9 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
 
 		// transforms (normal-matrix cache per-frame op matrix-object)
 		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
-		const normal9 = normal9Pool.ensure();
-		bmatNA.normalMatrixInto(normal9, matrix);
-		gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
+                const normal9 = normal9Pool.ensure();
+                M4.normal3Into(normal9, matrix);
+                gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
 
 		// draw
 		gl.bindVertexArray(vao);

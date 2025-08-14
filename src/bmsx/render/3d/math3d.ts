@@ -111,19 +111,21 @@ export const M4 = {
     // View matrix uit volledige, orthonormale basis en positie
     viewFromBasis(pos: vec3, right: vec3, up: vec3, back: vec3): Mat4 {
         const m = new Float32Array(16);
-        m[0] = right.x; m[1] = right.y; m[2] = right.z; m[3] = 0;
-        m[4] = up.x; m[5] = up.y; m[6] = up.z; m[7] = 0;
-        m[8] = back.x; m[9] = back.y; m[10] = back.z; m[11] = 0;
-        m[12] = -(right.x * pos.x + right.y * pos.y + right.z * pos.z);
-        m[13] = -(up.x * pos.x + up.y * pos.y + up.z * pos.z);
-        m[14] = -(back.x * pos.x + back.y * pos.y + back.z * pos.z);
-        m[15] = 1;
+        m[0] = right.x; m[4] = right.y; m[8] = right.z; m[12] = -(right.x * pos.x + right.y * pos.y + right.z * pos.z);
+        m[1] = up.x;    m[5] = up.y;    m[9] = up.z;    m[13] = -(up.x * pos.x + up.y * pos.y + up.z * pos.z);
+        m[2] = back.x;  m[6] = back.y;  m[10] = back.z; m[14] = -(back.x * pos.x + back.y * pos.y + back.z * pos.z);
+        m[3] = 0;       m[7] = 0;       m[11] = 0;      m[15] = 1;
         return m;
     },
 
     skyboxFromView(view: Mat4): Mat4 {
         const m = view.slice() as Mat4;
-        m[12] = m[13] = m[14] = 0; return m;
+        m[12] = m[13] = m[14] = 0;
+        // transpose rotation so that the matrix represents camera orientation
+        let t = m[1]; m[1] = m[4]; m[4] = t;
+        t = m[2]; m[2] = m[8]; m[8] = t;
+        t = m[6]; m[6] = m[9]; m[9] = t;
+        return m;
     },
 
     // 3x3 normal matrix (inverse-transpose)
@@ -142,6 +144,25 @@ export const M4 = {
         const m10 = b11 * det, m11 = (a22 * a00 - a02 * a20) * det, m12 = (-a12 * a00 + a02 * a10) * det;
         const m20 = b21 * det, m21 = (-a21 * a00 + a01 * a20) * det, m22 = (a11 * a00 - a01 * a10) * det;
         return new Float32Array([m00, m10, m20, m01, m11, m21, m02, m12, m22]);
+    },
+
+    normal3Into(out: Float32Array, model: Mat4): Float32Array {
+        const a00 = model[0], a01 = model[1], a02 = model[2];
+        const a10 = model[4], a11 = model[5], a12 = model[6];
+        const a20 = model[8], a21 = model[9], a22 = model[10];
+        const b01 = a22 * a11 - a12 * a21;
+        const b11 = -a22 * a10 + a12 * a20;
+        const b21 = a21 * a10 - a11 * a20;
+        let det = a00 * b01 + a01 * b11 + a02 * b21;
+        if (!det) { out.fill(0); return out; }
+        det = 1 / det;
+        const m00 = b01 * det, m01 = (-a22 * a01 + a02 * a21) * det, m02 = (a12 * a01 - a02 * a11) * det;
+        const m10 = b11 * det, m11 = (a22 * a00 - a02 * a20) * det, m12 = (-a12 * a00 + a02 * a10) * det;
+        const m20 = b21 * det, m21 = (-a21 * a00 + a01 * a20) * det, m22 = (a11 * a00 - a01 * a10) * det;
+        out[0] = m00; out[1] = m10; out[2] = m20;
+        out[3] = m01; out[4] = m11; out[5] = m21;
+        out[6] = m02; out[7] = m12; out[8] = m22;
+        return out;
     },
 };
 
@@ -281,9 +302,7 @@ export const bmat = {
 
     /** Alleen rotatie deel van een view (handig voor skybox). */
     skyboxViewFromView(view: Mat4): Mat4 {
-        const out = view.slice() as Mat4;
-        out[12] = 0; out[13] = 0; out[14] = 0;
-        return out;
+        return M4.skyboxFromView(view);
     },
 
     identity(): Mat4 {
@@ -745,8 +764,10 @@ export const bmatNA = {
     // },
 
     skyboxViewFromViewInto(out: Mat4, view: Mat4): Mat4 {
-        out.set(view);
-        out[12] = 0; out[13] = 0; out[14] = 0;
+        out[0] = view[0];  out[1] = view[4];  out[2] = view[8];  out[3] = 0;
+        out[4] = view[1];  out[5] = view[5];  out[6] = view[9];  out[7] = 0;
+        out[8] = view[2];  out[9] = view[6];  out[10] = view[10]; out[11] = 0;
+        out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
         return out;
     },
 

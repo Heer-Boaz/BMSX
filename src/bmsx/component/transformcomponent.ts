@@ -1,4 +1,4 @@
-import { bmat, Mat4 } from '../render/3d/math3d';
+import { M4, Mat4 } from '../render/3d/math3d';
 import type { Identifier, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { Component, componenttags_postprocessing } from './basecomponent';
@@ -13,8 +13,8 @@ export class TransformComponent extends Component {
     private _parentNode: TransformComponent | null = null;
     private children: TransformComponent[] = [];
 
-    private localMatrix: Mat4 = bmat.identity();
-    private worldMatrix: Mat4 = bmat.identity();
+    private localMatrix: Mat4 = M4.identity();
+    private worldMatrix: Mat4 = M4.identity();
     private dirty = true;
 
     constructor(parentid: Identifier, opts?: { position?: vec3arr; rotation?: vec3arr; scale?: vec3arr }) {
@@ -47,15 +47,15 @@ export class TransformComponent extends Component {
     }
 
     private updateMatrices(): void {
-        this.localMatrix = bmat.identity();
-        this.localMatrix = bmat.translate(this.localMatrix, this.position[0], this.position[1], this.position[2]);
-        this.localMatrix = bmat.rotateX(this.localMatrix, this.rotation[0]);
-        this.localMatrix = bmat.rotateY(this.localMatrix, this.rotation[1]);
-        this.localMatrix = bmat.rotateZ(this.localMatrix, this.rotation[2]);
-        this.localMatrix = bmat.scale(this.localMatrix, this.scale[0], this.scale[1], this.scale[2]);
+        this.localMatrix = M4.identity();
+        M4.translateSelf(this.localMatrix, this.position[0], this.position[1], this.position[2]);
+        M4.rotateXSelf(this.localMatrix, this.rotation[0]);
+        M4.rotateYSelf(this.localMatrix, this.rotation[1]);
+        M4.rotateZSelf(this.localMatrix, this.rotation[2]);
+        M4.scaleSelf(this.localMatrix, this.scale[0], this.scale[1], this.scale[2]);
         if (this._parentNode) {
             const pw = this._parentNode.getWorldMatrix();
-            this.worldMatrix = bmat.multiply(pw, this.localMatrix);
+            this.worldMatrix = M4.mul(pw, this.localMatrix);
         } else {
             this.worldMatrix = this.localMatrix;
         }

@@ -345,7 +345,7 @@ class Cube3D extends MeshObject {
     }
 
     override run(): void {
-        this.rotation[1] += 0.005; // Slow auto rotation
+        // this.rotation[1] += 0.005; // Slow auto rotation
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -370,7 +370,7 @@ class SmallCube3D extends MeshObject {
     }
 
     override run(): void {
-        this.rotation[0] += 0.01;
+        // this.rotation[0] += 0.01;
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -514,10 +514,10 @@ class CameraController extends GameObject {
         // Movement (works in both modes)
         if (moveForward_pressed) cam.moveForward(move);    // Forward movement
         if (moveBackward_pressed) cam.moveForward(-move);  // Backward movement
-        if (panLeft_pressed) cam.addRoll(-rotateSpeed);
-        if (panRight_pressed) cam.addRoll(rotateSpeed);
-        // if (panLeft_pressed) cam.strafeRight(-move);   // Pan left
-        // if (panRight_pressed) cam.strafeRight(move);    // Pan right
+        // if (panLeft_pressed) cam.addRoll(-rotateSpeed);
+        // if (panRight_pressed) cam.addRoll(rotateSpeed);
+        if (panLeft_pressed) cam.strafeRight(-move);   // Pan left
+        if (panRight_pressed) cam.strafeRight(move);    // Pan right
 
         // Additional free-form movement (you can map these to other keys)
         // cam.strafeFreeform() for left/right strafe

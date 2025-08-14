@@ -1,4 +1,5 @@
 import { GLView } from './glview';
+import { M4 } from './3d/math3d';
 
 const CATCH_WEBGL_ERROR = true;
 
@@ -208,9 +209,8 @@ export function generateDetailedDrawError(
     // Arrays and matrices
     jointMatrixArray: Float32Array,
     identityMatrix: Float32Array,
-    // Camera and math
-    activeCamera: any,
-    bmat: any
+    // Camera
+    activeCamera: any
 ): string {
     const typeToByteSize = {
         [gl.UNSIGNED_BYTE]: Uint8Array.BYTES_PER_ELEMENT,
@@ -310,8 +310,8 @@ export function generateDetailedDrawError(
     };
 
     const matColor = m.material?.color ?? [1, 1, 1, 1];
-    const mvp = bmat.multiply(activeCamera.viewProjectionMatrix, identityMatrix);
-    const normalMat = bmat.normalMatrix(identityMatrix);
+    const mvp = M4.mul(activeCamera.viewProjectionMatrix, identityMatrix);
+    const normalMat = M4.normal3(identityMatrix);
 
     return `Mesh ${m.name} has indices but drawElements failed. Vertex count: ${vertexCount}, Indices length: ${m.indices!.length}
         Max index: ${maxIndex} (must be < ${vertexCount})
