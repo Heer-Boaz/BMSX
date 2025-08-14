@@ -1,9 +1,10 @@
 import {
-    AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, TransformComponent, V3, WaitForActionCompletionDecorator, assign_bt,
+    AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, ComponentUpdateParams, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, TransformComponent, V3, WaitForActionCompletionDecorator, assign_bt,
     assign_fsm,
     attach_components,
     build_bt,
     build_fsm,
+    componenttags_postprocessing,
     componenttags_preprocessing,
     insavegame,
     new_area,
@@ -13,7 +14,9 @@ import {
     subscribesToSelfScopedEvent,
     update_tagged_components,
     vec2,
+    vec3arr,
 } from '../bmsx/index';
+import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
 import { BitmapId, ModelId } from './resourceids';
 
 var _game: Game;
@@ -399,6 +402,58 @@ class AnimatedMorphSphere extends MeshObject {
     }
 }
 
+interface Spark {
+    pos: vec3arr;
+    vel: vec3arr;
+    life: number;
+    color: { r: number; g: number; b: number; a: number };
+}
+
+@componenttags_postprocessing('position_update_axis')
+class SparkEmitter extends Component {
+    private tf?: TransformComponent;
+    private sparks: Spark[] = [];
+    static readonly SPARK_LIFETIME = 100;
+
+    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        super.postprocessingUpdate({ params, returnvalue });
+        this.spawnSparks();
+        this.updateSparks();
+
+    }
+
+    private spawnSparks(): void {
+        const origin = this.parentAs<GameObject>().pos;
+        for (let i = 0; i < 3; i++) {
+            const vel: vec3arr = [
+                (Math.random() - 0.5) * 0.05,
+                Math.random() * 0.05 + 0.02,
+                (Math.random() - 0.5) * 0.05,
+            ];
+            this.sparks.push({
+                pos: [origin.x, origin.y, origin.z] as vec3arr,
+                vel,
+                life: SparkEmitter.SPARK_LIFETIME,
+                color: { r: 1, g: 0.8, b: 0.2, a: 1 },
+            });
+        }
+    }
+
+    private updateSparks(): void {
+        for (let i = this.sparks.length - 1; i >= 0; i--) {
+            const s = this.sparks[i];
+            s.pos[0] += s.vel[0];
+            s.pos[1] += s.vel[1];
+            s.pos[2] += s.vel[2];
+            s.vel[1] -= 0.003; // gravity
+            s.life--;
+            s.color.a = s.life / SparkEmitter.SPARK_LIFETIME;
+            particlesToDraw.push({ position: s.pos, size: 4, color: s.color });
+            if (s.life <= 0) this.sparks.splice(i, 1);
+        }
+    }
+}
+
 class CameraController extends GameObject {
     private cameras: CameraObject[];
     private idx = 0;
@@ -590,6 +645,7 @@ class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const cube = new Cube3D();
+        cube.addComponent(new SparkEmitter(cube.id));
         const small = new SmallCube3D(1);
         const small2 = new SmallCube3D(2);
         const animatedMorphSphere = new AnimatedMorphSphere();

@@ -128,6 +128,12 @@ export const M4 = {
         return m;
     },
 
+    // Extract right and up vectors from a view matrix without allocations
+    viewRightUpInto(view: Mat4, outRight: Float32Array, outUp: Float32Array): void {
+        outRight[0] = view[0]; outRight[1] = view[4]; outRight[2] = view[8];
+        outUp[0] = view[1]; outUp[1] = view[5]; outUp[2] = view[9];
+    },
+
     // 3x3 normal matrix (inverse-transpose)
     normal3(model: Mat4): Float32Array {
         // snellere exacte 3x3 inverse-transpose (geen alloc binnenin)
