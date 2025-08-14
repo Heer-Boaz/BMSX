@@ -411,7 +411,6 @@ interface Spark {
 
 @componenttags_postprocessing('position_update_axis')
 class SparkEmitter extends Component {
-    private tf?: TransformComponent;
     private sparks: Spark[] = [];
     static readonly SPARK_LIFETIME = 100;
 
@@ -419,7 +418,6 @@ class SparkEmitter extends Component {
         super.postprocessingUpdate({ params, returnvalue });
         this.spawnSparks();
         this.updateSparks();
-
     }
 
     private spawnSparks(): void {
