@@ -31,7 +31,7 @@ _global['h406A'] = (args: BootArgs): Promise<any> => {
     });
 };
 
-const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'load', 'save', 'bla', 'blap'] as const;
+const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'load', 'save', 'bla', 'blap', 'rotateleft', 'rotateright', 'panup', 'pandown'] as const;
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -53,6 +53,10 @@ const keyboardInputMapping: MyKeyboardInputMapping = {
     'blap': ['KeyS'],           // Move backward
     'panleft': ['KeyA'],       // Pan left
     'panright': ['KeyD'],      // Pan right
+    'rotateleft': ['KeyQ'],    // Rotate left
+    'rotateright': ['KeyE'],   // Rotate right
+    'panup': ['KeyR'],         // Pan up
+    'pandown': ['KeyF'],      // Pan down
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
@@ -65,7 +69,11 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'bla': ['x'],
     'blap': ['y'],
     'panleft': ['lb'],
-    'panright': ['rb']
+    'panright': ['rb'],
+    'rotateleft': ['lt'],
+    'rotateright': ['rt'],
+    'panup': ['home'],
+    'pandown': ['select'],
 };
 
 @insavegame
@@ -501,6 +509,10 @@ class CameraController extends GameObject {
         let moveBackward_pressed = input.getActionState('blap').pressed;
         let panLeft_pressed = input.getActionState('panleft').pressed;
         let panRight_pressed = input.getActionState('panright').pressed;
+        let panUp_pressed = input.getActionState('panup').pressed;
+        let panDown_pressed = input.getActionState('pandown').pressed;
+        let rotateLeft_pressed = input.getActionState('rotateleft').pressed;
+        let rotateRight_pressed = input.getActionState('rotateright').pressed;
 
         // Choose control mode based on mouse lock state
         // if (!this.mouseControlsEnabled) {
@@ -514,10 +526,12 @@ class CameraController extends GameObject {
         // Movement (works in both modes)
         if (moveForward_pressed) cam.moveForward(move);    // Forward movement
         if (moveBackward_pressed) cam.moveForward(-move);  // Backward movement
-        // if (panLeft_pressed) cam.addRoll(-rotateSpeed);
-        // if (panRight_pressed) cam.addRoll(rotateSpeed);
+        if (panUp_pressed) cam.strafeUp(move);
+        if (panDown_pressed) cam.strafeUp(-move);
         if (panLeft_pressed) cam.strafeRight(-move);   // Pan left
         if (panRight_pressed) cam.strafeRight(move);    // Pan right
+        if (rotateLeft_pressed) cam.addRoll(-rotateSpeed);
+        if (rotateRight_pressed) cam.addRoll(rotateSpeed);
 
         // Additional free-form movement (you can map these to other keys)
         // cam.strafeFreeform() for left/right strafe
