@@ -227,6 +227,29 @@ export function set_vec2(p: vec2, new_x: number, new_y: number) {
     p.x = new_x;
     p.y = new_y;
 }
+
+export function copy_vec2arr(p: vec2arr): vec2arr {
+    return [p[0], p[1]];
+}
+
+export function copy_vec3(p: vec3): vec3 {
+    return { x: p.x, y: p.y, z: p.z };
+}
+
+export function copy_vec2(p: vec2): vec2 {
+    return { x: p.x, y: p.y };
+}
+
+export function vec2arr_equals(a: vec2arr, b: vec2arr): boolean {
+    if (a?.length !== b?.length) return false;
+    return a[0] === b[0] && a[1] === b[1];
+}
+
+export function vec3arr_equals(a: vec3arr, b: vec3arr): boolean {
+    if (a?.length !== b?.length) return false;
+    return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+}
+
 /**
  * Overwrites the values of a vec2 with the values of another vec2.
  * @param p - The vec2 to be overwritten.
