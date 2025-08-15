@@ -44,7 +44,7 @@ export class Camera {
     }
 
     /** Screen-space: rond actuele scherm-assen, roll blijft exact behouden. */
-    mouseLookScreen(dYaw: number, dPitch: number): void {
+    updateScreenBasedOrientation(dYaw: number, dPitch: number): void {
         const { r, u } = this.basis(); // asjes inclusief huidige roll
         const qYaw = Q.fromAxisAngle(u, dYaw);
         const qPitch = Q.fromAxisAngle(r, dPitch);
