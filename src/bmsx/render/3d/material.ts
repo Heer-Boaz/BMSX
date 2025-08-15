@@ -1,3 +1,4 @@
+import { insavegame } from '../..';
 import type { TextureKey } from '../texturemanager';
 import { color_arr } from '../view';
 
@@ -13,6 +14,7 @@ export interface MaterialGPUTextures {
     metallicRoughness?: TextureKey;
 }
 
+@insavegame
 export class Material {
     public textures: MaterialTextures;
     public gpuTextures: MaterialGPUTextures = {};

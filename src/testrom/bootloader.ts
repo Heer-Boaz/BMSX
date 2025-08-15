@@ -356,7 +356,7 @@ class Cube3D extends MeshObject {
     }
 
     override run(): void {
-        // this.rotation[1] += 0.005; // Slow auto rotation
+        this.rotation[1] += 0.005; // Slow auto rotation
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -381,7 +381,7 @@ class SmallCube3D extends MeshObject {
     }
 
     override run(): void {
-        // this.rotation[0] += 0.01;
+        this.rotation[0] += 0.01;
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -396,7 +396,7 @@ class AnimatedMorphSphere extends MeshObject {
     }
 
     override run(): void {
-        // this.rotation[1] += 0.01; // Slow auto rotation
+        this.rotation[1] += 0.01; // Slow auto rotation
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -451,6 +451,7 @@ class SparkEmitter extends Component {
         }
     }
 }
+
 
 class CameraController extends GameObject {
     private cameras: CameraObject[];
@@ -554,10 +555,6 @@ class CameraController extends GameObject {
         const rotateSpeed = 0.02; // Reduced from 0.05 for smoother rotation
 
         // Keyboard camera controls (when mouse is not locked)
-        let up_pressed = input.getActionState('up').pressed;
-        let down_pressed = input.getActionState('down').pressed;
-        let left_pressed = input.getActionState('left').pressed;
-        let right_pressed = input.getActionState('right').pressed;
         let moveForward_pressed = input.getActionState('bla').pressed;
         let moveBackward_pressed = input.getActionState('blap').pressed;
         let panLeft_pressed = input.getActionState('panleft').pressed;
@@ -566,15 +563,6 @@ class CameraController extends GameObject {
         let panDown_pressed = input.getActionState('pandown').pressed;
         let rotateLeft_pressed = input.getActionState('rotateleft').pressed;
         let rotateRight_pressed = input.getActionState('rotateright').pressed;
-
-        // Choose control mode based on mouse lock state
-        // if (!this.mouseControlsEnabled) {
-        //     // Keyboard rotation (when mouse is not locked)
-        //     if (up_pressed) cam.addPitch(rotateSpeed);      // Look up
-        //     if (down_pressed) cam.addPitch(-rotateSpeed);   // Look down
-        // if (left_pressed) cam.addRoll(-rotateSpeed);
-        // if (right_pressed) cam.addRoll(rotateSpeed);
-        // }
 
         // Movement (works in both modes)
         if (moveForward_pressed) cam.moveForward(move);    // Forward movement
@@ -585,24 +573,6 @@ class CameraController extends GameObject {
         if (panRight_pressed) cam.strafeRight(move);    // Pan right
         if (rotateLeft_pressed) cam.addRoll(-rotateSpeed);
         if (rotateRight_pressed) cam.addRoll(rotateSpeed);
-
-        // Additional free-form movement (you can map these to other keys)
-        // cam.strafeFreeform() for left/right strafe
-        // cam.moveFreeformVertical() for up/down movement
-        // cam.flyUpDown() for camera-relative up/down
-
-        // Debug output
-        // if (up_pressed || down_pressed || left_pressed || right_pressed || moveForward_pressed || moveBackward_pressed) {
-        // Log which actions are pressed and show combos as one string
-        // const forward = cam.getForwardVector();
-        // console.log('Camera controls:');
-        // console.log(`\tCamera - Up: ${up_pressed}, Down: ${down_pressed}, Left: ${left_pressed}, Right: ${right_pressed}`);
-        // console.log(`\tCamera - Move Forward: ${moveForward_pressed}, Move Backward: ${moveBackward_pressed}`);
-        // console.log(`\tCamera - Yaw: ${(cam.yaw * 180 / Math.PI).toFixed(1)}°, Pitch: ${(cam.pitch * 180 / Math.PI).toFixed(1)}°`);
-        // console.log(`\tPosition: [${cam.position.x.toFixed(2)}, ${cam.position.y.toFixed(2)}, ${cam.position.z.toFixed(2)}]`);
-        // console.log(`\tForward: [${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)}]`);
-        // console.log(`\tFOV: ${cam.fov}°, Aspect: ${cam.aspect.toFixed(2)}`);
-        // }
     }
 }
 
@@ -678,8 +648,6 @@ class gamemodel extends BaseModel {
         const cam2 = new CameraObject('cam2');
         cam2.camera.position = V3.of(5, 3, 5);
         cam2.camera.setAspect(this.gamewidth / this.gameheight);
-        // cam2.camera.setYaw(-Math.PI * 0.75); // Turn to look roughly toward origin (-135 degrees)
-        // cam2.camera.setPitch(-0.3); // Slight downward angle
 
         _model.spawn(cam1);
         _model.spawn(cam2);

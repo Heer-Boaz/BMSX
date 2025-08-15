@@ -9,6 +9,8 @@ import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, vec
 import { insavegame, onload } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 import { Float32ArrayPool } from './utils';
+
+@insavegame
 export class Mesh {
     public positions: Float32Array;
     public texcoords: Float32Array;

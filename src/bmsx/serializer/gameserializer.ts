@@ -169,6 +169,7 @@ export class Serializer {
                         if (Array.isArray(v)) break;
                         const valType = Serializer.get_typename(v);
                         if (valType !== 'Object' && valType !== 'object' && !Reviver.get_constructor_for_type(valType)) {
+                            console.error(`Object of type '${valType}' encountered without a known constructor. Did you forget to add '@insavegame' to the class definition?`);
                             continue;
                         }
                         // Avoid cycles

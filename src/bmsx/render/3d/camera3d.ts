@@ -1,6 +1,8 @@
 import { vec3 } from '../../rompack/rompack';
+import { insavegame } from '../../serializer/gameserializer';
 import { extractFrustumPlanes, M4, Mat4, Plane, Q, Quat, sphereInFrustum, V3 } from './math3d';
 
+@insavegame
 export class Camera {
     position: vec3 = V3.of(0, 0, 0);
 
