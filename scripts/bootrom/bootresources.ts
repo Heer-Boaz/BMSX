@@ -1,5 +1,6 @@
 import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
+import { generateAtlasName } from '../rompacker/atlasbuilder';
 
 export async function loadImage(url: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
@@ -368,6 +369,53 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
     return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
+async function getAssetImageBin(romImgAsset: RomImgAsset): Promise<HTMLImageElement> {
+    let source: HTMLImageElement | undefined = romImgAsset._imgbin; // Use the private _imgbin property
+    if (source) return source;
+
+    // If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
+    const imgmeta = romImgAsset.imgmeta;
+    if (!source && imgmeta.atlassed) {
+        const atlas = $.rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
+        if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
+        const coords = imgmeta.texcoords;
+        if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resname}'`);
+
+        const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
+        const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
+        const minU = Math.min(...xs), maxU = Math.max(...xs);
+        const minV = Math.min(...ys), maxV = Math.max(...ys);
+
+        const sx = minU * atlas.width;
+        const sy = minV * atlas.height;
+        let sw = (maxU - minU) * atlas.width;
+        let sh = (maxV - minV) * atlas.height;
+
+        // Ensure that sw === sh
+        if (sw !== sh) {
+            // Ensure that we remain within the atlas bounds and that the texture is square
+            const size = Math.min(sw, sh, atlas.width, atlas.height);
+            sw = size;
+            sh = size;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
+        // Convert canvas to HTMLImageElement asynchronously
+        source = await new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.src = canvas.toDataURL();
+        });
+    }
+
+    if (!source) throw new Error(`Image asset '${romImgAsset.resname}' has no image data`);
+    return source;
+}
+
 async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
     switch (res.type) {
         case 'image':
@@ -382,7 +430,12 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
             }
             const imgAsset: RomImgAsset = {
                 ...res,
-                imgbin: img,
+                _imgbin: img, // The HTML image element of the image asset or undefined if not available. Note that this will be populated with an HTMLImageElement when `get imgbin()` is called! In other words, it also acts as a cache when required.
+                // ** THAT'S WHY YOU SHOULD USE THE `atlassed`-PROPERTY TO DETERMINE WHETHER AN IMAGE ASSET IS ATLASSED OR NOT! **
+                // Getter for imgbin property, compatible with RomImgAsset interface
+                get imgbin() {
+                    return getAssetImageBin(this);
+                },
             };
             romResult.img[res.resid] = imgAsset;
             romResult.img[res.resname] = imgAsset;

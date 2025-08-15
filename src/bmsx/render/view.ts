@@ -57,6 +57,19 @@ export interface SkyboxImageIds {
 	negZ: string;
 }
 
+const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
+export function generateAtlasName(atlasIndex: number): string {
+	// Check if the atlas name is already cached
+	if (atlasNameCache.has(atlasIndex)) {
+		return atlasNameCache.get(atlasIndex)!;
+	}
+	// Generate a new atlas name and cache it
+	const idxStr = atlasIndex.toString().padStart(2, '0');
+	const atlasName = atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
+	atlasNameCache.set(atlasIndex, atlasName);
+	return atlasName;
+}
+
 /**
  * The `BaseView` class is an abstract class that serves as the base for all views in the application.
  * It provides common functionality and properties that are shared across all views.

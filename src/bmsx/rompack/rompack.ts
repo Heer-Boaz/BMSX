@@ -261,7 +261,8 @@ export interface RomAsset {
 }
 
 export interface RomImgAsset extends RomAsset {
-	imgbin: HTMLImageElement; // The HTML image element of the image asset
+	_imgbin: HTMLImageElement; // The HTML image element of the image asset
+	get imgbin(): Promise<HTMLImageElement>; // A getter for the image element (#see `bootresources.getAssetImageBin`)
 }
 
 export interface RomMeta {

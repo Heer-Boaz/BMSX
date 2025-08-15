@@ -1,13 +1,7 @@
-import { GLView } from './glview';
 import { M4 } from './3d/math3d';
+import { GLView } from './glview';
 
 const CATCH_WEBGL_ERROR = true;
-
-export function generateAtlasName(atlasIndex: number): string {
-    const idxStr = atlasIndex.toString().padStart(2, '0');
-    return atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
-}
-
 
 export function saveTextureToFile(): void {
     const view = $.viewAs<GLView>();
