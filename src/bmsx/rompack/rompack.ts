@@ -54,7 +54,7 @@ export type AudioType = 'sfx' | 'music';
  * Alternative representation of a 2D vector as an array.
  * Example: [x, y]
  */
-export type vec2arr = [number, number] | [number, number, number];
+export type vec2arr = [number, number];
 
 
 /**

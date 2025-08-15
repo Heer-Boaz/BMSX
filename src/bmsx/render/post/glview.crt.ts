@@ -1,3 +1,4 @@
+import { copy_vec2arr, vec2arr_equals } from '../../core/utils';
 import { vec2arr, vec3arr } from '../../rompack/rompack';
 import { bvec } from '../2d/vertexutils2d';
 import { glLoadShader, glSwitchProgram } from '../glutils';
@@ -18,6 +19,7 @@ export interface CRTShaderOptions {
     glowColor?: vec3arr
 };
 
+let currentViewportSize: vec2arr = null;
 let CRTShaderTexcoordLocation: GLint;
 let CRTShaderResolutionLocation: WebGLUniformLocation;
 let CRTShaderTimeLocation: WebGLUniformLocation;
@@ -209,9 +211,11 @@ export function createCRTShaderTexcoordBuffer(gl: WebGL2RenderingContext): void 
 }
 
 export function handleResize(gl: WebGL2RenderingContext, newWidth: number, newHeight: number): void {
+    const newSize: vec2arr = [newWidth, newHeight];
     // Set the resolution uniform
-    if (CRTShaderResolutionLocation) { // This is only set if the additional shader is being used
+    if (CRTShaderResolutionLocation && !vec2arr_equals(currentViewportSize, newSize)) { // This is only set if the additional shader is being used and the size of the canvas has changed
         gl.useProgram(CRTShaderProgram);
-        gl.uniform2fv(CRTShaderResolutionLocation, new Float32Array([newWidth, newHeight]));
+        gl.uniform2fv(CRTShaderResolutionLocation, new Float32Array(newSize));
+        currentViewportSize = copy_vec2arr(newSize); // We store the current size so that we can update it when needed during a resize
     }
 }

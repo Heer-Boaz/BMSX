@@ -187,18 +187,16 @@ export class GLView extends BaseView {
 	 */
 	override init(): void {
 		super.init(); // Call the base init method to set up the canvas
-		GLView3D.init(this.glctx, this.offscreenCanvasSize);
-		GLViewSkybox.init(this.glctx);
-		GLViewParticles.init(this.glctx);
-		this.setupGLContext(); // Set up the WebGL context
 		const gl = this.glctx;
+		this.setupGLContext(); // Set up the WebGL context
+		GLView3D.init(gl, this.offscreenCanvasSize);
+		GLViewSkybox.init(gl);
+		GLViewParticles.init(gl);
 		GLView2D.createSpriteShaderPrograms(gl); // Create the game shader programs
 		GLView3D.createGameShaderPrograms3D(gl); // Create 3D shader program
-		GLViewSkybox.createSkyboxProgram(gl);
 		GLViewParticles.createParticleProgram(gl);
 		GLView2D.setupSpriteShaderLocations(gl); // Set up the vertex shader locations for the game shader program
 		GLView3D.setupVertexShaderLocations3D(gl); // Set up the vertex shader locations for the 3D shader
-		GLViewSkybox.setupSkyboxLocations(gl);
 		GLViewParticles.setupParticleLocations(gl);
 		this.setupBuffers(); // Set up the buffers for the game shader
 		GLView2D.setupSpriteLocations(gl); // Set up the game shader locations
@@ -243,7 +241,6 @@ export class GLView extends BaseView {
 
 		GLView2D.setupBuffers(gl);
 		GLView3D.setupBuffers3D(gl); // Set up buffers for 3D
-		GLViewSkybox.createSkyboxBuffer(gl);
 	}
 
 	/**
@@ -351,12 +348,10 @@ export class GLView extends BaseView {
 
 		super.handleResize();
 		const gl = this.glctx;
-		if (gl) {
-			GLViewCRT.handleResize(gl, this.canvas.width, this.canvas.height);
-			gl.useProgram(GLView2D.spriteShaderProgram); // Switch to the game shader program
+		if (!gl) return;
 
-			GLView3D.handleResize(gl, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
-		}
+		GLViewCRT.handleResize(gl, this.canvas.width, this.canvas.height);
+		GLView3D.handleResize(gl, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
 
 		// Clear the needsResize flag
 		this.needsResize = false;
@@ -368,14 +363,21 @@ export class GLView extends BaseView {
 
 		const gl = this.glctx;
 
+		checkWebGLError('Before Skybox draw');
+
 		GLViewSkybox.drawSkybox(gl, this.framebuffer, this.canvas.width, this.canvas.height);
+		checkWebGLError('After Skybox draw');
 		GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
+		checkWebGLError('After 3D Mesh draw');
 		GLViewParticles.renderParticleBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height);
+		checkWebGLError('After Particles draw');
 		GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
+		checkWebGLError('After Sprites draw');
 		// saveTextureToFile();
 
 		// Draw a full-screen quad using the post-processing shader
 		GLViewCRT.applyCrtPostProcess(gl, this.canvas.width, this.canvas.height);
+		checkWebGLError('After CRT post-process');
 
 		glSwitchProgram(gl, GLView2D.spriteShaderProgram); // Switch back to the main shader
 

@@ -296,7 +296,6 @@ export function init(gl: WebGL2RenderingContext, offscreenCanvasSize: Size): voi
 }
 
 export function handleResize(gl: WebGL2RenderingContext, width: number, height: number): void {
-	gl.viewport(0, 0, width, height);
 	// Update aspect ratio of all cameras
 	if ($.model.cameras) {
 		$.model.cameras.forEach(cameraObject => cameraObject.camera.setAspect(width / height));
@@ -903,9 +902,9 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
 
 		// transforms (normal-matrix cache per-frame op matrix-object)
 		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
-                const normal9 = normal9Pool.ensure();
-                M4.normal3Into(normal9, matrix);
-                gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
+		const normal9 = normal9Pool.ensure();
+		M4.normal3Into(normal9, matrix);
+		gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
 
 		// draw
 		gl.bindVertexArray(vao);

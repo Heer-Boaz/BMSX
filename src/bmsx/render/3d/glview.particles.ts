@@ -1,9 +1,9 @@
 import type { vec3arr } from '../../rompack/rompack';
-import { Color } from '../view';
 import { glLoadShader, glSwitchProgram } from '../glutils';
+import { Color } from '../view';
 import { M4 } from './math3d';
-import particleVertCode from './shaders/particle.vert.glsl';
 import particleFragCode from './shaders/particle.frag.glsl';
+import particleVertCode from './shaders/particle.vert.glsl';
 
 export interface DrawParticleOptions {
     position: vec3arr;
@@ -36,11 +36,11 @@ export function init(gl: WebGL2RenderingContext): void {
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
     const quad = new Float32Array([
         -0.5, -0.5,
-         0.5, -0.5,
-         0.5,  0.5,
+        0.5, -0.5,
+        0.5, 0.5,
         -0.5, -0.5,
-         0.5,  0.5,
-        -0.5,  0.5,
+        0.5, 0.5,
+        -0.5, 0.5,
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
     instanceBuffer = gl.createBuffer()!;

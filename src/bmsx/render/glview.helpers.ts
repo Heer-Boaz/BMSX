@@ -98,8 +98,8 @@ export function checkWebGLError(infoText: string): number {
             throw new Error(`WebGL error occurred: ${getWebGLErrorString(gl, error)}: ${infoText}`);
         }
     } catch (e) {
-        // console.error(e);
-        throw e;
+        console.error(e);
+        // throw e;
     } finally {
         // WebGL does not provide a method to explicitly clear errors.
         // Errors are cleared automatically when retrieved using gl.getError().

@@ -18,6 +18,16 @@ export let skyboxTexture: WebGLTexture | null = null;
 
 export function init(gl: WebGL2RenderingContext) {
 	vaoSkybox = gl.createVertexArray()!;
+	createSkyboxProgram(gl);
+	setupSkyboxLocations(gl);
+	createSkyboxBuffer(gl);
+
+	glSwitchProgram(gl, skyboxProgram);
+	gl.bindVertexArray(vaoSkybox);
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
+	gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
+	gl.enableVertexAttribArray(skyboxPositionLocation);
 }
 
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
@@ -150,13 +160,10 @@ export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebu
 	}
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 	gl.viewport(0, 0, canvasWidth, canvasHeight);
+
 	gl.disable(gl.CULL_FACE);
 	glSwitchProgram(gl, skyboxProgram);
 	gl.bindVertexArray(vaoSkybox);
-
-	gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
-	gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
-	gl.enableVertexAttribArray(skyboxPositionLocation);
 
 	const activeCamera = $.model.activeCamera3D;
 	gl.uniformMatrix4fv(skyboxViewLocation, false, activeCamera.skyboxView());
