@@ -583,8 +583,9 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             });
         });
 
-        this.applyViewSettings();
+        $.view.reset(); // Reset the view to the initial state
 
+        this.applyViewSettings();
     }
 
     /**
