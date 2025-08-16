@@ -1,4 +1,4 @@
-import { GateCategory, TaskGate, taskGate } from '../render/rendergate';
+import { GateCategory, TaskGate, taskGate } from './taskgate';
 
 /**
  * A function that performs an asynchronous load and resolves with the loaded value.

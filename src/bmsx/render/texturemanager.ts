@@ -1,8 +1,8 @@
 import { AssetBarrier } from '../core/assetbarrier';
 import { Registry } from '../core/registry';
+import { taskGate } from '../core/taskgate';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
-import { taskGate } from './rendergate';
 
 export const TEXTMANAGER_ID = 'texmgr';
 
