@@ -2,7 +2,7 @@ import { AssetBarrier } from '../core/assetbarrier';
 import { Registry } from '../core/registry';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
-import { mainRenderGate } from './rendergate';
+import { taskGate } from './rendergate';
 
 export const TEXTMANAGER_ID = 'texmgr';
 
@@ -25,6 +25,23 @@ export type ImageKey = string;
 
 export interface GPUBackend {
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle;
+    createCubemapFromImages(
+        faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap],
+        desc: TextureParams
+    ): TextureHandle;
+    createSolidCubemap(
+        size: number,
+        rgba: [number, number, number, number],
+        desc: TextureParams
+    ): TextureHandle; // voor fallback (1×1)
+
+    createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
+    uploadCubemapFace(
+        cubemap: TextureHandle,
+        face: number,                 // 0..5
+        img: ImageBitmap
+    ): void;
+
     destroyTexture(handle: TextureHandle): void;
 }
 
@@ -33,6 +50,105 @@ export class WebGLBackend implements GPUBackend {
 
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): WebGLTexture {
         return glCreateTextureFromImage(this.gl, img, 3, desc);
+    }
+
+    createCubemapFromImages(
+        faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap],
+        desc: TextureParams
+    ): WebGLTexture {
+        const gl = this.gl;
+        const tex = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+
+        const targets = [
+            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
+        ] as const;
+
+        // upload alle faces
+        for (let i = 0; i < 6; i++) {
+            gl.texImage2D(targets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, faces[i]);
+        }
+
+        // sampler state (zonder mipmaps, jouw defaults)
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+
+        return tex;
+    }
+
+    createCubemapEmpty(size: number, desc: TextureParams): WebGLTexture {
+        const gl = this.gl;
+        const tex = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+
+        const targets = [
+            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
+        ] as const;
+
+        for (const t of targets) {
+            gl.texImage2D(t, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+
+        return tex;
+    }
+
+    uploadCubemapFace(cubemap: WebGLTexture, face: number, img: ImageBitmap): void {
+        const gl = this.gl;
+        const targets = [
+            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
+        ] as const;
+
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubemap);
+        gl.texImage2D(targets[face], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    }
+
+    createSolidCubemap(size: number, rgba: [number, number, number, number], desc: TextureParams): WebGLTexture {
+        const gl = this.gl;
+        const tex = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+
+        const data = new Uint8Array(size * size * 4);
+        for (let i = 0; i < size * size; i++) {
+            data.set(rgba, i * 4);
+        }
+        const targets = [
+            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
+            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
+        ] as const;
+
+        for (const t of targets) {
+            gl.texImage2D(t, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+        }
+
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+
+        return tex;
     }
 
     destroyTexture(handle: WebGLTexture): void {
@@ -71,7 +187,7 @@ export class TextureManager implements RegisterablePersistent {
     private backend?: GPUBackend;
     private imageCache = new Map<ImageKey, ImageCacheEntry>();
     private gpuCache = new Map<TextureKey, GPUCacheEntry>();
-    private textureBarrier = new AssetBarrier<WebGLTexture>(mainRenderGate);
+    private textureBarrier = new AssetBarrier<WebGLTexture>(taskGate);
 
     constructor(backend?: GPUBackend) {
         this.backend = backend;
@@ -111,6 +227,11 @@ export class TextureManager implements RegisterablePersistent {
 
     private makeBufferKey(identifier: TextureIdentifier): TextureKey {
         return `buf:${identifier.modelName}:${identifier.modelImageIndex}`;
+    }
+
+    private makeCubemapKey(name: string, faceIds: readonly string[], desc: TextureParams): TextureKey {
+        const descKey = JSON.stringify(desc);
+        return `cubemap:${name}|faces:${faceIds.join(',')}|${descKey}`;
     }
 
     private async loadBitmap(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap> {
@@ -224,6 +345,146 @@ export class TextureManager implements RegisterablePersistent {
         return key;
     }
 
+    public async loadCubemap(
+        name: string,
+        faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
+            () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
+        faceIdsForKey: readonly [string, string, string, string, string, string],
+        desc: TextureParams = {}
+    ): Promise<TextureKey> {
+        if (!this.backend) throw new Error('TextureManager backend not set');
+        const key = this.makeCubemapKey(name, faceIdsForKey, desc);
+
+        // Fast path
+        let gpu = this.gpuCache.get(key);
+        if (gpu) { gpu.refCount++; return key; }
+
+        const handle = await this.textureBarrier.acquire(
+            key,
+            async () => {
+                const faces = await Promise.all(faceLoaders.map(fn => fn())) as unknown as
+                    [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
+                // validatie (optioneel): afmetingen gelijk & vierkant
+                const w = (faces[0] as any).width, h = (faces[0] as any).height;
+                if (w !== h) throw new Error('Cubemap face not square');
+                for (const f of faces) if ((f as any).width !== w || (f as any).height !== h) {
+                    throw new Error('Cubemap faces must share the same size');
+                }
+                return this.backend!.createCubemapFromImages(faces, desc);
+            },
+            {
+                category: 'texture',
+                block_render: false,         // render blijft doorlopen; deze call wacht zelf
+                tag: `cubemap:${name}`,
+                disposer: (h) => this.backend!.destroyTexture(h),
+                warnIfLongerMs: 1000
+            }
+        );
+
+        this.gpuCache.set(key, { handle, refCount: 1 });
+        return key;
+    }
+
+    public acquireCubemap(
+        name: string,
+        faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
+            () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
+        faceIdsForKey: readonly [string, string, string, string, string, string],
+        desc: TextureParams = {},
+        fallbackColor: [number, number, number, number] = [0, 0, 0, 255]
+    ): TextureKey {
+        if (!this.backend) throw new Error('TextureManager backend not set');
+        const key = this.makeCubemapKey(name, faceIdsForKey, desc);
+
+        // Fast path
+        let gpu = this.gpuCache.get(key);
+        if (gpu) { gpu.refCount++; return key; }
+
+        // Fallback cubemap direct bindbaar
+        const fallback = this.backend.createSolidCubemap(1, fallbackColor, desc);
+        this.gpuCache.set(key, { handle: fallback, refCount: 1 });
+
+        void this.textureBarrier.acquire(
+            key,
+            async () => {
+                const faces = await Promise.all(faceLoaders.map(fn => fn())) as unknown as
+                    [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
+                return this.backend!.createCubemapFromImages(faces, desc);
+            },
+            {
+                category: 'texture',
+                block_render: false,
+                tag: `cubemap:${name}`,
+                disposer: (h) => this.backend!.destroyTexture(h),
+                warnIfLongerMs: 1000
+            }
+        ).then((real) => {
+            const entry = this.gpuCache.get(key);
+            if (!entry) { this.backend!.destroyTexture(real); return; }
+            // vervang fallback door echte
+            const old = entry.handle;
+            entry.handle = real;
+            // Als fallback dedicated was → opruimen
+            this.backend!.destroyTexture(old);
+        }).catch(err => console.error(`Cubemap acquire failed for key=${key}`, err));
+
+        return key;
+    }
+
+    public acquireCubemapStreamed(
+        name: string,
+        faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
+            () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
+        faceIdsForKey: readonly [string, string, string, string, string, string],
+        desc: TextureParams = {},
+        fallbackColor: [number, number, number, number] = [0, 0, 0, 255]
+    ): TextureKey {
+        if (!this.backend) throw new Error("TextureManager backend not set");
+        const key = this.makeCubemapKey(name, faceIdsForKey, desc);
+
+        // Fast path
+        let gpu = this.gpuCache.get(key);
+        if (gpu) { gpu.refCount++; return key; }
+
+        // Maak alvast een lege/fallback cubemap (bv. zwart)
+        const fallback = this.backend.createSolidCubemap(1, fallbackColor, desc);
+        this.gpuCache.set(key, { handle: fallback, refCount: 1 });
+
+        // Start een async chain: eerst lege cubemap van juiste size → daarna faces uploaden
+        void (async () => {
+            try {
+                // laad eerste face om resolutie te bepalen
+                const first = await faceLoaders[0]();
+                const size = first.width; // aanname: vierkant
+                const cubemap = this.backend!.createCubemapEmpty(size, desc);
+
+                // upload de eerste face direct
+                this.backend!.uploadCubemapFace(cubemap, 0, first);
+
+                // upload de overige faces zodra hun loaders klaar zijn
+                for (let i = 1; i < 6; i++) {
+                    faceLoaders[i]().then(img => {
+                        this.backend!.uploadCubemapFace(cubemap, i, img);
+                    }).catch(err => console.error(`Cubemap face ${i} failed`, err));
+                }
+
+                // swap fallback → echte cubemap
+                const entry = this.gpuCache.get(key);
+                if (entry) {
+                    const old = entry.handle;
+                    entry.handle = cubemap;
+                    this.backend!.destroyTexture(old); // alleen als fallback disposable is
+                } else {
+                    this.backend!.destroyTexture(cubemap);
+                }
+            } catch (err) {
+                console.error("Cubemap streaming failed", err);
+            }
+        })();
+
+        return key;
+    }
+
     public async loadTextureFromBuffer(buffer: ArrayBuffer, identifier: TextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
         const key = this.makeBufferKey(identifier);
         return this.loadAndCacheTexture(key, () => this.loadBitmap('', buffer), desc);
@@ -262,6 +523,17 @@ export class TextureManager implements RegisterablePersistent {
                 if (this.backend) this.backend.destroyTexture(gpuEntry.handle);
                 this.gpuCache.delete(key);
             }
+        }
+    }
+
+    public releaseByKey(key: TextureKey): void {
+        const gpuEntry = this.gpuCache.get(key);
+        if (!gpuEntry) return;
+        gpuEntry.refCount--;
+        if (gpuEntry.refCount <= 0) {
+            this.textureBarrier.invalidate(key, (h) => this.backend?.destroyTexture(h));
+            if (this.backend) this.backend.destroyTexture(gpuEntry.handle);
+            this.gpuCache.delete(key);
         }
     }
 

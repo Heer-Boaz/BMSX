@@ -1,3 +1,4 @@
+import { taskGate, TextureKey } from '../..';
 import { glLoadShader, glSwitchProgram } from '../glutils';
 import { BaseView } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
@@ -11,7 +12,7 @@ let skyboxPositionLocation: number;
 let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
 let skyboxTextureLocation: WebGLUniformLocation;
-let _textureLoading = false;
+let skyboxKey: TextureKey | undefined;
 
 export let skyboxBuffer: WebGLBuffer;
 export let skyboxTexture: WebGLTexture | null = null;
@@ -112,63 +113,74 @@ export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
 	gl.bufferData(gl.ARRAY_BUFFER, p, gl.STATIC_DRAW);
 }
 
-export async function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): Promise<void> {
-	_textureLoading = true;
-	// Create or update the cube map texture
-	gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
-	skyboxTexture = gl.createTexture();
-	gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
-	// gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-	// gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-	// Geen mipmaps gebruiken
-	// (als je ooit generateMipmap hebt geroepen: base/max-level vastzetten)
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
-
-	// Harde pixels
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-	// Naadbehandeling aan randen
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-	gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-
-	const faces = [
-		{ target: gl.TEXTURE_CUBE_MAP_POSITIVE_X, id: ids.posX },
-		{ target: gl.TEXTURE_CUBE_MAP_NEGATIVE_X, id: ids.negX },
-		{ target: gl.TEXTURE_CUBE_MAP_POSITIVE_Y, id: ids.posY },
-		{ target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, id: ids.negY },
-		{ target: gl.TEXTURE_CUBE_MAP_POSITIVE_Z, id: ids.posZ },
-		{ target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, id: ids.negZ },
-	];
-
-	const promises = faces.map(async (face) => {
-		const source = await BaseView.imgassets[face.id].imgbin;
-		gl.texImage2D(face.target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-	});
-
-	await Promise.all(promises);
-	_textureLoading = false;
+function faceLoaderFromImgAsset(faceId: string): () => Promise<ImageBitmap> {
+	return async () => {
+		const imgEl = await BaseView.imgassets[faceId].imgbin; // HTMLImageElement
+		return createImageBitmap(imgEl);
+	};
 }
 
-export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
-	if (!skyboxTexture || _textureLoading) {
+export async function setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
+	const loaders = [
+		faceLoaderFromImgAsset(ids.posX),
+		faceLoaderFromImgAsset(ids.negX),
+		faceLoaderFromImgAsset(ids.posY),
+		faceLoaderFromImgAsset(ids.negY),
+		faceLoaderFromImgAsset(ids.posZ),
+		faceLoaderFromImgAsset(ids.negZ),
+	] as const;
+
+	skyboxKey = await $.texmanager.loadCubemap(
+		"skybox/main",
+		loaders,
+		[ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
+		{}
+	);
+}
+
+export function setSkyboxImagesStreamed(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
+	const loaders = [
+		faceLoaderFromImgAsset(ids.posX),
+		faceLoaderFromImgAsset(ids.negX),
+		faceLoaderFromImgAsset(ids.posY),
+		faceLoaderFromImgAsset(ids.negY),
+		faceLoaderFromImgAsset(ids.posZ),
+		faceLoaderFromImgAsset(ids.negZ),
+	] as const;
+
+	skyboxKey = $.texmanager.acquireCubemap(
+		"skybox/main",
+		loaders,
+		[ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
+		{},                      // TextureParams
+		[0, 0, 0, 255]           // fallback kleur (zwart)
+	);
+	// drawSkybox blijft gewoon tekenen; fallback wordt vanzelf vervangen door de echte cubemap.
+}
+
+export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, w: number, h: number) {
+	if (!taskGate.ready) {
+		console.debug('TASKGATE BLOCKED SKYBOX RENDERING!!');
+		// TODO: Strange that this does not appear to be executed even once.
 		return;
 	}
+
+	const tex = $.texmanager.getTexture(skyboxKey) as WebGLTexture | undefined;
+	if (!tex) return;
+
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-	gl.viewport(0, 0, canvasWidth, canvasHeight);
+	gl.viewport(0, 0, w, h);
 
 	gl.disable(gl.CULL_FACE);
 	glSwitchProgram(gl, skyboxProgram);
 	gl.bindVertexArray(vaoSkybox);
 
-	const activeCamera = $.model.activeCamera3D;
-	gl.uniformMatrix4fv(skyboxViewLocation, false, activeCamera.skyboxView());
-	gl.uniformMatrix4fv(skyboxProjectionLocation, false, activeCamera.projection);
+	const cam = $.model.activeCamera3D;
+	gl.uniformMatrix4fv(skyboxViewLocation, false, cam.skyboxView());
+	gl.uniformMatrix4fv(skyboxProjectionLocation, false, cam.projection);
+
+	gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
+	gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
 
 	gl.drawArrays(gl.TRIANGLES, 0, 36);
 	gl.enable(gl.CULL_FACE);

@@ -263,7 +263,7 @@ export class GLView extends BaseView {
 	}
 
 	public async setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): Promise<void> {
-		await GLViewSkybox.setSkyboxImages(this.glctx, ids);
+		GLViewSkybox.setSkyboxImagesStreamed(ids);
 	}
 
 	/**
