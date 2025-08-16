@@ -169,7 +169,7 @@ export class Serializer {
                         if (Array.isArray(v)) break;
                         const valType = Serializer.get_typename(v);
                         if (valType !== 'Object' && valType !== 'object' && !Reviver.get_constructor_for_type(valType)) {
-                            console.error(`Object of type '${valType}' encountered without a known constructor. Did you forget to add '@insavegame' to the class definition?`);
+                            // console.error(`Object of type '${valType}' encountered without a known constructor. Did you forget to add '@insavegame' to the class definition?`);
                             continue;
                         }
                         // Avoid cycles
@@ -192,7 +192,6 @@ export class Serializer {
         }
         return { root: rootRef, objects };
     }
-
 }
 
 /**
@@ -224,6 +223,7 @@ export class Serializer {
 export class Reviver {
     static constructors: Record<string, new () => any> = {};
     static onLoads: Record<string, ((result: any) => any)[]> = {};
+    static excludedProperties: Record<string, Record<string, boolean>> = {};
 
     static removeSerializerProps(obj: { typename: string; }): void {
         obj.typename = undefined;
@@ -259,8 +259,10 @@ export class Reviver {
         for (const id of Object.keys(objects)) {
             const data = objects[id];
             const target = idToObject[id];
+            if (target == null) continue; // guard: geen assignment naar null/undefined
             for (const key of Object.keys(data)) {
                 if (key === 'typename') continue;
+                if (data.typename && Reviver.excludedProperties[data.typename]?.[key]) continue;
                 const val = data[key];
                 if (Array.isArray(val)) {
                     // If every element is a { r: ... }, resolve all
@@ -341,10 +343,15 @@ export function onsave(
  * @param descriptor - The property descriptor for the property to mark as excluded.
  * @returns The modified property descriptor.
  */
-export function excludepropfromsavegame(target: Object, propertyKey: string, _descriptor?: PropertyDescriptor): any {
-    Serializer.excludedProperties[target.constructor.name] ??= {};
-    Serializer.excludedProperties[target.constructor.name][propertyKey] = true;
+export function excludepropfromsavegame(target: Object, propertyKey: string) {
+    const type = target.constructor.name;
+    Serializer.excludedProperties[type] ??= {};
+    Serializer.excludedProperties[type][propertyKey] = true;
+
+    Reviver.excludedProperties[type] ??= {};
+    Reviver.excludedProperties[type][propertyKey] = true; // <-- ook bij hydration overslaan
 }
+
 
 /**
  * Sets the `onload` property of the target object to the provided function.
