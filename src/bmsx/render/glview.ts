@@ -357,6 +357,25 @@ export class GLView extends BaseView {
 		this.needsResize = false;
 	}
 
+	override reset() {
+		this.isRendering = false;
+		const gl = this.glctx;
+		if (!gl) return;
+
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.disable(gl.SCISSOR_TEST);
+		gl.colorMask(true, true, true, true);
+		gl.depthMask(true);
+		gl.depthFunc(gl.LEQUAL);
+		gl.cullFace(gl.BACK);
+		gl.enable(gl.DEPTH_TEST);
+		gl.disable(gl.BLEND);
+
+		gl.viewport(0, 0, this.canvasSize.x, this.canvasSize.y);
+		gl.clearColor(0, 0, 0, 1);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	}
+
 	override drawgame(clearCanvas: boolean = true): void {
 		this.isRendering = true;
 		super.drawgame(clearCanvas);

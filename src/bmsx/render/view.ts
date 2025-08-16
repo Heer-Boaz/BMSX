@@ -250,6 +250,8 @@ export abstract class BaseView implements RegisterablePersistent {
 		}
 	}
 
+	public abstract reset(): void;
+
 	/**
 	 * Registers event listeners for window resize, orientation change, and fullscreen mode change.
 	 * When any of these events occur, the `handleResize` method is called to recalculate the size of the canvas and adjust its position and scale.

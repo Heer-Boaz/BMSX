@@ -30,6 +30,31 @@ export function init(gl: WebGL2RenderingContext) {
 	gl.enableVertexAttribArray(skyboxPositionLocation);
 }
 
+export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
+	const program = gl.createProgram();
+	if (!program) throw Error('Failed to create skybox GLSL program');
+	skyboxProgram = program;
+	const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, skyboxVertCode);
+	const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, skyboxFragCode);
+	gl.attachShader(program, vertShader);
+	gl.attachShader(program, fragShader);
+	gl.linkProgram(program);
+	if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+		throw Error(`Unable to initialize the skybox shader program: ${gl.getProgramInfoLog(program)} `);
+	}
+}
+
+export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
+	gl.useProgram(skyboxProgram);
+	skyboxPositionLocation = gl.getAttribLocation(skyboxProgram, 'a_position');
+	skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
+	skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
+	skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
+
+	// koppel sampler -> texture unit
+	gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
+}
+
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
 	// CCW vanuit het centrum van de cube gezien (dus vertices in "normale" volgorde om naar binnen te kijken)
 	const p = new Float32Array([
@@ -128,30 +153,6 @@ export async function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: s
 
 	await Promise.all(promises);
 	_textureLoading = false;
-}
-export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
-	const program = gl.createProgram();
-	if (!program) throw Error('Failed to create skybox GLSL program');
-	skyboxProgram = program;
-	const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, skyboxVertCode);
-	const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, skyboxFragCode);
-	gl.attachShader(program, vertShader);
-	gl.attachShader(program, fragShader);
-	gl.linkProgram(program);
-	if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-		throw Error(`Unable to initialize the skybox shader program: ${gl.getProgramInfoLog(program)} `);
-	}
-}
-
-export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
-	gl.useProgram(skyboxProgram);
-	skyboxPositionLocation = gl.getAttribLocation(skyboxProgram, 'a_position');
-	skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
-	skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
-	skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
-
-	// koppel sampler -> texture unit
-	gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
 }
 
 export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {

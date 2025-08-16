@@ -1,6 +1,8 @@
+import { AssetBarrier } from '../core/assetbarrier';
 import { Registry } from '../core/registry';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
+import { GlobalRenderGate } from './rendergate';
 
 export const TEXTMANAGER_ID = 'texmgr';
 
@@ -69,6 +71,7 @@ export class TextureManager implements RegisterablePersistent {
     private backend?: GPUBackend;
     private imageCache = new Map<ImageKey, ImageCacheEntry>();
     private gpuCache = new Map<TextureKey, GPUCacheEntry>();
+    private textureBarrier = new AssetBarrier<WebGLTexture>(GlobalRenderGate);
 
     constructor(backend?: GPUBackend) {
         this.backend = backend;
@@ -124,49 +127,146 @@ export class TextureManager implements RegisterablePersistent {
         return bufferToImageBitmap(dataBuffer);
     }
 
+    // private async loadAndCacheTexture(key: string, loadBitmapFn: () => Promise<ImageBitmap>, desc: TextureParams): Promise<TextureKey> {
+    //     if (!this.backend) throw new Error('TextureManager backend not set');
+
+    //     // Check for existing GPU entry first (fast path for already-loaded textures)
+    //     let gpuCached = this.gpuCache.get(key);
+    //     if (gpuCached) {
+    //         gpuCached.refCount++;
+    //         return key;
+    //     }
+
+    //     // If no image entry, create a promise for the full process
+    //     let imgEntry = this.imageCache.get(key);
+    //     if (!imgEntry) {
+    //         // Cache a promise for the entire acquire (image + GPU creation)
+    //         const acquirePromise = (async () => {
+    //             const bitmap = await loadBitmapFn();
+    //             // At this point, create GPU texture (no race possible since promise is shared)
+    //             const handle = this.backend!.createTextureFromImage(bitmap, desc);
+    //             this.gpuCache.set(key, { handle, refCount: 1 }); // refCount starts at 1 for the creator
+    //             return bitmap; // Return bitmap if needed, but mainly for awaiting
+    //         })();
+
+    //         imgEntry = { refCount: 1, promise: acquirePromise };
+    //         this.imageCache.set(key, imgEntry);
+
+    //         // Await the full promise
+    //         imgEntry.bitmap = await acquirePromise;
+    //         imgEntry.promise = undefined;
+    //     } else {
+    //         imgEntry.refCount++;
+    //         if (imgEntry.promise) {
+    //             // Await the shared full-acquire promise
+    //             await imgEntry.promise.then(b => { imgEntry!.bitmap = b; imgEntry!.promise = undefined; });
+    //         }
+    //         // After await, GPU should exist; increment its refCount
+    //         gpuCached = this.gpuCache.get(key);
+    //         if (gpuCached) {
+    //             gpuCached.refCount++;
+    //         } else {
+    //             // This shouldn't happen with shared promise, but log if paranoid
+    //             console.error(`GPU cache missing after shared acquire for key: ${key}`);
+    //         }
+    //     }
+
+    //     return key;
+    // }
+
     private async loadAndCacheTexture(key: string, loadBitmapFn: () => Promise<ImageBitmap>, desc: TextureParams): Promise<TextureKey> {
+        return this.ensureTextureReady(key, loadBitmapFn, desc);
+    }
+
+    /**
+     * Blocking/legacy: wacht tot de echte GPU-texture klaar is en zet die in de cache.
+     * Dit behoudt het oude semantische gedrag van loadAndCacheTexture(...).
+     */
+    private async ensureTextureReady(
+        key: string,
+        loadBitmapFn: () => Promise<ImageBitmap>,
+        desc: TextureParams
+    ): Promise<TextureKey> {
         if (!this.backend) throw new Error('TextureManager backend not set');
 
-        // Check for existing GPU entry first (fast path for already-loaded textures)
-        let gpuCached = this.gpuCache.get(key);
-        if (gpuCached) {
-            gpuCached.refCount++;
-            return key;
-        }
+        // Fast path: GPU al aanwezig
+        let gpu = this.gpuCache.get(key);
+        if (gpu) { gpu.refCount++; return key; }
 
-        // If no image entry, create a promise for the full process
-        let imgEntry = this.imageCache.get(key);
-        if (!imgEntry) {
-            // Cache a promise for the entire acquire (image + GPU creation)
-            const acquirePromise = (async () => {
-                const bitmap = await loadBitmapFn();
-                // At this point, create GPU texture (no race possible since promise is shared)
-                const handle = this.backend!.createTextureFromImage(bitmap, desc);
-                this.gpuCache.set(key, { handle, refCount: 1 }); // refCount starts at 1 for the creator
-                return bitmap; // Return bitmap if needed, but mainly for awaiting
-            })();
-
-            imgEntry = { refCount: 1, promise: acquirePromise };
-            this.imageCache.set(key, imgEntry);
-
-            // Await the full promise
-            imgEntry.bitmap = await acquirePromise;
-            imgEntry.promise = undefined;
-        } else {
-            imgEntry.refCount++;
-            if (imgEntry.promise) {
-                // Await the shared full-acquire promise
-                await imgEntry.promise.then(b => { imgEntry!.bitmap = b; imgEntry!.promise = undefined; });
+        // Start en wacht: barrier met blocking:false (render blijft doorlopen),
+        // maar deze call resolved pas als GPU-handle bestaat.
+        const handle = await this.textureBarrier.acquire(
+            key,
+            async () => {
+                const bmp = await loadBitmapFn();
+                return this.backend!.createTextureFromImage(bmp, desc);
+            },
+            {
+                category: 'texture',
+                block_render: false, // non-blocking voor renderer; deze methode blockt alleen de caller
+                tag: `tex:${key}`,
+                disposer: (h) => this.backend!.destroyTexture(h)
             }
-            // After await, GPU should exist; increment its refCount
-            gpuCached = this.gpuCache.get(key);
-            if (gpuCached) {
-                gpuCached.refCount++;
-            } else {
-                // This shouldn't happen with shared promise, but log if paranoid
-                console.error(`GPU cache missing after shared acquire for key: ${key}`);
+        );
+
+        // Zet in gpuCache nadat handle er is
+        this.gpuCache.set(key, { handle, refCount: 1 });
+        return key;
+    }
+
+    /**
+     * Non-blocking acquire: registreert (of hergebruikt) een texture key,
+     * plaatst een fallback handle direct in de gpuCache en start async upload.
+     * Callers mogen meteen renderen met de fallback; de echte GPU-texture
+     * vervangt ‘m zodra de promise resolve’t.
+     */
+    public acquireTexture(
+        key: string,
+        loadBitmapFn: () => Promise<ImageBitmap>,
+        desc: TextureParams,
+        fallbackHandle: WebGLTexture,         // bv. 1×1 checker / flat color
+    ): TextureKey {
+        if (!this.backend) throw new Error('TextureManager backend not set');
+
+        // Fast path: GPU al aanwezig
+        let gpu = this.gpuCache.get(key);
+        if (gpu) { gpu.refCount++; return key; }
+
+        // Plaats fallback meteen (non-blocking)
+        this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1 });
+
+        // Start async load via barrier (non-blocking; geen await)
+        void this.textureBarrier.acquire(
+            key,
+            async () => {
+                const bmp = await loadBitmapFn();
+                const real = this.backend!.createTextureFromImage(bmp, desc);
+                return real;
+            },
+            {
+                category: 'texture',
+                block_render: false,
+                tag: `tex:${key}`,
+                disposer: (h) => this.backend!.destroyTexture(h),
             }
-        }
+        ).then((realHandle) => {
+            // Als de entry nog bestaat en niemand released heeft:
+            const entry = this.gpuCache.get(key);
+            if (!entry) { // niemand houdt nog vast → dispose nieuwe
+                this.backend!.destroyTexture(realHandle);
+                return;
+            }
+            // Vervang fallback door echte handle (disposen van fallback is optioneel)
+            if (entry.handle !== realHandle) {
+                const old = entry.handle;
+                entry.handle = realHandle;
+                // Als je fallback een gedeelde checker is: NIET deleten.
+                // Alleen deleten als het een dedicated temp-tex was:
+                // this.backend!.destroyTexture(old);
+            }
+        }).catch(err => {
+            console.error(`Texture acquire failed for key=${key}`, err);
+        });
 
         return key;
     }
@@ -197,17 +297,17 @@ export class TextureManager implements RegisterablePersistent {
 
     public releaseByUri(uri: string, desc: TextureParams = {}): void {
         const key = this.makeKey(uri, desc);
+
+        // refcount omlaag in gpuCache
         const gpuEntry = this.gpuCache.get(key);
         if (gpuEntry) {
             gpuEntry.refCount--;
             if (gpuEntry.refCount <= 0) {
+                // Invalideer entry in barrier zodat late promises niet terugschrijven
+                this.textureBarrier.invalidate(key, (h) => this.backend?.destroyTexture(h));
+                // Verwijder GPU-handle
                 if (this.backend) this.backend.destroyTexture(gpuEntry.handle);
                 this.gpuCache.delete(key);
-                const imgEntry = this.imageCache.get(key);
-                if (imgEntry) {
-                    imgEntry.refCount--;
-                    if (imgEntry.refCount <= 0) this.imageCache.delete(key);
-                }
             }
         }
     }
