@@ -6,11 +6,93 @@ import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import type { TextureKey } from '../render/texturemanager';
 import type { Color, DrawMeshOptions } from '../render/view';
 import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, vec3arr } from '../rompack/rompack';
-import { insavegame, onload } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 import { Float32ArrayPool } from './utils';
 
-@insavegame
+type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"
+
+function buildNodeKeyMap(model: GLTFModel): {
+    toKey: (i: number) => NodeKey,
+    toIndex: (k: NodeKey) => number | undefined
+} {
+    const nodes = model.nodes ?? [];
+    const sceneIndex = model.scene ?? 0;
+    const scene = model.scenes?.[sceneIndex];
+    if (!scene) {
+        // fallback: enkelvoudige graf zonder scenes → key = "s-1/<i>"
+        const map = new Map<string, number>();
+        for (let i = 0; i < nodes.length; i++) map.set(`s-1/${i}`, i);
+        return { toKey: (i) => `s-1/${i}`, toIndex: (k) => map.get(k) };
+    }
+
+    // parent[] opbouwen
+    const parentOf: number[] = new Array(nodes.length).fill(-1);
+    for (let p = 0; p < nodes.length; p++) {
+        const ch = nodes[p]?.children ?? [];
+        for (const c of ch) parentOf[c] = p;
+    }
+
+    // alle nodes die bereikbaar zijn vanuit de scene-roots: path keten van indices
+    const cacheKey: (string | undefined)[] = new Array(nodes.length);
+
+    const keyOf = (i: number): string => {
+        if (cacheKey[i] !== undefined) return cacheKey[i]!;
+        let p = parentOf[i];
+        let path = `${i}`;
+        while (p !== -1) {
+            path = `${p}/${path}`;
+            p = parentOf[p];
+        }
+        // controle: i moet bereikbaar zijn via een scene-root; zo niet, markeer als “detached”
+        const isRooted = scene.nodes.includes(parseInt(path.split('/')[0], 10));
+        const key = isRooted ? `s${sceneIndex}/${path}` : `s${sceneIndex}#detached/${path}`;
+        cacheKey[i] = key;
+        return key;
+    };
+
+    const map = new Map<string, number>();
+    for (let i = 0; i < nodes.length; i++) {
+        map.set(keyOf(i), i);
+    }
+    return {
+        toKey: keyOf,
+        toIndex: (k) => map.get(k),
+    };
+}
+
+type MaterialOverride = {
+    color?: [number, number, number, number];
+    scalars?: Record<string, number>;
+    vectors?: Record<string, [number, number, number, number]>;
+    textures?: Partial<{ albedo: number; normal: number; metallicRoughness: number }>; // indices binnen jouw model.textures
+};
+
+type NodeState = {
+    trs?: { t?: vec3arr; r?: [number, number, number, number]; s?: vec3arr };
+    weights?: number[];
+    material?: MaterialOverride;
+    visible?: boolean;
+};
+
+type AnimState = {
+    activeClip?: string | number; // jouw identifier
+    time?: number;
+    speed?: number;
+    loop?: boolean;
+    layers?: Array<{ clip: string | number; weight: number; time: number; speed?: number; loop?: boolean }>;
+};
+
+type MeshObjectRuntime = {
+    version: 1;
+    model_id?: asset_id;
+    assetHash?: string; // optioneel, detectie van asset-wijziging
+    anim?: AnimState;
+    nodes?: Record<NodeKey, NodeState>;
+};
+
+
+@excludeclassfromsavegame
 export class Mesh {
     public positions: Float32Array;
     public texcoords: Float32Array;
@@ -178,18 +260,25 @@ interface MeshInstance {
 
 @insavegame
 export abstract class MeshObject extends GameObject {
+    @excludepropfromsavegame
     public meshes: Mesh[] = [];
+    @excludepropfromsavegame
     public meshModel: GLTFModel;
     /** Rotation in radians [x, y, z] */
     public rotation: vec3arr;
     public scale: vec3arr;
     private _model_id?: asset_id;
+    @excludepropfromsavegame
     private meshInstances: MeshInstance[] = [];
     private nodeDirty: boolean[] = [];
+    @excludepropfromsavegame
     private worldMatrices: Float32Array[] = [];
     private animationTime = 0;
+    @excludepropfromsavegame
     private _base = new Float32Array(16);
+    @excludepropfromsavegame
     private worldPool: Float32ArrayPool;
+    private _modelGen = 0;
 
     constructor(id?: string, fsm_id?: string) {
         super(id, fsm_id);
@@ -207,11 +296,12 @@ export abstract class MeshObject extends GameObject {
         return this._model_id;
     }
 
-    public set model_id(model_id: asset_id) {
-        if (this._model_id === model_id) return; // No change, do nothing
-        if (this._model_id) this.releaseModel(this.meshModel); // Release previous model textures
-        this._model_id = model_id; // Set new model ID
-        this.setMeshModel($.rompack.model[this.model_id]); // Load the new model
+    public set model_id(id: asset_id) {
+        if (this._model_id === id) return;
+        if (this._model_id) this.releaseModel(this.meshModel);
+        this._model_id = id;
+        this._modelGen++;
+        this.setMeshModel($.rompack.model[id]);
     }
 
     private createMesh(mesh: GLTFMesh, meshModel: GLTFModel, index: number): Mesh {
@@ -257,7 +347,17 @@ export abstract class MeshObject extends GameObject {
 
     public setMeshModel(meshModel: GLTFModel): void {
         this.meshModel = meshModel;
+
+        // Valideer brondata, faal vroeg bij corruptie
+        if (!Array.isArray(meshModel.meshes) || meshModel.meshes.some(m => !m || !m.positions)) {
+            throw new Error(`GLTFModel '${meshModel.name}': invalid meshes array`);
+        }
+
         this.meshes = meshModel.meshes.map((m, i) => this.createMesh(m, meshModel, i));
+
+        // Invariant: dicht/non-null
+        // (optioneel) Object.freeze(this.meshes);
+
         if (meshModel.nodes) {
             this.worldMatrices = meshModel.nodes.map(() => M4.identity());
             this.nodeDirty = meshModel.nodes.map(() => true);
@@ -265,9 +365,11 @@ export abstract class MeshObject extends GameObject {
             this.worldMatrices = [];
             this.nodeDirty = [];
         }
+
         this.recalcMeshInstances();
-        this.loadMeshModel(this.meshModel);
+        this.loadMeshModel(this.meshModel); // textures binden NA volledige opbouw
     }
+
 
     public override run(): void {
         if (this.meshModel?.animations) {
@@ -375,32 +477,30 @@ export abstract class MeshObject extends GameObject {
     @onload
     public onLoad(_meshobject: MeshObject): void {
         if (this.meshModel) {
-            this.loadMeshModel(this.meshModel);
+            // Rebuild volledige state deterministisch
+            this.setMeshModel(this.meshModel);
+        } else if (this._model_id) {
+            const model = $.rompack.model[this._model_id];
+            if (model) this.setMeshModel(model); // dit vult this.meshes dicht/non-null
         }
-        else if (this._model_id) {
-            this.loadMeshModel(this.meshModel);
-        }
+        // GEEN directe call naar loadMeshModel hier.
     }
 
     private loadMeshModel(meshModel: GLTFModel): void {
+        const gen = this._modelGen;
         $.texmanager.fetchModelTextures(meshModel).then((gpuTextureKeys) => {
+            if (gen !== this._modelGen || meshModel !== this.meshModel) return; // hydration barrier
             meshModel.gpuTextures = gpuTextureKeys;
-            for (const mesh of this.meshes) {
-                if (!mesh.material) continue;
-                const tex = mesh.material.textures;
-                if (tex.albedo !== undefined) {
-                    mesh.material.gpuTextures.albedo = gpuTextureKeys[tex.albedo];
-                }
-                if (tex.normal !== undefined) {
-                    mesh.material.gpuTextures.normal = gpuTextureKeys[tex.normal];
-                }
-                if (tex.metallicRoughness !== undefined) {
-                    mesh.material.gpuTextures.metallicRoughness = gpuTextureKeys[tex.metallicRoughness];
-                }
+            for (let i = 0; i < this.meshes.length; i++) {
+                const mesh = this.meshes[i]; // hier mag je ervan uitgaan: non-null
+                const tex = mesh.material?.textures ?? {};
+                if (tex.albedo !== undefined) mesh.material!.gpuTextures.albedo = gpuTextureKeys[tex.albedo];
+                if (tex.normal !== undefined) mesh.material!.gpuTextures.normal = gpuTextureKeys[tex.normal];
+                if (tex.metallicRoughness !== undefined)
+                    mesh.material!.gpuTextures.metallicRoughness = gpuTextureKeys[tex.metallicRoughness];
             }
         });
     }
-
     private recalcMeshInstances(): void {
         this.meshInstances = [];
         if (this.meshModel.nodes && this.meshModel.scenes && this.meshModel.scenes.length > 0) {

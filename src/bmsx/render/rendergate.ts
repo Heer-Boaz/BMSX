@@ -67,4 +67,4 @@ export class RenderGate {
     }
 }
 
-export const GlobalRenderGate = new RenderGate();
+export const mainRenderGate = new RenderGate();

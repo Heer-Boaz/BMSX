@@ -2,7 +2,7 @@ import { AssetBarrier } from '../core/assetbarrier';
 import { Registry } from '../core/registry';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
-import { GlobalRenderGate } from './rendergate';
+import { mainRenderGate } from './rendergate';
 
 export const TEXTMANAGER_ID = 'texmgr';
 
@@ -71,7 +71,7 @@ export class TextureManager implements RegisterablePersistent {
     private backend?: GPUBackend;
     private imageCache = new Map<ImageKey, ImageCacheEntry>();
     private gpuCache = new Map<TextureKey, GPUCacheEntry>();
-    private textureBarrier = new AssetBarrier<WebGLTexture>(GlobalRenderGate);
+    private textureBarrier = new AssetBarrier<WebGLTexture>(mainRenderGate);
 
     constructor(backend?: GPUBackend) {
         this.backend = backend;
@@ -126,53 +126,6 @@ export class TextureManager implements RegisterablePersistent {
         }
         return bufferToImageBitmap(dataBuffer);
     }
-
-    // private async loadAndCacheTexture(key: string, loadBitmapFn: () => Promise<ImageBitmap>, desc: TextureParams): Promise<TextureKey> {
-    //     if (!this.backend) throw new Error('TextureManager backend not set');
-
-    //     // Check for existing GPU entry first (fast path for already-loaded textures)
-    //     let gpuCached = this.gpuCache.get(key);
-    //     if (gpuCached) {
-    //         gpuCached.refCount++;
-    //         return key;
-    //     }
-
-    //     // If no image entry, create a promise for the full process
-    //     let imgEntry = this.imageCache.get(key);
-    //     if (!imgEntry) {
-    //         // Cache a promise for the entire acquire (image + GPU creation)
-    //         const acquirePromise = (async () => {
-    //             const bitmap = await loadBitmapFn();
-    //             // At this point, create GPU texture (no race possible since promise is shared)
-    //             const handle = this.backend!.createTextureFromImage(bitmap, desc);
-    //             this.gpuCache.set(key, { handle, refCount: 1 }); // refCount starts at 1 for the creator
-    //             return bitmap; // Return bitmap if needed, but mainly for awaiting
-    //         })();
-
-    //         imgEntry = { refCount: 1, promise: acquirePromise };
-    //         this.imageCache.set(key, imgEntry);
-
-    //         // Await the full promise
-    //         imgEntry.bitmap = await acquirePromise;
-    //         imgEntry.promise = undefined;
-    //     } else {
-    //         imgEntry.refCount++;
-    //         if (imgEntry.promise) {
-    //             // Await the shared full-acquire promise
-    //             await imgEntry.promise.then(b => { imgEntry!.bitmap = b; imgEntry!.promise = undefined; });
-    //         }
-    //         // After await, GPU should exist; increment its refCount
-    //         gpuCached = this.gpuCache.get(key);
-    //         if (gpuCached) {
-    //             gpuCached.refCount++;
-    //         } else {
-    //             // This shouldn't happen with shared promise, but log if paranoid
-    //             console.error(`GPU cache missing after shared acquire for key: ${key}`);
-    //         }
-    //     }
-
-    //     return key;
-    // }
 
     private async loadAndCacheTexture(key: string, loadBitmapFn: () => Promise<ImageBitmap>, desc: TextureParams): Promise<TextureKey> {
         return this.ensureTextureReady(key, loadBitmapFn, desc);

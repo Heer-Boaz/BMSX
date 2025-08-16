@@ -1,4 +1,4 @@
-import { GateCategory, GlobalRenderGate, RenderGate } from '../render/rendergate';
+import { GateCategory, mainRenderGate, RenderGate } from '../render/rendergate';
 
 type LoaderFn<T> = () => Promise<T>;
 type Disposer<T> = (val: T) => void;
@@ -34,7 +34,7 @@ export class AssetBarrier<T> {
     private map = new Map<string, Entry<T>>();
     private gate: RenderGate;
 
-    constructor(gate: RenderGate = GlobalRenderGate) {
+    constructor(gate: RenderGate = mainRenderGate) {
         this.gate = gate;
     }
 
