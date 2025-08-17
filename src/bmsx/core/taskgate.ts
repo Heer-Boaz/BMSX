@@ -1,199 +1,111 @@
-/**
- * Allowed categories for scopes started via TaskGate.begin.
- *
- * Use these to classify tokens for telemetry and debugging.
- */
-export type GateCategory = 'scene' | 'texture' | 'audio' | 'model' | 'skybox' | 'fsm' | 'other';
+export type GateCategory = string;
 
-/**
- * Scope descriptor for TaskGate.begin.
- *
- * @property blocking - When true the started scope is considered "blocking" and will
- *   affect the TaskGate.ready state. Default: false.
- * @property category - Optional category for telemetry/debug grouping. Default: "other".
- * @property tag - Optional free-form tag for additional debug information.
- */
 export interface GateScope {
-    blocking?: boolean; // When true the scope is considered "blocking"
-    category?: GateCategory;
-    tag?: string; // optional tag for additional debug information
+    blocking?: boolean;          // telt mee voor ready() in de groep
+    category?: GateCategory;     // 'texture' | 'audio' | 'model' | ...
+    tag?: string;                // debug label
 }
 
-/**
- * Internal token returned by TaskGate.begin and consumed by TaskGate.end.
- *
- * @internal
- */
 type Token = { gen: number; id: number; blocking: boolean; category: GateCategory; tag?: string };
 
-/**
- * A lightweight gate for tracking asynchronous "scopes" (tokens).
- *
- * Use TaskGate to mark work that begins and ends when asynchronous operations
- * start/finish. Scopes can be marked as "blocking" so callers can test the
- * gate's readiness (via the `ready` getter). The gate also supports simple
- * telemetry by counting live tokens per category.
- *
- * Typical usage:
- * ```ts
- * const token = taskGate.begin({ blocking: true, category: 'scene' });
- * // ... async work ...
- * taskGate.end(token);
- * ```
- */
-export class TaskGate {
-    /**
-     * Generation counter for the gate.
-     *
-     * Each started token captures the current generation in its `gen` field.
-     * When `bump()` is called the generation is incremented, causing late/obsolete
-     * tokens (with an older generation) to be ignored by `end()`.
-     *
-     * Default: 0
-     *
-     * @internal
-     */
-    private gen = 0;
-    /**
-     * Unique ID counter for tokens.
-     *
-     * Each started token receives a unique ID in its `id` field.
-     *
-     * Default: 1
-     *
-     * @internal
-     */
-    private nextId = 1;
-    /**
-     * Counter for blocking scopes that are still pending.
-     *
-     * This is incremented when a blocking scope is started and decremented
-     * when it is ended. It is used to determine if the gate is "ready".
-     *
-     * Default: 0
-     *
-     * @internal
-     */
-    private blockingPending = 0;
-    /**
-     * Map of live token counts by category.
-     *
-     * This is used to track how many tokens are currently active in each category.
-     *
-     * @internal
-     */
-    private countsByCat = new Map<GateCategory, number>();
-    /**
-     * Map of live tokens by ID.
-     *
-     * This is used to track all currently active tokens.
-     *
-     * @internal
-     */
-    private liveTokens = new Map<number, Token>();
+type Bucket = {
+    gen: number;
+    nextId: number;
+    blockingPending: number;
+    countsByCat: Map<GateCategory, number>;
+    live: Map<number, Token>;
+};
 
-    /**
-     * Increase the generation counter for the gate.
-     *
-     * Each token records the generation at creation time; calling `bump()` advances
-     * the generation and causes any tokens from previous generations to be ignored
-     * (useful to avoid acting on late/obsolete async completions, e.g. after a
-     * hard scene switch). Calling this also clears pending/blocking counters and
-     * live token bookkeeping.
-     *
-     * Returns the new generation number.
-     */
-    bump(): number {
-        this.gen++;
-        this.blockingPending = 0;
-        this.countsByCat.clear();
-        this.liveTokens.clear();
-        return this.gen;
+export class TaskGate {
+    private buckets = new Map<string, Bucket>();
+
+    /** Maak of haal een bucket (groep/handle). */
+    group(name: string): GateGroup {
+        if (!this.buckets.has(name)) {
+            this.buckets.set(name, { gen: 0, nextId: 1, blockingPending: 0, countsByCat: new Map(), live: new Map() });
+        }
+        return new GateGroup(name, this);
     }
 
-    /**
-     * Begin a new scope and return a token representing it.
-     *
-     * The returned Token must be passed to `end()` when the scope finishes.
-     * If `scope.blocking` is true the token counts toward gate readiness; `scope.category`
-     * can be used for telemetry grouping and `scope.tag` for free-form debugging info.
-     */
-    begin(scope: GateScope = {}): Token {
-        const t: Token = {
-            gen: this.gen,
-            id: this.nextId++,
-            blocking: !!scope.blocking,
-            category: scope.category ?? 'other',
-            tag: scope.tag
-        };
-        this.liveTokens.set(t.id, t);
+    /** (optioneel) globale snapshot over alle groepen. */
+    snapshotAll() {
+        const out: Record<string, ReturnType<GateGroup["snapshot"]>> = {};
+        for (const [k, _] of this.buckets) out[k] = this.group(k).snapshot();
+        return out;
+    }
 
-        // tel voor telemetrie
-        this.countsByCat.set(t.category, (this.countsByCat.get(t.category) ?? 0) + 1);
-        if (t.blocking) this.blockingPending++;
+    // --- interne helpers voor GateGroup ---
+    _bucket(name: string): Bucket {
+        const b = this.buckets.get(name);
+        if (!b) throw new Error(`TaskGate bucket "${name}" not found`);
+        return b;
+    }
+}
+
+export class GateGroup {
+    constructor(private name: string, private gate: TaskGate) { }
+
+    /** Reset deze groep; invalideer late resolves. */
+    bump(): number {
+        const b = this.gate._bucket(this.name);
+        b.gen++; b.blockingPending = 0; b.countsByCat.clear(); b.live.clear();
+        return b.gen;
+    }
+
+    /** Start scope in deze groep. */
+    begin(scope: GateScope = {}): Token {
+        const b = this.gate._bucket(this.name);
+        const t: Token = {
+            gen: b.gen,
+            id: b.nextId++,
+            blocking: !!scope.blocking,
+            category: scope.category ?? "other",
+            tag: scope.tag,
+        };
+        b.live.set(t.id, t);
+        b.countsByCat.set(t.category, (b.countsByCat.get(t.category) ?? 0) + 1);
+        if (t.blocking) b.blockingPending++;
         return t;
     }
 
-    /**
-     * End a previously started scope.
-     *
-     * If `token` is omitted or belongs to an older generation (i.e. `token.gen !== this.gen`)
-     * the call is ignored. When a valid token is ended it is removed from live bookkeeping
-     * and per-category/ blocking counters are updated.
-     */
+    /** Einde scope. Late/andere gen → genegeerd. */
     end(token?: Token): void {
-        if (!token || token.gen !== this.gen) return; // late resolve → negeren
-        const existed = this.liveTokens.delete(token.id);
-        if (!existed) return;
+        if (!token) return;
+        const b = this.gate._bucket(this.name);
+        if (token.gen !== b.gen) return;
+        if (!b.live.delete(token.id)) return;
 
-        const catCount = (this.countsByCat.get(token.category) ?? 1) - 1;
-        if (catCount > 0) this.countsByCat.set(token.category, catCount);
-        else this.countsByCat.delete(token.category);
-        if (token.blocking && this.blockingPending > 0) this.blockingPending--;
+        const n = (b.countsByCat.get(token.category) ?? 1) - 1;
+        if (n > 0) b.countsByCat.set(token.category, n); else b.countsByCat.delete(token.category);
+        if (token.blocking && b.blockingPending > 0) b.blockingPending--;
     }
 
-    /**
-     * True when there are no blocking scopes pending.
-     *
-     * Consumers that create blocking scopes can check this property to determine whether
-     * the gate is currently "ready".
-     */
-    get ready(): boolean { return this.blockingPending === 0; }
+    /** Is deze groep klaar m.b.t. blocking scopes? */
+    get ready(): boolean { return this.gate._bucket(this.name).blockingPending === 0; }
 
-    public isReady(category: GateCategory): boolean {
-        // Filter the blocks by this scope only
-        let ready = true;
-        this.countsByCat.forEach((count, cat) => {
-            if (cat === category && count > 0) {
-                // If this category is blocked by this scope, it's not ready
-                ready = false;
-            }
-        });
-        return ready;
+    /** Is deze groep klaar voor een specifieke categorie? */
+    readyFor(category: GateCategory): boolean {
+        const b = this.gate._bucket(this.name);
+        return (b.countsByCat.get(category) ?? 0) === 0;
     }
 
-    /**
-     * Return a compact snapshot useful for telemetry and debugging.
-     *
-     * The snapshot includes:
-     * - gen: current generation
-     * - blockingPending: number of blocking scopes still pending
-     * - countsByCat: counts of live tokens per category
-     * - live: compact list of live tokens (id, cat, blocking, tag)
-     */
+    /** Telemetrie. */
     snapshot() {
+        const b = this.gate._bucket(this.name);
         return {
-            gen: this.gen,
-            blockingPending: this.blockingPending,
-            countsByCat: Object.fromEntries(this.countsByCat.entries()),
-            live: Array.from(this.liveTokens.values()).map(v => ({ id: v.id, cat: v.category, blocking: v.blocking, tag: v.tag }))
+            gen: b.gen,
+            blockingPending: b.blockingPending,
+            countsByCat: Object.fromEntries(b.countsByCat.entries()),
+            live: Array.from(b.live.values()).map(v => ({ id: v.id, cat: v.category, blocking: v.blocking, tag: v.tag })),
         };
+    }
+
+    /** Convenience: track een Promise als scope (auto begin/end). */
+    track<T>(p: Promise<T>, scope: GateScope): Promise<T> {
+        const token = this.begin(scope);
+        return p.finally(() => this.end(token));
     }
 }
 
-/**
- * Shared singleton TaskGate instance intended for application-wide use.
- *
- * Import and use this instance to coordinate scopes across modules.
- */
+// Eén globale poortwachter; je maakt groepen per operatie/subsysteem.
 export const taskGate = new TaskGate();
