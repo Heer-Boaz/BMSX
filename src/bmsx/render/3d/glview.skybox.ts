@@ -1,5 +1,7 @@
-import { taskGate, TextureKey } from '../..';
+import { AssetBarrier } from '../..';
+import { taskGate } from '../../core/taskgate';
 import { glLoadShader, glSwitchProgram } from '../glutils';
+import { TextureKey } from '../texturemanager';
 import { BaseView } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
@@ -13,7 +15,10 @@ let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
 let skyboxTextureLocation: WebGLUniformLocation;
 let skyboxKey: TextureKey | undefined;
+const skyboxGroup = taskGate.group('texture:skybox:main'); // dedicated groep
 
+// bump() bij scene/skybox wissel:
+export function resetSkyboxGroup() { skyboxGroup.bump(); }
 export let skyboxBuffer: WebGLBuffer;
 export let skyboxTexture: WebGLTexture | null = null;
 
@@ -120,25 +125,7 @@ function faceLoaderFromImgAsset(faceId: string): () => Promise<ImageBitmap> {
 	};
 }
 
-export async function setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
-	const loaders = [
-		faceLoaderFromImgAsset(ids.posX),
-		faceLoaderFromImgAsset(ids.negX),
-		faceLoaderFromImgAsset(ids.posY),
-		faceLoaderFromImgAsset(ids.negY),
-		faceLoaderFromImgAsset(ids.posZ),
-		faceLoaderFromImgAsset(ids.negZ),
-	] as const;
-
-	skyboxKey = await $.texmanager.loadCubemap(
-		"skybox/main",
-		loaders,
-		[ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
-		{}
-	);
-}
-
-export function setSkyboxImagesStreamed(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
+export function setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
 	const loaders = [
 		faceLoaderFromImgAsset(ids.posX),
 		faceLoaderFromImgAsset(ids.negX),
@@ -152,14 +139,35 @@ export function setSkyboxImagesStreamed(ids: { posX: string; negX: string; posY:
 		"skybox/main",
 		loaders,
 		[ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
+		new AssetBarrier<WebGLTexture>(skyboxGroup),
+		{},
+		[255, 0, 0, 255]           // fallback kleur (rood)
+	);
+}
+
+export function setSkyboxImagesStreamed(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
+	const loaders = [
+		faceLoaderFromImgAsset(ids.posX),
+		faceLoaderFromImgAsset(ids.negX),
+		faceLoaderFromImgAsset(ids.posY),
+		faceLoaderFromImgAsset(ids.negY),
+		faceLoaderFromImgAsset(ids.posZ),
+		faceLoaderFromImgAsset(ids.negZ),
+	] as const;
+
+	skyboxKey = $.texmanager.acquireCubemapStreamed(
+		"skybox/main",
+		loaders,
+		[ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
+		new AssetBarrier<WebGLTexture>(skyboxGroup),
 		{},                      // TextureParams
-		[0, 0, 0, 255]           // fallback kleur (zwart)
+		[255, 0, 0, 255]           // fallback kleur (rood)
 	);
 	// drawSkybox blijft gewoon tekenen; fallback wordt vanzelf vervangen door de echte cubemap.
 }
 
 export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, w: number, h: number) {
-	if (!taskGate.ready) {
+	if (!skyboxGroup.ready) {
 		console.debug('TASKGATE BLOCKED SKYBOX RENDERING!!');
 		// TODO: Strange that this does not appear to be executed even once.
 		return;

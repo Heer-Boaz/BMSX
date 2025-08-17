@@ -1,6 +1,6 @@
 import { AssetBarrier } from '../core/assetbarrier';
 import { Registry } from '../core/registry';
-import { taskGate } from '../core/taskgate';
+import { GateGroup, taskGate } from '../core/taskgate';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
 
@@ -184,14 +184,13 @@ export class TextureManager implements RegisterablePersistent {
     get registrypersistent(): true { return true; }
     public get id(): Identifier { return 'texmgr'; }
 
-    private backend?: GPUBackend;
     private imageCache = new Map<ImageKey, ImageCacheEntry>();
     private gpuCache = new Map<TextureKey, GPUCacheEntry>();
-    private textureBarrier = new AssetBarrier<WebGLTexture>(taskGate);
+    private textureBarrier: AssetBarrier<WebGLTexture>;
 
-    constructor(backend?: GPUBackend) {
-        this.backend = backend;
+    constructor(private backend?: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
         Registry.instance.register(this);
+        this.textureBarrier = new AssetBarrier<WebGLTexture>(this.defaultGroup);
     }
 
     public setBackend(backend: GPUBackend): void {
@@ -390,6 +389,7 @@ export class TextureManager implements RegisterablePersistent {
         faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
             () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
         faceIdsForKey: readonly [string, string, string, string, string, string],
+        assetBarrier?: AssetBarrier<WebGLTexture>,
         desc: TextureParams = {},
         fallbackColor: [number, number, number, number] = [0, 0, 0, 255]
     ): TextureKey {
@@ -403,10 +403,11 @@ export class TextureManager implements RegisterablePersistent {
         // Fallback cubemap direct bindbaar
         const fallback = this.backend.createSolidCubemap(1, fallbackColor, desc);
         this.gpuCache.set(key, { handle: fallback, refCount: 1 });
-
-        void this.textureBarrier.acquire(
+        const barrier = assetBarrier ?? this.textureBarrier;
+        void barrier.acquire(
             key,
             async () => {
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 const faces = await Promise.all(faceLoaders.map(fn => fn())) as unknown as
                     [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
                 return this.backend!.createCubemapFromImages(faces, desc);
@@ -436,6 +437,7 @@ export class TextureManager implements RegisterablePersistent {
         faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
             () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
         faceIdsForKey: readonly [string, string, string, string, string, string],
+        assetBarrier?: AssetBarrier<WebGLTexture>,
         desc: TextureParams = {},
         fallbackColor: [number, number, number, number] = [0, 0, 0, 255]
     ): TextureKey {
@@ -449,6 +451,7 @@ export class TextureManager implements RegisterablePersistent {
         // Maak alvast een lege/fallback cubemap (bv. zwart)
         const fallback = this.backend.createSolidCubemap(1, fallbackColor, desc);
         this.gpuCache.set(key, { handle: fallback, refCount: 1 });
+        const barrier = assetBarrier ?? this.textureBarrier;
 
         // Start een async chain: eerst lege cubemap van juiste size → daarna faces uploaden
         void (async () => {
