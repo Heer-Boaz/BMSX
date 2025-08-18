@@ -344,146 +344,94 @@ export class TextureManager implements RegisterablePersistent {
         return key;
     }
 
-    public async loadCubemap(
-        name: string,
-        faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
-            () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
-        faceIdsForKey: readonly [string, string, string, string, string, string],
-        desc: TextureParams = {}
-    ): Promise<TextureKey> {
-        if (!this.backend) throw new Error('TextureManager backend not set');
-        const key = this.makeCubemapKey(name, faceIdsForKey, desc);
-
-        // Fast path
-        let gpu = this.gpuCache.get(key);
-        if (gpu) { gpu.refCount++; return key; }
-
-        const handle = await this.textureBarrier.acquire(
-            key,
-            async () => {
-                const faces = await Promise.all(faceLoaders.map(fn => fn())) as unknown as
-                    [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
-                // validatie (optioneel): afmetingen gelijk & vierkant
-                const w = (faces[0] as any).width, h = (faces[0] as any).height;
-                if (w !== h) throw new Error('Cubemap face not square');
-                for (const f of faces) if ((f as any).width !== w || (f as any).height !== h) {
-                    throw new Error('Cubemap faces must share the same size');
-                }
-                return this.backend!.createCubemapFromImages(faces, desc);
-            },
-            {
-                category: 'texture',
-                block_render: false,         // render blijft doorlopen; deze call wacht zelf
-                tag: `cubemap:${name}`,
-                disposer: (h) => this.backend!.destroyTexture(h),
-                warnIfLongerMs: 1000
-            }
-        );
-
-        this.gpuCache.set(key, { handle, refCount: 1 });
-        return key;
+    // helper: reserve a fallback cubemap entry and return the asset barrier to use
+    private reserveFallbackCubemap(key: string, desc: TextureParams, fallbackColor: [number, number, number, number], assetBarrier?: AssetBarrier<WebGLTexture>): AssetBarrier<WebGLTexture> {
+        // place fallback immediately in cache (non-blocking)
+        const fallback = this.backend!.createSolidCubemap(1, fallbackColor, desc);
+        this.gpuCache.set(key, { handle: fallback, refCount: 1 });
+        return assetBarrier ?? this.textureBarrier;
     }
 
-    public acquireCubemap(
-        name: string,
-        faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
-            () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
-        faceIdsForKey: readonly [string, string, string, string, string, string],
+    // central helper to start an async replace of the fallback cubemap with a real one
+    private launchCubemapReplacement(
+        key: string,
+        acquireFn: () => Promise<TextureHandle>,
         assetBarrier?: AssetBarrier<WebGLTexture>,
-        desc: TextureParams = {},
-        fallbackColor: [number, number, number, number] = [0, 0, 0, 255]
-    ): TextureKey {
-        if (!this.backend) throw new Error('TextureManager backend not set');
-        const key = this.makeCubemapKey(name, faceIdsForKey, desc);
-
-        // Fast path
-        let gpu = this.gpuCache.get(key);
-        if (gpu) { gpu.refCount++; return key; }
-
-        // Fallback cubemap direct bindbaar
-        const fallback = this.backend.createSolidCubemap(1, fallbackColor, desc);
-        this.gpuCache.set(key, { handle: fallback, refCount: 1 });
+        tag?: string
+    ): void {
         const barrier = assetBarrier ?? this.textureBarrier;
         void barrier.acquire(
             key,
             async () => {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const faces = await Promise.all(faceLoaders.map(fn => fn())) as unknown as
-                    [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
-                return this.backend!.createCubemapFromImages(faces, desc);
+                return await acquireFn();
             },
             {
                 category: 'texture',
-                block_render: false,
-                tag: `cubemap:${name}`,
+                block_render: assetBarrier ? true : false,
+                tag: tag ?? `cubemap:${key}`,
                 disposer: (h) => this.backend!.destroyTexture(h),
                 warnIfLongerMs: 1000
             }
         ).then((real) => {
             const entry = this.gpuCache.get(key);
             if (!entry) { this.backend!.destroyTexture(real); return; }
-            // vervang fallback door echte
             const old = entry.handle;
             entry.handle = real;
-            // Als fallback dedicated was → opruimen
             this.backend!.destroyTexture(old);
         }).catch(err => console.error(`Cubemap acquire failed for key=${key}`, err));
-
-        return key;
     }
 
-    public acquireCubemapStreamed(
-        name: string,
-        faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
-            () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
-        faceIdsForKey: readonly [string, string, string, string, string, string],
-        assetBarrier?: AssetBarrier<WebGLTexture>,
-        desc: TextureParams = {},
-        fallbackColor: [number, number, number, number] = [0, 0, 0, 255]
+    public acquireCubemap(
+        options?: {
+            name: string,
+            streamed?: boolean;
+            delayMs?: number;
+            assetBarrier?: AssetBarrier<WebGLTexture>,
+            faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
+                () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
+            faceIdsForKey: readonly [string, string, string, string, string, string],
+            desc: TextureParams,
+            fallbackColor: [number, number, number, number],
+        }
     ): TextureKey {
-        if (!this.backend) throw new Error("TextureManager backend not set");
+        if (!this.backend) throw new Error('TextureManager backend not set');
+        const { name, faceIdsForKey, desc, fallbackColor, assetBarrier, faceLoaders, delayMs } = options;
+
         const key = this.makeCubemapKey(name, faceIdsForKey, desc);
 
         // Fast path
         let gpu = this.gpuCache.get(key);
         if (gpu) { gpu.refCount++; return key; }
 
-        // Maak alvast een lege/fallback cubemap (bv. zwart)
-        const fallback = this.backend.createSolidCubemap(1, fallbackColor, desc);
-        this.gpuCache.set(key, { handle: fallback, refCount: 1 });
-        const barrier = assetBarrier ?? this.textureBarrier;
+        // reserve fallback
+        this.reserveFallbackCubemap(key, desc, fallbackColor, assetBarrier);
 
-        // Start een async chain: eerst lege cubemap van juiste size → daarna faces uploaden
-        void (async () => {
-            try {
-                // laad eerste face om resolutie te bepalen
+        const streamed = options?.streamed ?? false;
+
+        if (!streamed) {
+            // atomic: wait for all faces, then create cubemap in one go
+            this.launchCubemapReplacement(key, async () => {
+                if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
+                const faces = await Promise.all(faceLoaders.map(fn => fn())) as unknown as
+                    [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
+                return this.backend!.createCubemapFromImages(faces, desc);
+            }, assetBarrier, `cubemap:${name}`);
+        } else {
+            // streamed: create empty cubemap and upload faces as they arrive
+            this.launchCubemapReplacement(key, async () => {
+                if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
                 const first = await faceLoaders[0]();
-                const size = first.width; // aanname: vierkant
+                const size = first.width; // assume square
                 const cubemap = this.backend!.createCubemapEmpty(size, desc);
-
-                // upload de eerste face direct
+                // upload first face immediately
                 this.backend!.uploadCubemapFace(cubemap, 0, first);
-
-                // upload de overige faces zodra hun loaders klaar zijn
-                for (let i = 1; i < 6; i++) {
-                    faceLoaders[i]().then(img => {
-                        this.backend!.uploadCubemapFace(cubemap, i, img);
-                    }).catch(err => console.error(`Cubemap face ${i} failed`, err));
-                }
-
-                // swap fallback → echte cubemap
-                const entry = this.gpuCache.get(key);
-                if (entry) {
-                    const old = entry.handle;
-                    entry.handle = cubemap;
-                    this.backend!.destroyTexture(old); // alleen als fallback disposable is
-                } else {
-                    this.backend!.destroyTexture(cubemap);
-                }
-            } catch (err) {
-                console.error("Cubemap streaming failed", err);
-            }
-        })();
+                // upload remaining faces in parallel as they resolve
+                await Promise.all(faceLoaders.slice(1).map((fn, idx) =>
+                    fn().then(img => this.backend!.uploadCubemapFace(cubemap, idx + 1, img))
+                ));
+                return cubemap;
+            }, assetBarrier, `cubemap:${name}:streamed`);
+        }
 
         return key;
     }
