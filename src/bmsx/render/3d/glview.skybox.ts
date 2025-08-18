@@ -1,4 +1,4 @@
-import { AssetBarrier } from '../..';
+import { AssetBarrier } from '../../core/assetbarrier';
 import { taskGate } from '../../core/taskgate';
 import { glLoadShader, glSwitchProgram } from '../glutils';
 import { TextureKey } from '../texturemanager';
@@ -136,34 +136,17 @@ export function setSkyboxImages(ids: { posX: string; negX: string; posY: string;
 	] as const;
 
 	skyboxKey = $.texmanager.acquireCubemap(
-		"skybox/main",
-		loaders,
-		[ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
-		new AssetBarrier<WebGLTexture>(skyboxGroup),
-		{},
-		[255, 0, 0, 255]           // fallback kleur (rood)
+		{
+			name: "skybox/main",
+			faceLoaders: loaders,
+			faceIdsForKey: [ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
+			assetBarrier: new AssetBarrier<WebGLTexture>(skyboxGroup),
+			desc: {},
+			fallbackColor: [255, 0, 0, 255],
+			streamed: true,
+			// delayMs: 2000,
+		}
 	);
-}
-
-export function setSkyboxImagesStreamed(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
-	const loaders = [
-		faceLoaderFromImgAsset(ids.posX),
-		faceLoaderFromImgAsset(ids.negX),
-		faceLoaderFromImgAsset(ids.posY),
-		faceLoaderFromImgAsset(ids.negY),
-		faceLoaderFromImgAsset(ids.posZ),
-		faceLoaderFromImgAsset(ids.negZ),
-	] as const;
-
-	skyboxKey = $.texmanager.acquireCubemapStreamed(
-		"skybox/main",
-		loaders,
-		[ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const,
-		new AssetBarrier<WebGLTexture>(skyboxGroup),
-		{},                      // TextureParams
-		[255, 0, 0, 255]           // fallback kleur (rood)
-	);
-	// drawSkybox blijft gewoon tekenen; fallback wordt vanzelf vervangen door de echte cubemap.
 }
 
 export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, w: number, h: number) {
