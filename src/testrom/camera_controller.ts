@@ -112,6 +112,8 @@ export class CameraController extends GameObject {
         let turnRight_pressed: boolean = input.getActionState('turnright' satisfies Action).pressed;
         let rotateLeft_pressed = input.getActionState('rotateleft' satisfies Action).pressed;
         let rotateRight_pressed = input.getActionState('rotateright' satisfies Action).pressed;
+        let pitchUp_pressed = input.getActionState('pitchup' satisfies Action).pressed;
+        let pitchDown_pressed = input.getActionState('pitchdown' satisfies Action).pressed;
 
         // Movement (works in both modes)
         if (moveForward_pressed) cam.moveForward(move);    // Forward movement
@@ -124,6 +126,7 @@ export class CameraController extends GameObject {
         if (turnRight_pressed) cam.updateScreenBasedOrientation(-rotateSpeed, 0);
         if (rotateLeft_pressed) cam.addRoll(-rotateSpeed);
         if (rotateRight_pressed) cam.addRoll(rotateSpeed);
+        if (pitchUp_pressed) cam.updateScreenBasedOrientation(0, -rotateSpeed);
+        if (pitchDown_pressed) cam.updateScreenBasedOrientation(0, rotateSpeed);
     }
-
 }

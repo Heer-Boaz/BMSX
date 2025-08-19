@@ -4,7 +4,6 @@ import { mytree_builder } from './mytree_builder';
 import { BitmapId } from './resourceids';
 import { DerivedTestComponent, TestComponent } from './testcomponents';
 
-
 @insavegame
 @assign_fsm('bclass_animation', 'bclass_meuk')
 @assign_bt('bclass_tree')
@@ -154,7 +153,7 @@ export class bclass extends SpriteObject {
         super('The B');
         this.imgid = BitmapId.b2;
         this.hitarea = new_area(0, 0, 14, 18);
-        this.visible = false;
+        this.visible = true;
     }
 
     override onspawn(spawningPos?: vec2): void {
