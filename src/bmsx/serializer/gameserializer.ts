@@ -117,6 +117,15 @@ export class Serializer {
                 else rootRef = value;
                 continue;
             }
+            if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+                const id = getIdForObject(value);
+                const typename = Serializer.get_typename(value);
+                const taPlain: any = { typename, data: Array.from(value as any), isTypedArray: true };
+                if (parent && key !== undefined) parent[key] = { r: id };
+                else rootRef = { r: id };
+                objects[id] = taPlain;
+                continue;
+            }
             if (Array.isArray(value)) {
                 const arr = value.length > 0 ? new Array(value.length) : [];
                 if (parent && key !== undefined) parent[key] = arr;
@@ -243,6 +252,15 @@ export class Reviver {
         // First pass: create all objects (empty shells)
         for (const id of Object.keys(objects)) {
             const data = objects[id];
+            if (data && data.isTypedArray) {
+                const ctor = (globalThis as any)[data.typename];
+                if (typeof ctor === "function") {
+                    idToObject[id] = new ctor(data.data);
+                } else {
+                    idToObject[id] = data.data;
+                }
+                continue;
+            }
             if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
                 const ctor = Reviver.get_constructor_for_type(data.typename);
                 if (!ctor) {
@@ -258,6 +276,7 @@ export class Reviver {
         // Second pass: assign properties
         for (const id of Object.keys(objects)) {
             const data = objects[id];
+            if (data && data.isTypedArray) continue;
             const target = idToObject[id];
             if (target == null) continue; // guard: geen assignment naar null/undefined
             for (const key of Object.keys(data)) {
@@ -297,6 +316,7 @@ export class Reviver {
         }
         // --- Third pass: call all registered @onload methods if present ---
         for (const id of Object.keys(idToObject)) {
+            if (objects[id]?.isTypedArray) continue;
             const obj = idToObject[id];
             let proto = Object.getPrototypeOf(obj);
             let reviverFunctions = [];
