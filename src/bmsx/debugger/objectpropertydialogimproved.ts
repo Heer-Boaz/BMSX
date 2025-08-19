@@ -21,8 +21,17 @@ function buildObjectTreePersistent(
     obj: any,
     ignoreProps: string[] | undefined,
     state: PropertyTreeState,
-    parentPath: string = ''
-): HTMLDivElement {
+    parentPath: string = '',
+    visitedObjs?: WeakSet<object>,
+): HTMLDivElement | undefined {
+    // Use a WeakSet of object references to detect cycles rather than path strings
+    if (!visitedObjs) visitedObjs = new WeakSet<object>();
+
+    if (obj && typeof obj === 'object') {
+        if (visitedObjs.has(obj)) return undefined; // Skip already visited object to avoid cycles
+        visitedObjs.add(obj);
+    }
+
     const container = document.createElement('div');
     container.className = 'object-tree';
     const entries = Array.isArray(obj)
@@ -33,6 +42,17 @@ function buildObjectTreePersistent(
         const isObj = typeof value === 'object' && value !== null;
         const path = parentPath ? parentPath + '.' + key : key;
         if (isObj) {
+            const childTree = buildObjectTreePersistent(value, ignoreProps, state, path, visitedObjs);
+            if (!childTree) {
+                // Already visited object (cycle) — show collapsed indicator to avoid overflowing recursion
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.textContent = `${key}: ${Array.isArray(value) ? 'Array[' + value.length + ']' : 'Object'} (circular)`;
+                details.appendChild(summary);
+                container.appendChild(details);
+                continue;
+            }
+
             const details = document.createElement('details');
             // Use state or auto-expand
             details.open = state.expanded.has(path) || PropertyTreeState.shouldAutoExpand(value);
@@ -43,7 +63,6 @@ function buildObjectTreePersistent(
             const summary = document.createElement('summary');
             summary.textContent = `${key}: ${Array.isArray(value) ? 'Array[' + value.length + ']' : 'Object'}`;
             details.appendChild(summary);
-            const childTree = buildObjectTreePersistent(value, ignoreProps, state, path);
             details.appendChild(childTree);
             container.appendChild(details);
         } else {
