@@ -100,7 +100,7 @@ export class Camera {
     get projection(): Mat4 { if (this._dirty) this.rebuild(); return this._proj; }
     get viewProjection(): Mat4 { if (this._dirty) this.rebuild(); return this._vp; }
     get frustumPlanes(): Plane[] { if (this._dirty) this.rebuild(); return this._planes; }
-    skyboxView(): Mat4 { return M4.skyboxFromView(this.view); }
+    get skyboxView(): Mat4 { return M4.skyboxFromView(this.view); }
 
     sphereInFrustum(center: [number, number, number], radius: number): boolean {
         if (this._dirty) this.rebuild();
