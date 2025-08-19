@@ -3,6 +3,7 @@ import { Float32ArrayPool } from '../../core/utils';
 import type { Size, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSwitchProgram } from '../glutils';
+import { TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL } from '../glview';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
 import { getFramebufferStatusString } from '../glview.helpers';
 import { DrawMeshOptions } from '../view';
@@ -17,9 +18,6 @@ const MAX_INSTANCES = 64;
 const INSTANCE_STRIDE_BYTES = 64; // 4 vec4
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
 const INSTANCE_STRIDE_NORMAL9 = 9;
-const TEXTURE_UNIT_ALBEDO = 3;
-const TEXTURE_UNIT_NORMAL = 4;
-const TEXTURE_UNIT_METALLIC_ROUGHNESS = 5;
 const MAT4_FLOATS = 16;
 export const TEXTURE_UNIT_SHADOW_MAP = 6;
 

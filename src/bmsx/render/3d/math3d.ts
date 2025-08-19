@@ -112,9 +112,9 @@ export const M4 = {
     viewFromBasis(pos: vec3, right: vec3, up: vec3, back: vec3): Mat4 {
         const m = new Float32Array(16);
         m[0] = right.x; m[4] = right.y; m[8] = right.z; m[12] = -(right.x * pos.x + right.y * pos.y + right.z * pos.z);
-        m[1] = up.x;    m[5] = up.y;    m[9] = up.z;    m[13] = -(up.x * pos.x + up.y * pos.y + up.z * pos.z);
-        m[2] = back.x;  m[6] = back.y;  m[10] = back.z; m[14] = -(back.x * pos.x + back.y * pos.y + back.z * pos.z);
-        m[3] = 0;       m[7] = 0;       m[11] = 0;      m[15] = 1;
+        m[1] = up.x; m[5] = up.y; m[9] = up.z; m[13] = -(up.x * pos.x + up.y * pos.y + up.z * pos.z);
+        m[2] = back.x; m[6] = back.y; m[10] = back.z; m[14] = -(back.x * pos.x + back.y * pos.y + back.z * pos.z);
+        m[3] = 0; m[7] = 0; m[11] = 0; m[15] = 1;
         return m;
     },
 
@@ -303,12 +303,6 @@ export const bmat = {
         out[14] = -(zx * px + zy * py + zz * pz);
         out[15] = 1;
         return out;
-    },
-
-
-    /** Alleen rotatie deel van een view (handig voor skybox). */
-    skyboxViewFromView(view: Mat4): Mat4 {
-        return M4.skyboxFromView(view);
     },
 
     identity(): Mat4 {
@@ -770,9 +764,9 @@ export const bmatNA = {
     // },
 
     skyboxViewFromViewInto(out: Mat4, view: Mat4): Mat4 {
-        out[0] = view[0];  out[1] = view[4];  out[2] = view[8];  out[3] = 0;
-        out[4] = view[1];  out[5] = view[5];  out[6] = view[9];  out[7] = 0;
-        out[8] = view[2];  out[9] = view[6];  out[10] = view[10]; out[11] = 0;
+        out[0] = view[0]; out[1] = view[4]; out[2] = view[8]; out[3] = 0;
+        out[4] = view[1]; out[5] = view[5]; out[6] = view[9]; out[7] = 0;
+        out[8] = view[2]; out[9] = view[6]; out[10] = view[10]; out[11] = 0;
         out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
         return out;
     },

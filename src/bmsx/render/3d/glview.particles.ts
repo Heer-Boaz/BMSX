@@ -1,5 +1,6 @@
 import type { vec3arr } from '../../rompack/rompack';
 import { glLoadShader, glSwitchProgram } from '../glutils';
+import { TEXTURE_UNIT_PARTICLE } from '../glview';
 import { Color } from '../view';
 import { M4 } from './math3d';
 import particleFragCode from './shaders/particle.frag.glsl';
@@ -128,7 +129,7 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
     gl.uniformMatrix4fv(viewProjLocation, false, activeCamera.viewProjection);
     gl.uniform3fv(cameraRightLocation, camRight);
     gl.uniform3fv(cameraUpLocation, camUp);
-    gl.uniform1i(textureLocation, 0);
+    gl.uniform1i(textureLocation, TEXTURE_UNIT_PARTICLE);
 
     gl.bindVertexArray(vao);
 
@@ -148,7 +149,7 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData.subarray(0, batchCount * INSTANCE_FLOATS));
-        gl.activeTexture(gl.TEXTURE0);
+        gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_PARTICLE);
         gl.bindTexture(gl.TEXTURE_2D, tex);
         gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, batchCount);
     }
@@ -156,7 +157,6 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
     gl.bindVertexArray(null);
 
     gl.depthMask(true);
-    gl.disable(gl.BLEND);
 
     particlesToDraw.length = 0;
 }

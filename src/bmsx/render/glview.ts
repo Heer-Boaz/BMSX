@@ -18,6 +18,16 @@ import * as GLViewCRT from './post/glview.crt';
 
 type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
 
+export const TEXTURE_UNIT_ATLAS = 0;
+export const TEXTURE_UNIT_ATLAS_DYNAMIC = 1;
+export const TEXTURE_UNIT_ALBEDO = 2;
+export const TEXTURE_UNIT_NORMAL = 3;
+export const TEXTURE_UNIT_METALLIC_ROUGHNESS = 4;
+export const TEXTURE_UNIT_SHADOW_MAP = 5;
+export const TEXTURE_UNIT_SKYBOX = 6;
+export const TEXTURE_UNIT_PARTICLE = 7;
+export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
+
 /**
  * Represents a view that renders graphics using WebGL.
  */
@@ -362,18 +372,16 @@ export class GLView extends BaseView {
 		const gl = this.glctx;
 		if (!gl) return;
 
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-		gl.disable(gl.SCISSOR_TEST);
-		gl.colorMask(true, true, true, true);
-		gl.depthMask(true);
-		gl.depthFunc(gl.LEQUAL);
-		gl.cullFace(gl.BACK);
-		gl.enable(gl.DEPTH_TEST);
-		gl.disable(gl.BLEND);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null); // Unbind the framebuffer
+		// gl.disable(gl.SCISSOR_TEST);
+		gl.colorMask(true, true, true, true); // Enables writing to RGBA color channels. (r,g,b,a) = true => fragments can update the framebuffer's color.
+		gl.depthMask(true); // Enables writing to the depth buffer.
+		gl.depthFunc(gl.LEQUAL); // Sets the depth function to less than or equal.
+		gl.cullFace(gl.BACK); // Sets the culling face to back.
+		// gl.enable(gl.DEPTH_TEST);
 
-		gl.viewport(0, 0, this.canvasSize.x, this.canvasSize.y);
-		gl.clearColor(0, 0, 0, 1);
-		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.viewport(0, 0, this.canvasSize.x, this.canvasSize.y); // Sets the viewport to the full canvas size
+		this.clear();
 	}
 
 	override drawgame(clearCanvas: boolean = true): void {

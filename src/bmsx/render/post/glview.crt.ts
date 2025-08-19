@@ -2,6 +2,7 @@ import { copy_vec2arr, vec2arr_equals } from '../../core/utils';
 import { vec2arr, vec3arr } from '../../rompack/rompack';
 import { bvec } from '../2d/vertexutils2d';
 import { glLoadShader, glSwitchProgram } from '../glutils';
+import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../glview';
 import { POSITION_COMPONENTS, SPRITE_DRAW_OFFSET, TEXCOORD_COMPONENTS, VERTICES_PER_SPRITE } from '../glview.constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
@@ -159,9 +160,7 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, canvasSize: 
     setCrtOptions(gl, options); // Also sets the current program to CRTShaderProgram
     gl.uniform1f(CRTVertexShaderScaleLocation, 1.0);
     gl.uniform1f(CRTFragmentShaderScaleLocation, 1.0);
-    const POST_UNIT = gl.TEXTURE8; // Use a texture unit that is not used by the game shader
-    const CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX = POST_UNIT - gl.TEXTURE0; // Calculate the texture unit index for the CRT fragment shader
-    gl.uniform1i(CRTFragmentShaderTextureLocation, CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX); // Set the texture unit for the post-processing shader texture. Note that the uniform expects an index instead of a WebGLTexture object, so we subtract gl.TEXTURE0 to get the index of the texture unit.
+    gl.uniform1i(CRTFragmentShaderTextureLocation, TEXTURE_UNIT_POST_PROCESSING_SOURCE); // Set the texture unit for the post-processing shader texture. Note that the uniform expects an index instead of a WebGLTexture object, so we subtract gl.TEXTURE0 to get the index of the texture unit.
     // Note that the resolution vector is set in the handleResize method for the CRT shader
 
     gl.uniform2fv(CRTFragmentShaderSrcResolutionLocation, new Float32Array(canvasSize));

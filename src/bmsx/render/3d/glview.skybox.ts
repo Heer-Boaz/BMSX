@@ -1,12 +1,12 @@
 import { AssetBarrier } from '../../core/assetbarrier';
 import { taskGate } from '../../core/taskgate';
 import { glLoadShader, glSwitchProgram } from '../glutils';
+import { TEXTURE_UNIT_SKYBOX } from '../glview';
 import { TextureKey } from '../texturemanager';
 import { BaseView, SkyboxImageIds } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
 
-const TEXTURE_UNIT_SKYBOX = 7;
 let vaoSkybox: WebGLVertexArrayObject | null = null;
 
 let skyboxProgram: WebGLProgram;
@@ -154,7 +154,6 @@ export function setSkyboxImages(ids: SkyboxImageIds) {
 export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, w: number, h: number) {
 	if (!skyboxGroup.ready) {
 		console.debug('TASKGATE BLOCKED SKYBOX RENDERING!!');
-		// TODO: Strange that this does not appear to be executed even once.
 		return;
 	}
 
@@ -169,7 +168,8 @@ export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebu
 	gl.bindVertexArray(vaoSkybox);
 
 	const cam = $.model.activeCamera3D;
-	gl.uniformMatrix4fv(skyboxViewLocation, false, cam.skyboxView());
+	if (!cam) return;
+	gl.uniformMatrix4fv(skyboxViewLocation, false, cam.skyboxView);
 	gl.uniformMatrix4fv(skyboxProjectionLocation, false, cam.projection);
 
 	gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
