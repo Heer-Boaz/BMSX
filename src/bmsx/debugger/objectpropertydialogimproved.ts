@@ -114,7 +114,6 @@ export class ObjectPropertyDialog {
     private static openDialogs: Map<string, ObjectPropertyDialog> = new Map();
     private dialog: FloatingDialog;
     private objectId: string;
-    private title: string;
     private contentDiv: HTMLElement;
     private ignoreProps?: string[];
     private treeState: PropertyTreeState;
@@ -122,7 +121,6 @@ export class ObjectPropertyDialog {
 
     constructor(objectId: string, title: string, ignoreProps?: string[]) {
         this.objectId = objectId;
-        this.title = title;
         this.ignoreProps = ignoreProps;
         this.dialog = new FloatingDialog(title);
         this.contentDiv = this.dialog.getContentElement();
@@ -183,19 +181,4 @@ export function refreshAllObjectPropertyDialogs() {
 }
 export function openObjectPropertyDialogById(objId: string, objName: string, ignoreProps?: string[], parentPath?: string) {
     return ObjectPropertyDialog.openDialogById(objId, objName, ignoreProps);
-}
-
-// Deprecate old builders
-export function buildObjectAccordion() { throw new Error('Deprecated'); }
-export function buildObjectInspector() { throw new Error('Deprecated'); }
-
-export function buildObjectTable(
-    obj: any,
-    objName: string,
-    ignoreProps?: string[],
-
-    parentPath: string = '',
-    depth: number = 0
-): HTMLTableElement {
-    throw new Error('buildObjectTable is deprecated. Use buildObjectAccordion instead.');
 }
