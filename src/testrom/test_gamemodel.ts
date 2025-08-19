@@ -42,7 +42,7 @@ export class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const cube = new Cube3D();
-        cube.addComponent(new SparkEmitter(cube.id));
+        const sparkEmitter = new SparkEmitter(cube.id);
         const small = new SmallCube3D(1);
         const small2 = new SmallCube3D(2);
         const animatedMorphSphere = new AnimatedMorphSphere();
@@ -90,7 +90,8 @@ export class gamemodel extends BaseModel {
         _model.spawn(ambient);
         _model.spawn(sun);
         _model.spawn(extraSun);
-        _model.spawn(lamp);
+        _model.spawn(lamp); +
+            _model.spawn(sparkEmitter);
 
         $.view.setSkybox({
             posX: BitmapId.skybox,

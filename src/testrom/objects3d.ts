@@ -1,4 +1,4 @@
-import { attach_components, Component, componenttags_postprocessing, ComponentUpdateParams, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
+import { attach_components, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
 import { BitmapId, ModelId } from './resourceids';
 
@@ -65,53 +65,50 @@ interface Spark {
     texture?: TextureHandle;
 }
 
-@componenttags_postprocessing('position_update_axis')
-export class SparkEmitter extends Component {
+export class SparkEmitter extends GameObject {
     private sparks: Spark[] = [];
     private textureKey: TextureKey;
     static readonly SPARK_LIFETIME = 100;
+    private parent_id: Identifier;
 
     constructor(parent_id: Identifier) {
-        super(parent_id);
+        super();
+        this.parent_id = parent_id;
         // Request spark texture from Texture Manager
         this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbin, {}, undefined);
     }
 
-    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
-        super.postprocessingUpdate({ params, returnvalue });
-        this.spawnSparks();
-        this.updateSparks();
-    }
-
-    private spawnSparks(): void {
-        const origin = this.parentAs<GameObject>().pos;
+    public override run(): void {
+        const origin = $.getGameObject(this.parent_id);
         for (let i = 0; i < 3; i++) {
             const vel: vec3arr = [
                 (Math.random() - 0.5) * 0.05,
                 Math.random() * 0.05 + 0.02,
                 (Math.random() - 0.5) * 0.05,
             ];
+            for (let i = this.sparks.length - 1; i >= 0; i--) {
+                const s = this.sparks[i];
+                s.pos[0] += s.vel[0];
+                s.pos[1] += s.vel[1];
+                s.pos[2] += s.vel[2];
+                s.vel[1] -= 0.003; // gravity
+                s.life--;
+                s.color.a = s.life / SparkEmitter.SPARK_LIFETIME;
+                if (s.life <= 0) this.sparks.splice(i, 1);
+            }
             this.sparks.push({
                 pos: [origin.x, origin.y, origin.z] as vec3arr,
                 vel,
                 life: SparkEmitter.SPARK_LIFETIME,
                 color: { r: 1, g: 0.8, b: 0.2, a: 1 },
+                texture: $.texmanager.getTexture(this.textureKey),
             });
         }
     }
 
-    private updateSparks(): void {
-        for (let i = this.sparks.length - 1; i >= 0; i--) {
-            const s = this.sparks[i];
-            s.pos[0] += s.vel[0];
-            s.pos[1] += s.vel[1];
-            s.pos[2] += s.vel[2];
-            s.vel[1] -= 0.003; // gravity
-            s.life--;
-            s.color.a = s.life / SparkEmitter.SPARK_LIFETIME;
-            const texture = $.texmanager.getTexture(this.textureKey);
-            particlesToDraw.push({ position: s.pos, size: 4, color: s.color, texture });
-            if (s.life <= 0) this.sparks.splice(i, 1);
+    public override paint(): void {
+        for (const s of this.sparks) {
+            particlesToDraw.push({ position: s.pos, size: 4, color: s.color, texture: s.texture });
         }
     }
 }
