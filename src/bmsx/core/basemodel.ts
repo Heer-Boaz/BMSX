@@ -228,11 +228,15 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     public paused: boolean;
     public startAfterLoad: boolean;
 
-    /** Active camera id */
-    public activeCameraId: Identifier | null = null;
+    private _activeCameraId: Identifier | null = null;
 
-    public setActiveCamera(id: Identifier): void {
-        this.activeCameraId = id;
+    public get activeCameraId(): Identifier | null {
+        return this._activeCameraId;
+    }
+
+    public set activeCameraId(id: Identifier | null) {
+        if (id !== null && !this.exists(id)) console.error(`Camera with id ${id} does not exist.`);
+        this._activeCameraId = id;
     }
 
     public get activeCameraObject(): CameraObject | null {
@@ -568,6 +572,11 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             }
 
             $.registry.clear(); // Clear the registry before loading the new state (otherwise, registered objects from the previous state will still be present). Note that this will not clear the model instance itself, as the model instance has the property `registrypersistent: true` and will not be cleared. The same applies to Input, View, and other persistent objects.
+
+            // Remove all cached textures and images from the texture manager
+            $.texmanager.clear();
+            $.view.reset(); // Reset the view to the initial state
+
             const savegame = Reviver.deserialize(serializedState) as Savegame;
             Object.assign(this, savegame.modelprops);
 
@@ -575,9 +584,6 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             persistentEntities.forEach(entity => {
                 $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
             });
-
-            // Remove all cached textures and images from the texture manager
-            $.texmanager.clear();
 
             savegame.spaces.forEach(space => this.addSpace(space));
             savegame.allSpacesObjects.forEach(space_and_objects => {
@@ -588,7 +594,6 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
                 });
             });
 
-            $.view.reset(); // Reset the view to the initial state
 
             this.applyViewSettings();
         }

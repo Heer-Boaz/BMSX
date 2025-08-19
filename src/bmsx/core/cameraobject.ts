@@ -16,14 +16,9 @@ export class CameraObject extends GameObject {
 
     override onspawn(pos?: Vector): void {
         super.onspawn(pos);
-        if (!$.model.activeCameraId) {
-            $.model.setActiveCamera(this.id);
-        }
     }
 
     override dispose(): void {
-        if ($.model.activeCameraId === this.id) $.model.activeCameraId = null;
         super.dispose();
     }
-
 }

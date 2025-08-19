@@ -80,6 +80,8 @@ export class gamemodel extends BaseModel {
         _model.spawn(cam1);
         _model.spawn(cam2);
 
+        _model.activeCameraId = cam1.id;
+
         const ambient = new AmbientLightObject([1.0, 1.0, 1.0], .2, 'amb');
         const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
         const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [1.0, 1.0, 1.0], 1, 'extraSun');

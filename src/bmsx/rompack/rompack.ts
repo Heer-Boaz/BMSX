@@ -1,6 +1,14 @@
 import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { TextureKey } from '../render/texturemanager';
 
+export type AssetId = string;
+
+export type BitmapId = AssetId;
+export type AudioId = AssetId;
+export type ModelId = AssetId;
+export type DataId = AssetId;
+export type FsmId = AssetId;
+
 /**
  * Arguments passed from the bootloader to the game constructor.
  */
@@ -17,10 +25,10 @@ export interface BootArgs {
  */
 
 export type AbstractConstructor<T> = Function & { prototype: T; };
+
 /**
  * Represents the direction values.
  */
-
 export type Direction = 'none' | 'up' | 'right' | 'down' | 'left';
 
 export type Identifier = string | 'model';

@@ -450,5 +450,8 @@ export abstract class BaseView implements RegisterablePersistent {
 	public abstract clearLights(): void;
 	public abstract setAmbientLight(light: AmbientLight): void;
 	public abstract setSkybox(images: SkyboxImageIds): void;
+	public abstract get skyboxFaceIds(): SkyboxImageIds | undefined;
 
+	public abstract get dynamicAtlas(): number | null;
+	public abstract set dynamicAtlas(value: number | null);
 }

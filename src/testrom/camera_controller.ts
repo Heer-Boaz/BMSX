@@ -85,7 +85,7 @@ export class CameraController extends GameObject {
 
         if (input.getActionState('save').justpressed) {
             this.idx = (this.idx + 1) % this.cameras.length;
-            $.model.setActiveCamera(this.cameras[this.idx].id);
+            $.model.activeCameraId = this.cameras[this.idx].id;
             console.log(`Switched to camera ${this.cameras[this.idx].id}`);
         }
 

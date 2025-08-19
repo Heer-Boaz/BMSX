@@ -392,8 +392,8 @@ export class TextureManager implements RegisterablePersistent {
             streamed?: boolean;
             delayMs?: number;
             assetBarrier?: AssetBarrier<WebGLTexture>,
-            faceLoaders: readonly [() => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>,
-                () => Promise<ImageBitmap>, () => Promise<ImageBitmap>, () => Promise<ImageBitmap>],
+            faceLoaders: readonly [Promise<ImageBitmap>, Promise<ImageBitmap>, Promise<ImageBitmap>,
+                Promise<ImageBitmap>, Promise<ImageBitmap>, Promise<ImageBitmap>],
             faceIdsForKey: readonly [string, string, string, string, string, string],
             desc: TextureParams,
             fallbackColor: [number, number, number, number],
@@ -417,7 +417,7 @@ export class TextureManager implements RegisterablePersistent {
             // atomic: wait for all faces, then create cubemap in one go
             this.launchCubemapReplacement(key, async () => {
                 if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
-                const faces = await Promise.all(faceLoaders.map(fn => fn())) as unknown as
+                const faces = await Promise.all(faceLoaders.map(fn => fn)) as unknown as
                     [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
                 return this.backend!.createCubemapFromImages(faces, desc);
             }, assetBarrier, `cubemap:${name}`);
@@ -425,14 +425,14 @@ export class TextureManager implements RegisterablePersistent {
             // streamed: create empty cubemap and upload faces as they arrive
             this.launchCubemapReplacement(key, async () => {
                 if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
-                const first = await faceLoaders[0]();
+                const first = await faceLoaders[0];
                 const size = first.width; // assume square
                 const cubemap = this.backend!.createCubemapEmpty(size, desc);
                 // upload first face immediately
                 this.backend!.uploadCubemapFace(cubemap, 0, first);
                 // upload remaining faces in parallel as they resolve
                 await Promise.all(faceLoaders.slice(1).map((fn, idx) =>
-                    fn().then(img => this.backend!.uploadCubemapFace(cubemap, idx + 1, img))
+                    fn.then(img => this.backend!.uploadCubemapFace(cubemap, idx + 1, img))
                 ));
                 return cubemap;
             }, assetBarrier, `cubemap:${name}:streamed`);

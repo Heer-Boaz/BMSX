@@ -2,7 +2,7 @@ import { AssetBarrier } from '../../core/assetbarrier';
 import { taskGate } from '../../core/taskgate';
 import { glLoadShader, glSwitchProgram } from '../glutils';
 import { TextureKey } from '../texturemanager';
-import { BaseView } from '../view';
+import { BaseView, SkyboxImageIds } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
 
@@ -15,6 +15,7 @@ let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
 let skyboxTextureLocation: WebGLUniformLocation;
 let skyboxKey: TextureKey | undefined;
+export let skyboxFaceIds: SkyboxImageIds | undefined;
 const skyboxGroup = taskGate.group('texture:skybox:main'); // dedicated groep
 
 // bump() bij scene/skybox wissel:
@@ -125,14 +126,14 @@ function faceLoaderFromImgAsset(faceId: string): () => Promise<ImageBitmap> {
 	};
 }
 
-export function setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }) {
+export function setSkyboxImages(ids: SkyboxImageIds) {
 	const loaders = [
-		faceLoaderFromImgAsset(ids.posX),
-		faceLoaderFromImgAsset(ids.negX),
-		faceLoaderFromImgAsset(ids.posY),
-		faceLoaderFromImgAsset(ids.negY),
-		faceLoaderFromImgAsset(ids.posZ),
-		faceLoaderFromImgAsset(ids.negZ),
+		BaseView.imgassets[ids.posX].imgbin,
+		BaseView.imgassets[ids.negX].imgbin,
+		BaseView.imgassets[ids.posY].imgbin,
+		BaseView.imgassets[ids.negY].imgbin,
+		BaseView.imgassets[ids.posZ].imgbin,
+		BaseView.imgassets[ids.negZ].imgbin,
 	] as const;
 
 	skyboxKey = $.texmanager.acquireCubemap(
@@ -147,6 +148,7 @@ export function setSkyboxImages(ids: { posX: string; negX: string; posY: string;
 			// delayMs: 2000,
 		}
 	);
+	skyboxFaceIds = ids;
 }
 
 export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, w: number, h: number) {

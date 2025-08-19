@@ -1,6 +1,7 @@
 import { type ModulationParams, SM } from "../audio/soundmaster";
 import { Space, SpaceObject } from "../core/basemodel";
 import { Registry } from "../core/registry";
+import { BaseView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";
 
 // Decorators onload/onsave are defined locally in this file
@@ -425,6 +426,7 @@ type SoundMasterState = {
 type ViewState = {
     dynamicAtlasIndex: number;
     activeCameraId: string | null;
+    skyboxFaceIds: SkyboxImageIds | undefined;
 };
 @insavegame
 /**
@@ -437,27 +439,30 @@ export class Savegame {
     SMState: SoundMasterState;
     viewState: ViewState;
 
-
     @onsave
     saveViewState(o: Savegame) {
         // Capture current view state
-        const view = $.view as any;
+        const view = $.view as BaseView;
         const viewState: ViewState = {
-            dynamicAtlasIndex: view.dynamicAtlasIndex,
+            dynamicAtlasIndex: view.dynamicAtlas,
             activeCameraId: $.model.activeCameraId ?? null,
+            skyboxFaceIds: view.skyboxFaceIds,
         };
         return { viewState };
     }
 
     @onload
     restoreViewState() {
-        const view = $.view as any;
+        const view = $.view as BaseView;
         // Restore view state
         if (this.viewState) {
             if (this.viewState.dynamicAtlasIndex !== undefined) {
                 view.dynamicAtlas = this.viewState.dynamicAtlasIndex;
             }
             $.model.activeCameraId = this.viewState.activeCameraId;
+            if (this.viewState.skyboxFaceIds) {
+                view.setSkybox(this.viewState.skyboxFaceIds);
+            }
         }
     }
 

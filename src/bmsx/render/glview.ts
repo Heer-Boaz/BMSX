@@ -533,4 +533,8 @@ export class GLView extends BaseView {
 		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);
 		glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
 	}
+
+	public get skyboxFaceIds(): SkyboxImageIds | undefined {
+		return GLViewSkybox.skyboxFaceIds;
+	}
 }
