@@ -672,8 +672,10 @@ export function handleDebugMouseMove(e: MouseEvent): void {
         if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) {
             draggedObj = null; // Stop dragging object when shift is released
         }
-        return;
     }
+    // Vraag een enkele veilige render aan via de main loop (alleen als paused).
+    // Geen directe draw -> minder batch/particle side-effects bij snel hoveren.
+    $.requestPausedFrame();
 }
 
 function highlight_object(o: GameObject) {
@@ -693,7 +695,6 @@ function highlight_object(o: GameObject) {
         }
         highlighter.target = o;
     }
-    $.view.drawgame();
 }
 
 export function handleDebugMouseUp(_e: MouseEvent): void {

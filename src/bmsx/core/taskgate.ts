@@ -83,6 +83,8 @@ export class GateGroup {
     /** Is this group ready with respect to blocking scopes? */
     get ready(): boolean { return this.gate._bucket(this.name).blockingPending === 0; }
 
+    get liveCount(): number { return this.gate._bucket(this.name).live.size; }
+
     /** Is this group ready for a specific category? */
     readyFor(category: GateCategory): boolean {
         const b = this.gate._bucket(this.name);

@@ -127,6 +127,18 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 */
 	public debug_runSingleFrameAndPause!: boolean;
 
+	// When paused, this flag requests a single safe render frame via the main loop
+	private _pausedOneShotRenderPending: boolean = false;
+
+	/**
+	 * Request one single render while the game is paused. The render is executed
+	 * from the main run() loop so drawgame() is called in the normal gated path.
+	 * Multiple calls within the same frame are coalesced.
+	 */
+	public requestPausedFrame(): void {
+		if (this._paused) this._pausedOneShotRenderPending = true;
+	}
+
 	public get rom(): RomPack { return global.$rom; }
 	public get rompack(): RomPack { return global.$rom; }
 
@@ -416,6 +428,14 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 		if (this._paused) {
 			this.accumulatedTime = 0; // No backlog
+
+			if (this._pausedOneShotRenderPending) {
+				this._pausedOneShotRenderPending = false;
+				// drawgame takes the renderGate token itself; call it from the main loop
+				this.view.drawgame();
+				window.dispatchEvent(new Event('frame'));
+			}
+
 			this.animationFrameRequestid = window.requestAnimationFrame(this.run);
 			return;
 		}
