@@ -79,7 +79,4 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 class gameview extends GLView {
-    override drawgame() {
-        super.drawgame();
-    }
 }

@@ -5,7 +5,7 @@ import { checkWebGLError } from './glview.helpers';
 
 import { glCreateTexture, glSwitchProgram } from './glutils';
 import { catchWebGLError } from './glview.helpers';
-import { generateAtlasName } from './view';
+import { generateAtlasName, renderGate } from './view';
 
 import * as GLView2D from './2d/glview.2d';
 import { BaseView, Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, SkyboxImageIds } from './view';
@@ -385,34 +385,44 @@ export class GLView extends BaseView {
 	}
 
 	override drawgame(clearCanvas: boolean = true): void {
-		this.isRendering = true;
-		super.drawgame(clearCanvas);
+		if (!renderGate.ready) {
+			console.debug(`renderGate block: ${renderGate.liveCount}`);
+			return; // Skip drawing until renderGate is released
+		}
 
-		const gl = this.glctx;
+		const token = renderGate.begin({ blocking: true, tag: 'frame' });
+		try {
+			this.isRendering = true;
+			this.drawbase(clearCanvas);
 
-		checkWebGLError('Before Skybox draw');
+			const gl = this.glctx;
 
-		GLViewSkybox.drawSkybox(gl, this.framebuffer, this.canvas.width, this.canvas.height);
-		checkWebGLError('After Skybox draw');
-		GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
-		checkWebGLError('After 3D Mesh draw');
-		GLViewParticles.renderParticleBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height);
-		checkWebGLError('After Particles draw');
-		GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
-		checkWebGLError('After Sprites draw');
-		// saveTextureToFile();
+			checkWebGLError('Before Skybox draw');
 
-		// Draw a full-screen quad using the post-processing shader
-		GLViewCRT.applyCrtPostProcess(gl, this.canvas.width, this.canvas.height);
-		checkWebGLError('After CRT post-process');
+			GLViewSkybox.drawSkybox(gl, this.framebuffer, this.canvas.width, this.canvas.height);
+			checkWebGLError('After Skybox draw');
+			GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
+			checkWebGLError('After 3D Mesh draw');
+			GLViewParticles.renderParticleBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height);
+			checkWebGLError('After Particles draw');
+			GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
+			checkWebGLError('After Sprites draw');
+			// saveTextureToFile();
 
-		glSwitchProgram(gl, GLView2D.spriteShaderProgram); // Switch back to the main shader
+			// Draw a full-screen quad using the post-processing shader
+			GLViewCRT.applyCrtPostProcess(gl, this.canvas.width, this.canvas.height);
+			checkWebGLError('After CRT post-process');
 
-		this.isRendering = false;
+			glSwitchProgram(gl, GLView2D.spriteShaderProgram); // Switch back to the main shader
 
-		// Check if a resize was requested while rendering
-		if (this.needsResize) {
-			this.handleResize();
+
+			// Check if a resize was requested while rendering
+			if (this.needsResize) {
+				this.handleResize();
+			}
+		} finally {
+			this.isRendering = false;
+			renderGate.end(token);
 		}
 	}
 

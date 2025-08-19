@@ -1,4 +1,5 @@
-﻿import { BFont } from '../core/font';
+﻿import { BaseModel } from '../core/basemodel';
+import { BFont } from '../core/font';
 import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/mesh';
 import { Registry } from '../core/registry';
@@ -121,31 +122,24 @@ export abstract class BaseView implements RegisterablePersistent {
 		this.listenToMediaEvents();
 	}
 
+	protected drawbase(clearCanvas: boolean = true): void {
+		// Base drawing logic goes here
+		const model: BaseModel = $.model;
+		model.applyViewSettings();
+		if (clearCanvas) $.view.clear();
+		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
+		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
+	}
+
 	/**
 	 * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.
 	 * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method
 	 * if they are visible and not flagged for disposal.
 	 *
-	 * Rendering is guarded by a global {@link renderGate}. When the gate is blocked (e.g. while the game state is being
+	 * Rendering should be guarded by a global {@link renderGate}. When the gate is blocked (e.g. while the game state is being
 	 * revived), this method immediately returns so no WebGL state is touched prematurely.
 	 */
-	public drawgame(clearCanvas: boolean = true): void {
-		if (!renderGate.ready) {
-			console.debug(`Render gate is blocked, skipping frame ${renderGate.snapshot()}`);
-			return; // Skip drawing until renderGate is released
-		}
-		const token = renderGate.begin({ tag: 'frame' });
-		try {
-			const model: any = $.model;
-			model.applyViewSettings();
-			if (clearCanvas) $.view.clear();
-			$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-			$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
-		}
-		finally {
-			renderGate.end(token);
-		}
-	}
+	public abstract drawgame(clearCanvas?: boolean): void;
 
 	/**
 	 * Calculates the size of the canvas and the scale factor based on the current viewport size and window size.

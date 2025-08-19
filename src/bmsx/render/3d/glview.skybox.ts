@@ -14,9 +14,14 @@ let skyboxPositionLocation: number;
 let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
 let skyboxTextureLocation: WebGLUniformLocation;
-let skyboxKey: TextureKey | undefined;
+
+export let skyboxKey: TextureKey | undefined;
 export let skyboxFaceIds: SkyboxImageIds | undefined;
 const skyboxGroup = taskGate.group('texture:skybox:main'); // dedicated groep
+
+// Add a small cache so we don't re-bind the same cubemap every draw
+let lastBoundSkyboxKey: TextureKey | undefined = undefined;
+let lastBoundSkyboxTexture: WebGLTexture | null = null;
 
 // bump() bij scene/skybox wissel:
 export function resetSkyboxGroup() { skyboxGroup.bump(); }
@@ -149,6 +154,10 @@ export function setSkyboxImages(ids: SkyboxImageIds) {
 		}
 	);
 	skyboxFaceIds = ids;
+
+	// Reset binding cache because the skybox key changed
+	lastBoundSkyboxKey = undefined;
+	lastBoundSkyboxTexture = null;
 }
 
 export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, w: number, h: number) {
@@ -172,8 +181,13 @@ export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebu
 	gl.uniformMatrix4fv(skyboxViewLocation, false, cam.skyboxView);
 	gl.uniformMatrix4fv(skyboxProjectionLocation, false, cam.projection);
 
-	gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
-	gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+	// Only bind the cubemap if the currently bound skybox differs
+	if (lastBoundSkyboxKey !== skyboxKey || lastBoundSkyboxTexture !== tex) {
+		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
+		gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+		lastBoundSkyboxKey = skyboxKey;
+		lastBoundSkyboxTexture = tex ?? null;
+	}
 
 	gl.drawArrays(gl.TRIANGLES, 0, 36);
 	gl.enable(gl.CULL_FACE);
