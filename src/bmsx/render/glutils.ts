@@ -91,7 +91,7 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
     return shader;
 }
 
-export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: Size, unit = 0): WebGLTexture {
+export function glCreateTexture(gl: WebGL2RenderingContext, img?: ImageBitmap, size?: Size, unit = 0): WebGLTexture {
     gl.activeTexture(gl.TEXTURE0 + unit);
     const tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, tex);

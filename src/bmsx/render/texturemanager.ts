@@ -5,8 +5,9 @@ import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size }
 import { glCreateTextureFromImage } from './glutils';
 
 export const TEXTMANAGER_ID = 'texmgr';
+export type TextureIdentifier = string;
 
-export interface TextureIdentifier {
+export interface ModelTextureIdentifier {
     modelName: string;
     modelImageIndex: number;
 }
@@ -176,7 +177,7 @@ interface ImageCacheEntry {
 }
 
 interface GPUCacheEntry {
-    handle: TextureHandle;
+    handle?: TextureHandle;
     refCount: number;
 }
 
@@ -204,7 +205,7 @@ export class TextureManager implements RegisterablePersistent {
         const gpuTextures: Index2GpuTexture = {};
         for (let i = 0; i < count; i++) {
             const buf = meshModel.imageBuffers ? meshModel.imageBuffers[i] : undefined;
-            const key = await this.loadTextureFromBuffer(buf, { modelName: meshModel.name, modelImageIndex: i });
+            const key = await this.loadModelTextureFromBuffer(buf, { modelName: meshModel.name, modelImageIndex: i });
             gpuTextures[i] = key;
         }
         return gpuTextures;
@@ -224,7 +225,7 @@ export class TextureManager implements RegisterablePersistent {
         return `${uri}|${descKey}`;
     }
 
-    private makeBufferKey(identifier: TextureIdentifier): TextureKey {
+    private makeModelBufferKey(identifier: ModelTextureIdentifier): TextureKey {
         return `buf:${identifier.modelName}:${identifier.modelImageIndex}`;
     }
 
@@ -294,10 +295,10 @@ export class TextureManager implements RegisterablePersistent {
      * vervangt ‘m zodra de promise resolve’t.
      */
     public acquireTexture(
-        key: string,
+        key: TextureKey,
         loadBitmapFn: () => Promise<ImageBitmap>,
         desc: TextureParams,
-        fallbackHandle: WebGLTexture,         // bv. 1×1 checker / flat color
+        fallbackHandle?: WebGLTexture,         // bv. 1×1 checker / flat color (optional)
     ): TextureKey {
         if (!this.backend) throw new Error('TextureManager backend not set');
 
@@ -305,8 +306,13 @@ export class TextureManager implements RegisterablePersistent {
         let gpu = this.gpuCache.get(key);
         if (gpu) { gpu.refCount++; return key; }
 
-        // Plaats fallback meteen (non-blocking)
-        this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1 });
+        // Plaats fallback meteen (non-blocking) or reserve empty entry
+        if (fallbackHandle !== undefined) {
+            this.gpuCache.set(key, { handle: fallbackHandle, refCount: 1 });
+        } else {
+            // reserve an entry so refcounts/releases work even without immediate handle
+            this.gpuCache.set(key, { handle: undefined, refCount: 1 });
+        }
 
         // Start async load via barrier (non-blocking; geen await)
         void this.textureBarrier.acquire(
@@ -326,16 +332,15 @@ export class TextureManager implements RegisterablePersistent {
             // Als de entry nog bestaat en niemand released heeft:
             const entry = this.gpuCache.get(key);
             if (!entry) { // niemand houdt nog vast → dispose nieuwe
-                this.backend!.destroyTexture(realHandle);
+                if (this.backend && realHandle) this.backend.destroyTexture(realHandle);
                 return;
             }
-            // Vervang fallback door echte handle (disposen van fallback is optioneel)
+            // Vervang fallback of lege entry door echte handle (disposen van fallback is optioneel)
             if (entry.handle !== realHandle) {
                 const old = entry.handle;
                 entry.handle = realHandle;
-                // Als je fallback een gedeelde checker is: NIET deleten.
-                // Alleen deleten als het een dedicated temp-tex was:
-                // this.backend!.destroyTexture(old);
+                // Destroy old only when present
+                if (old && this.backend) this.backend.destroyTexture(old);
             }
         }).catch(err => {
             console.error(`Texture acquire failed for key=${key}`, err);
@@ -374,10 +379,10 @@ export class TextureManager implements RegisterablePersistent {
             }
         ).then((real) => {
             const entry = this.gpuCache.get(key);
-            if (!entry) { this.backend!.destroyTexture(real); return; }
+            if (!entry) { if (this.backend && real) this.backend.destroyTexture(real); return; }
             const old = entry.handle;
             entry.handle = real;
-            this.backend!.destroyTexture(old);
+            if (old && this.backend) this.backend!.destroyTexture(old);
         }).catch(err => console.error(`Cubemap acquire failed for key=${key}`, err));
     }
 
@@ -436,12 +441,12 @@ export class TextureManager implements RegisterablePersistent {
         return key;
     }
 
-    public async loadTextureFromBuffer(buffer: ArrayBuffer, identifier: TextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
-        const key = this.makeBufferKey(identifier);
+    public async loadModelTextureFromBuffer(buffer: ArrayBuffer, identifier: ModelTextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
+        const key = this.makeModelBufferKey(identifier);
         return this.loadAndCacheTexture(key, () => this.loadBitmap('', buffer), desc);
     }
 
-    public async fetchTextureFromUri(uri: string, _identifier: TextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
+    public async fetchModelTextureFromUri(uri: string, _identifier: ModelTextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
         const key = this.makeKey(uri, desc);
         return this.loadAndCacheTexture(key, () => this.loadBitmap(uri, buffer), desc);
     }
@@ -469,9 +474,9 @@ export class TextureManager implements RegisterablePersistent {
             gpuEntry.refCount--;
             if (gpuEntry.refCount <= 0) {
                 // Invalideer entry in barrier zodat late promises niet terugschrijven
-                this.textureBarrier.invalidate(key, (h) => this.backend?.destroyTexture(h));
+                this.textureBarrier.invalidate(key, (h) => { if (this.backend && h) this.backend.destroyTexture(h); });
                 // Verwijder GPU-handle
-                if (this.backend) this.backend.destroyTexture(gpuEntry.handle);
+                if (this.backend && gpuEntry.handle) this.backend.destroyTexture(gpuEntry.handle);
                 this.gpuCache.delete(key);
             }
         }
@@ -482,15 +487,15 @@ export class TextureManager implements RegisterablePersistent {
         if (!gpuEntry) return;
         gpuEntry.refCount--;
         if (gpuEntry.refCount <= 0) {
-            this.textureBarrier.invalidate(key, (h) => this.backend?.destroyTexture(h));
-            if (this.backend) this.backend.destroyTexture(gpuEntry.handle);
+            this.textureBarrier.invalidate(key, (h) => { if (this.backend && h) this.backend.destroyTexture(h); });
+            if (this.backend && gpuEntry.handle) this.backend.destroyTexture(gpuEntry.handle);
             this.gpuCache.delete(key);
         }
     }
 
     public clear(): void {
         for (const entry of this.gpuCache.values()) {
-            if (this.backend) this.backend.destroyTexture(entry.handle);
+            if (this.backend && entry.handle) this.backend.destroyTexture(entry.handle);
         }
         this.gpuCache.clear();
         this.imageCache.clear();

@@ -1,6 +1,6 @@
-import { attach_components, Component, componenttags_postprocessing, ComponentUpdateParams, GameObject, insavegame, MeshObject, TransformComponent, vec3arr } from '../bmsx';
+import { attach_components, Component, componenttags_postprocessing, ComponentUpdateParams, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
-import { ModelId } from './resourceids';
+import { BitmapId, ModelId } from './resourceids';
 
 @insavegame
 @attach_components(TransformComponent)
@@ -62,12 +62,20 @@ interface Spark {
     vel: vec3arr;
     life: number;
     color: { r: number; g: number; b: number; a: number };
+    texture?: TextureHandle;
 }
 
 @componenttags_postprocessing('position_update_axis')
 export class SparkEmitter extends Component {
     private sparks: Spark[] = [];
+    private textureKey: TextureKey;
     static readonly SPARK_LIFETIME = 100;
+
+    constructor(parent_id: Identifier) {
+        super(parent_id);
+        // Request spark texture from Texture Manager
+        this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbin, {}, undefined);
+    }
 
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
         super.postprocessingUpdate({ params, returnvalue });
@@ -101,7 +109,8 @@ export class SparkEmitter extends Component {
             s.vel[1] -= 0.003; // gravity
             s.life--;
             s.color.a = s.life / SparkEmitter.SPARK_LIFETIME;
-            particlesToDraw.push({ position: s.pos, size: 4, color: s.color });
+            const texture = $.texmanager.getTexture(this.textureKey);
+            particlesToDraw.push({ position: s.pos, size: 4, color: s.color, texture });
             if (s.life <= 0) this.sparks.splice(i, 1);
         }
     }

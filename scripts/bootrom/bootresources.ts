@@ -2,10 +2,10 @@ import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAss
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 
-export async function loadImage(url: string): Promise<HTMLImageElement> {
+export async function loadImage(url: string): Promise<ImageBitmap> {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        img.onload = () => resolve(img);
+        img.onload = () => resolve(createImageBitmap(img));
         img.onerror = () => reject(`Failed to load image's URL: ${url}`);
         img.src = url;
     });
@@ -235,7 +235,7 @@ function getImageURL(buffer: ArrayBuffer): string {
     return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
 }
 
-async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement> {
+async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
     return loadImage(getImageURL(buffer));
 }
 
@@ -369,8 +369,8 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
     return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function getAssetImageBin(romImgAsset: RomImgAsset): Promise<HTMLImageElement> {
-    let source: HTMLImageElement | undefined = romImgAsset._imgbin; // Use the private _imgbin property
+async function getAssetImageBin(romImgAsset: RomImgAsset): Promise<ImageBitmap> {
+    let source: ImageBitmap | undefined = romImgAsset._imgbin; // Use the private _imgbin property
     if (source) return source;
 
     // If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
@@ -404,12 +404,8 @@ async function getAssetImageBin(romImgAsset: RomImgAsset): Promise<HTMLImageElem
         canvas.height = sh;
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
-        // Convert canvas to HTMLImageElement asynchronously
-        source = await new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.src = canvas.toDataURL();
-        });
+        // Convert canvas to ImageBitmap asynchronously
+        source = await createImageBitmap(canvas);
     }
 
     if (!source) throw new Error(`Image asset '${romImgAsset.resname}' has no image data`);
@@ -420,7 +416,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
     switch (res.type) {
         case 'image':
         case 'atlas':
-            let img: HTMLImageElement = undefined;
+            let img: ImageBitmap | undefined = undefined;
             if (!res.imgmeta?.atlassed) {
                 if (opts && opts.loadImageFromBuffer) {
                     img = await opts.loadImageFromBuffer(rom.slice(res.start, res.end));
@@ -430,7 +426,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
             }
             const imgAsset: RomImgAsset = {
                 ...res,
-                _imgbin: img, // The HTML image element of the image asset or undefined if not available. Note that this will be populated with an HTMLImageElement when `get imgbin()` is called! In other words, it also acts as a cache when required.
+                _imgbin: img, // The HTML image element of the image asset or undefined if not available. Note that this will be populated with an ImageBitmap when `get imgbin()` is called! In other words, it also acts as a cache when required.
                 // ** THAT'S WHY YOU SHOULD USE THE `atlassed`-PROPERTY TO DETERMINE WHETHER AN IMAGE ASSET IS ATLASSED OR NOT! **
                 // Getter for imgbin property, compatible with RomImgAsset interface
                 get imgbin() {

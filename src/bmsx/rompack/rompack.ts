@@ -213,7 +213,7 @@ export type OBJModel = GLTFModel;
 
 export interface RomPack {
 	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
-	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (HTMLImageElement).
+	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (ImageBitmap).
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
@@ -261,8 +261,8 @@ export interface RomAsset {
 }
 
 export interface RomImgAsset extends RomAsset {
-	_imgbin: HTMLImageElement; // The HTML image element of the image asset
-	get imgbin(): Promise<HTMLImageElement>; // A getter for the image element (#see `bootresources.getAssetImageBin`)
+	_imgbin: ImageBitmap; // The HTML image element of the image asset
+	get imgbin(): Promise<ImageBitmap>; // A getter for the image element (#see `bootresources.getAssetImageBin`)
 }
 
 export interface RomMeta {
@@ -274,5 +274,5 @@ export type id2res = Record<asset_id, RomAsset>;
 export type id2imgres = Record<asset_id, RomImgAsset>;
 export type id2model = Record<asset_id, GLTFModel>;
 export type id2data = Record<asset_id, any>;
-export type id2htmlimg = Record<asset_id, HTMLImageElement>;
+export type id2htmlimg = Record<asset_id, ImageBitmap>;
 export type id2fsm = Record<asset_id, StateMachineBlueprint>;
