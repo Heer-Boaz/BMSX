@@ -2,11 +2,15 @@
 import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/mesh';
 import { Registry } from '../core/registry';
+import { GateGroup, taskGate } from '../core/taskgate';
 import { copy_vector } from '../core/utils';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
+
+// Global gate used to coordinate rendering. When blocked, frames are skipped.
+export const renderGate: GateGroup = taskGate.group('render:main');
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -119,14 +123,28 @@ export abstract class BaseView implements RegisterablePersistent {
 
 	/**
 	 * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.
-	 * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method if they are visible and not flagged for disposal.
+	 * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method
+	 * if they are visible and not flagged for disposal.
+	 *
+	 * Rendering is guarded by a global {@link renderGate}. When the gate is blocked (e.g. while the game state is being
+	 * revived), this method immediately returns so no WebGL state is touched prematurely.
 	 */
 	public drawgame(clearCanvas: boolean = true): void {
-		const model: any = $.model;
-		model.applyViewSettings();
-		if (clearCanvas) $.view.clear();
-		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
+		if (!renderGate.ready) {
+			console.debug(`Render gate is blocked, skipping frame ${renderGate.snapshot()}`);
+			return; // Skip drawing until renderGate is released
+		}
+		const token = renderGate.begin({ tag: 'frame' });
+		try {
+			const model: any = $.model;
+			model.applyViewSettings();
+			if (clearCanvas) $.view.clear();
+			$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
+			$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
+		}
+		finally {
+			renderGate.end(token);
+		}
 	}
 
 	/**

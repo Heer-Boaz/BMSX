@@ -45,14 +45,14 @@ export class TaskGate {
 export class GateGroup {
     constructor(private name: string, private gate: TaskGate) { }
 
-    /** Reset deze groep; invalideer late resolves. */
+    /** Reset this group; invalidate late resolves. */
     bump(): number {
         const b = this.gate._bucket(this.name);
         b.gen++; b.blockingPending = 0; b.countsByCat.clear(); b.live.clear();
         return b.gen;
     }
 
-    /** Start scope in deze groep. */
+    /** Start scope in this group. */
     begin(scope: GateScope = {}): Token {
         const b = this.gate._bucket(this.name);
         const t: Token = {
@@ -68,28 +68,28 @@ export class GateGroup {
         return t;
     }
 
-    /** Einde scope. Late/andere gen → genegeerd. */
+    /** End of scope. Late/other gen → ignored. */
     end(token?: Token): void {
         if (!token) return;
         const b = this.gate._bucket(this.name);
-        if (token.gen !== b.gen) return;
-        if (!b.live.delete(token.id)) return;
+        if (token.gen !== b.gen) return; // Late/other gen → ignored
+        if (!b.live.delete(token.id)) return; // Unknown token or token already deleted → ignored
 
         const n = (b.countsByCat.get(token.category) ?? 1) - 1;
         if (n > 0) b.countsByCat.set(token.category, n); else b.countsByCat.delete(token.category);
         if (token.blocking && b.blockingPending > 0) b.blockingPending--;
     }
 
-    /** Is deze groep klaar m.b.t. blocking scopes? */
+    /** Is this group ready with respect to blocking scopes? */
     get ready(): boolean { return this.gate._bucket(this.name).blockingPending === 0; }
 
-    /** Is deze groep klaar voor een specifieke categorie? */
+    /** Is this group ready for a specific category? */
     readyFor(category: GateCategory): boolean {
         const b = this.gate._bucket(this.name);
         return (b.countsByCat.get(category) ?? 0) === 0;
     }
 
-    /** Telemetrie. */
+    /** Telemetry. */
     snapshot() {
         const b = this.gate._bucket(this.name);
         return {
@@ -100,7 +100,7 @@ export class GateGroup {
         };
     }
 
-    /** Convenience: track een Promise als scope (auto begin/end). */
+    /** Convenience: track a Promise as scope (auto begin/end). */
     track<T>(p: Promise<T>, scope: GateScope): Promise<T> {
         const token = this.begin(scope);
         return p.finally(() => this.end(token));

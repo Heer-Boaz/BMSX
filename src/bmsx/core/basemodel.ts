@@ -6,6 +6,7 @@ import { State } from '../fsm/state';
 import { StateDefinition } from '../fsm/statedefinition';
 import { Input } from "../input/input";
 import { Camera } from '../render/3d/camera3d';
+import { renderGate } from '../render/view';
 import type { Identifier, Registerable, RegisterablePersistent } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
@@ -549,43 +550,55 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public load(serialized: Uint8Array, compressed: boolean = true): void {
-        this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
-        $.event_emitter.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
+        // Block rendering during (de)serialization to avoid corrupt WebGL state.
+        renderGate.bump();
+        const gateToken = renderGate.begin({ blocking: true, tag: 'load' });
+        try {
+            this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
+            $.event_emitter.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
 
-        const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
-        temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
+            const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
+            temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
 
-        let serializedState: Uint8Array;
-        if (compressed) {
-            serializedState = BinaryCompressor.decompressBinary(serialized); // Decompress the serialized state
-        } else {
-            serializedState = serialized; // Use the serialized state as is
-        }
+            let serializedState: Uint8Array;
+            if (compressed) {
+                serializedState = BinaryCompressor.decompressBinary(serialized); // Decompress the serialized state
+            } else {
+                serializedState = serialized; // Use the serialized state as is
+            }
 
-        $.registry.clear(); // Clear the registry before loading the new state (otherwise, registered objects from the previous state will still be present). Note that this will not clear the model instance itself, as the model instance has the property `registrypersistent: true` and will not be cleared. The same applies to Input, View, and other persistent objects.
-        const savegame = Reviver.deserialize(serializedState) as Savegame;
-        Object.assign(this, savegame.modelprops);
+            $.registry.clear(); // Clear the registry before loading the new state (otherwise, registered objects from the previous state will still be present). Note that this will not clear the model instance itself, as the model instance has the property `registrypersistent: true` and will not be cleared. The same applies to Input, View, and other persistent objects.
+            const savegame = Reviver.deserialize(serializedState) as Savegame;
+            Object.assign(this, savegame.modelprops);
 
-        const persistentEntities = $.registry.getPersistentEntities();
-        persistentEntities.forEach(entity => {
-            $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
-        });
-
-        // Remove all cached textures and images from the texture manager
-        $.texmanager.clear();
-
-        savegame.spaces.forEach(space => this.addSpace(space));
-        savegame.allSpacesObjects.forEach(space_and_objects => {
-            const space = this[spaceid_2_space][space_and_objects.spaceid];
-            const objects = space_and_objects.objects;
-            objects.forEach(o => {
-                space.spawn(o, null, true);
+            const persistentEntities = $.registry.getPersistentEntities();
+            persistentEntities.forEach(entity => {
+                $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
             });
-        });
 
-        $.view.reset(); // Reset the view to the initial state
+            // Remove all cached textures and images from the texture manager
+            $.texmanager.clear();
 
-        this.applyViewSettings();
+            savegame.spaces.forEach(space => this.addSpace(space));
+            savegame.allSpacesObjects.forEach(space_and_objects => {
+                const space = this[spaceid_2_space][space_and_objects.spaceid];
+                const objects = space_and_objects.objects;
+                objects.forEach(o => {
+                    space.spawn(o, null, true);
+                });
+            });
+
+            $.view.reset(); // Reset the view to the initial state
+
+            this.applyViewSettings();
+        }
+        catch (e) {
+            console.error(`Error loading game state: ${e}`);
+        }
+        finally {
+            renderGate.end(gateToken);
+            $.wasupdated = true; // Set the update flag to true to indicate that the game has been updated
+        }
     }
 
     /**
