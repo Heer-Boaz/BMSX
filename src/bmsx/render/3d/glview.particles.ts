@@ -9,6 +9,7 @@ export interface DrawParticleOptions {
     position: vec3arr;
     size: number;
     color: Color;
+    texture?: WebGLTexture;
 }
 
 export let particlesToDraw: DrawParticleOptions[] = [];
@@ -25,6 +26,9 @@ let instanceBuffer: WebGLBuffer;
 let viewProjLocation: WebGLUniformLocation;
 let cameraRightLocation: WebGLUniformLocation;
 let cameraUpLocation: WebGLUniformLocation;
+let textureLocation: WebGLUniformLocation;
+
+let defaultTexture: WebGLTexture;
 
 const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
 const camRight = new Float32Array(3);
@@ -45,6 +49,17 @@ export function init(gl: WebGL2RenderingContext): void {
     gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
     instanceBuffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    // Create a 1x1 white texture as the default particle texture
+    const whitePixel = new Uint8Array([255, 255, 255, 255]);
+    defaultTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, defaultTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, whitePixel);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindTexture(gl.TEXTURE_2D, null);
 }
 
 export function createParticleProgram(gl: WebGL2RenderingContext): void {
@@ -61,6 +76,7 @@ export function createParticleProgram(gl: WebGL2RenderingContext): void {
     viewProjLocation = gl.getUniformLocation(program, 'u_viewProjection')!;
     cameraRightLocation = gl.getUniformLocation(program, 'u_cameraRight')!;
     cameraUpLocation = gl.getUniformLocation(program, 'u_cameraUp')!;
+    textureLocation = gl.getUniformLocation(program, 'u_texture')!;
 }
 
 export function setupParticleLocations(gl: WebGL2RenderingContext): void {
@@ -91,22 +107,16 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
 
     const activeCamera = $.model.activeCamera3D;
     M4.viewRightUpInto(activeCamera.view, camRight, camUp);
-
-    for (let i = 0; i < count && i < MAX_PARTICLES; i++) {
-        const p = particlesToDraw[i];
-        const base = i * INSTANCE_FLOATS;
-        instanceData[base] = p.position[0];
-        instanceData[base + 1] = p.position[1];
-        instanceData[base + 2] = p.position[2];
-        instanceData[base + 3] = p.size;
-        instanceData[base + 4] = p.color.r;
-        instanceData[base + 5] = p.color.g;
-        instanceData[base + 6] = p.color.b;
-        instanceData[base + 7] = p.color.a;
+    const batches = new Map<WebGLTexture, DrawParticleOptions[]>();
+    for (const p of particlesToDraw) {
+        const tex = p.texture ?? defaultTexture;
+        let arr = batches.get(tex);
+        if (!arr) {
+            arr = [];
+            batches.set(tex, arr);
+        }
+        arr.push(p);
     }
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData.subarray(0, count * INSTANCE_FLOATS));
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
@@ -118,13 +128,39 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
     gl.uniformMatrix4fv(viewProjLocation, false, activeCamera.viewProjection);
     gl.uniform3fv(cameraRightLocation, camRight);
     gl.uniform3fv(cameraUpLocation, camUp);
+    gl.uniform1i(textureLocation, 0);
 
     gl.bindVertexArray(vao);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+
+    for (const [tex, arr] of batches) {
+        const batchCount = Math.min(arr.length, MAX_PARTICLES);
+        for (let i = 0; i < batchCount; i++) {
+            const p = arr[i];
+            const base = i * INSTANCE_FLOATS;
+            instanceData[base] = p.position[0];
+            instanceData[base + 1] = p.position[1];
+            instanceData[base + 2] = p.position[2];
+            instanceData[base + 3] = p.size;
+            instanceData[base + 4] = p.color.r;
+            instanceData[base + 5] = p.color.g;
+            instanceData[base + 6] = p.color.b;
+            instanceData[base + 7] = p.color.a;
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData.subarray(0, batchCount * INSTANCE_FLOATS));
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, batchCount);
+    }
+
     gl.bindVertexArray(null);
 
     gl.depthMask(true);
     gl.disable(gl.BLEND);
 
     particlesToDraw.length = 0;
+}
+
+export function setDefaultParticleTexture(tex: WebGLTexture): void {
+    defaultTexture = tex;
 }
