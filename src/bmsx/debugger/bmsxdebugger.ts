@@ -1,12 +1,11 @@
 import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
-import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from '../component/basecomponent';
+import { Component, componenttags_preprocessing } from '../component/basecomponent';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import { GameObject } from '../core/gameobject';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/sprite';
-import { area2size, div_vec2, new_vec2, set_inplace_vec2, translate_vec2, trunc_vec3 } from '../core/utils';
+import { div_vec2, new_vec2 } from '../core/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
-import { Color } from '../render/view';
 import type { Identifier, vec2 } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { Msx1Colors } from '../systems/msx';
@@ -20,35 +19,8 @@ let draggedObjCursorOffset: vec2;
 let shiftX: number;
 let shiftY: number;
 let prevPausedState: boolean; // Remember the paused-state before a dialog was opened. This allows to return to the original "paused" state after closing debug dialogs
-
-@componenttags_preprocessing('position_update_axis') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
-@componenttags_postprocessing('position_update_axis') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
-/**
- * Represents a component that highlights a game object in the debug view.
- * *NOTE: DOES NOT EXTEND PositionUpdateAxisComponent, because it causes circular dependency problems in combination with the decorators, causing module-load to fail!*
- */
-export class DebugHighlightComponent extends Component {
-    /**
-     * The previous position of the game object.
-     */
-    protected oldPos: vec2;
-
-    constructor(_id: Identifier) {
-        super(_id);
-        this.oldPos = new_vec2(0, 0)
-    }
-
-    override preprocessingUpdate(): void {
-        set_inplace_vec2(this.oldPos, (this.parent as GameObject).pos); // Store the old position
-    }
-    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
-        super.postprocessingUpdate({ params, returnvalue });
-        const highlighter = $.model.getGameObject<ObjectHighlighter>('debug_highlighter');
-        if (highlighter) {
-            highlighter.setHighlightPos(this.parent);
-        }
-    }
-}
+let currentHighlighterComponent: ObjectHighlighterComponent | null;
+let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 
 @componenttags_preprocessing('render')
 export class HitBoxVisualizer extends Component {
@@ -92,66 +64,113 @@ export class HitBoxVisualizer extends Component {
                 $.view.drawPolygon(poly, parent.z, { ...Msx1Colors[2], a: 0.5 }, 1);
             }
         }
-
     }
 }
 
 @excludeclassfromsavegame
-class ObjectHighlighter extends SpriteObject {
-    #highlighted_obj: GameObject;
-    static readonly mijnkleur: Color = { r: 0, g: 0, b: 1, a: .5 };
-
-    public constructor() {
-        super('debug_highlighter');
-        this.imgid = 'whitepixel'; // ! FIXME: HARDCODED
-        this.visible = false;
-        this.#highlighted_obj = null;
-        this.z = Math.pow(10, 9);
-        this.sprite.colorize = ObjectHighlighter.mijnkleur;
-    }
-
-    public setHighlightPos(o: GameObject) {
-        if (o.hitarea) {
-            let translate = translate_vec2(o.pos, o.hitarea.start);
-            this.x = translate.x, this.y = translate.y;
-            let size = area2size(o.hitarea);
-            this.sx = size.x, this.sy = size.y;
+@componenttags_preprocessing('render')
+export class ObjectHighlighterComponent extends Component {
+    static toggle(obj: GameObject) {
+        if (ObjectHighlighterComponent.attachedToObject(obj)) {
+            ObjectHighlighterComponent.detachFromObject(obj);
         }
         else {
-            this.x = o.x, this.y = o.y;
-            this.sx = o.sx, this.sy = o.sy;
+            HitBoxVisualizer.attachToObject(obj);
         }
-        this.pos = trunc_vec3(this.pos);
-        this.size = trunc_vec3(this.size);
-        this.sprite.sx = this.size.x + 1;
-        this.sprite.sy = this.size.y + 1;
     }
 
-    public get target() {
-        return this.#highlighted_obj;
+    static attachToObject(obj: GameObject) {
+        if (!obj.getComponent(ObjectHighlighterComponent)) {
+            obj.addComponent(new ObjectHighlighterComponent(obj.id));
+        }
     }
 
-    public set target(o: GameObject) {
-        if (!o) {
-            if (this.#highlighted_obj) {
-                this.#highlighted_obj.removeComponent(DebugHighlightComponent);
-                this.#highlighted_obj = null;
+    static detachFromObject(obj: GameObject) {
+        obj.removeComponent(ObjectHighlighterComponent);
+    }
+
+    static attachedToObject(obj: GameObject) {
+        return obj.getComponent(ObjectHighlighterComponent);
+    }
+
+    constructor(_id: Identifier) {
+        super(_id);
+    }
+
+    override preprocessingUpdate(): void {
+        const parent = this.parent as SpriteObject;
+
+        // Draw polygons if available on the GameObject
+        if (parent.hasHitPolygon) {
+            for (const poly of parent.hitpolygon) {
+                // Offset polygon by parent position and z
+                $.view.drawPolygon(poly, parent.z, { ...Msx1Colors[6], a: 0.5 }, 1);
             }
-            this.x = this.y = this.sx = this.sy = 0;
-            this.visible = false;
-            return;
         }
 
-        if (o.id === this.id) return; // Don't highlight self
-
-        this.#highlighted_obj = o;
-        if (!o.getComponent(DebugHighlightComponent)) {
-            o.addComponent(new DebugHighlightComponent(o.id));
+        // Draw a transparent filled rectangle around the GameObject
+        if (parent.hitbox) {
+            $.view.fillRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 } });
         }
-        this.setHighlightPos(o);
-        this.visible = true;
     }
 }
+
+// @excludeclassfromsavegame
+// class ObjectHighlighter extends SpriteObject {
+//     #highlighted_obj: GameObject;
+//     static readonly mijnkleur: Color = { r: 0, g: 0, b: 1, a: .5 };
+
+//     public constructor() {
+//         super('debug_highlighter');
+//         this.imgid = 'whitepixel'; // ! FIXME: HARDCODED
+//         this.visible = false;
+//         this.#highlighted_obj = null;
+//         this.z = Math.pow(10, 9);
+//         this.sprite.colorize = ObjectHighlighter.mijnkleur;
+//     }
+
+//     public setHighlightPos(o: GameObject) {
+//         if (o.hitarea) {
+//             let translate = translate_vec2(o.pos, o.hitarea.start);
+//             this.x = translate.x, this.y = translate.y;
+//             let size = area2size(o.hitarea);
+//             this.sx = size.x, this.sy = size.y;
+//         }
+//         else {
+//             this.x = o.x, this.y = o.y;
+//             this.sx = o.sx, this.sy = o.sy;
+//         }
+//         this.pos = trunc_vec3(this.pos);
+//         this.size = trunc_vec3(this.size);
+//         this.sprite.sx = this.size.x + 1;
+//         this.sprite.sy = this.size.y + 1;
+//     }
+
+//     public get target() {
+//         return this.#highlighted_obj;
+//     }
+
+//     public set target(o: GameObject) {
+//         if (!o) {
+//             if (this.#highlighted_obj) {
+//                 this.#highlighted_obj.removeComponent(DebugHighlightComponent);
+//                 this.#highlighted_obj = null;
+//             }
+//             this.x = this.y = this.sx = this.sy = 0;
+//             this.visible = false;
+//             return;
+//         }
+
+//         if (o.id === this.id) return; // Don't highlight self
+
+//         this.#highlighted_obj = o;
+//         if (!o.getComponent(DebugHighlightComponent)) {
+//             o.addComponent(new DebugHighlightComponent(o.id));
+//         }
+//         this.setHighlightPos(o);
+//         this.visible = true;
+//     }
+// }
 
 export class FloatingDialog {
     private dialogDiv: HTMLDivElement;
@@ -633,7 +652,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
         return; // Only start dragging when primary button is pressed
     }
 
-    if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+    if (!e.shiftKey) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
         draggedObj = null; // Stop dragging object
         return;
     }
@@ -652,12 +671,18 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 
 export function handleDebugMouseMove(e: MouseEvent): void {
     const { objUnderCursor } = getGameObjectAtCursor(e);
-    if ($.input.getPlayerInput(1).getButtonState('ControlLeft', 'keyboard').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+    let dirtyFrame = false;
+
+    // We can't use the player input because they are not updated when the game is paused
+    // Get the state of the Control key directly from the browser API
+    if (e.ctrlKey) {
         // Highlight mouse-overed objects
         highlight_object(objUnderCursor);
+        dirtyFrame = true;
     }
     else {
         highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
+        dirtyFrame = true;
     }
 
     if (draggedObj) {
@@ -666,12 +691,13 @@ export function handleDebugMouseMove(e: MouseEvent): void {
         let y = e.offsetY / $.view.viewportScale;
 
         if (draggedObj.pos) {
-            draggedObj.x = ~~x - draggedObjCursorOffset.x;
-            draggedObj.y = ~~y - draggedObjCursorOffset.y;
+            draggedObj.x_nonotify = ~~x - draggedObjCursorOffset.x;
+            draggedObj.y_nonotify = ~~y - draggedObjCursorOffset.y;
         }
-        if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) {
+        if (!e.shiftKey) {
             draggedObj = null; // Stop dragging object when shift is released
         }
+        dirtyFrame = true;
     }
     // Vraag een enkele veilige render aan via de main loop (alleen als paused).
     // Geen directe draw -> minder batch/particle side-effects bij snel hoveren.
@@ -679,28 +705,19 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 }
 
 function highlight_object(o: GameObject) {
-    const model = $.model;
-    let highlighter = $.model.getGameObject<ObjectHighlighter>('debug_highlighter');
-
     if (!o) {
-        highlighter && (highlighter.target = null);
+        currentHighlighterComponent && currentHighlighterComponent.isAttached && currentHighlighterComponent.detach();
     }
     else {
-        if (!highlighter) {
-            highlighter = new ObjectHighlighter();
-            model.spawn(highlighter);
+        if (!currentHighlighterComponent) {
+            currentHighlighterComponent = new ObjectHighlighterComponent(o.id);
         }
-        else if (!model.is_obj_in_current_space('debug_highlighter')) {
-            model.move_obj_to_space('debug_highlighter', model.current_space_id);
-        }
-        highlighter.target = o;
+        currentHighlighterComponent.attach(o.id); // Also automatically detaches it
     }
 }
 
 export function handleDebugMouseUp(_e: MouseEvent): void {
-    if (draggedObj) {
-        draggedObj = null;
-    }
+    draggedObj = null;
 }
 
 export function handleDebugMouseOut(_e: MouseEvent): void {
@@ -713,7 +730,6 @@ function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: v
     draggedObjCursorOffset = new_vec2(~~offsetToCursor.x, ~~offsetToCursor.y);
 }
 
-let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 export function removeStateMachineVisualizer(objId: Identifier): void {
     if (stateMachineVisualisers[objId]) {
         delete stateMachineVisualisers[objId];
