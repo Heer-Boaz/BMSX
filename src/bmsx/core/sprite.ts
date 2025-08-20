@@ -55,11 +55,11 @@ export abstract class SpriteObject extends GameObject {
     }
 
     private updateHitareas() {
-        if (!this.hitarea) return; // Only update the hitarea if it exists
+        if (!this._hitarea) return; // Only update the hitarea if it exists
         const imgmeta = global.$rom['img'][this.sprite.imgid]?.['imgmeta'];
         const boundingbox = imgmeta['boundingbox']; // Get the bounding box of the image
         if (boundingbox) { // Only update the hitarea if the bounding box exists
-            set_inplace_area(this.hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)
+            set_inplace_area(this._hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)
         }
 
         const polygonsMeta = imgmeta['hitpolygons'];

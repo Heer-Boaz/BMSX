@@ -14,7 +14,7 @@ import { Component, componenttags_postprocessing, componenttags_preprocessing, C
 @insavegame
 @componenttags_preprocessing('position_update_axis') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
 @componenttags_postprocessing('position_update_axis') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
-export abstract class PositionUpdateAxisComponent extends Component {
+export abstract class PositionUpdateAxisComponent extends Component<GameObject> {
     /**
      * The previous position of the game object.
      */
@@ -26,7 +26,7 @@ export abstract class PositionUpdateAxisComponent extends Component {
     }
 
     override preprocessingUpdate(): void {
-        set_inplace_vec2(this.oldPos, (this.parent as GameObject).pos); // Store the old position
+        set_inplace_vec2(this.oldPos, this.parent.pos); // Store the old position
     }
 }
 
@@ -127,10 +127,10 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         super.postprocessingUpdate({ params, returnvalue });
         const currentPos = this.parent.pos;
         if (this.oldPos.x !== currentPos.x) {
-            this.checkTileCollisionForXAxis.call($.model.getGameObject(this.parentid), this.oldPos.x, currentPos.x);
+            this.checkTileCollisionForXAxis.call(this.parent, this.oldPos.x, currentPos.x);
         }
         if (this.oldPos.y !== currentPos.y) {
-            this.checkTileCollisionForYAxis.call($.model.getGameObject(this.parentid), this.oldPos.y, currentPos.y);
+            this.checkTileCollisionForYAxis.call(this.parent, this.oldPos.y, currentPos.y);
         }
     }
 

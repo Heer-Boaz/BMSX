@@ -84,6 +84,13 @@ export interface ComponentContainer extends Identifiable, Disposable {
      * @param args - Additional arguments to pass to the components' update method.
      */
     updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void;
+
+    removeComponentsWithTag(tag: ComponentTag): void;
+
+    /**
+     * Detaches all components from the container.
+     */
+    removeAllComponents(): void;
 }
 
 /**
@@ -103,7 +110,7 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export abstract class Component implements Identifiable {
+export abstract class Component<T extends ComponentContainer = ComponentContainer> implements Identifiable {
     /**
      * The identifier of the parent component.
      */
@@ -112,6 +119,7 @@ export abstract class Component implements Identifiable {
      * The component id is the parent id plus the component name.
      */
     public id: ComponentId; // The component id is the parent id + the component name
+    public get name(): string { return this.constructor.name; }
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
@@ -120,7 +128,7 @@ export abstract class Component implements Identifiable {
      *
      * @returns The parent component.
      */
-    public get parent() { return Registry.instance.get(this.parentid); }
+    public get parent(): T { return Registry.instance.get(this.parentid); }
     public parentAs<T extends Registerable>(): T | undefined { return Registry.instance.get<T>(this.parentid); }
     protected _enabled: boolean;
     /**
@@ -135,6 +143,25 @@ export abstract class Component implements Identifiable {
      * @returns {boolean} The value indicating whether the component is enabled.
      */
     public get enabled() { return this._enabled; }
+
+    public get isAttached() { return !!this.parentid; }
+
+    public get tagsPre() { return (this.constructor as ConstructorWithTagsProperty).tagsPre; }
+    public get tagsPost() { return (this.constructor as ConstructorWithTagsProperty).tagsPost; }
+
+    /**
+     * Returns a predicate function that checks whether this component's class
+     * (including inherited classes) has the given preprocessing or postprocessing tag.
+     *
+     * Advantage:
+     * - Provides a ready-to-use predicate bound to this instance (safe to pass around).
+     * - Avoids repeated method lookup when used heavily (small performance benefit).
+     * - Guards against missing tag sets on the constructor prototypes.
+     */
+    public get hasTag(): (tag: ComponentTag) => boolean {
+        return (tag: ComponentTag) =>
+            (this.tagsPre?.has(tag) ?? false) || (this.tagsPost?.has(tag) ?? false);
+    }
 
     /**
      * Constructs a new component with the specified parent id.
@@ -152,6 +179,7 @@ export abstract class Component implements Identifiable {
      * Disposes the component by disabling it, removing event subscriptions, and deregistering it from the entity registry.
      */
     public dispose() {
+        this.detach();
         this.enabled = false;
         // Remove event subscriptions
         const eventEmitter = EventEmitter.instance;
@@ -159,6 +187,41 @@ export abstract class Component implements Identifiable {
 
         // Deregister the component from the entity registry
         $.registry.deregister(this);
+    }
+
+    public attach(newParent?: Identifier) {
+        // If a new parent is specified, detach from the old parent
+        if (newParent) {
+            this.isAttached && this.detach();
+            this.parentid = newParent;
+        }
+
+        const parent = this.parent;
+        if (!parent) {
+            console.error(`Component ${this.id} has no parent to attach to.`);
+            return;
+        }
+        else if (!parent.components[this.name]) {
+            parent.addComponent(this);
+        }
+        else {
+            console.debug(`Component ${this.id} is already attached to parent ${parent.id}.`);
+        }
+    }
+
+    public detach() {
+        const parent = this.parent;
+        if (!parent) {
+            console.debug(`Component ${this.id} has no parent to detach from.`);
+            throw new Error(`Component ${this.id} has no parent to detach from.`);
+            return; // If there's no parent, there's nothing to detach
+        }
+
+        // Pass the constructor function (not a string). Cast to ComponentConstructor to satisfy TS.
+        parent.removeComponent(this.constructor as ComponentConstructor<Component>);
+
+        // Clear the parent id to indicate that the component is no longer attached
+        this.parentid = null;
     }
 
     /**
