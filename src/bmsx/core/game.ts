@@ -16,6 +16,7 @@ import { BFont } from './font';
 import { GameObject } from "./gameobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
+import { GateGroup, taskGate } from './taskgate';
 
 /**
  * Declare global variables and types.
@@ -43,6 +44,9 @@ const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
 const REWIND_BUFFER_ACTIVATED = true;
 const REWIND_BUFFER_WRITE_FREQUENCY = 10; // Frames
+
+// Gate to block the game update/run loop (used when loading/hydrating game state)
+export const runGate: GateGroup = taskGate.group('run:main');
 
 /**
  * Represents the main game loop and manages the game state.
@@ -417,7 +421,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 	/**
 	 * Runs the game loop and updates the game state.
-	 * @param currentTime - The current time in milliseconds.
+	 * @param currentTime - The current time in milliseconds`
 	 * @returns void
 	 */
 	private run = (currentTime: number): void => {
@@ -447,7 +451,13 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		while (this.accumulatedTime >= this.updateInterval && steps < MAX_SUBSTEPS) {
 			if (!this.paused) {
 				Input.instance.pollInput();
-				this.update(this.updateInterval);
+				if (runGate.ready) {
+					this.update(this.updateInterval);
+				}
+				else {
+					this.accumulatedTime = 0; // Reset accumulated time to avoid infinite loop
+					break;
+				}
 			}
 			this.accumulatedTime -= this.updateInterval;
 			++steps;

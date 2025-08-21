@@ -370,7 +370,6 @@ export abstract class MeshObject extends GameObject {
         this.loadMeshModel(this.meshModel); // textures binden NA volledige opbouw
     }
 
-
     public override run(): void {
         if (this.meshModel?.animations) {
             this.animationTime += $.deltaTime / 1000;
@@ -459,6 +458,7 @@ export abstract class MeshObject extends GameObject {
                 }
                 break;
             }
+            case 'LINEAR':
             default: {
                 const alpha = dt > 0 ? (t - t0) / dt : 0;
                 const start = i * stride;
@@ -577,7 +577,6 @@ export abstract class MeshObject extends GameObject {
         mark(index);
     }
 
-
     public releaseModel(model: GLTFModel): void {
         $.texmanager.releaseModelTextures(model);
     }
@@ -623,9 +622,6 @@ export abstract class MeshObject extends GameObject {
             };
             $.view.drawMesh(options);
         }
-
         this.worldPool.reset();
     }
-
-
 }

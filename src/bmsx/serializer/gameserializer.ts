@@ -316,6 +316,7 @@ export class Reviver {
             }
         }
         // --- Third pass: call all registered @onload methods if present ---
+        let savegameReviverFunctions = [];
         for (const id of Object.keys(idToObject)) {
             if (objects[id]?.isTypedArray) continue;
             const obj = idToObject[id];

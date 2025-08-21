@@ -12,6 +12,7 @@ import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from "./cameraobject";
+import { runGate } from './game';
 import { GameObject } from "./gameobject";
 import { AmbientLightObject, LightObject } from "./lightobject";
 import { Registry } from "./registry";
@@ -235,8 +236,8 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     }
 
     public set activeCameraId(id: Identifier | null) {
-        if (id !== null && !this.exists(id)) console.error(`Camera with id ${id} does not exist.`);
-        this._activeCameraId = id;
+        // if (id !== null && !this.exists(id)) console.error(`Camera with id ${id} does not exist.`);
+        this._activeCameraId = id; // Set the active camera ID, which can be null if no camera is active
     }
 
     public get activeCameraObject(): CameraObject | null {
@@ -555,8 +556,13 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      */
     public load(serialized: Uint8Array, compressed: boolean = true): void {
         // Block rendering during (de)serialization to avoid corrupt WebGL state.
+        // Also block the game update/run loop while the model is being hydrated.
         renderGate.bump();
         const gateToken = renderGate.begin({ blocking: true, tag: 'load' });
+
+        // Prevent the main update loop from running while loading the model
+        runGate.bump();
+        const runGateToken = runGate.begin({ blocking: true, tag: 'load' });
         try {
             this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
             $.event_emitter.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
@@ -594,7 +600,6 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
                 });
             });
 
-
             this.applyViewSettings();
         }
         catch (e) {
@@ -602,6 +607,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         }
         finally {
             renderGate.end(gateToken);
+            runGate.end(runGateToken);
             $.wasupdated = true; // Set the update flag to true to indicate that the game has been updated
         }
     }
