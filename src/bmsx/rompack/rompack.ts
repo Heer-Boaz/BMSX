@@ -189,6 +189,7 @@ export interface GLTFNode {
 	skin?: number;
 	/** Optional morph target weights for this node */
 	weights?: number[];
+	visible?: boolean;
 }
 
 export interface GLTFScene {

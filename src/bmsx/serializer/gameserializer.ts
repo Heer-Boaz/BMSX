@@ -189,13 +189,28 @@ export class Serializer {
                 stack.push({ value: v, parent: plain, key: k });
             }
             // Run @onsave hooks
-            const saves = Serializer.onSaves[typename];
-            if (saves) {
-                for (const fn of saves) {
-                    const extras = fn(value) || {};
-                    for (const k of Object.keys(extras)) {
-                        plain[k] = extras[k];
-                    }
+            // Collect @onsave hooks from the prototype chain (like Reviver.onLoads)
+            let proto = Object.getPrototypeOf(value);
+            const saveFunctions: ((...args: any[]) => any)[] = [];
+            while (proto && proto.constructor && proto.constructor.name !== 'Object') {
+                const s = Serializer.onSaves[proto.constructor.name];
+                s && saveFunctions.push(...s);
+                proto = Object.getPrototypeOf(proto);
+            }
+            // Call in reverse order so base-class hooks run first (same approach as Reviver)
+            for (let i = saveFunctions.length - 1; i >= 0; i--) {
+                let res;
+                const fn = saveFunctions[i];
+                if (fn.length === 1) {
+                    // static-style: call with constructor as `this`, pass object as arg
+                    res = fn.call(value.constructor, value);
+                } else {
+                    // instance-style: call with object as `this`
+                    res = fn.call(value);
+                }
+                const extras = res || {};
+                for (const k of Object.keys(extras)) {
+                    plain[k] = extras[k];
                 }
             }
             objects[id] = plain;
@@ -352,9 +367,11 @@ export function onsave(
     _propertyKey: string | symbol,
     descriptor: PropertyDescriptor
 ): any {
+
     const className = target.constructor.name;
     Serializer.onSaves[className] ??= [];
     Serializer.onSaves[className].push(descriptor.value);
+
     return descriptor;
 }
 

@@ -606,9 +606,10 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             console.error(`Error loading game state: ${e}`);
         }
         finally {
+            $.wasupdated = true; // Set the update flag to true to indicate that the game has been updated
             renderGate.end(gateToken);
             runGate.end(runGateToken);
-            $.wasupdated = true; // Set the update flag to true to indicate that the game has been updated
+            $.requestPausedFrame();
         }
     }
 
