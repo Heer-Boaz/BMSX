@@ -152,7 +152,7 @@ export class bclass extends SpriteObject {
     constructor() {
         super('The B');
         this.imgid = BitmapId.b2;
-        this.hitarea = new_area(0, 0, 14, 18);
+        this._hitarea = new_area(0, 0, 14, 18);
         this.visible = true;
     }
 
@@ -162,4 +162,3 @@ export class bclass extends SpriteObject {
     }
 
 }
-;
