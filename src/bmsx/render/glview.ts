@@ -382,6 +382,11 @@ export class GLView extends BaseView {
 
 		gl.viewport(0, 0, this.canvasSize.x, this.canvasSize.y); // Sets the viewport to the full canvas size
 		this.clear();
+		// GLView2D.reset(gl); // Reset the 2D view
+		GLView3D.reset(gl); // Reset the 3D view
+		// GLViewParticles.reset(gl); // Reset the particles view
+		// GLViewSkybox.reset(gl); // Reset the skybox view
+		// GLViewCRT.reset(gl); // Reset the CRT shader
 	}
 
 	override drawgame(clearCanvas: boolean = true): void {
