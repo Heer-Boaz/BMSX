@@ -14,6 +14,7 @@ type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"
 type RuntimeNodeTRS = { t?: vec3arr; r?: [number, number, number, number]; s?: vec3arr };
 type RuntimeNodeState = { trs?: RuntimeNodeTRS; weights?: number[]; visible?: boolean };
 type RuntimeAnim = { time?: number; speed?: number; activeClip?: string | number; loop?: boolean };
+type PersistedMatTex = Partial<{ albedo: number; normal: number; metallicRoughness: number }>;
 
 type MeshObjectRuntime = {
 	version: 1;
@@ -223,6 +224,7 @@ export abstract class MeshObject extends GameObject {
 	private worldPool: Float32ArrayPool;
 	private _modelGen = 0;
 	private _runtime: MeshObjectRuntime; // Runtime data for the mesh object, which is only used for serializing and deserializing the state
+	public materialOverrides?: Record<number, PersistedMatTex>; // meshIndex -> overrides
 
 	constructor(id?: string, fsm_id?: string) {
 		super(id, fsm_id);
@@ -457,14 +459,38 @@ export abstract class MeshObject extends GameObject {
 			runtime.anim = { time: this['animationTime'] ?? 0 };
 		}
 
-		console.log(`Saving MeshObject runtime: model_id=${runtime.model_id}, nodes=${Object.keys(runtime.nodes ?? {}).length}, anim=${runtime.anim?.time ?? 'none'}`);
+		// console.log(`Saving MeshObject runtime: model_id=${runtime.model_id}, nodes=${Object.keys(runtime.nodes ?? {}).length}, anim=${runtime.anim?.time ?? 'none'}`);
 
 		return { _runtime: runtime } as any;
 	}
 
+	@onsave
+	private captureMaterialOverrides() {
+		// Store only what’s explicitly set on each mesh.material.textures (image indices).
+		const out: Record<number, PersistedMatTex> = {};
+		this.meshes.forEach((m, i) => {
+			if (!m?.material) return;
+			const t = m.material.textures;
+			if (!t) return;
+
+			const o: PersistedMatTex = {};
+			if (t.albedo !== undefined) o.albedo = t.albedo;
+			if (t.normal !== undefined) o.normal = t.normal;
+			if (t.metallicRoughness !== undefined) o.metallicRoughness = t.metallicRoughness;
+
+			if (Object.keys(o).length) out[i] = o;
+		});
+
+		// Only persist if there is anything to save
+		if (Object.keys(out).length) {
+			return { materialOverrides: out };
+		}
+		return {};
+	}
+
 	@onload
 	public onLoad(): void {
-		console.log(`Hydrating MeshObject from runtime`);
+		// console.log(`Hydrating MeshObject from runtime`);
 		// 1) Runtime info uit snapshot
 		const rt: MeshObjectRuntime | undefined = (this as any)._runtime;
 		// Safety: gooi het veld weer weg uit de instance
@@ -519,6 +545,47 @@ export abstract class MeshObject extends GameObject {
 		// 5) Animatie-tijd herstellen (optioneel)
 		if (rt?.anim?.time !== undefined) {
 			this['animationTime'] = rt.anim.time;
+		}
+
+		// 6) Reapply persisted indices (image-space) to materials
+		if (this.materialOverrides) {
+			for (const [k, o] of Object.entries(this.materialOverrides)) {
+				const i = +k | 0;
+				const mesh = this.meshes[i];
+				if (!mesh?.material) continue;
+				const t = mesh.material.textures;
+				if (!t) continue;
+				if (o.albedo !== undefined) t.albedo = o.albedo;
+				if (o.normal !== undefined) t.normal = o.normal;
+				if (o.metallicRoughness !== undefined) t.metallicRoughness = o.metallicRoughness;
+			}
+		}
+
+		// 7) If the TextureManager was cleared, fetch keys again and then rebind
+		if (!this.meshModel.gpuTextures) {
+			$.texmanager.fetchModelTextures(this.meshModel).then(keys => {
+				// hydration guard (optional):
+				if (this.meshModel) {
+					this.meshModel.gpuTextures = keys;
+					this.rebindMaterialTexturesFromModelKeys();
+				}
+			});
+		} else {
+			// We already have keys — bind immediately
+			this.rebindMaterialTexturesFromModelKeys();
+		}
+	}
+
+	private rebindMaterialTexturesFromModelKeys(): void {
+		const keys = this.meshModel.gpuTextures;
+		if (!keys) return; // will bind once fetch completes
+		for (const m of this.meshes) {
+			const mat = m.material;
+			if (!mat) continue;
+			const t = mat.textures ?? {};
+			mat.gpuTextures.albedo = t.albedo !== undefined ? keys[t.albedo] : undefined;
+			mat.gpuTextures.normal = t.normal !== undefined ? keys[t.normal] : undefined;
+			mat.gpuTextures.metallicRoughness = t.metallicRoughness !== undefined ? keys[t.metallicRoughness] : undefined;
 		}
 	}
 
