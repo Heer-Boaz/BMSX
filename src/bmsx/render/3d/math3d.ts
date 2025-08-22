@@ -108,6 +108,79 @@ export const M4 = {
         m[0] = -2 * lr; m[5] = -2 * bt; m[10] = 2 * nf; m[12] = (l + r) * lr; m[13] = (t + b) * bt; m[14] = (f + n) * nf; m[15] = 1; return m;
     },
 
+    fisheye(fovRad: number, aspect: number, near: number, far: number): Mat4 {
+        // NOTE: True fisheye is a non-linear projection (can't be represented
+        // exactly with a single 4x4 matrix). Provide an approximation that
+        // preserves a circular look by using equal X/Y scale. This will
+        // visually appear more "fisheyish" than a normal perspective when
+        // rendered to a rectangular viewport, but it's still a linear
+        // transform (good enough for many use-cases and keeps frustum culling).
+        const m = new Float32Array(16);
+        const f = 1 / Math.tan(fovRad / 2);
+        // Use same scale on X and Y so the projected frustum is circular
+        m[0] = f;      // X scale (ignore aspect here to favour circular distortion)
+        m[5] = f;      // Y scale
+        // depth mapping (same convention as perspective)
+        const nf = 1 / (near - far);
+        m[10] = (far + near) * nf;
+        m[11] = -1;
+        m[14] = 2 * far * near * nf;
+        // other elements are zero by default
+        return m;
+    },
+
+    panorama(fovRad: number, aspect: number, near: number, far: number): Mat4 {
+        // Approximate a cylindrical / equirectangular-style panorama by treating
+        // the supplied fovRad as the horizontal field-of-view and deriving a
+        // matching vertical fov from the aspect. This is still a linear
+        // projection (not a true spherical/equirectangular mapping) but it
+        // provides a wide-panorama feel while remaining compatible with the
+        // existing raster pipeline and frustum tools.
+        const m = new Float32Array(16);
+        // horizontal fov is fovRad; compute vertical fov from aspect
+        const hfov = fovRad;
+        const vfov = (Math.abs(aspect) > 1e-6) ? (hfov / aspect) : hfov;
+        const sx = 1 / Math.tan(hfov / 2); // X scale
+        const sy = 1 / Math.tan(vfov / 2); // Y scale
+        m[0] = sx;
+        m[5] = sy;
+        const nf = 1 / (near - far);
+        m[10] = (far + near) * nf;
+        m[11] = -1;
+        m[14] = 2 * far * near * nf;
+        return m;
+    },
+    oblique(l: number, r: number, b: number, t: number, n: number, f: number, alphaRad: number, betaRad: number): Mat4 {
+        const ortho = this.orthographic(l, r, b, t, n, f);  // Basis orthographic
+        const cotAlpha = 1 / Math.tan(alphaRad), cotBeta = 1 / Math.tan(betaRad);
+        const shear = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, cotAlpha, cotBeta, 1, 0, 0, 0, 0, 1]);
+        // Mul shear met ortho (je hebt een Mat4 mul-functie nodig)
+        return M4.mul(shear, ortho);  // Assumptie: je hebt een mul-helper
+    },
+    asymmetricFrustum(l: number, r: number, b: number, t: number, n: number, f: number): Mat4 {
+        const rl = r - l, bt = t - b, fn = f - n;
+        const m = new Float32Array(16);
+        m[0] = 2 * n / rl; m[8] = (r + l) / rl;
+        m[5] = 2 * n / bt; m[9] = (t + b) / bt;
+        m[10] = -(f + n) / fn; m[11] = -1;
+        m[14] = -2 * f * n / fn;
+        return m;
+    },
+    isometric(scale: number = 1): Mat4 {  // Oneindig, geen near/far
+        const sqrt2 = Math.sqrt(2), sqrt6 = Math.sqrt(6), sqrt3 = Math.sqrt(3);
+        const m = new Float32Array(16);
+        m[0] = scale * sqrt2 / 2; m[1] = -scale * sqrt2 / 2; m[2] = 0; m[3] = 0;
+        m[4] = scale * sqrt2 / sqrt6; m[5] = scale * sqrt2 / sqrt6; m[6] = -scale * 2 / sqrt6; m[7] = 0;
+        m[8] = 0; m[9] = 0; m[10] = 0; m[11] = 0;
+        m[12] = 0; m[13] = 0; m[14] = 0; m[15] = 1;
+        return m;
+    },
+    infinitePerspective(fovRad: number, aspect: number, near: number): Mat4 {
+        const f = 1 / Math.tan(fovRad / 2);
+        const m = new Float32Array(16);
+        m[0] = f / aspect; m[5] = f; m[10] = -1; m[11] = -1; m[14] = -2 * near; return m;
+    },
+
     // View matrix uit volledige, orthonormale basis en positie
     viewFromBasis(pos: vec3, right: vec3, up: vec3, back: vec3): Mat4 {
         const m = new Float32Array(16);
