@@ -1,6 +1,6 @@
 import { GameObject } from '../core/gameobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
-import { insavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, insavegame } from '../serializer/gameserializer';
 
 /**
  * Represents the definition of a behavior tree.
@@ -296,6 +296,7 @@ export type BehaviorTreeContext = {
  * This class provides common properties and methods for behavior tree nodes.
  * @typeparam T - The type of the target object.
  */
+@excludeclassfromsavegame
 export abstract class BTNode implements Identifiable {
     public id: BehaviorTreeID;
     public priority: number;
