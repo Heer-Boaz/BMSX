@@ -596,6 +596,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
                 const space = this[spaceid_2_space][space_and_objects.spaceid];
                 const objects = space_and_objects.objects;
                 objects.forEach(o => {
+                    if (!o) return;
                     space.spawn(o, null, true);
                 });
             });
