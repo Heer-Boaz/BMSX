@@ -1,5 +1,5 @@
 import { vec3 } from '../../rompack/rompack';
-import { excludepropfromsavegame, insavegame, onload } from '../../serializer/gameserializer';
+import { excludepropfromsavegame, insavegame, onload, onsave } from '../../serializer/gameserializer';
 import { extractFrustumPlanes, M4, Mat4, Plane, Q, Quat, sphereInFrustum, V3 } from './math3d';
 
 @insavegame
@@ -7,28 +7,43 @@ export class Camera {
 	position: vec3 = V3.of(0, 0, 0);
 
 	// Bewaar deze voor UI/serialisatie; intern sturen we met _q
+	@excludepropfromsavegame
 	yaw = 0;
+	@excludepropfromsavegame
 	pitch = 0;
+	@excludepropfromsavegame
 	roll = 0;
 	static readonly MAX_PITCH = Math.PI / 2 - 1e-3;
 
 	fovDeg = 60; aspect = 1; near = 0.1; far = 1000; perspective = true;
 
 	private _q: Quat = Q.ident();       // <-- bron van waarheid
+	@excludepropfromsavegame
 	private _view: Mat4 = M4.identity();
+	@excludepropfromsavegame
 	private _proj: Mat4 = M4.identity();
+	@excludepropfromsavegame
 	private _vp: Mat4 = M4.identity();
+	@excludepropfromsavegame
 	private _planes: Plane[] = [];
 	@excludepropfromsavegame
 	private _dirty = true;
 
 	constructor() {
-		this.syncEulerToQuat(); // init _q vanuit yaw/pitch/roll = 0
 	}
 
 	@onload
 	private onLoad(): void {
-		this.syncEulerToQuat(); // init _q vanuit yaw/pitch/roll = 0
+		// yaw/pitch/roll consistent afleiden uit _q voor UI
+		this.updateEulerFromQuat();
+
+		this._dirty = true;
+		this.rebuild();
+	}
+
+	@onsave
+	private onSave(): void {
+		this.updateEulerFromQuat();
 	}
 
 	// --- basis zonder direct Euler te gebruiken
@@ -39,41 +54,45 @@ export class Camera {
 	// ====== Besturing ======
 
 	/** Flight-sim style: rotaties rond lokale assen (body axes). */
-	mouseLook(dYaw: number, dPitch: number): void {
-		const { r, u } = this.basis();
+	mouseLook(dYaw: number, dPitch: number, dRoll: number = 0): void {
+		// 1) yaw & pitch over huidige body-assen
+		const { r, u } = this.basis();           // basis uit huidige _q
+		const qYaw = Q.fromAxisAngle(u, dYaw);
+		const qPitch = Q.fromAxisAngle(r, dPitch);
+
 		// q' = R_u(dYaw) * R_r(dPitch) * q
-		const qYaw = Q.fromAxisAngle(u, dYaw);
-		const qPitch = Q.fromAxisAngle(r, dPitch);
-		this._q = Q.norm(Q.mul(qYaw, Q.mul(qPitch, this._q)));
-		this.updateEulerFromQuat(); // alleen voor UI/clamps
+		let qNext = Q.norm(Q.mul(qYaw, Q.mul(qPitch, this._q)));
+
+		// 2) optionele roll over NIEUWE forward-as (na yaw+pitch)
+		if (dRoll !== 0) {
+			const fNext = Q.basis(qNext).f;
+			const qRoll = Q.fromAxisAngle(fNext, dRoll);
+			qNext = Q.norm(Q.mul(qRoll, qNext));
+		}
+
+		this._q = qNext;
+		this.updateEulerFromQuat();  // herleid yaw/pitch/roll voor UI; pitch wordt geclamped
 		this._dirty = true;
 	}
 
-	/** Screen-space: rond actuele scherm-assen, roll blijft exact behouden. */
-	updateScreenBasedOrientation(dYaw: number, dPitch: number): void {
-		const { r, u } = this.basis(); // asjes inclusief huidige roll
+	/** Screen-space: rond actuele scherm-assen; roll delta optioneel. */
+	updateScreenBasedOrientation(dYaw: number, dPitch: number, dRoll: number = 0): void {
+		// Zelfde strategie: eerst yaw/pitch over huidige body-assen
+		const { r, u } = this.basis();
 		const qYaw = Q.fromAxisAngle(u, dYaw);
 		const qPitch = Q.fromAxisAngle(r, dPitch);
-		this._q = Q.norm(Q.mul(qYaw, Q.mul(qPitch, this._q)));
-		this.updateEulerFromQuat(); // werkt yaw/pitch bij zonder roll te herleiden
-		this._dirty = true;
-	}
 
-	addRoll(angle: number): void {
-		const { f } = this.basis();
-		const qRoll = Q.fromAxisAngle(f, angle);
-		this._q = Q.norm(Q.mul(qRoll, this._q));
-		this.roll = wrapPi(this.roll + angle); // numeriek bijhouden voor UI, met grenzen
-		this._dirty = true;
-	}
-	setRoll(angle: number): void {
-		// zet absolute roll: verwijder eerst huidige roll, dan nieuwe toepassen
-		const { f } = this.basis();
-		const qUndo = Q.fromAxisAngle(f, -this.roll);
-		this._q = Q.mul(qUndo, this._q);
-		const qNew = Q.fromAxisAngle(f, angle);
-		this._q = Q.norm(Q.mul(qNew, this._q));
-		this.roll = wrapPi(angle);
+		let qNext = Q.norm(Q.mul(qYaw, Q.mul(qPitch, this._q)));
+
+		// Roll over de nieuwe forward-as (na yaw+pitch)
+		if (dRoll !== 0) {
+			const fNext = Q.basis(qNext).f;
+			const qRoll = Q.fromAxisAngle(fNext, dRoll);
+			qNext = Q.norm(Q.mul(qRoll, qNext));
+		}
+
+		this._q = qNext;
+		this.updateEulerFromQuat();  // herleid en clamp
 		this._dirty = true;
 	}
 
@@ -132,16 +151,40 @@ export class Camera {
 		this._dirty = true;
 	}
 
-	/** Werk yaw/pitch bij uit _q zonder roll te ‘afleiden’; houd continuïteit. */
+	/** Werk yaw/pitch/roll bij uit _q, consistent met syncEulerToQuat orde. */
 	private updateEulerFromQuat(): void {
-		const { f } = this.basis();
-		// Yaw = atan2(f.x, -f.z), Pitch = asin(f.y), met unwrap t.o.v. vorige waarden
+		// Huidige basis uit _q
+		const basis = Q.basis(this._q);
+		const f = basis.f; // forward
+		const u = basis.u; // up
+
+		// 1) Yaw/Pitch uit forward vector
 		const newYaw = Math.atan2(f.x, -f.z);
 		const newPitch = Math.asin(Math.max(-1, Math.min(1, f.y)));
-		this.yaw = unwrapAngle(this.yaw, newYaw);
-		this.pitch = clamp(newPitch, -Camera.MAX_PITCH, Camera.MAX_PITCH);
-		// roll NIET wijzigen — die wordt uitsluitend via addRoll/setRoll aangepast.
+
+		const yawUnwrapped = unwrapAngle(this.yaw, newYaw);
+		const pitchClamped = clamp(newPitch, -Camera.MAX_PITCH, Camera.MAX_PITCH);
+
+		this.yaw = yawUnwrapped;
+		this.pitch = pitchClamped;
+
+		// 2) Roll: verschil tussen "roll‑loze up" en echte up, gemeten om de forward‑as
+		// Bouw q_y en q_yp (yaw dan pitch) om een referentie‑up (u0) zonder roll te krijgen
+		const worldUp = V3.of(0, 1, 0);
+		const q_y = Q.fromAxisAngle(worldUp, yawUnwrapped);
+		const r_y = Q.basis(q_y).r; // right na yaw
+		const q_yp = Q.mul(Q.fromAxisAngle(r_y, pitchClamped), q_y);
+
+		const u0 = Q.basis(q_yp).u;      // "up" zonder roll
+		// Signed angle tussen u0 en u om de f‑as:
+		const cross = V3.cross(u0, u);
+		const dot = V3.dot(u0, u);
+		const s = V3.dot(f, cross);  // teken volgens forward
+		const newRoll = Math.atan2(s, dot);
+
+		this.roll = unwrapAngle(this.roll, newRoll);
 	}
+
 }
 
 // Klein hulpspul onderaan camera.ts of in math3d.ts
