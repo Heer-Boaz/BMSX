@@ -109,7 +109,7 @@ export class SparkEmitter extends GameObject {
 
     public override paint(): void {
         for (const s of this.sparks) {
-            particlesToDraw.push({ position: s.pos, size: 4, color: s.color, texture: s.texture });
+            particlesToDraw.push({ position: s.pos, size: .5, color: s.color, texture: s.texture });
         }
     }
 }

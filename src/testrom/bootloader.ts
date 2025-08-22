@@ -21,7 +21,7 @@ _global['h406A'] = (args: BootArgs): Promise<any> => {
     });
 };
 
-const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'load', 'save', 'bla', 'blap', 'moveforward', 'movebackward', 'turnleft', 'turnright', 'rotateleft', 'rotateright', 'panup', 'pandown', 'pitchup', 'pitchdown'] as const;
+const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'load', 'save', 'bla', 'blap', 'moveforward', 'movebackward', 'turnleft', 'turnright', 'rotateleft', 'rotateright', 'panup', 'pandown', 'pitchup', 'pitchdown', 'toggleprojection'] as const;
 export type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -53,6 +53,7 @@ export const keyboardInputMapping: MyKeyboardInputMapping = {
     'pandown': ['KeyF'],      // Pan down
     'pitchup': ['KeyT'],      // Pitch up
     'pitchdown': ['KeyG'],    // Pitch down
+    'toggleprojection': ['KeyP'], // Toggle projection
 };
 
 export const gamepadInputMapping: MyGamepadInputMapping = {
@@ -76,6 +77,7 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
     'pandown': ['select'],
     'pitchup': ['up'],
     'pitchdown': ['down'],
+    'toggleprojection': ['x', 'y'], // Toggle projection
 };
 
 class gameview extends GLView {

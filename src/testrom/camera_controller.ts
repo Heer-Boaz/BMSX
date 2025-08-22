@@ -1,4 +1,4 @@
-import { CameraObject, DirectionalLightObject, GameObject, insavegame, onload } from '../bmsx';
+import { CameraObject, CameraProjectionType, DirectionalLightObject, GameObject, insavegame, onload } from '../bmsx';
 import { Action } from './bootloader';
 
 @insavegame
@@ -6,7 +6,7 @@ export class CameraController extends GameObject {
 	private cameras: CameraObject[];
 	private idx = 0;
 	private mouseControlsEnabled = false;
-	private delta = { x: 0, y: 0 };
+	private delta = { yaw: 0, pitch: 0, roll: 0 };
 
 	private onLockChange = () => {
 		const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
@@ -14,8 +14,6 @@ export class CameraController extends GameObject {
 
 		const locked = document.pointerLockElement === canvas;
 		this.mouseControlsEnabled = locked;
-
-		console.log(locked ? 'Mouse controls enabled' : 'Mouse controls disabled');
 	}
 
 	private onLockError = () => {
@@ -31,13 +29,14 @@ export class CameraController extends GameObject {
 		const dy = e.movementY || 0;
 
 		const sens = 0.002;
-		this.delta.x += -dx * sens;
-		this.delta.y += -dy * sens;
+		this.delta.yaw += -dx * sens;
+		this.delta.pitch += -dy * sens;
 	}
 
 	private onMouseDown = (e: MouseEvent) => {
 		if (e.button === 0) {
 			e.preventDefault();
+			this.mouseControlsEnabled = true;
 			this.toggleMouseControls();
 		}
 	}
@@ -45,7 +44,9 @@ export class CameraController extends GameObject {
 	private onMouseUp = (e: MouseEvent) => {
 		if (e.button === 0) {
 			e.preventDefault();
+			this.mouseControlsEnabled = false;
 			this.toggleMouseControls();
+			document.exitPointerLock();
 		}
 	}
 
@@ -125,15 +126,10 @@ export class CameraController extends GameObject {
 		const cam = camObj.camera;
 		const move = 0.5;
 		const rotateSpeed = 0.02; // Reduced from 0.05 for smoother rotation
-
-		// Process mouse movements
-		// Pas de camera aan met de delta
-		cam.updateScreenBasedOrientation(this.delta.x, this.delta.y);
-		this.delta.x = 0; // Reset delta na verwerking
-		this.delta.y = 0;
+		let screenBasedOrFlight: 'screen' | 'flight' = 'screen';
 
 		// Voor debug: log de camera rotatie
-		console.log(`Camera rotation updated: yaw=${cam.yaw}, pitch=${cam.pitch}, roll=${cam.roll}`);
+		// console.log(`Camera rotation updated: yaw=${cam.yaw}, pitch=${cam.pitch}, roll=${cam.roll}`);
 
 		// Keyboard camera controls (when mouse is not locked)
 		let moveForward_pressed = input.getActionState('moveforward' satisfies Action).pressed;
@@ -148,6 +144,7 @@ export class CameraController extends GameObject {
 		let rotateRight_pressed = input.getActionState('rotateright' satisfies Action).pressed;
 		let pitchUp_pressed = input.getActionState('pitchup' satisfies Action).pressed;
 		let pitchDown_pressed = input.getActionState('pitchdown' satisfies Action).pressed;
+		let toggleProjection_pressed = input.getActionState('toggleprojection' satisfies Action).justpressed;
 
 		// Movement (works in both modes)
 		if (moveForward_pressed) cam.moveForward(move);    // Forward movement
@@ -156,11 +153,38 @@ export class CameraController extends GameObject {
 		if (panDown_pressed) cam.strafeUp(-move);
 		if (panLeft_pressed) cam.strafeRight(-move);   // Pan left
 		if (panRight_pressed) cam.strafeRight(move);    // Pan right
-		if (turnLeft_pressed) cam.updateScreenBasedOrientation(rotateSpeed, 0);
-		if (turnRight_pressed) cam.updateScreenBasedOrientation(-rotateSpeed, 0);
-		if (rotateLeft_pressed) cam.updateScreenBasedOrientation(0, 0, -rotateSpeed);
-		if (rotateRight_pressed) cam.updateScreenBasedOrientation(0, 0, rotateSpeed);
-		if (pitchUp_pressed) cam.updateScreenBasedOrientation(0, -rotateSpeed);
-		if (pitchDown_pressed) cam.updateScreenBasedOrientation(0, rotateSpeed);
+
+		if (turnLeft_pressed) this.delta.yaw += rotateSpeed;
+		if (turnRight_pressed) this.delta.yaw -= rotateSpeed;
+		if (rotateLeft_pressed) this.delta.roll -= rotateSpeed;
+		if (rotateRight_pressed) this.delta.roll += rotateSpeed;
+		if (pitchUp_pressed) this.delta.pitch += rotateSpeed;
+		if (pitchDown_pressed) this.delta.pitch -= rotateSpeed;
+
+		const projectTypes: CameraProjectionType[] = ['perspective', 'orthographic', 'fisheye', 'panorama', 'oblique', 'asymmetricFrustum', 'isometric', 'infinitePerspective', 'viewFromBasis'];
+
+		if (toggleProjection_pressed) {
+			const currentIndex = projectTypes.indexOf(cam.projectionType);
+			const nextIndex = (currentIndex + 1) % projectTypes.length;
+			cam.projectionType = projectTypes[nextIndex];
+			console.log(`Camera projection switched to ${cam.projectionType}`);
+		}
+
+		// Process mouse movements
+		// Pas de camera aan met de delta
+		// @ts-ignore
+		switch (screenBasedOrFlight) {
+			// @ts-ignore
+			case 'flight':
+				cam.flightLook(this.delta.yaw, this.delta.pitch, this.delta.roll);
+				break;
+			// @ts-ignore
+			case 'screen':
+				cam.screenLook(this.delta.yaw, this.delta.pitch, this.delta.roll);
+				break;
+		}
+		this.delta.yaw = 0; // Reset delta na verwerking
+		this.delta.pitch = 0;
+		this.delta.roll = 0;
 	}
 }
