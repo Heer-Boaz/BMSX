@@ -65,6 +65,7 @@ interface Spark {
     texture?: TextureHandle;
 }
 
+@insavegame
 export class SparkEmitter extends GameObject {
     private sparks: Spark[] = [];
     private textureKey: TextureKey;
