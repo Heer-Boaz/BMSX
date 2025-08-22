@@ -6,6 +6,7 @@ export class CameraController extends GameObject {
 	private cameras: CameraObject[];
 	private idx = 0;
 	private mouseControlsEnabled = false;
+	private delta = { x: 0, y: 0 };
 
 	private onLockChange = () => {
 		const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
@@ -29,15 +30,9 @@ export class CameraController extends GameObject {
 		const dx = e.movementX || 0;
 		const dy = e.movementY || 0;
 
-		const camObj = $.model.activeCameraObject;
-		if (!camObj) {
-			console.error('No active camera object found');
-			return;
-		}
-
-		const cam = camObj.camera;
 		const sens = 0.002;
-		cam.updateScreenBasedOrientation(-dx * sens, -dy * sens);
+		this.delta.x += -dx * sens;
+		this.delta.y += -dy * sens;
 	}
 
 	private onMouseDown = (e: MouseEvent) => {
@@ -131,6 +126,15 @@ export class CameraController extends GameObject {
 		const move = 0.5;
 		const rotateSpeed = 0.02; // Reduced from 0.05 for smoother rotation
 
+		// Process mouse movements
+		// Pas de camera aan met de delta
+		cam.updateScreenBasedOrientation(this.delta.x, this.delta.y);
+		this.delta.x = 0; // Reset delta na verwerking
+		this.delta.y = 0;
+
+		// Voor debug: log de camera rotatie
+		console.log(`Camera rotation updated: yaw=${cam.yaw}, pitch=${cam.pitch}, roll=${cam.roll}`);
+
 		// Keyboard camera controls (when mouse is not locked)
 		let moveForward_pressed = input.getActionState('moveforward' satisfies Action).pressed;
 		let moveBackward_pressed = input.getActionState('movebackward' satisfies Action).pressed;
@@ -154,8 +158,8 @@ export class CameraController extends GameObject {
 		if (panRight_pressed) cam.strafeRight(move);    // Pan right
 		if (turnLeft_pressed) cam.updateScreenBasedOrientation(rotateSpeed, 0);
 		if (turnRight_pressed) cam.updateScreenBasedOrientation(-rotateSpeed, 0);
-		if (rotateLeft_pressed) cam.addRoll(-rotateSpeed);
-		if (rotateRight_pressed) cam.addRoll(rotateSpeed);
+		if (rotateLeft_pressed) cam.updateScreenBasedOrientation(0, 0, -rotateSpeed);
+		if (rotateRight_pressed) cam.updateScreenBasedOrientation(0, 0, rotateSpeed);
 		if (pitchUp_pressed) cam.updateScreenBasedOrientation(0, -rotateSpeed);
 		if (pitchDown_pressed) cam.updateScreenBasedOrientation(0, rotateSpeed);
 	}

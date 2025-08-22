@@ -47,8 +47,8 @@ export const keyboardInputMapping: MyKeyboardInputMapping = {
     'turnright': ['KeyD'],      // Turn right
     'panleft': ['KeyQ'],       // Pan left
     'panright': ['KeyE'],      // Pan right
-    'rotateleft': ['Key1'],    // Rotate left
-    'rotateright': ['Key3'],   // Rotate right
+    'rotateleft': ['Digit1'],    // Rotate left
+    'rotateright': ['Digit3'],   // Rotate right
     'panup': ['KeyR'],         // Pan up
     'pandown': ['KeyF'],      // Pan down
     'pitchup': ['KeyT'],      // Pitch up
