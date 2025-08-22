@@ -301,6 +301,7 @@ export function handleResize(gl: WebGL2RenderingContext, width: number, height: 
 }
 
 export function setAmbientLight(gl: WebGL2RenderingContext, light: AmbientLight): void {
+	if (!light) return;
 	gl.useProgram(gameShaderProgram3D);
 	gl.uniform3fv(ambientColorLocation3D, new Float32Array(light.color));
 	gl.uniform1f(ambientIntensityLocation3D, light.intensity);
@@ -718,7 +719,7 @@ function setupRenderingState(gl: WebGL2RenderingContext): void {
 	setUseInstancing(gl, false);
 
 	if (lightsDirty) {
-		setAmbientLight(gl, $.model.ambientLight.light as AmbientLight);
+		setAmbientLight(gl, $.model.ambientLight?.light as AmbientLight);
 		uploadDirectionalLights(gl);
 		uploadPointLights(gl);
 		lightsDirty = false;
@@ -927,4 +928,38 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 	renderSingleMeshes(gl, singles, framebuffer);
 
 	meshesToDraw = [];
+}
+
+export function reset(gl: WebGL2RenderingContext): void {
+	meshesToDraw = [];
+	// Clear the normal matrix pool
+	normal9Pool.reset();
+	// Clear the joint matrix pool
+	// jointMatrixPool.reset();
+	// Clear the morph target pool
+	// morphTargetPool.reset();
+	clearLights(gl);
+	// stateCache = {
+	// 	albedo: null, useAlbedo: 0,
+	// 	normal: null, useNormal: 0,
+	// 	mr: null, useMR: 0,
+	// };
+	// lastJointMatrixArray.fill(0); lastSkinningEnabled = false;
+	// lastMorphWeightArray.fill(0); lastMorphEnabled = false;
+	// instanceScratch.fill(0); instanceMatrixBuffer3D = null;
+
+	// Clear morph buffers
+	// for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+	// 	if (morphPositionBuffers3D[i]) gl.bindBuffer(gl.ARRAY_BUFFER, morphPositionBuffers3D[i]);
+	// 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(24), gl.STATIC_DRAW);
+	// 	if (morphNormalBuffers3D[i]) gl.bindBuffer(gl.ARRAY_BUFFER, morphNormalBuffers3D[i]);
+	// 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(24), gl.STATIC_DRAW);
+	// 	if (morphTangentBuffers3D[i]) gl.bindBuffer(gl.ARRAY_BUFFER, morphTangentBuffers3D[i]);
+	// 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(24), gl.STATIC_DRAW);
+	// }
+	// Clear instance matrix buffer
+	// if (instanceMatrixBuffer3D) {
+	// 	gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
+	// 	gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
+	// }
 }
