@@ -36,6 +36,7 @@ export abstract class LightObject extends GameObject {
     public abstract applyToView(): void;
 }
 
+@insavegame
 export class AmbientLightObject extends LightObject {
     public static readonly DEFAULT_COLOR: [number, number, number] = [1, 1, 1];
     public static readonly DEFAULT_INTENSITY: number = 1;
@@ -58,6 +59,7 @@ export class AmbientLightObject extends LightObject {
 
 }
 
+@insavegame
 export class DirectionalLightObject extends LightObject {
     constructor(orientation: [number, number, number], color: [number, number, number], intensity: number = 1, id?: string) {
         super({ type: 'directional', orientation: orientation, color, intensity }, id);
@@ -73,6 +75,7 @@ export class DirectionalLightObject extends LightObject {
 
 }
 
+@insavegame
 export class PointLightObject extends LightObject {
     constructor(pos: [number, number, number], color: [number, number, number], range: number, intensity: number = 1, id?: string) {
         super({ type: 'point', pos, color, range, intensity }, id);
