@@ -76,7 +76,7 @@ export class SparkEmitter extends GameObject {
         super();
         this.parent_id = parent_id;
         // Request spark texture from Texture Manager
-        this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbin, {}, undefined);
+        this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbinYFlipped, undefined);
     }
 
     public override run(): void {
