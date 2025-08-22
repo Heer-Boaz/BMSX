@@ -369,8 +369,13 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
     return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function getAssetImageBin(romImgAsset: RomImgAsset): Promise<ImageBitmap> {
-    let source: ImageBitmap | undefined = romImgAsset._imgbin; // Use the private _imgbin property
+async function getAssetImageBin(romImgAsset: RomImgAsset, options?: { flipY?: boolean }): Promise<ImageBitmap> {
+    let source: ImageBitmap | Promise<ImageBitmap> | undefined;
+    if (options?.flipY) {
+        source = romImgAsset._imgbinYFlipped; // Use the private _imgbinYFlipped property
+    } else {
+        source = romImgAsset._imgbin; // Use the private _imgbin property
+    }
     if (source) return source;
 
     // If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
@@ -405,7 +410,11 @@ async function getAssetImageBin(romImgAsset: RomImgAsset): Promise<ImageBitmap> 
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
         // Convert canvas to ImageBitmap asynchronously
-        source = await createImageBitmap(canvas);
+        source = createImageBitmap(canvas, {
+            imageOrientation: options?.flipY ? 'flipY' : 'none',
+            premultiplyAlpha: 'none',
+            colorSpaceConversion: 'none',
+        });
     }
 
     if (!source) throw new Error(`Image asset '${romImgAsset.resname}' has no image data`);
@@ -426,11 +435,15 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
             }
             const imgAsset: RomImgAsset = {
                 ...res,
-                _imgbin: img, // The HTML image element of the image asset or undefined if not available. Note that this will be populated with an ImageBitmap when `get imgbin()` is called! In other words, it also acts as a cache when required.
+                _imgbin: img, // The Image Bitmap of the image asset or undefined if not available. Note that this will be populated with an ImageBitmap when `get imgbin()` is called! In other words, it also acts as a cache when required.
+                _imgbinYFlipped: undefined,
                 // ** THAT'S WHY YOU SHOULD USE THE `atlassed`-PROPERTY TO DETERMINE WHETHER AN IMAGE ASSET IS ATLASSED OR NOT! **
                 // Getter for imgbin property, compatible with RomImgAsset interface
                 get imgbin() {
                     return getAssetImageBin(this);
+                },
+                get imgbinYFlipped() {
+                    return getAssetImageBin(this, { flipY: true });
                 },
             };
             romResult.img[res.resid] = imgAsset;

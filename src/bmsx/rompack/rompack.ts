@@ -270,8 +270,10 @@ export interface RomAsset {
 }
 
 export interface RomImgAsset extends RomAsset {
-	_imgbin: ImageBitmap; // The HTML image element of the image asset
+	_imgbin: ImageBitmap; // The Image Bitmap of the image asset
+	_imgbinYFlipped: ImageBitmap; // The flipped Image Bitmap of the image asset
 	get imgbin(): Promise<ImageBitmap>; // A getter for the image element (#see `bootresources.getAssetImageBin`)
+	get imgbinYFlipped(): Promise<ImageBitmap>; // A getter for the flipped image element (#see `bootresources.getAssetImageBin`)
 }
 
 export interface RomMeta {
