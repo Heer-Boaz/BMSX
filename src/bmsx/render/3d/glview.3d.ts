@@ -3,7 +3,7 @@ import { Float32ArrayPool } from '../../core/utils';
 import type { Size, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSwitchProgram } from '../glutils';
-import { TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL } from '../glview';
+import { GLView, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL } from '../glview';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
 import { getFramebufferStatusString } from '../glview.helpers';
 import { DrawMeshOptions } from '../view';
@@ -732,8 +732,8 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
 	// Albedo
 	let tex = m.gpuTextureAlbedo ? $.texmanager.getTexture(m.gpuTextureAlbedo) : null;
 	if (tex !== stateCache.albedo) {
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_ALBEDO);
-		gl.bindTexture(gl.TEXTURE_2D, tex);
+		$.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_ALBEDO;
+		$.viewAs<GLView>().bind2DTex(tex);
 		gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
 		stateCache.albedo = tex;
 	}
@@ -746,8 +746,8 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
 	// Normal
 	tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : null;
 	if (tex !== stateCache.normal) {
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_NORMAL);
-		gl.bindTexture(gl.TEXTURE_2D, tex);
+		$.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_NORMAL;
+		$.viewAs<GLView>().bind2DTex(tex);
 		gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
 		stateCache.normal = tex;
 	}
@@ -760,8 +760,8 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
 	// MetallicRoughness
 	tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : null;
 	if (tex !== stateCache.mr) {
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_METALLIC_ROUGHNESS);
-		gl.bindTexture(gl.TEXTURE_2D, tex);
+		$.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
+		$.viewAs<GLView>().bind2DTex(tex);
 		gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
 		stateCache.mr = tex;
 	}
@@ -773,8 +773,8 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
 
 	// Shadow (geen cache; vaak mesh-specifiek)
 	if (m.shadow) {
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SHADOW_MAP);
-		gl.bindTexture(gl.TEXTURE_2D, m.shadow.map.texture);
+		$.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SHADOW_MAP;
+		$.viewAs<GLView>().bind2DTex(m.shadow.map.texture);
 		gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
 		gl.uniformMatrix4fv(lightMatrixLocation3D, false, m.shadow.matrix);
 		gl.uniform1f(shadowStrengthLocation3D, m.shadow.strength);

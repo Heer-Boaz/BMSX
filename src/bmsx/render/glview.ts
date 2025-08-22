@@ -27,7 +27,7 @@ export const TEXTURE_UNIT_SHADOW_MAP = 5;
 export const TEXTURE_UNIT_SKYBOX = 6;
 export const TEXTURE_UNIT_PARTICLE = 7;
 export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
-
+export const TEXTURE_UNIT_UPLOAD = 15; // For uploading textures, not rendering
 /**
  * Represents a view that renders graphics using WebGL.
  */
@@ -42,6 +42,35 @@ export class GLView extends BaseView {
 	private depthBuffer: WebGLBuffer;
 	private isRendering: boolean = false;
 	private needsResize: boolean = false;
+
+	private _currentBoundTextureUnit: number | null = null;
+	private _activeTexture: WebGLTexture | null = null;
+	private _activeCubemap: WebGLTexture | null = null;
+
+	public set activeTexUnit(unit: number) {
+		if (this._currentBoundTextureUnit !== unit) {
+			this.glctx.activeTexture(this.glctx.TEXTURE0 + unit);
+			this._currentBoundTextureUnit = unit;
+		}
+	}
+
+	public get activeTexUnit(): number | null {
+		return this._currentBoundTextureUnit;
+	}
+
+	public bind2DTex(tex: WebGLTexture): void {
+		if (this._activeTexture !== tex) {
+			this.glctx.bindTexture(this.glctx.TEXTURE_2D, tex);
+			this._activeTexture = tex;
+		}
+	}
+
+	public bindCubemapTex(tex: WebGLTexture): void {
+		if (this._activeCubemap !== tex) {
+			this.glctx.bindTexture(this.glctx.TEXTURE_CUBE_MAP, tex);
+			this._activeCubemap = tex;
+		}
+	}
 
 	private _applyNoise: boolean = true;
 	private _applyColorBleed: boolean = true;
@@ -200,24 +229,42 @@ export class GLView extends BaseView {
 		const gl = this.glctx;
 		this.setupGLContext(); // Set up the WebGL context
 		GLView3D.init(gl, this.offscreenCanvasSize);
+		checkWebGLError('After GLView3D.init');
 		GLViewSkybox.init(gl);
+		checkWebGLError('After GLViewSkybox.init');
 		GLViewParticles.init(gl);
+		checkWebGLError('After GLViewParticles.init');
 		GLView2D.createSpriteShaderPrograms(gl); // Create the game shader programs
+		checkWebGLError('After GLView2D.createSpriteShaderPrograms');
 		GLView3D.createGameShaderPrograms3D(gl); // Create 3D shader program
+		checkWebGLError('After GLView3D.createGameShaderPrograms3D');
 		GLViewParticles.createParticleProgram(gl);
+		checkWebGLError('After GLViewParticles.createParticleProgram');
 		GLView2D.setupSpriteShaderLocations(gl); // Set up the vertex shader locations for the game shader program
+		checkWebGLError('After GLView2D.setupSpriteShaderLocations');
 		GLView3D.setupVertexShaderLocations3D(gl); // Set up the vertex shader locations for the 3D shader
+		checkWebGLError('After GLView3D.setupVertexShaderLocations3D');
 		GLViewParticles.setupParticleLocations(gl);
+		checkWebGLError('After GLViewParticles.setupParticleLocations');
 		this.setupBuffers(); // Set up the buffers for the game shader
+		checkWebGLError('After setupBuffers');
 		GLView2D.setupSpriteLocations(gl); // Set up the game shader locations
+		checkWebGLError('After setupSpriteLocations');
 		// GLView3D.setupGameShader3DLocations(gl); // Set up locations for 3D shader
 		this.setupTextures(); // Set up the textures used by the shaders (such as the atlas texture and the post-processing shader texture)
+		checkWebGLError('After setupTextures');
 		GLViewCRT.createCRTShaderPrograms(gl); // Create the CRT shader programs
+		checkWebGLError('After createCRTShaderPrograms');
 		GLViewCRT.setupCRTShaderLocations(gl); // Set up the CRT shader locations
+		checkWebGLError('After setupCRTShaderLocations');
 		GLViewCRT.createCRTVertexBuffer(gl, this.canvas.width, this.canvas.height); // Create the CRT shader vertex buffer for the CRT fragment shader
+		checkWebGLError('After createCRTVertexBuffer');
 		GLViewCRT.createCRTShaderTexcoordBuffer(gl); // Create the CRT shader texture coordinate buffer for the CRT fragment shader
+		checkWebGLError('After createCRTShaderTexcoordBuffer');
 		this.setDefaultUniformValues(); // Set the default uniform values for the game and CRT shaders, such as the scale, resolution vector, and texture location and flags (noise, color bleed, scanlines, blur, glow, fringing, etc.)
+		checkWebGLError('After setDefaultUniformValues');
 		this.createFramebufferAndTexture(); // Create the framebuffer and texture for the post-processing shader, note that this also binds the framebuffer
+		checkWebGLError('After createFramebufferAndTexture');
 		this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
 		if (checkWebGLError('After init')) {
 			throw Error('Initialization of 2D/3D/CRT shaders failed!');
@@ -265,9 +312,9 @@ export class GLView extends BaseView {
 		this.textures = {
 			// Link the atlas texture to the '_atlas' key for easy access
 			// The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
-			_atlas: glCreateTexture(gl, BaseView.imgassets['_atlas']?._imgbin, undefined, 0),
+			_atlas: glCreateTexture(gl, BaseView.imgassets['_atlas']?._imgbin, undefined, TEXTURE_UNIT_ATLAS),
 			// Create the texture with dummy width and height, which will be updated later
-			_atlas_dynamic: glCreateTexture(gl, null, { x: 1, y: 1 }, 1),
+			_atlas_dynamic: glCreateTexture(gl, null, { x: 1, y: 1 }, TEXTURE_UNIT_ATLAS_DYNAMIC),
 			post_processing_source_texture: null, // This will be created later in createFramebufferAndTexture
 		};
 	}
@@ -327,7 +374,7 @@ export class GLView extends BaseView {
 		const height = this.offscreenCanvasSize.y;
 
 		// Create a new texture
-		this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { x: width, y: height }, 8); // Use TEXTURE8 for the post-processing shader texture
+		this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { x: width, y: height }, TEXTURE_UNIT_POST_PROCESSING_SOURCE); // Use TEXTURE8 for the post-processing shader texture
 
 		// Create a new framebuffer
 		this.framebuffer = gl.createFramebuffer();
@@ -553,7 +600,7 @@ export class GLView extends BaseView {
 		this.textures['_atlas_dynamic'] = glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
 
 		// Update the dynamic atlas texture with the new image
-		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);
+		$.viewAs<GLView>().bind2DTex(this.textures['_atlas_dynamic']);
 		glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
 	}
 

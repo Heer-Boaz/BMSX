@@ -1,7 +1,7 @@
 import { AssetBarrier } from '../../core/assetbarrier';
 import { taskGate } from '../../core/taskgate';
 import { glLoadShader, glSwitchProgram } from '../glutils';
-import { TEXTURE_UNIT_SKYBOX } from '../glview';
+import { GLView, TEXTURE_UNIT_SKYBOX } from '../glview';
 import { TextureKey } from '../texturemanager';
 import { BaseView, SkyboxImageIds } from '../view';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
@@ -124,13 +124,6 @@ export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
 	gl.bufferData(gl.ARRAY_BUFFER, p, gl.STATIC_DRAW);
 }
 
-function faceLoaderFromImgAsset(faceId: string): () => Promise<ImageBitmap> {
-	return async () => {
-		const imgEl = await BaseView.imgassets[faceId].imgbin; // HTMLImageElement
-		return createImageBitmap(imgEl);
-	};
-}
-
 export function setSkyboxImages(ids: SkyboxImageIds) {
 	const loaders = [
 		BaseView.imgassets[ids.posX].imgbin,
@@ -183,8 +176,8 @@ export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebu
 
 	// Only bind the cubemap if the currently bound skybox differs
 	if (lastBoundSkyboxKey !== skyboxKey || lastBoundSkyboxTexture !== tex) {
-		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
-		gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+		$.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
+		$.viewAs<GLView>().bindCubemapTex(tex);
 		lastBoundSkyboxKey = skyboxKey;
 		lastBoundSkyboxTexture = tex ?? null;
 	}

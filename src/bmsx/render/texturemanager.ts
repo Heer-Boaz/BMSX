@@ -3,6 +3,7 @@ import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
+import { GLView, TEXTURE_UNIT_SKYBOX } from './glview';
 
 export const TEXTMANAGER_ID = 'texmgr';
 export type TextureIdentifier = string;
@@ -49,8 +50,8 @@ export interface GPUBackend {
 export class WebGLBackend implements GPUBackend {
     constructor(private gl: WebGL2RenderingContext) { }
 
-    createTextureFromImage(img: ImageBitmap, desc: TextureParams): WebGLTexture {
-        return glCreateTextureFromImage(this.gl, img, 3, desc);
+    createTextureFromImage(img: ImageBitmap, desc: TextureParams, unit: number | null = null): WebGLTexture {
+        return glCreateTextureFromImage(this.gl, img, desc, unit);
     }
 
     createCubemapFromImages(
@@ -58,8 +59,9 @@ export class WebGLBackend implements GPUBackend {
         desc: TextureParams
     ): WebGLTexture {
         const gl = this.gl;
+        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
         const tex = gl.createTexture()!;
-        gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+        $.viewAs<GLView>().bindCubemapTex(tex);
 
         const targets = [
             gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -86,8 +88,9 @@ export class WebGLBackend implements GPUBackend {
 
     createCubemapEmpty(size: number, desc: TextureParams): WebGLTexture {
         const gl = this.gl;
+        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
         const tex = gl.createTexture()!;
-        gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+        $.viewAs<GLView>().bindCubemapTex(tex);
 
         const targets = [
             gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
@@ -118,14 +121,16 @@ export class WebGLBackend implements GPUBackend {
             gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
         ] as const;
 
-        gl.bindTexture(gl.TEXTURE_CUBE_MAP, cubemap);
+        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
+        $.viewAs<GLView>().bindCubemapTex(cubemap);
         gl.texImage2D(targets[face], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
     }
 
     createSolidCubemap(size: number, rgba: [number, number, number, number], desc: TextureParams): WebGLTexture {
         const gl = this.gl;
+        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
         const tex = gl.createTexture()!;
-        gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+        $.viewAs<GLView>().bindCubemapTex(tex);
 
         const data = new Uint8Array(size * size * 4);
         for (let i = 0; i < size * size; i++) {
@@ -297,7 +302,7 @@ export class TextureManager implements RegisterablePersistent {
     public acquireTexture(
         key: TextureKey,
         loadBitmapFn: () => Promise<ImageBitmap>,
-        desc: TextureParams,
+        desc: TextureParams = {},
         fallbackHandle?: WebGLTexture,         // bv. 1×1 checker / flat color (optional)
     ): TextureKey {
         if (!this.backend) throw new Error('TextureManager backend not set');

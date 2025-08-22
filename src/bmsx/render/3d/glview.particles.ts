@@ -1,6 +1,6 @@
 import type { vec3arr } from '../../rompack/rompack';
 import { glLoadShader, glSwitchProgram } from '../glutils';
-import { TEXTURE_UNIT_PARTICLE } from '../glview';
+import { GLView, TEXTURE_UNIT_PARTICLE } from '../glview';
 import { Color } from '../view';
 import { M4 } from './math3d';
 import particleFragCode from './shaders/particle.frag.glsl';
@@ -40,12 +40,13 @@ export function init(gl: WebGL2RenderingContext): void {
     quadBuffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
     const quad = new Float32Array([
-        -0.5, -0.5,
-        0.5, -0.5,
-        0.5, 0.5,
-        -0.5, -0.5,
-        0.5, 0.5,
-        -0.5, 0.5,
+        // flipped vertically; reordered to preserve CCW winding
+        -0.5, 0.5,   // top-left
+        0.5, -0.5,   // bottom-right
+        0.5, 0.5,   // top-right
+        -0.5, 0.5,   // top-left
+        -0.5, -0.5,   // bottom-left
+        0.5, -0.5,   // bottom-right
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
     instanceBuffer = gl.createBuffer()!;
@@ -54,13 +55,13 @@ export function init(gl: WebGL2RenderingContext): void {
     // Create a 1x1 white texture as the default particle texture
     const whitePixel = new Uint8Array([255, 255, 255, 255]);
     defaultTexture = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, defaultTexture);
+    $.viewAs<GLView>().bind2DTex(defaultTexture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, whitePixel);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.bindTexture(gl.TEXTURE_2D, null);
+    $.viewAs<GLView>().bind2DTex(null);
 }
 
 export function createParticleProgram(gl: WebGL2RenderingContext): void {
@@ -149,9 +150,10 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData.subarray(0, batchCount * INSTANCE_FLOATS));
-        gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_PARTICLE);
-        gl.bindTexture(gl.TEXTURE_2D, tex);
+        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_PARTICLE;
+        $.viewAs<GLView>().bind2DTex(tex);
         gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, batchCount);
+
     }
 
     gl.bindVertexArray(null);

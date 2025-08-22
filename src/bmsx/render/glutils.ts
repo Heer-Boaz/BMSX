@@ -1,6 +1,7 @@
 import { Size } from '../rompack/rompack';
-import { TEXTURE_UNIT_SHADOW_MAP } from './3d/glview.3d';
+import { GLView, TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './glview';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
+import { checkWebGLError } from './glview.helpers';
 import { TextureParams } from './texturemanager';
 
 /**
@@ -91,26 +92,27 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
     return shader;
 }
 
-export function glCreateTexture(gl: WebGL2RenderingContext, img?: ImageBitmap, size?: Size, unit = 0): WebGLTexture {
-    gl.activeTexture(gl.TEXTURE0 + unit);
+export function glCreateTexture(gl: WebGL2RenderingContext, img?: ImageBitmap, size?: Size, unit = null): WebGLTexture {
+    $.viewAs<GLView>().activeTexUnit = unit ?? TEXTURE_UNIT_UPLOAD;
+    checkWebGLError('After setActiveTextureUnit');
     const tex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-
-
+    $.viewAs<GLView>().bind2DTex(tex);
+    checkWebGLError('After createTexture');
     if (img) gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
     else if (size) gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, size.x, size.y, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-
+    checkWebGLError('After texImage2D');
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    checkWebGLError('After setTextureParameters');
     return tex;
 }
 
-export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContext, desc: TextureParams) {
+export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContext, desc: TextureParams, unit = TEXTURE_UNIT_SHADOW_MAP) {
+    $.viewAs<GLView>().activeTexUnit = unit ?? TEXTURE_UNIT_UPLOAD;
     const tex = gl.createTexture()!;
-    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SHADOW_MAP);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
+    $.viewAs<GLView>().bind2DTex(tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.size.x, desc.size.y, 0,
         gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -135,18 +137,15 @@ export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContex
     return { texture: tex, framebuffer: fbo };
 }
 
-
-export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureIndex: number, desc: TextureParams): WebGLTexture {
-    gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
+export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, desc: TextureParams, unit = null): WebGLTexture {
+    $.viewAs<GLView>().activeTexUnit = unit ?? TEXTURE_UNIT_UPLOAD;
     const tex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    if (!img) {
-        throw new Error('Image is not defined');
-    }
-    if (img.width === 0 || img.height === 0) {
-        throw new Error(`Image has invalid dimensions: ${img.width}x${img.height}`);
-    }
+    if (!img) throw new Error('Image is not defined');
+    if (img.width === 0 || img.height === 0) throw new Error(`Image has invalid dimensions: ${img.width}x${img.height}`);
 
+    // Apply Y‑flip ONLY for this upload. This does not retroactively change existing textures.
+    // If you toggle desc.flipY later you must re-upload the texture.
+    $.viewAs<GLView>().bind2DTex(tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
