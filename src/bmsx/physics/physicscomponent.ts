@@ -1,13 +1,9 @@
-import { Component, ComponentTag } from '../component/basecomponent';
+import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
 import { new_vec3 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
-
-// Tags
-export const PHYSICS_PRE_TICK: ComponentTag = 'physics_pre';
-export const PHYSICS_POST_TICK: ComponentTag = 'physics_post';
 
 export interface PhysicsComponentOptions extends Omit<PhysicsBodyDesc, 'position'> {
     syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; // selective axis sync
@@ -18,10 +14,9 @@ export interface PhysicsComponentOptions extends Omit<PhysicsBodyDesc, 'position
 }
 
 @insavegame
+@componenttags_preprocessing('physics_pre') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
+@componenttags_postprocessing('physics_post') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
 export class PhysicsComponent extends Component {
-    static override tagsPre = new Set<ComponentTag>([PHYSICS_PRE_TICK]);
-    static override tagsPost = new Set<ComponentTag>([PHYSICS_POST_TICK]);
-
     body: PhysicsBody;
     world: PhysicsWorld;
     syncAxis = { x: true, y: true, z: true };

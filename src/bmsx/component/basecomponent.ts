@@ -378,6 +378,7 @@ export function update_tagged_components<T extends ComponentContainer>(...tags: 
         descriptor.value = function (...args: any[]) {
             const updateComponents = (updateType: 'tagsPre' | 'tagsPost', additionalArgs?: any[]) => {
                 // Get all components of the component container and store them in a set to avoid updating the same component multiple times (e.g. if a component has multiple tags) and to avoid updating components that have been added during the update process (e.g. if a component adds another component during the update process)
+                if (!(this as T).components) return;
                 const components = Object.values((this as T).components);
                 const updatedComponents = new Set<Component>();
 

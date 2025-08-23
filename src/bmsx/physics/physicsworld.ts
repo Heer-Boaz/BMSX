@@ -1,3 +1,4 @@
+import { update_tagged_components } from '../component/basecomponent';
 import { new_vec3 } from '../core/utils';
 import type { vec3 } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from '../serializer/gameserializer';
@@ -124,6 +125,8 @@ export class PhysicsWorld {
         this.broadphase.markDirty(body);
     }
 
+    @update_tagged_components('physics_pre')
+    @update_tagged_components('physics_post')
     step(dtMs: number, emitCollision?: (e: CollisionEvent) => void) {
         const startFrame = this.enableMetrics ? performance.now() : 0;
         const dt = dtMs / 1000;

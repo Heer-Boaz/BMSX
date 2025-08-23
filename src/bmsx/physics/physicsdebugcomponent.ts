@@ -1,11 +1,9 @@
-import { Component, ComponentTag } from '../component/basecomponent';
+import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
 import { new_vec3 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { PhysicsBody } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
-
-export const PHYSICS_DEBUG_DRAW: ComponentTag = 'physics_debug_draw';
 
 /**
  * PhysicsDebugComponent
@@ -15,9 +13,9 @@ export const PHYSICS_DEBUG_DRAW: ComponentTag = 'physics_debug_draw';
  * (We avoid pulling in a hard dependency on a particular renderer here.)
  */
 @excludeclassfromsavegame
+@componenttags_preprocessing('physics_pre') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
+@componenttags_postprocessing('physics_post') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
 export class PhysicsDebugComponent extends Component {
-    static override tagsPost = new Set<ComponentTag>([PHYSICS_DEBUG_DRAW]);
-
     world: PhysicsWorld;
     override get enabled() { return this._enabled; }
     override set enabled(v: boolean) { this._enabled = v; }
@@ -28,14 +26,19 @@ export class PhysicsDebugComponent extends Component {
     contactPoints: { x: number; y: number; z: number; nx: number; ny: number; nz: number; penetration: number; }[] = [];
     triggerAabbs: { x: number; y: number; z: number; hx: number; hy: number; hz: number; }[] = [];
 
-    private drawer = (world: PhysicsWorld) => {
+    override preprocessingUpdate(): void {
+        // read GameObject -> body before physics (if not sleeping and user wants authoritative GameObject)
+        // For now we always treat body as authoritative; could add option later.
+    }
+
+    override postprocessingUpdate(): void {
         if (!this.enabled) return;
         this.aabbLines.length = 0;
         this.sphereCircles.length = 0;
-        for (const b of world.getBodies()) this.drawBody(b);
+        for (const b of this.world.getBodies()) this.drawBody(b);
         // contacts
         this.contactPoints.length = 0;
-        for (const c of world.getContacts()) {
+        for (const c of this.world.getContacts()) {
             this.contactPoints.push({ x: c.point.x, y: c.point.y, z: c.point.z, nx: c.normal.x, ny: c.normal.y, nz: c.normal.z, penetration: c.penetration });
         }
         // Append world axes primitive lines once (avoid duplicates by checking length or a flag)
@@ -47,14 +50,15 @@ export class PhysicsDebugComponent extends Component {
             );
             this._axesAdded = true;
         }
-    };
+    }
+
     private _axesAdded = false;
 
     constructor(parentid: Identifier) {
         super(parentid);
         this.world = $.registry.get<PhysicsWorld>('physics_world');
         if (!this.world) throw new Error('PhysicsWorld not found for PhysicsDebugComponent');
-        this.world.addGizmo(this.drawer);
+        this.world.addGizmo(this.postprocessingUpdate);
     }
 
     private drawBody(b: PhysicsBody) {
@@ -88,6 +92,6 @@ export class PhysicsDebugComponent extends Component {
 
     override dispose(): void {
         super.dispose();
-        if (this.world) this.world.removeGizmo(this.drawer);
+        if (this.world) this.world.removeGizmo(this.postprocessingUpdate);
     }
 }
