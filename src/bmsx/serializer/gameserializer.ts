@@ -93,7 +93,6 @@ export class Serializer {
 
     // Ensure this method walks the prototype/constructor chain so abstract/base-class annotations are honored.
     static shouldClassBeExcludedFromSaveGame(obj: ConstructorWithSaveGame<any>): boolean {
-        // Bepaal cacheKey: bij constructor → classnaam; bij instance → instance.constructor.name
         const cacheKey = (typeof obj === 'function')
             ? (obj as Function).name
             : (obj as object && (obj as { constructor?: { name?: string } }).constructor?.name);
@@ -101,36 +100,21 @@ export class Serializer {
         const map = Serializer.classIncludeExcludeMap;
         if (cacheKey && map.has(cacheKey)) return map.get(cacheKey)! === true;
 
-        // 1) Check constructor-chain (klassenniveau; waar je decorator/flag meestal op zit)
-        let ctor: any = (typeof obj === 'function') ? obj : (obj as object && (obj as { constructor?: any }).constructor);
+        // 1) Walk constructor chain (class-level decorators / flags live here)
+        let ctor: any = (typeof obj === 'function') ? obj : (obj as any)?.constructor;
         while (ctor && ctor !== Object) {
-            if (hasExcludeFlag(ctor) && ctor.__exclude_savegame__ === true) {
-                if (cacheKey) map.set(cacheKey, true);
-                return true;
-            }
-            // Optioneel: ook je bestaande set gebruiken als bron van waarheid
-            if (Serializer.excludedObjectTypes?.has?.(ctor.name)) {
-                if (cacheKey) map.set(cacheKey, true);
-                return true;
-            }
-            ctor = Object.getPrototypeOf(ctor); // naar base class constructor
+            if (hasExcludeFlag(ctor) && ctor.__exclude_savegame__ === true) { if (cacheKey) map.set(cacheKey, true); return true; }
+            if (Serializer.excludedObjectTypes?.has?.(ctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
+            ctor = Object.getPrototypeOf(ctor);
         }
-
-        // 2) (Defensief) Check prototype-chain van een instance
+        // 2) Defensively walk prototype chain of an instance
         let proto: any = (typeof obj === 'function') ? (obj as any).prototype : Object.getPrototypeOf(obj);
         while (proto && proto.constructor && proto.constructor !== Object) {
             const pctor = proto.constructor;
-            if (hasExcludeFlag(pctor) && pctor.__exclude_savegame__ === true) {
-                if (cacheKey) map.set(cacheKey, true);
-                return true;
-            }
-            if (Serializer.excludedObjectTypes?.has?.(pctor.name)) {
-                if (cacheKey) map.set(cacheKey, true);
-                return true;
-            }
+            if (hasExcludeFlag(pctor) && pctor.__exclude_savegame__ === true) { if (cacheKey) map.set(cacheKey, true); return true; }
+            if (Serializer.excludedObjectTypes?.has?.(pctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
             proto = Object.getPrototypeOf(proto);
         }
-
         if (cacheKey) map.set(cacheKey, false);
         return false;
     }
@@ -138,36 +122,23 @@ export class Serializer {
     static shouldPropertyBeExcludedFromSaveGame(value: Object, key: string): boolean {
         const className = Serializer.get_typename(value);
         const map = Serializer.propertyIncludeExcludeMap;
-
         let typeMap = map.get(className);
         if (typeMap && typeMap.has(key)) return typeMap.get(key)! === true;
-        if (!typeMap) {
-            typeMap = new Map<string, boolean>();
-            map.set(className, typeMap);
-        }
-
-        // Walk prototype chain of the instance (prototype.constructor.name matches class name)
-        let proto = Object.getPrototypeOf(value);
+        if (!typeMap) { typeMap = new Map<string, boolean>(); map.set(className, typeMap); }
+        // Walk prototype chain of the instance
+        let proto: any = Object.getPrototypeOf(value);
         while (proto && proto.constructor && proto.constructor.name !== 'Object') {
-            if (Serializer.excludedProperties[proto.constructor.name]?.[key] === true) {
-                typeMap.set(key, true);
-                return true;
-            }
+            if (Serializer.excludedProperties[proto.constructor.name]?.[key] === true) { typeMap.set(key, true); return true; }
             proto = Object.getPrototypeOf(proto);
         }
-
         // Check whether the type of the property itself should be excluded
-        const propertyValue = (value as Record<string, unknown>)[key];
+        const propertyValue = (value as any)[key];
         if (propertyValue && typeof propertyValue === 'object') {
-            const ctorCandidate = (propertyValue as { constructor?: unknown }).constructor;
+            const ctorCandidate = (propertyValue as any).constructor;
             if (ctorCandidate && typeof ctorCandidate === 'function') {
-                if (Serializer.shouldClassBeExcludedFromSaveGame(ctorCandidate as ConstructorWithSaveGame)) {
-                    typeMap.set(key, true);
-                    return true;
-                }
+                if (Serializer.shouldClassBeExcludedFromSaveGame(ctorCandidate as any)) { typeMap.set(key, true); return true; }
             }
         }
-
         typeMap.set(key, false);
         return false;
     }
@@ -453,7 +424,6 @@ export class Reviver {
             }
         }
         // --- Third pass: call all registered @onload methods if present ---
-        let savegameReviverFunctions = [];
         for (const id of Object.keys(idToObject)) {
             if (objects[id]?.isTypedArray) continue;
             const obj = idToObject[id];
@@ -645,6 +615,9 @@ export class Savegame {
             }
         }
     }
+
+    @onload
+    rebuildPhysicsIfNeeded() { /* moved to BaseModel.load for correct timing */ }
 }
 
 /**

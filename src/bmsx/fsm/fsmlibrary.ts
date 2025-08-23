@@ -1,7 +1,7 @@
 import type { EventScope } from "../core/eventemitter";
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { listed_sdef_event, StateEventDefinition, StateMachineBlueprint } from "./fsmtypes";
+import type { listed_sdef_event, StateEventDefinition, Stateful, StateMachineBlueprint } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 
@@ -9,7 +9,7 @@ import { StateDefinition, validateStateMachine } from './statedefinition';
  * Represents the machine definitions.
  */
 export var StateDefinitions: Record<string, StateDefinition>;
-export var ActiveStateMachines: Map<string, State<any>[]> = new Map();
+export var ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
 
 export class HandlerRegistry {
     private static _instance: HandlerRegistry;
@@ -50,7 +50,7 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 }
 
 // ---------- Diff-based, tree-aware migration ----------
-export function migrateMachineDiff(root: State<any>, oldRootDef: StateDefinition | undefined, newRootDef: StateDefinition) {
+export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefinition | undefined, newRootDef: StateDefinition) {
     // Reconcile subtree shape (add/remove child State instances to match new defs)
     reconcileStateTree(root, oldRootDef, newRootDef);
 
@@ -68,7 +68,7 @@ export function migrateMachineDiff(root: State<any>, oldRootDef: StateDefinition
 }
 
 /** Ensure the instance’s children match the new StateDefinition tree. */
-function reconcileStateTree(node: State<any>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
+function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
     const newChildren = Object.keys(newDef.states ?? {});
     const oldChildren = Object.keys(node.states ?? {});
 
@@ -109,7 +109,7 @@ function reconcileStateTree(node: State<any>, oldDef: StateDefinition | undefine
 }
 
 /** Merge runtime data with new defaults, respecting old defaults to detect user-changed values. */
-function migrateDataTree(node: State<any>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
+function migrateDataTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
     node.data = mergeDataWithDefaults(node.data, oldDef?.data ?? {}, newDef.data ?? {});
     // Recurse
     for (const id in node.states ?? {}) {
@@ -157,7 +157,7 @@ function mergeDataWithDefaults(
     return out;
 }
 
-function clampTape(node: State<any>) {
+function clampTape(node: State<Stateful>) {
     const tape = node.tape;
     if (!tape) {
         node.setHeadNoSideEffect(-1);
@@ -408,8 +408,8 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 
 function makeId(parts: string[]) { return parts.join('.'); }
 
-type HandlerArgs = [state: State<any>, ...args: any[]];
-type AnyHandler = (this: any, ...args: HandlerArgs) => any;
+type HandlerArgs = [state: State<Stateful>, ...args: any[]];
+type AnyHandler = (this: Stateful, ...args: HandlerArgs) => any;
 
 function hoistHandler(
     ownerDef: any,

@@ -16,7 +16,6 @@ import { PhysicsWorld } from './physicsworld';
 @componenttags_preprocessing('physics_pre') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
 @componenttags_postprocessing('physics_post') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
 export class PhysicsDebugComponent extends Component {
-    world: PhysicsWorld;
     override get enabled() { return this._enabled; }
     override set enabled(v: boolean) { this._enabled = v; }
 
@@ -26,40 +25,55 @@ export class PhysicsDebugComponent extends Component {
     contactPoints: { x: number; y: number; z: number; nx: number; ny: number; nz: number; penetration: number; }[] = [];
     triggerAabbs: { x: number; y: number; z: number; hx: number; hy: number; hz: number; }[] = [];
 
-    override preprocessingUpdate(): void {
-        // read GameObject -> body before physics (if not sleeping and user wants authoritative GameObject)
-        // For now we always treat body as authoritative; could add option later.
+    // Simple debug hits from exercising world.raycast & world.shapeCast
+    testRaycastHit?: { x: number; y: number; z: number; dist: number };
+    testShapeCastHit?: { x: number; y: number; z: number; dist: number; time: number };
+
+    private _gizmoDrawer?: (world: PhysicsWorld) => void;
+
+    override preprocessingUpdate(): void { this.ensureGizmoRegistration(); }
+    override postprocessingUpdate(): void { /* gizmos populated in drawer at end of physics step */ }
+
+    private ensureGizmoRegistration() {
+        if (this._gizmoDrawer) return;
+        const world = $.get<PhysicsWorld>('physics_world');
+        if (!world) return; // try again later
+        this._gizmoDrawer = (w) => this.collectGizmos(w);
+        world.addGizmo(this._gizmoDrawer);
     }
 
-    override postprocessingUpdate(): void {
+    private collectGizmos(world: PhysicsWorld) {
         if (!this.enabled) return;
+        // Clear output buffers
         this.aabbLines.length = 0;
         this.sphereCircles.length = 0;
-        for (const b of this.world.getBodies()) this.drawBody(b);
-        // contacts
         this.contactPoints.length = 0;
-        for (const c of this.world.getContacts()) {
+        this.triggerAabbs.length = 0;
+        // Bodies
+        for (const b of world.getBodies()) this.drawBody(b);
+        // Contacts
+        for (const c of world.getContacts()) {
             this.contactPoints.push({ x: c.point.x, y: c.point.y, z: c.point.z, nx: c.normal.x, ny: c.normal.y, nz: c.normal.z, penetration: c.penetration });
         }
-        // Append world axes primitive lines once (avoid duplicates by checking length or a flag)
+        // Axes (once)
         if (!this._axesAdded) {
             this.aabbLines.push(
-                { x1: 0, y1: 0, z1: 0, x2: 5, y2: 0, z2: 0 }, // X
-                { x1: 0, y1: 0, z1: 0, x2: 0, y2: 5, z2: 0 }, // Y
-                { x1: 0, y1: 0, z1: 0, x2: 0, y2: 0, z2: 5 }  // Z
+                { x1: 0, y1: 0, z1: 0, x2: 5, y2: 0, z2: 0 },
+                { x1: 0, y1: 0, z1: 0, x2: 0, y2: 5, z2: 0 },
+                { x1: 0, y1: 0, z1: 0, x2: 0, y2: 0, z2: 5 }
             );
             this._axesAdded = true;
         }
+        // Lightweight usage tests (one raycast + one shapeCast per frame) so API stays validated & referenced
+        const rh = world.raycast(new_vec3(0, 0, 0), new_vec3(1, 0, 0), 100);
+        if (rh) this.testRaycastHit = { x: rh.point.x, y: rh.point.y, z: rh.point.z, dist: rh.distance };
+        const sh = world.shapeCast({ kind: 'sphere', radius: 1 }, new_vec3(-2, 0, 0), new_vec3(2, 0, 0));
+        if (sh) this.testShapeCastHit = { x: sh.point.x, y: sh.point.y, z: sh.point.z, dist: sh.distance, time: sh.time };
     }
 
     private _axesAdded = false;
 
-    constructor(parentid: Identifier) {
-        super(parentid);
-        this.world = $.registry.get<PhysicsWorld>('physics_world');
-        if (!this.world) throw new Error('PhysicsWorld not found for PhysicsDebugComponent');
-        this.world.addGizmo(this.postprocessingUpdate);
-    }
+    constructor(parentid: Identifier) { super(parentid); }
 
     private drawBody(b: PhysicsBody) {
         if (b.shape.kind === 'aabb') {
@@ -92,6 +106,8 @@ export class PhysicsDebugComponent extends Component {
 
     override dispose(): void {
         super.dispose();
-        if (this.world) this.world.removeGizmo(this.postprocessingUpdate);
+        const world = $.get<PhysicsWorld>('physics_world');
+        if (world && this._gizmoDrawer) world.removeGizmo(this._gizmoDrawer);
+        this._gizmoDrawer = undefined;
     }
 }

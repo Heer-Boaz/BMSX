@@ -1,7 +1,6 @@
-import { update_tagged_components } from '../component/basecomponent';
 import { new_vec3 } from '../core/utils';
 import type { vec3 } from '../rompack/rompack';
-import { excludepropfromsavegame, insavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { BroadphasePair, BroadphaseSAP } from './broadphase';
 import { ContactSolver } from './contactsolver';
 import { Contact, Narrowphase } from './narrowphase';
@@ -20,14 +19,14 @@ export interface TriggerEvent extends CollisionEvent { }
 export interface RaycastHit { body: PhysicsBody; point: vec3; normal: vec3; distance: number; }
 export interface ShapeCastHit extends RaycastHit { time: number; }
 
-@insavegame
+@excludeclassfromsavegame
 export class PhysicsWorld {
     id = 'physics_world';
     registrypersistent: true = true; // kept pattern from existing codebase
     private bodies: PhysicsBody[] = [];
     private broadphase = new BroadphaseSAP();
     private narrow = new Narrowphase();
-    private solver = new ContactSolver();
+    public solver = new ContactSolver();
     private pairs: BroadphasePair[] = [];
     private contacts: Contact[] = [];
     private previousFramePairs = new Set<number>();
@@ -67,11 +66,15 @@ export class PhysicsWorld {
     autoTuneMovementEpsilon = true;
     autoTuneBroadphase = true;
     private avgSpeedSq = 0; // smoothed running average
-    @excludepropfromsavegame
+    // Simple continuous collision prevention for fast-moving AABBs (thin floor tunneling)
+    enableSimpleAABBTunnelingFix = true;
+    // Extra safety positional fix pass for static-vs-dynamic after solver
+    enablePostSolveStaticSeparation = true;
+    // Debug
+    logFirstFramesContacts = true;
+    private _debugFrameCounter = 0;
     private hudElement?: HTMLElement;
-    @excludepropfromsavegame
     private hudParent?: HTMLElement;
-    @excludepropfromsavegame
     private hudLastUpdate = 0;
     private maxBodyId = 0;
     private compactCheckCounter = 0;
@@ -82,8 +85,29 @@ export class PhysicsWorld {
         this.gravity = opts.gravity ?? new_vec3(0, 300, 0);
     }
 
+    // --- Bootstrap helpers ---
+    static ensure(opts: PhysicsWorldOptions = {}): PhysicsWorld {
+        let w = $.get<PhysicsWorld>('physics_world');
+        if (!w) {
+            w = new PhysicsWorld(opts);
+            $.register(w);
+        }
+        return w;
+    }
+
+    /** Dispose existing world (if any) and create a fresh one; bodies/components must recreate runtime data afterwards */
+    static rebuild(opts: PhysicsWorldOptions = {}): PhysicsWorld {
+        let existing = $.get<PhysicsWorld>('physics_world');
+        if (existing) existing.dispose();
+        const w = new PhysicsWorld(opts);
+        $.register(w);
+        return w;
+    }
+
     // --- Runtime tuning helpers (debug) ---
+    /** Adjust world gravity at runtime (debug / scripting). Referenced externally by design. */
     public setGravity(g: vec3) { this.gravity = g; }
+    /** Retrieve current gravity (used in diagnostics & potential gameplay queries). */
     public getGravity(): vec3 { return this.gravity; }
     /** Enable/disable sleeping heuristics quickly for debugging visibility */
     public setSleepingEnabled(on: boolean) {
@@ -125,8 +149,6 @@ export class PhysicsWorld {
         this.broadphase.markDirty(body);
     }
 
-    @update_tagged_components('physics_pre')
-    @update_tagged_components('physics_post')
     step(dtMs: number, emitCollision?: (e: CollisionEvent) => void) {
         const startFrame = this.enableMetrics ? performance.now() : 0;
         const dt = dtMs / 1000;
@@ -145,10 +167,46 @@ export class PhysicsWorld {
                 b.velocity.x += (this.gravity.x + b.forceAccum.x * b.invMass) * dt;
                 b.velocity.y += (this.gravity.y + b.forceAccum.y * b.invMass) * dt;
                 b.velocity.z += (this.gravity.z + b.forceAccum.z * b.invMass) * dt;
+            } else if (b.type === 'kinematic') {
+                // Kinematic: user/script drives velocity; ignore gravity but still integrate
+                b.velocity.x += (b.forceAccum.x * (b.invMass || 0)) * dt;
+                b.velocity.y += (b.forceAccum.y * (b.invMass || 0)) * dt;
+                b.velocity.z += (b.forceAccum.z * (b.invMass || 0)) * dt;
             }
             b.previousPosition.x = b.position.x; b.previousPosition.y = b.position.y; b.previousPosition.z = b.position.z;
-            if (b.type === 'dynamic') {
+            if (b.type === 'dynamic' || b.type === 'kinematic') {
                 b.position.x += b.velocity.x * dt; b.position.y += b.velocity.y * dt; b.position.z += b.velocity.z * dt;
+                // --- Minimal CCD for fast downward moving AABB boxes vs static AABB floors/walls ---
+                if (b.type === 'dynamic' && this.enableSimpleAABBTunnelingFix && b.shape.kind === 'aabb' && b.velocity.y < 0) {
+                    const bh = b.shape.halfExtents;
+                    const newBottom = b.position.y - bh.y;
+                    const prevBottom = b.previousPosition.y - bh.y;
+                    // Only if we moved a significant distance this frame (potential tunneling)
+                    if (newBottom < prevBottom - this.movementEpsilon) {
+                        for (let j = 0; j < bodies.length; j++) {
+                            if (i === j) continue;
+                            const o = bodies[j];
+                            if (o.invMass !== 0) continue; // only static surfaces
+                            if (o.shape.kind !== 'aabb') continue; // keep it cheap (sphere handled elsewhere)
+                            const oh = o.shape.halfExtents;
+                            const otherTop = o.position.y + oh.y;
+                            // Was above last frame & now penetrated below top plane
+                            if (prevBottom >= otherTop && newBottom <= otherTop) {
+                                // Check lateral overlap X/Z to confirm we crossed within footprint
+                                const overlapX = Math.abs(b.position.x - o.position.x) <= (bh.x + oh.x);
+                                const overlapZ = Math.abs(b.position.z - o.position.z) <= (bh.z + oh.z);
+                                if (overlapX && overlapZ) {
+                                    // Snap to surface & zero vertical velocity
+                                    b.position.y = otherTop + bh.y;
+                                    b.velocity.y = 0;
+                                    // Wake body (it may generate a contact next narrowphase pass)
+                                    b.asleep = false;
+                                    break; // resolved; stop checking others
+                                }
+                            }
+                        }
+                    }
+                }
             }
             b.clearForces();
             if (b.type === 'dynamic') {
@@ -193,7 +251,7 @@ export class PhysicsWorld {
         // Narrowphase
         this.contacts.length = 0;
         // Reset contact pool for reuse (avoid GC churn)
-        (this.narrow as any).resetPool?.();
+        this.narrow.resetPool();
         const tn0 = this.enableMetrics ? performance.now() : 0;
         let narrowTests = 0;
         const toWake: PhysicsBody[] = [];
@@ -208,10 +266,42 @@ export class PhysicsWorld {
         for (const b of toWake) b.asleep = false;
         if (this.enableMetrics) { this._tNarrow = performance.now() - tn0; this.metrics.narrowTests = narrowTests; }
 
-        // Solve
+        // Solve (allow multi-iteration)
         const ts0 = this.enableMetrics ? performance.now() : 0;
-        this.solver.solve(this.contacts);
+        const iters = this.solver.iterations ?? 1;
+        for (let i = 0; i < iters; i++) this.solver.solve(this.contacts);
         if (this.enableMetrics) { this._tSolve = performance.now() - ts0; this.metrics.solvedContacts = this.solver.lastSolvedContacts; this.metrics.contacts = this.contacts.length; }
+
+        // Post-solve static separation safety: ensure no lingering penetration for static/dynamic
+        if (this.enablePostSolveStaticSeparation && this.contacts.length) {
+            for (const c of this.contacts) {
+                const a = c.a, b = c.b;
+                // If exactly one body is static (invMass==0) and the other dynamic, snap dynamic out along normal if still penetrating
+                const onlyAStatic = a.invMass === 0 && b.invMass !== 0;
+                const onlyBStatic = b.invMass === 0 && a.invMass !== 0;
+                if (c.penetration > 0 && (onlyAStatic || onlyBStatic)) {
+                    const dyn = onlyAStatic ? b : a;
+                    const normal = c.normal;
+                    // If dynamic ended up past the surface, move it back by remaining penetration *along normal*
+                    // Recompute relative position along normal quickly
+                    const rel = (dyn.position.x - (onlyAStatic ? a.position.x : b.position.x)) * normal.x +
+                        (dyn.position.y - (onlyAStatic ? a.position.y : b.position.y)) * normal.y +
+                        (dyn.position.z - (onlyAStatic ? a.position.z : b.position.z)) * normal.z;
+                    if (rel < 0) { // dynamic is on wrong side
+                        dyn.position.x -= normal.x * (c.penetration);
+                        dyn.position.y -= normal.y * (c.penetration);
+                        dyn.position.z -= normal.z * (c.penetration);
+                        // Nullify velocity into surface
+                        const vn = dyn.velocity.x * normal.x + dyn.velocity.y * normal.y + dyn.velocity.z * normal.z;
+                        if (vn < 0) {
+                            dyn.velocity.x -= normal.x * vn;
+                            dyn.velocity.y -= normal.y * vn;
+                            dyn.velocity.z -= normal.z * vn;
+                        }
+                    }
+                }
+            }
+        }
 
         // Events
         if (emitCollision) {
@@ -283,6 +373,14 @@ export class PhysicsWorld {
                     if (ratio > 0.85) this.broadphase.yzPruneThreshold = 1e9; else this.broadphase.yzPruneThreshold = 0;
                 }
             }
+        }
+        if (this.logFirstFramesContacts && this._debugFrameCounter < 10) {
+            console.log('[PhysDbg]', 'frame', this._debugFrameCounter, 'pairs', this.pairs.length, 'contacts', this.contacts.length);
+            if (this.contacts.length) {
+                const sample = this.contacts[0];
+                console.log('[PhysDbg] sample contact', { pen: sample.penetration, normal: sample.normal, a: sample.a.id, b: sample.b.id });
+            }
+            this._debugFrameCounter++;
         }
         if (this.hudElement && (performance.now() - this.hudLastUpdate) > 100) {
             this.hudLastUpdate = performance.now();
@@ -460,9 +558,12 @@ export class PhysicsWorld {
         }
     }
 
+    /** Register a per-frame gizmo drawer (used by PhysicsDebugComponent). */
     addGizmo(drawer: (world: PhysicsWorld) => void) { this.gizmoDrawers.push(drawer); }
+    /** Deregister a previously added gizmo drawer. */
     removeGizmo(drawer: (world: PhysicsWorld) => void) { const i = this.gizmoDrawers.indexOf(drawer); if (i >= 0) this.gizmoDrawers.splice(i, 1); }
 
+    /** Attach an on-screen HUD with lightweight perf metrics (manual opt-in). */
     enableMetricsHUD(parent: HTMLElement = document.body) {
         if (this.hudElement) return;
         this.enableMetrics = true;
@@ -481,6 +582,7 @@ export class PhysicsWorld {
         }
     }
 
+    /** Remove the on-screen physics HUD. */
     disableMetricsHUD() { if (this.hudElement && this.hudParent) { this.hudParent.removeChild(this.hudElement); } this.hudElement = undefined; }
 
     private resetPairTracking() {
@@ -488,5 +590,6 @@ export class PhysicsWorld {
         this.pairBodiesA.length = this.pairBodiesB.length = this.pairActive.length = 0;
     }
 
+    /** Toggle HUD auto-collapse behavior. */
     setHUDAutoHide(on: boolean) { this.hudAutoHide = on; if (!on && this.hudElement) { this.hudCollapsed = false; } }
 }

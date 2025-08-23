@@ -1,5 +1,7 @@
-import { AmbientLightObject, BaseModel, build_fsm, CameraObject, Direction, DirectionalLightObject, GameObject, insavegame, new_vec3, PhysicsComponent, PhysicsDebugComponent, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
+import { AmbientLightObject, BaseModel, build_fsm, CameraObject, Direction, DirectionalLightObject, GameObject, insavegame, new_vec3, PhysicsDebugComponent, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
 import { PhysicsOverlayRenderer } from '../bmsx/debugger/bmsxdebugger';
+import { PhysicsComponent } from '../bmsx/physics/physicscomponent';
+import { PhysicsDescriptorComponent } from '../bmsx/physics/physicsdescriptorcomponent';
 import { PhysicsWorld } from '../bmsx/physics/physicsworld';
 import { bclass } from './bclass';
 import { _model } from './bootloader';
@@ -74,15 +76,20 @@ export class gamemodel extends BaseModel {
         }
 
         const cam1 = new CameraObject('cam1');
-        cam1.camera.position = V3.of(0, 10, 25); // elevated & pulled back
+        // cam1.camera.position = V3.of(0, 10, 25); // elevated & pulled back
+
         cam1.camera.setAspect(this.gamewidth / this.gameheight);
         // Camera starts looking toward negative Z by default (forward)
         const cam2 = new CameraObject('cam2');
-        cam2.camera.position = V3.of(5, 12, 27);
         cam2.camera.setAspect(this.gamewidth / this.gameheight);
 
-        _model.spawn(cam1);
-        _model.spawn(cam2);
+        _model.spawn(cam1, V3.of(
+            -11.608727323457181,
+            75.36972014104992,
+            10.01821056934937
+        ));
+        cam1.camera.screenLook(1.7687161091476518, -1.418966871448069, -2.6349415504373304);
+        _model.spawn(cam2, V3.of(5, 12, 27));
 
         _model.activeCameraId = cam1.id;
 
@@ -94,8 +101,8 @@ export class gamemodel extends BaseModel {
         _model.spawn(ambient);
         _model.spawn(sun);
         _model.spawn(extraSun);
-        _model.spawn(lamp); +
-            _model.spawn(sparkEmitter);
+        _model.spawn(lamp);
+        _model.spawn(sparkEmitter);
 
         $.view.setSkybox({
             posX: BitmapId.skybox,
@@ -109,14 +116,8 @@ export class gamemodel extends BaseModel {
         _model.spawn(new CameraController(cam1, cam2));
 
         // Physics test setup (visual + physics bound objects)
-        let phys = $.registry.get<PhysicsWorld>('physics_world');
-        if (!phys) {
-            phys = new PhysicsWorld({ gravity: USE_Z_UP ? new_vec3(0, 0, -300) : new_vec3(0, -300, 0) });
-            $.registry.register(phys);
-        } else {
-            // Force gravity downward along selected up-axis for visibility
-            phys.setGravity(USE_Z_UP ? new_vec3(0, 0, -300) : new_vec3(0, -300, 0));
-        }
+        const phys = PhysicsWorld.ensure({ gravity: USE_Z_UP ? new_vec3(0, 0, -300) : new_vec3(0, -300, 0) });
+        phys.setGravity(USE_Z_UP ? new_vec3(0, 0, -300) : new_vec3(0, -300, 0));
         // For visibility ensure nothing sleeps while diagnosing
         phys.setSleepingEnabled(false);
         // Enable metrics HUD (force visible)
@@ -144,54 +145,65 @@ export class gamemodel extends BaseModel {
             { name: 'wall_west', pos: [-10, 0, 0], he: [0.5, 5, 10] },
             { name: 'wall_east', pos: [10, 0, 0], he: [0.5, 5, 10] }
         ];
+        let colorIdx = 0;
         for (const d of staticDefs) {
-            const box = new PhysStaticBox(d.he, d.name);
+            // assign cycling albedo index (demo) + distinct color factor to visualize even if atlas identical
+            const ci = colorIdx++ % 4;
+            const colorVariants: [number, number, number, number][] = [
+                [1, 0.3, 0.3, 1],
+                [0.3, 1, 0.3, 1],
+                [0.3, 0.3, 1, 1],
+                [1, 1, 0.3, 1],
+            ];
+            const box = new PhysStaticBox(d.he, d.name, ci, null, colorVariants[ci]);
             _model.spawn(box, new_vec3(d.pos[0], d.pos[1], d.pos[2]));
-            box.addComponent(new PhysicsComponent(box.id, { shape: { kind: 'aabb', halfExtents: new_vec3(d.he[0], d.he[1], d.he[2]) }, mass: 0, restitution: 0.1, friction: 0.8 }));
+            box.addComponent(new PhysicsDescriptorComponent(box.id, { shape: { kind: 'aabb', halfExtents: new_vec3(d.he[0], d.he[1], d.he[2]) }, mass: 0, restitution: 0.1, friction: 0.8 }));
         }
 
-        const DROP_HEIGHT = 5;
+        const DROP_HEIGHT = 150;
         if (!USE_Z_UP) {
             // Dynamic cubes (Y-up)
             for (let i = 0; i < 5; i++) {
                 const dc = new PhysDynamicCube(0.25);
                 _model.spawn(dc, new_vec3(-4 + i * 1.2, DROP_HEIGHT + i * 0.2, 0));
-                dc.addComponent(new PhysicsComponent(dc.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
+                dc.addComponent(new PhysicsDescriptorComponent(dc.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
             }
             // Dynamic spheres
             for (let i = 0; i < 5; i++) {
                 const ds = new PhysDynamicSphere(0.25);
                 _model.spawn(ds, new_vec3(4 - i * 1.2, DROP_HEIGHT + i * 0.2, 0.6)); // slight z offset
-                ds.addComponent(new PhysicsComponent(ds.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
+                ds.addComponent(new PhysicsDescriptorComponent(ds.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
             }
             // Fast sphere for CCD test (moving along Z across arena)
             const fastSphere = new PhysDynamicSphere(0.25);
             _model.spawn(fastSphere, new_vec3(0, DROP_HEIGHT + 1, -12));
-            fastSphere.addComponent(new PhysicsComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
-            fastSphere.getComponent(PhysicsComponent)!.body.velocity.z = 120; // lower due to smaller arena
+            fastSphere.addComponent(new PhysicsDescriptorComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
+            const fsPhysComp = fastSphere.getComponent(PhysicsComponent);
+            if (fsPhysComp) fsPhysComp.body.velocity.z = 120;
             // Trigger zone centered
             const trigger = new PhysTriggerZone([3, 3, 3]);
             _model.spawn(trigger, new_vec3(0, DROP_HEIGHT, 0));
-            trigger.addComponent(new PhysicsComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
+            trigger.addComponent(new PhysicsDescriptorComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
         } else {
             // Z-up variant: swap Y/Z usage
             for (let i = 0; i < 5; i++) {
                 const dc = new PhysDynamicCube(0.25);
                 _model.spawn(dc, new_vec3(-4 + i * 1.2, 0.6, DROP_HEIGHT + i * 0.2));
-                dc.addComponent(new PhysicsComponent(dc.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
+                dc.addComponent(new PhysicsDescriptorComponent(dc.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
             }
             for (let i = 0; i < 5; i++) {
                 const ds = new PhysDynamicSphere(0.25);
                 _model.spawn(ds, new_vec3(4 - i * 1.2, 0.6, DROP_HEIGHT + i * 0.2));
-                ds.addComponent(new PhysicsComponent(ds.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
+                ds.addComponent(new PhysicsDescriptorComponent(ds.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
             }
             const fastSphere = new PhysDynamicSphere(0.25);
             _model.spawn(fastSphere, new_vec3(0, -12, DROP_HEIGHT + 1));
-            fastSphere.addComponent(new PhysicsComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
-            fastSphere.getComponent(PhysicsComponent)!.body.velocity.y = 120; // sweep across Y axis now
+            fastSphere.addComponent(new PhysicsDescriptorComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
+            const fsPhysComp2 = fastSphere.getComponent(PhysicsComponent);
+            if (fsPhysComp2) fsPhysComp2.body.velocity.y = 120;
             const trigger = new PhysTriggerZone([3, 3, 3]);
             _model.spawn(trigger, new_vec3(0, 0, DROP_HEIGHT));
-            trigger.addComponent(new PhysicsComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
+            trigger.addComponent(new PhysicsDescriptorComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
         }
         return this;
     }
@@ -201,7 +213,7 @@ export class gamemodel extends BaseModel {
     private _loggedSummary = false;
     public override run(dt: number): void {
         super.run(dt);
-        const phys = $.registry.get<any>('physics_world');
+        const phys = $.get<PhysicsWorld>('physics_world');
         if (!phys) return;
         // Capture events counts
         this._enterCount += phys.lastEnterEvents.length;
@@ -226,6 +238,7 @@ export class gamemodel extends BaseModel {
             // Log position of first dynamic body to confirm motion & gravity application
             const firstDyn = phys.getBodies().find((b: any) => b.invMass && !b.isTrigger);
             if (firstDyn) console.log('[PhysDiag] t=', this._physicsTestFrame, 'posY=', firstDyn.position.y.toFixed(2), 'velY=', firstDyn.velocity.y.toFixed(2), 'gravY=', phys.getGravity().y);
+            // Also log the position of the game object that is related to
         }
         // After some frames, log summary once for regression visibility
         if (this._physicsTestFrame === 600 && !this._loggedSummary) {

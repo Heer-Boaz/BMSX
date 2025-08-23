@@ -79,7 +79,7 @@ export class PhysicsOverlayRenderer extends Component {
                 }
             }
         }
-        if (!debugComponents.length) return;
+        // if (!debugComponents.length) return;
         // Camera-aware projection: project 3D -> NDC -> screen (overlay canvas coordinates)
         const activeCamObj = $.model.getGameObject($.model.activeCameraId) as CameraObject | undefined;
         const cam = activeCamObj?.camera;

@@ -1,5 +1,6 @@
 import { attach_components, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
+import { onload } from '../bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
 
 @insavegame
@@ -123,38 +124,82 @@ export class PhysTestFloor extends GameObject {
 
 @insavegame
 export class PhysTestWall extends GameObject {
-    constructor(public nameId: string, public wallSize: vec3arr) { super(nameId); }
+    // Provide defaults so Reviver (which calls ctor with no args) won't crash.
+    constructor(public nameId: string = 'physTestWall', public wallSize: vec3arr = [1, 1, 1]) { super(nameId); }
     override run(): void { }
 }
 
 @insavegame
 export class PhysDynamicCube extends MeshObject {
     private static _counter = 0;
-    constructor(public halfExtent = 0.5) { super(`physDynCube_${PhysDynamicCube._counter++}`); this.model_id = ModelId.cube; this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2]; }
+    constructor(public halfExtent = 0.5) {
+        super(`physDynCube_${PhysDynamicCube._counter++}`);
+        this.model_id = ModelId.cube;
+        // Scale mesh so that its rendered half-extents match physics halfExtents (base cube assumed unit size +/-0.5)
+        this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2];
+    }
     override run(): void { super.run(); }
 }
 
 @insavegame
 export class PhysDynamicSphere extends MeshObject {
     private static _counter = 0;
-    constructor(public radius = 0.5) { super(`physDynSphere_${PhysDynamicSphere._counter++}`); this.model_id = ModelId.animatedmorphsphere; this.scale = [radius * 2, radius * 2, radius * 2]; }
+    constructor(public radius = 0.5) {
+        super(`physDynSphere_${PhysDynamicSphere._counter++}`);
+        this.model_id = ModelId.animatedmorphsphere;
+        // Scale mesh so rendered sphere radius matches physics radius
+        this.scale = [radius * 2, radius * 2, radius * 2];
+    }
     override run(): void { super.run(); }
 }
 
 @insavegame
 export class PhysTriggerZone extends GameObject {
-    constructor(public triggerSize: vec3arr) { super('physTrigger'); }
+    constructor(public triggerSize: vec3arr = [1, 1, 1]) { super('physTrigger'); }
     override run(): void { }
 }
 
 // Simple static box (visual + physics via PhysicsComponent attached externally)
 @insavegame
 export class PhysStaticBox extends MeshObject {
-    constructor(public halfExtents: vec3arr, public nameId: string) {
+    private static _counter = 0;
+
+    constructor(
+        public halfExtents: vec3arr = [0.5, 0.5, 0.5],
+        public nameId: string = `physStaticBox_${PhysStaticBox._counter++}`,
+        /** Optionele override voor albedo atlas index */
+        public albedoTextureIndex?: number,
+        /** Optionele override voor normal atlas index */
+        public normalTextureIndex?: number,
+        /** Optionele override voor base color factor (rgba) */
+        public overrideColor?: [number, number, number, number],
+        /** Optionele override voor metallic en roughness */
+        public metallicFactor?: number,
+        public roughnessFactor?: number,
+    ) {
         super(nameId);
         this.model_id = ModelId.cube;
-        // Scale is full size (halfExtents * 2)
-        this.scale = [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2];
+        this.applyHalfExtentsToScale();
+        // Direct overrides via engine API (persistable)
+        this.applyOverrides();
     }
+    private applyHalfExtentsToScale() {
+        if (!this.halfExtents) return;
+        const he = this.halfExtents;
+        this.scale = [he[0] * 2, he[1] * 2, he[2] * 2];
+    }
+    private applyOverrides() {
+        const mesh = this.meshes[0];
+        if (!mesh) return;
+        const overrides: any = {};
+        if (this.albedoTextureIndex !== undefined) overrides.albedo = this.albedoTextureIndex;
+        if (this.normalTextureIndex !== undefined) overrides.normal = this.normalTextureIndex;
+        if (this.overrideColor) overrides.color = this.overrideColor;
+        if (this.metallicFactor !== undefined) overrides.metallicFactor = this.metallicFactor;
+        if (this.roughnessFactor !== undefined) overrides.roughnessFactor = this.roughnessFactor;
+        if (Object.keys(overrides).length) this.setMaterialOverride(0, overrides);
+    }
+    @onload
+    public rehydrateScale() { this.applyHalfExtentsToScale(); this.applyOverrides(); }
     override run(): void { /* static */ }
 }

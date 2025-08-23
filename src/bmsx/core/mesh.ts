@@ -14,7 +14,14 @@ type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"
 type RuntimeNodeTRS = { t?: vec3arr; r?: [number, number, number, number]; s?: vec3arr };
 type RuntimeNodeState = { trs?: RuntimeNodeTRS; weights?: number[]; visible?: boolean };
 type RuntimeAnim = { time?: number; speed?: number; activeClip?: string | number; loop?: boolean };
-type PersistedMatTex = Partial<{ albedo: number; normal: number; metallicRoughness: number }>;
+type PersistedMatTex = Partial<{
+	albedo: number;
+	normal: number;
+	metallicRoughness: number;
+	color: [number, number, number, number];
+	metallicFactor: number;
+	roughnessFactor: number;
+}>;
 
 type MeshObjectRuntime = {
 	version: 1;
@@ -225,6 +232,9 @@ export abstract class MeshObject extends GameObject {
 	private _modelGen = 0;
 	private _runtime: MeshObjectRuntime; // Runtime data for the mesh object, which is only used for serializing and deserializing the state
 	public materialOverrides?: Record<number, PersistedMatTex>; // meshIndex -> overrides
+	// NOTE: We deliberately removed the previous global material variant cache.
+	// Variants are now expressed through explicit per-mesh overrides captured in materialOverrides
+	// so they serialize/deserialze cleanly without reflection or subclass boilerplate.
 
 	constructor(id?: string, fsm_id?: string) {
 		super(id, fsm_id);
@@ -289,6 +299,36 @@ export abstract class MeshObject extends GameObject {
 		});
 
 		return m;
+	}
+
+	/**
+	 * Returns (and caches) a lightweight material instance differing only by a small set of overrides.
+	 * The base material's GPU bindings are reused; only texture indices / scalar params differ.
+	 * keyParts must uniquely describe the variant (e.g. model id, mesh index, param tuple).
+	 */
+	/**
+	 * Set (and persist) a material override for a given mesh index.
+	 * Only fields provided in overrides are mutated & recorded.
+	 */
+	public setMaterialOverride(meshIndex: number, overrides: PersistedMatTex): void {
+		const mesh = this.meshes[meshIndex];
+		if (!mesh || !mesh.material) return;
+		const mat = mesh.material;
+		if (overrides.albedo !== undefined) mat.textures.albedo = overrides.albedo;
+		if (overrides.normal !== undefined) mat.textures.normal = overrides.normal;
+		if (overrides.metallicRoughness !== undefined) mat.textures.metallicRoughness = overrides.metallicRoughness;
+		if (overrides.color) mat.color = [...overrides.color] as any;
+		if (overrides.metallicFactor !== undefined) mat.metallicFactor = overrides.metallicFactor;
+		if (overrides.roughnessFactor !== undefined) mat.roughnessFactor = overrides.roughnessFactor;
+		this.materialOverrides ??= {} as any;
+		this.materialOverrides[meshIndex] = { ...(this.materialOverrides[meshIndex] ?? {}), ...overrides };
+		// (Re)bind GPU texture keys if already fetched
+		const keys = this.meshModel?.gpuTextures;
+		if (keys) {
+			if (mat.textures.albedo !== undefined) mat.gpuTextures.albedo = keys[mat.textures.albedo];
+			if (mat.textures.normal !== undefined) mat.gpuTextures.normal = keys[mat.textures.normal];
+			if (mat.textures.metallicRoughness !== undefined) mat.gpuTextures.metallicRoughness = keys[mat.textures.metallicRoughness];
+		}
 	}
 
 	public setMeshModel(meshModel: GLTFModel): void {
@@ -445,7 +485,7 @@ export abstract class MeshObject extends GameObject {
 				}
 				if (n.weights) st.weights = [...n.weights];
 				// (optioneel) visible-flag als je dat per node gebruikt
-				// if ((n as any).visible !== undefined) st.visible = !!(n as any).visible;
+				if (n.visible !== undefined) st.visible = !!n.visible;
 
 				if (st.trs || st.weights || st.visible !== undefined) {
 					map[k] = st;
@@ -455,8 +495,8 @@ export abstract class MeshObject extends GameObject {
 		}
 
 		// Animation snapshot (super compact, uitbreidbaar)
-		if ((this as any).animationTime !== undefined) {
-			runtime.anim = { time: this['animationTime'] ?? 0 };
+		if (this.animationTime !== undefined) {
+			runtime.anim = { time: this.animationTime ?? 0 };
 		}
 
 		// console.log(`Saving MeshObject runtime: model_id=${runtime.model_id}, nodes=${Object.keys(runtime.nodes ?? {}).length}, anim=${runtime.anim?.time ?? 'none'}`);
@@ -492,9 +532,9 @@ export abstract class MeshObject extends GameObject {
 	public onLoad(): void {
 		// console.log(`Hydrating MeshObject from runtime`);
 		// 1) Runtime info uit snapshot
-		const rt: MeshObjectRuntime | undefined = (this as any)._runtime;
+		const rt: MeshObjectRuntime | undefined = this._runtime;
 		// Safety: gooi het veld weer weg uit de instance
-		if ((this as any)._runtime) { delete (this as any)._runtime; }
+		if (this._runtime) { delete this._runtime; }
 
 		// 2) Kies model
 		let model: GLTFModel | undefined = undefined;
@@ -560,6 +600,7 @@ export abstract class MeshObject extends GameObject {
 				if (o.metallicRoughness !== undefined) t.metallicRoughness = o.metallicRoughness;
 			}
 		}
+
 
 		// 7) If the TextureManager was cleared, fetch keys again and then rebind
 		if (!this.meshModel.gpuTextures) {

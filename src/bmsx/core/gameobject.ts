@@ -1,5 +1,5 @@
 import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../ai/behaviourtree";
-import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "../component/basecomponent";
+import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, update_tagged_components } from "../component/basecomponent";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
 import { ZCOORD_MAX } from "../render/glview.constants";
@@ -645,8 +645,8 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * Auto components are added based on the `autoAddComponents` property of the game object's constructor.
 	 */
 	private addAutoComponents() {
-		if ((this.constructor as any).autoAddComponents) {
-			for (const componentClass of (this.constructor as any).autoAddComponents) {
+		if ((this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
+			for (const componentClass of (this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
 				this.addComponent(new componentClass(this.id));
 			}
 		}

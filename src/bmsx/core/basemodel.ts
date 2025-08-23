@@ -5,6 +5,7 @@ import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { StateDefinition } from '../fsm/statedefinition';
 import { Input } from "../input/input";
+import { PhysicsDescriptorComponent } from '../physics/physicsdescriptorcomponent';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
 import { renderGate } from '../render/view';
@@ -12,10 +13,10 @@ import type { Identifier, Registerable, RegisterablePersistent } from '../rompac
 import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
-import { CameraObject } from "./cameraobject";
+import { CameraObject } from './cameraobject';
 import { runGate } from './game';
-import { GameObject } from "./gameobject";
-import { AmbientLightObject, LightObject } from "./lightobject";
+import { GameObject } from './gameobject';
+import { AmbientLightObject, LightObject } from './lightobject';
 import { Registry } from "./registry";
 
 export interface SpaceObject {
@@ -630,6 +631,21 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
                     space.spawn(o, null, true);
                 });
             });
+
+            // Deferred physics world rebuild: after all objects & components are fully hydrated
+            try {
+                let needs = false;
+                for (const space of this.spaces) {
+                    for (const go of space.objects) {
+                        if (go.getComponent && go.getComponent(PhysicsDescriptorComponent)) { needs = true; break; }
+                    }
+                    if (needs) break;
+                }
+                if (needs) {
+                    const world = PhysicsWorld.rebuild();
+                    if (world.solver) world.solver.iterations = 4; // tune stability
+                }
+            } catch { /* ignore to avoid load failure if physics not present */ }
 
             this.applyViewSettings();
         }

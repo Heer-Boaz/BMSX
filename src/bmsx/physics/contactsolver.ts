@@ -13,9 +13,9 @@ function applyImpulseLinear(b: PhysicsBody, impulse: vec3, scale: number) {
 
 @insavegame
 export class ContactSolver {
-    iterations = 1; // Single pass MVP
-    slop = 0.001;
-    percent = 0.6; // positional correction fraction
+    iterations = 4; // more iterations for stability
+    slop = 0.0005;
+    percent = 1.0; // fully correct positional penetration (prevents sinking)
     lastSolvedContacts = 0;
     frictionEpsilon = 1e-4; // below this, treat friction as zero
     tangentialSpeedEpsilon = 1e-3; // skip friction calc when tangential speed tiny

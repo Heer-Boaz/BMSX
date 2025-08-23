@@ -1,41 +1,47 @@
 import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
 import { new_vec3 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
-import { insavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
 
 export interface PhysicsComponentOptions extends Omit<PhysicsBodyDesc, 'position'> {
     syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; // selective axis sync
     writeBack?: boolean; // if true: body -> GameObject each frame (default true)
-    readSource?: 'gameobject' | 'body'; // initial source for position
     layer?: number; // collision layer bit (0..31)
     mask?: number; // collision mask bits
 }
 
-@insavegame
+@excludeclassfromsavegame
 @componenttags_preprocessing('physics_pre') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
-@componenttags_postprocessing('physics_post') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
+@componenttags_postprocessing('run') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
 export class PhysicsComponent extends Component {
-    body: PhysicsBody;
-    world: PhysicsWorld;
+    body: PhysicsBody | null = null;
     syncAxis = { x: true, y: true, z: true };
     writeBack = true;
-    layer = 1; // default layer 0 -> bit 0
-    mask = 0xFFFFFFFF; // collide with everything
+    layer = 1;
+    mask = 0xFFFFFFFF;
+    private shape!: PhysicsBodyDesc['shape'];
+    private mass = 0;
+    private restitution = 0;
+    private friction = 0.2;
+    private isTrigger = false;
+    private isKinematic = false;
+    private _bodyBuilt = false;
 
     constructor(parentid: Identifier, opts: PhysicsComponentOptions) {
         super(parentid);
-        this.world = $.registry.get<PhysicsWorld>('physics_world');
-        const go = $.model.getGameObject(this.parentid);
-        if (!this.world) throw new Error('PhysicsWorld not available');
-        if (!go) throw new Error('PhysicsComponent parent GameObject not found');
         this.syncAxis = { ...this.syncAxis, ...(opts.syncAxis || {}) };
         this.writeBack = opts.writeBack ?? true;
         this.layer = opts.layer ?? 1;
         this.mask = opts.mask ?? 0xFFFFFFFF;
-        const startPos = opts.readSource === 'body' ? new_vec3(go.x, go.y, go.z) : new_vec3(go.x, go.y, go.z);
-        this.body = this.world.addBody({ ...opts, position: startPos, userData: go.id, layer: this.layer, mask: this.mask });
+        this.shape = opts.shape;
+        this.mass = opts.mass ?? 0;
+        this.restitution = opts.restitution ?? 0;
+        this.friction = opts.friction ?? 0.2;
+        this.isTrigger = !!opts.isTrigger;
+        this.isKinematic = opts.type === 'kinematic';
+        this.tryBuildBody();
     }
 
     override preprocessingUpdate(): void {
@@ -44,6 +50,7 @@ export class PhysicsComponent extends Component {
     }
 
     override postprocessingUpdate(): void {
+        if (!this.body) return;
         if (!this.writeBack) return;
         const go = $.model.getGameObject(this.parentid);
         if (!go) return;
@@ -61,6 +68,29 @@ export class PhysicsComponent extends Component {
 
     override dispose(): void {
         super.dispose();
-        this.world.removeBody(this.body);
+        const world = $.get<PhysicsWorld>('physics_world');
+        if (world && this.body) world.removeBody(this.body);
+        this.body = null;
+    }
+
+    private tryBuildBody() {
+        if (this._bodyBuilt) return;
+        const world = PhysicsWorld.ensure();
+        const go = $.model.getGameObject(this.parentid);
+        if (!go) return; // parent not yet available
+        const startPos = new_vec3(go.x, go.y, go.z);
+        this.body = world.addBody({
+            position: startPos,
+            shape: this.shape,
+            mass: this.mass,
+            restitution: this.restitution,
+            friction: this.friction,
+            isTrigger: this.isTrigger,
+            type: this.isKinematic ? 'kinematic' : undefined,
+            userData: go.id,
+            layer: this.layer,
+            mask: this.mask
+        });
+        this._bodyBuilt = true;
     }
 }

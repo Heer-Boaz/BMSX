@@ -13,8 +13,10 @@ import { insavegame, onload } from '../serializer/gameserializer';
  * The autoAddComponents property is an array of Component constructors that should be
  * automatically added to instances of the class.
  */
-interface ConstructorWithAutoAddComponents {
-    autoAddComponents?: ComponentConstructor<Component>[];
+export type ComponentClass<T extends Component = Component> = new (...args: any[]) => T;
+
+export interface ConstructorWithAutoAddComponents {
+    autoAddComponents?: ComponentClass[];
 }
 
 /**

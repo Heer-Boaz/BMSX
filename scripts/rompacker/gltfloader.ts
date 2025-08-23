@@ -131,7 +131,7 @@ export async function loadGLTFModel(data: string, dir: string, resname: string):
                 texcoords: prim.attributes.TEXCOORD_0 !== undefined ? getAccessorData(prim.attributes.TEXCOORD_0) as Float32Array : undefined,
                 normals: prim.attributes.NORMAL !== undefined ? getAccessorData(prim.attributes.NORMAL) as Float32Array : null,
                 tangents: prim.attributes.TANGENT !== undefined ? getAccessorData(prim.attributes.TANGENT) as Float32Array : null,
-                indices: prim.indices !== undefined ? (getAccessorData(prim.indices) as any) : undefined,
+                indices: prim.indices !== undefined ? (getAccessorData(prim.indices) as Uint16Array) : undefined,
                 indexComponentType: prim.indices !== undefined ? accessors[prim.indices].componentType : undefined,
                 materialIndex: prim.material,
                 morphPositions: posTargets.length ? posTargets : undefined,
