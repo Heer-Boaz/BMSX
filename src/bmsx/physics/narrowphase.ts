@@ -81,7 +81,7 @@ export class Narrowphase {
         if (px < py && px < pz) {
             const sx = Math.sign(dx) || 1;
             const c = this.getPooledContact(a, b);
-            c.normal.x = sx; c.normal.y = 0; c.normal.z = 0;
+            c.normal.x = sx; c.normal.y = 0; c.normal.z = 0; // points from a to b
             c.penetration = px;
             c.point.x = a.position.x + ha.x * sx;
             c.point.y = (a.position.y + b.position.y) / 2;
@@ -90,7 +90,7 @@ export class Narrowphase {
         } else if (py < pz) {
             const sy = Math.sign(dy) || 1;
             const c = this.getPooledContact(a, b);
-            c.normal.x = 0; c.normal.y = sy; c.normal.z = 0;
+            c.normal.x = 0; c.normal.y = sy; c.normal.z = 0; // from a to b
             c.penetration = py;
             c.point.x = (a.position.x + b.position.x) / 2;
             c.point.y = a.position.y + ha.y * sy;
@@ -99,7 +99,7 @@ export class Narrowphase {
         } else {
             const sz = Math.sign(dz) || 1;
             const c = this.getPooledContact(a, b);
-            c.normal.x = 0; c.normal.y = 0; c.normal.z = sz;
+            c.normal.x = 0; c.normal.y = 0; c.normal.z = sz; // from a to b
             c.penetration = pz;
             c.point.x = (a.position.x + b.position.x) / 2;
             c.point.y = (a.position.y + b.position.y) / 2;

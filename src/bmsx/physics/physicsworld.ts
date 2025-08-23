@@ -7,7 +7,7 @@ import { Contact, Narrowphase } from './narrowphase';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
 
 export interface PhysicsWorldOptions {
-    gravity?: vec3; // default (0, 300, 0) in screen coords (tune later)
+    gravity?: vec3; // Default assumes Y+ is UP. Negative Y gravity pulls objects down.
     maxSubSteps?: number;
     fixedTimeStep?: number; // ms - same as game update for now
 }
@@ -29,11 +29,11 @@ export class PhysicsWorld {
     public solver = new ContactSolver();
     private pairs: BroadphasePair[] = [];
     private contacts: Contact[] = [];
+    // Aggregated per-pair contact (deepest penetration or first) for event point/normal synthesis
+    private aggregatedPairContact = new Map<number, { point: vec3; normal: vec3 }>();
     private previousFramePairs = new Set<number>();
-    // Composite pair storage (sparse) indexed by packed 32-bit id (high 16 = max id, low 16 = min id)
-    private pairBodiesA: PhysicsBody[] = [];
-    private pairBodiesB: PhysicsBody[] = [];
-    private pairActive: boolean[] = [];
+    // Pair tracking replaced with Map to avoid sparse-array memory blow-up & to retain last contact data for exit events
+    private pairInfo = new Map<number, { a: PhysicsBody; b: PhysicsBody; lastPoint: vec3; lastNormal: vec3; active: boolean }>();
     private gravity: vec3;
     // Temp vectors
     private tmpPoint = new_vec3(0, 0, 0);
@@ -44,10 +44,11 @@ export class PhysicsWorld {
     public lastStayEvents: CollisionEvent[] = [];
     public lastExitEvents: CollisionEvent[] = [];
     // CCD threshold
-    fastSphereSpeed = 800;
+    fastSphereSpeed = 800; // legacy threshold (kept for metrics only; CCD now during integration)
     // Sleeping params
     sleepVelocityThreshold = 5;
     sleepFramesThreshold = 30;
+    sleepAngularVelocityThreshold = 0.5; // rad/s threshold
     private sleepCounters: number[] = []; // index by body.id (sparse) faster than Map
     private firstBroadphaseBuilt = false;
     // Performance instrumentation (lightweight, optional usage)
@@ -70,6 +71,8 @@ export class PhysicsWorld {
     enableSimpleAABBTunnelingFix = true;
     // Extra safety positional fix pass for static-vs-dynamic after solver
     enablePostSolveStaticSeparation = true;
+    // World default linear damping (per second fraction removed). Each body can override.
+    defaultLinearDamping = 0.0;
     // Debug
     logFirstFramesContacts = true;
     private _debugFrameCounter = 0;
@@ -82,7 +85,8 @@ export class PhysicsWorld {
     private hudCollapsed = false;
 
     constructor(opts: PhysicsWorldOptions = {}) {
-        this.gravity = opts.gravity ?? new_vec3(0, 300, 0);
+        // Coordinate system clarification: Y+ is up. Gravity defaults to pulling downward (negative Y).
+        this.gravity = opts.gravity ?? new_vec3(0, -300, 0);
     }
 
     // --- Bootstrap helpers ---
@@ -119,7 +123,7 @@ export class PhysicsWorld {
     dispose(): void {
         this.bodies.length = 0;
         this.previousFramePairs.clear();
-        this.pairBodiesA.length = this.pairBodiesB.length = this.pairActive.length = 0;
+        this.pairInfo.clear();
     }
 
     addBody(desc: PhysicsBodyDesc): PhysicsBody {
@@ -127,7 +131,7 @@ export class PhysicsWorld {
         this.bodies.push(b);
         this.broadphase.addBody(b);
         if (b.id > this.maxBodyId) this.maxBodyId = b.id;
-        console.log('[PhysicsDebug] Added body:', b.id, 'type:', b.type, 'invMass:', b.invMass, 'shape:', b.shape.kind, 'position:', b.position, 'layer:', b.layer, 'mask:', b.mask);
+        // console.log('[PhysicsDebug] Added body:', b.id, 'type:', b.type, 'invMass:', b.invMass, 'shape:', b.shape.kind, 'position:', b.position, 'layer:', b.layer, 'mask:', b.mask);
         return b;
     }
 
@@ -148,6 +152,12 @@ export class PhysicsWorld {
         body.applyForce({ x: fx, y: fy, z: fz });
         body.asleep = false; // auto-wake
         this.broadphase.markDirty(body);
+    }
+
+    applyTorque(body: PhysicsBody, tx: number, ty: number, tz: number) {
+        if (body.invMass === 0) return;
+        body.applyTorque(tx, ty, tz);
+        body.asleep = false;
     }
 
     /** Mark a body as needing broadphase AABB update (useful for position changes) */
@@ -172,62 +182,115 @@ export class PhysicsWorld {
         const bodies = this.bodies;
         for (let i = 0, n = bodies.length; i < n; ++i) {
             const b = bodies[i];
+            // Integrate forces -> velocity
             if (b.type === 'dynamic' && b.invMass !== 0) {
+                if (b.asleep) {
+                    b.velocity.x = b.velocity.y = b.velocity.z = 0;
+                    b.clearForces();
+                    continue;
+                }
                 b.velocity.x += (this.gravity.x + b.forceAccum.x * b.invMass) * dt;
                 b.velocity.y += (this.gravity.y + b.forceAccum.y * b.invMass) * dt;
                 b.velocity.z += (this.gravity.z + b.forceAccum.z * b.invMass) * dt;
             } else if (b.type === 'kinematic') {
-                // Kinematic: user/script drives velocity; ignore gravity but still integrate
+                // Script-driven; only forces from user (rare) scale by invMass if provided
                 b.velocity.x += (b.forceAccum.x * (b.invMass || 0)) * dt;
                 b.velocity.y += (b.forceAccum.y * (b.invMass || 0)) * dt;
                 b.velocity.z += (b.forceAccum.z * (b.invMass || 0)) * dt;
             }
+            // Linear damping (time-step independent exponential): v *= exp(-d * dt)
+            if (b.type === 'dynamic') {
+                const d = (b.linearDamping !== undefined ? b.linearDamping : this.defaultLinearDamping);
+                if (d > 0) {
+                    const factor = Math.exp(-d * dt);
+                    b.velocity.x *= factor; b.velocity.y *= factor; b.velocity.z *= factor;
+                }
+            }
+            // Cache previous position
             b.previousPosition.x = b.position.x; b.previousPosition.y = b.position.y; b.previousPosition.z = b.position.z;
             if (b.type === 'dynamic' || b.type === 'kinematic') {
-                b.position.x += b.velocity.x * dt; b.position.y += b.velocity.y * dt; b.position.z += b.velocity.z * dt;
-                // --- Minimal CCD for fast downward moving AABB boxes vs static AABB floors/walls ---
-                if (b.type === 'dynamic' && this.enableSimpleAABBTunnelingFix && b.shape.kind === 'aabb' && b.velocity.y < 0) {
+                // Proposed next position
+                const px = b.previousPosition.x, py = b.previousPosition.y, pz = b.previousPosition.z;
+                const nx = px + b.velocity.x * dt;
+                const ny = py + b.velocity.y * dt;
+                const nz = pz + b.velocity.z * dt;
+                if (b.type === 'dynamic' && b.shape.kind === 'sphere') {
+                    // CCD sphere sweep previous->proposed
+                    this.ccdSweepSphere(b, px, py, pz, nx, ny, nz);
+                } else if (b.type === 'dynamic' && this.enableSimpleAABBTunnelingFix && b.shape.kind === 'aabb' && b.velocity.y < 0) {
+                    // Simple vertical AABB tunneling prevention
                     const bh = b.shape.halfExtents;
-                    const newBottom = b.position.y - bh.y;
-                    const prevBottom = b.previousPosition.y - bh.y;
-                    // Only if we moved a significant distance this frame (potential tunneling)
+                    const prevBottom = py - bh.y;
+                    const newBottom = ny - bh.y;
                     if (newBottom < prevBottom - this.movementEpsilon) {
                         for (let j = 0; j < bodies.length; j++) {
                             if (i === j) continue;
                             const o = bodies[j];
-                            if (o.invMass !== 0) continue; // only static surfaces
-                            if (o.shape.kind !== 'aabb') continue; // keep it cheap (sphere handled elsewhere)
+                            if (o.invMass !== 0) continue; // only static
+                            if (o.shape.kind !== 'aabb') continue;
                             const oh = o.shape.halfExtents;
                             const otherTop = o.position.y + oh.y;
-                            // Was above last frame & now penetrated below top plane
                             if (prevBottom >= otherTop && newBottom <= otherTop) {
-                                // Check lateral overlap X/Z to confirm we crossed within footprint
-                                const overlapX = Math.abs(b.position.x - o.position.x) <= (bh.x + oh.x);
-                                const overlapZ = Math.abs(b.position.z - o.position.z) <= (bh.z + oh.z);
+                                const overlapX = Math.abs(nx - o.position.x) <= (bh.x + oh.x);
+                                const overlapZ = Math.abs(nz - o.position.z) <= (bh.z + oh.z);
                                 if (overlapX && overlapZ) {
-                                    // Snap to surface & zero vertical velocity
-                                    b.position.y = otherTop + bh.y;
-                                    b.velocity.y = 0;
-                                    // Wake body (it may generate a contact next narrowphase pass)
+                                    b.position.x = nx; b.position.z = nz; b.position.y = otherTop + bh.y;
+                                    if (b.velocity.y < 0) b.velocity.y = 0;
                                     b.asleep = false;
-                                    break; // resolved; stop checking others
+                                    break; // done
                                 }
                             }
                         }
                     }
+                    if (b.position.y === py) { // not snapped above
+                        b.position.x = nx; b.position.y = ny; b.position.z = nz;
+                    }
+                } else {
+                    b.position.x = nx; b.position.y = ny; b.position.z = nz;
+                }
+            }
+            // --- Angular integration (semi-implicit) ---
+            if (b.type === 'dynamic' && b.invMass !== 0) {
+                // Apply angular acceleration = torque * invInertia (diagonal approximation)
+                const wx = b.angularVelocity.x + b.torqueAccum.x * (b.invInertia.x) * dt;
+                const wy = b.angularVelocity.y + b.torqueAccum.y * (b.invInertia.y) * dt;
+                const wz = b.angularVelocity.z + b.torqueAccum.z * (b.invInertia.z) * dt;
+                // Angular damping exponential
+                const ad = b.angularDamping || 0;
+                const angFactor = ad > 0 ? Math.exp(-ad * dt) : 1;
+                b.angularVelocity.x = wx * angFactor;
+                b.angularVelocity.y = wy * angFactor;
+                b.angularVelocity.z = wz * angFactor;
+                // Integrate orientation quaternion (approx small-angle)
+                const ax = b.angularVelocity.x, ay = b.angularVelocity.y, az = b.angularVelocity.z;
+                const angle = Math.hypot(ax, ay, az);
+                if (angle > 0) {
+                    const half = 0.5 * angle * dt;
+                    const s = Math.sin(half) / (angle || 1);
+                    const dq = { x: ax * s, y: ay * s, z: az * s, w: Math.cos(half) };
+                    // q = dq * q
+                    const q = b.rotationQ;
+                    const qx = dq.w * q.x + dq.x * q.w + dq.y * q.z - dq.z * q.y;
+                    const qy = dq.w * q.y - dq.x * q.z + dq.y * q.w + dq.z * q.x;
+                    const qz = dq.w * q.z + dq.x * q.y - dq.y * q.x + dq.z * q.w;
+                    const qw = dq.w * q.w - dq.x * q.x - dq.y * q.y - dq.z * q.z;
+                    const invLen = 1 / Math.hypot(qx, qy, qz, qw);
+                    q.x = qx * invLen; q.y = qy * invLen; q.z = qz * invLen; q.w = qw * invLen;
                 }
             }
             b.clearForces();
             if (b.type === 'dynamic') {
-                const speedSq = b.velocity.x * b.velocity.x + b.velocity.y * b.velocity.y + b.velocity.z * b.velocity.z;
-                sumSpeedSq += speedSq; dynCount++;
-                if (speedSq < this.sleepVelocityThreshold * this.sleepVelocityThreshold) {
+                const linSpeedSq = b.velocity.x * b.velocity.x + b.velocity.y * b.velocity.y + b.velocity.z * b.velocity.z;
+                const angSpeedSq = b.angularVelocity.x * b.angularVelocity.x + b.angularVelocity.y * b.angularVelocity.y + b.angularVelocity.z * b.angularVelocity.z;
+                sumSpeedSq += linSpeedSq; dynCount++;
+                const linSleep = linSpeedSq < this.sleepVelocityThreshold * this.sleepVelocityThreshold;
+                const angSleep = angSpeedSq < this.sleepAngularVelocityThreshold * this.sleepAngularVelocityThreshold;
+                if (linSleep && angSleep) {
                     const next = ((this.sleepCounters[b.id] ?? 0) + 1);
                     this.sleepCounters[b.id] = next;
                     if (next > this.sleepFramesThreshold) { b.asleep = true; if (this.enableMetrics) this.metrics.sleeping++; }
                 } else {
-                    this.sleepCounters[b.id] = 0;
-                    b.asleep = false;
+                    this.sleepCounters[b.id] = 0; b.asleep = false;
                 }
             }
         }
@@ -260,12 +323,12 @@ export class PhysicsWorld {
         if (this.enableMetrics) this._tBroad = performance.now() - tb0;
         if (this.enableMetrics) this.metrics.pairs = this.pairs.length;
 
-        console.log('[PhysicsDebug] Step frame, pairs found:', this.pairs.length);
+        // console.log('[PhysicsDebug] Step frame, pairs found:', this.pairs.length);
         if (this.pairs.length > 0 && this._debugFrameCounter < 3) {
-            console.log('[PhysicsDebug] Sample pairs:');
+            // console.log('[PhysicsDebug] Sample pairs:');
             for (let i = 0; i < Math.min(3, this.pairs.length); i++) {
                 const p = this.pairs[i];
-                console.log('  Pair', i, ':', p.a.id, '(', p.a.type, p.a.shape.kind, ') <->', p.b.id, '(', p.b.type, p.b.shape.kind, ')');
+                // console.log('  Pair', i, ':', p.a.id, '(', p.a.type, p.a.shape.kind, ') <->', p.b.id, '(', p.b.type, p.b.shape.kind, ')');
             }
         }
 
@@ -280,19 +343,19 @@ export class PhysicsWorld {
             const layerMaskCheck = ((p.a.layer & p.b.mask) && (p.b.layer & p.a.mask));
             if (!layerMaskCheck) {
                 if (this._debugFrameCounter < 3) {
-                    console.log('[PhysicsDebug] Pair filtered out by layer/mask:', p.a.id, '(layer:', p.a.layer, 'mask:', p.a.mask, ') <->', p.b.id, '(layer:', p.b.layer, 'mask:', p.b.mask, ')');
+                    // console.log('[PhysicsDebug] Pair filtered out by layer/mask:', p.a.id, '(layer:', p.a.layer, 'mask:', p.a.mask, ') <->', p.b.id, '(layer:', p.b.layer, 'mask:', p.b.mask, ')');
                 }
                 continue;
             }
             if (p.a.invMass === 0 && p.b.invMass === 0 && !p.a.isTrigger && !p.b.isTrigger) {
                 if (this._debugFrameCounter < 3) {
-                    console.log('[PhysicsDebug] Pair filtered out (both static):', p.a.id, '<->', p.b.id);
+                    // console.log('[PhysicsDebug] Pair filtered out (both static):', p.a.id, '<->', p.b.id);
                 }
                 continue;
             }
             if (p.a.asleep && p.b.asleep) {
                 if (this._debugFrameCounter < 3) {
-                    console.log('[PhysicsDebug] Pair filtered out (both asleep):', p.a.id, '<->', p.b.id);
+                    // console.log('[PhysicsDebug] Pair filtered out (both asleep):', p.a.id, '<->', p.b.id);
                 }
                 continue;
             }
@@ -301,7 +364,7 @@ export class PhysicsWorld {
             this.narrow.collide(p.a, p.b, this.contacts);
             const contactsAfter = this.contacts.length;
             if (contactsAfter > contactsBefore && this._debugFrameCounter < 3) {
-                console.log('[PhysicsDebug] Contact generated between', p.a.id, 'and', p.b.id, 'contacts:', contactsAfter - contactsBefore);
+                // console.log('[PhysicsDebug] Contact generated between', p.a.id, 'and', p.b.id, 'contacts:', contactsAfter - contactsBefore);
             }
             narrowTests++;
         }
@@ -312,7 +375,7 @@ export class PhysicsWorld {
         const ts0 = this.enableMetrics ? performance.now() : 0;
         const iters = this.solver.iterations ?? 1;
         if (this.contacts.length > 0) {
-            console.log('[PhysicsDebug] Solving', this.contacts.length, 'contacts with', iters, 'iterations');
+            // console.log('[PhysicsDebug] Solving', this.contacts.length, 'contacts with', iters, 'iterations');
         }
         for (let i = 0; i < iters; i++) this.solver.solve(this.contacts);
         if (this.enableMetrics) { this._tSolve = performance.now() - ts0; this.metrics.solvedContacts = this.solver.lastSolvedContacts; this.metrics.contacts = this.contacts.length; }
@@ -353,35 +416,37 @@ export class PhysicsWorld {
             const te0 = this.enableMetrics ? performance.now() : 0;
             const currentPairs = new Set<number>();
             // Enter / stay
+            this.aggregatedPairContact.clear();
             for (const c of this.contacts) {
                 const minId = c.a.id < c.b.id ? c.a.id : c.b.id;
-                const maxId = c.a.id ^ minId ? c.a.id : c.b.id; // xor trick to get other id
+                const maxId = c.a.id ^ minId ? c.a.id : c.b.id;
                 const packed = (maxId << 16) | minId;
                 currentPairs.add(packed);
-                if (!this.pairActive[packed]) {
-                    this.pairActive[packed] = true;
-                    this.pairBodiesA[packed] = c.a.id === minId ? c.a : c.b;
-                    this.pairBodiesB[packed] = c.a.id === minId ? c.b : c.a;
+                let info = this.pairInfo.get(packed);
+                if (!info) {
+                    info = { a: c.a.id === minId ? c.a : c.b, b: c.a.id === minId ? c.b : c.a, lastPoint: new_vec3(c.point.x, c.point.y, c.point.z), lastNormal: new_vec3(c.normal.x, c.normal.y, c.normal.z), active: true };
+                    this.pairInfo.set(packed, info);
+                } else {
+                    info.active = true; info.lastPoint.x = c.point.x; info.lastPoint.y = c.point.y; info.lastPoint.z = c.point.z; info.lastNormal.x = c.normal.x; info.lastNormal.y = c.normal.y; info.lastNormal.z = c.normal.z;
                 }
+                // Aggregate: keep first or choose deeper (later improvement could store penetration). For now just first.
+                if (!this.aggregatedPairContact.has(packed)) this.aggregatedPairContact.set(packed, { point: c.point, normal: c.normal });
                 const existed = this.previousFramePairs.has(packed);
                 const type: CollisionEvent['type'] = existed ? 'stay' : 'enter';
-                const evt = { a: c.a, b: c.b, point: c.point, normal: c.normal, type };
+                const agg = this.aggregatedPairContact.get(packed)!;
+                const evt = { a: c.a, b: c.b, point: agg.point, normal: agg.normal, type };
                 if (type === 'enter') this.lastEnterEvents.push(evt); else this.lastStayEvents.push(evt);
                 emitCollision(evt);
             }
             // Exits
             for (const prev of this.previousFramePairs) {
                 if (!currentPairs.has(prev)) {
-                    if (this.pairActive[prev]) {
-                        const a = this.pairBodiesA[prev];
-                        const b = this.pairBodiesB[prev];
-                        if (a && b) {
-                            const exitEvt = { a, b, point: a.position, normal: this.tmpPoint, type: 'exit' as const };
-                            this.lastExitEvents.push(exitEvt);
-                            emitCollision(exitEvt);
-                        }
-                        this.pairActive[prev] = false;
-                        this.pairBodiesA[prev] = this.pairBodiesB[prev] = undefined as any;
+                    const info = this.pairInfo.get(prev);
+                    if (info && info.active) {
+                        const exitEvt = { a: info.a, b: info.b, point: info.lastPoint, normal: info.lastNormal, type: 'exit' as const };
+                        this.lastExitEvents.push(exitEvt);
+                        emitCollision(exitEvt);
+                        info.active = false; // keep cached for potential reuse
                     }
                 }
             }
@@ -389,15 +454,8 @@ export class PhysicsWorld {
             if (this.enableMetrics) this._tEvents = performance.now() - te0;
         }
 
-        // CCD fast spheres
-        const tc0 = this.enableMetrics ? performance.now() : 0;
-        for (const b of this.bodies) {
-            if (b.shape.kind === 'sphere') {
-                const speedSq = b.velocity.x * b.velocity.x + b.velocity.y * b.velocity.y + b.velocity.z * b.velocity.z;
-                if (speedSq > this.fastSphereSpeed * this.fastSphereSpeed) this.sweepSphere(b, dt);
-            }
-        }
-        if (this.enableMetrics) this._tCCD = performance.now() - tc0;
+        // CCD now handled during integration; keep zero timing for HUD
+        if (this.enableMetrics) this._tCCD = 0;
 
         // Debug gizmos
         if (this.gizmoDrawers.length) {
@@ -503,6 +561,9 @@ export class PhysicsWorld {
         let closest: RaycastHit | null = null;
         const ox = origin.x, oy = origin.y, oz = origin.z;
         const dx = dir.x, dy = dir.y, dz = dir.z;
+        const dirLen = Math.hypot(dx, dy, dz) || 1;
+        const invDirLen = 1 / dirLen;
+        const maxT = maxDist * invDirLen; // scale param space if dir not unit length
         for (const b of this.bodies) {
             // Build AABB
             let minx: number, miny: number, minz: number, maxx: number, maxy: number, maxz: number;
@@ -515,7 +576,7 @@ export class PhysicsWorld {
                 minx = b.position.x - r; miny = b.position.y - r; minz = b.position.z - r;
                 maxx = b.position.x + r; maxy = b.position.y + r; maxz = b.position.z + r;
             }
-            let tmin = 0, tmax = maxDist;
+            let tmin = 0, tmax = maxT;
             const invdx = 1 / (dx || 1e-8);
             const invdy = 1 / (dy || 1e-8);
             const invdz = 1 / (dz || 1e-8);
@@ -527,12 +588,13 @@ export class PhysicsWorld {
             if (tz1 > tz2) [tz1, tz2] = [tz2, tz1];
             tmin = Math.max(tmin, tx1, ty1, tz1);
             tmax = Math.min(tmax, tx2, ty2, tz2);
-            if (tmax >= tmin && tmin <= maxDist) {
-                if (!closest || tmin < closest.distance) {
+            if (tmax >= tmin && tmin <= maxT) {
+                const dist = tmin * dirLen;
+                if (!closest || dist < closest.distance) {
                     let nx = 0, ny = 0, nz = 0;
                     if (tmin === tx1) nx = -Math.sign(dx || 1); else if (tmin === ty1) ny = -Math.sign(dy || 1); else nz = -Math.sign(dz || 1);
                     const px = ox + dx * tmin, py = oy + dy * tmin, pz = oz + dz * tmin;
-                    closest = { body: b, point: new_vec3(px, py, pz), normal: new_vec3(nx, ny, nz), distance: tmin };
+                    closest = { body: b, point: new_vec3(px, py, pz), normal: new_vec3(nx, ny, nz), distance: dist };
                 }
             }
         }
@@ -540,66 +602,119 @@ export class PhysicsWorld {
     }
 
     // --- Continuous collision detection (sphere vs static AABB & sphere) ---
-    sweepSphere(body: PhysicsBody, dt: number) {
-        if (body.shape.kind !== 'sphere') return; // only spheres for MVP
-        if (body.invMass === 0) return; // skip static / kinematic
-        const vx = body.velocity.x * dt;
-        const vy = body.velocity.y * dt;
-        const vz = body.velocity.z * dt;
-        const rad = body.shape.radius;
-        // Very naive: check against all static bodies (broadphase could be reused)
+    // New CCD sphere sweep executed during integration (previous -> proposed). Adjusts position and removes inward normal velocity.
+    private ccdSweepSphere(body: PhysicsBody, px: number, py: number, pz: number, nx: number, ny: number, nz: number) {
+        const rad = body.shape.kind === 'sphere' ? body.shape.radius : 0;
+        const vx = nx - px, vy = ny - py, vz = nz - pz; // displacement over dt
+        if (vx === 0 && vy === 0 && vz === 0) { body.position.x = nx; body.position.y = ny; body.position.z = nz; return; }
+        let bestT = 1;
+        let hitNormal: vec3 | null = null;
+        // Broadphase-assisted: build swept AABB and test against broadphase bodies quickly (reuse broadphase axis list indirectly by brute force for now but with swept AABB early reject)
+        const sweepMinX = Math.min(px - rad, nx - rad);
+        const sweepMaxX = Math.max(px + rad, nx + rad);
+        const sweepMinY = Math.min(py - rad, ny - rad);
+        const sweepMaxY = Math.max(py + rad, ny + rad);
+        const sweepMinZ = Math.min(pz - rad, nz - rad);
+        const sweepMaxZ = Math.max(pz + rad, nz + rad);
         for (const other of this.bodies) {
             if (other === body) continue;
-            if (other.invMass !== 0) continue; // only static for now
-            const ox = other.position.x - body.position.x;
-            const oy = other.position.y - body.position.y;
-            const oz = other.position.z - body.position.z;
-            const relvx = vx;
-            const relvy = vy;
-            const relvz = vz;
-            const radiusSum = rad + (other.shape.kind === 'sphere' ? other.shape.radius : 0);
-            // Ray-sphere if other sphere
+            // Early reject by swept AABB vs other's static AABB
+            let ominx: number, ominy: number, ominz: number, omaxx: number, omaxy: number, omaxz: number;
             if (other.shape.kind === 'sphere') {
-                const a = relvx * relvx + relvy * relvy + relvz * relvz;
-                const b = 2 * (ox * relvx + oy * relvy + oz * relvz);
-                const c = ox * ox + oy * oy + oz * oz - radiusSum * radiusSum;
+                const r = other.shape.radius;
+                ominx = other.position.x - r; omaxx = other.position.x + r;
+                ominy = other.position.y - r; omaxy = other.position.y + r;
+                ominz = other.position.z - r; omaxz = other.position.z + r;
+            } else {
+                const h = other.shape.halfExtents;
+                ominx = other.position.x - h.x; omaxx = other.position.x + h.x;
+                ominy = other.position.y - h.y; omaxy = other.position.y + h.y;
+                ominz = other.position.z - h.z; omaxz = other.position.z + h.z;
+            }
+            if (omaxx < sweepMinX || ominx > sweepMaxX || omaxy < sweepMinY || ominy > sweepMaxY || omaxz < sweepMinZ || ominz > sweepMaxZ) continue;
+            const treatAsStatic = other.invMass === 0; // dynamic-dynamic CCD extension for spheres only (approx)
+            if (other.shape.kind === 'sphere') {
+                // Relative motion if dynamic-dynamic
+                let rvx = vx, rvy = vy, rvz = vz;
+                if (!treatAsStatic && other.shape.kind === 'sphere') {
+                    rvx -= (other.velocity.x * (nx !== px ? 1 : 0));
+                    rvy -= (other.velocity.y * (ny !== py ? 1 : 0));
+                    rvz -= (other.velocity.z * (nz !== pz ? 1 : 0));
+                }
+                const rSum = rad + other.shape.radius;
+                const sx = px - other.position.x;
+                const sy = py - other.position.y;
+                const sz = pz - other.position.z;
+                const a = rvx * rvx + rvy * rvy + rvz * rvz;
+                const b = 2 * (sx * rvx + sy * rvy + sz * rvz);
+                const c = sx * sx + sy * sy + sz * sz - rSum * rSum;
                 const disc = b * b - 4 * a * c;
                 if (disc >= 0) {
                     const t = (-b - Math.sqrt(disc)) / (2 * a);
-                    if (t >= 0 && t <= 1) {
-                        body.position.x += relvx * t; body.position.y += relvy * t; body.position.z += relvz * t;
-                        body.velocity.x = body.velocity.y = body.velocity.z = 0; // stop
-                        body.asleep = true;
-                        return;
+                    if (t >= 0 && t < bestT && t <= 1) {
+                        bestT = t;
+                        const cx = (px + vx * t) - other.position.x;
+                        const cy = (py + vy * t) - other.position.y;
+                        const cz = (pz + vz * t) - other.position.z;
+                        const len = Math.hypot(cx, cy, cz) || 1;
+                        hitNormal = new_vec3(cx / len, cy / len, cz / len);
                     }
                 }
-            }
-            // Ray-AABB (expanded by sphere radius)
-            // Simplified: treat moving sphere as ray + radius expansion of AABB
-            if (other.shape.kind === 'aabb') {
+            } else { // sphere vs AABB (ray vs expanded AABB)
                 const h = other.shape.halfExtents;
                 const minx = other.position.x - h.x - rad;
-                const miny = other.position.y - h.y - rad;
-                const minz = other.position.z - h.z - rad;
                 const maxx = other.position.x + h.x + rad;
+                const miny = other.position.y - h.y - rad;
                 const maxy = other.position.y + h.y + rad;
+                const minz = other.position.z - h.z - rad;
                 const maxz = other.position.z + h.z + rad;
-                let tmin = 0, tmax = 1;
-                const invx = 1 / (relvx || 1e-8);
-                const invy = 1 / (relvy || 1e-8);
-                const invz = 1 / (relvz || 1e-8);
-                let tx1 = (minx - 0) * invx, tx2 = (maxx - 0) * invx; if (tx1 > tx2) [tx1, tx2] = [tx2, tx1];
-                let ty1 = (miny - 0) * invy, ty2 = (maxy - 0) * invy; if (ty1 > ty2) [ty1, ty2] = [ty2, ty1];
-                let tz1 = (minz - 0) * invz, tz2 = (maxz - 0) * invz; if (tz1 > tz2) [tz1, tz2] = [tz2, tz1];
-                tmin = Math.max(tmin, tx1, ty1, tz1);
-                tmax = Math.min(tmax, tx2, ty2, tz2);
-                if (tmax >= tmin && tmin <= 1) {
-                    body.position.x += relvx * tmin; body.position.y += relvy * tmin; body.position.z += relvz * tmin;
-                    body.velocity.x = body.velocity.y = body.velocity.z = 0;
-                    body.asleep = true;
-                    return;
+                const invx = 1 / (vx || 1e-8);
+                const invy = 1 / (vy || 1e-8);
+                const invz = 1 / (vz || 1e-8);
+                let tx1 = (minx - px) * invx, tx2 = (maxx - px) * invx; if (tx1 > tx2) [tx1, tx2] = [tx2, tx1];
+                let ty1 = (miny - py) * invy, ty2 = (maxy - py) * invy; if (ty1 > ty2) [ty1, ty2] = [ty2, ty1];
+                let tz1 = (minz - pz) * invz, tz2 = (maxz - pz) * invz; if (tz1 > tz2) [tz1, tz2] = [tz2, tz1];
+                const tEnter = Math.max(0, tx1, ty1, tz1);
+                const tExit = Math.min(1, tx2, ty2, tz2);
+                if (tExit >= tEnter && tEnter < bestT) {
+                    bestT = tEnter;
+                    if (tEnter === tx1) hitNormal = new_vec3(-Math.sign(vx || 1), 0, 0);
+                    else if (tEnter === ty1) hitNormal = new_vec3(0, -Math.sign(vy || 1), 0);
+                    else hitNormal = new_vec3(0, 0, -Math.sign(vz || 1));
                 }
             }
+        }
+        if (bestT < 1) {
+            body.position.x = px + vx * bestT;
+            body.position.y = py + vy * bestT;
+            body.position.z = pz + vz * bestT;
+            if (hitNormal) {
+                // Restitution-aware response: reflect separating impulse scaled by restitution (min with static body if available)
+                const vn = body.velocity.x * hitNormal.x + body.velocity.y * hitNormal.y + body.velocity.z * hitNormal.z;
+                if (vn < 0) {
+                    // Find restitution against hit object (approx by sampling closest static shape along path)
+                    let restitution = body.restitution ?? 0;
+                    // (Optimization opportunity: pass the 'other' restitution along with hitNormal earlier.)
+                    // Iterate again cheaply to find closest matching static with same TOI (rare performance issue given MVP scope)
+                    for (const other of this.bodies) {
+                        if (other.invMass !== 0) continue;
+                        const dx = body.position.x - other.position.x;
+                        const dy = body.position.y - other.position.y;
+                        const dz = body.position.z - other.position.z;
+                        const distSq = dx * dx + dy * dy + dz * dz;
+                        if (distSq < 0.0001) { // overlapping center (rough proxy for impact object)
+                            restitution = Math.min(restitution, other.restitution);
+                            break;
+                        }
+                    }
+                    const bounce = -(1 + restitution) * vn;
+                    body.velocity.x += hitNormal.x * bounce;
+                    body.velocity.y += hitNormal.y * bounce;
+                    body.velocity.z += hitNormal.z * bounce;
+                }
+            }
+        } else {
+            body.position.x = nx; body.position.y = ny; body.position.z = nz;
         }
     }
 
@@ -632,7 +747,12 @@ export class PhysicsWorld {
 
     private resetPairTracking() {
         this.previousFramePairs.clear();
-        this.pairBodiesA.length = this.pairBodiesB.length = this.pairActive.length = 0;
+        this.pairInfo.clear();
+    }
+
+    // Runtime debug toggles
+    setDebugOptions(opts: { logFirstFramesContacts?: boolean }) {
+        if (opts.logFirstFramesContacts !== undefined) this.logFirstFramesContacts = opts.logFirstFramesContacts;
     }
 
     /** Toggle HUD auto-collapse behavior. */
