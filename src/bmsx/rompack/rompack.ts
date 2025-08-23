@@ -1,4 +1,5 @@
 import { StateMachineBlueprint } from '../fsm/fsmtypes';
+import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
 
 export type AssetId = string;
@@ -111,6 +112,10 @@ export interface Area {
 }
 
 export type Polygon = number[];
+
+export interface Oriented {
+	rotationQ: quat;
+}
 
 /**
  * Metadata for an audio asset.
