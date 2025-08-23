@@ -1,5 +1,5 @@
-import { M4, Mat4 } from '../render/3d/math3d';
-import type { Identifier, vec3arr } from '../rompack/rompack';
+import { M4, Mat4, quat } from '../render/3d/math3d';
+import type { Identifier, Oriented, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { Component, componenttags_postprocessing } from './basecomponent';
 
@@ -7,7 +7,8 @@ import { Component, componenttags_postprocessing } from './basecomponent';
 @componenttags_postprocessing('position_update_axis')
 export class TransformComponent extends Component {
     public position: vec3arr;
-    public rotation: vec3arr;
+    // public rotation: vec3arr; // retained for legacy callers; not authoritative if parent supplies quaternion
+    private orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
     public scale: vec3arr;
 
     private _parentNode: TransformComponent | null = null;
@@ -17,11 +18,11 @@ export class TransformComponent extends Component {
     private worldMatrix: Mat4 = M4.identity();
     private dirty = true;
 
-    constructor(parentid: Identifier, opts?: { position?: vec3arr; rotation?: vec3arr; scale?: vec3arr }) {
+    constructor(parentid: Identifier, opts?: { position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
         super(parentid);
         this.position = opts?.position ?? [0, 0, 0];
-        this.rotation = opts?.rotation ?? [0, 0, 0];
         this.scale = opts?.scale ?? [1, 1, 1];
+        if (opts?.orientationQ) this.orientationQ = opts.orientationQ;
     }
 
     public get parentNode(): TransformComponent | null {
@@ -49,9 +50,9 @@ export class TransformComponent extends Component {
     private updateMatrices(): void {
         this.localMatrix = M4.identity();
         M4.translateSelf(this.localMatrix, this.position[0], this.position[1], this.position[2]);
-        M4.rotateXSelf(this.localMatrix, this.rotation[0]);
-        M4.rotateYSelf(this.localMatrix, this.rotation[1]);
-        M4.rotateZSelf(this.localMatrix, this.rotation[2]);
+        const rot = new Float32Array(16);
+        M4.quatToMat4Into(rot, [this.orientationQ.x, this.orientationQ.y, this.orientationQ.z, this.orientationQ.w]);
+        M4.mulInto(this.localMatrix, this.localMatrix, rot);
         M4.scaleSelf(this.localMatrix, this.scale[0], this.scale[1], this.scale[2]);
         if (this._parentNode) {
             const pw = this._parentNode.getWorldMatrix();
@@ -77,10 +78,9 @@ export class TransformComponent extends Component {
             this.position[2] = parent.pos.z ?? 0;
         }
 
-        if (parent.rotation) {
-            this.rotation[0] = parent.rotation[0];
-            this.rotation[1] = parent.rotation[1];
-            this.rotation[2] = parent.rotation[2];
+        const oriented = parent as Oriented;
+        if (oriented.rotationQ) {
+            this.orientationQ = oriented.rotationQ;
         }
 
         if (parent.scale) {
