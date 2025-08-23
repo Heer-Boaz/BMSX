@@ -3,6 +3,19 @@ applyTo: '**/*.ts'
 ---
 Provide project context and coding guidelines that AI should follow when generating code, answering questions, or reviewing changes.
 
+0. Building the game engine requires:
+   ```bash
+   npx tsc --build ./src/bmsx
+   ```
+   Building the testrom requires:
+   ```bash
+   npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom --force
+   ```
+   Building any other rompack (game) requires:
+   ```
+   npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname <romname> --force
+   ```
+
 1. **Project Structure**: Understand the overall structure of the project, including key directories and files.
 2. **File Naming Conventions**: Follow consistent naming conventions for files and classes. Use PascalCase for class names and lowercase for file names.
 3. **Best-practices more important than backwards compatibility**: Feel free to make breaking changes if necessary, but document them clearly.
