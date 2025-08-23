@@ -1,6 +1,6 @@
-import { vec3 } from '../../rompack/rompack';
+import { Oriented, vec3 } from '../../rompack/rompack';
 import { excludepropfromsavegame, insavegame, onload, onsave } from '../../serializer/gameserializer';
-import { extractFrustumPlanes, M4, Mat4, Plane, Q, Quat, sphereInFrustum, V3 } from './math3d';
+import { extractFrustumPlanes, M4, Mat4, Plane, Q, quat, sphereInFrustum, V3 } from './math3d';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+
 // | Projectie                   | Type                    | Dieptevervorming      | Gebruikscase                 | Matrixelementen                              |
@@ -17,7 +17,7 @@ import { extractFrustumPlanes, M4, Mat4, Plane, Q, Quat, sphereInFrustum, V3 } f
 export type CameraProjectionType = 'perspective' | 'orthographic' | 'fisheye' | 'panorama' | 'oblique' | 'asymmetricFrustum' | 'isometric' | 'infinitePerspective' | 'viewFromBasis';
 
 @insavegame
-export class Camera {
+export class Camera implements Oriented {
 	position: vec3 = V3.of(0, 0, 0);
 
 	// Bewaar deze voor UI/serialisatie; intern sturen we met _q
@@ -32,7 +32,7 @@ export class Camera {
 	fovDeg = 60; aspect = 1; near = 0.1; far = 1000;
 	_projectionType: CameraProjectionType = 'perspective';
 
-	private _q: Quat = Q.ident();       // <-- bron van waarheid
+	private _q: quat = Q.ident();       // <-- bron van waarheid
 	@excludepropfromsavegame
 	private _view: Mat4 = M4.identity();
 	@excludepropfromsavegame
@@ -45,6 +45,14 @@ export class Camera {
 	private _dirty = true;
 
 	constructor() {
+	}
+
+	public get rotationQ(): quat {
+		return this._q;
+	}
+
+	public markDirty(): void {
+		this._dirty = true;
 	}
 
 	@onload

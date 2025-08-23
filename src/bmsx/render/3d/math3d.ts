@@ -88,6 +88,17 @@ export const M4 = {
         m[12] = 0; m[13] = 0; m[14] = 0; m[15] = 1;
         return m;
     },
+    // Write quaternion rotation matrix into provided out (avoids alloc per call)
+    quatToMat4Into(out: Mat4, q: [number, number, number, number]): Mat4 {
+        let [x, y, z, w] = q;
+        const l = Math.hypot(x, y, z, w) || 1; x /= l; y /= l; z /= l; w /= l;
+        const xx = x * x, yy = y * y, zz = z * z, xy = x * y, xz = x * z, yz = y * z, wx = w * x, wy = w * y, wz = w * z;
+        out[0] = 1 - 2 * (yy + zz); out[1] = 2 * (xy + wz); out[2] = 2 * (xz - wy); out[3] = 0;
+        out[4] = 2 * (xy - wz); out[5] = 1 - 2 * (xx + zz); out[6] = 2 * (yz + wx); out[7] = 0;
+        out[8] = 2 * (xz + wy); out[9] = 2 * (yz - wx); out[10] = 1 - 2 * (xx + yy); out[11] = 0;
+        out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+        return out;
+    },
     fromTRS(t: [number, number, number], q?: [number, number, number, number], s?: [number, number, number]): Mat4 {
         const out = M4.identity();
         if (t) M4.translateSelf(out, t[0], t[1], t[2]);
@@ -619,8 +630,6 @@ export const bvec3 = {
     }
 };
 
-export interface quat { x: number; y: number; z: number; w: number; }
-
 export const bquat = {
     identity(): quat {
         return { x: 0, y: 0, z: 0, w: 1 };
@@ -711,17 +720,45 @@ export function quatToMat4(q: [number, number, number, number]): Float32Array {
 }
 
 // ====== Quat helpers ======
-export type Quat = { x: number; y: number; z: number; w: number };
+export type quat = { x: number; y: number; z: number; w: number };
 
 export const Q = {
-    ident(): Quat { return { x: 0, y: 0, z: 0, w: 1 }; },
+    ident(): quat { return { x: 0, y: 0, z: 0, w: 1 }; },
+    fromEuler(rx: number, ry: number, rz: number): quat { // XYZ order (same as rotateX, then Y, then Z in paint legacy path)
+        const cx = Math.cos(rx * 0.5), sx = Math.sin(rx * 0.5);
+        const cy = Math.cos(ry * 0.5), sy = Math.sin(ry * 0.5);
+        const cz = Math.cos(rz * 0.5), sz = Math.sin(rz * 0.5);
+        // q = qz * qy * qx (Z then Y then X intrinsic) to match rotate order; derive combined
+        const qw = cz * cy * cx + sz * sy * sx;
+        const qx = cz * cy * sx - sz * sy * cx;
+        const qy = cz * sy * cx + sz * cy * sx;
+        const qz = sz * cy * cx - cz * sy * sx;
+        return { x: qx, y: qy, z: qz, w: qw };
+    },
+    toEuler(q: quat): [number, number, number] { // inverse of fromEuler above
+        // Normalize
+        const l = Math.hypot(q.x, q.y, q.z, q.w) || 1;
+        const x = q.x / l, y = q.y / l, z = q.z / l, w = q.w / l;
+        // Extract (XYZ intrinsic)
+        // Reference derivation for ZYX; adapted to match composition used.
+        const sinr = 2 * (w * x + y * z);
+        const cosr = 1 - 2 * (x * x + y * y);
+        const rx = Math.atan2(sinr, cosr);
+        const sinp = 2 * (w * y - z * x);
+        let ry: number;
+        if (Math.abs(sinp) >= 1) ry = Math.sign(sinp) * (Math.PI / 2); else ry = Math.asin(sinp);
+        const siny = 2 * (w * z + x * y);
+        const cosy = 1 - 2 * (y * y + z * z);
+        const rz = Math.atan2(siny, cosy);
+        return [rx, ry, rz];
+    },
 
-    fromAxisAngle(axis: vec3, ang: number): Quat {
+    fromAxisAngle(axis: vec3, ang: number): quat {
         const a = V3.norm(axis); const h = ang * 0.5, s = Math.sin(h);
         return { x: a.x * s, y: a.y * s, z: a.z * s, w: Math.cos(h) };
     },
 
-    mul(a: Quat, b: Quat): Quat {
+    mul(a: quat, b: quat): quat {
         return {
             w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
             x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
@@ -730,13 +767,13 @@ export const Q = {
         };
     },
 
-    norm(q: Quat): Quat {
+    norm(q: quat): quat {
         const L = Math.hypot(q.x, q.y, q.z, q.w) || 1;
         return { x: q.x / L, y: q.y / L, z: q.z / L, w: q.w / L };
     },
 
     // roteer vector met quaternion
-    rotateVec(q: Quat, v: vec3): vec3 {
+    rotateVec(q: quat, v: vec3): vec3 {
         // v' = q * (v,0) * q*
         const x = v.x, y = v.y, z = v.z;
         const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
@@ -753,7 +790,7 @@ export const Q = {
     },
 
     // basisvectoren uit q (rechts-handig, -Z is forward)
-    basis(q: Quat): { r: vec3; u: vec3; f: vec3 } {
+    basis(q: quat): { r: vec3; u: vec3; f: vec3 } {
         const r = Q.rotateVec(q, V3.of(1, 0, 0));
         const u = Q.rotateVec(q, V3.of(0, 1, 0));
         const f = Q.rotateVec(q, V3.of(0, 0, -1)); // -Z kijkrichting
