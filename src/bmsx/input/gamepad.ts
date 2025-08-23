@@ -162,7 +162,8 @@ export class GamepadInput implements InputHandler {
      */
     public pollInput(): void {
         if (this.gamepadIndex === null || !this.gamepad) return; // No gamepad was assigned to this GamepadInput-object
-        const gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined); // Get gamepads from browser API
+        const nav = navigator as Navigator & { webkitGetGamepads?: () => (Gamepad[] | null) };
+        const gamepads: Gamepad[] = (nav.getGamepads && nav.getGamepads()) || (nav.webkitGetGamepads && nav.webkitGetGamepads()) || [] as any; // Fallback to empty array
         if (!gamepads) return; // Browser does not support gamepads API
         if (gamepads.length < this.gamepadIndex) return; // Gamepad index is out of range of connected gamepads array (this can happen if multiple gamepads are connected and one is disconnected)
         const newGamepad = gamepads[this.gamepadIndex];

@@ -2,9 +2,11 @@
 import { BTNode } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing } from '../component/basecomponent';
 import type { Identifier } from '../rompack/rompack';
+import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { FloatingDialog } from './bmsxdebugger';
 
 @componenttags_postprocessing('render')
+@excludeclassfromsavegame
 export class BTVisualizer extends Component {
     private dialog: FloatingDialog;
     private machineElements: Map<string, HTMLElement>;

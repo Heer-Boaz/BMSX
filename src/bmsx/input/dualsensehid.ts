@@ -46,8 +46,9 @@ export class DualSenseHID {
     private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<HIDDevice[]> {
         if (!DualSenseHID.pendingRequest) {
             // Pause the game while the browser permission dialog is visible
-            const wasPaused = (global as any).$?.paused ?? false;
-            if (!wasPaused) (global as any).$.paused = true;
+            const g = global as unknown as { $?: { paused?: boolean } };
+            const wasPaused = g.$?.paused ?? false;
+            if (!wasPaused && g.$) g.$.paused = true;
 
             const filters = ids
                 ? [{ vendorId: ids.vendorId, productId: ids.productId }]
@@ -56,7 +57,7 @@ export class DualSenseHID {
             DualSenseHID.pendingRequest = navigator.hid.requestDevice({ filters })
                 .finally(() => {
                     DualSenseHID.pendingRequest = null;
-                    if (!wasPaused) (global as any).$.paused = false;
+                    if (!wasPaused && g.$) g.$.paused = false;
                 });
         }
         return DualSenseHID.pendingRequest;
@@ -178,11 +179,14 @@ export class DualSenseHID {
 
         if (!this.device) {
             console.info('Did not find any suitable controller device.');
-            console.info('Known devices:', known.map(d => `${d.productName} (${d.vendorId.toString(16)}:${d.productId.toString(16)}) serial: ${(d as any).serialNumber || 'none'}`));
+            console.info('Known devices:', known.map(d => {
+                const serial = (d as unknown as { serialNumber?: string }).serialNumber || 'none';
+                return `${d.productName} (${d.vendorId.toString(16)}:${d.productId.toString(16)}) serial: ${serial}`;
+            }));
             return; // No device found
         }
 
-        console.info(`Found Sony HID device: ${this.device.productName} (${this.device.vendorId.toString(16)}:${this.device.productId.toString(16)}) serial: ${(this.device as any).serialNumber || 'none'}`);
+        console.info(`Found Sony HID device: ${this.device.productName} (${this.device.vendorId.toString(16)}:${this.device.productId.toString(16)}) serial: ${(this.device as unknown as { serialNumber?: string }).serialNumber || 'none'}`);
 
         this.kind = this.detectPadKind(this.device);
         console.info(`Detected Sony HID device kind: ${this.kind ?? 'unknown'}`);
@@ -264,7 +268,7 @@ export class DualSenseHID {
         candidates.forEach(d => d.removeEventListener('inputreport', () => { })); // Clean up
 
         if (result && result.changed) {
-            console.info(`Matched HID device via input: ${result.device.productName} serial: ${(result.device as any).serialNumber || 'none'}`);
+            console.info(`Matched HID device via input: ${result.device.productName} serial: ${(result.device as unknown as { serialNumber?: string }).serialNumber || 'none'}`);
             return result.device;
         }
         console.warn('Input correlation timed out or no match.');

@@ -6,6 +6,10 @@ import { decodeBinary, encodeBinary } from "./binencoder";
 
 // Decorators onload/onsave are defined locally in this file
 type ConstructorWithSaveGame<T = any> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
+
+function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean } {
+    return !!ctor && typeof ctor === 'function' && '__exclude_savegame__' in (ctor as any);
+}
 /**
  * Serializes the input object to a string using JSON.stringify, excluding any properties that should not be serialized.
  * @param obj - The object to serialize.
@@ -92,15 +96,15 @@ export class Serializer {
         // Bepaal cacheKey: bij constructor → classnaam; bij instance → instance.constructor.name
         const cacheKey = (typeof obj === 'function')
             ? (obj as Function).name
-            : (obj as any)?.constructor?.name;
+            : (obj as object && (obj as { constructor?: { name?: string } }).constructor?.name);
 
         const map = Serializer.classIncludeExcludeMap;
         if (cacheKey && map.has(cacheKey)) return map.get(cacheKey)! === true;
 
         // 1) Check constructor-chain (klassenniveau; waar je decorator/flag meestal op zit)
-        let ctor: any = (typeof obj === 'function') ? obj : (obj as any)?.constructor;
+        let ctor: any = (typeof obj === 'function') ? obj : (obj as object && (obj as { constructor?: any }).constructor);
         while (ctor && ctor !== Object) {
-            if ((ctor as any).__exclude_savegame__ === true) {
+            if (hasExcludeFlag(ctor) && ctor.__exclude_savegame__ === true) {
                 if (cacheKey) map.set(cacheKey, true);
                 return true;
             }
@@ -113,10 +117,10 @@ export class Serializer {
         }
 
         // 2) (Defensief) Check prototype-chain van een instance
-        let proto: any = (typeof obj === 'function') ? obj.prototype : Object.getPrototypeOf(obj);
+        let proto: any = (typeof obj === 'function') ? (obj as any).prototype : Object.getPrototypeOf(obj);
         while (proto && proto.constructor && proto.constructor !== Object) {
             const pctor = proto.constructor;
-            if ((pctor as any).__exclude_savegame__ === true) {
+            if (hasExcludeFlag(pctor) && pctor.__exclude_savegame__ === true) {
                 if (cacheKey) map.set(cacheKey, true);
                 return true;
             }
@@ -143,7 +147,7 @@ export class Serializer {
         }
 
         // Walk prototype chain of the instance (prototype.constructor.name matches class name)
-        let proto = Object.getPrototypeOf(value as any);
+        let proto = Object.getPrototypeOf(value);
         while (proto && proto.constructor && proto.constructor.name !== 'Object') {
             if (Serializer.excludedProperties[proto.constructor.name]?.[key] === true) {
                 typeMap.set(key, true);
@@ -153,14 +157,14 @@ export class Serializer {
         }
 
         // Check whether the type of the property itself should be excluded
-        const propertyValue = (value as any)[key];
-        if (propertyValue && propertyValue.constructor) {
-            if (Serializer.shouldClassBeExcludedFromSaveGame(
-                // pass constructor or instance — helper handles both
-                propertyValue.constructor ?? propertyValue
-            )) {
-                typeMap.set(key, true);
-                return true;
+        const propertyValue = (value as Record<string, unknown>)[key];
+        if (propertyValue && typeof propertyValue === 'object') {
+            const ctorCandidate = (propertyValue as { constructor?: unknown }).constructor;
+            if (ctorCandidate && typeof ctorCandidate === 'function') {
+                if (Serializer.shouldClassBeExcludedFromSaveGame(ctorCandidate as ConstructorWithSaveGame)) {
+                    typeMap.set(key, true);
+                    return true;
+                }
             }
         }
 
@@ -214,7 +218,7 @@ export class Serializer {
             if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
                 const id = getIdForObject(value);
                 const typename = Serializer.get_typename(value);
-                const taPlain: any = { typename, data: Array.from(value as any), isTypedArray: true };
+                const taPlain: { typename: string; data: number[]; isTypedArray: true } = { typename, data: Array.from(value as unknown as ArrayLike<number>), isTypedArray: true };
                 if (parent && key !== undefined) parent[key] = { r: id };
                 else rootRef = { r: id };
                 objects[id] = taPlain;
@@ -254,7 +258,7 @@ export class Serializer {
             // Create a plain object for serialization
             // If we have a known constructor, we can use the typename
             // Otherwise, we just use an empty object
-            const plain: any = hasConstructor ? { typename } : {};
+            const plain: Record<string, unknown> = hasConstructor ? { typename } : {};
             // Use { r: id } for references
             if (parent && key !== undefined) parent[key] = { r: id };
             else rootRef = { r: id };
@@ -263,7 +267,7 @@ export class Serializer {
             for (let i = keys.length - 1; i >= 0; --i) {
                 const k = keys[i];
                 // Inline exclusion logic for performance
-                const v = value[k];
+                const v = (value as Record<string, unknown>)[k];
                 if (v === null || v === undefined) continue;
                 if (k && Serializer.shouldPropertyBeExcludedFromSaveGame(value, k)) {
                     // console.debug(`Property '${k}' of type '${typename}' is excluded from serialization.`);
@@ -290,6 +294,9 @@ export class Serializer {
                                 break;
                             case 'webgltexture':
                                 continue; // Skip WebGL textures
+                            case 'set':
+                                // We can handle Sets without a known constructor
+                                break;
                             default:
                                 if (!Reviver.constructors[valType]) {
                                     console.warn(`Object of type '${valType}' encountered without a known constructor. Did you forget to add '@insavegame' to the class definition?`);

@@ -4,6 +4,7 @@ import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
+import { PhysicsWorld } from '../physics/physicsworld';
 import { TEXTMANAGER_ID, TextureManager, WebGLBackend } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
@@ -323,7 +324,12 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			$.input.enableOnscreenGamepad();
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
-		const gl = ($.view as any).glctx as WebGL2RenderingContext | undefined;
+		// Obtain WebGL context if the active view is a GLView
+		let gl: WebGL2RenderingContext | undefined;
+		try {
+			const glView = $.viewAs?.<import('../render/glview').GLView>();
+			gl = glView?.glctx;
+		} catch { /* non-GL view */ }
 		new TextureManager(gl ? new WebGLBackend(gl) : undefined);
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
@@ -358,6 +364,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		model.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
+
+		// Register / create physics world (MVP). Exposed via registry for components/game objects.
+		if (!this.registry.has('physics_world')) {
+			this.registry.register(new PhysicsWorld());
+		}
 
 		this.initialized = true; // Mark the game as initialized
 		return this; // Allow chaining
@@ -399,6 +410,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public update(deltaTime: number): void {
 		const game = global.$;
 		const model = game.model;
+		// Step physics first so game object logic can react to post-collision resolved positions.
 		model.run(deltaTime);
 
 		if (REWIND_BUFFER_ACTIVATED && (game._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {

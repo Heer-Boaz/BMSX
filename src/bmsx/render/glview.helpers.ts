@@ -90,7 +90,7 @@ export function checkWebGLError(infoText: string): number {
     // because the error may not occur at the original draw call anymore.
     let error = 0;
     try {
-        const gl = ($.view as any).glctx as WebGLRenderingContext;
+        const gl = $.viewAs<GLView>().glctx as WebGLRenderingContext;
         error = gl.getError();
         if (error !== gl.NO_ERROR) {
             // Throwing error so that it can be caught by the debugger via catching caught exceptions
@@ -115,7 +115,7 @@ export function catchWebGLError(_target: any, propertyKey: string, descriptor: P
     const originalMethod = descriptor.value;
     descriptor.value = function (...args: any[]) {
         const returnValue = originalMethod.apply(this, args);
-        const gl = ($.view as any).glctx as WebGLRenderingContext;
+        const gl = $.viewAs<GLView>().glctx as WebGLRenderingContext;
         if (gl) {
             const error = gl.getError();
             // Handle the error as needed

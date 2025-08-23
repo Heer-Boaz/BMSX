@@ -1,11 +1,13 @@
 import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
-import { Component, componenttags_preprocessing } from '../component/basecomponent';
+import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
+import { CameraObject } from '../core/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import { GameObject } from '../core/gameobject';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/sprite';
 import { div_vec2, new_vec2 } from '../core/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
+import { PhysicsDebugComponent } from '../physics/physicsdebugcomponent';
 import type { Identifier, vec2 } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { Msx1Colors } from '../systems/msx';
@@ -13,6 +15,7 @@ import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
+const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
 let draggedObj: GameObject | null;
 let draggedObjCursorOffset: vec2;
@@ -22,7 +25,151 @@ let prevPausedState: boolean; // Remember the paused-state before a dialog was o
 let currentHighlighterComponent: ObjectHighlighterComponent | null;
 let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 
+// Physics overlay renderer: attaches once, renders PhysicsDebugComponent buffers every frame
+@excludeclassfromsavegame
+@componenttags_postprocessing('render')
+export class PhysicsOverlayRenderer extends Component {
+    private canvas: HTMLCanvasElement;
+    private ctx: CanvasRenderingContext2D;
+    private attached = false;
+    private lastResizeW = 0; private lastResizeH = 0;
+    constructor(id: Identifier) {
+        super(id);
+        // Create or reuse overlay canvas
+        let c = document.getElementById(PHYSICS_OVERLAY_ID) as HTMLCanvasElement | null;
+        if (!c) {
+            c = document.createElement('canvas');
+            c.id = PHYSICS_OVERLAY_ID;
+            c.style.position = 'absolute';
+            c.style.left = '0'; c.style.top = '0';
+            c.style.pointerEvents = 'none';
+            c.style.zIndex = '9000';
+            document.body.appendChild(c);
+        }
+        this.canvas = c;
+        const ctx = c.getContext('2d');
+        if (!ctx) throw new Error('2D context not available for physics overlay');
+        this.ctx = ctx;
+    }
+
+    private ensureSize() {
+        const w = window.innerWidth, h = window.innerHeight;
+        if (w !== this.lastResizeW || h !== this.lastResizeH) {
+            this.lastResizeW = this.canvas.width = w;
+            this.lastResizeH = this.canvas.height = h;
+        }
+    }
+
+    override postprocessingUpdate(): void {
+        this.ensureSize();
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Gather all PhysicsDebugComponents
+        const debugComponents: PhysicsDebugComponent[] = [];
+        // Iterate all spaces for game objects
+        const modelAny: any = $.model as any;
+        const spaceMap = modelAny[Symbol.for('id2space')] || modelAny['id2space'] || modelAny['spaceid_2_space'] || modelAny['spaceid_2_space'.toString()];
+        if (spaceMap) {
+            for (const sid in spaceMap) {
+                const space = spaceMap[sid];
+                if (!space || !space.objects) continue;
+                for (const go of space.objects) {
+                    const p = go.getComponent(PhysicsDebugComponent);
+                    if (p && p.enabled) debugComponents.push(p);
+                }
+            }
+        }
+        if (!debugComponents.length) return;
+        // Camera-aware projection: project 3D -> NDC -> screen (overlay canvas coordinates)
+        const activeCamObj = $.model.getGameObject($.model.activeCameraId) as CameraObject | undefined;
+        const cam = activeCamObj?.camera;
+        if (!cam) return; // no camera yet
+        const vp = cam.viewProjection; // Float32Array length 16
+        const width = this.canvas.width; const height = this.canvas.height;
+        const project = (x: number, y: number, z: number): { sx: number; sy: number; depth: number; behind: boolean } => {
+            // Multiply vec4
+            const vx = x, vy = y, vz = z, vw = 1;
+            const m = vp;
+            const rx = m[0] * vx + m[4] * vy + m[8] * vz + m[12] * vw;
+            const ry = m[1] * vx + m[5] * vy + m[9] * vz + m[13] * vw;
+            const rz = m[2] * vx + m[6] * vy + m[10] * vz + m[14] * vw;
+            const rw = m[3] * vx + m[7] * vy + m[11] * vz + m[15] * vw;
+            if (rw === 0) return { sx: 0, sy: 0, depth: 1, behind: true };
+            const invW = 1 / rw;
+            const ndcX = rx * invW, ndcY = ry * invW, ndcZ = rz * invW;
+            // behind camera if rw<0 or outside clip z (ndcZ outside [-1,1])
+            const behind = rw < 0 || ndcZ < -1 || ndcZ > 1;
+            const sx = (ndcX * 0.5 + 0.5) * width;
+            const sy = (-ndcY * 0.5 + 0.5) * height;
+            return { sx, sy, depth: ndcZ, behind };
+        };
+        const fadeDepth = (d: number) => Math.max(0.15, 1 - ((d + 1) * 0.5)); // map ndcZ [-1,1] -> [0,1]
+        const drawLine = (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, color: string) => {
+            const p1 = project(x1, y1, z1), p2 = project(x2, y2, z2);
+            if (p1.behind && p2.behind) return;
+            ctx.globalAlpha = Math.min(fadeDepth(p1.depth), fadeDepth(p2.depth));
+            ctx.strokeStyle = color;
+            ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke();
+        };
+        const drawCircle = (cx: number, cy: number, cz: number, r: number, color: string) => {
+            const center = project(cx, cy, cz); if (center.behind) return;
+            // Approximate radius in screen space by projecting a point offset along camera right axis
+            // Simplify: sample point in +X world direction (small)
+            const edge = project(cx + r, cy, cz);
+            const radiusPx = Math.abs(edge.sx - center.sx);
+            ctx.globalAlpha = fadeDepth(center.depth);
+            ctx.strokeStyle = color;
+            ctx.beginPath(); ctx.arc(center.sx, center.sy, radiusPx, 0, Math.PI * 2); ctx.stroke();
+        };
+        const drawPoint = (x: number, y: number, z: number, color: string) => {
+            const p = project(x, y, z); if (p.behind) return;
+            ctx.globalAlpha = fadeDepth(p.depth);
+            ctx.fillStyle = color;
+            ctx.fillRect(p.sx - 2, p.sy - 2, 4, 4);
+        };
+        // Color scheme
+        const colAABB = '#0f8';
+        const colTrigger = '#ff0';
+        const colSphere = '#08f';
+        const colContact = '#f33';
+        for (const d of debugComponents) {
+            for (const l of d.aabbLines) drawLine(l.x1, l.y1, l.z1, l.x2, l.y2, l.z2, colAABB);
+            for (const t of d.triggerAabbs) {
+                // Draw as 12 edges: recreate quickly
+                const hx = t.hx, hy = t.hy, hz = t.hz;
+                const x = t.x, y = t.y, z = t.z;
+                const edges = [
+                    [x - hx, y - hy, z - hz, x + hx, y - hy, z - hz],
+                    [x + hx, y - hy, z - hz, x + hx, y + hy, z - hz],
+                    [x + hx, y + hy, z - hz, x - hx, y + hy, z - hz],
+                    [x - hx, y + hy, z - hz, x - hx, y - hy, z - hz],
+                    [x - hx, y - hy, z + hz, x + hx, y - hy, z + hz],
+                    [x + hx, y - hy, z + hz, x + hx, y + hy, z + hz],
+                    [x + hx, y + hy, z + hz, x - hx, y + hy, z + hz],
+                    [x - hx, y + hy, z + hz, x - hx, y - hy, z + hz],
+                    [x - hx, y - hy, z - hz, x - hx, y - hy, z + hz],
+                    [x + hx, y - hy, z - hz, x + hx, y - hy, z + hz],
+                    [x + hx, y + hy, z - hz, x + hx, y + hy, z + hz],
+                    [x - hx, y + hy, z - hz, x - hx, y + hy, z + hz]
+                ];
+                for (const e of edges) drawLine(e[0], e[1], e[2], e[3], e[4], e[5], colTrigger);
+            }
+            for (const c of d.sphereCircles) drawCircle(c.cx, c.cy, c.cz, c.r, colSphere);
+            for (const cp of d.contactPoints) {
+                drawPoint(cp.x, cp.y, cp.z, colContact);
+            }
+        }
+        // World axes (length 5) for orientation: X=red, Y=green, Z=blue
+        const AXIS_LEN = 5;
+        drawLine(0, 0, 0, AXIS_LEN, 0, 0, '#f00');
+        drawLine(0, 0, 0, 0, AXIS_LEN, 0, '#0f0');
+        drawLine(0, 0, 0, 0, 0, AXIS_LEN, '#00f');
+        ctx.globalAlpha = 1;
+    }
+}
+
 @componenttags_preprocessing('render')
+@excludeclassfromsavegame
 export class HitBoxVisualizer extends Component {
     static toggle(obj: GameObject) {
         if (HitBoxVisualizer.attachedToObject(obj)) {

@@ -12,6 +12,7 @@ const enum Tag {
     Bin = 8,
     Int = 9,
     F32 = 10,
+    Set = 11,
 }
 
 /**
@@ -242,6 +243,12 @@ class BinWriter {
                     this.pos += view.length;
                     return;
                 }
+                if (val instanceof Set) {
+                    this.u8(Tag.Set);
+                    this.varuint(val.size);
+                    for (const item of val) this.writeWithPropTable(item, propNameToId);
+                    return;
+                }
                 this.u8(Tag.Obj);
                 this.varuint(keys.length);
                 for (let i = 0; i < keys.length; i++) {
@@ -252,8 +259,10 @@ class BinWriter {
                     this.writeWithPropTable(val[k], propNameToId);
                 }
                 return;
+            case 'function':
+                return; // Functions are not serializable
             default:
-                throw new Error(`encodeBinary.writeWithPropTable: Unsupported type ${typeof val}`);
+                throw new Error(`encodeBinary.writeWithPropTable: Unsupported type '${typeof val}'`);
         }
     }
 }
@@ -343,6 +352,12 @@ export function decodeBinary(buf: Uint8Array) {
             }
             case Tag.F32: {
                 const v = dv.getFloat32(offset, true); offset += 4; return v;
+            }
+            case Tag.Set: {
+                const len = readVarUint();
+                const s = new Set<any>();
+                for (let i = 0; i < len; ++i) s.add(read());
+                return s;
             }
             default:
                 throw new Error(`Unknown tag in decodeBinary: ${tag}`);

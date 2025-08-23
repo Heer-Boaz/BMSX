@@ -41,7 +41,7 @@ export function glCreateBuffer(gl: WebGL2RenderingContext, data?: Float32Array |
     const buffer = gl.createBuffer()!;
     if (!data) return buffer;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
     return buffer;
 }
 
@@ -49,7 +49,7 @@ export function glCreateElementBuffer(gl: WebGL2RenderingContext, data?: Uint8Ar
     const buffer = gl.createBuffer()!;
     if (!data) return buffer;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, (data as any) ?? null, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
     return buffer;
 }
 

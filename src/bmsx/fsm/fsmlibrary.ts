@@ -43,7 +43,7 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
                     }
                     return impl.apply(this, args);
                 };
-                reg.register(id, fn as any);
+                reg.register(id, fn);
             }
         }
     }
@@ -430,7 +430,7 @@ function hoistHandler(
             return h.apply(this, args); // args is a tuple: [State, ...]
         };
         Object.defineProperty(proxy, 'name', { value: `proxy_${id}`, configurable: true });
-        (proxy as any)._handlerId = id;
+        (proxy as unknown as { _handlerId?: string })._handlerId = id;
         ownerDef[slot] = proxy as unknown; // satisfies the slot’s function type structurally
     } else {
         ownerDef[slot] = id;
@@ -472,14 +472,13 @@ function walkAndHoist(
 ) {
     // direct slots
     for (const slot of ['enter', 'exit', 'run', 'next', 'end', 'process_input'] as const) {
-        if (typeof (sdef as any)[slot] === 'function') {
-            hoistHandler(sdef, slot, makeId([machineName, ...path, slot]), registry, useProxyThunks);
-        }
+        const maybe = (sdef as unknown as Record<string, unknown>)[slot];
+        if (typeof maybe === 'function') hoistHandler(sdef, slot, makeId([machineName, ...path, slot]), registry, useProxyThunks);
     }
 
     // on / on_input
     for (const bagName of ['on', 'on_input'] as const) {
-        const bag = (sdef as any)[bagName];
+        const bag = (sdef as unknown as Record<string, any>)[bagName];
         if (!bag) continue;
         for (const rawEventName of Object.keys(bag)) {
             const evDef = bag[rawEventName];
@@ -490,7 +489,7 @@ function walkAndHoist(
     }
 
     // run_checks
-    const rc = (sdef as any).run_checks as any[] | undefined;
+    const rc = (sdef as unknown as { run_checks?: unknown }).run_checks as Array<Record<string, unknown>> | undefined;
     if (Array.isArray(rc)) {
         rc.forEach((chk, i) => {
             if (!chk || typeof chk !== 'object') return;
@@ -505,7 +504,7 @@ function walkAndHoist(
     }
 
     // guards
-    const g = (sdef as any).guards;
+    const g = (sdef as unknown as { guards?: { canEnter?: AnyHandler; canExit?: AnyHandler } }).guards;
     if (g && typeof g === 'object') {
         if (typeof g.canEnter === 'function') {
             hoistHandler(g, 'canEnter', makeId([machineName, ...path, 'guards', 'canEnter']), registry, useProxyThunks);

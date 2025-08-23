@@ -5,6 +5,7 @@ import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { StateDefinition } from '../fsm/statedefinition';
 import { Input } from "../input/input";
+import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
 import { renderGate } from '../render/view';
 import type { Identifier, Registerable, RegisterablePersistent } from '../rompack/rompack';
@@ -181,6 +182,9 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     on(event_name: string, handler: Function, emitter_id: Identifier): void {
         $.event_emitter.on(event_name, handler, this, emitter_id);
     }
+
+    // Internal physics diagnostic frame counter (temporary instrumentation)
+    private static _physDiagFrames?: number;
 
     /**
      * An array of keys to exclude from the serialized game state when saving the game.
@@ -494,8 +498,34 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * Runs the current state of the model by calling the `run` method of the current state.
      * @returns {void} Nothing.
      */
-    public run(_deltaTime: number): void {
+    public run(deltaTime: number): void {
         this.sc.run();
+        // Physics step & event dispatch (moved from Game.run for cleaner layering)
+        const phys = $.registry.get<PhysicsWorld>('physics_world');
+        if (phys) {
+            const collisionEvents: CollisionEvent[] = [];
+            phys.step(deltaTime, (evt) => collisionEvents.push(evt));
+            BaseModel._physDiagFrames = BaseModel._physDiagFrames ?? 0;
+            if (BaseModel._physDiagFrames < 5) {
+                const firstDyn = phys.getBodies().find(b => b.invMass && !b.isTrigger);
+                if (firstDyn) console.log('[PhysStep]', 'dt=', deltaTime, 'pos=', firstDyn.position, 'vel=', firstDyn.velocity, 'grav=', 'getGravity' in phys ? phys.getGravity() : 'n/a');
+                BaseModel._physDiagFrames++;
+            }
+            if (collisionEvents.length) {
+                // Batch dispatch to reduce per-contact FSM overhead
+                for (const evt of collisionEvents) {
+                    const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.model.getGameObject(evt.a.userData) : evt.a.userData;
+                    const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.model.getGameObject(evt.b.userData) : evt.b.userData;
+                    if (goA?.sc) goA.sc.do('physics_collision_' + evt.type, goB?.id ?? goA.id, evt);
+                    if (goB?.sc) goB.sc.do('physics_collision_' + evt.type, goA?.id ?? goB.id, evt);
+                    // Strongly typed optional callback using user-defined type guard
+                    type CollisionAware = { onPhysicsCollision: (e: CollisionEvent, other: any) => void };
+                    function isCollisionAware(o: any): o is CollisionAware { return o && typeof o.onPhysicsCollision === 'function'; }
+                    if (isCollisionAware(goA)) goA.onPhysicsCollision(evt, goB);
+                    if (isCollisionAware(goB)) goB.onPhysicsCollision(evt, goA);
+                }
+            }
+        }
     }
 
     /**

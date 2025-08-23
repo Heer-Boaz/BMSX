@@ -113,3 +113,48 @@ export class SparkEmitter extends GameObject {
         }
     }
 }
+
+// Append physics test objects
+@insavegame
+export class PhysTestFloor extends GameObject {
+    constructor(public width = 50, public depth = 50) { super('physFloor'); }
+    override run(): void { }
+}
+
+@insavegame
+export class PhysTestWall extends GameObject {
+    constructor(public nameId: string, public wallSize: vec3arr) { super(nameId); }
+    override run(): void { }
+}
+
+@insavegame
+export class PhysDynamicCube extends MeshObject {
+    private static _counter = 0;
+    constructor(public halfExtent = 0.5) { super(`physDynCube_${PhysDynamicCube._counter++}`); this.model_id = ModelId.cube; this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2]; }
+    override run(): void { super.run(); }
+}
+
+@insavegame
+export class PhysDynamicSphere extends MeshObject {
+    private static _counter = 0;
+    constructor(public radius = 0.5) { super(`physDynSphere_${PhysDynamicSphere._counter++}`); this.model_id = ModelId.animatedmorphsphere; this.scale = [radius * 2, radius * 2, radius * 2]; }
+    override run(): void { super.run(); }
+}
+
+@insavegame
+export class PhysTriggerZone extends GameObject {
+    constructor(public triggerSize: vec3arr) { super('physTrigger'); }
+    override run(): void { }
+}
+
+// Simple static box (visual + physics via PhysicsComponent attached externally)
+@insavegame
+export class PhysStaticBox extends MeshObject {
+    constructor(public halfExtents: vec3arr, public nameId: string) {
+        super(nameId);
+        this.model_id = ModelId.cube;
+        // Scale is full size (halfExtents * 2)
+        this.scale = [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2];
+    }
+    override run(): void { /* static */ }
+}
