@@ -50,7 +50,6 @@ export class Space {
      */
     public get<T extends GameObject>(id: Identifier): T | undefined {
         return <T>this[id2obj][id];
-
     }
 
     public id: Identifier;

@@ -14,11 +14,11 @@ export interface PhysicsComponentOptions extends Omit<PhysicsBodyDesc, 'position
 
 @excludeclassfromsavegame
 @componenttags_preprocessing('physics_pre') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
-@componenttags_postprocessing('run') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
+@componenttags_postprocessing('physics_post') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
 export class PhysicsComponent extends Component {
     body: PhysicsBody | null = null;
     syncAxis = { x: true, y: true, z: true };
-    writeBack = true;
+    writeBack = true; // if true: body -> GameObject each frame (default true)
     layer = 1;
     mask = 0xFFFFFFFF;
     private shape!: PhysicsBodyDesc['shape'];
@@ -45,8 +45,36 @@ export class PhysicsComponent extends Component {
     }
 
     override preprocessingUpdate(): void {
-        // read GameObject -> body before physics (if not sleeping and user wants authoritative GameObject)
-        // For now we always treat body as authoritative; could add option later.
+        // Ensure body is created when the parent GameObject becomes available
+        this.tryBuildBody();
+
+        // Temporary aggressive sync: always copy GameObject -> physics body before physics step.
+        // This is a diagnostic change to confirm whether lack of sync is the root cause.
+        if (this.body) {
+            const go = $.model.getGameObject(this.parentid);
+            if (go) {
+                let positionChanged = false;
+                if (this.syncAxis.x && this.body.position.x !== go.x) {
+                    this.body.position.x = go.x;
+                    positionChanged = true;
+                }
+                if (this.syncAxis.y && this.body.position.y !== go.y) {
+                    this.body.position.y = go.y;
+                    positionChanged = true;
+                }
+                if (this.syncAxis.z && this.body.position.z !== go.z) {
+                    this.body.position.z = go.z;
+                    positionChanged = true;
+                }
+
+                // Mark body dirty if position changed so broadphase updates
+                if (positionChanged) {
+                    console.log('[PhysAggSync]', this.parentid, 'sync -> body pos', this.body.position);
+                    const world = PhysicsWorld.ensure();
+                    world.markBodyDirty(this.body); // Mark dirty without requiring dynamic body
+                }
+            }
+        }
     }
 
     override postprocessingUpdate(): void {
@@ -79,6 +107,7 @@ export class PhysicsComponent extends Component {
         const go = $.model.getGameObject(this.parentid);
         if (!go) return; // parent not yet available
         const startPos = new_vec3(go.x, go.y, go.z);
+        console.log('[PhysicsComponent] Building body for', go.id, 'at position', startPos, 'shape:', this.shape, 'mass:', this.mass, 'layer:', this.layer, 'mask:', this.mask);
         this.body = world.addBody({
             position: startPos,
             shape: this.shape,

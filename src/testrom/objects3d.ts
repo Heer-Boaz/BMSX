@@ -119,14 +119,12 @@ export class SparkEmitter extends GameObject {
 @insavegame
 export class PhysTestFloor extends GameObject {
     constructor(public width = 50, public depth = 50) { super('physFloor'); }
-    override run(): void { }
 }
 
 @insavegame
 export class PhysTestWall extends GameObject {
     // Provide defaults so Reviver (which calls ctor with no args) won't crash.
     constructor(public nameId: string = 'physTestWall', public wallSize: vec3arr = [1, 1, 1]) { super(nameId); }
-    override run(): void { }
 }
 
 @insavegame
@@ -138,7 +136,6 @@ export class PhysDynamicCube extends MeshObject {
         // Scale mesh so that its rendered half-extents match physics halfExtents (base cube assumed unit size +/-0.5)
         this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2];
     }
-    override run(): void { super.run(); }
 }
 
 @insavegame
@@ -150,13 +147,11 @@ export class PhysDynamicSphere extends MeshObject {
         // Scale mesh so rendered sphere radius matches physics radius
         this.scale = [radius * 2, radius * 2, radius * 2];
     }
-    override run(): void { super.run(); }
 }
 
 @insavegame
 export class PhysTriggerZone extends GameObject {
     constructor(public triggerSize: vec3arr = [1, 1, 1]) { super('physTrigger'); }
-    override run(): void { }
 }
 
 // Simple static box (visual + physics via PhysicsComponent attached externally)
@@ -201,5 +196,4 @@ export class PhysStaticBox extends MeshObject {
     }
     @onload
     public rehydrateScale() { this.applyHalfExtentsToScale(); this.applyOverrides(); }
-    override run(): void { /* static */ }
 }
