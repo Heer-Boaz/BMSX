@@ -1,12 +1,12 @@
 import { update_tagged_components } from '../component/basecomponent';
 import { TransformComponent } from '../component/transformcomponent';
 import { Material } from '../render/3d/material';
-import { M4, Mat4 } from '../render/3d/math3d';
+import { M4, Mat4, Q, quat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import type { TextureKey } from '../render/texturemanager';
 import type { Color, DrawMeshOptions } from '../render/view';
-import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, vec3arr } from '../rompack/rompack';
+import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, vec3arr } from '../rompack/rompack';
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 import { Float32ArrayPool } from './utils';
@@ -210,13 +210,13 @@ interface MeshInstance {
 }
 
 @insavegame
-export abstract class MeshObject extends GameObject {
+export abstract class MeshObject extends GameObject implements Oriented {
 	@excludepropfromsavegame
 	public meshes: Mesh[] = [];
 	@excludepropfromsavegame
 	public meshModel: GLTFModel;
-	/** Rotation in radians [x, y, z] */
-	public rotation: vec3arr;
+	// Orientation stored purely as quaternion (Euler legacy removed)
+	private _rotationQ: quat = Q.ident();
 	public scale: vec3arr;
 	private _model_id?: asset_id;
 	@excludepropfromsavegame
@@ -232,14 +232,91 @@ export abstract class MeshObject extends GameObject {
 	private worldPool: Float32ArrayPool;
 	private _modelGen = 0;
 	private _runtime: MeshObjectRuntime; // Runtime data for the mesh object, which is only used for serializing and deserializing the state
-	public materialOverrides?: Record<number, PersistedMatTex>; // meshIndex -> overrides
-	// NOTE: We deliberately removed the previous global material variant cache.
-	// Variants are now expressed through explicit per-mesh overrides captured in materialOverrides
+	// Variants are expressed through explicit per-mesh overrides captured in materialOverrides
 	// so they serialize/deserialze cleanly without reflection or subclass boilerplate.
+	public materialOverrides?: Record<number, PersistedMatTex>; // meshIndex -> overrides
+	// Orientation driving
+	orientationDriveNodeIndex: number = 0; // which node's sampled rotation drives object-level rotationQ
+	activeClipIndex: number | null = null; // currently playing animation clip (null = play all as before)
+
+	public get rotationQ(): quat { return this._rotationQ; }
+	public set rotationQValue(q: quat) { this._rotationQ = Q.norm(q); }
+
+	// Animation blending support
+	private _animBlendActive = false;
+	private _animBlendT = 0; // 0..1
+	private _animBlendDur = 0.001;
+	private _animTargetQ: quat = Q.ident();
+	private _animStartQ: quat = Q.ident();
+
+	public startRotationBlend(target: quat, duration: number) {
+		this._animBlendActive = true; this._animBlendT = 0;
+		this._animBlendDur = Math.max(duration, 0.0001);
+		this._animStartQ = { ...this._rotationQ };
+		this._animTargetQ = Q.norm(target);
+	}
+
+	public setOrientationDriveNode(index: number) { this.orientationDriveNodeIndex = index | 0; }
+
+	public playAnimation(clip: string | number, blendDuration = 0, resetTime = true): boolean {
+		if (!this.meshModel?.animations) return false;
+		let idx: number | undefined;
+		if (typeof clip === 'number') idx = clip | 0; else {
+			idx = this.meshModel.animations.findIndex(a => (a as any).name === clip);
+		}
+		if (idx === undefined || idx < 0 || idx >= this.meshModel.animations.length) return false;
+		// Prepare blend if requested
+		if (blendDuration > 0) {
+			// Sample target clip root node rotation at t=0 to get blend target
+			const anim = this.meshModel.animations[idx];
+			let targetQ: quat | null = null;
+			for (const channel of anim.channels) {
+				if (channel.target.node === this.orientationDriveNodeIndex && channel.target.path === 'rotation') {
+					const sampler = anim.samplers[channel.sampler];
+					if (sampler?.input && sampler?.output) {
+						const stride = sampler.output.length / sampler.input.length;
+						const comp = sampler.interpolation === 'CUBICSPLINE' ? stride / 3 : stride;
+						const val = this.sampleAnimation(sampler, 0, comp); // t=0
+						targetQ = { x: val[0], y: val[1], z: val[2], w: val[3] };
+					}
+					break;
+				}
+			}
+			if (targetQ) this.startRotationBlend(targetQ, blendDuration);
+		}
+		this.activeClipIndex = idx;
+		if (resetTime) this.animationTime = 0;
+		return true;
+	}
+
+	private _advanceRotationBlend(dtSec: number) {
+		if (!this._animBlendActive) return;
+		this._animBlendT += dtSec / this._animBlendDur;
+		if (this._animBlendT >= 1) { this._rotationQ = this._animTargetQ; this._animBlendActive = false; return; }
+		// Slerp
+		const t = this._animBlendT;
+		let cos = this._animStartQ.x * this._animTargetQ.x + this._animStartQ.y * this._animTargetQ.y + this._animStartQ.z * this._animTargetQ.z + this._animStartQ.w * this._animTargetQ.w;
+		let tq = this._animTargetQ;
+		if (cos < 0) { cos = -cos; tq = { x: -tq.x, y: -tq.y, z: -tq.z, w: -tq.w }; }
+		let k0: number, k1: number;
+		if (cos > 0.9995) { k0 = 1 - t; k1 = t; }
+		else {
+			const sin = Math.sqrt(1 - cos * cos);
+			const ang = Math.atan2(sin, cos);
+			k0 = Math.sin((1 - t) * ang) / sin;
+			k1 = Math.sin(t * ang) / sin;
+		}
+		this._rotationQ = Q.norm({
+			x: this._animStartQ.x * k0 + tq.x * k1,
+			y: this._animStartQ.y * k0 + tq.y * k1,
+			z: this._animStartQ.z * k0 + tq.z * k1,
+			w: this._animStartQ.w * k0 + tq.w * k1,
+		});
+	}
 
 	constructor(id?: string, fsm_id?: string) {
 		super(id, fsm_id);
-		this.rotation ??= [0, 0, 0];
+		// Euler rotation removed
 		this.scale ??= [1, 1, 1];
 		this.worldPool = new Float32ArrayPool(16);
 	}
@@ -360,10 +437,13 @@ export abstract class MeshObject extends GameObject {
 	@update_tagged_components('physics_pre')
 	@update_tagged_components('physics_post')
 	public override run(): void {
+		const dtSec = $.deltaTime / 1000;
 		if (this.meshModel?.animations) {
-			this.animationTime += $.deltaTime / 1000;
+			this.animationTime += dtSec;
+			this._advanceRotationBlend(dtSec);
 			let nodesChanged = false;
-			for (const anim of this.meshModel.animations) {
+			const anims = this.activeClipIndex != null ? [this.meshModel.animations[this.activeClipIndex]] : this.meshModel.animations;
+			for (const anim of anims) {
 				for (const channel of anim.channels) {
 					const sampler = anim.samplers[channel.sampler];
 					if (!sampler || !sampler.input || !sampler.output) continue; // TODO: SHOULD NOT BE REQUIRED, BUT LOADING FROM SERIALIZED STATE CAUSES ISSUES
@@ -373,12 +453,20 @@ export abstract class MeshObject extends GameObject {
 					if (channel.target.node !== undefined && this.meshModel.nodes) {
 						const node = this.meshModel.nodes[channel.target.node];
 						switch (channel.target.path) {
-							case 'rotation':
-								node.rotation = [value[0], value[1], value[2], value[3]];
+							case 'rotation': {
+								const q = { x: value[0], y: value[1], z: value[2], w: value[3] };
+								node.rotation = [q.x, q.y, q.z, q.w]; // keep per-node for skinning hierarchy
+								// If this node is the configured orientation driver, copy into object quaternion (unless blending in progress)
+								if (channel.target.node === this.orientationDriveNodeIndex) {
+									if (!this._animBlendActive) {
+										this._rotationQ = Q.norm(q);
+									}
+								}
 								node.matrix = undefined;
 								this.markNodeDirty(channel.target.node);
 								nodesChanged = true;
 								break;
+							}
 							case 'translation':
 								node.translation = [value[0], value[1], value[2]];
 								node.matrix = undefined;
@@ -738,6 +826,7 @@ export abstract class MeshObject extends GameObject {
 
 	override paint(): void {
 		if (this.meshInstances.length === 0) return;
+		// Euler path removed; always use quaternion orientation
 
 		const transform = this.getComponent(TransformComponent);
 		const base = this._base; // Float32Array(16) hergebruikt
@@ -745,11 +834,12 @@ export abstract class MeshObject extends GameObject {
 		if (transform) {
 			base.set(transform.getWorldMatrix()); // aanname: column-major 4x4
 		} else {
+			const q = this._rotationQ;
 			M4.setIdentity(base);
 			M4.translateSelf(base, this.x, this.y, this.z);
-			M4.rotateXSelf(base, this.rotation[0]);
-			M4.rotateYSelf(base, this.rotation[1]);
-			M4.rotateZSelf(base, this.rotation[2]);
+			const rot = this.worldPool.ensure();
+			M4.quatToMat4Into(rot, [q.x, q.y, q.z, q.w]);
+			M4.mulInto(base, base, rot);
 			M4.scaleSelf(base, this.scale[0], this.scale[1], this.scale[2]);
 		}
 
