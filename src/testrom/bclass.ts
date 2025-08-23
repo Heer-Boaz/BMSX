@@ -1,5 +1,5 @@
-import { assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, InputMap, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, update_tagged_components, vec2 } from '../bmsx';
-import { Action, gamepadInputMapping, keyboardInputMapping } from './bootloader';
+import { assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, update_tagged_components, vec2 } from '../bmsx';
+import { Action } from './bootloader';
 import { mytree_builder } from './mytree_builder';
 import { BitmapId } from './resourceids';
 import { DerivedTestComponent, TestComponent } from './testcomponents';
@@ -60,11 +60,6 @@ export class bclass extends SpriteObject {
 
     @build_fsm()
     public static bouw(): StateMachineBlueprint {
-        $.input.getPlayerInput(1).setInputMap({
-            keyboard: keyboardInputMapping,
-            gamepad: gamepadInputMapping,
-        } as InputMap);
-
         function blarun(this: bclass) {
             const speed = 2;
             if (this.sc.current_state.def_id === 'blap') {
@@ -153,7 +148,7 @@ export class bclass extends SpriteObject {
         super('The B');
         this.imgid = BitmapId.b2;
         this._hitarea = new_area(0, 0, 14, 18);
-        this.visible = true;
+        this.visible = false;
     }
 
     override onspawn(spawningPos?: vec2): void {

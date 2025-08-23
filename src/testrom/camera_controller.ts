@@ -1,4 +1,4 @@
-import { CameraObject, CameraProjectionType, DirectionalLightObject, GameObject, insavegame, onload } from '../bmsx';
+import { CameraObject, CameraProjectionType, GameObject, insavegame, onload } from '../bmsx';
 import { Action } from './bootloader';
 
 @insavegame
@@ -28,7 +28,7 @@ export class CameraController extends GameObject {
 		const dx = e.movementX || 0;
 		const dy = e.movementY || 0;
 
-		const sens = 0.002;
+		const sens = 0.004;
 		this.delta.yaw += -dx * sens;
 		this.delta.pitch += -dy * sens;
 	}
@@ -37,7 +37,7 @@ export class CameraController extends GameObject {
 		if (e.button === 0) {
 			e.preventDefault();
 			this.mouseControlsEnabled = true;
-			this.toggleMouseControls();
+			// this.toggleMouseControls();
 		}
 	}
 
@@ -45,9 +45,24 @@ export class CameraController extends GameObject {
 		if (e.button === 0) {
 			e.preventDefault();
 			this.mouseControlsEnabled = false;
-			this.toggleMouseControls();
-			document.exitPointerLock();
+			// this.toggleMouseControls();
+			// document.exitPointerLock();
 		}
+	}
+
+	private onBlur = () => {
+		this.mouseControlsEnabled = false;
+		document.exitPointerLock();
+	}
+
+	private onLoseFocus = () => {
+		this.mouseControlsEnabled = false;
+		document.exitPointerLock();
+	}
+
+	private onFocus = () => {
+		this.mouseControlsEnabled = false;
+		document.exitPointerLock();
 	}
 
 	constructor(...cams: CameraObject[]) {
@@ -66,6 +81,10 @@ export class CameraController extends GameObject {
 		canvas.addEventListener('mousemove', this.onMouseMove);
 		document.addEventListener('pointerlockchange', this.onLockChange);
 		document.addEventListener('pointerlockerror', this.onLockError);
+		document.addEventListener('blur', this.onBlur);
+		document.addEventListener('focusout', this.onLoseFocus);
+		document.addEventListener('focus', this.onFocus);
+
 	}
 
 	private toggleMouseControls(): void {
@@ -101,6 +120,9 @@ export class CameraController extends GameObject {
 
 		document.removeEventListener('pointerlockchange', this.onLockChange);
 		document.removeEventListener('pointerlockerror', this.onLockError);
+		document.removeEventListener('blur', this.onBlur);
+		document.removeEventListener('focusout', this.onLoseFocus);
+		document.removeEventListener('focus', this.onFocus);
 	}
 
 	override run(): void {
@@ -112,10 +134,10 @@ export class CameraController extends GameObject {
 			console.log(`Switched to camera ${this.cameras[this.idx].id}`);
 		}
 
-		if (input.getActionState('load').justpressed) {
-			const extra = $.model.getGameObject<DirectionalLightObject>('extraSun');
-			if (extra) extra.active = !extra.active;
-		}
+		// if (input.getActionState('load').justpressed) {
+		// 	const extra = $.model.getGameObject<DirectionalLightObject>('extraSun');
+		// 	if (extra) extra.active = !extra.active;
+		// }
 
 		const camObj = $.model.activeCameraObject;
 		if (!camObj) {
@@ -124,8 +146,8 @@ export class CameraController extends GameObject {
 		}
 
 		const cam = camObj.camera;
-		const move = 0.5;
-		const rotateSpeed = 0.02; // Reduced from 0.05 for smoother rotation
+		const move = 2.0;
+		const rotateSpeed = 0.1; // Reduced from 0.05 for smoother rotation
 		let screenBasedOrFlight: 'screen' | 'flight' = 'screen';
 
 		// Voor debug: log de camera rotatie

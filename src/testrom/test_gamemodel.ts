@@ -1,12 +1,11 @@
-import { AmbientLightObject, BaseModel, build_fsm, CameraObject, Direction, DirectionalLightObject, GameObject, insavegame, new_vec3, PhysicsDebugComponent, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
+import { AmbientLightObject, BaseModel, build_fsm, CameraObject, Direction, DirectionalLightObject, GameObject, InputMap, insavegame, new_vec3, PhysicsDebugComponent, PointLightObject, State, StateMachineBlueprint, V3 } from '../bmsx';
 import { PhysicsOverlayRenderer } from '../bmsx/debugger/bmsxdebugger';
 import { PhysicsComponent } from '../bmsx/physics/physicscomponent';
 import { PhysicsDescriptorComponent } from '../bmsx/physics/physicsdescriptorcomponent';
 import { PhysicsWorld } from '../bmsx/physics/physicsworld';
-import { bclass } from './bclass';
-import { _model } from './bootloader';
+import { _model, gamepadInputMapping, keyboardInputMapping } from './bootloader';
 import { CameraController } from './camera_controller';
-import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, PhysDynamicSphere, PhysStaticBox, PhysTriggerZone, SmallCube3D, SparkEmitter } from './objects3d';
+import { PhysDynamicCube, PhysDynamicSphere, PhysStaticBox, PhysTriggerZone, SparkEmitter } from './objects3d';
 import { BitmapId } from './resourceids';
 
 const savestring = Symbol('savestring');
@@ -45,38 +44,41 @@ export class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
+        $.input.getPlayerInput(1).setInputMap({
+            keyboard: keyboardInputMapping,
+            gamepad: gamepadInputMapping,
+        } as InputMap);
+
         // Config: toggle if engine visual up-axis is Z instead of Y
         const USE_Z_UP = false; // set to true if models/camera treat Z as vertical axis
-        const cube = new Cube3D();
-        const sparkEmitter = new SparkEmitter(cube.id);
-        const small = new SmallCube3D(1);
-        const small2 = new SmallCube3D(2);
-        const animatedMorphSphere = new AnimatedMorphSphere();
-        _model.spawn(new bclass(), new_vec3(100, 100, 1000));
-        _model.spawn(cube, new_vec3(0, 0, 0));
-        _model.spawn(small, new_vec3(5, 0, 0));
-        _model.spawn(small2, new_vec3(5, 5, 5));
-        _model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
+        // const cube = new Cube3D();
+        // const small = new SmallCube3D(1);
+        // const small2 = new SmallCube3D(2);
+        // const animatedMorphSphere = new AnimatedMorphSphere();
+        // _model.spawn(new bclass(), new_vec3(100, 100, 1000));
+        // _model.spawn(cube, new_vec3(0, 0, 0));
+        // _model.spawn(small, new_vec3(5, 0, 0));
+        // _model.spawn(small2, new_vec3(5, 5, 5));
+        // _model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
-        const parentTf = cube.getComponent(TransformComponent);
-        const childTf = small.getComponent(TransformComponent);
-        const childTf2 = small2.getComponent(TransformComponent);
-        const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
-        if (parentTf && childTf) {
-            childTf.parentNode = parentTf;
-            childTf.position = [1, 0, 0];
-            if (childTf2) {
-                childTf2.parentNode = childTf;
-                childTf2.position = [0, 1, 0];
-                if (childTf3) {
-                    childTf3.parentNode = childTf2;
-                    childTf3.position = [0, 0, 1];
-                }
-            }
-        }
+        // const parentTf = cube.getComponent(TransformComponent);
+        // const childTf = small.getComponent(TransformComponent);
+        // const childTf2 = small2.getComponent(TransformComponent);
+        // const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
+        // if (parentTf && childTf) {
+        //     childTf.parentNode = parentTf;
+        //     childTf.position = [1, 0, 0];
+        //     if (childTf2) {
+        //         childTf2.parentNode = childTf;
+        //         childTf2.position = [0, 1, 0];
+        //         if (childTf3) {
+        //             childTf3.parentNode = childTf2;
+        //             childTf3.position = [0, 0, 1];
+        //         }
+        //     }
+        // }
 
         const cam1 = new CameraObject('cam1');
-        // cam1.camera.position = V3.of(0, 10, 25); // elevated & pulled back
 
         cam1.camera.setAspect(this.gamewidth / this.gameheight);
         // Camera starts looking toward negative Z by default (forward)
@@ -102,7 +104,6 @@ export class gamemodel extends BaseModel {
         _model.spawn(sun);
         _model.spawn(extraSun);
         _model.spawn(lamp);
-        _model.spawn(sparkEmitter);
 
         $.view.setSkybox({
             posX: BitmapId.skybox,
@@ -148,7 +149,7 @@ export class gamemodel extends BaseModel {
         let colorIdx = 0;
         for (const d of staticDefs) {
             // assign cycling albedo index (demo) + distinct color factor to visualize even if atlas identical
-            const ci = colorIdx++ % 4;
+            const ci = Math.max(colorIdx++ % 4, 1);
             const colorVariants: [number, number, number, number][] = [
                 [1, 0.3, 0.3, 1],
                 [0.3, 1, 0.3, 1],
@@ -166,6 +167,8 @@ export class gamemodel extends BaseModel {
             for (let i = 0; i < 5; i++) {
                 const dc = new PhysDynamicCube(0.25);
                 _model.spawn(dc, new_vec3(-4 + i * 1.2, DROP_HEIGHT + i * 0.2, 0));
+                _model.spawn(new SparkEmitter(dc.id));
+
                 dc.addComponent(new PhysicsDescriptorComponent(dc.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
             }
             // Dynamic spheres
@@ -179,7 +182,7 @@ export class gamemodel extends BaseModel {
             _model.spawn(fastSphere, new_vec3(0, DROP_HEIGHT + 1, -12));
             fastSphere.addComponent(new PhysicsDescriptorComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
             const fsPhysComp = fastSphere.getComponent(PhysicsComponent);
-            if (fsPhysComp) fsPhysComp.body.velocity.z = 120;
+            if (fsPhysComp) fsPhysComp.body.velocity.z = 20;
             // Trigger zone centered
             const trigger = new PhysTriggerZone([3, 3, 3]);
             _model.spawn(trigger, new_vec3(0, DROP_HEIGHT, 0));
@@ -200,7 +203,7 @@ export class gamemodel extends BaseModel {
             _model.spawn(fastSphere, new_vec3(0, -12, DROP_HEIGHT + 1));
             fastSphere.addComponent(new PhysicsDescriptorComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
             const fsPhysComp2 = fastSphere.getComponent(PhysicsComponent);
-            if (fsPhysComp2) fsPhysComp2.body.velocity.y = 120;
+            if (fsPhysComp2) fsPhysComp2.body.velocity.y = 20;
             const trigger = new PhysTriggerZone([3, 3, 3]);
             _model.spawn(trigger, new_vec3(0, 0, DROP_HEIGHT));
             trigger.addComponent(new PhysicsDescriptorComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
