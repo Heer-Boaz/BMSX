@@ -51,6 +51,13 @@ export class Camera implements Oriented {
 		return this._q;
 	}
 
+	/** Set camera orientation quaternion directly. Optionally sync Euler for UI (default true). */
+	public setRotationQ(q: quat, syncEuler: boolean = true): void {
+		this._q = Q.norm(q);
+		if (syncEuler) this.updateEulerFromQuat();
+		this._dirty = true;
+	}
+
 	public markDirty(): void {
 		this._dirty = true;
 	}
@@ -69,8 +76,8 @@ export class Camera implements Oriented {
 		this.updateEulerFromQuat();
 	}
 
-	// --- basis zonder direct Euler te gebruiken
-	private basis(): { r: vec3; u: vec3; f: vec3 } {
+	// --- basis zonder direct Euler te gebruiken (exposed for read-only access)
+	public basis(): { r: vec3; u: vec3; f: vec3 } {
 		return Q.basis(this._q);
 	}
 
