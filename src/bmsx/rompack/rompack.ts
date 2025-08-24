@@ -117,6 +117,10 @@ export interface Oriented {
 	rotationQ: quat;
 }
 
+export interface Scaled {
+	scale: vec3arr;
+}
+
 /**
  * Metadata for an audio asset.
  */
