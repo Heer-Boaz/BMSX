@@ -12,7 +12,6 @@ export class Cube3D extends MeshObject {
     }
 
     override run(): void {
-        this.rotation[1] += 0.005; // Slow auto rotation
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -37,7 +36,6 @@ export class SmallCube3D extends MeshObject {
     }
 
     override run(): void {
-        this.rotation[0] += 0.01;
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -52,7 +50,6 @@ export class AnimatedMorphSphere extends MeshObject {
     }
 
     override run(): void {
-        this.rotation[1] += 0.01; // Slow auto rotation
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }

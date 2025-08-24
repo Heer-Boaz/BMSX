@@ -93,7 +93,7 @@ export class CameraController extends GameObject {
 
 		if (!this.mouseControlsEnabled) {
 			// Raw (unaccelerated) mouse als de browser het toelaat
-			const anyCanvas = canvas as any;
+			const anyCanvas = canvas as HTMLCanvasElement;
 			if (anyCanvas.requestPointerLock) {
 				try {
 					anyCanvas.requestPointerLock({ unadjustedMovement: true });

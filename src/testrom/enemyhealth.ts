@@ -1,0 +1,59 @@
+import { Component, componenttags_postprocessing } from '../bmsx/component/basecomponent';
+import type { Identifier } from '../bmsx/rompack/rompack';
+import { insavegame } from '../bmsx/serializer/gameserializer';
+
+@insavegame
+@componenttags_postprocessing('enemy_post')
+export class EnemyHealthComponent extends Component {
+    hp: number; maxHp: number; scoreValue: number;
+    diedAt: number | null = null;
+    despawnDelay = 1.2;
+    flashTimer = 0;
+    private flashDur = 0.15;
+    private originalColors?: [number, number, number, number][][]; // per mesh index may contain multiple stored originals if multi-mesh
+    boss = false;
+    constructor(parent: Identifier, hp = 20, scoreValue = 50, opts?: { boss?: boolean }) {
+        super(parent); this.hp = hp; this.maxHp = hp; this.scoreValue = scoreValue; this.boss = !!opts?.boss;
+    }
+    applyDamage(d: number) {
+        if (this.dead) return; this.hp -= d; if (this.hp < 0) this.hp = 0; this.flashTimer = this.flashDur; if (this.dead && this.diedAt == null) this.diedAt = performance.now() / 1000;
+    }
+    get dead() { return this.hp <= 0; }
+    override postprocessingUpdate(): void {
+        // Handle damage flash tint (temporarily lerp base color toward flash color then restore)
+        if (this.flashTimer > 0) {
+            this.flashTimer -= $.deltaTime / 1000;
+            const go = $.model.getGameObject(this.parentid);
+            if (go && 'meshes' in go) {
+                const meshObj = go as unknown as { meshes: { material?: { color: [number, number, number, number]; }; }[] };
+                // Capture originals once at flash start
+                if (!this.originalColors) {
+                    this.originalColors = meshObj.meshes.map(m => m.material ? [[...m.material.color]] : []);
+                }
+                const t = 1 - Math.max(0, this.flashTimer) / this.flashDur; // 0..1 progression
+                const ease = t * (2 - t); // easeOutQuad
+                const flash = [1, 0.3, 0.2, 1] as const; // reddish flash
+                meshObj.meshes.forEach((m, i) => {
+                    const mat = m.material; if (!mat) return;
+                    const origArr = this.originalColors?.[i]?.[0];
+                    const o = origArr ?? mat.color;
+                    // Lerp each channel (alpha preserved from original)
+                    mat.color[0] = o[0] + (flash[0] - o[0]) * (1 - ease); // stronger at start then ease back
+                    mat.color[1] = o[1] + (flash[1] - o[1]) * (1 - ease);
+                    mat.color[2] = o[2] + (flash[2] - o[2]) * (1 - ease);
+                    mat.color[3] = o[3];
+                });
+            }
+        } else if (this.originalColors) {
+            const go = $.model.getGameObject(this.parentid);
+            if (go && 'meshes' in go) {
+                const meshObj = go as unknown as { meshes: { material?: { color: [number, number, number, number]; }; }[] };
+                meshObj.meshes.forEach((m, i) => { const mat = m.material; const o = this.originalColors?.[i]?.[0]; if (mat && o) { mat.color[0] = o[0]; mat.color[1] = o[1]; mat.color[2] = o[2]; mat.color[3] = o[3]; } });
+            }
+            this.originalColors = undefined; // clear cache after restore
+        }
+        if (this.dead && this.diedAt) {
+            const t = performance.now() / 1000 - this.diedAt; if (t > this.despawnDelay) { const go = $.model.getGameObject(this.parentid); if (go) go.dispose(); }
+        }
+    }
+}

@@ -83,14 +83,6 @@ export class bclass extends SpriteObject {
                     case 'left':
                         this.x -= speed;
                         break;
-                    case 'load':
-                        if (consumed) break;
-                        $.input.getPlayerInput(1).consumeAction(action);
-                        break;
-                    case 'save':
-                        if (consumed) break;
-                        $.input.getPlayerInput(1).consumeAction(action);
-                        break;
                     case 'bla':
                         if (consumed) break;
                         $.input.getPlayerInput(1).consumeAction(action);

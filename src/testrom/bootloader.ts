@@ -1,9 +1,11 @@
 import {
+    BFont,
     BGamepadButton, BootArgs,
     GLView, Game, GamepadInputMapping, KeyboardButton, KeyboardInputMapping,
 
     new_vec2
 } from '../bmsx/index';
+import { BitmapId } from './resourceids';
 import { gamemodel } from './test_gamemodel';
 
 var _game: Game;
@@ -15,13 +17,15 @@ const _global = window || globalThis;
 _global['h406A'] = (args: BootArgs): Promise<any> => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(_model.gamewidth, _model.gameheight));
+
     _game = new Game();
     return _game.init({ ...args, model: _model, view: _view }).then(() => {
+        _view.default_font = new BFont(BitmapId);
         _game.start();
     });
 };
 
-const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'load', 'save', 'bla', 'blap', 'moveforward', 'movebackward', 'turnleft', 'turnright', 'rotateleft', 'rotateright', 'panup', 'pandown', 'pitchup', 'pitchdown', 'toggleprojection'] as const;
+const actions = ['up', 'right', 'down', 'left', 'panleft', 'panright', 'switch_camera', 'bla', 'blap', 'moveforward', 'movebackward', 'turnleft', 'turnright', 'rotateleft', 'rotateright', 'panup', 'pandown', 'pitchup', 'pitchdown', 'toggleprojection', 'fire'] as const;
 export type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -37,8 +41,7 @@ export const keyboardInputMapping: MyKeyboardInputMapping = {
     'right': ['ArrowRight'],
     'down': ['ArrowDown'],
     'left': ['ArrowLeft'],
-    'load': ['ShiftLeft'],      // Toggle extra light
-    'save': ['KeyZ'],           // Switch camera
+    'switch_camera': ['KeyZ'],           // Switch camera
     'bla': ['KeyW'],            // Move forward
     'blap': ['KeyS'],           // Move backward
     'moveforward': ['KeyW'],    // Move forward
@@ -54,6 +57,7 @@ export const keyboardInputMapping: MyKeyboardInputMapping = {
     'pitchup': ['KeyT'],      // Pitch up
     'pitchdown': ['KeyG'],    // Pitch down
     'toggleprojection': ['KeyP'], // Toggle projection
+    'fire': ['ShiftLeft'],
 };
 
 export const gamepadInputMapping: MyGamepadInputMapping = {
@@ -61,8 +65,7 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
     'right': ['right'],
     'down': ['down'],
     'left': ['left'],
-    'load': ['a'],
-    'save': ['b'],
+    'switch_camera': ['b'],
     'bla': ['x'],
     'blap': ['y'],
     'turnleft': ['left'],
@@ -78,6 +81,7 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
     'pitchup': ['up'],
     'pitchdown': ['down'],
     'toggleprojection': ['x', 'y'], // Toggle projection
+    'fire': ['a'],
 };
 
 class gameview extends GLView {
