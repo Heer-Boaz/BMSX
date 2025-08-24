@@ -1,4 +1,4 @@
-import { AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraRailBinder, Direction, DirectionalLightObject, GameObject, InputMap, insavegame, new_vec3, PhysicsWorld, PointLightObject, RailDeterministicPlayer, RailPath, RailRunner, State, StateMachineBlueprint, Timeline, TransformComponent, V3, WaveManager } from '../bmsx';
+import { AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraRailBinder, Direction, DirectionalLightObject, EventTimeline, GameObject, InputMap, insavegame, new_vec3, PhysicsWorld, PointLightObject, RailDeterministicPlayer, RailPath, RailRunner, State, StateMachineBlueprint, TransformComponent, V3, WaveManager } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { PhysicsDescriptorComponent } from '../bmsx/physics/physicsdescriptorcomponent';
 import { Atmosphere } from '../bmsx/render/3d/atmosphere';
@@ -182,9 +182,18 @@ export class gamemodel extends BaseModel {
 
 		// Deterministic controller: 14 seconds full rail
 		const detPlayer = new RailDeterministicPlayer(runner, rail, { totalDuration: 24 }); // longer path -> longer showcase
-		// Timeline follows runner.u for additive camera breathing & future layered effects
-		const timeline = new Timeline(); timeline.loop = false; for (const ev of rail.events) timeline.addEvent(ev.time, ev.name, ev.data);
-		const baseFov = activeCam.camera.fovDeg; timeline.addAction(0, 1, (t) => { const breathe = Math.sin(t * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); }); timeline.play();
+		// EventTimeline drives events & ranged camera effects keyed to rail progress
+		const eventTimeline = new EventTimeline({ mode: 'u' });
+		for (const ev of rail.events) eventTimeline.addInstant({ u: ev.time, name: ev.name, data: ev.data });
+		const baseFov = activeCam.camera.fovDeg;
+		eventTimeline.addRange({ startU: 0, endU: 1, update: (tn) => { const breathe = Math.sin(tn * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); } });
+		// One-shot helper implemented as near-zero length ranges
+		const oneShot = (u: number, fn: () => void) => { let fired = false; eventTimeline.addRange({ startU: u, endU: u + 0.0001, update: () => { if (!fired) { fn(); fired = true; } } }); };
+		oneShot(0.12, () => binder.startFovPulse({ delta: 12, duration: 0.6, curve: 'easeOutBack' }));
+		oneShot(0.45, () => binder.startFovPulse({ delta: 8, duration: 0.4, curve: 'easeInOutQuad' }));
+		oneShot(0.90, () => binder.startFovPulse({ delta: 15, duration: 0.5, curve: 'easeOutQuad' }));
+		oneShot(0.25, () => binder.startShake({ amp: 0.4, freq: 22, duration: 0.5 }));
+		oneShot(0.70, () => binder.startShake({ amp: 0.6, freq: 18, duration: 0.6 }));
 
 		// Reticle & bullets setup
 		const reticle = new Reticle();
@@ -230,7 +239,7 @@ export class gamemodel extends BaseModel {
 				const dtSec = $.deltaTime / 1000; // game.deltaTime in ms
 				// Deterministic advancement & timeline sync
 				detPlayer.update(dtSec);
-				timeline.advanceTo(runner.u);
+				eventTimeline.update(dtSec, runner);
 				binder.update(dtSec);
 				Atmosphere.progressFactor = runner.u; // feed rail progress to atmosphere
 				// Update reticle offset & placement

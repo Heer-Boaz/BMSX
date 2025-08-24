@@ -39,7 +39,7 @@ export class CameraRailBinder {
         this.runner.rail.on('rail.resume', () => { this.runner.paused = false; }, this);
     }
 
-    private startShake(d: any): void { this.shakeActive = true; this.shakeAmp = d?.amp ?? 0.2; this.shakeFreq = d?.freq ?? 20; this.shakeEndTime = this.tAccum + (d?.duration ?? 0.5); }
+    public startShake(d: any): void { this.shakeActive = true; this.shakeAmp = d?.amp ?? 0.2; this.shakeFreq = d?.freq ?? 20; this.shakeEndTime = this.tAccum + (d?.duration ?? 0.5); }
 
     public startFovPulse(d: any): void {
         this.fovPulseActive = true; this.fovPulseFrom = this.cameraObj.camera.fovDeg; this.fovPulseTo = this.baseFov! + (d?.delta ?? 10); this.fovPulseTotal = d?.duration ?? 0.4; this.fovPulseStart = this.tAccum; this.fovPulseEndTime = this.tAccum + this.fovPulseTotal;
