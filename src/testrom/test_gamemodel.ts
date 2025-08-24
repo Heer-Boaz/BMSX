@@ -1,5 +1,7 @@
-import { AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraRailBinder, Direction, DirectionalLightObject, GameObject, InputMap, insavegame, new_vec3, PhysicsWorld, PointLightObject, RailPath, RailRunner, State, StateMachineBlueprint, Timeline, TransformComponent, V3, WaveManager } from '../bmsx';
+import { AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraRailBinder, Direction, DirectionalLightObject, GameObject, InputMap, insavegame, new_vec3, PhysicsWorld, PointLightObject, RailDeterministicPlayer, RailPath, RailRunner, State, StateMachineBlueprint, Timeline, TransformComponent, V3, WaveManager } from '../bmsx';
+// RailDeterministicPlayer now exported via barrel
 import { PhysicsDescriptorComponent } from '../bmsx/physics/physicsdescriptorcomponent';
+import { Atmosphere } from '../bmsx/render/3d/atmosphere';
 import { bclass } from './bclass';
 import { _model, gamepadInputMapping, keyboardInputMapping } from './bootloader';
 import { BulletManager } from './bullets';
@@ -7,7 +9,7 @@ import { CameraController } from './camera_controller';
 import { DamageNumberManager, ExplosionEmitter, ImpactBurst, MuzzleFlash } from './effects';
 import { EnemyHealthComponent } from './enemyhealth';
 import { RailShooterHUD } from './hud';
-import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D } from './objects3d';
+import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D, spawnSimpleCity } from './objects3d';
 import { BitmapId } from './resourceids';
 import { Reticle } from './reticle';
 
@@ -88,10 +90,12 @@ export class gamemodel extends BaseModel {
 		const cam2 = new CameraObject('cam2');
 		cam2.camera.setAspect(this.gamewidth / this.gameheight);
 
+		// Elevated starting camera to view massive scaled city
+		// Lower the camera closer to street level so spawned buildings are immediately visible
 		_model.spawn(cam1, V3.of(
-			-11.608727323457181,
-			75.36972014104992,
-			10.01821056934937
+			-60,
+			48, // was 260
+			120
 		));
 		cam1.camera.screenLook(1.7687161091476518, -1.418966871448069, -2.6349415504373304);
 		_model.spawn(cam2, V3.of(5, 12, 27));
@@ -121,55 +125,66 @@ export class gamemodel extends BaseModel {
 
 		// ===== Rail shooter demo scaffold =====
 		// Simple S-curve forward rail reminiscent of an urban fly-through
+		// Extended weaving rail path: dips between towers then rises above skyline
 		const railDef = {
 			points: [
-				{ x: -20, y: 10, z: 40, t: 0 },
-				{ x: -10, y: 12, z: 20 },
-				{ x: 0, y: 14, z: 0 },
-				{ x: 15, y: 16, z: -20 },
-				{ x: 25, y: 18, z: -40, t: 1 }
+				{ x: -40, y: 14, z: 80, t: 0 },
+				{ x: -25, y: 10, z: 48 }, // descend into streets
+				{ x: -10, y: 12, z: 24 },
+				{ x: 0, y: 18, z: 0 }, // climb slightly
+				{ x: 18, y: 9, z: -26 }, // dive again between blocks
+				{ x: 32, y: 22, z: -52 }, // rapid climb for skyline overview
+				{ x: 46, y: 28, z: -78 },
+				{ x: 60, y: 18, z: -104 }, // descend
+				{ x: 78, y: 24, z: -132 },
+				{ x: 92, y: 32, z: -160, t: 1 } // high vantage
 			],
 			events: [
-				{ time: 0.03, name: 'rail.speed', data: { speed: 0.06 } },
 				{ time: 0.05, name: 'spawn.enemyWave', data: { count: 3, spread: 6 } },
-				{ time: 0.10, name: 'rail.speed', data: { speed: 0.09 } },
 				{ time: 0.12, name: 'camera.fovPulse', data: { delta: 12, duration: 0.6, curve: 'easeOutBack' } },
 				{ time: 0.15, name: 'spawn.enemyWave', data: { count: 4, spread: 8 } },
-				{ time: 0.20, name: 'rail.pause', data: { duration: 1.0 } },
 				{ time: 0.25, name: 'camera.shake', data: { amp: 0.4, freq: 22, duration: 0.5 } },
 				{ time: 0.32, name: 'spawn.enemyWave', data: { count: 5, spread: 10 } },
-				{ time: 0.38, name: 'rail.speed', data: { speed: 0.05 } },
 				{ time: 0.45, name: 'camera.fovPulse', data: { delta: 8, duration: 0.4, curve: 'easeInOutQuad' } },
-				{ time: 0.50, name: 'rail.speed', data: { speed: 0.1 } },
 				{ time: 0.55, name: 'spawn.enemyBoss', data: { size: 2.5 } },
 				{ time: 0.70, name: 'camera.shake', data: { amp: 0.6, freq: 18, duration: 0.6 } },
 				{ time: 0.78, name: 'spawn.enemyWave', data: { count: 6, spread: 12 } },
-				{ time: 0.85, name: 'rail.speed', data: { speed: 0.07 } },
 				{ time: 0.90, name: 'camera.fovPulse', data: { delta: 15, duration: 0.5, curve: 'easeOutQuad' } }
 			]
 		};
 		const rail = RailPath.fromJSON(railDef);
 		const runner = new RailRunner(rail);
-		runner.speed = 0.0; // will be driven by timeline
+		// Populate multi-silhouette deterministic cityscape around the rail for motion parallax
+		spawnSimpleCity(rail, {
+			seed: 'demo-city-v2',
+			steps: 240,
+			debugLog: true,
+			worldScale: 6,
+			silhouettes: [
+				// Immediate showcase towers right at the start so user always sees scale
+				{ uStart: -0.02, uEnd: 0.05, lateralSpan: 90, minHeight: 80, maxHeight: 160, density: 0.75, gridSize: 12, footprintMinFactor: 0.50, footprintMaxFactor: 0.75 },
+				// Peripheral sprawl
+				{ uStart: 0.0, uEnd: 0.18, lateralSpan: 120, minHeight: 10, maxHeight: 40, density: 0.50, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.85 },
+				// Approaching mid-rise
+				{ uStart: 0.18, uEnd: 0.42, lateralSpan: 160, minHeight: 18, maxHeight: 70, density: 0.60, gridSize: 14, footprintMinFactor: 0.50, footprintMaxFactor: 0.80 },
+				// Dense downtown core
+				{ uStart: 0.42, uEnd: 0.75, lateralSpan: 220, minHeight: 30, maxHeight: 140, density: 0.65, gridSize: 16, footprintMinFactor: 0.45, footprintMaxFactor: 0.75 },
+				// Transition to high plateau towers
+				{ uStart: 0.75, uEnd: 0.90, lateralSpan: 250, minHeight: 50, maxHeight: 180, density: 0.60, gridSize: 18, footprintMinFactor: 0.40, footprintMaxFactor: 0.70 },
+				// Outskirts taper
+				{ uStart: 0.90, uEnd: 1.05, lateralSpan: 160, minHeight: 15, maxHeight: 60, density: 0.40, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.80 },
+			],
+		});
+		runner.speed = 0.0; // unused in deterministic playback
 		const activeCam = cam1; // bind primary camera to rail
 		const binder = new CameraRailBinder(runner, activeCam, { autoRotate: true, lookAhead: 0.15 });
-		binder.attachRailEvents();
+		binder.attachRailEvents(); // still handles camera events
 
-		// Timeline drives runner.u and orchestrates camera pulses beyond discrete events
-		const timeline = new Timeline();
-		timeline.loop = false;
-		// Mirror rail events into timeline for consistency (optional, but shows integration)
-		for (const ev of rail.events) timeline.addEvent(ev.time, ev.name, ev.data);
-		// Example continuous speed curve (ease in, cruise, ease out)
-		timeline.animateNumber(() => runner.speed, v => runner.speed = v, 0.0, 0.12, 0.0, 0.15, { easing: 'easeOutQuad' });
-		timeline.animateNumber(() => runner.speed, v => runner.speed = v, 0.12, 0.12, 0.15, 0.55, { easing: 'linear' });
-		timeline.animateNumber(() => runner.speed, v => runner.speed = v, 0.12, 0.0, 0.70, 0.20, { easing: 'easeInQuad', clamp: true });
-		// Subtle continuous FOV breathing effect (layered with event pulses)
-		const baseFov = activeCam.camera.fovDeg;
-		timeline.addAction(0, 1, (t) => { const breathe = Math.sin(t * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); });
-		// Bind timeline to runner: we let runner speed still move u; timeline also advances via runner.u each frame
-		// Alternative: we could drive runner.u directly from timeline.u for deterministic playback.
-		timeline.play();
+		// Deterministic controller: 14 seconds full rail
+		const detPlayer = new RailDeterministicPlayer(runner, rail, { totalDuration: 24 }); // longer path -> longer showcase
+		// Timeline follows runner.u for additive camera breathing & future layered effects
+		const timeline = new Timeline(); timeline.loop = false; for (const ev of rail.events) timeline.addEvent(ev.time, ev.name, ev.data);
+		const baseFov = activeCam.camera.fovDeg; timeline.addAction(0, 1, (t) => { const breathe = Math.sin(t * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); }); timeline.play();
 
 		// Reticle & bullets setup
 		const reticle = new Reticle();
@@ -213,10 +228,11 @@ export class gamemodel extends BaseModel {
 		class RailDemoDriver extends GameObject {
 			override run(): void {
 				const dtSec = $.deltaTime / 1000; // game.deltaTime in ms
-				// Advance runner first (speed-based) then sync timeline to runner.u
-				runner.update(dtSec);
+				// Deterministic advancement & timeline sync
+				detPlayer.update(dtSec);
 				timeline.advanceTo(runner.u);
 				binder.update(dtSec);
+				Atmosphere.progressFactor = runner.u; // feed rail progress to atmosphere
 				// Update reticle offset & placement
 				reticle.updateFromInput();
 				const cam = activeCam.camera;
@@ -251,6 +267,7 @@ export class gamemodel extends BaseModel {
 			}
 		}
 		_model.spawn(new RailDemoDriver('railDriver'));
+
 		// ===== End rail shooter demo scaffold =====
 
 		// Physics test setup (visual + physics bound objects)

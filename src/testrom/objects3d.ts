@@ -1,4 +1,5 @@
-import { attach_components, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
+import { attach_components, GameObject, Identifier, insavegame, MeshObject, RailPath, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
+import { noteCandidateBuildingTop } from '../bmsx/render/3d/atmosphere';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
 import { onload } from '../bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
@@ -193,4 +194,185 @@ export class PhysStaticBox extends MeshObject {
     }
     @onload
     public rehydrateScale() { this.applyHalfExtentsToScale(); this.applyOverrides(); }
+}
+
+// Lightweight building mesh (uses dedicated building.gltf model) for procedural city; avoids PhysStaticBox overhead
+@insavegame
+export class BuildingMesh extends MeshObject {
+    private static _counter = 0;
+    constructor(public halfExtents: vec3arr = [0.5, 0.5, 0.5]) {
+        super(`building_${BuildingMesh._counter++}`);
+        // model id added to resourceids.ts (ModelId.building)
+        // Use direct assignment like other mesh objects; fallback safety retained
+        this.model_id = (ModelId as any).building ?? ModelId.cube;
+        this.scale = [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2];
+    }
+}
+
+// Procedural simple city block generator placing static boxes along rail flanks
+// City generation configuration interfaces
+export interface CitySilhouetteConfig {
+    /** Inclusive start of u-range (0..1) */
+    uStart?: number;
+    /** Exclusive end of u-range (0..1) */
+    uEnd?: number;
+    /** Max lateral distance from rail center where buildings are spawned */
+    lateralSpan?: number;
+    /** Minimum building height */
+    minHeight?: number;
+    /** Maximum building height */
+    maxHeight?: number;
+    /** Probability per grid slot (0..1) */
+    density?: number;
+    /** Grid cell size */
+    gridSize?: number;
+    /** Minimal lateral distance of first building row (default = gridSize * 0.5) */
+    nearOffset?: number;
+    /** Optional custom color palette (rgba). If omitted random neutral palette used */
+    palette?: [number, number, number, number][];
+    /** Optional min fraction of gridSize used for X/Z footprint (default 0.45) */
+    footprintMinFactor?: number;
+    /** Optional max fraction of gridSize used for X/Z footprint (default 0.70) */
+    footprintMaxFactor?: number;
+}
+
+export interface SpawnCityOptions extends CitySilhouetteConfig {
+    /** Deterministic seed (number or string). If omitted uses Math.random */
+    seed?: number | string;
+    /** Total number of rail samples for placement */
+    steps?: number;
+    /** When provided, overrides top-level silhouette settings with per-segment configs */
+    silhouettes?: CitySilhouetteConfig[];
+    /** Ensure we spawn at least some near buildings early for visibility */
+    ensureVisible?: boolean;
+    /** Log summary to console */
+    debugLog?: boolean;
+    /** Uniform world scale multiplier to blow up whole city */
+    worldScale?: number;
+}
+
+// Simple mulberry32 PRNG for deterministic layout
+function createMulberry32(seed: number) {
+    let a = seed >>> 0;
+    return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function hashSeed(seed: number | string): number {
+    if (typeof seed === 'number') return seed;
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < seed.length; i++) {
+        h ^= seed.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+/**
+ * Spawn a procedural city around a rail path. Deterministic when a seed is supplied.
+ * Supports multiple silhouette segments each with varying density / height / span.
+ */
+export function spawnSimpleCity(rail: RailPath, options: SpawnCityOptions = {}): void {
+    const {
+        seed, steps = 160, silhouettes, debugLog,
+        ensureVisible = true,
+        worldScale = 1,
+    } = options; // higher default steps for horizon-scale city density
+
+    const rng = seed !== undefined ? createMulberry32(hashSeed(seed)) : Math.random;
+
+    const segs: CitySilhouetteConfig[] = silhouettes && silhouettes.length
+        ? silhouettes
+        : [options]; // treat top-level as single silhouette
+
+    // Normalize segments (fill defaults & clamp ranges)
+    for (const seg of segs) {
+        if (seg.uStart === undefined) seg.uStart = 0;
+        if (seg.uEnd === undefined) seg.uEnd = 1;
+        if (seg.uStart < 0) seg.uStart = 0; if (seg.uEnd > 1) seg.uEnd = 1;
+        if (seg.uEnd < seg.uStart) [seg.uStart, seg.uEnd] = [seg.uEnd, seg.uStart];
+        if (!seg.gridSize) seg.gridSize = 8;
+        if (seg.nearOffset === undefined) seg.nearOffset = seg.gridSize * 0.5;
+        if (seg.lateralSpan === undefined) seg.lateralSpan = 50;
+        if (seg.minHeight === undefined) seg.minHeight = 6;
+        if (seg.maxHeight === undefined) seg.maxHeight = 28;
+        if (seg.density === undefined) seg.density = 0.5;
+        if (seg.footprintMinFactor === undefined) seg.footprintMinFactor = 0.45;
+        if (seg.footprintMaxFactor === undefined) seg.footprintMaxFactor = 0.70;
+    }
+
+    const samples = Array.from({ length: steps + 1 }, (_, i) => ({ u: i / steps, s: rail.sample(i / steps) }));
+    let totalSpawned = 0;
+    let skippedDuplicates = 0;
+    // World-space occupancy set to avoid spawning multiple buildings in the same grid cell (which caused heavy z-fighting / garbled look)
+    // Keying strategy: quantize X/Z to grid cells per segment gridSize (we'll use the candidate segment's gridSize when generating key)
+    const occupied = new Set<string>();
+    // Pass 1: iterate segments
+    let segIndex = 0;
+    for (const seg of segs) {
+        const { uStart = 0, uEnd = 1, lateralSpan = 50, minHeight = 6, maxHeight = 28, density = 0.5, gridSize = 8, nearOffset = gridSize * 0.5, palette } = seg;
+        const gSize = gridSize * worldScale;
+        const nOffset = nearOffset * worldScale;
+        const effectiveLateralSpan = lateralSpan * (1 + segIndex * 0.15) * worldScale; // gradually widen span for later segments & scale
+        const minH = minHeight * worldScale;
+        const maxH = maxHeight * worldScale;
+        for (const { u, s } of samples) {
+            if (u < uStart || u >= uEnd) continue;
+            const f = s.fwd;
+            const rightLen = Math.hypot(f.z, f.x) || 1;
+            const rx = f.z / rightLen; const rz = -f.x / rightLen;
+            for (const side of [-1, 1] as const) {
+                for (let dist = nOffset; dist <= effectiveLateralSpan; dist += gSize) {
+                    // Instead of spawning multiple longitudinal jitter variants per sample (which caused massive overdraw),
+                    // we quantize forward progress into grid cells using the sample's position projected onto the rail forward.
+                    if (rng() > density) continue;
+                    const px = s.p.x + rx * dist * side;
+                    const pz = s.p.z + rz * dist * side;
+                    const cellX = Math.round(px / gSize);
+                    const cellZ = Math.round(pz / gSize);
+                    const key = cellX + ':' + cellZ; // coarse world grid
+                    if (occupied.has(key)) { skippedDuplicates++; continue; }
+                    occupied.add(key);
+                    const height = minH + rng() * (maxH - minH);
+                    const fMin = seg.footprintMinFactor ?? 0.45;
+                    const fMax = seg.footprintMaxFactor ?? 0.70;
+                    const fRange = Math.max(0.01, fMax - fMin);
+                    const footprintScaleX = gSize * (fMin + rng() * fRange);
+                    const footprintScaleZ = gSize * (fMin + rng() * fRange);
+                    const he: [number, number, number] = [footprintScaleX, height * 0.5, footprintScaleZ];
+                    const box = new BuildingMesh([he[0], he[1], he[2]]);
+                    noteCandidateBuildingTop(s.p.y + he[1] * 2);
+                    $.model.spawn(box, [px, s.p.y + he[1], pz] as any);
+                    // Color selection
+                    if (palette && palette.length) {
+                        const col = palette[Math.floor(rng() * palette.length)];
+                        box.setMaterialOverride(0, { color: col });
+                    } else {
+                        const base = 0.50 + rng() * 0.40; // neutral brightness
+                        const accent = base * (0.85 + rng() * 0.25);
+                        box.setMaterialOverride(0, { color: [base, accent, base * 0.75, 1] });
+                    }
+                    totalSpawned++;
+                }
+            }
+        }
+        segIndex++;
+    }
+
+    if (ensureVisible && totalSpawned === 0) {
+        // Fallback: spawn a tiny cluster near the first sample so player sees something
+        const first = samples[0].s;
+        for (let i = 0; i < 6; i++) {
+            const h = (8 + rng() * 12) * worldScale;
+            const he: [number, number, number] = [(2 + rng() * 2) * worldScale, h * 0.5, (2 + rng() * 2) * worldScale];
+            const box = new BuildingMesh([he[0], he[1], he[2]]);
+            noteCandidateBuildingTop(first.p.y + he[1] * 2);
+            $.model.spawn(box, [first.p.x + (i - 3) * 4, first.p.y + he[1], first.p.z - 6 - rng() * 6] as any);
+        }
+    }
+    if (debugLog) console.log('[CityGen] spawned buildings:', totalSpawned, 'segments:', segs.length, 'seed:', seed, 'skippedDuplicates:', skippedDuplicates, 'cells:', occupied.size, 'worldScale:', worldScale);
 }

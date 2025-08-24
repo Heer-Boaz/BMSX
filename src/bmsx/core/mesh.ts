@@ -127,7 +127,10 @@ export class Mesh {
 	 * Used for batching to minimize texture and shader state changes.
 	 */
 	public get materialSignature(): string {
-		return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}`;
+		// Include base color so per-instance color overrides do not collapse into one instanced batch losing variation.
+		const c = this.material?.color;
+		const cSig = c ? `${c[0].toFixed(3)},${c[1].toFixed(3)},${c[2].toFixed(3)},${c[3].toFixed(3)}` : '';
+		return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${cSig}`;
 	}
 	/**
 	 * Recalculate the mesh's bounding sphere in local space. Morph targets are

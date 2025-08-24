@@ -183,5 +183,7 @@ export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebu
 	}
 
 	gl.drawArrays(gl.TRIANGLES, 0, 36);
+	gl.bindVertexArray(null);
 	gl.enable(gl.CULL_FACE);
+
 }

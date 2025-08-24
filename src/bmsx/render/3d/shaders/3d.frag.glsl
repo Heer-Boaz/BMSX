@@ -17,6 +17,16 @@ uniform bool u_useShadowMap;
 uniform mat4 u_lightMatrix;
 uniform float u_shadowStrength;
 uniform vec3 u_cameraPos;
+// Fog & atmospheric params
+uniform vec3 u_fogColor;
+uniform float u_fogDensity; // exponential fog density
+uniform bool u_enableFog;
+// Height-based color gradient (applied multiplicatively to baseColor prior to lighting)
+uniform vec3 u_heightGradientLow;
+uniform vec3 u_heightGradientHigh;
+uniform bool u_enableHeightGradient;
+uniform float u_heightMin;
+uniform float u_heightMax;
 uniform vec3 u_ambientColor;
 uniform float u_ambientIntensity;
 const int MAX_DIR_LIGHTS = 4;
@@ -96,6 +106,11 @@ void main() {
     }
 
     vec3 baseColor = texColor.rgb * u_materialColor.rgb;
+    if (u_enableHeightGradient) {
+        float hT = clamp((v_worldPos.y - u_heightMin) / max(0.0001, (u_heightMax - u_heightMin)), 0.0, 1.0);
+        vec3 hColor = mix(u_heightGradientLow, u_heightGradientHigh, hT);
+        baseColor *= hColor; // apply gradient tint
+    }
     float metallic = u_metallicFactor;
     float roughness = u_roughnessFactor;
     if (u_useMetallicRoughnessTexture) {
@@ -158,6 +173,11 @@ void main() {
     if (texColor.a < 1.0f) {
         float ditherAlpha = bayer(v_texcoord * vec2(256.0f, 256.0f)) * u_ditherIntensity; // Texture-space voor object-binding
         texColor.a = clamp(texColor.a + ditherAlpha, 0.0f, 1.0f);
+    }
+    if (u_enableFog) {
+        float fogDist = length(u_cameraPos - v_worldPos);
+        float fogFactor = 1.0 - clamp(1.0 - exp(-u_fogDensity * fogDist), 0.0, 1.0);
+        col = mix(col, u_fogColor, fogFactor);
     }
     outputColor = vec4(col, texColor.a);
 }

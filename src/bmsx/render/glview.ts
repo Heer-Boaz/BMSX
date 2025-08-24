@@ -449,21 +449,13 @@ export class GLView extends BaseView {
 
 			const gl = this.glctx;
 
-			checkWebGLError('Before Skybox draw');
-
 			GLViewSkybox.drawSkybox(gl, this.framebuffer, this.canvas.width, this.canvas.height);
-			checkWebGLError('After Skybox draw');
 			GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
-			checkWebGLError('After 3D Mesh draw');
 			GLViewParticles.renderParticleBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height);
-			checkWebGLError('After Particles draw');
 			GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
-			checkWebGLError('After Sprites draw');
-			// saveTextureToFile();
 
 			// Draw a full-screen quad using the post-processing shader
 			GLViewCRT.applyCrtPostProcess(gl, this.canvas.width, this.canvas.height);
-			checkWebGLError('After CRT post-process');
 
 			glSwitchProgram(gl, GLView2D.spriteShaderProgram); // Switch back to the main shader
 
@@ -474,6 +466,7 @@ export class GLView extends BaseView {
 			}
 		} finally {
 			this.isRendering = false;
+			checkWebGLError('After CRT post-process');
 			renderGate.end(token);
 		}
 	}

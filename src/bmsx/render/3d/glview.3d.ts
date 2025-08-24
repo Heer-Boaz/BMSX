@@ -7,6 +7,7 @@ import { GLView, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_U
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
 import { getFramebufferStatusString } from '../glview.helpers';
 import { DrawMeshOptions } from '../view';
+import { Atmosphere, registerAtmosphereHotkeys } from './atmosphere';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
 import fragShader3DCode from './shaders/3d.frag.glsl';
@@ -131,6 +132,15 @@ let instanceMatrixBuffer3D: WebGLBuffer;
 let instanceMatrixLocations3D: number[];
 let viewProjectionLocation3D: WebGLUniformLocation;
 let useInstancingLocation3D: WebGLUniformLocation;
+// Fog / atmosphere & height gradient uniform locations
+let fogColorLocation3D: WebGLUniformLocation;
+let fogDensityLocation3D: WebGLUniformLocation;
+let fogEnableLocation3D: WebGLUniformLocation;
+let heightGradLowLocation3D: WebGLUniformLocation;
+let heightGradHighLocation3D: WebGLUniformLocation;
+let heightMinLocation3D: WebGLUniformLocation;
+let heightMaxLocation3D: WebGLUniformLocation;
+let heightGradEnableLocation3D: WebGLUniformLocation;
 const MAX_MORPH_TARGETS = 2;
 const MAX_JOINTS = 32;
 const jointMatrixArray = new Float32Array(MAX_JOINTS * MAT4_FLOATS);
@@ -535,6 +545,15 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 		gl.getAttribLocation(gameShaderProgram3D, 'a_i2'),
 		gl.getAttribLocation(gameShaderProgram3D, 'a_i3'),
 	];
+	// Fog / gradient uniforms
+	fogColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogColor')!;
+	fogDensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogDensity')!;
+	fogEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableFog')!;
+	heightGradLowLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientLow')!;
+	heightGradHighLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientHigh')!;
+	heightMinLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMin')!;
+	heightMaxLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMax')!;
+	heightGradEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableHeightGradient')!;
 }
 
 function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, morph: boolean): WebGLVertexArrayObject {
@@ -717,6 +736,20 @@ function setupRenderingState(gl: WebGL2RenderingContext): void {
 	gl.uniformMatrix4fv(viewProjectionLocation3D, false, activeCamera.viewProjection);
 
 	setUseInstancing(gl, false);
+
+	registerAtmosphereHotkeys();
+	// Animated fog density using rail/time progress
+	const p = Atmosphere.progressFactor;
+	const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0; // cosine for smooth loop
+	const fogDensity = Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
+	gl.uniform3fv(fogColorLocation3D, new Float32Array(Atmosphere.fogColor));
+	gl.uniform1f(fogDensityLocation3D, fogDensity);
+	gl.uniform1i(fogEnableLocation3D, Atmosphere.enableFog ? 1 : 0);
+	gl.uniform3fv(heightGradLowLocation3D, new Float32Array(Atmosphere.heightLowColor));
+	gl.uniform3fv(heightGradHighLocation3D, new Float32Array(Atmosphere.heightHighColor));
+	gl.uniform1f(heightMinLocation3D, Atmosphere.heightMin);
+	gl.uniform1f(heightMaxLocation3D, Atmosphere.heightMax);
+	gl.uniform1i(heightGradEnableLocation3D, Atmosphere.enableHeightGradient ? 1 : 0);
 
 	if (lightsDirty) {
 		setAmbientLight(gl, $.model.ambientLight?.light as AmbientLight);

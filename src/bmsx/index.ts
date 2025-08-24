@@ -17,6 +17,7 @@ export * from './core/mesh';
 export * from './core/objecttracker';
 export * from './core/rail/railcamera';
 export * from './core/rail/railpath';
+export * from './core/rail/railplayer';
 export * from './core/rail/timeline';
 export * from './core/rail/wavemanager';
 export * from './core/registry';
