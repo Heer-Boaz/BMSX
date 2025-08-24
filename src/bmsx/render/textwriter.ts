@@ -18,6 +18,9 @@ export class TextWriter {
      */
     public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: Color, backgroundColor?: Color): void {
         let font = _font ?? $.view.default_font;
+        if (!font) {
+            console.error('No default font available for TextWriter.drawText');
+        }
         let startPos: vec2 = { x: x, y: y };
         let stepX: number = 0;
         let stepY: number = 0;
