@@ -1,5 +1,6 @@
+import { GameObject } from '../core/gameobject';
 import { M4, Mat4, quat } from '../render/3d/math3d';
-import type { Identifier, Oriented, vec3arr } from '../rompack/rompack';
+import type { Identifier, Oriented, Scaled, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { Component, componenttags_postprocessing } from './basecomponent';
 
@@ -69,8 +70,7 @@ export class TransformComponent extends Component {
     }
 
     override postprocessingUpdate(): void {
-        const parent = this.parent as any;
-        if (!parent) return;
+        const parent = this.parentAs<GameObject & Oriented & Scaled>();
 
         if (parent.pos) {
             this.position[0] = parent.pos.x;

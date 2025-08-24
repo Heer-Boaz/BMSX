@@ -107,7 +107,10 @@ export class Space {
      */
     public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
-        if ($.model[objid_2_objspaceid][o.id]) throw new Error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${$.model[objid_2_objspaceid][o.id]}'!`);
+        if ($.model[objid_2_objspaceid][o.id]) {
+            console.error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${$.model[objid_2_objspaceid][o.id]}'!`);
+            return;
+        }
 
         this.objects.push(o); // Add the object to the space
 
@@ -762,8 +765,8 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * @param {GameObject} o - The game object to exile.
      * @returns {void} Nothing.
      */
-    public exile(o: GameObject): void {
-        this.spaces.forEach(s => s.get(o.id) && s.exile(o));
+    public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
+        this.spaces.forEach(s => s.get(o.id) && s.exile(o, skip_ondispose_event));
         // Note that we don't need to dispose / deregister the object, as that is done in the `ondispose` method of the `GameObject` class
     }
 

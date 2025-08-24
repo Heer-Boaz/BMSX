@@ -43,9 +43,9 @@ export class PhysicsComponent extends Component {
 		this.mass = opts.mass ?? 0;
 		this.restitution = opts.restitution ?? 0;
 		this.friction = opts.friction ?? 0.2;
-		this.linearDamping = (opts as any).linearDamping ?? 0;
-		this.angularDamping = (opts as any).angularDamping ?? 0;
-		if ((opts as any).angularVelocity) this.angularVelocity = (opts as any).angularVelocity;
+		this.linearDamping = opts.linearDamping ?? 0;
+		this.angularDamping = opts.angularDamping ?? 0;
+		if (opts.angularVelocity) this.angularVelocity = opts.angularVelocity;
 		this.isTrigger = !!opts.isTrigger;
 		this.isKinematic = opts.type === 'kinematic';
 		this.tryBuildBody();

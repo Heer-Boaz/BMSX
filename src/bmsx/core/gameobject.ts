@@ -609,9 +609,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		let result: string;
 		do {
 			const baseId = this.constructor.name;
-			const uniqueNumber = $.model.getNextIdNumber();
+			const uniqueNumber = model.getNextIdNumber();
 			result = `${baseId}_${uniqueNumber}`;
-		} while (model?.exists(result));
+		} while (model.exists(result));
 		return result;
 	}
 

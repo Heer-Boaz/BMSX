@@ -1,6 +1,7 @@
 // BehaviourTreeVisualizer extracted from bmsxdebugger.ts
 import { BTNode } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing } from '../component/basecomponent';
+import { GameObject } from '../core/gameobject';
 import type { Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { FloatingDialog } from './bmsxdebugger';
@@ -18,7 +19,7 @@ export class BTVisualizer extends Component {
 
     override postprocessingUpdate(): void {
         this.openDialog();
-        [, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), ($.get as any)(this.parentid));
+        [, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), this.parentid);
     }
 
     public closeDialog(): void {
@@ -32,7 +33,7 @@ export class BTVisualizer extends Component {
             this.dialog = new FloatingDialog(`BT: [${this.parentid}]`);
         }
         if (!this.machineElements) {
-            [, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), ($.get as any)(this.parentid));
+            [, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), this.parentid);
             this.dialog.updateSize();
         }
     }
@@ -53,52 +54,52 @@ export function visualizeBehaviorTree(container: HTMLElement, btControllerId: Id
     }
 
     function visualizeNode(node: BTNode, nodeName: string, parentElement: HTMLElement, path: string): void {
-        const btController = ($.get as any)(btControllerId);
-        let table = document.createElement('table');
-        parentElement.appendChild(table);
-        let nodeNameRow = document.createElement('tr');
-        let nodeNameCell = document.createElement('td');
-        nodeNameCell.textContent = nodeName;
-        nodeNameRow.appendChild(nodeNameCell);
-        table.appendChild(nodeNameRow);
-        nodeElements.set(path, nodeNameCell);
-        let nodeInPath = btController.blackboards[node.id]?.executionPath?.find((n: any) => n.node.id === node.id);
-        let nodeResultRow = document.createElement('tr');
-        let nodeResultCell = document.createElement('td');
-        nodeResultCell.textContent = 'Result: ' + (nodeInPath ? nodeInPath.result : 'Not executed');
-        nodeResultCell.classList.add('result');
-        nodeResultRow.appendChild(nodeResultCell);
-        table.appendChild(nodeResultRow);
-        let any_node = node as any;
-        if (any_node.child) {
-            let childNode = any_node.child;
-            let childNodeRow = document.createElement('tr');
-            let childNodeCell = document.createElement('td');
-            childNodeCell.textContent = childNode.name;
-            childNodeCell.classList.add('node');
-            childNodeRow.appendChild(childNodeCell);
-            table.appendChild(childNodeRow);
-            const newPath = `${path}.child`;
-            visualizeNode(childNode, childNode.name, childNodeCell, newPath);
-        }
-        if (any_node.children) {
-            for (let i = 0; i < any_node.children.length; i++) {
-                let childNode = any_node.children[i];
-                let childNodeRow = document.createElement('tr');
-                let childNodeCell = document.createElement('td');
-                childNodeCell.textContent = childNode.name;
-                childNodeCell.classList.add('node');
-                childNodeRow.appendChild(childNodeCell);
-                table.appendChild(childNodeRow);
-                const newPath = `${path}.${i}`;
-                visualizeNode(childNode, childNode.name, childNodeCell, newPath);
-            }
-        }
+        // const btController = $.get<GameObject>(btControllerId);
+        // let table = document.createElement('table');
+        // parentElement.appendChild(table);
+        // let nodeNameRow = document.createElement('tr');
+        // let nodeNameCell = document.createElement('td');
+        // nodeNameCell.textContent = nodeName;
+        // nodeNameRow.appendChild(nodeNameCell);
+        // table.appendChild(nodeNameRow);
+        // nodeElements.set(path, nodeNameCell);
+        // let nodeInPath = btController.blackboards[node.id]?.executionPath?.find((n: any) => n.node.id === node.id);
+        // let nodeResultRow = document.createElement('tr');
+        // let nodeResultCell = document.createElement('td');
+        // nodeResultCell.textContent = 'Result: ' + (nodeInPath ? nodeInPath.result : 'Not executed');
+        // nodeResultCell.classList.add('result');
+        // nodeResultRow.appendChild(nodeResultCell);
+        // table.appendChild(nodeResultRow);
+        // let any_node = node;
+        // if (any_node.child) {
+        //     let childNode = any_node.child;
+        //     let childNodeRow = document.createElement('tr');
+        //     let childNodeCell = document.createElement('td');
+        //     childNodeCell.textContent = childNode.name;
+        //     childNodeCell.classList.add('node');
+        //     childNodeRow.appendChild(childNodeCell);
+        //     table.appendChild(childNodeRow);
+        //     const newPath = `${path}.child`;
+        //     visualizeNode(childNode, childNode.name, childNodeCell, newPath);
+        // }
+        // if (any_node.children) {
+        //     for (let i = 0; i < any_node.children.length; i++) {
+        //         let childNode = any_node.children[i];
+        //         let childNodeRow = document.createElement('tr');
+        //         let childNodeCell = document.createElement('td');
+        //         childNodeCell.textContent = childNode.name;
+        //         childNodeCell.classList.add('node');
+        //         childNodeRow.appendChild(childNodeCell);
+        //         table.appendChild(childNodeRow);
+        //         const newPath = `${path}.${i}`;
+        //         visualizeNode(childNode, childNode.name, childNodeCell, newPath);
+        //     }
+        // }
     }
 
-    const btController = ($.get as any)(btControllerId);
-    for (let treeName in btController.behaviortreeIds) {
-        let tree = btController.behaviortrees[treeName];
+    const btController = $.get<GameObject>(btControllerId);
+    for (let treeName in btController.btreecontexts) {
+        let tree = btController.btreecontexts[treeName].root;
         let treeRow = document.createElement('tr');
         let subTableCell = document.createElement('td');
         treeRow.appendChild(subTableCell);

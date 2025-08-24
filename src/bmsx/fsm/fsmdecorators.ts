@@ -100,7 +100,7 @@ export function fsmHandler(opts?: FsmHandlerOpts) {
         const memberName = ctx.name;
 
         ctx.addInitializer(function () {
-            const ctor = (this as any).constructor;
+            const ctor = this.constructor;
             const bag: FsmHandlerDecl[] = (ctor[HANDLER_META] ||= []);
             bag.push({
                 name: memberName,

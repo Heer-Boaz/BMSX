@@ -6,7 +6,7 @@ import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import type { TextureKey } from '../render/texturemanager';
 import type { Color, DrawMeshOptions } from '../render/view';
-import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, vec3arr } from '../rompack/rompack';
+import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr } from '../rompack/rompack';
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 import { Float32ArrayPool } from './utils';
@@ -210,7 +210,7 @@ interface MeshInstance {
 }
 
 @insavegame
-export abstract class MeshObject extends GameObject implements Oriented {
+export abstract class MeshObject extends GameObject implements Oriented, Scaled {
 	@excludepropfromsavegame
 	public meshes: Mesh[] = [];
 	@excludepropfromsavegame
@@ -262,7 +262,7 @@ export abstract class MeshObject extends GameObject implements Oriented {
 		if (!this.meshModel?.animations) return false;
 		let idx: number | undefined;
 		if (typeof clip === 'number') idx = clip | 0; else {
-			idx = this.meshModel.animations.findIndex(a => (a as any).name === clip);
+			idx = this.meshModel.animations.findIndex(a => a.name === clip);
 		}
 		if (idx === undefined || idx < 0 || idx >= this.meshModel.animations.length) return false;
 		// Prepare blend if requested
@@ -366,7 +366,7 @@ export abstract class MeshObject extends GameObject implements Oriented {
 		}
 
 		m.material = new Material({
-			color: mat?.baseColorFactor ? [...mat.baseColorFactor] as any : [1, 1, 1, 1],
+			color: mat?.baseColorFactor ? [...mat.baseColorFactor] : [1, 1, 1, 1],
 			textures: {
 				albedo: albedo !== undefined ? albedo : undefined,
 				normal: normal !== undefined ? normal : undefined,
@@ -395,10 +395,10 @@ export abstract class MeshObject extends GameObject implements Oriented {
 		if (overrides.albedo !== undefined) mat.textures.albedo = overrides.albedo;
 		if (overrides.normal !== undefined) mat.textures.normal = overrides.normal;
 		if (overrides.metallicRoughness !== undefined) mat.textures.metallicRoughness = overrides.metallicRoughness;
-		if (overrides.color) mat.color = [...overrides.color] as any;
+		if (overrides.color) mat.color = [...overrides.color];
 		if (overrides.metallicFactor !== undefined) mat.metallicFactor = overrides.metallicFactor;
 		if (overrides.roughnessFactor !== undefined) mat.roughnessFactor = overrides.roughnessFactor;
-		this.materialOverrides ??= {} as any;
+		this.materialOverrides ??= {};
 		this.materialOverrides[meshIndex] = { ...(this.materialOverrides[meshIndex] ?? {}), ...overrides };
 		// (Re)bind GPU texture keys if already fetched
 		const keys = this.meshModel?.gpuTextures;
@@ -552,7 +552,7 @@ export abstract class MeshObject extends GameObject implements Oriented {
 	}
 
 	@onsave
-	public saveRuntime(): Partial<MeshObject> {
+	public saveRuntime(): { _runtime: MeshObjectRuntime } {
 		// NB: static @onsave krijgt de instance als parameter (o)
 		const runtime: MeshObjectRuntime = { version: 1 };
 
@@ -592,7 +592,7 @@ export abstract class MeshObject extends GameObject implements Oriented {
 
 		// console.log(`Saving MeshObject runtime: model_id=${runtime.model_id}, nodes=${Object.keys(runtime.nodes ?? {}).length}, anim=${runtime.anim?.time ?? 'none'}`);
 
-		return { _runtime: runtime } as any;
+		return { _runtime: runtime };
 	}
 
 	@onsave
@@ -786,7 +786,7 @@ export abstract class MeshObject extends GameObject implements Oriented {
 		const t = node.translation ?? [0, 0, 0];
 		const q = node.rotation ?? undefined; // [x,y,z,w]
 		const s = node.scale ?? [1, 1, 1];
-		return M4.fromTRS([t[0], t[1], t[2]], q as any, [s[0], s[1], s[2]]);
+		return M4.fromTRS([t[0], t[1], t[2]], q, [s[0], s[1], s[2]]);
 	}
 
 	private computeSkinMatrices(skinIndex: number): Float32Array[] | undefined {

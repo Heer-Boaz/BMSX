@@ -244,7 +244,7 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 }
 
 export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
-    const obj = decodeBinary(new Uint8Array(buffer)) as any;
+    const obj = decodeBinary(new Uint8Array(buffer));
     function toF32(v: any): Float32Array | undefined {
         if (v === undefined || v === null) return undefined;
         if (ArrayBuffer.isView(v)) {

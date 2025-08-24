@@ -43,7 +43,7 @@ export interface GameInitArgs<M extends BaseModel = BaseModel, V extends BaseVie
 const GAME_FPS = 50;
 const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
-const REWIND_BUFFER_ACTIVATED = true;
+const REWIND_BUFFER_ACTIVATED = false;
 const REWIND_BUFFER_WRITE_FREQUENCY = 10; // Frames
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
@@ -288,6 +288,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 */
 	constructor() {
 		this.initialized = false;
+		global = globalThis;
+		global['$'] = this;
+		window['$'] = this;
 	}
 
 	/**
@@ -301,9 +304,6 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 */
 	public async init(init: GameInitArgs<M, V>): Promise<Game> {
 		const { rom, model, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
-		global = globalThis;
-		global['$'] = this;
-		window['$'] = this;
 		global['$rom'] = rom;
 		window['$rom'] = rom;
 		this.running = false;

@@ -200,7 +200,7 @@ function deepEqual(a: any, b: any): boolean {
 
 function deepClone<T>(v: T): T {
     if (v === null || typeof v !== 'object') return v;
-    if (Array.isArray(v)) return v.map(deepClone) as any;
+    if (Array.isArray(v)) return v.map(deepClone) as T;
     return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, deepClone(val)])) as T;
 }
 

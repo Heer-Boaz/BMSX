@@ -323,7 +323,7 @@ function updateAllPreprocessingTags(constructor: ConstructorWithTagsProperty) {
     let currentClass = constructor as ConstructorWithTagsProperty; // Start with the given constructor
 
     while (currentClass && currentClass !== Object) { // Traverse the prototype chain
-        if (currentClass.tagsPre) { // Check if the current class has any tags
+        if (currentClass.tagsPre) { // Check if the current class has tags
             currentClass.tagsPre.forEach((tag: ComponentTag) => tags.add(tag)); // Add the tags to the set
         }
         currentClass = Object.getPrototypeOf(currentClass); // Get the next class in the prototype chain
@@ -356,7 +356,7 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
     let currentClass = constructor as ConstructorWithTagsProperty; // Start with the given constructor
 
     while (currentClass && currentClass !== Object) { // Traverse the prototype chain
-        if (currentClass.tagsPost) { // Check if the current class has any tags
+        if (currentClass.tagsPost) { // Check if the current class has tags
             currentClass.tagsPost.forEach((tag: ComponentTag) => tags.add(tag)); // Add the tags to the set
         }
         currentClass = Object.getPrototypeOf(currentClass); // Get the next class in the prototype chain

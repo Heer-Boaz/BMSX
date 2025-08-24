@@ -307,7 +307,7 @@ class InputActionParser {
 		this.take(Tokens.Sym, ')'); // Ensure the closing parenthesis is present
 
 		// Return a FunNode representing the parsed function
-		return { fname: base, args, window: win, eval: compileFunction(base as any, args, win) };
+		return { fname: base, args, window: win, eval: compileFunction(base, args, win) };
 	}
 
 	/**
@@ -627,7 +627,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			any = true;
 			// At least one eligible contributing leaf is just-pressed
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForJP && gs(a.name).justpressed) return true;
 			}
 		}
@@ -642,7 +642,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForJP) {
 					hasEligible = true;
 					if (!gs(a.name).justpressed) return false;
@@ -662,7 +662,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) continue;
 			any = true;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForJR && gs(a.name).justreleased) return true;
 			}
 		}
@@ -675,7 +675,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForJR) {
 					hasEligible = true;
 					if (!gs(a.name).justreleased) return false;
@@ -696,7 +696,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) continue;
 			any = true;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForWP && g(a.name, win).waspressed) return true;
 			}
 		}
@@ -710,7 +710,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForWP) {
 					hasEligible = true;
 					if (!g(a.name, win).waspressed) return false; // strict: all eligible leaves inside arg within window
@@ -731,7 +731,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) continue;
 			any = true;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForWR && g(a.name, win).wasreleased) return true;
 			}
 		}
@@ -745,7 +745,7 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 			if (!truth) return false;
 			let hasEligible = false;
 			for (let j = 0; j < leaves.length; j++) {
-				const a = leaves[j] as ActNode as any;
+				const a = leaves[j] as ActNode;
 				if (a._edgeForWR) {
 					hasEligible = true;
 					if (!g(a.name, win).wasreleased) return false;

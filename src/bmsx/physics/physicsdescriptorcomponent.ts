@@ -1,4 +1,5 @@
 import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
+import { new_vec3 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import type { PhysicsBodyDesc } from './physicsbody';
@@ -25,7 +26,7 @@ export class PhysicsDescriptorComponent extends Component {
             this.attachRuntime();
         } else {
             // Safe defaults; will be overwritten by deserialized fields before @onload
-            this.shape = { kind: 'aabb', halfExtents: [0, 0, 0] } as any;
+            this.shape = { kind: 'aabb', halfExtents: new_vec3(0, 0, 0) };
             this.mass = 0; this.restitution = 0; this.friction = 0.2; this.isTrigger = false; this.layer = 1; this.mask = 0xFFFFFFFF;
         }
     }
