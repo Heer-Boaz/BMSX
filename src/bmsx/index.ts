@@ -12,10 +12,13 @@ export * from './core/font';
 export * from './core/game';
 export * from './core/gameobject';
 export * from './core/gameoptions';
-// physics mvp
 export * from './core/lightobject';
 export * from './core/mesh';
 export * from './core/objecttracker';
+export * from './core/rail/railcamera';
+export * from './core/rail/railpath';
+export * from './core/rail/timeline';
+export * from './core/rail/wavemanager';
 export * from './core/registry';
 export * from './core/sprite';
 export * from './core/taskgate';
