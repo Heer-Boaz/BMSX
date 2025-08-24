@@ -86,7 +86,8 @@ export class BFont {
         '[': 'letter_speakstart', // opening square bracket
         ']': 'letter_speakend', // closing square bracket
         '(': 'letter_haakjeopen', // opening parenthesis
-        ')': 'letter_haakjesluit' // closing parenthesis
+        ')': 'letter_haakjesluit', // closing parenthesis
+        '+': 'letter_question',
     };
 
     /**
