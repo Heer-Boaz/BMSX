@@ -1,0 +1,41 @@
+/**
+ * PooledGameObject
+ * Basis voor tijdelijke / vaak gespawnde GameObjects (particles, decals, hitmarkers, etc.)
+ * die via een Pool<T> hergebruikt worden zonder GC-churn en zonder dubbele ids in het model.
+ *
+ * Gebruik:
+ *  - Maak een subclass die een static Pool<T> heeft.
+ *  - Bij acquire(): inst.prepareForReuse(); inst.markActive(); inst.reset(...);
+ *  - In run(): als effect klaar is -> this.recycle(); (en release naar pool)
+ */
+import { GameObject } from './gameobject';
+
+export abstract class PooledGameObject extends GameObject {
+    protected active = true; // zichtbaar / updatebaar
+
+    /** Subclasses geven een reset implementatie voor initialisatie van state. */
+    protected abstract reset(...args: any[]): void; // eslint-disable-line @typescript-eslint/no-explicit-any
+    /** Subclasses must still implement run/paint like gewone GameObject lifecycle. */
+    public abstract override run(): void;
+    public abstract override paint(): void;
+
+    /** Markeer object opnieuw als actief na acquire uit pool. */
+    public markActive(): void { this.active = true; }
+
+    /** Wordt aangeroepen door pool / effect wanneer levensduur klaar is. */
+    public recycle(): void { this.active = false; }
+
+    /** Zorgt dat het object niet nog in de model space hangt voordat we hem opnieuw gebruiken. */
+    protected prepareForReuse(): void {
+        if ($.model.exists(this.id)) {
+            $.model.exile(this, false); // detach zonder dispose zodat allocaties behouden blijven
+        }
+    }
+
+    /** Helper die subclasses kunnen aanroepen in hun static create(). */
+    public prepareAndReset(...args: any[]): void { // eslint-disable-line @typescript-eslint/no-explicit-any
+        this.prepareForReuse();
+        this.markActive();
+        this.reset(...args);
+    }
+}
