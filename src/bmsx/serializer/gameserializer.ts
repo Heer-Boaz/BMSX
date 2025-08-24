@@ -8,7 +8,7 @@ import { decodeBinary, encodeBinary } from "./binencoder";
 type ConstructorWithSaveGame<T = any> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
 
 function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean } {
-    return !!ctor && typeof ctor === 'function' && '__exclude_savegame__' in (ctor as any);
+    return !!ctor && typeof ctor === 'function' && '__exclude_savegame__' in (ctor);
 }
 /**
  * Serializes the input object to a string using JSON.stringify, excluding any properties that should not be serialized.
@@ -101,14 +101,14 @@ export class Serializer {
         if (cacheKey && map.has(cacheKey)) return map.get(cacheKey)! === true;
 
         // 1) Walk constructor chain (class-level decorators / flags live here)
-        let ctor: any = (typeof obj === 'function') ? obj : (obj as any)?.constructor;
+        let ctor: any = (typeof obj === 'function') ? obj : (obj as new () => any)?.constructor;
         while (ctor && ctor !== Object) {
             if (hasExcludeFlag(ctor) && ctor.__exclude_savegame__ === true) { if (cacheKey) map.set(cacheKey, true); return true; }
             if (Serializer.excludedObjectTypes?.has?.(ctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
             ctor = Object.getPrototypeOf(ctor);
         }
         // 2) Defensively walk prototype chain of an instance
-        let proto: any = (typeof obj === 'function') ? (obj as any).prototype : Object.getPrototypeOf(obj);
+        let proto: any = (typeof obj === 'function') ? obj.prototype : Object.getPrototypeOf(obj);
         while (proto && proto.constructor && proto.constructor !== Object) {
             const pctor = proto.constructor;
             if (hasExcludeFlag(pctor) && pctor.__exclude_savegame__ === true) { if (cacheKey) map.set(cacheKey, true); return true; }
@@ -132,11 +132,11 @@ export class Serializer {
             proto = Object.getPrototypeOf(proto);
         }
         // Check whether the type of the property itself should be excluded
-        const propertyValue = (value as any)[key];
+        const propertyValue = value[key];
         if (propertyValue && typeof propertyValue === 'object') {
-            const ctorCandidate = (propertyValue as any).constructor;
+            const ctorCandidate = propertyValue.constructor;
             if (ctorCandidate && typeof ctorCandidate === 'function') {
-                if (Serializer.shouldClassBeExcludedFromSaveGame(ctorCandidate as any)) { typeMap.set(key, true); return true; }
+                if (Serializer.shouldClassBeExcludedFromSaveGame(ctorCandidate)) { typeMap.set(key, true); return true; }
             }
         }
         typeMap.set(key, false);
@@ -362,7 +362,7 @@ export class Reviver {
         for (const id of Object.keys(objects)) {
             const data = objects[id];
             if (data && data.isTypedArray) {
-                const ctor = (globalThis as any)[data.typename];
+                const ctor = globalThis[data.typename];
                 if (typeof ctor === "function") {
                     idToObject[id] = new ctor(data.data);
                 } else {
