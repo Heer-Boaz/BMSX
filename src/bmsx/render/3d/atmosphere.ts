@@ -7,6 +7,14 @@ export interface AtmosphereParams {
     heightLowColor: [number, number, number];
     heightHighColor: [number, number, number];
     enableFog: boolean;
+    /** Fog mode: 0 = exponential (exp), 1 = exponential squared (exp2) */
+    fogMode: 0 | 1;
+    /** Enable additional ground / height fog modulation */
+    enableHeightFog: boolean;
+    /** World Y at which height fog is at full strength (below or equal) */
+    heightFogStart: number;
+    /** World Y where height fog fully dissipates */
+    heightFogEnd: number;
     enableHeightGradient: boolean;
     progressFactor: number;
     enableAutoAnimation: boolean;
@@ -24,6 +32,10 @@ export const Atmosphere: AtmosphereParams = {
     enableHeightGradient: true,
     progressFactor: 0,
     enableAutoAnimation: true,
+    fogMode: 1, // default to exp2 for smoother far fade
+    enableHeightFog: true,
+    heightFogStart: 0,
+    heightFogEnd: 140,
 };
 
 // Console exposure for tweaking
@@ -35,6 +47,8 @@ export function registerAtmosphereHotkeys(): void {
     window.addEventListener('keydown', (e) => {
         if (e.key === 'f') Atmosphere.enableFog = !Atmosphere.enableFog;
         else if (e.key === 'g') Atmosphere.enableHeightGradient = !Atmosphere.enableHeightGradient;
+        else if (e.key === 'h') Atmosphere.enableHeightFog = !Atmosphere.enableHeightFog;
+        else if (e.key === 'm') Atmosphere.fogMode = Atmosphere.fogMode === 0 ? 1 : 0; // toggle fog mode
     });
 }
 

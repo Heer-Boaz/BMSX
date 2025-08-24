@@ -19,8 +19,12 @@ uniform float u_shadowStrength;
 uniform vec3 u_cameraPos;
 // Fog & atmospheric params
 uniform vec3 u_fogColor;
-uniform float u_fogDensity; // exponential fog density
+uniform float u_fogDensity; // exponential (base) density parameter
 uniform bool u_enableFog;
+uniform int u_fogMode; // 0 = exp, 1 = exp2
+uniform bool u_enableHeightFog;
+uniform float u_heightFogStart;
+uniform float u_heightFogEnd;
 // Height-based color gradient (applied multiplicatively to baseColor prior to lighting)
 uniform vec3 u_heightGradientLow;
 uniform vec3 u_heightGradientHigh;
@@ -175,9 +179,27 @@ void main() {
         texColor.a = clamp(texColor.a + ditherAlpha, 0.0f, 1.0f);
     }
     if (u_enableFog) {
-        float fogDist = length(u_cameraPos - v_worldPos);
-        float fogFactor = 1.0 - clamp(1.0 - exp(-u_fogDensity * fogDist), 0.0, 1.0);
-        col = mix(col, u_fogColor, fogFactor);
+        float d = length(u_cameraPos - v_worldPos);
+        float density = u_fogDensity;
+        float fogFactor;
+        if (u_fogMode == 1) { // exp2 (more natural smoothness for large scenes)
+            // Factor = exp(-(density^2) * d^2)
+            float dd = d * d;
+            fogFactor = clamp(exp(-(density * density) * dd), 0.0, 1.0);
+        } else { // classic exponential
+            // Factor = exp(-density * d)
+            fogFactor = clamp(exp(-density * d), 0.0, 1.0);
+        }
+        if (u_enableHeightFog) {
+            float hStart = min(u_heightFogStart, u_heightFogEnd);
+            float hEnd = max(u_heightFogStart, u_heightFogEnd);
+            float span = max(0.0001, hEnd - hStart);
+            // Ground factor: 1 at or below start, 0 at/above end.
+            float groundFactor = 1.0 - clamp((v_worldPos.y - hStart) / span, 0.0, 1.0);
+            // Blend ground factor into distance fog (bias to not overpower distance fade).
+            fogFactor *= mix(1.0, groundFactor, 0.85);
+        }
+        col = mix(u_fogColor, col, fogFactor);
     }
     outputColor = vec4(col, texColor.a);
 }
