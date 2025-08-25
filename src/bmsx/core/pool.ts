@@ -6,7 +6,6 @@
  * - Provide predictable acquire/release semantics.
  * - Support optional hard capacity (fixed pool) or elastic growth (bounded by maxTotal).
  * - Offer iteration over ACTIVE items without exposing internal storage (for ECS-like update passes).
- * - Zero 'as any'; fully typed.
  *
  * Design:
  * - Client supplies a factory to create new instances (create()).
@@ -137,7 +136,7 @@ export class Pool<T> {
         return {
             get: () => {
                 if (!singleton) {
-                    const { lazyWarm, ...rest } = opts as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+                    const { lazyWarm, ...rest } = opts;
                     singleton = new Pool<T>(rest);
                     if (lazyWarm && lazyWarm > 0) singleton.warmUp(lazyWarm);
                 }

@@ -38,7 +38,7 @@ export class Timeline extends EventEmitter {
     // Generic path helpers (renamed from *Rail* variants)
     bindToPath(_runner: PathRunner): this { return this; }
     updateFromPath(runner: PathRunner): void { this.advanceTo(runner.u); }
-    drivePath(runner: PathRunner): void { (runner as any).u = this.u; }
+    drivePath(runner: PathRunner): void { runner.u = this.u; }
     // Deprecated rail-named helpers kept for compatibility (no-op wrappers)
     bindToRail(r: PathRunner): this { return this.bindToPath(r); }
     updateFromRail(r: PathRunner): void { this.updateFromPath(r); }
