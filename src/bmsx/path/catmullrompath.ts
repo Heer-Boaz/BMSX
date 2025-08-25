@@ -1,6 +1,6 @@
-import { V3 } from '../../render/3d/math3d';
-import type { vec3 } from '../../rompack/rompack';
-import { EventEmitter } from '../eventemitter';
+import { EventEmitter } from '../core/eventemitter';
+import { V3 } from '../render/3d/math3d';
+import type { vec3 } from '../rompack/rompack';
 import { IPath, PathPoint, PathSample, PathSegmentMeta } from './ipath';
 
 export interface CatmullRomPathJSON { points: { x: number; y: number; z: number; t?: number; meta?: PathSegmentMeta }[]; }

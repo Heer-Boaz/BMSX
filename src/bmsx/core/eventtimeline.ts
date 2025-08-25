@@ -1,5 +1,5 @@
+import type { PathRunner } from '../path/pathrunner';
 import { EventEmitter } from './eventemitter';
-import type { PathRunner } from './path/pathrunner';
 
 // Generic event timeline supporting instantaneous events and ranged actions keyed either to
 // normalized rail progress (u) or accumulated time (seconds). Lightweight forward evaluator.

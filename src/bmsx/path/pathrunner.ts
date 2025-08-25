@@ -1,4 +1,4 @@
-import { Q, quat } from '../../render/3d/math3d';
+import { Q, quat } from '../render/3d/math3d';
 import { CatmullRomPath } from './catmullrompath';
 import { IPath, PathSample } from './ipath';
 

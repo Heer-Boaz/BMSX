@@ -1,8 +1,8 @@
 // Moved from core/rail/timeline.ts to generic core scope.
+import type { PathRunner } from '../path/pathrunner';
 import type { quat } from '../render/3d/math3d';
 import type { vec3 } from '../rompack/rompack';
 import { EventEmitter } from './eventemitter';
-import type { PathRunner } from './path/pathrunner';
 
 export interface TimelineEvent { time: number; name: string; data?: any; fired?: boolean; }
 export interface TimelineAction { start: number; end: number; update: (tNorm: number, globalU: number) => void; done?: boolean; }

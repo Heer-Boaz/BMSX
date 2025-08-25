@@ -1,5 +1,5 @@
-import { CameraObject } from '../../core/cameraobject';
-import type { vec3 } from '../../rompack/rompack';
+import { CameraObject } from '../core/cameraobject';
+import type { vec3 } from '../rompack/rompack';
 import { PathRunner } from './pathrunner';
 
 export interface CameraPathBindOptions {

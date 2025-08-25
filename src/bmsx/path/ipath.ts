@@ -1,4 +1,4 @@
-import type { vec3 } from '../../rompack/rompack';
+import type { vec3 } from '../rompack/rompack';
 
 export interface PathSample { u: number; p: vec3; fwd: vec3; }
 export interface IPath {
