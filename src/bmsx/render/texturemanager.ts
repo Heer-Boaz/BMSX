@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
-import { GPUBackend } from './gpu_backend';
+import { GPUBackend } from './backend/interfaces';
 import { TextureHandle, TextureParams } from './gpu_types';
 
 export const TEXTMANAGER_ID = 'texmgr';
@@ -18,7 +18,7 @@ export interface ModelTextureIdentifier {
 export type TextureKey = string;
 export type ImageKey = string;
 
-// GPUBackend + concrete backend implementation now live in gpu_backend.ts.
+// GPUBackend implementation lives in backend/webgl_backend.ts (legacy gpu_backend shim removed).
 
 export async function hashURI(uri: string): Promise<string> {
     const encoder = new TextEncoder();

@@ -7,7 +7,7 @@
  * code so migration can be incremental.
  */
 import { taskGate } from '../../core/taskgate';
-import { GPUBackend } from '../gpu_backend';
+import { GPUBackend } from '../backend/interfaces';
 import { TextureHandle } from '../gpu_types';
 
 export type RGHandle = number;
@@ -125,7 +125,7 @@ interface InternalValueResource<T = unknown> {
     lastUse?: number;      // last reading pass (or provider if never read)
 }
 
-// Using unified GPUBackend abstraction (WebGLBackend currently) from gpu_backend.ts
+// Using unified GPUBackend abstraction (WebGLBackend) from backend/webgl_backend.ts
 
 export class RenderGraphRuntime {
     public backend: GPUBackend;

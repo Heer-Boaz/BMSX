@@ -1,7 +1,7 @@
 import { Float32ArrayPool } from '../../core/utils';
-import * as GLView3D from '../3d/glview.3d';
 import type { AmbientLight, Light } from '../3d/light';
-import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
+import * as MeshPipeline from '../3d/mesh_pipeline';
+import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../backend/webgl.constants';
 
 export interface LightingFrameState {
 	ambient: AmbientLight | null;
@@ -22,10 +22,10 @@ export class LightingSystem {
 	constructor(private gl: WebGL2RenderingContext) { }
 
 	update(ambient: AmbientLight | null): LightingFrameState {
-		const lightsMutated = GLView3D.consumeLightsDirty();
+		const lightsMutated = MeshPipeline.consumeLightsDirty();
 		let ambientChanged = false;
 		if (ambient && ambient !== this._lastAmbient) {
-			GLView3D.setAmbientLight(this.gl, ambient);
+			MeshPipeline.setAmbientLight(this.gl, ambient);
 			this._lastAmbient = ambient;
 			ambientChanged = true;
 		} else if (!ambient && this._lastAmbient) {
@@ -34,8 +34,8 @@ export class LightingSystem {
 			ambientChanged = true;
 			// Optional: could push zero to shader here.
 		}
-		const dirCount = GLView3D.getDirectionalLightCount();
-		const pointCount = GLView3D.getPointLightCount();
+		const dirCount = MeshPipeline.getDirectionalLightCount();
+		const pointCount = MeshPipeline.getPointLightCount();
 		const dirty = lightsMutated || ambientChanged;
 		// Only rebuild frame state object if something changed to reduce churn
 		if (dirty || this._frameState.dirCount !== dirCount || this._frameState.pointCount !== pointCount || this._frameState.ambient !== this._lastAmbient) {
@@ -44,10 +44,10 @@ export class LightingSystem {
 				dirCount,
 				pointCount,
 				dirty,
-				dirBinding: GLView3D.DIR_LIGHT_UNIFORM_BINDING,
-				pointBinding: GLView3D.POINT_LIGHT_UNIFORM_BINDING,
-				dirBuffer: GLView3D.getDirectionalLightBuffer(),
-				pointBuffer: GLView3D.getPointLightBuffer(),
+				dirBinding: MeshPipeline.DIR_LIGHT_UNIFORM_BINDING,
+				pointBinding: MeshPipeline.POINT_LIGHT_UNIFORM_BINDING,
+				dirBuffer: MeshPipeline.getDirectionalLightBuffer(),
+				pointBuffer: MeshPipeline.getPointLightBuffer(),
 			};
 		} else {
 			// ensure dirty cleared if no changes
@@ -80,8 +80,8 @@ export interface LightingDescriptor {
 
 // Build a descriptor snapshot for any backend (e.g. WebGPU) from current GL-side light lists.
 export function buildLightingDescriptor(frame: LightingFrameState): LightingDescriptor {
-	const dirs = GLView3D.getDirectionalLights();
-	const pts = GLView3D.getPointLightsAll();
+	const dirs = MeshPipeline.getDirectionalLights();
+	const pts = MeshPipeline.getPointLightsAll();
 	const dirCount = Math.min(dirs.length, frame.dirCount);
 	const pointCount = Math.min(pts.length, frame.pointCount);
 	const dirDirections = new Float32Array(dirCount * 3);
@@ -137,8 +137,8 @@ export function resetLightingDescriptorPools(): void {
 }
 
 export function buildLightingDescriptorPooled(frame: LightingFrameState): LightingDescriptor {
-	const dirs = GLView3D.getDirectionalLights();
-	const pts = GLView3D.getPointLightsAll();
+	const dirs = MeshPipeline.getDirectionalLights();
+	const pts = MeshPipeline.getPointLightsAll();
 	const dirCount = Math.min(dirs.length, frame.dirCount, MAX_DIR_LIGHTS);
 	const pointCount = Math.min(pts.length, frame.pointCount, MAX_POINT_LIGHTS);
 

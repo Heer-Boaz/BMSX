@@ -1,6 +1,6 @@
 /** FrameData builder (initial). Extracts snapshot data from existing subsystems. */
 import { $ } from '../../core/game';
-import { GLView } from '../glview';
+import { GLView } from '../view/render_view';
 import type { FrameData, View } from './rendergraph';
 
 // We keep dependencies extremely light; detailed draw command unification will happen later.

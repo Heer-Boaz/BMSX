@@ -3,7 +3,7 @@ import { TransformComponent } from '../component/transformcomponent';
 import { Material } from '../render/3d/material';
 import { M4, Mat4, Q, quat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
-import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
+import { DEFAULT_VERTEX_COLOR } from '../render/backend/webgl.constants';
 import type { TextureKey } from '../render/texturemanager';
 import type { Color, DrawMeshOptions } from '../render/view';
 import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr } from '../rompack/rompack';

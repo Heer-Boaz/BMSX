@@ -5,8 +5,7 @@ import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
-import { GLView } from '../render/glview';
-import { WebGLBackend } from "../render/gpu_backend";
+import { WebGLBackend } from "../render/backend/webgl_backend";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
@@ -329,12 +328,12 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			$.input.enableOnscreenGamepad();
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
-		// Obtain WebGL context if the active view is a GLView
+		// Obtain WebGL2 context if current view is a RenderView (backend-enabled)
 		let gl: WebGL2RenderingContext | undefined;
 		try {
-			const glView = $.viewAs<GLView>();
+			const glView = $.viewAs<any>();
 			gl = glView?.glctx;
-		} catch { /* non-GL view */ }
+		} catch { /* non-WebGL view */ }
 		new TextureManager(gl ? new WebGLBackend(gl) : undefined);
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {

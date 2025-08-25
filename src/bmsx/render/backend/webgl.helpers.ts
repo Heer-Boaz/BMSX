@@ -1,6 +1,6 @@
-import { $ } from '../core/game';
-import { M4 } from './3d/math3d';
-import { GLView } from './glview';
+import { $ } from '../../core/game';
+import { M4 } from '../3d/math3d';
+import { GLView } from '../view/render_view';
 
 const CATCH_WEBGL_ERROR = true;
 
@@ -9,7 +9,7 @@ export function saveTextureToFile(): void {
     const gl = view.glctx;
 
     // 1. Bind the framebuffer that has the texture attached
-    gl.bindFramebuffer(gl.FRAMEBUFFER, view.framebuffer);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, (view as any)._legacyFramebuffer);
 
     // 2. Read the pixels from the framebuffer into an array
     const width = view.canvas.width;  // replace with the width of your texture

@@ -1,4 +1,4 @@
-import { GLView } from '../glview';
+import { GLView } from '../view/render_view';
 import { RGCommandKind, RGDrawCommand } from './rendergraph';
 
 // Builds draw command list based on current subsystem queues/state.
