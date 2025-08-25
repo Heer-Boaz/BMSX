@@ -1,4 +1,4 @@
-import { attach_components, GameObject, Identifier, insavegame, MeshObject, RailPath, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
+import { attach_components, CatmullRomPath, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, vec3arr } from '../bmsx';
 import { noteCandidateBuildingTop } from '../bmsx/render/3d/atmosphere';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
 import { onload } from '../bmsx/serializer/gameserializer';
@@ -276,7 +276,7 @@ function hashSeed(seed: number | string): number {
  * Spawn a procedural city around a rail path. Deterministic when a seed is supplied.
  * Supports multiple silhouette segments each with varying density / height / span.
  */
-export function spawnSimpleCity(rail: RailPath, options: SpawnCityOptions = {}): void {
+export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions = {}): void {
     const {
         seed, steps = 160, silhouettes, debugLog,
         ensureVisible = true,

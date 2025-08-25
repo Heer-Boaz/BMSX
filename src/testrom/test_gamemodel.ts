@@ -1,4 +1,4 @@
-import { AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraRailBinder, Direction, DirectionalLightObject, EventTimeline, GameObject, InputMap, insavegame, new_vec3, PhysicsWorld, PointLightObject, RailDeterministicPlayer, RailPath, RailRunner, State, StateMachineBlueprint, TransformComponent, V3, WaveManager } from '../bmsx';
+import { AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraPathBinder, CatmullRomPath, Direction, DirectionalLightObject, EventTimeline, GameObject, InputMap, insavegame, new_vec3, PathRunner, PhysicsWorld, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3, WaveManager } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { PhysicsDescriptorComponent } from '../bmsx/physics/physicsdescriptorcomponent';
 import { Atmosphere } from '../bmsx/render/3d/atmosphere';
@@ -152,8 +152,8 @@ export class gamemodel extends BaseModel {
 				{ time: 0.90, name: 'camera.fovPulse', data: { delta: 15, duration: 0.5, curve: 'easeOutQuad' } }
 			]
 		};
-		const rail = RailPath.fromJSON(railDef);
-		const runner = new RailRunner(rail);
+		const rail = CatmullRomPath.fromJSON(railDef);
+		const runner = new PathRunner(rail, { playback: 'clamp', distanceMode: false });
 		// Populate multi-silhouette deterministic cityscape around the rail for motion parallax
 		spawnSimpleCity(rail, {
 			seed: 'demo-city-v2',
@@ -177,23 +177,19 @@ export class gamemodel extends BaseModel {
 		});
 		runner.speed = 0.0; // unused in deterministic playback
 		const activeCam = cam1; // bind primary camera to rail
-		const binder = new CameraRailBinder(runner, activeCam, { autoRotate: true, lookAhead: 0.15 });
-		binder.attachRailEvents(); // still handles camera events
-
-		// Deterministic controller: 14 seconds full rail
-		const detPlayer = new RailDeterministicPlayer(runner, rail, { totalDuration: 24 }); // longer path -> longer showcase
-		// EventTimeline drives events & ranged camera effects keyed to rail progress
+		// Deterministic progression (manual) across 24s
+		const totalDuration = 24;
+		let elapsed = 0;
+		// EventTimeline drives events & ranged camera effects keyed to path progress
 		const eventTimeline = new EventTimeline({ mode: 'u' });
-		for (const ev of rail.events) eventTimeline.addInstant({ u: ev.time, name: ev.name, data: ev.data });
+		for (const ev of railDef.events) eventTimeline.addInstant({ u: ev.time, name: ev.name, data: ev.data });
 		const baseFov = activeCam.camera.fovDeg;
 		eventTimeline.addRange({ startU: 0, endU: 1, update: (tn) => { const breathe = Math.sin(tn * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); } });
-		// One-shot helper implemented as near-zero length ranges
-		const oneShot = (u: number, fn: () => void) => { let fired = false; eventTimeline.addRange({ startU: u, endU: u + 0.0001, update: () => { if (!fired) { fn(); fired = true; } } }); };
-		oneShot(0.12, () => binder.startFovPulse({ delta: 12, duration: 0.6, curve: 'easeOutBack' }));
-		oneShot(0.45, () => binder.startFovPulse({ delta: 8, duration: 0.4, curve: 'easeInOutQuad' }));
-		oneShot(0.90, () => binder.startFovPulse({ delta: 15, duration: 0.5, curve: 'easeOutQuad' }));
-		oneShot(0.25, () => binder.startShake({ amp: 0.4, freq: 22, duration: 0.5 }));
-		oneShot(0.70, () => binder.startShake({ amp: 0.6, freq: 18, duration: 0.6 }));
+		// Bind camera to path with look-ahead + auto-rotation
+		const camBinder = new CameraPathBinder(runner, activeCam, { autoRotate: true, lookAheadU: 0.02 });
+		// Hook timeline camera events
+		eventTimeline.on('camera.fovPulse', d => camBinder.startFovPulse(d), this);
+		eventTimeline.on('camera.shake', d => camBinder.startShake(d), this);
 
 		// Reticle & bullets setup
 		const reticle = new Reticle();
@@ -206,7 +202,7 @@ export class gamemodel extends BaseModel {
 		let bossObjId: string | null = null; hud.bossId = bossObjId;
 
 		// Wave manager listens to rail spawn events
-		const waves = new WaveManager(rail);
+		const waves = new WaveManager(eventTimeline);
 		waves.onSpawn('spawn.enemyWave', (data) => {
 			const count = data?.count ?? 3;
 			const spread = data?.spread ?? 5;
@@ -236,43 +232,23 @@ export class gamemodel extends BaseModel {
 		// Inject runner & binder into update loop via a lightweight GameObject
 		class RailDemoDriver extends GameObject {
 			override run(): void {
-				const dtSec = $.deltaTime / 1000; // game.deltaTime in ms
-				// Deterministic advancement & timeline sync
-				detPlayer.update(dtSec);
-				eventTimeline.update(dtSec, runner);
-				binder.update(dtSec);
-				Atmosphere.progressFactor = runner.u; // feed rail progress to atmosphere
-				// Update reticle offset & placement
+				const dtSec = $.deltaTime / 1000;
+				elapsed += dtSec; const prevParam = runner.u; const newParam = Math.min(1, elapsed / totalDuration); if (newParam !== prevParam) runner.u = newParam;
+				eventTimeline.update(dtSec, runner as any);
+				camBinder.update(dtSec);
+				Atmosphere.progressFactor = runner.u;
+				// Reticle & firing logic
 				reticle.updateFromInput();
-				const cam = activeCam.camera;
-				const basis = cam.basis ? cam.basis() : undefined;
-				const f = basis ? basis.f : { x: 0, y: 0, z: -1 };
-				const r = basis ? basis.r : { x: 1, y: 0, z: 0 }; const u = basis ? basis.u : { x: 0, y: 1, z: 0 };
-				const aimDir = { x: f.x + r.x * reticle.ox + u.x * reticle.oy, y: f.y + r.y * reticle.ox + u.y * reticle.oy, z: f.z + r.z * reticle.ox + u.z * reticle.oy };
+				const camObj = activeCam.camera; const basis = camObj.basis ? camObj.basis() : undefined; const fBasis = basis ? basis.f : { x: 0, y: 0, z: -1 }; const rBasis = basis ? basis.r : { x: 1, y: 0, z: 0 }; const uBasis = basis ? basis.u : { x: 0, y: 1, z: 0 };
+				const aimDir = { x: fBasis.x + rBasis.x * reticle.ox + uBasis.x * reticle.oy, y: fBasis.y + rBasis.y * reticle.ox + uBasis.y * reticle.oy, z: fBasis.z + rBasis.z * reticle.ox + uBasis.z * reticle.oy };
 				hud.reticle = { ox: reticle.ox, oy: reticle.oy };
-				const aimLen = Math.hypot(aimDir.x, aimDir.y, aimDir.z) || 1; aimDir.x /= aimLen; aimDir.y /= aimLen; aimDir.z /= aimLen;
-				const dist = 15;
-				reticle.x = cam.position.x + aimDir.x * dist;
-				reticle.y = cam.position.y + aimDir.y * dist;
-				reticle.z = cam.position.z + aimDir.z * dist;
+				const aimLen = Math.hypot(aimDir.x, aimDir.y, aimDir.z) || 1; aimDir.x /= aimLen; aimDir.y /= aimLen; aimDir.z /= aimLen; const dist = 15; reticle.x = camObj.position.x + aimDir.x * dist; reticle.y = camObj.position.y + aimDir.y * dist; reticle.z = camObj.position.z + aimDir.z * dist;
 				const input = $.input.getPlayerInput(1);
 				if (input.getActionState('fire').justpressed) {
-					bullets.spawn([cam.position.x, cam.position.y, cam.position.z], [aimDir.x, aimDir.y, aimDir.z]);
-					binder.startFovPulse({ delta: 4, duration: 0.25, curve: 'easeOutQuad' });
-					_model.spawn(MuzzleFlash.create([cam.position.x + aimDir.x * 2, cam.position.y + aimDir.y * 2, cam.position.z + aimDir.z * 2]));
+					bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
+					_model.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
 				}
-				for (const impact of bullets.popImpacts()) {
-					const enemy = $.model.getGameObject(impact.enemyId);
-					if (enemy) {
-						const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent;
-						if (health) {
-							const now = performance.now() / 1000;
-							if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); }
-							else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); }
-							dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage);
-						}
-					}
-				}
+				for (const impact of bullets.popImpacts()) { const enemy = $.model.getGameObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
 			}
 		}
 		_model.spawn(new RailDemoDriver('railDriver'));

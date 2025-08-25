@@ -2,7 +2,7 @@
 import type { quat } from '../render/3d/math3d';
 import type { vec3 } from '../rompack/rompack';
 import { EventEmitter } from './eventemitter';
-import type { RailRunner } from './rail/railpath';
+import type { PathRunner } from './path/pathrunner';
 
 export interface TimelineEvent { time: number; name: string; data?: any; fired?: boolean; }
 export interface TimelineAction { start: number; end: number; update: (tNorm: number, globalU: number) => void; done?: boolean; }
@@ -35,9 +35,14 @@ export class Timeline extends EventEmitter {
     animateVec3(get: () => vec3, set: (v: vec3) => void, from: vec3, to: vec3, start: number, duration: number, opts: AnimateVec3Options = {}): this { const end = start + duration; const easing = typeof opts.easing === 'string' ? (Easings[opts.easing] || Easings.easeOutQuad) : (opts.easing || Easings.easeOutQuad); return this.addAction(start, end, (tn) => { const e = easing(Math.min(1, Math.max(0, tn))); set({ x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, z: from.z + (to.z - from.z) * e }); }); }
     animateQuat(get: () => quat, set: (q: quat) => void, from: quat, to: quat, start: number, duration: number, opts: AnimateQuatOptions = {}): this { const end = start + duration; const easing = typeof opts.easing === 'string' ? (Easings[opts.easing] || Easings.easeOutQuad) : (opts.easing || Easings.easeOutQuad); let toAdj = { ...to }; if (opts.shortestPath) { const dot = from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w; if (dot < 0) { toAdj = { x: -to.x, y: -to.y, z: -to.z, w: -to.w }; } } return this.addAction(start, end, (tn) => { const e = easing(Math.min(1, Math.max(0, tn))); let x = from.x + (toAdj.x - from.x) * e; let y = from.y + (toAdj.y - from.y) * e; let z = from.z + (toAdj.z - from.z) * e; let w = from.w + (toAdj.w - from.w) * e; const len = Math.hypot(x, y, z, w) || 1; set({ x: x / len, y: y / len, z: z / len, w: w / len }); }); }
     advanceTo(u: number): void { const prev = this._u; let looped = false; if (u < prev && this.loop) looped = true; this._u = u; if (looped) { for (const e of this.events) e.fired = false; for (const a of this.actions) a.done = false; } for (const ev of this.events) { if (!ev.fired) { if (!looped && ev.time >= prev && ev.time < u) { this.emit(ev.name, ev.data); ev.fired = true; } else if (looped && (ev.time >= prev || ev.time < u)) { this.emit(ev.name, ev.data); ev.fired = true; } } } for (const a of this.actions) { if (a.done) continue; const span = a.end - a.start || 1; let tn: number | undefined; if (!looped) { if (u >= a.start && prev <= a.end) { const clamped = Math.min(u, a.end); tn = (clamped - a.start) / span; if (clamped >= a.end) a.done = true; } } else { if (u >= a.start || prev <= a.end) { if (u >= a.start) tn = (u - a.start) / span; else tn = (1 - a.start + u) / span; if (u >= a.end && prev < a.end) a.done = true; } } if (tn !== undefined) a.update(Math.min(1, Math.max(0, tn)), this._u); } }
-    bindToRail(runner: RailRunner): this { runner.rail.on('rail.resetTimeline', () => this.reset(), this); return this; }
-    updateFromRail(runner: RailRunner): void { this.advanceTo(runner.u); }
-    driveRail(runner: RailRunner): void { runner.u = this.u; }
+    // Generic path helpers (renamed from *Rail* variants)
+    bindToPath(_runner: PathRunner): this { return this; }
+    updateFromPath(runner: PathRunner): void { this.advanceTo(runner.u); }
+    drivePath(runner: PathRunner): void { (runner as any).u = this.u; }
+    // Deprecated rail-named helpers kept for compatibility (no-op wrappers)
+    bindToRail(r: PathRunner): this { return this.bindToPath(r); }
+    updateFromRail(r: PathRunner): void { this.updateFromPath(r); }
+    driveRail(r: PathRunner): void { this.drivePath(r); }
     play(): this { this.playing = true; return this; }
     pause(): this { this.playing = false; return this; }
 }

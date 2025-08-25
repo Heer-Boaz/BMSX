@@ -1,5 +1,5 @@
 import { EventEmitter } from './eventemitter';
-import type { RailRunner } from './rail/railpath';
+import type { PathRunner } from './path/pathrunner';
 
 // Generic event timeline supporting instantaneous events and ranged actions keyed either to
 // normalized rail progress (u) or accumulated time (seconds). Lightweight forward evaluator.
@@ -27,11 +27,11 @@ export class EventTimeline extends EventEmitter {
     addInstants(list: ETInstant[]): this { for (const e of list) this.addInstant(e); return this; }
     addRange(r: ETRange): this { if (this._mode === 'u') { if (r.startU === undefined || r.endU === undefined) throw new Error('Range needs startU/endU in u-mode'); } else { if (r.startTime === undefined || r.endTime === undefined) throw new Error('Range needs startTime/endTime in time-mode'); } this.ranges.push(r); this.ranges.sort((a, b) => { if (this._mode === 'u') return (a.startU! - b.startU!); else return (a.startTime! - b.startTime!); }); return this; }
 
-    update(dt: number, runner?: RailRunner): void {
+    update(dt: number, runner?: PathRunner): void {
         if (!this.playing) return;
         const prevU = this._u, prevT = this._time;
         if (this._mode === 'u') {
-            if (!runner) throw new Error('u-mode timeline requires RailRunner');
+            if (!runner) throw new Error('u-mode timeline requires PathRunner');
             this._u = runner.u;
             const looped = this.loop && this._u < prevU;
             // Instants
