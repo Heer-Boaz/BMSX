@@ -201,16 +201,15 @@ export class HitBoxVisualizer extends Component {
 
     override preprocessingUpdate(): void {
         const parent = this.parent as SpriteObject;
-        if (parent.hitbox) {
-            $.view.drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 } });
-        }
-
         // Draw polygons if available on the GameObject
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
-                $.view.drawPolygon(poly, parent.z, { ...Msx1Colors[2], a: 0.5 }, 1);
+                $.view.drawPolygon(poly, parent.z + 1, { ...Msx1Colors[2], a: 0.5 }, 1);
             }
+        }
+        if (parent.hitbox) {
+            $.view.drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 } });
         }
     }
 }
