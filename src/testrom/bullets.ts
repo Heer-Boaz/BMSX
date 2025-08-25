@@ -1,7 +1,7 @@
 import { $, GameObject } from '../bmsx';
 import { Pool } from '../bmsx/core/pool';
 import type { PhysicsWorld } from '../bmsx/physics/physicsworld';
-import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
+import { particlesToDraw } from '../bmsx/render/3d/particles_pipeline';
 import { EnemyHealthComponent } from './enemyhealth';
 
 interface Bullet { active: boolean; pos: [number, number, number]; prev: [number, number, number]; dir: [number, number, number]; speed: number; life: number; maxLife: number; damage: number; }

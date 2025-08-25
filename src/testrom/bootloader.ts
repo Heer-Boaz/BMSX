@@ -1,8 +1,7 @@
 import {
     BFont,
     BGamepadButton, BootArgs,
-    GLView, Game, GamepadInputMapping, KeyboardButton, KeyboardInputMapping,
-
+    Game, GamepadInputMapping, KeyboardButton, KeyboardInputMapping,
     new_vec2
 } from '../bmsx/index';
 import { BitmapId } from './resourceids';
@@ -84,5 +83,5 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
     'fire': ['a'],
 };
 
-class gameview extends GLView {
+class gameview extends View {
 }

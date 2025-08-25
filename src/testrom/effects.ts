@@ -1,7 +1,7 @@
 import { $, GameObject, Msx1Colors, TextWriter } from '../bmsx';
 import { Pool } from '../bmsx/core/pool';
 import { PooledGameObject } from '../bmsx/core/pooledgameobject';
-import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
+import { particlesToDraw } from '../bmsx/render/3d/particles_pipeline';
 
 interface P { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; max: number; r: number; g: number; b: number; a: number; size: number; grow: number; }
 

@@ -610,7 +610,7 @@ if (player.overlaps_point({ x: mouseX, y: mouseY })) {
 - See [`src/bmsx/gameobject.ts`](src/bmsx/gameobject.ts) for the `GameObject` and `SpriteObject` classes.
 - See [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) for the model, space management, and world APIs.
 - See [`src/bmsx/sprite.ts`](src/bmsx/sprite.ts) for sprite rendering and hitbox logic.
-- See [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for rendering integration.
+- (Legacy reference updated) See [`src/bmsx/render/view/render_view.ts`](src/bmsx/render/view/render_view.ts) for rendering integration.
 - See [`src/bmsx/game.ts`](src/bmsx/game.ts) for overall game loop and object management.
 
 ---
@@ -772,7 +772,7 @@ class MyObject extends GameObject {
 
 ## References
 
-- See [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the WebGL renderer and CRT effects.
+- (Legacy reference updated) See [`src/bmsx/render/view/render_view.ts`](src/bmsx/render/view/render_view.ts) for the WebGL renderer and CRT effects.
 - See [`src/bmsx/view.ts`](src/bmsx/view.ts) for the base view, drawing API, and layout management.
 - See [`src/bmsx/game.ts`](src/bmsx/game.ts) and [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) for integration with the game model and object system.
 
@@ -821,7 +821,7 @@ $.view.drawImg({
 
 ### See Also
 - [`src/bmsx/sprite.ts`](src/bmsx/sprite.ts) for the sprite and sprite object classes.
-- [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the `drawImg` implementation and batching.
+- (Legacy reference updated) [`src/bmsx/render/view/render_view.ts`](src/bmsx/render/view/render_view.ts) for the `drawImg` implementation and batching.
 - [`src/bmsx/view.ts`](src/bmsx/view.ts) for the drawing API and 2D fallback.
 
 ---
