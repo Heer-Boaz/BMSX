@@ -184,7 +184,7 @@ export class gamemodel extends BaseModel {
 		const eventTimeline = new EventTimeline({ mode: 'u' });
 		for (const ev of railDef.events) eventTimeline.addInstant({ u: ev.time, name: ev.name, data: ev.data });
 		const baseFov = activeCam.camera.fovDeg;
-		eventTimeline.addRange({ startU: 0, endU: 1, update: (tn) => { const breathe = Math.sin(tn * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); } });
+		eventTimeline.addRange({ startU: 0, endU: 1, update: (tn) => { const breathe = Math.sin(tn * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); }, type: 'camera.fovPulse' });
 		// Bind camera to path with look-ahead + auto-rotation
 		const camBinder = new CameraPathBinder(runner, activeCam, { autoRotate: true, lookAheadU: 0.02 });
 		// Hook timeline camera events
@@ -234,7 +234,7 @@ export class gamemodel extends BaseModel {
 			override run(): void {
 				const dtSec = $.deltaTime / 1000;
 				elapsed += dtSec; const prevParam = runner.u; const newParam = Math.min(1, elapsed / totalDuration); if (newParam !== prevParam) runner.u = newParam;
-				eventTimeline.update(dtSec, runner as any);
+				eventTimeline.update(dtSec, runner);
 				camBinder.update(dtSec);
 				Atmosphere.progressFactor = runner.u;
 				// Reticle & firing logic
@@ -352,7 +352,6 @@ export class gamemodel extends BaseModel {
 
 	private _physicsTestFrame = 0;
 	private _enterCount = 0; private _stayCount = 0; private _exitCount = 0;
-	private _loggedSummary = false;
 	public override run(dt: number): void {
 		super.run(dt);
 		const phys = $.get<PhysicsWorld>('physics_world');
@@ -375,18 +374,18 @@ export class gamemodel extends BaseModel {
 				}
 			}
 		}
-		this._physicsTestFrame++;
-		if (this._physicsTestFrame % 60 === 0) {
-			// Log position of first dynamic body to confirm motion & gravity application
-			const firstDyn = phys.getBodies().find((b: any) => b.invMass && !b.isTrigger);
-			if (firstDyn) console.log('[PhysDiag] t=', this._physicsTestFrame, 'posY=', firstDyn.position.y.toFixed(2), 'velY=', firstDyn.velocity.y.toFixed(2), 'gravY=', phys.getGravity().y);
-			// Also log the position of the game object that is related to
-		}
-		// After some frames, log summary once for regression visibility
-		if (this._physicsTestFrame === 600 && !this._loggedSummary) {
-			this._loggedSummary = true;
-			console.log('[PhysicsTest] enter:', this._enterCount, 'stay:', this._stayCount, 'exit:', this._exitCount, 'contactsLastFrame:', phys.lastStayEvents.length + phys.lastEnterEvents.length);
-		}
+		// this._physicsTestFrame++;
+		// if (this._physicsTestFrame % 60 === 0) {
+		// 	// Log position of first dynamic body to confirm motion & gravity application
+		// 	// const firstDyn = phys.getBodies().find((b: any) => b.invMass && !b.isTrigger);
+		// 	// if (firstDyn) console.log('[PhysDiag] t=', this._physicsTestFrame, 'posY=', firstDyn.position.y.toFixed(2), 'velY=', firstDyn.velocity.y.toFixed(2), 'gravY=', phys.getGravity().y);
+		// 	// Also log the position of the game object that is related to
+		// }
+		// // After some frames, log summary once for regression visibility
+		// if (this._physicsTestFrame === 600 && !this._loggedSummary) {
+		// 	this._loggedSummary = true;
+		// 	console.log('[PhysicsTest] enter:', this._enterCount, 'stay:', this._stayCount, 'exit:', this._exitCount, 'contactsLastFrame:', phys.lastStayEvents.length + phys.lastEnterEvents.length);
+		// }
 	}
 
 	public get gamewidth(): number {
