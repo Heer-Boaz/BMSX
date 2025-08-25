@@ -1,4 +1,5 @@
 import type { Identifier } from '../rompack/rompack';
+import { $ } from './game';
 import { GameObject } from "./gameobject";
 
 /**

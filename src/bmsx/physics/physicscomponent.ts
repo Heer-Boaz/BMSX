@@ -1,4 +1,5 @@
 import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
+import { $ } from '../core/game';
 import { GameObject } from '../core/gameobject';
 import { new_vec3 } from '../core/utils';
 import type { Identifier, Oriented } from '../rompack/rompack';

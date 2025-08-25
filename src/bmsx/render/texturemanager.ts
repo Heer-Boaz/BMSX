@@ -1,4 +1,5 @@
 import { AssetBarrier } from '../core/assetbarrier';
+import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';

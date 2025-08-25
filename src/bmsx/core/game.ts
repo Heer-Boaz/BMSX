@@ -25,12 +25,14 @@ import { GateGroup, taskGate } from './taskgate';
  * Declare global variables and types.
  */
 declare global {
-	var $: Game;
-	var $rom: RomPack;
-	var debug: boolean;
+	// var $: Game;
+	// var $rom: RomPack;
+	// var debug: boolean;
 }
 
 global = globalThis || window; // Ensure global is defined
+
+export var $: Game;
 
 export interface GameInitArgs<M extends BaseModel = BaseModel, V extends BaseView = BaseView> {
 	rom: RomPack;
@@ -293,6 +295,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global = globalThis;
 		global['$'] = this;
 		window['$'] = this;
+		$ = this;
 	}
 
 	/**

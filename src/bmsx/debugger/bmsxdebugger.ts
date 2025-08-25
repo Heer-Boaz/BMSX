@@ -2,6 +2,7 @@ import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
 import { CameraObject } from '../core/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
+import { $ } from '../core/game';
 import { GameObject } from '../core/gameobject';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/sprite';

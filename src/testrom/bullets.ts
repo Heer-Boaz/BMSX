@@ -1,4 +1,4 @@
-import { GameObject } from '../bmsx';
+import { $, GameObject } from '../bmsx';
 import { Pool } from '../bmsx/core/pool';
 import type { PhysicsWorld } from '../bmsx/physics/physicsworld';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';

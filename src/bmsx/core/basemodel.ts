@@ -14,7 +14,7 @@ import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './cameraobject';
-import { runGate } from './game';
+import { $, runGate } from './game';
 import { GameObject } from './gameobject';
 import { AmbientLightObject, LightObject } from './lightobject';
 import { Registry } from "./registry";

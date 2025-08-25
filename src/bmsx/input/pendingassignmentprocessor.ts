@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { SpriteObject } from '../core/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';

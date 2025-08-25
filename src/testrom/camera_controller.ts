@@ -1,4 +1,4 @@
-import { CameraObject, CameraProjectionType, GameObject, insavegame, onload } from '../bmsx';
+import { $, CameraObject, CameraProjectionType, GameObject, insavegame, onload } from '../bmsx';
 import { Action } from './bootloader';
 
 @insavegame

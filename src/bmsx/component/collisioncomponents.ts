@@ -1,4 +1,5 @@
 import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitter";
+import { $ } from '../core/game';
 import { GameObject } from "../core/gameobject";
 import { mod, new_vec2, set_inplace_vec2 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';

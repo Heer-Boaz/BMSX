@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { new_vec3 } from '../core/utils';
 import type { vec3 } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';

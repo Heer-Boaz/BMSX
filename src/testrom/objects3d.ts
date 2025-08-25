@@ -1,4 +1,4 @@
-import { attach_components, CatmullRomPath, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from '../bmsx';
+import { $, attach_components, CatmullRomPath, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from '../bmsx';
 import { noteCandidateBuildingTop } from '../bmsx/render/3d/atmosphere';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';
 import { onload } from '../bmsx/serializer/gameserializer';

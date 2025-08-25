@@ -1,6 +1,7 @@
 import { AssetBarrier } from '../../core/assetbarrier';
+import { $ } from '../../core/game';
 import { taskGate } from '../../core/taskgate';
-import { glLoadShader, glSwitchProgram } from '../glutils';
+import { glSwitchProgram } from '../glutils';
 import { GLView, TEXTURE_UNIT_SKYBOX } from '../glview';
 import { TextureKey } from '../texturemanager';
 import { BaseView, SkyboxImageIds } from '../view';
@@ -43,17 +44,11 @@ export function init(gl: WebGL2RenderingContext) {
 }
 
 export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
-	const program = gl.createProgram();
-	if (!program) throw Error('Failed to create skybox GLSL program');
+	const gv = $.viewAs<GLView>();
+	const b = gv.getBackend();
+	const program = b.buildProgram(skyboxVertCode, skyboxFragCode, 'skybox');
+	if (!program) throw Error('Failed to build skybox shader program');
 	skyboxProgram = program;
-	const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, skyboxVertCode);
-	const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, skyboxFragCode);
-	gl.attachShader(program, vertShader);
-	gl.attachShader(program, fragShader);
-	gl.linkProgram(program);
-	if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-		throw Error(`Unable to initialize the skybox shader program: ${gl.getProgramInfoLog(program)} `);
-	}
 }
 
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {

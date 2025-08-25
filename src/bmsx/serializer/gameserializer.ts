@@ -1,5 +1,6 @@
 import { type ModulationParams, SM } from "../audio/soundmaster";
 import { Space, SpaceObject } from "../core/basemodel";
+import { $ } from '../core/game';
 import { Registry } from "../core/registry";
 import { BaseView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";

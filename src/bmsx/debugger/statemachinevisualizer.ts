@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import type { Stateful } from '../fsm/fsmtypes';
 import { State } from '../fsm/state';
 import type { Identifier } from '../rompack/rompack';

@@ -1,4 +1,4 @@
-import { AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraPathBinder, CatmullRomPath, Direction, DirectionalLightObject, EventTimeline, GameObject, InputMap, insavegame, new_vec3, PathRunner, PhysicsWorld, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3, WaveManager } from '../bmsx';
+import { $, AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraPathBinder, CatmullRomPath, Direction, DirectionalLightObject, EventTimeline, GameObject, InputMap, insavegame, new_vec3, PathRunner, PhysicsWorld, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3, WaveManager } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { PhysicsDescriptorComponent } from '../bmsx/physics/physicsdescriptorcomponent';
 import { Atmosphere } from '../bmsx/render/3d/atmosphere';

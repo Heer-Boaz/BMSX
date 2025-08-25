@@ -128,7 +128,7 @@ interface InternalValueResource<T = unknown> {
 // Using unified GPUBackend abstraction (WebGLBackend currently) from gpu_backend.ts
 
 export class RenderGraphRuntime {
-    private backend: GPUBackend;
+    public backend: GPUBackend;
     private passes: RenderPass<unknown>[] = [];
     private compiled = false;
     private texResources: InternalTexResource[] = [];

@@ -1,6 +1,8 @@
 // Rewind Debugger UI extracted from bmsxdebugger.ts
 // Provides: showRewindDialog, gamePaused, gameResumed
 
+import { $ } from '../core/game';
+
 export function showRewindDialog() {
     // Remove any existing rewind overlay
     let rewindOverlay = document.getElementById('rewind-overlay');

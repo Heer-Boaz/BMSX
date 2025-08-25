@@ -8,6 +8,7 @@ import type { TextureKey } from '../render/texturemanager';
 import type { Color, DrawMeshOptions } from '../render/view';
 import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr } from '../rompack/rompack';
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave } from '../serializer/gameserializer';
+import { $ } from './game';
 import { GameObject } from './gameobject';
 import { Float32ArrayPool } from './utils';
 

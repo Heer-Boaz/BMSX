@@ -1,6 +1,7 @@
 // BehaviourTreeVisualizer extracted from bmsxdebugger.ts
 import { BTNode } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing } from '../component/basecomponent';
+import { $ } from '../core/game';
 import { GameObject } from '../core/gameobject';
 import type { Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';

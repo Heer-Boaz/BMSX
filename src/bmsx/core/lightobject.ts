@@ -1,5 +1,6 @@
 import type { AmbientLight, DirectionalLight, Light, PointLight } from '../render/3d/light';
 import { insavegame } from '../serializer/gameserializer';
+import { $ } from './game';
 import { GameObject } from './gameobject';
 
 @insavegame

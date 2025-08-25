@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { Size } from '../rompack/rompack';
 import { GLView, TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './glview';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';

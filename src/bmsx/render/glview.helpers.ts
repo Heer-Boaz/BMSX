@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { M4 } from './3d/math3d';
 import { GLView } from './glview';
 

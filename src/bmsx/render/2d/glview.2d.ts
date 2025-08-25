@@ -1,6 +1,7 @@
+import { $ } from '../../core/game';
 import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
-import { buildQuadTexCoords, glCreateBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram, glUpdateBuffer } from '../glutils';
+import { buildQuadTexCoords, glCreateBuffer, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram, glUpdateBuffer } from '../glutils';
 import type { GLView } from '../glview';
 import {
     ATLAS_ID_ATTRIBUTE_SIZE,
@@ -65,18 +66,11 @@ let spriteShaderScaleLocation: WebGLUniformLocation;
  * Creates the sprite shader programs (vertex and fragment shaders).
  */
 export function createSpriteShaderPrograms(gl: WebGL2RenderingContext): void {
-    const program = gl.createProgram();
-    if (!program) throw Error(`Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`);
+    const gv = $.viewAs<GLView>();
+    const b = gv.getBackend();
+    const program = b.buildProgram(spriteShaderVertCode, spriteShaderFragCode, 'sprites');
+    if (!program) throw Error('Failed to build sprite shader program');
     spriteShaderProgram = program;
-    const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, spriteShaderVertCode);
-    const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, spriteShaderFragCode);
-
-    gl.attachShader(program, vertShader);
-    gl.attachShader(program, fragShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        throw Error(`Unable to initialize the shader program: ${gl.getProgramInfoLog(program)} `);
-    }
 }
 
 /**

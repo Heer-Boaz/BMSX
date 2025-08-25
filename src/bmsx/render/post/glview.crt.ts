@@ -1,8 +1,9 @@
+import { $ } from '../../core/game';
 import { copy_vec2arr, vec2arr_equals } from '../../core/utils';
 import { vec2arr, vec3arr } from '../../rompack/rompack';
 import { bvec } from '../2d/vertexutils2d';
-import { glLoadShader, glSwitchProgram } from '../glutils';
-import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../glview';
+import { glSwitchProgram } from '../glutils';
+import { GLView, TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../glview';
 import { POSITION_COMPONENTS, SPRITE_DRAW_OFFSET, TEXCOORD_COMPONENTS, VERTICES_PER_SPRITE } from '../glview.constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
@@ -99,20 +100,11 @@ export function applyCrtPostProcess(gl: WebGL2RenderingContext, viewportWidth: n
  * attaches them to the program, and links the program. If the program fails to link, an error is thrown.
  */
 export function createCRTShaderPrograms(gl: WebGL2RenderingContext): void {
-    const program = gl.createProgram();
-    if (!program) throw Error(`Failed to create the CRT Shader GLSL program! Aborting as we cannot create the GLView for the game!`);
+    const gv = $.viewAs<GLView>();
+    const b = gv.getBackend();
+    const program = b.buildProgram(vertexShaderCRTCode, fragmentShaderCRTCode, 'crt');
+    if (!program) throw Error('Failed to build CRT shader program');
     CRTShaderProgram = program;
-
-    const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, vertexShaderCRTCode);
-    const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, fragmentShaderCRTCode);
-
-    gl.attachShader(program, vertShader);
-    gl.attachShader(program, fragShader);
-    gl.linkProgram(program);
-
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        throw Error(`Unable to initialize the crt shader shader program: ${gl.getProgramInfoLog(program)}.`);
-    }
 }
 
 /**

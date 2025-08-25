@@ -1,3 +1,4 @@
+import { $ } from '../bmsx';
 import { Component, componenttags_postprocessing } from '../bmsx/component/basecomponent';
 import type { Identifier } from '../bmsx/rompack/rompack';
 import { insavegame } from '../bmsx/serializer/gameserializer';

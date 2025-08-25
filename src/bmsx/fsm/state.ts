@@ -1,4 +1,5 @@
 import { EventSubscriber } from '../core/eventemitter';
+import { $ } from '../core/game';
 import { Input } from '../input/input';
 import { Identifiable, Identifier, Registerable } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';

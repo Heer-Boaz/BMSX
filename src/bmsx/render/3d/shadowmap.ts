@@ -1,3 +1,4 @@
+import { $ } from '../../core/game';
 import { glCreateShadowMapTextureAndFramebuffer } from '../glutils';
 import { GLView } from '../glview';
 

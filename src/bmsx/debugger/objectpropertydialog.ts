@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { Serializer } from '../serializer/gameserializer';
 import { FloatingDialog } from './bmsxdebugger';
 

@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { GameObject } from '../core/gameobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame } from '../serializer/gameserializer';

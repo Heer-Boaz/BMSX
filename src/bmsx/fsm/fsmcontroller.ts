@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { ActiveStateMachines } from './fsmlibrary';

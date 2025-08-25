@@ -1,6 +1,7 @@
 // Unified GPU backend abstraction for both TextureManager and RenderGraph.
 // Future WebGPU implementation can implement the same interface.
 
+import { $ } from '../core/game';
 import * as GLView2D from './2d/glview.2d';
 import * as GLView3D from './3d/glview.3d';
 import * as GLViewParticles from './3d/glview.particles';
@@ -16,6 +17,7 @@ export enum PipelineId {
     MeshBatch = 'meshbatch',
     Particles = 'particles',
     Sprites = 'sprites',
+    CRT = 'crt', // post-process / present
 }
 
 export interface GPUBackend {
@@ -381,7 +383,8 @@ export class WebGLBackend implements GPUBackend {
         this.runCurrentPipeline(pass);
     }
 
-    private buildProgram(vsSource: string, fsSource: string, label: string): WebGLProgram | null {
+    // Public so legacy modules can temporarily request backend-managed program creation while migrating.
+    buildProgram(vsSource: string, fsSource: string, label: string): WebGLProgram | null {
         const gl = this.gl;
         function compile(type: number, src: string): WebGLShader | null {
             const s = gl.createShader(type);

@@ -1,4 +1,4 @@
-import { GameObject, Msx1Colors, TextWriter } from '../bmsx';
+import { $, GameObject, Msx1Colors, TextWriter } from '../bmsx';
 import { Pool } from '../bmsx/core/pool';
 import { PooledGameObject } from '../bmsx/core/pooledgameobject';
 import { particlesToDraw } from '../bmsx/render/3d/glview.particles';

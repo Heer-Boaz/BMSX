@@ -1,4 +1,5 @@
 ﻿import { EventEmitter } from '../core/eventemitter';
+import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';

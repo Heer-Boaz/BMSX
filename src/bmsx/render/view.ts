@@ -1,5 +1,6 @@
 ﻿import { BaseModel } from '../core/basemodel';
 import { BFont } from '../core/font';
+import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/mesh';
 import { Registry } from '../core/registry';

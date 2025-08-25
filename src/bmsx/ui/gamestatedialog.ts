@@ -1,3 +1,5 @@
+import { $ } from '../core/game';
+
 /**
  * Shows a download dialog for the current save state.
  * The save state is downloaded as a .bmsx file.

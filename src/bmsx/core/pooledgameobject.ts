@@ -8,6 +8,7 @@
  *  - Bij acquire(): inst.prepareForReuse(); inst.markActive(); inst.reset(...);
  *  - In run(): als effect klaar is -> this.recycle(); (en release naar pool)
  */
+import { $ } from './game';
 import { GameObject } from './gameobject';
 
 export abstract class PooledGameObject extends GameObject {

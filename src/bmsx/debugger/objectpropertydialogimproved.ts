@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { FloatingDialog } from './bmsxdebugger';
 
 // Track expanded/collapsed state per dialog instance

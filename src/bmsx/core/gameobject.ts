@@ -5,6 +5,7 @@ import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
 import { ZCOORD_MAX } from "../render/glview.constants";
 import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../rompack/rompack";
 import { insavegame, onload } from "../serializer/gameserializer";
+import { $ } from './game';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from './utils';
 

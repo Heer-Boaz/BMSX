@@ -1,8 +1,9 @@
+import { $ } from '../../core/game';
 import type { Mesh } from '../../core/mesh';
 import { Float32ArrayPool } from '../../core/utils';
 import type { Size, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
-import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSwitchProgram } from '../glutils';
+import { glCreateBuffer, glCreateElementBuffer, glSwitchProgram } from '../glutils';
 import { GLView, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL } from '../glview';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
 import { getFramebufferStatusString } from '../glview.helpers';
@@ -504,21 +505,14 @@ export function setupBuffers3D(gl: WebGL2RenderingContext): void {
 }
 
 export function createGameShaderPrograms3D(gl: WebGL2RenderingContext): void {
-	const program = gl.createProgram();
-	if (!program) throw Error('Failed to create 3D GLSL program');
+	const gv = $.viewAs<GLView>();
+	const b = gv.getBackend();
+	const program = b.buildProgram(vertexShader3DCode, fragShader3DCode, 'meshbatch');
+	if (!program) throw Error('Failed to build 3D mesh shader program');
 	gameShaderProgram3D = program;
-	const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, vertexShader3DCode);
-	const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, fragShader3DCode);
-	gl.attachShader(program, vertShader);
-	gl.attachShader(program, fragShader);
-
-	gl.linkProgram(program);
 	gl.validateProgram(program);
 	if (!gl.getProgramParameter(program, gl.VALIDATE_STATUS)) {
 		throw Error(`Invalid 3D GLSL program: ${gl.getProgramInfoLog(program)}`);
-	}
-	if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-		throw Error(`Unable to initialize the 3D shader program: ${gl.getProgramInfoLog(program)} `);
 	}
 }
 

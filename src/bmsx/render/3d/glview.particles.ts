@@ -1,5 +1,6 @@
+import { $ } from '../../core/game';
 import type { vec3arr } from '../../rompack/rompack';
-import { glLoadShader, glSwitchProgram } from '../glutils';
+import { glSwitchProgram } from '../glutils';
 import { GLView, TEXTURE_UNIT_PARTICLE } from '../glview';
 import { Color } from '../view';
 import { M4 } from './math3d';
@@ -65,16 +66,11 @@ export function init(gl: WebGL2RenderingContext): void {
 }
 
 export function createParticleProgram(gl: WebGL2RenderingContext): void {
-    const program = gl.createProgram()!;
+    const gv = $.viewAs<GLView>();
+    const b = gv.getBackend();
+    const program = b.buildProgram(particleVertCode, particleFragCode, 'particles');
+    if (!program) throw Error('Failed to build particle shader program');
     particleProgram = program;
-    const vert = glLoadShader(gl, gl.VERTEX_SHADER, particleVertCode);
-    const frag = glLoadShader(gl, gl.FRAGMENT_SHADER, particleFragCode);
-    gl.attachShader(program, vert);
-    gl.attachShader(program, frag);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        throw Error(`Unable to initialize the particle shader program: ${gl.getProgramInfoLog(program)}`);
-    }
     viewProjLocation = gl.getUniformLocation(program, 'u_viewProjection')!;
     cameraRightLocation = gl.getUniformLocation(program, 'u_cameraRight')!;
     cameraUpLocation = gl.getUniformLocation(program, 'u_cameraUp')!;

@@ -2,6 +2,7 @@ import { DEFAULT_VERTEX_COLOR } from "../render/glview.constants";
 import { Color, DrawImgOptions } from "../render/view";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../rompack/rompack";
 import { insavegame } from "../serializer/gameserializer";
+import { $ } from './game';
 import { GameObject } from "./gameobject";
 import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from './utils';
 

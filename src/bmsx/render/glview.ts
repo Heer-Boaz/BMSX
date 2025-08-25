@@ -10,7 +10,7 @@ import { generateAtlasName, renderGate } from './view';
 import * as GLView2D from './2d/glview.2d';
 import { BaseView, Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, SkyboxImageIds } from './view';
 
-import { AmbientLight, DirectionalLight, PointLight } from '..';
+import { $, AmbientLight, DirectionalLight, PointLight } from '..';
 import { Atmosphere } from './3d/atmosphere';
 import * as GLView3D from './3d/glview.3d';
 import * as GLViewParticles from './3d/glview.particles';
@@ -51,9 +51,10 @@ export class GLView extends BaseView {
 	private needsResize: boolean = false;
 
 	// Render graph integration
-	private renderGraph: RenderGraphRuntime | null = null;
+	public renderGraph: RenderGraphRuntime | null = null;
 	private rgColor: RGTexHandle | null = null;
 	private rgDepth: RGTexHandle | null = null;
+	private backend: WebGLBackend | null = null; // persistent backend for shader program creation & graph
 	private graphInvalid: boolean = true;
 	private logPassStats: boolean = false; // enable to console.log per-pass timings
 	private passStatsOverlay: HTMLDivElement | null = null;
@@ -63,6 +64,11 @@ export class GLView extends BaseView {
 	private lastFrameStart: number = 0;
 	private overlayHotkeyRegistered: boolean = false;
 	private overlayThemeIndex: number = 0; // cycles themes
+
+	public getBackend(): WebGLBackend {
+		if (!this.backend) this.backend = new WebGLBackend(this.glctx);
+		return this.backend;
+	}
 
 	private _currentBoundTextureUnit: number | null = null;
 	private _activeTexture: WebGLTexture | null = null;
@@ -491,7 +497,9 @@ export class GLView extends BaseView {
 	}
 
 	private buildRenderGraph(): void {
-		this.renderGraph = new RenderGraphRuntime(new WebGLBackend(this.glctx));
+		// Ensure a persistent backend instance exists even before the render graph is (re)built.
+		if (!this.backend) this.backend = new WebGLBackend(this.glctx);
+		this.renderGraph = new RenderGraphRuntime(this.backend);
 		const lightingSystem = new LightingSystem(this.glctx);
 		this.rgColor = null;
 		this.rgDepth = null;
