@@ -21,7 +21,6 @@ export * from './core/path/camerapathbinder';
 export * from './core/path/catmullrompath';
 export * from './core/path/ipath';
 export * from './core/path/markers';
-export * from './core/path/orientation';
 export * from './core/path/pathrunner';
 export * from './core/registry';
 export * from './core/sprite';

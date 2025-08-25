@@ -1,5 +1,5 @@
 import { new_vec3 } from '../core/utils';
-import { bquat, quat } from '../render/3d/math3d';
+import { Q, quat } from '../render/3d/math3d';
 import type { Oriented, vec3 } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import type { CollisionShape } from './collisionshape';
@@ -68,7 +68,7 @@ export class PhysicsBody implements Oriented {
         this.userData = desc.userData;
         this.layer = desc.layer ?? 1;
         this.mask = desc.mask ?? 0xFFFFFFFF;
-        this.rotationQ = desc.orientation ?? bquat.identity();
+        this.rotationQ = desc.orientation ?? Q.ident();
         this.angularVelocity = desc.angularVelocity ? desc.angularVelocity : new_vec3(0, 0, 0);
         // Approximate inertia tensor diagonal for primitive shapes (box & sphere) in local space
         if (this.invMass === 0) {

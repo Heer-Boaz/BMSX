@@ -258,6 +258,7 @@ export const M4 = {
 
 
 // ====== Vec helpers ======
+// Quaternion helpers consolidated into lower section (Q)
 export const V3 = {
     of(x = 0, y = 0, z = 0): vec3 { return { x, y, z }; },
     add(a: vec3, b: vec3): vec3 { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; },
@@ -630,72 +631,7 @@ export const bvec3 = {
     }
 };
 
-export const bquat = {
-    identity(): quat {
-        return { x: 0, y: 0, z: 0, w: 1 };
-    },
-    fromAxisAngle(axis: vec3, rad: number): quat {
-        const half = rad / 2;
-        const s = Math.sin(half);
-        return { x: axis.x * s, y: axis.y * s, z: axis.z * s, w: Math.cos(half) };
-    },
-    fromEuler(x: number, y: number, z: number): quat {
-        const hx = x * 0.5, hy = y * 0.5, hz = z * 0.5;
-        const sx = Math.sin(hx), cx = Math.cos(hx);
-        const sy = Math.sin(hy), cy = Math.cos(hy);
-        const sz = Math.sin(hz), cz = Math.cos(hz);
-        return {
-            w: cx * cy * cz + sx * sy * sz,
-            x: sx * cy * cz - cx * sy * sz,
-            y: cx * sy * cz + sx * cy * sz,
-            z: cx * cy * sz - sx * sy * cz,
-        };
-    },
-    multiply(a: quat, b: quat): quat {
-        return {
-            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-        };
-    },
-    normalize(q: quat): quat {
-        const len = Math.hypot(q.x, q.y, q.z, q.w) || 1;
-        return { x: q.x / len, y: q.y / len, z: q.z / len, w: q.w / len };
-    },
-    conjugate(q: quat): quat {
-        return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
-    },
-    rotatevec3(q: quat, v: vec3): vec3 {
-        const qv: quat = { x: v.x, y: v.y, z: v.z, w: 0 };
-        const res = bquat.multiply(bquat.multiply(q, qv), bquat.conjugate(q));
-        return { x: res.x, y: res.y, z: res.z };
-    },
-    toMat4(q: quat): Mat4 {
-        const { x, y, z, w } = bquat.normalize(q);
-        const xx = x * x, yy = y * y, zz = z * z;
-        const xy = x * y, xz = x * z, yz = y * z;
-        const wx = w * x, wy = w * y, wz = w * z;
-        const out = new Float32Array(16);
-        out[0] = 1 - 2 * (yy + zz);
-        out[1] = 2 * (xy + wz);
-        out[2] = 2 * (xz - wy);
-        out[3] = 0;
-        out[4] = 2 * (xy - wz);
-        out[5] = 1 - 2 * (xx + zz);
-        out[6] = 2 * (yz + wx);
-        out[7] = 0;
-        out[8] = 2 * (xz + wy);
-        out[9] = 2 * (yz - wx);
-        out[10] = 1 - 2 * (xx + yy);
-        out[11] = 0;
-        out[12] = 0;
-        out[13] = 0;
-        out[14] = 0;
-        out[15] = 1;
-        return out;
-    }
-};
+// Quaternion utilities unified under Q.
 export function quatToMat4(q: [number, number, number, number]): Float32Array {
     const [x, y, z, w] = q;
     const x2 = x + x, y2 = y + y, z2 = z + z;
@@ -795,8 +731,45 @@ export const Q = {
         const u = Q.rotateVec(q, V3.of(0, 1, 0));
         const f = Q.rotateVec(q, V3.of(0, 0, -1)); // -Z kijkrichting
         return { r: V3.norm(r), u: V3.norm(u), f: V3.norm(f) };
+    },
+
+    fromBasis(fwd: vec3, up: vec3): quat { // replicate previous QuatUtil.fromBasis
+        let rx = up.y * fwd.z - up.z * fwd.y;
+        let ry = up.z * fwd.x - up.x * fwd.z;
+        let rz = up.x * fwd.y - up.y * fwd.x;
+        const rLen = Math.hypot(rx, ry, rz) || 1; rx /= rLen; ry /= rLen; rz /= rLen;
+        const ux = fwd.y * rz - fwd.z * ry;
+        const uy = fwd.z * rx - fwd.x * rz;
+        const uz = fwd.x * ry - fwd.y * rx;
+        const m00 = rx, m01 = ry, m02 = rz;
+        const m10 = ux, m11 = uy, m12 = uz;
+        const m20 = fwd.x, m21 = fwd.y, m22 = fwd.z;
+        const tr = m00 + m11 + m22;
+        let q: quat;
+        if (tr > 0) { const S = Math.sqrt(tr + 1.0) * 2; q = { w: 0.25 * S, x: (m21 - m12) / S, y: (m02 - m20) / S, z: (m10 - m01) / S }; }
+        else if ((m00 > m11) && (m00 > m22)) { const S = Math.sqrt(1.0 + m00 - m11 - m22) * 2; q = { w: (m21 - m12) / S, x: 0.25 * S, y: (m01 + m10) / S, z: (m02 + m20) / S }; }
+        else if (m11 > m22) { const S = Math.sqrt(1.0 + m11 - m00 - m22) * 2; q = { w: (m02 - m20) / S, x: (m01 + m10) / S, y: 0.25 * S, z: (m12 + m21) / S }; }
+        else { const S = Math.sqrt(1.0 + m22 - m00 - m11) * 2; q = { w: (m10 - m01) / S, x: (m02 + m20) / S, y: (m12 + m21) / S, z: 0.25 * S }; }
+        return Q.norm(q);
+    },
+
+    slerp(a: quat, b: quat, t: number): quat {
+        let cos = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+        let bx = b.x, by = b.y, bz = b.z, bw = b.w;
+        if (cos < 0) { cos = -cos; bx = -bx; by = -by; bz = -bz; bw = -bw; }
+        if (cos > 0.9995) { // near linear
+            const x = a.x + (bx - a.x) * t; const y = a.y + (by - a.y) * t; const z = a.z + (bz - a.z) * t; const w = a.w + (bw - a.w) * t; return Q.norm({ x, y, z, w });
+        }
+        const theta = Math.acos(Math.min(Math.max(cos, -1), 1));
+        const s = Math.sin(theta);
+        const w1 = Math.sin((1 - t) * theta) / s;
+        const w2 = Math.sin(t * theta) / s;
+        return { x: a.x * w1 + bx * w2, y: a.y * w1 + by * w2, z: a.z * w1 + bz * w2, w: a.w * w1 + bw * w2 };
     }
 };
+
+// Deprecated aliases (will remove later):
+// (Removed deprecated QuatUtil / bquat adapters)
 
 // ====== Veilige as-rotatie voor vec3 (Rodrigues) ======
 export function rotateAroundAxis(v: vec3, axis: vec3, ang: number): vec3 {

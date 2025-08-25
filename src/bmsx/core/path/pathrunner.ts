@@ -1,6 +1,6 @@
+import { Q, quat } from '../../render/3d/math3d';
 import { CatmullRomPath } from './catmullrompath';
 import { IPath, PathSample } from './ipath';
-import { Quat, QuatUtil } from './orientation';
 
 // Local easing lookup for segment meta (keep lightweight)
 const EasingLookup: Record<string, (t: number) => number> = {
@@ -12,7 +12,7 @@ const EasingLookup: Record<string, (t: number) => number> = {
 };
 
 export type PlaybackPolicy = 'clamp' | 'loop' | 'pingpong';
-export interface PathRunnerOptions { speed?: number; distanceMode?: boolean; playback?: PlaybackPolicy; bankFactor?: number; orientationKeys?: { u: number; q: Quat }[]; lookAt?: () => { x: number; y: number; z: number }; baseUp?: { x: number; y: number; z: number }; }
+export interface PathRunnerOptions { speed?: number; distanceMode?: boolean; playback?: PlaybackPolicy; bankFactor?: number; orientationKeys?: { u: number; q: quat }[]; lookAt?: () => { x: number; y: number; z: number }; baseUp?: { x: number; y: number; z: number }; }
 
 export class PathRunner {
     u = 0;
@@ -24,9 +24,9 @@ export class PathRunner {
     private _distanceCache = 0;
     readonly path: IPath;
     // Orientation state
-    orientation: Quat = QuatUtil.identity();
+    orientation: quat = Q.ident();
     private _lastFwd = { x: 0, y: 0, z: 1 };
-    private _orientationKeys: { u: number; q: Quat }[] = [];
+    private _orientationKeys: { u: number; q: quat }[] = [];
     private _lookAt?: () => { x: number; y: number; z: number };
     private _baseUp = { x: 0, y: 1, z: 0 };
     private _bankFactor = 0;
@@ -91,7 +91,7 @@ export class PathRunner {
         if (this._orientationKeys.length) {
             const keys = this._orientationKeys; if (this.u <= keys[0].u) { this.orientation = keys[0].q; return; }
             if (this.u >= keys[keys.length - 1].u) { this.orientation = keys[keys.length - 1].q; return; }
-            for (let i = 0; i < keys.length - 1; i++) { const a = keys[i], b = keys[i + 1]; if (this.u >= a.u && this.u <= b.u) { const span = (b.u - a.u) || 1; const t = (this.u - a.u) / span; this.orientation = QuatUtil.slerp(a.q, b.q, t); return; } }
+            for (let i = 0; i < keys.length - 1; i++) { const a = keys[i], b = keys[i + 1]; if (this.u >= a.u && this.u <= b.u) { const span = (b.u - a.u) || 1; const t = (this.u - a.u) / span; this.orientation = Q.slerp(a.q, b.q, t); return; } }
         }
         // Tangent / banked
         let up = this._baseUp;
@@ -117,7 +117,7 @@ export class PathRunner {
                 z: u.z * c + (fx * u.y - fy * u.x) * s + fz * dotUF * (1 - c)
             };
         }
-        this.orientation = QuatUtil.fromBasis(fwd, up);
+        this.orientation = Q.fromBasis(fwd, up);
         this._lastFwd = fwd;
     }
     sample(): PathSample { return this.path.sample(this.u); }
