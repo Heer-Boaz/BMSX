@@ -1,4 +1,4 @@
-import { GLView, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d } from '../bmsx';
+import { $, GLView, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d } from '../bmsx';
 import { Fighter } from './fighter';
 import { BitmapId } from './resourceids';
 

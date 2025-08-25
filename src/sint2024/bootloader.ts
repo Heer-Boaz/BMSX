@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BaseModel, BootArgs, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
+import { $, BFont, BGamepadButton, BaseModel, BootArgs, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';

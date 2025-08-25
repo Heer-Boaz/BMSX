@@ -1,4 +1,4 @@
-import { assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type RandomModulationParams, type vec2 } from '../bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type RandomModulationParams, type vec2 } from '../bmsx';
 import { gamemodel } from './gamemodel';
 import { AudioId, BitmapId } from './resourceids';
 
@@ -93,7 +93,7 @@ export abstract class Fighter extends SpriteObject {
 
     constructor(id: Identifier, fsm_id: string, facing: 'left' | 'right' = 'right', playerIndex: number) {
         super(id, fsm_id);
-        this.hitarea = new_area(0, 0, 0, 0); // Populate the hitarea with a default value. It is updated in the imgid setter.
+        this._hitarea = new_area(0, 0, 0, 0); // Populate the hitarea with a default value. It is updated in the imgid setter.
         this.facing = facing;
         this.currentHitMarker = null;
         this.player_index = playerIndex;

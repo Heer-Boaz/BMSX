@@ -1,4 +1,4 @@
-import { BaseModel, build_fsm, Direction, GameObject, InputMap, insavegame, MSX1ScreenHeight, MSX1ScreenWidth, new_vec3, SM, State, StateMachineBlueprint, subscribesToGlobalEvent } from '../bmsx';
+import { $, BaseModel, build_fsm, Direction, GameObject, InputMap, insavegame, MSX1ScreenHeight, MSX1ScreenWidth, new_vec3, SM, State, StateMachineBlueprint, subscribesToGlobalEvent } from '../bmsx';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';

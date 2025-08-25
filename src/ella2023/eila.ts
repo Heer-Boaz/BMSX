@@ -1,4 +1,4 @@
-import { Direction, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
+import { $, Direction, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
 import { Fighter } from './fighter';
 import { gamemodel } from './gamemodel';
 import { Action } from './inputmapping';
