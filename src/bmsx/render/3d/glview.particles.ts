@@ -103,12 +103,19 @@ export function setupParticleLocations(gl: WebGL2RenderingContext): void {
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 }
 
-export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
+export interface ParticlePassState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }
+
+export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {
     const count = particlesToDraw.length;
     if (count === 0) return;
 
-    const activeCamera = $.model.activeCamera3D;
-    M4.viewRightUpInto(activeCamera.view, camRight, camUp);
+    if (state) {
+        camRight.set(state.camRight);
+        camUp.set(state.camUp);
+    } else {
+        const activeCamera = $.model.activeCamera3D;
+        M4.viewRightUpInto(activeCamera.view, camRight, camUp);
+    }
     const batches = new Map<WebGLTexture, DrawParticleOptions[]>();
     for (const p of particlesToDraw) {
         const tex = p.texture ?? defaultTexture;
@@ -127,7 +134,7 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
     gl.depthMask(false);
 
     glSwitchProgram(gl, particleProgram);
-    gl.uniformMatrix4fv(viewProjLocation, false, activeCamera.viewProjection);
+    gl.uniformMatrix4fv(viewProjLocation, false, state ? state.viewProj : $.model.activeCamera3D.viewProjection);
     gl.uniform3fv(cameraRightLocation, camRight);
     gl.uniform3fv(cameraUpLocation, camUp);
     gl.uniform1i(textureLocation, TEXTURE_UNIT_PARTICLE);

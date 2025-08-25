@@ -2,7 +2,7 @@ import { Size } from '../rompack/rompack';
 import { GLView, TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD } from './glview';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
 import { checkWebGLError } from './glview.helpers';
-import { TextureParams } from './texturemanager';
+import { TextureParams } from './gpu_types';
 
 /**
  * Gets the texture coordinates for the vertices of the rectangles.
@@ -152,6 +152,18 @@ export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageB
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
 
+    return tex;
+}
+
+export function glCreateDepthTexture(gl: WebGL2RenderingContext, width: number, height: number, unit = TEXTURE_UNIT_UPLOAD): WebGLTexture {
+    $.viewAs<GLView>().activeTexUnit = unit;
+    const tex = gl.createTexture()!;
+    $.viewAs<GLView>().bind2DTex(tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, width, height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     return tex;
 }
 

@@ -478,10 +478,10 @@ export class PhysicsWorld {
             }
         }
         if (this.logFirstFramesContacts && this._debugFrameCounter < 10) {
-            console.log('[PhysDbg]', 'frame', this._debugFrameCounter, 'pairs', this.pairs.length, 'contacts', this.contacts.length);
+            // console.log('[PhysDbg]', 'frame', this._debugFrameCounter, 'pairs', this.pairs.length, 'contacts', this.contacts.length);
             if (this.contacts.length) {
                 const sample = this.contacts[0];
-                console.log('[PhysDbg] sample contact', { pen: sample.penetration, normal: sample.normal, a: sample.a.id, b: sample.b.id });
+                // console.log('[PhysDbg] sample contact', { pen: sample.penetration, normal: sample.normal, a: sample.a.id, b: sample.b.id });
             }
             this._debugFrameCounter++;
         }

@@ -76,7 +76,7 @@ export class PhysicsComponent extends Component {
 
 				// Mark body dirty if position changed so broadphase updates
 				if (positionChanged) {
-					console.log('[PhysAggSync]', this.parentid, 'sync -> body pos', this.body.position);
+					// console.log('[PhysAggSync]', this.parentid, 'sync -> body pos', this.body.position);
 					const world = PhysicsWorld.ensure();
 					world.markBodyDirty(this.body); // Mark dirty without requiring dynamic body
 				}
@@ -100,13 +100,13 @@ export class PhysicsComponent extends Component {
 			go.rotationQ.z = this.body.rotationQ.z;
 			go.rotationQ.w = this.body.rotationQ.w;
 		}
-		if (PhysicsComponent._debugFrames < 5) {
-			if (beforeX !== go.x_nonotify || beforeY !== go.y_nonotify || beforeZ !== go.z_nonotify) {
-				console.log(`[PhysSync]`, this.parentid, `body`, this.body.position, `goBefore: [${beforeX}, ${beforeY}, ${beforeZ}] goAfter: [${go.x_nonotify}, ${go.y_nonotify}, ${go.z_nonotify}]`);
-			}
-			else console.log(`No update: [${beforeX}, ${beforeY}, ${beforeZ}] -> [${go.x_nonotify}, ${go.y_nonotify}, ${go.z_nonotify}]`);
-			PhysicsComponent._debugFrames++;
-		}
+		// if (PhysicsComponent._debugFrames < 5) {
+		// 	if (beforeX !== go.x_nonotify || beforeY !== go.y_nonotify || beforeZ !== go.z_nonotify) {
+		// 		// console.log(`[PhysSync]`, this.parentid, `body`, this.body.position, `goBefore: [${beforeX}, ${beforeY}, ${beforeZ}] goAfter: [${go.x_nonotify}, ${go.y_nonotify}, ${go.z_nonotify}]`);
+		// 	}
+		// 	// else console.log(`No update: [${beforeX}, ${beforeY}, ${beforeZ}] -> [${go.x_nonotify}, ${go.y_nonotify}, ${go.z_nonotify}]`);
+		// 	PhysicsComponent._debugFrames++;
+		// }
 	}
 
 	private static _debugFrames = 0;
@@ -124,7 +124,7 @@ export class PhysicsComponent extends Component {
 		const go = $.model.getGameObject(this.parentid);
 		if (!go) return; // parent not yet available
 		const startPos = new_vec3(go.x, go.y, go.z);
-		console.log('[PhysicsComponent] Building body for', go.id, 'at position', startPos, 'shape:', this.shape, 'mass:', this.mass, 'layer:', this.layer, 'mask:', this.mask);
+		// console.log('[PhysicsComponent] Building body for', go.id, 'at position', startPos, 'shape:', this.shape, 'mass:', this.mass, 'layer:', this.layer, 'mask:', this.mask);
 		this.body = world.addBody({
 			position: startPos,
 			shape: this.shape,

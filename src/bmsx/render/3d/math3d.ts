@@ -1,4 +1,4 @@
-import type { vec3 } from '../../rompack/rompack';
+import type { vec3, vec3arr } from '../../rompack/rompack';
 
 // math.ts — compacte, consistente math voor column-major mat4 (OpenGL-style)
 
@@ -261,6 +261,7 @@ export const M4 = {
 // Quaternion helpers consolidated into lower section (Q)
 export const V3 = {
     of(x = 0, y = 0, z = 0): vec3 { return { x, y, z }; },
+    ofArr(arr: vec3arr): vec3 { return { x: arr[0], y: arr[1], z: arr[2] }; },
     add(a: vec3, b: vec3): vec3 { return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }; },
     sub(a: vec3, b: vec3): vec3 { return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }; },
     scale(a: vec3, s: number): vec3 { return { x: a.x * s, y: a.y * s, z: a.z * s }; },

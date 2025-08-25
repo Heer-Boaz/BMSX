@@ -1,9 +1,9 @@
 import { AssetBarrier } from '../core/assetbarrier';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
-import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
-import { glCreateTextureFromImage } from './glutils';
-import { GLView, TEXTURE_UNIT_SKYBOX } from './glview';
+import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
+import { GPUBackend } from './gpu_backend';
+import { TextureHandle, TextureParams } from './gpu_types';
 
 export const TEXTMANAGER_ID = 'texmgr';
 export type TextureIdentifier = string;
@@ -13,154 +13,11 @@ export interface ModelTextureIdentifier {
     modelImageIndex: number;
 }
 
-export interface TextureParams {
-    size?: Size;
-    wrapS?: number;
-    wrapT?: number;
-    minFilter?: number;
-    magFilter?: number;
-}
-
-export type TextureHandle = unknown;
+// TextureParams & TextureHandle now sourced from gpu_types.ts to break circular dependencies.
 export type TextureKey = string;
 export type ImageKey = string;
 
-export interface GPUBackend {
-    createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle;
-    createCubemapFromImages(
-        faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap],
-        desc: TextureParams
-    ): TextureHandle;
-    createSolidCubemap(
-        size: number,
-        rgba: [number, number, number, number],
-        desc: TextureParams
-    ): TextureHandle; // voor fallback (1×1)
-
-    createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
-    uploadCubemapFace(
-        cubemap: TextureHandle,
-        face: number,                 // 0..5
-        img: ImageBitmap
-    ): void;
-
-    destroyTexture(handle: TextureHandle): void;
-}
-
-export class WebGLBackend implements GPUBackend {
-    constructor(private gl: WebGL2RenderingContext) { }
-
-    createTextureFromImage(img: ImageBitmap, desc: TextureParams, unit: number | null = null): WebGLTexture {
-        return glCreateTextureFromImage(this.gl, img, desc, unit);
-    }
-
-    createCubemapFromImages(
-        faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap],
-        desc: TextureParams
-    ): WebGLTexture {
-        const gl = this.gl;
-        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
-        const tex = gl.createTexture()!;
-        $.viewAs<GLView>().bindCubemapTex(tex);
-
-        const targets = [
-            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
-        ] as const;
-
-        // upload alle faces
-        for (let i = 0; i < 6; i++) {
-            gl.texImage2D(targets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, faces[i]);
-        }
-
-        // sampler state (zonder mipmaps, jouw defaults)
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-
-        return tex;
-    }
-
-    createCubemapEmpty(size: number, desc: TextureParams): WebGLTexture {
-        const gl = this.gl;
-        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
-        const tex = gl.createTexture()!;
-        $.viewAs<GLView>().bindCubemapTex(tex);
-
-        const targets = [
-            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
-        ] as const;
-
-        for (const t of targets) {
-            gl.texImage2D(t, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        }
-
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-
-        return tex;
-    }
-
-    uploadCubemapFace(cubemap: WebGLTexture, face: number, img: ImageBitmap): void {
-        const gl = this.gl;
-        const targets = [
-            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
-        ] as const;
-
-        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
-        $.viewAs<GLView>().bindCubemapTex(cubemap);
-        gl.texImage2D(targets[face], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    }
-
-    createSolidCubemap(size: number, rgba: [number, number, number, number], desc: TextureParams): WebGLTexture {
-        const gl = this.gl;
-        $.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
-        const tex = gl.createTexture()!;
-        $.viewAs<GLView>().bindCubemapTex(tex);
-
-        const data = new Uint8Array(size * size * 4);
-        for (let i = 0; i < size * size; i++) {
-            data.set(rgba, i * 4);
-        }
-        const targets = [
-            gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
-            gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z,
-        ] as const;
-
-        for (const t of targets) {
-            gl.texImage2D(t, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-        }
-
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_BASE_LEVEL, 0);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAX_LEVEL, 0);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
-
-        return tex;
-    }
-
-    destroyTexture(handle: WebGLTexture): void {
-        this.gl.deleteTexture(handle);
-    }
-}
+// GPUBackend + concrete backend implementation now live in gpu_backend.ts.
 
 export async function hashURI(uri: string): Promise<string> {
     const encoder = new TextEncoder();

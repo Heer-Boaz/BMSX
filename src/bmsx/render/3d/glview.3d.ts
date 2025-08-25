@@ -23,7 +23,16 @@ const MAT4_FLOATS = 16;
 export const TEXTURE_UNIT_SHADOW_MAP = 6;
 
 export let meshesToDraw: DrawMeshOptions[] = [];
-let lightsDirty: boolean = true;
+let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
+
+export interface FogState {
+	fogColor: [number, number, number]; fogDensity: number; enableFog: boolean; fogMode: number;
+	enableHeightFog: boolean; heightFogStart: number; heightFogEnd: number;
+	heightLowColor: [number, number, number]; heightHighColor: [number, number, number];
+	heightMin: number; heightMax: number; enableHeightGradient: boolean;
+}
+
+export interface LightingStateSummary { ambient?: AmbientLight | null; dirCount: number; pointCount: number; dirty: boolean; }
 
 interface MeshBuffers {
 	vertex: WebGLBuffer;
@@ -68,6 +77,12 @@ const stateCache = {
 
 const directionalLights: Map<string, DirectionalLight> = new Map();
 const pointLights: Map<string, PointLight> = new Map();
+
+// Accessors for lighting system (decouple from internal maps / buffers)
+export function getDirectionalLightCount(): number { return directionalLights.size; }
+export function getPointLightCount(): number { return pointLights.size; }
+export function getDirectionalLightBuffer(): WebGLBuffer | undefined { return dirLightBuffer; }
+export function getPointLightBuffer(): WebGLBuffer | undefined { return pointLightBuffer; }
 
 let gameShaderProgram3D: WebGLProgram;
 let vertexPositionLocation3D: number;
@@ -390,12 +405,24 @@ export function getPointLight(id: string): PointLight | undefined {
 	return pointLights.get(id);
 }
 
+// Enumerate lights (read-only snapshots) for GPU-agnostic descriptor building
+export function getDirectionalLights(): ReadonlyArray<DirectionalLight> { return Array.from(directionalLights.values()); }
+export function getPointLightsAll(): ReadonlyArray<PointLight> { return Array.from(pointLights.values()); }
+
 export function clearLights(gl: WebGL2RenderingContext): void {
 	directionalLights.clear();
 	pointLights.clear();
 	uploadDirectionalLights(gl);
 	uploadPointLights(gl);
 }
+
+// Dirty flag consumption for centralized lighting system
+export function consumeLightsDirty(): boolean { const d = lightsDirty; lightsDirty = false; return d; }
+export function peekLightsDirty(): boolean { return lightsDirty; }
+
+// Expose uniform block binding indices (RHI-level introspection / debug)
+export const DIR_LIGHT_UNIFORM_BINDING = DIR_LIGHT_BINDING;
+export const POINT_LIGHT_UNIFORM_BINDING = POINT_LIGHT_BINDING;
 
 export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number): void {
 	gl.useProgram(gameShaderProgram3D);
@@ -735,40 +762,50 @@ function setupFramebufferAndViewport(gl: WebGL2RenderingContext, framebuffer: We
 	}
 }
 
-function setupRenderingState(gl: WebGL2RenderingContext): void {
+export interface MeshPassState {
+	width: number; height: number;
+	camPos: { x: number; y: number; z: number };
+	viewProj: Float32Array;
+	fog: FogState;
+	lighting?: LightingStateSummary;
+}
+
+function setupRenderingState(gl: WebGL2RenderingContext, state?: MeshPassState): void {
 	glSwitchProgram(gl, gameShaderProgram3D);
 
-	// Alleen camera / viewProjection per frame
-	const activeCamera = $.model.activeCamera3D;
-	gl.uniform3fv(cameraPositionLocation3D, new Float32Array([activeCamera.position.x, activeCamera.position.y, activeCamera.position.z]));
-	gl.uniformMatrix4fv(viewProjectionLocation3D, false, activeCamera.viewProjection);
+	let camPos: { x: number; y: number; z: number }; let viewProj: Float32Array;
+	if (state) { camPos = state.camPos; viewProj = state.viewProj; } else {
+		const activeCamera = $.model.activeCamera3D;
+		camPos = activeCamera.position; viewProj = activeCamera.viewProjection;
+	}
+	gl.uniform3fv(cameraPositionLocation3D, new Float32Array([camPos.x, camPos.y, camPos.z]));
+	gl.uniformMatrix4fv(viewProjectionLocation3D, false, viewProj);
 
 	setUseInstancing(gl, false);
 
 	registerAtmosphereHotkeys();
-	// Animated fog density using rail/time progress
-	const p = Atmosphere.progressFactor;
-	const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0; // cosine for smooth loop
-	const fogDensity = Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
-	gl.uniform3fv(fogColorLocation3D, new Float32Array(Atmosphere.fogColor));
-	gl.uniform1f(fogDensityLocation3D, fogDensity);
-	gl.uniform1i(fogEnableLocation3D, Atmosphere.enableFog ? 1 : 0);
-	gl.uniform1i(fogModeLocation3D, Atmosphere.fogMode);
-	gl.uniform1i(heightFogEnableLocation3D, Atmosphere.enableHeightFog ? 1 : 0);
-	gl.uniform1f(heightFogStartLocation3D, Atmosphere.heightFogStart);
-	gl.uniform1f(heightFogEndLocation3D, Atmosphere.heightFogEnd);
-	gl.uniform3fv(heightGradLowLocation3D, new Float32Array(Atmosphere.heightLowColor));
-	gl.uniform3fv(heightGradHighLocation3D, new Float32Array(Atmosphere.heightHighColor));
-	gl.uniform1f(heightMinLocation3D, Atmosphere.heightMin);
-	gl.uniform1f(heightMaxLocation3D, Atmosphere.heightMax);
-	gl.uniform1i(heightGradEnableLocation3D, Atmosphere.enableHeightGradient ? 1 : 0);
+	const fog: FogState = state ? state.fog : {
+		fogColor: Atmosphere.fogColor as [number, number, number],
+		fogDensity: (() => { const p = Atmosphere.progressFactor; const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0; return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim; })(),
+		enableFog: Atmosphere.enableFog, fogMode: Atmosphere.fogMode,
+		enableHeightFog: Atmosphere.enableHeightFog, heightFogStart: Atmosphere.heightFogStart, heightFogEnd: Atmosphere.heightFogEnd,
+		heightLowColor: Atmosphere.heightLowColor as [number, number, number], heightHighColor: Atmosphere.heightHighColor as [number, number, number],
+		heightMin: Atmosphere.heightMin, heightMax: Atmosphere.heightMax, enableHeightGradient: Atmosphere.enableHeightGradient,
+	};
+	gl.uniform3fv(fogColorLocation3D, new Float32Array(fog.fogColor));
+	gl.uniform1f(fogDensityLocation3D, fog.fogDensity);
+	gl.uniform1i(fogEnableLocation3D, fog.enableFog ? 1 : 0);
+	gl.uniform1i(fogModeLocation3D, fog.fogMode);
+	gl.uniform1i(heightFogEnableLocation3D, fog.enableHeightFog ? 1 : 0);
+	gl.uniform1f(heightFogStartLocation3D, fog.heightFogStart);
+	gl.uniform1f(heightFogEndLocation3D, fog.heightFogEnd);
+	gl.uniform3fv(heightGradLowLocation3D, new Float32Array(fog.heightLowColor));
+	gl.uniform3fv(heightGradHighLocation3D, new Float32Array(fog.heightHighColor));
+	gl.uniform1f(heightMinLocation3D, fog.heightMin);
+	gl.uniform1f(heightMaxLocation3D, fog.heightMax);
+	gl.uniform1i(heightGradEnableLocation3D, fog.enableHeightGradient ? 1 : 0);
 
-	if (lightsDirty) {
-		setAmbientLight(gl, $.model.ambientLight?.light as AmbientLight);
-		uploadDirectionalLights(gl);
-		uploadPointLights(gl);
-		lightsDirty = false;
-	}
+	// Lighting uploads handled by LightingSystem externally (ambient+counts set during FrameSharedState pass)
 	// GEEN: uploadDirectionalLights/uploadPointLights hier (alleen bij wijziging aanroepen)
 	// GEEN: disable alle attribs; VAO regelt dit.
 }
@@ -962,12 +999,12 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
 	normal9Pool.reset();
 }
 
-export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
+export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: MeshPassState): void {
 	const { instancedGroups, singles } = cullAndSortMeshes();
 	if (instancedGroups.size === 0 && singles.length === 0) return;
 
 	setupFramebufferAndViewport(gl, framebuffer, canvasWidth, canvasHeight);
-	setupRenderingState(gl);
+	setupRenderingState(gl, state);
 
 	renderInstancedMeshes(gl, instancedGroups);
 	renderSingleMeshes(gl, singles, framebuffer);

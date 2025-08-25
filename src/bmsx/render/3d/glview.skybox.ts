@@ -153,37 +153,38 @@ export function setSkyboxImages(ids: SkyboxImageIds) {
 	lastBoundSkyboxTexture = null;
 }
 
-export function drawSkybox(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, w: number, h: number) {
-	if (!skyboxGroup.ready) {
-		console.debug('TASKGATE BLOCKED SKYBOX RENDERING!!');
-		return;
-	}
+export interface SkyboxPassState {
+	view: Float32Array;
+	proj: Float32Array;
+	tex: WebGLTexture;
+	width?: number;
+	height?: number;
+}
 
-	const tex = $.texmanager.getTexture(skyboxKey) as WebGLTexture | undefined;
-	if (!tex) return;
+// Legacy drawSkybox removed; use drawSkyboxWithState via backend pipeline.
+
+// Variant used by backend pipeline when camera matrices & texture already prepared.
+export function drawSkyboxWithState(
+	gl: WebGL2RenderingContext,
+	framebuffer: WebGLFramebuffer,
+	state: SkyboxPassState
+): void {
+	console.log(`Rendering skybox stuff`);
 
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-	gl.viewport(0, 0, w, h);
-
+	if (state.width && state.height) gl.viewport(0, 0, state.width, state.height);
 	gl.disable(gl.CULL_FACE);
 	glSwitchProgram(gl, skyboxProgram);
 	gl.bindVertexArray(vaoSkybox);
-
-	const cam = $.model.activeCamera3D;
-	if (!cam) return;
-	gl.uniformMatrix4fv(skyboxViewLocation, false, cam.skyboxView);
-	gl.uniformMatrix4fv(skyboxProjectionLocation, false, cam.projection);
-
-	// Only bind the cubemap if the currently bound skybox differs
-	if (lastBoundSkyboxKey !== skyboxKey || lastBoundSkyboxTexture !== tex) {
+	gl.uniformMatrix4fv(skyboxViewLocation, false, state.view);
+	gl.uniformMatrix4fv(skyboxProjectionLocation, false, state.proj);
+	if (lastBoundSkyboxTexture !== state.tex) {
 		$.viewAs<GLView>().activeTexUnit = TEXTURE_UNIT_SKYBOX;
-		$.viewAs<GLView>().bindCubemapTex(tex);
-		lastBoundSkyboxKey = skyboxKey;
-		lastBoundSkyboxTexture = tex ?? null;
+		$.viewAs<GLView>().bindCubemapTex(state.tex);
+		lastBoundSkyboxTexture = state.tex;
+		lastBoundSkyboxKey = skyboxKey; // approximate; key may not change
 	}
-
 	gl.drawArrays(gl.TRIANGLES, 0, 36);
 	gl.bindVertexArray(null);
 	gl.enable(gl.CULL_FACE);
-
 }

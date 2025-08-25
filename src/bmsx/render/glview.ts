@@ -11,9 +11,16 @@ import * as GLView2D from './2d/glview.2d';
 import { BaseView, Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, SkyboxImageIds } from './view';
 
 import { AmbientLight, DirectionalLight, PointLight } from '..';
+import { Atmosphere } from './3d/atmosphere';
 import * as GLView3D from './3d/glview.3d';
 import * as GLViewParticles from './3d/glview.particles';
 import * as GLViewSkybox from './3d/glview.skybox';
+import { M4 } from './3d/math3d';
+import { PipelineId, WebGLBackend } from './gpu_backend';
+import { buildDrawCommands } from './graph/drawcommandbuilder';
+import { buildFrameData } from './graph/framedata';
+import { FrameData, RenderGraphRuntime, RGCommandKind, RGTexHandle } from './graph/rendergraph';
+import { isAmbientLight, LightingSystem } from './lighting/lightingsystem';
 import * as GLViewCRT from './post/glview.crt';
 
 type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
@@ -42,6 +49,20 @@ export class GLView extends BaseView {
 	private depthBuffer: WebGLBuffer;
 	private isRendering: boolean = false;
 	private needsResize: boolean = false;
+
+	// Render graph integration
+	private renderGraph: RenderGraphRuntime | null = null;
+	private rgColor: RGTexHandle | null = null;
+	private rgDepth: RGTexHandle | null = null;
+	private graphInvalid: boolean = true;
+	private logPassStats: boolean = false; // enable to console.log per-pass timings
+	private passStatsOverlay: HTMLDivElement | null = null;
+	private passStatsTotals: { [name: string]: { frames: number; total: number } } = {};
+	private frameTimes: number[] = [];
+	private frameTimeBufferSize: number = 120; // rolling window ~2s at 60fps
+	private lastFrameStart: number = 0;
+	private overlayHotkeyRegistered: boolean = false;
+	private overlayThemeIndex: number = 0; // cycles themes
 
 	private _currentBoundTextureUnit: number | null = null;
 	private _activeTexture: WebGLTexture | null = null;
@@ -234,16 +255,23 @@ export class GLView extends BaseView {
 		checkWebGLError('After GLViewSkybox.init');
 		GLViewParticles.init(gl);
 		checkWebGLError('After GLViewParticles.init');
+
+		// TODO: MUST USE GPUBACKEND FOR THIS!
 		GLView2D.createSpriteShaderPrograms(gl); // Create the game shader programs
 		checkWebGLError('After GLView2D.createSpriteShaderPrograms');
+		// TODO: MUST USE GPUBACKEND FOR THIS!
 		GLView3D.createGameShaderPrograms3D(gl); // Create 3D shader program
 		checkWebGLError('After GLView3D.createGameShaderPrograms3D');
+		// TODO: MUST USE GPUBACKEND FOR THIS!
 		GLViewParticles.createParticleProgram(gl);
 		checkWebGLError('After GLViewParticles.createParticleProgram');
+		// TODO: MUST USE GPUBACKEND FOR THIS!
 		GLView2D.setupSpriteShaderLocations(gl); // Set up the vertex shader locations for the game shader program
 		checkWebGLError('After GLView2D.setupSpriteShaderLocations');
+		// TODO: MUST USE GPUBACKEND FOR THIS!
 		GLView3D.setupVertexShaderLocations3D(gl); // Set up the vertex shader locations for the 3D shader
 		checkWebGLError('After GLView3D.setupVertexShaderLocations3D');
+		// TODO: MUST USE GPUBACKEND FOR THIS!
 		GLViewParticles.setupParticleLocations(gl);
 		checkWebGLError('After GLViewParticles.setupParticleLocations');
 		this.setupBuffers(); // Set up the buffers for the game shader
@@ -269,6 +297,7 @@ export class GLView extends BaseView {
 		if (checkWebGLError('After init')) {
 			throw Error('Initialization of 2D/3D/CRT shaders failed!');
 		}
+		this.buildRenderGraph();
 	}
 
 	/**
@@ -409,6 +438,8 @@ export class GLView extends BaseView {
 
 		GLViewCRT.handleResize(gl, this.canvas.width, this.canvas.height);
 		GLView3D.handleResize(gl, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
+		// Invalidate render graph resources so they are recreated with new size
+		this.graphInvalid = true;
 
 		// Clear the needsResize flag
 		this.needsResize = false;
@@ -445,19 +476,7 @@ export class GLView extends BaseView {
 		const token = renderGate.begin({ blocking: true, tag: 'frame' });
 		try {
 			this.isRendering = true;
-			this.drawbase(clearCanvas);
-
-			const gl = this.glctx;
-
-			GLViewSkybox.drawSkybox(gl, this.framebuffer, this.canvas.width, this.canvas.height);
-			GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
-			GLViewParticles.renderParticleBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height);
-			GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
-
-			// Draw a full-screen quad using the post-processing shader
-			GLViewCRT.applyCrtPostProcess(gl, this.canvas.width, this.canvas.height);
-
-			glSwitchProgram(gl, GLView2D.spriteShaderProgram); // Switch back to the main shader
+			this.executeRenderGraph(clearCanvas);
 
 
 			// Check if a resize was requested while rendering
@@ -469,6 +488,257 @@ export class GLView extends BaseView {
 			checkWebGLError('After CRT post-process');
 			renderGate.end(token);
 		}
+	}
+
+	private buildRenderGraph(): void {
+		this.renderGraph = new RenderGraphRuntime(new WebGLBackend(this.glctx));
+		const lightingSystem = new LightingSystem(this.glctx);
+		this.rgColor = null;
+		this.rgDepth = null;
+		// Reusable scratch vectors (avoid per-frame allocations in passes)
+		const particleCamRight = new Float32Array(3);
+		const particleCamUp = new Float32Array(3);
+		// Pass: create / clear targets
+		this.renderGraph.addPass({
+			name: 'Clear',
+			setup: (io) => {
+				// Create logical resources & declare write with clear options so runtime performs clear automatically.
+				this.rgColor = io.createTex({ width: this.offscreenCanvasSize.x, height: this.offscreenCanvasSize.y, name: 'FrameColor' });
+				this.rgDepth = io.createTex({ width: this.offscreenCanvasSize.x, height: this.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
+				if (this.rgColor) io.writeTex(this.rgColor, { clearColor: [0, 0, 0, 1] });
+				if (this.rgDepth) io.writeTex(this.rgDepth, { clearDepth: 1.0 });
+				if (this.rgColor) io.exportToBackbuffer(this.rgColor);
+				return null;
+			},
+			execute: () => { /* clear handled by runtime */ }
+		});
+		// FrameSharedState pass: gather per-frame view & lighting
+		this.renderGraph.addPass({
+			name: 'FrameSharedState',
+			// Side-effect aggregation; force execution (alwaysExecute) while migration in progress.
+			alwaysExecute: true,
+			setup: () => { return null; }, // no resource deps so it schedules early after Clear
+			execute: (ctx) => {
+				const cam = $.model.activeCamera3D; if (!cam) return;
+				const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
+				// Use type guard to ensure only AmbientLight accepted
+				const maybeAmbient = $.model.ambientLight?.light;
+				const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
+				ctx.backend.setPipelineState?.('__frame_shared__', { view: viewState, lighting });
+			}
+		});
+		// Skybox pass
+		this.renderGraph.addPass({
+			name: 'Skybox',
+			consumes: [RGCommandKind.Skybox],
+			setup: (io) => {
+				// Overlay writer: declare writes to same targets (no clear) to chain multi-writer ordering
+				if (this.rgColor) io.writeTex(this.rgColor);
+				if (this.rgDepth) io.writeTex(this.rgDepth);
+				return { width: this.offscreenCanvasSize.x, height: this.offscreenCanvasSize.y };
+			},
+			execute: (ctx, frame, data: { width: number; height: number }) => {
+				if (!this.rgColor || !this.rgDepth) return;
+				if (!frame.drawCommands || frame.drawCommands.length === 0) return; // filtered out
+				const cam = $.model.activeCamera3D;
+				if (!cam) return;
+				// Acquire skybox texture once here; pipeline won't re-fetch.
+				const tex = $.texmanager.getTexture(GLViewSkybox.skyboxKey) as WebGLTexture | undefined;
+				if (!tex) return;
+				ctx.backend.setPipelineState?.(PipelineId.Skybox, { view: cam.skyboxView, proj: cam.projection, tex, width: data.width, height: data.height });
+				const fbo = ctx.getFBO(this.rgColor, this.rgDepth);
+				ctx.backend.executePipeline?.(PipelineId.Skybox, fbo);
+			}
+		});
+		// Mesh pass
+		this.renderGraph.addPass({
+			name: 'Meshes',
+			consumes: [RGCommandKind.MeshBatch],
+			setup: (io) => {
+				if (this.rgColor) io.writeTex(this.rgColor);
+				if (this.rgDepth) io.writeTex(this.rgDepth);
+				return { width: this.offscreenCanvasSize.x, height: this.offscreenCanvasSize.y };
+			},
+			execute: (ctx, frame, data: { width: number; height: number }) => {
+				if (!this.rgColor || !this.rgDepth) return;
+				// Skip if no meshes enqueued this frame.
+				if (GLView3D.meshesToDraw?.length === 0) return;
+				const fbo = ctx.getFBO(this.rgColor, this.rgDepth);
+				const cam = $.model.activeCamera3D;
+				const fogState = {
+					fogColor: Atmosphere.fogColor as [number, number, number],
+					fogDensity: (() => { const p = Atmosphere.progressFactor; const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0; return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim; })(),
+					enableFog: Atmosphere.enableFog, fogMode: Atmosphere.fogMode,
+					enableHeightFog: Atmosphere.enableHeightFog, heightFogStart: Atmosphere.heightFogStart, heightFogEnd: Atmosphere.heightFogEnd,
+					heightLowColor: Atmosphere.heightLowColor as [number, number, number], heightHighColor: Atmosphere.heightHighColor as [number, number, number],
+					heightMin: Atmosphere.heightMin, heightMax: Atmosphere.heightMax, enableHeightGradient: Atmosphere.enableHeightGradient,
+				};
+				// Build consolidated per-frame view state (shared across pipelines if needed)
+				const viewState = { camPos: cam.position, viewProj: cam.viewProjection };
+				const frameShared = ctx.backend.getPipelineState?.('__frame_shared__') as { view: any; lighting: any } | undefined;
+				ctx.backend.setPipelineState?.(PipelineId.MeshBatch, { width: data.width, height: data.height, view: viewState, fog: fogState, lighting: frameShared?.lighting });
+				ctx.backend.executePipeline?.(PipelineId.MeshBatch, fbo);
+			}
+		});
+		// Particle pass
+		this.renderGraph.addPass({
+			name: 'Particles',
+			consumes: [RGCommandKind.ParticleBatch],
+			setup: (io) => {
+				if (this.rgColor) io.writeTex(this.rgColor);
+				if (this.rgDepth) io.writeTex(this.rgDepth);
+				return { width: this.offscreenCanvasSize.x, height: this.offscreenCanvasSize.y };
+			},
+			execute: (ctx, frame, data: { width: number; height: number }) => {
+				if (!this.rgColor || !this.rgDepth) return;
+				if (GLViewParticles.particlesToDraw?.length === 0) return;
+				const fbo = ctx.getFBO(this.rgColor, this.rgDepth);
+				const activeCamera = $.model.activeCamera3D;
+				if (activeCamera) {
+					// Extract camera right/up vectors from view matrix for billboard orientation (reuse scratch arrays)
+					M4.viewRightUpInto(activeCamera.view, particleCamRight, particleCamUp);
+					ctx.backend.setPipelineState?.(PipelineId.Particles, { width: data.width, height: data.height, viewProj: activeCamera.viewProjection, camRight: particleCamRight, camUp: particleCamUp });
+				}
+				ctx.backend.executePipeline?.(PipelineId.Particles, fbo);
+			}
+		});
+		// Sprite pass
+		this.renderGraph.addPass({
+			name: 'Sprites2D',
+			consumes: [RGCommandKind.SpriteBatch],
+			setup: (io) => {
+				if (this.rgColor) io.writeTex(this.rgColor);
+				if (this.rgDepth) io.writeTex(this.rgDepth);
+				return { width: this.offscreenCanvasSize.x, height: this.offscreenCanvasSize.y };
+			},
+			execute: (ctx, frame, data: { width: number; height: number }) => {
+				if (!this.rgColor || !this.rgDepth) return;
+				// Sprites are always drawn; no additional guard needed.
+				const fbo = ctx.getFBO(this.rgColor, this.rgDepth);
+				ctx.backend.setPipelineState?.(PipelineId.Sprites, { width: data.width, height: data.height });
+				ctx.backend.executePipeline?.(PipelineId.Sprites, fbo);
+			}
+		});
+		// Presentation (CRT post-process) pass reading exported color
+		this.renderGraph.addPass({
+			name: 'Present',
+			setup: (io) => { if (this.rgColor) io.readTex(this.rgColor); return null; },
+			execute: (ctx) => {
+				if (!this.rgColor) return;
+				const glTex = ctx.getTex(this.rgColor);
+				if (!glTex) return;
+				// Bind color texture to post-processing sampler unit
+				this.activeTexUnit = TEXTURE_UNIT_POST_PROCESSING_SOURCE;
+				this.bind2DTex(glTex);
+				// CRT expects canvas-sized viewport (already set by drawbase)
+				GLViewCRT.applyCrtPostProcess(this.glctx, this.canvas.width, this.canvas.height);
+				glSwitchProgram(this.glctx, GLView2D.spriteShaderProgram);
+			}
+		});
+		this.graphInvalid = false;
+	}
+
+	private executeRenderGraph(clearCanvas: boolean): void {
+		this.lastFrameStart = performance.now();
+		// Build frame data snapshot and dynamic draw command list via helper
+		const _frame: FrameData = buildFrameData(this);
+		_frame.drawCommands = buildDrawCommands(this);
+		// drawbase sets up base state (clear on main canvas) if requested
+		this.drawbase(clearCanvas);
+		this.renderGraph!.execute(_frame);
+		if (this.logPassStats) this.updatePassStatsOverlay(performance.now() - this.lastFrameStart);
+	}
+
+	private setViewportOffscreen(): void {
+		const gl = this.glctx;
+		gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
+	}
+
+	public setPassStatsLogging(enabled: boolean): void {
+		if (enabled === this.logPassStats) return;
+		this.logPassStats = enabled;
+		if (enabled) {
+			if (!this.passStatsOverlay) {
+				const div = document.createElement('div');
+				this.applyOverlayTheme(div, this.overlayThemeIndex);
+				div.textContent = 'RG stats...';
+				document.body.appendChild(div);
+				this.passStatsOverlay = div;
+			}
+			if (!this.overlayHotkeyRegistered) {
+				window.addEventListener('keydown', (e) => {
+					if (e.key === 'F8' && !e.shiftKey) {
+						this.setPassStatsLogging(!this.logPassStats);
+					} else if (e.key === 'F8' && e.shiftKey) {
+						this.overlayThemeIndex = (this.overlayThemeIndex + 1) % 2; // two themes for now
+						if (this.passStatsOverlay) this.applyOverlayTheme(this.passStatsOverlay, this.overlayThemeIndex);
+					}
+				});
+				this.overlayHotkeyRegistered = true;
+			}
+		} else {
+			if (this.passStatsOverlay) {
+				this.passStatsOverlay.remove();
+				this.passStatsOverlay = null;
+			}
+			this.passStatsTotals = {};
+			this.frameTimes = [];
+		}
+	}
+
+	private updatePassStatsOverlay(frameMs: number): void {
+		const stats = this.renderGraph?.getPassStats();
+		if (!stats) return;
+		for (const s of stats) {
+			let rec = this.passStatsTotals[s.name];
+			if (!rec) rec = this.passStatsTotals[s.name] = { frames: 0, total: 0 };
+			rec.frames++;
+			rec.total += s.ms;
+		}
+		// Rolling window frame times
+		this.frameTimes.push(frameMs);
+		if (this.frameTimes.length > this.frameTimeBufferSize) this.frameTimes.shift();
+		let sum = 0, min = Infinity, max = -Infinity;
+		for (let i = 0; i < this.frameTimes.length; i++) {
+			const v = this.frameTimes[i];
+			sum += v; if (v < min) min = v; if (v > max) max = v;
+		}
+		const avgFrame = sum / this.frameTimes.length;
+		const currentFps = 1000 / frameMs;
+		const avgFps = 1000 / avgFrame;
+		if (this.passStatsOverlay) {
+			const lines: string[] = [];
+			lines.push(`FPS ${currentFps.toFixed(1)} (avg ${avgFps.toFixed(1)}) frame ${frameMs.toFixed(2)}ms avg ${avgFrame.toFixed(2)} min ${min.toFixed(2)} max ${max.toFixed(2)}`);
+			for (const s of stats) {
+				const avg = this.passStatsTotals[s.name];
+				const avgMs = avg.total / avg.frames;
+				const warn = s.ms > 4 ? '!' : ' ';
+				lines.push(`${warn}${s.name.padEnd(8)} ${s.ms.toFixed(2)}ms (avg ${avgMs.toFixed(2)})`);
+			}
+			this.passStatsOverlay.textContent = lines.join('\n');
+		}
+	}
+
+	private applyOverlayTheme(div: HTMLDivElement, themeIndex: number): void {
+		div.style.position = 'absolute';
+		div.style.top = '0';
+		div.style.right = '0';
+		div.style.font = '11px/1.2 monospace';
+		div.style.whiteSpace = 'pre';
+		div.style.pointerEvents = 'none';
+		div.style.zIndex = '9999';
+		if (themeIndex === 0) {
+			div.style.background = 'rgba(0,0,0,0.55)';
+			div.style.color = '#8f8';
+			div.style.textShadow = '0 0 2px #0f0';
+			div.style.border = '1px solid #0a0';
+		} else {
+			div.style.background = 'rgba(16,16,40,0.70)';
+			div.style.color = '#e0e0ff';
+			div.style.textShadow = '0 0 3px #6af';
+			div.style.border = '1px solid #385';
+		}
+		div.style.padding = '4px 6px';
 	}
 
 	/**
@@ -592,9 +862,8 @@ export class GLView extends BaseView {
 		// Create the dynamic atlas texture
 		this.textures['_atlas_dynamic'] = glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
 
-		// Update the dynamic atlas texture with the new image
+		// Bind once so subsequent sprite draws use the updated atlas (already uploaded above)
 		$.viewAs<GLView>().bind2DTex(this.textures['_atlas_dynamic']);
-		glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
 	}
 
 	public get skyboxFaceIds(): SkyboxImageIds | undefined {

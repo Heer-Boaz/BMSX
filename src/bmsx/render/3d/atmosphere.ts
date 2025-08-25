@@ -38,12 +38,14 @@ export const Atmosphere: AtmosphereParams = {
     heightFogEnd: 140,
 };
 
-// Console exposure for tweaking
-(globalThis as any).atm = Atmosphere;
+// Console exposure for tweaking (declare on global interface for typing)
+declare global { interface Window { atm?: AtmosphereParams } }
+window.atm = Atmosphere;
 
+let atmosphereHotkeysInstalled = false;
 export function registerAtmosphereHotkeys(): void {
-    if ((registerAtmosphereHotkeys as any)._installed) return;
-    (registerAtmosphereHotkeys as any)._installed = true;
+    if (atmosphereHotkeysInstalled) return;
+    atmosphereHotkeysInstalled = true;
     window.addEventListener('keydown', (e) => {
         if (e.key === 'f') Atmosphere.enableFog = !Atmosphere.enableFog;
         else if (e.key === 'g') Atmosphere.enableHeightGradient = !Atmosphere.enableHeightGradient;

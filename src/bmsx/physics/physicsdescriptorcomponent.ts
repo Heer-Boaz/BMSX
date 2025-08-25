@@ -33,7 +33,7 @@ export class PhysicsDescriptorComponent extends Component {
     private attachRuntime() {
         const parent = $.model.getGameObject(this.parentid); if (!parent) return;
         if (parent.getComponent(PhysicsComponent)) return;
-        console.log('[PhysicsDescriptorComponent] Attaching runtime physics to', parent.id);
+        // console.log('[PhysicsDescriptorComponent] Attaching runtime physics to', parent.id);
         // NOTE: Do NOT force 'kinematic' here. Kinematic bodies were never integrated in PhysicsWorld.step,
         // causing everything spawned via descriptor to freeze. Default behavior should remain
         // dynamic (mass>0) or static (mass==0). If explicit kinematic support is added later,

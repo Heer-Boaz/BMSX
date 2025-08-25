@@ -5,7 +5,9 @@ import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
-import { TEXTMANAGER_ID, TextureManager, WebGLBackend } from "../render/texturemanager";
+import { GLView } from '../render/glview';
+import { WebGLBackend } from "../render/gpu_backend";
+import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
 import { Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
@@ -327,7 +329,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		// Obtain WebGL context if the active view is a GLView
 		let gl: WebGL2RenderingContext | undefined;
 		try {
-			const glView = $.viewAs?.<import('../render/glview').GLView>();
+			const glView = $.viewAs<GLView>();
 			gl = glView?.glctx;
 		} catch { /* non-GL view */ }
 		new TextureManager(gl ? new WebGLBackend(gl) : undefined);
