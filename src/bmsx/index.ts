@@ -67,7 +67,7 @@ export * from './render/graph/drawcommandbuilder';
 export * from './render/graph/framedata';
 export * from './render/graph/rendergraph';
 export * from './render/lighting/lightingsystem';
-export * from './render/pipelines/registry';
+export * from './render/pipelines/pipelineregistry';
 export * from './render/texturemanager';
 export * from './render/textwriter';
 export * from './render/view/render_context';

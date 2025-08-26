@@ -34,19 +34,29 @@ export class WebGLBackend implements GPUBackend {
     private extraStates = new Map<string, unknown>();
     constructor(private gl: WebGL2RenderingContext) {
         // Create wrapper pipelines
-        this.createPipeline({ label: PipelineId.Skybox });
-        this.createPipeline({ label: PipelineId.MeshBatch });
-        this.createPipeline({ label: PipelineId.Particles });
-        this.createPipeline({ label: PipelineId.Sprites });
         this.createPipeline({
-            label: PipelineId.CRT, vsCode: vertexShaderCRTCode, fsCode: fragmentShaderCRTCode, bindingLayout: {
+            label: 'Skybox'
+        });
+        this.createPipeline({
+            label: 'MeshBatch'
+        });
+        this.createPipeline({
+            label: 'Particles'
+        });
+        this.createPipeline({
+            label: 'Sprites'
+        });
+        this.createPipeline({
+            label: 'CRT', vsCode: vertexShaderCRTCode, fsCode: fragmentShaderCRTCode, bindingLayout: {
                 uniforms: [
                     'u_resolution', 'u_time', 'u_random', 'u_applyNoise', 'u_applyColorBleed', 'u_applyScanlines', 'u_applyBlur', 'u_applyGlow', 'u_applyFringing',
                     'u_noiseIntensity', 'u_colorBleed', 'u_blurIntensity', 'u_glowColor', 'u_scale', 'u_fragscale', 'u_texture', 'u_srcResolution'
                 ]
             }
         });
-        this.createPipeline({ label: PipelineId.Fog });
+        this.createPipeline({
+            label: 'Fog'
+        });
     }
     // === Static low-level WebGL helpers (migrated from glutils.ts) ===
     // NOTE: Kept static so existing call sites can be refactored gradually to import from backend if desired.
@@ -69,7 +79,9 @@ export class WebGLBackend implements GPUBackend {
     static glSetupAttributeFloat(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number): void { if (location < 0) return; gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0); }
     static glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number, type: GLenum = WebGL2RenderingContext.UNSIGNED_BYTE): void { if (location < 0) return; gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.enableVertexAttribArray(location); gl.vertexAttribIPointer(location, size, type, 0, 0); }
     static glUpdateBuffer(gl: WebGL2RenderingContext, buffer: WebGLBuffer, target: GLenum, offset: number, data: ArrayBufferView): void { gl.bindBuffer(target, buffer); gl.bufferData(target, data.byteLength, gl.STREAM_DRAW); gl.bufferSubData(target, offset, data); }
-    static glLoadShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader { const shader = gl.createShader(type)!; gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { throw Error(`Error compiling shader: ${gl.getShaderInfoLog(shader)} `); } return shader; }
+    static glLoadShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
+        const shader = gl.createShader(type)!; gl.shaderSource(shader, source); gl.compileShader(shader); if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { throw Error(`Error compiling shader: ${gl.getShaderInfoLog(shader)} `); } return shader;
+    }
     static glCreateTexture(gl: WebGL2RenderingContext, img?: ImageBitmap, size?: { x: number; y: number }, unit: number | null = null): WebGLTexture { const tex = gl.createTexture()!; if (unit != null) gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); if (img) gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); else if (size) gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, size.x, size.y, 0, gl.RGBA, gl.UNSIGNED_BYTE, null); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); return tex; }
     static glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContext, desc: TextureParams, unit = TEXTURE_UNIT_SHADOW_MAP) { const tex = gl.createTexture()!; gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.size.x, desc.size.y, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); const fbo = gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0); gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE); const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER); if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error(`Shadow FBO incomplete: 0x${status.toString(16)}`); gl.bindFramebuffer(gl.FRAMEBUFFER, null); return { texture: tex, framebuffer: fbo }; }
     static glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, desc: TextureParams, unit: number | null = null): WebGLTexture { const tex = gl.createTexture()!; if (!img) throw new Error('Image is not defined'); if (img.width === 0 || img.height === 0) throw new Error(`Image has invalid dimensions: ${img.width}x${img.height}`); if (unit != null) gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST); return tex; }
@@ -121,7 +133,33 @@ export class WebGLBackend implements GPUBackend {
     }
     bindFBO(fbo: WebGLFramebuffer | null): void { this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo); }
     clear(opts: { color?: [number, number, number, number]; depth?: number }): void { const gl = this.gl; let mask = 0; if (opts.color) { gl.clearColor(...opts.color); mask |= gl.COLOR_BUFFER_BIT; } if (opts.depth !== undefined) { gl.clearDepth(opts.depth); mask |= gl.DEPTH_BUFFER_BIT; } if (mask) gl.clear(mask); }
-    beginRenderPass(desc: RenderPassDesc): PassEncoder { let fbo: WebGLFramebuffer | null = null; if (desc.color || desc.depth) { const colorTex = desc.color?.tex as WebGLTexture | null; const depthTex = desc.depth?.tex as WebGLTexture | null; if (colorTex) { if (!this.texIds.has(colorTex)) this.texIds.set(colorTex, this.nextTexId++); const cid = this.texIds.get(colorTex)!; let did = 0; if (depthTex) { if (!this.texIds.has(depthTex)) this.texIds.set(depthTex, this.nextTexId++); did = this.texIds.get(depthTex)!; } const key = cid + ':' + did; let cached = this.fboCache.get(key); if (!cached) { cached = this.createFBO(colorTex, depthTex) as WebGLFramebuffer | null; this.fboCache.set(key, cached); } fbo = cached; } else { fbo = this.createFBO(colorTex, depthTex) as WebGLFramebuffer | null; } this.bindFBO(fbo); if (desc.color?.clear || desc.depth?.clearDepth !== undefined) { this.clear({ color: desc.color?.clear, depth: desc.depth?.clearDepth }); } } return { fbo, desc }; }
+    beginRenderPass(desc: RenderPassDesc): PassEncoder {
+        let fbo: WebGLFramebuffer | null = null;
+        // Normalize single color into colors[0]
+        const firstColor = desc.colors && desc.colors.length ? desc.colors[0] : desc.color;
+        if (firstColor || desc.depth) {
+            const colorTex = firstColor?.tex as WebGLTexture | null;
+            const depthTex = desc.depth?.tex as WebGLTexture | null;
+            if (colorTex) {
+                if (!this.texIds.has(colorTex)) this.texIds.set(colorTex, this.nextTexId++);
+                const cid = this.texIds.get(colorTex)!;
+                let did = 0;
+                if (depthTex) { if (!this.texIds.has(depthTex)) this.texIds.set(depthTex, this.nextTexId++); did = this.texIds.get(depthTex)!; }
+                const key = cid + ':' + did;
+                let cached = this.fboCache.get(key);
+                if (!cached) { cached = this.createFBO(colorTex, depthTex) as WebGLFramebuffer | null; this.fboCache.set(key, cached); }
+                fbo = cached;
+            } else {
+                fbo = this.createFBO(colorTex, depthTex) as WebGLFramebuffer | null;
+            }
+            this.bindFBO(fbo);
+            const clearColor = firstColor?.clear;
+            if (clearColor || desc.depth?.clearDepth !== undefined) {
+                this.clear({ color: clearColor, depth: desc.depth?.clearDepth });
+            }
+        }
+        return { fbo, desc };
+    }
     endRenderPass(_pass: PassEncoder): void { }
     getCaps() { return { maxColorAttachments: 1 }; }
     transitionTexture(): void { }
@@ -136,7 +174,7 @@ export class WebGLBackend implements GPUBackend {
                 for (const u of desc.bindingLayout.uniforms) uniformLocations.set(u, program ? this.gl.getUniformLocation(program, u) : null);
             }
             // Special handling for CRT: create fullscreen quad buffers + default option state
-            if (desc.label === PipelineId.CRT) {
+            if (desc.label === 'CRT') {
                 const gl = this.gl;
                 // Fullscreen quad positions in PIXEL space (vertex shader converts to clip)
                 let vbo = gl.createBuffer();
@@ -170,7 +208,7 @@ export class WebGLBackend implements GPUBackend {
                 const attribPos = gl.getAttribLocation(program!, 'a_position');
                 const attribTex = gl.getAttribLocation(program!, 'a_texcoord');
                 exec = (glExec) => {
-                    const st = this.getPipelineState<any>(PipelineId.CRT);
+                    const st = this.getPipelineState<any>('CRT');
                     if (!st) return;
                     // Bind default framebuffer (present to screen)
                     glExec.bindFramebuffer(glExec.FRAMEBUFFER, null);
@@ -225,12 +263,14 @@ export class WebGLBackend implements GPUBackend {
             return handle;
         }
         switch (desc.label) {
-            case PipelineId.Skybox: exec = (gl, fbo) => { const st = this.getPipelineState<SkyboxPassState>(PipelineId.Skybox); if (!st) return; SkyboxPipeline.drawSkyboxWithState(gl, fbo as WebGLFramebuffer, st); }; break;
-            case PipelineId.MeshBatch: exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; view: { camPos: { x: number; y: number; z: number }; viewProj: Float32Array }; fog?: any; lighting?: any }>(PipelineId.MeshBatch); if (!st) return; MeshPipeline.renderMeshBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, { width: st.width, height: st.height, camPos: st.view.camPos, viewProj: st.view.viewProj, fog: st.fog ?? undefined, lighting: st.lighting }); }; break;
-            case PipelineId.Particles: exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }>(PipelineId.Particles); if (!st) return; ParticlesPipeline.renderParticleBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, st); }; break;
-            case PipelineId.Sprites: exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; baseWidth?: number; baseHeight?: number }>(PipelineId.Sprites); if (!st) return; SpritesPipeline.renderSpriteBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, st.baseWidth, st.baseHeight); }; break;
-            case PipelineId.CRT: exec = () => { /* should have been created with shaders earlier */ }; break;
-            case PipelineId.Fog: exec = () => { /* state only */ }; break;
+            case 'Skybox': exec = (gl, fbo) => {
+                const st = this.getPipelineState<SkyboxPassState>('Skybox'); if (!st) return; SkyboxPipeline.drawSkyboxWithState(gl, fbo as WebGLFramebuffer, st);
+            }; break;
+            case 'MeshBatch': exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; view: { camPos: { x: number; y: number; z: number }; viewProj: Float32Array }; fog?: any; lighting?: any }>('MeshBatch'); if (!st) return; MeshPipeline.renderMeshBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, { width: st.width, height: st.height, camPos: st.view.camPos, viewProj: st.view.viewProj, fog: st.fog ?? undefined, lighting: st.lighting }); }; break;
+            case 'Particles': exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }>('Particles'); if (!st) return; ParticlesPipeline.renderParticleBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, st); }; break;
+            case 'Sprites': exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; baseWidth?: number; baseHeight?: number }>('Sprites'); if (!st) return; SpritesPipeline.renderSpriteBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, st.baseWidth, st.baseHeight); }; break;
+            case 'CRT': exec = () => { /* should have been created with shaders earlier */ }; break;
+            case 'Fog': exec = () => { /* state only */ }; break;
             default: exec = () => { }; break;
         }
         this.pipelines.push({ handle, exec });

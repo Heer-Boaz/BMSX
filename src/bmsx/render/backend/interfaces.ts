@@ -1,14 +1,14 @@
 // Backend interfaces extracted from legacy gpu_backend.ts for split architecture.
 import { TextureHandle, TextureParams } from '../gpu_types';
 
-export enum PipelineId {
-    Skybox = 'skybox',
-    MeshBatch = 'meshbatch',
-    Particles = 'particles',
-    Sprites = 'sprites',
-    CRT = 'crt',
-    Fog = 'fog',
-}
+export type PipelineId =
+    | 'Skybox'
+    | 'MeshBatch'
+    | 'Particles'
+    | 'Sprites'
+    | 'CRT'
+    | 'Fog'
+    | '__frame_shared__';
 
 export interface BackendCaps { maxColorAttachments: number; }
 export interface PipelineBindingLayout {
@@ -25,7 +25,10 @@ export interface PipelineDesc {
 }
 export interface PipelineHandle { id: number; label?: string }
 export interface RenderPassDesc {
+    // Backward compatible single color attachment (will mirror first element of colors[] if provided).
     color?: { tex: TextureHandle; clear?: [number, number, number, number]; discardAfter?: boolean };
+    // Multi-Render-Target attachments. WebGL backend will currently only bind the first due to API limits.
+    colors?: { tex: TextureHandle; clear?: [number, number, number, number]; discardAfter?: boolean }[];
     depth?: { tex: TextureHandle; clearDepth?: number; discardAfter?: boolean };
     label?: string;
 }
@@ -52,19 +55,19 @@ export interface GPUBackend {
     setPipeline?(pass: PassEncoder, pipeline: PipelineHandle): void;
     draw?(pass: PassEncoder, first: number, count: number): void;
     drawIndexed?(pass: PassEncoder, indexCount: number, firstIndex?: number): void;
-    setPipelineState?<S = unknown>(label: string, state: S): void;
-    executePipeline?(label: PipelineId | string, fbo: unknown): void;
-    getPipelineState?<S = unknown>(label: PipelineId | string): S | undefined;
+    setPipelineState?<S = unknown>(label: PipelineId, state: S): void;
+    executePipeline?(label: PipelineId, fbo: unknown): void;
+    getPipelineState?<S = unknown>(label: PipelineId): S | undefined;
     buildProgram?(vsSource: string, fsSource: string, label: string): WebGLProgram | null; // convenience for legacy modules
 }
 
 export interface PipelineStateRegistry {
-    [PipelineId.Skybox]: { view: Float32Array; proj: Float32Array; tex: WebGLTexture; width?: number; height?: number };
-    [PipelineId.MeshBatch]: { width: number; height: number; view: { camPos: { x: number; y: number; z: number }; viewProj: Float32Array }; fog?: any; lighting?: any };
-    [PipelineId.Particles]: { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array };
-    [PipelineId.Sprites]: { width: number; height: number };
-    [PipelineId.CRT]: { width: number; height: number };
-    [PipelineId.Fog]: { width: number; height: number; fog: any };
+    ['Skybox']: { view: Float32Array; proj: Float32Array; tex: WebGLTexture; width?: number; height?: number };
+    ['MeshBatch']: { width: number; height: number; view: { camPos: { x: number; y: number; z: number }; viewProj: Float32Array }; fog?: any; lighting?: any };
+    ['Particles']: { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array };
+    ['Sprites']: { width: number; height: number };
+    ['CRT']: { width: number; height: number };
+    ['Fog']: { width: number; height: number; fog: any };
     __frame_shared__?: { view: any; lighting: any };
 }
 

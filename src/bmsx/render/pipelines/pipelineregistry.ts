@@ -14,6 +14,7 @@ export interface PipelinePassDescriptor {
     name: string;
     consumes: RGCommandKind[];
     writesDepth?: boolean;
+    isStateOnly?: boolean; // executes for state population only (no direct draws)
     prepare(view: Pick<RenderContext, 'glctx'> & Partial<WebGLRenderView>, ctx: { backend: GPUBackend; width: number; height: number }): void;
     shouldExecute?(): boolean;
     presentStage?: boolean; // marks a post-process / final stage
@@ -24,8 +25,9 @@ const particleCamUp = new Float32Array(3);
 
 export const pipelineRegistry: PipelinePassDescriptor[] = [
     {
-        id: PipelineId.Fog,
+        id: 'Fog',
         name: 'FogState',
+        isStateOnly: true,
         consumes: [],
         writesDepth: false,
         shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
@@ -39,11 +41,11 @@ export const pipelineRegistry: PipelinePassDescriptor[] = [
                 heightLowColor: Atmosphere.heightLowColor, heightHighColor: Atmosphere.heightHighColor,
                 heightMin: Atmosphere.heightMin, heightMax: Atmosphere.heightMax, enableHeightGradient: Atmosphere.enableHeightGradient,
             };
-            backend.setPipelineState?.(PipelineId.Fog, { width, height, fog: fogState });
+            backend.setPipelineState?.('Fog', { width, height, fog: fogState });
         }
     },
     {
-        id: PipelineId.Skybox,
+        id: 'Skybox',
         name: 'Skybox',
         consumes: [RGCommandKind.Skybox],
         writesDepth: true,
@@ -52,11 +54,11 @@ export const pipelineRegistry: PipelinePassDescriptor[] = [
             const cam = $.model.activeCamera3D; if (!cam) return;
             const tex = $.texmanager.getTexture(SkyboxPipeline.skyboxKey) as WebGLTexture | undefined;
             if (!tex) return;
-            backend.setPipelineState?.(PipelineId.Skybox, { view: cam.skyboxView, proj: cam.projection, tex, width, height });
+            backend.setPipelineState?.('Skybox', { view: cam.skyboxView, proj: cam.projection, tex, width, height });
         }
     },
     {
-        id: PipelineId.MeshBatch,
+        id: 'MeshBatch',
         name: 'Meshes',
         consumes: [RGCommandKind.MeshBatch],
         writesDepth: true,
@@ -64,7 +66,7 @@ export const pipelineRegistry: PipelinePassDescriptor[] = [
         prepare(_view, { backend, width, height }) {
             const cam = $.model.activeCamera3D; if (!cam) return;
             const frameShared = backend.getPipelineState?.('__frame_shared__') as { lighting?: unknown } | undefined;
-            const fogStateHolder = backend.getPipelineState?.(PipelineId.Fog) as { fog?: any } | undefined;
+            const fogStateHolder = backend.getPipelineState?.('Fog') as { fog?: any } | undefined;
             let fog = fogStateHolder?.fog;
             if (!fog) {
                 // Recompute fog locally if Fog state pass hasn't executed yet (graph ordering)
@@ -84,11 +86,11 @@ export const pipelineRegistry: PipelinePassDescriptor[] = [
                     enableHeightGradient: Atmosphere.enableHeightGradient,
                 };
             }
-            backend.setPipelineState?.(PipelineId.MeshBatch, { width, height, view: { camPos: cam.position, viewProj: cam.viewProjection }, lighting: frameShared && (frameShared as any).lighting, fog });
+            backend.setPipelineState?.('MeshBatch', { width, height, view: { camPos: cam.position, viewProj: cam.viewProjection }, lighting: frameShared && (frameShared as any).lighting, fog });
         }
     },
     {
-        id: PipelineId.Particles,
+        id: 'Particles',
         name: 'Particles',
         consumes: [RGCommandKind.ParticleBatch],
         writesDepth: true,
@@ -96,18 +98,18 @@ export const pipelineRegistry: PipelinePassDescriptor[] = [
         prepare(_view, { backend, width, height }) {
             const cam = $.model.activeCamera3D; if (!cam) return;
             M4.viewRightUpInto(cam.view, particleCamRight, particleCamUp);
-            backend.setPipelineState?.(PipelineId.Particles, { width, height, viewProj: cam.viewProjection, camRight: particleCamRight, camUp: particleCamUp });
+            backend.setPipelineState?.('Particles', { width, height, viewProj: cam.viewProjection, camRight: particleCamRight, camUp: particleCamUp });
         }
     },
     {
-        id: PipelineId.Sprites,
+        id: 'Sprites',
         name: 'Sprites2D',
         consumes: [RGCommandKind.SpriteBatch],
         writesDepth: true,
         prepare(_view, { backend, width, height }) {
             // Provide both offscreen buffer size (width/height) and logical viewport size for correct 2D scaling
             const viewAny: any = _view;
-            backend.setPipelineState?.(PipelineId.Sprites, {
+            backend.setPipelineState?.('Sprites', {
                 width, height, // offscreen buffer (e.g. 640x480)
                 baseWidth: viewAny.viewportSize?.x ?? width / 2,
                 baseHeight: viewAny.viewportSize?.y ?? height / 2,
@@ -115,14 +117,14 @@ export const pipelineRegistry: PipelinePassDescriptor[] = [
         }
     },
     {
-        id: PipelineId.CRT,
+        id: 'CRT',
         name: 'CRTPost',
         consumes: [RGCommandKind.PostProcess],
         writesDepth: false,
         presentStage: true,
         prepare(view, { backend, width, height }) {
             const glview = view as WebGLRenderView; // structural usage
-            backend.setPipelineState?.(PipelineId.CRT, {
+            backend.setPipelineState?.('CRT', {
                 width: glview.offscreenCanvasSize.x,   // actual offscreen buffer size (after integer upscale)
                 height: glview.offscreenCanvasSize.y,
                 baseWidth: glview.viewportSize.x,      // logical game resolution

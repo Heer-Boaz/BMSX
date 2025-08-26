@@ -7,7 +7,7 @@
  * code so migration can be incremental.
  */
 import { taskGate } from '../../core/taskgate';
-import { GPUBackend } from '../backend/interfaces';
+import { GPUBackend, RenderPassDesc } from '../backend/interfaces';
 import { TextureHandle } from '../gpu_types';
 
 export type RGHandle = number;
@@ -393,14 +393,14 @@ export class RenderGraphRuntime {
                 }
             }
             if (writes.length) {
-                // For now support single color + optional depth (common case). Expand later for MRT.
-                let colorRes: InternalTexResource | undefined;
+                // Multi-attachment discovery (color targets first, single depth optional)
+                const colorTargets: InternalTexResource[] = [];
                 let depthRes: InternalTexResource | undefined;
                 for (const w of writes) {
-                    const r = this.texResources[w];
-                    if (!r) continue;
-                    if (r.desc.depth) depthRes = r; else if (!colorRes) colorRes = r;
+                    const r = this.texResources[w]; if (!r) continue;
+                    if (r.desc.depth) depthRes = r; else colorTargets.push(r);
                 }
+                const colorRes = colorTargets[0]; // legacy single color path
                 // Simple layout / usage transition heuristic (no-op on WebGL):
                 //  * Reads -> shaderRead
                 //  * Color attachment writes -> colorAttachment
@@ -432,10 +432,16 @@ export class RenderGraphRuntime {
                 const isFirstColorWriter = colorRes ? colorRes.writerPasses[0] === i : false;
                 const isFirstDepthWriter = depthRes ? depthRes.writerPasses[0] === i : false;
                 const desc = {
+                    // Provide both single color (for legacy backends) and colors[] array (for MRT-capable backends)
                     color: colorRes ? { tex: colorRes.tex as TextureHandle, clear: isFirstColorWriter ? colorRes.clearOnWrite?.color : undefined, discardAfter: !!colorRes.desc.transient } : undefined,
+                    colors: colorTargets.length ? colorTargets.map((ct, idx) => ({
+                        tex: ct.tex as TextureHandle,
+                        clear: (idx === 0 && ct === colorRes && isFirstColorWriter) ? ct.clearOnWrite?.color : undefined,
+                        discardAfter: !!ct.desc.transient,
+                    })) : undefined,
                     depth: depthRes ? { tex: depthRes.tex as TextureHandle, clearDepth: isFirstDepthWriter ? depthRes.clearOnWrite?.depth : undefined, discardAfter: !!depthRes.desc.transient } : undefined,
                     label: this.passes[i].name,
-                };
+                } as RenderPassDesc;
                 // TODO(backends): Insert resource state / layout transitions here for non-WebGL (e.g. Vulkan/WebGPU)
                 // before beginning the render pass. This requires tracking previous usage and desired new usage
                 // (read -> colorAttachment, colorAttachment -> shaderRead, depthWrite -> depthRead, etc.).
@@ -453,6 +459,19 @@ export class RenderGraphRuntime {
 
     getPassStats(): ReadonlyArray<{ name: string; ms: number }> { return this.passStats; }
 
+    // Introspection API (safe, read-only views for diagnostics / editor tools)
+    getPassOrder(): readonly number[] { return this.passOrder; }
+    getReachableMask(): readonly boolean[] { return this.reachable; }
+    getPassNames(): readonly string[] { return this.passes.map(p => p.name); }
+    /** Debug info for each logical texture resource. */
+    getTextureDebugInfo(): RGTexDebugInfo[] {
+        const list: RGTexDebugInfo[] = [];
+        for (let i = 0; i < this.texResources.length; i++) {
+            const r = this.texResources[i]; if (!r) continue;
+            list.push({ index: i, name: r.desc.name, firstUse: r.firstUse, lastUse: r.lastUse, writers: [...r.writerPasses], readers: [...r.readPasses], physicalId: r.physicalId, present: !!r.present, transient: !!r.desc.transient });
+        }
+        return list;
+    }
     private realizeAll(): void {
         // Create physical textures for each alias group lazily; map physicalId -> backend TextureHandle
         const physTex = new Map<number, TextureHandle>();
@@ -492,4 +511,17 @@ export class RenderGraphRuntime {
         this.texResources = [];
         this.valueResources = [];
     }
+}
+
+// Public debug info interface (exported separately)
+export interface RGTexDebugInfo {
+    index: number;
+    name?: string;
+    firstUse?: number;
+    lastUse?: number;
+    writers: number[];
+    readers: number[];
+    physicalId?: number;
+    present?: boolean;
+    transient?: boolean;
 }
