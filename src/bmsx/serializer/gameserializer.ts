@@ -2,7 +2,7 @@ import { type ModulationParams, SM } from "../audio/soundmaster";
 import { Space, SpaceObject } from "../core/basemodel";
 import { $ } from '../core/game';
 import { Registry } from "../core/registry";
-import { BaseView, SkyboxImageIds } from '../render/view';
+import { GameView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";
 
 // Decorators onload/onsave are defined locally in this file
@@ -563,7 +563,7 @@ export class Savegame {
     @onsave
     saveViewState(o: Savegame) {
         // Capture current view state
-        const view = $.view as BaseView;
+        const view = $.view as GameView;
         const viewState: ViewState = {
             dynamicAtlasIndex: view.dynamicAtlas,
             activeCameraId: $.model.activeCameraId ?? null,
@@ -574,7 +574,7 @@ export class Savegame {
 
     @onload
     restoreViewState() {
-        const view = $.view as BaseView;
+        const view = $.view as GameView;
         // Restore view state
         if (this.viewState) {
             if (this.viewState.dynamicAtlasIndex !== undefined) {

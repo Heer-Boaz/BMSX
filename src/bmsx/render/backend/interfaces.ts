@@ -8,7 +8,7 @@ export type PipelineId =
     | 'Sprites'
     | 'CRT'
     | 'Fog'
-    | '__frame_shared__';
+    | 'FrameShared';
 
 export interface BackendCaps { maxColorAttachments: number; }
 export interface PipelineBindingLayout {
@@ -68,7 +68,7 @@ export interface PipelineStateRegistry {
     ['Sprites']: { width: number; height: number };
     ['CRT']: { width: number; height: number };
     ['Fog']: { width: number; height: number; fog: any };
-    __frame_shared__?: { view: any; lighting: any };
+    FrameShared: { view: any; lighting: any };
 }
 
 export class WebGPUBackendStub implements GPUBackend {

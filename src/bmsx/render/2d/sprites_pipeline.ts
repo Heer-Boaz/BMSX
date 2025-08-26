@@ -3,6 +3,8 @@
 import { $ } from '../../core/game';
 import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
+import * as GLR from '../backend/gl_resources';
+import { RenderContext } from '../backend/pipeline_registry';
 import {
     ATLAS_ID_ATTRIBUTE_SIZE,
     ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
@@ -30,10 +32,8 @@ import {
     ZCOORD_MAX,
     ZCOORDS_SIZE,
 } from '../backend/webgl.constants';
-import { WebGLBackend } from '../backend/webgl_backend';
-import { BaseView, Color, DrawImgOptions, DrawRectOptions } from '../view';
-import type { RenderContext } from '../view/render_context';
-import { TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC } from '../view/render_view';
+import { Color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
+import { GLView, TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC } from '../view/render_view';
 import spriteShaderFragCode from './shaders/2d.frag.glsl';
 import spriteShaderVertCode from './shaders/2d.vert.glsl';
 import { bvec } from './vertexutils2d';
@@ -64,7 +64,7 @@ const spriteShaderData = {
 let spriteShaderScaleLocation: WebGLUniformLocation;
 
 export function createSpriteShaderPrograms(gl: WebGL2RenderingContext): void {
-    const gv = $.viewAs<any>();
+    const gv = $.viewAs<GLView>();
     const b = gv.getBackend();
     const program = b.buildProgram(spriteShaderVertCode, spriteShaderFragCode, 'sprites');
     if (!program) throw Error('Failed to build sprite shader program');
@@ -100,12 +100,12 @@ export function setupDefaultUniformValues(gl: WebGL2RenderingContext, defaultSca
 }
 
 export function setupBuffers(gl: WebGL2RenderingContext): void {
-    if (!spriteShaderData.vertexcoords) spriteShaderData.vertexcoords = WebGLBackend.buildQuadTexCoords();
-    const cvertexBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.vertexcoords);
-    const ctexcoordBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.texcoords);
-    const czBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.zcoords);
-    const ccolor_overrideBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.color_override);
-    const catlas_idBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.atlas_id);
+    if (!spriteShaderData.vertexcoords) spriteShaderData.vertexcoords = GLR.buildQuadTexCoords();
+    const cvertexBuffer = GLR.glCreateBuffer(gl, spriteShaderData.vertexcoords);
+    const ctexcoordBuffer = GLR.glCreateBuffer(gl, spriteShaderData.texcoords);
+    const czBuffer = GLR.glCreateBuffer(gl, spriteShaderData.zcoords);
+    const ccolor_overrideBuffer = GLR.glCreateBuffer(gl, spriteShaderData.color_override);
+    const catlas_idBuffer = GLR.glCreateBuffer(gl, spriteShaderData.atlas_id);
     vertexBuffer = cvertexBuffer;
     texcoordBuffer = ctexcoordBuffer;
     zBuffer = czBuffer;
@@ -114,18 +114,18 @@ export function setupBuffers(gl: WebGL2RenderingContext): void {
 }
 
 export function setupSpriteLocations(gl: WebGL2RenderingContext): void {
-    WebGLBackend.glSwitchProgram(gl, spriteShaderProgram);
-    WebGLBackend.glSetupAttributeFloat(gl, vertexBuffer, vertexLocation, VERTEX_ATTRIBUTE_SIZE);
-    WebGLBackend.glSetupAttributeFloat(gl, texcoordBuffer, texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
-    WebGLBackend.glSetupAttributeFloat(gl, zBuffer, zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
-    WebGLBackend.glSetupAttributeFloat(gl, color_overrideBuffer, color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
-    WebGLBackend.glSetupAttributeInt(gl, atlas_idBuffer, atlas_idLocation, ATLAS_ID_ATTRIBUTE_SIZE);
+    GLR.glSwitchProgram(gl, spriteShaderProgram);
+    GLR.glSetupAttributeFloat(gl, vertexBuffer, vertexLocation, VERTEX_ATTRIBUTE_SIZE);
+    GLR.glSetupAttributeFloat(gl, texcoordBuffer, texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
+    GLR.glSetupAttributeFloat(gl, zBuffer, zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
+    GLR.glSetupAttributeFloat(gl, color_overrideBuffer, color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
+    GLR.glSetupAttributeInt(gl, atlas_idBuffer, atlas_idLocation, ATLAS_ID_ATTRIBUTE_SIZE);
 }
 
 export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, logicalWidth?: number, logicalHeight?: number): void {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight); // use full offscreen buffer
-    WebGLBackend.glSwitchProgram(gl, spriteShaderProgram);
+    GLR.glSwitchProgram(gl, spriteShaderProgram);
     const resW = logicalWidth ?? canvasWidth;
     const resH = logicalHeight ?? canvasHeight;
     // Update resolution uniform if changed (dynamic resize safety) using logical size
@@ -161,7 +161,7 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
 }
 
 export function drawImg(view: RenderContext, options: DrawImgOptions): void {
-    const { imgid } = options; const imgmeta = BaseView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
+    const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
     const distinct = { ...options, pos: options.pos !== undefined ? { ...options.pos } : undefined, scale: options.scale !== undefined ? { ...options.scale } : undefined, colorize: options.colorize !== undefined ? { ...options.colorize } : undefined, flip: options.flip !== undefined ? { ...options.flip } : undefined };
     imagesToDraw.push({ options: distinct, imgmeta });
 }
@@ -174,11 +174,11 @@ export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta)
 }
 
 export function updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, atlasid: Uint8Array, index: number): void {
-    WebGLBackend.glUpdateBuffer(gl, vertexBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
-    WebGLBackend.glUpdateBuffer(gl, texcoordBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
-    WebGLBackend.glUpdateBuffer(gl, zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
-    WebGLBackend.glUpdateBuffer(gl, color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
-    WebGLBackend.glUpdateBuffer(gl, atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
+    GLR.glUpdateBuffer(gl, vertexBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
+    GLR.glUpdateBuffer(gl, texcoordBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
+    GLR.glUpdateBuffer(gl, zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
+    GLR.glUpdateBuffer(gl, color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
+    GLR.glUpdateBuffer(gl, atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
 }
 
 export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {

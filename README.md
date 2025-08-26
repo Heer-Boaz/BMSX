@@ -1,3 +1,43 @@
+### Custom Render Pipelines
+
+You can register new render pipelines at runtime (from a ROM) without touching engine internals.
+
+Example:
+
+```ts
+function registerMyBloom() {
+  const rv = $.view;
+  const backend = rv.getBackend();
+  backend.registerCustomPipeline('MyBloom', {
+    vsCode: myVsSource,
+    fsCode: myFsSource,
+    uniforms: ['u_resolution','u_threshold'],
+    prepare: (gl, state) => {
+      const prog = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+      if (!prog) return;
+      const resLoc = gl.getUniformLocation(prog,'u_resolution');
+      if (resLoc) gl.uniform2f(resLoc, state.width, state.height);
+    },
+    exec: (gl, fbo, state) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.viewport(0,0,state.width,state.height);
+      // draw fullscreen quad (reuse engine helper in future)
+    }
+  });
+}
+
+// Later each frame set state then execute (render graph integration can automate this):
+// backend.setPipelineState('MyBloom',{ width: w, height: h, threshold: 1.2 });
+// backend.executePipeline('MyBloom', someFBO);
+```
+
+API summary:
+
+* `backend.registerCustomPipeline(id, { vsCode, fsCode, uniforms, prepare, exec })`
+* `backend.setPipelineState(id, state)` – attach per-frame state object
+* `backend.executePipeline(id, fbo)` – run draw logic (program auto-bound)
+
+Pipelines with only wrapper logic (no shaders) omit `vsCode/fsCode` and just implement `exec`.
 # BMSX
 
 BMSX is a lightweight TypeScript game engine and toolchain used to build small retro-style browser games. Instead of loading assets directly from the web, each game is packaged into a single `.rom` file that contains the engine, game code and resources.

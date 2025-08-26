@@ -8,7 +8,7 @@ import { PhysicsWorld } from '../physics/physicsworld';
 import { WebGLBackend } from "../render/backend/webgl_backend";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
-import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
+import { Color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
 import { Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
@@ -33,7 +33,7 @@ global = globalThis || window; // Ensure global is defined
 
 export var $: Game;
 
-export interface GameInitArgs<M extends BaseModel = BaseModel, V extends BaseView = BaseView> {
+export interface GameInitArgs<M extends BaseModel = BaseModel, V extends GameView = GameView> {
 	rom: RomPack;
 	model: M;
 	view: V;
@@ -55,7 +55,7 @@ export const runGate: GateGroup = taskGate.group('run:main');
 /**
  * Represents the main game loop and manages the game state.
  */
-export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView> {
+export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView> {
 	private _debug: boolean = false;
 	private initialized: boolean = false; // Indicates if the game has been initialized
 	/**
@@ -163,7 +163,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * Retrieves the global view of type T.
 	 * @returns The global view of type T.
 	 */
-	public viewAs<T extends BaseView = BaseView>(): T { return this.registry.get<T>('view'); }
+	public viewAs<T extends GameView = GameView>(): T { return this.registry.get<T>('view'); }
 
 	public get view(): V { return this.viewAs<V>(); }
 
@@ -321,7 +321,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global['debug'] = this.debug;
 		global['$rom'] = rom;
 
-		BaseView.imgassets = rom.img;
+		GameView.imgassets = rom.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
 		if ($.input.isOnscreenGamepadEnabled) {
@@ -329,12 +329,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		// Obtain WebGL2 context if current view is a RenderView (backend-enabled)
-		let gl: WebGL2RenderingContext | undefined;
-		try {
-			const glView = $.viewAs<any>();
-			gl = glView?.glctx;
-		} catch { /* non-WebGL view */ }
-		new TextureManager(gl ? new WebGLBackend(gl) : undefined);
+		const activeView = this.view as any; // BaseView reference
+		const gl = activeView.glctx; // Narrow to WebGL-capable view
+		new TextureManager(new WebGLBackend(gl));
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);

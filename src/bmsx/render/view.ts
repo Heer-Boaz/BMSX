@@ -80,7 +80,7 @@ export function generateAtlasName(atlasIndex: number): string {
  * The `BaseView` class is an abstract class that serves as the base for all views in the application.
  * It provides common functionality and properties that are shared across all views.
  */
-export abstract class BaseView implements RegisterablePersistent {
+export abstract class GameView implements RegisterablePersistent {
 	get registrypersistent(): true {
 		return true;
 	}
@@ -99,16 +99,16 @@ export abstract class BaseView implements RegisterablePersistent {
 	public windowSize: Size;
 	public availableWindowSize: Size;
 	public viewportSize: Size; // The size of the viewport, which is the size of the game buffer (e.g. 256x212 for the MSX2)
-	public canvasSize: Size; // The size of the canvas, which may be different from the viewport size (e.g. when the RenderView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
 	public dx: number;
 	public dy: number;
 	public viewportScale: number;
+	public canvasSize: Size; // The size of the canvas, which may be different from the viewport size (e.g. when the RenderView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
 
 	public canvas_dx: number;
 	public canvas_dy: number;
 	public canvasScale: number;
 
-	constructor(viewportSize: Size, canvasSize?: Size) {
+	constructor(viewportSize: Size, canvasSize?: Size,) {
 		Registry.instance.register(this);
 		this.viewportSize = copy_vector(viewportSize);
 		this.canvasSize = copy_vector(canvasSize) ?? copy_vector(viewportSize);
@@ -123,7 +123,7 @@ export abstract class BaseView implements RegisterablePersistent {
 		this.listenToMediaEvents();
 	}
 
-	protected drawbase(clearCanvas: boolean = true): void {
+	public drawbase(clearCanvas: boolean = true): void {
 		// Base drawing logic goes here
 		const model: BaseModel = $.model;
 		model.applyViewSettings();
@@ -140,7 +140,7 @@ export abstract class BaseView implements RegisterablePersistent {
 	 * Rendering should be guarded by a global {@link renderGate}. When the gate is blocked (e.g. while the game state is being
 	 * revived), this method immediately returns so no WebGL state is touched prematurely.
 	 */
-	public abstract drawgame(clearCanvas?: boolean): void;
+	abstract drawgame(clearCanvas?: boolean): void;
 
 	/**
 	 * Calculates the size of the canvas and the scale factor based on the current viewport size and window size.
@@ -263,7 +263,9 @@ export abstract class BaseView implements RegisterablePersistent {
 		}
 	}
 
-	public abstract reset(): void;
+	public reset(): void {
+		throw new Error("Method not implemented.");
+	}
 
 	/**
 	 * Registers event listeners for window resize, orientation change, and fullscreen mode change.
@@ -307,7 +309,7 @@ export abstract class BaseView implements RegisterablePersistent {
 
 	public toFullscreen(): void {
 		// https://zinoui.com/blog/javascript-fullscreen-api
-		window.addEventListener('keyup', BaseView.triggerFullScreenOnFakeUserEvent);
+		window.addEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
 	}
 
 	public get isFullscreen() {
@@ -319,7 +321,7 @@ export abstract class BaseView implements RegisterablePersistent {
 	}
 
 	public static triggerFullScreenOnFakeUserEvent(): void {
-		if (BaseView.fullscreenEnabled) {
+		if (GameView.fullscreenEnabled) {
 			try {
 				global.$.paused = true;
 				document.documentElement.requestFullscreen?.()
@@ -344,15 +346,15 @@ export abstract class BaseView implements RegisterablePersistent {
 				console.error(error);
 			}
 		}
-		window.removeEventListener('keyup', BaseView.triggerFullScreenOnFakeUserEvent);
+		window.removeEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
 	}
 
 	public ToWindowed(): void {
-		window.addEventListener('keyup', BaseView.triggerWindowedOnFakeUserEvent);
+		window.addEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
 	}
 
 	public static triggerWindowedOnFakeUserEvent(): void {
-		if (BaseView.fullscreenEnabled) {
+		if (GameView.fullscreenEnabled) {
 			try {
 				global.$.paused = true;
 				document.exitFullscreen?.()
@@ -370,7 +372,7 @@ export abstract class BaseView implements RegisterablePersistent {
 				console.error(error);
 			}
 		}
-		window.removeEventListener('keyup', BaseView.triggerWindowedOnFakeUserEvent);
+		window.removeEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
 	}
 
 
@@ -439,14 +441,12 @@ export abstract class BaseView implements RegisterablePersistent {
 	public abstract getPointLight(id: Identifier): PointLight | undefined;
 	public abstract setPointLight(id: Identifier, light: PointLight): void;
 	public abstract removePointLight(id: Identifier): void;
-
 	public abstract addDirectionalLight(id: Identifier, light: DirectionalLight): void;
 	public abstract removeDirectionalLight(id: Identifier): void;
 	public abstract clearLights(): void;
 	public abstract setAmbientLight(light: AmbientLight): void;
 	public abstract setSkybox(images: SkyboxImageIds): void;
 	public abstract get skyboxFaceIds(): SkyboxImageIds | undefined;
-
 	public abstract get dynamicAtlas(): number | null;
 	public abstract set dynamicAtlas(value: number | null);
 }

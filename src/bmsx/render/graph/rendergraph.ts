@@ -7,7 +7,8 @@
  * code so migration can be incremental.
  */
 import { taskGate } from '../../core/taskgate';
-import { GPUBackend, RenderPassDesc } from '../backend/interfaces';
+import { GPUBackend } from '../backend/interfaces';
+import { RenderPassBuilder } from '../backend/renderpass_builder';
 import { TextureHandle } from '../gpu_types';
 
 export type RGHandle = number;
@@ -43,9 +44,6 @@ export interface FrameData {
     time: number;
     delta: number;
     views: View[];
-    // Draw commands & scene data kept generic for now; filled by framedata.ts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    drawCommands?: RGDrawCommand[];
     // Lights, postFx, etc. are attached here later.
     // Using index signature to stay flexible during migration.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -71,21 +69,8 @@ export interface PassContext {
     backend: GPUBackend;
 }
 
-// Draw command kinds -------------------------------------------------------
-export const enum RGCommandKind {
-    Skybox = 'skybox',
-    MeshBatch = 'meshBatch',
-    ParticleBatch = 'particleBatch',
-    SpriteBatch = 'spriteBatch',
-    PostProcess = 'postProcess',
-}
-
-export interface RGDrawCommand { kind: RGCommandKind; /* future fields: material, range, etc. */ }
-
 export interface RenderPass<SetupOut = unknown> {
     name: string;
-    // Optional list of command kinds this pass wants; runtime provides filtered list
-    consumes?: readonly RGCommandKind[];
     setup(io: IOBuilder, frame: FrameData): SetupOut; // declare dependencies
     execute(ctx: PassContext, frame: FrameData, data: SetupOut): void; // issue GL commands
     /**
@@ -365,22 +350,6 @@ export class RenderGraphRuntime {
             if (this.reachable.length && !this.reachable[i]) continue; // skip culled
             const pass = this.passes[i];
             const data = setupData[i];
-            // Filter draw commands if pass declares interest
-            const originalCmds = frame.drawCommands;
-            let filtered: RGDrawCommand[] | undefined;
-            if (pass.consumes && originalCmds) {
-                const set = new Set(pass.consumes);
-                filtered = [];
-                for (let j = 0; j < originalCmds.length; j++) {
-                    const c = originalCmds[j];
-                    if (set.has(c.kind)) filtered.push(c);
-                }
-            }
-            let restore: RGDrawCommand[] | undefined;
-            if (filtered) {
-                restore = originalCmds;
-                frame.drawCommands = filtered;
-            }
             // Begin implicit render pass if this pass writes any textures
             let rp: { end: () => void } | null = null;
             const writes: RGTexHandle[] = [];
@@ -431,28 +400,22 @@ export class RenderGraphRuntime {
                 // should preserve previous contents (unless they explicitly requested a clear in the future).
                 const isFirstColorWriter = colorRes ? colorRes.writerPasses[0] === i : false;
                 const isFirstDepthWriter = depthRes ? depthRes.writerPasses[0] === i : false;
-                const desc = {
-                    // Provide both single color (for legacy backends) and colors[] array (for MRT-capable backends)
-                    color: colorRes ? { tex: colorRes.tex as TextureHandle, clear: isFirstColorWriter ? colorRes.clearOnWrite?.color : undefined, discardAfter: !!colorRes.desc.transient } : undefined,
-                    colors: colorTargets.length ? colorTargets.map((ct, idx) => ({
-                        tex: ct.tex as TextureHandle,
-                        clear: (idx === 0 && ct === colorRes && isFirstColorWriter) ? ct.clearOnWrite?.color : undefined,
-                        discardAfter: !!ct.desc.transient,
-                    })) : undefined,
-                    depth: depthRes ? { tex: depthRes.tex as TextureHandle, clearDepth: isFirstDepthWriter ? depthRes.clearOnWrite?.depth : undefined, discardAfter: !!depthRes.desc.transient } : undefined,
-                    label: this.passes[i].name,
-                } as RenderPassDesc;
-                // TODO(backends): Insert resource state / layout transitions here for non-WebGL (e.g. Vulkan/WebGPU)
-                // before beginning the render pass. This requires tracking previous usage and desired new usage
-                // (read -> colorAttachment, colorAttachment -> shaderRead, depthWrite -> depthRead, etc.).
-                const passEnc = this.backend.beginRenderPass(desc);
+                const builder = new RenderPassBuilder(this.backend).label(this.passes[i].name);
+                if (colorTargets.length) {
+                    for (let idx = 0; idx < colorTargets.length; idx++) {
+                        const ct = colorTargets[idx];
+                        const clear = (idx === 0 && ct === colorRes && isFirstColorWriter) ? ct.clearOnWrite?.color : undefined;
+                        builder.addColor(ct.tex as TextureHandle, clear, !!ct.desc.transient);
+                    }
+                }
+                if (depthRes) builder.depth(depthRes.tex as TextureHandle, isFirstDepthWriter ? depthRes.clearOnWrite?.depth : undefined, !!depthRes.desc.transient);
+                const passEnc = builder.begin();
                 rp = { end: () => this.backend.endRenderPass(passEnc) };
             }
             const t0 = performance.now();
             pass.execute(ctx, frame, data as unknown);
             const dt = performance.now() - t0;
             this.passStats.push({ name: pass.name, ms: dt });
-            if (filtered) frame.drawCommands = restore; // restore original list
             if (rp) rp.end();
         }
     }
