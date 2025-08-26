@@ -19,11 +19,18 @@ export class CameraPathBinder {
     // FOV pulse
     private fovPulseActive = false; private fovPulseEnd = 0; private fovPulseFrom = 0; private fovPulseTo = 0; private fovPulseDur = 0; private fovPulseStart = 0; private fovCurve: (t: number) => number = t => 1 - (t - 1) * (t - 1);
     // Shake
-    private shakeActive = false; private shakeEnd = 0; private shakeAmp = 0; private shakeFreq = 0;
+    private shakeActive = false; private shakeStart = 0; private shakeEnd = 0; private shakeAmp = 0; private shakeFreq = 0;
 
     constructor(runner: PathRunner, cameraObj: CameraObject, opts: CameraPathBindOptions = {}) { this.runner = runner; this.cameraObj = cameraObj; this.opts = opts; this.baseFov = cameraObj.camera.fovDeg; }
 
-    startShake(d: any): void { this.shakeActive = true; this.shakeAmp = d?.amp ?? 0.2; this.shakeFreq = d?.freq ?? 20; this.shakeEnd = this.tAccum + (d?.duration ?? 0.5); }
+    startShake(d: any): void {
+        this.shakeActive = true;
+        this.shakeAmp = d?.amp ?? 0.2;
+        this.shakeFreq = d?.freq ?? 20;
+        const dur = d?.duration ?? 0.5;
+        this.shakeStart = this.tAccum;
+        this.shakeEnd = this.tAccum + dur;
+    }
     startFovPulse(d: any): void {
         this.fovPulseActive = true; this.fovPulseFrom = this.cameraObj.camera.fovDeg; this.fovPulseTo = this.baseFov + (d?.delta ?? 10); this.fovPulseDur = d?.duration ?? 0.4; this.fovPulseStart = this.tAccum; this.fovPulseEnd = this.tAccum + this.fovPulseDur;
         const curveName: string = d?.curve ?? 'easeOutQuad';
@@ -66,10 +73,16 @@ export class CameraPathBinder {
             cam.markDirty();
         }
         if (this.shakeActive) {
-            if (this.tAccum >= this.shakeEnd) this.shakeActive = false; else {
-                const phase = this.tAccum * this.shakeFreq; const decay = 1 - (this.tAccum / this.shakeEnd);
-                cam.position.x += (Math.sin(phase * 12.9898) * 43758.5453 % 1 - 0.5) * this.shakeAmp * decay;
-                cam.position.y += (Math.sin(phase * 78.233) * 96453.5453 % 1 - 0.5) * this.shakeAmp * decay;
+            if (this.tAccum >= this.shakeEnd) {
+                this.shakeActive = false;
+            } else {
+                const localT = (this.tAccum - this.shakeStart) / (this.shakeEnd - this.shakeStart);
+                const decay = 1 - Math.min(1, Math.max(0, localT));
+                const phase = this.tAccum * this.shakeFreq;
+                const randX = (Math.sin(phase * 12.9898) * 43758.5453) % 1 - 0.5;
+                const randY = (Math.sin(phase * 78.233) * 96453.5453) % 1 - 0.5;
+                cam.position.x += randX * this.shakeAmp * decay;
+                cam.position.y += randY * this.shakeAmp * decay;
                 cam.markDirty();
             }
         }

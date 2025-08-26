@@ -1,10 +1,10 @@
-import { GameConstants as CS } from "./gameconstants"
-import { GameState, GameSubstate, Model } from "./gamemodel";
+import { model, view } from "../bmsx/bmsx";
 import { Point } from "../bmsx/common";
-import { view, model } from "../bmsx/bmsx";
-import { GLView } from '../bmsx/glview';
+import { RenderView } from '../bmsx/glview';
+import { GameConstants as CS } from "./gameconstants";
+import { GameState, GameSubstate, Model } from "./gamemodel";
 
-export class GameView extends GLView {
+export class GameView extends RenderView {
     private static _instance: GameView;
 
     public static get _(): GameView {

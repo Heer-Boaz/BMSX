@@ -138,18 +138,24 @@ export class WebGLBackend implements GPUBackend {
             // Special handling for CRT: create fullscreen quad buffers + default option state
             if (desc.label === PipelineId.CRT) {
                 const gl = this.gl;
-                // Fullscreen quad positions
-                const vertices = new Float32Array([
-                    -1.0, -1.0,
-                    1.0, -1.0,
-                    -1.0, 1.0,
-                    1.0, -1.0,
-                    1.0, 1.0,
-                    -1.0, 1.0
-                ]);
-                const vbo = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-                gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+                // Fullscreen quad positions in PIXEL space (vertex shader converts to clip)
+                let vbo = gl.createBuffer();
+                let lastSrcW = -1, lastSrcH = -1;
+                function ensureQuadVerts(srcW: number, srcH: number) {
+                    if (srcW === lastSrcW && srcH === lastSrcH && vbo) return;
+                    const verts = new Float32Array([
+                        0.0, 0.0,          // bottom left (y flipped later in VS)
+                        0.0, srcH,         // top left
+                        srcW, 0.0,         // bottom right
+                        srcW, 0.0,         // bottom right
+                        0.0, srcH,         // top left
+                        srcW, srcH,        // top right
+                    ]);
+                    if (!vbo) vbo = gl.createBuffer();
+                    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+                    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+                    lastSrcW = srcW; lastSrcH = srcH;
+                }
                 const texcoords = new Float32Array([
                     0.0, 1.0,
                     0.0, 0.0,
@@ -170,6 +176,11 @@ export class WebGLBackend implements GPUBackend {
                     glExec.bindFramebuffer(glExec.FRAMEBUFFER, null);
                     const outW = st.outWidth ?? st.width;
                     const outH = st.outHeight ?? st.height;
+                    const srcW = st.baseWidth ?? st.width;   // logical resolution
+                    const srcH = st.baseHeight ?? st.height; // logical resolution
+                    const fragScale = st.fragScale ?? (st.width / srcW);
+                    // Ensure quad sized to source (offscreen buffer) dimensions
+                    ensureQuadVerts(st.width, st.height);
                     glExec.viewport(0, 0, outW, outH);
                     if (program) glExec.useProgram(program);
                     // Update dynamic uniforms
@@ -178,9 +189,9 @@ export class WebGLBackend implements GPUBackend {
                     if (u('u_time')) glExec.uniform1f(u('u_time')!, now);
                     if (u('u_random')) glExec.uniform1f(u('u_random')!, Math.random());
                     if (u('u_resolution')) glExec.uniform2f(u('u_resolution')!, outW, outH);
-                    if (u('u_srcResolution')) glExec.uniform2f(u('u_srcResolution')!, st.width, st.height);
+                    if (u('u_srcResolution')) glExec.uniform2f(u('u_srcResolution')!, srcW, srcH); // base logical resolution
                     if (u('u_scale')) glExec.uniform1f(u('u_scale')!, 1.0);
-                    if (u('u_fragscale')) glExec.uniform1f(u('u_fragscale')!, 1.0);
+                    if (u('u_fragscale')) glExec.uniform1f(u('u_fragscale')!, fragScale);
                     // Feature toggles & params
                     const opts = st.options || {};
                     function boolU(name: string, val: boolean | undefined, d: boolean) { if (u(name)) glExec.uniform1i(u(name)!, (val ?? d) ? 1 : 0); }
@@ -217,7 +228,7 @@ export class WebGLBackend implements GPUBackend {
             case PipelineId.Skybox: exec = (gl, fbo) => { const st = this.getPipelineState<SkyboxPassState>(PipelineId.Skybox); if (!st) return; SkyboxPipeline.drawSkyboxWithState(gl, fbo as WebGLFramebuffer, st); }; break;
             case PipelineId.MeshBatch: exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; view: { camPos: { x: number; y: number; z: number }; viewProj: Float32Array }; fog?: any; lighting?: any }>(PipelineId.MeshBatch); if (!st) return; MeshPipeline.renderMeshBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, { width: st.width, height: st.height, camPos: st.view.camPos, viewProj: st.view.viewProj, fog: st.fog ?? undefined, lighting: st.lighting }); }; break;
             case PipelineId.Particles: exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }>(PipelineId.Particles); if (!st) return; ParticlesPipeline.renderParticleBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, st); }; break;
-            case PipelineId.Sprites: exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number }>(PipelineId.Sprites); if (!st) return; SpritesPipeline.renderSpriteBatch(gl, fbo as WebGLFramebuffer, st.width, st.height); }; break;
+            case PipelineId.Sprites: exec = (gl, fbo) => { const st = this.getPipelineState<{ width: number; height: number; baseWidth?: number; baseHeight?: number }>(PipelineId.Sprites); if (!st) return; SpritesPipeline.renderSpriteBatch(gl, fbo as WebGLFramebuffer, st.width, st.height, st.baseWidth, st.baseHeight); }; break;
             case PipelineId.CRT: exec = () => { /* should have been created with shaders earlier */ }; break;
             case PipelineId.Fog: exec = () => { /* state only */ }; break;
             default: exec = () => { }; break;

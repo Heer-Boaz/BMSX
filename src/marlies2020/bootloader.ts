@@ -1,6 +1,6 @@
 import type { randomInt } from 'crypto';
 import type { Direction } from 'readline';
-import { BaseModel, BootArgs, build_fsm, Game, GameObject, getOppositeDirection, GLView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, RomPack, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
+import { BaseModel, BootArgs, build_fsm, Game, GameObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, RomPack, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';
@@ -833,7 +833,7 @@ class keuken extends SpriteObject {
     }
 };
 
-class viewclass extends GLView {
+class viewclass extends RenderView {
     override drawgame(): void {
         super.drawgame();
         super.drawSprites();

@@ -14,6 +14,20 @@ import { FrameData, RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem } from '../lighting/lightingsystem';
 import { BaseView, Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, generateAtlasName, renderGate, SkyboxImageIds } from '../view';
 
+// Debug flag (disabled now that graph is validated)
+const DEBUG_INJECT_TEST_SPRITE = false;
+// Texture unit constants (migrated from legacy glview.ts)
+export const TEXTURE_UNIT_ATLAS = 0;
+export const TEXTURE_UNIT_ATLAS_DYNAMIC = 1;
+export const TEXTURE_UNIT_ALBEDO = 2;
+export const TEXTURE_UNIT_NORMAL = 3;
+export const TEXTURE_UNIT_METALLIC_ROUGHNESS = 4;
+export const TEXTURE_UNIT_SHADOW_MAP = 5;
+export const TEXTURE_UNIT_SKYBOX = 6;
+export const TEXTURE_UNIT_PARTICLE = 7;
+export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
+export const TEXTURE_UNIT_UPLOAD = 15;
+
 export class RenderView extends BaseView {
     public glctx: WebGL2RenderingContext;
     private backend: WebGLBackend | null = null;
@@ -27,9 +41,9 @@ export class RenderView extends BaseView {
     private needsResize = false;
     private framebuffer: WebGLFramebuffer | null = null;
     private depthBuffer: WebGLRenderbuffer | null = null;
-    private textures: { [k: string]: WebGLTexture | null } = {};
+    public textures: { [k: string]: WebGLTexture | null } = {};
     private _dynamicAtlasIndex: number | null = null;
-    // Texture binding cache (migrated from legacy GLView shim)
+    // Texture binding cache (migrated from legacy RenderView shim)
     private _activeTexUnit: number | null = null;
     private _activeTexture2D: WebGLTexture | null = null;
     private _activeCubemap: WebGLTexture | null = null;
@@ -57,6 +71,9 @@ export class RenderView extends BaseView {
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
         MeshPipeline.init(gl, this.offscreenCanvasSize); SkyboxPipeline.init(gl); ParticlesPipeline.init(gl); SpritesPipeline.createSpriteShaderPrograms(gl); MeshPipeline.createGameShaderPrograms3D(gl); ParticlesPipeline.createParticleProgram(gl); SpritesPipeline.setupSpriteShaderLocations(gl); MeshPipeline.setupVertexShaderLocations3D(gl); ParticlesPipeline.setupParticleLocations(gl);
         SpritesPipeline.setupBuffers(gl); MeshPipeline.setupBuffers3D(gl); SpritesPipeline.setupSpriteLocations(gl);
+        // IMPORTANT: set default uniform values (resolution, scale, texture units) for sprite & mesh pipelines
+        SpritesPipeline.setupDefaultUniformValues(gl, 1.0, [this.offscreenCanvasSize.x, this.offscreenCanvasSize.y] as unknown as [number, number]);
+        MeshPipeline.setDefaultUniformValues(gl, 1.0);
         this.setupTextures(); this.createFramebuffer(); this.handleResize();
         this.rebuildGraph();
     }
@@ -77,11 +94,33 @@ export class RenderView extends BaseView {
         this.depthBuffer = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthBuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    override handleResize(): void { if (this.isRendering) { this.needsResize = true; return; } super.handleResize(); this.graphInvalid = true; }
+    override handleResize(): void {
+        if (this.isRendering) { this.needsResize = true; return; }
+        super.handleResize();
+        // Refresh resolution-dependent uniforms after size change
+        try {
+            SpritesPipeline.setupDefaultUniformValues(this.glctx, 1.0, [this.offscreenCanvasSize.x, this.offscreenCanvasSize.y] as unknown as [number, number]);
+            MeshPipeline.setDefaultUniformValues(this.glctx, 1.0);
+        } catch { /* ignore if not yet initialized */ }
+        this.graphInvalid = true;
+    }
     override drawgame(clearCanvas = true): void { if (!renderGate.ready) return; const token = renderGate.begin({ blocking: true, tag: 'frame' }); try { this.isRendering = true; this.execute(clearCanvas); if (this.needsResize) this.handleResize(); } finally { this.isRendering = false; renderGate.end(token); } }
-    private execute(clearCanvas: boolean): void { const frame: FrameData = buildFrameData(this as any); frame.drawCommands = buildDrawCommands(this as any); this.drawbase(clearCanvas); if (!this.renderGraph || this.graphInvalid) this.rebuildGraph(); this.renderGraph!.execute(frame); }
+    private execute(clearCanvas: boolean): void {
+        const frame: FrameData = buildFrameData(this as any);
+        if (DEBUG_INJECT_TEST_SPRITE) {
+            // Draw a magenta pixel at 10,10 to test sprite path
+            SpritesPipeline.drawImg(this as any, { imgid: 'whitepixel', pos: { x: 10, y: 10, z: 0 }, scale: { x: 4, y: 4 } });
+        }
+        frame.drawCommands = buildDrawCommands(this as any);
+        this.drawbase(clearCanvas);
+        if (!this.renderGraph || this.graphInvalid) this.rebuildGraph();
+        this.renderGraph!.execute(frame);
+        const stats = this.renderGraph!.getPassStats();
+    }
     public rebuildGraph(): void { if (!this.backend) this.backend = new WebGLBackend(this.glctx); if (!this.lightingSystem) this.lightingSystem = new LightingSystem(this.glctx); this.renderGraph = buildFrameGraph(this as any, this.lightingSystem); this.graphInvalid = false; }
     override clear(): void { const gl = this.glctx; gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
+    // Legacy clear above relied on an internal framebuffer; with the render graph active the graph's Clear pass handles clears.
+    // TODO: remove calls to clear() from higher level once migration completes.
     override drawImg(o: DrawImgOptions): void { SpritesPipeline.drawImg(this as any, o); }
     override drawRectangle(o: DrawRectOptions): void { SpritesPipeline.drawRectangle(this as any, o); }
     override fillRectangle(o: DrawRectOptions): void { SpritesPipeline.fillRectangle(this as any, o); }
@@ -108,18 +147,3 @@ export class RenderView extends BaseView {
     // Temporary accessor for legacy helpers (to be removed with post-process refactor)
     get _legacyFramebuffer(): WebGLFramebuffer | null { return this.framebuffer; }
 }
-
-// Backwards compatibility export
-export { RenderView as GLView, RenderView as UnifiedRenderView, RenderView as WebGLRenderView };
-
-// Texture unit constants (migrated from legacy glview.ts)
-export const TEXTURE_UNIT_ATLAS = 0;
-export const TEXTURE_UNIT_ATLAS_DYNAMIC = 1;
-export const TEXTURE_UNIT_ALBEDO = 2;
-export const TEXTURE_UNIT_NORMAL = 3;
-export const TEXTURE_UNIT_METALLIC_ROUGHNESS = 4;
-export const TEXTURE_UNIT_SHADOW_MAP = 5;
-export const TEXTURE_UNIT_SKYBOX = 6;
-export const TEXTURE_UNIT_PARTICLE = 7;
-export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
-export const TEXTURE_UNIT_UPLOAD = 15;

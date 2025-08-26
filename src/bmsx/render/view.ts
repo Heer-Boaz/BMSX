@@ -99,7 +99,7 @@ export abstract class BaseView implements RegisterablePersistent {
 	public windowSize: Size;
 	public availableWindowSize: Size;
 	public viewportSize: Size; // The size of the viewport, which is the size of the game buffer (e.g. 256x212 for the MSX2)
-	public canvasSize: Size; // The size of the canvas, which may be different from the viewport size (e.g. when the GLView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
+	public canvasSize: Size; // The size of the canvas, which may be different from the viewport size (e.g. when the RenderView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
 	public dx: number;
 	public dy: number;
 	public viewportScale: number;

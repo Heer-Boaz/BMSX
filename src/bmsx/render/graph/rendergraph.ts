@@ -77,6 +77,7 @@ export const enum RGCommandKind {
     MeshBatch = 'meshBatch',
     ParticleBatch = 'particleBatch',
     SpriteBatch = 'spriteBatch',
+    PostProcess = 'postProcess',
 }
 
 export interface RGDrawCommand { kind: RGCommandKind; /* future fields: material, range, etc. */ }

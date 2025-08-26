@@ -4,18 +4,19 @@ import {
     Game, GamepadInputMapping, KeyboardButton, KeyboardInputMapping,
     new_vec2
 } from '../bmsx/index';
+import { RenderView } from '../bmsx/render/view/render_view';
 import { BitmapId } from './resourceids';
 import { gamemodel } from './test_gamemodel';
 
 var _game: Game;
 export let _model: gamemodel;
-var _view: gameview;
+var _view: RenderView;
 
 const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
     _model = new gamemodel();
-    _view = new gameview(new_vec2(_model.gamewidth, _model.gameheight));
+    _view = new RenderView(new_vec2(_model.gamewidth, _model.gameheight));
 
     _game = new Game();
     return _game.init({ ...args, model: _model, view: _view }).then(() => {
@@ -83,5 +84,4 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
     'fire': ['a'],
 };
 
-class gameview extends View {
-}
+// Custom view subclass was removed; using RenderView directly. Extend here only if per-ROM overrides are needed.

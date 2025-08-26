@@ -2,7 +2,7 @@ import { BaseModel, Space } from '../bmsx/basemodel';
 import { build_fsm, sdef, State } from '../bmsx/bfsm';
 import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
-import { GLView } from '../bmsx/glview';
+import { RenderView } from '../bmsx/glview';
 import { Input } from '../bmsx/input';
 import { MSX1ScreenHeight, MSX1ScreenWidth } from '../bmsx/msx';
 import { SpriteObject } from '../bmsx/sprite';
@@ -577,7 +577,7 @@ class hud extends SpriteObject {
     };
 };
 
-class viewclass extends GLView {
+class viewclass extends RenderView {
     override drawgame(): void {
         super.drawgame();
         super.drawSprites();

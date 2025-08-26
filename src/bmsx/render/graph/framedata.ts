@@ -1,6 +1,6 @@
 /** FrameData builder (initial). Extracts snapshot data from existing subsystems. */
 import { $ } from '../../core/game';
-import { GLView } from '../view/render_view';
+import { RenderView } from '../view/render_view';
 import type { FrameData, View } from './rendergraph';
 
 // We keep dependencies extremely light; detailed draw command unification will happen later.
@@ -31,7 +31,7 @@ interface Camera3DShape {
     position?: Vec3Like; // direct buffer from engine (avoid copies)
 }
 
-export function buildFrameData(view: GLView): FrameData {
+export function buildFrameData(view: RenderView): FrameData {
     const mainCam = $.model.activeCamera3D as Camera3DShape | undefined;
     const views: View[] = [];
     if (mainCam) {

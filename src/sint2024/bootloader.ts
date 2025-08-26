@@ -1,17 +1,17 @@
-import { $, BFont, BGamepadButton, BaseModel, BootArgs, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
+import { $, BFont, BGamepadButton, BaseModel, BootArgs, Direction, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RenderView, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
 
 var _game: Game;
 let _model: gamemodel;
-var _view: gameview;
+var _view: RenderView;
 
 const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
     _model = new gamemodel();
-    _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+    _view = new RenderView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game();
     return _game.init({ ...args, model: _model, view: _view }).then(() => {
@@ -166,7 +166,4 @@ class gamemodel extends BaseModel {
     public isCollisionTile(_x: number, _y: number): boolean {
         return false;
     }
-}
-
-class gameview extends GLView {
 }

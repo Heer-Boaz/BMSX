@@ -1,4 +1,4 @@
-import { $, GLView, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d } from '../bmsx';
+import { $, Msx1Colors, RenderView, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d } from '../bmsx';
 import { Fighter } from './fighter';
 import { BitmapId } from './resourceids';
 
@@ -20,7 +20,7 @@ export class Hud extends SpriteObject {
         super.paint();
         // Update hitpoints
         const model = $.model;
-        const view = $.view as GLView;
+        const view = $.view as RenderView;
         const player = model.getGameObject<Fighter>('player');
         const sinterklaas = model.getGameObject<Fighter>('sinterklaas');
 

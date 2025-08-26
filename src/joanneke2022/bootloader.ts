@@ -1,4 +1,4 @@
-import { base_model_spaces, BaseModel, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, GameObject, GLView, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { base_model_spaces, BaseModel, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, GameObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RenderView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -855,7 +855,7 @@ class barst extends onvolmaaktheid {
     }
 }
 
-class gameview extends GLView {
+class gameview extends RenderView {
 }
 
 let _game: Game;

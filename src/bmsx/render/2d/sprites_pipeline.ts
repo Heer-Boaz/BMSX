@@ -54,7 +54,7 @@ let color_overrideBuffer: WebGLBuffer;
 let atlas_idBuffer: WebGLBuffer;
 const spriteShaderData = {
     resolutionVector: new Float32Array(RESOLUTION_VECTOR_SIZE),
-    vertexcoords: WebGLBackend.buildQuadTexCoords(),
+    vertexcoords: null as Float32Array | null, // Lazy init to avoid circular dependency timing with backend
     texcoords: new Float32Array(TEXTURECOORDS_SIZE * MAX_SPRITES),
     zcoords: new Float32Array(ZCOORDS_SIZE * MAX_SPRITES),
     color_override: new Float32Array(COLOR_OVERRIDE_SIZE * MAX_SPRITES),
@@ -99,6 +99,7 @@ export function setupDefaultUniformValues(gl: WebGL2RenderingContext, defaultSca
 }
 
 export function setupBuffers(gl: WebGL2RenderingContext): void {
+    if (!spriteShaderData.vertexcoords) spriteShaderData.vertexcoords = WebGLBackend.buildQuadTexCoords();
     const cvertexBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.vertexcoords);
     const ctexcoordBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.texcoords);
     const czBuffer = WebGLBackend.glCreateBuffer(gl, spriteShaderData.zcoords);
@@ -120,10 +121,17 @@ export function setupSpriteLocations(gl: WebGL2RenderingContext): void {
     WebGLBackend.glSetupAttributeInt(gl, atlas_idBuffer, atlas_idLocation, ATLAS_ID_ATTRIBUTE_SIZE);
 }
 
-export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
+export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, logicalWidth?: number, logicalHeight?: number): void {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.viewport(0, 0, canvasWidth, canvasHeight);
+    gl.viewport(0, 0, canvasWidth, canvasHeight); // use full offscreen buffer
     WebGLBackend.glSwitchProgram(gl, spriteShaderProgram);
+    const resW = logicalWidth ?? canvasWidth;
+    const resH = logicalHeight ?? canvasHeight;
+    // Update resolution uniform if changed (dynamic resize safety) using logical size
+    if (spriteShaderData.resolutionVector[0] !== resW || spriteShaderData.resolutionVector[1] !== resH) {
+        spriteShaderData.resolutionVector[0] = resW; spriteShaderData.resolutionVector[1] = resH;
+        gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer); gl.vertexAttribPointer(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(vertexLocation);
     gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer); gl.vertexAttribPointer(texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(texcoordLocation);
     gl.bindBuffer(gl.ARRAY_BUFFER, zBuffer); gl.vertexAttribPointer(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(zcoordLocation);
