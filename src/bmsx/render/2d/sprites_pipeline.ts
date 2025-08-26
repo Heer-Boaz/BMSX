@@ -33,6 +33,7 @@ import {
 import { WebGLBackend } from '../backend/webgl_backend';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from '../view';
 import type { RenderContext } from '../view/render_context';
+import { TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC } from '../view/render_view';
 import spriteShaderFragCode from './shaders/2d.frag.glsl';
 import spriteShaderVertCode from './shaders/2d.vert.glsl';
 import { bvec } from './vertexutils2d';
@@ -94,8 +95,8 @@ export function setupDefaultUniformValues(gl: WebGL2RenderingContext, defaultSca
     gl.uniform1f(spriteShaderScaleLocation, defaultScale);
     spriteShaderData.resolutionVector.set([...canvasSize]);
     gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
-    gl.uniform1i(texture0Location, 0);
-    gl.uniform1i(texture1Location, 1);
+    gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS);
+    gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_DYNAMIC);
 }
 
 export function setupBuffers(gl: WebGL2RenderingContext): void {

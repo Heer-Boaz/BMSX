@@ -79,8 +79,8 @@ export class RenderView extends BaseView {
     }
     private setupTextures(): void {
         const gl = this.glctx;
-        this.textures['_atlas'] = WebGLBackend.glCreateTexture(gl, BaseView.imgassets['_atlas']?._imgbin, undefined, 0);
-        this.textures['_atlas_dynamic'] = WebGLBackend.glCreateTexture(gl, null, { x: 1, y: 1 }, 1);
+        this.textures['_atlas'] = WebGLBackend.glCreateTexture(gl, BaseView.imgassets['_atlas']?._imgbin, undefined, TEXTURE_UNIT_ATLAS);
+        this.textures['_atlas_dynamic'] = WebGLBackend.glCreateTexture(gl, null, { x: 1, y: 1 }, TEXTURE_UNIT_ATLAS_DYNAMIC);
         this.textures['post_processing_source_texture'] = null;
     }
     private createFramebuffer(): void {
@@ -88,7 +88,7 @@ export class RenderView extends BaseView {
         if (this.framebuffer) gl.deleteFramebuffer(this.framebuffer);
         if (this.textures['post_processing_source_texture']) gl.deleteTexture(this.textures['post_processing_source_texture']);
         const w = this.offscreenCanvasSize.x, h = this.offscreenCanvasSize.y;
-        this.textures['post_processing_source_texture'] = WebGLBackend.glCreateTexture(gl, undefined, { x: w, y: h }, 8);
+        this.textures['post_processing_source_texture'] = WebGLBackend.glCreateTexture(gl, undefined, { x: w, y: h }, TEXTURE_UNIT_POST_PROCESSING_SOURCE);
         this.framebuffer = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['post_processing_source_texture'], 0);
         this.depthBuffer = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthBuffer);
@@ -136,7 +136,7 @@ export class RenderView extends BaseView {
     override setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
     override get skyboxFaceIds(): SkyboxImageIds | undefined { return SkyboxPipeline.skyboxFaceIds; }
     override get dynamicAtlas(): number | null { return this._dynamicAtlasIndex; }
-    override set dynamicAtlas(index: number | null) { if (this._dynamicAtlasIndex === index) return; if (this.textures['_atlas_dynamic']) { this.glctx.deleteTexture(this.textures['_atlas_dynamic']); this.textures['_atlas_dynamic'] = null; } this._dynamicAtlasIndex = index; if (index == null) { this.glctx.activeTexture(this.glctx.TEXTURE1); this.glctx.bindTexture(this.glctx.TEXTURE_2D, null); return; } const atlasName = generateAtlasName(index); const atlasImage = BaseView.imgassets[atlasName]?._imgbin; if (!atlasImage) { console.error(`Atlas '${atlasName}' not found`); return; } this.textures['_atlas_dynamic'] = WebGLBackend.glCreateTexture(this.glctx, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1); }
+    override set dynamicAtlas(index: number | null) { if (this._dynamicAtlasIndex === index) return; if (this.textures['_atlas_dynamic']) { this.glctx.deleteTexture(this.textures['_atlas_dynamic']); this.textures['_atlas_dynamic'] = null; } this._dynamicAtlasIndex = index; if (index == null) { this.glctx.activeTexture(TEXTURE_UNIT_ATLAS_DYNAMIC); this.glctx.bindTexture(this.glctx.TEXTURE_2D, null); return; } const atlasName = generateAtlasName(index); const atlasImage = BaseView.imgassets[atlasName]?._imgbin; if (!atlasImage) { console.error(`Atlas '${atlasName}' not found`); return; } this.textures['_atlas_dynamic'] = WebGLBackend.glCreateTexture(this.glctx, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1); }
     override reset(): void { }
 
     // Texture binding helpers (legacy compatibility)
