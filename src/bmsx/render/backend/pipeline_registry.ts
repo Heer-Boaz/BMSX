@@ -7,9 +7,8 @@ import * as ParticlesPipeline from '../3d/particles_pipeline';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
-import { LightingSystem } from '../lighting/lightingsystem';
+import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { RenderGraphRuntime } from '../graph/rendergraph';
-import { buildFrameGraph } from '../graph/build_framegraph';
 import { RenderContext, RenderPassDef, RenderPassStateId, RenderPassStateRegistry, TextureHandle } from './pipeline_interfaces';
 import { GraphicsPipelineManager } from './pipeline_manager';
 
@@ -237,8 +236,102 @@ export class PipelineRegistry {
     replacePipelinePasses(mutator: (arr: RenderPassDef[]) => void): void { mutator(this.passes); }
     findPipelinePassIndex(id: string): number { return this.passes.findIndex(p => String(p.id) === id); }
 
-    // Convenience: build render graph from current pass registry
-    buildRenderGraph(view: RenderContext, lighting: LightingSystem): RenderGraphRuntime {
-        return buildFrameGraph(view, lighting, this);
+    // Build render graph from current pass registry with Clear/Present wiring
+    buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
+        const rg = new RenderGraphRuntime(view.getBackend());
+        let frameColorHandle: number | null = null;
+        let frameDepthHandle: number | null = null;
+
+        // Clear pass: create frame color/depth and export to backbuffer
+        const DEBUG_FORCE_VISIBLE_CLEAR = false;
+        rg.addPass({
+            name: 'Clear',
+            setup: (io) => {
+                const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
+                const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
+                const clearCol: [number, number, number, number] = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
+                io.writeTex(color, { clearColor: clearCol });
+                io.writeTex(depth, { clearDepth: 1.0 });
+                io.exportToBackbuffer(color);
+                frameColorHandle = color;
+                frameDepthHandle = depth;
+                return null;
+            },
+            execute: () => { },
+        });
+
+        // Per-frame shared state aggregation (camera + lighting)
+        rg.addPass({
+            name: 'FrameSharedState',
+            alwaysExecute: true,
+            setup: () => null,
+            execute: () => {
+                const cam = $.model.activeCamera3D; if (!cam) return;
+                const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
+                const maybeAmbient = $.model.ambientLight?.light;
+                const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
+                this.setState('frame_shared', { view: viewState, lighting } as any);
+            }
+        });
+
+        // Build pass sequence from registry
+        const passList = this.getPipelinePasses();
+        for (const desc of passList) {
+            const isPresent = !!desc.present;
+            const isStateOnly = !!desc.stateOnly;
+            rg.addPass({
+                name: desc.name,
+                alwaysExecute: isStateOnly,
+                setup: (io) => {
+                    if (!isPresent && !isStateOnly) {
+                        if (frameColorHandle != null) io.writeTex(frameColorHandle);
+                        if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
+                    } else {
+                        if (frameColorHandle != null) io.readTex(frameColorHandle);
+                    }
+                    return { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, present: isPresent };
+                },
+                execute: (ctx, frame, data: { width: number; height: number; present: boolean }) => {
+                    const willRun = !desc.shouldExecute || desc.shouldExecute();
+                    if (!willRun) return;
+                    if (data.present) {
+                        const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
+                        try {
+                            this.setState('crt', {
+                                width: view.offscreenCanvasSize.x,
+                                height: view.offscreenCanvasSize.y,
+                                baseWidth: view.viewportSize.x,
+                                baseHeight: view.viewportSize.y,
+                                colorTex,
+                                options: (frame as any)['postFx']?.crt,
+                            } as unknown);
+                        } catch { /* ignore */ }
+                        desc.prepare?.(ctx.backend, undefined);
+                        this.execute(desc.id, null);
+                    } else if (isStateOnly) {
+                        desc.prepare?.(ctx.backend, undefined);
+                    } else {
+                        desc.prepare?.(ctx.backend, undefined);
+                        if (frameColorHandle == null || frameDepthHandle == null) return;
+                        this.execute(desc.id, ctx.getFBO(frameColorHandle, frameDepthHandle) as WebGLFramebuffer);
+                    }
+                }
+            });
+        }
+
+        // Optional: quick validation similar to original
+        try {
+            const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
+            rg.compile(dummyFrame);
+            const texInfo = rg.getTextureDebugInfo();
+            const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
+            if (frameColor) {
+                const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
+                const contentWriters = writerNames.filter(n => n !== 'Clear');
+                if (contentWriters.length === 0) console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
+            }
+        } catch { /* ignore */ }
+
+        return rg;
     }
 }

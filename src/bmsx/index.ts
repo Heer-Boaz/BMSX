@@ -63,7 +63,6 @@ export * from './render/3d/shadowmap';
 export * from './render/backend/pipeline_interfaces';
 export * from './render/backend/pipeline_registry';
 export * from './render/backend/webgl_backend';
-export * from './render/graph/build_framegraph';
 export * from './render/graph/rendergraph';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';

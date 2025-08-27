@@ -12,10 +12,9 @@ import { Camera } from '../3d/camera3d';
 import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
 
-export type RGHandle = number;
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
-export type RGTexHandle = RGHandle;
-export type ValueHandle<T = unknown> = RGHandle & { readonly __t?: T };
+export type RGTexHandle = number;
+export type ValueHandle<T = unknown> = RGTexHandle & { readonly __t?: T };
 
 export interface TexDesc {
     width: number;
@@ -49,6 +48,20 @@ export interface FrameData {
     // Using index signature to stay flexible during migration.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [k: string]: any;
+}
+
+
+// Public debug info interface (exported separately)
+export interface RGTexDebugInfo {
+    index: number;
+    name?: string;
+    firstUse?: number;
+    lastUse?: number;
+    writers: number[];
+    readers: number[];
+    physicalId?: number;
+    present?: boolean;
+    transient?: boolean;
 }
 
 // FrameData helpers (moved here to simplify file structure)
@@ -198,7 +211,7 @@ export class RenderGraphRuntime {
 
     compile(frame: FrameData): void {
         // Build dependency data (reads/writes) & then topologically sort reachable passes.
-        let nextHandle: RGHandle = 1; // 0 reserved / invalid
+        let nextHandle: RGTexHandle = 1; // 0 reserved / invalid
 
         const texMap = new Map<RGTexHandle, InternalTexResource>();
         const valueMap = new Map<ValueHandle, InternalValueResource>();
@@ -534,17 +547,4 @@ export class RenderGraphRuntime {
         this.texResources = [];
         this.valueResources = [];
     }
-}
-
-// Public debug info interface (exported separately)
-export interface RGTexDebugInfo {
-    index: number;
-    name?: string;
-    firstUse?: number;
-    lastUse?: number;
-    writers: number[];
-    readers: number[];
-    physicalId?: number;
-    present?: boolean;
-    transient?: boolean;
 }
