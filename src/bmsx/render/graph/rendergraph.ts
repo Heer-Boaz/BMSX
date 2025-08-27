@@ -6,7 +6,9 @@
  * topological order. This file intentionally avoids touching existing pipeline
  * code so migration can be incremental.
  */
+import { $ } from '../../core/game';
 import { taskGate } from '../../core/taskgate';
+import { Camera } from '../3d/camera3d';
 import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
 
@@ -47,6 +49,65 @@ export interface FrameData {
     // Using index signature to stay flexible during migration.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     [k: string]: any;
+}
+
+// FrameData helpers (moved here to simplify file structure)
+let extFrameIndex = 0;
+let extTimeSeconds = 0;
+let extDeltaSeconds = 0;
+export function updateExternalFrameTiming(frameIndex: number, timeSeconds: number, deltaSeconds: number): void {
+    extFrameIndex = frameIndex;
+    extTimeSeconds = timeSeconds;
+    extDeltaSeconds = deltaSeconds;
+}
+interface CRTOptionsCarrier {
+    // CRT/post-processing options exposed by the view
+    applyNoise: boolean; applyColorBleed: boolean; applyScanlines: boolean; applyBlur: boolean; applyGlow: boolean; applyFringing: boolean;
+    noiseIntensity: number; colorBleed: [number, number, number]; blurIntensity: number; glowColor: [number, number, number];
+    canvas: HTMLCanvasElement;
+}
+export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: number } } & Partial<CRTOptionsCarrier>): FrameData {
+    const mainCam = $.model.activeCamera3D as Camera | undefined;
+    const views: View[] = [];
+    if (mainCam) {
+        const invView = mainCam.view; // inverse not exposed
+        const invProj = mainCam.projection; // inverse not exposed
+        const cameraPos = mainCam.position;
+        views.push({
+            name: 'Main',
+            viewport: { x: 0, y: 0, w: view.offscreenCanvasSize.x, h: view.offscreenCanvasSize.y },
+            viewMatrix: mainCam.view,
+            projMatrix: mainCam.projection,
+            viewProj: mainCam.viewProjection,
+            invView,
+            invProj,
+            cameraPos,
+            flags: 0,
+        });
+    }
+    const frame: FrameData = {
+        frameIndex: extFrameIndex,
+        time: extTimeSeconds,
+        delta: extDeltaSeconds,
+        views,
+        postFx: view && typeof view.noiseIntensity === 'number' ? {
+            crt: {
+                noise: view.noiseIntensity,
+                colorBleed: view.colorBleed as [number, number, number],
+                blur: view.blurIntensity,
+                glowColor: view.glowColor as [number, number, number],
+                flags: {
+                    noise: !!view.applyNoise,
+                    colorBleed: !!view.applyColorBleed,
+                    scanlines: !!view.applyScanlines,
+                    blur: !!view.applyBlur,
+                    glow: !!view.applyGlow,
+                    fringe: !!view.applyFringing,
+                },
+            },
+        } : undefined,
+    } as FrameData;
+    return frame;
 }
 
 // Pass authoring interfaces -------------------------------------------------

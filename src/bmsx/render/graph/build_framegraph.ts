@@ -1,8 +1,7 @@
 import { $ } from '../..';
-import { RenderPassDef } from '../backend/pipeline_interfaces';
+import { RenderContext, RenderPassDef } from '../backend/pipeline_interfaces';
 import { PipelineRegistry } from '../backend/pipeline_registry';
 import { isAmbientLight, LightingSystem } from '../lighting/lightingsystem';
-import { GLView } from '../view/render_view';
 import { RenderGraphRuntime } from './rendergraph';
 
 // Debug output removed for production usage; keep constant for quick local enabling if needed
@@ -35,23 +34,24 @@ function clonePasses(registry: PipelineRegistry): LocalRenderPassDef[] {
     }));
 }
 
-export function buildFrameGraph(view: GLView, lightingSystem: LightingSystem, registry: PipelineRegistry, customPasses?: LocalRenderPassDef[]): RenderGraphRuntime {
+export function buildFrameGraph(view: RenderContext, lightingSystem: LightingSystem, registry: PipelineRegistry, customPasses?: LocalRenderPassDef[]): RenderGraphRuntime {
     const rg = new RenderGraphRuntime(view.getBackend());
-    view.rgColor = null; view.rgDepth = null;
     // (particle camera vectors handled inside pipeline registry now)
     // Keep a handle reference for diagnostics (populated inside Clear pass setup)
     let frameColorHandle: number | null = null;
+    let frameDepthHandle: number | null = null;
 
     rg.addPass({
         name: 'Clear',
         setup: (io) => {
-            view.rgColor = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
-            view.rgDepth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
+            const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
+            const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
             const clearCol: [number, number, number, number] = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
-            if (view.rgColor) io.writeTex(view.rgColor, { clearColor: clearCol });
-            if (view.rgDepth) io.writeTex(view.rgDepth, { clearDepth: 1.0 });
-            if (view.rgColor) io.exportToBackbuffer(view.rgColor);
-            frameColorHandle = view.rgColor;
+            io.writeTex(color, { clearColor: clearCol });
+            io.writeTex(depth, { clearDepth: 1.0 });
+            io.exportToBackbuffer(color);
+            frameColorHandle = color;
+            frameDepthHandle = depth;
             return null;
         },
         execute: () => { }
@@ -84,10 +84,10 @@ export function buildFrameGraph(view: GLView, lightingSystem: LightingSystem, re
             setup: (io) => {
                 if (!isPresent && !isStateOnly) {
                     // Rendering passes declare themselves as writers to the shared frame color/depth
-                    if (view.rgColor) io.writeTex(view.rgColor);
-                    if (desc.writesDepth && view.rgDepth) io.writeTex(view.rgDepth);
+                    if (frameColorHandle != null) io.writeTex(frameColorHandle);
+                    if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
                 } else {
-                    if (view.rgColor) io.readTex(view.rgColor); // read final color for post-process
+                    if (frameColorHandle != null) io.readTex(frameColorHandle); // read final color for post-process
                 }
                 return { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, present: isPresent };
             },
@@ -95,13 +95,26 @@ export function buildFrameGraph(view: GLView, lightingSystem: LightingSystem, re
                 const willRun = !desc.shouldExecute || desc.shouldExecute();
                 if (!willRun) return; // skip entirely (not counted as expected writer)
                 if (data.present) {
+                    // Provide present state (CRT) with the final color texture and options
+                    const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
+                    try {
+                        registry.setState('crt', {
+                            width: view.offscreenCanvasSize.x,
+                            height: view.offscreenCanvasSize.y,
+                            baseWidth: view.viewportSize.x,
+                            baseHeight: view.viewportSize.y,
+                            colorTex,
+                            options: (frame['postFx']?.crt),
+                        });
+                    } catch { /* registry may not have 'crt' yet */ }
                     desc.prepare(ctx.backend, undefined);
                     registry.execute(desc.id, null);
                 } else if (isStateOnly) {
                     desc.prepare(ctx.backend, undefined);
                 } else {
                     desc.prepare(ctx.backend, undefined);
-                    registry.execute(desc.id, ctx.getFBO(view.rgColor!, view.rgDepth!) as WebGLFramebuffer);
+                    if (frameColorHandle == null || frameDepthHandle == null) return;
+                    registry.execute(desc.id, ctx.getFBO(frameColorHandle, frameDepthHandle) as WebGLFramebuffer);
                 }
             }
         });
