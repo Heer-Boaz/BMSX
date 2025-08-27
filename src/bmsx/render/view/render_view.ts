@@ -17,12 +17,12 @@ import {
 import { WebGLBackend } from '../backend/webgl_backend';
 import { buildFrameData, FrameData, RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem } from '../lighting/lightingsystem';
-import { Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, GameView, generateAtlasName, renderGate, SkyboxImageIds } from '../view';
+import { Color, DrawImgOptions, DrawMeshOptions, DrawParticleOptions, DrawRectOptions, GameView, generateAtlasName, renderGate, SkyboxImageIds } from '../view';
 
 // Debug flag (disabled now that graph is validated)
 const DEBUG_INJECT_TEST_SPRITE = false;
 
-export class GLView extends GameView {
+export class RenderView extends GameView {
     public glctx: WebGL2RenderingContext;
     private backend: WebGLBackend | null = null;
     public renderGraph: RenderGraphRuntime | null = null;
@@ -259,6 +259,10 @@ export class GLView extends GameView {
         this.renderer.submit.mesh(o);
     }
 
+    override drawParticle(o: DrawParticleOptions): void {
+        ParticlesPipeline.submitParticle({ position: o.position, size: o.size, color: o.color, texture: o.texture });
+    }
+
     override getPointLight(id: Identifier): PointLight | undefined {
         return MeshPipeline.getPointLight(id);
     }
@@ -358,5 +362,5 @@ export class GLView extends GameView {
     }
 }
 
-export type RenderView = GLView;
+// class renamed; no alias maintained
 export { TEXTURE_UNIT_POST_PROCESSING_SOURCE };

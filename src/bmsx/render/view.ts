@@ -7,7 +7,7 @@ import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { copy_vector } from '../core/utils';
 import { Input } from '../input/input';
-import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
+import type { Area, Polygon, Size, Vector, id2imgres, vec2, vec3arr } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
 
@@ -52,6 +52,13 @@ export interface DrawMeshOptions {
 	matrix: Float32Array;
 	jointMatrices?: Float32Array[];
 	morphWeights?: number[];
+}
+
+export interface DrawParticleOptions {
+    position: vec3arr;
+    size: number;
+    color: Color;
+    texture?: WebGLTexture;
 }
 
 export interface SkyboxImageIds {
@@ -437,6 +444,8 @@ export abstract class GameView implements RegisterablePersistent {
 	public abstract drawPolygon(points: Polygon, z: number, color: Color, thickness: number): void;
 
 	public abstract drawMesh(options: DrawMeshOptions): void;
+
+	public abstract drawParticle(options: DrawParticleOptions): void;
 
 	public abstract getPointLight(id: Identifier): PointLight | undefined;
 	public abstract setPointLight(id: Identifier, light: PointLight): void;

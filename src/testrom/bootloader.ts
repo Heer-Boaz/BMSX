@@ -1,7 +1,7 @@
 import {
     BFont,
     BGamepadButton, BootArgs,
-    Game, GamepadInputMapping, GLView, KeyboardButton, KeyboardInputMapping,
+    Game, GamepadInputMapping, RenderView, KeyboardButton, KeyboardInputMapping,
     new_vec2
 } from '../bmsx/index';
 import { BitmapId } from './resourceids';
@@ -9,13 +9,13 @@ import { gamemodel } from './test_gamemodel';
 
 var _game: Game;
 export let _model: gamemodel;
-var _view: GLView;
+var _view: RenderView;
 
 const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
     _model = new gamemodel();
-    _view = new GLView(new_vec2(_model.gamewidth, _model.gameheight));
+    _view = new RenderView(new_vec2(_model.gamewidth, _model.gameheight));
 
     _game = new Game();
     return _game.init({ ...args, model: _model, view: _view }).then(() => {

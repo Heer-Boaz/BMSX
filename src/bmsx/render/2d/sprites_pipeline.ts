@@ -33,7 +33,7 @@ import {
     ZCOORDS_SIZE,
 } from '../backend/webgl.constants';
 import { Color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
-import { GLView } from '../view/render_view';
+import { RenderView } from '../view/render_view';
 import { TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC } from '../backend/webgl.constants';
 import spriteShaderFragCode from './shaders/2d.frag.glsl';
 import spriteShaderVertCode from './shaders/2d.vert.glsl';
@@ -64,7 +64,7 @@ const spriteShaderData = {
 let spriteShaderScaleLocation: WebGLUniformLocation;
 
 export function createSpriteShaderPrograms(gl: WebGL2RenderingContext): void {
-    const gv = $.viewAs<GLView>();
+    const gv = $.viewAs<RenderView>();
     const b = gv.getBackend();
     const program = b.buildProgram(spriteShaderVertCode, spriteShaderFragCode, 'sprites');
     if (!program) throw Error('Failed to build sprite shader program');
@@ -125,7 +125,7 @@ export function setupSpriteLocations(gl: WebGL2RenderingContext): void {
 export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, logicalWidth?: number, logicalHeight?: number): void {
     // Prefer centralized queue if available
     type V = { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
-    const view = $.viewAs<GLView>() as unknown as V;
+    const view = $.viewAs<RenderView>() as unknown as V;
     const queued = view.renderer?.queues?.sprites;
     const combined: { options: DrawImgOptions; imgmeta: ImgMeta }[] = [];
     if (queued && queued.length) {
@@ -184,7 +184,7 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
 
 export function drawImg(view: RenderContext, options: DrawImgOptions): void {
     const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
-    const gv = $.viewAs<GLView>() as unknown as { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
+    const gv = $.viewAs<RenderView>() as unknown as { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
     const q = gv.renderer?.queues?.sprites;
     if (!q) throw Error('Render queues not initialized for sprites');
     // Deep-copy nested objects to freeze values at submission time
