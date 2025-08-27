@@ -37,3 +37,17 @@ export const COLOR_OVERRIDE_COMPONENTS = 4;
 export const ATLAS_ID_COMPONENTS = 1;
 
 export const SPRITE_DRAW_OFFSET = 0;
+
+// Centralized texture unit assignments for WebGL. Keep these stable.
+// Used by pipelines, backend, and view code.
+export const TEXTURE_UNIT_ATLAS = 0;
+export const TEXTURE_UNIT_ATLAS_DYNAMIC = 1;
+export const TEXTURE_UNIT_ALBEDO = 2;
+export const TEXTURE_UNIT_NORMAL = 3;
+export const TEXTURE_UNIT_METALLIC_ROUGHNESS = 4;
+export const TEXTURE_UNIT_SHADOW_MAP = 5;
+export const TEXTURE_UNIT_SKYBOX = 6;
+export const TEXTURE_UNIT_PARTICLE = 7;
+export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
+// A high-numbered scratch unit for temporary uploads
+export const TEXTURE_UNIT_UPLOAD = 15;

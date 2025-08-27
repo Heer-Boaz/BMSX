@@ -52,12 +52,12 @@ export class GraphicsPipelineManager {
         const p = this.pipelines.get(id);
         if (!p) throw new Error(`Pipeline '${id}' not found`);
         const backend = this.backend;
-        if (p.prepare) p.prepare(backend, p.state);
-        // Bind program/pipeline if created via backend
+        // Bind program/pipeline before prepare so uniforms can be set
         if (p.pipelineHandle && backend.setGraphicsPipeline) {
             const stubPass = { fbo, desc: { label: id } as RenderPassDesc } as any;
             backend.setGraphicsPipeline(stubPass, p.pipelineHandle);
         }
+        if (p.prepare) p.prepare(backend, p.state);
         p.exec(backend, fbo, p.state);
     }
 

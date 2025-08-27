@@ -1,5 +1,5 @@
 // WebGL backend implementation extracted from legacy gpu_backend.ts
-import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from '../view/render_view';
+import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
 import * as GLR from './gl_resources';
 import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassId, RenderPassInstanceHandle, RenderPassStateRegistry, TextureParams } from './pipeline_interfaces';
 

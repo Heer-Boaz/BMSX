@@ -7,7 +7,6 @@ import * as ParticlesPipeline from '../3d/particles_pipeline';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
-import { GLView } from '../view/render_view';
 import { LightingSystem } from '../lighting/lightingsystem';
 import { RenderGraphRuntime } from '../graph/rendergraph';
 import { buildFrameGraph } from '../graph/build_framegraph';
@@ -82,7 +81,7 @@ export class PipelineRegistry {
             },
             prepare: (backend, _state) => {
                 const gv = getRenderContext();
-                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
                 const cam = $.model.activeCamera3D;
                 if (!cam) return;
                 const tex = $.texmanager.getTexture(SkyboxPipeline.skyboxKey) as TextureHandle | undefined;
@@ -106,7 +105,7 @@ export class PipelineRegistry {
             },
             prepare: (backend, _state) => {
                 const gv = getRenderContext();
-                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
                 const cam = $.model.activeCamera3D;
                 if (!cam) return;
                 const frameShared = this.getState('frame_shared') as { lighting?: unknown } | undefined;
@@ -159,7 +158,7 @@ export class PipelineRegistry {
             },
             prepare: (backend, _state) => {
                 const gv = getRenderContext();
-                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
                 const cam = $.model.activeCamera3D;
                 if (!cam) return;
 
@@ -181,16 +180,31 @@ export class PipelineRegistry {
             },
             prepare: (backend, _state) => {
                 const gv = getRenderContext();
-                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
                 const baseW = gv.viewportSize.x;
                 const baseH = gv.viewportSize.y;
+                // Ensure size-dependent uniforms are up-to-date on resize
+                try {
+                    const gl = (backend as any).gl as WebGL2RenderingContext;
+                    SpritesPipeline.setupDefaultUniformValues(gl, 1.0, [gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y] as unknown as [number, number]);
+                    MeshPipeline.setDefaultUniformValues(gl, 1.0);
+                } catch { /* ignore if not initialized yet */ }
                 const spriteState: SpritesPipelineState = { width, height, baseWidth: baseW, baseHeight: baseH };
                 this.setState('sprites', spriteState as any);
             },
         });
 
         // CRT
-        registerCRT(this.pm); // Assume updated
+        registerCRT(this.pm); // Registers program + execution into PipelineManager
+        // Also add a present-stage pass to the graph sequence (do not re-register into PM)
+        this.insertPipelinePass({
+            id: 'crt',
+            label: 'crt',
+            name: 'Present/CRT',
+            present: true,
+            exec: () => { /* delegated via this.pm by registry.execute */ },
+            prepare: () => { /* state set in framegraph just-in-time */ },
+        } as RenderPassDef, this.passes.length);
 
         // FrameShared
         this.register({
@@ -224,7 +238,7 @@ export class PipelineRegistry {
     findPipelinePassIndex(id: string): number { return this.passes.findIndex(p => String(p.id) === id); }
 
     // Convenience: build render graph from current pass registry
-    buildRenderGraph(view: GLView, lighting: LightingSystem): RenderGraphRuntime {
+    buildRenderGraph(view: RenderContext, lighting: LightingSystem): RenderGraphRuntime {
         return buildFrameGraph(view, lighting, this);
     }
 }
