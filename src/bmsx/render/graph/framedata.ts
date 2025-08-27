@@ -14,9 +14,6 @@ export function updateExternalFrameTiming(frameIndex: number, timeSeconds: numbe
     extDeltaSeconds = deltaSeconds;
 }
 
-// Reusable fallback vector (avoid per-frame allocations).
-const ZERO_VEC3 = new Float32Array([0, 0, 0]);
-
 export function buildFrameData(view: GLView): FrameData {
     const mainCam = $.model.activeCamera3D as Camera | undefined;
     const views: View[] = [];
