@@ -58,15 +58,29 @@ export class GLView extends GameView {
     public renderer: {
         queues: {
             particles: ParticlesPipeline.DrawParticleOptions[];
+            sprites: DrawImgOptions[];
+            meshes: DrawMeshOptions[];
         };
         submit: {
             particle: (o: ParticlesPipeline.DrawParticleOptions) => void;
+            sprite: (o: DrawImgOptions) => void;
+            mesh: (o: DrawMeshOptions) => void;
         };
         swap: () => void;
     } = {
-        queues: { particles: [] },
+        queues: { particles: [], sprites: [], meshes: [] },
         submit: {
             particle: (o: ParticlesPipeline.DrawParticleOptions) => { this.renderer.queues.particles.push({ ...o }); },
+            sprite: (o: DrawImgOptions) => {
+                this.renderer.queues.sprites.push({
+                    ...o,
+                    pos: o.pos ? { ...o.pos } : undefined,
+                    scale: o.scale ? { ...o.scale } : undefined,
+                    colorize: o.colorize ? { ...o.colorize } : undefined,
+                    flip: o.flip ? { ...o.flip } : undefined,
+                });
+            },
+            mesh: (o: DrawMeshOptions) => { this.renderer.queues.meshes.push({ ...o }); },
         },
         // No double buffering yet; placeholder for future frame-swap
         swap: () => { /* no-op for now */ },
@@ -96,20 +110,7 @@ export class GLView extends GameView {
         gl.cullFace(gl.BACK);
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 
-        // Initialize pipelines and shader programs
-        MeshPipeline.init(gl, this.offscreenCanvasSize);
-        SkyboxPipeline.init(gl);
-        ParticlesPipeline.init(gl);
-        SpritesPipeline.createSpriteShaderPrograms(gl);
-        MeshPipeline.createGameShaderPrograms3D(gl);
-        ParticlesPipeline.createParticleProgram(gl);
-        SpritesPipeline.setupSpriteShaderLocations(gl);
-        MeshPipeline.setupVertexShaderLocations3D(gl);
-        ParticlesPipeline.setupParticleLocations(gl);
-
-        SpritesPipeline.setupBuffers(gl);
-        MeshPipeline.setupBuffers3D(gl);
-        SpritesPipeline.setupSpriteLocations(gl);
+        // Pipeline bootstrap now handled via PipelineRegistry registration
 
         // IMPORTANT: set default uniform values (resolution, scale, texture units) for sprite & mesh pipelines
         SpritesPipeline.setupDefaultUniformValues(gl, 1.0, [this.offscreenCanvasSize.x, this.offscreenCanvasSize.y]);
@@ -255,7 +256,7 @@ export class GLView extends GameView {
     }
 
     override drawMesh(o: DrawMeshOptions): void {
-        MeshPipeline.meshesToDraw.push(o);
+        this.renderer.submit.mesh(o);
     }
 
     override getPointLight(id: Identifier): PointLight | undefined {

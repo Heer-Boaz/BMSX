@@ -72,6 +72,10 @@ export class PipelineRegistry {
             id: 'skybox',
             label: 'skybox',
             name: 'Skybox',
+            bootstrap: (backend) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                SkyboxPipeline.init(gl);
+            },
             writesDepth: true,
             shouldExecute: () => !!$.model.activeCamera3D && !!SkyboxPipeline.skyboxKey,
             exec: (backend, fbo, s) => {
@@ -95,8 +99,18 @@ export class PipelineRegistry {
             id: 'meshbatch',
             label: 'meshbatch',
             name: 'Meshes',
+            bootstrap: (backend) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                MeshPipeline.createGameShaderPrograms3D(gl);
+                MeshPipeline.setupVertexShaderLocations3D(gl);
+                MeshPipeline.setupBuffers3D(gl);
+            },
             writesDepth: true,
-            shouldExecute: () => (MeshPipeline.meshesToDraw?.length ?? 0) > 0,
+            shouldExecute: () => {
+                const gv = getRenderContext() as unknown as { renderer?: { queues?: { meshes?: unknown[] } } };
+                const qlen = (gv.renderer?.queues?.meshes?.length ?? 0);
+                return qlen > 0;
+            },
             exec: (backend, fbo, s) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
                 const state = s as MeshBatchPipelineState;
@@ -148,12 +162,17 @@ export class PipelineRegistry {
             id: 'particles',
             label: 'particles',
             name: 'Particles',
+            bootstrap: (backend) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                ParticlesPipeline.init(gl);
+                ParticlesPipeline.createParticleProgram(gl);
+                ParticlesPipeline.setupParticleLocations(gl);
+            },
             writesDepth: true,
             shouldExecute: () => {
                 const gv = getRenderContext() as unknown as { renderer?: { queues?: { particles?: unknown[] } } };
                 const qlen = (gv.renderer?.queues?.particles?.length ?? 0);
-                const legacyLen = (ParticlesPipeline.particlesToDraw?.length ?? 0);
-                return qlen > 0 || legacyLen > 0;
+                return qlen > 0;
             },
             exec: (backend, fbo, s) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
@@ -176,7 +195,19 @@ export class PipelineRegistry {
             id: 'sprites',
             label: 'sprites',
             name: 'Sprites2D',
+            bootstrap: (backend) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                SpritesPipeline.createSpriteShaderPrograms(gl);
+                SpritesPipeline.setupSpriteShaderLocations(gl);
+                SpritesPipeline.setupBuffers(gl);
+                SpritesPipeline.setupSpriteLocations(gl);
+            },
             writesDepth: true,
+            shouldExecute: () => {
+                const gv = getRenderContext() as unknown as { renderer?: { queues?: { sprites?: unknown[] } } };
+                const qlen = (gv.renderer?.queues?.sprites?.length ?? 0);
+                return qlen > 0;
+            },
             exec: (backend, fbo, s) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
                 const state = s as SpritesPipelineState;

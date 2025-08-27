@@ -39,7 +39,6 @@ import spriteShaderFragCode from './shaders/2d.frag.glsl';
 import spriteShaderVertCode from './shaders/2d.vert.glsl';
 import { bvec } from './vertexutils2d';
 
-let imagesToDraw: { options: DrawImgOptions; imgmeta: ImgMeta }[] = [];
 export let spriteShaderProgram: WebGLProgram;
 let vertexLocation: number;
 let texcoordLocation: number;
@@ -124,6 +123,27 @@ export function setupSpriteLocations(gl: WebGL2RenderingContext): void {
 }
 
 export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, logicalWidth?: number, logicalHeight?: number): void {
+    // Prefer centralized queue if available
+    type V = { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
+    const view = $.viewAs<GLView>() as unknown as V;
+    const queued = view.renderer?.queues?.sprites;
+    const combined: { options: DrawImgOptions; imgmeta: ImgMeta }[] = [];
+    if (queued && queued.length) {
+        for (const options of queued) {
+            const imgmeta = GameView.imgassets[options.imgid]?.imgmeta; if (!imgmeta) continue;
+            // Deep-copy nested fields to avoid aliasing if the caller reuses objects
+            const distinct: DrawImgOptions = {
+                ...options,
+                pos: options.pos ? { ...options.pos } : undefined,
+                scale: options.scale ? { ...options.scale } : undefined,
+                colorize: options.colorize ? { ...options.colorize } : undefined,
+                flip: options.flip ? { ...options.flip } : undefined,
+            };
+            combined.push({ options: distinct, imgmeta });
+        }
+    }
+    // no legacy sprite list; only centralized queue is used
+    if (combined.length === 0) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight); // use full offscreen buffer
     GLR.glSwitchProgram(gl, spriteShaderProgram);
@@ -139,9 +159,9 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
     gl.bindBuffer(gl.ARRAY_BUFFER, zBuffer); gl.vertexAttribPointer(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(zcoordLocation);
     gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer); gl.vertexAttribPointer(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(color_overrideLocation);
     gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer); gl.vertexAttribIPointer(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0); gl.enableVertexAttribArray(atlas_idLocation);
-    imagesToDraw.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
+    combined.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
     const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = spriteShaderData; let i = 0;
-    for (const { options, imgmeta } of imagesToDraw) {
+    for (const { options, imgmeta } of combined) {
         const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
         const { width, height } = imgmeta;
         bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
@@ -158,13 +178,23 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
         }
     }
     if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
-    imagesToDraw = [];
+    // Clear used queues
+    if (queued) queued.length = 0;
 }
 
 export function drawImg(view: RenderContext, options: DrawImgOptions): void {
     const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
-    const distinct = { ...options, pos: options.pos !== undefined ? { ...options.pos } : undefined, scale: options.scale !== undefined ? { ...options.scale } : undefined, colorize: options.colorize !== undefined ? { ...options.colorize } : undefined, flip: options.flip !== undefined ? { ...options.flip } : undefined };
-    imagesToDraw.push({ options: distinct, imgmeta });
+    const gv = $.viewAs<GLView>() as unknown as { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
+    const q = gv.renderer?.queues?.sprites;
+    if (!q) throw Error('Render queues not initialized for sprites');
+    // Deep-copy nested objects to freeze values at submission time
+    q.push({
+        ...options,
+        pos: options.pos ? { ...options.pos } : undefined,
+        scale: options.scale ? { ...options.scale } : undefined,
+        colorize: options.colorize ? { ...options.colorize } : undefined,
+        flip: options.flip ? { ...options.flip } : undefined,
+    });
 }
 
 export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
@@ -181,6 +211,9 @@ export function updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32A
     GLR.glUpdateBuffer(gl, color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
     GLR.glUpdateBuffer(gl, atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
 }
+
+// For scheduling checks
+// No legacy pending count; scheduling uses centralized queue length.
 
 export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {
     if (ex < x) { [x, ex] = [ex, x]; }

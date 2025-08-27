@@ -4,16 +4,16 @@ import { $ } from '../../core/game';
 import type { vec3arr } from '../../rompack/rompack';
 import * as GLR from '../backend/gl_resources';
 import { getRenderContext } from '../backend/pipeline_registry';
+import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { Color } from '../view';
-import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { M4 } from './math3d';
 import particleFragCode from './shaders/particle.frag.glsl';
 import particleVertCode from './shaders/particle.vert.glsl';
 
 export interface DrawParticleOptions { position: vec3arr; size: number; color: Color; texture?: WebGLTexture; }
 // Legacy global queue kept for backward-compat submission; prefer view.renderer.queues.particles
-export let particlesToDraw: DrawParticleOptions[] = [];
+// Legacy queue removed; use centralized view.renderer.queues.particles instead.
 const MAX_PARTICLES = 1000;
 const INSTANCE_FLOATS = 8; // vec4(position+size) + vec4(color)
 const BYTES_PER_FLOAT = 4;
@@ -50,11 +50,13 @@ export function createParticleProgram(gl: WebGL2RenderingContext): void {
 export function setupParticleLocations(gl: WebGL2RenderingContext): void { gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer); gl.bufferData(gl.ARRAY_BUFFER, MAX_PARTICLES * INSTANCE_BYTES, gl.DYNAMIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, INSTANCE_BYTES, 0); gl.vertexAttribDivisor(1, 1); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, INSTANCE_BYTES, 4 * BYTES_PER_FLOAT); gl.vertexAttribDivisor(2, 1); gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); }
 export interface ParticlePassState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }
 export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {
-    // Prefer centralized queue on the active RenderContext if available
+    // Combine centralized queue (if any) with legacy queue for backward compatibility
     type V = { renderer?: { queues?: { particles?: DrawParticleOptions[] } } };
     const ctx = getRenderContext() as unknown as V;
-    const list = (ctx.renderer?.queues?.particles) ?? particlesToDraw;
-    const count = list.length;
+    const combined: DrawParticleOptions[] = [];
+    const q = ctx.renderer?.queues?.particles;
+    if (q && q.length) combined.push(...q);
+    const count = combined.length;
     if (count === 0) return;
     if (state) {
         camRight.set(state.camRight);
@@ -64,7 +66,7 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
         M4.viewRightUpInto(activeCamera.view, camRight, camUp);
     }
     const batches = new Map<WebGLTexture, DrawParticleOptions[]>();
-    for (const p of list) {
+    for (const p of combined) {
         const tex = p.texture ?? defaultTexture;
         let arr = batches.get(tex);
         if (!arr) {
@@ -107,8 +109,8 @@ export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: Web
     }
     gl.bindVertexArray(null);
     gl.depthMask(true);
-    // Clear whichever queue we used
-    list.length = 0;
+    // Clear queues used
+    if (q) q.length = 0;
 }
 export function setDefaultParticleTexture(tex: WebGLTexture): void { defaultTexture = tex; }
 // New submission helper (prefer over touching particlesToDraw)
@@ -116,5 +118,5 @@ export function submitParticle(p: DrawParticleOptions): void {
     type V = { renderer?: { queues?: { particles?: DrawParticleOptions[] } } };
     const ctx = getRenderContext() as unknown as V;
     const q = ctx.renderer?.queues?.particles;
-    if (q) q.push({ ...p }); else particlesToDraw.push({ ...p });
+    if (q) q.push({ ...p });
 }

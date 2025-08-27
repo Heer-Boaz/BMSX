@@ -56,7 +56,10 @@ export interface SkyboxPassState { view: Float32Array; proj: Float32Array; tex: 
 export function drawSkyboxWithState(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, state: SkyboxPassState): void {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     if (state.width && state.height) gl.viewport(0, 0, state.width, state.height);
+    const prevCull = gl.isEnabled(gl.CULL_FACE);
+    const prevDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
     gl.disable(gl.CULL_FACE);
+    gl.depthMask(false);
     GLR.glSwitchProgram(gl, skyboxProgram);
     gl.bindVertexArray(vaoSkybox);
     gl.uniformMatrix4fv(skyboxViewLocation, false, state.view);
@@ -70,5 +73,6 @@ export function drawSkyboxWithState(gl: WebGL2RenderingContext, framebuffer: Web
     }
     gl.drawArrays(gl.TRIANGLES, 0, 36);
     gl.bindVertexArray(null);
-    gl.enable(gl.CULL_FACE);
+    if (prevCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
+    gl.depthMask(prevDepthMask);
 }

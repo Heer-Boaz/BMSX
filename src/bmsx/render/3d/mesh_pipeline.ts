@@ -328,5 +328,34 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
 function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<string, { mesh: Mesh; matrices: Float32Array[] }>): void { if (instancedGroups.size === 0) return; setUseInstancing(gl, true); uploadJointPalette(gl, undefined, false); for (const { mesh: m, matrices } of instancedGroups.values()) { const buffers = getMeshBuffers(gl, m); const hasMorph = m.hasMorphTargets && (m.morphWeights?.some(w => w !== 0)); const sig = getVAOSignature(m, true, hasMorph); let vao: WebGLVertexArrayObject; if (hasMorph) { if (buffers.vaoInstancedSig !== sig) { if (buffers.vaoInstanced) gl.deleteVertexArray(buffers.vaoInstanced); buffers.vaoInstanced = buildVAOForMesh(gl, m, buffers, true, true); buffers.vaoInstancedSig = sig; } vao = buffers.vaoInstanced!; } else { if (buffers.vaoInstancedNoMorphSig !== sig) { if (buffers.vaoInstancedNoMorph) gl.deleteVertexArray(buffers.vaoInstancedNoMorph); buffers.vaoInstancedNoMorph = buildVAOForMesh(gl, m, buffers, true, false); buffers.vaoInstancedNoMorphSig = sig; } vao = buffers.vaoInstancedNoMorph!; } const indexed = !!buffers.index; const indexType = buffers.indexType!; const indexCount = buffers.indexCount ?? m.indices?.length ?? 0; setMeshMaterial(gl, m); setMeshTextures(gl, m); if (hasMorph) { const w = new Float32Array(MAX_MORPH_TARGETS); const src = m.morphWeights ?? []; for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0; uploadMorphWeights(gl, w); } else uploadMorphWeights(gl, null); gl.bindVertexArray(vao); let prevBatchCount = -1; for (let offset = 0; offset < matrices.length; offset += MAX_INSTANCES) { const batchCount = Math.min(MAX_INSTANCES, matrices.length - offset); for (let i = 0; i < batchCount; i++) instanceScratch.set(matrices[offset + i], i * INSTANCE_STRIDE_FLOATS); gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D); if (batchCount !== prevBatchCount) { gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS)); prevBatchCount = batchCount; } gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS)); if (indexed) gl.drawElementsInstanced(gl.TRIANGLES, indexCount, indexType, 0, batchCount); else gl.drawArraysInstanced(gl.TRIANGLES, 0, m.vertexCount, batchCount); } gl.bindVertexArray(null); } setUseInstancing(gl, false); }
 function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void { const mat = m.material; gl.uniform4fv(materialColorLocation3D, new Float32Array(mat?.color ?? [1, 1, 1, 1])); gl.uniform1f(metallicFactorLocation3D, mat?.metallicFactor ?? 0.0); gl.uniform1f(roughnessFactorLocation3D, mat?.roughnessFactor ?? 0.0); }
 function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void { setUseInstancing(gl, false); for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) { const buffers = getMeshBuffers(gl, m); const srcWeights = morphWeights ?? m.morphWeights ?? []; const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0); const sig = getVAOSignature(m, false, hasMorph); let vao: WebGLVertexArrayObject; if (hasMorph) { if (buffers.vaoSig !== sig) { if (buffers.vao) gl.deleteVertexArray(buffers.vao); buffers.vao = buildVAOForMesh(gl, m, buffers, false, true); buffers.vaoSig = sig; } vao = buffers.vao!; } else { if (buffers.vaoNoMorphSig !== sig) { if (buffers.vaoNoMorph) gl.deleteVertexArray(buffers.vaoNoMorph); buffers.vaoNoMorph = buildVAOForMesh(gl, m, buffers, false, false); buffers.vaoNoMorphSig = sig; } vao = buffers.vaoNoMorph!; } uploadJointPalette(gl, jointMatrices, m.hasSkinning); if (hasMorph) { const w = new Float32Array(MAX_MORPH_TARGETS); for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0; uploadMorphWeights(gl, w); } else uploadMorphWeights(gl, null); setMeshMaterial(gl, m); setMeshTextures(gl, m); gl.uniformMatrix4fv(modelLocation3D, false, matrix); const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9); gl.bindVertexArray(vao); if (buffers.index) gl.drawElements(gl.TRIANGLES, buffers.indexCount ?? m.indices!.length, buffers.indexType!, 0); else gl.drawArrays(gl.TRIANGLES, 0, m.vertexCount); gl.bindVertexArray(null); } normal9Pool.reset(); }
-export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: any): void { const { instancedGroups, singles } = cullAndSortMeshes(); if (instancedGroups.size === 0 && singles.length === 0) return; setupFramebufferAndViewport(gl, framebuffer, canvasWidth, canvasHeight); setupRenderingState(gl, state); renderInstancedMeshes(gl, instancedGroups); renderSingleMeshes(gl, singles, framebuffer); meshesToDraw = []; }
+export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: any): void {
+    // Combine centralized queue (if any) with legacy queue
+    type V = { renderer?: { queues?: { meshes?: DrawMeshOptions[] } } };
+    const ctx = getRenderContext() as unknown as V;
+    const q = ctx.renderer?.queues?.meshes;
+    const work: DrawMeshOptions[] = [];
+    if (q && q.length) work.push(...q);
+    if (meshesToDraw.length) work.push(...meshesToDraw);
+    // Use working copy for existing cull/sort pathway
+    const prevRef = meshesToDraw;
+    meshesToDraw = work;
+    const { instancedGroups, singles } = cullAndSortMeshes();
+    // restore reference
+    meshesToDraw = prevRef;
+    if (instancedGroups.size === 0 && singles.length === 0) { if (q) q.length = 0; meshesToDraw.length = 0; return; }
+    setupFramebufferAndViewport(gl, framebuffer, canvasWidth, canvasHeight);
+    setupRenderingState(gl, state);
+    renderInstancedMeshes(gl, instancedGroups);
+    renderSingleMeshes(gl, singles, framebuffer);
+    // Clear queues
+    if (q) q.length = 0;
+    meshesToDraw.length = 0;
+}
+
+export function submitMesh(o: DrawMeshOptions): void {
+    type V = { renderer?: { queues?: { meshes?: DrawMeshOptions[] } } };
+    const ctx = getRenderContext() as unknown as V;
+    const q = ctx.renderer?.queues?.meshes;
+    if (q) q.push(o); else meshesToDraw.push(o);
+}
 export function reset(gl: WebGL2RenderingContext): void { meshesToDraw = []; normal9Pool.reset(); clearLights(gl); }

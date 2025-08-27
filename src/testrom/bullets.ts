@@ -1,7 +1,7 @@
 import { $, GameObject } from '../bmsx';
 import { Pool } from '../bmsx/core/pool';
 import type { PhysicsWorld } from '../bmsx/physics/physicsworld';
-import { particlesToDraw } from '../bmsx/render/3d/particles_pipeline';
+import { submitParticle } from '../bmsx/render/3d/particles_pipeline';
 import { EnemyHealthComponent } from './enemyhealth';
 
 interface Bullet { active: boolean; pos: [number, number, number]; prev: [number, number, number]; dir: [number, number, number]; speed: number; life: number; maxLife: number; damage: number; }
@@ -43,8 +43,8 @@ export class BulletManager extends GameObject {
         // Draw bullet tracers as small fading particles along current segment
         this.pool.forEachActive(b => {
             const t = b.life / b.maxLife; const a = 1 - t; // fade
-            particlesToDraw.push({ position: [b.pos[0], b.pos[1], b.pos[2]], size: 0.25, color: { r: 1, g: 0.9, b: 0.4, a } });
-            particlesToDraw.push({ position: [b.prev[0], b.prev[1], b.prev[2]], size: 0.15, color: { r: 1, g: 0.6, b: 0.2, a: a * 0.6 } });
+            submitParticle({ position: [b.pos[0], b.pos[1], b.pos[2]], size: 0.25, color: { r: 1, g: 0.9, b: 0.4, a } });
+            submitParticle({ position: [b.prev[0], b.prev[1], b.prev[2]], size: 0.15, color: { r: 1, g: 0.6, b: 0.2, a: a * 0.6 } });
         });
     }
     private checkHitsSegment(b: Bullet, phys: PhysicsWorld) {

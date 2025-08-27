@@ -35,7 +35,7 @@ export class GraphicsPipelineManager {
             prepare: desc.prepare,
         };
         // One-time pass bootstrap for persistent GPU resources (optional)
-        desc?.bootstrap(this.backend);
+        desc.bootstrap?.(this.backend);
         this.pipelines.set(desc.id, pipeline);
     }
 
