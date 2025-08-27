@@ -51,6 +51,11 @@ export interface RenderPassDef {
     stateOnly?: boolean;
     present?: boolean;
     shouldExecute?(): boolean;
+    /**
+     * Optional one-time initializer to create permanent GPU resources for this pass
+     * (e.g., buffers, VAOs, default textures). Called once at registration time.
+     */
+    bootstrap?: (backend: GPUBackend) => void;
     exec: (backend: GPUBackend, fbo: unknown, state: unknown) => void;
     prepare?: (backend: GPUBackend, state: unknown) => void;
 }
@@ -112,4 +117,6 @@ export interface RenderContext {
     activeTexUnit: number | null;
     bind2DTex(tex: TextureHandle | null): void;
     bindCubemapTex(tex: TextureHandle | null): void;
+    // Optional centralized renderer submission + queues (lightweight, backend-agnostic)
+    renderer?: { queues?: { [k: string]: unknown } ; submit?: unknown; swap?: () => void };
 }

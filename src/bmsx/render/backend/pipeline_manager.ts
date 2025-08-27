@@ -1,7 +1,7 @@
 // Graphics pipeline manager: single place to register passes and execute them
 // Simplified to avoid coupling with the render graph internals.
 
-import { GPUBackend, GraphicsPipelineBuildDesc, RenderPassDef, RenderPassInstanceHandle, RenderPassDesc } from './pipeline_interfaces';
+import { GPUBackend, GraphicsPipelineBuildDesc, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle } from './pipeline_interfaces';
 
 interface RegisteredPass {
     id: string;
@@ -34,6 +34,8 @@ export class GraphicsPipelineManager {
             exec: desc.exec,
             prepare: desc.prepare,
         };
+        // One-time pass bootstrap for persistent GPU resources (optional)
+        desc?.bootstrap(this.backend);
         this.pipelines.set(desc.id, pipeline);
     }
 

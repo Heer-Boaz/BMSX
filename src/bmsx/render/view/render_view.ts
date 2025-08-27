@@ -54,6 +54,24 @@ export class GLView extends GameView {
     private _pipelineRegistry?: PipelineRegistry; // Injected via Game.init
     public setPipelineRegistry(reg: PipelineRegistry) { this._pipelineRegistry = reg; this.graphInvalid = true; }
 
+    // Centralized renderer submission + queues (initial minimal version: particles only)
+    public renderer: {
+        queues: {
+            particles: ParticlesPipeline.DrawParticleOptions[];
+        };
+        submit: {
+            particle: (o: ParticlesPipeline.DrawParticleOptions) => void;
+        };
+        swap: () => void;
+    } = {
+        queues: { particles: [] },
+        submit: {
+            particle: (o: ParticlesPipeline.DrawParticleOptions) => { this.renderer.queues.particles.push({ ...o }); },
+        },
+        // No double buffering yet; placeholder for future frame-swap
+        swap: () => { /* no-op for now */ },
+    };
+
     constructor(viewport: Size) {
         super(viewport, multiply_vec(viewport, 2));
         this.offscreenCanvasSize = multiply_vec(viewport, 2);

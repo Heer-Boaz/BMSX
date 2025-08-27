@@ -149,7 +149,12 @@ export class PipelineRegistry {
             label: 'particles',
             name: 'Particles',
             writesDepth: true,
-            shouldExecute: () => (ParticlesPipeline.particlesToDraw?.length ?? 0) > 0,
+            shouldExecute: () => {
+                const gv = getRenderContext() as unknown as { renderer?: { queues?: { particles?: unknown[] } } };
+                const qlen = (gv.renderer?.queues?.particles?.length ?? 0);
+                const legacyLen = (ParticlesPipeline.particlesToDraw?.length ?? 0);
+                return qlen > 0 || legacyLen > 0;
+            },
             exec: (backend, fbo, s) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
                 const state = s as ParticlePipelineState;
