@@ -59,7 +59,7 @@ export class AssetBarrier<T> {
                 .finally(() => {
                     const still = this.map.get(key);
                     if (still && still.gen === genAtStart) still.promise = undefined;
-                    console.debug(`[AssetBarrier] Loaded ${key} in ${(performance.now() - startedAt).toFixed(1)}ms`);
+                    // console.debug(`[AssetBarrier] Loaded ${key} in ${(performance.now() - startedAt).toFixed(1)}ms`);
                 });
         }
         return entry.promise!;

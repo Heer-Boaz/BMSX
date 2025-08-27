@@ -1,8 +1,9 @@
-import { PipelineManager } from '../backend/pipeline_manager';
-import { CRTState } from '../backend/pipeline_types';
+import { GraphicsPipelineManager } from '../backend/pipeline_manager';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../view/render_view';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
+// Local copy of CRTState to avoid import issues after refactor (remove duplication later)
+interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; fragScale?: number; outWidth?: number; outHeight?: number; colorTex?: WebGLTexture | null; options?: any }
 
 // Internal cached fullscreen quad (VBO + TBO + attrib locations)
 interface FullscreenQuad { vbo: WebGLBuffer; tbo: WebGLBuffer; attribPos: number; attribTex: number }
@@ -25,13 +26,28 @@ function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: nu
     return { vbo, tbo, attribPos, attribTex };
 }
 
-export function registerCRT(pm: PipelineManager): void {
-    pm.register<CRTState>({
-        id: 'CRT',
+export function registerCRT(pm: GraphicsPipelineManager): void {
+    pm.register({
+        id: 'crt',
+        label: 'crt',
+        name: 'CRT',
         vsCode: vertexShaderCRTCode,
         fsCode: fragmentShaderCRTCode,
-        uniforms: ['u_resolution', 'u_time', 'u_random', 'u_applyNoise', 'u_applyColorBleed', 'u_applyScanlines', 'u_applyBlur', 'u_applyGlow', 'u_applyFringing', 'u_noiseIntensity', 'u_colorBleed', 'u_blurIntensity', 'u_glowColor', 'u_scale', 'u_fragscale', 'u_texture', 'u_srcResolution'],
-        prepare: (gl, st) => {
+        exec: (backend, _fbo, state: unknown) => {
+            const gl = (backend as any).gl as WebGL2RenderingContext; // Use concrete WebGL backend
+            const st = state as CRTState;
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            const outW = st.outWidth ?? st.width; const outH = st.outHeight ?? st.height;
+            gl.viewport(0, 0, outW, outH);
+            if (!fsq) fsq = createFullscreenQuad(gl, st.width, st.height);
+            const { vbo, tbo, attribPos, attribTex } = fsq;
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo); if (attribPos !== -1) { gl.enableVertexAttribArray(attribPos); gl.vertexAttribPointer(attribPos, 2, gl.FLOAT, false, 0, 0); }
+            gl.bindBuffer(gl.ARRAY_BUFFER, tbo); if (attribTex !== -1) { gl.enableVertexAttribArray(attribTex); gl.vertexAttribPointer(attribTex, 2, gl.FLOAT, false, 0, 0); }
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        },
+        prepare: (backend, state: unknown) => {
+            const gl = (backend as any).gl as WebGL2RenderingContext;
+            const st = state as CRTState;
             const now = Date.now() / 1000;
             const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null; if (!program) return;
             const u = (n: string) => gl.getUniformLocation(program, n);
@@ -54,16 +70,6 @@ export function registerCRT(pm: PipelineManager): void {
             { const loc = u('u_glowColor'); if (loc) gl.uniform3fv(loc, new Float32Array(opts.glowColor ?? [0.12, 0.10, 0.09])); }
             { const loc = u('u_texture'); if (loc) gl.uniform1i(loc, TEXTURE_UNIT_POST_PROCESSING_SOURCE); }
             if (st.colorTex) { gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_POST_PROCESSING_SOURCE); gl.bindTexture(gl.TEXTURE_2D, st.colorTex); }
-        },
-        exec: (gl, _fbo, st) => {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            const outW = st.outWidth ?? st.width; const outH = st.outHeight ?? st.height;
-            gl.viewport(0, 0, outW, outH);
-            if (!fsq) fsq = createFullscreenQuad(gl, st.width, st.height);
-            const { vbo, tbo, attribPos, attribTex } = fsq;
-            gl.bindBuffer(gl.ARRAY_BUFFER, vbo); if (attribPos !== -1) { gl.enableVertexAttribArray(attribPos); gl.vertexAttribPointer(attribPos, 2, gl.FLOAT, false, 0, 0); }
-            gl.bindBuffer(gl.ARRAY_BUFFER, tbo); if (attribTex !== -1) { gl.enableVertexAttribArray(attribTex); gl.vertexAttribPointer(attribTex, 2, gl.FLOAT, false, 0, 0); }
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
     });
 }

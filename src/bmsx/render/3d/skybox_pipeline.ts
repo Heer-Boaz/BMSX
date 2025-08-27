@@ -4,6 +4,7 @@ import { $ } from '../../core/game';
 import { taskGate } from '../../core/taskgate';
 import * as GLR from '../backend/gl_resources';
 import { getRenderContext } from '../backend/pipeline_registry';
+import { WebGLBackend } from '../backend/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../view';
 import { TEXTURE_UNIT_SKYBOX } from '../view/render_view';
@@ -18,7 +19,7 @@ export function resetSkyboxGroup() { skyboxGroup.bump(); }
 export let skyboxBuffer: WebGLBuffer; export let skyboxTexture: WebGLTexture | null = null;
 export function init(gl: WebGL2RenderingContext) { vaoSkybox = gl.createVertexArray()!; createSkyboxProgram(gl); setupSkyboxLocations(gl); createSkyboxBuffer(gl); GLR.glSwitchProgram(gl, skyboxProgram); gl.bindVertexArray(vaoSkybox); gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer); gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(skyboxPositionLocation); }
 export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
-    const b = getRenderContext().getBackend();
+    const b = getRenderContext().getBackend() as WebGLBackend;
     const program = b.buildProgram(skyboxVertCode, skyboxFragCode, 'skybox');
     if (!program) throw Error('Failed to build skybox shader program');
     skyboxProgram = program;

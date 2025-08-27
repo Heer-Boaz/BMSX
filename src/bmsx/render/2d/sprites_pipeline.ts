@@ -4,7 +4,7 @@ import { $ } from '../../core/game';
 import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import * as GLR from '../backend/gl_resources';
-import { RenderContext } from '../backend/pipeline_registry';
+import { RenderContext } from '../backend/pipeline_interfaces';
 import {
     ATLAS_ID_ATTRIBUTE_SIZE,
     ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,

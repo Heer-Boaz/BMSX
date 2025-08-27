@@ -510,7 +510,7 @@ export function onload(target: any, _name: any, descriptor: PropertyDescriptor):
 export function insavegame(constructor: InstanceType<any>, _toJSON?: () => any, _fromJSON?: (value: any, value_data: any) => any): any {
     Reviver.constructors ??= {};
     Reviver.constructors[constructor.name] = constructor;
-    console.debug(`Registered class '${constructor.name}' for savegame serialization.`);
+    // console.debug(`Registered class '${constructor.name}' for savegame serialization.`);
 
     // Mark the constructor so serializers can detect it (including when checking derived instances)
     constructor.__exclude_savegame__ = false; // Default to not excluded
@@ -530,7 +530,7 @@ export function excludeclassfromsavegame(constructor: InstanceType<any>): any {
     constructor.__exclude_savegame__ = true;
     Serializer.classIncludeExcludeMap.set(constructor.name, true); // Mark as excluded
     Serializer.excludedObjectTypes.add(constructor.name);
-    console.debug(`Marked class '${constructor.name}' as excluded from savegame serialization.`);
+    // console.debug(`Marked class '${constructor.name}' as excluded from savegame serialization.`);
 
     return constructor;
 }

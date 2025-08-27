@@ -1,15 +1,14 @@
 /// <reference types="@webgpu/types" />
-import { TextureHandle, TextureParams } from '../gpu_types';
-import { BackendCaps, GPUBackend, PassEncoder, PipelineDesc, PipelineHandle, PipelineId, RenderPassDesc } from './interfaces';
+import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from './pipeline_interfaces';
 // Assuming TextureHandle is GPUTexture for WebGPU
 
 export class WebGPUBackend implements GPUBackend {
-    private stateRegistry: Map<PipelineId, any> = new Map();
+    private stateRegistry: Map<RenderPassStateId, any> = new Map();
     private limits: GPUSupportedLimits;
     private pipelineIdCounter: number = 0;
     private pipelines: Map<number, GPURenderPipeline> = new Map();
 
-    constructor(private device: GPUDevice, private context?: GPUCanvasContext) {
+    constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
         this.limits = this.device.limits;
     }
 
@@ -238,7 +237,7 @@ export class WebGPUBackend implements GPUBackend {
         // WebGPU handles resource states automatically; manual transitions not required.
     }
 
-    createPipeline(desc: PipelineDesc): PipelineHandle {
+    createRenderPassInstance(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle {
         const bindGroupLayouts: GPUBindGroupLayout[] = [];
         if (desc.bindingLayout) {
             const entries: GPUBindGroupLayoutEntry[] = [];
@@ -283,11 +282,11 @@ export class WebGPUBackend implements GPUBackend {
         return { id, label: desc.label };
     }
 
-    destroyPipeline(p: PipelineHandle): void {
+    destroyRenderPassInstance(p: RenderPassInstanceHandle): void {
         this.pipelines.delete(p.id);
     }
 
-    setPipeline(pass: PassEncoder & { encoder: GPURenderPassEncoder }, pipelineHandle: PipelineHandle): void {
+    setGraphicsPipeline(pass: PassEncoder & { encoder: GPURenderPassEncoder }, pipelineHandle: RenderPassInstanceHandle): void {
         const pipeline = this.pipelines.get(pipelineHandle.id);
         if (pipeline) {
             pass.encoder.setPipeline(pipeline);
@@ -302,22 +301,17 @@ export class WebGPUBackend implements GPUBackend {
         pass.encoder.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0);
     }
 
-    setPipelineState<S = unknown>(label: PipelineId, state: S): void {
+    setPassState<S = unknown>(label: RenderPassStateId, state: S): void {
         this.stateRegistry.set(label, state);
     }
 
-    executePipeline(label: PipelineId, fbo: unknown): void {
-        const state = this.getPipelineState(label);
+    executePass(label: RenderPassStateId, fbo: unknown): void {
+        const state = this.getPassState(label);
         if (!state) return;
         // Implement specific execution logic here if needed
     }
 
-    getPipelineState<S = unknown>(label: PipelineId): S | undefined {
+    getPassState<S = unknown>(label: RenderPassStateId): S | undefined {
         return this.stateRegistry.get(label);
-    }
-
-    buildProgram(vsSource: string, fsSource: string, label: string): WebGLProgram | null {
-        // Legacy for WebGL; return null for WebGPU
-        return null;
     }
 }

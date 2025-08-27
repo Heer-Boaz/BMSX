@@ -1,5 +1,5 @@
-import type { TextureHandle } from '../gpu_types';
-import { GPUBackend, PassEncoder, RenderPassDesc } from './interfaces';
+import type { TextureHandle } from './pipeline_interfaces';
+import { GPUBackend, PassEncoder, RenderPassDesc } from './pipeline_interfaces';
 
 export interface ColorAttachmentSpec { tex: TextureHandle; clear?: [number, number, number, number]; discardAfter?: boolean }
 export interface DepthAttachmentSpec { tex: TextureHandle; clearDepth?: number; discardAfter?: boolean }

@@ -4,6 +4,7 @@ import { $ } from '../../core/game';
 import type { vec3arr } from '../../rompack/rompack';
 import * as GLR from '../backend/gl_resources';
 import { getRenderContext } from '../backend/pipeline_registry';
+import { WebGLBackend } from '../backend/webgl_backend';
 import { Color } from '../view';
 import { TEXTURE_UNIT_PARTICLE } from '../view/render_view';
 import { M4 } from './math3d';
@@ -36,7 +37,7 @@ export function init(gl: WebGL2RenderingContext): void {
     getRenderContext().bind2DTex(null);
 }
 export function createParticleProgram(gl: WebGL2RenderingContext): void {
-    const b = getRenderContext().getBackend();
+    const b = getRenderContext().getBackend() as WebGLBackend;
     const program = b.buildProgram(particleVertCode, particleFragCode, 'particles');
     if (!program) throw Error('Failed to build particle shader program');
     particleProgram = program;

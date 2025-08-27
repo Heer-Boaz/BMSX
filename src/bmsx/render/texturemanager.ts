@@ -3,8 +3,7 @@ import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
-import { GPUBackend } from './backend/interfaces';
-import { TextureHandle, TextureParams } from './gpu_types';
+import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
 
 export const TEXTMANAGER_ID = 'texmgr';
 export type TextureIdentifier = string;

@@ -5,6 +5,8 @@ import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
+import { GraphicsPipelineManager } from "../render/backend/pipeline_manager";
+import { PipelineRegistry } from "../render/backend/pipeline_registry";
 import { WebGLBackend } from "../render/backend/webgl_backend";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
@@ -328,10 +330,20 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 			$.input.enableOnscreenGamepad();
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
-		// Obtain WebGL2 context if current view is a RenderView (backend-enabled)
-		const activeView = this.view as any; // BaseView reference
-		const gl = activeView.glctx; // Narrow to WebGL-capable view
-		new TextureManager(new WebGLBackend(gl));
+		// Initialize rendering backend + pipeline registry/manager (no global singletons)
+		const activeView = this.view as any; // TODO: REMOVE CAST!!
+		const gl: WebGL2RenderingContext = activeView.glctx; // WebGL-capable view (required)
+		const backend = new WebGLBackend(gl);
+		new TextureManager(backend);
+		const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
+		const pipelineRegistry = new PipelineRegistry(pipelineManager);
+		pipelineRegistry.registerBuiltin();
+		// Store on view for graph rebuild
+		if (typeof activeView.setPipelineRegistry === 'function') {
+			activeView.setPipelineRegistry(pipelineRegistry);
+		} else {
+			activeView._pipelineRegistry = pipelineRegistry; // fallback
+		}
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);

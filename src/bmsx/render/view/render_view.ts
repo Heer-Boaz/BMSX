@@ -7,8 +7,9 @@ import * as MeshPipeline from '../3d/mesh_pipeline';
 import * as ParticlesPipeline from '../3d/particles_pipeline';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import * as GLR from '../backend/gl_resources';
+import { GraphicsPipelineManager } from '../backend/pipeline_manager';
+import { PipelineRegistry } from '../backend/pipeline_registry';
 import { WebGLBackend } from '../backend/webgl_backend';
-import { buildFrameGraph } from '../graph/build_framegraph';
 import { buildFrameData } from '../graph/framedata';
 import { FrameData, RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem } from '../lighting/lightingsystem';
@@ -58,6 +59,8 @@ export class GLView extends GameView {
     public colorBleed: [number, number, number] = [0.02, 0.0, 0.0];
     public blurIntensity = 0.6;
     public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
+    private _pipelineRegistry?: PipelineRegistry; // Injected via Game.init
+    public setPipelineRegistry(reg: PipelineRegistry) { this._pipelineRegistry = reg; this.graphInvalid = true; }
 
     constructor(viewport: Size) {
         super(viewport, multiply_vec(viewport, 2));
@@ -212,7 +215,11 @@ export class GLView extends GameView {
     public rebuildGraph(): void {
         if (!this.backend) this.backend = new WebGLBackend(this.glctx);
         if (!this.lightingSystem) this.lightingSystem = new LightingSystem(this.glctx);
-        this.renderGraph = buildFrameGraph(this, this.lightingSystem);
+        if (!this._pipelineRegistry) {
+            this._pipelineRegistry = new PipelineRegistry(new GraphicsPipelineManager(this.backend)); // temporary fallback
+            console.warn('PipelineRegistry not set on view; using fallback instance');
+        }
+        this.renderGraph = this._pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
         this.graphInvalid = false;
     }
 

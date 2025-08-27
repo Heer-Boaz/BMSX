@@ -1,43 +1,41 @@
 import { $ } from '../..';
-import { PipelineId } from '../backend/interfaces';
-import { getPipelinePasses } from '../backend/pipeline_registry';
+import { RenderPassDef } from '../backend/pipeline_interfaces';
+import { PipelineRegistry } from '../backend/pipeline_registry';
 import { isAmbientLight, LightingSystem } from '../lighting/lightingsystem';
 import { GLView } from '../view/render_view';
 import { RenderGraphRuntime } from './rendergraph';
 
 // Debug output removed for production usage; keep constant for quick local enabling if needed
 const DEBUG_FORCE_VISIBLE_CLEAR = false;
+
+// const MANDATORY_WRITERS: (keyof RenderPassDef)[] = ['Clear', 'Scene', 'PostProcess'];
 // Local cached clone of the pipeline registry (stable across frames unless hot-reload triggers full refresh)
 // We keep only the data needed for graph building to avoid accidental mutation of shared registry objects.
 // Extended: future fields (e.g. transient scratch targets, MRT descriptors) can be added here without changing loop logic.
-type PipelinePassPrepare = ReturnType<typeof getPipelinePasses>[number]['prepare'];
-interface LocalPipelineDesc {
+type PipelinePassPrepare = NonNullable<RenderPassDef['prepare']>;
+interface LocalRenderPassDef {
     name: string;
     writesDepth?: boolean;
-    id: PipelineId;
-    presentStage?: boolean;
-    isStateOnly?: boolean;
+    id: string; // allow dynamic ids beyond PipelineId union
+    present?: boolean;
+    stateOnly?: boolean;
     shouldExecute?: () => boolean;
     prepare: PipelinePassPrepare;
 }
-function clonePasses(): LocalPipelineDesc[] {
-    const src = getPipelinePasses();
+function clonePasses(registry: PipelineRegistry): LocalRenderPassDef[] {
+    const src = registry.getPipelinePasses();
     return src.map(p => ({
         name: p.name,
         writesDepth: p.writesDepth,
-        id: p.id,
-        presentStage: p.presentStage,
-        isStateOnly: p.isStateOnly,
+        id: String(p.id),
+        present: p.present,
+        stateOnly: p.stateOnly,
         shouldExecute: p.shouldExecute?.bind(p),
-        prepare: p.prepare,
+        prepare: p.prepare ?? (() => { /* no-op */ }),
     }));
 }
 
-// Diagnostics removed; helper stubs kept minimal to avoid churn if reintroduced
-/* noop */
-
-/** Build the render graph for a WebGLRenderView. */
-export function buildFrameGraph(view: GLView, lightingSystem: LightingSystem, customPasses?: LocalPipelineDesc[]): RenderGraphRuntime {
+export function buildFrameGraph(view: GLView, lightingSystem: LightingSystem, registry: PipelineRegistry, customPasses?: LocalRenderPassDef[]): RenderGraphRuntime {
     const rg = new RenderGraphRuntime(view.getBackend());
     view.rgColor = null; view.rgDepth = null;
     // (particle camera vectors handled inside pipeline registry now)
@@ -68,17 +66,18 @@ export function buildFrameGraph(view: GLView, lightingSystem: LightingSystem, cu
             const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
             const maybeAmbient = $.model.ambientLight?.light;
             const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
-            ctx.backend.setPipelineState?.('FrameShared', { view: viewState, lighting });
+            // Store shared frame state via registry so downstream prepare() calls can read it
+            registry.setState('frame_shared', { view: viewState, lighting } as any);
         }
     });
 
     // Add passes for each registered pipeline (including presentStage CRT)
     // We build passes first; expected writers resolved dynamically at Present pass execution (after shouldExecute filters).
-    const passList = customPasses ?? clonePasses();
+    const passList = customPasses ?? clonePasses(registry);
     for (const desc of passList) {
         // Flags for behavior
-        const isPresent = !!desc.presentStage;
-        const isStateOnly = !!desc.isStateOnly;
+        const isPresent = !!desc.present;
+        const isStateOnly = !!desc.stateOnly;
         rg.addPass({
             name: desc.name,
             alwaysExecute: isStateOnly, // ensure state-only pass runs
@@ -96,24 +95,36 @@ export function buildFrameGraph(view: GLView, lightingSystem: LightingSystem, cu
                 const willRun = !desc.shouldExecute || desc.shouldExecute();
                 if (!willRun) return; // skip entirely (not counted as expected writer)
                 if (data.present) {
-                    const srcTex = view.rgColor ? (ctx.getTex(view.rgColor) as WebGLTexture | null) : null;
-                    // Prepare & execute like any other pass (now passes srcTex)
-                    desc.prepare(view, { backend: ctx.backend, width: data.width, height: data.height, srcTex });
-                    ctx.backend.executePipeline?.(desc.id, null);
+                    desc.prepare(ctx.backend, undefined);
+                    registry.execute(desc.id, null);
                 } else if (isStateOnly) {
-                    // Fog/state-only – just prepare state (no FBO binding by graph for writers)
-                    desc.prepare(view, { backend: ctx.backend, width: data.width, height: data.height });
+                    desc.prepare(ctx.backend, undefined);
                 } else {
-                    // Non-present passes keep using their descriptor-based prepare logic
-                    desc.prepare(view, { backend: ctx.backend, width: data.width, height: data.height });
-                    // executePipeline is loosely typed in backend (string id). Use the enum value as key.
-                    ctx.backend.executePipeline?.(desc.id, ctx.getFBO(view.rgColor!, view.rgDepth!) as WebGLFramebuffer);
+                    desc.prepare(ctx.backend, undefined);
+                    registry.execute(desc.id, ctx.getFBO(view.rgColor!, view.rgDepth!) as WebGLFramebuffer);
                 }
             }
         });
     }
 
-    // Optional early compile removed (diagnostics disabled)
+    // Post-compile validation (lazy): compile once with minimal frame to inspect writers
+    try {
+        const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
+        rg.compile(dummyFrame); // safe to call compile early
+        // Simplified validation: ensure at least one non-Clear writer besides any present pass.
+        const texInfo = rg.getTextureDebugInfo();
+        const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
+        if (frameColor) {
+            const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
+            const contentWriters = writerNames.filter(n => n !== 'Clear');
+            if (contentWriters.length === 0) {
+                console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
+            }
+        }
+    } catch (e) {
+        console.error(`Framegraph validation: Render graph compile failed.\n${e}`);
+        /* ignore validation errors (e.g., if compile requires real frame data) */
+    }
 
     return rg;
 }

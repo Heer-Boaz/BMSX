@@ -158,7 +158,7 @@ export class gamemodel extends BaseModel {
 		spawnSimpleCity(rail, {
 			seed: 'demo-city-v2',
 			steps: 240,
-			debugLog: true,
+			debugLog: false,
 			worldScale: 6,
 			silhouettes: [
 				// Immediate showcase towers right at the start so user always sees scale

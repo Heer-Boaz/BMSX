@@ -7,9 +7,8 @@
  * code so migration can be incremental.
  */
 import { taskGate } from '../../core/taskgate';
-import { GPUBackend } from '../backend/interfaces';
+import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
-import { TextureHandle } from '../gpu_types';
 
 export type RGHandle = number;
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
@@ -35,7 +34,7 @@ export interface View {
     viewProj: Float32Array;
     invView: Float32Array;
     invProj: Float32Array;
-    cameraPos: Float32Array;
+    cameraPos: Float32Array | { x: number; y: number; z: number };
     flags?: number; // bit flags for skybox, ui, etc.
 }
 

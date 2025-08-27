@@ -7,141 +7,51 @@ import * as ParticlesPipeline from '../3d/particles_pipeline';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
-import { GLView as WebGLRenderView } from '../view/render_view';
-import { GPUBackend, PipelineId } from './interfaces';
-import { PipelineManager } from './pipeline_manager';
-import { FogState, FrameSharedState, MeshBatchState, ParticlesState, PipelineStates, SkyboxState, SpritesState } from './pipeline_types';
-
-// Definieer een generieke texture-referentie
-type GPUTextureRef = WebGLTexture | GPUTexture;
-
-// Backend-agnostische RenderContext
-export interface RenderContext {
-    backendType: 'webgl2' | 'webgpu';
-    offscreenCanvasSize: { x: number; y: number };
-    getBackend(): GPUBackend;
-    activeTexUnit: number | null; // Behoud voor WebGL2; WebGPU negeert dit
-    bind2DTex(tex: GPUTextureRef | null): void;
-    bindCubemapTex(tex: GPUTextureRef | null): void;
-}
-
-// Full render-view contract (BaseView + RenderContext) for internal narrowing
-export type RenderViewLike = GameView & RenderContext;
+import { GLView } from '../view/render_view';
+import { LightingSystem } from '../lighting/lightingsystem';
+import { RenderGraphRuntime } from '../graph/rendergraph';
+import { buildFrameGraph } from '../graph/build_framegraph';
+import { RenderContext, RenderPassDef, RenderPassStateId, RenderPassStateRegistry, TextureHandle } from './pipeline_interfaces';
+import { GraphicsPipelineManager } from './pipeline_manager';
 
 export function getRenderContext(): RenderContext {
     const v = $.viewAs<GameView>() as unknown as RenderContext;
     return v;
 }
-
-
-// Local descriptor type for custom registration (shader optional)
-export interface RuntimePipelineDescriptor<S> {
-    id: string;
-    vsCode?: string; fsCode?: string; uniforms?: string[];
-    prepare?: (gl: WebGL2RenderingContext, state: S) => void;
-    exec: (gl: WebGL2RenderingContext, fbo: WebGLFramebuffer | null, state: S) => void;
-}
+const camRight = new Float32Array(3);
+const camUp = new Float32Array(3);
+// Dedicated state types for passes to eliminate 'any' casts
+interface FogPipelineState { width: number; height: number; fog: unknown; }
+interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
+interface MeshBatchPipelineState { width: number; height: number; camPos: any; viewProj: Float32Array; fog: unknown; lighting?: unknown; }
+interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
+interface SpritesPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; }
 
 export class PipelineRegistry {
-    constructor(private pm: PipelineManager) { }
+    private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
+
+    constructor(private pm: GraphicsPipelineManager) { }
 
     registerBuiltin() {
-        // Skybox
-        this.pm.register<SkyboxState>({ id: 'Skybox', exec: (gl, fbo, s) => { if (s) SkyboxPipeline.drawSkyboxWithState(gl, fbo, s); } });
-        // Mesh batch
-        this.pm.register<MeshBatchState>({ id: 'MeshBatch', exec: (gl, fbo, s) => { MeshPipeline.renderMeshBatch(gl, fbo, s.width, s.height, { width: s.width, height: s.height, camPos: s.view.camPos, viewProj: s.view.viewProj, fog: s.fog, lighting: s.lighting }); } });
-        // Particles
-        this.pm.register<ParticlesState>({ id: 'Particles', exec: (gl, fbo, s) => { ParticlesPipeline.renderParticleBatch(gl, fbo, s.width, s.height, s); } });
-        // Sprites
-        this.pm.register<SpritesState>({ id: 'Sprites', exec: (gl, fbo, s) => { SpritesPipeline.renderSpriteBatch(gl, fbo, s.width, s.height, s.baseWidth, s.baseHeight); } });
-        // CRT
-        registerCRT(this.pm);
-        // Fog (state only)
-        this.pm.register<FogState>({ id: 'Fog', exec: () => { /* state only */ } });
-        // FrameShared (state only)
-        this.pm.register<FrameSharedState>({ id: 'FrameShared', exec: () => { /* populated per frame by graph */ } });
-    }
-
-    register<S>(desc: RuntimePipelineDescriptor<S>): void { this.pm.register(desc); }
-    setState<K extends keyof PipelineStates>(id: K, state: PipelineStates[K]): void { this.pm.setState(id, state); }
-    getState<K extends keyof PipelineStates>(id: K): PipelineStates[K] | undefined { return this.pm.getState(id); }
-    execute(id: string, fbo: WebGLFramebuffer | null): void { this.pm.execute(id, fbo); }
-    has(id: string): boolean { return this.pm.has(id); }
-}
-
-// High-level pass descriptors (merged from prior separate file) ------------------
-export interface PipelinePassDescriptor {
-    id: PipelineId; name: string; writesDepth?: boolean; isStateOnly?: boolean; presentStage?: boolean; shouldExecute?(): boolean;
-    prepare(view: Partial<WebGLRenderView>, ctx: { backend: GPUBackend; width: number; height: number; srcTex?: WebGLTexture | null }): void;
-}
-const particleCamRight = new Float32Array(3);
-const particleCamUp = new Float32Array(3);
-
-// Internal mutable list of pipeline passes (ROMs may mutate via exported helpers before graph build)
-const pipelinePassesInternal: PipelinePassDescriptor[] = [
-    {
-        id: 'Fog',
-        name: 'FogState',
-        writesDepth: false,
-        isStateOnly: true,
-        shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
-        prepare(_v, { backend, width, height }) {
-            registerAtmosphereHotkeys();
-            const fogState = {
-                fogColor: Atmosphere.fogColor,
-                fogDensity: (() => {
-                    const p = Atmosphere.progressFactor;
-                    const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0;
-                    return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
-                })(),
-                enableFog: Atmosphere.enableFog,
-                fogMode: Atmosphere.fogMode,
-                enableHeightFog: Atmosphere.enableHeightFog,
-                heightFogStart: Atmosphere.heightFogStart,
-                heightFogEnd: Atmosphere.heightFogEnd,
-                heightLowColor: Atmosphere.heightLowColor,
-                heightHighColor: Atmosphere.heightHighColor,
-                heightMin: Atmosphere.heightMin,
-                heightMax: Atmosphere.heightMax,
-                enableHeightGradient: Atmosphere.enableHeightGradient,
-            };
-
-            backend.setPipelineState?.('Fog', { width, height, fog: fogState });
-        },
-    },
-
-    {
-        id: 'Skybox',
-        name: 'Skybox',
-        writesDepth: true,
-        shouldExecute: () => !!$.model.activeCamera3D && !!SkyboxPipeline.skyboxKey,
-        prepare(_v, { backend, width, height }) {
-            const cam = $.model.activeCamera3D;
-            if (!cam) return;
-            const tex = $.texmanager.getTexture(SkyboxPipeline.skyboxKey) as WebGLTexture | undefined;
-            if (!tex) return;
-            backend.setPipelineState?.('Skybox', { view: cam.skyboxView, proj: cam.projection, tex, width, height });
-        },
-    },
-
-    {
-        id: 'MeshBatch',
-        name: 'Meshes',
-        writesDepth: true,
-        shouldExecute: () => (MeshPipeline.meshesToDraw?.length ?? 0) > 0,
-        prepare(_v, { backend, width, height }) {
-            const cam = $.model.activeCamera3D;
-            if (!cam) return;
-            const frameShared = backend.getPipelineState?.('FrameShared') as { lighting?: unknown } | undefined;
-            const fogStateHolder = backend.getPipelineState?.('Fog') as { fog?: any } | undefined;
-            let fog = fogStateHolder?.fog;
-            if (!fog) {
+        // Fog
+        this.register({
+            id: 'fog',
+            label: 'fog',
+            name: 'FogState',
+            writesDepth: false,
+            stateOnly: true,
+            shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
+            exec: () => { /* state only */ },
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                registerAtmosphereHotkeys();
                 const density = (() => {
                     const p = Atmosphere.progressFactor;
                     const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0;
                     return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
                 })();
-                fog = {
+                const fog: any = {
                     fogColor: Atmosphere.fogColor,
                     fogDensity: density,
                     enableFog: Atmosphere.enableFog,
@@ -155,80 +65,166 @@ const pipelinePassesInternal: PipelinePassDescriptor[] = [
                     heightMax: Atmosphere.heightMax,
                     enableHeightGradient: Atmosphere.enableHeightGradient,
                 };
-            }
+                this.setState('fog', { width, height, fog } as any);
+            },
+        });
 
-            backend.setPipelineState?.('MeshBatch', {
-                width,
-                height,
-                view: { camPos: cam.position, viewProj: cam.viewProjection },
-                lighting: frameShared ? frameShared.lighting : undefined,
-                fog,
-            });
-        },
-    },
+        // Skybox
+        this.register({
+            id: 'skybox',
+            label: 'skybox',
+            name: 'Skybox',
+            writesDepth: true,
+            shouldExecute: () => !!$.model.activeCamera3D && !!SkyboxPipeline.skyboxKey,
+            exec: (backend, fbo, s) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                SkyboxPipeline.drawSkyboxWithState(gl, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
+            },
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const cam = $.model.activeCamera3D;
+                if (!cam) return;
+                const tex = $.texmanager.getTexture(SkyboxPipeline.skyboxKey) as TextureHandle | undefined;
+                if (!tex) return;
+                // Update state with dynamic data
+                this.setState('skybox', { width, height, view: cam.skyboxView, proj: cam.projection, tex } as any);
+            },
+        });
 
-    {
-        id: 'Particles',
-        name: 'Particles',
-        writesDepth: true,
-        shouldExecute: () => (ParticlesPipeline.particlesToDraw?.length ?? 0) > 0,
-        prepare(_v, { backend, width, height }) {
-            const cam = $.model.activeCamera3D;
-            if (!cam) return;
-            M4.viewRightUpInto(cam.view, particleCamRight, particleCamUp);
-            backend.setPipelineState?.('Particles', { width, height, viewProj: cam.viewProjection, camRight: particleCamRight, camUp: particleCamUp });
-        },
-    },
+        // Mesh batch
+        this.register({
+            id: 'meshbatch',
+            label: 'meshbatch',
+            name: 'Meshes',
+            writesDepth: true,
+            shouldExecute: () => (MeshPipeline.meshesToDraw?.length ?? 0) > 0,
+            exec: (backend, fbo, s) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                const state = s as MeshBatchPipelineState;
+                MeshPipeline.renderMeshBatch(gl, fbo as WebGLFramebuffer, state.width, state.height, state);
+            },
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const cam = $.model.activeCamera3D;
+                if (!cam) return;
+                const frameShared = this.getState('frame_shared') as { lighting?: unknown } | undefined;
+                const fogStateHolder = this.getState('fog') as { fog?: any } | undefined;
+                let fog = fogStateHolder?.fog;
+                if (!fog) {
+                    const density = (() => {
+                        const p = Atmosphere.progressFactor;
+                        const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0;
+                        return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
+                    })();
+                    fog = {
+                        fogColor: Atmosphere.fogColor,
+                        fogDensity: density,
+                        enableFog: Atmosphere.enableFog,
+                        fogMode: Atmosphere.fogMode,
+                        enableHeightFog: Atmosphere.enableHeightFog,
+                        heightFogStart: Atmosphere.heightFogStart,
+                        heightFogEnd: Atmosphere.heightFogEnd,
+                        heightLowColor: Atmosphere.heightLowColor,
+                        heightHighColor: Atmosphere.heightHighColor,
+                        heightMin: Atmosphere.heightMin,
+                        heightMax: Atmosphere.heightMax,
+                        enableHeightGradient: Atmosphere.enableHeightGradient,
+                    };
+                }
+                const meshState: MeshBatchPipelineState = {
+                    width,
+                    height,
+                    camPos: cam.position,
+                    viewProj: cam.viewProjection,
+                    fog,
+                    lighting: frameShared ? frameShared.lighting : undefined,
+                };
+                this.setState('meshbatch', meshState as any);
+            },
+        });
 
-    {
-        id: 'Sprites',
-        name: 'Sprites2D',
-        writesDepth: true,
-        prepare(v, { backend, width, height }) {
-            const gv = v as WebGLRenderView | undefined;
-            const baseW = gv?.viewportSize?.x ?? width / 2;
-            const baseH = gv?.viewportSize?.y ?? height / 2;
-            backend.setPipelineState?.('Sprites', { width, height, baseWidth: baseW, baseHeight: baseH });
-        },
-    },
+        // Particles
+        this.register({
+            id: 'particles',
+            label: 'particles',
+            name: 'Particles',
+            writesDepth: true,
+            shouldExecute: () => (ParticlesPipeline.particlesToDraw?.length ?? 0) > 0,
+            exec: (backend, fbo, s) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                const state = s as ParticlePipelineState;
+                ParticlesPipeline.renderParticleBatch(gl, fbo as WebGLFramebuffer, state.width, state.height, state);
+            },
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const cam = $.model.activeCamera3D;
+                if (!cam) return;
 
-    {
-        id: 'CRT',
-        name: 'CRTPost',
-        writesDepth: false,
-        presentStage: true,
-        prepare(v, { backend, srcTex }) {
-            const gv = v as WebGLRenderView | undefined;
-            if (!gv) return;
-            const colorTex = srcTex ?? gv.textures.post_processing_source_texture;
-            backend.setPipelineState?.('CRT', {
-                width: gv.offscreenCanvasSize.x,
-                height: gv.offscreenCanvasSize.y,
-                baseWidth: gv.viewportSize.x,
-                baseHeight: gv.viewportSize.y,
-                fragScale: gv.offscreenCanvasSize.x / gv.viewportSize.x,
-                outWidth: gv.canvasSize.x,
-                outHeight: gv.canvasSize.y,
-                colorTex,
-                options: {
-                    applyNoise: gv.applyNoise,
-                    applyColorBleed: gv.applyColorBleed,
-                    applyScanlines: gv.applyScanlines,
-                    applyBlur: gv.applyBlur,
-                    applyGlow: gv.applyGlow,
-                    applyFringing: gv.applyFringing,
-                    noiseIntensity: gv.noiseIntensity,
-                    colorBleed: gv.colorBleed,
-                    blurIntensity: gv.blurIntensity,
-                    glowColor: gv.glowColor,
-                },
-            });
-        },
-    },
-];
+                M4.viewRightUpInto(cam.view, camRight, camUp);
+                this.setState('particles', { width, height, viewProj: cam.viewProjection, camRight, camUp } as any);
+            },
+        });
 
-export function getPipelinePasses(): readonly PipelinePassDescriptor[] { return pipelinePassesInternal; }
-export function appendPipelinePass(pass: PipelinePassDescriptor): void { pipelinePassesInternal.push(pass); }
-export function insertPipelinePass(pass: PipelinePassDescriptor, index: number): void { if (index < 0 || index > pipelinePassesInternal.length) index = pipelinePassesInternal.length; pipelinePassesInternal.splice(index, 0, pass); }
-export function replacePipelinePasses(mutator: (arr: PipelinePassDescriptor[]) => void): void { mutator(pipelinePassesInternal); }
-export function findPipelinePassIndex(id: string): number { return pipelinePassesInternal.findIndex(p => p.id === id); }
+        // Sprites
+        this.register({
+            id: 'sprites',
+            label: 'sprites',
+            name: 'Sprites2D',
+            writesDepth: true,
+            exec: (backend, fbo, s) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                const state = s as SpritesPipelineState;
+                SpritesPipeline.renderSpriteBatch(gl, fbo as WebGLFramebuffer, state.width, state.height, state.baseWidth, state.baseHeight);
+            },
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                const baseW = gv.viewportSize.x;
+                const baseH = gv.viewportSize.y;
+                const spriteState: SpritesPipelineState = { width, height, baseWidth: baseW, baseHeight: baseH };
+                this.setState('sprites', spriteState as any);
+            },
+        });
+
+        // CRT
+        registerCRT(this.pm); // Assume updated
+
+        // FrameShared
+        this.register({
+            id: 'frame_shared',
+            label: 'frame_shared',
+            name: 'FrameShared',
+            stateOnly: true,
+            exec: () => { /* populated per frame by graph */ }
+        });
+    }
+
+    register(desc: RenderPassDef): void {
+        this.passes.push(desc);
+        this.pm.register(desc);
+    }
+
+    setState<PState extends RenderPassStateId>(id: PState, state: RenderPassStateRegistry[PState]): void { this.pm.setState(id, state); }
+    getState<PState extends RenderPassStateId>(id: PState): RenderPassStateRegistry[PState] | undefined { return this.pm.getState(id); }
+    execute(id: string, fbo: unknown): void { this.pm.execute(id, fbo); }
+    has(id: string): boolean { return this.pm.has(id); }
+
+    // Passes list access
+    getPipelinePasses(): readonly RenderPassDef[] { return this.passes; }
+    appendPipelinePass(pass: RenderPassDef): void { this.register(pass); }
+    insertPipelinePass(pass: RenderPassDef, index: number): void {
+        if (index < 0 || index > this.passes.length) index = this.passes.length;
+        this.passes.splice(index, 0, pass);
+        // Caller must ensure pass conforms to RegisteredPipeline if execution desired
+    }
+    replacePipelinePasses(mutator: (arr: RenderPassDef[]) => void): void { mutator(this.passes); }
+    findPipelinePassIndex(id: string): number { return this.passes.findIndex(p => String(p.id) === id); }
+
+    // Convenience: build render graph from current pass registry
+    buildRenderGraph(view: GLView, lighting: LightingSystem): RenderGraphRuntime {
+        return buildFrameGraph(view, lighting, this);
+    }
+}
