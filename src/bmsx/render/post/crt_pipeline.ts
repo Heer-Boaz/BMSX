@@ -1,5 +1,5 @@
 import { GraphicsPipelineManager } from '../backend/pipeline_manager';
-import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../view/render_view';
+import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl.constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
 // Local copy of CRTState to avoid import issues after refactor (remove duplication later)

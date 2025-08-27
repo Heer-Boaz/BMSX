@@ -9,32 +9,24 @@ import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import * as GLR from '../backend/gl_resources';
 import { GraphicsPipelineManager } from '../backend/pipeline_manager';
 import { PipelineRegistry } from '../backend/pipeline_registry';
+import {
+    TEXTURE_UNIT_ATLAS,
+    TEXTURE_UNIT_ATLAS_DYNAMIC,
+    TEXTURE_UNIT_POST_PROCESSING_SOURCE
+} from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
-import { buildFrameData } from '../graph/framedata';
-import { FrameData, RenderGraphRuntime } from '../graph/rendergraph';
+import { buildFrameData, FrameData, RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem } from '../lighting/lightingsystem';
 import { Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, GameView, generateAtlasName, renderGate, SkyboxImageIds } from '../view';
 
 // Debug flag (disabled now that graph is validated)
 const DEBUG_INJECT_TEST_SPRITE = false;
-// Texture unit constants (migrated from legacy glview.ts)
-export const TEXTURE_UNIT_ATLAS = 0;
-export const TEXTURE_UNIT_ATLAS_DYNAMIC = 1;
-export const TEXTURE_UNIT_ALBEDO = 2;
-export const TEXTURE_UNIT_NORMAL = 3;
-export const TEXTURE_UNIT_METALLIC_ROUGHNESS = 4;
-export const TEXTURE_UNIT_SHADOW_MAP = 5;
-export const TEXTURE_UNIT_SKYBOX = 6;
-export const TEXTURE_UNIT_PARTICLE = 7;
-export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
-export const TEXTURE_UNIT_UPLOAD = 15;
 
 export class GLView extends GameView {
     public glctx: WebGL2RenderingContext;
     private backend: WebGLBackend | null = null;
     public renderGraph: RenderGraphRuntime | null = null;
-    public rgColor: number | null = null;
-    public rgDepth: number | null = null;
+    // Graph handles are no longer stored on the view; they live inside the graph runtime
     private graphInvalid = true;
     private lightingSystem: LightingSystem | null = null;
     public offscreenCanvasSize: vec2;
@@ -173,11 +165,6 @@ export class GLView extends GameView {
     override handleResize(): void {
         if (this.isRendering) { this.needsResize = true; return; }
         super.handleResize(); // TODO: NEEDS TO BE OTHER WAY AROUND!
-        // Refresh resolution-dependent uniforms after size change
-        try {
-            SpritesPipeline.setupDefaultUniformValues(this.glctx, 1.0, [this.offscreenCanvasSize.x, this.offscreenCanvasSize.y] as unknown as [number, number]);
-            MeshPipeline.setDefaultUniformValues(this.glctx, 1.0);
-        } catch { /* ignore if not yet initialized */ }
         this.graphInvalid = true;
     }
     override drawgame(clearCanvas = true): void {
@@ -216,10 +203,11 @@ export class GLView extends GameView {
         if (!this.backend) this.backend = new WebGLBackend(this.glctx);
         if (!this.lightingSystem) this.lightingSystem = new LightingSystem(this.glctx);
         if (!this._pipelineRegistry) {
-            this._pipelineRegistry = new PipelineRegistry(new GraphicsPipelineManager(this.backend)); // temporary fallback
-            console.warn('PipelineRegistry not set on view; using fallback instance');
+            console.warn('PipelineRegistry not set on view yet; deferring render graph build');
+            this.graphInvalid = true;
+            return;
         }
-        this.renderGraph = this._pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
+        this.renderGraph = this._pipelineRegistry.buildRenderGraph(this as any, this.lightingSystem);
         this.graphInvalid = false;
     }
 
@@ -350,3 +338,6 @@ export class GLView extends GameView {
         return this.framebuffer;
     }
 }
+
+export type RenderView = GLView;
+export { TEXTURE_UNIT_POST_PROCESSING_SOURCE };

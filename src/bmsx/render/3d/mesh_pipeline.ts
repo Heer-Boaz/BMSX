@@ -11,7 +11,7 @@ import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../backend/webgl.constants';
 import { getFramebufferStatusString } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { DrawMeshOptions } from '../view';
-import { TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL } from '../view/render_view';
+import { TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { Atmosphere, registerAtmosphereHotkeys } from './atmosphere';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
@@ -25,7 +25,7 @@ const INSTANCE_STRIDE_BYTES = 64; // 4 vec4
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
 const INSTANCE_STRIDE_NORMAL9 = 9;
 const MAT4_FLOATS = 16;
-export const TEXTURE_UNIT_SHADOW_MAP = 6;
+// unified in webgl.constants
 
 export let meshesToDraw: DrawMeshOptions[] = [];
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem

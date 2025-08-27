@@ -6,7 +6,7 @@ import * as GLR from '../backend/gl_resources';
 import { getRenderContext } from '../backend/pipeline_registry';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { Color } from '../view';
-import { TEXTURE_UNIT_PARTICLE } from '../view/render_view';
+import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { M4 } from './math3d';
 import particleFragCode from './shaders/particle.frag.glsl';
 import particleVertCode from './shaders/particle.vert.glsl';

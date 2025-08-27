@@ -33,7 +33,8 @@ import {
     ZCOORDS_SIZE,
 } from '../backend/webgl.constants';
 import { Color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
-import { GLView, TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC } from '../view/render_view';
+import { GLView } from '../view/render_view';
+import { TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC } from '../backend/webgl.constants';
 import spriteShaderFragCode from './shaders/2d.frag.glsl';
 import spriteShaderVertCode from './shaders/2d.vert.glsl';
 import { bvec } from './vertexutils2d';

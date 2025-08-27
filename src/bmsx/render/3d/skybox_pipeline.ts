@@ -7,7 +7,7 @@ import { getRenderContext } from '../backend/pipeline_registry';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../view';
-import { TEXTURE_UNIT_SKYBOX } from '../view/render_view';
+import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl.constants';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
 
