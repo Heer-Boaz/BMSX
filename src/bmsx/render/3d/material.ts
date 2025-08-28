@@ -1,6 +1,5 @@
-import { insavegame } from '../..';
+import { color_arr, insavegame } from '../..';
 import type { TextureKey } from '../texturemanager';
-import { color_arr } from '../view';
 
 export interface MaterialTextures {
     albedo?: number;

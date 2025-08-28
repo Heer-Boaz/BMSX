@@ -2,7 +2,8 @@ import { $ } from '../../core/game';
 import { M4 } from '../3d/math3d';
 import { RenderView } from '../view/render_view';
 
-const CATCH_WEBGL_ERROR = true;
+// Global toggle for WebGL error checking. Disable in normal builds for performance.
+export const CATCH_WEBGL_ERROR = true;
 
 export function saveTextureToFile(): void {
     const view = $.viewAs<RenderView>();
@@ -84,29 +85,18 @@ export function saveFramebufferToFile(): void {
     a.click();
 }
 
-export function checkWebGLError(infoText: string): number {
-    // NOTE:
-    // Calling gl.getError() synchronizes the WebGL command queue and clears the error flag.
-    // This can change the timing/order of error detection, and may mask or alter the manifestation
-    // of errors (e.g., INVALID_OPERATION due to incomplete textures or framebuffers).
-    // In some cases, this can make race/timing-related bugs harder to reproduce or debug,
-    // because the error may not occur at the original draw call anymore.
-    let error = 0;
+export function checkWebGLError(_infoText: string): number {
+    if (!CATCH_WEBGL_ERROR) return 0;
     try {
         const gl = $.viewAs<RenderView>().glctx as WebGLRenderingContext;
-        error = gl.getError();
-        if (error !== gl.NO_ERROR) {
-            // Throwing error so that it can be caught by the debugger via catching caught exceptions
-            // This is useful for debugging WebGL errors in the browser console
-            throw new Error(`WebGL error occurred: ${getWebGLErrorString(gl, error)}: ${infoText}`);
+        const err = gl.getError();
+        if (err !== gl.NO_ERROR) {
+            // Surface in console during debug but do not throw to avoid breaking the frame
+            console.error(`WebGL error: ${getWebGLErrorString(gl, err)}: ${_infoText}`);
         }
-    } catch (e) {
-        console.error(e);
-        // throw e;
-    } finally {
-        // WebGL does not provide a method to explicitly clear errors.
-        // Errors are cleared automatically when retrieved using gl.getError().
-        return error;
+        return err;
+    } catch {
+        return 0;
     }
 }
 

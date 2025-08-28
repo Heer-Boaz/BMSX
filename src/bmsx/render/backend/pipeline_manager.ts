@@ -2,6 +2,7 @@
 // Simplified to avoid coupling with the render graph internals.
 
 import { GPUBackend, GraphicsPipelineBuildDesc, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle } from './pipeline_interfaces';
+import { checkWebGLError } from './webgl.helpers';
 
 interface RegisteredPass {
     id: string;
@@ -42,6 +43,7 @@ export class GraphicsPipelineManager {
                 this.backend.setGraphicsPipeline(stubPass, pipelineHandle);
             }
             desc.bootstrap(this.backend);
+            checkWebGLError(`after bootstrap ${desc.id}`);
         }
         this.pipelines.set(desc.id, pipeline);
     }
@@ -61,13 +63,17 @@ export class GraphicsPipelineManager {
         const p = this.pipelines.get(id);
         if (!p) throw new Error(`Pipeline '${id}' not found`);
         const backend = this.backend;
+        checkWebGLError(`before binding pipeline ${id}`);
         // Bind program/pipeline before prepare so uniforms can be set
         if (p.pipelineHandle && backend.setGraphicsPipeline) {
             const stubPass = { fbo, desc: { label: id } as RenderPassDesc } as any;
             backend.setGraphicsPipeline(stubPass, p.pipelineHandle);
         }
+        checkWebGLError(`after binding pipeline ${id}`);
         if (p.prepare) p.prepare(backend, p.state);
+        checkWebGLError(`after preparing pipeline ${id}`);
         p.exec(backend, fbo, p.state);
+        checkWebGLError(`after executing pipeline ${id}`);
     }
 
     has(id: string): boolean { return this.pipelines.has(id); }

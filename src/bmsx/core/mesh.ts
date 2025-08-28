@@ -5,22 +5,22 @@ import { M4, Mat4, Q, quat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/backend/webgl.constants';
 import type { TextureKey } from '../render/texturemanager';
-import type { Color, DrawMeshOptions } from '../render/view';
-import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr } from '../rompack/rompack';
+import type { color, DrawMeshOptions } from '../render/view';
+import type { asset_id, color_arr, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr, vec4arr } from '../rompack/rompack';
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave } from '../serializer/gameserializer';
 import { $ } from './game';
 import { GameObject } from './gameobject';
 import { Float32ArrayPool } from './utils';
 
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"
-type RuntimeNodeTRS = { t?: vec3arr; r?: [number, number, number, number]; s?: vec3arr };
+type RuntimeNodeTRS = { t?: vec3arr; r?: vec4arr; s?: vec3arr };
 type RuntimeNodeState = { trs?: RuntimeNodeTRS; weights?: number[]; visible?: boolean };
 type RuntimeAnim = { time?: number; speed?: number; activeClip?: string | number; loop?: boolean };
 type PersistedMatTex = Partial<{
 	albedo: number;
 	normal: number;
 	metallicRoughness: number;
-	color: [number, number, number, number];
+	color: color_arr;
 	metallicFactor: number;
 	roughnessFactor: number;
 }>;
@@ -54,7 +54,7 @@ export class Mesh {
 	public tangents: Float32Array | null;
 	/** Optional index buffer */
 	public indices?: Uint8Array | Uint16Array | Uint32Array;
-	public color: Color;
+	public color: color;
 	public atlasId: number;
 	public material?: Material;
 	public shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
@@ -68,7 +68,7 @@ export class Mesh {
 	public boundingCenter: vec3arr = [0, 0, 0];
 	public boundingRadius: number = 0;
 
-	constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: Color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array, meshname: string }) {
+	constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array, meshname: string }) {
 		this.name = opts?.meshname;
 		this.positions = opts?.positions ?? new Float32Array();
 		this.texcoords = opts?.texcoords ?? new Float32Array();
@@ -575,7 +575,7 @@ export abstract class MeshObject extends GameObject implements Oriented, Scaled 
 				if (n.translation || n.rotation || n.scale) {
 					st.trs = {};
 					if (n.translation) st.trs.t = [...n.translation] as vec3arr;
-					if (n.rotation) st.trs.r = [...n.rotation] as [number, number, number, number];
+					if (n.rotation) st.trs.r = [...n.rotation] as vec4arr;
 					if (n.scale) st.trs.s = [...n.scale] as vec3arr;
 				}
 				if (n.weights) st.weights = [...n.weights];
@@ -660,7 +660,7 @@ export abstract class MeshObject extends GameObject implements Oriented, Scaled 
 				// TRS
 				if (ns.trs) {
 					if (ns.trs.t) node.translation = [...ns.trs.t] as vec3arr;
-					if (ns.trs.r) node.rotation = [...ns.trs.r] as [number, number, number, number];
+					if (ns.trs.r) node.rotation = [...ns.trs.r] as vec4arr;
 					if (ns.trs.s) node.scale = [...ns.trs.s] as vec3arr;
 					node.matrix = undefined; // force recompute
 					anyDirty = true;

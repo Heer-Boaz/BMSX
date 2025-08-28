@@ -1,5 +1,5 @@
 import { DEFAULT_VERTEX_COLOR } from "../render/backend/webgl.constants";
-import { Color, DrawImgOptions } from "../render/view";
+import { color, DrawImgOptions } from "../render/view";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../rompack/rompack";
 import { insavegame } from "../serializer/gameserializer";
 import { $ } from './game';
@@ -51,7 +51,7 @@ export abstract class SpriteObject extends GameObject {
         return this.sprite.colorize;
     }
 
-    public set colorize(c: Color) {
+    public set colorize(c: color) {
         this.sprite.colorize = c;
     }
 
@@ -142,10 +142,10 @@ export class Sprite {
     public set flip_v(v: boolean) {
         this.options.flip.flip_v = v;
     }
-    public get colorize(): Color {
+    public get colorize(): color {
         return this.options.colorize;
     }
-    public set colorize(v: Color) {
+    public set colorize(v: color) {
         this.options.colorize = v;
     }
     public get imgid(): string {

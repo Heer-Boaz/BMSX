@@ -8,9 +8,11 @@
  */
 import { $ } from '../../core/game';
 import { taskGate } from '../../core/taskgate';
+import { color_arr } from '../../rompack/rompack';
 import { Camera } from '../3d/camera3d';
 import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
+import { checkWebGLError } from '../backend/webgl.helpers';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -128,7 +130,7 @@ export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: numb
 export interface IOBuilder {
     createTex(desc: TexDesc): RGTexHandle; // allocate logical resource
     readTex(handle: RGTexHandle): void;    // declare read dependency
-    writeTex(handle: RGTexHandle, opts?: { clearColor?: [number, number, number, number]; clearDepth?: number }): void; // declare write + optional clear
+    writeTex(handle: RGTexHandle, opts?: { clearColor?: color_arr; clearDepth?: number }): void; // declare write + optional clear
     exportToBackbuffer(handle: RGTexHandle): void; // mark final output
     provideValue<T>(val: T): ValueHandle<T>; // immediate value handle
     readValue(handle: ValueHandle): void; // declare value read
@@ -171,7 +173,7 @@ interface InternalTexResource {
     firstUse?: number;
     lastUse?: number;
     physicalId?: number;
-    clearOnWrite?: { color?: [number, number, number, number]; depth?: number };
+    clearOnWrite?: { color?: color_arr; depth?: number };
     state?: { layout: string };
 }
 
@@ -199,7 +201,7 @@ export class RenderGraphRuntime {
     private _pendingInvalidateOnReady: boolean = false;
     // Cached per-pass dependency data (populated during compile) for use during execute (transitions, stats)
     private _passReads: { tex: RGTexHandle }[][] = [];
-    private _passWrites: { tex: RGTexHandle; clear?: { color?: [number, number, number, number]; depth?: number } }[][] = [];
+    private _passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
     private _valueReads: { val: ValueHandle }[][] = [];
 
     constructor(backend: GPUBackend) { this.backend = backend; }
@@ -231,7 +233,7 @@ export class RenderGraphRuntime {
         }
 
         const setupData: unknown[] = [];
-        const passWrites: { tex: RGTexHandle; clear?: { color?: [number, number, number, number]; depth?: number } }[][] = [];
+        const passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
         const passReads: { tex: RGTexHandle }[][] = [];
         const valueReads: { val: ValueHandle }[][] = [];
 
@@ -393,7 +395,9 @@ export class RenderGraphRuntime {
             if (gateGroup && !gateGroup.ready) return; // Defer frame until required assets loaded
             if (gateGroup && gateGroup.ready && this._pendingInvalidateOnReady) { this.invalidate(); this._pendingInvalidateOnReady = false; }
         } catch { /* ignore if taskGate not wired */ }
+        checkWebGLError('Before compile');
         if (!this.compiled) this.compile(frame);
+        checkWebGLError('After compile');
         const setupData: unknown[] = (this as unknown as { _setupData: unknown[] })._setupData;
 
         const ctx: PassContext = {
@@ -413,12 +417,16 @@ export class RenderGraphRuntime {
             backend: this.backend,
         };
 
+        checkWebGLError('Before realizeAll');
+
         // Ensure GL objects exist before first pass that needs them
         this.realizeAll();
+        checkWebGLError('After realizeAll');
 
         this.passStats.length = 0;
         const order = this.passOrder.length ? this.passOrder : this.passes.map((_, i) => i); // fallback sequential
         for (let oi = 0; oi < order.length; oi++) {
+            checkWebGLError(`Before pass execution: ${order[oi]}: ${this.passes[order[oi]].name}`);
             const i = order[oi];
             if (this.reachable.length && !this.reachable[i]) continue; // skip culled
             const pass = this.passes[i];
@@ -490,6 +498,7 @@ export class RenderGraphRuntime {
             const dt = performance.now() - t0;
             this.passStats.push({ name: pass.name, ms: dt });
             if (rp) rp.end();
+            checkWebGLError(`After pass execution: ${i}: ${this.passes[i].name}`);
         }
     }
 

@@ -1,24 +1,26 @@
 import { $ } from '../../core/game';
-import * as SpritesPipeline from '../2d/sprites_pipeline';
-import spriteVS from '../2d/shaders/2d.vert.glsl';
+import { color_arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
+import spriteVS from '../2d/shaders/2d.vert.glsl';
+import * as SpritesPipeline from '../2d/sprites_pipeline';
 import { Atmosphere, registerAtmosphereHotkeys } from '../3d/atmosphere';
 import { M4 } from '../3d/math3d';
 import * as MeshPipeline from '../3d/mesh_pipeline';
-import meshVS from '../3d/shaders/3d.vert.glsl';
-import meshFS from '../3d/shaders/3d.frag.glsl';
 import * as ParticlesPipeline from '../3d/particles_pipeline';
-import particleVS from '../3d/shaders/particle.vert.glsl';
+import meshFS from '../3d/shaders/3d.frag.glsl';
+import meshVS from '../3d/shaders/3d.vert.glsl';
 import particleFS from '../3d/shaders/particle.frag.glsl';
-import * as SkyboxPipeline from '../3d/skybox_pipeline';
-import skyboxVS from '../3d/shaders/skybox.vert.glsl';
+import particleVS from '../3d/shaders/particle.vert.glsl';
 import skyboxFS from '../3d/shaders/skybox.frag.glsl';
+import skyboxVS from '../3d/shaders/skybox.vert.glsl';
+import * as SkyboxPipeline from '../3d/skybox_pipeline';
+import { RenderGraphRuntime } from '../graph/rendergraph';
+import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
-import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
-import { RenderGraphRuntime } from '../graph/rendergraph';
 import { RenderContext, RenderPassDef, RenderPassStateId, RenderPassStateRegistry, TextureHandle } from './pipeline_interfaces';
 import { GraphicsPipelineManager } from './pipeline_manager';
+import { checkWebGLError } from './webgl.helpers';
 
 export function getRenderContext(): RenderContext {
     const v = $.viewAs<GameView>() as unknown as RenderContext;
@@ -46,18 +48,8 @@ export class PipelineRegistry {
             name: 'FrameResolve',
             stateOnly: true,
             exec: () => { /* state only */ },
-            prepare: (backend, _state) => {
-                // Centralize default uniform values here so the view and individual passes don't need to set them
-                try {
-                    const gv = getRenderContext();
-                    const gl = (backend as any).gl as WebGL2RenderingContext;
-                    SpritesPipeline.setupDefaultUniformValues(
-                        gl,
-                        1.0,
-                        [gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y] as unknown as [number, number]
-                    );
-                    MeshPipeline.setDefaultUniformValues(gl, 1.0);
-                } catch { /* backend might not be WebGL yet or programs not ready */ }
+            prepare: (_backend, _state) => {
+                // No-op: per-pass uniform initialization happens inside each pass after the pipeline is bound.
             },
         });
         // Fog
@@ -209,6 +201,8 @@ export class PipelineRegistry {
                 // Desired state: enable culling, enable depth writes
                 backend.setCullEnabled?.(true);
                 backend.setDepthMask?.(true);
+                // Bind-time defaults now that the mesh program is bound (via PipelineManager)
+                try { const gl = (backend as any).gl as WebGL2RenderingContext; MeshPipeline.setDefaultUniformValues(gl, 1.0); } catch { /* ignore */ }
             },
         });
 
@@ -220,10 +214,9 @@ export class PipelineRegistry {
             vsCode: particleVS,
             fsCode: particleFS,
             bootstrap: (backend) => {
-                const gl = (backend as any).gl as WebGL2RenderingContext;
-                ParticlesPipeline.init(gl);
-                ParticlesPipeline.setupParticleLocations(gl);
-                ParticlesPipeline.setupParticleUniforms(gl);
+                ParticlesPipeline.init(backend);
+                ParticlesPipeline.setupParticleLocations();
+                ParticlesPipeline.setupParticleUniforms(backend);
             },
             writesDepth: true,
             shouldExecute: () => {
@@ -231,10 +224,9 @@ export class PipelineRegistry {
                 const qlen = (gv.renderer?.queues?.particles?.length ?? 0);
                 return qlen > 0;
             },
-            exec: (backend, fbo, s) => {
-                const gl = (backend as any).gl as WebGL2RenderingContext;
+            exec: (_backend, fbo, s) => {
                 const state = s as ParticlePipelineState;
-                ParticlesPipeline.renderParticleBatch(gl, fbo as WebGLFramebuffer, state.width, state.height, state);
+                ParticlesPipeline.renderParticleBatch(fbo, state.width, state.height, state);
             },
             prepare: (backend, _state) => {
                 const gv = getRenderContext();
@@ -258,10 +250,9 @@ export class PipelineRegistry {
                 textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }],
             },
             bootstrap: (backend) => {
-                const gl = (backend as any).gl as WebGL2RenderingContext;
-                SpritesPipeline.setupSpriteShaderLocations(gl);
-                SpritesPipeline.setupBuffers(gl);
-                SpritesPipeline.setupSpriteLocations(gl);
+                SpritesPipeline.setupSpriteShaderLocations(backend);
+                SpritesPipeline.setupBuffers(backend);
+                SpritesPipeline.setupSpriteLocations(backend);
             },
             writesDepth: true,
             shouldExecute: () => {
@@ -269,10 +260,9 @@ export class PipelineRegistry {
                 const qlen = (gv.renderer?.queues?.sprites?.length ?? 0);
                 return qlen > 0;
             },
-            exec: (backend, fbo, s) => {
-                const gl = (backend as any).gl as WebGL2RenderingContext;
+            exec: (_backend, fbo, s) => {
                 const state = s as SpritesPipelineState;
-                SpritesPipeline.renderSpriteBatch(gl, fbo as WebGLFramebuffer, state.width, state.height, state.baseWidth, state.baseHeight);
+                SpritesPipeline.renderSpriteBatch(fbo, state.width, state.height, state.baseWidth, state.baseHeight);
             },
             prepare: (backend, _state) => {
                 const gv = getRenderContext();
@@ -280,7 +270,19 @@ export class PipelineRegistry {
                 const baseW = gv.viewportSize.x;
                 const baseH = gv.viewportSize.y;
                 const spriteState: SpritesPipelineState = { width, height, baseWidth: baseW, baseHeight: baseH };
-                this.setState('sprites', spriteState as any);
+                this.setState('sprites', spriteState);
+                // Program is bound for sprites here; set defaults once per frame
+                checkWebGLError('Sprites: before setupDefaultUniformValues');
+                if (!backend) throw new Error('Backend not available');
+                if (!gv.offscreenCanvasSize) throw new Error('Offscreen canvas size not available');
+                SpritesPipeline.setupDefaultUniformValues(
+                    backend,
+                    1.0,
+                    // Use logical viewport resolution for sprite coordinate mapping
+                    [baseW, baseH] as unknown as [number, number]
+                );
+                checkWebGLError('Sprites: after setupDefaultUniformValues');
+
             },
         });
 
@@ -340,7 +342,7 @@ export class PipelineRegistry {
             setup: (io) => {
                 const color = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, name: 'FrameColor' });
                 const depth = io.createTex({ width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, depth: true, name: 'FrameDepth' });
-                const clearCol: [number, number, number, number] = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
+                const clearCol: color_arr = DEBUG_FORCE_VISIBLE_CLEAR ? [1, 0, 1, 1] : [0, 0, 0, 1];
                 io.writeTex(color, { clearColor: clearCol });
                 io.writeTex(depth, { clearDepth: 1.0 });
                 io.exportToBackbuffer(color);
@@ -394,16 +396,18 @@ export class PipelineRegistry {
                                 baseWidth: view.viewportSize.x,
                                 baseHeight: view.viewportSize.y,
                                 colorTex,
-                                options: (frame as any)['postFx']?.crt,
-                            } as unknown);
-                        } catch { /* ignore */ }
-                        desc.prepare?.(ctx.backend, undefined);
+                                options: frame['postFx']?.crt,
+                            });
+                        } catch { console.error(`Failed to set CRT state: ${frame['postFx']?.crt}`); }
+                        // Execute the pass; GraphicsPipelineManager ensures the program/pipeline
+                        // is bound before calling the pass's prepare() (WebGL requires useProgram).
                         this.execute(desc.id, null);
                     } else if (isStateOnly) {
-                        desc.prepare?.(ctx.backend, undefined);
+                        // Even for state-only passes, route through execute() to keep behavior uniform.
+                        this.execute(desc.id, null);
                     } else {
-                        desc.prepare?.(ctx.backend, undefined);
                         if (frameColorHandle == null || frameDepthHandle == null) return;
+                        // Execute with the current frame FBO; manager binds pipeline then calls prepare().
                         this.execute(desc.id, ctx.getFBO(frameColorHandle, frameDepthHandle) as WebGLFramebuffer);
                     }
                 }

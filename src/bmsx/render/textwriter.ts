@@ -2,7 +2,7 @@ import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions as GO } from '../core/gameoptions';
 import { vec2, vec3 } from "../rompack/rompack";
-import { Color, type DrawRectOptions } from './view';
+import { color, type DrawRectOptions } from './view';
 
 /**
  * A utility class for drawing text on the screen.
@@ -17,7 +17,7 @@ export class TextWriter {
      * @param _font The font to use for the text. If not specified, the default font will be used.
      * @param color The color to use for the text. If not specified, the default color will be used.
      */
-    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: Color, backgroundColor?: Color): void {
+    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: color, backgroundColor?: color): void {
         let font = _font ?? $.view.default_font;
         if (!font) {
             console.error('No default font available for TextWriter.drawText');

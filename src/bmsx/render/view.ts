@@ -21,7 +21,7 @@ export interface FlipOptions {
 
 export interface DrawRectOptions {
 	area: Area;
-	color: Color;
+	color: color;
 }
 
 export interface DrawImgOptions {
@@ -29,23 +29,15 @@ export interface DrawImgOptions {
 	pos: Vector;
 	scale?: vec2;
 	flip?: FlipOptions;
-	colorize?: Color;
+	colorize?: color;
 }
 
-export type Color = {
+export type color = {
 	r: number;
 	g: number;
 	b: number;
 	a: number;
 };
-
-export type color_arr = [number, number, number, number];
-
-export class PixelData {
-	public B: number;
-	public G: number;
-	public R: number;
-}
 
 export interface DrawMeshOptions {
 	mesh: Mesh;
@@ -55,10 +47,10 @@ export interface DrawMeshOptions {
 }
 
 export interface DrawParticleOptions {
-    position: vec3arr;
-    size: number;
-    color: Color;
-    texture?: WebGLTexture;
+	position: vec3arr;
+	size: number;
+	color: color;
+	texture?: WebGLTexture;
 }
 
 export interface SkyboxImageIds {
@@ -134,7 +126,6 @@ export abstract class GameView implements RegisterablePersistent {
 		// Base drawing logic goes here
 		const model: BaseModel = $.model;
 		model.applyViewSettings();
-		if (clearCanvas) $.view.clear();
 		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
 		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
 	}
@@ -424,9 +415,6 @@ export abstract class GameView implements RegisterablePersistent {
 	}
 
 	public clear(): void {
-		$.view.context.translate(0.5, 0.5);
-		$.view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-		$.view.context.translate(-0.5, -0.5);
 	}
 
 	public abstract drawImg(options: DrawImgOptions): void;
@@ -441,7 +429,7 @@ export abstract class GameView implements RegisterablePersistent {
 	 * @param color Color to use for the outline
 	 * @param thickness Line thickness in pixels (default 1)
 	 */
-	public abstract drawPolygon(points: Polygon, z: number, color: Color, thickness: number): void;
+	public abstract drawPolygon(points: Polygon, z: number, color: color, thickness: number): void;
 
 	public abstract drawMesh(options: DrawMeshOptions): void;
 

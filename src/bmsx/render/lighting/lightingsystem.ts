@@ -21,22 +21,17 @@ export class LightingSystem {
 
 	constructor(private gl: WebGL2RenderingContext) { }
 
-	update(ambient: AmbientLight | null): LightingFrameState {
-		const lightsMutated = MeshPipeline.consumeLightsDirty();
-		let ambientChanged = false;
-		if (ambient && ambient !== this._lastAmbient) {
-			MeshPipeline.setAmbientLight(this.gl, ambient);
-			this._lastAmbient = ambient;
-			ambientChanged = true;
-		} else if (!ambient && this._lastAmbient) {
-			// If ambient removed, reset to zero intensity
-			this._lastAmbient = null;
-			ambientChanged = true;
-			// Optional: could push zero to shader here.
-		}
-		const dirCount = MeshPipeline.getDirectionalLightCount();
-		const pointCount = MeshPipeline.getPointLightCount();
-		const dirty = lightsMutated || ambientChanged;
+    update(ambient: AmbientLight | null): LightingFrameState {
+        const lightsMutated = MeshPipeline.consumeLightsDirty();
+        let ambientChanged = false;
+        if (ambient !== this._lastAmbient) {
+            // Defer ambient uniform uploads until the mesh pass prepare/state stage
+            this._lastAmbient = ambient;
+            ambientChanged = true;
+        }
+        const dirCount = MeshPipeline.getDirectionalLightCount();
+        const pointCount = MeshPipeline.getPointLightCount();
+        const dirty = lightsMutated || ambientChanged;
 		// Only rebuild frame state object if something changed to reduce churn
 		if (dirty || this._frameState.dirCount !== dirCount || this._frameState.pointCount !== pointCount || this._frameState.ambient !== this._lastAmbient) {
 			this._frameState = {

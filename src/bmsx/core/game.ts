@@ -10,7 +10,7 @@ import { PipelineRegistry } from "../render/backend/pipeline_registry";
 import { WebGLBackend } from "../render/backend/webgl_backend";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
-import { Color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
+import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
 import { Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
@@ -220,7 +220,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		this.view.fillRectangle(options);
 	}
 
-	public drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: Color, backgroundColor?: Color): void {
+	public drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: color, backgroundColor?: color): void {
 		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 

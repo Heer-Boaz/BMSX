@@ -1,5 +1,5 @@
 /// <reference types="@webgpu/types" />
-import { Size } from '../../rompack/rompack';
+import { color_arr, Size } from '../../rompack/rompack';
 
 // Minimal, unified render interfaces for both backends
 
@@ -37,9 +37,23 @@ export interface GraphicsPipelineBindingLayout {
 }
 
 // Attachments for a render pass instance (runtime execution)
-export interface ColorAttachmentSpec { tex: TextureHandle; clear?: [number, number, number, number]; discardAfter?: boolean }
-export interface DepthAttachmentSpec { tex: TextureHandle; clearDepth?: number; discardAfter?: boolean }
-export interface RenderPassDesc { label?: string; color?: ColorAttachmentSpec; colors?: ColorAttachmentSpec[]; depth?: DepthAttachmentSpec }
+export interface ColorAttachmentSpec {
+    tex: TextureHandle;
+    clear?: color_arr;
+    discardAfter?: boolean;
+}
+
+export interface DepthAttachmentSpec {
+    tex: TextureHandle;
+    clearDepth?: number;
+    discardAfter?: boolean;
+}
+export interface RenderPassDesc {
+    label?: string;
+    color?: ColorAttachmentSpec;
+    colors?: ColorAttachmentSpec[];
+    depth?: DepthAttachmentSpec;
+}
 
 // Definition of a logical pass (registration-time)
 export interface RenderPassDef {
@@ -76,8 +90,9 @@ export interface PassEncoder { fbo: unknown; desc: RenderPassDesc; }
 
 export interface GPUBackend {
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle;
+    createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
     createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): TextureHandle;
-    createSolidCubemap(size: number, rgba: [number, number, number, number], desc: TextureParams): TextureHandle;
+    createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle;
     createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
     uploadCubemapFace(cubemap: TextureHandle, face: number, img: ImageBitmap): void;
     destroyTexture(handle: TextureHandle): void;
@@ -85,7 +100,9 @@ export interface GPUBackend {
     createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
     createFBO(color?: TextureHandle | null, depth?: TextureHandle | null): unknown;
     bindFBO(fbo: unknown): void;
-    clear(opts: { color?: [number, number, number, number]; depth?: number }): void;
+    clear(opts: {
+        color?: color_arr;
+    }): void;
     beginRenderPass(desc: RenderPassDesc): PassEncoder;
     endRenderPass(pass: PassEncoder): void;
     getCaps(): BackendCaps;
@@ -94,7 +111,7 @@ export interface GPUBackend {
     destroyRenderPassInstance?(p: RenderPassInstanceHandle): void;
     setGraphicsPipeline?(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void;
     draw?(pass: PassEncoder, first: number, count: number): void;
-    drawIndexed?(pass: PassEncoder, indexCount: number, firstIndex?: number): void;
+    drawIndexed?(pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void;
     setPassState?<S = unknown>(label: RenderPassId, state: S): void;
     executePass?(label: RenderPassId, fbo: unknown): void;
     getPassState?<S = unknown>(label: RenderPassId): S | undefined;
@@ -105,6 +122,7 @@ export interface GPUBackend {
     bindArrayBuffer?(buf: BufferHandle | null): void;
     createVertexArray?(): unknown;
     bindVertexArray?(vao: unknown | null): void;
+    deleteVertexArray?(vao: unknown | null): void;
 
     // Optional attribute helpers
     enableVertexAttrib?(index: number): void;
@@ -115,9 +133,14 @@ export interface GPUBackend {
     vertexAttribI4ui?(index: number, x: number, y: number, z: number, w: number): void;
     bindElementArrayBuffer?(buf: BufferHandle | null): void;
 
+    // Backend-agnostic attribute convenience wrappers (avoid GL enums in pipeline code)
+    setAttribPointerFloat?(index: number, size: number, stride: number, offset: number): void;
+    setAttribIPointerU8?(index: number, size: number, stride: number, offset: number): void;
+    setAttribIPointerU16?(index: number, size: number, stride: number, offset: number): void;
+
     // Optional draw helpers
     drawInstanced?(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex?: number, firstInstance?: number): void;
-    drawIndexedInstanced?(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex?: number, baseVertex?: number, firstInstance?: number): void;
+    drawIndexedInstanced?(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex?: number, baseVertex?: number, firstInstance?: number, indexType?: number): void;
 
     // Optional uniform buffer helpers (WebGL backed today)
     createUniformBuffer?(byteSize: number, usage: 'static' | 'dynamic'): BufferHandle;
@@ -132,12 +155,23 @@ export interface GPUBackend {
     setBlendFunc?(src: number, dst: number): void;
 
     // Optional texture binding for WebGPU
-    bindTextureWithSampler?(texBinding: number, samplerBinding: number, texture: TextureHandle, samplerDesc?: { mag?: 'nearest'|'linear'; min?: 'nearest'|'linear'; wrapS?: 'clamp'|'repeat'; wrapT?: 'clamp'|'repeat' }): void;
+    bindTextureWithSampler?(texBinding: number, samplerBinding: number, texture: TextureHandle, samplerDesc?: { mag?: 'nearest' | 'linear'; min?: 'nearest' | 'linear'; wrapS?: 'clamp' | 'repeat'; wrapT?: 'clamp' | 'repeat' }): void;
 
     // Optional constant attribute helpers
     vertexAttrib2f?(index: number, x: number, y: number): void;
     vertexAttrib3f?(index: number, x: number, y: number, z: number): void;
     vertexAttrib4f?(index: number, x: number, y: number, z: number, w: number): void;
+
+    // Optional uniform helpers (WebGL implemented; WebGPU may map to buffers)
+    getAttribLocation?(name: string): number;
+    setUniform1f?(name: string, v: number): void;
+    setUniform1fv?(name: string, data: Float32Array): void;
+    setUniform2fv?(name: string, data: Float32Array): void;
+    setUniform1i?(name: string, v: number): void;
+    setUniform3fv?(name: string, data: Float32Array): void;
+    setUniformMatrix3fv?(name: string, data: Float32Array): void;
+    setUniformMatrix4fv?(name: string, data: Float32Array): void;
+    setUniform4f?(name: string, x: number, y: number, z: number, w: number): void;
 }
 
 export interface RenderPassStateRegistry {
@@ -161,5 +195,5 @@ export interface RenderContext {
     bind2DTex(tex: TextureHandle | null): void;
     bindCubemapTex(tex: TextureHandle | null): void;
     // Optional centralized renderer submission + queues (lightweight, backend-agnostic)
-    renderer?: { queues?: { [k: string]: unknown } ; submit?: unknown; swap?: () => void };
+    renderer?: { queues?: { [k: string]: unknown }; submit?: unknown; swap?: () => void };
 }

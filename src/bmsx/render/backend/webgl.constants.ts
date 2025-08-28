@@ -1,9 +1,9 @@
-import type { Color } from '../view';
+import type { color } from '../view';
 
-export const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
-export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
+export const DEFAULT_VERTEX_COLOR: color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+export const VERTEX_COLOR_COLORIZED_RED: color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
+export const VERTEX_COLOR_COLORIZED_GREEN: color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
+export const VERTEX_COLOR_COLORIZED_BLUE: color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
 
 export const MAX_SPRITES = 256;
 export const MAX_DIR_LIGHTS = 4;

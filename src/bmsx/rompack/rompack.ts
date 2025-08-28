@@ -65,12 +65,13 @@ export type AudioType = 'sfx' | 'music';
  */
 export type vec2arr = [number, number];
 
-
 /**
  * Alternative representation of a 2D vector as an array.
  * Example: [x, y, z]
  */
 export type vec3arr = [number, number, number];
+
+export type vec4arr = [number, number, number, number];
 
 /**
  * Represents a 2D vector.
@@ -102,6 +103,8 @@ export type Vector = vec2 & { z?: number };
  * It can be either a 2D vector or a 3D vector.
  */
 export type Size = Vector;
+
+export type x_y_w_h_arr = vec4arr;
 
 /**
  * Represents an area defined by a start and end point.
@@ -144,9 +147,10 @@ export interface HitPolygonsPrecalc {
 	fliphv: Polygon[]; // The concave hull polygons of the image, when flipped both horizontally and vertically.
 }
 
+export type color_arr = vec4arr;
 
 export interface GLTFMaterial {
-	baseColorFactor?: [number, number, number, number];
+	baseColorFactor?: color_arr;
 	metallicFactor?: number;
 	roughnessFactor?: number;
 	baseColorTexture?: number;
@@ -192,7 +196,7 @@ export interface GLTFNode {
 	mesh?: number;
 	children?: number[];
 	translation?: vec3arr;
-	rotation?: [number, number, number, number];
+	rotation?: vec4arr;
 	scale?: vec3arr;
 	matrix?: Float32Array;
 	skin?: number;

@@ -165,7 +165,7 @@ export class PhysStaticBox extends MeshObject {
         /** Optionele override voor normal atlas index */
         public normalTextureIndex?: number,
         /** Optionele override voor base color factor (rgba) */
-        public overrideColor?: [number, number, number, number],
+        public overrideColor?: color_arr,
         /** Optionele override voor metallic en roughness */
         public metallicFactor?: number,
         public roughnessFactor?: number,
@@ -229,7 +229,7 @@ export interface CitySilhouetteConfig {
     /** Minimal lateral distance of first building row (default = gridSize * 0.5) */
     nearOffset?: number;
     /** Optional custom color palette (rgba). If omitted random neutral palette used */
-    palette?: [number, number, number, number][];
+    palette?: color_arr[];
     /** Optional min fraction of gridSize used for X/Z footprint (default 0.45) */
     footprintMinFactor?: number;
     /** Optional max fraction of gridSize used for X/Z footprint (default 0.70) */

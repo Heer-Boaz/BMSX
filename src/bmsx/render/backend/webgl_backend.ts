@@ -1,7 +1,8 @@
 // WebGL backend implementation extracted from legacy gpu_backend.ts
-import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
+import { color_arr } from '../../rompack/rompack';
 import * as GLR from './gl_resources';
 import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassId, RenderPassInstanceHandle, RenderPassStateRegistry, TextureParams } from './pipeline_interfaces';
+import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 
@@ -13,11 +14,37 @@ export class WebGLBackend implements GPUBackend {
     // typed as Partial<PipelineStates> for compile-time narrowing while still allowing
     // arbitrary extension via index signature.
     private extraStates: Partial<RenderPassStateRegistry> & { [k: string]: unknown } = {};
+    private currentProgram: WebGLProgram | null = null;
+    private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
+    private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
+    private bufferSizes = new WeakMap<WebGLBuffer, number>();
     constructor(public gl: WebGL2RenderingContext) {
         // No internal manager; caller creates PipelineManager with this backend
     }
     // (Static helpers have moved to core/gl_resources.ts; existing external usages should import from there.)
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): WebGLTexture { return GLR.glCreateTextureFromImage(this.gl, img, desc, null); }
+    createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+        const tex = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        const data = new Uint8Array(width * height * 4);
+        for (let i = 0; i < width * height; i++) {
+            data[i * 4 + 0] = Math.round(rgba[0] * 255);
+            data[i * 4 + 1] = Math.round(rgba[1] * 255);
+            data[i * 4 + 2] = Math.round(rgba[2] * 255);
+            data[i * 4 + 3] = Math.round(rgba[3] * 255);
+        }
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_BASE_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        return tex;
+    }
     createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): WebGLTexture {
         const gl = this.gl;
         // Avoid global state; use local binding if possible, but for simplicity keep as is (refactor later if needed)
@@ -32,7 +59,7 @@ export class WebGLBackend implements GPUBackend {
         gl.bindTexture(gl.TEXTURE_CUBE_MAP, null); // Unbind to clean up
         return tex;
     }
-    createSolidCubemap(size: number, rgba: [number, number, number, number], desc: TextureParams): WebGLTexture {
+    createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): WebGLTexture {
         const gl = this.gl;
         gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
         const tex = gl.createTexture()!;
@@ -68,7 +95,21 @@ export class WebGLBackend implements GPUBackend {
         gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
     }
     destroyTexture(handle: WebGLTexture): void { this.gl.deleteTexture(handle); }
-    createColorTexture(desc: { width: number; height: number; format?: GLenum }): WebGLTexture { return GLR.glCreateTexture(this.gl, undefined, { x: desc.width, y: desc.height }, TEXTURE_UNIT_UPLOAD); }
+    createColorTexture(desc: { width: number; height: number; format?: GLenum }): WebGLTexture {
+        const gl = this.gl;
+        const tex = gl.createTexture()!;
+        gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        // Use RGBA8 for guaranteed color-renderable texture in WebGL2
+        const internal = (typeof desc.format === 'number' ? desc.format : gl.RGBA8) as GLenum;
+        gl.texImage2D(gl.TEXTURE_2D, 0, internal, desc.width, desc.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        return tex;
+    }
     createDepthTexture(desc: { width: number; height: number }): WebGLTexture { return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD); }
     createFBO(color?: WebGLTexture | null, depth?: WebGLTexture | null): WebGLFramebuffer | null {
         const gl = this.gl;
@@ -76,11 +117,13 @@ export class WebGLBackend implements GPUBackend {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
         if (color) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0);
         if (depth) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depth, 0);
+        // Ensure draw buffer routing is valid for user FBOs
+        if (color) gl.drawBuffers([gl.COLOR_ATTACHMENT0]); else gl.drawBuffers([gl.NONE]);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         return fbo;
     }
     bindFBO(fbo: WebGLFramebuffer | null): void { this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo); }
-    clear(opts: { color?: [number, number, number, number]; depth?: number }): void {
+    clear(opts: { color?: color_arr; depth?: number }): void {
         const gl = this.gl;
         let mask = 0;
         if (opts.color) { gl.clearColor(...opts.color); mask |= gl.COLOR_BUFFER_BIT; }
@@ -112,6 +155,8 @@ export class WebGLBackend implements GPUBackend {
                 this.clear({ color: clearColor, depth: desc.depth?.clearDepth });
             }
         }
+        // Set the program related to this render-pass (if defined)
+        // if (desc.
         return { fbo, desc } as PassEncoder & { encoder?: null }; // No encoder in WebGL
     }
     endRenderPass(_pass: PassEncoder): void {
@@ -131,13 +176,17 @@ export class WebGLBackend implements GPUBackend {
         if (p.backendData) this.gl.deleteProgram(p.backendData as WebGLProgram);
     }
     setGraphicsPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void {
-        this.gl.useProgram(pipeline.backendData as WebGLProgram);
+        const prog = pipeline.backendData as WebGLProgram;
+        this.gl.useProgram(prog);
+        this.currentProgram = prog;
     }
     draw(pass: PassEncoder, first: number, count: number): void {
         this.gl.drawArrays(this.gl.TRIANGLES, first, count); // Assume TRIANGLES; customize if needed
     }
-    drawIndexed(pass: PassEncoder, indexCount: number, firstIndex?: number): void {
-        this.gl.drawElements(this.gl.TRIANGLES, indexCount, this.gl.UNSIGNED_SHORT, (firstIndex ?? 0) * 2); // Assume UNSIGNED_SHORT; adjust as per buffers
+    drawIndexed(pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void {
+        const type = (indexType ?? this.gl.UNSIGNED_SHORT);
+        const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
+        this.gl.drawElements(this.gl.TRIANGLES, indexCount, type, (firstIndex ?? 0) * bytesPerIndex);
     }
     // Remove registerCustomPipeline; use PipelineManager.register directly
     private hashString(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return h >>> 0; }
@@ -191,18 +240,28 @@ export class WebGLBackend implements GPUBackend {
         const buf = gl.createBuffer(); if (!buf) throw new Error('Failed to create buffer');
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
         gl.bufferData(gl.ARRAY_BUFFER, data, usage === 'static' ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+        this.bufferSizes.set(buf, data.byteLength);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
         return buf;
     }
     updateVertexBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstOffset = 0): void {
         const gl = this.gl;
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.bufferSubData(gl.ARRAY_BUFFER, dstOffset, data);
+        const current = this.bufferSizes.get(buf) ?? 0;
+        const needed = dstOffset + data.byteLength;
+        if (needed > current) {
+            // Grow buffer with new contents when subData would overflow
+            gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+            this.bufferSizes.set(buf, data.byteLength);
+        } else {
+            gl.bufferSubData(gl.ARRAY_BUFFER, dstOffset, data);
+        }
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
     bindArrayBuffer(buf: WebGLBuffer | null): void { this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buf); }
     createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
     bindVertexArray(vao: WebGLVertexArrayObject | null): void { this.gl.bindVertexArray(vao); }
+    deleteVertexArray(vao: WebGLVertexArrayObject | null): void { if (vao) this.gl.deleteVertexArray(vao); }
 
     enableVertexAttrib(index: number): void { this.gl.enableVertexAttribArray(index); }
     disableVertexAttrib(index: number): void { this.gl.disableVertexAttribArray(index); }
@@ -221,8 +280,10 @@ export class WebGLBackend implements GPUBackend {
     drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, _firstInstance = 0): void {
         this.gl.drawArraysInstanced(this.gl.TRIANGLES, firstVertex, vertexCount, instanceCount);
     }
-    drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, _firstInstance = 0): void {
-        this.gl.drawElementsInstanced(this.gl.TRIANGLES, indexCount, this.gl.UNSIGNED_SHORT, firstIndex * 2, instanceCount);
+    drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, _firstInstance = 0, indexType?: number): void {
+        const type = (indexType ?? this.gl.UNSIGNED_SHORT);
+        const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
+        this.gl.drawElementsInstanced(this.gl.TRIANGLES, indexCount, type, firstIndex * bytesPerIndex, instanceCount);
     }
 
     createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): WebGLBuffer {
@@ -252,4 +313,66 @@ export class WebGLBackend implements GPUBackend {
     vertexAttrib2f(index: number, x: number, y: number): void { this.gl.vertexAttrib2f(index, x, y); }
     vertexAttrib3f(index: number, x: number, y: number, z: number): void { this.gl.vertexAttrib3f(index, x, y, z); }
     vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void { this.gl.vertexAttrib4f(index, x, y, z, w); }
+    getError?(): number { return this.gl.getError(); }
+
+    // --- Backend-agnostic convenience wrappers ---
+    setAttribPointerFloat(index: number, size: number, stride: number, offset: number): void {
+        this.gl.vertexAttribPointer(index, size, this.gl.FLOAT, false, stride, offset);
+    }
+    setAttribIPointerU8(index: number, size: number, stride: number, offset: number): void {
+        this.gl.vertexAttribIPointer(index, size, this.gl.UNSIGNED_BYTE, stride, offset);
+    }
+    setAttribIPointerU16(index: number, size: number, stride: number, offset: number): void {
+        this.gl.vertexAttribIPointer(index, size, this.gl.UNSIGNED_SHORT, stride, offset);
+    }
+
+    // --- Uniform helpers ---
+    private getCurrentProgramOrThrow(): WebGLProgram {
+        const p = this.currentProgram ?? (this.gl.getParameter(this.gl.CURRENT_PROGRAM) as WebGLProgram | null);
+        if (!p) throw new Error('No current program bound');
+        this.currentProgram = p;
+        return p;
+    }
+    getAttribLocation(name: string): number {
+        const prog = this.getCurrentProgramOrThrow();
+        let map = this.attribCache.get(prog);
+        if (!map) { map = new Map(); this.attribCache.set(prog, map); }
+        if (map.has(name)) return map.get(name)!;
+        const loc = this.gl.getAttribLocation(prog, name);
+        map.set(name, loc);
+        return loc;
+    }
+    private getUniformLocationCached(name: string): WebGLUniformLocation | null {
+        const prog = this.getCurrentProgramOrThrow();
+        let map = this.uniformCache.get(prog);
+        if (!map) { map = new Map(); this.uniformCache.set(prog, map); }
+        if (map.has(name)) return map.get(name)!;
+        const loc = this.gl.getUniformLocation(prog, name);
+        map.set(name, loc);
+        return loc;
+    }
+    setUniform1f(name: string, v: number): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform1f(loc, v);
+    }
+    setUniform1fv(name: string, data: Float32Array): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform1fv(loc, data);
+    }
+    setUniform2fv(name: string, data: Float32Array): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform2fv(loc, data);
+    }
+    setUniform1i(name: string, v: number): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform1i(loc, v);
+    }
+    setUniform3fv(name: string, data: Float32Array): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform3fv(loc, data);
+    }
+    setUniformMatrix3fv(name: string, data: Float32Array): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniformMatrix3fv(loc, false, data);
+    }
+    setUniformMatrix4fv(name: string, data: Float32Array): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniformMatrix4fv(loc, false, data);
+    }
+    setUniform4f(name: string, x: number, y: number, z: number, w: number): void {
+        const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform4f(loc, x, y, z, w);
+    }
 }

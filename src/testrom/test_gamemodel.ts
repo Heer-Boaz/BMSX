@@ -289,7 +289,7 @@ export class gamemodel extends BaseModel {
 		// for (const d of staticDefs) {
 		//     // assign cycling albedo index (demo) + distinct color factor to visualize even if atlas identical
 		//     const ci = Math.max(colorIdx++ % 4, 1);
-		//     const colorVariants: [number, number, number, number][] = [
+		//     const colorVariants: color_arr[] = [
 		//         [1, 0.3, 0.3, 1],
 		//         [0.3, 1, 0.3, 1],
 		//         [0.3, 0.3, 1, 1],

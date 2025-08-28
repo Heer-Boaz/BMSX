@@ -1,4 +1,5 @@
 /// <reference types="@webgpu/types" />
+import { color_arr } from '../../rompack/rompack';
 import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from './pipeline_interfaces';
 // Assuming TextureHandle is GPUTexture for WebGPU
 
@@ -35,6 +36,31 @@ export class WebGPUBackend implements GPUBackend {
         return texture;
     }
 
+    createSolidTexture2D(width: number, height: number, rgba: color_arr, _desc: TextureParams = {}): TextureHandle {
+        const texture = this.device.createTexture({
+            size: { width, height, depthOrArrayLayers: 1 },
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+            mipLevelCount: 1,
+            dimension: '2d',
+        });
+        const pixelCount = width * height;
+        const data = new Uint8Array(pixelCount * 4);
+        for (let i = 0; i < pixelCount; i++) {
+            data[i * 4 + 0] = Math.round(rgba[0] * 255);
+            data[i * 4 + 1] = Math.round(rgba[1] * 255);
+            data[i * 4 + 2] = Math.round(rgba[2] * 255);
+            data[i * 4 + 3] = Math.round(rgba[3] * 255);
+        }
+        this.device.queue.writeTexture(
+            { texture },
+            data,
+            { bytesPerRow: width * 4 },
+            { width, height, depthOrArrayLayers: 1 },
+        );
+        return texture;
+    }
+
     createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): TextureHandle {
         if (faces.length !== 6 || !faces.every(f => f.width === faces[0].width && f.height === faces[0].height)) {
             throw new Error('All cubemap faces must be the same square size');
@@ -60,7 +86,7 @@ export class WebGPUBackend implements GPUBackend {
         return texture;
     }
 
-    createSolidCubemap(size: number, rgba: [number, number, number, number], desc: TextureParams): TextureHandle {
+    createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle {
         const texture = this.device.createTexture({
             size: { width: size, height: size, depthOrArrayLayers: 6 },
             format: 'rgba8unorm',
@@ -166,7 +192,7 @@ export class WebGPUBackend implements GPUBackend {
         // No-op in WebGPU; binding is handled in render passes
     }
 
-    clear(opts: { color?: [number, number, number, number]; depth?: number }): void {
+    clear(opts: { color?: color_arr; depth?: number }): void {
         // To clear outside a pass, create a temporary render pass for clearing
         const commandEncoder = this.device.createCommandEncoder();
         let colorAttachments: GPURenderPassColorAttachment[] = [];
@@ -313,9 +339,9 @@ export class WebGPUBackend implements GPUBackend {
     }
 
     draw(pass: PassEncoder & { encoder: GPURenderPassEncoder }, first: number, count: number): void { pass.encoder.draw(count, 1, first, 0); }
-    drawIndexed(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, firstIndex?: number): void { pass.encoder.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
+    drawIndexed(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, firstIndex?: number, _indexType?: number): void { pass.encoder.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
     drawInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { pass.encoder.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
-    drawIndexedInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0): void { pass.encoder.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
+    drawIndexedInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void { pass.encoder.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
 
     setPassState<S = unknown>(label: RenderPassStateId, state: S): void {
         this.stateRegistry.set(label, state);
@@ -337,8 +363,12 @@ export class WebGPUBackend implements GPUBackend {
     bindArrayBuffer?(buf: unknown | null): void; // no-op
     createVertexArray?(): unknown; // no-op
     bindVertexArray?(vao: unknown | null): void; // no-op
+    deleteVertexArray?(vao: unknown | null): void { /* no-op */ }
     vertexAttribIPointer?(index: number, size: number, type: number, stride: number, offset: number): void; // no-op
     vertexAttribI4ui?(index: number, x: number, y: number, z: number, w: number): void; // no-op
+    setAttribPointerFloat?(index: number, size: number, stride: number, offset: number): void { /* no-op */ }
+    setAttribIPointerU8?(index: number, size: number, stride: number, offset: number): void { /* no-op */ }
+    setAttribIPointerU16?(index: number, size: number, stride: number, offset: number): void { /* no-op */ }
     createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): GPUBuffer {
         return this.device.createBuffer({ size: byteSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, mappedAtCreation: false });
     }
@@ -351,13 +381,13 @@ export class WebGPUBackend implements GPUBackend {
         this.bindGroupCache.clear();
     }
 
-    bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: GPUTexture, samplerDesc?: { mag?: 'nearest'|'linear'; min?: 'nearest'|'linear'; wrapS?: 'clamp'|'repeat'; wrapT?: 'clamp'|'repeat' }): void {
+    bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: GPUTexture, samplerDesc?: { mag?: 'nearest' | 'linear'; min?: 'nearest' | 'linear'; wrapS?: 'clamp' | 'repeat'; wrapT?: 'clamp' | 'repeat' }): void {
         try {
             const view = texture.createView();
             const mag = samplerDesc?.mag === 'linear' ? 'linear' : 'nearest';
             const min = samplerDesc?.min === 'linear' ? 'linear' : 'nearest';
-            const address = (wrap: 'clamp'|'repeat'|undefined): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
-            const sampler = this.device.createSampler({ magFilter: mag as GPUSamplerFilterMode, minFilter: min as GPUSamplerFilterMode, addressModeU: address(samplerDesc?.wrapS), addressModeV: address(samplerDesc?.wrapT) });
+            const address = (wrap: 'clamp' | 'repeat' | undefined): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
+            const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(samplerDesc?.wrapS), addressModeV: address(samplerDesc?.wrapT) });
             this.textureBindings.set(texBinding, view);
             this.samplerBindings.set(samplerBinding, sampler);
             this.bindGroupCache.clear();
@@ -368,4 +398,15 @@ export class WebGPUBackend implements GPUBackend {
     }
     setCullEnabled?(enabled: boolean): void { /* no-op; configure in pipeline state */ }
     setDepthMask?(write: boolean): void { /* no-op; configure in depthStencil state */ }
+
+    // Uniform helpers no-ops (WebGPU path uses buffers/bind groups)
+    getAttribLocation?(name: string): number { return -1; }
+    setUniform1f?(name: string, v: number): void { /* no-op */ }
+    setUniform1fv?(name: string, data: Float32Array): void { /* no-op */ }
+    setUniform2fv?(name: string, data: Float32Array): void { /* no-op */ }
+    setUniform1i?(name: string, v: number): void { /* no-op */ }
+    setUniform3fv?(name: string, data: Float32Array): void { /* no-op */ }
+    setUniformMatrix3fv?(name: string, data: Float32Array): void { /* no-op */ }
+    setUniformMatrix4fv?(name: string, data: Float32Array): void { /* no-op */ }
+    setUniform4f?(name: string, x: number, y: number, z: number, w: number): void { /* no-op */ }
 }

@@ -7,17 +7,17 @@ import * as MeshPipeline from '../3d/mesh_pipeline';
 import * as ParticlesPipeline from '../3d/particles_pipeline';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import * as GLR from '../backend/gl_resources';
-import { GraphicsPipelineManager } from '../backend/pipeline_manager';
 import { PipelineRegistry } from '../backend/pipeline_registry';
 import {
     TEXTURE_UNIT_ATLAS,
     TEXTURE_UNIT_ATLAS_DYNAMIC,
     TEXTURE_UNIT_POST_PROCESSING_SOURCE
 } from '../backend/webgl.constants';
+import { checkWebGLError } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { buildFrameData, FrameData, RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem } from '../lighting/lightingsystem';
-import { Color, DrawImgOptions, DrawMeshOptions, DrawParticleOptions, DrawRectOptions, GameView, generateAtlasName, renderGate, SkyboxImageIds } from '../view';
+import { color, DrawImgOptions, DrawMeshOptions, DrawParticleOptions, DrawRectOptions, GameView, generateAtlasName, renderGate, SkyboxImageIds } from '../view';
 
 // Debug flag (disabled now that graph is validated)
 const DEBUG_INJECT_TEST_SPRITE = false;
@@ -68,23 +68,23 @@ export class RenderView extends GameView {
         };
         swap: () => void;
     } = {
-        queues: { particles: [], sprites: [], meshes: [] },
-        submit: {
-            particle: (o: ParticlesPipeline.DrawParticleOptions) => { this.renderer.queues.particles.push({ ...o }); },
-            sprite: (o: DrawImgOptions) => {
-                this.renderer.queues.sprites.push({
-                    ...o,
-                    pos: o.pos ? { ...o.pos } : undefined,
-                    scale: o.scale ? { ...o.scale } : undefined,
-                    colorize: o.colorize ? { ...o.colorize } : undefined,
-                    flip: o.flip ? { ...o.flip } : undefined,
-                });
+            queues: { particles: [], sprites: [], meshes: [] },
+            submit: {
+                particle: (o: ParticlesPipeline.DrawParticleOptions) => { this.renderer.queues.particles.push({ ...o }); },
+                sprite: (o: DrawImgOptions) => {
+                    this.renderer.queues.sprites.push({
+                        ...o,
+                        pos: o.pos ? { ...o.pos } : undefined,
+                        scale: o.scale ? { ...o.scale } : undefined,
+                        colorize: o.colorize ? { ...o.colorize } : undefined,
+                        flip: o.flip ? { ...o.flip } : undefined,
+                    });
+                },
+                mesh: (o: DrawMeshOptions) => { this.renderer.queues.meshes.push({ ...o }); },
             },
-            mesh: (o: DrawMeshOptions) => { this.renderer.queues.meshes.push({ ...o }); },
-        },
-        // No double buffering yet; placeholder for future frame-swap
-        swap: () => { /* no-op for now */ },
-    };
+            // No double buffering yet; placeholder for future frame-swap
+            swap: () => { /* no-op for now */ },
+        };
 
     constructor(viewport: Size) {
         super(viewport, multiply_vec(viewport, 2));
@@ -113,11 +113,15 @@ export class RenderView extends GameView {
         // Pipeline bootstrap now handled via PipelineRegistry registration
 
         // Default uniform setup has moved to PipelineRegistry ('frame_resolve' pass)
-
+        checkWebGLError('Before setup setup textures');
         this.setupTextures();
+        checkWebGLError('After setup setup textures');
         this.createFramebuffer();
+        checkWebGLError('After createFramebuffer');
         this.handleResize();
+        checkWebGLError('After handleResize');
         this.rebuildGraph();
+        checkWebGLError('After rebuildGraph');
     }
     private setupTextures(): void {
         const gl = this.glctx;
@@ -190,7 +194,9 @@ export class RenderView extends GameView {
         const token = renderGate.begin({ blocking: true, tag: 'frame' });
         try {
             this.isRendering = true;
+            checkWebGLError('Before execute');
             this.execute(clearCanvas);
+            checkWebGLError('After execute');
             if (this.needsResize) this.handleResize();
         } finally {
             this.isRendering = false;
@@ -211,10 +217,15 @@ export class RenderView extends GameView {
         // The explicit draw-commands stage has been removed. Each pipeline
         // prepares and executes itself from its own queues/state when the
         // render graph runs.
+        checkWebGLError('Before drawbase');
         this.drawbase(clearCanvas);
+        checkWebGLError('After drawbase');
         if (!this.renderGraph || this.graphInvalid) this.rebuildGraph();
+        checkWebGLError('Before execute');
         this.renderGraph!.execute(frame);
+        checkWebGLError('After execute');
         const stats = this.renderGraph!.getPassStats();
+        console.log(`Render Pass Stats: ${JSON.stringify(stats)}`);
     }
     public rebuildGraph(): void {
         if (!this.backend) this.backend = new WebGLBackend(this.glctx);
@@ -249,7 +260,7 @@ export class RenderView extends GameView {
         SpritesPipeline.fillRectangle(this as any, o);
     }
 
-    override drawPolygon(points: Polygon, z: number, color: Color, thickness: number): void {
+    override drawPolygon(points: Polygon, z: number, color: color, thickness: number): void {
         SpritesPipeline.drawPolygon(this as any, points, z, color, thickness);
     }
 
@@ -282,7 +293,10 @@ export class RenderView extends GameView {
     }
 
     override setAmbientLight(light: AmbientLight): void {
-        MeshPipeline.setAmbientLight(this.glctx, light);
+        // Defer ambient uniform upload until the mesh pass is active.
+        // Ambient values are pulled from $.model.ambientLight by the frame_shared pass
+        // and applied in MeshPipeline.setupRenderingState(). No-op here to avoid
+        // touching GL state with the wrong program bound.
     }
 
     override clearLights(): void {

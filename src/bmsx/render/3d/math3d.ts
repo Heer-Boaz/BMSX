@@ -1,4 +1,4 @@
-import type { vec3, vec3arr } from '../../rompack/rompack';
+import type { vec3, vec3arr, vec4arr } from '../../rompack/rompack';
 
 // math.ts — compacte, consistente math voor column-major mat4 (OpenGL-style)
 
@@ -77,7 +77,7 @@ export const M4 = {
         return m;
     },
     // ----- TRS helpers -----
-    quatToMat4(q: [number, number, number, number]): Mat4 {
+    quatToMat4(q: vec4arr): Mat4 {
         let [x, y, z, w] = q;
         const l = Math.hypot(x, y, z, w) || 1; x /= l; y /= l; z /= l; w /= l;
         const xx = x * x, yy = y * y, zz = z * z, xy = x * y, xz = x * z, yz = y * z, wx = w * x, wy = w * y, wz = w * z;
@@ -89,7 +89,7 @@ export const M4 = {
         return m;
     },
     // Write quaternion rotation matrix into provided out (avoids alloc per call)
-    quatToMat4Into(out: Mat4, q: [number, number, number, number]): Mat4 {
+    quatToMat4Into(out: Mat4, q: vec4arr): Mat4 {
         let [x, y, z, w] = q;
         const l = Math.hypot(x, y, z, w) || 1; x /= l; y /= l; z /= l; w /= l;
         const xx = x * x, yy = y * y, zz = z * z, xy = x * y, xz = x * z, yz = y * z, wx = w * x, wy = w * y, wz = w * z;
@@ -99,7 +99,7 @@ export const M4 = {
         out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
         return out;
     },
-    fromTRS(t: [number, number, number], q?: [number, number, number, number], s?: [number, number, number]): Mat4 {
+    fromTRS(t: [number, number, number], q?: vec4arr, s?: [number, number, number]): Mat4 {
         const out = M4.identity();
         if (t) M4.translateSelf(out, t[0], t[1], t[2]);
         if (q) M4.mulInto(out, out, M4.quatToMat4(q));
@@ -256,7 +256,6 @@ export const M4 = {
     },
 };
 
-
 // ====== Vec helpers ======
 // Quaternion helpers consolidated into lower section (Q)
 export const V3 = {
@@ -294,7 +293,7 @@ export const V3 = {
 
 
 // ====== Frustum helpers ======
-export type Plane = [number, number, number, number];
+export type Plane = vec4arr;
 export function extractFrustumPlanes(vp: Mat4): Plane[] {
     const m = vp;
     const P: Plane[] = [
@@ -633,7 +632,7 @@ export const bvec3 = {
 };
 
 // Quaternion utilities unified under Q.
-export function quatToMat4(q: [number, number, number, number]): Float32Array {
+export function quatToMat4(q: vec4arr): Float32Array {
     const [x, y, z, w] = q;
     const x2 = x + x, y2 = y + y, z2 = z + z;
     const xx = x * x2, xy = x * y2, xz = x * z2;

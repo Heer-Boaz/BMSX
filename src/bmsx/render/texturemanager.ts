@@ -2,7 +2,7 @@ import { AssetBarrier } from '../core/assetbarrier';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
-import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
+import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
 
 export const TEXTMANAGER_ID = 'texmgr';
@@ -212,7 +212,7 @@ export class TextureManager implements RegisterablePersistent {
     }
 
     // helper: reserve a fallback cubemap entry and return the asset barrier to use
-    private reserveFallbackCubemap(key: string, desc: TextureParams, fallbackColor: [number, number, number, number], assetBarrier?: AssetBarrier<WebGLTexture>): AssetBarrier<WebGLTexture> {
+    private reserveFallbackCubemap(key: string, desc: TextureParams, fallbackColor: color_arr, assetBarrier?: AssetBarrier<WebGLTexture>): AssetBarrier<WebGLTexture> {
         // place fallback immediately in cache (non-blocking)
         const fallback = this.backend!.createSolidCubemap(1, fallbackColor, desc);
         this.gpuCache.set(key, { handle: fallback, refCount: 1 });
@@ -258,7 +258,7 @@ export class TextureManager implements RegisterablePersistent {
                 Promise<ImageBitmap>, Promise<ImageBitmap>, Promise<ImageBitmap>],
             faceIdsForKey: readonly [string, string, string, string, string, string],
             desc: TextureParams,
-            fallbackColor: [number, number, number, number],
+            fallbackColor: color_arr,
         }
     ): TextureKey {
         if (!this.backend) throw new Error('TextureManager backend not set');

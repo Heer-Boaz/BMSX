@@ -1,5 +1,5 @@
 import { ATLAS_ID_ATTRIBUTE_SIZE, ATLAS_ID_SIZE, COLOR_OVERRIDE_ATTRIBUTE_SIZE, COLOR_OVERRIDE_SIZE, TEXTURECOORDS_SIZE, VERTEXCOORDS_SIZE, ZCOORDS_SIZE, ZCOORD_ATTRIBUTE_SIZE } from '../backend/webgl.constants';
-import type { Color } from '../view';
+import type { color } from '../view';
 
 
 export const bvec = {
@@ -19,7 +19,7 @@ export const bvec = {
         const offset = i * ZCOORDS_SIZE;
         for (let j = offset; j < offset + ZCOORDS_SIZE; j += ZCOORD_ATTRIBUTE_SIZE) v[j] = z;
     },
-    set_color(v: Float32Array, i: number, color: Color): void {
+    set_color(v: Float32Array, i: number, color: color): void {
         const offset = i * COLOR_OVERRIDE_SIZE;
         const colorArray = [color.r, color.g, color.b, color.a];
         for (let j = offset; j < offset + COLOR_OVERRIDE_SIZE; j += COLOR_OVERRIDE_ATTRIBUTE_SIZE) v.set(colorArray, j);

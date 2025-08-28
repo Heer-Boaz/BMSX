@@ -1,4 +1,4 @@
-import { Color } from "../render/view";
+import { color } from "../render/view";
 import { vec2 } from "../rompack/rompack";
 
 export const TileSize: number = 16;
@@ -55,7 +55,7 @@ export const MSX1ScreenWidth: number = 256;
 export const MSX1ScreenHeight: number = 192;
 export const MSX2ScreenWidth: number = 256;
 export const MSX2ScreenHeight: number = 212;
-export const Msx1Colors: Color[] = [
+export const Msx1Colors: color[] = [
     { r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 1 },
     { r: 0 / 255, g: 0 / 255, b: 0 / 255, a: 1 },
     { r: 0 / 255, g: 241 / 255, b: 20 / 255, a: 1 },
@@ -73,4 +73,4 @@ export const Msx1Colors: Color[] = [
     { r: 208 / 255, g: 208 / 255, b: 208 / 255, a: 1 },
     { r: 255 / 255, g: 255 / 255, b: 255 / 255, a: 1 },
 ];
-export const Msx1ExtColors: Color[] = [{ r: 104, g: 104, b: 104, a: 1 }];
+export const Msx1ExtColors: color[] = [{ r: 104, g: 104, b: 104, a: 1 }];
