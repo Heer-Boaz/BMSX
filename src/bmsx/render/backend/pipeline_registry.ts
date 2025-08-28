@@ -105,6 +105,7 @@ export class PipelineRegistry {
             fsCode: skyboxFS,
             bindingLayout: {
                 textures: [{ name: 'u_skybox' }],
+                samplers: [{ name: 's_skybox' }],
             },
             bootstrap: (backend) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
@@ -128,6 +129,8 @@ export class PipelineRegistry {
                 // Desired state: no cull, no depth write
                 backend.setCullEnabled?.(false);
                 backend.setDepthMask?.(false);
+                // WebGPU: bind texture + sampler
+                backend.bindTextureWithSampler?.(0, 1, tex);
             },
         });
 

@@ -64,13 +64,7 @@ const spriteShaderData = {
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
 
-export function createSpriteShaderPrograms(gl: WebGL2RenderingContext): void {
-    const gv = $.viewAs<RenderView>();
-    const b = gv.getBackend();
-    const program = b.buildProgram(spriteShaderVertCode, spriteShaderFragCode, 'sprites');
-    if (!program) throw Error('Failed to build sprite shader program');
-    spriteShaderProgram = program;
-}
+// Removed: program creation is handled by the backend/pipeline manager
 
 export function setupSpriteShaderLocations(gl: WebGL2RenderingContext): void {
     // If program not explicitly created yet, pick up the program bound by the PipelineManager

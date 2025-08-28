@@ -242,4 +242,14 @@ export class WebGLBackend implements GPUBackend {
     setViewport(vp: { x: number; y: number; w: number; h: number }): void { this.gl.viewport(vp.x, vp.y, vp.w, vp.h); }
     setCullEnabled(enabled: boolean): void { if (enabled) this.gl.enable(this.gl.CULL_FACE); else this.gl.disable(this.gl.CULL_FACE); }
     setDepthMask(write: boolean): void { this.gl.depthMask(write); }
+    setBlendEnabled(enabled: boolean): void { if (enabled) this.gl.enable(this.gl.BLEND); else this.gl.disable(this.gl.BLEND); }
+    setBlendFunc(src: number, dst: number): void { this.gl.blendFunc(src, dst); }
+
+    bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: WebGLTexture): void {
+        // WebGL path binds textures via conventional texture units + uniforms; this is a no-op here
+    }
+
+    vertexAttrib2f(index: number, x: number, y: number): void { this.gl.vertexAttrib2f(index, x, y); }
+    vertexAttrib3f(index: number, x: number, y: number, z: number): void { this.gl.vertexAttrib3f(index, x, y, z); }
+    vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void { this.gl.vertexAttrib4f(index, x, y, z, w); }
 }

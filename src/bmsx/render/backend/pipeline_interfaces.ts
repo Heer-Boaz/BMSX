@@ -128,7 +128,17 @@ export interface GPUBackend {
     setViewport?(vp: { x: number; y: number; w: number; h: number }): void;
     setCullEnabled?(enabled: boolean): void;
     setDepthMask?(write: boolean): void;
-} 
+    setBlendEnabled?(enabled: boolean): void;
+    setBlendFunc?(src: number, dst: number): void;
+
+    // Optional texture binding for WebGPU
+    bindTextureWithSampler?(texBinding: number, samplerBinding: number, texture: TextureHandle, samplerDesc?: { mag?: 'nearest'|'linear'; min?: 'nearest'|'linear'; wrapS?: 'clamp'|'repeat'; wrapT?: 'clamp'|'repeat' }): void;
+
+    // Optional constant attribute helpers
+    vertexAttrib2f?(index: number, x: number, y: number): void;
+    vertexAttrib3f?(index: number, x: number, y: number, z: number): void;
+    vertexAttrib4f?(index: number, x: number, y: number, z: number, w: number): void;
+}
 
 export interface RenderPassStateRegistry {
     ['skybox']: unknown;

@@ -8,6 +8,8 @@ export class WebGPUBackend implements GPUBackend {
     private pipelineIdCounter: number = 0;
     private pipelines: Map<number, GPURenderPipeline> = new Map();
     private uniformBindings: Map<number, GPUBuffer> = new Map();
+    private textureBindings: Map<number, GPUTextureView> = new Map();
+    private samplerBindings: Map<number, GPUSampler> = new Map();
     private bindGroupCache: Map<number, GPUBindGroup> = new Map();
 
     constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
@@ -296,11 +298,15 @@ export class WebGPUBackend implements GPUBackend {
         try {
             let bg = this.bindGroupCache.get(pipelineHandle.id);
             const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
-            if (!bg && this.uniformBindings.size > 0) {
+            if (!bg) {
                 const entries: GPUBindGroupEntry[] = [];
                 for (const [binding, buffer] of this.uniformBindings) entries.push({ binding, resource: { buffer } });
-                bg = this.device.createBindGroup({ layout, entries });
-                this.bindGroupCache.set(pipelineHandle.id, bg);
+                for (const [binding, view] of this.textureBindings) entries.push({ binding, resource: view });
+                for (const [binding, sampler] of this.samplerBindings) entries.push({ binding, resource: sampler });
+                if (entries.length > 0) {
+                    bg = this.device.createBindGroup({ layout, entries });
+                    this.bindGroupCache.set(pipelineHandle.id, bg);
+                }
             }
             if (bg) pass.encoder.setBindGroup(0, bg);
         } catch { /* ignore if layout 0 absent */ }
@@ -343,6 +349,19 @@ export class WebGPUBackend implements GPUBackend {
         this.uniformBindings.set(bindingIndex, buf);
         // Invalidate cached bind groups to reflect new resources
         this.bindGroupCache.clear();
+    }
+
+    bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: GPUTexture, samplerDesc?: { mag?: 'nearest'|'linear'; min?: 'nearest'|'linear'; wrapS?: 'clamp'|'repeat'; wrapT?: 'clamp'|'repeat' }): void {
+        try {
+            const view = texture.createView();
+            const mag = samplerDesc?.mag === 'linear' ? 'linear' : 'nearest';
+            const min = samplerDesc?.min === 'linear' ? 'linear' : 'nearest';
+            const address = (wrap: 'clamp'|'repeat'|undefined): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
+            const sampler = this.device.createSampler({ magFilter: mag as GPUSamplerFilterMode, minFilter: min as GPUSamplerFilterMode, addressModeU: address(samplerDesc?.wrapS), addressModeV: address(samplerDesc?.wrapT) });
+            this.textureBindings.set(texBinding, view);
+            this.samplerBindings.set(samplerBinding, sampler);
+            this.bindGroupCache.clear();
+        } catch { /* ignore if not a GPUTexture */ }
     }
     setViewport?(vp: { x: number; y: number; w: number; h: number }): void {
         // Viewport is set via render pass; explicit calls are no-op for now

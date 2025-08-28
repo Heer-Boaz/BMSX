@@ -45,16 +45,7 @@ export function init(gl: WebGL2RenderingContext): void {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     getRenderContext().bind2DTex(null);
 }
-export function createParticleProgram(gl: WebGL2RenderingContext): void {
-    const b = getRenderContext().getBackend() as WebGLBackend;
-    const program = b.buildProgram(particleVertCode, particleFragCode, 'particles');
-    if (!program) throw Error('Failed to build particle shader program');
-    particleProgram = program;
-    viewProjLocation = gl.getUniformLocation(program, 'u_viewProjection')!;
-    cameraRightLocation = gl.getUniformLocation(program, 'u_cameraRight')!;
-    cameraUpLocation = gl.getUniformLocation(program, 'u_cameraUp')!;
-    textureLocation = gl.getUniformLocation(program, 'u_texture')!;
-}
+// Removed: program creation is handled by the backend/pipeline manager
 export function setupParticleUniforms(gl: WebGL2RenderingContext): void {
     // Pick up program created/bound by GPUBackend/GraphicsPipelineManager
     if (!particleProgram) {
