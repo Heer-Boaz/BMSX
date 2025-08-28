@@ -203,4 +203,43 @@ export class WebGLBackend implements GPUBackend {
     bindArrayBuffer(buf: WebGLBuffer | null): void { this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buf); }
     createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
     bindVertexArray(vao: WebGLVertexArrayObject | null): void { this.gl.bindVertexArray(vao); }
+
+    enableVertexAttrib(index: number): void { this.gl.enableVertexAttribArray(index); }
+    disableVertexAttrib(index: number): void { this.gl.disableVertexAttribArray(index); }
+    vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void {
+        this.gl.vertexAttribPointer(index, size, type, normalized, stride, offset);
+    }
+    vertexAttribDivisor(index: number, divisor: number): void { this.gl.vertexAttribDivisor(index, divisor); }
+    bindElementArrayBuffer?(buf: WebGLBuffer | null): void { this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, buf); }
+    vertexAttribIPointer(index: number, size: number, type: number, stride: number, offset: number): void {
+        this.gl.vertexAttribIPointer(index, size, type, stride, offset);
+    }
+    vertexAttribI4ui(index: number, x: number, y: number, z: number, w: number): void {
+        this.gl.vertexAttribI4ui(index, x, y, z, w);
+    }
+
+    drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, _firstInstance = 0): void {
+        this.gl.drawArraysInstanced(this.gl.TRIANGLES, firstVertex, vertexCount, instanceCount);
+    }
+    drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, _firstInstance = 0): void {
+        this.gl.drawElementsInstanced(this.gl.TRIANGLES, indexCount, this.gl.UNSIGNED_SHORT, firstIndex * 2, instanceCount);
+    }
+
+    createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): WebGLBuffer {
+        const gl = this.gl;
+        const buf = gl.createBuffer(); if (!buf) throw new Error('Failed to create uniform buffer');
+        gl.bindBuffer(gl.UNIFORM_BUFFER, buf);
+        gl.bufferData(gl.UNIFORM_BUFFER, byteSize, usage === 'static' ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+        return buf;
+    }
+    updateUniformBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstByteOffset = 0): void {
+        const gl = this.gl; gl.bindBuffer(gl.UNIFORM_BUFFER, buf); gl.bufferSubData(gl.UNIFORM_BUFFER, dstByteOffset, data); gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+    }
+    bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void { this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf); }
+
+    // --- Render state helpers ---
+    setViewport(vp: { x: number; y: number; w: number; h: number }): void { this.gl.viewport(vp.x, vp.y, vp.w, vp.h); }
+    setCullEnabled(enabled: boolean): void { if (enabled) this.gl.enable(this.gl.CULL_FACE); else this.gl.disable(this.gl.CULL_FACE); }
+    setDepthMask(write: boolean): void { this.gl.depthMask(write); }
 }

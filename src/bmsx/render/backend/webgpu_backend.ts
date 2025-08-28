@@ -7,6 +7,8 @@ export class WebGPUBackend implements GPUBackend {
     private limits: GPUSupportedLimits;
     private pipelineIdCounter: number = 0;
     private pipelines: Map<number, GPURenderPipeline> = new Map();
+    private uniformBindings: Map<number, GPUBuffer> = new Map();
+    private bindGroupCache: Map<number, GPUBindGroup> = new Map();
 
     constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
         this.limits = this.device.limits;
@@ -288,18 +290,26 @@ export class WebGPUBackend implements GPUBackend {
 
     setGraphicsPipeline(pass: PassEncoder & { encoder: GPURenderPassEncoder }, pipelineHandle: RenderPassInstanceHandle): void {
         const pipeline = this.pipelines.get(pipelineHandle.id);
-        if (pipeline) {
-            pass.encoder.setPipeline(pipeline);
-        }
+        if (!pipeline) return;
+        pass.encoder.setPipeline(pipeline);
+        // Bind group 0 from current uniform buffer bindings if present
+        try {
+            let bg = this.bindGroupCache.get(pipelineHandle.id);
+            const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
+            if (!bg && this.uniformBindings.size > 0) {
+                const entries: GPUBindGroupEntry[] = [];
+                for (const [binding, buffer] of this.uniformBindings) entries.push({ binding, resource: { buffer } });
+                bg = this.device.createBindGroup({ layout, entries });
+                this.bindGroupCache.set(pipelineHandle.id, bg);
+            }
+            if (bg) pass.encoder.setBindGroup(0, bg);
+        } catch { /* ignore if layout 0 absent */ }
     }
 
-    draw(pass: PassEncoder & { encoder: GPURenderPassEncoder }, first: number, count: number): void {
-        pass.encoder.draw(count, 1, first, 0);
-    }
-
-    drawIndexed(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, firstIndex?: number): void {
-        pass.encoder.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0);
-    }
+    draw(pass: PassEncoder & { encoder: GPURenderPassEncoder }, first: number, count: number): void { pass.encoder.draw(count, 1, first, 0); }
+    drawIndexed(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, firstIndex?: number): void { pass.encoder.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
+    drawInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { pass.encoder.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
+    drawIndexedInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0): void { pass.encoder.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
 
     setPassState<S = unknown>(label: RenderPassStateId, state: S): void {
         this.stateRegistry.set(label, state);
@@ -315,10 +325,28 @@ export class WebGPUBackend implements GPUBackend {
         return this.stateRegistry.get(label);
     }
 
-    // Optional buffer/VAO helpers: not applicable to WebGPU yet (vertex buffers managed per pipeline)
+    // Optional buffer/VAO helpers: vertex buffers are pipeline-defined in WebGPU; skip
     createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): never;
     updateVertexBuffer?(buf: unknown, data: ArrayBufferView, dstOffset?: number): never;
     bindArrayBuffer?(buf: unknown | null): void; // no-op
     createVertexArray?(): unknown; // no-op
     bindVertexArray?(vao: unknown | null): void; // no-op
+    vertexAttribIPointer?(index: number, size: number, type: number, stride: number, offset: number): void; // no-op
+    vertexAttribI4ui?(index: number, x: number, y: number, z: number, w: number): void; // no-op
+    createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): GPUBuffer {
+        return this.device.createBuffer({ size: byteSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, mappedAtCreation: false });
+    }
+    updateUniformBuffer(buf: GPUBuffer, data: ArrayBufferView, dstByteOffset = 0): void {
+        this.device.queue.writeBuffer(buf, dstByteOffset, data.buffer, data.byteOffset, data.byteLength);
+    }
+    bindUniformBufferBase(bindingIndex: number, buf: GPUBuffer): void {
+        this.uniformBindings.set(bindingIndex, buf);
+        // Invalidate cached bind groups to reflect new resources
+        this.bindGroupCache.clear();
+    }
+    setViewport?(vp: { x: number; y: number; w: number; h: number }): void {
+        // Viewport is set via render pass; explicit calls are no-op for now
+    }
+    setCullEnabled?(enabled: boolean): void { /* no-op; configure in pipeline state */ }
+    setDepthMask?(write: boolean): void { /* no-op; configure in depthStencil state */ }
 }

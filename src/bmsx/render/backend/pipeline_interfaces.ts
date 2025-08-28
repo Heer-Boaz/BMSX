@@ -105,7 +105,30 @@ export interface GPUBackend {
     bindArrayBuffer?(buf: BufferHandle | null): void;
     createVertexArray?(): unknown;
     bindVertexArray?(vao: unknown | null): void;
-}
+
+    // Optional attribute helpers
+    enableVertexAttrib?(index: number): void;
+    disableVertexAttrib?(index: number): void;
+    vertexAttribPointer?(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void;
+    vertexAttribDivisor?(index: number, divisor: number): void;
+    vertexAttribIPointer?(index: number, size: number, type: number, stride: number, offset: number): void;
+    vertexAttribI4ui?(index: number, x: number, y: number, z: number, w: number): void;
+    bindElementArrayBuffer?(buf: BufferHandle | null): void;
+
+    // Optional draw helpers
+    drawInstanced?(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex?: number, firstInstance?: number): void;
+    drawIndexedInstanced?(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex?: number, baseVertex?: number, firstInstance?: number): void;
+
+    // Optional uniform buffer helpers (WebGL backed today)
+    createUniformBuffer?(byteSize: number, usage: 'static' | 'dynamic'): BufferHandle;
+    updateUniformBuffer?(buf: BufferHandle, data: ArrayBufferView, dstByteOffset?: number): void;
+    bindUniformBufferBase?(bindingIndex: number, buf: BufferHandle): void;
+
+    // Optional render state helpers
+    setViewport?(vp: { x: number; y: number; w: number; h: number }): void;
+    setCullEnabled?(enabled: boolean): void;
+    setDepthMask?(write: boolean): void;
+} 
 
 export interface RenderPassStateRegistry {
     ['skybox']: unknown;

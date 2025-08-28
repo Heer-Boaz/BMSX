@@ -103,6 +103,9 @@ export class PipelineRegistry {
             name: 'Skybox',
             vsCode: skyboxVS,
             fsCode: skyboxFS,
+            bindingLayout: {
+                textures: [{ name: 'u_skybox' }],
+            },
             bootstrap: (backend) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
                 SkyboxPipeline.init(gl);
@@ -122,6 +125,9 @@ export class PipelineRegistry {
                 if (!tex) return;
                 // Update state with dynamic data
                 this.setState('skybox', { width, height, view: cam.skyboxView, proj: cam.projection, tex } as any);
+                // Desired state: no cull, no depth write
+                backend.setCullEnabled?.(false);
+                backend.setDepthMask?.(false);
             },
         });
 
@@ -137,6 +143,10 @@ export class PipelineRegistry {
                     { name: 'u_albedoTexture' },
                     { name: 'u_normalTexture' },
                     { name: 'u_metallicRoughnessTexture' },
+                ],
+                buffers: [
+                    { name: 'DirLightBlock', size: 0, usage: 'uniform' },
+                    { name: 'PointLightBlock', size: 0, usage: 'uniform' },
                 ],
             },
             bootstrap: (backend) => {
@@ -193,6 +203,9 @@ export class PipelineRegistry {
                     lighting: frameShared ? frameShared.lighting : undefined,
                 };
                 this.setState('meshbatch', meshState as any);
+                // Desired state: enable culling, enable depth writes
+                backend.setCullEnabled?.(true);
+                backend.setDepthMask?.(true);
             },
         });
 
