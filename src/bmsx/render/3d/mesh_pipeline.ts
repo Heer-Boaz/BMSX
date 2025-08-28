@@ -228,7 +228,79 @@ export function createGameShaderPrograms3D(gl: WebGL2RenderingContext): void {
     gl.validateProgram(program);
     if (!gl.getProgramParameter(program, gl.VALIDATE_STATUS)) throw Error(`Invalid 3D GLSL program: ${gl.getProgramInfoLog(program)}`);
 }
-export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void { gl.useProgram(gameShaderProgram3D); vertexPositionLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_position'); texcoordLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_texcoord'); normalLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_normal'); tangentLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_tangent'); morphPositionLocations3D = [gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos0'), gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos1')]; morphNormalLocations3D = [gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm0'), gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm1')]; morphTangentLocations3D = [gl.getAttribLocation(gameShaderProgram3D, 'a_morphTan0'), gl.getAttribLocation(gameShaderProgram3D, 'a_morphTan1')]; jointLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_joints'); weightLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_weights'); modelLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_model')!; normalMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalMatrix')!; ditherLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ditherIntensity')!; ambientColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientColor')!; ambientIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientIntensity')!; const dirBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'DirLightBlock'); const pointBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'PointLightBlock'); gl.uniformBlockBinding(gameShaderProgram3D, dirBlock, DIR_LIGHT_BINDING); gl.uniformBlockBinding(gameShaderProgram3D, pointBlock, POINT_LIGHT_BINDING); materialColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_materialColor')!; shadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowMap')!; useShadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useShadowMap')!; lightMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_lightMatrix')!; shadowStrengthLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowStrength')!; vertShaderScaleLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_scale')!; albedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_albedoTexture')!; useAlbedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useAlbedoTexture')!; normalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalTexture')!; useNormalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useNormalTexture')!; metallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicRoughnessTexture')!; useMetallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useMetallicRoughnessTexture')!; metallicFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicFactor')!; roughnessFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_roughnessFactor')!; jointMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_jointMatrices[0]')!; morphWeightLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphWeights[0]')!; cameraPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_cameraPos')!; viewProjectionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_viewProjection')!; useInstancingLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useInstancing')!; instanceMatrixLocations3D = [gl.getAttribLocation(gameShaderProgram3D, 'a_i0'), gl.getAttribLocation(gameShaderProgram3D, 'a_i1'), gl.getAttribLocation(gameShaderProgram3D, 'a_i2'), gl.getAttribLocation(gameShaderProgram3D, 'a_i3')]; fogColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogColor')!; fogDensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogDensity')!; fogEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableFog')!; fogModeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogMode')!; heightFogEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableHeightFog')!; heightFogStartLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFogStart')!; heightFogEndLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFogEnd')!; heightGradLowLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientLow')!; heightGradHighLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientHigh')!; heightMinLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMin')!; heightMaxLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMax')!; heightGradEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableHeightGradient')!; }
+export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
+    // If program not explicitly created yet, pick up the program bound by the PipelineManager
+    if (!gameShaderProgram3D) {
+        const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+        if (!current) throw new Error('Mesh shader program not bound during bootstrap');
+        gameShaderProgram3D = current;
+    }
+    gl.useProgram(gameShaderProgram3D);
+    vertexPositionLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_position');
+    texcoordLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_texcoord');
+    normalLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_normal');
+    tangentLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_tangent');
+    morphPositionLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos1'),
+    ];
+    morphNormalLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm1'),
+    ];
+    morphTangentLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphTan0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphTan1'),
+    ];
+    jointLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_joints');
+    weightLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_weights');
+    modelLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_model')!;
+    normalMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalMatrix')!;
+    ditherLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ditherIntensity')!;
+    ambientColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientColor')!;
+    ambientIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientIntensity')!;
+    const dirBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'DirLightBlock');
+    const pointBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'PointLightBlock');
+    gl.uniformBlockBinding(gameShaderProgram3D, dirBlock, DIR_LIGHT_BINDING);
+    gl.uniformBlockBinding(gameShaderProgram3D, pointBlock, POINT_LIGHT_BINDING);
+    materialColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_materialColor')!;
+    shadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowMap')!;
+    useShadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useShadowMap')!;
+    lightMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_lightMatrix')!;
+    shadowStrengthLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowStrength')!;
+    vertShaderScaleLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_scale')!;
+    albedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_albedoTexture')!;
+    useAlbedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useAlbedoTexture')!;
+    normalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalTexture')!;
+    useNormalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useNormalTexture')!;
+    metallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicRoughnessTexture')!;
+    useMetallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useMetallicRoughnessTexture')!;
+    metallicFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicFactor')!;
+    roughnessFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_roughnessFactor')!;
+    jointMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_jointMatrices[0]')!;
+    morphWeightLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphWeights[0]')!;
+    cameraPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_cameraPos')!;
+    viewProjectionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_viewProjection')!;
+    useInstancingLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useInstancing')!;
+    instanceMatrixLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i1'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i2'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_i3'),
+    ];
+    fogColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogColor')!;
+    fogDensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogDensity')!;
+    fogEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableFog')!;
+    fogModeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogMode')!;
+    heightFogEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableHeightFog')!;
+    heightFogStartLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFogStart')!;
+    heightFogEndLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFogEnd')!;
+    heightGradLowLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientLow')!;
+    heightGradHighLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientHigh')!;
+    heightMinLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMin')!;
+    heightMaxLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMax')!;
+    heightGradEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableHeightGradient')!;
+}
 function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, morph: boolean): WebGLVertexArrayObject { const vao = gl.createVertexArray()!; gl.bindVertexArray(vao); if (buffers.vertex && vertexPositionLocation3D >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex); gl.vertexAttribPointer(vertexPositionLocation3D, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(vertexPositionLocation3D); } if (buffers.texcoord && texcoordLocation3D >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoord); gl.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(texcoordLocation3D); } else { gl.disableVertexAttribArray(texcoordLocation3D); gl.vertexAttrib2f(texcoordLocation3D, 0, 0); } if (buffers.normal && normalLocation3D >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal); gl.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(normalLocation3D); } else { gl.disableVertexAttribArray(normalLocation3D); gl.vertexAttrib3f(normalLocation3D, 0, 0, 1); } if (buffers.tangent && tangentLocation3D >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tangent); const hasVec4 = m.tangents && m.tangents.length === m.vertexCount * 4; const size = hasVec4 ? 4 : 3; gl.vertexAttribPointer(tangentLocation3D, size, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(tangentLocation3D); } else { gl.disableVertexAttribArray(tangentLocation3D); gl.vertexAttrib4f(tangentLocation3D, 1, 0, 0, 1); } if (m.hasSkinning && buffers.joint && buffers.weight) { if (jointLocation3D >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint); gl.vertexAttribIPointer(jointLocation3D, 4, gl.UNSIGNED_SHORT, 0, 0); gl.enableVertexAttribArray(jointLocation3D); } if (weightLocation3D >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight); gl.vertexAttribPointer(weightLocation3D, 4, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(weightLocation3D); } } else { if (jointLocation3D >= 0) { gl.disableVertexAttribArray(jointLocation3D); gl.vertexAttribI4ui(jointLocation3D, 0, 0, 0, 0); } if (weightLocation3D >= 0) { gl.disableVertexAttribArray(weightLocation3D); gl.vertexAttrib4f(weightLocation3D, 1, 0, 0, 0); } } if (morph && m.hasMorphTargets && buffers.morphPositions) { for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, buffers.morphPositions.length); i++) { const pLoc = morphPositionLocations3D[i]; const nLoc = morphNormalLocations3D[i]; const tLoc = morphTangentLocations3D[i]; const pBuf = buffers.morphPositions[i]; const nBuf = buffers.morphNormals?.[i]; const tBuf = buffers.morphTangents?.[i]; if (pBuf && pLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, pBuf); gl.vertexAttribPointer(pLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(pLoc); } if (nBuf && nLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, nBuf); gl.vertexAttribPointer(nLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(nLoc); } if (tBuf && tLoc >= 0) { gl.bindBuffer(gl.ARRAY_BUFFER, tBuf); gl.vertexAttribPointer(tLoc, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(tLoc); } } } else { for (let i = 0; i < MAX_MORPH_TARGETS; i++) { const pLoc = morphPositionLocations3D[i]; const nLoc = morphNormalLocations3D[i]; const tLoc = morphTangentLocations3D[i]; if (pLoc >= 0) { gl.disableVertexAttribArray(pLoc); gl.vertexAttrib3f(pLoc, 0, 0, 0); } if (nLoc >= 0) { gl.disableVertexAttribArray(nLoc); gl.vertexAttrib3f(nLoc, 0, 0, 0); } if (tLoc >= 0) { gl.disableVertexAttribArray(tLoc); gl.vertexAttrib3f(tLoc, 0, 0, 0); } } } if (buffers.index) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index); if (instanced) { const locs = instanceMatrixLocations3D; gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D); for (let i = 0; i < 4; i++) { const loc = locs[i]; if (loc >= 0) { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, INSTANCE_STRIDE_BYTES, i * COLUMN_BYTES); gl.vertexAttribDivisor(loc, 1); } } } gl.bindVertexArray(null); return vao; }
 function cullAndSortMeshes(list: DrawMeshOptions[]): { instancedGroups: Map<string, { mesh: Mesh; matrices: Float32Array[] }>; singles: DrawMeshOptions[] } {
     if (list.length === 0) return { instancedGroups: new Map(), singles: [] };

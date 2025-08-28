@@ -184,4 +184,23 @@ export class WebGLBackend implements GPUBackend {
         gl.deleteShader(vs); gl.deleteShader(fs);
         return prog;
     }
+
+    // --- Optional buffer/VAO helpers ---
+    createVertexBuffer(data: ArrayBufferView, usage: 'static' | 'dynamic'): WebGLBuffer {
+        const gl = this.gl;
+        const buf = gl.createBuffer(); if (!buf) throw new Error('Failed to create buffer');
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, data, usage === 'static' ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        return buf;
+    }
+    updateVertexBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstOffset = 0): void {
+        const gl = this.gl;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, dstOffset, data);
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    }
+    bindArrayBuffer(buf: WebGLBuffer | null): void { this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buf); }
+    createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
+    bindVertexArray(vao: WebGLVertexArrayObject | null): void { this.gl.bindVertexArray(vao); }
 }

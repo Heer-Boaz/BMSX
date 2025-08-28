@@ -5,6 +5,7 @@ import { Size } from '../../rompack/rompack';
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
 export type TextureHandle = WebGLTexture | GPUTexture;
+export type BufferHandle = WebGLBuffer | GPUBuffer | unknown;
 
 export interface TextureParams {
     size?: Size;
@@ -22,7 +23,8 @@ export type RenderPassId =
     | 'sprites'
     | 'crt'
     | 'fog'
-    | 'frame_shared';
+    | 'frame_shared'
+    | 'frame_resolve';
 
 export interface BackendCaps { maxColorAttachments: number; }
 
@@ -96,6 +98,13 @@ export interface GPUBackend {
     setPassState?<S = unknown>(label: RenderPassId, state: S): void;
     executePass?(label: RenderPassId, fbo: unknown): void;
     getPassState?<S = unknown>(label: RenderPassId): S | undefined;
+
+    // Optional buffer/VAO helpers (WebGL-backed today; WebGPU mapping later)
+    createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): BufferHandle;
+    updateVertexBuffer?(buf: BufferHandle, data: ArrayBufferView, dstOffset?: number): void;
+    bindArrayBuffer?(buf: BufferHandle | null): void;
+    createVertexArray?(): unknown;
+    bindVertexArray?(vao: unknown | null): void;
 }
 
 export interface RenderPassStateRegistry {
@@ -106,6 +115,7 @@ export interface RenderPassStateRegistry {
     ['crt']: unknown;
     ['fog']: unknown;
     ['frame_shared']: unknown;
+    ['frame_resolve']: unknown;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 

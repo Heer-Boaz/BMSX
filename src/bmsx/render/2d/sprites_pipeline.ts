@@ -4,7 +4,8 @@ import { $ } from '../../core/game';
 import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import * as GLR from '../backend/gl_resources';
-import { RenderContext } from '../backend/pipeline_interfaces';
+import { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
+import { getRenderContext } from '../backend/pipeline_registry';
 import {
     ATLAS_ID_ATTRIBUTE_SIZE,
     ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
@@ -72,6 +73,12 @@ export function createSpriteShaderPrograms(gl: WebGL2RenderingContext): void {
 }
 
 export function setupSpriteShaderLocations(gl: WebGL2RenderingContext): void {
+    // If program not explicitly created yet, pick up the program bound by the PipelineManager
+    if (!spriteShaderProgram) {
+        const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+        if (!current) throw new Error('Sprite shader program not bound during bootstrap');
+        spriteShaderProgram = current;
+    }
     const locations = {
         vertex: gl.getAttribLocation(spriteShaderProgram, 'a_position'),
         texcoord: gl.getAttribLocation(spriteShaderProgram, 'a_texcoord'),
@@ -173,11 +180,29 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
         ++i;
         if (i >= MAX_SPRITES) {
             updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
-            gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+            try {
+                const ctx = getRenderContext();
+                const backend = ctx.getBackend();
+                const passStub = { fbo: framebuffer, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0];
+                backend.draw?.(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+            } catch {
+                gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+            }
             i = 0;
         }
     }
-    if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
+    if (i > 0) {
+        updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
+        // Prefer backend draw when available (keeps exec path backend-agnostic)
+        try {
+            const ctx = getRenderContext();
+            const backend = ctx.getBackend();
+            const passStub = { fbo: framebuffer, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0];
+            backend.draw?.(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+        } catch {
+            gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+        }
+    }
     // Clear used queues
     if (queued) queued.length = 0;
 }

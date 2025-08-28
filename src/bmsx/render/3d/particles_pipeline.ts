@@ -47,6 +47,18 @@ export function createParticleProgram(gl: WebGL2RenderingContext): void {
     cameraUpLocation = gl.getUniformLocation(program, 'u_cameraUp')!;
     textureLocation = gl.getUniformLocation(program, 'u_texture')!;
 }
+export function setupParticleUniforms(gl: WebGL2RenderingContext): void {
+    // Pick up program created/bound by GPUBackend/GraphicsPipelineManager
+    if (!particleProgram) {
+        const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+        if (!current) throw new Error('Particle shader program not bound during bootstrap');
+        particleProgram = current;
+    }
+    viewProjLocation = gl.getUniformLocation(particleProgram, 'u_viewProjection')!;
+    cameraRightLocation = gl.getUniformLocation(particleProgram, 'u_cameraRight')!;
+    cameraUpLocation = gl.getUniformLocation(particleProgram, 'u_cameraUp')!;
+    textureLocation = gl.getUniformLocation(particleProgram, 'u_texture')!;
+}
 export function setupParticleLocations(gl: WebGL2RenderingContext): void { gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer); gl.bufferData(gl.ARRAY_BUFFER, MAX_PARTICLES * INSTANCE_BYTES, gl.DYNAMIC_DRAW); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, INSTANCE_BYTES, 0); gl.vertexAttribDivisor(1, 1); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, INSTANCE_BYTES, 4 * BYTES_PER_FLOAT); gl.vertexAttribDivisor(2, 1); gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, null); }
 export interface ParticlePassState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }
 export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {

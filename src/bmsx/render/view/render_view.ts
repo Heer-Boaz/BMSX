@@ -112,9 +112,7 @@ export class RenderView extends GameView {
 
         // Pipeline bootstrap now handled via PipelineRegistry registration
 
-        // IMPORTANT: set default uniform values (resolution, scale, texture units) for sprite & mesh pipelines
-        SpritesPipeline.setupDefaultUniformValues(gl, 1.0, [this.offscreenCanvasSize.x, this.offscreenCanvasSize.y]);
-        MeshPipeline.setDefaultUniformValues(gl, 1.0);
+        // Default uniform setup has moved to PipelineRegistry ('frame_resolve' pass)
 
         this.setupTextures();
         this.createFramebuffer();

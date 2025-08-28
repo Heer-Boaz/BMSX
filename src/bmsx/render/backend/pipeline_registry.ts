@@ -1,10 +1,18 @@
 import { $ } from '../../core/game';
 import * as SpritesPipeline from '../2d/sprites_pipeline';
+import spriteVS from '../2d/shaders/2d.vert.glsl';
+import spriteFS from '../2d/shaders/2d.frag.glsl';
 import { Atmosphere, registerAtmosphereHotkeys } from '../3d/atmosphere';
 import { M4 } from '../3d/math3d';
 import * as MeshPipeline from '../3d/mesh_pipeline';
+import meshVS from '../3d/shaders/3d.vert.glsl';
+import meshFS from '../3d/shaders/3d.frag.glsl';
 import * as ParticlesPipeline from '../3d/particles_pipeline';
+import particleVS from '../3d/shaders/particle.vert.glsl';
+import particleFS from '../3d/shaders/particle.frag.glsl';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
+import skyboxVS from '../3d/shaders/skybox.vert.glsl';
+import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
@@ -31,6 +39,27 @@ export class PipelineRegistry {
     constructor(private pm: GraphicsPipelineManager) { }
 
     registerBuiltin() {
+        // FrameResolve: set per-frame default uniforms shared across passes (sprite + mesh)
+        this.register({
+            id: 'frame_resolve',
+            label: 'frame_resolve',
+            name: 'FrameResolve',
+            stateOnly: true,
+            exec: () => { /* state only */ },
+            prepare: (backend, _state) => {
+                // Centralize default uniform values here so the view and individual passes don't need to set them
+                try {
+                    const gv = getRenderContext();
+                    const gl = (backend as any).gl as WebGL2RenderingContext;
+                    SpritesPipeline.setupDefaultUniformValues(
+                        gl,
+                        1.0,
+                        [gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y] as unknown as [number, number]
+                    );
+                    MeshPipeline.setDefaultUniformValues(gl, 1.0);
+                } catch { /* backend might not be WebGL yet or programs not ready */ }
+            },
+        });
         // Fog
         this.register({
             id: 'fog',
@@ -72,6 +101,8 @@ export class PipelineRegistry {
             id: 'skybox',
             label: 'skybox',
             name: 'Skybox',
+            vsCode: skyboxVS,
+            fsCode: skyboxFS,
             bootstrap: (backend) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
                 SkyboxPipeline.init(gl);
@@ -99,9 +130,17 @@ export class PipelineRegistry {
             id: 'meshbatch',
             label: 'meshbatch',
             name: 'Meshes',
+            vsCode: meshVS,
+            fsCode: meshFS,
+            bindingLayout: {
+                textures: [
+                    { name: 'u_albedoTexture' },
+                    { name: 'u_normalTexture' },
+                    { name: 'u_metallicRoughnessTexture' },
+                ],
+            },
             bootstrap: (backend) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
-                MeshPipeline.createGameShaderPrograms3D(gl);
                 MeshPipeline.setupVertexShaderLocations3D(gl);
                 MeshPipeline.setupBuffers3D(gl);
             },
@@ -162,11 +201,13 @@ export class PipelineRegistry {
             id: 'particles',
             label: 'particles',
             name: 'Particles',
+            vsCode: particleVS,
+            fsCode: particleFS,
             bootstrap: (backend) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
                 ParticlesPipeline.init(gl);
-                ParticlesPipeline.createParticleProgram(gl);
                 ParticlesPipeline.setupParticleLocations(gl);
+                ParticlesPipeline.setupParticleUniforms(gl);
             },
             writesDepth: true,
             shouldExecute: () => {
@@ -195,9 +236,13 @@ export class PipelineRegistry {
             id: 'sprites',
             label: 'sprites',
             name: 'Sprites2D',
+            vsCode: spriteVS,
+            fsCode: spriteFS,
+            bindingLayout: {
+                textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }],
+            },
             bootstrap: (backend) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
-                SpritesPipeline.createSpriteShaderPrograms(gl);
                 SpritesPipeline.setupSpriteShaderLocations(gl);
                 SpritesPipeline.setupBuffers(gl);
                 SpritesPipeline.setupSpriteLocations(gl);
@@ -218,12 +263,6 @@ export class PipelineRegistry {
                 const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
                 const baseW = gv.viewportSize.x;
                 const baseH = gv.viewportSize.y;
-                // Ensure size-dependent uniforms are up-to-date on resize
-                try {
-                    const gl = (backend as any).gl as WebGL2RenderingContext;
-                    SpritesPipeline.setupDefaultUniformValues(gl, 1.0, [gv.offscreenCanvasSize.x, gv.offscreenCanvasSize.y] as unknown as [number, number]);
-                    MeshPipeline.setDefaultUniformValues(gl, 1.0);
-                } catch { /* ignore if not initialized yet */ }
                 const spriteState: SpritesPipelineState = { width, height, baseWidth: baseW, baseHeight: baseH };
                 this.setState('sprites', spriteState as any);
             },

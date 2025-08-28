@@ -35,7 +35,14 @@ export class GraphicsPipelineManager {
             prepare: desc.prepare,
         };
         // One-time pass bootstrap for persistent GPU resources (optional)
-        desc.bootstrap?.(this.backend);
+        if (desc.bootstrap) {
+            // Bind the created pipeline so bootstrap can query attrib/uniform locations
+            if (pipelineHandle && this.backend.setGraphicsPipeline) {
+                const stubPass = { fbo: null, desc: { label: desc.id } as RenderPassDesc } as any;
+                this.backend.setGraphicsPipeline(stubPass, pipelineHandle);
+            }
+            desc.bootstrap(this.backend);
+        }
         this.pipelines.set(desc.id, pipeline);
     }
 

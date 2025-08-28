@@ -314,4 +314,11 @@ export class WebGPUBackend implements GPUBackend {
     getPassState<S = unknown>(label: RenderPassStateId): S | undefined {
         return this.stateRegistry.get(label);
     }
+
+    // Optional buffer/VAO helpers: not applicable to WebGPU yet (vertex buffers managed per pipeline)
+    createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): never;
+    updateVertexBuffer?(buf: unknown, data: ArrayBufferView, dstOffset?: number): never;
+    bindArrayBuffer?(buf: unknown | null): void; // no-op
+    createVertexArray?(): unknown; // no-op
+    bindVertexArray?(vao: unknown | null): void; // no-op
 }
