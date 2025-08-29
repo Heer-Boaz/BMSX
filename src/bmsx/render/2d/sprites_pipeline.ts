@@ -31,7 +31,6 @@ import {
     ZCOORDS_SIZE
 } from '../backend/webgl.constants';
 import { color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
-import { RenderView } from '../view/render_view';
 import { bvec } from './vertexutils2d';
 
 export let spriteShaderProgram: WebGLProgram;
@@ -156,7 +155,7 @@ export function renderSpriteBatch(
     const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
     // Prefer centralized queue if available
     type V = { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
-    const view = $.viewAs<RenderView>() as unknown as V;
+    const view = $.viewAs<GameView>() as unknown as V;
     const queued = view.renderer?.queues?.sprites;
     const combined: { options: DrawImgOptions; imgmeta: ImgMeta }[] = [];
     if (queued && queued.length) {
@@ -214,7 +213,7 @@ export function renderSpriteBatch(
 
 export function drawImg(view: RenderContext, options: DrawImgOptions): void {
     const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
-    const gv = $.viewAs<RenderView>() as unknown as { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
+    const gv = $.viewAs<GameView>() as unknown as { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
     const q = gv.renderer?.queues?.sprites;
     if (!q) throw Error('Render queues not initialized for sprites');
     // Deep-copy nested objects to freeze values at submission time

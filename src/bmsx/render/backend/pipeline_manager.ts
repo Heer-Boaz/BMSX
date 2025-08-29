@@ -1,19 +1,19 @@
 // Graphics pipeline manager: single place to register passes and execute them
 // Simplified to avoid coupling with the render graph internals.
 
-import { GPUBackend, GraphicsPipelineBuildDesc, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle } from './pipeline_interfaces';
+import { GPUBackend, GraphicsPipelineBuildDesc, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl.helpers';
 
-interface RegisteredPass {
+interface RegisteredPass<SMap extends object> {
     id: string;
-    prepare?: (backend: GPUBackend, state: unknown) => void;
-    exec: (backend: GPUBackend, fbo: unknown, state: unknown) => void;
+    prepare?: (backend: GPUBackend, state: SMap[keyof SMap] | undefined) => void;
+    exec: (backend: GPUBackend, fbo: unknown, state: SMap[keyof SMap] | undefined) => void;
     pipelineHandle?: RenderPassInstanceHandle | null;
-    state?: unknown;
+    state?: SMap[keyof SMap];
 }
 
-export class GraphicsPipelineManager {
-    private pipelines = new Map<string, RegisteredPass>();
+export class GraphicsPipelineManager<SMap extends object = RenderPassStateRegistry> {
+    private pipelines = new Map<string, RegisteredPass<SMap>>();
 
     constructor(private backend: GPUBackend) { }
 
@@ -29,7 +29,7 @@ export class GraphicsPipelineManager {
             };
             pipelineHandle = this.backend.createRenderPassInstance(build);
         }
-        const pipeline: RegisteredPass = {
+        const pipeline: RegisteredPass<SMap> = {
             id: desc.id,
             pipelineHandle,
             exec: desc.exec,
@@ -48,15 +48,15 @@ export class GraphicsPipelineManager {
         this.pipelines.set(desc.id, pipeline);
     }
 
-    setState(id: string, state: unknown): void {
+    setState<PState extends keyof SMap & string>(id: PState, state: SMap[PState]): void {
         const p = this.pipelines.get(id);
         if (!p) throw new Error(`Pipeline '${id}' not found`);
         p.state = state;
     }
 
-    getState<T = unknown>(id: string): T | undefined {
+    getState<PState extends keyof SMap & string>(id: PState): SMap[PState] | undefined {
         const p = this.pipelines.get(id);
-        return p ? (p.state as T) : undefined;
+        return p ? (p.state as SMap[PState]) : undefined;
     }
 
     execute(id: string, fbo: unknown): void {

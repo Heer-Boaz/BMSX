@@ -335,8 +335,8 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		const gl: WebGL2RenderingContext = activeView.glctx; // WebGL-capable view (required)
 		const backend = new WebGLBackend(gl);
 		new TextureManager(backend);
-		const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
-		const pipelineRegistry = new PipelineRegistry(pipelineManager);
+        const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
+        const pipelineRegistry = new PipelineRegistry(pipelineManager);
 		pipelineRegistry.registerBuiltin();
 		// Store on view for graph rebuild
 		if (typeof activeView.setPipelineRegistry === 'function') {

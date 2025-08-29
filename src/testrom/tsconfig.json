@@ -7,13 +7,17 @@
         "tsBuildInfoFile": "./tsconfig.buildinfo",
         "paths": {
             "bmsx": [
-                "../bmsx/bmsx.ts"
+                "../bmsx/index.ts"
             ]
         }
     },
     "include": [
         ".",
-        "../bmsx/bmsx.ts",
+        "../bmsx/index.ts",
         "../bmsx/**/*"
+    ],
+    "exclude": [
+        "../bmsx/bmsx.js",
+        "../bmsx/bmsx.d.ts"
     ]
 }

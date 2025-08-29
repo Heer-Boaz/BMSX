@@ -1,12 +1,12 @@
 import { $ } from '../../core/game';
 import * as GLR from '../backend/gl_resources';
-import { RenderView } from '../view/render_view';
+import { GameView } from '../view';
 
 export class ShadowMap {
     public texture: WebGLTexture | null = null;
     public framebuffer: WebGLFramebuffer | null = null;
     constructor(size: number = 1024) {
-        const gl = $.viewAs<RenderView>().glctx;
+        const gl = $.viewAs<GameView>().glctx;
         const { texture, framebuffer } = GLR.glCreateShadowMapTextureAndFramebuffer(gl, {
             size: { x: size, y: size },
             wrapS: gl.CLAMP_TO_EDGE,

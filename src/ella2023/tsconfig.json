@@ -10,5 +10,9 @@
         ".",
         "../bmsx/index.ts",
         "../bmsx/**/*"
+    ],
+    "exclude": [
+        "../bmsx/bmsx.js",
+        "../bmsx/bmsx.d.ts"
     ]
 }

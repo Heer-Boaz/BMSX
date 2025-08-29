@@ -101,6 +101,7 @@
     "excludeFiles": [
       "**/node_modules",
       "**/node_modules/**",
+      "**/bmsx.d.ts",
       "dist",
       "scripts",
       "_ignore"

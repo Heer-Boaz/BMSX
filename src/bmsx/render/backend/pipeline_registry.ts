@@ -350,8 +350,8 @@ export class PipelineRegistry {
 		this.pm.register(desc);
 	}
 
-    setState<PState extends RenderPassStateId>(id: PState, state: PassStateTypes[PState]): void { this.pm.setState(id, state); }
-    getState<PState extends RenderPassStateId>(id: PState): PassStateTypes[PState] | undefined { return this.pm.getState(id); }
+    setState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState, state: PassStateTypes[PState]): void { this.pm.setState(id as any, state as any); }
+    getState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState): PassStateTypes[PState] | undefined { return this.pm.getState(id as any) as any; }
 	execute(id: string, fbo: unknown): void { this.pm.execute(id, fbo); }
 	has(id: string): boolean { return this.pm.has(id); }
 
@@ -390,19 +390,31 @@ export class PipelineRegistry {
 			execute: () => { },
 		});
 
-		// Per-frame shared state aggregation (camera + lighting)
-		rg.addPass({
-			name: 'FrameSharedState',
-			alwaysExecute: true,
-			setup: () => null,
-			execute: () => {
-				const cam = $.model.activeCamera3D; if (!cam) return;
-				const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
-				const maybeAmbient = $.model.ambientLight?.light;
-				const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
-				this.setState('frame_shared', { view: viewState, lighting } as any);
-			}
-		});
+        // Per-frame shared state aggregation (camera + lighting + frame UBO update)
+        rg.addPass({
+            name: 'FrameSharedState',
+            alwaysExecute: true,
+            setup: () => null,
+            execute: (_ctx, frame) => {
+                const cam = $.model.activeCamera3D; if (!cam) return;
+                const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
+                const maybeAmbient = $.model.ambientLight?.light;
+                const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
+                this.setState('frame_shared', { view: viewState, lighting } as any);
+                try {
+                    const gv = getRenderContext();
+                    updateAndBindFrameUniforms(gv.getBackend(), {
+                        offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
+                        logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+                        time: (frame as any)?.time ?? 0,
+                        delta: (frame as any)?.delta ?? 0,
+                        view: cam.view,
+                        proj: cam.projection,
+                        cameraPos: cam.position,
+                    });
+                } catch { /* ignore if backend does not support UBOs */ }
+            }
+        });
 
 		// Build pass sequence from registry
 		const passList = this.getPipelinePasses();

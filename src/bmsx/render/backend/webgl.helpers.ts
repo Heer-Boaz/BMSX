@@ -1,12 +1,12 @@
 import { $ } from '../../core/game';
 import { M4 } from '../3d/math3d';
-import { RenderView } from '../view/render_view';
+import { GameView } from '../view';
 
 // Global toggle for WebGL error checking. Disable in normal builds for performance.
 export const CATCH_WEBGL_ERROR = true;
 
 export function saveTextureToFile(): void {
-    const view = $.viewAs<RenderView>();
+    const view = $.viewAs<GameView>();
     const gl = view.glctx;
 
     // 1. Bind the framebuffer that has the texture attached
@@ -56,7 +56,7 @@ export function saveTextureToFile(): void {
 
 
 export function saveFramebufferToFile(): void {
-    const view = $.viewAs<RenderView>();
+    const view = $.viewAs<GameView>();
     const gl = view.glctx;
     // 2. Read the pixels from the framebuffer into an array
     const width = gl.drawingBufferWidth;
@@ -88,7 +88,7 @@ export function saveFramebufferToFile(): void {
 export function checkWebGLError(_infoText: string): number {
     if (!CATCH_WEBGL_ERROR) return 0;
     try {
-        const gl = $.viewAs<RenderView>().glctx as WebGLRenderingContext;
+        const gl = $.viewAs<GameView>().glctx as WebGLRenderingContext;
         const err = gl.getError();
         if (err !== gl.NO_ERROR) {
             // Surface in console during debug but do not throw to avoid breaking the frame
@@ -108,7 +108,7 @@ export function catchWebGLError(_target: any, propertyKey: string, descriptor: P
     const originalMethod = descriptor.value;
     descriptor.value = function (...args: any[]) {
         const returnValue = originalMethod.apply(this, args);
-        const gl = $.viewAs<RenderView>().glctx as WebGLRenderingContext;
+        const gl = $.viewAs<GameView>().glctx as WebGLRenderingContext;
         if (gl) {
             const error = gl.getError();
             // Handle the error as needed
