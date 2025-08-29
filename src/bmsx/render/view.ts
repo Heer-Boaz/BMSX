@@ -142,37 +142,18 @@ export class GameView implements RegisterablePersistent {
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
 
-	// Submission queues (double buffered)
-	private _queuesFront: { particles: DrawParticleOptions[]; sprites: DrawImgOptions[]; meshes: DrawMeshOptions[] } = { particles: [], sprites: [], meshes: [] };
-	private _queuesBack: { particles: DrawParticleOptions[]; sprites: DrawImgOptions[]; meshes: DrawMeshOptions[] } = { particles: [], sprites: [], meshes: [] };
-	public renderer: {
-		queues: { particles: DrawParticleOptions[]; sprites: DrawImgOptions[]; meshes: DrawMeshOptions[] };
-		submit: { particle: (o: DrawParticleOptions) => void; sprite: (o: DrawImgOptions) => void; mesh: (o: DrawMeshOptions) => void };
-		swap: () => void;
-	} = {
-			queues: this._queuesFront,
-			submit: {
-				particle: (o: DrawParticleOptions) => { this._queuesBack.particles.push({ ...o }); },
-				sprite: (o: DrawImgOptions) => {
-					this._queuesBack.sprites.push({
-						...o,
-						pos: o.pos ? { ...o.pos } : undefined,
-						scale: o.scale ? { ...o.scale } : undefined,
-						colorize: o.colorize ? { ...o.colorize } : undefined,
-						flip: o.flip ? { ...o.flip } : undefined,
-					});
-				},
-				mesh: (o: DrawMeshOptions) => { MeshPipeline.submitMesh({ ...o }); },
-			},
-			swap: () => {
-				const f = this._queuesFront; const b = this._queuesBack;
-				this._queuesFront = b; this._queuesBack = f;
-				this._queuesBack.particles.length = 0;
-				this._queuesBack.sprites.length = 0;
-				this._queuesBack.meshes.length = 0;
-				this.renderer.queues = this._queuesFront;
-			},
-		};
+    // Renderer submission facade (no legacy queues)
+    public renderer: {
+        submit: { particle: (o: DrawParticleOptions) => void; sprite: (o: DrawImgOptions) => void; mesh: (o: DrawMeshOptions) => void };
+        swap: () => void;
+    } = {
+            submit: {
+                particle: (o: DrawParticleOptions) => { ParticlesPipeline.submitParticle({ ...o }); },
+                sprite: (o: DrawImgOptions) => { this.drawImg(o); },
+                mesh: (o: DrawMeshOptions) => { MeshPipeline.submitMesh({ ...o }); },
+            },
+            swap: () => { /* no-op: feature queues handle their own swapping */ },
+        };
 
 	constructor(viewportSize: Size, canvasSize?: Size,) {
 		Registry.instance.register(this);
