@@ -377,12 +377,8 @@ function setupViewport(gl: WebGL2RenderingContext, canvasWidth: number, canvasHe
 function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
     // Ensure the correct program is bound before setting uniforms
     if (gameShaderProgram3D) gl.useProgram(gameShaderProgram3D);
-    let camPos: { x: number; y: number; z: number };
-    let viewProj: Float32Array;
-    if (state) { camPos = state.camPos; viewProj = state.viewProj; }
-    else { const activeCamera = $.model.activeCamera3D; camPos = activeCamera.position; viewProj = activeCamera.viewProjection; }
-    gl.uniform3fv(cameraPositionLocation3D, new Float32Array([camPos.x, camPos.y, camPos.z]));
-    gl.uniformMatrix4fv(viewProjectionLocation3D, false, viewProj);
+    // Camera + view/proj are now provided via the FrameUniforms UBO;
+    // keep legacy uniforms unset to avoid redundant state.
     setUseInstancing(gl, false);
     registerAtmosphereHotkeys();
     const fogSrc: any | undefined = state?.fog;

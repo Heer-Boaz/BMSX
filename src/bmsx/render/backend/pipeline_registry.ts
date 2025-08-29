@@ -380,6 +380,14 @@ export class PipelineRegistry {
                 if (!gv.textures?._atlas) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
                 if (!gv.textures?._atlas_dynamic) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
             }
+            if (passId === 'meshbatch') {
+                try {
+                    const dirBuf = MeshPipeline.getDirectionalLightBuffer?.();
+                    const ptBuf = MeshPipeline.getPointLightBuffer?.();
+                    if (!dirBuf) console.warn(`[validate] ${pass.name}: DirLightBlock buffer not initialized`);
+                    if (!ptBuf) console.warn(`[validate] ${pass.name}: PointLightBlock buffer not initialized`);
+                } catch { /* ignore */ }
+            }
         } catch { /* no-op */ }
     }
 

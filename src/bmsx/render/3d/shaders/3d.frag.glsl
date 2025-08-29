@@ -16,7 +16,16 @@ uniform sampler2D u_shadowMap;
 uniform bool u_useShadowMap;
 uniform mat4 u_lightMatrix;
 uniform float u_shadowStrength;
+// Legacy uniform (kept for compatibility), but prefer FrameUniforms camera
 uniform vec3 u_cameraPos;
+layout(std140) uniform FrameUniforms {
+    vec2 u_offscreenSize;
+    vec2 u_logicalSize;
+    vec4 u_timeDelta; // x=time, y=delta
+    mat4 u_view;
+    mat4 u_proj;
+    vec4 u_cameraPos_frame; // xyz, pad
+};
 // Fog & atmospheric params
 uniform vec3 u_fogColor;
 uniform float u_fogDensity; // exponential (base) density parameter
@@ -123,7 +132,7 @@ void main() {
         metallic *= mr.b;
     }
 
-    vec3 viewDir = normalize(u_cameraPos - v_worldPos);
+    vec3 viewDir = normalize(u_cameraPos_frame.xyz - v_worldPos);
     vec3 F0 = mix(vec3(0.04f), baseColor, metallic);
     vec3 lighting = u_ambientColor * u_ambientIntensity * baseColor;
 
