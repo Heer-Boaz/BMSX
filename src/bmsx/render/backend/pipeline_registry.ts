@@ -109,67 +109,72 @@ export class PipelineRegistry {
 			},
 		});
 
-		// Skybox
-		this.register({
-			id: 'skybox',
-			label: 'skybox',
-			name: 'Skybox',
-			vsCode: skyboxVS,
-			fsCode: skyboxFS,
-			bindingLayout: {
-				textures: [{ name: 'u_skybox' }],
-				samplers: [{ name: 's_skybox' }],
-			},
-			bootstrap: (backend) => {
-				const gl = (backend as any).gl as WebGL2RenderingContext;
-				SkyboxPipeline.init(gl);
-			},
+        // Skybox
+        this.register({
+            id: 'skybox',
+            label: 'skybox',
+            name: 'Skybox',
+            vsCode: skyboxVS,
+            fsCode: skyboxFS,
+            bindingLayout: {
+                uniforms: ['FrameUniforms'],
+                textures: [{ name: 'u_skybox' }],
+                samplers: [{ name: 's_skybox' }],
+            },
+            bootstrap: (backend) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                SkyboxPipeline.init(gl);
+                backend.setUniformBlockBinding?.('FrameUniforms', FRAME_UNIFORM_BINDING);
+            },
 			writesDepth: true,
 			shouldExecute: () => !!$.model.activeCamera3D && !!SkyboxPipeline.skyboxKey,
 			exec: (backend, fbo, s) => {
 				const gl = (backend as any).gl as WebGL2RenderingContext;
 				SkyboxPipeline.drawSkyboxWithState(gl, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
 			},
-			prepare: (backend, _state) => {
-				const gv = getRenderContext();
-				const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-				const cam = $.model.activeCamera3D;
-				if (!cam) return;
-				const tex = $.texmanager.getTexture(SkyboxPipeline.skyboxKey) as TextureHandle | undefined;
-				if (!tex) return;
-				// Update state with dynamic data
-				this.setState('skybox', { width, height, view: cam.skyboxView, proj: cam.projection, tex } as any);
-				// Desired state: no cull, no depth write
-				backend.setCullEnabled?.(false);
-				backend.setDepthMask?.(false);
-				// WebGPU: bind texture + sampler
-				backend.bindTextureWithSampler?.(0, 1, tex);
-			},
-		});
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
+                const cam = $.model.activeCamera3D;
+                if (!cam) return;
+                const tex = $.texmanager.getTexture(SkyboxPipeline.skyboxKey) as TextureHandle | undefined;
+                if (!tex) return;
+                // Update state with dynamic data
+                this.setState('skybox', { width, height, view: cam.skyboxView, proj: cam.projection, tex } as any);
+                // Desired state: no cull, no depth write
+                backend.setCullEnabled?.(false);
+                backend.setDepthMask?.(false);
+                // WebGPU: bind texture + sampler
+                try { (backend as any).bindTextureWithSampler?.(0, 1, tex); } catch { /* ignore */ }
+                this.validatePassResources('skybox', backend);
+            },
+        });
 
-		// Mesh batch
-		this.register({
-			id: 'meshbatch',
-			label: 'meshbatch',
-			name: 'Meshes',
-			vsCode: meshVS,
-			fsCode: meshFS,
-			bindingLayout: {
-				textures: [
-					{ name: 'u_albedoTexture' },
-					{ name: 'u_normalTexture' },
-					{ name: 'u_metallicRoughnessTexture' },
-				],
-				buffers: [
-					{ name: 'DirLightBlock', size: 0, usage: 'uniform' },
-					{ name: 'PointLightBlock', size: 0, usage: 'uniform' },
-				],
-			},
-			bootstrap: (backend) => {
-				const gl = (backend as any).gl as WebGL2RenderingContext;
-				MeshPipeline.setupVertexShaderLocations3D(gl);
-				MeshPipeline.setupBuffers3D(gl);
-			},
+        // Mesh batch
+        this.register({
+            id: 'meshbatch',
+            label: 'meshbatch',
+            name: 'Meshes',
+            vsCode: meshVS,
+            fsCode: meshFS,
+            bindingLayout: {
+                uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'],
+                textures: [
+                    { name: 'u_albedoTexture' },
+                    { name: 'u_normalTexture' },
+                    { name: 'u_metallicRoughnessTexture' },
+                ],
+                buffers: [
+                    { name: 'DirLightBlock', size: 0, usage: 'uniform' },
+                    { name: 'PointLightBlock', size: 0, usage: 'uniform' },
+                ],
+            },
+            bootstrap: (backend) => {
+                const gl = (backend as any).gl as WebGL2RenderingContext;
+                MeshPipeline.setupVertexShaderLocations3D(gl);
+                MeshPipeline.setupBuffers3D(gl);
+                backend.setUniformBlockBinding?.('FrameUniforms', FRAME_UNIFORM_BINDING);
+            },
 			writesDepth: true,
 			shouldExecute: () => {
 				const gv = getRenderContext() as unknown as { renderer?: { queues?: { meshes?: unknown[] } } };
@@ -222,23 +227,25 @@ export class PipelineRegistry {
 				// Desired state: enable culling, enable depth writes
 				backend.setCullEnabled?.(true);
 				backend.setDepthMask?.(true);
-				// Bind-time defaults now that the mesh program is bound (via PipelineManager)
-				try { const gl = (backend as any).gl as WebGL2RenderingContext; MeshPipeline.setDefaultUniformValues(gl, 1.0); } catch { /* ignore */ }
-			},
-		});
+                // Bind-time defaults now that the mesh program is bound (via PipelineManager)
+                try { const gl = (backend as any).gl as WebGL2RenderingContext; MeshPipeline.setDefaultUniformValues(gl, 1.0); } catch { /* ignore */ }
+                this.validatePassResources('meshbatch', backend);
+            },
+        });
 
-		// Particles
-		this.register({
-			id: 'particles',
-			label: 'particles',
-			name: 'Particles',
-			vsCode: particleVS,
-			fsCode: particleFS,
-			bootstrap: (backend) => {
-				ParticlesPipeline.init(backend);
-				ParticlesPipeline.setupParticleLocations();
-				ParticlesPipeline.setupParticleUniforms(backend);
-			},
+        // Particles
+        this.register({
+            id: 'particles',
+            label: 'particles',
+            name: 'Particles',
+            vsCode: particleVS,
+            fsCode: particleFS,
+            bootstrap: (backend) => {
+                ParticlesPipeline.init(backend);
+                ParticlesPipeline.setupParticleLocations();
+                ParticlesPipeline.setupParticleUniforms(backend);
+                backend.setUniformBlockBinding?.('FrameUniforms', FRAME_UNIFORM_BINDING);
+            },
 			writesDepth: true,
 			shouldExecute: () => {
 				const gv = getRenderContext() as unknown as { renderer?: { queues?: { particles?: unknown[] } } };
@@ -289,24 +296,24 @@ export class PipelineRegistry {
 				const state = s as SpritesPipelineState;
 				SpritesPipeline.renderSpriteBatch(fbo, state.width, state.height, state.baseWidth, state.baseHeight);
 			},
-			prepare: (backend, _state) => {
-				const gv = getRenderContext();
-				const width = gv.offscreenCanvasSize.x;
-				const height = gv.offscreenCanvasSize.y;
-				const baseWidth = gv.viewportSize.x;
-				const baseHeight = gv.viewportSize.y;
-				const spriteState: SpritesPipelineState = { width, height, baseWidth, baseHeight };
-				this.setState('sprites', spriteState);
-				// Program is bound for sprites here; set defaults once per frame
-				checkWebGLError('Sprites: before setupDefaultUniformValues');
-				if (!backend) throw new Error('Backend not available');
-				if (!gv.offscreenCanvasSize) throw new Error('Offscreen canvas size not available');
-				SpritesPipeline.setupDefaultUniformValues(
-					backend,
-					1.0,
-					// Use logical viewport resolution for sprite coordinate mapping
-					[baseWidth, baseHeight] as vec2arr
-				);
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.offscreenCanvasSize.x;
+                const height = gv.offscreenCanvasSize.y;
+                const baseWidth = gv.viewportSize.x;
+                const baseHeight = gv.viewportSize.y;
+                const spriteState: SpritesPipelineState = { width, height, baseWidth, baseHeight };
+                this.setState('sprites', spriteState);
+                // Program is bound for sprites here; set defaults once per frame
+                checkWebGLError('Sprites: before setupDefaultUniformValues');
+                if (!backend) throw new Error('Backend not available');
+                if (!gv.offscreenCanvasSize) throw new Error('Offscreen canvas size not available');
+                SpritesPipeline.setupDefaultUniformValues(
+                    backend,
+                    1.0,
+                    // Use logical viewport resolution for sprite coordinate mapping
+                    [baseWidth, baseHeight] as vec2arr
+                );
                 // Ensure atlas textures are bound to expected units for this pass (WebGL path)
                 try {
                     const v = gv as unknown as { textures?: { [k: string]: unknown | null }, activeTexUnit: number | null, bind2DTex: (t: unknown | null) => void };
@@ -324,6 +331,8 @@ export class PipelineRegistry {
                 } catch { /* ignore if not WebGPU */ }
                 // backend.setBlendEnabled(true);
                 checkWebGLError('Sprites: after setupDefaultUniformValues');
+                // Validate binding layout vs resources
+                this.validatePassResources('sprites', backend);
             },
         });
 
@@ -356,6 +365,23 @@ export class PipelineRegistry {
 			exec: () => { /* populated per frame by graph */ }
 		});
 	}
+
+    private validatePassResources(passId: string, backend: unknown): void {
+        try {
+            const idx = this.findPipelinePassIndex(passId);
+            if (idx < 0) return;
+            const pass = this.passes[idx];
+            const layout = pass.bindingLayout; if (!layout) return;
+            const gv = getRenderContext() as any;
+            if (layout.uniforms?.includes('FrameUniforms') && !(backend as any).bindUniformBufferBase) {
+                console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
+            }
+            if (passId === 'sprites') {
+                if (!gv.textures?._atlas) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
+                if (!gv.textures?._atlas_dynamic) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
+            }
+        } catch { /* no-op */ }
+    }
 
 	register(desc: RenderPassDef): void {
 		this.passes.push(desc);

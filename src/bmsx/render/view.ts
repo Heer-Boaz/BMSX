@@ -521,7 +521,7 @@ export class GameView implements RegisterablePersistent {
 	// (single handleResize implementation above in the class)
 
 	public rebuildGraph(): void {
-		if (!this.lightingSystem) this.lightingSystem = new LightingSystem(this.nativeCtx as any);
+        if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
 		if (!this._pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
 		this.renderGraph = this._pipelineRegistry.buildRenderGraph(this as any, this.lightingSystem);
 		this.graphInvalid = false;

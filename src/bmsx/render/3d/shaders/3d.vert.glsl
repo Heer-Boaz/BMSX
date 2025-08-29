@@ -25,6 +25,16 @@ uniform mat4 u_jointMatrices[32];
 uniform mat4 u_viewProjection;
 uniform bool u_useInstancing;
 
+// Frame-shared UBO (std140). Prefer using this view/proj when present.
+layout(std140) uniform FrameUniforms {
+    vec2 u_offscreenSize;
+    vec2 u_logicalSize;
+    vec4 u_timeDelta; // x=time, y=delta
+    mat4 u_view;
+    mat4 u_proj;
+    vec4 u_cameraPos_frame; // xyz, pad (named differently to avoid conflicts)
+};
+
 out vec2 v_texcoord; // Texture coordinates to pass to the fragment shader
 out vec3 v_normal; // Normal vector to pass to the fragment shader
 out vec3 v_tangent; // Tangent vector in world space
@@ -56,7 +66,9 @@ void main() {
     mat4 instanceM = mat4(a_i0, a_i1, a_i2, a_i3);
     mat4 model = u_useInstancing ? instanceM : u_model;
     vec4 world = model * vec4(scaledPosition, 1.0); // Transform position to world space
-    gl_Position = u_viewProjection * model * vec4(scaledPosition, 1.0);
+    // Prefer UBO view/proj (backend binds per frame); fallback path remains available via u_viewProjection
+    mat4 viewProjBlock = u_proj * u_view;
+    gl_Position = viewProjBlock * model * vec4(scaledPosition, 1.0);
     v_worldPos = world.xyz; // Pass the world position to the fragment shader
     v_texcoord = a_texcoord; // Pass the texture coordinates to the fragment shader
     mat3 upper = mat3(model);

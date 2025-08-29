@@ -31,6 +31,13 @@ export interface FrameUniformsUpdate {
     cameraPos?: { x: number; y: number; z: number } | Float32Array; // xyz
 }
 
+function frameBindingIndexFor(backend: GPUBackend): number {
+    // WebGL path uses binding 2 to avoid collisions with mesh light UBOs (0,1)
+    // WebGPU bind group conventionally uses binding 0 for the frame uniform buffer
+    const isWebGL = typeof (backend as any).gl !== 'undefined';
+    return isWebGL ? FRAME_UNIFORM_BINDING : 0;
+}
+
 export function updateAndBindFrameUniforms(backend: GPUBackend, u: FrameUniformsUpdate): void {
     if (!backend.updateUniformBuffer || !backend.bindUniformBufferBase) return;
     if (!ubo) initFrameUniforms(backend);
@@ -58,5 +65,5 @@ export function updateAndBindFrameUniforms(backend: GPUBackend, u: FrameUniforms
     }
     buf[43] = 0;
     backend.updateUniformBuffer(ubo as unknown as WebGLBuffer, buf);
-    backend.bindUniformBufferBase(FRAME_UNIFORM_BINDING, ubo as unknown as WebGLBuffer);
+    backend.bindUniformBufferBase(frameBindingIndexFor(backend), ubo as unknown as WebGLBuffer);
 }

@@ -16,10 +16,10 @@ export interface LightingFrameState {
 
 // Central lighting update system akin to Unreal's FDeferredLightUniformStruct population.
 export class LightingSystem {
-	private _lastAmbient: AmbientLight | null = null;
-	private _frameState: LightingFrameState = { ambient: null, dirCount: 0, pointCount: 0, dirty: true };
+    private _lastAmbient: AmbientLight | null = null;
+    private _frameState: LightingFrameState = { ambient: null, dirCount: 0, pointCount: 0, dirty: true };
 
-	constructor(private gl: WebGL2RenderingContext) { }
+    constructor() { }
 
     update(ambient: AmbientLight | null): LightingFrameState {
         const lightsMutated = MeshPipeline.consumeLightsDirty();
