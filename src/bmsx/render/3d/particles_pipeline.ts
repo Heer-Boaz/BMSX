@@ -8,16 +8,21 @@ import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { color } from '../view';
 import { M4 } from './math3d';
-import { ScratchBatch } from '../../core/scratchbatch';
+import { FeatureQueue } from '../backend/feature_queue';
+import { FloatRingCursor } from '../backend/ring_buffer';
 
 export interface DrawParticleOptions { position: vec3arr; size: number; color: color; texture?: WebGLTexture; }
 // Legacy global queue kept for backward-compat submission; prefer view.renderer.queues.particles
 // Legacy queue removed; use centralized view.renderer.queues.particles instead.
 const MAX_PARTICLES = 1000;
+const RING_FACTOR = 3; // 3x capacity for rotating per-frame uploads
+const INSTANCE_CAPACITY = MAX_PARTICLES * RING_FACTOR;
 const INSTANCE_FLOATS = 8; // vec4(position+size) + vec4(color)
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
 let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffer: WebGLBuffer; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let textureLocation: WebGLUniformLocation; let defaultTexture: WebGLTexture; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS); const camRight = new Float32Array(3); const camUp = new Float32Array(3);
+const particleQueue = new FeatureQueue<DrawParticleOptions>(1024);
+const ring = new FloatRingCursor(INSTANCE_CAPACITY * INSTANCE_FLOATS);
 export function init(fbo: unknown): void {
     const backend = (getRenderContext().getBackend() as WebGLBackend);
     const gl = backend.gl;
@@ -25,14 +30,14 @@ export function init(fbo: unknown): void {
     const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
     if (backend.createVertexBuffer) {
         quadBuffer = backend.createVertexBuffer(quad, 'static') as WebGLBuffer;
-        instanceBuffer = backend.createVertexBuffer(new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer;
+        instanceBuffer = backend.createVertexBuffer(new Float32Array(INSTANCE_CAPACITY * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer;
     } else {
         quadBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
         instanceBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, MAX_PARTICLES * INSTANCE_BYTES, gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, INSTANCE_CAPACITY * INSTANCE_BYTES, gl.DYNAMIC_DRAW);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
     const whitePixel = new Uint8Array([255, 255, 255, 255]);
@@ -80,21 +85,16 @@ export function setupParticleLocations(): void {
     if (backend.bindArrayBuffer) backend.bindArrayBuffer(null); else gl.bindBuffer(gl.ARRAY_BUFFER, null);
 }
 export interface ParticlePassState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }
-// Scratch list reused each frame for batching
-const combinedScratch = new ScratchBatch<DrawParticleOptions>(256);
 export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {
     const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
-    // Combine centralized queue (if any) with legacy queue for backward compatibility
+    // Ingest centralized queue into feature queue, then swap
     type V = { renderer?: { queues?: { particles?: DrawParticleOptions[] } } };
     const ctx = getRenderContext() as unknown as V;
-    // Scratch list to avoid per-frame allocations
-    combinedScratch.clear();
     const q = ctx.renderer?.queues?.particles;
-    if (q && q.length) {
-        for (let i = 0; i < q.length; i++) combinedScratch.push(q[i]);
-    }
-    const count = combinedScratch.length;
-    if (count === 0) return;
+    if (q && q.length) { for (const it of q) particleQueue.submit({ ...it }); q.length = 0; }
+    particleQueue.swap();
+    const src = particleQueue.frontArray();
+    if (src.length === 0) return;
     if (state) {
         camRight.set(state.camRight);
         camUp.set(state.camUp);
@@ -103,7 +103,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
         M4.viewRightUpInto(activeCamera.view, camRight, camUp);
     }
     const batches = new Map<WebGLTexture, DrawParticleOptions[]>();
-    for (const p of combinedScratch) {
+    for (const p of src) {
         const tex = p.texture ?? defaultTexture;
         let arr = batches.get(tex);
         if (!arr) {
@@ -139,8 +139,18 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
             instanceData[base + 7] = p.color.a;
         }
         const backend = (getRenderContext().getBackend() as Partial<WebGLBackend>);
+        // Allocate space in ring and upload; to maximize compatibility, update at offset 0 and avoid pointer rebinds
+        // If you want to enable true ring-offset pointers, uncomment the pointer rebinds below.
+        const allocStartFloats = ring.alloc(batchCount * INSTANCE_FLOATS);
+        const baseByte = 0; // allocStartFloats * BYTES_PER_FLOAT;
         backend.bindArrayBuffer!(instanceBuffer);
-        backend.updateVertexBuffer!(instanceBuffer, instanceData.subarray(0, batchCount * INSTANCE_FLOATS));
+        backend.updateVertexBuffer!(instanceBuffer, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), baseByte);
+        // Ensure attribs are enabled and divisors set (defensive)
+        backend.enableVertexAttrib?.(1); backend.enableVertexAttrib?.(2);
+        backend.vertexAttribDivisor?.(1, 1); backend.vertexAttribDivisor?.(2, 1);
+        // If enabling ring-offset pointers, rebind pointers relative to baseByte here:
+        // backend.vertexAttribPointer?.(1, 4, gl.FLOAT, false, INSTANCE_BYTES, allocStartFloats * BYTES_PER_FLOAT);
+        // backend.vertexAttribPointer?.(2, 4, gl.FLOAT, false, INSTANCE_BYTES, allocStartFloats * BYTES_PER_FLOAT + 4 * BYTES_PER_FLOAT);
         const v = getRenderContext();
         v.activeTexUnit = TEXTURE_UNIT_PARTICLE;
         v.bind2DTex(tex);
@@ -149,14 +159,11 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
     }
     backend.bindVertexArray?.(null);
     gl.depthMask(true);
-    // Clear queues used
-    if (q) q.length = 0;
+    // Ring cursor keeps its head; no additional action
 }
 export function setDefaultParticleTexture(tex: WebGLTexture): void { defaultTexture = tex; }
 // New submission helper (prefer over touching particlesToDraw)
 export function submitParticle(p: DrawParticleOptions): void {
-    type V = { renderer?: { queues?: { particles?: DrawParticleOptions[] } } };
-    const ctx = getRenderContext() as unknown as V;
-    const q = ctx.renderer?.queues?.particles;
-    if (q) q.push({ ...p });
+    particleQueue.submit({ ...p });
 }
+export function getQueuedParticleCount(): number { return particleQueue.sizeBack(); }

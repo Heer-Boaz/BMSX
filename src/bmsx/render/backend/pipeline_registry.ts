@@ -188,9 +188,11 @@ export class PipelineRegistry {
             },
 			writesDepth: true,
             shouldExecute: () => {
-                try { return (MeshPipeline as any).getQueuedMeshCount?.() > 0; } catch { /* fallback */ }
                 const gv = getRenderContext() as unknown as { renderer?: { queues?: { meshes?: unknown[] } } };
-                return (gv.renderer?.queues?.meshes?.length ?? 0) > 0;
+                const legacyCount = (gv.renderer?.queues?.meshes?.length ?? 0) | 0;
+                let featureCount = 0;
+                try { featureCount = (MeshPipeline as any).getQueuedMeshCount?.() ?? 0; } catch { /* ignore */ }
+                return (legacyCount + featureCount) > 0;
             },
 			exec: (backend, fbo, s) => {
 				const gl = (backend as any).gl as WebGL2RenderingContext;
@@ -258,11 +260,11 @@ export class PipelineRegistry {
                 backend.setUniformBlockBinding?.('FrameUniforms', FRAME_UNIFORM_BINDING);
             },
 			writesDepth: true,
-			shouldExecute: () => {
-				const gv = getRenderContext() as unknown as { renderer?: { queues?: { particles?: unknown[] } } };
-				const qlen = (gv.renderer?.queues?.particles?.length ?? 0);
-				return qlen > 0;
-			},
+            shouldExecute: () => {
+                try { return (ParticlesPipeline as any).getQueuedParticleCount?.() > 0; } catch { /* fallback */ }
+                const gv = getRenderContext() as unknown as { renderer?: { queues?: { particles?: unknown[] } } };
+                return (gv.renderer?.queues?.particles?.length ?? 0) > 0;
+            },
 			exec: (_backend, fbo, s) => {
 				const state = s as ParticlePipelineState;
 				ParticlesPipeline.renderParticleBatch(fbo, state.width, state.height, state);

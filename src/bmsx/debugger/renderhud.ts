@@ -54,7 +54,6 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
     @subscribesToGlobalEvent('frameend')
     update(): void {
         this.updateNow();
-        console.log('Render HUD updated');
     }
     updateNow(): void {
         if (!this.enabled) return;
