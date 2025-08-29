@@ -157,6 +157,11 @@ export interface GPUBackend {
     // Optional texture binding for WebGPU
     bindTextureWithSampler?(texBinding: number, samplerBinding: number, texture: TextureHandle, samplerDesc?: { mag?: 'nearest' | 'linear'; min?: 'nearest' | 'linear'; wrapS?: 'clamp' | 'repeat'; wrapT?: 'clamp' | 'repeat' }): void;
 
+    // Optional backend-native texture binding helpers (WebGL path caches state; WebGPU maps via bind groups)
+    setActiveTexture?(unit: number): void;
+    bindTexture2D?(tex: TextureHandle | null): void;
+    bindTextureCube?(tex: TextureHandle | null): void;
+
     // Optional constant attribute helpers
     vertexAttrib2f?(index: number, x: number, y: number): void;
     vertexAttrib3f?(index: number, x: number, y: number, z: number): void;

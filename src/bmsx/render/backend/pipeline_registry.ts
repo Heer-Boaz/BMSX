@@ -285,27 +285,35 @@ export class PipelineRegistry {
 				const state = s as SpritesPipelineState;
 				SpritesPipeline.renderSpriteBatch(fbo, state.width, state.height, state.baseWidth, state.baseHeight);
 			},
-			prepare: (backend, _state) => {
-				const gv = getRenderContext();
-				const width = gv.offscreenCanvasSize.x;
-				const height = gv.offscreenCanvasSize.y;
-				const baseWidth = gv.viewportSize.x;
-				const baseHeight = gv.viewportSize.y;
-				const spriteState: SpritesPipelineState = { width, height, baseWidth, baseHeight };
-				this.setState('sprites', spriteState);
-				// Program is bound for sprites here; set defaults once per frame
-				checkWebGLError('Sprites: before setupDefaultUniformValues');
-				if (!backend) throw new Error('Backend not available');
-				if (!gv.offscreenCanvasSize) throw new Error('Offscreen canvas size not available');
-				SpritesPipeline.setupDefaultUniformValues(
-					backend,
-					1.0,
-					// Use logical viewport resolution for sprite coordinate mapping
-					[baseWidth, baseHeight] as vec2arr
-				);
-				checkWebGLError('Sprites: after setupDefaultUniformValues');
-			},
-		});
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.offscreenCanvasSize.x;
+                const height = gv.offscreenCanvasSize.y;
+                const baseWidth = gv.viewportSize.x;
+                const baseHeight = gv.viewportSize.y;
+                const spriteState: SpritesPipelineState = { width, height, baseWidth, baseHeight };
+                this.setState('sprites', spriteState);
+                // Program is bound for sprites here; set defaults once per frame
+                checkWebGLError('Sprites: before setupDefaultUniformValues');
+                if (!backend) throw new Error('Backend not available');
+                if (!gv.offscreenCanvasSize) throw new Error('Offscreen canvas size not available');
+                SpritesPipeline.setupDefaultUniformValues(
+                    backend,
+                    1.0,
+                    // Use logical viewport resolution for sprite coordinate mapping
+                    [baseWidth, baseHeight] as vec2arr
+                );
+                // Ensure atlas textures are bound to expected units for this pass
+                try {
+                    const v = gv as unknown as { textures?: { [k: string]: WebGLTexture | null }, activeTexUnit: number | null, bind2DTex: (t: WebGLTexture | null) => void };
+                    if (v && v.textures) {
+                        v.activeTexUnit = 0; v.bind2DTex(v.textures['_atlas'] ?? null);
+                        v.activeTexUnit = 1; v.bind2DTex(v.textures['_atlas_dynamic'] ?? null);
+                    }
+                } catch { /* ignore, will be bound elsewhere */ }
+                checkWebGLError('Sprites: after setupDefaultUniformValues');
+            },
+        });
 
 		// const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 		// const baseW = gv.viewportSize.x;

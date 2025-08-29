@@ -354,18 +354,20 @@ export class RenderView extends GameView {
 
     set activeTexUnit(u: number | null) {
         this._activeTexUnit = u;
-        if (u != null) this.glctx.activeTexture(this.glctx.TEXTURE0 + u);
+        if (u != null) {
+            try { this.getBackend().setActiveTexture?.(u); } catch { this.glctx.activeTexture(this.glctx.TEXTURE0 + u); }
+        }
     }
 
     bind2DTex(tex: WebGLTexture | null): void {
         if (this._activeTexture2D === tex) return;
-        this.glctx.bindTexture(this.glctx.TEXTURE_2D, tex);
+        try { this.getBackend().bindTexture2D?.(tex); } catch { this.glctx.bindTexture(this.glctx.TEXTURE_2D, tex); }
         this._activeTexture2D = tex;
     }
 
     bindCubemapTex(tex: WebGLTexture | null): void {
         if (this._activeCubemap === tex) return;
-        this.glctx.bindTexture(this.glctx.TEXTURE_CUBE_MAP, tex);
+        try { this.getBackend().bindTextureCube?.(tex); } catch { this.glctx.bindTexture(this.glctx.TEXTURE_CUBE_MAP, tex); }
         this._activeCubemap = tex;
     }
     // Temporary accessor for legacy helpers (to be removed with post-process refactor)

@@ -23,6 +23,9 @@ export class WebGLBackend implements GPUBackend {
     private cachedCullEnabled: boolean | null = null;
     private cachedDepthMask: boolean | null = null;
     private cachedBlendFunc: { src: number; dst: number } | null = null;
+    private currentActiveTexUnit: number | null = null;
+    private boundTex2D: (WebGLTexture | null)[] = [];
+    private boundTexCube: (WebGLTexture | null)[] = [];
     private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
     private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
     private bufferSizes = new WeakMap<WebGLBuffer, number>();
@@ -310,6 +313,23 @@ export class WebGLBackend implements GPUBackend {
 
     bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: WebGLTexture): void {
         // WebGL path binds textures via conventional texture units + uniforms; this is a no-op here
+    }
+    setActiveTexture(unit: number): void {
+        if (this.currentActiveTexUnit === unit) return;
+        this.gl.activeTexture(this.gl.TEXTURE0 + unit);
+        this.currentActiveTexUnit = unit;
+    }
+    bindTexture2D(tex: WebGLTexture | null): void {
+        const unit = this.currentActiveTexUnit ?? 0;
+        if (this.boundTex2D[unit] === tex) return;
+        this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
+        this.boundTex2D[unit] = tex;
+    }
+    bindTextureCube(tex: WebGLTexture | null): void {
+        const unit = this.currentActiveTexUnit ?? 0;
+        if (this.boundTexCube[unit] === tex) return;
+        this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, tex);
+        this.boundTexCube[unit] = tex;
     }
 
     vertexAttrib2f(index: number, x: number, y: number): void { this.gl.vertexAttrib2f(index, x, y); }
