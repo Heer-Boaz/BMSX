@@ -5,7 +5,7 @@ import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/mesh';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
-import { copy_vector, multiply_vec, multiply_vec2 } from '../core/utils';
+import { multiply_vec, multiply_vec2, shallowCopy } from '../core/utils';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2, vec3arr } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
@@ -13,10 +13,8 @@ import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
 import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
-import * as GLR from './backend/gl_resources';
+import type { GPUBackend } from './backend/pipeline_interfaces';
 import { PipelineRegistry } from './backend/pipeline_registry';
-import { checkWebGLError } from './backend/webgl.helpers';
-import { WebGLBackend } from './backend/webgl_backend';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 
@@ -117,17 +115,15 @@ export class GameView implements RegisterablePersistent {
 	public canvasScale: number;
 
 	// WebGL / pipeline state
-	public glctx!: WebGL2RenderingContext;
-	private backend: WebGLBackend | null = null;
+	public nativeCtx: unknown | null = null;
+	private _backend: GPUBackend | null = null;
 	public renderGraph: RenderGraphRuntime | null = null;
 	private graphInvalid = true;
 	private lightingSystem: LightingSystem | null = null;
 	public offscreenCanvasSize!: vec2;
 	private isRendering = false;
 	private needsResize = false;
-	private framebuffer: WebGLFramebuffer | null = null;
-	private depthBuffer: WebGLRenderbuffer | null = null;
-	public textures: { [k: string]: WebGLTexture | null } = {};
+	public textures: { [k: string]: unknown | null } = {};
 	private _dynamicAtlasIndex: number | null = null;
 	private _pipelineRegistry?: PipelineRegistry;
 	// Texture binding cache
@@ -180,12 +176,11 @@ export class GameView implements RegisterablePersistent {
 
 	constructor(viewportSize: Size, canvasSize?: Size,) {
 		Registry.instance.register(this);
-		this.viewportSize = copy_vector(viewportSize);
-		this.canvasSize = canvasSize ? copy_vector(canvasSize) : multiply_vec2(viewportSize, 2);
+		this.viewportSize = shallowCopy(viewportSize) as Size;
+		this.canvasSize = (shallowCopy(canvasSize) ?? multiply_vec2(viewportSize, 2)) as Size; // By default, the canvas is twice the size of the viewport!!
 		this.canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
-		// Init WebGL2 context and offscreen sizing for unified renderer
+		// Offscreen resolution for internal render graph targets (view-agnostic)
 		this.offscreenCanvasSize = multiply_vec(viewportSize, 2);
-		this.glctx = this.canvas.getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext;
 	}
 
 	public init(): void {
@@ -194,24 +189,9 @@ export class GameView implements RegisterablePersistent {
 		this.canvas.height = this.canvasSize.y;
 		this.handleResize();
 		this.listenToMediaEvents();
-		// Default GL state
-		const gl = this.glctx;
-		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-		gl.enable(gl.DEPTH_TEST);
-		gl.depthFunc(gl.LEQUAL);
-		gl.enable(gl.BLEND);
-		gl.enable(gl.CULL_FACE);
-		gl.cullFace(gl.BACK);
-		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-		checkWebGLError('Before setup textures');
-		this.setupTextures();
-		checkWebGLError('After setup textures');
-		this.createFramebuffer();
-		checkWebGLError('After createFramebuffer');
+		// Backend resources are configured externally via setBackend()
 		this.handleResize();
-		checkWebGLError('After handleResize');
 		this.rebuildGraph();
-		checkWebGLError('After rebuildGraph');
 	}
 
 	public drawbase(clearCanvas: boolean = true): void {
@@ -235,13 +215,11 @@ export class GameView implements RegisterablePersistent {
 		const token = renderGate.begin({ blocking: true, tag: 'frame' });
 		try {
 			this.isRendering = true;
-			checkWebGLError('Before execute');
 			this.renderer.swap();
 			const frame = buildFrameData(this as any);
 			this.drawbase(clearCanvas);
 			if (!this.renderGraph || this.graphInvalid) this.rebuildGraph();
 			this.renderGraph!.execute(frame);
-			checkWebGLError('After execute');
 		} finally {
 			this.isRendering = false;
 			renderGate.end(token);
@@ -522,13 +500,7 @@ export class GameView implements RegisterablePersistent {
 		$.view.hideFadingOverlay();
 	}
 
-	public clear(): void {
-		const gl = this.glctx;
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-		gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-	}
+	public clear(): void { /* handled by render graph clear pass */ }
 
 	// Pipeline hooks
 	public setPipelineRegistry(reg: PipelineRegistry) { this._pipelineRegistry = reg; this.graphInvalid = true; }
@@ -536,37 +508,20 @@ export class GameView implements RegisterablePersistent {
 	public isPassEnabled(id: string): boolean { return this._pipelineRegistry?.isPassEnabled(id) ?? true; }
 
 	// Backend
-	public getBackend(): WebGLBackend { if (!this.backend) this.backend = new WebGLBackend(this.glctx); return this.backend; }
-	private setupTextures(): void {
-		const gl = this.glctx;
-		this.textures['_atlas'] = GLR.glCreateTexture(gl, GameView.imgassets['_atlas']?._imgbin, undefined, 0);
-		this.textures['_atlas_dynamic'] = GLR.glCreateTexture(gl, null, { x: 1, y: 1 }, 1);
-		this.textures['post_processing_source_texture'] = null;
-	}
-	private createFramebuffer(): void {
-		const gl = this.glctx;
-		if (this.framebuffer) { gl.deleteFramebuffer(this.framebuffer); this.framebuffer = null; }
-		if (this.textures['post_processing_source_texture']) {
-			gl.deleteTexture(this.textures['post_processing_source_texture']);
-			this.textures['post_processing_source_texture'] = null;
-		}
-		const w = this.offscreenCanvasSize.x; const h = this.offscreenCanvasSize.y;
-		this.textures['post_processing_source_texture'] = GLR.glCreateTexture(gl, undefined, { x: w, y: h }, 2);
-		this.framebuffer = gl.createFramebuffer();
-		gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['post_processing_source_texture'], 0);
-		this.depthBuffer = gl.createRenderbuffer();
-		gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer);
-		gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
-		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthBuffer);
-		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+	public setBackend(backend: GPUBackend): void { this._backend = backend; }
+	public getBackend(): GPUBackend { if (!this._backend) throw new Error('Backend not set on GameView'); return this._backend; }
+	public initializeDefaultTextures(): void {
+		try {
+			const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
+			if (atlasImage) this.textures['_atlas'] = this.getBackend().createTextureFromImage(atlasImage, {});
+			this.textures['_atlas_dynamic'] = this.getBackend().createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+		} catch { /* ignore */ }
 	}
 
 	// (single handleResize implementation above in the class)
 
 	public rebuildGraph(): void {
-		if (!this.backend) this.backend = new WebGLBackend(this.glctx);
-		if (!this.lightingSystem) this.lightingSystem = new LightingSystem(this.glctx);
+		if (!this.lightingSystem) this.lightingSystem = new LightingSystem(this.nativeCtx as any);
 		if (!this._pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
 		this.renderGraph = this._pipelineRegistry.buildRenderGraph(this as any, this.lightingSystem);
 		this.graphInvalid = false;
@@ -591,30 +546,29 @@ export class GameView implements RegisterablePersistent {
 	public drawParticle(options: DrawParticleOptions): void { ParticlesPipeline.submitParticle({ position: options.position, size: options.size, color: options.color, texture: options.texture }); }
 
 	public getPointLight(id: Identifier): PointLight | undefined { return MeshPipeline.getPointLight(id); }
-	public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(this.glctx, id, light); }
-	public removePointLight(id: Identifier): void { MeshPipeline.removePointLight(this.glctx, id); }
-	public addDirectionalLight(id: Identifier, light: DirectionalLight): void { MeshPipeline.addDirectionalLight(this.glctx, id, light); }
-	public removeDirectionalLight(id: Identifier): void { MeshPipeline.removeDirectionalLight(this.glctx, id); }
-	public clearLights(): void { MeshPipeline.clearLights(this.glctx); }
+	public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(this.nativeCtx as any, id, light); }
+	public removePointLight(id: Identifier): void { MeshPipeline.removePointLight(this.nativeCtx as any, id); }
+	public addDirectionalLight(id: Identifier, light: DirectionalLight): void { MeshPipeline.addDirectionalLight(this.nativeCtx as any, id, light); }
+	public removeDirectionalLight(id: Identifier): void { MeshPipeline.removeDirectionalLight(this.nativeCtx as any, id); }
+	public clearLights(): void { MeshPipeline.clearLights(this.nativeCtx as any); }
 	public setAmbientLight(_light: AmbientLight): void { /* pulled later by mesh pass */ }
 	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
 	public get skyboxFaceIds(): SkyboxImageIds | undefined { return SkyboxPipeline.skyboxFaceIds; }
 	public get dynamicAtlas(): number | null { return this._dynamicAtlasIndex; }
 	public set dynamicAtlas(index: number | null) {
 		if (this._dynamicAtlasIndex === index) return;
-		if (this.textures['_atlas_dynamic']) { this.glctx.deleteTexture(this.textures['_atlas_dynamic']); this.textures['_atlas_dynamic'] = null; }
+		this.textures['_atlas_dynamic'] = null;
 		this._dynamicAtlasIndex = index;
-		if (index == null) { this.glctx.activeTexture(1); this.glctx.bindTexture(this.glctx.TEXTURE_2D, null); return; }
+		if (index == null) { this.activeTexUnit = 1; this.bind2DTex(null as any); return; }
 		const atlasName = generateAtlasName(index);
 		const atlasImage = GameView.imgassets[atlasName]?._imgbin;
 		if (!atlasImage) { console.error(`Atlas '${atlasName}' not found`); return; }
-		this.textures['_atlas_dynamic'] = GLR.glCreateTexture(this.glctx, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
+		this.textures['_atlas_dynamic'] = this.getBackend().createTextureFromImage(atlasImage as ImageBitmap, {});
 	}
 
 	// Texture binding helpers
 	get activeTexUnit(): number | null { return this._activeTexUnit; }
-	set activeTexUnit(u: number | null) { this._activeTexUnit = u; if (u != null) { try { this.getBackend().setActiveTexture?.(u); } catch { this.glctx.activeTexture(this.glctx.TEXTURE0 + u); } } }
-	bind2DTex(tex: WebGLTexture | null): void { if (this._activeTexture2D === tex) return; try { this.getBackend().bindTexture2D?.(tex); } catch { this.glctx.bindTexture(this.glctx.TEXTURE_2D, tex); } this._activeTexture2D = tex; }
-	bindCubemapTex(tex: WebGLTexture | null): void { if (this._activeCubemap === tex) return; try { this.getBackend().bindTextureCube?.(tex); } catch { this.glctx.bindTexture(this.glctx.TEXTURE_CUBE_MAP, tex); } this._activeCubemap = tex; }
-	get _legacyFramebuffer(): WebGLFramebuffer | null { return this.framebuffer; }
+	set activeTexUnit(u: number | null) { this._activeTexUnit = u; if (u != null) { try { this.getBackend().setActiveTexture?.(u); } catch { /* noop: backend not ready */ } } }
+	bind2DTex(tex: any | null): void { if (this._activeTexture2D === tex) return; try { this.getBackend().bindTexture2D?.(tex as any); } catch { /* noop */ } this._activeTexture2D = tex as any; }
+	bindCubemapTex(tex: any | null): void { if (this._activeCubemap === tex) return; try { this.getBackend().bindTextureCube?.(tex as any); } catch { /* noop */ } this._activeCubemap = tex as any; }
 }

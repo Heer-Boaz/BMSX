@@ -331,9 +331,13 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
-		const activeView = this.view as any; // TODO: REMOVE CAST!!
-		const gl: WebGL2RenderingContext = activeView.glctx; // WebGL-capable view (required)
-		const backend = new WebGLBackend(gl);
+        const activeView = this.view as any; // TODO: REMOVE CAST!!
+        // Acquire WebGL2 context and backend; in future this can branch for WebGPU
+        const gl: WebGL2RenderingContext = (activeView.nativeCtx as WebGL2RenderingContext) ?? (activeView.canvas.getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext);
+        activeView.nativeCtx = gl;
+        const backend = new WebGLBackend(gl);
+        activeView.setBackend(backend);
+        activeView.initializeDefaultTextures();
 		new TextureManager(backend);
         const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
         const pipelineRegistry = new PipelineRegistry(pipelineManager);

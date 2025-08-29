@@ -119,8 +119,14 @@ export function to_vec3arr(v: vec3 | vec3arr): vec3arr {
  * @returns A new Vector object with the same x, y and z values as the original.
  */
 
-export function copy_vector(toCopy: Vector): Vector {
-    return { x: toCopy.x, y: toCopy.y, z: toCopy.z };
+export function shallowCopy(toCopy: {} | []) {
+    if (Array.isArray(toCopy)) {
+        return [...toCopy];
+    }
+    if (typeof toCopy === 'object') {
+        return { ...toCopy };
+    }
+    return toCopy;
 }
 /**
  * Truncates the components of a 2D vector to integers.

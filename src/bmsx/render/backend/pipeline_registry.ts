@@ -15,11 +15,11 @@ import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import { RenderGraphRuntime } from '../graph/rendergraph';
-import { updateAndBindFrameUniforms } from './frame_uniforms';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
-import { RenderContext, RenderPassDef, RenderPassStateId, RenderPassStateRegistry, TextureHandle } from './pipeline_interfaces';
+import { updateAndBindFrameUniforms } from './frame_uniforms';
+import { RenderContext, RenderPassDef, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
 import { GraphicsPipelineManager } from './pipeline_manager';
 import { checkWebGLError } from './webgl.helpers';
 
@@ -40,39 +40,39 @@ interface FrameSharedState { view: { camPos: any; viewProj: Float32Array; skybox
 
 // Type-safe pass state map used by this registry (compile-time only)
 type PassStateTypes = {
-    fog: FogPipelineState;
-    skybox: SkyboxPipelineState;
-    meshbatch: MeshBatchPipelineState;
-    particles: ParticlePipelineState;
-    sprites: SpritesPipelineState;
-    crt: CRTPipelineState;
-    frame_shared: FrameSharedState;
-    frame_resolve: undefined;
+	fog: FogPipelineState;
+	skybox: SkyboxPipelineState;
+	meshbatch: MeshBatchPipelineState;
+	particles: ParticlePipelineState;
+	sprites: SpritesPipelineState;
+	crt: CRTPipelineState;
+	frame_shared: FrameSharedState;
+	frame_resolve: undefined;
 }
 
 export class PipelineRegistry {
-    private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
-    private passEnabled = new Map<string, boolean>();
+	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
+	private passEnabled = new Map<string, boolean>();
 
 	constructor(private pm: GraphicsPipelineManager) { }
 
-    registerBuiltin() {
+	registerBuiltin() {
 		// FrameResolve: set per-frame default uniforms shared across passes (sprite + mesh)
-        this.register({
-            id: 'frame_resolve',
-            label: 'frame_resolve',
-            name: 'FrameResolve',
-            stateOnly: true,
-            exec: () => { /* state only */ },
-            prepare: (backend, _state) => {
-                // Upload minimal frame-shared values via a UBO foundation
-                const gv = getRenderContext();
-                updateAndBindFrameUniforms(backend, {
-                    offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
-                    logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
-                });
-            },
-        });
+		this.register({
+			id: 'frame_resolve',
+			label: 'frame_resolve',
+			name: 'FrameResolve',
+			stateOnly: true,
+			exec: () => { /* state only */ },
+			prepare: (backend, _state) => {
+				// Upload minimal frame-shared values via a UBO foundation
+				const gv = getRenderContext();
+				updateAndBindFrameUniforms(backend, {
+					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
+					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+				});
+			},
+		});
 		// Fog
 		this.register({
 			id: 'fog',
@@ -285,35 +285,39 @@ export class PipelineRegistry {
 				const state = s as SpritesPipelineState;
 				SpritesPipeline.renderSpriteBatch(fbo, state.width, state.height, state.baseWidth, state.baseHeight);
 			},
-            prepare: (backend, _state) => {
-                const gv = getRenderContext();
-                const width = gv.offscreenCanvasSize.x;
-                const height = gv.offscreenCanvasSize.y;
-                const baseWidth = gv.viewportSize.x;
-                const baseHeight = gv.viewportSize.y;
-                const spriteState: SpritesPipelineState = { width, height, baseWidth, baseHeight };
-                this.setState('sprites', spriteState);
-                // Program is bound for sprites here; set defaults once per frame
-                checkWebGLError('Sprites: before setupDefaultUniformValues');
-                if (!backend) throw new Error('Backend not available');
-                if (!gv.offscreenCanvasSize) throw new Error('Offscreen canvas size not available');
-                SpritesPipeline.setupDefaultUniformValues(
-                    backend,
-                    1.0,
-                    // Use logical viewport resolution for sprite coordinate mapping
-                    [baseWidth, baseHeight] as vec2arr
-                );
-                // Ensure atlas textures are bound to expected units for this pass
-                try {
-                    const v = gv as unknown as { textures?: { [k: string]: WebGLTexture | null }, activeTexUnit: number | null, bind2DTex: (t: WebGLTexture | null) => void };
-                    if (v && v.textures) {
-                        v.activeTexUnit = 0; v.bind2DTex(v.textures['_atlas'] ?? null);
-                        v.activeTexUnit = 1; v.bind2DTex(v.textures['_atlas_dynamic'] ?? null);
-                    }
-                } catch { /* ignore, will be bound elsewhere */ }
-                checkWebGLError('Sprites: after setupDefaultUniformValues');
-            },
-        });
+			prepare: (backend, _state) => {
+				const gv = getRenderContext();
+				const width = gv.offscreenCanvasSize.x;
+				const height = gv.offscreenCanvasSize.y;
+				const baseWidth = gv.viewportSize.x;
+				const baseHeight = gv.viewportSize.y;
+				const spriteState: SpritesPipelineState = { width, height, baseWidth, baseHeight };
+				this.setState('sprites', spriteState);
+				// Program is bound for sprites here; set defaults once per frame
+				checkWebGLError('Sprites: before setupDefaultUniformValues');
+				if (!backend) throw new Error('Backend not available');
+				if (!gv.offscreenCanvasSize) throw new Error('Offscreen canvas size not available');
+				SpritesPipeline.setupDefaultUniformValues(
+					backend,
+					1.0,
+					// Use logical viewport resolution for sprite coordinate mapping
+					[baseWidth, baseHeight] as vec2arr
+				);
+				// Ensure atlas textures are bound to expected units for this pass
+				try {
+					const v = gv as unknown as { textures?: { [k: string]: unknown | null }, activeTexUnit: number | null, bind2DTex: (t: unknown | null) => void };
+					if (v && v.textures) {
+						v.activeTexUnit = 0; v.bind2DTex(v.textures['_atlas'] ?? null);
+						v.activeTexUnit = 1; v.bind2DTex(v.textures['_atlas_dynamic'] ?? null);
+					}
+				} catch (e) {
+					console.warn(`Sprites: texture binding failed, will be bound elsewhere: ${e}`);
+					/* ignore, will be bound elsewhere */
+				}
+				// backend.setBlendEnabled(true);
+				checkWebGLError('Sprites: after setupDefaultUniformValues');
+			},
+		});
 
 		// const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 		// const baseW = gv.viewportSize.x;
@@ -350,8 +354,8 @@ export class PipelineRegistry {
 		this.pm.register(desc);
 	}
 
-    setState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState, state: PassStateTypes[PState]): void { this.pm.setState(id as any, state as any); }
-    getState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState): PassStateTypes[PState] | undefined { return this.pm.getState(id as any) as any; }
+	setState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState, state: PassStateTypes[PState]): void { this.pm.setState(id as any, state as any); }
+	getState<PState extends keyof PassStateTypes & RenderPassStateId>(id: PState): PassStateTypes[PState] | undefined { return this.pm.getState(id as any) as any; }
 	execute(id: string, fbo: unknown): void { this.pm.execute(id, fbo); }
 	has(id: string): boolean { return this.pm.has(id); }
 
@@ -366,8 +370,8 @@ export class PipelineRegistry {
 	replacePipelinePasses(mutator: (arr: RenderPassDef[]) => void): void { mutator(this.passes); }
 	findPipelinePassIndex(id: string): number { return this.passes.findIndex(p => String(p.id) === id); }
 
-        // Build render graph from current pass registry with Clear/Present wiring
-        buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
+	// Build render graph from current pass registry with Clear/Present wiring
+	buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
 		const rg = new RenderGraphRuntime(view.getBackend());
 		let frameColorHandle: number | null = null;
 		let frameDepthHandle: number | null = null;
@@ -390,41 +394,41 @@ export class PipelineRegistry {
 			execute: () => { },
 		});
 
-        // Per-frame shared state aggregation (camera + lighting + frame UBO update)
-        rg.addPass({
-            name: 'FrameSharedState',
-            alwaysExecute: true,
-            setup: () => null,
-            execute: (_ctx, frame) => {
-                const cam = $.model.activeCamera3D; if (!cam) return;
-                const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
-                const maybeAmbient = $.model.ambientLight?.light;
-                const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
-                this.setState('frame_shared', { view: viewState, lighting } as any);
-                try {
-                    const gv = getRenderContext();
-                    updateAndBindFrameUniforms(gv.getBackend(), {
-                        offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
-                        logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
-                        time: (frame as any)?.time ?? 0,
-                        delta: (frame as any)?.delta ?? 0,
-                        view: cam.view,
-                        proj: cam.projection,
-                        cameraPos: cam.position,
-                    });
-                } catch { /* ignore if backend does not support UBOs */ }
-            }
-        });
+		// Per-frame shared state aggregation (camera + lighting + frame UBO update)
+		rg.addPass({
+			name: 'FrameSharedState',
+			alwaysExecute: true,
+			setup: () => null,
+			execute: (_ctx, frame) => {
+				const cam = $.model.activeCamera3D; if (!cam) return;
+				const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
+				const maybeAmbient = $.model.ambientLight?.light;
+				const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
+				this.setState('frame_shared', { view: viewState, lighting } as any);
+				try {
+					const gv = getRenderContext();
+					updateAndBindFrameUniforms(gv.getBackend(), {
+						offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
+						logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+						time: (frame as any)?.time ?? 0,
+						delta: (frame as any)?.delta ?? 0,
+						view: cam.view,
+						proj: cam.projection,
+						cameraPos: cam.position,
+					});
+				} catch { /* ignore if backend does not support UBOs */ }
+			}
+		});
 
 		// Build pass sequence from registry
 		const passList = this.getPipelinePasses();
-        for (const desc of passList) {
-            const isPresent = !!desc.present;
-            const isStateOnly = !!desc.stateOnly;
-            rg.addPass({
-                name: desc.name,
-                alwaysExecute: isStateOnly,
-                setup: (io) => {
+		for (const desc of passList) {
+			const isPresent = !!desc.present;
+			const isStateOnly = !!desc.stateOnly;
+			rg.addPass({
+				name: desc.name,
+				alwaysExecute: isStateOnly,
+				setup: (io) => {
 					if (!isPresent && !isStateOnly) {
 						if (frameColorHandle != null) io.writeTex(frameColorHandle);
 						if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
@@ -433,11 +437,11 @@ export class PipelineRegistry {
 					}
 					return { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, present: isPresent };
 				},
-                execute: (ctx, frame, data: { width: number; height: number; present: boolean }) => {
-                    const enabled = this.isPassEnabled(desc.id as string);
-                    const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
-                    if (!willRun) return;
-                    if (data.present) {
+				execute: (ctx, frame, data: { width: number; height: number; present: boolean }) => {
+					const enabled = this.isPassEnabled(desc.id as string);
+					const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
+					if (!willRun) return;
+					if (data.present) {
 						const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
 						// const fragScale = view.offscreenCanvasSize.x / view.viewportSize.x;
 						try {
@@ -466,32 +470,32 @@ export class PipelineRegistry {
 			});
 		}
 
-        // Optional: quick validation similar to original
-        try {
-            const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
-            rg.compile(dummyFrame);
-            const texInfo = rg.getTextureDebugInfo();
-            const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
-            if (frameColor) {
-                const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
-                const contentWriters = writerNames.filter(n => n !== 'Clear');
-                if (contentWriters.length === 0) console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
-            }
-            // Pass registry validation: unique IDs and shader availability for non-state passes
-            const seen = new Set<string>();
-            for (const p of this.getPipelinePasses()) {
-                const idStr = String(p.id);
-                if (seen.has(idStr)) console.warn(`Duplicate pass id registered: ${idStr}`);
-                seen.add(idStr);
-                const needsShaders = !p.stateOnly && !p.present;
-                if (needsShaders && (!p.vsCode || !p.fsCode)) console.warn(`Pass '${p.name}' missing shaders (vs=${!!p.vsCode} fs=${!!p.fsCode})`);
-            }
-        } catch { /* ignore */ }
+		// Optional: quick validation similar to original
+		try {
+			const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
+			rg.compile(dummyFrame);
+			const texInfo = rg.getTextureDebugInfo();
+			const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
+			if (frameColor) {
+				const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
+				const contentWriters = writerNames.filter(n => n !== 'Clear');
+				if (contentWriters.length === 0) console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
+			}
+			// Pass registry validation: unique IDs and shader availability for non-state passes
+			const seen = new Set<string>();
+			for (const p of this.getPipelinePasses()) {
+				const idStr = String(p.id);
+				if (seen.has(idStr)) console.warn(`Duplicate pass id registered: ${idStr}`);
+				seen.add(idStr);
+				const needsShaders = !p.stateOnly && !p.present;
+				if (needsShaders && (!p.vsCode || !p.fsCode)) console.warn(`Pass '${p.name}' missing shaders (vs=${!!p.vsCode} fs=${!!p.fsCode})`);
+			}
+		} catch { /* ignore */ }
 
-        return rg;
-    }
+		return rg;
+	}
 
-    // Enable/disable passes at runtime (debug/editor)
-    setPassEnabled(id: string, enabled: boolean): void { this.passEnabled.set(id, !!enabled); }
-    isPassEnabled(id: string): boolean { return this.passEnabled.get(id) !== false; }
+	// Enable/disable passes at runtime (debug/editor)
+	setPassEnabled(id: string, enabled: boolean): void { this.passEnabled.set(id, !!enabled); }
+	isPassEnabled(id: string): boolean { return this.passEnabled.get(id) !== false; }
 }

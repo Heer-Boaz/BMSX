@@ -6,7 +6,7 @@ export class ShadowMap {
     public texture: WebGLTexture | null = null;
     public framebuffer: WebGLFramebuffer | null = null;
     constructor(size: number = 1024) {
-        const gl = $.viewAs<GameView>().glctx;
+        const gl = $.viewAs<GameView>().nativeCtx as WebGL2RenderingContext;
         const { texture, framebuffer } = GLR.glCreateShadowMapTextureAndFramebuffer(gl, {
             size: { x: size, y: size },
             wrapS: gl.CLAMP_TO_EDGE,

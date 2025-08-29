@@ -7,8 +7,8 @@ export const CATCH_WEBGL_ERROR = true;
 
 export function saveTextureToFile(): void {
     const view = $.viewAs<GameView>();
-    const gl = view.glctx;
-
+    const gl = view.nativeCtx as WebGLRenderingContext;
+    
     // 1. Bind the framebuffer that has the texture attached
     // Access legacy framebuffer through the documented getter (RenderView exposes _legacyFramebuffer)
     const legacyFbo: WebGLFramebuffer | null = (view as unknown as { _legacyFramebuffer: WebGLFramebuffer | null })._legacyFramebuffer;
@@ -57,7 +57,7 @@ export function saveTextureToFile(): void {
 
 export function saveFramebufferToFile(): void {
     const view = $.viewAs<GameView>();
-    const gl = view.glctx;
+    const gl = view.nativeCtx as WebGLRenderingContext;
     // 2. Read the pixels from the framebuffer into an array
     const width = gl.drawingBufferWidth;
     const height = gl.drawingBufferHeight;
@@ -88,7 +88,7 @@ export function saveFramebufferToFile(): void {
 export function checkWebGLError(_infoText: string): number {
     if (!CATCH_WEBGL_ERROR) return 0;
     try {
-        const gl = $.viewAs<GameView>().glctx as WebGLRenderingContext;
+        const gl = $.viewAs<GameView>().nativeCtx as WebGLRenderingContext;
         const err = gl.getError();
         if (err !== gl.NO_ERROR) {
             // Surface in console during debug but do not throw to avoid breaking the frame
@@ -108,7 +108,7 @@ export function catchWebGLError(_target: any, propertyKey: string, descriptor: P
     const originalMethod = descriptor.value;
     descriptor.value = function (...args: any[]) {
         const returnValue = originalMethod.apply(this, args);
-        const gl = $.viewAs<GameView>().glctx as WebGLRenderingContext;
+        const gl = $.viewAs<GameView>().nativeCtx as WebGLRenderingContext;
         if (gl) {
             const error = gl.getError();
             // Handle the error as needed
