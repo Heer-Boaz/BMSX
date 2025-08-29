@@ -177,6 +177,7 @@ export interface GPUBackend {
     setUniformMatrix3fv?(name: string, data: Float32Array): void;
     setUniformMatrix4fv?(name: string, data: Float32Array): void;
     setUniform4f?(name: string, x: number, y: number, z: number, w: number): void;
+    setUniformBlockBinding?(blockName: string, bindingIndex: number): void;
 }
 
 export interface RenderPassStateRegistry {

@@ -18,7 +18,7 @@ import { RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
-import { updateAndBindFrameUniforms } from './frame_uniforms';
+import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
 import { RenderContext, RenderPassDef, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
 import { GraphicsPipelineManager } from './pipeline_manager';
 import { checkWebGLError } from './webgl.helpers';
@@ -260,21 +260,25 @@ export class PipelineRegistry {
 			},
 		});
 
-		// Sprites
-		this.register({
-			id: 'sprites',
-			label: 'sprites',
-			name: 'Sprites2D',
-			vsCode: spriteVS,
-			fsCode: spriteFS,
-			bindingLayout: {
-				textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }],
-			},
-			bootstrap: (backend) => {
-				SpritesPipeline.setupSpriteShaderLocations(backend);
-				SpritesPipeline.setupBuffers(backend);
-				SpritesPipeline.setupSpriteLocations(backend);
-			},
+        // Sprites
+        this.register({
+            id: 'sprites',
+            label: 'sprites',
+            name: 'Sprites2D',
+            vsCode: spriteVS,
+            fsCode: spriteFS,
+            bindingLayout: {
+                uniforms: ['FrameUniforms'],
+                textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }],
+                samplers: [{ name: 's_texture0' }, { name: 's_texture1' }],
+            },
+            bootstrap: (backend) => {
+                SpritesPipeline.setupSpriteShaderLocations(backend);
+                SpritesPipeline.setupBuffers(backend);
+                SpritesPipeline.setupSpriteLocations(backend);
+                // Bind frame UBO block to a consistent binding index
+                backend.setUniformBlockBinding?.('FrameUniforms', FRAME_UNIFORM_BINDING);
+            },
 			writesDepth: true,
 			shouldExecute: () => {
 				const gv = getRenderContext() as unknown as { renderer?: { queues?: { sprites?: unknown[] } } };
@@ -303,21 +307,25 @@ export class PipelineRegistry {
 					// Use logical viewport resolution for sprite coordinate mapping
 					[baseWidth, baseHeight] as vec2arr
 				);
-				// Ensure atlas textures are bound to expected units for this pass
-				try {
-					const v = gv as unknown as { textures?: { [k: string]: unknown | null }, activeTexUnit: number | null, bind2DTex: (t: unknown | null) => void };
-					if (v && v.textures) {
-						v.activeTexUnit = 0; v.bind2DTex(v.textures['_atlas'] ?? null);
-						v.activeTexUnit = 1; v.bind2DTex(v.textures['_atlas_dynamic'] ?? null);
-					}
-				} catch (e) {
-					console.warn(`Sprites: texture binding failed, will be bound elsewhere: ${e}`);
-					/* ignore, will be bound elsewhere */
-				}
-				// backend.setBlendEnabled(true);
-				checkWebGLError('Sprites: after setupDefaultUniformValues');
-			},
-		});
+                // Ensure atlas textures are bound to expected units for this pass (WebGL path)
+                try {
+                    const v = gv as unknown as { textures?: { [k: string]: unknown | null }, activeTexUnit: number | null, bind2DTex: (t: unknown | null) => void };
+                    if (v && v.textures) {
+                        v.activeTexUnit = 0; v.bind2DTex(v.textures['_atlas'] ?? null);
+                        v.activeTexUnit = 1; v.bind2DTex(v.textures['_atlas_dynamic'] ?? null);
+                    }
+                } catch { /* ignore, will be bound elsewhere */ }
+                // WebGPU bind-group wiring (basic): uniforms @0, textures @1,2 and samplers @3,4
+                try {
+                    const tex0 = (gv as any).textures?._atlas as unknown;
+                    const tex1 = (gv as any).textures?._atlas_dynamic as unknown;
+                    if (backend.bindTextureWithSampler && tex0) backend.bindTextureWithSampler(1, 3, tex0 as any, { mag: 'nearest', min: 'nearest', wrapS: 'clamp', wrapT: 'clamp' });
+                    if (backend.bindTextureWithSampler && tex1) backend.bindTextureWithSampler(2, 4, tex1 as any, { mag: 'nearest', min: 'nearest', wrapS: 'clamp', wrapT: 'clamp' });
+                } catch { /* ignore if not WebGPU */ }
+                // backend.setBlendEnabled(true);
+                checkWebGLError('Sprites: after setupDefaultUniformValues');
+            },
+        });
 
 		// const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 		// const baseW = gv.viewportSize.x;

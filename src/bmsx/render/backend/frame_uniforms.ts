@@ -2,6 +2,8 @@ import type { GPUBackend } from './pipeline_interfaces';
 
 // Minimal per-frame uniform buffer (foundation for future shader blocks)
 // Binding indices: keep distinct from lighting UBOs (0,1)
+// Use a binding index that doesn't collide with existing UBOs
+// DirLightBlock = 0, PointLightBlock = 1 in mesh pipeline. Keep frame at 2.
 export const FRAME_UNIFORM_BINDING = 2;
 
 let ubo: WebGLBuffer | null = null;

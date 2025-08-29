@@ -375,7 +375,8 @@ function cullAndSortMeshes(list: DrawMeshOptions[]): { instancedGroups: Map<stri
 }
 function setupViewport(gl: WebGL2RenderingContext, canvasWidth: number, canvasHeight: number): void { getRenderContext().getBackend().setViewport?.({ x: 0, y: 0, w: canvasWidth, h: canvasHeight }); }
 function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
-    // Program is already bound via backend
+    // Ensure the correct program is bound before setting uniforms
+    if (gameShaderProgram3D) gl.useProgram(gameShaderProgram3D);
     let camPos: { x: number; y: number; z: number };
     let viewProj: Float32Array;
     if (state) { camPos = state.camPos; viewProj = state.viewProj; }

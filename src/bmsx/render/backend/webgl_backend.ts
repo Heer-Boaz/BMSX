@@ -397,6 +397,15 @@ export class WebGLBackend implements GPUBackend {
     setUniform4f(name: string, x: number, y: number, z: number, w: number): void {
         const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform4f(loc, x, y, z, w);
     }
+    setUniformBlockBinding(blockName: string, bindingIndex: number): void {
+        const gl = this.gl;
+        const prog = this.currentProgram ?? (gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null);
+        if (!prog) return;
+        const blockIndex = gl.getUniformBlockIndex(prog, blockName);
+        const INVALID_INDEX = (gl as any).INVALID_INDEX ?? 0xFFFFFFFF;
+        if (blockIndex === INVALID_INDEX) return;
+        gl.uniformBlockBinding(prog, blockIndex, bindingIndex);
+    }
 
     // --- Cached buffer/VAO/state binds ---
     bindArrayBuffer(buf: WebGLBuffer | null): void {

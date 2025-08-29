@@ -8,6 +8,7 @@ import { PhysicsWorld } from '../physics/physicsworld';
 import { GraphicsPipelineManager } from "../render/backend/pipeline_manager";
 import { PipelineRegistry } from "../render/backend/pipeline_registry";
 import { WebGLBackend } from "../render/backend/webgl_backend";
+import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
@@ -333,9 +334,8 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
         const activeView = this.view as any; // TODO: REMOVE CAST!!
         // Acquire WebGL2 context and backend; in future this can branch for WebGPU
-        const gl: WebGL2RenderingContext = (activeView.nativeCtx as WebGL2RenderingContext) ?? (activeView.canvas.getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext);
-        activeView.nativeCtx = gl;
-        const backend = new WebGLBackend(gl);
+        const { backend, nativeCtx } = await createBackendForCanvasAsync(activeView.canvas);
+        activeView.nativeCtx = nativeCtx;
         activeView.setBackend(backend);
         activeView.initializeDefaultTextures();
 		new TextureManager(backend);
