@@ -546,11 +546,11 @@ export class GameView implements RegisterablePersistent {
 	public drawParticle(options: DrawParticleOptions): void { ParticlesPipeline.submitParticle({ position: options.position, size: options.size, color: options.color, texture: options.texture }); }
 
 	public getPointLight(id: Identifier): PointLight | undefined { return MeshPipeline.getPointLight(id); }
-	public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(this.nativeCtx as any, id, light); }
-	public removePointLight(id: Identifier): void { MeshPipeline.removePointLight(this.nativeCtx as any, id); }
-	public addDirectionalLight(id: Identifier, light: DirectionalLight): void { MeshPipeline.addDirectionalLight(this.nativeCtx as any, id, light); }
-	public removeDirectionalLight(id: Identifier): void { MeshPipeline.removeDirectionalLight(this.nativeCtx as any, id); }
-	public clearLights(): void { MeshPipeline.clearLights(this.nativeCtx as any); }
+    public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(id, light); }
+        public removePointLight(id: Identifier): void { MeshPipeline.removePointLight(id); }
+    public addDirectionalLight(id: Identifier, light: DirectionalLight): void { MeshPipeline.addDirectionalLight(id, light); }
+        public removeDirectionalLight(id: Identifier): void { MeshPipeline.removeDirectionalLight(id); }
+    public clearLights(): void { MeshPipeline.clearLights(); }
 	public setAmbientLight(_light: AmbientLight): void { /* pulled later by mesh pass */ }
 	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
 	public get skyboxFaceIds(): SkyboxImageIds | undefined { return SkyboxPipeline.skyboxFaceIds; }
