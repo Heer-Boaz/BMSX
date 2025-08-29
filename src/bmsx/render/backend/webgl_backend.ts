@@ -15,6 +15,14 @@ export class WebGLBackend implements GPUBackend {
     // arbitrary extension via index signature.
     private extraStates: Partial<RenderPassStateRegistry> & { [k: string]: unknown } = {};
     private currentProgram: WebGLProgram | null = null;
+    private currentVAO: WebGLVertexArrayObject | null = null;
+    private currentArrayBuffer: WebGLBuffer | null = null;
+    private currentElementArrayBuffer: WebGLBuffer | null = null;
+    private cachedViewport: { x: number; y: number; w: number; h: number } | null = null;
+    private cachedBlendEnabled: boolean | null = null;
+    private cachedCullEnabled: boolean | null = null;
+    private cachedDepthMask: boolean | null = null;
+    private cachedBlendFunc: { src: number; dst: number } | null = null;
     private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
     private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
     private bufferSizes = new WeakMap<WebGLBuffer, number>();
@@ -177,8 +185,10 @@ export class WebGLBackend implements GPUBackend {
     }
     setGraphicsPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void {
         const prog = pipeline.backendData as WebGLProgram;
-        this.gl.useProgram(prog);
-        this.currentProgram = prog;
+        if (this.currentProgram !== prog) {
+            this.gl.useProgram(prog);
+            this.currentProgram = prog;
+        }
     }
     draw(pass: PassEncoder, first: number, count: number): void {
         this.gl.drawArrays(this.gl.TRIANGLES, first, count); // Assume TRIANGLES; customize if needed
@@ -258,10 +268,7 @@ export class WebGLBackend implements GPUBackend {
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
-    bindArrayBuffer(buf: WebGLBuffer | null): void { this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buf); }
-    createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
-    bindVertexArray(vao: WebGLVertexArrayObject | null): void { this.gl.bindVertexArray(vao); }
-    deleteVertexArray(vao: WebGLVertexArrayObject | null): void { if (vao) this.gl.deleteVertexArray(vao); }
+    // moved below with cached variants
 
     enableVertexAttrib(index: number): void { this.gl.enableVertexAttribArray(index); }
     disableVertexAttrib(index: number): void { this.gl.disableVertexAttribArray(index); }
@@ -269,7 +276,7 @@ export class WebGLBackend implements GPUBackend {
         this.gl.vertexAttribPointer(index, size, type, normalized, stride, offset);
     }
     vertexAttribDivisor(index: number, divisor: number): void { this.gl.vertexAttribDivisor(index, divisor); }
-    bindElementArrayBuffer?(buf: WebGLBuffer | null): void { this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, buf); }
+    // moved below with cached variants
     vertexAttribIPointer(index: number, size: number, type: number, stride: number, offset: number): void {
         this.gl.vertexAttribIPointer(index, size, type, stride, offset);
     }
@@ -300,11 +307,6 @@ export class WebGLBackend implements GPUBackend {
     bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void { this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf); }
 
     // --- Render state helpers ---
-    setViewport(vp: { x: number; y: number; w: number; h: number }): void { this.gl.viewport(vp.x, vp.y, vp.w, vp.h); }
-    setCullEnabled(enabled: boolean): void { if (enabled) this.gl.enable(this.gl.CULL_FACE); else this.gl.disable(this.gl.CULL_FACE); }
-    setDepthMask(write: boolean): void { this.gl.depthMask(write); }
-    setBlendEnabled(enabled: boolean): void { if (enabled) this.gl.enable(this.gl.BLEND); else this.gl.disable(this.gl.BLEND); }
-    setBlendFunc(src: number, dst: number): void { this.gl.blendFunc(src, dst); }
 
     bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: WebGLTexture): void {
         // WebGL path binds textures via conventional texture units + uniforms; this is a no-op here
@@ -374,5 +376,52 @@ export class WebGLBackend implements GPUBackend {
     }
     setUniform4f(name: string, x: number, y: number, z: number, w: number): void {
         const loc = this.getUniformLocationCached(name); if (loc) this.gl.uniform4f(loc, x, y, z, w);
+    }
+
+    // --- Cached buffer/VAO/state binds ---
+    bindArrayBuffer(buf: WebGLBuffer | null): void {
+        if (this.currentArrayBuffer === buf) return;
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buf);
+        this.currentArrayBuffer = buf;
+    }
+    bindElementArrayBuffer(buf: WebGLBuffer | null): void {
+        if (this.currentElementArrayBuffer === buf) return;
+        this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, buf);
+        this.currentElementArrayBuffer = buf;
+    }
+    createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
+    bindVertexArray(vao: WebGLVertexArrayObject | null): void {
+        if (this.currentVAO === vao) return;
+        this.gl.bindVertexArray(vao);
+        this.currentVAO = vao;
+    }
+    deleteVertexArray(vao: WebGLVertexArrayObject | null): void { if (vao) this.gl.deleteVertexArray(vao); }
+
+    setViewport(vp: { x: number; y: number; w: number; h: number }): void {
+        const c = this.cachedViewport;
+        if (c && c.x === vp.x && c.y === vp.y && c.w === vp.w && c.h === vp.h) return;
+        this.gl.viewport(vp.x, vp.y, vp.w, vp.h);
+        this.cachedViewport = { ...vp };
+    }
+    setCullEnabled(enabled: boolean): void {
+        if (this.cachedCullEnabled === enabled) return;
+        if (enabled) this.gl.enable(this.gl.CULL_FACE); else this.gl.disable(this.gl.CULL_FACE);
+        this.cachedCullEnabled = enabled;
+    }
+    setDepthMask(write: boolean): void {
+        if (this.cachedDepthMask === write) return;
+        this.gl.depthMask(write);
+        this.cachedDepthMask = write;
+    }
+    setBlendEnabled(enabled: boolean): void {
+        if (this.cachedBlendEnabled === enabled) return;
+        if (enabled) this.gl.enable(this.gl.BLEND); else this.gl.disable(this.gl.BLEND);
+        this.cachedBlendEnabled = enabled;
+    }
+    setBlendFunc(src: number, dst: number): void {
+        const c = this.cachedBlendFunc;
+        if (c && c.src === src && c.dst === dst) return;
+        this.gl.blendFunc(src, dst);
+        this.cachedBlendFunc = { src, dst };
     }
 }
