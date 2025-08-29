@@ -187,11 +187,11 @@ export class PipelineRegistry {
                 backend.setUniformBlockBinding?.('PointLightBlock', 1);
             },
 			writesDepth: true,
-			shouldExecute: () => {
-				const gv = getRenderContext() as unknown as { renderer?: { queues?: { meshes?: unknown[] } } };
-				const qlen = (gv.renderer?.queues?.meshes?.length ?? 0);
-				return qlen > 0;
-			},
+            shouldExecute: () => {
+                try { return (MeshPipeline as any).getQueuedMeshCount?.() > 0; } catch { /* fallback */ }
+                const gv = getRenderContext() as unknown as { renderer?: { queues?: { meshes?: unknown[] } } };
+                return (gv.renderer?.queues?.meshes?.length ?? 0) > 0;
+            },
 			exec: (backend, fbo, s) => {
 				const gl = (backend as any).gl as WebGL2RenderingContext;
 				const state = s as MeshBatchPipelineState;
@@ -328,6 +328,13 @@ export class PipelineRegistry {
                     // Use logical viewport resolution for sprite coordinate mapping
                     [baseWidth, baseHeight] as vec2arr
                 );
+                // Ensure alpha blending is enabled for sprites
+                try {
+                    const gl = (backend as any).gl as WebGL2RenderingContext;
+                    backend.setBlendEnabled?.(true);
+                    backend.setBlendFunc?.(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                    backend.setDepthMask?.(false);
+                } catch { /* backend may not be WebGL */ }
                 // Ensure atlas textures are bound to expected units for this pass (WebGL path)
                 try {
                     const v = gv as unknown as { textures?: { [k: string]: unknown | null }, activeTexUnit: number | null, bind2DTex: (t: unknown | null) => void };

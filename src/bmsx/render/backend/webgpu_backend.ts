@@ -19,7 +19,10 @@ export class WebGPUBackend implements GPUBackend {
     }
     beginFrame?(): void { this._bytesUploaded = 0; }
     endFrame?(): void {}
-    getFrameStats?() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded }; }
+    getFrameStats?() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
+    accountUpload?(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
+        this._bytesUploaded += bytes;
+    }
 
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle {
         // Use defaults since properties not in TextureParams

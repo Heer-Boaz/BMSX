@@ -72,9 +72,11 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
             const b = gv.getBackend?.();
             const fs = b?.getFrameStats?.();
             if (fs) {
-                const bytes = (fs.bytesUploaded ?? 0);
-                const kb = (bytes / 1024).toFixed(1);
-                lines.push(`draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} upload:${kb}KB`);
+                const toKB = (n: number | undefined) => ((n ?? 0) / 1024).toFixed(1);
+                lines.push(
+                    `draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} ` +
+                    `upload:${toKB(fs.bytesUploaded)}KB (v:${toKB((fs as any).vertexBytes)}K i:${toKB((fs as any).indexBytes)}K u:${toKB((fs as any).uniformBytes)}K t:${toKB((fs as any).textureBytes)}K)`
+                );
             }
         } catch { /* ignore */ }
 

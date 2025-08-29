@@ -183,6 +183,8 @@ export interface GPUBackend {
     beginFrame?(): void;
     endFrame?(): void;
     getFrameStats?(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number } | undefined;
+    // Optional: fine-grained upload accounting for HUD
+    accountUpload?(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void;
 }
 
 export interface RenderPassStateRegistry {

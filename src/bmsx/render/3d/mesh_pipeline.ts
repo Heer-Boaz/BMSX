@@ -7,6 +7,7 @@ import type { Size, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import * as GLR from '../backend/gl_resources';
 import { getRenderContext } from '../backend/pipeline_registry';
+import { FeatureQueue } from '../backend/feature_queue';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../backend/webgl.constants';
 import { getFramebufferStatusString } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
@@ -28,6 +29,8 @@ const MAT4_FLOATS = 16;
 // unified in webgl.constants
 
 export let meshesToDraw: DrawMeshOptions[] = [];
+const meshQueue = new FeatureQueue<DrawMeshOptions>(256);
+export function getQueuedMeshCount(): number { return meshQueue.sizeBack(); }
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
 
 interface MeshBuffers {
@@ -193,13 +196,14 @@ function getVAOSignature(m: Mesh, instanced: boolean, morph: boolean): string {
 function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
     let buffers = meshBufferCache.get(m); if (buffers) return buffers;
     buffers = { vertex: GLR.glCreateBuffer(gl) };
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex); gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.STATIC_DRAW);
-    if (m.hasTexcoords) { buffers.texcoord = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoord); gl.bufferData(gl.ARRAY_BUFFER, m.texcoords, gl.STATIC_DRAW); }
-    if (m.hasNormals) { buffers.normal = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal); gl.bufferData(gl.ARRAY_BUFFER, m.normals!, gl.STATIC_DRAW); }
-    if (m.hasTangents) { buffers.tangent = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tangent); gl.bufferData(gl.ARRAY_BUFFER, m.tangents!, gl.STATIC_DRAW); }
-    if (m.indices) { buffers.index = GLR.glCreateElementBuffer(gl); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.STATIC_DRAW); buffers.indexCount = m.indices.length; buffers.indexType = (m.indices instanceof Uint32Array) ? gl.UNSIGNED_INT : (m.indices instanceof Uint8Array) ? gl.UNSIGNED_BYTE : gl.UNSIGNED_SHORT; }
-    if (m.hasSkinning) { buffers.joint = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint); gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.STATIC_DRAW); buffers.weight = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight); gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.STATIC_DRAW); }
-    if (m.hasMorphTargets) { buffers.morphPositions = []; buffers.morphNormals = []; buffers.morphTangents = []; for (let i = 0; i < Math.min(m.morphPositions!.length, MAX_MORPH_TARGETS); i++) { const pos = m.morphPositions![i]; const posBuf = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW); buffers.morphPositions.push(posBuf); if (m.morphNormals && m.morphNormals[i]) { const normBuf = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, normBuf); gl.bufferData(gl.ARRAY_BUFFER, m.morphNormals[i]!, gl.STATIC_DRAW); buffers.morphNormals.push(normBuf); } else buffers.morphNormals.push(undefined); if (m.morphTangents && m.morphTangents[i]) { const tanBuf = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, tanBuf); gl.bufferData(gl.ARRAY_BUFFER, m.morphTangents[i]!, gl.STATIC_DRAW); buffers.morphTangents.push(tanBuf); } else buffers.morphTangents.push(undefined); } }
+    const backend = getRenderContext().getBackend();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex); gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.positions.byteLength);
+    if (m.hasTexcoords) { buffers.texcoord = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoord); gl.bufferData(gl.ARRAY_BUFFER, m.texcoords, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.texcoords!.byteLength); }
+    if (m.hasNormals) { buffers.normal = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal); gl.bufferData(gl.ARRAY_BUFFER, m.normals!, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.normals!.byteLength); }
+    if (m.hasTangents) { buffers.tangent = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tangent); gl.bufferData(gl.ARRAY_BUFFER, m.tangents!, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.tangents!.byteLength); }
+    if (m.indices) { buffers.index = GLR.glCreateElementBuffer(gl); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.STATIC_DRAW); buffers.indexCount = m.indices.length; buffers.indexType = (m.indices instanceof Uint32Array) ? gl.UNSIGNED_INT : (m.indices instanceof Uint8Array) ? gl.UNSIGNED_BYTE : gl.UNSIGNED_SHORT; backend.accountUpload?.('index', (m.indices as ArrayBufferView).byteLength); }
+    if (m.hasSkinning) { buffers.joint = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint); gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.jointIndices!.byteLength); buffers.weight = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight); gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.jointWeights!.byteLength); }
+    if (m.hasMorphTargets) { buffers.morphPositions = []; buffers.morphNormals = []; buffers.morphTangents = []; for (let i = 0; i < Math.min(m.morphPositions!.length, MAX_MORPH_TARGETS); i++) { const pos = m.morphPositions![i]; const posBuf = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW); backend.accountUpload?.('vertex', pos.byteLength); buffers.morphPositions.push(posBuf); if (m.morphNormals && m.morphNormals[i]) { const normBuf = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, normBuf); gl.bufferData(gl.ARRAY_BUFFER, m.morphNormals[i]!, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.morphNormals[i]!.byteLength); buffers.morphNormals.push(normBuf); } else buffers.morphNormals.push(undefined); if (m.morphTangents && m.morphTangents[i]) { const tanBuf = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, tanBuf); gl.bufferData(gl.ARRAY_BUFFER, m.morphTangents[i]!, gl.STATIC_DRAW); backend.accountUpload?.('vertex', m.morphTangents[i]!.byteLength); buffers.morphTangents.push(tanBuf); } else buffers.morphTangents.push(undefined); } }
     meshBufferCache.set(m, buffers); return buffers;
 }
 export function init(_gl: WebGL2RenderingContext, _offscreenCanvasSize: Size): void { }
@@ -468,32 +472,23 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void { const mat = m.material; gl.uniform4fv(materialColorLocation3D, new Float32Array(mat?.color ?? [1, 1, 1, 1])); gl.uniform1f(metallicFactorLocation3D, mat?.metallicFactor ?? 0.0); gl.uniform1f(roughnessFactorLocation3D, mat?.roughnessFactor ?? 0.0); }
 function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void { setUseInstancing(gl, false); for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) { const buffers = getMeshBuffers(gl, m); const srcWeights = morphWeights ?? m.morphWeights ?? []; const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0); const sig = getVAOSignature(m, false, hasMorph); let vao: WebGLVertexArrayObject; if (hasMorph) { if (buffers.vaoSig !== sig) { if (buffers.vao) gl.deleteVertexArray(buffers.vao); buffers.vao = buildVAOForMesh(gl, m, buffers, false, true); buffers.vaoSig = sig; } vao = buffers.vao!; } else { if (buffers.vaoNoMorphSig !== sig) { if (buffers.vaoNoMorph) gl.deleteVertexArray(buffers.vaoNoMorph); buffers.vaoNoMorph = buildVAOForMesh(gl, m, buffers, false, false); buffers.vaoNoMorphSig = sig; } vao = buffers.vaoNoMorph!; } uploadJointPalette(gl, jointMatrices, m.hasSkinning); if (hasMorph) { const w = new Float32Array(MAX_MORPH_TARGETS); for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0; uploadMorphWeights(gl, w); } else uploadMorphWeights(gl, null); setMeshMaterial(gl, m); setMeshTextures(gl, m); gl.uniformMatrix4fv(modelLocation3D, false, matrix); const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9); const __b2 = getRenderContext().getBackend() as any; if (__b2.bindVertexArray) __b2.bindVertexArray(vao); else gl.bindVertexArray(vao); const _b2 = getRenderContext().getBackend(); const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } } as any; if (buffers.index) _b2.drawIndexed!(_p2 as any, buffers.indexCount ?? m.indices!.length, 0); else _b2.draw!(_p2 as any, 0, m.vertexCount); if (__b2.bindVertexArray) __b2.bindVertexArray(null); else gl.bindVertexArray(null); } normal9Pool.reset(); }
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: any): void {
-    // Combine centralized queue (if any) with legacy queue
+    // Ingest centralized queue + legacy direct submissions into feature queue
     type V = { renderer?: { queues?: { meshes?: DrawMeshOptions[] } } };
     const ctx = getRenderContext() as unknown as V;
     const q = ctx.renderer?.queues?.meshes;
-    const work: DrawMeshOptions[] = [];
-    if (q && q.length) work.push(...q);
-    if (meshesToDraw.length) work.push(...meshesToDraw);
-    // Use working copy for existing cull/sort pathway
-    const prevRef = meshesToDraw;
-    meshesToDraw = work;
-    const { instancedGroups, singles } = cullAndSortMeshes(work);
-    // restore reference
-    meshesToDraw = prevRef;
-    if (instancedGroups.size === 0 && singles.length === 0) { if (q) q.length = 0; meshesToDraw.length = 0; return; }
+    if (q && q.length) { for (const it of q) meshQueue.submit({ ...it }); q.length = 0; }
+    if (meshesToDraw.length) { for (const it of meshesToDraw) meshQueue.submit({ ...it }); meshesToDraw.length = 0; }
+    // Swap to make submissions visible
+    meshQueue.swap();
+    const src = meshQueue.frontArray();
+    if (src.length === 0) return;
+    const { instancedGroups, singles } = cullAndSortMeshes(src);
     setupViewport(gl, canvasWidth, canvasHeight);
     setupRenderingState(gl, state);
     renderInstancedMeshes(gl, instancedGroups);
     renderSingleMeshes(gl, singles, framebuffer);
-    // Clear queues
-    if (q) q.length = 0;
+    // FeatureQueue back buffer cleared on swap; nothing else to do
 }
 
-export function submitMesh(o: DrawMeshOptions): void {
-    type V = { renderer?: { queues?: { meshes?: DrawMeshOptions[] } } };
-    const ctx = getRenderContext() as unknown as V;
-    const q = ctx.renderer?.queues?.meshes;
-    if (q) q.push(o);
-}
+export function submitMesh(o: DrawMeshOptions): void { meshQueue.submit({ ...o }); }
 export function reset(_gl: WebGL2RenderingContext): void { meshesToDraw = []; normal9Pool.reset(); clearLights(); }
