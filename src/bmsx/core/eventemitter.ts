@@ -1,7 +1,7 @@
 import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
 
-type Listener = { listener: Function, subscriber: any };
+type Listener = { listener: Function, subscriber: any, persistent: boolean };
 export type ListenerSet = Set<Listener>;
 type EventListenerMap = Record<string, ListenerSet>;
 type EmitterScopeListenerMap = Record<string, EventListenerMap>;
@@ -94,7 +94,7 @@ export class EventEmitter implements RegisterablePersistent {
                     if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as Identifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have an 'id'.`);
                     break;
             }
-            self.on(subscription.eventName, handler, subscriber, emitterFilter);
+            self.on(subscription.eventName, handler, subscriber, emitterFilter, !!subscription.persistent);
         });
     }
 
@@ -130,7 +130,15 @@ export class EventEmitter implements RegisterablePersistent {
      * @param subscriber - The subscriber object associated with the listener.
      * @param filtered_on_emitter_id - (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
      */
-    on(event_name: string, listener: Function, subscriber: any, filtered_on_emitter_id?: Identifier): void {
+    /**
+     * Registers a listener for an event.
+     * @param event_name Name of the event.
+     * @param listener Callback invoked when the event is emitted.
+     * @param subscriber The logical subscriber instance (used for bulk removal).
+     * @param filtered_on_emitter_id Optional emitter id filter (self/parent/custom). If omitted the listener is global.
+     * @param persistent If true the listener survives EventEmitter.clear() just like registry persistent objects.
+     */
+    on(event_name: string, listener: Function, subscriber: any, filtered_on_emitter_id?: Identifier, persistent: boolean = false): void {
         const self = EventEmitter.instance;
         if (filtered_on_emitter_id) {
             if (!self.emitterScopeListeners[event_name]) {
@@ -143,7 +151,7 @@ export class EventEmitter implements RegisterablePersistent {
                 console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
                 return; // Prevent adding the same listener multiple times
             }
-            self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber });
+            self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber, persistent });
         } else {
             if (!self.globalScopeListeners[event_name]) {
                 self.globalScopeListeners[event_name] = new Set();
@@ -152,7 +160,7 @@ export class EventEmitter implements RegisterablePersistent {
                 console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
                 return; // Prevent adding the same listener multiple times
             }
-            self.globalScopeListeners[event_name].add({ listener, subscriber });
+            self.globalScopeListeners[event_name].add({ listener, subscriber, persistent });
         }
     }
 
@@ -222,9 +230,42 @@ export class EventEmitter implements RegisterablePersistent {
      * Clears all the listeners from the event emitter.
      */
     clear(): void {
+        // Only remove non-persistent listeners. Persistent listeners survive resets.
         const self = EventEmitter.instance;
-        self.emitterScopeListeners = {};
-        self.globalScopeListeners = {};
+
+        // Filter emitter-scoped listeners
+        for (const eventName in self.emitterScopeListeners) {
+            const emitterMap = self.emitterScopeListeners[eventName];
+            for (const emitterId in emitterMap) {
+                const originalSet = emitterMap[emitterId];
+                const kept = new Set<Listener>();
+                for (const item of originalSet) {
+                    if (item.persistent) kept.add(item);
+                }
+                if (kept.size > 0) {
+                    emitterMap[emitterId] = kept;
+                } else {
+                    delete emitterMap[emitterId];
+                }
+            }
+            if (Object.keys(emitterMap).length === 0) {
+                delete self.emitterScopeListeners[eventName];
+            }
+        }
+
+        // Filter global listeners
+        for (const eventName in self.globalScopeListeners) {
+            const originalSet = self.globalScopeListeners[eventName];
+            const kept = new Set<Listener>();
+            for (const item of originalSet) {
+                if (item.persistent) kept.add(item);
+            }
+            if (kept.size > 0) {
+                self.globalScopeListeners[eventName] = kept;
+            } else {
+                delete self.globalScopeListeners[eventName];
+            }
+        }
     }
 }
 
@@ -258,6 +299,8 @@ export type EventSubscription = {
      * - 'self': The event will be consumed for the current instance only.
      */
     scope: EventScope;
+    /** If true this subscription survives EventEmitter.clear(). */
+    persistent?: boolean;
 };
 
 /**
@@ -292,12 +335,12 @@ function updateAllEventSubscriptions(constructor: any) {
  * @param eventName - The name of the event to subscribe to.
  * @returns A decorator function that adds the event subscription to the target class.
  */
-export function subscribesToParentScopedEvent(eventName: string) {
+export function subscribesToParentScopedEvent(eventName: string, persistent?: boolean) {
     return function (target: any, propertyKey: string) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
         }
-        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'parent' });
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'parent', persistent });
         updateAllEventSubscriptions(target.constructor);
     };
 }
@@ -308,12 +351,12 @@ export function subscribesToParentScopedEvent(eventName: string) {
  * @param eventName - The name of the event to subscribe to.
  * @returns A decorator function that adds the event subscription to the target class.
  */
-export function subscribesToSelfScopedEvent(eventName: string) {
+export function subscribesToSelfScopedEvent(eventName: string, persistent?: boolean) {
     return function (target: any, propertyKey: string) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
         }
-        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'self' });
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'self', persistent });
         updateAllEventSubscriptions(target.constructor);
     };
 }
@@ -324,12 +367,12 @@ export function subscribesToSelfScopedEvent(eventName: string) {
  * @param emitter_id The ID of the event emitter.
  * @returns A decorator function that adds the event subscription to the target class.
  */
-export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: string) {
+export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: string, persistent?: boolean) {
     return function (target: any, propertyKey: string, _descriptor: PropertyDescriptor) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
         }
-        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: emitter_id });
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: emitter_id, persistent });
         updateAllEventSubscriptions(target.constructor);
     };
 }
@@ -340,12 +383,12 @@ export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: st
  * @param eventName The name of the event to handle.
  * @returns A function that decorates the target method.
  */
-export function subscribesToGlobalEvent(eventName: string) {
+export function subscribesToGlobalEvent(eventName: string, persistent?: boolean) {
     return function (target: any, propertyKey: string, _descriptor: PropertyDescriptor) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
         }
-        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'all' });
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'all', persistent });
         updateAllEventSubscriptions(target.constructor);
     };
 }
