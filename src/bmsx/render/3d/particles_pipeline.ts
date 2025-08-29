@@ -84,9 +84,13 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
     // Combine centralized queue (if any) with legacy queue for backward compatibility
     type V = { renderer?: { queues?: { particles?: DrawParticleOptions[] } } };
     const ctx = getRenderContext() as unknown as V;
+    // Pooled scratch array to avoid allocations
     const combined: DrawParticleOptions[] = [];
     const q = ctx.renderer?.queues?.particles;
-    if (q && q.length) combined.push(...q);
+    if (q && q.length) {
+        combined.length = 0;
+        for (let i = 0; i < q.length; i++) combined.push(q[i]);
+    }
     const count = combined.length;
     if (count === 0) return;
     if (state) {

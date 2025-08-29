@@ -57,6 +57,8 @@ const spriteShaderData = {
     atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
+// Pooled scratch list to avoid per-frame allocations during batching
+const batchScratch: { options: DrawImgOptions; imgmeta: ImgMeta }[] = [];
 
 // Removed: program creation is handled by the backend/pipeline manager
 
@@ -157,16 +159,15 @@ export function renderSpriteBatch(
     type V = { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
     const view = $.viewAs<GameView>() as unknown as V;
     const queued = view.renderer?.queues?.sprites;
-    const combined: { options: DrawImgOptions; imgmeta: ImgMeta }[] = [];
+    batchScratch.length = 0;
     if (queued && queued.length) {
-        for (const options of queued) {
+        for (let qi = 0; qi < queued.length; qi++) {
+            const options = queued[qi];
             const imgmeta = GameView.imgassets[options.imgid]?.imgmeta; if (!imgmeta) continue;
-            // drawImg() already deep-copies nested fields; reuse to avoid allocations
-            combined.push({ options, imgmeta });
+            batchScratch.push({ options, imgmeta });
         }
     }
-    // no legacy sprite list; only centralized queue is used
-    if (combined.length === 0) return;
+    if (batchScratch.length === 0) return;
     // FBO binding handled by RenderGraph beginRenderPass
     const backend = getRenderContext().getBackend() as WebGLBackend;
     backend.setViewport?.({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
@@ -191,9 +192,9 @@ export function renderSpriteBatch(
         backend.bindArrayBuffer?.(color_overrideBuffer); backend.vertexAttribPointer?.(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(color_overrideLocation);
         backend.bindArrayBuffer?.(atlas_idBuffer); backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0); backend.enableVertexAttrib?.(atlas_idLocation);
     }
-    combined.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
+    batchScratch.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
     const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = spriteShaderData; let i = 0;
-    for (const { options, imgmeta } of combined) {
+    for (const { options, imgmeta } of batchScratch) {
         const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
         const { width, height } = imgmeta;
         bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
@@ -207,8 +208,9 @@ export function renderSpriteBatch(
     }
     if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
     if (useVAO) backend.bindVertexArray!(null);
-    // Clear used queues
+    // Clear used queues & scratch list
     if (queued) queued.length = 0;
+    batchScratch.length = 0;
 }
 
 export function drawImg(view: RenderContext, options: DrawImgOptions): void {
