@@ -29,6 +29,7 @@ export class WebGLBackend implements GPUBackend {
     private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
     private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
     private bufferSizes = new WeakMap<WebGLBuffer, number>();
+    private frameStats = { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0 };
     constructor(public gl: WebGL2RenderingContext) {
         // No internal manager; caller creates PipelineManager with this backend
     }
@@ -194,9 +195,11 @@ export class WebGLBackend implements GPUBackend {
         }
     }
     draw(pass: PassEncoder, first: number, count: number): void {
+        this.frameStats.draws++;
         this.gl.drawArrays(this.gl.TRIANGLES, first, count); // Assume TRIANGLES; customize if needed
     }
     drawIndexed(pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void {
+        this.frameStats.drawIndexed++;
         const type = (indexType ?? this.gl.UNSIGNED_SHORT);
         const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
         this.gl.drawElements(this.gl.TRIANGLES, indexCount, type, (firstIndex ?? 0) * bytesPerIndex);
@@ -288,9 +291,11 @@ export class WebGLBackend implements GPUBackend {
     }
 
     drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, _firstInstance = 0): void {
+        this.frameStats.drawsInstanced++;
         this.gl.drawArraysInstanced(this.gl.TRIANGLES, firstVertex, vertexCount, instanceCount);
     }
     drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, _firstInstance = 0, indexType?: number): void {
+        this.frameStats.drawIndexedInstanced++;
         const type = (indexType ?? this.gl.UNSIGNED_SHORT);
         const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
         this.gl.drawElementsInstanced(this.gl.TRIANGLES, indexCount, type, firstIndex * bytesPerIndex, instanceCount);
@@ -406,6 +411,10 @@ export class WebGLBackend implements GPUBackend {
         if (blockIndex === INVALID_INDEX) return;
         gl.uniformBlockBinding(prog, blockIndex, bindingIndex);
     }
+
+    beginFrame(): void { this.frameStats.draws = this.frameStats.drawIndexed = this.frameStats.drawsInstanced = this.frameStats.drawIndexedInstanced = 0; }
+    endFrame(): void { /* no-op for now */ }
+    getFrameStats() { return this.frameStats; }
 
     // --- Cached buffer/VAO/state binds ---
     bindArrayBuffer(buf: WebGLBuffer | null): void {

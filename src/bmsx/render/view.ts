@@ -214,6 +214,7 @@ export class GameView implements RegisterablePersistent {
 		if (!renderGate.ready) return;
 		const token = renderGate.begin({ blocking: true, tag: 'frame' });
 		try {
+			this._backend?.beginFrame?.();
 			$.emit('framebegin', this, token);
 			this.isRendering = true;
 			this.renderer.swap();
@@ -224,6 +225,7 @@ export class GameView implements RegisterablePersistent {
 			this.renderGraph!.execute(frame);
 		} finally {
 			$.emit('frameend', this, token);
+			this._backend?.endFrame?.();
 			this.isRendering = false;
 			renderGate.end(token);
 		}

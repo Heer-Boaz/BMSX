@@ -16,6 +16,9 @@ export class WebGPUBackend implements GPUBackend {
     constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
         this.limits = this.device.limits;
     }
+    beginFrame?(): void {}
+    endFrame?(): void {}
+    getFrameStats?() { return undefined; }
 
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle {
         // Use defaults since properties not in TextureParams

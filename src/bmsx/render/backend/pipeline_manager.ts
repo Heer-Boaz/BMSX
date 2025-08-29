@@ -2,6 +2,7 @@
 // Simplified to avoid coupling with the render graph internals.
 
 import { GPUBackend, GraphicsPipelineBuildDesc, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry } from './pipeline_interfaces';
+import { FRAME_UNIFORM_BINDING } from './frame_uniforms';
 import { checkWebGLError } from './webgl.helpers';
 
 interface RegisteredPass<SMap extends object> {
@@ -10,6 +11,7 @@ interface RegisteredPass<SMap extends object> {
     exec: (backend: GPUBackend, fbo: unknown, state: SMap[keyof SMap] | undefined) => void;
     pipelineHandle?: RenderPassInstanceHandle | null;
     state?: SMap[keyof SMap];
+    bindingLayout?: RenderPassDef['bindingLayout'];
 }
 
 export class GraphicsPipelineManager<SMap extends object = RenderPassStateRegistry> {
@@ -34,6 +36,7 @@ export class GraphicsPipelineManager<SMap extends object = RenderPassStateRegist
             pipelineHandle,
             exec: desc.exec,
             prepare: desc.prepare,
+            bindingLayout: desc.bindingLayout,
         };
         // One-time pass bootstrap for persistent GPU resources (optional)
         if (desc.bootstrap) {
@@ -68,6 +71,15 @@ export class GraphicsPipelineManager<SMap extends object = RenderPassStateRegist
         if (p.pipelineHandle && backend.setGraphicsPipeline) {
             const stubPass = { fbo, desc: { label: id } as RenderPassDesc } as any;
             backend.setGraphicsPipeline(stubPass, p.pipelineHandle);
+        }
+        // Ensure standard uniform blocks are consistently bound when present in the declared layout
+        const uniforms = p.bindingLayout?.uniforms ?? [];
+        if (uniforms.length && backend.setUniformBlockBinding) {
+            for (const u of uniforms) {
+                if (u === 'FrameUniforms') backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
+                if (u === 'DirLightBlock') backend.setUniformBlockBinding('DirLightBlock', 0);
+                if (u === 'PointLightBlock') backend.setUniformBlockBinding('PointLightBlock', 1);
+            }
         }
         checkWebGLError(`after binding pipeline ${id}`);
         if (p.prepare) p.prepare(backend, p.state);

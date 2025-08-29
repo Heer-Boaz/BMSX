@@ -56,7 +56,7 @@ export interface RenderPassDesc {
 }
 
 // Definition of a logical pass (registration-time)
-export interface RenderPassDef {
+export interface RenderPassDef<S = unknown> {
     id: RenderPassStateId;
     label?: string;
     vsCode?: string;
@@ -72,8 +72,8 @@ export interface RenderPassDef {
      * (e.g., buffers, VAOs, default textures). Called once at registration time.
      */
     bootstrap?: (backend: GPUBackend) => void;
-    exec: (backend: GPUBackend, fbo: unknown, state: unknown) => void;
-    prepare?: (backend: GPUBackend, state: unknown) => void;
+    exec: (backend: GPUBackend, fbo: unknown, state: S | undefined) => void;
+    prepare?: (backend: GPUBackend, state: S | undefined) => void;
 }
 
 // Minimal shader build description for backend pipeline creation
@@ -178,6 +178,11 @@ export interface GPUBackend {
     setUniformMatrix4fv?(name: string, data: Float32Array): void;
     setUniform4f?(name: string, x: number, y: number, z: number, w: number): void;
     setUniformBlockBinding?(blockName: string, bindingIndex: number): void;
+
+    // Optional per-frame hooks + stats
+    beginFrame?(): void;
+    endFrame?(): void;
+    getFrameStats?(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number } | undefined;
 }
 
 export interface RenderPassStateRegistry {

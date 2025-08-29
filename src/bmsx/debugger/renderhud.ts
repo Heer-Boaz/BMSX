@@ -49,6 +49,7 @@ export class RenderHUDOverlay {
 
     constructor() {
         this.enabled = false;
+        this.useEMA = true;
         // derive EMA alpha from SUMMARY_FREQUENCY: alpha = 2 / (N + 1)
         this.emaAlpha = 2 / (this.SUMMARY_FREQUENCY + 1);
         EventEmitter.instance.initClassBoundEventSubscriptions(this);
@@ -70,6 +71,12 @@ export class RenderHUDOverlay {
         const lines: string[] = [];
         let total = 0;
         for (const s of stats) total += s.ms;
+        // Backend draw call counters (if backend exposes them)
+        try {
+            const b = gv.getBackend?.();
+            const fs = b?.getFrameStats?.();
+            if (fs) lines.push(`draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced}`);
+        } catch { /* ignore */ }
 
         // Compute averages depending on mode (EMA or fixed sliding window)
         const modeStr = this.useEMA ? 'EMA' : 'Window';
