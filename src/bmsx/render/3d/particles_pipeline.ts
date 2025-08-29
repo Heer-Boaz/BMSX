@@ -2,16 +2,14 @@
 import { $ } from '../../core/game';
 
 import type { vec3arr } from '../../rompack/rompack';
-import * as GLR from '../backend/gl_resources';
+import { GPUBackend } from '../backend/pipeline_interfaces';
 import { getRenderContext } from '../backend/pipeline_registry';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
-import { Color } from '../view';
+import { color } from '../view';
 import { M4 } from './math3d';
-import particleFragCode from './shaders/particle.frag.glsl';
-import particleVertCode from './shaders/particle.vert.glsl';
 
-export interface DrawParticleOptions { position: vec3arr; size: number; color: Color; texture?: WebGLTexture; }
+export interface DrawParticleOptions { position: vec3arr; size: number; color: color; texture?: WebGLTexture; }
 // Legacy global queue kept for backward-compat submission; prefer view.renderer.queues.particles
 // Legacy queue removed; use centralized view.renderer.queues.particles instead.
 const MAX_PARTICLES = 1000;
@@ -19,8 +17,9 @@ const INSTANCE_FLOATS = 8; // vec4(position+size) + vec4(color)
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
 let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffer: WebGLBuffer; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let textureLocation: WebGLUniformLocation; let defaultTexture: WebGLTexture; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS); const camRight = new Float32Array(3); const camUp = new Float32Array(3);
-export function init(gl: WebGL2RenderingContext): void {
-    const backend = (getRenderContext().getBackend() as Partial<WebGLBackend>);
+export function init(fbo: unknown): void {
+    const backend = (getRenderContext().getBackend() as WebGLBackend);
+    const gl = backend.gl;
     vao = backend.createVertexArray ? (backend.createVertexArray() as WebGLVertexArrayObject) : gl.createVertexArray()!;
     const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
     if (backend.createVertexBuffer) {
@@ -46,7 +45,8 @@ export function init(gl: WebGL2RenderingContext): void {
     getRenderContext().bind2DTex(null);
 }
 // Removed: program creation is handled by the backend/pipeline manager
-export function setupParticleUniforms(gl: WebGL2RenderingContext): void {
+export function setupParticleUniforms(backend: GPUBackend): void {
+    const gl = (backend as WebGLBackend).gl;
     // Pick up program created/bound by GPUBackend/GraphicsPipelineManager
     if (!particleProgram) {
         const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
@@ -58,8 +58,9 @@ export function setupParticleUniforms(gl: WebGL2RenderingContext): void {
     cameraUpLocation = gl.getUniformLocation(particleProgram, 'u_cameraUp')!;
     textureLocation = gl.getUniformLocation(particleProgram, 'u_texture')!;
 }
-export function setupParticleLocations(gl: WebGL2RenderingContext): void {
-    const backend = (getRenderContext().getBackend() as Partial<WebGLBackend>);
+export function setupParticleLocations(): void {
+    const backend = (getRenderContext().getBackend() as WebGLBackend);
+    const gl = backend.gl;
     // VAO bind
     if (backend.bindVertexArray) backend.bindVertexArray(vao); else gl.bindVertexArray(vao);
     // Static quad buffer at attrib 0
@@ -78,7 +79,8 @@ export function setupParticleLocations(gl: WebGL2RenderingContext): void {
     if (backend.bindArrayBuffer) backend.bindArrayBuffer(null); else gl.bindBuffer(gl.ARRAY_BUFFER, null);
 }
 export interface ParticlePassState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }
-export function renderParticleBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {
+export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {
+    const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
     // Combine centralized queue (if any) with legacy queue for backward compatibility
     type V = { renderer?: { queues?: { particles?: DrawParticleOptions[] } } };
     const ctx = getRenderContext() as unknown as V;

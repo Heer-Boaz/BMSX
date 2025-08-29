@@ -6,7 +6,7 @@ import vertexShaderCRTCode from './shaders/crt.vert.glsl';
 interface CRTState { width: number; height: number; baseWidth?: number; baseHeight?: number; fragScale?: number; outWidth?: number; outHeight?: number; colorTex?: WebGLTexture | null; options?: any }
 
 // Internal cached fullscreen quad (VBO + TBO + attrib locations)
-interface FullscreenQuad { vbo: WebGLBuffer; tbo: WebGLBuffer; attribPos: number; attribTex: number }
+interface FullscreenQuad { vbo: WebGLBuffer; tbo: WebGLBuffer; attribPos: number; attribTex: number; w: number; h: number }
 let fsq: FullscreenQuad | null = null;
 
 function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: number): FullscreenQuad {
@@ -23,7 +23,7 @@ function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: nu
     gl.bindBuffer(gl.ARRAY_BUFFER, tbo); gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STATIC_DRAW);
     const attribPos = vsProg ? gl.getAttribLocation(vsProg, 'a_position') : -1;
     const attribTex = vsProg ? gl.getAttribLocation(vsProg, 'a_texcoord') : -1;
-    return { vbo, tbo, attribPos, attribTex };
+    return { vbo, tbo, attribPos, attribTex, w: srcW, h: srcH };
 }
 
 export function registerCRT(pm: GraphicsPipelineManager): void {
@@ -37,12 +37,17 @@ export function registerCRT(pm: GraphicsPipelineManager): void {
             const gl = (backend as any).gl as WebGL2RenderingContext; // Use concrete WebGL backend
             const st = state as CRTState;
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            const outW = st.outWidth ?? st.width; const outH = st.outHeight ?? st.height;
+            const outW = st.outWidth ?? st.width;
+            const outH = st.outHeight ?? st.height;
             gl.viewport(0, 0, outW, outH);
-            if (!fsq) fsq = createFullscreenQuad(gl, st.width, st.height);
+            if (!fsq || fsq.w !== outW || fsq.h !== outH) {
+                fsq = createFullscreenQuad(gl, st.width, st.height);
+            }
             const { vbo, tbo, attribPos, attribTex } = fsq;
-            gl.bindBuffer(gl.ARRAY_BUFFER, vbo); if (attribPos !== -1) { gl.enableVertexAttribArray(attribPos); gl.vertexAttribPointer(attribPos, 2, gl.FLOAT, false, 0, 0); }
-            gl.bindBuffer(gl.ARRAY_BUFFER, tbo); if (attribTex !== -1) { gl.enableVertexAttribArray(attribTex); gl.vertexAttribPointer(attribTex, 2, gl.FLOAT, false, 0, 0); }
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+            if (attribPos !== -1) { gl.enableVertexAttribArray(attribPos); gl.vertexAttribPointer(attribPos, 2, gl.FLOAT, false, 0, 0); }
+            gl.bindBuffer(gl.ARRAY_BUFFER, tbo);
+            if (attribTex !== -1) { gl.enableVertexAttribArray(attribTex); gl.vertexAttribPointer(attribTex, 2, gl.FLOAT, false, 0, 0); }
             gl.drawArrays(gl.TRIANGLES, 0, 6);
         },
         prepare: (backend, state: unknown) => {

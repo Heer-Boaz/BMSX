@@ -12,5 +12,9 @@
         ".",
         "rompack/rompack.ts",
         // "../../dist/aynoiseprocessor.js",
+    ],
+    "exclude": [
+        "node_modules",
+        "**/bmsx.d.ts"
     ]
 }

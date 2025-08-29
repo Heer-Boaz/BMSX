@@ -1,5 +1,6 @@
 // Sprites pipeline (formerly glview.2d) inlined from legacy module.
 // Provides batched 2D sprite + primitive rendering using shared buffers.
+import { WebGLBackend } from '../..';
 import { $ } from '../../core/game';
 import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
@@ -7,11 +8,9 @@ import * as GLR from '../backend/gl_resources';
 import { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
 import { getRenderContext } from '../backend/pipeline_registry';
 import {
-    ATLAS_ID_ATTRIBUTE_SIZE,
     ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
     ATLAS_ID_COMPONENTS,
     ATLAS_ID_SIZE,
-    COLOR_OVERRIDE_ATTRIBUTE_SIZE,
     COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER,
     COLOR_OVERRIDE_COMPONENTS,
     COLOR_OVERRIDE_SIZE,
@@ -22,22 +21,17 @@ import {
     RESOLUTION_VECTOR_SIZE,
     SPRITE_DRAW_OFFSET,
     TEXCOORD_COMPONENTS,
-    TEXTURECOORD_ATTRIBUTE_SIZE,
+    TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC,
     TEXTURECOORDS_SIZE,
-    VERTEX_ATTRIBUTE_SIZE,
     VERTEX_BUFFER_OFFSET_MULTIPLIER,
     VERTICES_PER_SPRITE,
-    ZCOORD_ATTRIBUTE_SIZE,
     ZCOORD_BUFFER_OFFSET_MULTIPLIER,
     ZCOORD_COMPONENTS,
     ZCOORD_MAX,
-    ZCOORDS_SIZE,
+    ZCOORDS_SIZE
 } from '../backend/webgl.constants';
-import { Color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
+import { color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
 import { RenderView } from '../view/render_view';
-import { TEXTURE_UNIT_ATLAS, TEXTURE_UNIT_ATLAS_DYNAMIC } from '../backend/webgl.constants';
-import spriteShaderFragCode from './shaders/2d.frag.glsl';
-import spriteShaderVertCode from './shaders/2d.vert.glsl';
 import { bvec } from './vertexutils2d';
 
 export let spriteShaderProgram: WebGLProgram;
@@ -66,7 +60,8 @@ let spriteShaderScaleLocation: WebGLUniformLocation;
 
 // Removed: program creation is handled by the backend/pipeline manager
 
-export function setupSpriteShaderLocations(gl: WebGL2RenderingContext): void {
+export function setupSpriteShaderLocations(backend: GPUBackend): void {
+    const gl = (backend as WebGLBackend).gl;
     // If program not explicitly created yet, pick up the program bound by the PipelineManager
     if (!spriteShaderProgram) {
         const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
@@ -91,16 +86,18 @@ export function setupSpriteShaderLocations(gl: WebGL2RenderingContext): void {
     spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
 }
 
-export function setupDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number, canvasSize: vec2arr): void {
+export function setupDefaultUniformValues(backend: GPUBackend, defaultScale: number, canvasSize: vec2arr): void {
+    const gl = (backend as WebGLBackend).gl;
     gl.useProgram(spriteShaderProgram);
     gl.uniform1f(spriteShaderScaleLocation, defaultScale);
-    spriteShaderData.resolutionVector.set([...canvasSize]);
+    spriteShaderData.resolutionVector.set([canvasSize[0], canvasSize[1]]);
     gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
     gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS);
     gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_DYNAMIC);
 }
 
-export function setupBuffers(gl: WebGL2RenderingContext): void {
+export function setupBuffers(fbo: unknown): void {
+    const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
     if (!spriteShaderData.vertexcoords) spriteShaderData.vertexcoords = GLR.buildQuadTexCoords();
     const cvertexBuffer = GLR.glCreateBuffer(gl, spriteShaderData.vertexcoords);
     const ctexcoordBuffer = GLR.glCreateBuffer(gl, spriteShaderData.texcoords);
@@ -114,9 +111,9 @@ export function setupBuffers(gl: WebGL2RenderingContext): void {
     atlas_idBuffer = catlas_idBuffer;
 }
 
-export function setupSpriteLocations(gl: WebGL2RenderingContext): void {
+export function setupSpriteLocations(backend: GPUBackend): void {
     // Program is bound by the backend; set up attributes via backend helpers
-    const backend = getRenderContext().getBackend();
+    const gl = (backend as WebGLBackend).gl;
     backend.bindArrayBuffer?.(vertexBuffer);
     backend.enableVertexAttrib?.(vertexLocation);
     backend.vertexAttribPointer?.(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
@@ -134,7 +131,16 @@ export function setupSpriteLocations(gl: WebGL2RenderingContext): void {
     backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0);
 }
 
-export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, logicalWidth?: number, logicalHeight?: number): void {
+// Note: 'fbo' is provided by the render graph and used only to satisfy the
+// PassEncoder shape for backend.draw(). WebGL draw ignores it; WebGPU may use it.
+export function renderSpriteBatch(
+    fbo: unknown,
+    canvasWidth: number,
+    canvasHeight: number,
+    logicalWidth?: number,
+    logicalHeight?: number,
+): void {
+    const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
     // Prefer centralized queue if available
     type V = { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
     const view = $.viewAs<RenderView>() as unknown as V;
@@ -157,15 +163,18 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
     // no legacy sprite list; only centralized queue is used
     if (combined.length === 0) return;
     // FBO binding handled by RenderGraph beginRenderPass
-    getRenderContext().getBackend().setViewport?.({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
-    const resW = logicalWidth ?? canvasWidth;
-    const resH = logicalHeight ?? canvasHeight;
-    // Update resolution uniform if changed (dynamic resize safety) using logical size
-    if (spriteShaderData.resolutionVector[0] !== resW || spriteShaderData.resolutionVector[1] !== resH) {
-        spriteShaderData.resolutionVector[0] = resW; spriteShaderData.resolutionVector[1] = resH;
-        gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
-    }
-    const backend = getRenderContext().getBackend();
+    const backend = getRenderContext().getBackend() as WebGLBackend;
+    backend.setViewport?.({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
+    // backend.setCullEnabled(false);
+    // backend.setDepthMask(false);
+    // backend.setBlendEnabled(true);
+    // const resW = logicalWidth ?? canvasWidth;
+    // const resH = logicalHeight ?? canvasHeight;
+    // // Update resolution uniform if changed (dynamic resize safety) using logical size
+    // if (spriteShaderData.resolutionVector[0] !== resW || spriteShaderData.resolutionVector[1] !== resH) {
+    //     spriteShaderData.resolutionVector[0] = resW; spriteShaderData.resolutionVector[1] = resH;
+    //     gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
+    // }
     backend.bindArrayBuffer?.(vertexBuffer); backend.vertexAttribPointer?.(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(vertexLocation);
     backend.bindArrayBuffer?.(texcoordBuffer); backend.vertexAttribPointer?.(texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(texcoordLocation);
     backend.bindArrayBuffer?.(zBuffer); backend.vertexAttribPointer?.(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(zcoordLocation);
@@ -183,9 +192,9 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
         bvec.set_color(color_override, i, colorize);
         bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
         ++i;
-        if (i >= MAX_SPRITES) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo: framebuffer, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); i = 0; }
+        if (i >= MAX_SPRITES) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); i = 0; }
     }
-    if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo: framebuffer, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
+    if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
     // Clear used queues
     if (queued) queued.length = 0;
 }
@@ -221,9 +230,6 @@ export function updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32A
     backend.updateVertexBuffer?.(atlas_idBuffer, atlasid, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index);
 }
 
-// For scheduling checks
-// No legacy pending count; scheduling uses centralized queue length.
-
 export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {
     if (ex < x) { [x, ex] = [ex, x]; }
     if (ey < y) { [y, ey] = [ey, y]; }
@@ -243,7 +249,7 @@ export function fillRectangle(view: RenderContext, options: DrawRectOptions): vo
     drawImg(view, { pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
 }
 
-export function drawPolygon(view: RenderContext, coords: Polygon, z: number, color: Color, thickness: number = 1): void {
+export function drawPolygon(view: RenderContext, coords: Polygon, z: number, color: color, thickness: number = 1): void {
     if (!coords || coords.length < 4) return; const imgid = 'whitepixel';
     for (let i = 0; i < coords.length; i += 2) {
         let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]); const next = (i + 2) % coords.length; let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
