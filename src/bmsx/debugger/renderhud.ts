@@ -1,7 +1,9 @@
 import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
 import { $ } from '../core/game';
+import { Identifiable } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 
+// TODO: FIND A WAY TO NOT INITIALIZE ALL THIS STUFF WHEN THE GAME ROM IS NOT A DEBUG-ROM!
 const HUD_ID = 'bmsx-render-hud';
 
 function ensureHudElement(): HTMLElement {
@@ -26,15 +28,9 @@ function ensureHudElement(): HTMLElement {
     return el;
 }
 
-// let rafId: number | null = null;
-
-// function tick(): void {
-//     updateNow();
-//     rafId = requestAnimationFrame(tick);
-// }
-
 @excludeclassfromsavegame
-export class RenderHUDOverlay {
+export class RenderHUDOverlay implements Identifiable { // Note that it is *not* required to implement Identifiable interface, but it can be useful for certain features later
+    public get id(): string { return 'render-hud-overlay'; }
     public enabled = false;
     // sliding window buffers keyed by pass name; also keep a global frame totals window
     private slidingWindowStats: { [key: string]: number[] } = {};
@@ -139,6 +135,5 @@ export class RenderHUDOverlay {
 
 const overlay = new RenderHUDOverlay();
 
-export function toggleRenderHUD(): void { if (overlay.enabled) overlay.disable(); else overlay.enable(); }
-
-export function toggleRenderHUDAverageMode(): void { overlay.toggleAverageMode(); }
+export function toggleRenderHUD(): void { if (overlay?.enabled) overlay.disable(); else overlay?.enable(); }
+export function toggleRenderHUDAverageMode(): void { overlay?.toggleAverageMode(); }
