@@ -15,6 +15,7 @@ import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
 import * as SkyboxPipeline from '../3d/skybox_pipeline';
 import { RenderGraphRuntime } from '../graph/rendergraph';
+import { updateAndBindFrameUniforms } from './frame_uniforms';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT } from '../post/crt_pipeline';
 import { GameView } from '../view';
@@ -50,22 +51,28 @@ type PassStateTypes = {
 }
 
 export class PipelineRegistry {
-	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
+    private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
+    private passEnabled = new Map<string, boolean>();
 
 	constructor(private pm: GraphicsPipelineManager) { }
 
-	registerBuiltin() {
+    registerBuiltin() {
 		// FrameResolve: set per-frame default uniforms shared across passes (sprite + mesh)
-		this.register({
-			id: 'frame_resolve',
-			label: 'frame_resolve',
-			name: 'FrameResolve',
-			stateOnly: true,
-			exec: () => { /* state only */ },
-			prepare: (_backend, _state) => {
-				// No-op: per-pass uniform initialization happens inside each pass after the pipeline is bound.
-			},
-		});
+        this.register({
+            id: 'frame_resolve',
+            label: 'frame_resolve',
+            name: 'FrameResolve',
+            stateOnly: true,
+            exec: () => { /* state only */ },
+            prepare: (backend, _state) => {
+                // Upload minimal frame-shared values via a UBO foundation
+                const gv = getRenderContext();
+                updateAndBindFrameUniforms(backend, {
+                    offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
+                    logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+                });
+            },
+        });
 		// Fog
 		this.register({
 			id: 'fog',
@@ -351,8 +358,8 @@ export class PipelineRegistry {
 	replacePipelinePasses(mutator: (arr: RenderPassDef[]) => void): void { mutator(this.passes); }
 	findPipelinePassIndex(id: string): number { return this.passes.findIndex(p => String(p.id) === id); }
 
-	// Build render graph from current pass registry with Clear/Present wiring
-	buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
+        // Build render graph from current pass registry with Clear/Present wiring
+        buildRenderGraph(view: RenderContext, lightingSystem: LightingSystem): RenderGraphRuntime {
 		const rg = new RenderGraphRuntime(view.getBackend());
 		let frameColorHandle: number | null = null;
 		let frameDepthHandle: number | null = null;
@@ -391,13 +398,13 @@ export class PipelineRegistry {
 
 		// Build pass sequence from registry
 		const passList = this.getPipelinePasses();
-		for (const desc of passList) {
-			const isPresent = !!desc.present;
-			const isStateOnly = !!desc.stateOnly;
-			rg.addPass({
-				name: desc.name,
-				alwaysExecute: isStateOnly,
-				setup: (io) => {
+        for (const desc of passList) {
+            const isPresent = !!desc.present;
+            const isStateOnly = !!desc.stateOnly;
+            rg.addPass({
+                name: desc.name,
+                alwaysExecute: isStateOnly,
+                setup: (io) => {
 					if (!isPresent && !isStateOnly) {
 						if (frameColorHandle != null) io.writeTex(frameColorHandle);
 						if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
@@ -406,10 +413,11 @@ export class PipelineRegistry {
 					}
 					return { width: view.offscreenCanvasSize.x, height: view.offscreenCanvasSize.y, present: isPresent };
 				},
-				execute: (ctx, frame, data: { width: number; height: number; present: boolean }) => {
-					const willRun = !desc.shouldExecute || desc.shouldExecute();
-					if (!willRun) return;
-					if (data.present) {
+                execute: (ctx, frame, data: { width: number; height: number; present: boolean }) => {
+                    const enabled = this.isPassEnabled(desc.id as string);
+                    const willRun = enabled && (!desc.shouldExecute || desc.shouldExecute());
+                    if (!willRun) return;
+                    if (data.present) {
 						const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
 						// const fragScale = view.offscreenCanvasSize.x / view.viewportSize.x;
 						try {
@@ -438,19 +446,32 @@ export class PipelineRegistry {
 			});
 		}
 
-		// Optional: quick validation similar to original
-		try {
-			const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
-			rg.compile(dummyFrame);
-			const texInfo = rg.getTextureDebugInfo();
-			const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
-			if (frameColor) {
-				const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
-				const contentWriters = writerNames.filter(n => n !== 'Clear');
-				if (contentWriters.length === 0) console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
-			}
-		} catch { /* ignore */ }
+        // Optional: quick validation similar to original
+        try {
+            const dummyFrame: any = { views: [], frameIndex: 0, time: 0, delta: 0 };
+            rg.compile(dummyFrame);
+            const texInfo = rg.getTextureDebugInfo();
+            const frameColor = frameColorHandle != null ? texInfo.find(t => t.index === frameColorHandle) : texInfo.find(t => t.present);
+            if (frameColor) {
+                const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
+                const contentWriters = writerNames.filter(n => n !== 'Clear');
+                if (contentWriters.length === 0) console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
+            }
+            // Pass registry validation: unique IDs and shader availability for non-state passes
+            const seen = new Set<string>();
+            for (const p of this.getPipelinePasses()) {
+                const idStr = String(p.id);
+                if (seen.has(idStr)) console.warn(`Duplicate pass id registered: ${idStr}`);
+                seen.add(idStr);
+                const needsShaders = !p.stateOnly && !p.present;
+                if (needsShaders && (!p.vsCode || !p.fsCode)) console.warn(`Pass '${p.name}' missing shaders (vs=${!!p.vsCode} fs=${!!p.fsCode})`);
+            }
+        } catch { /* ignore */ }
 
-		return rg;
-	}
+        return rg;
+    }
+
+    // Enable/disable passes at runtime (debug/editor)
+    setPassEnabled(id: string, enabled: boolean): void { this.passEnabled.set(id, !!enabled); }
+    isPassEnabled(id: string): boolean { return this.passEnabled.get(id) !== false; }
 }
