@@ -188,11 +188,7 @@ export class PipelineRegistry {
             },
 			writesDepth: true,
             shouldExecute: () => {
-                const gv = getRenderContext() as unknown as { renderer?: { queues?: { meshes?: unknown[] } } };
-                const legacyCount = (gv.renderer?.queues?.meshes?.length ?? 0) | 0;
-                let featureCount = 0;
-                try { featureCount = (MeshPipeline as any).getQueuedMeshCount?.() ?? 0; } catch { /* ignore */ }
-                return (legacyCount + featureCount) > 0;
+                try { return MeshPipeline.getQueuedMeshCount?.() > 0; } catch { return true; }
             },
 			exec: (backend, fbo, s) => {
 				const gl = (backend as any).gl as WebGL2RenderingContext;
@@ -261,9 +257,7 @@ export class PipelineRegistry {
             },
 			writesDepth: true,
             shouldExecute: () => {
-                try { return (ParticlesPipeline as any).getQueuedParticleCount?.() > 0; } catch { /* fallback */ }
-                const gv = getRenderContext() as unknown as { renderer?: { queues?: { particles?: unknown[] } } };
-                return (gv.renderer?.queues?.particles?.length ?? 0) > 0;
+                try { return (ParticlesPipeline as any).getQueuedParticleCount?.() > 0; } catch { return true; }
             },
 			exec: (_backend, fbo, s) => {
 				const state = s as ParticlePipelineState;
@@ -304,9 +298,7 @@ export class PipelineRegistry {
             },
 			writesDepth: true,
             shouldExecute: () => {
-                try { return (SpritesPipeline as any).getQueuedSpriteCount?.() > 0; } catch { /* fallback */ }
-                const gv = getRenderContext() as unknown as { renderer?: { queues?: { sprites?: unknown[] } } };
-                return (gv.renderer?.queues?.sprites?.length ?? 0) > 0;
+                try { return (SpritesPipeline as any).getQueuedSpriteCount?.() > 0; } catch { return true; }
             },
 			exec: (_backend, fbo, s) => {
 				const state = s as SpritesPipelineState;

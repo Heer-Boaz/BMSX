@@ -162,7 +162,7 @@ export class GameView implements RegisterablePersistent {
 						flip: o.flip ? { ...o.flip } : undefined,
 					});
 				},
-				mesh: (o: DrawMeshOptions) => { this._queuesBack.meshes.push({ ...o }); },
+				mesh: (o: DrawMeshOptions) => { MeshPipeline.submitMesh({ ...o }); },
 			},
 			swap: () => {
 				const f = this._queuesFront; const b = this._queuesBack;

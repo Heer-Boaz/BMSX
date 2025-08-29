@@ -5,14 +5,12 @@ import type { Mesh } from '../../core/mesh';
 import { Float32ArrayPool } from '../../core/utils';
 import type { Size, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
+import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
 import { getRenderContext } from '../backend/pipeline_registry';
-import { FeatureQueue } from '../backend/feature_queue';
-import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../backend/webgl.constants';
-import { getFramebufferStatusString } from '../backend/webgl.helpers';
+import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { DrawMeshOptions } from '../view';
-import { TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { Atmosphere, registerAtmosphereHotkeys } from './atmosphere';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
@@ -472,13 +470,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void { const mat = m.material; gl.uniform4fv(materialColorLocation3D, new Float32Array(mat?.color ?? [1, 1, 1, 1])); gl.uniform1f(metallicFactorLocation3D, mat?.metallicFactor ?? 0.0); gl.uniform1f(roughnessFactorLocation3D, mat?.roughnessFactor ?? 0.0); }
 function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void { setUseInstancing(gl, false); for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) { const buffers = getMeshBuffers(gl, m); const srcWeights = morphWeights ?? m.morphWeights ?? []; const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0); const sig = getVAOSignature(m, false, hasMorph); let vao: WebGLVertexArrayObject; if (hasMorph) { if (buffers.vaoSig !== sig) { if (buffers.vao) gl.deleteVertexArray(buffers.vao); buffers.vao = buildVAOForMesh(gl, m, buffers, false, true); buffers.vaoSig = sig; } vao = buffers.vao!; } else { if (buffers.vaoNoMorphSig !== sig) { if (buffers.vaoNoMorph) gl.deleteVertexArray(buffers.vaoNoMorph); buffers.vaoNoMorph = buildVAOForMesh(gl, m, buffers, false, false); buffers.vaoNoMorphSig = sig; } vao = buffers.vaoNoMorph!; } uploadJointPalette(gl, jointMatrices, m.hasSkinning); if (hasMorph) { const w = new Float32Array(MAX_MORPH_TARGETS); for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0; uploadMorphWeights(gl, w); } else uploadMorphWeights(gl, null); setMeshMaterial(gl, m); setMeshTextures(gl, m); gl.uniformMatrix4fv(modelLocation3D, false, matrix); const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9); const __b2 = getRenderContext().getBackend() as any; if (__b2.bindVertexArray) __b2.bindVertexArray(vao); else gl.bindVertexArray(vao); const _b2 = getRenderContext().getBackend(); const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } } as any; if (buffers.index) _b2.drawIndexed!(_p2 as any, buffers.indexCount ?? m.indices!.length, 0); else _b2.draw!(_p2 as any, 0, m.vertexCount); if (__b2.bindVertexArray) __b2.bindVertexArray(null); else gl.bindVertexArray(null); } normal9Pool.reset(); }
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: any): void {
-    // Ingest centralized queue + legacy direct submissions into feature queue
-    type V = { renderer?: { queues?: { meshes?: DrawMeshOptions[] } } };
-    const ctx = getRenderContext() as unknown as V;
-    const q = ctx.renderer?.queues?.meshes;
-    if (q && q.length) { for (const it of q) meshQueue.submit({ ...it }); q.length = 0; }
-    if (meshesToDraw.length) { for (const it of meshesToDraw) meshQueue.submit({ ...it }); meshesToDraw.length = 0; }
-    // Swap to make submissions visible
+    // Swap to make submissions visible (no legacy fallbacks)
     meshQueue.swap();
     const src = meshQueue.frontArray();
     if (src.length === 0) return;
