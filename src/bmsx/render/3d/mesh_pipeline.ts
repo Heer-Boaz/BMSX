@@ -26,7 +26,7 @@ const INSTANCE_STRIDE_NORMAL9 = 9;
 const MAT4_FLOATS = 16;
 // unified in webgl.constants
 
-export let meshesToDraw: DrawMeshOptions[] = [];
+// Legacy direct submission array removed. Use submitMesh() with feature queue.
 const meshQueue = new FeatureQueue<DrawMeshOptions>(256);
 export function getQueuedMeshCount(): number { return meshQueue.sizeBack(); }
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
@@ -518,4 +518,4 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 }
 
 export function submitMesh(o: DrawMeshOptions): void { meshQueue.submit({ ...o }); }
-export function reset(_gl: WebGL2RenderingContext): void { meshesToDraw = []; normal9Pool.reset(); clearLights(); }
+export function reset(_gl: WebGL2RenderingContext): void { normal9Pool.reset(); clearLights(); }

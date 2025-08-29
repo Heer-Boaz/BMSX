@@ -5,10 +5,9 @@ import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
+import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
 import { GraphicsPipelineManager } from "../render/backend/pipeline_manager";
 import { PipelineRegistry } from "../render/backend/pipeline_registry";
-import { WebGLBackend } from "../render/backend/webgl_backend";
-import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
@@ -49,8 +48,8 @@ export interface GameInitArgs<M extends BaseModel = BaseModel, V extends GameVie
 const GAME_FPS = 50;
 const MAX_FRAME_DELTA = 250;  // ms
 const MAX_SUBSTEPS = 5;
-const REWIND_BUFFER_ACTIVATED = false;
-const REWIND_BUFFER_WRITE_FREQUENCY = 10; // Frames
+const REWIND_BUFFER_ACTIVATED = true;
+const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
@@ -332,15 +331,15 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
-        const activeView = this.view as any; // TODO: REMOVE CAST!!
-        // Acquire WebGL2 context and backend; in future this can branch for WebGPU
-        const { backend, nativeCtx } = await createBackendForCanvasAsync(activeView.canvas);
-        activeView.nativeCtx = nativeCtx;
-        activeView.setBackend(backend);
-        activeView.initializeDefaultTextures();
+		const activeView = this.view as any; // TODO: REMOVE CAST!!
+		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
+		const { backend, nativeCtx } = await createBackendForCanvasAsync(activeView.canvas);
+		activeView.nativeCtx = nativeCtx;
+		activeView.setBackend(backend);
+		activeView.initializeDefaultTextures();
 		new TextureManager(backend);
-        const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
-        const pipelineRegistry = new PipelineRegistry(pipelineManager);
+		const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
+		const pipelineRegistry = new PipelineRegistry(pipelineManager);
 		pipelineRegistry.registerBuiltin();
 		// Store on view for graph rebuild
 		if (typeof activeView.setPipelineRegistry === 'function') {

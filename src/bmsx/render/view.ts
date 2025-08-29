@@ -142,18 +142,18 @@ export class GameView implements RegisterablePersistent {
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
 
-    // Renderer submission facade (no legacy queues)
-    public renderer: {
-        submit: { particle: (o: DrawParticleOptions) => void; sprite: (o: DrawImgOptions) => void; mesh: (o: DrawMeshOptions) => void };
-        swap: () => void;
-    } = {
-            submit: {
-                particle: (o: DrawParticleOptions) => { ParticlesPipeline.submitParticle({ ...o }); },
-                sprite: (o: DrawImgOptions) => { this.drawImg(o); },
-                mesh: (o: DrawMeshOptions) => { MeshPipeline.submitMesh({ ...o }); },
-            },
-            swap: () => { /* no-op: feature queues handle their own swapping */ },
-        };
+	// Renderer submission facade (no legacy queues)
+	public renderer: {
+		submit: { particle: (o: DrawParticleOptions) => void; sprite: (o: DrawImgOptions) => void; mesh: (o: DrawMeshOptions) => void };
+		swap: () => void;
+	} = {
+			submit: {
+				particle: (o: DrawParticleOptions) => { ParticlesPipeline.submitParticle({ ...o }); },
+				sprite: (o: DrawImgOptions) => { this.drawImg(o); },
+				mesh: (o: DrawMeshOptions) => { MeshPipeline.submitMesh({ ...o }); },
+			},
+			swap: () => { /* no-op: feature queues handle their own swapping */ },
+		};
 
 	constructor(viewportSize: Size, canvasSize?: Size,) {
 		Registry.instance.register(this);
@@ -334,7 +334,7 @@ export class GameView implements RegisterablePersistent {
 	}
 
 	public reset(): void {
-		throw new Error("Method not implemented.");
+		;
 	}
 
 	/**

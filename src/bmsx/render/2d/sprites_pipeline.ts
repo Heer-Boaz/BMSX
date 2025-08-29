@@ -229,13 +229,35 @@ export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta)
     return imgmeta['texcoords'];
 }
 
-export function updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, atlasid: Uint8Array, index: number): void {
-    const backend = getRenderContext().getBackend();
-    backend.updateVertexBuffer?.(vertexBuffer, vertexcoords, VERTEX_BUFFER_OFFSET_MULTIPLIER * index);
-    backend.updateVertexBuffer?.(texcoordBuffer, texcoords, VERTEX_BUFFER_OFFSET_MULTIPLIER * index);
-    backend.updateVertexBuffer?.(zBuffer, zcoords, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index);
-    backend.updateVertexBuffer?.(color_overrideBuffer, color_override, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index);
-    backend.updateVertexBuffer?.(atlas_idBuffer, atlasid, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index);
+export function updateBuffers(
+    gl: WebGL2RenderingContext,
+    vertexcoords: Float32Array,
+    texcoords: Float32Array,
+    zcoords: Float32Array,
+    color_override: Float32Array,
+    atlasid: Uint8Array,
+    index: number,
+): void {
+    // Orphan + upload pattern to avoid driver stalls on mobile GPUs.
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexcoords.byteLength, gl.DYNAMIC_DRAW);
+    gl.bufferSubData(gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texcoords.byteLength, gl.DYNAMIC_DRAW);
+    gl.bufferSubData(gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, zBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, zcoords.byteLength, gl.DYNAMIC_DRAW);
+    gl.bufferSubData(gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, color_override.byteLength, gl.DYNAMIC_DRAW);
+    gl.bufferSubData(gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, atlasid.byteLength, gl.DYNAMIC_DRAW);
+    gl.bufferSubData(gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
 }
 
 export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {
