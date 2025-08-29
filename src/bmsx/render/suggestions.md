@@ -3,10 +3,14 @@
 Continue implementing the professionalized render/pipeline foundations I approved. Prioritize according to your own will.
 Always consider that:
 - I also need to support both WebGL2 and WebGPU (even though WebGPU pipelines are not implemented yet).
-- There are already components implemented that enable GPU API agnostic code, like the `GPUBackend`, `TextureManager`, `AssetBarrier`, `Float32Pool`, etc.
+- There are already components implemented that enable GPU API agnostic code, like the `GPUBackend`, `TextureManager`,
+- Reuse existing helpers like `AssetBarrier`, `Float32Pool`, `Pool`, etc.
 - The `GameView` class should be backend agnostic and not depend on WebGL2-specific code.
+- Here is your proposed plan that I approved, which you already have partially implemented:
 
-And always consider your proposed plan: A UE5-inspired, light-weight design for the render/pipeline system that fits the current codebase and conventions (e.g. `fsmlibrary.ts`, `basecomponent.ts`, `registry.ts` plus a staged roadmap to implement it safely.
+# Proposed Plan
+
+A UE5-inspired, light-weight design for the render/pipeline system that fits the current codebase and conventions (e.g. `fsmlibrary.ts`, `basecomponent.ts`, `registry.ts` plus a staged roadmap to implement it safely.
 
 ## Goals
 

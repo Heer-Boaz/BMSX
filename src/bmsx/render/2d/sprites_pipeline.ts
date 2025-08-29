@@ -31,6 +31,7 @@ import {
     ZCOORDS_SIZE
 } from '../backend/webgl.constants';
 import { color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
+import { ScratchBatch } from '../../core/scratchbatch';
 import { bvec } from './vertexutils2d';
 
 export let spriteShaderProgram: WebGLProgram;
@@ -57,8 +58,8 @@ const spriteShaderData = {
     atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
-// Pooled scratch list to avoid per-frame allocations during batching
-const batchScratch: { options: DrawImgOptions; imgmeta: ImgMeta }[] = [];
+// Scratch list to avoid per-frame allocations during batching
+const batchScratch = new ScratchBatch<{ options: DrawImgOptions; imgmeta: ImgMeta }>(128);
 
 // Removed: program creation is handled by the backend/pipeline manager
 
@@ -159,7 +160,7 @@ export function renderSpriteBatch(
     type V = { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
     const view = $.viewAs<GameView>() as unknown as V;
     const queued = view.renderer?.queues?.sprites;
-    batchScratch.length = 0;
+    batchScratch.clear();
     if (queued && queued.length) {
         for (let qi = 0; qi < queued.length; qi++) {
             const options = queued[qi];
@@ -210,7 +211,7 @@ export function renderSpriteBatch(
     if (useVAO) backend.bindVertexArray!(null);
     // Clear used queues & scratch list
     if (queued) queued.length = 0;
-    batchScratch.length = 0;
+    batchScratch.clear();
 }
 
 export function drawImg(view: RenderContext, options: DrawImgOptions): void {

@@ -8,6 +8,7 @@ import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { color } from '../view';
 import { M4 } from './math3d';
+import { ScratchBatch } from '../../core/scratchbatch';
 
 export interface DrawParticleOptions { position: vec3arr; size: number; color: color; texture?: WebGLTexture; }
 // Legacy global queue kept for backward-compat submission; prefer view.renderer.queues.particles
@@ -79,19 +80,20 @@ export function setupParticleLocations(): void {
     if (backend.bindArrayBuffer) backend.bindArrayBuffer(null); else gl.bindBuffer(gl.ARRAY_BUFFER, null);
 }
 export interface ParticlePassState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }
+// Scratch list reused each frame for batching
+const combinedScratch = new ScratchBatch<DrawParticleOptions>(256);
 export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {
     const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
     // Combine centralized queue (if any) with legacy queue for backward compatibility
     type V = { renderer?: { queues?: { particles?: DrawParticleOptions[] } } };
     const ctx = getRenderContext() as unknown as V;
-    // Pooled scratch array to avoid allocations
-    const combined: DrawParticleOptions[] = [];
+    // Scratch list to avoid per-frame allocations
+    combinedScratch.clear();
     const q = ctx.renderer?.queues?.particles;
     if (q && q.length) {
-        combined.length = 0;
-        for (let i = 0; i < q.length; i++) combined.push(q[i]);
+        for (let i = 0; i < q.length; i++) combinedScratch.push(q[i]);
     }
-    const count = combined.length;
+    const count = combinedScratch.length;
     if (count === 0) return;
     if (state) {
         camRight.set(state.camRight);
@@ -101,7 +103,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
         M4.viewRightUpInto(activeCamera.view, camRight, camUp);
     }
     const batches = new Map<WebGLTexture, DrawParticleOptions[]>();
-    for (const p of combined) {
+    for (const p of combinedScratch) {
         const tex = p.texture ?? defaultTexture;
         let arr = batches.get(tex);
         if (!arr) {

@@ -174,6 +174,9 @@ export class PipelineRegistry {
                 MeshPipeline.setupVertexShaderLocations3D(gl);
                 MeshPipeline.setupBuffers3D(gl);
                 backend.setUniformBlockBinding?.('FrameUniforms', FRAME_UNIFORM_BINDING);
+                // Ensure mesh light blocks are consistently bound on WebGL
+                backend.setUniformBlockBinding?.('DirLightBlock', 0);
+                backend.setUniformBlockBinding?.('PointLightBlock', 1);
             },
 			writesDepth: true,
 			shouldExecute: () => {

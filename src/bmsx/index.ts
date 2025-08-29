@@ -19,6 +19,7 @@ export * from './core/mesh';
 export * from './core/objecttracker';
 export * from './core/registry';
 export * from './core/sprite';
+export * from './core/scratchbatch';
 export * from './core/taskgate';
 export * from './core/timeline';
 export * from './core/utils';
