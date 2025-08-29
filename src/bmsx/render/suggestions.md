@@ -4,7 +4,6 @@ Continue implementing the professionalized render/pipeline foundations I approve
 Always consider that:
 - I also need to support both WebGL2 and WebGPU (even though WebGPU pipelines are not implemented yet).
 - There are already components implemented that enable GPU API agnostic code, like the `GPUBackend`, `TextureManager`, `AssetBarrier`, `Float32Pool`, etc.
-- I want to get rid of the `GLView` (`render_view.ts`) and rather have a single `GameView`-class instead.
 - The `GameView` class should be backend agnostic and not depend on WebGL2-specific code.
 
 And always consider your proposed plan: A UE5-inspired, light-weight design for the render/pipeline system that fits the current codebase and conventions (e.g. `fsmlibrary.ts`, `basecomponent.ts`, `registry.ts` plus a staged roadmap to implement it safely.
@@ -40,6 +39,7 @@ And always consider your proposed plan: A UE5-inspired, light-weight design for 
 * Replace “unknown” pass state with generics tied to pass IDs.
 
 ### Example
+
 * RenderPassStateMap is a generic type parameter of PipelineRegistry and GraphicsPipelineManager.
 * Each pass registers its own State type; setState('sprites', SpritesState) becomes type-checked.
 
@@ -77,20 +77,21 @@ And always consider your proposed plan: A UE5-inspired, light-weight design for 
 
 * WebGL2: Create VAOs per pipeline in bootstrap, bind once per draw; attribute pointers live in VAOs.
 * Backend state cache:
-* Track bound VAO, program, vertex/index buffer, textures per unit; short-circuit redundant binds.
-* Provide setVertexLayout(handle) convenience that binds the right VAO and buffers.
-* WebGPU: Map VAO concept to pipeline vertex-state descriptors.
+  * Track bound VAO, program, vertex/index buffer, textures per unit; short-circuit redundant binds.
+  * Provide setVertexLayout(handle) convenience that binds the right VAO and buffers.
+  * WebGPU: Map VAO concept to pipeline vertex-state descriptors.
 
 ### Files
 
   * src/bmsx/render/backend/webgl_backend.ts: add VAO helpers (many exist; wire VAO creation in pipeline bootstrap).
   * src/bmsx/render/2d/sprites_pipeline.ts: Create a VAO and stop re-specifying attrib pointers each frame.
-  * Shader Modules & Binding Layout
-  *
-  * Keep GLSL for WebGL2. Introduce a small “module” wrapper:
-  * Declares its binding layout and specialization constants (defines).
-  * Provides a stable “material signature” key for permutation caching.
-  * Optional: lightweight string preprocessor for defines, but keep it simple.
+
+### Shader Modules & Binding Layout
+
+  * Introduce a small “module” wrapper for shader code:
+    * Declares its binding layout and specialization constants (defines).
+    * Provides a stable “material signature” key for permutation caching.
+    * Optional: lightweight string preprocessor for defines, but keep it simple.
 
 ### Validation & Debug HUD
 
@@ -98,9 +99,9 @@ And always consider your proposed plan: A UE5-inspired, light-weight design for 
   * Pass ID uniqueness, binding layout agreement (declared vs. used), graph cycle/alias warnings.
   * Check for missing prepare state or null textures for required bindings.
   * HUD in bmsxdebugger.ts:
-  * Framegraph pass list with timings (you already collect stats).
-  * Per-pass resource usage, active pipelines count, draw call counts.
-  * Toggles to pause/step frame, show viewports, visualize overdraw, runtime “force clear color” (your Clear pass already supports a debug color flag).
+    * Framegraph pass list with timings (you already collect stats).
+    * Per-pass resource usage, active pipelines count, draw call counts.
+    * Toggles to pause/step frame, show viewports, visualize overdraw, runtime “force clear color” (your Clear pass already supports a debug color flag).
 
 ### Performance Practices
 
