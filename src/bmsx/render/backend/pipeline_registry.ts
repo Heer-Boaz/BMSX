@@ -34,6 +34,20 @@ interface SkyboxPipelineState { width: number; height: number; view: Float32Arra
 interface MeshBatchPipelineState { width: number; height: number; camPos: any; viewProj: Float32Array; fog: unknown; lighting?: unknown; }
 interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
 interface SpritesPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; }
+interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle | null; options?: unknown; }
+interface FrameSharedState { view: { camPos: any; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array }; lighting: unknown }
+
+// Type-safe pass state map used by this registry (compile-time only)
+type PassStateTypes = {
+    fog: FogPipelineState;
+    skybox: SkyboxPipelineState;
+    meshbatch: MeshBatchPipelineState;
+    particles: ParticlePipelineState;
+    sprites: SpritesPipelineState;
+    crt: CRTPipelineState;
+    frame_shared: FrameSharedState;
+    frame_resolve: undefined;
+}
 
 export class PipelineRegistry {
 	private passes: RenderPassDef[] = []; // Mutable list for ordering/scheduling
@@ -321,8 +335,8 @@ export class PipelineRegistry {
 		this.pm.register(desc);
 	}
 
-	setState<PState extends RenderPassStateId>(id: PState, state: RenderPassStateRegistry[PState]): void { this.pm.setState(id, state); }
-	getState<PState extends RenderPassStateId>(id: PState): RenderPassStateRegistry[PState] | undefined { return this.pm.getState(id); }
+    setState<PState extends RenderPassStateId>(id: PState, state: PassStateTypes[PState]): void { this.pm.setState(id, state); }
+    getState<PState extends RenderPassStateId>(id: PState): PassStateTypes[PState] | undefined { return this.pm.getState(id); }
 	execute(id: string, fbo: unknown): void { this.pm.execute(id, fbo); }
 	has(id: string): boolean { return this.pm.has(id); }
 

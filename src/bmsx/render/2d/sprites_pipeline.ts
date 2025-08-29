@@ -48,6 +48,7 @@ let texcoordBuffer: WebGLBuffer;
 let zBuffer: WebGLBuffer;
 let color_overrideBuffer: WebGLBuffer;
 let atlas_idBuffer: WebGLBuffer;
+let spriteVAO: WebGLVertexArrayObject | null = null;
 const spriteShaderData = {
     resolutionVector: new Float32Array(RESOLUTION_VECTOR_SIZE),
     vertexcoords: null as Float32Array | null, // Lazy init to avoid circular dependency timing with backend
@@ -112,23 +113,35 @@ export function setupBuffers(fbo: unknown): void {
 }
 
 export function setupSpriteLocations(backend: GPUBackend): void {
-    // Program is bound by the backend; set up attributes via backend helpers
+    // Program is bound by the backend; prefer VAO to avoid per-frame attrib churn
     const gl = (backend as WebGLBackend).gl;
-    backend.bindArrayBuffer?.(vertexBuffer);
-    backend.enableVertexAttrib?.(vertexLocation);
-    backend.vertexAttribPointer?.(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
-    backend.bindArrayBuffer?.(texcoordBuffer);
-    backend.enableVertexAttrib?.(texcoordLocation);
-    backend.vertexAttribPointer?.(texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
-    backend.bindArrayBuffer?.(zBuffer);
-    backend.enableVertexAttrib?.(zcoordLocation);
-    backend.vertexAttribPointer?.(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
-    backend.bindArrayBuffer?.(color_overrideBuffer);
-    backend.enableVertexAttrib?.(color_overrideLocation);
-    backend.vertexAttribPointer?.(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0);
-    backend.bindArrayBuffer?.(atlas_idBuffer);
-    backend.enableVertexAttrib?.(atlas_idLocation);
-    backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0);
+    try {
+        const vao = backend.createVertexArray ? backend.createVertexArray() as WebGLVertexArrayObject : null;
+        if (vao && backend.bindVertexArray) {
+            backend.bindVertexArray(vao);
+            backend.bindArrayBuffer?.(vertexBuffer);
+            backend.enableVertexAttrib?.(vertexLocation);
+            backend.vertexAttribPointer?.(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
+            backend.bindArrayBuffer?.(texcoordBuffer);
+            backend.enableVertexAttrib?.(texcoordLocation);
+            backend.vertexAttribPointer?.(texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
+            backend.bindArrayBuffer?.(zBuffer);
+            backend.enableVertexAttrib?.(zcoordLocation);
+            backend.vertexAttribPointer?.(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
+            backend.bindArrayBuffer?.(color_overrideBuffer);
+            backend.enableVertexAttrib?.(color_overrideLocation);
+            backend.vertexAttribPointer?.(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0);
+            backend.bindArrayBuffer?.(atlas_idBuffer);
+            backend.enableVertexAttrib?.(atlas_idLocation);
+            backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0);
+            backend.bindVertexArray(null);
+            spriteVAO = vao;
+        } else {
+            spriteVAO = null; // Fallback to per-draw attribute binding
+        }
+    } catch {
+        spriteVAO = null;
+    }
 }
 
 // Note: 'fbo' is provided by the render graph and used only to satisfy the
@@ -149,15 +162,8 @@ export function renderSpriteBatch(
     if (queued && queued.length) {
         for (const options of queued) {
             const imgmeta = GameView.imgassets[options.imgid]?.imgmeta; if (!imgmeta) continue;
-            // Deep-copy nested fields to avoid aliasing if the caller reuses objects
-            const distinct: DrawImgOptions = {
-                ...options,
-                pos: options.pos ? { ...options.pos } : undefined,
-                scale: options.scale ? { ...options.scale } : undefined,
-                colorize: options.colorize ? { ...options.colorize } : undefined,
-                flip: options.flip ? { ...options.flip } : undefined,
-            };
-            combined.push({ options: distinct, imgmeta });
+            // drawImg() already deep-copies nested fields; reuse to avoid allocations
+            combined.push({ options, imgmeta });
         }
     }
     // no legacy sprite list; only centralized queue is used
@@ -175,11 +181,17 @@ export function renderSpriteBatch(
     //     spriteShaderData.resolutionVector[0] = resW; spriteShaderData.resolutionVector[1] = resH;
     //     gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
     // }
-    backend.bindArrayBuffer?.(vertexBuffer); backend.vertexAttribPointer?.(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(vertexLocation);
-    backend.bindArrayBuffer?.(texcoordBuffer); backend.vertexAttribPointer?.(texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(texcoordLocation);
-    backend.bindArrayBuffer?.(zBuffer); backend.vertexAttribPointer?.(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(zcoordLocation);
-    backend.bindArrayBuffer?.(color_overrideBuffer); backend.vertexAttribPointer?.(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(color_overrideLocation);
-    backend.bindArrayBuffer?.(atlas_idBuffer); backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0); backend.enableVertexAttrib?.(atlas_idLocation);
+    const useVAO = !!spriteVAO && !!backend.bindVertexArray;
+    if (useVAO) {
+        backend.bindVertexArray!(spriteVAO as unknown as WebGLVertexArrayObject);
+    } else {
+        // Fallback path: bind attributes explicitly each frame
+        backend.bindArrayBuffer?.(vertexBuffer); backend.vertexAttribPointer?.(vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(vertexLocation);
+        backend.bindArrayBuffer?.(texcoordBuffer); backend.vertexAttribPointer?.(texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(texcoordLocation);
+        backend.bindArrayBuffer?.(zBuffer); backend.vertexAttribPointer?.(zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(zcoordLocation);
+        backend.bindArrayBuffer?.(color_overrideBuffer); backend.vertexAttribPointer?.(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(color_overrideLocation);
+        backend.bindArrayBuffer?.(atlas_idBuffer); backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0); backend.enableVertexAttrib?.(atlas_idLocation);
+    }
     combined.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
     const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = spriteShaderData; let i = 0;
     for (const { options, imgmeta } of combined) {
@@ -195,6 +207,7 @@ export function renderSpriteBatch(
         if (i >= MAX_SPRITES) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); i = 0; }
     }
     if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
+    if (useVAO) backend.bindVertexArray!(null);
     // Clear used queues
     if (queued) queued.length = 0;
 }
