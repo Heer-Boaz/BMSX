@@ -35,7 +35,7 @@ export class EventEmitter implements RegisterablePersistent {
      * Disposes the object and deregisters it from the registry.
      */
     public dispose(): void {
-        this.clear();
+        EventEmitter.instance.clear();
     }
 
     /**
@@ -73,7 +73,7 @@ export class EventEmitter implements RegisterablePersistent {
         const constr = subscriber.constructor as EventSubscriber;
         if (!constr?.eventSubscriptions) return;
 
-        const eventEmitter = EventEmitter.instance;
+        const self = EventEmitter.instance;
         constr.eventSubscriptions.forEach(subscription => {
             let handler = subscriber[subscription.handlerName].bind(subscriber);
             // If a wrapper function is provided, use it to call the handler
@@ -94,13 +94,14 @@ export class EventEmitter implements RegisterablePersistent {
                     if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as Identifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have an 'id'.`);
                     break;
             }
-            eventEmitter.on(subscription.eventName, handler, subscriber, emitterFilter);
+            self.on(subscription.eventName, handler, subscriber, emitterFilter);
         });
     }
 
     private checkIfListenerExists(event_name: string, listener: Function, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
+        const self = EventEmitter.instance;
         if (filtered_on_emitter_id) {
-            const emitterListeners = this.emitterScopeListeners[event_name]?.[filtered_on_emitter_id];
+            const emitterListeners = self.emitterScopeListeners[event_name]?.[filtered_on_emitter_id];
             if (emitterListeners) {
                 for (let item of emitterListeners) {
                     if (item.listener === listener && item.subscriber === subscriber) {
@@ -109,7 +110,7 @@ export class EventEmitter implements RegisterablePersistent {
                 }
             }
         } else {
-            const globalListeners = this.globalScopeListeners[event_name];
+            const globalListeners = self.globalScopeListeners[event_name];
             if (globalListeners) {
                 for (let item of globalListeners) {
                     if (item.listener === listener && item.subscriber === subscriber) {
@@ -130,27 +131,28 @@ export class EventEmitter implements RegisterablePersistent {
      * @param filtered_on_emitter_id - (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
      */
     on(event_name: string, listener: Function, subscriber: any, filtered_on_emitter_id?: Identifier): void {
+        const self = EventEmitter.instance;
         if (filtered_on_emitter_id) {
-            if (!this.emitterScopeListeners[event_name]) {
-                this.emitterScopeListeners[event_name] = {};
+            if (!self.emitterScopeListeners[event_name]) {
+                self.emitterScopeListeners[event_name] = {};
             }
-            if (!this.emitterScopeListeners[event_name][filtered_on_emitter_id]) {
-                this.emitterScopeListeners[event_name][filtered_on_emitter_id] = new Set();
+            if (!self.emitterScopeListeners[event_name][filtered_on_emitter_id]) {
+                self.emitterScopeListeners[event_name][filtered_on_emitter_id] = new Set();
             }
-            if (this.checkIfListenerExists(event_name, listener, subscriber, filtered_on_emitter_id)) {
+            if (self.checkIfListenerExists(event_name, listener, subscriber, filtered_on_emitter_id)) {
                 console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
                 return; // Prevent adding the same listener multiple times
             }
-            this.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber });
+            self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber });
         } else {
-            if (!this.globalScopeListeners[event_name]) {
-                this.globalScopeListeners[event_name] = new Set();
+            if (!self.globalScopeListeners[event_name]) {
+                self.globalScopeListeners[event_name] = new Set();
             }
-            if (this.checkIfListenerExists(event_name, listener, subscriber)) {
+            if (self.checkIfListenerExists(event_name, listener, subscriber)) {
                 console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
                 return; // Prevent adding the same listener multiple times
             }
-            this.globalScopeListeners[event_name].add({ listener, subscriber });
+            self.globalScopeListeners[event_name].add({ listener, subscriber });
         }
     }
 
@@ -162,10 +164,10 @@ export class EventEmitter implements RegisterablePersistent {
      * @param args - Additional arguments to pass to the listeners.
      */
     emit(event_name: string, emitter: Identifiable, ...args: any[]): void {
-        this.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
+        EventEmitter.instance.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
             listener.call(subscriber, event_name, emitter, ...args);
         });
-        this.globalScopeListeners[event_name]?.forEach(({ listener, subscriber }) => {
+        EventEmitter.instance.globalScopeListeners[event_name]?.forEach(({ listener, subscriber }) => {
             listener.call(subscriber, event_name, emitter, ...args);
         });
     }
@@ -179,7 +181,7 @@ export class EventEmitter implements RegisterablePersistent {
      */
     off(event_name: string, listener: Function, emitter?: string): void {
         const key = emitter || 'all';
-        const emitterListeners = this.emitterScopeListeners[event_name]?.[key];
+        const emitterListeners = EventEmitter.instance.emitterScopeListeners[event_name]?.[key];
         if (!emitterListeners) {
             console.warn(`No listeners for event "${event_name}" and emitter "${key}"`);
             return;
@@ -197,19 +199,20 @@ export class EventEmitter implements RegisterablePersistent {
      * @param subscriber - The subscriber to be removed.
      */
     removeSubscriber(subscriber: any): void {
-        for (const event in this.emitterScopeListeners) {
-            for (const key in this.emitterScopeListeners[event]) {
-                for (let item of this.emitterScopeListeners[event][key]) {
+        const self = EventEmitter.instance;
+        for (const event in self.emitterScopeListeners) {
+            for (const key in self.emitterScopeListeners[event]) {
+                for (let item of self.emitterScopeListeners[event][key]) {
                     if (item.subscriber === subscriber) {
-                        this.emitterScopeListeners[event][key].delete(item);
+                        self.emitterScopeListeners[event][key].delete(item);
                     }
                 }
             }
         }
-        for (const event in this.globalScopeListeners) {
-            for (let item of this.globalScopeListeners[event]) {
+        for (const event in self.globalScopeListeners) {
+            for (let item of self.globalScopeListeners[event]) {
                 if (item.subscriber === subscriber) {
-                    this.globalScopeListeners[event].delete(item);
+                    self.globalScopeListeners[event].delete(item);
                 }
             }
         }
@@ -219,8 +222,9 @@ export class EventEmitter implements RegisterablePersistent {
      * Clears all the listeners from the event emitter.
      */
     clear(): void {
-        this.emitterScopeListeners = {};
-        this.globalScopeListeners = {};
+        const self = EventEmitter.instance;
+        self.emitterScopeListeners = {};
+        self.globalScopeListeners = {};
     }
 }
 

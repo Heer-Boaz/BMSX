@@ -4,7 +4,7 @@ Continue implementing the professionalized render/pipeline foundations I approve
 Always consider that:
 - I also need to support both WebGL2 and WebGPU (even though WebGPU pipelines are not implemented yet).
 - There are already components implemented that enable GPU API agnostic code, like the `GPUBackend`, `TextureManager`,
-- Reuse existing helpers like `AssetBarrier`, `Float32Pool`, `Pool`, etc.
+- Reuse existing helpers like `AssetBarrier`, `Float32Pool`, `Pool`, `ScratchBatchPool`, etc.
 - The `GameView` class should be backend agnostic and not depend on WebGL2-specific code.
 - Here is your proposed plan that I approved, which you already have partially implemented:
 
@@ -15,11 +15,13 @@ A UE5-inspired, light-weight design for the render/pipeline system that fits the
 ## Goals
 
 * Clean separation of concerns: view/build state vs. per-pass execution.
-* Type-safe pass state and bindings; no “unknown” or “any”.
+* Type-safe pass state and bindings; no “unknown” or “any”, unless there are good usecases (e.g. generic pass state, or generic helpers like Pools).
 * Cross‑backend (WebGL2/WebGPU) parity via a single backend interface.
 * Deterministic scheduling/resource lifetime via the render graph.
 * High performance: minimal state changes, pooled submissions, VAOs, UBOs.
 * Editor/dev workflows: introspection, validation, profiling, and quick toggles.
+* Extensibility: easy to add new features and passes without major refactoring.
+* Prevent fallbacks for supporting legacy code; always prefer new APIs and patterns and removing deprecated ones, as this is a new game engine and the existing game roms will eventually need to be updated.
 
 ## Core Abstractions
 

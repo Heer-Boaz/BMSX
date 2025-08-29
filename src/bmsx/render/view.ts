@@ -214,13 +214,16 @@ export class GameView implements RegisterablePersistent {
 		if (!renderGate.ready) return;
 		const token = renderGate.begin({ blocking: true, tag: 'frame' });
 		try {
+			$.emit('framebegin', this, token);
 			this.isRendering = true;
 			this.renderer.swap();
 			const frame = buildFrameData(this as any);
 			this.drawbase(clearCanvas);
 			if (!this.renderGraph || this.graphInvalid) this.rebuildGraph();
+			$.emit('frameupdate', this, token);
 			this.renderGraph!.execute(frame);
 		} finally {
+			$.emit('frameend', this, token);
 			this.isRendering = false;
 			renderGate.end(token);
 		}
@@ -521,7 +524,7 @@ export class GameView implements RegisterablePersistent {
 	// (single handleResize implementation above in the class)
 
 	public rebuildGraph(): void {
-        if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
+		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
 		if (!this._pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
 		this.renderGraph = this._pipelineRegistry.buildRenderGraph(this as any, this.lightingSystem);
 		this.graphInvalid = false;
@@ -546,11 +549,11 @@ export class GameView implements RegisterablePersistent {
 	public drawParticle(options: DrawParticleOptions): void { ParticlesPipeline.submitParticle({ position: options.position, size: options.size, color: options.color, texture: options.texture }); }
 
 	public getPointLight(id: Identifier): PointLight | undefined { return MeshPipeline.getPointLight(id); }
-    public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(id, light); }
-        public removePointLight(id: Identifier): void { MeshPipeline.removePointLight(id); }
-    public addDirectionalLight(id: Identifier, light: DirectionalLight): void { MeshPipeline.addDirectionalLight(id, light); }
-        public removeDirectionalLight(id: Identifier): void { MeshPipeline.removeDirectionalLight(id); }
-    public clearLights(): void { MeshPipeline.clearLights(); }
+	public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(id, light); }
+	public removePointLight(id: Identifier): void { MeshPipeline.removePointLight(id); }
+	public addDirectionalLight(id: Identifier, light: DirectionalLight): void { MeshPipeline.addDirectionalLight(id, light); }
+	public removeDirectionalLight(id: Identifier): void { MeshPipeline.removeDirectionalLight(id); }
+	public clearLights(): void { MeshPipeline.clearLights(); }
 	public setAmbientLight(_light: AmbientLight): void { /* pulled later by mesh pass */ }
 	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
 	public get skyboxFaceIds(): SkyboxImageIds | undefined { return SkyboxPipeline.skyboxFaceIds; }

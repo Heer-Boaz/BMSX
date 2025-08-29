@@ -2,6 +2,7 @@
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
+import { toggleRenderHUD } from '../debugger/renderhud';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
@@ -464,6 +465,11 @@ export class Input implements RegisterablePersistent {
 				case 'Escape':
 				case 'Esc':
 				case 'F12':
+					break;
+				case 'F1':
+					// preventActionAndPropagation(e);
+					e.preventDefault();
+					toggleRenderHUD();
 					break;
 				case 'F6':
 					e.preventDefault();
