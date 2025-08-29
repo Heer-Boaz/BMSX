@@ -22,6 +22,7 @@ import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_unifo
 import { RenderContext, RenderPassDef, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
 import { GraphicsPipelineManager } from './pipeline_manager';
 import { checkWebGLError } from './webgl.helpers';
+import { shaderModule, makePipelineBuildDesc } from './shader_module';
 
 export function getRenderContext(): RenderContext {
 	const v = $.viewAs<GameView>() as unknown as RenderContext;
@@ -155,20 +156,27 @@ export class PipelineRegistry {
             id: 'meshbatch',
             label: 'meshbatch',
             name: 'Meshes',
-            vsCode: meshVS,
-            fsCode: meshFS,
-            bindingLayout: {
-                uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'],
-                textures: [
-                    { name: 'u_albedoTexture' },
-                    { name: 'u_normalTexture' },
-                    { name: 'u_metallicRoughnessTexture' },
-                ],
-                buffers: [
-                    { name: 'DirLightBlock', size: 0, usage: 'uniform' },
-                    { name: 'PointLightBlock', size: 0, usage: 'uniform' },
-                ],
-            },
+            ...(() => {
+                const vs = shaderModule(meshVS, { uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'] }, 'mesh-vs');
+                const fs = shaderModule(
+                    meshFS,
+                    {
+                        uniforms: ['FrameUniforms', 'DirLightBlock', 'PointLightBlock'],
+                        textures: [
+                            { name: 'u_albedoTexture' },
+                            { name: 'u_normalTexture' },
+                            { name: 'u_metallicRoughnessTexture' },
+                        ],
+                        buffers: [
+                            { name: 'DirLightBlock', size: 0, usage: 'uniform' },
+                            { name: 'PointLightBlock', size: 0, usage: 'uniform' },
+                        ],
+                    },
+                    'mesh-fs'
+                );
+                const build = makePipelineBuildDesc('Meshes', vs, fs);
+                return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
+            })(),
             bootstrap: (backend) => {
                 const gl = (backend as any).gl as WebGL2RenderingContext;
                 MeshPipeline.setupVertexShaderLocations3D(gl);
@@ -275,13 +283,16 @@ export class PipelineRegistry {
             id: 'sprites',
             label: 'sprites',
             name: 'Sprites2D',
-            vsCode: spriteVS,
-            fsCode: spriteFS,
-            bindingLayout: {
-                uniforms: ['FrameUniforms'],
-                textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }],
-                samplers: [{ name: 's_texture0' }, { name: 's_texture1' }],
-            },
+            ...(() => {
+                const vs = shaderModule(spriteVS, { uniforms: ['FrameUniforms'] }, 'sprites-vs');
+                const fs = shaderModule(
+                    spriteFS,
+                    { uniforms: ['FrameUniforms'], textures: [{ name: 'u_texture0' }, { name: 'u_texture1' }], samplers: [{ name: 's_texture0' }, { name: 's_texture1' }] },
+                    'sprites-fs'
+                );
+                const build = makePipelineBuildDesc('Sprites2D', vs, fs);
+                return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
+            })(),
             bootstrap: (backend) => {
                 SpritesPipeline.setupSpriteShaderLocations(backend);
                 SpritesPipeline.setupBuffers(backend);
@@ -290,11 +301,11 @@ export class PipelineRegistry {
                 backend.setUniformBlockBinding?.('FrameUniforms', FRAME_UNIFORM_BINDING);
             },
 			writesDepth: true,
-			shouldExecute: () => {
-				const gv = getRenderContext() as unknown as { renderer?: { queues?: { sprites?: unknown[] } } };
-				const qlen = (gv.renderer?.queues?.sprites?.length ?? 0);
-				return qlen > 0;
-			},
+            shouldExecute: () => {
+                try { return (SpritesPipeline as any).getQueuedSpriteCount?.() > 0; } catch { /* fallback */ }
+                const gv = getRenderContext() as unknown as { renderer?: { queues?: { sprites?: unknown[] } } };
+                return (gv.renderer?.queues?.sprites?.length ?? 0) > 0;
+            },
 			exec: (_backend, fbo, s) => {
 				const state = s as SpritesPipelineState;
 				SpritesPipeline.renderSpriteBatch(fbo, state.width, state.height, state.baseWidth, state.baseHeight);

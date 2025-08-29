@@ -29,7 +29,7 @@ export class WebGLBackend implements GPUBackend {
     private uniformCache = new WeakMap<WebGLProgram, Map<string, WebGLUniformLocation | null>>();
     private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
     private bufferSizes = new WeakMap<WebGLBuffer, number>();
-    private frameStats = { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0 };
+    private frameStats = { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: 0 };
     constructor(public gl: WebGL2RenderingContext) {
         // No internal manager; caller creates PipelineManager with this backend
     }
@@ -256,6 +256,7 @@ export class WebGLBackend implements GPUBackend {
         const buf = gl.createBuffer(); if (!buf) throw new Error('Failed to create buffer');
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
         gl.bufferData(gl.ARRAY_BUFFER, data, usage === 'static' ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+        this.frameStats.bytesUploaded += data.byteLength;
         this.bufferSizes.set(buf, data.byteLength);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
         return buf;
@@ -268,9 +269,11 @@ export class WebGLBackend implements GPUBackend {
         if (needed > current) {
             // Grow buffer with new contents when subData would overflow
             gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+            this.frameStats.bytesUploaded += data.byteLength;
             this.bufferSizes.set(buf, data.byteLength);
         } else {
             gl.bufferSubData(gl.ARRAY_BUFFER, dstOffset, data);
+            this.frameStats.bytesUploaded += data.byteLength;
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
@@ -310,7 +313,7 @@ export class WebGLBackend implements GPUBackend {
         return buf;
     }
     updateUniformBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstByteOffset = 0): void {
-        const gl = this.gl; gl.bindBuffer(gl.UNIFORM_BUFFER, buf); gl.bufferSubData(gl.UNIFORM_BUFFER, dstByteOffset, data); gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+        const gl = this.gl; gl.bindBuffer(gl.UNIFORM_BUFFER, buf); gl.bufferSubData(gl.UNIFORM_BUFFER, dstByteOffset, data); gl.bindBuffer(gl.UNIFORM_BUFFER, null); this.frameStats.bytesUploaded += data.byteLength;
     }
     bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void { this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf); }
 
@@ -412,7 +415,7 @@ export class WebGLBackend implements GPUBackend {
         gl.uniformBlockBinding(prog, blockIndex, bindingIndex);
     }
 
-    beginFrame(): void { this.frameStats.draws = this.frameStats.drawIndexed = this.frameStats.drawsInstanced = this.frameStats.drawIndexedInstanced = 0; }
+    beginFrame(): void { this.frameStats.draws = this.frameStats.drawIndexed = this.frameStats.drawsInstanced = this.frameStats.drawIndexedInstanced = 0; this.frameStats.bytesUploaded = 0; }
     endFrame(): void { /* no-op for now */ }
     getFrameStats() { return this.frameStats; }
 

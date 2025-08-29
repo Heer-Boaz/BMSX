@@ -71,7 +71,11 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
         try {
             const b = gv.getBackend?.();
             const fs = b?.getFrameStats?.();
-            if (fs) lines.push(`draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced}`);
+            if (fs) {
+                const bytes = (fs.bytesUploaded ?? 0);
+                const kb = (bytes / 1024).toFixed(1);
+                lines.push(`draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} upload:${kb}KB`);
+            }
         } catch { /* ignore */ }
 
         // Compute averages depending on mode (EMA or fixed sliding window)

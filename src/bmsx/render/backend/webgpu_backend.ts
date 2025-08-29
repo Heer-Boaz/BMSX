@@ -13,12 +13,13 @@ export class WebGPUBackend implements GPUBackend {
     private samplerBindings: Map<number, GPUSampler> = new Map();
     private bindGroupCache: Map<number, GPUBindGroup> = new Map();
 
+    private _bytesUploaded = 0;
     constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
         this.limits = this.device.limits;
     }
-    beginFrame?(): void {}
+    beginFrame?(): void { this._bytesUploaded = 0; }
     endFrame?(): void {}
-    getFrameStats?() { return undefined; }
+    getFrameStats?() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded }; }
 
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle {
         // Use defaults since properties not in TextureParams
@@ -377,6 +378,7 @@ export class WebGPUBackend implements GPUBackend {
     }
     updateUniformBuffer(buf: GPUBuffer, data: ArrayBufferView, dstByteOffset = 0): void {
         this.device.queue.writeBuffer(buf, dstByteOffset, data.buffer, data.byteOffset, data.byteLength);
+        this._bytesUploaded += data.byteLength;
     }
     bindUniformBufferBase(bindingIndex: number, buf: GPUBuffer): void {
         this.uniformBindings.set(bindingIndex, buf);

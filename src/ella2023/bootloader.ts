@@ -1,16 +1,16 @@
-import { BFont, BootArgs, Game, MSX1ScreenHeight, MSX1ScreenWidth, new_vec2, RenderView } from '../bmsx';
+import { BFont, BootArgs, Game, GameView, MSX1ScreenHeight, MSX1ScreenWidth, new_vec2 } from '../bmsx';
 import { gamemodel } from './gamemodel';
 import { BitmapId } from './resourceids';
 
 let _game: Game;
 let _model: gamemodel;
-let _view: RenderView;
+let _view: GameView;
 
 const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
 	_model = new gamemodel();
-	_view = new RenderView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+	_view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_game = new Game();
 	return _game.init({
 		rom: args.rom,

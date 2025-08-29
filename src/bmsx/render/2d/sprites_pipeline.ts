@@ -31,7 +31,8 @@ import {
     ZCOORDS_SIZE
 } from '../backend/webgl.constants';
 import { color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
-import { ScratchBatch } from '../../core/scratchbatch';
+// import { ScratchBatch } from '../../core/scratchbatch';
+import { FeatureQueue } from '../backend/feature_queue';
 import { bvec } from './vertexutils2d';
 
 export let spriteShaderProgram: WebGLProgram;
@@ -58,8 +59,9 @@ const spriteShaderData = {
     atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
-// Scratch list to avoid per-frame allocations during batching
-const batchScratch = new ScratchBatch<{ options: DrawImgOptions; imgmeta: ImgMeta }>(128);
+// Feature-local, double-buffered submission queue (UE-like feature queue)
+type SpriteSubmission = { options: DrawImgOptions; imgmeta: ImgMeta };
+const spriteQueue = new FeatureQueue<SpriteSubmission>(256);
 
 // Removed: program creation is handled by the backend/pipeline manager
 
@@ -156,19 +158,9 @@ export function renderSpriteBatch(
     logicalHeight?: number,
 ): void {
     const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
-    // Prefer centralized queue if available
-    type V = { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
-    const view = $.viewAs<GameView>() as unknown as V;
-    const queued = view.renderer?.queues?.sprites;
-    batchScratch.clear();
-    if (queued && queued.length) {
-        for (let qi = 0; qi < queued.length; qi++) {
-            const options = queued[qi];
-            const imgmeta = GameView.imgassets[options.imgid]?.imgmeta; if (!imgmeta) continue;
-            batchScratch.push({ options, imgmeta });
-        }
-    }
-    if (batchScratch.length === 0) return;
+    // Use feature queue
+    spriteQueue.swap();
+    if (spriteQueue.sizeFront() === 0) return;
     // FBO binding handled by RenderGraph beginRenderPass
     const backend = getRenderContext().getBackend() as WebGLBackend;
     backend.setViewport?.({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
@@ -193,9 +185,10 @@ export function renderSpriteBatch(
         backend.bindArrayBuffer?.(color_overrideBuffer); backend.vertexAttribPointer?.(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(color_overrideLocation);
         backend.bindArrayBuffer?.(atlas_idBuffer); backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0); backend.enableVertexAttrib?.(atlas_idLocation);
     }
-    batchScratch.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
+    const front = spriteQueue.frontArray();
+    front.sort((a, b) => (a.options.pos.z ?? 0) - (b.options.pos.z ?? 0));
     const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = spriteShaderData; let i = 0;
-    for (const { options, imgmeta } of batchScratch) {
+    for (const { options, imgmeta } of front) {
         const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
         const { width, height } = imgmeta;
         bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
@@ -209,25 +202,25 @@ export function renderSpriteBatch(
     }
     if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
     if (useVAO) backend.bindVertexArray!(null);
-    // Clear used queues & scratch list
-    if (queued) queued.length = 0;
-    batchScratch.clear();
+    // FeatureQueue back buffer already cleared on swap
 }
 
 export function drawImg(view: RenderContext, options: DrawImgOptions): void {
     const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
-    const gv = $.viewAs<GameView>() as unknown as { renderer?: { queues?: { sprites?: DrawImgOptions[] } } };
-    const q = gv.renderer?.queues?.sprites;
-    if (!q) throw Error('Render queues not initialized for sprites');
     // Deep-copy nested objects to freeze values at submission time
-    q.push({
-        ...options,
-        pos: options.pos ? { ...options.pos } : undefined,
-        scale: options.scale ? { ...options.scale } : undefined,
-        colorize: options.colorize ? { ...options.colorize } : undefined,
-        flip: options.flip ? { ...options.flip } : undefined,
+    spriteQueue.submit({
+        options: {
+            ...options,
+            pos: options.pos ? { ...options.pos } : undefined,
+            scale: options.scale ? { ...options.scale } : undefined,
+            colorize: options.colorize ? { ...options.colorize } : undefined,
+            flip: options.flip ? { ...options.flip } : undefined,
+        },
+        imgmeta,
     });
 }
+
+export function getQueuedSpriteCount(): number { return spriteQueue.sizeBack(); }
 
 export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
     if (flip_h && flip_v) return imgmeta['texcoords_fliphv'];

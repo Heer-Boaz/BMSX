@@ -182,7 +182,7 @@ export interface GPUBackend {
     // Optional per-frame hooks + stats
     beginFrame?(): void;
     endFrame?(): void;
-    getFrameStats?(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number } | undefined;
+    getFrameStats?(): { draws: number; drawIndexed: number; drawsInstanced: number; drawIndexedInstanced: number; bytesUploaded: number } | undefined;
 }
 
 export interface RenderPassStateRegistry {
