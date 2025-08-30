@@ -491,7 +491,9 @@ export class RenderGraphRuntime {
                 }
                 if (depthRes) builder.depth(depthRes.tex as TextureHandle, isFirstDepthWriter ? depthRes.clearOnWrite?.depth : undefined, !!depthRes.desc.transient);
                 const passEnc = builder.begin();
-                rp = { end: () => this.backend.endRenderPass(passEnc) };
+                // Provide active pass encoder to backend (WebGPU uses it to bind pipeline and draw)
+                try { (this.backend as any).setActivePassEncoder?.(passEnc); } catch { /* ignore */ }
+                rp = { end: () => { try { (this.backend as any).setActivePassEncoder?.(null); } catch { /* ignore */ } this.backend.endRenderPass(passEnc); } };
             }
             const t0 = performance.now();
             pass.execute(ctx, frame, data as unknown);

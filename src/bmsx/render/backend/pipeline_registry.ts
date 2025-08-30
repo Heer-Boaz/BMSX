@@ -1,14 +1,19 @@
 import { $ } from '../../core/game';
 import { color_arr } from '../../rompack/rompack';
 import { registerSpritesPass_WebGL } from '../2d/sprites_pipeline';
+import { registerSpritesPass_WebGPU } from '../2d/sprites_pipeline.wgpu';
 import { Atmosphere, registerAtmosphereHotkeys } from '../3d/atmosphere';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGL } from '../3d/mesh_pipeline';
+import { registerMeshBatchPass_WebGPU } from '../3d/mesh_pipeline.wgpu';
 import { registerParticlesPass_WebGL } from '../3d/particles_pipeline';
+import { registerParticlesPass_WebGPU } from '../3d/particles_pipeline.wgpu';
 import { registerSkyboxPass_WebGL } from '../3d/skybox_pipeline';
+import { registerSkyboxPass_WebGPU } from '../3d/skybox_pipeline.wgpu';
 import { RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
+import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { GameView } from '../view';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
 import { GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
@@ -80,7 +85,55 @@ export class RenderPassLibrary {
     }
 
     private registerBuiltinPassesWebGPU() {
-        // TODO: Implement WebGPU built-in passes
+        // Common state-only passes (backend-agnostic)
+        this.register({
+            id: 'frame_resolve', label: 'frame_resolve', name: 'FrameResolve', stateOnly: true,
+            exec: () => { /* state only */ },
+            prepare: (backend, _state) => {
+                const gv = getRenderContext();
+                updateAndBindFrameUniforms(backend, {
+                    offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
+                    logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+                });
+            },
+        });
+        this.register({
+            id: 'fog', label: 'fog', name: 'FogState', writesDepth: false, stateOnly: true,
+            shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
+            exec: () => { /* state only */ },
+            prepare: (_backend, _state) => {
+                const gv = getRenderContext();
+                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
+                registerAtmosphereHotkeys();
+                const density = (() => {
+                    const p = Atmosphere.progressFactor;
+                    const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0;
+                    return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
+                })();
+                const fog: FogUniforms = {
+                    fogColor: Atmosphere.fogColor,
+                    fogDensity: density,
+                    enableFog: Atmosphere.enableFog,
+                    fogMode: Atmosphere.fogMode,
+                    enableHeightFog: Atmosphere.enableHeightFog,
+                    heightFogStart: Atmosphere.heightFogStart,
+                    heightFogEnd: Atmosphere.heightFogEnd,
+                    heightLowColor: Atmosphere.heightLowColor,
+                    heightHighColor: Atmosphere.heightHighColor,
+                    heightMin: Atmosphere.heightMin,
+                    heightMax: Atmosphere.heightMax,
+                    enableHeightGradient: Atmosphere.enableHeightGradient,
+                };
+                this.setState('fog', { width, height, fog });
+            },
+        });
+        this.register({ id: 'frame_shared', label: 'frame_shared', name: 'FrameShared', stateOnly: true, exec: () => { } });
+        // Backend-specific pass registrations (stubs for now)
+        registerSkyboxPass_WebGPU(this);
+        registerMeshBatchPass_WebGPU(this);
+        registerParticlesPass_WebGPU(this);
+        registerSpritesPass_WebGPU(this);
+        registerCRT_WebGPU(this);
     }
 
     private registerBuiltinPassesWebGL() {

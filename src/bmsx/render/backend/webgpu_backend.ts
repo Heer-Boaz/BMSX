@@ -16,6 +16,7 @@ export class WebGPUBackend implements GPUBackend {
     private textureBindings: Map<number, GPUTextureView> = new Map();
     private samplerBindings: Map<number, GPUSampler> = new Map();
     private bindGroupCache: Map<number, GPUBindGroup> = new Map();
+    private _activePassEncoder: GPURenderPassEncoder | null = null;
 
     private _bytesUploaded = 0;
     constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
@@ -264,6 +265,7 @@ export class WebGPUBackend implements GPUBackend {
     endRenderPass(pass: PassEncoder & { encoder: GPURenderPassEncoder }): void {
         pass.encoder.end();
         this.device.queue.submit([(pass.fbo as GPUCommandEncoder).finish()]);
+        if (this._activePassEncoder === pass.encoder) this._activePassEncoder = null;
     }
 
     getCaps(): BackendCaps {
@@ -333,7 +335,9 @@ export class WebGPUBackend implements GPUBackend {
     setGraphicsPipeline(pass: PassEncoder & { encoder: GPURenderPassEncoder }, pipelineHandle: RenderPassInstanceHandle): void {
         const pipeline = this.pipelines.get(pipelineHandle.id);
         if (!pipeline) return;
-        pass.encoder.setPipeline(pipeline);
+        const enc = (pass as any).encoder ?? this._activePassEncoder;
+        if (!enc) return;
+        enc.setPipeline(pipeline);
         // Bind group 0 from current uniform buffer bindings if present
         try {
             let bg = this.bindGroupCache.get(pipelineHandle.id);
@@ -348,14 +352,14 @@ export class WebGPUBackend implements GPUBackend {
                     this.bindGroupCache.set(pipelineHandle.id, bg);
                 }
             }
-            if (bg) pass.encoder.setBindGroup(0, bg);
+            if (bg && enc) enc.setBindGroup(0, bg);
         } catch { /* ignore if layout 0 absent */ }
     }
 
-    draw(pass: PassEncoder & { encoder: GPURenderPassEncoder }, first: number, count: number): void { pass.encoder.draw(count, 1, first, 0); }
-    drawIndexed(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, firstIndex?: number, _indexType?: number): void { pass.encoder.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
-    drawInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { pass.encoder.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
-    drawIndexedInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void { pass.encoder.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
+    draw(pass: PassEncoder & { encoder: GPURenderPassEncoder }, first: number, count: number): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.draw(count, 1, first, 0); }
+    drawIndexed(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, firstIndex?: number, _indexType?: number): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
+    drawInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
+    drawIndexedInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
 
     setPassState<S = unknown>(label: RenderPassStateId, state: S): void {
         this.stateRegistry.set(label, state);
@@ -389,5 +393,10 @@ export class WebGPUBackend implements GPUBackend {
             this.samplerBindings.set(samplerBinding, sampler);
             this.bindGroupCache.clear();
         } catch { /* ignore if not a GPUTexture */ }
+    }
+
+    // Optional hook for RenderGraphRuntime to provide the active GPURenderPassEncoder
+    setActivePassEncoder(pass: (PassEncoder & { encoder: GPURenderPassEncoder }) | null): void {
+        this._activePassEncoder = pass ? pass.encoder : null;
     }
 }
