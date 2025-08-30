@@ -71,7 +71,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
         for (const s of stats) total += s.ms;
         // Backend draw call counters (if backend exposes them)
         try {
-            const b = gv.getBackend?.();
+            const b = gv.backend;
             const fs = b?.getFrameStats?.();
             if (fs) {
                 const toKB = (n?: number) => ((n ?? 0) / 1024).toFixed(1);
@@ -158,4 +158,3 @@ const overlay = new RenderHUDOverlay();
 
 export function toggleRenderHUD(): void { if (overlay?.enabled) overlay.disable(); else overlay?.enable(); }
 export function toggleRenderHUDAverageMode(): void { overlay?.toggleAverageMode(); }
-

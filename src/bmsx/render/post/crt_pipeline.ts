@@ -1,5 +1,4 @@
-import { WebGLBackend } from '../..';
-import { GraphicsPipelineManager } from '../backend/pipeline_manager';
+import { GPUBackend, PipelineRegistry, WebGLBackend } from '../..';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl.constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
@@ -27,15 +26,17 @@ function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: nu
     return { vbo, tbo, attribPos, attribTex, w: srcW, h: srcH };
 }
 
-export function registerCRT(pm: GraphicsPipelineManager): void {
-    pm.register({
+export function registerCRT_WebGL(registry: PipelineRegistry): void {
+    registry.register({
         id: 'crt',
         label: 'crt',
-        name: 'CRT',
+        name: 'Present/CRT',
         vsCode: vertexShaderCRTCode,
         fsCode: fragmentShaderCRTCode,
-        exec: (backend, _fbo, state: unknown) => {
-            const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext; // Use concrete WebGL backend
+        present: true,
+        exec: (backend: GPUBackend, _fbo, state: unknown) => {
+            const be = backend as WebGLBackend;
+            const gl = be.gl as WebGL2RenderingContext; // Use concrete WebGL backend
             const st = state as CRTState;
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             const outW = st.outWidth ?? st.width;
@@ -76,6 +77,8 @@ export function registerCRT(pm: GraphicsPipelineManager): void {
             { const loc = u('u_glowColor'); if (loc) gl.uniform3fv(loc, new Float32Array(opts.glowColor ?? [0.12, 0.10, 0.09])); }
             { const loc = u('u_texture'); if (loc) gl.uniform1i(loc, TEXTURE_UNIT_POST_PROCESSING_SOURCE); }
             if (st.colorTex) { gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_POST_PROCESSING_SOURCE); gl.bindTexture(gl.TEXTURE_2D, st.colorTex); }
+
+            registry.validatePassResources('crt', backend);
         }
     });
 }

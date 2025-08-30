@@ -1,12 +1,18 @@
 // WebGL backend implementation extracted from legacy gpu_backend.ts
 import { color_arr } from '../../rompack/rompack';
+// Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassId, RenderPassInstanceHandle, RenderPassStateRegistry, TextureParams } from './pipeline_interfaces';
+import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, TextureParams } from './pipeline_interfaces';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
+import { checkWebGLError } from './webgl.helpers';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 
 export class WebGLBackend implements GPUBackend {
+    get type(): 'webgl2' | 'webgpu' {
+        return 'webgl2';
+    }
+
     private texIds = new WeakMap<WebGLTexture, number>();
     private nextTexId = 1;
     private fboCache = new Map<string, WebGLFramebuffer | null>();
@@ -22,6 +28,8 @@ export class WebGLBackend implements GPUBackend {
     private cachedBlendEnabled: boolean | null = null;
     private cachedCullEnabled: boolean | null = null;
     private cachedDepthMask: boolean | null = null;
+    private cachedDepthTestEnabled: boolean | null = null;
+    private cachedDepthFunc: number | null = null;
     private cachedBlendFunc: { src: number; dst: number } | null = null;
     private currentActiveTexUnit: number | null = null;
     private boundTex2D: (WebGLTexture | null)[] = [];
@@ -217,11 +225,6 @@ export class WebGLBackend implements GPUBackend {
         // Migrate to external manager.setState; for now keep extraStates
         this.extraStates[label] = state;
     }
-    executePass(label: RenderPassId, fbo: unknown): void {
-        // Call external manager.execute(label, fbo)
-        // Assuming caller has PipelineManager instance
-        throw new Error('executePass requires external GraphicsPipelineManager; migrate calls');
-    }
     buildProgram(vsSource: string, fsSource: string, label: string): WebGLProgram | null {
         const gl = this.gl;
         function compile(type: number, source: string, stage: string): WebGLShader | null {
@@ -294,15 +297,49 @@ export class WebGLBackend implements GPUBackend {
         this.gl.vertexAttribI4ui(index, x, y, z, w);
     }
 
-    drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, _firstInstance = 0): void {
+    drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void {
         this.frameStats.drawsInstanced++;
+        checkWebGLError('drawInstanced: before drawArraysInstanced');
         this.gl.drawArraysInstanced(this.gl.TRIANGLES, firstVertex, vertexCount, instanceCount);
+        checkWebGLError(`drawInstanced: after drawArraysInstanced. firstVertex: ${firstVertex}, vertexCount: ${vertexCount}, instanceCount: ${instanceCount}, firstInstance: ${firstInstance}`);
     }
-    drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, _firstInstance = 0, indexType?: number): void {
+    drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, firstInstance = 0, indexType?: number): void {
         this.frameStats.drawIndexedInstanced++;
-        const type = (indexType ?? this.gl.UNSIGNED_SHORT);
-        const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
-        this.gl.drawElementsInstanced(this.gl.TRIANGLES, indexCount, type, firstIndex * bytesPerIndex, instanceCount);
+        const gl = this.gl;
+        const type = (indexType ?? gl.UNSIGNED_SHORT);
+        const bytesPerIndex = (type === gl.UNSIGNED_INT) ? 4 : (type === gl.UNSIGNED_BYTE ? 1 : 2);
+        checkWebGLError('drawIndexedInstanced: before drawElementsInstanced');
+        gl.drawElementsInstanced(gl.TRIANGLES, indexCount, type, firstIndex * bytesPerIndex, instanceCount);
+        // Inline detailed diagnostics on error to pinpoint root cause
+        const err = gl.getError();
+        if (err !== gl.NO_ERROR) {
+            try {
+                const vao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
+                const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
+                // Attempt to inspect a few common attributes
+                const posLoc = this.getAttribLocation('a_position');
+                const instLocs = ['a_i0','a_i1','a_i2','a_i3'].map(n => this.getAttribLocation(n));
+                const attribState = (loc: number) => (loc >= 0 ? {
+                    enabled: !!gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_ENABLED),
+                    divisor: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_DIVISOR) as number,
+                    buf: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) as WebGLBuffer | null,
+                } : null);
+                const pos = attribState(posLoc);
+                const inst = instLocs.map(attribState);
+                let u0: WebGLBuffer | null = null, u1: WebGLBuffer | null = null;
+                try {
+                    u0 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 0) as WebGLBuffer | null;
+                    u1 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 1) as WebGLBuffer | null;
+                } catch {}
+                console.error(
+                    `WebGL error ${err} after drawElementsInstanced; ` +
+                    `firstIndex=${firstIndex} indexCount=${indexCount} instanceCount=${instanceCount} firstInstance=${firstInstance} indexType=${type}; ` +
+                    `vao=${!!vao} ebo=${!!ebo} ubo0=${!!u0} ubo1=${!!u1}; ` +
+                    `pos=${pos ? `en=${pos.enabled} buf=${!!pos.buf}` : 'n/a'}; ` +
+                    `inst=${inst.map(s => s ? `en=${s.enabled} div=${s.divisor} buf=${!!s.buf}` : 'n/a').join(',')}`
+                );
+            } catch { /* ignore diagnostics errors */ }
+        }
     }
 
     createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): WebGLBuffer {
@@ -319,10 +356,6 @@ export class WebGLBackend implements GPUBackend {
     bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void { this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf); }
 
     // --- Render state helpers ---
-
-    bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: WebGLTexture): void {
-        // WebGL path binds textures via conventional texture units + uniforms; this is a no-op here
-    }
     setActiveTexture(unit: number): void {
         if (this.currentActiveTexUnit === unit) return;
         this.gl.activeTexture(this.gl.TEXTURE0 + unit);
@@ -419,7 +452,7 @@ export class WebGLBackend implements GPUBackend {
     beginFrame(): void { this.frameStats.draws = this.frameStats.drawIndexed = this.frameStats.drawsInstanced = this.frameStats.drawIndexedInstanced = 0; this.frameStats.bytesUploaded = 0; this.frameStats.vertexBytes = 0; this.frameStats.indexBytes = 0; this.frameStats.uniformBytes = 0; this.frameStats.textureBytes = 0; }
     endFrame(): void { /* no-op for now */ }
     getFrameStats() { return this.frameStats; }
-    accountUpload?(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
+    accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
         this.frameStats.bytesUploaded += bytes;
         if (kind === 'vertex') this.frameStats.vertexBytes += bytes;
         else if (kind === 'index') this.frameStats.indexBytes += bytes;
@@ -440,9 +473,19 @@ export class WebGLBackend implements GPUBackend {
     }
     createVertexArray(): WebGLVertexArrayObject { const vao = this.gl.createVertexArray(); if (!vao) throw new Error('Failed to create VAO'); return vao; }
     bindVertexArray(vao: WebGLVertexArrayObject | null): void {
+        // VAO switch changes the element-array binding association.
+        // Invalidate cached ARRAY/ELEMENT_ARRAY buffers so subsequent
+        // bind calls actually rebind for the new VAO.
         if (this.currentVAO === vao) return;
         this.gl.bindVertexArray(vao);
         this.currentVAO = vao;
+        // In WebGL2, ELEMENT_ARRAY_BUFFER binding is stored per-VAO.
+        // If we keep the cache, we might skip binding the index buffer
+        // for a freshly bound VAO, leading to INVALID_OPERATION on draw.
+        this.currentElementArrayBuffer = null;
+        // ARRAY_BUFFER binding is global but used during vertexAttribPointer;
+        // clearing avoids stale cache preventing intended binds during VAO setup.
+        this.currentArrayBuffer = null;
     }
     deleteVertexArray(vao: WebGLVertexArrayObject | null): void { if (vao) this.gl.deleteVertexArray(vao); }
 
@@ -462,6 +505,16 @@ export class WebGLBackend implements GPUBackend {
         this.gl.depthMask(write);
         this.cachedDepthMask = write;
     }
+    setDepthTestEnabled(enabled: boolean): void {
+        if (this.cachedDepthTestEnabled === enabled) return;
+        if (enabled) this.gl.enable(this.gl.DEPTH_TEST); else this.gl.disable(this.gl.DEPTH_TEST);
+        this.cachedDepthTestEnabled = enabled;
+    }
+    setDepthFunc(func: number): void {
+        if (this.cachedDepthFunc === func) return;
+        this.gl.depthFunc(func);
+        this.cachedDepthFunc = func;
+    }
     setBlendEnabled(enabled: boolean): void {
         if (this.cachedBlendEnabled === enabled) return;
         if (enabled) this.gl.enable(this.gl.BLEND); else this.gl.disable(this.gl.BLEND);
@@ -473,4 +526,6 @@ export class WebGLBackend implements GPUBackend {
         this.gl.blendFunc(src, dst);
         this.cachedBlendFunc = { src, dst };
     }
+
+    // Legacy per-pass hooks removed; each pipeline module owns setup and execution.
 }

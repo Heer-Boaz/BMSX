@@ -1,13 +1,17 @@
 /// <reference types="@webgpu/types" />
 import { color_arr } from '../../rompack/rompack';
 import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from './pipeline_interfaces';
-// Assuming TextureHandle is GPUTexture for WebGPU
 
 export class WebGPUBackend implements GPUBackend {
+    get type(): 'webgl2' | 'webgpu' {
+        return 'webgpu';
+    }
+
     private stateRegistry: Map<RenderPassStateId, any> = new Map();
     private limits: GPUSupportedLimits;
     private pipelineIdCounter: number = 0;
     private pipelines: Map<number, GPURenderPipeline> = new Map();
+    // Cached resource/bind state
     private uniformBindings: Map<number, GPUBuffer> = new Map();
     private textureBindings: Map<number, GPUTextureView> = new Map();
     private samplerBindings: Map<number, GPUSampler> = new Map();
@@ -17,10 +21,10 @@ export class WebGPUBackend implements GPUBackend {
     constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
         this.limits = this.device.limits;
     }
-    beginFrame?(): void { this._bytesUploaded = 0; }
-    endFrame?(): void {}
-    getFrameStats?() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
-    accountUpload?(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
+    beginFrame(): void { this._bytesUploaded = 0; }
+    endFrame(): void { }
+    getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
+    accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
         this._bytesUploaded += bytes;
     }
 
@@ -195,10 +199,6 @@ export class WebGPUBackend implements GPUBackend {
         return { color, depth };
     }
 
-    bindFBO(fbo: unknown): void {
-        // No-op in WebGPU; binding is handled in render passes
-    }
-
     clear(opts: { color?: color_arr; depth?: number }): void {
         // To clear outside a pass, create a temporary render pass for clearing
         const commandEncoder = this.device.createCommandEncoder();
@@ -312,6 +312,13 @@ export class WebGPUBackend implements GPUBackend {
                 targets: [{ format: 'bgra8unorm' }],
             },
             primitive: { topology: 'triangle-list' }, // Customize as needed
+            depthStencil: {
+                format: 'depth24plus-stencil8',
+                depthWriteEnabled: false, // TODO: Needs to be customized!
+                depthCompare: 'always', // TODO: Needs to be customized!
+                stencilReadMask: 0xff,
+                stencilWriteMask: 0xff,
+            },
         });
 
         const id = this.pipelineIdCounter++;
@@ -354,28 +361,10 @@ export class WebGPUBackend implements GPUBackend {
         this.stateRegistry.set(label, state);
     }
 
-    executePass(label: RenderPassStateId, fbo: unknown): void {
-        const state = this.getPassState(label);
-        if (!state) return;
-        // Implement specific execution logic here if needed
-    }
-
     getPassState<S = unknown>(label: RenderPassStateId): S | undefined {
         return this.stateRegistry.get(label);
     }
 
-    // Optional buffer/VAO helpers: vertex buffers are pipeline-defined in WebGPU; skip
-    createVertexBuffer?(data: ArrayBufferView, usage: 'static' | 'dynamic'): never;
-    updateVertexBuffer?(buf: unknown, data: ArrayBufferView, dstOffset?: number): never;
-    bindArrayBuffer?(buf: unknown | null): void; // no-op
-    createVertexArray?(): unknown; // no-op
-    bindVertexArray?(vao: unknown | null): void; // no-op
-    deleteVertexArray?(vao: unknown | null): void { /* no-op */ }
-    vertexAttribIPointer?(index: number, size: number, type: number, stride: number, offset: number): void; // no-op
-    vertexAttribI4ui?(index: number, x: number, y: number, z: number, w: number): void; // no-op
-    setAttribPointerFloat?(index: number, size: number, stride: number, offset: number): void { /* no-op */ }
-    setAttribIPointerU8?(index: number, size: number, stride: number, offset: number): void { /* no-op */ }
-    setAttribIPointerU16?(index: number, size: number, stride: number, offset: number): void { /* no-op */ }
     createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): GPUBuffer {
         return this.device.createBuffer({ size: byteSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, mappedAtCreation: false });
     }
@@ -401,20 +390,4 @@ export class WebGPUBackend implements GPUBackend {
             this.bindGroupCache.clear();
         } catch { /* ignore if not a GPUTexture */ }
     }
-    setViewport?(vp: { x: number; y: number; w: number; h: number }): void {
-        // Viewport is set via render pass; explicit calls are no-op for now
-    }
-    setCullEnabled?(enabled: boolean): void { /* no-op; configure in pipeline state */ }
-    setDepthMask?(write: boolean): void { /* no-op; configure in depthStencil state */ }
-
-    // Uniform helpers no-ops (WebGPU path uses buffers/bind groups)
-    getAttribLocation?(name: string): number { return -1; }
-    setUniform1f?(name: string, v: number): void { /* no-op */ }
-    setUniform1fv?(name: string, data: Float32Array): void { /* no-op */ }
-    setUniform2fv?(name: string, data: Float32Array): void { /* no-op */ }
-    setUniform1i?(name: string, v: number): void { /* no-op */ }
-    setUniform3fv?(name: string, data: Float32Array): void { /* no-op */ }
-    setUniformMatrix3fv?(name: string, data: Float32Array): void { /* no-op */ }
-    setUniformMatrix4fv?(name: string, data: Float32Array): void { /* no-op */ }
-    setUniform4f?(name: string, x: number, y: number, z: number, w: number): void { /* no-op */ }
 }

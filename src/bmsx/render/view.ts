@@ -119,7 +119,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	// WebGL / pipeline state
 	public nativeCtx: unknown | null = null;
 	private _backend: GPUBackend | null = null;
-	public backendType: 'webgl2' | 'webgpu' = 'webgl2';
+	public get backendType() { return this._backend?.type }
 	public renderGraph: RenderGraphRuntime | null = null;
 	private graphInvalid = true;
 	private lightingSystem: LightingSystem | null = null;
@@ -493,17 +493,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	// Backend
 	public setBackend(backend: GPUBackend): void {
 		this._backend = backend;
-		try {
-			const maybeGl = (backend as unknown as WebGLBackend).gl;
-			this.backendType = maybeGl ? 'webgl2' : 'webgpu';
-		} catch { this.backendType = 'webgl2'; }
 	}
-	public getBackend(): GPUBackend { if (!this._backend) throw new Error('Backend not set on GameView'); return this._backend; }
+	public get backend(): GPUBackend { return this._backend; }
 	public initializeDefaultTextures(): void {
 		try {
 			const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
-			if (atlasImage) this.textures['_atlas'] = this.getBackend().createTextureFromImage(atlasImage, {});
-			this.textures['_atlas_dynamic'] = this.getBackend().createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+			if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
+			this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		} catch { /* ignore */ }
 	}
 
@@ -555,12 +551,33 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const atlasName = generateAtlasName(index);
 		const atlasImage = GameView.imgassets[atlasName]?._imgbin;
 		if (!atlasImage) { console.error(`Atlas '${atlasName}' not found`); return; }
-		this.textures['_atlas_dynamic'] = this.getBackend().createTextureFromImage(atlasImage as ImageBitmap, {});
+		this.textures['_atlas_dynamic'] = this.backend.createTextureFromImage(atlasImage as ImageBitmap, {});
 	}
 
 	// Texture binding helpers
-	get activeTexUnit(): number | null { return this._activeTexUnit; }
-	set activeTexUnit(u: number | null) { this._activeTexUnit = u; if (u != null) { try { this.getBackend().setActiveTexture?.(u); } catch { /* noop: backend not ready */ } } }
-	bind2DTex(tex: TextureHandle | null): void { if (this._activeTexture2D === tex) return; try { this.getBackend().bindTexture2D?.(tex); } catch { /* noop */ } this._activeTexture2D = tex; }
-	bindCubemapTex(tex: TextureHandle | null): void { if (this._activeCubemap === tex) return; try { this.getBackend().bindTextureCube?.(tex); } catch { /* noop */ } this._activeCubemap = tex; }
+	get activeTexUnit(): number | null {
+		return this._activeTexUnit;
+	}
+
+	set activeTexUnit(u: number | null) {
+		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
+
+		this._activeTexUnit = u;
+		if (u != null) (this.backend as WebGLBackend).setActiveTexture?.(u);
+	}
+
+	bind2DTex(tex: TextureHandle | null): void {
+		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
+		if (this._activeTexture2D === tex) return;
+		(this.backend as WebGLBackend).bindTexture2D?.(tex);
+		this._activeTexture2D = tex;
+	}
+
+	bindCubemapTex(tex: TextureHandle | null): void {
+		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
+
+		if (this._activeCubemap === tex) return;
+		(this.backend as WebGLBackend).bindTextureCube?.(tex);
+		this._activeCubemap = tex;
+	}
 }

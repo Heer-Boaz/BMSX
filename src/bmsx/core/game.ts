@@ -340,7 +340,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		new TextureManager(backend);
 		const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
 		const pipelineRegistry = new PipelineRegistry(pipelineManager);
-		pipelineRegistry.registerBuiltin();
+		pipelineRegistry.registerBuiltin(activeView.backend);
 		// Store on view for graph rebuild
 		if (typeof activeView.setPipelineRegistry === 'function') {
 			activeView.setPipelineRegistry(pipelineRegistry);

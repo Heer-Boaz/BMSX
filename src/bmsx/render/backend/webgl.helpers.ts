@@ -3,12 +3,12 @@ import { M4 } from '../3d/math3d';
 import { GameView } from '../view';
 
 // Global toggle for WebGL error checking. Disable in normal builds for performance.
-export const CATCH_WEBGL_ERROR = true;
+export const CATCH_WEBGL_ERROR = false;
 
 export function saveTextureToFile(): void {
     const view = $.viewAs<GameView>();
     const gl = view.nativeCtx as WebGLRenderingContext;
-    
+
     // 1. Bind the framebuffer that has the texture attached
     // Access legacy framebuffer through the documented getter (RenderView exposes _legacyFramebuffer)
     const legacyFbo: WebGLFramebuffer | null = (view as unknown as { _legacyFramebuffer: WebGLFramebuffer | null })._legacyFramebuffer;
