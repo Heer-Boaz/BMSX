@@ -14,6 +14,7 @@ import { RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
+import { registerSolidColorPass_WebGPU } from '../debug/solidcolor_pipeline.wgpu';
 import { GameView } from '../view';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
 import { GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
@@ -186,20 +187,23 @@ export class RenderPassLibrary {
             },
         });
 
-        // Skybox
-        registerSkyboxPass_WebGL(this);
+        // Skybox (WebGPU)
+        registerSkyboxPass_WebGPU(this);
 
-        // Mesh batch
-        registerMeshBatchPass_WebGL(this);
+        // Mesh batch (WebGPU)
+        registerMeshBatchPass_WebGPU(this);
 
-        // Particles
-        registerParticlesPass_WebGL(this);
+        // Particles (WebGPU)
+        registerParticlesPass_WebGPU(this);
 
-        // Sprites
-        registerSpritesPass_WebGL(this);
+        // Sprites (WebGPU)
+        registerSpritesPass_WebGPU(this);
 
-        // CRT
-        registerCRT_WebGL(this); // Registers program + execution
+        // Debug solid writer (WebGPU) — ensures content is written before present
+        registerSolidColorPass_WebGPU(this);
+
+        // CRT (WebGPU)
+        registerCRT_WebGPU(this); // Registers program + execution
 
         // FrameShared
         this.register({
@@ -420,7 +424,10 @@ export class RenderPassLibrary {
             if (frameColor) {
                 const writerNames = frameColor.writers.map(i => rg.getPassNames()[i]);
                 const contentWriters = writerNames.filter(n => n !== 'Clear');
-                if (contentWriters.length === 0) console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
+                const hasPotentialWriters = this.getPipelinePasses().some(p => !p.stateOnly && !p.present);
+                if (contentWriters.length === 0 && hasPotentialWriters) {
+                    console.warn('Framegraph validation: Only Clear pass wrote to frame color.');
+                }
             }
             // Pass registry validation: unique IDs and shader availability for non-state passes
             const seen = new Set<string>();

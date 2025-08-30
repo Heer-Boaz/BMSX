@@ -24,6 +24,14 @@ export async function createBackendForCanvasAsync(canvas: HTMLCanvasElement): Pr
 					const adapter: GPUAdapter | null = await nav.gpu.requestAdapter();
 					if (adapter) {
 						const device: GPUDevice = await adapter.requestDevice();
+						// Configure the canvas context for presentation
+						const preferredFormat: GPUTextureFormat = (nav.gpu.getPreferredCanvasFormat && nav.gpu.getPreferredCanvasFormat()) || 'bgra8unorm';
+						try {
+							context.configure({ device, format: preferredFormat, alphaMode: 'premultiplied' });
+						} catch (e) {
+							console.error('Failed to configure WebGPU canvas context:', e);
+							throw e;
+						}
 						const { WebGPUBackend } = await import('./webgpu_backend');
 						const backend = new WebGPUBackend(device, context);
 						return { backend, nativeCtx: context };
