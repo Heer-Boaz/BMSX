@@ -184,10 +184,10 @@ export function renderSpriteBatch(
         backend.bindArrayBuffer?.(color_overrideBuffer); backend.vertexAttribPointer?.(color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib?.(color_overrideLocation);
         backend.bindArrayBuffer?.(atlas_idBuffer); backend.vertexAttribIPointer?.(atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0); backend.enableVertexAttrib?.(atlas_idLocation);
     }
-    const front = spriteQueue.frontArray();
-    front.sort((a, b) => (a.options.pos.z ?? 0) - (b.options.pos.z ?? 0));
+    // Sort by z once without exposing underlying storage
+    spriteQueue.sortFront((a, b) => (a.options.pos.z ?? 0) - (b.options.pos.z ?? 0));
     const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = spriteShaderData; let i = 0;
-    for (const { options, imgmeta } of front) {
+    spriteQueue.forEachFront(({ options, imgmeta }) => {
         const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
         const { width, height } = imgmeta;
         bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
@@ -198,7 +198,7 @@ export function renderSpriteBatch(
         bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
         ++i;
         if (i >= MAX_SPRITES) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); i = 0; }
-    }
+    });
     if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw!(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
     if (useVAO) backend.bindVertexArray!(null);
     // FeatureQueue back buffer already cleared on swap
@@ -220,9 +220,7 @@ export function drawImg(options: DrawImgOptions): void {
 }
 
 export function getQueuedSpriteCount(): number { return spriteQueue.sizeBack(); }
-export function getSpriteQueueDebug(): { front: number; back: number } {
-    try { return { front: spriteQueue.sizeFront(), back: spriteQueue.sizeBack() }; } catch { return { front: spriteQueue.frontArray().length, back: spriteQueue.sizeBack() }; }
-}
+export function getSpriteQueueDebug(): { front: number; back: number } { return { front: spriteQueue.sizeFront(), back: spriteQueue.sizeBack() }; }
 
 export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
     if (flip_h && flip_v) return imgmeta['texcoords_fliphv'];

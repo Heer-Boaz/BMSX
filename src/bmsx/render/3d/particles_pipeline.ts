@@ -84,8 +84,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
     const gl = (getRenderContext().getBackend() as WebGLBackend).gl;
     // No legacy ingestion; swap feature queue
     particleQueue.swap();
-    const src = particleQueue.frontArray();
-    if (src.length === 0) return;
+    if (particleQueue.sizeFront() === 0) return;
     if (state) {
         camRight.set(state.camRight);
         camUp.set(state.camUp);
@@ -94,16 +93,13 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
         M4.viewRightUpInto(activeCamera.view, camRight, camUp);
     }
     const batches = new Map<WebGLTexture, DrawParticleOptions[]>();
-    for (const p of src) {
-        if (!p) continue;
+    particleQueue.forEachFront((p) => {
+        if (!p) return;
         const tex = p.texture ?? defaultTexture;
         let arr = batches.get(tex);
-        if (!arr) {
-            arr = [];
-            batches.set(tex, arr);
-        }
+        if (!arr) { arr = []; batches.set(tex, arr); }
         arr.push(p);
-    }
+    });
     // FBO binding handled by RenderGraph beginRenderPass
     (getRenderContext().getBackend() as Partial<WebGLBackend>).setViewport?.({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
     gl.enable(gl.BLEND);
@@ -158,7 +154,5 @@ export function submitParticle(p: DrawParticleOptions): void {
     particleQueue.submit({ ...p });
 }
 export function getQueuedParticleCount(): number { return particleQueue.sizeBack(); }
-export function getParticleQueueDebug(): { front: number; back: number } {
-    return { front: particleQueue.frontArray().length, back: particleQueue.sizeBack() };
-}
+export function getParticleQueueDebug(): { front: number; back: number } { return { front: particleQueue.sizeFront(), back: particleQueue.sizeBack() }; }
 

@@ -345,10 +345,13 @@ function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
     b.bindVertexArray?.(null);
     return vao;
 }
-function cullAndSortMeshes(list: DrawMeshOptions[]): { instancedGroups: Map<string, { mesh: Mesh; matrices: Float32Array[] }>; singles: DrawMeshOptions[] } {
-    if (list.length === 0) return { instancedGroups: new Map(), singles: [] };
+function cullAndSortMeshes(list: Iterable<DrawMeshOptions>): { instancedGroups: Map<string, { mesh: Mesh; matrices: Float32Array[] }>; singles: DrawMeshOptions[] } {
+    // Gather into a transient array for filtering + sorting
+    const temp: DrawMeshOptions[] = [];
+    for (const it of list) temp.push(it);
+    if (temp.length === 0) return { instancedGroups: new Map(), singles: [] };
     const activeCamera = $.model.activeCamera3D; activeCamera.viewProjection;
-    const filtered = list.filter(({ mesh: m, matrix }) => {
+    const filtered = temp.filter(({ mesh: m, matrix }) => {
         if (m.boundingRadius === 0) return true;
         const cx = matrix[12] + m.boundingCenter[0] * matrix[0] + m.boundingCenter[1] * matrix[4] + m.boundingCenter[2] * matrix[8];
         const cy = matrix[13] + m.boundingCenter[0] * matrix[1] + m.boundingCenter[1] * matrix[5] + m.boundingCenter[2] * matrix[9];
@@ -507,9 +510,11 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: any): void {
     // Swap to make submissions visible (no legacy fallbacks)
     meshQueue.swap();
-    const src = meshQueue.frontArray();
-    if (src.length === 0) return;
-    const { instancedGroups, singles } = cullAndSortMeshes(src);
+    if (meshQueue.sizeFront() === 0) return;
+    // Adapt to FeatureQueue API without exposing storage
+    const collected: DrawMeshOptions[] = [];
+    meshQueue.forEachFront((it) => { collected.push(it); });
+    const { instancedGroups, singles } = cullAndSortMeshes(collected);
     setupViewport(gl, canvasWidth, canvasHeight);
     setupRenderingState(gl, state);
     renderInstancedMeshes(gl, instancedGroups);
@@ -519,6 +524,4 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
 export function submitMesh(o: DrawMeshOptions): void { meshQueue.submit({ ...o }); }
 export function reset(_gl: WebGL2RenderingContext): void { normal9Pool.reset(); clearLights(); }
-export function getMeshQueueDebug(): { front: number; back: number } {
-    try { return { front: meshQueue.frontArray().length, back: meshQueue.sizeBack() }; } catch { return { front: 0, back: 0 }; }
-}
+export function getMeshQueueDebug(): { front: number; back: number } { return { front: meshQueue.sizeFront(), back: meshQueue.sizeBack() }; }
