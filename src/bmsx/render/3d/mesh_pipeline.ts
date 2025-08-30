@@ -10,8 +10,7 @@ import meshFS from '../3d/shaders/3d.frag.glsl';
 import meshVS from '../3d/shaders/3d.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
-import { GraphicsPipelineManager } from '../backend/pipeline_manager';
-import { FogUniforms, getRenderContext, MeshBatchPipelineState, PipelineRegistry } from '../backend/pipeline_registry';
+import { FogUniforms, getRenderContext, MeshBatchPipelineState, RenderPassLibrary } from '../backend/pipeline_registry';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
@@ -746,7 +745,7 @@ export function submitMesh(o: DrawMeshOptions): void { meshQueue.submit({ ...o }
 export function reset(_gl: WebGL2RenderingContext): void { normal9Pool.reset(); clearLights(); }
 export function getMeshQueueDebug(): { front: number; back: number } { return { front: meshQueue.sizeFront(), back: meshQueue.sizeBack() }; }
 
-export function registerMeshBatchPass_WebGL(registry: PipelineRegistry, pm: GraphicsPipelineManager<any>) {
+export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
     registry.register({
         id: 'meshbatch',
         label: 'meshbatch',
@@ -792,8 +791,8 @@ export function registerMeshBatchPass_WebGL(registry: PipelineRegistry, pm: Grap
             const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
             const cam = $.model.activeCamera3D;
             if (!cam) return;
-            const frameShared = pm.getState('frame_shared');
-            const fogStateHolder = pm.getState('fog');
+            const frameShared = registry.getState('frame_shared');
+            const fogStateHolder = registry.getState('fog');
             let fog = fogStateHolder?.fog as FogUniforms | undefined;
             if (!fog) {
                 const density = (() => {

@@ -1,4 +1,4 @@
-import { GPUBackend, PipelineRegistry, WebGLBackend } from '../..';
+import { GPUBackend, RenderPassLibrary, WebGLBackend } from '../..';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl.constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
@@ -26,7 +26,7 @@ function createFullscreenQuad(gl: WebGL2RenderingContext, srcW: number, srcH: nu
     return { vbo, tbo, attribPos, attribTex, w: srcW, h: srcH };
 }
 
-export function registerCRT_WebGL(registry: PipelineRegistry): void {
+export function registerCRT_WebGL(registry: RenderPassLibrary): void {
     registry.register({
         id: 'crt',
         label: 'crt',

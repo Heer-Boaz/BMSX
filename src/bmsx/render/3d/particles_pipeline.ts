@@ -5,8 +5,7 @@ import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import { PassEncoder } from '../backend/pipeline_interfaces';
-import { GraphicsPipelineManager } from '../backend/pipeline_manager';
-import { getRenderContext, ParticlePipelineState, PipelineRegistry } from '../backend/pipeline_registry';
+import { getRenderContext, ParticlePipelineState, RenderPassLibrary } from '../backend/pipeline_registry';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { color } from '../view';
@@ -144,7 +143,7 @@ export function submitParticle(p: DrawParticleOptions): void {
 export function getQueuedParticleCount(): number { return particleQueue.sizeBack(); }
 export function getParticleQueueDebug(): { front: number; back: number } { return { front: particleQueue.sizeFront(), back: particleQueue.sizeBack() }; }
 
-export function registerParticlesPass_WebGL(registry: PipelineRegistry, pm: GraphicsPipelineManager): void {
+export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
     registry.register({
         id: 'particles',
         label: 'particles',

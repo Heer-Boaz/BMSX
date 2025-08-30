@@ -8,8 +8,7 @@ import spriteVS from '../2d/shaders/2d.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
 import { GPUBackend } from '../backend/pipeline_interfaces';
-import { GraphicsPipelineManager } from '../backend/pipeline_manager';
-import { getRenderContext, PipelineRegistry, SpritesPipelineState } from '../backend/pipeline_registry';
+import { getRenderContext, RenderPassLibrary, SpritesPipelineState } from '../backend/pipeline_registry';
 import {
     ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
     ATLAS_ID_COMPONENTS,
@@ -278,7 +277,7 @@ export function drawPolygon(coords: Polygon, z: number, color: color, thickness:
     }
 }
 
-export function registerSpritesPass_WebGL(registry: PipelineRegistry, pm: GraphicsPipelineManager): void {
+export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
     registry.register({
         id: 'sprites',
         label: 'sprites',

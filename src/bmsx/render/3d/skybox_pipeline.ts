@@ -5,8 +5,7 @@ import { taskGate } from '../../core/taskgate';
 import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
 import { TextureHandle } from '../backend/pipeline_interfaces';
-import { GraphicsPipelineManager } from '../backend/pipeline_manager';
-import { getRenderContext, PipelineRegistry, SkyboxPipelineState } from '../backend/pipeline_registry';
+import { getRenderContext, RenderPassLibrary, SkyboxPipelineState } from '../backend/pipeline_registry';
 import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { TextureKey } from '../texturemanager';
@@ -93,7 +92,7 @@ export function drawSkyboxWithState(gl: WebGL2RenderingContext, framebuffer: Web
     backend.bindVertexArray(null);
 }
 
-export function registerSkyboxPass_WebGL(registry: PipelineRegistry, pm: GraphicsPipelineManager<any>) {
+export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
     registry.register({
         id: 'skybox',
         label: 'skybox',

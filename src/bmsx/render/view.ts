@@ -15,7 +15,7 @@ import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
 import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
-import { PipelineRegistry } from './backend/pipeline_registry';
+import { RenderPassLibrary } from './backend/pipeline_registry';
 import type { WebGLBackend } from './backend/webgl_backend';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
@@ -126,7 +126,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: unknown | null } = {};
 	private _dynamicAtlasIndex: number | null = null;
-	public pipelineRegistry?: PipelineRegistry;
+	public pipelineRegistry?: RenderPassLibrary;
 	// Texture binding cache
 	private _activeTexUnit: number | null = null;
 	private _activeTexture2D: unknown | null = null;
@@ -488,7 +488,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public clear(): void { /* handled by render graph clear pass */ }
 
 	// Pipeline hooks
-	public setPipelineRegistry(reg: PipelineRegistry) { this.pipelineRegistry = reg; this.graphInvalid = true; }
+	public setPipelineRegistry(reg: RenderPassLibrary) { this.pipelineRegistry = reg; this.graphInvalid = true; }
 
 	// Backend
 	public setBackend(backend: GPUBackend): void {

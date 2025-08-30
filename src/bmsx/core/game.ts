@@ -6,8 +6,7 @@ import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
 import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
-import { GraphicsPipelineManager } from "../render/backend/pipeline_manager";
-import { PipelineRegistry } from "../render/backend/pipeline_registry";
+import { RenderPassLibrary } from "../render/backend/pipeline_registry";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
@@ -338,8 +337,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		activeView.setBackend(backend);
 		activeView.initializeDefaultTextures();
 		new TextureManager(backend);
-		const pipelineManager = new GraphicsPipelineManager(backend); // Backend conforms to minimal subset used
-		const pipelineRegistry = new PipelineRegistry(pipelineManager);
+		const pipelineRegistry = new RenderPassLibrary(backend);
 		pipelineRegistry.registerBuiltin(activeView.backend);
 		// Store on view for graph rebuild
 		if (typeof activeView.setPipelineRegistry === 'function') {
