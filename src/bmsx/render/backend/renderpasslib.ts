@@ -19,10 +19,6 @@ import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_unifo
 import { GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl.helpers';
 
-export function getRenderContext(): RenderContext {
-    // GameView implements RenderContext; no cast required
-    return $.viewAs<GameView>();
-}
 export type FogUniforms = {
     fogColor: [number, number, number];
     fogDensity: number;
@@ -64,6 +60,7 @@ interface RegisteredPassRec {
     pipelineHandle?: RenderPassInstanceHandle | null;
     state?: unknown;
     bindingLayout?: RenderPassDef['bindingLayout'];
+    present?: boolean;
 }
 
 export class RenderPassLibrary {
@@ -90,7 +87,7 @@ export class RenderPassLibrary {
             id: 'frame_resolve', label: 'frame_resolve', name: 'FrameResolve', stateOnly: true,
             exec: () => { /* state only */ },
             prepare: (backend, _state) => {
-                const gv = getRenderContext();
+                const gv = $.viewAs<GameView>();
                 updateAndBindFrameUniforms(backend, {
                     offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
                     logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -102,7 +99,7 @@ export class RenderPassLibrary {
             shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
             exec: () => { /* state only */ },
             prepare: (_backend, _state) => {
-                const gv = getRenderContext();
+                const gv = $.viewAs<GameView>();
                 const width = gv.viewportSize.x; const height = gv.viewportSize.y;
                 registerAtmosphereHotkeys();
                 const density = (() => {
@@ -146,7 +143,7 @@ export class RenderPassLibrary {
             exec: () => { /* state only */ },
             prepare: (backend, _state) => {
                 // Upload minimal frame-shared values via a UBO foundation
-                const gv = getRenderContext();
+                const gv = $.viewAs<GameView>();
                 updateAndBindFrameUniforms(backend, {
                     offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
                     logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -163,7 +160,7 @@ export class RenderPassLibrary {
             shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
             exec: () => { /* state only */ },
             prepare: (backend, _state) => {
-                const gv = getRenderContext();
+                const gv = $.viewAs<GameView>();
                 const width = gv.viewportSize.x; const height = gv.viewportSize.y;
                 registerAtmosphereHotkeys();
                 const density = (() => {
@@ -221,7 +218,7 @@ export class RenderPassLibrary {
             if (idx < 0) return;
             pass = this.passes[idx];
             const layout = pass.bindingLayout; if (!layout) return;
-            const gv = getRenderContext();
+            const gv = $.viewAs<GameView>();
             if (layout.uniforms?.includes('FrameUniforms') && !(backend as any).bindUniformBufferBase) {
                 console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
             }
@@ -252,7 +249,7 @@ export class RenderPassLibrary {
         if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
             pipelineHandle = this.backend.createRenderPassInstance({ label: desc.label ?? desc.name, vsCode: desc.vsCode, fsCode: desc.fsCode, bindingLayout: desc.bindingLayout });
         }
-        const rec: RegisteredPassRec = { id: idStr, exec: desc.exec as any, prepare: desc.prepare as any, pipelineHandle, bindingLayout: desc.bindingLayout };
+        const rec: RegisteredPassRec = { id: idStr, exec: desc.exec as any, prepare: desc.prepare as any, pipelineHandle, bindingLayout: desc.bindingLayout, present: !!desc.present };
         // One-time bootstrap for GPU resources
         if (desc.bootstrap) {
             if (pipelineHandle && this.backend.setGraphicsPipeline) {
@@ -293,7 +290,14 @@ export class RenderPassLibrary {
         checkWebGLError(`after binding pipeline ${id}`);
         if (p.prepare) p.prepare(backend, p.state);
         checkWebGLError(`after preparing pipeline ${id}`);
-        p.exec(backend, fbo, p.state);
+        // Special-case: present passes on WebGPU manage their own pass/encoder.
+        // Provide pipeline handle via fbo parameter for convenience.
+        if ((backend.type === 'webgpu') && p.present) {
+            const fboWithPipeline = { pipelineHandle: p.pipelineHandle };
+            p.exec(backend, fboWithPipeline, p.state);
+        } else {
+            p.exec(backend, fbo, p.state);
+        }
         checkWebGLError(`after executing pipeline ${id}`);
     }
     has(id: string): boolean { return this.registered.has(String(id)); }
@@ -345,7 +349,7 @@ export class RenderPassLibrary {
                 const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
                 this.setState('frame_shared', { view: viewState, lighting });
                 try {
-                    const gv = getRenderContext();
+                    const gv = $.viewAs<GameView>();
                     updateAndBindFrameUniforms(gv.backend, {
                         offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
                         logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },

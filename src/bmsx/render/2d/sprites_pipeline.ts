@@ -1,6 +1,6 @@
 // Sprites pipeline (formerly glview.2d) inlined from legacy module.
 // Provides batched 2D sprite + primitive rendering using shared buffers.
-import { makePipelineBuildDesc, shaderModule, WebGLBackend } from '../..';
+import { $, makePipelineBuildDesc, shaderModule, WebGLBackend } from '../..';
 import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
@@ -8,7 +8,7 @@ import spriteVS from '../2d/shaders/2d.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
 import { GPUBackend } from '../backend/pipeline_interfaces';
-import { getRenderContext, RenderPassLibrary, SpritesPipelineState } from '../backend/pipeline_registry';
+import { RenderPassLibrary, SpritesPipelineState } from '../backend/renderpasslib';
 import {
     ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
     ATLAS_ID_COMPONENTS,
@@ -62,6 +62,10 @@ let spriteShaderScaleLocation: WebGLUniformLocation;
 // Feature-local, double-buffered submission queue (UE-like feature queue)
 type SpriteSubmission = { options: DrawImgOptions; imgmeta: ImgMeta };
 const spriteQueue = new FeatureQueue<SpriteSubmission>(256);
+
+function getRenderContext() {
+    return $.viewAs<GameView>();
+}
 
 export function setupSpriteShaderLocations(backend: GPUBackend): void {
     const gl = (backend as WebGLBackend).gl;

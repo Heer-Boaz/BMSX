@@ -1,9 +1,9 @@
-import { PipelineRegistry } from '../backend/pipeline_registry';
+import { RenderPassLibrary } from '../backend/renderpasslib';
 
 // WebGPU stub: registers the Sprites pass for WebGPU builds.
 // This is a placeholder. Replace with real WGSL shaders and GPUBackend calls.
-export function registerSpritesPass_WebGPU(registry: PipelineRegistry): void {
-    registry.register({
+export function registerSpritesPass_WebGPU(library: RenderPassLibrary): void {
+    library.register({
         id: 'sprites',
         label: 'sprites',
         name: 'Sprites2D (WebGPU)',
@@ -13,4 +13,3 @@ export function registerSpritesPass_WebGPU(registry: PipelineRegistry): void {
         prepare: () => { /* set sprites state here when implemented */ },
     });
 }
-

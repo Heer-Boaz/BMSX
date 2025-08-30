@@ -1,9 +1,9 @@
-import { PipelineRegistry } from '../backend/pipeline_registry';
+import { RenderPassLibrary } from '../backend/renderpasslib';
 
 // WebGPU stub: registers the Mesh Batch pass for WebGPU builds.
 // Replace with WGSL, vertex/index buffer setup and proper execution.
-export function registerMeshBatchPass_WebGPU(registry: PipelineRegistry): void {
-    registry.register({
+export function registerMeshBatchPass_WebGPU(library: RenderPassLibrary): void {
+    library.register({
         id: 'meshbatch',
         label: 'meshbatch',
         name: 'Meshes (WebGPU)',
@@ -14,4 +14,3 @@ export function registerMeshBatchPass_WebGPU(registry: PipelineRegistry): void {
         prepare: () => { /* set mesh state here when implemented */ },
     });
 }
-

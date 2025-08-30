@@ -6,7 +6,7 @@ import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
 import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
-import { RenderPassLibrary } from "../render/backend/pipeline_registry";
+import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";

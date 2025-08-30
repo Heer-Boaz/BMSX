@@ -5,11 +5,15 @@ import { taskGate } from '../../core/taskgate';
 import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
 import { TextureHandle } from '../backend/pipeline_interfaces';
-import { getRenderContext, RenderPassLibrary, SkyboxPipelineState } from '../backend/pipeline_registry';
+import { RenderPassLibrary, SkyboxPipelineState } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../view';
+
+function getRenderContext() {
+    return $.viewAs<GameView>();
+}
 
 let vaoSkybox: WebGLVertexArrayObject | null = null;
 let skyboxProgram: WebGLProgram; let skyboxPositionLocation: number; let skyboxViewLocation: WebGLUniformLocation; let skyboxProjectionLocation: WebGLUniformLocation; let skyboxTextureLocation: WebGLUniformLocation;

@@ -1,8 +1,8 @@
-import { PipelineRegistry } from '../backend/pipeline_registry';
+import { RenderPassLibrary } from '../backend/renderpasslib';
 
 // WebGPU stub: registers the Skybox pass for WebGPU builds.
-export function registerSkyboxPass_WebGPU(registry: PipelineRegistry): void {
-    registry.register({
+export function registerSkyboxPass_WebGPU(library: RenderPassLibrary): void {
+    library.register({
         id: 'skybox',
         label: 'skybox',
         name: 'Skybox (WebGPU)',
@@ -13,4 +13,3 @@ export function registerSkyboxPass_WebGPU(registry: PipelineRegistry): void {
         prepare: () => { /* set skybox state here when implemented */ },
     });
 }
-

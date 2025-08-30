@@ -15,7 +15,7 @@ import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
 import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
-import { RenderPassLibrary } from './backend/pipeline_registry';
+import { RenderPassLibrary } from './backend/renderpasslib';
 import type { WebGLBackend } from './backend/webgl_backend';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';

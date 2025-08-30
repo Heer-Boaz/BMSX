@@ -5,11 +5,15 @@ import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import { PassEncoder } from '../backend/pipeline_interfaces';
-import { getRenderContext, ParticlePipelineState, RenderPassLibrary } from '../backend/pipeline_registry';
+import { ParticlePipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
-import { color } from '../view';
+import { color, GameView } from '../view';
 import { M4 } from './math3d';
+
+function getRenderContext() {
+    return $.viewAs<GameView>();
+}
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);

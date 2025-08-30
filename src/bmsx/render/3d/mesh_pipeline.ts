@@ -10,11 +10,11 @@ import meshFS from '../3d/shaders/3d.frag.glsl';
 import meshVS from '../3d/shaders/3d.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
-import { FogUniforms, getRenderContext, MeshBatchPipelineState, RenderPassLibrary } from '../backend/pipeline_registry';
+import { FogUniforms, MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
-import { DrawMeshOptions } from '../view';
+import { DrawMeshOptions, GameView } from '../view';
 import { Atmosphere, registerAtmosphereHotkeys } from './atmosphere';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
@@ -27,6 +27,9 @@ const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
 const INSTANCE_STRIDE_NORMAL9 = 9;
 const MAT4_FLOATS = 16;
 // unified in webgl.constants
+function getRenderContext() {
+    return $.viewAs<GameView>();
+}
 
 // Legacy direct submission array removed. Use submitMesh() with feature queue.
 const meshQueue = new FeatureQueue<DrawMeshOptions>(256);
@@ -214,6 +217,9 @@ export function uploadDirectionalLights(): void {
     ensureLightBuffersInitialized();
     const lights = Array.from(directionalLights.values());
     const count = Math.min(lights.length, MAX_DIR_LIGHTS);
+    // Guard for non-WebGL backends or uninitialized buffers during WebGPU migration
+    const backendAny = getRenderContext().backend as any;
+    if (!dirLightData || !backendAny.updateUniformBuffer || !dirLightBuffer) { lightsDirty = true; return; }
     dirLightData.fill(0);
     dirLightCount[0] = count;
     for (let i = 0; i < count; i++) {
@@ -226,14 +232,15 @@ export function uploadDirectionalLights(): void {
         base = DIR_LIGHT_INTENSITY_OFFSET + i * 4;
         dirLightData[base] = lights[i].intensity;
     }
-    const backend = getRenderContext().backend as WebGLBackend;
-    backend.updateUniformBuffer(dirLightBuffer, dirLightData);
+    (backendAny as WebGLBackend).updateUniformBuffer(dirLightBuffer as any, dirLightData);
     lightsDirty = true;
 }
 export function uploadPointLights(): void {
     ensureLightBuffersInitialized();
     const lights = Array.from(pointLights.values());
     const count = Math.min(lights.length, MAX_POINT_LIGHTS);
+    const backendAny = getRenderContext().backend as any;
+    if (!pointLightData || !backendAny.updateUniformBuffer || !pointLightBuffer) { lightsDirty = true; return; }
     pointLightData.fill(0);
     pointLightCount[0] = count;
     for (let i = 0; i < count; i++) {
@@ -247,8 +254,7 @@ export function uploadPointLights(): void {
         pointLightData[base] = lights[i].range!;
         pointLightData[base + 1] = lights[i].intensity;
     }
-    const backend = getRenderContext().backend as WebGLBackend;
-    backend.updateUniformBuffer(pointLightBuffer, pointLightData);
+    (backendAny as WebGLBackend).updateUniformBuffer(pointLightBuffer as any, pointLightData);
     lightsDirty = true;
 }
 export function addDirectionalLight(id: Identifier, light: DirectionalLight): void { directionalLights.set(id, { type: 'directional', color: light.color, intensity: light.intensity, orientation: light.orientation }); uploadDirectionalLights(); }
