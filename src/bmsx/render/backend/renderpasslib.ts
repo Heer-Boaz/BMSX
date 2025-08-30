@@ -14,7 +14,6 @@ import { RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
-import { registerSolidColorPass_WebGPU } from '../debug/solidcolor_pipeline.wgpu';
 import { GameView } from '../view';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
 import { GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
@@ -188,22 +187,22 @@ export class RenderPassLibrary {
         });
 
         // Skybox (WebGPU)
-        registerSkyboxPass_WebGPU(this);
+        registerSkyboxPass_WebGL(this);
 
         // Mesh batch (WebGPU)
-        registerMeshBatchPass_WebGPU(this);
+        registerMeshBatchPass_WebGL(this);
 
         // Particles (WebGPU)
-        registerParticlesPass_WebGPU(this);
+        registerParticlesPass_WebGL(this);
 
-        // Sprites (WebGPU)
-        registerSpritesPass_WebGPU(this);
+        // Sprites (WebGL)
+        registerSpritesPass_WebGL(this);
 
-        // Debug solid writer (WebGPU) — ensures content is written before present
-        registerSolidColorPass_WebGPU(this);
+        // Debug solid writer (WebGL) — ensures content is written before present
+        // registerSolidColorPass_WebGL(this);
 
-        // CRT (WebGPU)
-        registerCRT_WebGPU(this); // Registers program + execution
+        // CRT (WebGL)
+        registerCRT_WebGL(this); // Registers program + execution
 
         // FrameShared
         this.register({
