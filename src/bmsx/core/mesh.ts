@@ -133,6 +133,7 @@ export class Mesh {
 		const cSig = c ? `${c[0].toFixed(3)},${c[1].toFixed(3)},${c[2].toFixed(3)},${c[3].toFixed(3)}` : '';
 		return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${cSig}`;
 	}
+
 	/**
 	 * Recalculate the mesh's bounding sphere in local space. Morph targets are
 	 * taken into account so the bounds remain valid as animations deform the

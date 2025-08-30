@@ -3,9 +3,8 @@ import { color_arr } from '../../rompack/rompack';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
 import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, TextureParams } from './pipeline_interfaces';
-import { CATCH_WEBGL_ERROR, checkWebGLError } from './webgl.helpers';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
-import { checkWebGLError } from './webgl.helpers';
+import { CATCH_WEBGL_ERROR, checkWebGLError } from './webgl.helpers';
 
 // (Texture units sourced from render_view constants to avoid duplication.)
 
@@ -319,7 +318,7 @@ export class WebGLBackend implements GPUBackend {
                 const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
                 // Attempt to inspect a few common attributes
                 const posLoc = this.getAttribLocation('a_position');
-                const instLocs = ['a_i0','a_i1','a_i2','a_i3'].map(n => this.getAttribLocation(n));
+                const instLocs = ['a_i0', 'a_i1', 'a_i2', 'a_i3'].map(n => this.getAttribLocation(n));
                 const attribState = (loc: number) => (loc >= 0 ? {
                     enabled: !!gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_ENABLED),
                     divisor: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_DIVISOR) as number,
@@ -331,7 +330,7 @@ export class WebGLBackend implements GPUBackend {
                 try {
                     u0 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 0) as WebGLBuffer | null;
                     u1 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 1) as WebGLBuffer | null;
-                } catch {}
+                } catch { }
                 console.error(
                     `WebGL error ${err} after drawElementsInstanced; ` +
                     `firstIndex=${firstIndex} indexCount=${indexCount} instanceCount=${instanceCount} firstInstance=${firstInstance} indexType=${type}; ` +

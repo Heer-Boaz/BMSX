@@ -673,7 +673,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
     checkWebGLError('mesh.instanced: after setUseInstancing');
 }
 // Uniform change caching for materials
-let lastMaterialSig: number | null = null;
+let lastMaterialSig: string | null = null;
 let lastMaterialColor = new Float32Array([1, 1, 1, 1]);
 let lastMetallic = 1.0;
 let lastRoughness = 1.0;
