@@ -629,13 +629,10 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
             const batchCount = Math.min(MAX_INSTANCES, matrices.length - offset);
             for (let i = 0; i < batchCount; i++) instanceScratch.set(matrices[offset + i], i * INSTANCE_STRIDE_FLOATS);
             gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
-            checkWebGLError('mesh.instanced: before bufferData');
-            gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
-            checkWebGLError('mesh.instanced: after bufferData');
+            // Buffer was pre-allocated in setupBuffers3D; update contents in place for perf
             gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS));
             checkWebGLError('mesh.instanced: after bufferSubData');
-            if (indexed && buffers.index) __b.bindElementArrayBuffer(buffers.index);
-            checkWebGLError('mesh.instanced: after bindElementArrayBuffer');
+            // EBO is captured in VAO; no need to rebind per draw when VAO is bound
             const _b = getRenderContext().backend as WebGLBackend; const _pass = { fbo: null, desc: { label: 'meshbatch' } } as any;
             if (CATCH_WEBGL_ERROR) {
                 const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
@@ -697,7 +694,7 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
         const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
         const __b2 = getRenderContext().backend as WebGLBackend; __b2.bindVertexArray(vao);
         const _b2 = getRenderContext().backend as WebGLBackend; const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } } as any;
-        if (buffers.index) __b2.bindElementArrayBuffer(buffers.index);
+        // EBO is captured in VAO; avoid redundant bind per draw
         checkWebGLError('mesh.single: before draw');
         if (buffers.index) _b2.drawIndexed(_p2 as any, buffers.indexCount ?? m.indices!.length, 0, buffers.indexType); else _b2.draw(_p2 as any, 0, m.vertexCount);
         checkWebGLError('mesh.single: after draw');

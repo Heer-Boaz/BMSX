@@ -3,6 +3,7 @@ import { color_arr } from '../../rompack/rompack';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
 import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, TextureParams } from './pipeline_interfaces';
+import { CATCH_WEBGL_ERROR, checkWebGLError } from './webgl.helpers';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
 import { checkWebGLError } from './webgl.helpers';
 
@@ -299,20 +300,20 @@ export class WebGLBackend implements GPUBackend {
 
     drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void {
         this.frameStats.drawsInstanced++;
-        checkWebGLError('drawInstanced: before drawArraysInstanced');
+        if (CATCH_WEBGL_ERROR) checkWebGLError('drawInstanced: before drawArraysInstanced');
         this.gl.drawArraysInstanced(this.gl.TRIANGLES, firstVertex, vertexCount, instanceCount);
-        checkWebGLError(`drawInstanced: after drawArraysInstanced. firstVertex: ${firstVertex}, vertexCount: ${vertexCount}, instanceCount: ${instanceCount}, firstInstance: ${firstInstance}`);
+        if (CATCH_WEBGL_ERROR) checkWebGLError(`drawInstanced: after drawArraysInstanced. firstVertex: ${firstVertex}, vertexCount: ${vertexCount}, instanceCount: ${instanceCount}, firstInstance: ${firstInstance}`);
     }
     drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, firstInstance = 0, indexType?: number): void {
         this.frameStats.drawIndexedInstanced++;
         const gl = this.gl;
         const type = (indexType ?? gl.UNSIGNED_SHORT);
         const bytesPerIndex = (type === gl.UNSIGNED_INT) ? 4 : (type === gl.UNSIGNED_BYTE ? 1 : 2);
-        checkWebGLError('drawIndexedInstanced: before drawElementsInstanced');
+        if (CATCH_WEBGL_ERROR) checkWebGLError('drawIndexedInstanced: before drawElementsInstanced');
         gl.drawElementsInstanced(gl.TRIANGLES, indexCount, type, firstIndex * bytesPerIndex, instanceCount);
         // Inline detailed diagnostics on error to pinpoint root cause
-        const err = gl.getError();
-        if (err !== gl.NO_ERROR) {
+        const err = CATCH_WEBGL_ERROR ? gl.getError() : gl.NO_ERROR;
+        if (CATCH_WEBGL_ERROR && err !== gl.NO_ERROR) {
             try {
                 const vao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
                 const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
