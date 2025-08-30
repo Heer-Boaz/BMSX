@@ -124,15 +124,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private graphInvalid = true;
 	private lightingSystem: LightingSystem | null = null;
 	public offscreenCanvasSize!: vec2;
-	private isRendering = false;
-	private needsResize = false;
 	public textures: { [k: string]: unknown | null } = {};
 	private _dynamicAtlasIndex: number | null = null;
 	public pipelineRegistry?: PipelineRegistry;
 	// Texture binding cache
 	private _activeTexUnit: number | null = null;
-    private _activeTexture2D: unknown | null = null;
-    private _activeCubemap: unknown | null = null;
+	private _activeTexture2D: unknown | null = null;
+	private _activeCubemap: unknown | null = null;
 	// CRT/post flags (used by passes)
 	public applyNoise = true;
 	public applyColorBleed = true;
@@ -200,7 +198,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		try {
 			this._backend?.beginFrame?.();
 			$.emit('framebegin', this, token);
-			this.isRendering = true;
 			this.renderer.swap();
 			const frame = buildFrameData(this);
 			this.drawbase(clearCanvas);
@@ -210,7 +207,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		} finally {
 			$.emit('frameend', this, token);
 			this._backend?.endFrame?.();
-			this.isRendering = false;
 			renderGate.end(token);
 		}
 	}
@@ -513,13 +509,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	// (single handleResize implementation above in the class)
 
-    public rebuildGraph(): void {
-        if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
-        if (!this.pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
-        // GameView implements RenderContext directly
-        this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
-        this.graphInvalid = false;
-    }
+	public rebuildGraph(): void {
+		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
+		if (!this.pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
+		// GameView implements RenderContext directly
+		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
+		this.graphInvalid = false;
+	}
 
 	public drawImg(options: DrawImgOptions): void {
 		SpritesPipeline.drawImg(options);
@@ -565,6 +561,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	// Texture binding helpers
 	get activeTexUnit(): number | null { return this._activeTexUnit; }
 	set activeTexUnit(u: number | null) { this._activeTexUnit = u; if (u != null) { try { this.getBackend().setActiveTexture?.(u); } catch { /* noop: backend not ready */ } } }
-    bind2DTex(tex: TextureHandle | null): void { if (this._activeTexture2D === tex) return; try { this.getBackend().bindTexture2D?.(tex); } catch { /* noop */ } this._activeTexture2D = tex; }
-    bindCubemapTex(tex: TextureHandle | null): void { if (this._activeCubemap === tex) return; try { this.getBackend().bindTextureCube?.(tex); } catch { /* noop */ } this._activeCubemap = tex; }
+	bind2DTex(tex: TextureHandle | null): void { if (this._activeTexture2D === tex) return; try { this.getBackend().bindTexture2D?.(tex); } catch { /* noop */ } this._activeTexture2D = tex; }
+	bindCubemapTex(tex: TextureHandle | null): void { if (this._activeCubemap === tex) return; try { this.getBackend().bindTextureCube?.(tex); } catch { /* noop */ } this._activeCubemap = tex; }
 }
