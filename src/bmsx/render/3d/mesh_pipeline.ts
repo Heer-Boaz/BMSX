@@ -634,7 +634,9 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
             // Orphan storage and upload the current batch at offset 0 (stable across drivers)
             gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
             gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
-            gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS));
+            const slice = instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, slice);
+            try { (getRenderContext().backend as WebGLBackend).accountUpload('vertex', slice.byteLength); } catch { /* ignore */ }
             checkWebGLError('mesh.instanced: after bufferSubData');
             // EBO is captured in VAO; no need to rebind per draw when VAO is bound
             const _b = getRenderContext().backend as WebGLBackend; const _pass = { fbo: null, desc: { label: 'meshbatch' } } as any;

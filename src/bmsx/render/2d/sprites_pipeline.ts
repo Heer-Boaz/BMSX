@@ -215,25 +215,31 @@ export function updateBuffers(
     index: number,
 ): void {
     // Orphan + upload pattern to avoid driver stalls on mobile GPUs.
+    const backend = (getRenderContext().backend as WebGLBackend);
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertexcoords.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
+    try { backend.accountUpload('vertex', vertexcoords.byteLength); } catch { /* ignore */ }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, texcoords.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
+    try { backend.accountUpload('vertex', texcoords.byteLength); } catch { /* ignore */ }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, zBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, zcoords.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
+    try { backend.accountUpload('vertex', zcoords.byteLength); } catch { /* ignore */ }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, color_override.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
+    try { backend.accountUpload('vertex', color_override.byteLength); } catch { /* ignore */ }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, atlasid.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
+    try { backend.accountUpload('vertex', atlasid.byteLength); } catch { /* ignore */ }
 }
 
 export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {
