@@ -65,15 +65,7 @@ const meshBufferCache = new WeakMap<Mesh, MeshBuffers>();
 // instancing upload helpers
 const instanceScratch = new Float32Array(MAX_INSTANCES * INSTANCE_STRIDE_FLOATS);
 const normal9Pool = new Float32ArrayPool(INSTANCE_STRIDE_NORMAL9);
-// Instance ring buffer: triple-buffered pages to avoid stalls (disabled by default)
-const USE_INSTANCE_RING = false as const;
-// Ring buffer config (only used when USE_INSTANCE_RING = true)
-const INSTANCE_RING_PAGES = 3;
-const INSTANCE_PAGE_INSTANCES = 1024; // tunable per page capacity
-const INSTANCE_PAGE_BYTES = INSTANCE_PAGE_INSTANCES * INSTANCE_STRIDE_BYTES;
-const INSTANCE_RING_TOTAL_BYTES = INSTANCE_RING_PAGES * INSTANCE_PAGE_BYTES;
-let instanceRingPage = 0;
-let instanceRingCursorBytes = 0;
+// Instance data uses a single dynamic buffer (ring buffer removed)
 
 // simpele texture/material state cache
 const stateCache = {
@@ -303,8 +295,7 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
 export function setupBuffers3D(gl: WebGL2RenderingContext): void {
     instanceMatrixBuffer3D = GLR.glCreateBuffer(gl);
     gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
-    if (USE_INSTANCE_RING) gl.bufferData(gl.ARRAY_BUFFER, INSTANCE_RING_PAGES * INSTANCE_PAGE_BYTES, gl.DYNAMIC_DRAW);
-    else gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
 
     morphPositionBuffers3D = [GLR.glCreateBuffer(gl), GLR.glCreateBuffer(gl)];
     morphNormalBuffers3D = [GLR.glCreateBuffer(gl), GLR.glCreateBuffer(gl)];
@@ -640,30 +631,10 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
         for (let offset = 0; offset < matrices.length; offset += MAX_INSTANCES) {
             const batchCount = Math.min(MAX_INSTANCES, matrices.length - offset);
             for (let i = 0; i < batchCount; i++) instanceScratch.set(matrices[offset + i], i * INSTANCE_STRIDE_FLOATS);
-            if (USE_INSTANCE_RING) {
-                // Reserve space; if overflow, advance page; if wrapping beyond ring, clamp to start
-                const batchBytes = batchCount * INSTANCE_STRIDE_BYTES;
-                if (instanceRingCursorBytes + batchBytes > INSTANCE_PAGE_BYTES) {
-                    instanceRingPage = (instanceRingPage + 1) % INSTANCE_RING_PAGES;
-                    instanceRingCursorBytes = 0;
-                }
-                let baseOffsetBytes = instanceRingPage * INSTANCE_PAGE_BYTES + instanceRingCursorBytes;
-                if (baseOffsetBytes + batchBytes > INSTANCE_RING_TOTAL_BYTES) {
-                    // Wrap ring safely to start
-                    instanceRingPage = 0; instanceRingCursorBytes = 0; baseOffsetBytes = 0;
-                }
-                gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
-                gl.bufferSubData(gl.ARRAY_BUFFER, baseOffsetBytes, instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS));
-                // update instance attrib base pointers for this batch
-                const locs = instanceMatrixLocations3D; const be = (getRenderContext().backend as WebGLBackend);
-                for (let i = 0; i < 4; i++) { const loc = locs[i]; if (loc >= 0) be.vertexAttribPointer(loc, 4, gl.FLOAT, false, INSTANCE_STRIDE_BYTES, baseOffsetBytes + i * COLUMN_BYTES); }
-                instanceRingCursorBytes += batchBytes;
-            } else {
-                // Orphan storage and upload the current batch at offset 0 (stable across drivers)
-                gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
-                gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
-                gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS));
-            }
+            // Orphan storage and upload the current batch at offset 0 (stable across drivers)
+            gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceScratch.subarray(0, batchCount * INSTANCE_STRIDE_FLOATS));
             checkWebGLError('mesh.instanced: after bufferSubData');
             // EBO is captured in VAO; no need to rebind per draw when VAO is bound
             const _b = getRenderContext().backend as WebGLBackend; const _pass = { fbo: null, desc: { label: 'meshbatch' } } as any;
@@ -757,8 +728,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     // Swap to make submissions visible (no legacy fallbacks)
     meshQueue.swap();
     if (meshQueue.sizeFront() === 0) return;
-    // Advance ring page per frame and reset cursor (when enabled)
-    if (USE_INSTANCE_RING) { instanceRingPage = (instanceRingPage + 1) % INSTANCE_RING_PAGES; instanceRingCursorBytes = 0; }
+    // Single dynamic buffer; no ring state
     // Adapt to FeatureQueue API without exposing storage
     const collected: DrawMeshOptions[] = [];
     meshQueue.forEachFront((it) => { collected.push(it); });
