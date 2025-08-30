@@ -331,7 +331,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
-		const activeView = this.view as any; // TODO: REMOVE CAST!!
+		const activeView = this.view;
 		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
 		const { backend, nativeCtx } = await createBackendForCanvasAsync(activeView.canvas);
 		activeView.nativeCtx = nativeCtx;
@@ -345,7 +345,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		if (typeof activeView.setPipelineRegistry === 'function') {
 			activeView.setPipelineRegistry(pipelineRegistry);
 		} else {
-			activeView._pipelineRegistry = pipelineRegistry; // fallback
+			activeView.pipelineRegistry = pipelineRegistry; // fallback
 		}
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {

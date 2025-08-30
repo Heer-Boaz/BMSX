@@ -519,3 +519,6 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
 export function submitMesh(o: DrawMeshOptions): void { meshQueue.submit({ ...o }); }
 export function reset(_gl: WebGL2RenderingContext): void { normal9Pool.reset(); clearLights(); }
+export function getMeshQueueDebug(): { front: number; back: number } {
+    try { return { front: meshQueue.frontArray().length, back: meshQueue.sizeBack() }; } catch { return { front: 0, back: 0 }; }
+}

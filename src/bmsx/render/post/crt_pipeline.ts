@@ -1,3 +1,4 @@
+import { WebGLBackend } from '../..';
 import { GraphicsPipelineManager } from '../backend/pipeline_manager';
 import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl.constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
@@ -34,7 +35,7 @@ export function registerCRT(pm: GraphicsPipelineManager): void {
         vsCode: vertexShaderCRTCode,
         fsCode: fragmentShaderCRTCode,
         exec: (backend, _fbo, state: unknown) => {
-            const gl = (backend as any).gl as WebGL2RenderingContext; // Use concrete WebGL backend
+            const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext; // Use concrete WebGL backend
             const st = state as CRTState;
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
             const outW = st.outWidth ?? st.width;
@@ -51,7 +52,7 @@ export function registerCRT(pm: GraphicsPipelineManager): void {
             gl.drawArrays(gl.TRIANGLES, 0, 6);
         },
         prepare: (backend, state: unknown) => {
-            const gl = (backend as any).gl as WebGL2RenderingContext;
+            const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
             const st = state as CRTState;
             const now = Date.now() / 1000;
             const program = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null; if (!program) return;

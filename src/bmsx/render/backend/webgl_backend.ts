@@ -411,7 +411,7 @@ export class WebGLBackend implements GPUBackend {
         const prog = this.currentProgram ?? (gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null);
         if (!prog) return;
         const blockIndex = gl.getUniformBlockIndex(prog, blockName);
-        const INVALID_INDEX = (gl as any).INVALID_INDEX ?? 0xFFFFFFFF;
+        const INVALID_INDEX = (gl.INVALID_INDEX ?? 0xFFFFFFFF);
         if (blockIndex === INVALID_INDEX) return;
         gl.uniformBlockBinding(prog, blockIndex, bindingIndex);
     }

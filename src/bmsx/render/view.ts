@@ -9,12 +9,14 @@ import { multiply_vec, multiply_vec2, shallowCopy } from '../core/utils';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2, vec3arr } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
+import * as SpritesPipeline from './2d/sprites_pipeline';
 import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
 import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
-import type { GPUBackend } from './backend/pipeline_interfaces';
+import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
 import { PipelineRegistry } from './backend/pipeline_registry';
+import type { WebGLBackend } from './backend/webgl_backend';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 
@@ -86,7 +88,7 @@ export function generateAtlasName(atlasIndex: number): string {
  * The `BaseView` class is an abstract class that serves as the base for all views in the application.
  * It provides common functionality and properties that are shared across all views.
  */
-export class GameView implements RegisterablePersistent {
+export class GameView implements RegisterablePersistent, RenderContext {
 	get registrypersistent(): true {
 		return true;
 	}
@@ -117,6 +119,7 @@ export class GameView implements RegisterablePersistent {
 	// WebGL / pipeline state
 	public nativeCtx: unknown | null = null;
 	private _backend: GPUBackend | null = null;
+	public backendType: 'webgl2' | 'webgpu' = 'webgl2';
 	public renderGraph: RenderGraphRuntime | null = null;
 	private graphInvalid = true;
 	private lightingSystem: LightingSystem | null = null;
@@ -125,11 +128,11 @@ export class GameView implements RegisterablePersistent {
 	private needsResize = false;
 	public textures: { [k: string]: unknown | null } = {};
 	private _dynamicAtlasIndex: number | null = null;
-	private _pipelineRegistry?: PipelineRegistry;
+	public pipelineRegistry?: PipelineRegistry;
 	// Texture binding cache
 	private _activeTexUnit: number | null = null;
-	private _activeTexture2D: WebGLTexture | null = null;
-	private _activeCubemap: WebGLTexture | null = null;
+    private _activeTexture2D: unknown | null = null;
+    private _activeCubemap: unknown | null = null;
 	// CRT/post flags (used by passes)
 	public applyNoise = true;
 	public applyColorBleed = true;
@@ -199,7 +202,7 @@ export class GameView implements RegisterablePersistent {
 			$.emit('framebegin', this, token);
 			this.isRendering = true;
 			this.renderer.swap();
-			const frame = buildFrameData(this as any);
+			const frame = buildFrameData(this);
 			this.drawbase(clearCanvas);
 			if (!this.renderGraph || this.graphInvalid) this.rebuildGraph();
 			$.emit('frameupdate', this, token);
@@ -489,12 +492,16 @@ export class GameView implements RegisterablePersistent {
 	public clear(): void { /* handled by render graph clear pass */ }
 
 	// Pipeline hooks
-	public setPipelineRegistry(reg: PipelineRegistry) { this._pipelineRegistry = reg; this.graphInvalid = true; }
-	public enablePass(id: string, enabled: boolean): void { this._pipelineRegistry?.setPassEnabled(id, enabled); }
-	public isPassEnabled(id: string): boolean { return this._pipelineRegistry?.isPassEnabled(id) ?? true; }
+	public setPipelineRegistry(reg: PipelineRegistry) { this.pipelineRegistry = reg; this.graphInvalid = true; }
 
 	// Backend
-	public setBackend(backend: GPUBackend): void { this._backend = backend; }
+	public setBackend(backend: GPUBackend): void {
+		this._backend = backend;
+		try {
+			const maybeGl = (backend as unknown as WebGLBackend).gl;
+			this.backendType = maybeGl ? 'webgl2' : 'webgpu';
+		} catch { this.backendType = 'webgl2'; }
+	}
 	public getBackend(): GPUBackend { if (!this._backend) throw new Error('Backend not set on GameView'); return this._backend; }
 	public initializeDefaultTextures(): void {
 		try {
@@ -506,18 +513,21 @@ export class GameView implements RegisterablePersistent {
 
 	// (single handleResize implementation above in the class)
 
-	public rebuildGraph(): void {
-		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
-		if (!this._pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
-		this.renderGraph = this._pipelineRegistry.buildRenderGraph(this as any, this.lightingSystem);
-		this.graphInvalid = false;
+    public rebuildGraph(): void {
+        if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
+        if (!this.pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
+        // GameView implements RenderContext directly
+        this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
+        this.graphInvalid = false;
+    }
+
+	public drawImg(options: DrawImgOptions): void {
+		SpritesPipeline.drawImg(options);
 	}
 
-	public drawImg(options: DrawImgOptions): void { require('./2d/sprites_pipeline'); (require('./2d/sprites_pipeline') as any).drawImg(this as any, options); }
+	public drawRectangle(options: DrawRectOptions): void { SpritesPipeline.drawRectangle(options); }
 
-	public drawRectangle(options: DrawRectOptions): void { (require('./2d/sprites_pipeline') as any).drawRectangle(this as any, options); }
-
-	public fillRectangle(options: DrawRectOptions): void { (require('./2d/sprites_pipeline') as any).fillRectangle(this as any, options); }
+	public fillRectangle(options: DrawRectOptions): void { SpritesPipeline.fillRectangle(options); }
 
 	/**
 	 * Draws the outline of a polygon by drawing lines between its vertices.
@@ -525,7 +535,7 @@ export class GameView implements RegisterablePersistent {
 	 * @param color Color to use for the outline
 	 * @param thickness Line thickness in pixels (default 1)
 	 */
-	public drawPolygon(points: Polygon, z: number, color: color, thickness: number): void { (require('./2d/sprites_pipeline') as any).drawPolygon(this as any, points, z, color, thickness); }
+	public drawPolygon(points: Polygon, z: number, color: color, thickness: number): void { SpritesPipeline.drawPolygon(points, z, color, thickness); }
 
 	public drawMesh(options: DrawMeshOptions): void { this.renderer.submit.mesh(options); }
 
@@ -545,7 +555,7 @@ export class GameView implements RegisterablePersistent {
 		if (this._dynamicAtlasIndex === index) return;
 		this.textures['_atlas_dynamic'] = null;
 		this._dynamicAtlasIndex = index;
-		if (index == null) { this.activeTexUnit = 1; this.bind2DTex(null as any); return; }
+		if (index == null) { this.activeTexUnit = 1; this.bind2DTex(null); return; }
 		const atlasName = generateAtlasName(index);
 		const atlasImage = GameView.imgassets[atlasName]?._imgbin;
 		if (!atlasImage) { console.error(`Atlas '${atlasName}' not found`); return; }
@@ -555,6 +565,6 @@ export class GameView implements RegisterablePersistent {
 	// Texture binding helpers
 	get activeTexUnit(): number | null { return this._activeTexUnit; }
 	set activeTexUnit(u: number | null) { this._activeTexUnit = u; if (u != null) { try { this.getBackend().setActiveTexture?.(u); } catch { /* noop: backend not ready */ } } }
-	bind2DTex(tex: any | null): void { if (this._activeTexture2D === tex) return; try { this.getBackend().bindTexture2D?.(tex as any); } catch { /* noop */ } this._activeTexture2D = tex as any; }
-	bindCubemapTex(tex: any | null): void { if (this._activeCubemap === tex) return; try { this.getBackend().bindTextureCube?.(tex as any); } catch { /* noop */ } this._activeCubemap = tex as any; }
+    bind2DTex(tex: TextureHandle | null): void { if (this._activeTexture2D === tex) return; try { this.getBackend().bindTexture2D?.(tex); } catch { /* noop */ } this._activeTexture2D = tex; }
+    bindCubemapTex(tex: TextureHandle | null): void { if (this._activeCubemap === tex) return; try { this.getBackend().bindTextureCube?.(tex); } catch { /* noop */ } this._activeCubemap = tex; }
 }

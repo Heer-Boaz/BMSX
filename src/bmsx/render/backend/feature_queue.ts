@@ -5,8 +5,10 @@ export class FeatureQueue<T> {
     private _back: T[] = [];
 
     constructor(initialCapacity = 128) {
-        this._front = new Array<T>(); this._front.length = 0; (this._front as any).capacity = initialCapacity;
-        this._back = new Array<T>(); this._back.length = 0; (this._back as any).capacity = initialCapacity;
+        // Avoid pre-filling with undefined holes; just create empty arrays.
+        // JS arrays grow dynamically; if a reserve is desired later we can use a typed buffer pool.
+        this._front = [];
+        this._back = [];
     }
 
     submit(item: T): void { this._back.push(item); }
@@ -25,4 +27,3 @@ export class FeatureQueue<T> {
 
     frontArray(): T[] { return this._front; }
 }
-

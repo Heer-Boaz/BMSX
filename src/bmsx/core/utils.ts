@@ -511,9 +511,9 @@ export function swizzlable<T extends Record<string, any> | any[]>(
         if (customMap && customMap.hasOwnProperty(letter)) {
             const key = customMap[letter];
             if (typeof key === 'number') {
-                return Array.isArray(target) ? target[key] : (target as any)[String(key)];
+                return Array.isArray(target) ? target[key] : target[String(key)];
             }
-            return (target as any)[key];
+            return target[key];
         }
         // fallback to original numeric-index based behaviour
         const idx = defaultMap[letter];
@@ -533,10 +533,10 @@ export function swizzlable<T extends Record<string, any> | any[]>(
             const key = customMap[letter];
             if (typeof key === 'number') {
                 if (Array.isArray(target)) target[key] = value;
-                else (target as any)[String(key)] = value;
+                else target[String(key)] = value;
                 return;
             }
-            (target as any)[key] = value;
+            target[key] = value;
             return;
         }
         const idx = defaultMap[letter];
@@ -558,7 +558,7 @@ export function swizzlable<T extends Record<string, any> | any[]>(
             if (typeof prop === 'string') {
                 // If direct property exists on target, return it (preserve numbers and methods)
                 if (prop in target && !isValidToken(prop)) {
-                    return (target as any)[prop];
+                    return target[prop];
                 }
                 // Swizzle pattern: sequence of valid letters
                 const letters = prop.replace(/\s+/g, '');
@@ -576,7 +576,7 @@ export function swizzlable<T extends Record<string, any> | any[]>(
                 }
             }
             // fallback to default behaviour
-            return (target as any)[prop];
+            return target[prop];
         },
         set(target, prop, value, receiver) {
             if (typeof prop === 'string') {
@@ -598,11 +598,11 @@ export function swizzlable<T extends Record<string, any> | any[]>(
                             ].filter(Boolean);
                             let found = false;
                             for (const pn of propNames) {
-                                if ((value as any)[pn] !== undefined) { vals.push((value as any)[pn]); found = true; break; }
+                                if (value[pn] !== undefined) { vals.push(value[pn]); found = true; break; }
                             }
                             if (!found) {
                                 // fallback numeric index on the provided object
-                                if ((value as any)[i] !== undefined) { vals.push((value as any)[i]); found = true; }
+                                if (value[i] !== undefined) { vals.push(value[i]); found = true; }
                             }
                             if (!found) vals.push(undefined);
                         }
@@ -620,7 +620,7 @@ export function swizzlable<T extends Record<string, any> | any[]>(
                 }
             }
             // default set
-            (target as any)[prop] = value;
+            target[prop] = value;
             return true;
         }
     };

@@ -2,14 +2,13 @@
 import { $ } from '../../core/game';
 
 import type { vec3arr } from '../../rompack/rompack';
-import { GPUBackend } from '../backend/pipeline_interfaces';
+import { FeatureQueue } from '../backend/feature_queue';
+import { GPUBackend, PassEncoder } from '../backend/pipeline_interfaces';
 import { getRenderContext } from '../backend/pipeline_registry';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { color } from '../view';
 import { M4 } from './math3d';
-import { FeatureQueue } from '../backend/feature_queue';
-import { FloatRingCursor } from '../backend/ring_buffer';
 
 export interface DrawParticleOptions { position: vec3arr; size: number; color: color; texture?: WebGLTexture; }
 // Legacy global queue kept for backward-compat submission; prefer view.renderer.queues.particles
@@ -30,12 +29,12 @@ export function init(fbo: unknown): void {
     const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
     if (backend.createVertexBuffer) {
         quadBuffer = backend.createVertexBuffer(quad, 'static') as WebGLBuffer;
-        instanceBuffers = [0,1,2].map(() => backend.createVertexBuffer(new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer);
+        instanceBuffers = [0, 1, 2].map(() => backend.createVertexBuffer(new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer);
     } else {
         quadBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
-        instanceBuffers = [0,1,2].map(() => {
+        instanceBuffers = [0, 1, 2].map(() => {
             const b = gl.createBuffer()!;
             gl.bindBuffer(gl.ARRAY_BUFFER, b);
             gl.bufferData(gl.ARRAY_BUFFER, MAX_PARTICLES * INSTANCE_BYTES, gl.DYNAMIC_DRAW);
@@ -96,6 +95,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
     }
     const batches = new Map<WebGLTexture, DrawParticleOptions[]>();
     for (const p of src) {
+        if (!p) continue;
         const tex = p.texture ?? defaultTexture;
         let arr = batches.get(tex);
         if (!arr) {
@@ -128,7 +128,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
     for (const [tex, arr] of batches) {
         const batchCount = Math.min(arr.length, MAX_PARTICLES);
         for (let i = 0; i < batchCount; i++) {
-            const p = arr[i];
+            const p = arr[i]; if (!p) continue;
             const base = i * INSTANCE_FLOATS;
             instanceData[base] = p.position[0];
             instanceData[base + 1] = p.position[1];
@@ -145,8 +145,8 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
         const v = getRenderContext();
         v.activeTexUnit = TEXTURE_UNIT_PARTICLE;
         v.bind2DTex(tex);
-        const passStub = { fbo: framebuffer, desc: { label: 'particles' } } as unknown as Parameters<WebGLBackend['drawInstanced']>[0];
-        backend.drawInstanced!(passStub as any, 6, batchCount, 0, 0);
+        const passStub: PassEncoder = { fbo: framebuffer, desc: { label: 'particles' } };
+        backend.drawInstanced!(passStub, 6, batchCount, 0, 0);
     }
     backend.bindVertexArray?.(null);
     gl.depthMask(true);
@@ -158,3 +158,7 @@ export function submitParticle(p: DrawParticleOptions): void {
     particleQueue.submit({ ...p });
 }
 export function getQueuedParticleCount(): number { return particleQueue.sizeBack(); }
+export function getParticleQueueDebug(): { front: number; back: number } {
+    return { front: particleQueue.frontArray().length, back: particleQueue.sizeBack() };
+}
+

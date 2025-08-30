@@ -1,11 +1,10 @@
 // Sprites pipeline (formerly glview.2d) inlined from legacy module.
 // Provides batched 2D sprite + primitive rendering using shared buffers.
 import { WebGLBackend } from '../..';
-import { $ } from '../../core/game';
 import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import * as GLR from '../backend/gl_resources';
-import { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
+import { GPUBackend } from '../backend/pipeline_interfaces';
 import { getRenderContext } from '../backend/pipeline_registry';
 import {
     ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
@@ -205,7 +204,7 @@ export function renderSpriteBatch(
     // FeatureQueue back buffer already cleared on swap
 }
 
-export function drawImg(view: RenderContext, options: DrawImgOptions): void {
+export function drawImg(options: DrawImgOptions): void {
     const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
     // Deep-copy nested objects to freeze values at submission time
     spriteQueue.submit({
@@ -221,6 +220,9 @@ export function drawImg(view: RenderContext, options: DrawImgOptions): void {
 }
 
 export function getQueuedSpriteCount(): number { return spriteQueue.sizeBack(); }
+export function getSpriteQueueDebug(): { front: number; back: number } {
+    try { return { front: spriteQueue.sizeFront(), back: spriteQueue.sizeBack() }; } catch { return { front: spriteQueue.frontArray().length, back: spriteQueue.sizeBack() }; }
+}
 
 export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
     if (flip_h && flip_v) return imgmeta['texcoords_fliphv'];
@@ -266,31 +268,31 @@ export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number
     return [x, y, ex, ey];
 }
 
-export function drawRectangle(view: RenderContext, options: DrawRectOptions): void {
+export function drawRectangle(options: DrawRectOptions): void {
     let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-    drawImg(view, { pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, 1), colorize: c });
-    drawImg(view, { pos: new_vec3(x, ey, z), imgid, scale: new_vec2(ex - x, 1), colorize: c });
-    drawImg(view, { pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c });
-    drawImg(view, { pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c });
+    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, 1), colorize: c });
+    drawImg({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(ex - x, 1), colorize: c });
+    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c });
+    drawImg({ pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c });
 }
 
-export function fillRectangle(view: RenderContext, options: DrawRectOptions): void {
+export function fillRectangle(options: DrawRectOptions): void {
     let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-    drawImg(view, { pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
+    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
 }
 
-export function drawPolygon(view: RenderContext, coords: Polygon, z: number, color: color, thickness: number = 1): void {
+export function drawPolygon(coords: Polygon, z: number, color: color, thickness: number = 1): void {
     if (!coords || coords.length < 4) return; const imgid = 'whitepixel';
     for (let i = 0; i < coords.length; i += 2) {
         let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]); const next = (i + 2) % coords.length; let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
         const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1; let err = dx - dy;
         if (dx > dy) {
             while (true) {
-                drawImg(view, { pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg(view, { pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); break; } if (e2 < dx) { err += dx; y0 += sy; }
+                drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); break; } if (e2 < dx) { err += dx; y0 += sy; }
             }
         } else {
             while (true) {
-                drawImg(view, { pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg(view, { pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); break; } if (e2 < dx) { err += dx; y0 += sy; }
+                drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); break; } if (e2 < dx) { err += dx; y0 += sy; }
             }
         }
     }

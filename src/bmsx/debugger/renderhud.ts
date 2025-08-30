@@ -1,5 +1,8 @@
 import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
 import { $ } from '../core/game';
+import * as SpritesPipeline from '../render/2d/sprites_pipeline';
+import * as MeshPipeline from '../render/3d/mesh_pipeline';
+import * as ParticlesPipeline from '../render/3d/particles_pipeline';
 import { Identifiable } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 
@@ -51,7 +54,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
         EventEmitter.instance.initClassBoundEventSubscriptions(this);
     }
 
-    @subscribesToGlobalEvent('frameend', true)
+    @subscribesToGlobalEvent('frameend')
     update(): void {
         this.updateNow();
     }
@@ -71,16 +74,29 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
             const b = gv.getBackend?.();
             const fs = b?.getFrameStats?.();
             if (fs) {
-                const toKB = (n: number | undefined) => ((n ?? 0) / 1024).toFixed(1);
+                const toKB = (n?: number) => ((n ?? 0) / 1024).toFixed(1);
+                const anyFs = fs as unknown as { vertexBytes?: number; indexBytes?: number; uniformBytes?: number; textureBytes?: number };
                 lines.push(
                     `draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} ` +
-                    `upload:${toKB(fs.bytesUploaded)}KB (v:${toKB((fs as any).vertexBytes)}K i:${toKB((fs as any).indexBytes)}K u:${toKB((fs as any).uniformBytes)}K t:${toKB((fs as any).textureBytes)}K)`
+                    `upload:${toKB(fs.bytesUploaded)}KB (v:${toKB(anyFs.vertexBytes)}KB i:${toKB(anyFs.indexBytes)}KB u:${toKB(anyFs.uniformBytes)}KB t:${toKB(anyFs.textureBytes)}KB)`
                 );
             }
         } catch { /* ignore */ }
 
         // Compute averages depending on mode (EMA or fixed sliding window)
         const modeStr = this.useEMA ? 'EMA' : 'Window';
+        // Feature queue sizes (front/back)
+        try {
+            const sq = (SpritesPipeline).getSpriteQueueDebug();
+            const mq = (MeshPipeline).getMeshQueueDebug();
+            const pq = (ParticlesPipeline).getQueuedParticleCount();
+            if (sq || mq || pq) {
+                const s = sq ? `S f:${sq.front} b:${sq.back}` : 'S n/a';
+                const m = mq ? `M f:${mq.front} b:${mq.back}` : 'M n/a';
+                const p = pq ? `P f:${pq} b:n/a` : 'P n/a';
+                lines.push(`queues ${s} | ${m} | ${p}`);
+            }
+        } catch { /* ignore */ }
         if (this.useEMA) {
             // Update EMA for frame average
             if (this.emaFrameAvg === null) this.emaFrameAvg = total;
@@ -142,3 +158,4 @@ const overlay = new RenderHUDOverlay();
 
 export function toggleRenderHUD(): void { if (overlay?.enabled) overlay.disable(); else overlay?.enable(); }
 export function toggleRenderHUDAverageMode(): void { overlay?.toggleAverageMode(); }
+

@@ -1,4 +1,5 @@
 import type { GPUBackend } from './pipeline_interfaces';
+import { WebGLBackend } from './webgl_backend';
 
 // Minimal per-frame uniform buffer (foundation for future shader blocks)
 // Binding indices: keep distinct from lighting UBOs (0,1)
@@ -34,7 +35,7 @@ export interface FrameUniformsUpdate {
 function frameBindingIndexFor(backend: GPUBackend): number {
     // WebGL path uses binding 2 to avoid collisions with mesh light UBOs (0,1)
     // WebGPU bind group conventionally uses binding 0 for the frame uniform buffer
-    const isWebGL = typeof (backend as any).gl !== 'undefined';
+    const isWebGL = typeof (backend as WebGLBackend).gl !== 'undefined';
     return isWebGL ? FRAME_UNIFORM_BINDING : 0;
 }
 
@@ -56,10 +57,10 @@ export function updateAndBindFrameUniforms(backend: GPUBackend, u: FrameUniforms
     if (u.proj && u.proj.length >= 16) buf.set(u.proj.subarray(0, 16), 24);
     else for (let i = 24; i < 40; i++) buf[i] = (i % 5 === 4) ? 1 : 0; // identity
     if (u.cameraPos) {
-        const c = (u.cameraPos as any);
-        buf[40] = c.x ?? c[0] ?? 0;
-        buf[41] = c.y ?? c[1] ?? 0;
-        buf[42] = c.z ?? c[2] ?? 0;
+        const c = u.cameraPos;
+        buf[40] = c[0] ?? 0;
+        buf[41] = c[1] ?? 0;
+        buf[42] = c[2] ?? 0;
     } else {
         buf[40] = buf[41] = buf[42] = 0;
     }
