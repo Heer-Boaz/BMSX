@@ -1,9 +1,9 @@
 // Graphics pipeline manager: single place to register passes and execute them
 // Simplified to avoid coupling with the render graph internals.
 
+import { FRAME_UNIFORM_BINDING } from './frame_uniforms';
 import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl.helpers';
-import { FRAME_UNIFORM_BINDING } from './frame_uniforms';
 
 interface RegisteredPass<SMap extends object> {
     id: string;
