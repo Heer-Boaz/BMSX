@@ -6,6 +6,11 @@ export interface GateScope {
     tag?: string;                // debug label
 }
 
+/**
+ * Represents a unique token for a specific scope within a gate.
+ * This token is used to track the state of the scope and its relationship
+ * with the gate's lifecycle.
+ */
 type Token = { gen: number; id: number; blocking: boolean; category: GateCategory; tag?: string };
 
 type Bucket = {
@@ -69,8 +74,8 @@ export class GateGroup {
     }
 
     /** End of scope. Late/other gen → ignored. */
-    end(token?: Token): void {
-        if (!token) return;
+    end(token: Token): void {
+        if (!token) console.error('[GateGroup] GateGroup.end() called without token');
         const b = this.gate._bucket(this.name);
         if (token.gen !== b.gen) return; // Late/other gen → ignored
         if (!b.live.delete(token.id)) return; // Unknown token or token already deleted → ignored
@@ -78,6 +83,11 @@ export class GateGroup {
         const n = (b.countsByCat.get(token.category) ?? 1) - 1;
         if (n > 0) b.countsByCat.set(token.category, n); else b.countsByCat.delete(token.category);
         if (token.blocking && b.blockingPending > 0) b.blockingPending--;
+    }
+
+    public endCategory(category: GateCategory): void {
+        const b = this.gate._bucket(this.name);
+        b.live.values().forEach(token => token.category === category && this.end(token));
     }
 
     /** Is this group ready with respect to blocking scopes? */
@@ -103,7 +113,7 @@ export class GateGroup {
     }
 
     /** Convenience: track a Promise as scope (auto begin/end). */
-    track<T>(p: Promise<T>, scope: GateScope): Promise<T> {
+    async track<T>(p: Promise<T>, scope: GateScope): Promise<T> {
         const token = this.begin(scope);
         return p.finally(() => this.end(token));
     }

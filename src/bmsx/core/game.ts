@@ -328,23 +328,23 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		if ($.input.isOnscreenGamepadEnabled) {
 			$.input.enableOnscreenGamepad();
 		}
-		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
+		const gview = this.view;
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
-		const activeView = this.view;
 		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
-		const { backend, nativeCtx } = await createBackendForCanvasAsync(activeView.canvas);
-		activeView.nativeCtx = nativeCtx;
-		activeView.setBackend(backend);
-		activeView.initializeDefaultTextures();
+		const { backend, nativeCtx } = await createBackendForCanvasAsync(gview.canvas);
+		gview.nativeCtx = nativeCtx;
+		gview.setBackend(backend); // Set the backend for the view before initializing
 		new TextureManager(backend);
 		const pipelineRegistry = new RenderPassLibrary(backend);
-		pipelineRegistry.registerBuiltin(activeView.backend);
+		pipelineRegistry.registerBuiltin(gview.backend); // We first need to register the built-in passes before calling view.init
 		// Store on view for graph rebuild
-		if (typeof activeView.setPipelineRegistry === 'function') {
-			activeView.setPipelineRegistry(pipelineRegistry);
+		if (typeof gview.setPipelineRegistry === 'function') {
+			gview.setPipelineRegistry(pipelineRegistry); // Register the pipeline registry with the view before initializing
 		} else {
-			activeView.pipelineRegistry = pipelineRegistry; // fallback
+			gview.pipelineRegistry = pipelineRegistry; // fallback
 		}
+		gview.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
+		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);
@@ -409,11 +409,11 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		if (!this.initialized) {
 			throw new Error('Game not initialized. Call init() before starting the game!');
 		}
-		this.running = true;
 		this.lastUpdate = performance.now();
 		this.last_gametick_time = performance.now();
 		this._turnCounter = 0;
 		this.animationFrameRequestid = window.requestAnimationFrame(this.run);
+		this.running = true;
 	}
 
 	/**

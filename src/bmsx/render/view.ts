@@ -163,6 +163,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 		// Offscreen resolution for internal render graph targets (view-agnostic)
 		this.offscreenCanvasSize = multiply_vec(viewportSize, 2);
+		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}
 
 	public init(): void {
@@ -174,6 +175,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		// Backend resources are configured externally via setBackend()
 		this.handleResize();
 		this.rebuildGraph();
+		renderGate.endCategory('init'); // End the init scope without a token, assuming the category is unique for init.
 	}
 
 	public drawbase(clearCanvas: boolean = true): void {
@@ -194,19 +196,19 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	 */
 	public drawgame(clearCanvas = true): void {
 		if (!renderGate.ready) return;
-		const token = renderGate.begin({ blocking: true, tag: 'frame' });
+		const token = renderGate.begin({ blocking: true, category: 'frame', tag: 'frame' });
 		try {
-			this._backend?.beginFrame?.();
+			this._backend.beginFrame();
 			$.emit('framebegin', this, token);
 			this.renderer.swap();
 			const frame = buildFrameData(this);
 			this.drawbase(clearCanvas);
-			if (!this.renderGraph || this.graphInvalid) this.rebuildGraph();
+			// No need to check for invalid or missing render graph, as we assume it's valid for the frame given the render gate that blocks rendering if no graph present
 			$.emit('frameupdate', this, token);
 			this.renderGraph!.execute(frame);
 		} finally {
 			$.emit('frameend', this, token);
-			this._backend?.endFrame?.();
+			this._backend.endFrame();
 			renderGate.end(token);
 		}
 	}
@@ -506,11 +508,14 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	// (single handleResize implementation above in the class)
 
 	public rebuildGraph(): void {
+		const token = renderGate.begin({ blocking: true, category: 'rebuild_graph', tag: 'frame' });
 		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
-		if (!this.pipelineRegistry) { console.warn('PipelineRegistry not set on view yet; deferring render graph build'); this.graphInvalid = true; return; }
+		if (!this.pipelineRegistry) { console.warn('[GameView] PipelineRegistry not set on view yet; skipping render graph build'); this.graphInvalid = true; return; }
+		if ($.debug) console.info('[GameView] Building render graph');
 		// GameView implements RenderContext directly
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
 		this.graphInvalid = false;
+		renderGate.end(token);
 	}
 
 	public drawImg(options: DrawImgOptions): void {
