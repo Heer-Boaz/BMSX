@@ -134,6 +134,7 @@ let morphCountLocation3D: WebGLUniformLocation;
 let morphNormTexLocation3D: WebGLUniformLocation;
 let morphNormTexSizeLocation3D: WebGLUniformLocation;
 let morphNormCountLocation3D: WebGLUniformLocation;
+let morphIndicesLocation3D: WebGLUniformLocation;
 
 // uniform buffers voor lights
 const DIR_LIGHT_BINDING = 0;
@@ -198,6 +199,31 @@ const lastMorphWeightArray = new Float32Array(MAX_MORPH_TARGETS);
 let lastUseInstancing = -1;
 
 function arraysEqual(a: Float32Array, b: Float32Array): boolean { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
+// Float32 to Float16 bit-level conversion (IEEE 754 half-precision pack)
+function float32ToFloat16(val: number): number {
+    const floatView = new Float32Array(1);
+    const int32View = new Int32Array(floatView.buffer);
+    floatView[0] = val;
+    const x = int32View[0];
+    const sign = (x >> 16) & 0x8000;
+    const mant = x & 0x007fffff;
+    let exp = (x >> 23) & 0xff;
+    if (exp === 0xff) { // NaN or Inf
+        if (mant !== 0) return sign | 0x7e00; // NaN
+        return sign | 0x7c00; // Inf
+    }
+    exp = exp - 127 + 15;
+    if (exp <= 0) {
+        if (exp < -10) return sign; // underflow
+        // subnormal
+        const m = (mant | 0x00800000) >> (1 - exp);
+        return sign | (m + 0x00000fff + ((m >> 13) & 1)) >> 13;
+    } else if (exp >= 0x1f) {
+        return sign | 0x7c00; // overflow -> Inf
+    }
+    const half = sign | (exp << 10) | ((mant + 0x00000fff + ((mant >> 13) & 1)) >> 13);
+    return half;
+}
 function setUseInstancing(gl: WebGL2RenderingContext, enabled: boolean): void { const val = enabled ? 1 : 0; if (lastUseInstancing !== val) { gl.uniform1i(useInstancingLocation3D, val); lastUseInstancing = val; } }
 function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] | undefined, hasSkinning: boolean): void {
     if (hasSkinning && joints) {
@@ -279,16 +305,36 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
         if (nCount > 0) {
             const width = m.vertexCount;
             const height = nCount;
-            const texels = new Float32Array(width * height * 4);
+            // Encode absolute normals per target using octahedral encoding into RG16F
+            const texels = new Uint16Array(width * height * 2);
             for (let ti = 0; ti < nCount; ti++) {
-                const rowOffset = ti * width * 4;
-                const src = m.morphNormals![ti]!;
+                const rowOffset = ti * width * 2;
+                const src = m.morphNormals![ti]!; // normal deltas
                 for (let v = 0; v < width; v++) {
-                    const si = v * 3; const di = rowOffset + v * 4;
-                    texels[di + 0] = src[si + 0];
-                    texels[di + 1] = src[si + 1];
-                    texels[di + 2] = src[si + 2];
-                    texels[di + 3] = 0.0;
+                    const si = v * 3; const di = rowOffset + v * 2;
+                    // base + delta -> absolute target normal
+                    const bx = m.normals ? m.normals[si + 0] : 0;
+                    const by = m.normals ? m.normals[si + 1] : 0;
+                    const bz = m.normals ? m.normals[si + 2] : 1;
+                    let nx = bx + src[si + 0];
+                    let ny = by + src[si + 1];
+                    let nz = bz + src[si + 2];
+                    const invLen = 1.0 / Math.max(1e-8, Math.hypot(nx, ny, nz));
+                    nx *= invLen; ny *= invLen; nz *= invLen;
+                    // oct encode
+                    const denom = Math.abs(nx) + Math.abs(ny) + Math.abs(nz) || 1;
+                    let ox = nx / denom;
+                    let oy = ny / denom;
+                    if (nz < 0) {
+                        const sx = ox >= 0 ? 1 : -1;
+                        const sy = oy >= 0 ? 1 : -1;
+                        const tx = 1 - Math.abs(oy);
+                        const ty = 1 - Math.abs(ox);
+                        ox = tx * sx; oy = ty * sy;
+                    }
+                    // pack to float16
+                    texels[di + 0] = float32ToFloat16(ox);
+                    texels[di + 1] = float32ToFloat16(oy);
                 }
             }
             const tex = gl.createTexture()!;
@@ -297,7 +343,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, texels);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, width, height, 0, gl.RG, gl.HALF_FLOAT, texels);
             gl.bindTexture(gl.TEXTURE_2D, null);
             try { backend.accountUpload('texture', texels.byteLength); } catch { /* ignore */ }
             buffers.morphNormTex = tex;
@@ -388,6 +434,12 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
     gl.uniform1i(morphPosTexLocation3D, TEXTURE_UNIT_MORPH_POS);
     gl.uniform2f(morphTexSizeLocation3D, 1.0, 1.0);
     gl.uniform1i(morphCountLocation3D, 0);
+    // Morph normal texture defaults
+    gl.uniform1i(morphNormTexLocation3D, TEXTURE_UNIT_MORPH_NORM);
+    gl.uniform2f(morphNormTexSizeLocation3D, 1.0, 1.0);
+    gl.uniform1i(morphNormCountLocation3D, 0);
+    // Morph indices default
+    gl.uniform1iv(morphIndicesLocation3D, new Int32Array(8));
     gl.uniform1i(morphNormTexLocation3D, TEXTURE_UNIT_MORPH_NORM);
     gl.uniform2f(morphNormTexSizeLocation3D, 1.0, 1.0);
     gl.uniform1i(morphNormCountLocation3D, 0);
@@ -501,6 +553,7 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     morphNormTexLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphNormTex')!;
     morphNormTexSizeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphNormTexSize')!;
     morphNormCountLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphNormCount')!;
+    morphIndicesLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphIndices[0]')!;
     instanceMatrixLocations3D = [
         gl.getAttribLocation(gameShaderProgram3D, 'a_i0'),
         gl.getAttribLocation(gameShaderProgram3D, 'a_i1'),
@@ -679,9 +732,15 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
         gl.uniform1i(morphPosTexLocation3D, TEXTURE_UNIT_MORPH_POS);
         gl.uniform2f(morphTexSizeLocation3D, buffers.morphPosTexSize.w, buffers.morphPosTexSize.h);
         gl.uniform1i(morphCountLocation3D, buffers.morphCount ?? 0);
+        // Indices: sequential [0..count-1]
+        const cnt = buffers.morphCount ?? 0;
+        const idx = new Int32Array(8);
+        for (let i = 0; i < Math.min(cnt, 8); i++) idx[i] = i;
+        gl.uniform1iv(morphIndicesLocation3D, idx);
         _morphUsage.pos++;
     } else {
         gl.uniform1i(morphCountLocation3D, 0);
+        gl.uniform1iv(morphIndicesLocation3D, new Int32Array(8));
     }
     // Morph normal texture bind (optional)
     if (buffers.morphNormTex && buffers.morphNormTexSize) {

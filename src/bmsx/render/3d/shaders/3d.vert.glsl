@@ -19,10 +19,11 @@ uniform float u_scale; // Scaling factor for the position
 uniform float u_morphWeights[8];
 uniform sampler2D u_morphPosTex;
 uniform vec2 u_morphTexSize; // (width, height)
-uniform int u_morphCount;    // number of rows/targets (0..4)
+uniform int u_morphCount;    // number of rows/targets (0..MAX)
 uniform sampler2D u_morphNormTex;
 uniform vec2 u_morphNormTexSize;
 uniform int u_morphNormCount;
+uniform int u_morphIndices[8];
 uniform mat4 u_jointMatrices[32];
 uniform mat4 u_viewProjection;
 uniform bool u_useInstancing;
@@ -45,6 +46,16 @@ out vec3 v_bitangent; // Bitangent vector in world space
 out vec3 v_worldPos; // World position of the vertex to pass to the fragment shader
 out vec4 v_color; // Per-vertex/instance color factor
 
+// Octahedral decode (from [-1,1] encoded 2D to unit 3D)
+vec3 octDecode(vec2 e) {
+    vec3 n = vec3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+    if (n.z < 0.0) {
+        vec2 signV = vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
+        n.xy = (vec2(1.0) - vec2(abs(n.y), abs(n.x))) * signV;
+    }
+    return normalize(n);
+}
+
 void main() {
     vec3 pos = a_position;
     vec3 normal = a_normal;
@@ -55,7 +66,8 @@ void main() {
         float vx = (float(gl_VertexID) + 0.5) / u_morphTexSize.x;
         for (int i = 0; i < 8; ++i) {
             if (i >= u_morphCount) break;
-            float vy = (float(i) + 0.5) / u_morphTexSize.y;
+            int row = u_morphIndices[i];
+            float vy = (float(row) + 0.5) / u_morphTexSize.y;
             vec3 dp = texture(u_morphPosTex, vec2(vx, vy)).xyz;
             pos += dp * u_morphWeights[i];
         }
@@ -63,14 +75,19 @@ void main() {
     // Apply normal morphs from texture (up to 4 targets)
     if (u_morphNormCount > 0) {
         float vxn = (float(gl_VertexID) + 0.5) / u_morphNormTexSize.x;
-        vec3 nd = vec3(0.0);
+        float totalW = 0.0;
+        vec3 nAcc = normal; // start from base
         for (int i = 0; i < 8; ++i) {
             if (i >= u_morphNormCount) break;
-            float vyn = (float(i) + 0.5) / u_morphNormTexSize.y;
-            vec3 dn = texture(u_morphNormTex, vec2(vxn, vyn)).xyz;
-            nd += dn * u_morphWeights[i];
+            int rowN = u_morphIndices[i];
+            float vyn = (float(rowN) + 0.5) / u_morphNormTexSize.y;
+            vec2 enc = texture(u_morphNormTex, vec2(vxn, vyn)).rg;
+            vec3 targ = octDecode(enc);
+            float w = u_morphWeights[i];
+            totalW += w;
+            nAcc += (targ - normal) * w;
         }
-        normal += nd;
+        normal = normalize(nAcc);
     }
     mat4 skin = a_weights.x * u_jointMatrices[int(a_joints.x)] +
                 a_weights.y * u_jointMatrices[int(a_joints.y)] +

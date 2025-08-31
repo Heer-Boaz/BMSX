@@ -519,6 +519,21 @@ export class RenderGraphRuntime {
         }
         return list;
     }
+    /** Total texture memory (unique physical textures) and breakdown by color/depth. */
+    getTotalTextureMemoryInfo(): { total: number; color: number; depth: number } {
+        const seen = new Set<number>();
+        let color = 0, depth = 0;
+        const bpp = (r: InternalTexResource) => (r.desc.depth ? 2 : 4);
+        for (let i = 0; i < this.texResources.length; i++) {
+            const r = this.texResources[i]; if (!r) continue;
+            const pid = r.physicalId ?? i;
+            if (seen.has(pid)) continue;
+            seen.add(pid);
+            const bytes = (r.desc.width * r.desc.height * bpp(r)) | 0;
+            if (r.desc.depth) depth += bytes; else color += bytes;
+        }
+        return { total: color + depth, color, depth };
+    }
     /** Rough per-pass texture memory footprint (bytes) based on logical resources (color=4Bpp, depth16=2Bpp). */
     getPassTextureMemoryInfo(): { name: string; bytes: number }[] {
         // Aggregate bytes of textures read or written by each pass
