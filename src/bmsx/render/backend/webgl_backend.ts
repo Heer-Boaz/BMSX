@@ -177,7 +177,6 @@ export class WebGLBackend implements GPUBackend {
             }
         }
         // Set the program related to this render-pass (if defined)
-        // if (desc.
         return { fbo, desc } as PassEncoder & { encoder?: null }; // No encoder in WebGL
     }
     endRenderPass(_pass: PassEncoder): void {

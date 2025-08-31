@@ -152,6 +152,11 @@ export class gamemodel extends BaseModel {
 				{ time: 0.90, name: 'camera.fovPulse', data: { delta: 15, duration: 0.5, curve: 'easeOutQuad' } }
 			]
 		};
+
+		$.view.setSpritesAmbient(true, 1.0);
+		$.view.setParticlesAmbient(1, 1.0);
+		$.view.setSkyboxTintExposure([.5, .4, .2], .5);
+
 		const rail = CatmullRomPath.fromJSON(railDef);
 		const runner = new PathRunner(rail, { playback: 'clamp', distanceMode: false });
 		// Populate multi-silhouette deterministic cityscape around the rail for motion parallax

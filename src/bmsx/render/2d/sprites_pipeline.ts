@@ -44,6 +44,8 @@ let atlas_idLocation: number;
 let resolutionLocation: WebGLUniformLocation;
 let texture0Location: WebGLUniformLocation;
 let texture1Location: WebGLUniformLocation;
+let spriteAmbientEnabledLocation: WebGLUniformLocation;
+let spriteAmbientFactorLocation: WebGLUniformLocation;
 let vertexBuffer: WebGLBuffer;
 let texcoordBuffer: WebGLBuffer;
 let zBuffer: WebGLBuffer;
@@ -90,6 +92,8 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
     resolutionLocation = gl.getUniformLocation(spriteShaderProgram, 'u_resolution')!;
     texture0Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture0')!;
     texture1Location = gl.getUniformLocation(spriteShaderProgram, 'u_texture1')!;
+    spriteAmbientEnabledLocation = gl.getUniformLocation(spriteShaderProgram, 'u_spriteAmbientEnabled')!;
+    spriteAmbientFactorLocation = gl.getUniformLocation(spriteShaderProgram, 'u_spriteAmbientFactor')!;
     spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
 }
 
@@ -101,6 +105,8 @@ export function setupDefaultUniformValues(backend: WebGLBackend, defaultScale: n
     gl.uniform2fv(resolutionLocation, spriteShaderData.resolutionVector);
     gl.uniform1i(texture0Location, TEXTURE_UNIT_ATLAS);
     gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_DYNAMIC);
+    gl.uniform1i(spriteAmbientEnabledLocation, 0);
+    gl.uniform1f(spriteAmbientFactorLocation, 1.0);
 }
 
 export function setupBuffers(): void {
@@ -162,11 +168,43 @@ export function renderSpriteBatch(
     gl.depthMask(false);
     backend.bindVertexArray(spriteVAO as unknown as WebGLVertexArrayObject);
 
-    // Sort by z once without exposing underlying storage
-    spriteQueue.sortFront((a, b) => (a.options.pos.z ?? 0) - (b.options.pos.z ?? 0));
+    // Sort by layer (world/ui), then z, then ambient state (to reduce uniform flips without breaking painter order)
+    const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100; // quantize to 0.01 steps
+    spriteQueue.sortFront((a, b) => {
+        const la = (a.options as any).layer === 'ui' ? 1 : 0;
+        const lb = (b.options as any).layer === 'ui' ? 1 : 0;
+        if (la !== lb) return la - lb;
+        const za = a.options.pos.z ?? 0; const zb = b.options.pos.z ?? 0;
+        if (za !== zb) return za - zb;
+        const ae = ((a.options as any).ambientAffected ? 1 : 0);
+        const be = ((b.options as any).ambientAffected ? 1 : 0);
+        if (ae !== be) return ae - be;
+        const af = q((a.options as any).ambientFactor ?? 1.0);
+        const bf = q((b.options as any).ambientFactor ?? 1.0);
+        if (af !== bf) return af - bf;
+        return 0;
+    });
     const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = spriteShaderData; let i = 0;
+    let currentAmbientEnabled: number | null = null;
+    let currentAmbientFactor = 1.0;
+    const flush = () => {
+        if (i <= 0) return;
+        updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
+        gl.uniform1i(spriteAmbientEnabledLocation, currentAmbientEnabled ?? 0);
+        gl.uniform1f(spriteAmbientFactorLocation, currentAmbientFactor);
+        const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0];
+        backend.draw(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+        i = 0;
+    };
     spriteQueue.forEachFront(({ options, imgmeta }) => {
         const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
+        // Dynamic ambient per-sprite (optional)
+        const gv = getRenderContext();
+        const layerIsUI = (options as any).layer === 'ui';
+        const ambE = layerIsUI ? 0 : ((options as any).ambientAffected != null ? ((options as any).ambientAffected ? 1 : 0) : ((gv as any).spriteAmbientEnabledDefault ? 1 : 0));
+        const ambF = q((options as any).ambientFactor != null ? (options as any).ambientFactor : ((gv as any).spriteAmbientFactorDefault ?? 1.0));
+        if (currentAmbientEnabled === null) { currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
+        else if (ambE !== currentAmbientEnabled || Math.abs(ambF - currentAmbientFactor) > 1e-3) { flush(); currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
         const { width, height } = imgmeta;
         bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
         bvec.set_texturecoords(texcoords, i, getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
@@ -175,9 +213,9 @@ export function renderSpriteBatch(
         bvec.set_color(color_override, i, colorize);
         bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
         ++i;
-        if (i >= MAX_SPRITES) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); i = 0; }
+        if (i >= MAX_SPRITES) { flush(); }
     });
-    if (i > 0) { updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0); const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0]; backend.draw(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i); }
+    if (i > 0) { flush(); }
     backend.bindVertexArray(null);
     gl.depthMask(true);
     // FeatureQueue back buffer already cleared on swap

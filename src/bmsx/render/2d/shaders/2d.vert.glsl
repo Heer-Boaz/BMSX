@@ -21,6 +21,7 @@ layout(std140) uniform FrameUniforms {
     mat4 u_view;
     mat4 u_proj;
     vec4 u_cameraPos; // xyz, w pad
+    vec4 u_ambient_frame; // rgb,intensity (kept for block parity with FS)
 };
 
 // Output variables to pass to the fragment shader

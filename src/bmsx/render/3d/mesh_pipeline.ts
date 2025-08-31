@@ -12,11 +12,11 @@ import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
 import { FogUniforms, MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
-import { CATCH_WEBGL_ERROR, checkWebGLError } from '../backend/webgl.helpers';
+import { checkWebGLError } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { DrawMeshOptions, GameView } from '../view';
 import { Atmosphere, registerAtmosphereHotkeys } from './atmosphere';
-import type { AmbientLight, DirectionalLight, PointLight } from './light';
+import type { DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
 
 const BYTES_PER_FLOAT = 4;
@@ -109,8 +109,6 @@ let tangentLocation3D: number;
 let modelLocation3D: WebGLUniformLocation;
 let normalMatrixLocation3D: WebGLUniformLocation;
 let ditherLocation3D: WebGLUniformLocation;
-let ambientColorLocation3D: WebGLUniformLocation;
-let ambientIntensityLocation3D: WebGLUniformLocation;
 let materialColorLocation3D: WebGLUniformLocation;
 let shadowMapLocation3D: WebGLUniformLocation;
 let useShadowMapLocation3D: WebGLUniformLocation;
@@ -254,8 +252,8 @@ function isMatrixMirrored(mat: Float32Array): boolean {
     const m10 = mat[4], m11 = mat[5], m12 = mat[6];
     const m20 = mat[8], m21 = mat[9], m22 = mat[10];
     const det = m00 * (m11 * m22 - m12 * m21)
-              - m01 * (m10 * m22 - m12 * m20)
-              + m02 * (m10 * m21 - m11 * m20);
+        - m01 * (m10 * m22 - m12 * m20)
+        + m02 * (m10 * m21 - m11 * m20);
     return det < 0;
 }
 function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
@@ -274,16 +272,26 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
         if (targetCount > 0) {
             const width = m.vertexCount;
             const height = targetCount;
-            const texels = new Float32Array(width * height * 4);
+            // Per-target scale stored in alpha channel per texel (constant across row)
+            const texels = new Uint16Array(width * height * 4);
             for (let ti = 0; ti < targetCount; ti++) {
                 const rowOffset = ti * width * 4;
                 const src = m.morphPositions![ti];
+                // Compute per-target scalar scale: max abs component
+                let s = 1e-6;
+                for (let v = 0; v < width; v++) {
+                    const si = v * 3;
+                    s = Math.max(s, Math.abs(src[si + 0]), Math.abs(src[si + 1]), Math.abs(src[si + 2]));
+                }
                 for (let v = 0; v < width; v++) {
                     const si = v * 3; const di = rowOffset + v * 4;
-                    texels[di + 0] = src[si + 0];
-                    texels[di + 1] = src[si + 1];
-                    texels[di + 2] = src[si + 2];
-                    texels[di + 3] = 0.0;
+                    const nx = src[si + 0] / s;
+                    const ny = src[si + 1] / s;
+                    const nz = src[si + 2] / s;
+                    texels[di + 0] = float32ToFloat16(nx);
+                    texels[di + 1] = float32ToFloat16(ny);
+                    texels[di + 2] = float32ToFloat16(nz);
+                    texels[di + 3] = float32ToFloat16(s);
                 }
             }
             const tex = gl.createTexture()!;
@@ -292,8 +300,8 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            // WebGL2: RGBA32F supported for sampling
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, texels);
+            // WebGL2: RGBA16F for positions + per-target scale in A
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, texels);
             gl.bindTexture(gl.TEXTURE_2D, null);
             try { backend.accountUpload('texture', texels.byteLength); } catch { /* ignore */ }
             buffers.morphPosTex = tex;
@@ -353,7 +361,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
     }
     meshBufferCache.set(m, buffers); return buffers;
 }
-export function setAmbientLight(gl: WebGL2RenderingContext, light: AmbientLight): void { if (!light) return; gl.useProgram(gameShaderProgram3D); gl.uniform3fv(ambientColorLocation3D, new Float32Array(light.color)); gl.uniform1f(ambientIntensityLocation3D, light.intensity); }
+// Ambient lighting is supplied via FrameUniforms (u_ambient_frame) — no direct uniform updates here.
 export function uploadDirectionalLights(): void {
     ensureLightBuffersInitialized();
     const lights = Array.from(directionalLights.values());
@@ -412,8 +420,6 @@ export const DIR_LIGHT_UNIFORM_BINDING = DIR_LIGHT_BINDING; export const POINT_L
 export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number): void {
     gl.useProgram(gameShaderProgram3D);
     gl.uniform1f(ditherLocation3D, 0.3);
-    gl.uniform3fv(ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
-    gl.uniform1f(ambientIntensityLocation3D, 0);
     gl.uniform1f(vertShaderScaleLocation3D, defaultScale);
     gl.uniform1i(useAlbedoTextureLocation3D, 0);
     gl.uniform1i(useNormalTextureLocation3D, 0);
@@ -520,8 +526,6 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     modelLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_model')!;
     normalMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalMatrix')!;
     ditherLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ditherIntensity')!;
-    ambientColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientColor')!;
-    ambientIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientIntensity')!;
     const dirBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'DirLightBlock');
     const pointBlock = gl.getUniformBlockIndex(gameShaderProgram3D, 'PointLightBlock');
     gl.uniformBlockBinding(gameShaderProgram3D, dirBlock, DIR_LIGHT_BINDING);
@@ -651,14 +655,7 @@ function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
     // Ensure back-face culling enabled for solid geometry (skybox pass disables it)
     (getRenderContext().backend as WebGLBackend).setCullEnabled(true);
     gl.cullFace(gl.BACK);
-    // Update ambient lighting if provided by frame state
-    try {
-        const amb = state?.lighting?.ambient as { color: [number, number, number]; intensity: number } | undefined;
-        if (amb) {
-            gl.uniform3fv(ambientColorLocation3D, new Float32Array(amb.color));
-            gl.uniform1f(ambientIntensityLocation3D, amb.intensity);
-        }
-    } catch { /* ignore */ }
+    // Ambient is applied via FrameUniforms (u_ambient_frame)
     // Camera + view/proj are now provided via the FrameUniforms UBO;
     // keep legacy uniforms unset to avoid redundant state.
     setUseInstancing(gl, false);

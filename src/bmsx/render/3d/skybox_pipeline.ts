@@ -22,6 +22,8 @@ let skyboxViewLocation: WebGLUniformLocation;
 let skyboxProjectionLocation: WebGLUniformLocation;
 let skyboxTextureLocation: WebGLUniformLocation;
 let skyboxDitherIntensityLocation: WebGLUniformLocation;
+let skyboxTintLocation: WebGLUniformLocation;
+let skyboxExposureLocation: WebGLUniformLocation;
 
 export let skyboxKey: TextureKey | undefined; export let skyboxFaceIds: SkyboxImageIds | undefined; const skyboxGroup = taskGate.group('texture:skybox:main');
 let lastBoundSkyboxKey: TextureKey | undefined = undefined; let lastBoundSkyboxTexture: WebGLTexture | null = null;
@@ -48,8 +50,12 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
     skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
     skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
     skyboxDitherIntensityLocation = gl.getUniformLocation(skyboxProgram, 'u_ditherIntensity')!;
+    skyboxTintLocation = gl.getUniformLocation(skyboxProgram, 'u_skyTint')!;
+    skyboxExposureLocation = gl.getUniformLocation(skyboxProgram, 'u_skyExposure')!;
     gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
     gl.uniform1f(skyboxDitherIntensityLocation, 0.3);
+    gl.uniform3f(skyboxTintLocation, 1.0, 1.0, 1.0);
+    gl.uniform1f(skyboxExposureLocation, 1.0);
 
 }
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
@@ -84,15 +90,17 @@ export function drawSkyboxWithState(gl: WebGL2RenderingContext, framebuffer: Web
     // FBO binding handled by render graph
     const backend = getRenderContext().backend as WebGLBackend;
     if (state.width && state.height) backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
-    // Render skybox as background: no culling (render inside faces), no depth writes, depth test LEQUAL
+    // Render skybox as background: no culling (render inside faces), no depth writes, no depth test
     backend.setCullEnabled(false);
     backend.setDepthMask(false);
-    backend.setDepthTestEnabled(true);
-    backend.setDepthFunc((backend.gl as WebGL2RenderingContext).LEQUAL);
+    backend.setDepthTestEnabled(false);
     // Program is bound by the backend pipeline
     backend.bindVertexArray(vaoSkybox);
     gl.uniformMatrix4fv(skyboxViewLocation, false, state.view);
     gl.uniformMatrix4fv(skyboxProjectionLocation, false, state.proj);
+    // Apply current tint/exposure
+    gl.uniform3f(skyboxTintLocation, _skyTint[0], _skyTint[1], _skyTint[2]);
+    gl.uniform1f(skyboxExposureLocation, _skyExposure);
     if (lastBoundSkyboxTexture !== state.tex) {
         const v = getRenderContext();
         v.activeTexUnit = TEXTURE_UNIT_SKYBOX;
@@ -103,6 +111,14 @@ export function drawSkyboxWithState(gl: WebGL2RenderingContext, framebuffer: Web
     const passStub = { fbo: framebuffer, desc: { label: 'skybox' } };
     backend.draw(passStub, 0, 36);
     backend.bindVertexArray(null);
+}
+
+// --- Public API: tint/exposure controls ------------------------------------
+let _skyTint: [number, number, number] = [1, 1, 1];
+let _skyExposure = 1.0;
+export function setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
+    _skyTint = [Math.max(0, tint[0]), Math.max(0, tint[1]), Math.max(0, tint[2])];
+    _skyExposure = Math.max(0, exposure);
 }
 
 export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
@@ -121,7 +137,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
             const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
             init(gl);
         },
-        writesDepth: true,
+        writesDepth: false,
         shouldExecute: () => !!$.model.activeCamera3D && !!skyboxKey,
         exec: (backend, fbo, s) => {
             const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;

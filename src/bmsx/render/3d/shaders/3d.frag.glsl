@@ -25,6 +25,7 @@ layout(std140) uniform FrameUniforms {
     mat4 u_view;
     mat4 u_proj;
     vec4 u_cameraPos_frame; // xyz, pad
+    vec4 u_ambient_frame;   // rgb,intensity
 };
 // Fog & atmospheric params
 uniform vec3 u_fogColor;
@@ -40,8 +41,7 @@ uniform vec3 u_heightGradientHigh;
 uniform bool u_enableHeightGradient;
 uniform float u_heightMin;
 uniform float u_heightMax;
-uniform vec3 u_ambientColor;
-uniform float u_ambientIntensity;
+// Ambient provided via FrameUniforms (u_ambient_frame)
 // Surface classification: 0=opaque, 1=masked(alpha-test), 2=transparent
 uniform int u_surface;
 uniform float u_alphaCutoff;
@@ -138,7 +138,7 @@ void main() {
 
     vec3 viewDir = normalize(u_cameraPos_frame.xyz - v_worldPos);
     vec3 F0 = mix(vec3(0.04f), baseColor, metallic);
-    vec3 lighting = u_ambientColor * u_ambientIntensity * baseColor;
+    vec3 lighting = (u_ambient_frame.rgb * u_ambient_frame.a) * baseColor;
 
     for (int i = 0; i < MAX_DIR_LIGHTS; i++) {
         if (i >= u_numDirLights)

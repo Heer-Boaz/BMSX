@@ -37,6 +37,7 @@ layout(std140) uniform FrameUniforms {
     mat4 u_view;
     mat4 u_proj;
     vec4 u_cameraPos_frame; // xyz, pad (named differently to avoid conflicts)
+    vec4 u_ambient_frame;   // rgb,intensity
 };
 
 out vec2 v_texcoord; // Texture coordinates to pass to the fragment shader
@@ -68,7 +69,8 @@ void main() {
             if (i >= u_morphCount) break;
             int row = u_morphIndices[i];
             float vy = (float(row) + 0.5) / u_morphTexSize.y;
-            vec3 dp = texture(u_morphPosTex, vec2(vx, vy)).xyz;
+            vec4 texel = texture(u_morphPosTex, vec2(vx, vy));
+            vec3 dp = texel.xyz * texel.w; // apply per-target scale
             pos += dp * u_morphWeights[i];
         }
     }

@@ -14,7 +14,8 @@ let ubo: WebGLBuffer | null = null;
 // [8..23]  view matrix (mat4)
 // [24..39] proj matrix (mat4)
 // [40..43] cameraPos.xyz, pad
-const buf = new Float32Array(44);
+// [44..47] ambient: (r, g, b, intensity)
+const buf = new Float32Array(48);
 
 export function initFrameUniforms(backend: GPUBackend): void {
     if (ubo || !backend.createUniformBuffer) return;
@@ -30,6 +31,7 @@ export interface FrameUniformsUpdate {
     view?: Float32Array; // length 16
     proj?: Float32Array; // length 16
     cameraPos?: { x: number; y: number; z: number } | Float32Array; // xyz
+    ambient?: { color: [number, number, number]; intensity: number };
 }
 
 function frameBindingIndexFor(backend: GPUBackend): number {
@@ -65,6 +67,10 @@ export function updateAndBindFrameUniforms(backend: GPUBackend, u: FrameUniforms
         buf[40] = buf[41] = buf[42] = 0;
     }
     buf[43] = 0;
+    // Ambient
+    const amb = u.ambient;
+    if (amb) { buf[44] = amb.color[0]; buf[45] = amb.color[1]; buf[46] = amb.color[2]; buf[47] = amb.intensity; }
+    else { buf[44] = buf[45] = buf[46] = buf[47] = 0; }
     backend.updateUniformBuffer(ubo as unknown as WebGLBuffer, buf);
     backend.bindUniformBufferBase(frameBindingIndexFor(backend), ubo as unknown as WebGLBuffer);
 }

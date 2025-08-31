@@ -39,6 +39,11 @@ export interface DrawImgOptions {
 	scale?: vec2;
 	flip?: FlipOptions;
 	colorize?: color;
+	// Optional ambient lighting override for world sprites
+	ambientAffected?: boolean;
+	ambientFactor?: number; // 0..1
+	// Optional sprite layer for sorting/grouping: 'world' (default) or 'ui'
+	layer?: 'world' | 'ui';
 }
 
 export type color = {
@@ -60,6 +65,9 @@ export interface DrawParticleOptions {
 	size: number;
 	color: color;
 	texture?: WebGLTexture;
+	// Optional ambient override
+	ambientMode?: 0 | 1; // 0=unlit, 1=ambient
+	ambientFactor?: number; // 0..1
 }
 
 export interface SkyboxImageIds {
@@ -143,6 +151,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public blurIntensity = 0.6;
 	public glowColor: [number, number, number] = [0.12, 0.10, 0.09];
 
+	// Sprite ambient defaults (used when per-sprite override not provided)
+	public spriteAmbientEnabledDefault = false;
+	public spriteAmbientFactorDefault = 1.0;
+
 	// Renderer submission facade (no legacy queues)
 	public renderer: {
 		submit: { particle: (o: DrawParticleOptions) => void; sprite: (o: DrawImgOptions) => void; mesh: (o: DrawMeshOptions) => void };
@@ -155,6 +167,18 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			},
 			swap: () => { /* no-op: feature queues handle their own swapping */ },
 		};
+
+	// --- Ambient controls API (best-practice toggles) -------------------------
+	public setSkyboxTintExposure(tint: [number, number, number], exposure = 1.0): void {
+		SkyboxPipeline.setSkyboxTintExposure(tint, exposure);
+	}
+	public setParticlesAmbient(mode: 0 | 1, factor = 1.0): void {
+		ParticlesPipeline.setAmbientDefaults(mode, factor);
+	}
+	public setSpritesAmbient(enabled: boolean, factor = 1.0): void {
+		this.spriteAmbientEnabledDefault = !!enabled;
+		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
+	}
 
 	constructor(viewportSize: Size, canvasSize?: Size,) {
 		Registry.instance.register(this);

@@ -94,6 +94,11 @@ export class RenderPassLibrary {
                     offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
                     logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
                 });
+                // Ambient now resides in the Frame UBO
+                try {
+                    const amb = $.model.ambientLight?.light;
+                    updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
+                } catch { /* ignore */ }
             },
         });
         this.register({
@@ -186,6 +191,11 @@ export class RenderPassLibrary {
                     enableHeightGradient: Atmosphere.enableHeightGradient,
                 };
                 this.setState('fog', { width, height, fog });
+                // Update ambient in frame UBO (WebGL path)
+                try {
+                    const amb = $.model.ambientLight?.light;
+                    updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
+                } catch { /* ignore */ }
             },
         });
 
@@ -371,6 +381,7 @@ export class RenderPassLibrary {
                         view: cam.view,
                         proj: cam.projection,
                         cameraPos: cam.position,
+                        ambient: lighting?.ambient ? { color: (lighting.ambient as any).color, intensity: (lighting.ambient as any).intensity } : undefined,
                     });
                 } catch { /* ignore if backend does not support UBOs */ }
             }

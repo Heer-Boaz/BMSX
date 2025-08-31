@@ -26,7 +26,27 @@ function ensureHudElement(): HTMLElement {
         el.style.borderRadius = '4px';
         el.style.maxWidth = '40vw';
         el.style.whiteSpace = 'pre';
+        const content = document.createElement('div');
+        content.id = HUD_ID + '-content';
+        const lights = document.createElement('div');
+        lights.id = HUD_ID + '-lights';
+        lights.style.marginTop = '6px';
+        const lightsHeader = document.createElement('div');
+        lightsHeader.id = HUD_ID + '-lights-header';
+        const lightsDetail = document.createElement('div');
+        lightsDetail.id = HUD_ID + '-lights-detail';
+        lights.appendChild(lightsHeader);
+        lights.appendChild(lightsDetail);
+        el.appendChild(content);
+        el.appendChild(lights);
         document.body.appendChild(el);
+        // Improve readability and wrapping
+        el.style.whiteSpace = 'pre-wrap';
+        (content as HTMLElement).style.whiteSpace = 'pre-wrap';
+        (content as HTMLElement).style.wordBreak = 'break-word';
+        (lightsHeader as HTMLElement).style.whiteSpace = 'pre-wrap';
+        (lightsDetail as HTMLElement).style.whiteSpace = 'pre-wrap';
+        (lightsDetail as HTMLElement).style.wordBreak = 'break-word';
     }
     return el;
 }
@@ -46,6 +66,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
     private emaPerPass: { [key: string]: number } = {};
     private emaMemPerPass: { [key: string]: number } = {};
     private peakMemPerPass: { [key: string]: number } = {};
+    private showLightDetail = false;
     private readonly SUMMARY_FREQUENCY = 500; // 500 frames (is 10 seconds, given the strict 50fps)
 
     constructor() {
@@ -63,6 +84,17 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
     updateNow(): void {
         if (!this.enabled) return;
         const el = ensureHudElement();
+        const contentEl = document.getElementById(HUD_ID + '-content')!;
+        const lightsHeaderEl = document.getElementById(HUD_ID + '-lights-header')!;
+        const lightsDetailEl = document.getElementById(HUD_ID + '-lights-detail')!;
+        const lightsEl = document.getElementById(HUD_ID + '-lights')!;
+        // Click/hover only on header (expanded detail stays non-clickable/non-underlined)
+        if (!(lightsHeaderEl as any)._lightsToggleAdded) {
+            lightsHeaderEl.addEventListener('click', (ev) => { this.showLightDetail = !this.showLightDetail; this.updateNow(); ev.stopPropagation(); });
+            lightsHeaderEl.addEventListener('mouseenter', () => { lightsHeaderEl.style.textDecoration = 'underline'; lightsHeaderEl.style.cursor = 'pointer'; });
+            lightsHeaderEl.addEventListener('mouseleave', () => { lightsHeaderEl.style.textDecoration = 'none'; lightsHeaderEl.style.cursor = 'default'; });
+            (lightsHeaderEl as any)._lightsToggleAdded = true;
+        }
         const gv = $.view;
         const rg = gv.renderGraph;
         if (!rg) { el.textContent = 'Render HUD: no graph'; return; }
@@ -71,6 +103,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
         const frameMem = (rg as any).getTotalTextureMemoryInfo?.();
         if (!stats || stats.length === 0) { el.textContent = 'Render HUD: no stats'; return; }
         const lines: string[] = [];
+        const lightLines: string[] = [];
         let total = 0;
         for (const s of stats) total += s.ms;
         // Backend draw call counters (if backend exposes them)
@@ -84,9 +117,34 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                     `draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} ` +
                     `upload:${toKB(fs.bytesUploaded)}KB (v:${toKB(anyFs.vertexBytes)}KB i:${toKB(anyFs.indexBytes)}KB u:${toKB(anyFs.uniformBytes)}KB t:${toKB(anyFs.textureBytes)}KB)`
                 );
-                // try {
-                //     const mu = SpritesPipeline.getMorphTextureUsage() : undefined;
-                // } catch { /* ignore */ }
+                // Lights summary (build separately)
+                try {
+                    const dCount = (MeshPipeline as any).getDirectionalLightCount?.() ?? 0;
+                    const pCount = (MeshPipeline as any).getPointLightCount?.() ?? 0;
+                    const amb = ($ as any).model?.ambientLight?.light;
+                    const ambColor = amb?.color ?? [0,0,0];
+                    const ambI = amb?.intensity ?? 0;
+                    const r = Math.max(0, Math.min(255, Math.round((ambColor[0]) * 255)));
+                    const g = Math.max(0, Math.min(255, Math.round((ambColor[1]) * 255)));
+                    const b = Math.max(0, Math.min(255, Math.round((ambColor[2]) * 255)));
+                    const ambChip = `<span style=\"display:inline-block;width:10px;height:10px;background:rgb(${r},${g},${b});border:1px solid #222;margin-right:6px;vertical-align:middle;\"></span>`;
+                    // Header text (human-friendly labels)
+                    const header = `${ambChip}<strong>Ambient</strong> (intensity ${ambI.toFixed(2)})   |   Directional lights: ${dCount}   Point lights: ${pCount}   [${this.showLightDetail ? 'details shown' : 'click to show details'}]`;
+                    (lightsHeaderEl as HTMLElement).innerHTML = header;
+                    const dirs = (MeshPipeline as any).getDirectionalLights?.() ?? [];
+                    const pts = (MeshPipeline as any).getPointLightsAll?.() ?? [];
+                    const topDir = dirs.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
+                    const topPt = pts.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
+                    if (dCount || pCount) lightLines.push(`  Directional intensities: [${topDir}]   Point intensities: [${topPt}]`);
+                    if (this.showLightDetail) {
+                        for (let i = 0; i < dirs.length; i++) {
+                            const L = dirs[i]; lightLines.push(`  Directional #${i}  Intensity:${L.intensity.toFixed(2)}  Color:[${L.color.map((c:number)=>c.toFixed(2)).join(',')}]  Direction:[${L.orientation.map((c:number)=>c.toFixed(2)).join(',')}]`);
+                        }
+                        for (let i = 0; i < pts.length; i++) {
+                            const L = pts[i]; lightLines.push(`  Point #${i}  Intensity:${L.intensity.toFixed(2)}  Range:${(L.range??0).toFixed(2)}  Color:[${L.color.map((c:number)=>c.toFixed(2)).join(',')}]  Position:[${(L.pos??[0,0,0]).map((c:number)=>c.toFixed(2)).join(',')}]`);
+                        }
+                    }
+                } catch { /* ignore */ }
                 try {
                     const mu = MeshPipeline.getMorphTextureUsage();
                     if (mu && (mu.pos || mu.norm)) lines.push(`morphTex pos:${mu.pos} norm:${mu.norm}`);
@@ -163,7 +221,21 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                 }
             }
         }
-        el.textContent = lines.join('\n');
+        // Render non-light metrics
+        contentEl.textContent = lines.join('\n');
+        // Render detailed lights section (color chips); keep header separate & the only clickable part
+        lightsDetailEl.innerHTML = lightLines
+            .map(line => line
+                .replace(/C:\[(.*?)\]/g, (_m, g1) => {
+                    const comps = String(g1).split(',').map((s: string) => parseFloat(s));
+                    const r = Math.max(0, Math.min(255, Math.round((comps[0] || 0) * 255)));
+                    const g = Math.max(0, Math.min(255, Math.round((comps[1] || 0) * 255)));
+                    const b = Math.max(0, Math.min(255, Math.round((comps[2] || 0) * 255)));
+                    const chip = `<span style=\"display:inline-block;width:10px;height:10px;background:rgb(${r},${g},${b});border:1px solid #222;margin-right:4px;vertical-align:middle;\"></span>`;
+                    return `${chip}C:[${g1}]`;
+                })
+            )
+            .join('<br>');
     }
 
     enable(): void {
