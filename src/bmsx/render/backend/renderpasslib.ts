@@ -10,6 +10,7 @@ import { registerParticlesPass_WebGL } from '../3d/particles_pipeline';
 import { registerParticlesPass_WebGPU } from '../3d/particles_pipeline.wgpu';
 import { registerSkyboxPass_WebGL } from '../3d/skybox_pipeline';
 import { registerSkyboxPass_WebGPU } from '../3d/skybox_pipeline.wgpu';
+import { registerSolidColorPass_WebGPU } from '../debug/solidcolor_pipeline.wgpu';
 import { RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
@@ -130,6 +131,7 @@ export class RenderPassLibrary {
         registerMeshBatchPass_WebGPU(this);
         registerParticlesPass_WebGPU(this);
         registerSpritesPass_WebGPU(this);
+        registerSolidColorPass_WebGPU(this);
         registerCRT_WebGPU(this);
     }
 
@@ -250,7 +252,15 @@ export class RenderPassLibrary {
         if (this.registered.has(idStr)) throw new Error(`Pipeline '${desc.id}' already registered`);
         let pipelineHandle: RenderPassInstanceHandle | null = null;
         if (this.backend.createRenderPassInstance && (desc.vsCode || desc.fsCode)) {
-            pipelineHandle = this.backend.createRenderPassInstance({ label: desc.label ?? desc.name, vsCode: desc.vsCode, fsCode: desc.fsCode, bindingLayout: desc.bindingLayout });
+            pipelineHandle = this.backend.createRenderPassInstance({
+                label: desc.label ?? desc.name,
+                vsCode: desc.vsCode,
+                fsCode: desc.fsCode,
+                bindingLayout: desc.bindingLayout,
+                usesDepth: !!(desc.writesDepth || desc.depthTest),
+                depthTest: !!desc.depthTest,
+                depthWrite: desc.depthWrite ?? !!desc.writesDepth,
+            });
         }
         const rec: RegisteredPassRec = { id: idStr, exec: desc.exec as any, prepare: desc.prepare as any, pipelineHandle, bindingLayout: desc.bindingLayout, present: !!desc.present };
         // One-time bootstrap for GPU resources
@@ -378,6 +388,7 @@ export class RenderPassLibrary {
                     if (!isPresent && !isStateOnly) {
                         if (frameColorHandle != null) io.writeTex(frameColorHandle);
                         if (desc.writesDepth && frameDepthHandle != null) io.writeTex(frameDepthHandle);
+                        else if (desc.depthTest && frameDepthHandle != null) io.readTex(frameDepthHandle);
                     } else {
                         if (frameColorHandle != null) io.readTex(frameColorHandle);
                     }

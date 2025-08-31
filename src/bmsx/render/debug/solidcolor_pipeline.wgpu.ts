@@ -1,5 +1,6 @@
 import { GPUBackend } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
+import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu_backend';
 
 // Minimal solid-color writer for WebGPU. Uses a fullscreen triangle and emits a constant color.
 const VS_SOLID = /* wgsl */ `
@@ -22,25 +23,37 @@ fn main(@builtin(vertex_index) vid : u32) -> VSOut {
 const FS_SOLID = /* wgsl */ `
 @fragment
 fn main() -> @location(0) vec4<f32> {
-  // Debug purple-ish color
-  return vec4<f32>(0.15, 0.05, 0.25, 1.0);
+  // Debug pink-ish color
+  return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+
+//   return vec4<f32>(0.15, 0.05, 0.25, 1.0);
 }
 `;
 
 export function registerSolidColorPass_WebGPU(library: RenderPassLibrary): void {
-  library.register({
-    id: 'debug_solid',
-    label: 'debug_solid',
-    name: 'Debug Solid (WebGPU)',
-    // Non-state, non-present → treated as a writer by the render graph
-    vsCode: VS_SOLID,
-    fsCode: FS_SOLID,
-    writesDepth: false,
-    exec: (_backend: GPUBackend) => {
-      // Encoder and pipeline are already bound by the graph + library; draw 1 tri
-      // Use backend draw API with the active encoder
-      (_backend as any).draw({} as any, 0, 3);
-    },
-  });
+	library.register({
+		id: 'debug_solid',
+		label: 'debug_solid',
+		name: 'Debug Solid (WebGPU)',
+		vsCode: VS_SOLID,
+		fsCode: FS_SOLID,
+		depthTest: false,
+		depthWrite: false,
+		writesDepth: false,
+		exec: (backend: GPUBackend, fbo: unknown) => {
+			const be = backend as WebGPUBackend;
+			// Scope validation errors around this draw for lightweight debugging
+			try { be.device.pushErrorScope('validation'); } catch { /* older runtimes */ }
+			be.draw(fbo as WebGPUPassEncoder, 0, 3);
+			// Pop the error scope once submitted work completes
+			try {
+				void be.device.queue.onSubmittedWorkDone().then(async () => {
+					try {
+						const err = await be.device.popErrorScope?.();
+						if (err) console.error('WebGPU validation error (debug_solid):', err.message ?? err);
+					} catch { /* ignore */ }
+				});
+			} catch { /* ignore */ }
+		},
+	});
 }
-

@@ -535,7 +535,7 @@ export class RenderGraphRuntime {
             res.tex = physTex.get(pid)!;
             // Build color-only FBO for color targets
             if (!res.desc.depth && !res.fboColorOnly) {
-                res.fboColorOnly = this.backend.createFBO(res.tex, null) as FramebufferHandle;
+                res.fboColorOnly = this.backend.createRenderTarget(res.tex, null) as FramebufferHandle;
             }
         }
     }
@@ -546,7 +546,7 @@ export class RenderGraphRuntime {
         if (!cRes || !dRes) return null;
         if (cRes.fboWithDepth && cRes.fboWithDepth.depth === depth) return cRes.fboWithDepth.fbo as FramebufferHandle;
         // Delegate FBO creation to backend abstraction (opaque handle)
-        const fbo = this.backend.createFBO(cRes.tex, dRes.tex) as FramebufferHandle | null;
+        const fbo = this.backend.createRenderTarget(cRes.tex, dRes.tex) as FramebufferHandle | null;
         cRes.fboWithDepth = { depth, fbo };
         return fbo;
     }

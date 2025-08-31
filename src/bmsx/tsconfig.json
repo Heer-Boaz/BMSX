@@ -15,6 +15,7 @@
     ],
     "exclude": [
         "node_modules",
-        "**/bmsx.d.ts"
+        "**/bmsx.d.ts",
+        "**/bmsx.js",
     ]
 }

@@ -1,11 +1,28 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, Size } from '../../rompack/rompack';
+import { WebGLBackend } from './webgl_backend';
+import { WebGPUBackend } from './webgpu_backend';
 
 // Minimal, unified render interfaces for both backends
 
 export type TextureFormat = 'rgba8unorm' | 'bgra8unorm' | 'rgb8unorm' | 'depth24plus' | 'depth32float' | string | number;
 export type TextureHandle = WebGLTexture | GPUTexture;
 export type BufferHandle = WebGLBuffer | GPUBuffer | unknown;
+// ---- Unified "FBO" a.k.a. render target ------------------------------------
+
+export type RenderTargetHandle =
+    | WebGLFramebuffer               // persistent GL object
+    | {
+        size: Size;
+        colors: GPUTexture[];                // textures you own
+        depth?: GPUTexture;
+        colorViews: GPUTextureView[];        // pre-created views for speed
+        depthView?: GPUTextureView;
+        sampleCount?: number;
+        format?: GPUTextureFormat;           // optional bookkeeping
+    };
+
+// keep your existing alias names for other handles:
 
 export interface TextureParams {
     size?: Size;
@@ -64,6 +81,8 @@ export interface RenderPassDef<S = unknown> {
     bindingLayout?: GraphicsPipelineBindingLayout;
     name: string;
     writesDepth?: boolean;
+    depthTest?: boolean;   // pipeline uses depth testing (may be read-only)
+    depthWrite?: boolean;  // pipeline writes depth (separate from writesDepth graph hint)
     stateOnly?: boolean;
     present?: boolean;
     shouldExecute?(): boolean;
@@ -72,7 +91,7 @@ export interface RenderPassDef<S = unknown> {
      * (e.g., buffers, VAOs, default textures). Called once at registration time.
      */
     bootstrap?: (backend: GPUBackend) => void;
-    exec: (backend: GPUBackend, fbo: unknown, state: S | undefined) => void;
+    exec: (backend: AnyBackend, fbo: unknown, state: S | undefined) => void;
     prepare?: (backend: GPUBackend, state: S | undefined) => void;
 }
 
@@ -82,11 +101,17 @@ export interface GraphicsPipelineBuildDesc {
     vsCode?: string;
     fsCode?: string;
     bindingLayout?: GraphicsPipelineBindingLayout;
+    // Hints for backend pipeline creation
+    usesDepth?: boolean; // when true, pipeline includes depth-stencil state matching render pass
+    depthTest?: boolean; // enable depth testing in pipeline
+    depthWrite?: boolean; // enable depth writes in pipeline
 }
 
 export interface RenderPassInstanceHandle { id: number; label?: string; backendData?: unknown }
 
 export interface PassEncoder { fbo: unknown; desc: RenderPassDesc; }
+
+export type AnyBackend = WebGLBackend | WebGPUBackend;
 
 export interface GPUBackend {
     get type(): 'webgl2' | 'webgpu';
@@ -99,7 +124,7 @@ export interface GPUBackend {
     destroyTexture(handle: TextureHandle): void;
     createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
     createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
-    createFBO(color?: TextureHandle | null, depth?: TextureHandle | null): unknown;
+    createRenderTarget(color?: TextureHandle | null, depth?: TextureHandle | null): RenderTargetHandle;
     clear(opts: { color?: color_arr; depth?: number }): void;
     beginRenderPass(desc: RenderPassDesc): PassEncoder;
     endRenderPass(pass: PassEncoder): void;
@@ -152,6 +177,7 @@ export interface RenderPassStateRegistry {
     ['fog']: unknown;
     ['frame_shared']: unknown;
     ['frame_resolve']: unknown;
+    ['debug_solid']: unknown;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;
 

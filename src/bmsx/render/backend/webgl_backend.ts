@@ -2,7 +2,7 @@
 import { color_arr } from '../../rompack/rompack';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, TextureParams } from './pipeline_interfaces';
+import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, TextureParams } from './pipeline_interfaces';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './webgl.helpers';
 
@@ -132,7 +132,7 @@ export class WebGLBackend implements GPUBackend {
         return tex;
     }
     createDepthTexture(desc: { width: number; height: number }): WebGLTexture { return GLR.glCreateDepthTexture(this.gl, desc.width, desc.height, TEXTURE_UNIT_UPLOAD); }
-    createFBO(color?: WebGLTexture | null, depth?: WebGLTexture | null): WebGLFramebuffer | null {
+    createRenderTarget(color?: WebGLTexture | null, depth?: WebGLTexture | null): RenderTargetHandle | null {
         const gl = this.gl;
         const fbo = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
@@ -165,10 +165,10 @@ export class WebGLBackend implements GPUBackend {
                 if (depthTex) { if (!this.texIds.has(depthTex)) this.texIds.set(depthTex, this.nextTexId++); did = this.texIds.get(depthTex)!; }
                 const key = cid + ':' + did;
                 let cached = this.fboCache.get(key);
-                if (!cached) { cached = this.createFBO(colorTex, depthTex) as WebGLFramebuffer | null; this.fboCache.set(key, cached); }
+                if (!cached) { cached = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer | null; this.fboCache.set(key, cached); }
                 fbo = cached;
             } else {
-                fbo = this.createFBO(colorTex, depthTex) as WebGLFramebuffer | null;
+                fbo = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer | null;
             }
             this.bindFBO(fbo);
             const clearColor = firstColor?.clear;

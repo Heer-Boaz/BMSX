@@ -74,7 +74,8 @@
     "node_modules",
     "_ignore",
     "dist",
-    // "scripts"
+    "**/bmsx.d.ts",
+    "**/bmsx.js",
   ],
   "files": [], // No files are included in the compilation, only references
   "include": [
@@ -102,6 +103,7 @@
       "**/node_modules",
       "**/node_modules/**",
       "**/bmsx.d.ts",
+      "**/bmsx.js",
       "dist",
       "scripts",
       "_ignore"

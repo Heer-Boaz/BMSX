@@ -2,6 +2,8 @@
 import { color_arr } from '../../rompack/rompack';
 import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from './pipeline_interfaces';
 
+export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
+
 export class WebGPUBackend implements GPUBackend {
     get type(): 'webgl2' | 'webgpu' {
         return 'webgpu';
@@ -11,6 +13,8 @@ export class WebGPUBackend implements GPUBackend {
     private limits: GPUSupportedLimits;
     private pipelineIdCounter: number = 0;
     private pipelines: Map<number, GPURenderPipeline> = new Map();
+    private pipelineBindingEntryCount: Map<number, number> = new Map();
+    private pipelineExpected: Map<number, { binding: number; kind: 'buffer' | 'texture' | 'sampler' }[]> = new Map();
     // Cached resource/bind state
     private uniformBindings: Map<number, GPUBuffer> = new Map();
     private textureBindings: Map<number, GPUTextureView> = new Map();
@@ -195,7 +199,7 @@ export class WebGPUBackend implements GPUBackend {
         });
     }
 
-    createFBO(color?: TextureHandle | null, depth?: TextureHandle | null): unknown {
+    createRenderTarget(color?: TextureHandle | null, depth?: TextureHandle | null): unknown {
         // In WebGPU, no explicit FBO; return a descriptor-like object for compatibility
         return { color, depth };
     }
@@ -259,10 +263,10 @@ export class WebGPUBackend implements GPUBackend {
         };
 
         const encoder = commandEncoder.beginRenderPass(passDesc);
-        return { fbo: commandEncoder, desc, encoder } as PassEncoder & { encoder: GPURenderPassEncoder };
+        return { fbo: commandEncoder, desc, encoder } as WebGPUPassEncoder;
     }
 
-    endRenderPass(pass: PassEncoder & { encoder: GPURenderPassEncoder }): void {
+    endRenderPass(pass: WebGPUPassEncoder): void {
         pass.encoder.end();
         this.device.queue.submit([(pass.fbo as GPUCommandEncoder).finish()]);
         if (this._activePassEncoder === pass.encoder) this._activePassEncoder = null;
@@ -278,21 +282,35 @@ export class WebGPUBackend implements GPUBackend {
 
     createRenderPassInstance(desc: GraphicsPipelineBuildDesc): RenderPassInstanceHandle {
         const bindGroupLayouts: GPUBindGroupLayout[] = [];
+        let expectedEntries = 0;
+        const expected: { binding: number; kind: 'buffer' | 'texture' | 'sampler' }[] = [];
         if (desc.bindingLayout) {
             const entries: GPUBindGroupLayoutEntry[] = [];
             let binding = 0;
 
             desc.bindingLayout.uniforms?.forEach(() => {
-                entries.push({ binding: binding++, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
+                entries.push({ binding: binding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
+                expected.push({ binding, kind: 'buffer' });
+                binding++;
+                expectedEntries++;
             });
-            desc.bindingLayout.textures?.forEach(t => {
-                entries.push({ binding: binding++, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } });
+            desc.bindingLayout.textures?.forEach(_t => {
+                entries.push({ binding: binding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } });
+                expected.push({ binding, kind: 'texture' });
+                binding++;
+                expectedEntries++;
             });
-            desc.bindingLayout.samplers?.forEach(s => {
-                entries.push({ binding: binding++, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } });
+            desc.bindingLayout.samplers?.forEach(_s => {
+                entries.push({ binding: binding, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } });
+                expected.push({ binding, kind: 'sampler' });
+                binding++;
+                expectedEntries++;
             });
             desc.bindingLayout.buffers?.forEach(b => {
-                entries.push({ binding: binding++, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: b.usage === 'storage' ? 'storage' : 'uniform' } });
+                entries.push({ binding: binding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: b.usage === 'storage' ? 'storage' : 'uniform' } });
+                expected.push({ binding, kind: 'buffer' });
+                binding++;
+                expectedEntries++;
             });
 
             bindGroupLayouts.push(this.device.createBindGroupLayout({ entries }));
@@ -314,40 +332,60 @@ export class WebGPUBackend implements GPUBackend {
                 targets: [{ format: 'bgra8unorm' }],
             },
             primitive: { topology: 'triangle-list' }, // Customize as needed
-            depthStencil: {
+            depthStencil: (desc.usesDepth || desc.depthTest) ? {
                 format: 'depth24plus-stencil8',
-                depthWriteEnabled: false, // TODO: Needs to be customized!
-                depthCompare: 'always', // TODO: Needs to be customized!
+                depthWriteEnabled: !!desc.depthWrite,
+                depthCompare: 'less',
                 stencilReadMask: 0xff,
                 stencilWriteMask: 0xff,
-            },
+            } : undefined,
         });
 
         const id = this.pipelineIdCounter++;
         this.pipelines.set(id, pipeline);
+        this.pipelineBindingEntryCount.set(id, expectedEntries);
+        if (expectedEntries > 0) this.pipelineExpected.set(id, expected);
         return { id, label: desc.label };
     }
 
     destroyRenderPassInstance(p: RenderPassInstanceHandle): void {
         this.pipelines.delete(p.id);
+        this.pipelineBindingEntryCount.delete(p.id);
+        this.pipelineExpected.delete(p.id);
     }
 
-    setGraphicsPipeline(pass: PassEncoder & { encoder: GPURenderPassEncoder }, pipelineHandle: RenderPassInstanceHandle): void {
+    setGraphicsPipeline(pass: WebGPUPassEncoder, pipelineHandle: RenderPassInstanceHandle): void {
         const pipeline = this.pipelines.get(pipelineHandle.id);
         if (!pipeline) return;
-        const enc = (pass as any).encoder ?? this._activePassEncoder;
+        const enc = pass.encoder ?? this._activePassEncoder;
         if (!enc) return;
         enc.setPipeline(pipeline);
-        // Bind group 0 from current uniform buffer bindings if present
+        // Bind group 0 using only entries expected by this pipeline
+        const expectedCount = this.pipelineBindingEntryCount.get(pipelineHandle.id) ?? 0;
+        if (expectedCount === 0) return;
+        const expectList = this.pipelineExpected.get(pipelineHandle.id) ?? [];
         try {
             let bg = this.bindGroupCache.get(pipelineHandle.id);
             const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
             if (!bg) {
                 const entries: GPUBindGroupEntry[] = [];
-                for (const [binding, buffer] of this.uniformBindings) entries.push({ binding, resource: { buffer } });
-                for (const [binding, view] of this.textureBindings) entries.push({ binding, resource: view });
-                for (const [binding, sampler] of this.samplerBindings) entries.push({ binding, resource: sampler });
-                if (entries.length > 0) {
+                let missing = false;
+                for (const exp of expectList) {
+                    if (exp.kind === 'buffer') {
+                        const buf = this.uniformBindings.get(exp.binding);
+                        if (!buf) { missing = true; break; }
+                        entries.push({ binding: exp.binding, resource: { buffer: buf } });
+                    } else if (exp.kind === 'texture') {
+                        const view = this.textureBindings.get(exp.binding);
+                        if (!view) { missing = true; break; }
+                        entries.push({ binding: exp.binding, resource: view });
+                    } else if (exp.kind === 'sampler') {
+                        const samp = this.samplerBindings.get(exp.binding);
+                        if (!samp) { missing = true; break; }
+                        entries.push({ binding: exp.binding, resource: samp });
+                    }
+                }
+                if (!missing && entries.length === expectList.length) {
                     bg = this.device.createBindGroup({ layout, entries });
                     this.bindGroupCache.set(pipelineHandle.id, bg);
                 }
@@ -356,10 +394,10 @@ export class WebGPUBackend implements GPUBackend {
         } catch { /* ignore if layout 0 absent */ }
     }
 
-    draw(pass: PassEncoder & { encoder: GPURenderPassEncoder }, first: number, count: number): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.draw(count, 1, first, 0); }
-    drawIndexed(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, firstIndex?: number, _indexType?: number): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
-    drawInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
-    drawIndexedInstanced(pass: PassEncoder & { encoder: GPURenderPassEncoder }, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void { const enc = (pass as any).encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
+    draw(pass: WebGPUPassEncoder, first: number, count: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.draw(count, 1, first, 0); }
+    drawIndexed(pass: WebGPUPassEncoder, indexCount: number, firstIndex?: number, _indexType?: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, 1, firstIndex ?? 0, 0, 0); }
+    drawInstanced(pass: WebGPUPassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.draw(vertexCount, instanceCount, firstVertex, firstInstance); }
+    drawIndexedInstanced(pass: WebGPUPassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, baseVertex = 0, firstInstance = 0, _indexType?: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.drawIndexed(indexCount, instanceCount, firstIndex, baseVertex, firstInstance); }
 
     setPassState<S = unknown>(label: RenderPassStateId, state: S): void {
         this.stateRegistry.set(label, state);
@@ -396,7 +434,7 @@ export class WebGPUBackend implements GPUBackend {
     }
 
     // Optional hook for RenderGraphRuntime to provide the active GPURenderPassEncoder
-    setActivePassEncoder(pass: (PassEncoder & { encoder: GPURenderPassEncoder }) | null): void {
+    setActivePassEncoder(pass: (WebGPUPassEncoder) | null): void {
         this._activePassEncoder = pass ? pass.encoder : null;
     }
 }

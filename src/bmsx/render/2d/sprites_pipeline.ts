@@ -93,8 +93,8 @@ export function setupSpriteShaderLocations(backend: GPUBackend): void {
     spriteShaderScaleLocation = gl.getUniformLocation(spriteShaderProgram, 'u_scale');
 }
 
-export function setupDefaultUniformValues(backend: GPUBackend, defaultScale: number, canvasSize: vec2arr): void {
-    const gl = (backend as WebGLBackend).gl;
+export function setupDefaultUniformValues(backend: WebGLBackend, defaultScale: number, canvasSize: vec2arr): void {
+    const gl = backend.gl;
     gl.useProgram(spriteShaderProgram);
     gl.uniform1f(spriteShaderScaleLocation, defaultScale);
     spriteShaderData.resolutionVector.set([canvasSize[0], canvasSize[1]]);
@@ -103,7 +103,7 @@ export function setupDefaultUniformValues(backend: GPUBackend, defaultScale: num
     gl.uniform1i(texture1Location, TEXTURE_UNIT_ATLAS_DYNAMIC);
 }
 
-export function setupBuffers(fbo: unknown): void {
+export function setupBuffers(): void {
     const gl = (getRenderContext().backend as WebGLBackend).gl;
     if (!spriteShaderData.vertexcoords) spriteShaderData.vertexcoords = GLR.buildQuadTexCoords();
     const cvertexBuffer = GLR.glCreateBuffer(gl, spriteShaderData.vertexcoords);
@@ -299,7 +299,7 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
         bootstrap: (backend) => {
             // Manager has bound the program; set up attributes, buffers and VAO
             setupSpriteShaderLocations(backend);
-            setupBuffers(null);
+            setupBuffers();
             setupSpriteLocations(backend as WebGLBackend);
         },
         writesDepth: true,
@@ -323,12 +323,12 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
                 atlasTex: (gv as any).textures?._atlas ?? null,
                 atlasDynamicTex: (gv as any).textures?._atlas_dynamic ?? null,
             };
+            const be = backend as WebGLBackend;
             registry.setState('sprites', spriteState);
             // Update per-frame defaults that depend on logical viewport size
-            setupDefaultUniformValues(backend, 1.0, [baseWidth, baseHeight] as unknown as vec2arr);
+            setupDefaultUniformValues(be, 1.0, [baseWidth, baseHeight] as unknown as vec2arr);
             // Ensure atlases are bound to expected texture units once per frame
             try {
-                const be = backend as WebGLBackend;
                 if (spriteState.atlasTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS); be.bindTexture2D(spriteState.atlasTex as unknown as WebGLTexture); }
                 if (spriteState.atlasDynamicTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS_DYNAMIC); be.bindTexture2D(spriteState.atlasDynamicTex as unknown as WebGLTexture); }
             } catch { /* ignore if not WebGL backend */ }
