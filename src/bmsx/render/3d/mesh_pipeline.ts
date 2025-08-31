@@ -11,7 +11,7 @@ import meshVS from '../3d/shaders/3d.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
 import { FogUniforms, MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
-import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
+import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
 import { DrawMeshOptions, GameView } from '../view';
@@ -50,8 +50,10 @@ interface MeshBuffers {
     morphPosTex?: WebGLTexture;
     morphPosTexSize?: { w: number; h: number };
     morphCount?: number;
-    morphNormals?: (WebGLBuffer | undefined)[];
-    morphTangents?: (WebGLBuffer | undefined)[];
+    // Morph normals also use a texture
+    morphNormTex?: WebGLTexture;
+    morphNormTexSize?: { w: number; h: number };
+    morphNormCount?: number;
 
     // VAO caches
     vao?: WebGLVertexArrayObject;            // non-instanced + morph
@@ -85,6 +87,10 @@ const stateCache = {
     useNormal: -1,
     useMR: -1,
 };
+
+// Debug counters: per-frame usage of morph textures
+let _morphUsage = { pos: 0, norm: 0 };
+export function getMorphTextureUsage(): { pos: number; norm: number } { return { pos: _morphUsage.pos, norm: _morphUsage.norm }; }
 
 const directionalLights: Map<string, DirectionalLight> = new Map();
 const pointLights: Map<string, PointLight> = new Map();
@@ -122,6 +128,12 @@ let roughnessFactorLocation3D: WebGLUniformLocation;
 let cameraPositionLocation3D: WebGLUniformLocation;
 let alphaCutoffLocation3D: WebGLUniformLocation;
 let surfaceLocation3D: WebGLUniformLocation;
+let morphPosTexLocation3D: WebGLUniformLocation;
+let morphTexSizeLocation3D: WebGLUniformLocation;
+let morphCountLocation3D: WebGLUniformLocation;
+let morphNormTexLocation3D: WebGLUniformLocation;
+let morphNormTexSizeLocation3D: WebGLUniformLocation;
+let morphNormCountLocation3D: WebGLUniformLocation;
 
 // uniform buffers voor lights
 const DIR_LIGHT_BINDING = 0;
@@ -146,9 +158,7 @@ const POINT_LIGHT_POSITION_OFFSET = POINT_LIGHT_HEADER;
 const POINT_LIGHT_COLOR_OFFSET = POINT_LIGHT_POSITION_OFFSET + POINT_LIGHT_STRIDE;
 const POINT_LIGHT_PARAM_OFFSET = POINT_LIGHT_COLOR_OFFSET + POINT_LIGHT_STRIDE;
 
-let morphNormalBuffers3D: WebGLBuffer[];
-let morphPositionLocations3D: number[];
-let morphNormalLocations3D: number[];
+// No morph attribute bindings remain (all morph deltas via textures)
 let morphWeightLocation3D: WebGLUniformLocation;
 let jointLocation3D: number;
 let weightLocation3D: number;
@@ -264,18 +274,35 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
             buffers.morphPosTexSize = { w: width, h: height };
             buffers.morphCount = targetCount;
         }
-        // Keep morph normals via attributes (first two targets if present)
-        buffers.morphNormals = [];
-        const maxN = Math.min(m.morphNormals?.length ?? 0, 2);
-        for (let i = 0; i < maxN; i++) {
-            const normSrc = m.morphNormals![i];
-            if (normSrc) {
-                const normBuf = GLR.glCreateBuffer(gl);
-                gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
-                gl.bufferData(gl.ARRAY_BUFFER, normSrc, gl.STATIC_DRAW);
-                backend.accountUpload('vertex', normSrc.byteLength);
-                buffers.morphNormals.push(normBuf);
-            } else buffers.morphNormals.push(undefined);
+        // Build morph normal texture (up to 4 targets) if normals present
+        const nCount = Math.min(m.morphNormals?.length ?? 0, 4);
+        if (nCount > 0) {
+            const width = m.vertexCount;
+            const height = nCount;
+            const texels = new Float32Array(width * height * 4);
+            for (let ti = 0; ti < nCount; ti++) {
+                const rowOffset = ti * width * 4;
+                const src = m.morphNormals![ti]!;
+                for (let v = 0; v < width; v++) {
+                    const si = v * 3; const di = rowOffset + v * 4;
+                    texels[di + 0] = src[si + 0];
+                    texels[di + 1] = src[si + 1];
+                    texels[di + 2] = src[si + 2];
+                    texels[di + 3] = 0.0;
+                }
+            }
+            const tex = gl.createTexture()!;
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, texels);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            try { backend.accountUpload('texture', texels.byteLength); } catch { /* ignore */ }
+            buffers.morphNormTex = tex;
+            buffers.morphNormTexSize = { w: width, h: height };
+            buffers.morphNormCount = nCount;
         }
     }
     meshBufferCache.set(m, buffers); return buffers;
@@ -357,6 +384,13 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
     gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
     gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
     gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
+    // Morph pos texture defaults
+    gl.uniform1i(morphPosTexLocation3D, TEXTURE_UNIT_MORPH_POS);
+    gl.uniform2f(morphTexSizeLocation3D, 1.0, 1.0);
+    gl.uniform1i(morphCountLocation3D, 0);
+    gl.uniform1i(morphNormTexLocation3D, TEXTURE_UNIT_MORPH_NORM);
+    gl.uniform2f(morphNormTexSizeLocation3D, 1.0, 1.0);
+    gl.uniform1i(morphNormCountLocation3D, 0);
     gl.uniformMatrix4fv(viewProjectionLocation3D, false, identityMatrix);
     setUseInstancing(gl, false);
     jointMatrixArray.fill(0);
@@ -373,12 +407,7 @@ export function setupBuffers3D(gl: WebGL2RenderingContext): void {
     gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
     gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
 
-    morphNormalBuffers3D = [GLR.glCreateBuffer(gl), GLR.glCreateBuffer(gl)];
-    const dummyMorphData = new Float32Array(24);
-    for (let i = 0; i < 2; i++) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, morphNormalBuffers3D[i]);
-        gl.bufferData(gl.ARRAY_BUFFER, dummyMorphData, gl.STATIC_DRAW);
-    }
+    // No morph attribute buffers are allocated; morph deltas are provided via textures
     // Ensure light UBOs exist even before any pass execution
     ensureLightBuffersInitialized();
     gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
@@ -432,11 +461,7 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     texcoordLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_texcoord');
     normalLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_normal');
     tangentLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_tangent');
-    morphPositionLocations3D = [-1, -1];
-    morphNormalLocations3D = [
-        gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm0'),
-        gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm1'),
-    ];
+    // No morph attribute locations (texture-based morphing)
     // No morph tangent attributes (handled via base tangent only)
     jointLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_joints');
     weightLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_weights');
@@ -470,6 +495,12 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     useInstancingLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useInstancing')!;
     alphaCutoffLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_alphaCutoff')!;
     surfaceLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_surface')!;
+    morphPosTexLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphPosTex')!;
+    morphTexSizeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphTexSize')!;
+    morphCountLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphCount')!;
+    morphNormTexLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphNormTex')!;
+    morphNormTexSizeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphNormTexSize')!;
+    morphNormCountLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphNormCount')!;
     instanceMatrixLocations3D = [
         gl.getAttribLocation(gameShaderProgram3D, 'a_i0'),
         gl.getAttribLocation(gameShaderProgram3D, 'a_i1'),
@@ -508,13 +539,7 @@ function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
         if (jointLocation3D >= 0) { b.disableVertexAttrib(jointLocation3D); b.vertexAttribI4ui(jointLocation3D, 0, 0, 0, 0); }
         if (weightLocation3D >= 0) { b.disableVertexAttrib(weightLocation3D); }
     }
-    // Bind morph normal attributes if present (first two only)
-    for (let i = 0; i < 2; i++) {
-        const nLoc = morphNormalLocations3D[i];
-        const nBuf = buffers.morphNormals?.[i];
-        if (nBuf && nLoc >= 0) { b.bindArrayBuffer(nBuf); b.vertexAttribPointer(nLoc, 3, gl.FLOAT, false, 0, 0); b.enableVertexAttrib(nLoc); }
-        else if (nLoc >= 0) { b.disableVertexAttrib(nLoc); }
-    }
+    // No morph normal attributes are used (texture-based morphing)
     if (buffers.index) { b.bindElementArrayBuffer(buffers.index); }
     if (instanced) {
         const locs = instanceMatrixLocations3D; b.bindArrayBuffer(instanceMatrixBuffer3D);
@@ -605,7 +630,7 @@ function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
     gl.uniform1f(heightMaxLocation3D, fog.heightMax);
     gl.uniform1i(heightGradEnableLocation3D, fog.enableHeightGradient ? 1 : 0);
 }
-function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
+function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers): void {
     let tex = m.gpuTextureAlbedo ? $.texmanager.getTexture(m.gpuTextureAlbedo) : null;
     const v = getRenderContext();
     if (tex !== stateCache.albedo) {
@@ -644,6 +669,31 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh): void {
     if (useMR !== stateCache.useMR) {
         gl.uniform1i(useMetallicRoughnessTextureLocation3D, useMR);
         stateCache.useMR = useMR;
+    }
+
+    // Morph position texture bind (optional)
+    if (buffers.morphPosTex && buffers.morphPosTexSize) {
+        const v = getRenderContext();
+        v.activeTexUnit = TEXTURE_UNIT_MORPH_POS;
+        v.bind2DTex(buffers.morphPosTex);
+        gl.uniform1i(morphPosTexLocation3D, TEXTURE_UNIT_MORPH_POS);
+        gl.uniform2f(morphTexSizeLocation3D, buffers.morphPosTexSize.w, buffers.morphPosTexSize.h);
+        gl.uniform1i(morphCountLocation3D, buffers.morphCount ?? 0);
+        _morphUsage.pos++;
+    } else {
+        gl.uniform1i(morphCountLocation3D, 0);
+    }
+    // Morph normal texture bind (optional)
+    if (buffers.morphNormTex && buffers.morphNormTexSize) {
+        const v = getRenderContext();
+        v.activeTexUnit = TEXTURE_UNIT_MORPH_NORM;
+        v.bind2DTex(buffers.morphNormTex);
+        gl.uniform1i(morphNormTexLocation3D, TEXTURE_UNIT_MORPH_NORM);
+        gl.uniform2f(morphNormTexSizeLocation3D, buffers.morphNormTexSize.w, buffers.morphNormTexSize.h);
+        gl.uniform1i(morphNormCountLocation3D, buffers.morphNormCount ?? 0);
+        _morphUsage.norm++;
+    } else {
+        gl.uniform1i(morphNormCountLocation3D, 0);
     }
 
     if (m.shadow) {
@@ -685,7 +735,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
         const indexCount = buffers.indexCount ?? m.indices?.length ?? 0;
         setMeshMaterial(gl, m);
         checkWebGLError('mesh.instanced: after setMeshMaterial');
-        setMeshTextures(gl, m);
+        setMeshTextures(gl, m, buffers);
         checkWebGLError('mesh.instanced: after setMeshTextures');
         if (hasMorph) { const w = new Float32Array(MAX_MORPH_TARGETS); const src = m.morphWeights ?? []; for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0; uploadMorphWeights(gl, w); } else uploadMorphWeights(gl, null);
         checkWebGLError('mesh.instanced: after uploadMorphWeights');
@@ -782,7 +832,7 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
             uploadMorphWeights(gl, w);
         } else uploadMorphWeights(gl, null);
         setMeshMaterial(gl, m);
-        setMeshTextures(gl, m);
+        setMeshTextures(gl, m, buffers);
         gl.uniformMatrix4fv(modelLocation3D, false, matrix);
         const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
         const __b2 = getRenderContext().backend as WebGLBackend; __b2.bindVertexArray(vao);
@@ -803,6 +853,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     // Swap to make submissions visible (no legacy fallbacks)
     meshQueue.swap();
     if (meshQueue.sizeFront() === 0) return;
+    _morphUsage.pos = 0; _morphUsage.norm = 0;
     // Single dynamic buffer; no ring state
     // Adapt to FeatureQueue API without exposing storage
     const collected: DrawMeshOptions[] = [];

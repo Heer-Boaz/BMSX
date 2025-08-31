@@ -31,7 +31,7 @@ export class Material {
         this.color = opts?.color ?? [1, 1, 1, 1];
         this.metallicFactor = opts?.metallicFactor ?? 1.0;
         this.roughnessFactor = opts?.roughnessFactor ?? 1.0;
-        this.surface = 'opaque';
+        this.surface = 'masked'; // TODO: OPTIMIZE THIS!!
         this.alphaCutoff = 0.5;
     }
 

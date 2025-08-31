@@ -5,8 +5,7 @@ in vec3 a_position; // Vertex position in 3D space
 in vec2 a_texcoord; // Texture coordinates for the vertex
 in vec3 a_normal; // Normal vector for lighting calculations
 in vec4 a_tangent; // Tangent vector (xyz) and bitangent sign (w)
-in vec3 a_morphNorm0;
-in vec3 a_morphNorm1;
+// Morph normals are sampled from texture
 in uvec4 a_joints;
 in vec4 a_weights;
 layout(location=8) in vec4 a_i0;
@@ -21,6 +20,9 @@ uniform float u_morphWeights[4];
 uniform sampler2D u_morphPosTex;
 uniform vec2 u_morphTexSize; // (width, height)
 uniform int u_morphCount;    // number of rows/targets (0..4)
+uniform sampler2D u_morphNormTex;
+uniform vec2 u_morphNormTexSize;
+uniform int u_morphNormCount;
 uniform mat4 u_jointMatrices[32];
 uniform mat4 u_viewProjection;
 uniform bool u_useInstancing;
@@ -58,9 +60,18 @@ void main() {
             pos += dp * u_morphWeights[i];
         }
     }
-    // For normals, still use first two attribute morphs for now
-    normal += a_morphNorm0 * u_morphWeights[0];
-    normal += a_morphNorm1 * u_morphWeights[1];
+    // Apply normal morphs from texture (up to 4 targets)
+    if (u_morphNormCount > 0) {
+        float vxn = (float(gl_VertexID) + 0.5) / u_morphNormTexSize.x;
+        vec3 nd = vec3(0.0);
+        for (int i = 0; i < 4; ++i) {
+            if (i >= u_morphNormCount) break;
+            float vyn = (float(i) + 0.5) / u_morphNormTexSize.y;
+            vec3 dn = texture(u_morphNormTex, vec2(vxn, vyn)).xyz;
+            nd += dn * u_morphWeights[i];
+        }
+        normal += nd;
+    }
     mat4 skin = a_weights.x * u_jointMatrices[int(a_joints.x)] +
                 a_weights.y * u_jointMatrices[int(a_joints.y)] +
                 a_weights.z * u_jointMatrices[int(a_joints.z)] +
