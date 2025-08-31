@@ -68,6 +68,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
         if (!rg) { el.textContent = 'Render HUD: no graph'; return; }
         const stats = rg.getPassStats();
         const memInfo = (rg as any).getPassTextureMemoryInfo?.();
+        const frameMem = (rg as any).getTotalTextureMemoryInfo?.();
         if (!stats || stats.length === 0) { el.textContent = 'Render HUD: no stats'; return; }
         const lines: string[] = [];
         let total = 0;
@@ -113,6 +114,9 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
             else this.emaFrameAvg = this.emaAlpha * total + (1 - this.emaAlpha) * this.emaFrameAvg;
             lines.push(`Frame ${Math.floor(performance.now())} time:${total.toFixed(2)}ms avg:${this.emaFrameAvg.toFixed(2)}ms mode=${modeStr}`);
 
+            if (frameMem) {
+                lines.push(`frame tex mem: ${(frameMem.total/(1024*1024)).toFixed(2)} MB (color ${(frameMem.color/(1024*1024)).toFixed(2)} + depth ${(frameMem.depth/(1024*1024)).toFixed(2)})`);
+            }
             // Update per-pass EMAs
             for (const s of stats) {
                 const prev = this.emaPerPass[s.name];
@@ -146,6 +150,9 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                 this.slidingWindowStats[s.name] = passWindow;
                 const avg = (passWindow.reduce((a, b) => a + b, 0) / passWindow.length) || 0;
                 lines.push(`${s.name.padEnd(18)} time:${s.ms.toFixed(3)}ms avg:${avg.toFixed(3)}ms`);
+            }
+            if (frameMem) {
+                lines.push(`frame tex mem: ${(frameMem.total/(1024*1024)).toFixed(2)} MB (color ${(frameMem.color/(1024*1024)).toFixed(2)} + depth ${(frameMem.depth/(1024*1024)).toFixed(2)})`);
             }
             // Memory windows: we’ll just show current + peak for windowed mode for brevity
             if (Array.isArray(memInfo)) {
