@@ -80,6 +80,13 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                     `draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} ` +
                     `upload:${toKB(fs.bytesUploaded)}KB (v:${toKB(anyFs.vertexBytes)}KB i:${toKB(anyFs.indexBytes)}KB u:${toKB(anyFs.uniformBytes)}KB t:${toKB(anyFs.textureBytes)}KB)`
                 );
+                // try {
+                //     const mu = SpritesPipeline.getMorphTextureUsage() : undefined;
+                // } catch { /* ignore */ }
+                try {
+                    const mu = MeshPipeline.getMorphTextureUsage();
+                    if (mu && (mu.pos || mu.norm)) lines.push(`morphTex pos:${mu.pos} norm:${mu.norm}`);
+                } catch { /* ignore */ }
             }
         } catch { /* ignore */ }
 

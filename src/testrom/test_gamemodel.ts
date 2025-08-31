@@ -9,7 +9,7 @@ import { CameraController } from './camera_controller';
 import { DamageNumberManager, ExplosionEmitter, ImpactBurst, MuzzleFlash } from './effects';
 import { EnemyHealthComponent } from './enemyhealth';
 import { RailShooterHUD } from './hud';
-import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D } from './objects3d';
+import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D, spawnSimpleCity } from './objects3d';
 import { BitmapId } from './resourceids';
 import { Reticle } from './reticle';
 
@@ -155,26 +155,26 @@ export class gamemodel extends BaseModel {
 		const rail = CatmullRomPath.fromJSON(railDef);
 		const runner = new PathRunner(rail, { playback: 'clamp', distanceMode: false });
 		// Populate multi-silhouette deterministic cityscape around the rail for motion parallax
-		// spawnSimpleCity(rail, {
-		// 	seed: 'demo-city-v2',
-		// 	steps: 240,
-		// 	debugLog: false,
-		// 	worldScale: 6,
-		// 	silhouettes: [
-		// 		// Immediate showcase towers right at the start so user always sees scale
-		// 		{ uStart: -0.02, uEnd: 0.05, lateralSpan: 90, minHeight: 80, maxHeight: 160, density: 0.75, gridSize: 12, footprintMinFactor: 0.50, footprintMaxFactor: 0.75 },
-		// 		// Peripheral sprawl
-		// 		{ uStart: 0.0, uEnd: 0.18, lateralSpan: 120, minHeight: 10, maxHeight: 40, density: 0.50, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.85 },
-		// 		// Approaching mid-rise
-		// 		{ uStart: 0.18, uEnd: 0.42, lateralSpan: 160, minHeight: 18, maxHeight: 70, density: 0.60, gridSize: 14, footprintMinFactor: 0.50, footprintMaxFactor: 0.80 },
-		// 		// Dense downtown core
-		// 		{ uStart: 0.42, uEnd: 0.75, lateralSpan: 220, minHeight: 30, maxHeight: 140, density: 0.65, gridSize: 16, footprintMinFactor: 0.45, footprintMaxFactor: 0.75 },
-		// 		// Transition to high plateau towers
-		// 		{ uStart: 0.75, uEnd: 0.90, lateralSpan: 250, minHeight: 50, maxHeight: 180, density: 0.60, gridSize: 18, footprintMinFactor: 0.40, footprintMaxFactor: 0.70 },
-		// 		// Outskirts taper
-		// 		{ uStart: 0.90, uEnd: 1.05, lateralSpan: 160, minHeight: 15, maxHeight: 60, density: 0.40, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.80 },
-		// 	],
-		// });
+		spawnSimpleCity(rail, {
+			seed: 'demo-city-v2',
+			steps: 240,
+			debugLog: false,
+			worldScale: 6,
+			silhouettes: [
+				// Immediate showcase towers right at the start so user always sees scale
+				{ uStart: -0.02, uEnd: 0.05, lateralSpan: 90, minHeight: 80, maxHeight: 160, density: 0.75, gridSize: 12, footprintMinFactor: 0.50, footprintMaxFactor: 0.75 },
+				// Peripheral sprawl
+				{ uStart: 0.0, uEnd: 0.18, lateralSpan: 120, minHeight: 10, maxHeight: 40, density: 0.50, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.85 },
+				// Approaching mid-rise
+				{ uStart: 0.18, uEnd: 0.42, lateralSpan: 160, minHeight: 18, maxHeight: 70, density: 0.60, gridSize: 14, footprintMinFactor: 0.50, footprintMaxFactor: 0.80 },
+				// Dense downtown core
+				{ uStart: 0.42, uEnd: 0.75, lateralSpan: 220, minHeight: 30, maxHeight: 140, density: 0.65, gridSize: 16, footprintMinFactor: 0.45, footprintMaxFactor: 0.75 },
+				// Transition to high plateau towers
+				{ uStart: 0.75, uEnd: 0.90, lateralSpan: 250, minHeight: 50, maxHeight: 180, density: 0.60, gridSize: 18, footprintMinFactor: 0.40, footprintMaxFactor: 0.70 },
+				// Outskirts taper
+				{ uStart: 0.90, uEnd: 1.05, lateralSpan: 160, minHeight: 15, maxHeight: 60, density: 0.40, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.80 },
+			],
+		});
 		runner.speed = 0.0; // unused in deterministic playback
 		const activeCam = cam1; // bind primary camera to rail
 		// Deterministic progression (manual) across 24s
