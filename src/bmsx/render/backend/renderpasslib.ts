@@ -3,6 +3,7 @@ import { color_arr } from '../../rompack/rompack';
 import { registerSpritesPass_WebGL } from '../2d/sprites_pipeline';
 import { registerSpritesPass_WebGPU } from '../2d/sprites_pipeline.wgpu';
 import { Atmosphere, registerAtmosphereHotkeys } from '../3d/atmosphere';
+import { AmbientLight } from '../3d/light';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGL } from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGPU } from '../3d/mesh_pipeline.wgpu';
@@ -12,7 +13,7 @@ import { registerSkyboxPass_WebGL } from '../3d/skybox_pipeline';
 import { registerSkyboxPass_WebGPU } from '../3d/skybox_pipeline.wgpu';
 import { registerSolidColorPass_WebGPU } from '../debug/solidcolor_pipeline.wgpu';
 import { RenderGraphRuntime } from '../graph/rendergraph';
-import { LightingSystem, isAmbientLight } from '../lighting/lightingsystem';
+import { LightingSystem } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { GameView } from '../view';
@@ -358,8 +359,7 @@ export class RenderPassLibrary {
             execute: (_ctx, frame) => {
                 const cam = $.model.activeCamera3D; if (!cam) return;
                 const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
-                const maybeAmbient = $.model.ambientLight?.light;
-                const lighting = lightingSystem.update(isAmbientLight(maybeAmbient) ? maybeAmbient : null);
+                const lighting = lightingSystem.update($.model.ambientLight?.light as AmbientLight);
                 this.setState('frame_shared', { view: viewState, lighting });
                 try {
                     const gv = $.viewAs<GameView>();

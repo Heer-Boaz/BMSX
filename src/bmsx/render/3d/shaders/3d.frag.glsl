@@ -42,6 +42,9 @@ uniform float u_heightMin;
 uniform float u_heightMax;
 uniform vec3 u_ambientColor;
 uniform float u_ambientIntensity;
+// Surface classification: 0=opaque, 1=masked(alpha-test), 2=transparent
+uniform int u_surface;
+uniform float u_alphaCutoff;
 const int MAX_DIR_LIGHTS = 4;
 const int MAX_POINT_LIGHTS = 4;
 layout(std140) uniform DirLightBlock {
@@ -64,6 +67,7 @@ in vec3 v_normal;
 in vec3 v_tangent;
 in vec3 v_bitangent;
 in vec3 v_worldPos;
+in vec4 v_color;
 
 out vec4 outputColor;
 
@@ -104,11 +108,11 @@ float bayer(vec2 pos) {
 }
 
 void main() {
-    vec4 texColor;
-    if (u_useAlbedoTexture) {
-        texColor = texture(u_albedoTexture, v_texcoord);
-    } else {
-        texColor = texture(u_texture0, v_texcoord);
+    vec4 texColor = u_useAlbedoTexture ? texture(u_albedoTexture, v_texcoord)
+                                       : texture(u_texture0, v_texcoord);
+    float alpha = texColor.a * v_color.a;
+    if (u_surface == 1 && alpha < u_alphaCutoff) {
+        discard;
     }
 
     vec3 normal = normalize(v_normal);
@@ -118,7 +122,7 @@ void main() {
         normal = normalize(tbn * n);
     }
 
-    vec3 baseColor = texColor.rgb * u_materialColor.rgb;
+    vec3 baseColor = texColor.rgb * v_color.rgb;
     if (u_enableHeightGradient) {
         float hT = clamp((v_worldPos.y - u_heightMin) / max(0.0001, (u_heightMax - u_heightMin)), 0.0, 1.0);
         vec3 hColor = mix(u_heightGradientLow, u_heightGradientHigh, hT);
@@ -210,5 +214,5 @@ void main() {
         }
         col = mix(u_fogColor, col, fogFactor);
     }
-    outputColor = vec4(col, texColor.a);
+    outputColor = vec4(col, alpha);
 }

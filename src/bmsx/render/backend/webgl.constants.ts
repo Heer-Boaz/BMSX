@@ -49,5 +49,6 @@ export const TEXTURE_UNIT_SHADOW_MAP = 5;
 export const TEXTURE_UNIT_SKYBOX = 6;
 export const TEXTURE_UNIT_PARTICLE = 7;
 export const TEXTURE_UNIT_POST_PROCESSING_SOURCE = 8;
+export const TEXTURE_UNIT_MORPH_POS = 9;
 // A high-numbered scratch unit for temporary uploads
 export const TEXTURE_UNIT_UPLOAD = 15;

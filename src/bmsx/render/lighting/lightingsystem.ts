@@ -1,5 +1,5 @@
 import { Float32ArrayPool } from '../../core/utils';
-import type { AmbientLight, Light } from '../3d/light';
+import type { AmbientLight } from '../3d/light';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../backend/webgl.constants';
 
@@ -16,22 +16,22 @@ export interface LightingFrameState {
 
 // Central lighting update system akin to Unreal's FDeferredLightUniformStruct population.
 export class LightingSystem {
-    private _lastAmbient: AmbientLight | null = null;
-    private _frameState: LightingFrameState = { ambient: null, dirCount: 0, pointCount: 0, dirty: true };
+	private _lastAmbient: AmbientLight | null = null;
+	private _frameState: LightingFrameState = { ambient: null, dirCount: 0, pointCount: 0, dirty: true };
 
-    constructor() { }
+	constructor() { }
 
-    update(ambient: AmbientLight | null): LightingFrameState {
-        const lightsMutated = MeshPipeline.consumeLightsDirty();
-        let ambientChanged = false;
-        if (ambient !== this._lastAmbient) {
-            // Defer ambient uniform uploads until the mesh pass prepare/state stage
-            this._lastAmbient = ambient;
-            ambientChanged = true;
-        }
-        const dirCount = MeshPipeline.getDirectionalLightCount();
-        const pointCount = MeshPipeline.getPointLightCount();
-        const dirty = lightsMutated || ambientChanged;
+	update(ambient: AmbientLight | null): LightingFrameState {
+		const lightsMutated = MeshPipeline.consumeLightsDirty();
+		let ambientChanged = false;
+		if (ambient !== this._lastAmbient) {
+			// Defer ambient uniform uploads until the mesh pass prepare/state stage
+			this._lastAmbient = ambient;
+			ambientChanged = true;
+		}
+		const dirCount = MeshPipeline.getDirectionalLightCount();
+		const pointCount = MeshPipeline.getPointLightCount();
+		const dirty = lightsMutated || ambientChanged;
 		// Only rebuild frame state object if something changed to reduce churn
 		if (dirty || this._frameState.dirCount !== dirCount || this._frameState.pointCount !== pointCount || this._frameState.ambient !== this._lastAmbient) {
 			this._frameState = {
@@ -52,11 +52,6 @@ export class LightingSystem {
 	}
 
 	get frameState(): LightingFrameState { return this._frameState; }
-}
-
-// Type guard for ambient light
-export function isAmbientLight(l: Light | null | undefined): l is AmbientLight {
-	return l?.type === 'ambient';
 }
 
 // GPU-agnostic descriptor (backend independent); arrays sized to counts.

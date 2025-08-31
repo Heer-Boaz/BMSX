@@ -91,7 +91,7 @@ export function drawSkyboxWithState(gl: WebGL2RenderingContext, framebuffer: Web
         lastBoundSkyboxTexture = state.tex;
         lastBoundSkyboxKey = skyboxKey;
     }
-    const passStub = { fbo: framebuffer, desc: { label: 'skybox' } } as any;
+    const passStub = { fbo: framebuffer, desc: { label: 'skybox' } };
     backend.draw(passStub, 0, 36);
     backend.bindVertexArray(null);
 }

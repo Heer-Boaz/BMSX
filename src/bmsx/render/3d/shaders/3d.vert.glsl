@@ -5,25 +5,26 @@ in vec3 a_position; // Vertex position in 3D space
 in vec2 a_texcoord; // Texture coordinates for the vertex
 in vec3 a_normal; // Normal vector for lighting calculations
 in vec4 a_tangent; // Tangent vector (xyz) and bitangent sign (w)
-in vec3 a_morphPos0;
-in vec3 a_morphPos1;
 in vec3 a_morphNorm0;
 in vec3 a_morphNorm1;
-in vec3 a_morphTan0;
-in vec3 a_morphTan1;
 in uvec4 a_joints;
 in vec4 a_weights;
 layout(location=8) in vec4 a_i0;
 layout(location=9) in vec4 a_i1;
 layout(location=10) in vec4 a_i2;
 layout(location=11) in vec4 a_i3;
+layout(location=12) in vec4 a_iColor; // per-instance color (UNORM8 normalized)
 uniform mat4 u_model; // Model matrix for transforming the vertex position
 uniform mat3 u_normalMatrix; // Normal matrix for transforming normals
 uniform float u_scale; // Scaling factor for the position
-uniform float u_morphWeights[2];
+uniform float u_morphWeights[4];
+uniform sampler2D u_morphPosTex;
+uniform vec2 u_morphTexSize; // (width, height)
+uniform int u_morphCount;    // number of rows/targets (0..4)
 uniform mat4 u_jointMatrices[32];
 uniform mat4 u_viewProjection;
 uniform bool u_useInstancing;
+uniform vec4 u_materialColor; // base color factor for non-instanced draws
 
 // Frame-shared UBO (std140). Prefer using this view/proj when present.
 layout(std140) uniform FrameUniforms {
@@ -40,18 +41,26 @@ out vec3 v_normal; // Normal vector to pass to the fragment shader
 out vec3 v_tangent; // Tangent vector in world space
 out vec3 v_bitangent; // Bitangent vector in world space
 out vec3 v_worldPos; // World position of the vertex to pass to the fragment shader
+out vec4 v_color; // Per-vertex/instance color factor
 
 void main() {
     vec3 pos = a_position;
     vec3 normal = a_normal;
     vec3 tangent = a_tangent.xyz;
     float tanSign = a_tangent.w;
-    pos += a_morphPos0 * u_morphWeights[0];
+    // Apply position morphs from texture (up to 4 targets)
+    if (u_morphCount > 0) {
+        float vx = (float(gl_VertexID) + 0.5) / u_morphTexSize.x;
+        for (int i = 0; i < 4; ++i) {
+            if (i >= u_morphCount) break;
+            float vy = (float(i) + 0.5) / u_morphTexSize.y;
+            vec3 dp = texture(u_morphPosTex, vec2(vx, vy)).xyz;
+            pos += dp * u_morphWeights[i];
+        }
+    }
+    // For normals, still use first two attribute morphs for now
     normal += a_morphNorm0 * u_morphWeights[0];
-    tangent += a_morphTan0 * u_morphWeights[0];
-    pos += a_morphPos1 * u_morphWeights[1];
     normal += a_morphNorm1 * u_morphWeights[1];
-    tangent += a_morphTan1 * u_morphWeights[1];
     mat4 skin = a_weights.x * u_jointMatrices[int(a_joints.x)] +
                 a_weights.y * u_jointMatrices[int(a_joints.y)] +
                 a_weights.z * u_jointMatrices[int(a_joints.z)] +
@@ -77,4 +86,6 @@ void main() {
     v_normal = nMat * skinnedNormal; // Pass the normal vector to the fragment shader
     v_tangent = nMat * skinnedTangent;
     v_bitangent = nMat * skinnedBitangent;
+    // Instance color when instancing; otherwise uniform material color
+    v_color = u_useInstancing ? a_iColor : u_materialColor;
 }
