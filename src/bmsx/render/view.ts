@@ -155,14 +155,12 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public spriteAmbientFactorDefault = 1.0;
 
     public atmosphere: AtmosphereParams = {
-        fogColor: [0.05, 0.07, 0.10],
-        fogD50: 250.0,
-        heightFalloff: 0.02,
-        heightDensity: 1.0,
-        heightMin: 0,
-        heightMax: 200,
-        heightLowColor: [1.0, 1.0, 1.0],
-        heightHighColor: [1.0, 1.0, 1.0],
+        fogD50: 320.0,
+        fogStart: 120.0,
+        fogColorLow: [0.90, 0.95, 1.00],
+        fogColorHigh: [1.05, 1.02, 0.95],
+        fogYMin: 0.0,
+        fogYMax: 200.0,
         progressFactor: 0,
         enableAutoAnimation: false,
     };
@@ -541,8 +539,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
             this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
             // Normal map default (0.5,0.5,1.0)
             this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
-            // Metallic/Roughness default (g=1 for roughness, b=0 for metallic)
-            this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 0.0, 1.0]);
+            // Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
+            this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 1.0, 1.0]);
         } catch { /* ignore */ }
     }
 
@@ -628,14 +626,12 @@ export class GameView implements RegisterablePersistent, RenderContext {
 }
 
 export interface AtmosphereParams {
-    fogColor: [number, number, number];
     fogD50: number;
-    heightFalloff: number;
-    heightDensity: number;
-    heightMin: number;
-    heightMax: number;
-    heightLowColor: [number, number, number];
-    heightHighColor: [number, number, number];
+    fogStart: number;
+    fogColorLow: [number, number, number];
+    fogColorHigh: [number, number, number];
+    fogYMin: number;
+    fogYMax: number;
     progressFactor: number;
     enableAutoAnimation: boolean;
 }
@@ -647,25 +643,21 @@ export function registerAtmosphereHotkeys(): void {
             return;
         }
         if (e.key === 'f') {
-            $.view.atmosphere.fogD50 = ($.view.atmosphere.fogD50 > 1e6) ? 250.0 : 1e9;
+            $.view.atmosphere.fogD50 = ($.view.atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
             console.info(`Fog ${$.view.atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${$.view.atmosphere.fogD50})`);
         }
-        else if (e.key === 'h') {
-            $.view.atmosphere.heightDensity = $.view.atmosphere.heightDensity > 0.0 ? 0.0 : 1.0;
-            console.info(`Height fog ${$.view.atmosphere.heightDensity > 0.0 ? 'enabled' : 'disabled'}`);
-        }
         else if (e.key === 'g') {
-            const isDisabled = $.view.atmosphere.heightLowColor[0] === 1.0 && $.view.atmosphere.heightHighColor[0] === 1.0
-                            && $.view.atmosphere.heightLowColor[1] === 1.0 && $.view.atmosphere.heightHighColor[1] === 1.0
-                            && $.view.atmosphere.heightLowColor[2] === 1.0 && $.view.atmosphere.heightHighColor[2] === 1.0;
-            if (isDisabled) {
-                $.view.atmosphere.heightLowColor = [0.90, 0.95, 1.00];
-                $.view.atmosphere.heightHighColor = [1.15, 1.05, 0.85];
+            const isNeutral = $.view.atmosphere.fogColorLow[0] === 1.0 && $.view.atmosphere.fogColorHigh[0] === 1.0
+                           && $.view.atmosphere.fogColorLow[1] === 1.0 && $.view.atmosphere.fogColorHigh[1] === 1.0
+                           && $.view.atmosphere.fogColorLow[2] === 1.0 && $.view.atmosphere.fogColorHigh[2] === 1.0;
+            if (isNeutral) {
+                $.view.atmosphere.fogColorLow = [0.90, 0.95, 1.00];
+                $.view.atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
             } else {
-                $.view.atmosphere.heightLowColor = [1.0, 1.0, 1.0];
-                $.view.atmosphere.heightHighColor = [1.0, 1.0, 1.0];
+                $.view.atmosphere.fogColorLow = [1.0, 1.0, 1.0];
+                $.view.atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
             }
-            console.info(`Height gradient: ${isDisabled ? 'enabled' : 'disabled'}`);
+            console.info('Fog color gradient toggled');
         }
     });
 }

@@ -1,5 +1,9 @@
 #version 300 es
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 
 uniform sampler2D u_texture0;
 uniform sampler2D u_albedoTexture;
@@ -24,16 +28,7 @@ layout(std140) uniform FrameUniforms {
     vec4 u_cameraPos_frame; // xyz, pad
     vec4 u_ambient_frame;   // rgb,intensity
 };
-// Fog & atmospheric params
-uniform vec3 u_fogColor;        // linear-space fog color
-uniform float u_fogD50;         // half-distance (world units); set very large to disable
-uniform float u_heightFalloff;  // 1/H in 1/units; 0 disables height fog
-uniform float u_heightDensity;  // scales height term; 0 disables
-// Height-based color gradient (applied multiplicatively to baseColor prior to lighting)
-uniform vec3 u_heightGradientLow;
-uniform vec3 u_heightGradientHigh;
-uniform float u_heightMin;
-uniform float u_heightMax;
+// (Fog disabled) — reserve space for future atmospheric params if needed
 // Ambient provided via FrameUniforms (u_ambient_frame)
 // Surface classification: 0=opaque, 1=masked(alpha-test), 2=transparent
 uniform int u_surface;
@@ -59,7 +54,7 @@ in vec2 v_texcoord;
 in vec3 v_normal;
 in vec3 v_tangent;
 in vec3 v_bitangent;
-in vec3 v_worldPos;
+in highp vec3 v_worldPos;
 in vec4 v_color;
 
 out vec4 outputColor;
@@ -104,25 +99,6 @@ float bayer(vec2 pos) {
 vec3 srgb_to_linear(vec3 c) { return pow(c, vec3(2.2)); }
 vec3 linear_to_srgb(vec3 c) { return pow(max(c, vec3(0.0)), vec3(1.0 / 2.2)); }
 
-// Exponential distance fog + analytic height fog (Nishita integral)
-vec3 applyFog(vec3 litLinear, vec3 camPos, vec3 worldPos, vec3 fogColorLinear,
-              float fogD50, float heightFalloff, float heightDensity) {
-    vec3 v = worldPos - camPos;
-    float d = length(v);
-    float k = 0.69314718 / max(fogD50, 1e-3); // ln(2)/d50
-    float Td = exp(-k * d);
-    // Height term
-    float fall = max(heightFalloff, 0.0);
-    float H = (fall > 0.0) ? 1.0 / fall : 1e9; // huge H effectively disables
-    float y0 = camPos.y;
-    float y1 = worldPos.y;
-    float cosT = abs(v.y) / max(d, 1e-5);
-    float I = (exp(-y0 / H) - exp(-y1 / H)) * H / max(cosT, 1e-3);
-    float Th = exp(-heightDensity * I);
-    float T = Td * Th;
-    return mix(fogColorLinear, litLinear, clamp(T, 0.0, 1.0));
-}
-
 void main() {
     vec4 texColor = texture(u_albedoTexture, v_texcoord);
     float alpha = texColor.a * v_color.a;
@@ -141,10 +117,6 @@ void main() {
     normal = normalize(tbn * n);
 
     vec3 baseColor = srgb_to_linear(texColor.rgb) * v_color.rgb;
-    // Unconditional height gradient tint; disable by setting low==high=(1,1,1)
-    float hT = clamp((v_worldPos.y - u_heightMin) / max(0.0001, (u_heightMax - u_heightMin)), 0.0, 1.0);
-    vec3 hColor = mix(u_heightGradientLow, u_heightGradientHigh, hT);
-    baseColor *= hColor; // apply gradient tint
     float metallic = u_metallicFactor;
     float roughness = clamp(u_roughnessFactor, 0.04f, 1.0f);
     vec3 mr = texture(u_metallicRoughnessTexture, v_texcoord).rgb;
@@ -196,8 +168,8 @@ void main() {
     // Start from lit color (linear)
     vec3 colLinear = lighting * shadow;
 
-    // Apply distance + height fog in linear space (fog color provided in sRGB → convert to linear)
-    colLinear = applyFog(colLinear, u_cameraPos_frame.xyz, v_worldPos, srgb_to_linear(u_fogColor), u_fogD50, u_heightFalloff, u_heightDensity);
+    // Fog removed: keep lit color in linear
+    colLinear = clamp(colLinear, 0.0f, 1.0f);
 
     // Dither in screen-space before quantization, operate in sRGB
     vec3 col = linear_to_srgb(colLinear);

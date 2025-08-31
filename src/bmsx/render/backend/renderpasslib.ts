@@ -21,17 +21,15 @@ import { checkWebGLError } from './webgl.helpers';
 import { WebGLBackend } from './webgl_backend';
 
 export type FogUniforms = {
-    fogColor: [number, number, number];
     fogD50: number;
-    heightFalloff: number;
-    heightDensity: number;
-    heightLowColor: [number, number, number];
-    heightHighColor: [number, number, number];
-    heightMin: number;
-    heightMax: number;
+    fogStart: number;
+    fogColorLow: [number, number, number];
+    fogColorHigh: [number, number, number];
+    fogYMin: number;
+    fogYMax: number;
 };
 export interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
-export interface MeshBatchPipelineState { width: number; height: number; camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; fog: FogUniforms; lighting?: unknown; }
+export interface MeshBatchPipelineState { width: number; height: number; camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; lighting?: unknown; }
 export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
 export interface SpritesPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; atlasTex?: TextureHandle | null; atlasDynamicTex?: TextureHandle | null; }
 export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle | null; options?: unknown; }
@@ -298,14 +296,12 @@ export class RenderPassLibrary {
                 // Build fog state alongside frame-shared so consumers can rely on it
                 const gv = $.view;
                 const fog: FogUniforms = {
-                    fogColor: gv.atmosphere.fogColor,
                     fogD50: gv.atmosphere.fogD50,
-                    heightFalloff: gv.atmosphere.heightFalloff,
-                    heightDensity: gv.atmosphere.heightDensity,
-                    heightLowColor: gv.atmosphere.heightLowColor,
-                    heightHighColor: gv.atmosphere.heightHighColor,
-                    heightMin: gv.atmosphere.heightMin,
-                    heightMax: gv.atmosphere.heightMax,
+                    fogStart: gv.atmosphere.fogStart,
+                    fogColorLow: gv.atmosphere.fogColorLow,
+                    fogColorHigh: gv.atmosphere.fogColorHigh,
+                    fogYMin: gv.atmosphere.fogYMin,
+                    fogYMax: gv.atmosphere.fogYMax,
                 };
                 this.setState('frame_shared', { view: viewState, lighting, fog });
                 try {

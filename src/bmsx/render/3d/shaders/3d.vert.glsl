@@ -1,5 +1,9 @@
 #version 300 es
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 
 in vec3 a_position; // Vertex position in 3D space
 in vec2 a_texcoord; // Texture coordinates for the vertex
@@ -44,7 +48,7 @@ out vec2 v_texcoord; // Texture coordinates to pass to the fragment shader
 out vec3 v_normal; // Normal vector to pass to the fragment shader
 out vec3 v_tangent; // Tangent vector in world space
 out vec3 v_bitangent; // Bitangent vector in world space
-out vec3 v_worldPos; // World position of the vertex to pass to the fragment shader
+out highp vec3 v_worldPos; // World position of the vertex to pass to the fragment shader
 out vec4 v_color; // Per-vertex/instance color factor
 
 // Octahedral decode (from [-1,1] encoded 2D to unit 3D)

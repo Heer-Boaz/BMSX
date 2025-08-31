@@ -163,15 +163,7 @@ let instanceMatrixLocations3D: number[];
 let instanceColorLocation3D: number;
 let viewProjectionLocation3D: WebGLUniformLocation;
 let useInstancingLocation3D: WebGLUniformLocation;
-// Fog / atmosphere & height gradient uniform locations
-let fogColorLocation3D: WebGLUniformLocation;
-let fogD50Location3D: WebGLUniformLocation;
-let heightFalloffLocation3D: WebGLUniformLocation;
-let heightDensityLocation3D: WebGLUniformLocation;
-let heightGradLowLocation3D: WebGLUniformLocation;
-let heightGradHighLocation3D: WebGLUniformLocation;
-let heightMinLocation3D: WebGLUniformLocation;
-let heightMaxLocation3D: WebGLUniformLocation;
+// (Fog removed) — no fog uniforms
 const MAX_MORPH_TARGETS = 8;
 const MAX_JOINTS = 32;
 
@@ -552,14 +544,6 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
         gl.getAttribLocation(gameShaderProgram3D, 'a_i3'),
     ];
     instanceColorLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_iColor');
-    fogColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogColor')!;
-    fogD50Location3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogD50')!;
-    heightFalloffLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFalloff')!;
-    heightDensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightDensity')!;
-    heightGradLowLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientLow')!;
-    heightGradHighLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientHigh')!;
-    heightMinLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMin')!;
-    heightMaxLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMax')!;
 }
 function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, morph: boolean): WebGLVertexArrayObject {
     const b = getRenderContext().backend as WebGLBackend;
@@ -627,7 +611,7 @@ function cullAndSortMeshes(list: Iterable<DrawMeshOptions>): { instancedGroups: 
     return { instancedGroups, singles };
 }
 function setupViewport(gl: WebGL2RenderingContext, canvasWidth: number, canvasHeight: number): void { (getRenderContext().backend as WebGLBackend).setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight }); }
-function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
+function setupRenderingState(gl: WebGL2RenderingContext, _state?: any): void {
     // Ensure the correct program is bound before setting uniforms
     if (gameShaderProgram3D) gl.useProgram(gameShaderProgram3D);
     // Reset common fixed-function state for mesh pass
@@ -641,20 +625,14 @@ function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
     // Ambient is applied via FrameUniforms (u_ambient_frame)
     // Camera + view/proj are now provided via the FrameUniforms UBO;
     setUseInstancing(gl, false);
-    // Resolve fog strictly from render state (no fallback)
-    const fog = (state as MeshBatchPipelineState)?.fog as FogUniforms | undefined;
-    if (!fog) { throw new Error('[meshbatch] Missing fog render-state from frame_shared.'); }
-    gl.uniform3fv(fogColorLocation3D, new Float32Array(fog.fogColor));
-    gl.uniform1f(fogD50Location3D, fog.fogD50);
-    gl.uniform1f(heightFalloffLocation3D, fog.heightFalloff);
-    gl.uniform1f(heightDensityLocation3D, fog.heightDensity);
-    gl.uniform3fv(heightGradLowLocation3D, new Float32Array(fog.heightLowColor));
-    gl.uniform3fv(heightGradHighLocation3D, new Float32Array(fog.heightHighColor));
-    gl.uniform1f(heightMinLocation3D, fog.heightMin);
-    gl.uniform1f(heightMaxLocation3D, fog.heightMax);
+    // Fog removed — no fog uniforms to upload
 }
 function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers): void {
-    let tex = m.gpuTextureAlbedo ? $.texmanager.getTexture(m.gpuTextureAlbedo) : (getRenderContext().textures['_default_albedo'] as WebGLTexture | null);
+    // Albedo: prefer mesh texture; otherwise use 1x1 white (no shared atlas fallback)
+    const vctx = getRenderContext();
+    let tex = m.gpuTextureAlbedo
+        ? $.texmanager.getTexture(m.gpuTextureAlbedo)
+        : (vctx.textures['_default_albedo'] as WebGLTexture | null);
     const v = getRenderContext();
     if (tex !== stateCache.albedo) {
         v.activeTexUnit = TEXTURE_UNIT_ALBEDO;
@@ -664,7 +642,7 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
     }
     stateCache.useAlbedo = tex !== null ? 1 : 0;
 
-    tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (getRenderContext().textures['_default_normal'] as WebGLTexture | null);
+    tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (vctx.textures['_default_normal'] as WebGLTexture | null);
     if (tex !== stateCache.normal) {
         v.activeTexUnit = TEXTURE_UNIT_NORMAL;
         v.bind2DTex(tex);
@@ -673,7 +651,7 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
     }
     stateCache.useNormal = tex !== null ? 1 : 0;
 
-    tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (getRenderContext().textures['_default_mr'] as WebGLTexture | null);
+    tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (vctx.textures['_default_mr'] as WebGLTexture | null);
     if (tex !== stateCache.mr) {
         v.activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
         v.bind2DTex(tex);
@@ -814,7 +792,7 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
     const sig = m.materialSignature;
     const color = new Float32Array(mat?.color ?? [1, 1, 1, 1]);
     const metallic = mat?.metallicFactor ?? 0.0;
-    const roughness = mat?.roughnessFactor ?? 0.0;
+    const roughness = mat?.roughnessFactor ?? 1.0;
     if (color[0] !== lastMaterialColor[0] || color[1] !== lastMaterialColor[1] || color[2] !== lastMaterialColor[2] || color[3] !== lastMaterialColor[3] || lastMaterialSig !== sig) {
         gl.uniform4fv(materialColorLocation3D, color);
         lastMaterialColor.set(color);
@@ -963,16 +941,11 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
                 return;
             }
             const frameShared = registry.getState('frame_shared');
-            const fog = frameShared.fog as FogUniforms | undefined;
-            if (!fog) {
-                throw new Error('[meshbatch.prepare] Fog state missing from frame_shared. Ensure FrameSharedState builds fog.');
-            }
             const meshState: MeshBatchPipelineState = {
                 width,
                 height,
                 camPos: cam.position,
                 viewProj: cam.viewProjection,
-                fog,
                 lighting: frameShared ? frameShared.lighting : undefined,
             };
             registry.setState('meshbatch', meshState);
