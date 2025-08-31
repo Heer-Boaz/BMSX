@@ -129,7 +129,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	private _backend: GPUBackend | null = null;
 	public get backendType() { return this._backend?.type }
 	public renderGraph: RenderGraphRuntime | null = null;
-	private graphInvalid = true;
 	private lightingSystem: LightingSystem | null = null;
 	public offscreenCanvasSize!: vec2;
 	public textures: { [k: string]: unknown | null } = {};
@@ -154,6 +153,19 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	// Sprite ambient defaults (used when per-sprite override not provided)
 	public spriteAmbientEnabledDefault = false;
 	public spriteAmbientFactorDefault = 1.0;
+
+    public atmosphere: AtmosphereParams = {
+        fogColor: [0.05, 0.07, 0.10],
+        fogD50: 250.0,
+        heightFalloff: 0.02,
+        heightDensity: 1.0,
+        heightMin: 0,
+        heightMax: 200,
+        heightLowColor: [1.0, 1.0, 1.0],
+        heightHighColor: [1.0, 1.0, 1.0],
+        progressFactor: 0,
+        enableAutoAnimation: false,
+    };
 
 	// Renderer submission facade (no legacy queues)
 	public renderer: {
@@ -199,6 +211,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		// Backend resources are configured externally via setBackend()
 		this.handleResize();
 		this.rebuildGraph();
+		registerAtmosphereHotkeys(); // TODO: REMOVE
 		renderGate.endCategory('init'); // End the init scope without a token, assuming the category is unique for init.
 	}
 
@@ -513,32 +526,35 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public clear(): void { /* handled by render graph clear pass */ }
 
-	// Pipeline hooks
-	public setPipelineRegistry(reg: RenderPassLibrary) { this.pipelineRegistry = reg; this.graphInvalid = true; }
-
 	// Backend
-	public setBackend(backend: GPUBackend): void {
+	public set backend(backend: GPUBackend) {
 		this._backend = backend;
 	}
+
 	public get backend(): GPUBackend { return this._backend; }
-	public initializeDefaultTextures(): void {
-		try {
-			const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
-			if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
-			this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-		} catch { /* ignore */ }
-	}
+    public initializeDefaultTextures(): void {
+        try {
+            const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
+            if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
+            this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+            // Default material textures for meshes
+            this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+            // Normal map default (0.5,0.5,1.0)
+            this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
+            // Metallic/Roughness default (g=1 for roughness, b=0 for metallic)
+            this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 0.0, 1.0]);
+        } catch { /* ignore */ }
+    }
 
 	// (single handleResize implementation above in the class)
 
 	public rebuildGraph(): void {
 		const token = renderGate.begin({ blocking: true, category: 'rebuild_graph', tag: 'frame' });
 		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
-		if (!this.pipelineRegistry) { console.warn('[GameView] PipelineRegistry not set on view yet; skipping render graph build'); this.graphInvalid = true; return; }
+		if (!this.pipelineRegistry) { console.warn('[GameView] PipelineRegistry not set on view yet; skipping render graph build'); return; }
 		if ($.debug) console.info('[GameView] Building render graph');
 		// GameView implements RenderContext directly
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
-		this.graphInvalid = false;
 		renderGate.end(token);
 	}
 
@@ -609,4 +625,47 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		(this.backend as WebGLBackend).bindTextureCube?.(tex);
 		this._activeCubemap = tex;
 	}
+}
+
+export interface AtmosphereParams {
+    fogColor: [number, number, number];
+    fogD50: number;
+    heightFalloff: number;
+    heightDensity: number;
+    heightMin: number;
+    heightMax: number;
+    heightLowColor: [number, number, number];
+    heightHighColor: [number, number, number];
+    progressFactor: number;
+    enableAutoAnimation: boolean;
+}
+
+export function registerAtmosphereHotkeys(): void {
+    window.addEventListener('keydown', (e) => {
+        if (!$.view?.atmosphere) {
+            console.warn('No atmosphere found on view; cannot toggle atmosphere settings');
+            return;
+        }
+        if (e.key === 'f') {
+            $.view.atmosphere.fogD50 = ($.view.atmosphere.fogD50 > 1e6) ? 250.0 : 1e9;
+            console.info(`Fog ${$.view.atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${$.view.atmosphere.fogD50})`);
+        }
+        else if (e.key === 'h') {
+            $.view.atmosphere.heightDensity = $.view.atmosphere.heightDensity > 0.0 ? 0.0 : 1.0;
+            console.info(`Height fog ${$.view.atmosphere.heightDensity > 0.0 ? 'enabled' : 'disabled'}`);
+        }
+        else if (e.key === 'g') {
+            const isDisabled = $.view.atmosphere.heightLowColor[0] === 1.0 && $.view.atmosphere.heightHighColor[0] === 1.0
+                            && $.view.atmosphere.heightLowColor[1] === 1.0 && $.view.atmosphere.heightHighColor[1] === 1.0
+                            && $.view.atmosphere.heightLowColor[2] === 1.0 && $.view.atmosphere.heightHighColor[2] === 1.0;
+            if (isDisabled) {
+                $.view.atmosphere.heightLowColor = [0.90, 0.95, 1.00];
+                $.view.atmosphere.heightHighColor = [1.15, 1.05, 0.85];
+            } else {
+                $.view.atmosphere.heightLowColor = [1.0, 1.0, 1.0];
+                $.view.atmosphere.heightHighColor = [1.0, 1.0, 1.0];
+            }
+            console.info(`Height gradient: ${isDisabled ? 'enabled' : 'disabled'}`);
+        }
+    });
 }

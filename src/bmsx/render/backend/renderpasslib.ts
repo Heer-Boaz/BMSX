@@ -2,7 +2,6 @@ import { $ } from '../../core/game';
 import { color_arr } from '../../rompack/rompack';
 import { registerSpritesPass_WebGL } from '../2d/sprites_pipeline';
 import { registerSpritesPass_WebGPU } from '../2d/sprites_pipeline.wgpu';
-import { Atmosphere, registerAtmosphereHotkeys } from '../3d/atmosphere';
 import { AmbientLight } from '../3d/light';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 import { registerMeshBatchPass_WebGL } from '../3d/mesh_pipeline';
@@ -16,36 +15,30 @@ import { RenderGraphRuntime } from '../graph/rendergraph';
 import { LightingSystem } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
-import { GameView } from '../view';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
 import { GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl.helpers';
+import { WebGLBackend } from './webgl_backend';
 
 export type FogUniforms = {
     fogColor: [number, number, number];
-    fogDensity: number;
-    enableFog: boolean;
-    fogMode: 0 | 1;
-    enableHeightFog: boolean;
-    heightFogStart: number;
-    heightFogEnd: number;
+    fogD50: number;
+    heightFalloff: number;
+    heightDensity: number;
     heightLowColor: [number, number, number];
     heightHighColor: [number, number, number];
     heightMin: number;
     heightMax: number;
-    enableHeightGradient: boolean;
 };
-export interface FogPipelineState { width: number; height: number; fog: FogUniforms; }
 export interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
 export interface MeshBatchPipelineState { width: number; height: number; camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; fog: FogUniforms; lighting?: unknown; }
 export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
 export interface SpritesPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; atlasTex?: TextureHandle | null; atlasDynamicTex?: TextureHandle | null; }
 export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle | null; options?: unknown; }
-export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array }; lighting: unknown }
+export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array }; lighting: unknown; fog: FogUniforms }
 
 // Type-safe pass state map used by this registry (compile-time only)
 type PassStateTypes = {
-    fog: FogPipelineState;
     skybox: SkyboxPipelineState;
     meshbatch: MeshBatchPipelineState;
     particles: ParticlePipelineState;
@@ -89,7 +82,7 @@ export class RenderPassLibrary {
             id: 'frame_resolve', label: 'frame_resolve', name: 'FrameResolve', stateOnly: true,
             exec: () => { /* state only */ },
             prepare: (backend, _state) => {
-                const gv = $.viewAs<GameView>();
+                const gv = $.view;
                 updateAndBindFrameUniforms(backend, {
                     offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
                     logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -101,36 +94,7 @@ export class RenderPassLibrary {
                 } catch { /* ignore */ }
             },
         });
-        this.register({
-            id: 'fog', label: 'fog', name: 'FogState', writesDepth: false, stateOnly: true,
-            shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
-            exec: () => { /* state only */ },
-            prepare: (_backend, _state) => {
-                const gv = $.viewAs<GameView>();
-                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
-                registerAtmosphereHotkeys();
-                const density = (() => {
-                    const p = Atmosphere.progressFactor;
-                    const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0;
-                    return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
-                })();
-                const fog: FogUniforms = {
-                    fogColor: Atmosphere.fogColor,
-                    fogDensity: density,
-                    enableFog: Atmosphere.enableFog,
-                    fogMode: Atmosphere.fogMode,
-                    enableHeightFog: Atmosphere.enableHeightFog,
-                    heightFogStart: Atmosphere.heightFogStart,
-                    heightFogEnd: Atmosphere.heightFogEnd,
-                    heightLowColor: Atmosphere.heightLowColor,
-                    heightHighColor: Atmosphere.heightHighColor,
-                    heightMin: Atmosphere.heightMin,
-                    heightMax: Atmosphere.heightMax,
-                    enableHeightGradient: Atmosphere.enableHeightGradient,
-                };
-                this.setState('fog', { width, height, fog });
-            },
-        });
+        // Removed: standalone fog pass. Fog state is produced in FrameSharedState.
         this.register({ id: 'frame_shared', label: 'frame_shared', name: 'FrameShared', stateOnly: true, exec: () => { } });
         // Backend-specific pass registrations (stubs for now)
         registerSkyboxPass_WebGPU(this);
@@ -151,53 +115,14 @@ export class RenderPassLibrary {
             exec: () => { /* state only */ },
             prepare: (backend, _state) => {
                 // Upload minimal frame-shared values via a UBO foundation
-                const gv = $.viewAs<GameView>();
+                const gv = $.view;
                 updateAndBindFrameUniforms(backend, {
                     offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
                     logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
                 });
             },
         });
-        // Fog
-        this.register({
-            id: 'fog',
-            label: 'fog',
-            name: 'FogState',
-            writesDepth: false,
-            stateOnly: true,
-            shouldExecute: () => Atmosphere.enableFog || Atmosphere.enableHeightFog || Atmosphere.enableHeightGradient,
-            exec: () => { /* state only */ },
-            prepare: (backend, _state) => {
-                const gv = $.viewAs<GameView>();
-                const width = gv.viewportSize.x; const height = gv.viewportSize.y;
-                registerAtmosphereHotkeys();
-                const density = (() => {
-                    const p = Atmosphere.progressFactor;
-                    const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0;
-                    return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
-                })();
-                const fog: FogUniforms = {
-                    fogColor: Atmosphere.fogColor,
-                    fogDensity: density,
-                    enableFog: Atmosphere.enableFog,
-                    fogMode: Atmosphere.fogMode,
-                    enableHeightFog: Atmosphere.enableHeightFog,
-                    heightFogStart: Atmosphere.heightFogStart,
-                    heightFogEnd: Atmosphere.heightFogEnd,
-                    heightLowColor: Atmosphere.heightLowColor,
-                    heightHighColor: Atmosphere.heightHighColor,
-                    heightMin: Atmosphere.heightMin,
-                    heightMax: Atmosphere.heightMax,
-                    enableHeightGradient: Atmosphere.enableHeightGradient,
-                };
-                this.setState('fog', { width, height, fog });
-                // Update ambient in frame UBO (WebGL path)
-                try {
-                    const amb = $.model.ambientLight?.light;
-                    updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
-                } catch { /* ignore */ }
-            },
-        });
+        // Removed: standalone fog pass. Fog state is produced in FrameSharedState.
 
         // Skybox (WebGPU)
         registerSkyboxPass_WebGL(this);
@@ -227,15 +152,15 @@ export class RenderPassLibrary {
         });
     }
 
-    public validatePassResources(passId: string, backend: unknown): void {
+    public validatePassResources(passId: string, backend: GPUBackend): void {
         let pass: RenderPassDef | undefined;
         try {
             const idx = this.findPipelinePassIndex(passId);
             if (idx < 0) return;
             pass = this.passes[idx];
             const layout = pass.bindingLayout; if (!layout) return;
-            const gv = $.viewAs<GameView>();
-            if (layout.uniforms?.includes('FrameUniforms') && !(backend as any).bindUniformBufferBase) {
+            const gv = $.view;
+            if (layout.uniforms?.includes('FrameUniforms') && !backend.bindUniformBufferBase) {
                 console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
             }
             if (passId === 'sprites') {
@@ -303,17 +228,18 @@ export class RenderPassLibrary {
             const stubPass: PassEncoder = { fbo, desc: { label: id } as RenderPassDesc };
             backend.setGraphicsPipeline(stubPass, p.pipelineHandle);
         }
-        const uniforms = p.bindingLayout?.uniforms ?? [];
-        if (uniforms.length && (backend as any).setUniformBlockBinding) {
-            for (const u of uniforms) {
-                if (u === 'FrameUniforms') (backend as any).setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
-                if (u === 'DirLightBlock') (backend as any).setUniformBlockBinding('DirLightBlock', 0);
-                if (u === 'PointLightBlock') (backend as any).setUniformBlockBinding('PointLightBlock', 1);
+        if (backend.type === 'webgl2') {
+            const uniforms = p.bindingLayout?.uniforms ?? [];
+            if (uniforms.length) {
+                for (const u of uniforms) {
+                    if (u === 'FrameUniforms') (backend as WebGLBackend).setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
+                    if (u === 'DirLightBlock') (backend as WebGLBackend).setUniformBlockBinding('DirLightBlock', 0);
+                    if (u === 'PointLightBlock') (backend as WebGLBackend).setUniformBlockBinding('PointLightBlock', 1);
+                }
             }
         }
-        checkWebGLError(`after binding pipeline ${id}`);
         if (p.prepare) p.prepare(backend, p.state);
-        checkWebGLError(`after preparing pipeline ${id}`);
+
         // Special-case: present passes on WebGPU manage their own pass/encoder.
         // Provide pipeline handle via fbo parameter for convenience.
         if ((backend.type === 'webgpu') && p.present) {
@@ -322,7 +248,6 @@ export class RenderPassLibrary {
         } else {
             p.exec(backend, fbo, p.state);
         }
-        checkWebGLError(`after executing pipeline ${id}`);
     }
     has(id: string): boolean { return this.registered.has(String(id)); }
 
@@ -370,9 +295,20 @@ export class RenderPassLibrary {
                 const cam = $.model.activeCamera3D; if (!cam) return;
                 const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
                 const lighting = lightingSystem.update($.model.ambientLight?.light as AmbientLight);
-                this.setState('frame_shared', { view: viewState, lighting });
+                // Build fog state alongside frame-shared so consumers can rely on it
+                const gv = $.view;
+                const fog: FogUniforms = {
+                    fogColor: gv.atmosphere.fogColor,
+                    fogD50: gv.atmosphere.fogD50,
+                    heightFalloff: gv.atmosphere.heightFalloff,
+                    heightDensity: gv.atmosphere.heightDensity,
+                    heightLowColor: gv.atmosphere.heightLowColor,
+                    heightHighColor: gv.atmosphere.heightHighColor,
+                    heightMin: gv.atmosphere.heightMin,
+                    heightMax: gv.atmosphere.heightMax,
+                };
+                this.setState('frame_shared', { view: viewState, lighting, fog });
                 try {
-                    const gv = $.viewAs<GameView>();
                     updateAndBindFrameUniforms(gv.backend, {
                         offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
                         logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
@@ -381,7 +317,7 @@ export class RenderPassLibrary {
                         view: cam.view,
                         proj: cam.projection,
                         cameraPos: cam.position,
-                        ambient: lighting?.ambient ? { color: (lighting.ambient as any).color, intensity: (lighting.ambient as any).intensity } : undefined,
+                        ambient: lighting?.ambient ? { color: lighting.ambient.color, intensity: lighting.ambient.intensity } : undefined,
                     });
                 } catch { /* ignore if backend does not support UBOs */ }
             }

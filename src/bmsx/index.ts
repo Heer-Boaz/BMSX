@@ -55,7 +55,6 @@ export * from './physics/physicsbody';
 export * from './physics/physicscomponent';
 export * from './physics/physicsdebugcomponent';
 export * from './physics/physicsworld';
-export * from './render/3d/atmosphere';
 export * from './render/3d/camera3d';
 export * from './render/3d/light';
 export * from './render/3d/material';

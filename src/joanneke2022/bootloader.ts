@@ -21,13 +21,13 @@ class gamemodel extends BaseModel {
     }
 
     public get_onvolmaaktheden(): onvolmaaktheid[] {
-        return this.filter(o => (o as any).is_onvolmaaktheid) as onvolmaaktheid[];
+        return this.filtero => (o.is_onvolmaaktheid) as onvolmaaktheid[];
     }
 
     public tel_onvolmaaktheden(): number {
         let total = 0;
         this.filter_and_foreach(
-            o => (o as any).is_onvolmaaktheid,
+            o => o.is_onvolmaaktheid,
             o => {
                 let onvolmaaktje = o as onvolmaaktheid;
                 if (onvolmaaktje.ben_ik_nog_onvolmaakt === true)
@@ -659,7 +659,7 @@ class draaischijf extends SpriteObject {
         else {
             // Slijpen!!
             _model.filter_and_foreach(
-                o => (o as any).is_onvolmaaktheid,
+                o => o.is_onvolmaaktheid,
                 o => {
                     let onvolmaaktje = o as onvolmaaktheid;
                     if (onvolmaaktje.collides(this)) {

@@ -1,17 +1,17 @@
 import { controller, Game, game, model } from '../bmsx/bmsx';
 import { setPoint } from '../bmsx/common';
 import { Tile } from '../bmsx/msx';
-import type { RomPack, BootArgs } from '../bmsx/rompack';
+import type { BootArgs } from '../bmsx/rompack';
 import { GameConstants } from './gameconstants';
 import { Controller } from './gamecontroller';
 import { Chapter, Model } from './gamemodel';
-import { GameView } from './gameview';
+import { UglyView } from './uglyview';
 
 var _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): void => {
     let _model = new Model();
-    let _view = new GameView({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
+    let _view = new UglyView({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
     let _controller = new Controller();
     new Game({ ...args, model: _model, view: _view });
 

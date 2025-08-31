@@ -66,7 +66,7 @@ type SpriteSubmission = { options: DrawImgOptions; imgmeta: ImgMeta };
 const spriteQueue = new FeatureQueue<SpriteSubmission>(256);
 
 function getRenderContext() {
-    return $.viewAs<GameView>();
+    return $.view;
 }
 
 export function setupSpriteShaderLocations(backend: GPUBackend): void {
@@ -171,16 +171,16 @@ export function renderSpriteBatch(
     // Sort by layer (world/ui), then z, then ambient state (to reduce uniform flips without breaking painter order)
     const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100; // quantize to 0.01 steps
     spriteQueue.sortFront((a, b) => {
-        const la = (a.options as any).layer === 'ui' ? 1 : 0;
-        const lb = (b.options as any).layer === 'ui' ? 1 : 0;
+        const la = a.options.layer === 'ui' ? 1 : 0;
+        const lb = b.options.layer === 'ui' ? 1 : 0;
         if (la !== lb) return la - lb;
         const za = a.options.pos.z ?? 0; const zb = b.options.pos.z ?? 0;
         if (za !== zb) return za - zb;
-        const ae = ((a.options as any).ambientAffected ? 1 : 0);
-        const be = ((b.options as any).ambientAffected ? 1 : 0);
+        const ae = (a.options.ambientAffected ? 1 : 0);
+        const be = (b.options.ambientAffected ? 1 : 0);
         if (ae !== be) return ae - be;
-        const af = q((a.options as any).ambientFactor ?? 1.0);
-        const bf = q((b.options as any).ambientFactor ?? 1.0);
+        const af = q(a.options.ambientFactor ?? 1.0);
+        const bf = q(b.options.ambientFactor ?? 1.0);
         if (af !== bf) return af - bf;
         return 0;
     });
@@ -200,9 +200,9 @@ export function renderSpriteBatch(
         const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
         // Dynamic ambient per-sprite (optional)
         const gv = getRenderContext();
-        const layerIsUI = (options as any).layer === 'ui';
-        const ambE = layerIsUI ? 0 : ((options as any).ambientAffected != null ? ((options as any).ambientAffected ? 1 : 0) : ((gv as any).spriteAmbientEnabledDefault ? 1 : 0));
-        const ambF = q((options as any).ambientFactor != null ? (options as any).ambientFactor : ((gv as any).spriteAmbientFactorDefault ?? 1.0));
+        const layerIsUI = options.layer === 'ui';
+        const ambE = layerIsUI ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : (gv.spriteAmbientEnabledDefault ? 1 : 0));
+        const ambF = q(options.ambientFactor != null ? options.ambientFactor : (gv.spriteAmbientFactorDefault ?? 1.0));
         if (currentAmbientEnabled === null) { currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
         else if (ambE !== currentAmbientEnabled || Math.abs(ambF - currentAmbientFactor) > 1e-3) { flush(); currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
         const { width, height } = imgmeta;
@@ -358,8 +358,8 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
                 baseWidth,
                 baseHeight,
                 // Provide atlas textures for direct binding in render step when needed
-                atlasTex: (gv as any).textures?._atlas ?? null,
-                atlasDynamicTex: (gv as any).textures?._atlas_dynamic ?? null,
+                atlasTex: gv.textures?._atlas ?? null,
+                atlasDynamicTex: gv.textures?._atlas_dynamic ?? null,
             };
             const be = backend as WebGLBackend;
             registry.setState('sprites', spriteState);

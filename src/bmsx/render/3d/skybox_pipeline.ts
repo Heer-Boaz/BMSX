@@ -12,7 +12,7 @@ import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../view';
 
 function getRenderContext() {
-    return $.viewAs<GameView>();
+    return $.view;
 }
 
 let vaoSkybox: WebGLVertexArrayObject | null = null;

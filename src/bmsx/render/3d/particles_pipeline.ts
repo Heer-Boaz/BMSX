@@ -8,11 +8,11 @@ import { PassEncoder } from '../backend/pipeline_interfaces';
 import { ParticlePipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
 import { WebGLBackend } from '../backend/webgl_backend';
-import { color, GameView } from '../view';
+import { color } from '../view';
 import { M4 } from './math3d';
 
 function getRenderContext() {
-    return $.viewAs<GameView>();
+    return $.view;
 }
 
 const camRight = new Float32Array(3);
@@ -104,7 +104,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
         const key = mode + ':' + factor.toFixed(2);
         let arr = byAmbient.get(key);
         if (!arr) { arr = []; byAmbient.set(key, arr); }
-        arr.push({ ...p, ambientMode: mode as 0|1, ambientFactor: factor });
+        arr.push({ ...p, ambientMode: mode as 0 | 1, ambientFactor: factor });
     });
     // FBO binding handled by RenderGraph beginRenderPass
     (getRenderContext().backend as WebGLBackend).setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });

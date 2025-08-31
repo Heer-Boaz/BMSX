@@ -333,16 +333,12 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
 		const { backend, nativeCtx } = await createBackendForCanvasAsync(gview.canvas);
 		gview.nativeCtx = nativeCtx;
-		gview.setBackend(backend); // Set the backend for the view before initializing
+		gview.backend = backend; // Set the backend for the view before initializing
 		new TextureManager(backend);
 		const pipelineRegistry = new RenderPassLibrary(backend);
 		pipelineRegistry.registerBuiltin(gview.backend); // We first need to register the built-in passes before calling view.init
 		// Store on view for graph rebuild
-		if (typeof gview.setPipelineRegistry === 'function') {
-			gview.setPipelineRegistry(pipelineRegistry); // Register the pipeline registry with the view before initializing
-		} else {
-			gview.pipelineRegistry = pipelineRegistry; // fallback
-		}
+		gview.pipelineRegistry = pipelineRegistry; // Register the pipeline registry with the view before initializing
 		gview.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);

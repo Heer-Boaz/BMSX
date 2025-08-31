@@ -39,7 +39,6 @@ export type RenderPassId =
     | 'particles'
     | 'sprites'
     | 'crt'
-    | 'fog'
     | 'frame_shared'
     | 'frame_resolve';
 
@@ -174,7 +173,6 @@ export interface RenderPassStateRegistry {
     ['particles']: unknown;
     ['sprites']: unknown;
     ['crt']: unknown;
-    ['fog']: unknown;
     ['frame_shared']: unknown;
     ['frame_resolve']: unknown;
     ['debug_solid']: unknown;

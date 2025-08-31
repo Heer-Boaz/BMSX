@@ -14,8 +14,7 @@ import { FogUniforms, MeshBatchPipelineState, RenderPassLibrary } from '../backe
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { checkWebGLError } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';
-import { DrawMeshOptions, GameView } from '../view';
-import { Atmosphere, registerAtmosphereHotkeys } from './atmosphere';
+import { DrawMeshOptions } from '../view';
 import type { DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
 
@@ -30,7 +29,7 @@ const INSTANCE_STRIDE_NORMAL9 = 9;
 const MAT4_FLOATS = 16;
 // unified in webgl.constants
 function getRenderContext() {
-    return $.viewAs<GameView>();
+    return $.view;
 }
 
 // Legacy direct submission array removed. Use submitMesh() with feature queue.
@@ -116,14 +115,11 @@ let lightMatrixLocation3D: WebGLUniformLocation;
 let shadowStrengthLocation3D: WebGLUniformLocation;
 let vertShaderScaleLocation3D: WebGLUniformLocation;
 let albedoTextureLocation3D: WebGLUniformLocation;
-let useAlbedoTextureLocation3D: WebGLUniformLocation;
+// Removed 'useXxx' toggles in shader; always sample with default fallbacks
 let normalTextureLocation3D: WebGLUniformLocation;
-let useNormalTextureLocation3D: WebGLUniformLocation;
 let metallicRoughnessTextureLocation3D: WebGLUniformLocation;
-let useMetallicRoughnessTextureLocation3D: WebGLUniformLocation;
 let metallicFactorLocation3D: WebGLUniformLocation;
 let roughnessFactorLocation3D: WebGLUniformLocation;
-let cameraPositionLocation3D: WebGLUniformLocation;
 let alphaCutoffLocation3D: WebGLUniformLocation;
 let surfaceLocation3D: WebGLUniformLocation;
 let morphPosTexLocation3D: WebGLUniformLocation;
@@ -169,17 +165,13 @@ let viewProjectionLocation3D: WebGLUniformLocation;
 let useInstancingLocation3D: WebGLUniformLocation;
 // Fog / atmosphere & height gradient uniform locations
 let fogColorLocation3D: WebGLUniformLocation;
-let fogDensityLocation3D: WebGLUniformLocation;
-let fogEnableLocation3D: WebGLUniformLocation;
-let fogModeLocation3D: WebGLUniformLocation;
-let heightFogEnableLocation3D: WebGLUniformLocation;
-let heightFogStartLocation3D: WebGLUniformLocation;
-let heightFogEndLocation3D: WebGLUniformLocation;
+let fogD50Location3D: WebGLUniformLocation;
+let heightFalloffLocation3D: WebGLUniformLocation;
+let heightDensityLocation3D: WebGLUniformLocation;
 let heightGradLowLocation3D: WebGLUniformLocation;
 let heightGradHighLocation3D: WebGLUniformLocation;
 let heightMinLocation3D: WebGLUniformLocation;
 let heightMaxLocation3D: WebGLUniformLocation;
-let heightGradEnableLocation3D: WebGLUniformLocation;
 const MAX_MORPH_TARGETS = 8;
 const MAX_JOINTS = 32;
 
@@ -421,10 +413,8 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
     gl.useProgram(gameShaderProgram3D);
     gl.uniform1f(ditherLocation3D, 0.3);
     gl.uniform1f(vertShaderScaleLocation3D, defaultScale);
-    gl.uniform1i(useAlbedoTextureLocation3D, 0);
-    gl.uniform1i(useNormalTextureLocation3D, 0);
-    gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
-    gl.uniform1f(metallicFactorLocation3D, 1.0);
+    // PBR defaults: non-metal (0), rough (1)
+    gl.uniform1f(metallicFactorLocation3D, 0.0);
     gl.uniform1f(roughnessFactorLocation3D, 1.0);
     gl.uniform1i(useShadowMapLocation3D, 0);
     gl.uniform1f(shadowStrengthLocation3D, 0.5);
@@ -537,16 +527,13 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     shadowStrengthLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowStrength')!;
     vertShaderScaleLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_scale')!;
     albedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_albedoTexture')!;
-    useAlbedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useAlbedoTexture')!;
     normalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalTexture')!;
-    useNormalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useNormalTexture')!;
     metallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicRoughnessTexture')!;
-    useMetallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useMetallicRoughnessTexture')!;
     metallicFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicFactor')!;
     roughnessFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_roughnessFactor')!;
     jointMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_jointMatrices[0]')!;
     morphWeightLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphWeights[0]')!;
-    cameraPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_cameraPos')!;
+    // Camera position is provided via FrameUniforms (u_cameraPos_frame); no legacy uniform lookup.
     viewProjectionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_viewProjection')!;
     useInstancingLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useInstancing')!;
     alphaCutoffLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_alphaCutoff')!;
@@ -566,17 +553,13 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     ];
     instanceColorLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_iColor');
     fogColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogColor')!;
-    fogDensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogDensity')!;
-    fogEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableFog')!;
-    fogModeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogMode')!;
-    heightFogEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableHeightFog')!;
-    heightFogStartLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFogStart')!;
-    heightFogEndLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFogEnd')!;
+    fogD50Location3D = gl.getUniformLocation(gameShaderProgram3D, 'u_fogD50')!;
+    heightFalloffLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightFalloff')!;
+    heightDensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightDensity')!;
     heightGradLowLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientLow')!;
     heightGradHighLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightGradientHigh')!;
     heightMinLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMin')!;
     heightMaxLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_heightMax')!;
-    heightGradEnableLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_enableHeightGradient')!;
 }
 function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, morph: boolean): WebGLVertexArrayObject {
     const b = getRenderContext().backend as WebGLBackend;
@@ -657,39 +640,21 @@ function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
     gl.cullFace(gl.BACK);
     // Ambient is applied via FrameUniforms (u_ambient_frame)
     // Camera + view/proj are now provided via the FrameUniforms UBO;
-    // keep legacy uniforms unset to avoid redundant state.
     setUseInstancing(gl, false);
-    registerAtmosphereHotkeys();
-    const fogSrc: any | undefined = state?.fog;
-    const fog: any = fogSrc ?? {
-        fogColor: Atmosphere.fogColor as [number, number, number],
-        fogDensity: (() => { const p = Atmosphere.progressFactor; const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0; return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim; })(),
-        enableFog: Atmosphere.enableFog,
-        fogMode: Atmosphere.fogMode,
-        enableHeightFog: Atmosphere.enableHeightFog,
-        heightFogStart: Atmosphere.heightFogStart,
-        heightFogEnd: Atmosphere.heightFogEnd,
-        heightLowColor: Atmosphere.heightLowColor as [number, number, number],
-        heightHighColor: Atmosphere.heightHighColor as [number, number, number],
-        heightMin: Atmosphere.heightMin,
-        heightMax: Atmosphere.heightMax,
-        enableHeightGradient: Atmosphere.enableHeightGradient,
-    };
+    // Resolve fog strictly from render state (no fallback)
+    const fog = (state as MeshBatchPipelineState)?.fog as FogUniforms | undefined;
+    if (!fog) { throw new Error('[meshbatch] Missing fog render-state from frame_shared.'); }
     gl.uniform3fv(fogColorLocation3D, new Float32Array(fog.fogColor));
-    gl.uniform1f(fogDensityLocation3D, fog.fogDensity);
-    gl.uniform1i(fogEnableLocation3D, fog.enableFog ? 1 : 0);
-    gl.uniform1i(fogModeLocation3D, fog.fogMode);
-    gl.uniform1i(heightFogEnableLocation3D, fog.enableHeightFog ? 1 : 0);
-    gl.uniform1f(heightFogStartLocation3D, fog.heightFogStart);
-    gl.uniform1f(heightFogEndLocation3D, fog.heightFogEnd);
+    gl.uniform1f(fogD50Location3D, fog.fogD50);
+    gl.uniform1f(heightFalloffLocation3D, fog.heightFalloff);
+    gl.uniform1f(heightDensityLocation3D, fog.heightDensity);
     gl.uniform3fv(heightGradLowLocation3D, new Float32Array(fog.heightLowColor));
     gl.uniform3fv(heightGradHighLocation3D, new Float32Array(fog.heightHighColor));
     gl.uniform1f(heightMinLocation3D, fog.heightMin);
     gl.uniform1f(heightMaxLocation3D, fog.heightMax);
-    gl.uniform1i(heightGradEnableLocation3D, fog.enableHeightGradient ? 1 : 0);
 }
 function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers): void {
-    let tex = m.gpuTextureAlbedo ? $.texmanager.getTexture(m.gpuTextureAlbedo) : null;
+    let tex = m.gpuTextureAlbedo ? $.texmanager.getTexture(m.gpuTextureAlbedo) : (getRenderContext().textures['_default_albedo'] as WebGLTexture | null);
     const v = getRenderContext();
     if (tex !== stateCache.albedo) {
         v.activeTexUnit = TEXTURE_UNIT_ALBEDO;
@@ -697,37 +662,25 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
         gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
         stateCache.albedo = tex;
     }
-    const useAlbedo = tex !== null ? 1 : 0;
-    if (useAlbedo !== stateCache.useAlbedo) {
-        gl.uniform1i(useAlbedoTextureLocation3D, useAlbedo);
-        stateCache.useAlbedo = useAlbedo;
-    }
+    stateCache.useAlbedo = tex !== null ? 1 : 0;
 
-    tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : null;
+    tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (getRenderContext().textures['_default_normal'] as WebGLTexture | null);
     if (tex !== stateCache.normal) {
         v.activeTexUnit = TEXTURE_UNIT_NORMAL;
         v.bind2DTex(tex);
         gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
         stateCache.normal = tex;
     }
-    const useNormal = tex !== null ? 1 : 0;
-    if (useNormal !== stateCache.useNormal) {
-        gl.uniform1i(useNormalTextureLocation3D, useNormal);
-        stateCache.useNormal = useNormal;
-    }
+    stateCache.useNormal = tex !== null ? 1 : 0;
 
-    tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : null;
+    tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (getRenderContext().textures['_default_mr'] as WebGLTexture | null);
     if (tex !== stateCache.mr) {
         v.activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
         v.bind2DTex(tex);
         gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
         stateCache.mr = tex;
     }
-    const useMR = tex !== null ? 1 : 0;
-    if (useMR !== stateCache.useMR) {
-        gl.uniform1i(useMetallicRoughnessTextureLocation3D, useMR);
-        stateCache.useMR = useMR;
-    }
+    stateCache.useMR = tex !== null ? 1 : 0;
 
     // Morph position texture bind (optional)
     if (buffers.morphPosTex && buffers.morphPosTexSize) {
@@ -1005,30 +958,14 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
             const gv = getRenderContext();
             const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
             const cam = $.model.activeCamera3D;
-            if (!cam) return;
+            if (!cam) {
+                console.warn('[Draw Meshes] No active 3D camera found, skipping mesh draw');
+                return;
+            }
             const frameShared = registry.getState('frame_shared');
-            const fogStateHolder = registry.getState('fog');
-            let fog = fogStateHolder?.fog as FogUniforms | undefined;
+            const fog = frameShared.fog as FogUniforms | undefined;
             if (!fog) {
-                const density = (() => {
-                    const p = Atmosphere.progressFactor;
-                    const anim = Atmosphere.enableAutoAnimation ? (0.5 - 0.5 * Math.cos(p * 6.28318530718)) : 0.0;
-                    return Atmosphere.baseFogDensity + Atmosphere.dynamicFogDensity * anim;
-                })();
-                fog = {
-                    fogColor: Atmosphere.fogColor,
-                    fogDensity: density,
-                    enableFog: Atmosphere.enableFog,
-                    fogMode: Atmosphere.fogMode,
-                    enableHeightFog: Atmosphere.enableHeightFog,
-                    heightFogStart: Atmosphere.heightFogStart,
-                    heightFogEnd: Atmosphere.heightFogEnd,
-                    heightLowColor: Atmosphere.heightLowColor,
-                    heightHighColor: Atmosphere.heightHighColor,
-                    heightMin: Atmosphere.heightMin,
-                    heightMax: Atmosphere.heightMax,
-                    enableHeightGradient: Atmosphere.enableHeightGradient,
-                };
+                throw new Error('[meshbatch.prepare] Fog state missing from frame_shared. Ensure FrameSharedState builds fog.');
             }
             const meshState: MeshBatchPipelineState = {
                 width,

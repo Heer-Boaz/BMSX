@@ -67,6 +67,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
     private emaMemPerPass: { [key: string]: number } = {};
     private peakMemPerPass: { [key: string]: number } = {};
     private showLightDetail = false;
+    private _lightToggleAdded = false;
     private readonly SUMMARY_FREQUENCY = 500; // 500 frames (is 10 seconds, given the strict 50fps)
 
     constructor() {
@@ -89,18 +90,18 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
         const lightsDetailEl = document.getElementById(HUD_ID + '-lights-detail')!;
         const lightsEl = document.getElementById(HUD_ID + '-lights')!;
         // Click/hover only on header (expanded detail stays non-clickable/non-underlined)
-        if (!(lightsHeaderEl as any)._lightsToggleAdded) {
+        if (!this._lightToggleAdded) {
             lightsHeaderEl.addEventListener('click', (ev) => { this.showLightDetail = !this.showLightDetail; this.updateNow(); ev.stopPropagation(); });
             lightsHeaderEl.addEventListener('mouseenter', () => { lightsHeaderEl.style.textDecoration = 'underline'; lightsHeaderEl.style.cursor = 'pointer'; });
             lightsHeaderEl.addEventListener('mouseleave', () => { lightsHeaderEl.style.textDecoration = 'none'; lightsHeaderEl.style.cursor = 'default'; });
-            (lightsHeaderEl as any)._lightsToggleAdded = true;
+            this._lightToggleAdded = true;
         }
         const gv = $.view;
         const rg = gv.renderGraph;
         if (!rg) { el.textContent = 'Render HUD: no graph'; return; }
         const stats = rg.getPassStats();
-        const memInfo = (rg as any).getPassTextureMemoryInfo?.();
-        const frameMem = (rg as any).getTotalTextureMemoryInfo?.();
+        const memInfo = rg.getPassTextureMemoryInfo?.();
+        const frameMem = rg.getTotalTextureMemoryInfo?.();
         if (!stats || stats.length === 0) { el.textContent = 'Render HUD: no stats'; return; }
         const lines: string[] = [];
         const lightLines: string[] = [];
@@ -119,10 +120,10 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                 );
                 // Lights summary (build separately)
                 try {
-                    const dCount = (MeshPipeline as any).getDirectionalLightCount?.() ?? 0;
-                    const pCount = (MeshPipeline as any).getPointLightCount?.() ?? 0;
-                    const amb = ($ as any).model?.ambientLight?.light;
-                    const ambColor = amb?.color ?? [0,0,0];
+                    const dCount = MeshPipeline.getDirectionalLightCount?.() ?? 0;
+                    const pCount = MeshPipeline.getPointLightCount?.() ?? 0;
+                    const amb = $.model?.ambientLight?.light;
+                    const ambColor = amb?.color ?? [0, 0, 0];
                     const ambI = amb?.intensity ?? 0;
                     const r = Math.max(0, Math.min(255, Math.round((ambColor[0]) * 255)));
                     const g = Math.max(0, Math.min(255, Math.round((ambColor[1]) * 255)));
@@ -131,17 +132,17 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                     // Header text (human-friendly labels)
                     const header = `${ambChip}<strong>Ambient</strong> (intensity ${ambI.toFixed(2)})   |   Directional lights: ${dCount}   Point lights: ${pCount}   [${this.showLightDetail ? 'details shown' : 'click to show details'}]`;
                     (lightsHeaderEl as HTMLElement).innerHTML = header;
-                    const dirs = (MeshPipeline as any).getDirectionalLights?.() ?? [];
-                    const pts = (MeshPipeline as any).getPointLightsAll?.() ?? [];
+                    const dirs = MeshPipeline.getDirectionalLights?.() ?? [];
+                    const pts = MeshPipeline.getPointLightsAll?.() ?? [];
                     const topDir = dirs.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
                     const topPt = pts.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
                     if (dCount || pCount) lightLines.push(`  Directional intensities: [${topDir}]   Point intensities: [${topPt}]`);
                     if (this.showLightDetail) {
                         for (let i = 0; i < dirs.length; i++) {
-                            const L = dirs[i]; lightLines.push(`  Directional #${i}  Intensity:${L.intensity.toFixed(2)}  Color:[${L.color.map((c:number)=>c.toFixed(2)).join(',')}]  Direction:[${L.orientation.map((c:number)=>c.toFixed(2)).join(',')}]`);
+                            const L = dirs[i]; lightLines.push(`  Directional #${i}  Intensity:${L.intensity.toFixed(2)}  Color:[${L.color.map((c: number) => c.toFixed(2)).join(',')}]  Direction:[${L.orientation.map((c: number) => c.toFixed(2)).join(',')}]`);
                         }
                         for (let i = 0; i < pts.length; i++) {
-                            const L = pts[i]; lightLines.push(`  Point #${i}  Intensity:${L.intensity.toFixed(2)}  Range:${(L.range??0).toFixed(2)}  Color:[${L.color.map((c:number)=>c.toFixed(2)).join(',')}]  Position:[${(L.pos??[0,0,0]).map((c:number)=>c.toFixed(2)).join(',')}]`);
+                            const L = pts[i]; lightLines.push(`  Point #${i}  Intensity:${L.intensity.toFixed(2)}  Range:${(L.range ?? 0).toFixed(2)}  Color:[${L.color.map((c: number) => c.toFixed(2)).join(',')}]  Position:[${(L.pos ?? [0, 0, 0]).map((c: number) => c.toFixed(2)).join(',')}]`);
                         }
                     }
                 } catch { /* ignore */ }
@@ -173,7 +174,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
             lines.push(`Frame ${Math.floor(performance.now())} time:${total.toFixed(2)}ms avg:${this.emaFrameAvg.toFixed(2)}ms mode=${modeStr}`);
 
             if (frameMem) {
-                lines.push(`frame tex mem: ${(frameMem.total/(1024*1024)).toFixed(2)} MB (color ${(frameMem.color/(1024*1024)).toFixed(2)} + depth ${(frameMem.depth/(1024*1024)).toFixed(2)})`);
+                lines.push(`frame tex mem: ${(frameMem.total / (1024 * 1024)).toFixed(2)} MB (color ${(frameMem.color / (1024 * 1024)).toFixed(2)} + depth ${(frameMem.depth / (1024 * 1024)).toFixed(2)})`);
             }
             // Update per-pass EMAs
             for (const s of stats) {
@@ -210,7 +211,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                 lines.push(`${s.name.padEnd(18)} time:${s.ms.toFixed(3)}ms avg:${avg.toFixed(3)}ms`);
             }
             if (frameMem) {
-                lines.push(`frame tex mem: ${(frameMem.total/(1024*1024)).toFixed(2)} MB (color ${(frameMem.color/(1024*1024)).toFixed(2)} + depth ${(frameMem.depth/(1024*1024)).toFixed(2)})`);
+                lines.push(`frame tex mem: ${(frameMem.total / (1024 * 1024)).toFixed(2)} MB (color ${(frameMem.color / (1024 * 1024)).toFixed(2)} + depth ${(frameMem.depth / (1024 * 1024)).toFixed(2)})`);
             }
             // Memory windows: we’ll just show current + peak for windowed mode for brevity
             if (Array.isArray(memInfo)) {

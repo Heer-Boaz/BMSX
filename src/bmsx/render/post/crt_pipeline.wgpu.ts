@@ -1,6 +1,6 @@
 import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
-import { WebGPUBackend } from '../backend/webgpu_backend';
+import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu_backend';
 
 // Minimal WGSL shaders for present pass (full-screen triangle)
 const VS = /* wgsl */ `
@@ -53,24 +53,22 @@ export function registerCRT_WebGPU(registry: RenderPassLibrary): void {
 		prepare: (backend: GPUBackend, st: unknown) => {
 			const state = st as CRTState;
 			if (!state?.colorTex) return;
-			try {
-				(backend as WebGPUBackend).bindTextureWithSampler(0, 1, state.colorTex as any);
-			} catch { /* ignore if not WebGPU */ }
+			(backend as WebGPUBackend).bindTextureWithSampler(0, 1, state.colorTex as GPUTexture);
 		},
-		exec: (backend: GPUBackend, fbo: unknown, st: unknown) => {
+		exec: (backend: GPUBackend, fbo: any, _st: unknown) => {
 			const wgpu = backend as WebGPUBackend;
 			if (wgpu.type !== 'webgpu' || !wgpu.context) return;
 			// Create a render pass targeting the swapchain texture
 			const swapTex = wgpu.context.getCurrentTexture();
-			const pass = backend.beginRenderPass({ label: 'Present/CRT', color: { tex: swapTex } });
-			try { (wgpu as any).setActivePassEncoder?.(pass); } catch { /* ignore */ }
+			const pass = backend.beginRenderPass({ label: 'Present/CRT', color: { tex: swapTex } }) as WebGPUPassEncoder;
+			wgpu.setActivePassEncoder(pass);
 			// Bind the pipeline built at registration time (provided by registry via fbo param)
-			const ph = (fbo as any)?.pipelineHandle;
-			if (ph) { wgpu.setGraphicsPipeline(pass as any, ph); }
+			const ph = fbo?.pipelineHandle; // TODO: REMOVE BULLSHIT CODE
+			if (ph) { wgpu.setGraphicsPipeline(pass, ph); }
 			// Draw full-screen triangle
-			wgpu.draw(pass as any, 0, 3);
+			wgpu.draw(pass, 0, 3);
 			(backend as GPUBackend).endRenderPass(pass);
-			try { (wgpu as any).setActivePassEncoder?.(null); } catch { /* ignore */ }
+			wgpu.setActivePassEncoder(null);
 		},
 	});
 }

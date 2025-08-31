@@ -1,12 +1,11 @@
 // Centralized low-level WebGL helper & resource creation utilities.
 // Moved out of webgl_backend.ts to keep backend focused on orchestration.
 import { $ } from '../../core/game';
-import { GameView } from '../view';
 import { TextureParams } from './pipeline_interfaces';
 import { MAX_SPRITES, TEXTURE_UNIT_SHADOW_MAP, TEXTURE_UNIT_UPLOAD, VERTEXCOORDS_SIZE } from './webgl.constants';
 
 function getRenderContext() {
-    return $.viewAs<GameView>();
+    return $.view;
 }
 
 export function buildQuadTexCoords(): Float32Array {

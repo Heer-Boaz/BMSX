@@ -13,6 +13,7 @@ import { Camera } from '../3d/camera3d';
 import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
 import { checkWebGLError } from '../backend/webgl.helpers';
+import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu_backend';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -492,8 +493,15 @@ export class RenderGraphRuntime {
                 if (depthRes) builder.depth(depthRes.tex as TextureHandle, isFirstDepthWriter ? depthRes.clearOnWrite?.depth : undefined, !!depthRes.desc.transient);
                 const passEnc = builder.begin();
                 // Provide active pass encoder to backend (WebGPU uses it to bind pipeline and draw)
-                try { (this.backend as any).setActivePassEncoder?.(passEnc); } catch { /* ignore */ }
-                rp = { end: () => { try { (this.backend as any).setActivePassEncoder?.(null); } catch { /* ignore */ } this.backend.endRenderPass(passEnc); } };
+                if (this.backend.type === 'webgpu') {
+                    (this.backend as WebGPUBackend).setActivePassEncoder(passEnc as WebGPUPassEncoder);
+                }
+                rp = {
+                    end: () => {
+                        if (this.backend.type === 'webgpu') (this.backend as WebGPUBackend).setActivePassEncoder(null);
+                        this.backend.endRenderPass(passEnc);
+                    }
+                };
             }
             const t0 = performance.now();
             pass.execute(ctx, frame, data as unknown);

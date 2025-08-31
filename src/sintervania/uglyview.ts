@@ -4,16 +4,16 @@ import { RenderView } from '../bmsx/glview';
 import { GameConstants as CS } from "./gameconstants";
 import { GameState, GameSubstate, Model } from "./gamemodel";
 
-export class GameView extends RenderView {
-    private static _instance: GameView;
+export class UglyView extends RenderView {
+    private static _instance: UglyView;
 
-    public static get _(): GameView {
-        return GameView._instance;
+    public static get _(): UglyView {
+        return UglyView._instance;
     }
 
     constructor(viewportSize: Point) {
         super(viewportSize);
-        GameView._instance = this;
+        UglyView._instance = this;
     }
 
     public drawgame(): void {

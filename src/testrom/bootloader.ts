@@ -7,6 +7,10 @@ import {
 import { BitmapId } from './resourceids';
 import { gamemodel } from './test_gamemodel';
 
+// Find all (xyz as any) and replace them. Codex is stupid and always inserts buggy `as any`.
+// (\s*\(([^)]+?)\s+as\s+any\s*\))
+// $2
+
 var _game: Game;
 export let _model: gamemodel;
 var _view: GameView;
