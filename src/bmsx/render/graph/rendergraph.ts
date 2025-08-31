@@ -519,6 +519,22 @@ export class RenderGraphRuntime {
         }
         return list;
     }
+    /** Rough per-pass texture memory footprint (bytes) based on logical resources (color=4Bpp, depth16=2Bpp). */
+    getPassTextureMemoryInfo(): { name: string; bytes: number }[] {
+        // Aggregate bytes of textures read or written by each pass
+        const names = this.getPassNames();
+        const mem = new Array<number>(names.length).fill(0);
+        const bpp = (r: InternalTexResource) => (r.desc.depth ? 2 : 4);
+        for (let i = 0; i < this.texResources.length; i++) {
+            const r = this.texResources[i]; if (!r) continue;
+            const bytes = (r.desc.width * r.desc.height * bpp(r)) | 0;
+            // Writers
+            for (const p of r.writerPasses) mem[p] += bytes;
+            // Readers
+            for (const p of r.readPasses) mem[p] += bytes;
+        }
+        return names.map((name, i) => ({ name, bytes: mem[i] }));
+    }
     private realizeAll(): void {
         // Create physical textures for each alias group lazily; map physicalId -> backend TextureHandle
         const physTex = new Map<number, TextureHandle>();

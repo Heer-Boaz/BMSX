@@ -181,7 +181,7 @@ let heightGradHighLocation3D: WebGLUniformLocation;
 let heightMinLocation3D: WebGLUniformLocation;
 let heightMaxLocation3D: WebGLUniformLocation;
 let heightGradEnableLocation3D: WebGLUniformLocation;
-const MAX_MORPH_TARGETS = 4;
+const MAX_MORPH_TARGETS = 8;
 const MAX_JOINTS = 32;
 
 const jointMatrixArray = new Float32Array(MAX_JOINTS * MAT4_FLOATS);
@@ -244,7 +244,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
     if (m.hasSkinning) { buffers.joint = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint); gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.STATIC_DRAW); backend.accountUpload('vertex', m.jointIndices!.byteLength); buffers.weight = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight); gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.STATIC_DRAW); backend.accountUpload('vertex', m.jointWeights!.byteLength); }
     if (m.hasMorphTargets) {
         // Build morph position texture (up to 4 targets), layout: width=vertexCount, height=targetCount, RGBA32F xyz delta + pad
-        const targetCount = Math.min(m.morphPositions?.length ?? 0, 4);
+        const targetCount = Math.min(m.morphPositions?.length ?? 0, MAX_MORPH_TARGETS);
         if (targetCount > 0) {
             const width = m.vertexCount;
             const height = targetCount;
@@ -275,7 +275,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
             buffers.morphCount = targetCount;
         }
         // Build morph normal texture (up to 4 targets) if normals present
-        const nCount = Math.min(m.morphNormals?.length ?? 0, 4);
+        const nCount = Math.min(m.morphNormals?.length ?? 0, MAX_MORPH_TARGETS);
         if (nCount > 0) {
             const width = m.vertexCount;
             const height = nCount;

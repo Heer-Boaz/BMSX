@@ -72,6 +72,7 @@ in vec4 v_color;
 out vec4 outputColor;
 
 const vec3 msx1_palette[16] = vec3[](vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.24f, 0.67f, 0.24f), vec3(0.33f, 0.76f, 0.33f), vec3(0.33f, 0.33f, 0.76f), vec3(0.43f, 0.43f, 0.86f), vec3(0.24f, 0.67f, 0.67f), vec3(0.47f, 0.76f, 0.76f), vec3(0.76f, 0.33f, 0.33f), vec3(0.76f, 0.43f, 0.43f), vec3(0.67f, 0.67f, 0.24f), vec3(0.76f, 0.76f, 0.33f), vec3(0.24f, 0.47f, 0.24f), vec3(0.67f, 0.33f, 0.67f), vec3(0.76f, 0.76f, 0.76f), vec3(1.0f, 1.0f, 1.0f));
+const float[16] pattern = float[16](0.0f, 8.0f, 2.0f, 10.0f, 12.0f, 4.0f, 14.0f, 6.0f, 3.0f, 11.0f, 1.0f, 9.0f, 15.0f, 7.0f, 13.0f, 5.0f);
 
 vec3 quantize(vec3 color, int mode) {
     switch (mode) {
@@ -103,7 +104,6 @@ float bayer(vec2 pos) {
     int x = int(mod(pos.x, 4.0f));
     int y = int(mod(pos.y, 4.0f));
     int index = x + y * 4;
-    float[16] pattern = float[16](0.0f, 8.0f, 2.0f, 10.0f, 12.0f, 4.0f, 14.0f, 6.0f, 3.0f, 11.0f, 1.0f, 9.0f, 15.0f, 7.0f, 13.0f, 5.0f);
     return (pattern[index] / 16.0f - 0.5f) * u_ditherIntensity;
 }
 

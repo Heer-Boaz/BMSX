@@ -16,7 +16,7 @@ layout(location=12) in vec4 a_iColor; // per-instance color (UNORM8 normalized)
 uniform mat4 u_model; // Model matrix for transforming the vertex position
 uniform mat3 u_normalMatrix; // Normal matrix for transforming normals
 uniform float u_scale; // Scaling factor for the position
-uniform float u_morphWeights[4];
+uniform float u_morphWeights[8];
 uniform sampler2D u_morphPosTex;
 uniform vec2 u_morphTexSize; // (width, height)
 uniform int u_morphCount;    // number of rows/targets (0..4)
@@ -53,7 +53,7 @@ void main() {
     // Apply position morphs from texture (up to 4 targets)
     if (u_morphCount > 0) {
         float vx = (float(gl_VertexID) + 0.5) / u_morphTexSize.x;
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 8; ++i) {
             if (i >= u_morphCount) break;
             float vy = (float(i) + 0.5) / u_morphTexSize.y;
             vec3 dp = texture(u_morphPosTex, vec2(vx, vy)).xyz;
@@ -64,7 +64,7 @@ void main() {
     if (u_morphNormCount > 0) {
         float vxn = (float(gl_VertexID) + 0.5) / u_morphNormTexSize.x;
         vec3 nd = vec3(0.0);
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 8; ++i) {
             if (i >= u_morphNormCount) break;
             float vyn = (float(i) + 0.5) / u_morphNormTexSize.y;
             vec3 dn = texture(u_morphNormTex, vec2(vxn, vyn)).xyz;

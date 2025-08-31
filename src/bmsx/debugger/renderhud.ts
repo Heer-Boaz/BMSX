@@ -44,6 +44,8 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
     private readonly emaAlpha: number;
     private emaFrameAvg: number | null = null;
     private emaPerPass: { [key: string]: number } = {};
+    private emaMemPerPass: { [key: string]: number } = {};
+    private peakMemPerPass: { [key: string]: number } = {};
     private readonly SUMMARY_FREQUENCY = 500; // 500 frames (is 10 seconds, given the strict 50fps)
 
     constructor() {
@@ -65,6 +67,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
         const rg = gv.renderGraph;
         if (!rg) { el.textContent = 'Render HUD: no graph'; return; }
         const stats = rg.getPassStats();
+        const memInfo = (rg as any).getPassTextureMemoryInfo?.();
         if (!stats || stats.length === 0) { el.textContent = 'Render HUD: no stats'; return; }
         const lines: string[] = [];
         let total = 0;
@@ -108,7 +111,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
             // Update EMA for frame average
             if (this.emaFrameAvg === null) this.emaFrameAvg = total;
             else this.emaFrameAvg = this.emaAlpha * total + (1 - this.emaAlpha) * this.emaFrameAvg;
-            lines.push(`Frame ${Math.floor(performance.now())} ms=${total.toFixed(2)} avg=${this.emaFrameAvg.toFixed(2)} mode=${modeStr}`);
+            lines.push(`Frame ${Math.floor(performance.now())} time:${total.toFixed(2)}ms avg:${this.emaFrameAvg.toFixed(2)}ms mode=${modeStr}`);
 
             // Update per-pass EMAs
             for (const s of stats) {
@@ -118,12 +121,22 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                 const avg = this.emaPerPass[s.name];
                 lines.push(`${s.name.padEnd(18)} ${s.ms.toFixed(3)} ms avg=${avg.toFixed(3)}`);
             }
+            // Update per-pass memory EMAs + peak
+            if (Array.isArray(memInfo)) {
+                for (const m of memInfo) {
+                    const prev = this.emaMemPerPass[m.name] ?? 0;
+                    this.emaMemPerPass[m.name] = prev === 0 ? m.bytes : (this.emaAlpha * m.bytes + (1 - this.emaAlpha) * prev);
+                    const peak = this.peakMemPerPass[m.name] ?? 0;
+                    this.peakMemPerPass[m.name] = Math.max(peak, m.bytes);
+                    if (m.bytes > 0) lines.push(`${(m.name + ' mem').padEnd(18)} ${(m.bytes / (1024 * 1024)).toFixed(2)}MB avg=${(this.emaMemPerPass[m.name] / (1024 * 1024)).toFixed(2)}MB peak=${(this.peakMemPerPass[m.name] / (1024 * 1024)).toFixed(2)}MB`);
+                }
+            }
         } else {
             // Windowed averages
             this.frameWindow.push(total);
             if (this.frameWindow.length > this.SUMMARY_FREQUENCY) this.frameWindow.shift();
             const frameAvg = (this.frameWindow.reduce((a, b) => a + b, 0) / this.frameWindow.length) || 0;
-            lines.push(`Frame ${Math.floor(performance.now())} ms=${total.toFixed(2)} avg=${frameAvg.toFixed(2)} mode=${modeStr}`);
+            lines.push(`Frame ${Math.floor(performance.now())} time:${total.toFixed(2)}ms avg:${frameAvg.toFixed(2)}ms mode=${modeStr}`);
 
             // Update per-pass sliding windows and show per-pass averages
             for (const s of stats) {
@@ -132,7 +145,15 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
                 if (passWindow.length > this.SUMMARY_FREQUENCY) passWindow.shift();
                 this.slidingWindowStats[s.name] = passWindow;
                 const avg = (passWindow.reduce((a, b) => a + b, 0) / passWindow.length) || 0;
-                lines.push(`${s.name.padEnd(18)} ${s.ms.toFixed(3)} ms avg=${avg.toFixed(3)}`);
+                lines.push(`${s.name.padEnd(18)} time:${s.ms.toFixed(3)}ms avg:${avg.toFixed(3)}ms`);
+            }
+            // Memory windows: we’ll just show current + peak for windowed mode for brevity
+            if (Array.isArray(memInfo)) {
+                for (const m of memInfo) {
+                    const peak = this.peakMemPerPass[m.name] ?? 0;
+                    this.peakMemPerPass[m.name] = Math.max(peak, m.bytes);
+                    if (m.bytes > 0) lines.push(`${(m.name + ' mem').padEnd(18)} ${(m.bytes / (1024 * 1024)).toFixed(2)}MB avg=${(this.emaMemPerPass[m.name] / (1024 * 1024)).toFixed(2)}MB peak=${(this.peakMemPerPass[m.name] / (1024 * 1024)).toFixed(2)}MB`);
+                }
             }
         }
         el.textContent = lines.join('\n');
