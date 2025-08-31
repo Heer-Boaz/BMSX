@@ -1,17 +1,15 @@
 import { Float32ArrayPool } from '../../core/utils';
 import type { AmbientLight } from '../3d/light';
 import * as MeshPipeline from '../3d/mesh_pipeline';
-import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../backend/webgl.constants';
+// Avoid backend-specific imports here; use conservative defaults for pooled arrays
+const DEFAULT_MAX_DIR_LIGHTS = 4;
+const DEFAULT_MAX_POINT_LIGHTS = 4;
 
 export interface LightingFrameState {
 	ambient: AmbientLight | null;
 	dirCount: number;
 	pointCount: number;
 	dirty: boolean; // true if any light data (counts/buffers or ambient) changed this frame
-	dirBinding?: number; // optional binding indices (debug / future backend bridging)
-	pointBinding?: number;
-	dirBuffer?: WebGLBuffer; // exposed for diagnostics / WebGPU transition planning
-	pointBuffer?: WebGLBuffer;
 }
 
 // Central lighting update system akin to Unreal's FDeferredLightUniformStruct population.
@@ -39,10 +37,6 @@ export class LightingSystem {
 				dirCount,
 				pointCount,
 				dirty,
-				dirBinding: MeshPipeline.DIR_LIGHT_UNIFORM_BINDING,
-				pointBinding: MeshPipeline.POINT_LIGHT_UNIFORM_BINDING,
-				dirBuffer: MeshPipeline.getDirectionalLightBuffer(),
-				pointBuffer: MeshPipeline.getPointLightBuffer(),
 			};
 		} else {
 			// ensure dirty cleared if no changes
@@ -107,12 +101,12 @@ export function buildLightingDescriptor(frame: LightingFrameState): LightingDesc
 
 // --- Pooled descriptor strategy (no per-frame heap churn) ---
 // Pools sized to maximum supported lights. Returned arrays are reused; treat them as transient for the current frame only.
-const poolDirDirections = new Float32ArrayPool(3 * MAX_DIR_LIGHTS);
-const poolDirColors = new Float32ArrayPool(3 * MAX_DIR_LIGHTS);
-const poolDirIntensity = new Float32ArrayPool(MAX_DIR_LIGHTS);
-const poolPointPositions = new Float32ArrayPool(3 * MAX_POINT_LIGHTS);
-const poolPointColors = new Float32ArrayPool(3 * MAX_POINT_LIGHTS);
-const poolPointParams = new Float32ArrayPool(2 * MAX_POINT_LIGHTS);
+const poolDirDirections = new Float32ArrayPool(3 * DEFAULT_MAX_DIR_LIGHTS);
+const poolDirColors = new Float32ArrayPool(3 * DEFAULT_MAX_DIR_LIGHTS);
+const poolDirIntensity = new Float32ArrayPool(DEFAULT_MAX_DIR_LIGHTS);
+const poolPointPositions = new Float32ArrayPool(3 * DEFAULT_MAX_POINT_LIGHTS);
+const poolPointColors = new Float32ArrayPool(3 * DEFAULT_MAX_POINT_LIGHTS);
+const poolPointParams = new Float32ArrayPool(2 * DEFAULT_MAX_POINT_LIGHTS);
 const poolAmbientColor = new Float32ArrayPool(3);
 
 // Reset pools at frame start so each ensure() yields the first buffer instance; callers should invoke once per frame.
@@ -129,8 +123,8 @@ export function resetLightingDescriptorPools(): void {
 export function buildLightingDescriptorPooled(frame: LightingFrameState): LightingDescriptor {
 	const dirs = MeshPipeline.getDirectionalLights();
 	const pts = MeshPipeline.getPointLightsAll();
-	const dirCount = Math.min(dirs.length, frame.dirCount, MAX_DIR_LIGHTS);
-	const pointCount = Math.min(pts.length, frame.pointCount, MAX_POINT_LIGHTS);
+    const dirCount = Math.min(dirs.length, frame.dirCount, DEFAULT_MAX_DIR_LIGHTS);
+    const pointCount = Math.min(pts.length, frame.pointCount, DEFAULT_MAX_POINT_LIGHTS);
 
 	const dirDirections = poolDirDirections.ensure();
 	const dirColors = poolDirColors.ensure();

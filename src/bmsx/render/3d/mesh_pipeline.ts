@@ -651,6 +651,14 @@ function setupRenderingState(gl: WebGL2RenderingContext, state?: any): void {
     // Ensure back-face culling enabled for solid geometry (skybox pass disables it)
     (getRenderContext().backend as WebGLBackend).setCullEnabled(true);
     gl.cullFace(gl.BACK);
+    // Update ambient lighting if provided by frame state
+    try {
+        const amb = state?.lighting?.ambient as { color: [number, number, number]; intensity: number } | undefined;
+        if (amb) {
+            gl.uniform3fv(ambientColorLocation3D, new Float32Array(amb.color));
+            gl.uniform1f(ambientIntensityLocation3D, amb.intensity);
+        }
+    } catch { /* ignore */ }
     // Camera + view/proj are now provided via the FrameUniforms UBO;
     // keep legacy uniforms unset to avoid redundant state.
     setUseInstancing(gl, false);
