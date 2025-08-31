@@ -16,7 +16,13 @@ function getRenderContext() {
 }
 
 let vaoSkybox: WebGLVertexArrayObject | null = null;
-let skyboxProgram: WebGLProgram; let skyboxPositionLocation: number; let skyboxViewLocation: WebGLUniformLocation; let skyboxProjectionLocation: WebGLUniformLocation; let skyboxTextureLocation: WebGLUniformLocation;
+let skyboxProgram: WebGLProgram;
+let skyboxPositionLocation: number;
+let skyboxViewLocation: WebGLUniformLocation;
+let skyboxProjectionLocation: WebGLUniformLocation;
+let skyboxTextureLocation: WebGLUniformLocation;
+let skyboxDitherIntensityLocation: WebGLUniformLocation;
+
 export let skyboxKey: TextureKey | undefined; export let skyboxFaceIds: SkyboxImageIds | undefined; const skyboxGroup = taskGate.group('texture:skybox:main');
 let lastBoundSkyboxKey: TextureKey | undefined = undefined; let lastBoundSkyboxTexture: WebGLTexture | null = null;
 export function resetSkyboxGroup() { skyboxGroup.bump(); }
@@ -41,7 +47,10 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
     skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
     skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
     skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
+    skyboxDitherIntensityLocation = gl.getUniformLocation(skyboxProgram, 'u_ditherIntensity')!;
     gl.uniform1i(skyboxTextureLocation, TEXTURE_UNIT_SKYBOX);
+    gl.uniform1f(skyboxDitherIntensityLocation, 0.3);
+
 }
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
     // 36 vertices (12 triangles) cube; each face rendered separately
