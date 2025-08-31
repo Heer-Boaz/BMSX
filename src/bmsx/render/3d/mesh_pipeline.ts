@@ -10,7 +10,7 @@ import meshFS from '../3d/shaders/3d.frag.glsl';
 import meshVS from '../3d/shaders/3d.vert.glsl';
 import { FeatureQueue } from '../backend/feature_queue';
 import * as GLR from '../backend/gl_resources';
-import { FogUniforms, MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
+import { MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl.constants';
 import { checkWebGLError } from '../backend/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl_backend';

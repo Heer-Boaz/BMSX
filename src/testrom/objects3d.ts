@@ -345,7 +345,6 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
                     const he: [number, number, number] = [footprintScaleX, height * 0.5, footprintScaleZ];
                     const box = new BuildingMesh([he[0], he[1], he[2]]);
                     const topY = s.p.y + he[1] * 2;
-                    if (topY > $.view.atmosphere.heightMax) $.view.atmosphere.heightMax = topY;
                     $.model.spawn(box, V3.of(px, s.p.y + he[1], pz));
                     // Color selection
                     if (palette && palette.length) {
@@ -371,7 +370,6 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
             const he: [number, number, number] = [(2 + rng() * 2) * worldScale, h * 0.5, (2 + rng() * 2) * worldScale];
             const box = new BuildingMesh([he[0], he[1], he[2]]);
             const topY = first.p.y + he[1] * 2;
-            if (topY > $.view.atmosphere.heightMax) $.view.atmosphere.heightMax = topY;
             $.model.spawn(box, V3.of(first.p.x + (i - 3) * 4, first.p.y + he[1], first.p.z - 6 - rng() * 6));
         }
     }

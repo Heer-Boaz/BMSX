@@ -1,5 +1,5 @@
 ﻿import { PSG } from "../audio/psg";
-import { RandomModulationParams, SM } from "../audio/soundmaster";
+import { RandomModulationParams, SoundMaster } from "../audio/soundmaster";
 import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
@@ -111,7 +111,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		if (this._paused === value) return; // No change
 		this._paused = value;
 		if (this._paused === true) {
-			SM.pause();
+			this.sndmaster.pause();
 			this.view.showPauseOverlay();
 			if (this.debug) {
 				// Show debug information
@@ -121,7 +121,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		else if (this._paused === false) {
 			this.view.showResumeOverlay();
 			gameResumed();
-			SM.resume();
+			this.sndmaster.resume();
 		}
 	}
 
@@ -173,7 +173,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 	public get input(): Input { return this.registry.get<Input>('input'); }
 	public get texmanager(): TextureManager { return this.registry.get<TextureManager>(TEXTMANAGER_ID); }
 	public get registry(): Registry { return Registry.instance; }
-	public get sndmaster(): SM { return SM; }
+	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm'); }
 
 	public emit(event_name: string, emitter: Identifiable, ...args: any[]) {
 		this.event_emitter.emit(event_name, emitter, ...args);
@@ -224,23 +224,23 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 	}
 
 	public playAudio(id: string, options: RandomModulationParams = {}): void {
-		SM.play(id, options);
+		this.sndmaster.play(id, options);
 	}
 
 	public stopEffect(): void {
-		SM.stopEffect();
+		this.sndmaster.stopEffect();
 	}
 
 	public stopMusic(): void {
-		SM.stopMusic();
+		this.sndmaster.stopMusic();
 	}
 
 	public set volume(volume: number) {
-		SM.volume = volume;
+		this.sndmaster.volume = volume;
 	}
 
 	public get volume(): number {
-		return SM.volume;
+		return this.sndmaster.volume;
 	}
 
 	public setInputMap(playerIndex: number, map: InputMap): void {
@@ -341,7 +341,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		gview.pipelineRegistry = pipelineRegistry; // Register the pipeline registry with the view before initializing
 		gview.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
-		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
+		await SoundMaster.instance.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);
 		} catch (error) {
@@ -503,8 +503,8 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		window.requestAnimationFrame(() => {
 			$.view.clear.call($.view);
 			$.view.handleResize.call($.view);
-			SM.stopEffect();
-			SM.stopMusic();
+			this.sndmaster.stopEffect();
+			this.sndmaster.stopMusic();
 		});
 		window.removeEventListener('beforeunload', this.onBeforeUnload, true);
 	}

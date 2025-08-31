@@ -1,4 +1,5 @@
 export * from './ai/behaviourtree';
+export * from './audio/audioeventmanager';
 export * from './audio/psg';
 export * from './audio/soundmaster';
 export * from './component/basecomponent';

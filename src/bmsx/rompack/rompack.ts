@@ -2,13 +2,64 @@ import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
 
-export type AssetId = string;
+export interface RomPack {
+	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
+	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (ImageBitmap).
+	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
+	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
+	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
+	code: string; // The loaded game code in the ROM pack.
+	fsm: id2fsm; // Reference to the loaded FSM assets in the ROM pack, including metadata.
+	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata.
+}
 
-export type BitmapId = AssetId;
-export type AudioId = AssetId;
-export type ModelId = AssetId;
-export type DataId = AssetId;
-export type FsmId = AssetId;
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm';
+export type asset_id = string;
+
+/**
+ * Represents an asset in a ROM pack.
+ */
+export interface RomAsset {
+	resid: asset_id; // The resource ID of the asset.
+	resname: string; // The name of the asset.
+	type: asset_type; // The type of the asset.
+	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
+	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
+	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
+	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
+	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
+	texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
+	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
+	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
+	texture_start?: number; // Start offset of the texture buffer within the ROM
+	texture_end?: number;   // End offset of the texture buffer within the ROM
+}
+
+export interface RomImgAsset extends RomAsset {
+	_imgbin: ImageBitmap; // The Image Bitmap of the image asset
+	_imgbinYFlipped: ImageBitmap; // The flipped Image Bitmap of the image asset
+	get imgbin(): Promise<ImageBitmap>; // A getter for the image element (#see `bootresources.getAssetImageBin`)
+	get imgbinYFlipped(): Promise<ImageBitmap>; // A getter for the flipped image element (#see `bootresources.getAssetImageBin`)
+}
+
+export interface RomMeta {
+	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
+	end: number; // The end offset of the RomPack metadata in the ROM (file) buffer itself.
+}
+
+export type id2res = Record<asset_id, RomAsset>;
+export type id2imgres = Record<asset_id, RomImgAsset>;
+export type id2model = Record<asset_id, GLTFModel>;
+export type id2data = Record<asset_id, any>;
+export type id2htmlimg = Record<asset_id, ImageBitmap>;
+export type id2fsm = Record<asset_id, StateMachineBlueprint>;
+export type id2audioevent = Record<asset_id, AudioEventMapEntry>;
+
+export type BitmapId = asset_id;
+export type AudioId = asset_id;
+export type ModelId = asset_id;
+export type DataId = asset_id;
+export type FsmId = asset_id;
 
 /**
  * Arguments passed from the bootloader to the game constructor.
@@ -233,16 +284,6 @@ export interface GLTFModel {
 
 export type OBJModel = GLTFModel;
 
-export interface RomPack {
-	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
-	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (ImageBitmap).
-	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
-	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
-	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
-	code: string; // The loaded game code in the ROM pack.
-	fsm: id2fsm; // Reference to the loaded FSM assets in the ROM pack, including metadata.
-}
-
 /**
  * Metadata for an image asset.
  */
@@ -260,43 +301,35 @@ export interface ImgMeta {
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm';
-export type asset_id = string | number;
-
-/**
- * Represents an asset in a ROM pack.
- */
-export interface RomAsset {
-	resid: asset_id; // The resource ID of the asset.
-	resname: string; // The name of the asset.
-	type: asset_type; // The type of the asset.
-	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
-	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
-	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
-	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
-	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
-	texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
-	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
-	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
-	texture_start?: number; // Start offset of the texture buffer within the ROM
-	texture_end?: number;   // End offset of the texture buffer within the ROM
+export interface AudioEventPayload {
+	actorId?: Identifier;
+	targetId?: Identifier;
+	modulationPreset?: asset_id;
+	[k: string]: unknown;
 }
 
-export interface RomImgAsset extends RomAsset {
-	_imgbin: ImageBitmap; // The Image Bitmap of the image asset
-	_imgbinYFlipped: ImageBitmap; // The flipped Image Bitmap of the image asset
-	get imgbin(): Promise<ImageBitmap>; // A getter for the image element (#see `bootresources.getAssetImageBin`)
-	get imgbinYFlipped(): Promise<ImageBitmap>; // A getter for the flipped image element (#see `bootresources.getAssetImageBin`)
+export interface AudioCaseMatcher {
+	equals?: Record<string, unknown>;
+	anyOf?: Record<string, unknown[]>;
+	hasTag?: string[];
 }
 
-export interface RomMeta {
-	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
-	end: number; // The end offset of the RomPack metadata in the ROM (file) buffer itself.
+export interface AudioAction {
+	audioId: AudioId;
+	modulationPreset?: asset_id;
+	priority?: number;
+	cooldownMs?: number;
 }
 
-export type id2res = Record<asset_id, RomAsset>;
-export type id2imgres = Record<asset_id, RomImgAsset>;
-export type id2model = Record<asset_id, GLTFModel>;
-export type id2data = Record<asset_id, any>;
-export type id2htmlimg = Record<asset_id, ImageBitmap>;
-export type id2fsm = Record<asset_id, StateMachineBlueprint>;
+export interface AudioEventRule {
+	when?: AudioCaseMatcher;
+	do: AudioAction;
+}
+
+export interface AudioEventMapEntry {
+	name: string;
+	channel?: 'sfx' | 'music' | 'ui';
+	maxVoices?: number;
+	policy?: 'replace' | 'ignore' | 'queue';
+	rules: AudioEventRule[];
+}

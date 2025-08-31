@@ -1,4 +1,5 @@
-import { AudioMeta, AudioType, id2res } from "../rompack/rompack";
+import { Registry } from '../core/registry';
+import { AudioMeta, AudioType, id2res, RegisterablePersistent } from "../rompack/rompack";
 
 export interface AudioMetadataWithID extends AudioMeta {
 	id: string; // The ID of the audio asset.
@@ -99,79 +100,102 @@ export interface ModulationParams {
 	filter?: FilterModulationParams;
 }
 
-export class SM {
-	private static limitToOneEffect: boolean = true;
-	private static tracks: id2res;
-	private static buffers: Record<string, AudioBuffer>;
-	private static sndContext: AudioContext;
-	private static currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode>;
-	private static currentPlayParamsByType: Record<AudioType, ModulationParams | null> = { sfx: null, music: null };
-	private static nodeExtras: WeakMap<AudioBufferSourceNode, { gain?: GainNode; filter?: BiquadFilterNode }> = new WeakMap();
-	public static currentAudioByType: Record<AudioType, AudioMetadataWithID | null> = { sfx: null, music: null };
-	private static gainNode: GainNode;
-	private static nodeStartTime: Record<AudioType, number> = { sfx: 0, music: 0 };
-	private static nodeStartOffset: Record<AudioType, number> = { sfx: 0, music: 0 };
+export class SoundMaster implements RegisterablePersistent {
+	public get id(): 'sm' { return 'sm'; }
+	public get registrypersistent(): true { return true; }
 
-	public static async init(
-		_audioResources: id2res,
-		sndcontext: AudioContext,
-		startingVolume: number,
-		gainnode?: GainNode
-	) {
-		SM.sndContext = sndcontext;
-		SM.currentAudioByType = { sfx: null, music: null };
-		SM.currentAudioNodeByType = { sfx: null, music: null };
+	/**
+	 * The singleton instance of the SoundMaster class.
+	 */
+	private static _instance: SoundMaster;
 
-		SM.tracks = _audioResources;
-		SM.predecodeTracks();
-
-		await SM.sndContext.resume();
-
-		if (!gainnode) {
-			SM.gainNode = SM.sndContext.createGain();
-			SM.gainNode.connect(SM.sndContext.destination);
-		} else {
-			SM.gainNode = gainnode;
+	public static get instance(): SoundMaster {
+		if (!SoundMaster._instance) {
+			SoundMaster._instance = new SoundMaster();
 		}
-		SM.volume = startingVolume ?? 0;
+		return SoundMaster._instance;
 	}
 
-	private static predecodeTracks() {
-		SM.buffers = {};
-		Object.keys(SM.tracks).forEach(id => {
-			SM.decode(global.$rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end']))
-				.then(decoded => SM.buffers[id] = decoded);
+	private tracks: id2res;
+	private buffers: Record<string, AudioBuffer>;
+	private sndContext: AudioContext;
+	private currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode>;
+	private currentPlayParamsByType: Record<AudioType, ModulationParams | null>;
+	private nodeExtras: WeakMap<AudioBufferSourceNode, { gain?: GainNode; filter?: BiquadFilterNode }>;
+	public currentAudioByType: Record<AudioType, AudioMetadataWithID | null>;
+	private gainNode: GainNode;
+	private nodeStartTime: Record<AudioType, number>;
+	private nodeStartOffset: Record<AudioType, number>;
+
+	constructor() {
+		Registry.instance.register(this);
+		this.tracks = {};
+		this.buffers = {};
+		this.sndContext = null; // Passed externally via the init method
+		this.currentAudioNodeByType = { sfx: null, music: null };
+		this.currentPlayParamsByType = { sfx: null, music: null };
+		this.nodeExtras = new WeakMap();
+		this.currentAudioByType = { sfx: null, music: null };
+		this.gainNode = null; // Passed externally via the init method
+		this.nodeStartTime = { sfx: 0, music: 0 };
+		this.nodeStartOffset = { sfx: 0, music: 0 };
+	}
+
+	public async init(audioResources: id2res, sndcontext: AudioContext, startingVolume: number, gainnode?: GainNode) {
+		this.sndContext = sndcontext;
+		this.currentAudioByType = { sfx: null, music: null };
+		this.currentAudioNodeByType = { sfx: null, music: null };
+
+		this.tracks = audioResources;
+		this.predecodeTracks();
+
+		await this.sndContext.resume();
+
+		if (!gainnode) {
+			this.gainNode = this.sndContext.createGain();
+			this.gainNode.connect(this.sndContext.destination);
+		} else {
+			this.gainNode = gainnode;
+		}
+		this.volume = startingVolume ?? 0;
+	}
+
+	private predecodeTracks() {
+		this.buffers = {};
+		Object.keys(this.tracks).forEach(id => {
+			this.decode(global.$rom['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
+				.then(decoded => this.buffers[id] = decoded);
 		});
 	}
 
-	private static async decode(audioData: ArrayBuffer): Promise<AudioBuffer> {
-		if (SM.sndContext.decodeAudioData.length === 2) {
+	private async decode(audioData: ArrayBuffer): Promise<AudioBuffer> {
+		if (this.sndContext.decodeAudioData.length === 2) {
 			return new Promise(resolve => {
-				SM.sndContext.decodeAudioData(audioData, buffer => resolve(buffer));
+				this.sndContext.decodeAudioData(audioData, buffer => resolve(buffer));
 			});
 		} else {
-			return SM.sndContext.decodeAudioData(audioData);
+			return this.sndContext.decodeAudioData(audioData);
 		}
 	}
 
-	private static async createNode(id: string): Promise<AudioBufferSourceNode> {
-		const node = SM.sndContext.createBufferSource();
+	private async createNode(id: string): Promise<AudioBufferSourceNode> {
+		const node = this.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			Promise.resolve(node.buffer = SM.buffers[id]).then(() => resolve(node))
+			Promise.resolve(node.buffer = this.buffers[id]).then(() => resolve(node))
 				.catch(e => reject(e));
 		});
 	}
 
-	private static nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
+	private nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
 		// Only clear if this node is still the current one for this type
-		if (SM.currentAudioNodeByType[type] === node) {
-			SM.currentAudioByType[type] = null;
-			SM.currentAudioNodeByType[type] = null;
+		if (this.currentAudioNodeByType[type] === node) {
+			this.currentAudioByType[type] = null;
+			this.currentAudioNodeByType[type] = null;
 		}
-		SM.releaseNode(node);
+		this.releaseNode(node);
 	}
 
-	private static resolvePlayParams(options: RandomModulationParams | ModulationParams): ModulationParams {
+	private resolvePlayParams(options: RandomModulationParams | ModulationParams): ModulationParams {
 		if (!options) return {};
 		const anyOptions = options as RandomModulationParams | ModulationParams;
 
@@ -189,13 +213,13 @@ export class SM {
 		};
 	}
 
-	private static playNodeWithParams(_track: AudioMeta, node: AudioBufferSourceNode, params: ModulationParams): void {
+	private playNodeWithParams(_track: AudioMeta, node: AudioBufferSourceNode, params: ModulationParams): void {
 		try {
-			let destination: AudioNode = SM.gainNode;
+			let destination: AudioNode = this.gainNode;
 			const extras: { gain?: GainNode; filter?: BiquadFilterNode } = {};
 
 			if (params.filter) {
-				const filter = SM.sndContext.createBiquadFilter();
+				const filter = this.sndContext.createBiquadFilter();
 				if (params.filter.type) filter.type = params.filter.type;
 				if (params.filter.frequency !== undefined) filter.frequency.value = params.filter.frequency;
 				if (params.filter.q !== undefined) filter.Q.value = params.filter.q;
@@ -206,7 +230,7 @@ export class SM {
 			}
 
 			if (params.volumeDelta !== undefined) {
-				const gain = SM.sndContext.createGain();
+				const gain = this.sndContext.createGain();
 				gain.gain.value = Math.pow(10, params.volumeDelta / 20);
 				gain.connect(destination);
 				destination = gain;
@@ -214,7 +238,7 @@ export class SM {
 			}
 
 			node.connect(destination);
-			SM.nodeExtras.set(node, extras);
+			this.nodeExtras.set(node, extras);
 
 			const buffer = node.buffer;
 			let startOffset = params.offset ?? 0;
@@ -238,114 +262,132 @@ export class SM {
 
 			node.playbackRate.value = (params.playbackRate ?? 1) * (1 + (params.pitchDelta ?? 0));
 
-			SM.nodeStartTime[_track['audiotype']] = SM.sndContext.currentTime;
-			SM.nodeStartOffset[_track['audiotype']] = startOffset;
+			this.nodeStartTime[_track['audiotype']] = this.sndContext.currentTime;
+			this.nodeStartOffset[_track['audiotype']] = startOffset;
 			node.start(0, startOffset);
-			node.onended = () => SM.nodeEndedHandler(node, _track['audiotype']);
+			node.onended = () => this.nodeEndedHandler(node, _track['audiotype']);
 		} catch (error) {
 			console.error(error);
 		}
 	}
 
-	public static play(id: string, options?: ModulationParams | RandomModulationParams): void {
-		const params = SM.resolvePlayParams(options);
-		const track = SM.tracks[id]?.['audiometa'];
+	public play(id: string, options?: ModulationParams | RandomModulationParams): void {
+		const params = this.resolvePlayParams(options);
+		const track = this.tracks[id]?.['audiometa'];
 		if (!track) {
 			console.error(`SoundMaster: Attempted to play unknown track with id = "${id}". Skipping.`);
 			return;
 		}
 		const audiotype = track['audiotype'];
 		const playCallback = (node: AudioBufferSourceNode) => {
-			SM.stop(id);
-			SM.currentAudioNodeByType[audiotype] = node;
-			SM.currentAudioByType[audiotype] = { ...track, id: id };
-			SM.currentPlayParamsByType[audiotype] = params;
-			SM.playNodeWithParams(track, node, params);
+			this.stop(id);
+			this.currentAudioNodeByType[audiotype] = node;
+			this.currentAudioByType[audiotype] = { ...track, id: id };
+			this.currentPlayParamsByType[audiotype] = params;
+			this.playNodeWithParams(track, node, params);
 		};
-		SM.createNode(id)
+		this.createNode(id)
 			.then(playCallback)
 			.catch(e => console.error(e.message));
 	}
 
-	private static releaseNode(node: AudioBufferSourceNode) {
+	private releaseNode(node: AudioBufferSourceNode) {
 		if (!node) {
 			console.warn(`SoundMaster: Attempted to release null node. Skipping.`);
 			return;
 		}
-		const extra = SM.nodeExtras.get(node);
+		const extra = this.nodeExtras.get(node);
 		try {
 			node.stop();
 		} catch { /* ignored */ }
 		node.disconnect();
 		if (extra?.gain) extra.gain.disconnect();
 		if (extra?.filter) extra.filter.disconnect();
-		SM.nodeExtras.delete(node);
+		this.nodeExtras.delete(node);
 		try { node.buffer = null; } catch { } // Some browsers may not allow setting buffer to null, and we can safely ignore this error
 	}
 
-	private static stop(id: string): void {
-		const audiotype = SM.tracks[id]?.['audiometa']['audiotype'];
-		SM.stopByType(audiotype);
+	private stop(id: string): void {
+		const audiotype = this.tracks[id]?.['audiometa']['audiotype'];
+		this.stopByType(audiotype);
 	}
 
-	private static stopByType(type: AudioType): void {
+	private stopByType(type: AudioType): void {
 		try {
-			const node = SM.currentAudioNodeByType[type];
+			const node = this.currentAudioNodeByType[type];
 			if (node && node.context.state !== 'closed') {
-				SM.releaseNode(node);
+				this.releaseNode(node);
 			}
 		} catch (e) { console.warn(e); }
-		SM.currentAudioNodeByType[type] = null;
-		SM.currentAudioByType[type] = null;
+		this.currentAudioNodeByType[type] = null;
+		this.currentAudioByType[type] = null;
 	}
 
-	public static stopEffect(): void {
-		SM.stopByType('sfx');
+	public stopEffect(): void {
+		this.stopByType('sfx');
 	}
 
-	public static stopMusic(): void {
-		SM.stopByType('music');
+	public stopMusic(): void {
+		this.stopByType('music');
 	}
 
-	public static pause(): void {
-		if (SM.sndContext.state === 'running') {
-			SM.sndContext.suspend();
+	public pause(): void {
+		if (this.sndContext.state === 'running') {
+			this.sndContext.suspend();
 		}
 	}
 
-	public static resume(): void {
-		if (SM.sndContext.state === 'suspended') {
-			SM.sndContext.resume();
+	public resume(): void {
+		if (this.sndContext.state === 'suspended') {
+			this.sndContext.resume();
 		}
 	}
 
-	public static get volume(): number {
-		return parseFloat(SM.gainNode.gain.value.toFixed(1));
+	public get volume(): number {
+		return parseFloat(this.gainNode.gain.value.toFixed(1));
 	}
 
-	public static set volume(_v: number) {
+	public set volume(_v: number) {
 		let v = parseFloat(_v.toFixed(1));
-		SM.gainNode.gain.value = SM.gainNode.gain.defaultValue * v;
+		this.gainNode.gain.value = this.gainNode.gain.defaultValue * v;
 	}
 
-	public static currentTimeByType(type: AudioType): number | null {
-		if (SM.currentAudioByType[type] === null) {
+	public currentTimeByType(type: AudioType): number | null {
+		if (this.currentAudioByType[type] === null) {
 			return null; // No audio is currently playing for this type
 		}
-		const node = SM.currentAudioNodeByType[type];
+		const node = this.currentAudioNodeByType[type];
 		if (node) {
 			// Calculate true playback position
-			return (node.context.currentTime - SM.nodeStartTime[type]) + (SM.nodeStartOffset[type] ?? 0);
+			return (node.context.currentTime - this.nodeStartTime[type]) + (this.nodeStartOffset[type] ?? 0);
 		}
 		return null;
 	}
 
-	public static currentTrackByType(type: AudioType): string | null {
-		const audioMeta = SM.currentAudioByType[type];
+	public currentTrackByType(type: AudioType): string | null {
+		const audioMeta = this.currentAudioByType[type];
 		return audioMeta ? audioMeta.id : null;
 	}
 
-	public static currentModulationParamsByType(type: AudioType): ModulationParams | null {
-		return SM.currentPlayParamsByType[type] || null;
+	public currentTrackMetaByType(type: AudioType): AudioMeta | null {
+		const audioMeta = this.currentAudioByType[type];
+		return audioMeta ? audioMeta : null;
+	}
+
+	public currentModulationParamsByType(type: AudioType): ModulationParams | null {
+		return this.currentPlayParamsByType[type] || null;
+	}
+
+	public dispose() {
+		this.tracks = null;
+		this.buffers = null;
+		this.sndContext = null;
+		this.currentAudioNodeByType = null;
+		this.currentPlayParamsByType = null;
+		this.nodeExtras = null;
+		this.currentAudioByType = null;
+		this.gainNode = null;
+		this.nodeStartTime = null;
+		this.nodeStartOffset = null;
 	}
 }

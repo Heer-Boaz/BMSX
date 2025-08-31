@@ -14,6 +14,7 @@ import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './cameraobject';
+import { EventHandler } from './eventemitter';
 import { $, runGate } from './game';
 import { GameObject } from './gameobject';
 import { AmbientLightObject, LightObject } from './lightobject';
@@ -182,7 +183,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
 
     public get id(): Identifier { return 'model'; } // Required for IStateful and IIdentifiable
 
-    on(event_name: string, handler: Function, emitter_id: Identifier): void {
+    on(event_name: string, handler: EventHandler, emitter_id: Identifier): void {
         $.event_emitter.on(event_name, handler, this, emitter_id);
     }
 

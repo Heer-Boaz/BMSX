@@ -1,4 +1,4 @@
-import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, State, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent } from '../bmsx';
+import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent } from '../bmsx';
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
@@ -112,7 +112,7 @@ export class Sinterklaas extends Fighter {
                 highkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: State, hit: boolean) {
-                        SM.play(AudioId.kick);
+                        $.playAudio(AudioId.kick);
                         this.imgid = BitmapId.sint_highkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
@@ -123,7 +123,7 @@ export class Sinterklaas extends Fighter {
                 lowkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: State, hit: boolean) {
-                        SM.play(AudioId.kick);
+                        $.playAudio(AudioId.kick);
                         this.imgid = BitmapId.sint_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
@@ -134,7 +134,7 @@ export class Sinterklaas extends Fighter {
                 punch: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: State, hit: boolean) {
-                        SM.play(AudioId.punch);
+                        $.playAudio(AudioId.punch);
                         this.imgid = BitmapId.sint_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
@@ -145,7 +145,7 @@ export class Sinterklaas extends Fighter {
                 duckkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: State, hit: boolean) {
-                        SM.play(AudioId.kick);
+                        $.playAudio(AudioId.kick);
                         this.imgid = BitmapId.sint_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
@@ -156,7 +156,7 @@ export class Sinterklaas extends Fighter {
                 flyingkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: State, hit: boolean) {
-                        SM.play(AudioId.kick);
+                        $.playAudio(AudioId.kick);
                         this.imgid = BitmapId.sint_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
@@ -173,7 +173,7 @@ export class Sinterklaas extends Fighter {
                 humiliated: {
                     ticks2move: 50,
                     enter(this: SpriteObject) {
-                        SM.play(AudioId.stuk);
+                        $.playAudio(AudioId.stuk);
                         this.imgid = BitmapId.sint_humiliated_1;
                     },
                     states: {

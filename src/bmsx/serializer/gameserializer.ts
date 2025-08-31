@@ -1,4 +1,4 @@
-import { type ModulationParams, SM } from "../audio/soundmaster";
+import { type ModulationParams } from "../audio/soundmaster";
 import { Space, SpaceObject } from "../core/basemodel";
 import { $ } from '../core/game';
 import { Registry } from "../core/registry";
@@ -608,12 +608,12 @@ export class Savegame {
     saveSoundState(o: Savegame) {
         // Capture current sound master playback state
         const SMState = {
-            sfxTrackId: SM.currentTrackByType('sfx'),
-            sfxOffset: SM.currentTimeByType('sfx'),
-            musicTrackId: SM.currentTrackByType('music'),
-            musicOffset: SM.currentTimeByType('music'),
-            sfxModParams: SM.currentModulationParamsByType('sfx'),
-            musicModParams: SM.currentModulationParamsByType('music'),
+            sfxTrackId: $.sndmaster.currentTrackByType('sfx'),
+            sfxOffset: $.sndmaster.currentTimeByType('sfx'),
+            musicTrackId: $.sndmaster.currentTrackByType('music'),
+            musicOffset: $.sndmaster.currentTimeByType('music'),
+            sfxModParams: $.sndmaster.currentModulationParamsByType('sfx'),
+            musicModParams: $.sndmaster.currentModulationParamsByType('music'),
         };
 
         return { SMState };
@@ -622,14 +622,14 @@ export class Savegame {
     @onload
     restoreSoundState() {
         // Restore sound master playback state
-        SM.stopEffect(); // Stop any currently playing sound effect
-        SM.stopMusic(); // Stop any currently playing music
+        $.sndmaster.stopEffect(); // Stop any currently playing sound effect
+        $.sndmaster.stopMusic(); // Stop any currently playing music
         if (this.SMState) {
             if (this.SMState.sfxTrackId) {
-                SM.play(this.SMState.sfxTrackId, { offset: this.SMState.sfxOffset, ...(this.SMState.sfxModParams || {}) });
+                $.sndmaster.play(this.SMState.sfxTrackId, { offset: this.SMState.sfxOffset, ...(this.SMState.sfxModParams || {}) });
             }
             if (this.SMState.musicTrackId) {
-                SM.play(this.SMState.musicTrackId, { offset: this.SMState.musicOffset, ...this.SMState.musicModParams || {} });
+                $.sndmaster.play(this.SMState.musicTrackId, { offset: this.SMState.musicOffset, ...this.SMState.musicModParams || {} });
             }
         }
     }

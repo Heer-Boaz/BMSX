@@ -1,4 +1,4 @@
-import { $, BaseModel, build_fsm, Direction, GameObject, InputMap, insavegame, MSX1ScreenHeight, MSX1ScreenWidth, new_vec3, SM, State, StateMachineBlueprint, subscribesToGlobalEvent } from '../bmsx';
+import { $, BaseModel, build_fsm, Direction, GameObject, InputMap, insavegame, MSX1ScreenHeight, MSX1ScreenWidth, new_vec3, State, StateMachineBlueprint, subscribesToGlobalEvent } from '../bmsx';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
@@ -36,7 +36,7 @@ export class gamemodel extends BaseModel {
 
 		if (emitter.hp <= 0) {
 			emitter.hp = 0;
-			SM.stopMusic();
+			$.stopMusic();
 
 			// Handle that fighter is down
 			emitter.sc.do('go_humiliated', emitter);
@@ -90,7 +90,7 @@ export class gamemodel extends BaseModel {
 						_ffwachten: {
 							ticks2move: 150,
 							enter(this: gamemodel) {
-								SM.play(AudioId.start);
+								$.playAudio(AudioId.start);
 								$.event_emitter.emit('its_curtains', this);
 							},
 							end: () => 'oefenen',
@@ -103,7 +103,7 @@ export class gamemodel extends BaseModel {
 								this.spawn(this.room_mgr.rooms[this._currentRoomId], new_vec3(0, 0, 0));
 								this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
-								SM.play(AudioId.trainen);
+								$.playAudio(AudioId.trainen);
 							},
 							run(this: gamemodel): string | void {
 								const player = this.getGameObject<Fighter>('player');
@@ -128,7 +128,7 @@ export class gamemodel extends BaseModel {
 								this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
 								this.spawn(new Sinterklaas(this.numOfPlayers === 1), new_vec3(60, 0, 10));
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
-								SM.play(AudioId.knokken);
+								$.playAudio(AudioId.knokken);
 							},
 						},
 					},
