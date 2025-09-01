@@ -226,9 +226,10 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
-	public playAudio(id: asset_id, options: RandomModulationParams = {}): void {
-		this.sndmaster.play(id, options);
-	}
+    public playAudio(id: asset_id, options: RandomModulationParams = {}): void {
+        // Route through AudioEventManager so policies and per-channel handling stay consistent
+        this.aem.playDirect(id, options);
+    }
 
 	public stopEffect(): void {
 		this.sndmaster.stopEffect();

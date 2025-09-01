@@ -3,18 +3,113 @@ import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import type {
 	asset_id,
-	AudioAction,
-	AudioActionOneOfSpec,
-	AudioActionSpec,
-	AudioEventMapEntry,
-	AudioEventPayload,
-	AudioEventRule,
+	AudioId,
+	AudioType,
 	id2audioevent,
 	Identifiable,
 	Identifier,
 	RegisterablePersistent,
 } from '../rompack/rompack';
 import type { ModulationParams, RandomModulationParams } from './soundmaster';
+
+export interface AudioEventPayload {
+	actorId?: Identifier;
+	targetId?: Identifier;
+	modulationPreset?: asset_id;
+	modulationParams?: RandomModulationParams | ModulationParams;
+	[k: string]: unknown;
+}
+
+export interface AudioCaseMatcher {
+	// Basic comparisons
+	equals?: Record<string, unknown>;
+	/**
+	 * Value must be in provided list per key. Alias: `in`.
+	 */
+	anyOf?: Record<string, unknown[]>;
+	/**
+	 * Synonym for `anyOf` for readability in YAML (IN operator).
+	 */
+	in?: Record<string, unknown[]>;
+	/**
+	 * All tags listed must be present in payload `tags: string[]`.
+	 */
+	hasTag?: string[];
+
+	// Logical composition
+	/** All nested matchers must match in addition to this node */
+	and?: AudioCaseMatcher[];
+	/** Any nested matcher may match (OR) in addition to this node */
+	or?: AudioCaseMatcher[];
+	/** Nested matcher must NOT match. */
+	not?: AudioCaseMatcher;
+}
+
+export interface AudioAction {
+	audioId: AudioId;
+	modulationPreset?: asset_id;
+	priority?: number;
+	cooldownMs?: number;
+}
+
+export interface AudioActionWeighted extends AudioAction {
+	/** Relative probability when using weighted selection */
+	weight?: number;
+}
+
+export type AudioActionPickStrategy = 'uniform' | 'weighted';
+/**
+ * Randomized action spec: choose one action from a list.
+ * - If any item specifies a `weight` or `pick: 'weighted'`, weighted selection is used.
+ * - `avoidRepeat`: prevent immediate repeat of the last choice for this rule.
+ */
+
+export interface AudioActionOneOfSpec {
+	oneOf: (AudioActionWeighted | AudioId)[];
+	pick?: AudioActionPickStrategy;
+	avoidRepeat?: boolean;
+}
+
+export type AudioStingerSpec = { stinger: AudioId; returnTo?: AudioId; returnToPrevious?: boolean; };
+export type AudioDelaySpec = { delayMs: number; };
+export type AudioSyncMode = 'immediate' | 'loop' | AudioDelaySpec | AudioStingerSpec;
+// Music transition (engine-level) — no BPM required
+
+export interface MusicTransitionSpec {
+	musicTransition: {
+		audioId: AudioId;
+		/**
+		 * How to schedule the transition:
+		 * - 'immediate': switch now
+		 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
+		 * - { delayMs }: switch after delay
+		 * - { stinger, returnTo?: AudioId, returnToPrevious?: boolean }: play stinger immediately, then switch to either a specific id (returnTo) or the previously playing music (returnToPrevious). If both are provided, returnTo takes precedence.
+		 */
+		sync?: AudioSyncMode;
+		fadeMs?: number;
+		/** If true and target has a loop point, start at its loopStart (skip intro) */
+		startAtLoopStart?: boolean;
+		/** If true, start target at t=0 (fresh) instead of resuming an offset */
+		startFresh?: boolean;
+	};
+}
+
+export type AudioActionSpec = AudioAction | AudioActionOneOfSpec | MusicTransitionSpec;
+
+export interface AudioEventRule {
+	when?: AudioCaseMatcher;
+	do: AudioActionSpec;
+}
+
+export type AudioPlaybackMode = 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
+
+export interface AudioEventMapEntry {
+	name: string;
+	channel?: AudioType;
+	maxVoices?: number;
+	policy?: AudioPlaybackMode;
+	rules: AudioEventRule[];
+}
 
 export interface AudioHandleContext {
 	name: string;
@@ -24,6 +119,10 @@ export interface AudioHandleContext {
 }
 
 export type AudioHandler = (ctx: AudioHandleContext) => boolean;
+
+export type AudioEventQueueItem = { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number, cooldownMs?: number, enqueuedAt?: number };
+export type AudioEventQueue = AudioEventQueueItem[];
+export type AudioEventQueuePartialForDeserialization = Partial<AudioEventQueueItem>[]
 
 // Example usage
 // $.emit('combat.hit', this, { result: 'hit', material: 'barrier', weaponClass: 'heavy', actorId, targetId });
@@ -82,9 +181,9 @@ export class AudioEventManager implements RegisterablePersistent {
 	private lastPlayedAt = new Map<string, number>();
 	private lastRandomPickByRule = new Map<string, number>();
 	private anyListener?: EventHandler;
-	private endUnsubByType: Partial<Record<'sfx' | 'music' | 'ui', () => void>> = {};
-	private queuesByType: Record<'sfx' | 'music' | 'ui', { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number; cooldownMs?: number; enqueuedAt: number; }[]> = { sfx: [], music: [], ui: [] };
-	private resumeOnNextEndByType: Record<'sfx' | 'music' | 'ui', boolean> = { sfx: false, music: false, ui: false };
+	private endUnsubByType: Partial<Record<AudioType, () => void>> = {};
+	private queuesByType: Record<AudioType, AudioEventQueue> = { sfx: [], music: [], ui: [] };
+	private resumeOnNextEndByType: Record<AudioType, boolean> = { sfx: false, music: false, ui: false };
 
 	init(maps: id2audioevent[], handlers?: AudioHandler[]): void {
 		this.handlers = handlers ?? [];
@@ -101,8 +200,8 @@ export class AudioEventManager implements RegisterablePersistent {
 		$.event_emitter.onAny(this.anyListener, true);
 
 		// subscribe to voice end events for sfx and ui to manage queue/pause
-		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx', () => this.onChannelEnded('sfx'));
-		this.endUnsubByType['ui'] = $.sndmaster.addEndedListener('ui', () => this.onChannelEnded('ui'));
+		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx' as AudioType, () => this.onChannelEnded('sfx'));
+		this.endUnsubByType['ui'] = $.sndmaster.addEndedListener('ui' as AudioType, () => this.onChannelEnded('ui'));
 
 		// Expose instance for serializer helpers
 		(globalThis as { AudioEventManagerInstance?: AudioEventManager }).AudioEventManagerInstance = this;
@@ -126,14 +225,31 @@ export class AudioEventManager implements RegisterablePersistent {
 		} catch { }
 	}
 
-	public getQueues(): { sfx: { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[]; ui: { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[] } {
+	// Direct play entrypoint so game code can route through AEM (policies/awareness)
+	public playDirect(id: asset_id, options?: RandomModulationParams | ModulationParams): void {
+		const meta = $.rompack.audio[id]?.audiometa;
+		const type = (meta?.audiotype ?? 'sfx') as AudioType;
+		// For direct plays, rely on SoundMaster per-type pooling and keep music isolated.
+		switch (type) {
+			case 'music':
+				$.sndmaster.play(id, options);
+				break;
+			case 'ui':
+			case 'sfx':
+			default:
+				$.sndmaster.play(id, options);
+				break;
+		}
+	}
+
+	public getQueues(): { sfx: AudioEventQueue; ui: AudioEventQueue } {
 		return {
 			sfx: this.queuesByType.sfx.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority })),
 			ui: this.queuesByType.ui.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority })),
 		};
 	}
 
-	public restoreQueues(qs: { sfx: { name?: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[]; ui: { name?: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[] }): void {
+	public restoreQueues(qs: { sfx: AudioEventQueuePartialForDeserialization; ui: AudioEventQueuePartialForDeserialization }): void {
 		const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 		this.queuesByType.sfx = (qs.sfx || []).map(it => ({ name: it.name ?? 'restored.sfx', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, enqueuedAt: now }));
 		this.queuesByType.ui = (qs.ui || []).map(it => ({ name: it.name ?? 'restored.ui', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, enqueuedAt: now }));
@@ -165,6 +281,23 @@ export class AudioEventManager implements RegisterablePersistent {
 		// 2) data-driven resolution
 		const entry = this.merged.get(name);
 		if (!entry) return false;
+
+		// First, check for music transitions in matching rules
+		for (let i = 0; i < entry.rules.length; i++) {
+			const r = entry.rules[i];
+			if (!this.matches(r.when, payload)) continue;
+			const d = r.do as unknown as { musicTransition?: { audioId: asset_id; sync?: unknown; fadeMs?: number; startAtLoopStart?: boolean } };
+			if (d && typeof d === 'object' && 'musicTransition' in d && d.musicTransition) {
+				const mt = d.musicTransition;
+				$.sndmaster.requestMusicTransition({
+					to: mt.audioId,
+					sync: (mt as any).sync,
+					fadeMs: mt.fadeMs,
+					startAtLoopStart: mt.startAtLoopStart,
+				});
+				return true;
+			}
+		}
 
 		const action = this.pickAction(name, entry.rules, payload);
 		if (!action) return true;
@@ -227,19 +360,19 @@ export class AudioEventManager implements RegisterablePersistent {
 		return true;
 	}
 
-	private enqueue(type: 'sfx' | 'music' | 'ui', item: { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number; cooldownMs?: number; }): void {
+	private enqueue(type: AudioType, item: AudioEventQueueItem): void {
 		const q = this.queuesByType[type];
 		q.push({ ...item, enqueuedAt: (typeof performance !== 'undefined' ? performance.now() : Date.now()) });
 	}
 
-	private onChannelEnded(type: 'sfx' | 'ui' | 'music'): void {
+	private onChannelEnded(type: AudioType): void {
 		// Resume paused voices if requested
 		if (this.resumeOnNextEndByType[type]) {
 			this.resumeOnNextEndByType[type] = false;
 			const snaps = $.sndmaster.drainPausedSnapshots(type);
-            for (const s of snaps) {
-                $.sndmaster.play(s.id, { ...s.params, offset: s.offset });
-            }
+			for (const s of snaps) {
+				$.sndmaster.play(s.id, { ...s.params, offset: s.offset });
+			}
 			return; // Give priority to resuming before dequeuing
 		}
 
@@ -342,10 +475,10 @@ export class AudioEventManager implements RegisterablePersistent {
 		return typeof maybe === 'object' && maybe !== null && 'oneOf' in (maybe as Record<string, unknown>) && Array.isArray((maybe as AudioActionOneOfSpec).oneOf);
 	}
 
-    private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec): AudioAction | undefined {
-        if (!this.isOneOfSpec(spec)) {
-            return spec as AudioAction;
-        }
+	private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec): AudioAction | undefined {
+		if (!this.isOneOfSpec(spec)) {
+			return spec as AudioAction;
+		}
 
 		const items = spec.oneOf;
 		if (items.length === 0) return undefined;

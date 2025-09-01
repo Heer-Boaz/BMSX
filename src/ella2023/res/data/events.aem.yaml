@@ -43,15 +43,6 @@ events:
           audioId: hit2
           modulationPreset: hitsfx
           priority: 2
-      # - when:
-      #     equals:
-      #       result: block
-      #       material: shield
-      #   do:
-      #     audioId: Hit_Shield_Clang
-      #     modulationPreset: hitsfx
-      #     priority: 1
-
   # --- Demonstration events showcasing new matcher features ---
   demo.in_operator:
     channel: sfx
@@ -99,3 +90,68 @@ events:
             - { audioId: hit2, modulationPreset: hitsfx, weight: 3 }
           pick: weighted
           avoidRepeat: true
+
+  # --- Music examples using musicTransition ---
+  music.enter_explore:
+    channel: music
+    rules:
+      - do:
+          musicTransition:
+            audioId: trainen           # explore/ambient theme
+            sync: loop                 # align to current loop boundary if something is already playing
+            fadeMs: 300
+
+  music.enter_combat:
+    channel: music
+    rules:
+      - do:
+          musicTransition:
+            audioId: knokken           # combat theme
+            sync: loop                 # wait for source loop wrap, then switch
+            fadeMs: 250
+            startAtLoopStart: true     # skip target intro if it has a loop point
+
+  music.leave_combat:
+    channel: music
+    rules:
+      - do:
+          musicTransition:
+            audioId: trainen           # back to explore
+            sync: loop
+            fadeMs: 300
+
+  music.victory:
+    channel: music
+    rules:
+      - do:
+          musicTransition:
+            sync:
+              stinger: vernederdans    # play stinger immediately
+              returnTo: trainen
+            audioId: trainen           # then return to explore theme
+            fadeMs: 200
+  music.victory_alt:
+      - do:
+          musicTransition:
+            sync:
+              stinger: vernederdans    # play stinger immediately
+              returnTo: trainen        # then return to explore theme
+            fadeMs: 200
+
+  music.gameover:
+    channel: music
+    rules:
+      - do:
+          musicTransition:
+            audioId: gameover          # game over music
+            sync: immediate            # start right away
+            fadeMs: 150
+
+  music.cutscene_intro:
+    channel: music
+    rules:
+      - do:
+          musicTransition:
+            audioId: start             # title/intro theme
+            sync: { delayMs: 500 }     # delay start by 0.5s (e.g., after sfx)
+            fadeMs: 400

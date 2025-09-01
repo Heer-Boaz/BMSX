@@ -5,6 +5,7 @@ export interface AudioMetadataWithID extends AudioMeta {
     id: asset_id; // The ID of the audio asset.
 }
 
+export type AudioStopSelector = 'all' | 'oldest' | 'newest' | 'byId'
 export type ModulationRange = [number, number];
 
 export interface FilterModulationParams {
@@ -137,6 +138,8 @@ export class SoundMaster implements RegisterablePersistent {
 
     // Ended listeners per type
     private endedListenersByType: Record<AudioType, Set<() => void>>;
+    private musicTransitionTimer: ReturnType<typeof setTimeout> | null = null;
+    private pendingStingerReturnTo: asset_id | null = null;
 
     constructor() {
         Registry.instance.register(this);
@@ -151,6 +154,7 @@ export class SoundMaster implements RegisterablePersistent {
         this.nodeStartTime = { sfx: 0, music: 0, ui: 0 };
         this.nodeStartOffset = { sfx: 0, music: 0, ui: 0 };
         this.voicesByType = { sfx: [], music: [], ui: [] };
+        // Allow multiple concurrent SFX/UI voices by default; keep music single-voice
         this.defaultMaxVoicesByType = { sfx: 1, music: 1, ui: 1 };
         this.pausedByType = { sfx: [], music: [], ui: [] };
         this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
@@ -259,13 +263,13 @@ export class SoundMaster implements RegisterablePersistent {
                 extras.filter = filter;
             }
 
-            if (params.volumeDelta !== undefined) {
-                const gain = this.sndContext.createGain();
-                gain.gain.value = Math.pow(10, params.volumeDelta / 20);
-                gain.connect(destination);
-                destination = gain;
-                extras.gain = gain;
-            }
+            // Always include a gain stage for envelopes/crossfades
+            const gain = this.sndContext.createGain();
+            const vol = (params.volumeDelta !== undefined) ? Math.pow(10, params.volumeDelta / 20) : 1;
+            gain.gain.value = vol;
+            gain.connect(destination);
+            destination = gain;
+            extras.gain = gain;
 
             node.connect(destination);
             this.nodeExtras.set(node, extras);
@@ -357,25 +361,27 @@ export class SoundMaster implements RegisterablePersistent {
         try { node.buffer = null; } catch { /* ignored */ }
     }
 
-    public stop(idOrType?: asset_id | AudioType, which?: 'all' | 'oldest' | 'newest' | 'byId', id?: asset_id): void {
-        // Support original behavior: stop by asset id (type inferred)
-        if (idOrType in AudioTypes) {
-            const audioType = idOrType as AudioType;
-            this.stopByTypeInternal(audioType, which ?? 'all', id);
+    private isAudioType(value: unknown): value is AudioType {
+        return typeof value === 'string' && AudioTypes.includes(value as AudioType);
+    }
+
+    public stop(idOrType?: asset_id | AudioType, which?: AudioStopSelector, id?: asset_id): void {
+        // If explicit channel provided
+        if (this.isAudioType(idOrType)) {
+            this.stopByTypeInternal(idOrType, which ?? 'all', id);
             return;
-        } else {
+        }
+        // Otherwise, treat as asset id and infer channel
+        if (idOrType !== undefined) {
             const audioRes = this.tracks[idOrType];
             const inferredType = audioRes?.['audiometa']?.['audiotype'] as AudioType | undefined;
             if (inferredType) {
                 this.stopByTypeInternal(inferredType, 'byId', idOrType);
             }
-            else {
-                AudioTypes.forEach(type => this.stopByTypeInternal(type, 'all'));
-            }
         }
     }
 
-    private stopByTypeInternal(type: AudioType, which: 'all' | 'oldest' | 'newest' | 'byId', id?: asset_id): void {
+    private stopByTypeInternal(type: AudioType, which: AudioStopSelector, id?: asset_id): void {
         const pool = this.voicesByType[type];
         const toStopSet = new Set<AudioBufferSourceNode>();
         switch (which) {
@@ -524,6 +530,142 @@ export class SoundMaster implements RegisterablePersistent {
     public addEndedListener(type: AudioType, listener: () => void): () => void {
         this.endedListenersByType[type].add(listener);
         return () => this.endedListenersByType[type].delete(listener);
+    }
+
+    public requestMusicTransition(opts: {
+        to: asset_id;
+        sync?: 'immediate' | 'loop' | { delayMs: number } | { stinger: asset_id; returnTo?: asset_id; returnToPrevious?: boolean };
+        fadeMs?: number;
+        startAtLoopStart?: boolean;
+        startFresh?: boolean;
+    }): void {
+        const sync = opts.sync ?? 'immediate';
+        const fadeMs = opts.fadeMs ?? 250;
+        const startAtLoopStart = opts.startAtLoopStart ?? false;
+        const startFresh = opts.startFresh ?? false;
+
+        // Clear any pending timer
+        if (this.musicTransitionTimer != null) {
+            clearTimeout(this.musicTransitionTimer);
+            this.musicTransitionTimer = null;
+        }
+
+        // Stinger path: object with 'stinger' property
+        if (typeof sync === 'object' && 'stinger' in sync) {
+            // Select return target: explicit id or previous music
+            if (sync.returnToPrevious) {
+                const prevId = this.currentTrackByType('music');
+                const prevOffset = this.currentTimeByType('music') ?? 0;
+                const prevParams = this.currentModulationParamsByType('music') ?? undefined;
+                this.pendingStingerReturnTo = prevId != null ? prevId : (opts.to ?? null);
+                // Stop music and play stinger; after end, resume prev at saved offset
+                const resumeId = this.pendingStingerReturnTo;
+                this.stop('music', 'all');
+                this.play(sync.stinger);
+                const unsub = this.addEndedListener('music', () => {
+                    unsub();
+                    const target = resumeId;
+                    this.pendingStingerReturnTo = null;
+                    if (target != null) this.startMusicWithFade(target, fadeMs, startAtLoopStart, prevOffset);
+                });
+                return;
+            } else {
+                const ret = sync.returnTo ?? opts.to;
+                this.pendingStingerReturnTo = ret;
+                this.stop('music', 'all');
+                this.play(sync.stinger);
+                const unsub = this.addEndedListener('music', () => {
+                    unsub();
+                    const target = this.pendingStingerReturnTo;
+                    this.pendingStingerReturnTo = null;
+                    if (target != null) this.startMusicWithFade(target, fadeMs, startAtLoopStart);
+                });
+                return;
+            }
+        }
+
+        if (sync === 'immediate') {
+            this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+            return;
+        }
+
+        // Delay path: object with 'delayMs' property
+        if (typeof sync === 'object' && 'delayMs' in sync) {
+            const delayMs = Math.max(0, sync.delayMs);
+            this.musicTransitionTimer = setTimeout(() => {
+                this.musicTransitionTimer = null;
+                this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+            }, delayMs);
+            return;
+        }
+
+        // sync === 'loop'
+        const nowOffset = this.currentTimeByType('music');
+        const node = this.currentAudioNodeByType['music'];
+        const meta = this.currentAudioByType['music'];
+        const duration = node?.buffer?.duration ?? 0;
+        const loopStart = meta?.loop ?? undefined;
+        if (nowOffset == null || !duration || nowOffset < 0) {
+            this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart);
+            return;
+        }
+        const offsetMod = ((nowOffset % duration) + duration) % duration;
+        let boundary = duration;
+        if (loopStart !== undefined && loopStart !== null) boundary = (offsetMod < loopStart) ? loopStart : duration;
+        const delaySec = Math.max(0, boundary - offsetMod);
+        this.musicTransitionTimer = setTimeout(() => {
+            this.musicTransitionTimer = null;
+            this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart, startFresh ? 0 : undefined);
+        }, Math.floor(delaySec * 1000));
+    }
+
+    private startMusicWithFade(target: asset_id, fadeMs: number, startAtLoopStart: boolean, startAtSeconds?: number): void {
+        const targetMeta = this.tracks[target]?.['audiometa'];
+        const startOffset = (startAtSeconds !== undefined) ? startAtSeconds : ((startAtLoopStart && targetMeta && targetMeta.loop != null) ? targetMeta.loop : 0);
+
+        const currentNode = this.currentAudioNodeByType['music'];
+        const currentExtras = currentNode ? this.nodeExtras.get(currentNode) : undefined;
+        const ctxTime = this.sndContext.currentTime;
+        const fadeSec = Math.max(0, fadeMs) / 1000;
+
+        // Ramp down old music if possible
+        if (currentExtras?.gain) {
+            try {
+                const g = currentExtras.gain.gain;
+                g.cancelScheduledValues(ctxTime);
+                const cur = g.value;
+                g.setValueAtTime(cur, ctxTime);
+                g.linearRampToValueAtTime(0.0001, ctxTime + fadeSec);
+            } catch { /* ignore */ }
+        }
+
+        this.createNode(target).then(node => {
+            const playParams: ModulationParams = { offset: startOffset, volumeDelta: -80 };
+            const meta = this.tracks[target]?.['audiometa'];
+            this.currentAudioNodeByType['music'] = node;
+            this.currentAudioByType['music'] = meta ? { ...meta, id: target } : null;
+            this.currentPlayParamsByType['music'] = playParams;
+            const startTime = this.sndContext.currentTime;
+            this.playNodeWithParams(meta, node, playParams);
+            this.voicesByType['music'].push({ node, id: target, priority: meta?.priority ?? 0, params: playParams, startedAt: startTime, startOffset, meta });
+
+            // Fade in new
+            const extras = this.nodeExtras.get(node);
+            const g = extras?.gain?.gain;
+            if (g) {
+                try {
+                    g.cancelScheduledValues(this.sndContext.currentTime);
+                    g.setValueAtTime(g.value, this.sndContext.currentTime);
+                    g.linearRampToValueAtTime(1.0, this.sndContext.currentTime + fadeSec);
+                } catch { /* ignore */ }
+            }
+
+            if (currentNode) {
+                setTimeout(() => {
+                    try { this.releaseNode(currentNode); } catch { /* ignore */ }
+                }, fadeMs);
+            }
+        }).catch(e => console.error(e));
     }
 
     public dispose() {

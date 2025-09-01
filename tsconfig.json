@@ -87,6 +87,7 @@
     "scripts/rompacker/atlasbuilder.ts",
     "scripts/rompacker/boundingbox_extractor.ts",
     "scripts/rompacker/gltfloader.ts",
+    "scripts/rompacker/audioeventvalidator.ts",
   ],
   "watchOptions": {
     // Use native file system events for files and directories

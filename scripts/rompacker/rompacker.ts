@@ -1,4 +1,5 @@
-import { BOOTROM_TS_FILENAME, buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, validateAudioEventReferences } from './rompacker-core';
+import { validateAudioEventReferences } from './audioeventvalidator';
+import { BOOTROM_TS_FILENAME, buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rompacker-core';
 import type { RomManifest, RomPackerOptions } from './rompacker.rompack';
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
@@ -268,21 +269,21 @@ async function main() {
 				await progress?.taskCompleted();
 				const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
 				await progress?.taskCompleted();
-                const resources = await getResourcesList(romResMetaList, rom_name);
-                await progress?.taskCompleted();
+				const resources = await getResourcesList(romResMetaList, rom_name);
+				await progress?.taskCompleted();
 
-                if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-                    await createAtlasses(resources);
-                }
-                await progress?.taskCompleted();
+				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+					await createAtlasses(resources);
+				}
+				await progress?.taskCompleted();
 
-                // Validate AEM references against loaded resources
-                validateAudioEventReferences(resources);
+				// Validate AEM references against loaded resources
+				validateAudioEventReferences(resources);
 
-                const romAssets = await generateRomAssets(resources);
-                await progress?.taskCompleted();
+				const romAssets = await generateRomAssets(resources);
+				await progress?.taskCompleted();
 
-                                await finalizeRompack(romAssets, rom_name, debug);
+				await finalizeRompack(romAssets, rom_name, debug);
 				await progress?.taskCompleted();
 			}
 			await buildBootromScriptIfNewer(force, debug);
