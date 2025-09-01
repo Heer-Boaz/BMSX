@@ -261,14 +261,14 @@ export class PendingAssignmentProcessor {
                 // Initialize the HID pad for the gamepad input
                 await gamepadInput.init(); // *REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
                 inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
-                $.emit('controller_assigned', Input.instance, this.proposedPlayerIndex);
+                $.emit('controller_assigned', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex });
                 this.icon = null;
             }
             else if (this.checkNonConsumedPressed('b', gamepadInput)) {
                 // Cancel assignment process for this gamepad and remove the joystick icon
                 gamepadInput.consumeButton('b');
                 this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
-                $.emit('controller_assigmment_cancelled', Input.instance, this.proposedPlayerIndex);
+                $.emit('controller_assignment_cancelled', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex });
                 this.icon = null;
                 // this.removeIcon();
             }

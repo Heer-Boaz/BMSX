@@ -1,7 +1,6 @@
-import { EventSubscriber } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { Input } from '../input/input';
-import { Identifiable, Identifier, Registerable } from '../rompack/rompack';
+import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
@@ -15,7 +14,7 @@ const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start
  * Represents a state in a state machine.
  * @template T - The type of the game object or model associated with the state.
  */
-export class State<T extends Stateful & EventSubscriber & Registerable = any> implements Identifiable {
+export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
      * The identifier of this specific instance of the state machine.
     * @see {@link make_id}

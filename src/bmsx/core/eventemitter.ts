@@ -1,7 +1,8 @@
 import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
 
-export type EventHandler = (event_name: string, emitter: Identifiable, ...args: any[]) => any;
+export type EventPayload = Record<string, any>;
+export type EventHandler = (event_name: string, emitter: Identifiable, payload?: EventPayload) => any;
 
 type Listener = { listener: EventHandler, subscriber: any, persistent: boolean };
 export type ListenerSet = Set<Listener>;
@@ -122,7 +123,7 @@ export class EventEmitter implements RegisterablePersistent {
 		});
 	}
 
-	private checkIfListenerExists(event_name: string, listener: Function, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
+	private checkIfListenerExists(event_name: string, listener: EventHandler, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
 		const self = EventEmitter.instance;
 		if (filtered_on_emitter_id) {
 			const emitterListeners = self.emitterScopeListeners[event_name]?.[filtered_on_emitter_id];
@@ -195,16 +196,24 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param emitter - The emitter object.
 	 * @param args - Additional arguments to pass to the listeners.
 	 */
-	emit(event_name: string, emitter: Identifiable, ...args: any[]): void {
+	emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void {
+		let anyoneSubscribed = false;
 		EventEmitter.instance.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
-			listener.call(subscriber, event_name, emitter, ...args);
+			anyoneSubscribed = true;
+			listener.call(subscriber, event_name, emitter, payload);
 		});
 		EventEmitter.instance.globalScopeListeners[event_name]?.forEach(({ listener, subscriber }) => {
-			listener.call(subscriber, event_name, emitter, ...args);
+			anyoneSubscribed = true;
+			listener.call(subscriber, event_name, emitter, payload);
 		});
-		// Wildcard listeners (receive event name, payload?, emitter)
-		const payload = args.length > 0 ? args[0] : undefined;
-		for (const fn of this.anyListeners) fn(event_name, payload, emitter);
+
+		// Wildcard listeners
+		for (const fn of this.anyListeners) fn(event_name, emitter, payload);
+
+		if (!anyoneSubscribed) {
+			console.warn(`No listeners for event "${event_name}" and emitter "${emitter.id}"!`);
+			if (this.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
+		}
 	}
 
 	/**
@@ -214,7 +223,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param listener - The listener function to remove.
 	 * @param emitter - Optional. The emitter name. If not provided, 'all' is used as the default emitter.
 	 */
-	off(event_name: string, listener: Function, emitter?: string): void {
+	off(event_name: string, listener: EventHandler, emitter?: string): void {
 		const key = emitter || 'all';
 		const emitterListeners = EventEmitter.instance.emitterScopeListeners[event_name]?.[key];
 		if (!emitterListeners) {
@@ -430,10 +439,10 @@ export function subscribesToGlobalEvent(eventName: string, persistent?: boolean)
 export function emits_event(eventName: string) {
 	return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
 		const originalMethod = descriptor.value;
-		descriptor.value = function (...args: any[]) {
-			originalMethod.apply(this, args);
+		descriptor.value = function (payload: EventPayload) {
+			originalMethod.apply(this, payload);
 			// Logic to emit the event
-			EventEmitter.instance.emit(eventName, this as Identifiable, ...args);
+			EventEmitter.instance.emit(eventName, this as Identifiable, payload);
 		};
 	};
 }

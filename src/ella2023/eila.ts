@@ -365,7 +365,7 @@ export class Eila extends Fighter {
 	}
 
 	@subscribesToSelfScopedEvent('animationEnd')
-	public handleAnimationEndEvent(event_name: string, _emitter: Eila, animation_name: string): void {
+	public handleAnimationEndEvent(event_name: string, _emitter: Eila, { animation_name }: { animation_name: string }): void {
 		switch (event_name) {
 			case 'animationEnd':
 				switch (animation_name) {
@@ -397,6 +397,11 @@ export class Eila extends Fighter {
 						// This is needed to quickly end the animation of the attack action.
 						// Must be done after the state machine is resumed, otherwise the event will not be handled.
 						// It will allow the player to recuperate first, before the next attack can be done by the opponent.
+						state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
+					}
+				},
+				$i_hit_face: {
+					do(state: State) {
 						state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
 					}
 				},
@@ -447,7 +452,7 @@ export class Eila extends Fighter {
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
 					next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, 'highkick');
+						$.emit('animationEnd', this, { animation_name: 'highkick' });
 					},
 				},
 				lowkick: {
@@ -458,7 +463,7 @@ export class Eila extends Fighter {
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
 					next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, 'lowkick');
+						$.emit('animationEnd', this, { animation_name: 'lowkick' });
 					},
 				},
 				punch: {
@@ -469,7 +474,7 @@ export class Eila extends Fighter {
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
 					next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, 'punch');
+						$.emit('animationEnd', this, { animation_name: 'punch' });
 					}
 				},
 				duckkick: {
@@ -479,7 +484,7 @@ export class Eila extends Fighter {
 						this.imgid = BitmapId.eila_duckkick;
 					},
 					next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, 'duckkick');
+						$.emit('animationEnd', this, { animation_name: 'duckkick' });
 					}
 				},
 				flyingkick: {
@@ -490,7 +495,7 @@ export class Eila extends Fighter {
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
 					next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, 'flyingkick');
+						$.emit('animationEnd', this, { animation_name: 'flyingkick' });
 					}
 				},
 				duck: {
@@ -506,7 +511,7 @@ export class Eila extends Fighter {
 						this.imgid = BitmapId.eila_humiliated;
 					},
 					next(this: Eila) {
-						$.emit('humiliated_animation_end', this, 'eila');
+						$.emit('humiliated_animation_end', this, { character: 'eila' });
 					}
 				},
 			}

@@ -11,11 +11,11 @@ import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
-import { Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
+import { asset_id, Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { BaseModel } from "./basemodel";
-import { EventEmitter } from "./eventemitter";
+import { EventEmitter, EventPayload } from "./eventemitter";
 import { BFont } from './font';
 import { GameObject } from "./gameobject";
 import { GameOptions } from './gameoptions';
@@ -176,8 +176,8 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 	public get registry(): Registry { return Registry.instance; }
 	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm'); }
 
-	public emit(event_name: string, emitter: Identifiable, ...args: any[]) {
-		this.event_emitter.emit(event_name, emitter, ...args);
+	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload) {
+		this.event_emitter.emit(event_name, emitter, payload);
 	}
 
 	public get<T extends Registerable>(id: Identifier): T {
@@ -224,7 +224,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
-	public playAudio(id: string, options: RandomModulationParams = {}): void {
+	public playAudio(id: asset_id, options: RandomModulationParams = {}): void {
 		this.sndmaster.play(id, options);
 	}
 
@@ -348,7 +348,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		} catch (error) {
 			console.error("Failed to initialize PSG:", error);
 		}
-		AudioEventManager.instance.init(rom.audioevents, null);
+		AudioEventManager.instance.init([rom.audioevents], null);
 		// SM.volume = 0;
 
 		if (this.debug) {

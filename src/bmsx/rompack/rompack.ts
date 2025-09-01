@@ -330,6 +330,6 @@ export interface AudioEventMapEntry {
 	name: string;
 	channel?: 'sfx' | 'music' | 'ui';
 	maxVoices?: number;
-	policy?: 'replace' | 'ignore' | 'queue';
+	policy?: 'replace' | 'ignore' | 'queue' | 'stop' | 'pause';
 	rules: AudioEventRule[];
 }

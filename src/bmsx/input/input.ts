@@ -701,7 +701,7 @@ export class Input implements RegisterablePersistent {
 	 */
 	public assignGamepadToPlayer(gamepad: InputHandler, playerIndex: number): void {
 		this.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
-		EventEmitter.instance.emit('playerjoin', this, playerIndex);
+		EventEmitter.instance.emit('playerjoin', this, { playerIndex: playerIndex });
 	}
 
 	public static get KC_F1(): boolean {

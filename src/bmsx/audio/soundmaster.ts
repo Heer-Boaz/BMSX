@@ -1,8 +1,8 @@
 import { Registry } from '../core/registry';
-import { AudioMeta, AudioType, id2res, RegisterablePersistent } from "../rompack/rompack";
+import { asset_id, AudioMeta, AudioType, id2res, RegisterablePersistent } from "../rompack/rompack";
 
 export interface AudioMetadataWithID extends AudioMeta {
-	id: string; // The ID of the audio asset.
+	id: asset_id; // The ID of the audio asset.
 }
 
 export type ModulationRange = [number, number];
@@ -178,7 +178,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 	}
 
-	private async createNode(id: string): Promise<AudioBufferSourceNode> {
+	private async createNode(id: asset_id): Promise<AudioBufferSourceNode> {
 		const node = this.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
 			Promise.resolve(node.buffer = this.buffers[id]).then(() => resolve(node))
@@ -271,7 +271,7 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 	}
 
-	public play(id: string, options?: ModulationParams | RandomModulationParams): void {
+	public play(id: asset_id, options?: ModulationParams | RandomModulationParams): void {
 		const params = this.resolvePlayParams(options);
 		const track = this.tracks[id]?.['audiometa'];
 		if (!track) {
@@ -307,7 +307,7 @@ export class SoundMaster implements RegisterablePersistent {
 		try { node.buffer = null; } catch { } // Some browsers may not allow setting buffer to null, and we can safely ignore this error
 	}
 
-	private stop(id: string): void {
+	private stop(id: asset_id): void {
 		const audiotype = this.tracks[id]?.['audiometa']['audiotype'];
 		this.stopByType(audiotype);
 	}
@@ -364,7 +364,7 @@ export class SoundMaster implements RegisterablePersistent {
 		return null;
 	}
 
-	public currentTrackByType(type: AudioType): string | null {
+	public currentTrackByType(type: AudioType): asset_id | null {
 		const audioMeta = this.currentAudioByType[type];
 		return audioMeta ? audioMeta.id : null;
 	}

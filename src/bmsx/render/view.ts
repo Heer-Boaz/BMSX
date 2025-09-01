@@ -101,7 +101,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		return true;
 	}
 
-	public get id(): Identifier { return 'view'; }
+	public get id(): 'view' { return 'view'; }
 	public dispose(): void {
 		// Deregister from registry
 		Registry.instance.deregister(this);
@@ -154,16 +154,16 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public spriteAmbientEnabledDefault = false;
 	public spriteAmbientFactorDefault = 1.0;
 
-    public atmosphere: AtmosphereParams = {
-        fogD50: 320.0,
-        fogStart: 120.0,
-        fogColorLow: [0.90, 0.95, 1.00],
-        fogColorHigh: [1.05, 1.02, 0.95],
-        fogYMin: 0.0,
-        fogYMax: 200.0,
-        progressFactor: 0,
-        enableAutoAnimation: false,
-    };
+	public atmosphere: AtmosphereParams = {
+		fogD50: 320.0,
+		fogStart: 120.0,
+		fogColorLow: [0.90, 0.95, 1.00],
+		fogColorHigh: [1.05, 1.02, 0.95],
+		fogYMin: 0.0,
+		fogYMax: 200.0,
+		progressFactor: 0,
+		enableAutoAnimation: false,
+	};
 
 	// Renderer submission facade (no legacy queues)
 	public renderer: {
@@ -234,12 +234,12 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const token = renderGate.begin({ blocking: true, category: 'frame', tag: 'frame' });
 		try {
 			this._backend.beginFrame();
-			$.emit('framebegin', this, token);
+			// $.emit('framebegin', this, token);
 			this.renderer.swap();
 			const frame = buildFrameData(this);
 			this.drawbase(clearCanvas);
 			// No need to check for invalid or missing render graph, as we assume it's valid for the frame given the render gate that blocks rendering if no graph present
-			$.emit('frameupdate', this, token);
+			// $.emit('frameupdate', this, token);
 			this.renderGraph!.execute(frame);
 		} finally {
 			$.emit('frameend', this, token);
@@ -530,19 +530,19 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public get backend(): GPUBackend { return this._backend; }
-    public initializeDefaultTextures(): void {
-        try {
-            const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
-            if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
-            this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-            // Default material textures for meshes
-            this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-            // Normal map default (0.5,0.5,1.0)
-            this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
-            // Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
-            this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 1.0, 1.0]);
-        } catch { /* ignore */ }
-    }
+	public initializeDefaultTextures(): void {
+		try {
+			const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
+			if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
+			this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+			// Default material textures for meshes
+			this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+			// Normal map default (0.5,0.5,1.0)
+			this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
+			// Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
+			this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 1.0, 1.0]);
+		} catch { /* ignore */ }
+	}
 
 	// (single handleResize implementation above in the class)
 
@@ -626,38 +626,38 @@ export class GameView implements RegisterablePersistent, RenderContext {
 }
 
 export interface AtmosphereParams {
-    fogD50: number;
-    fogStart: number;
-    fogColorLow: [number, number, number];
-    fogColorHigh: [number, number, number];
-    fogYMin: number;
-    fogYMax: number;
-    progressFactor: number;
-    enableAutoAnimation: boolean;
+	fogD50: number;
+	fogStart: number;
+	fogColorLow: [number, number, number];
+	fogColorHigh: [number, number, number];
+	fogYMin: number;
+	fogYMax: number;
+	progressFactor: number;
+	enableAutoAnimation: boolean;
 }
 
 export function registerAtmosphereHotkeys(): void {
-    window.addEventListener('keydown', (e) => {
-        if (!$.view?.atmosphere) {
-            console.warn('No atmosphere found on view; cannot toggle atmosphere settings');
-            return;
-        }
-        if (e.key === 'f') {
-            $.view.atmosphere.fogD50 = ($.view.atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
-            console.info(`Fog ${$.view.atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${$.view.atmosphere.fogD50})`);
-        }
-        else if (e.key === 'g') {
-            const isNeutral = $.view.atmosphere.fogColorLow[0] === 1.0 && $.view.atmosphere.fogColorHigh[0] === 1.0
-                           && $.view.atmosphere.fogColorLow[1] === 1.0 && $.view.atmosphere.fogColorHigh[1] === 1.0
-                           && $.view.atmosphere.fogColorLow[2] === 1.0 && $.view.atmosphere.fogColorHigh[2] === 1.0;
-            if (isNeutral) {
-                $.view.atmosphere.fogColorLow = [0.90, 0.95, 1.00];
-                $.view.atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
-            } else {
-                $.view.atmosphere.fogColorLow = [1.0, 1.0, 1.0];
-                $.view.atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
-            }
-            console.info('Fog color gradient toggled');
-        }
-    });
+	window.addEventListener('keydown', (e) => {
+		if (!$.view?.atmosphere) {
+			console.warn('No atmosphere found on view; cannot toggle atmosphere settings');
+			return;
+		}
+		if (e.key === 'f') {
+			$.view.atmosphere.fogD50 = ($.view.atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
+			console.info(`Fog ${$.view.atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${$.view.atmosphere.fogD50})`);
+		}
+		else if (e.key === 'g') {
+			const isNeutral = $.view.atmosphere.fogColorLow[0] === 1.0 && $.view.atmosphere.fogColorHigh[0] === 1.0
+				&& $.view.atmosphere.fogColorLow[1] === 1.0 && $.view.atmosphere.fogColorHigh[1] === 1.0
+				&& $.view.atmosphere.fogColorLow[2] === 1.0 && $.view.atmosphere.fogColorHigh[2] === 1.0;
+			if (isNeutral) {
+				$.view.atmosphere.fogColorLow = [0.90, 0.95, 1.00];
+				$.view.atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
+			} else {
+				$.view.atmosphere.fogColorLow = [1.0, 1.0, 1.0];
+				$.view.atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
+			}
+			console.info('Fog color gradient toggled');
+		}
+	});
 }

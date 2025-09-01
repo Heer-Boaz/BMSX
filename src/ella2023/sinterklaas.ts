@@ -38,7 +38,7 @@ export class Sinterklaas extends Fighter {
     }
 
     @subscribesToSelfScopedEvent('animationEnd')
-    public handleAnimationEndEvent(event_name: string, _emitter: Sinterklaas, animation_name: string): void {
+    public handleAnimationEndEvent(event_name: string, _emitter: Sinterklaas, { animation_name }: { animation_name: string }): void {
         switch (event_name) {
             case 'animationEnd':
                 switch (animation_name) {
@@ -65,7 +65,15 @@ export class Sinterklaas extends Fighter {
         return {
             parallel: true,
             on: {
-                i_hit_face: {
+                $i_was_hit: {
+                    do(state: State) {
+                        // This is needed to quickly end the animation of the attack action.
+                        // Must be done after the state machine is resumed, otherwise the event will not be handled.
+                        // It will allow the player to recuperate first, before the next attack can be done by the opponent.
+                        state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
+                    }
+                },
+                $i_hit_face: {
                     do(state: State) {
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
@@ -117,7 +125,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        $.emit('animationEnd', this, 'highkick');
+                        $.emit('animationEnd', this, { animation_name: 'highkick' });
                     }
                 },
                 lowkick: {
@@ -128,7 +136,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        $.emit('animationEnd', this, 'lowkick');
+                        $.emit('animationEnd', this, { animation_name: 'lowkick' });
                     }
                 },
                 punch: {
@@ -139,7 +147,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        $.emit('animationEnd', this, 'punch');
+                        $.emit('animationEnd', this, { animation_name: 'punch' });
                     }
                 },
                 duckkick: {
@@ -150,7 +158,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        $.emit('animationEnd', this, 'duckkick');
+                        $.emit('animationEnd', this, { animation_name: 'duckkick' });
                     }
                 },
                 flyingkick: {
@@ -161,7 +169,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        $.emit('animationEnd', this, 'flyingkick');
+                        $.emit('animationEnd', this, { animation_name: 'flyingkick' });
                     }
                 },
                 duck: {
@@ -202,7 +210,7 @@ export class Sinterklaas extends Fighter {
                             ticks2move: 100,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next(this: SpriteObject) {
-                                $.emit('humiliated_animation_end', this, 'sinterklaas');
+                                $.emit('humiliated_animation_end', this, { character: 'sinterklaas' });
                             }
                         },
                     },

@@ -119,7 +119,7 @@ export class StateMachineController {
 					let scope = event.scope;
 					switch (scope) {
 						case 'self':
-							scope = machine.target; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
+							scope = machine.target.id; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
 							break;
 						case 'all':
 						default:

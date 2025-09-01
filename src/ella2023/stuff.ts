@@ -139,7 +139,7 @@ export class TitleScreen extends SpriteObject {
 						// If a priority action is pressed, start the game.
 						this.cursorVisible = true;
 						this.sc.do('pause_blink', this);
-						$.emit('gamestart_selected', this, this.selectedPlayers);
+						$.emit('gamestart_selected', this, { selectedPlayers: this.selectedPlayers });
 					},
 					states: {
 						_players_1: {

@@ -63,21 +63,21 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
     private checkBoundaryForXAxis(this: GameObject, oldx: number, newx: number) {
         if (newx < oldx) {
             if (newx + this.size.x < 0) {
-                EventEmitter.instance.emit('leaveScreen', this, 'left', oldx);
+                EventEmitter.instance.emit('leaveScreen', this, { d: 'left', old_x_or_y: oldx });
                 this.onLeaveScreen?.(this, 'left', oldx);
             }
             else if (newx < 0) {
-                EventEmitter.instance.emit('leavingScreen', this, 'left', oldx);
+                EventEmitter.instance.emit('leavingScreen', this, { d: 'left', old_x_or_y: oldx });
                 this.onLeavingScreen?.(this, 'left', oldx);
             }
         }
         else if (newx > oldx) {
             if (newx >= $.model.gamewidth) {
-                EventEmitter.instance.emit('leaveScreen', this, 'right', oldx);
+                EventEmitter.instance.emit('leaveScreen', this, { d: 'right', old_x_or_y: oldx });
                 this.onLeaveScreen?.(this, 'right', oldx);
             }
             else if (newx + this.size.x >= $.model.gamewidth) {
-                EventEmitter.instance.emit('leavingScreen', this, 'right', oldx);
+                EventEmitter.instance.emit('leavingScreen', this, { d: 'right', old_x_or_y: oldx });
                 this.onLeavingScreen?.(this, 'right', oldx);
             }
         }
@@ -93,21 +93,21 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
     private checkBoundaryForYAxis(this: GameObject, oldy: number, newy: number) {
         if (newy < oldy) {
             if (newy + this.size.y < 0) {
-                EventEmitter.instance.emit('leaveScreen', this, 'up', oldy);
+                EventEmitter.instance.emit('leaveScreen', this, { d: 'up', old_x_or_y: oldy });
                 this.onLeaveScreen?.(this, 'up', oldy);
             }
             else if (newy < 0) {
-                EventEmitter.instance.emit('leavingScreen', this, 'up', oldy);
+                EventEmitter.instance.emit('leavingScreen', this, { d: 'up', old_x_or_y: oldy });
                 this.onLeavingScreen?.(this, 'up', oldy);
             }
         }
         else if (newy > oldy) {
             if (newy >= $.model.gameheight) {
-                EventEmitter.instance.emit('leaveScreen', this, 'down', oldy);
+                EventEmitter.instance.emit('leaveScreen', this, { d: 'down', old_x_or_y: oldy });
                 this.onLeaveScreen?.(this, 'down', oldy);
             }
             else if (newy + this.size.y >= $.model.gameheight) {
-                EventEmitter.instance.emit('leavingScreen', this, 'down', oldy);
+                EventEmitter.instance.emit('leavingScreen', this, { d: 'down', old_x_or_y: oldy });
                 this.onLeavingScreen?.(this, 'down', oldy);
             }
         }
@@ -143,7 +143,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
     protected checkTileCollisionForXAxis(this: GameObject, oldx: number, newx: number) {
         if (newx < oldx) {
             if ($.model.collidesWithTile(this, 'left')) {
-                EventEmitter.instance.emit('wallcollide', this, 'left');
+                EventEmitter.instance.emit('wallcollide', this, { d: 'left' });
                 this.onWallcollide?.('left');
                 newx += TileSize - mod(newx, TileSize);
             }
@@ -151,7 +151,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         }
         else if (newx > oldx) {
             if ($.model.collidesWithTile(this, 'right')) {
-                EventEmitter.instance.emit('wallcollide', this, 'right');
+                EventEmitter.instance.emit('wallcollide', this, { d: 'right' });
                 this.onWallcollide?.('right');
                 newx -= newx % TileSize;
             }
@@ -167,7 +167,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
     protected checkTileCollisionForYAxis(this: GameObject, oldy: number, newy: number) {
         if (newy < oldy) {
             if ($.model.collidesWithTile(this, 'up')) {
-                EventEmitter.instance.emit('wallcollide', this, 'up');
+                EventEmitter.instance.emit('wallcollide', this, { d: 'up' });
                 this.onWallcollide?.('up');
                 newy += TileSize - mod(newy, TileSize);
             }
@@ -175,7 +175,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         }
         else if (newy > oldy) {
             if ($.model.collidesWithTile(this, 'down')) {
-                EventEmitter.instance.emit('wallcollide', this, 'down');
+                EventEmitter.instance.emit('wallcollide', this, { d: 'down' });
                 this.onWallcollide?.('down');
                 newy -= newy % TileSize;
             }
@@ -197,8 +197,8 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
      * @param old_x_or_y - The previous x or y coordinate of the game object.
      */
     @subscribesToParentScopedEvent('leavingScreen')
-    public onLeavingScreen(_event_name: string, emitter: GameObject, d: Direction, old_x_or_y: number) {
-        leavingScreenHandler_prohibit(emitter, d, old_x_or_y);
+    public onLeavingScreen(_event_name: string, emitter: GameObject, { d, old_x_or_y }: { d: Direction, old_x_or_y: number }) {
+        leavingScreenHandler_prohibit(emitter, { d, old_x_or_y });
     }
 }
 
@@ -210,7 +210,7 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
  * @param d The direction in which the `GameObject` is leaving the screen.
  * @param old_x_or_y The old x or y position of the `GameObject`.
  */
-export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_x_or_y: number): void {
+export function leavingScreenHandler_prohibit(ik: GameObject, { d, old_x_or_y }: { d: Direction, old_x_or_y: number }): void {
     switch (d) {
         case 'left': case 'right':
             ik.pos.x = old_x_or_y;

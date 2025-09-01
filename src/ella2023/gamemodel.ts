@@ -47,7 +47,7 @@ export class gamemodel extends BaseModel {
 	}
 
 	@subscribesToGlobalEvent('humiliated_animation_end')
-	public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, who: string): void {
+	public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
 		const player = this.getGameObject<Fighter>('player');
 		const sinterklaas = this.getGameObject<Fighter>('sinterklaas');
 
@@ -62,7 +62,7 @@ export class gamemodel extends BaseModel {
 		}
 
 		// If one of the fighters is down, go to gameover or hoera.
-		switch (who) { // who is the fighter that is down
+		switch (character) { // who is the fighter that is down
 			case 'eila':
 				this.sc.to('gameover'); // Game over for Eila
 				break;
