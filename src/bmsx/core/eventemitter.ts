@@ -54,7 +54,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Listeners that receive all events emitted on the bus (wildcard).
 	 * Signature: (name, payload?, emitter?)
 	 */
-	private anyListeners: Array<EventHandler> = [];
+	private anyListeners: Array<{ handler: EventHandler, persistent: boolean }> = [];
 
 	/**
 	 * The singleton instance of the EventEmitter class.
@@ -79,15 +79,18 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Subscribes a listener that is called for every emitted event.
 	 * The payload is the first argument passed by the emitter (if any).
 	 */
-	public onAny(handler: EventHandler): void {
-		this.anyListeners.push(handler);
+	public onAny(handler: EventHandler, persistent: boolean): void {
+		// default persistent to false if undefined
+		this.anyListeners.push({ handler, persistent: !!persistent });
 	}
 
 	/**
 	 * Unsubscribes a previously registered wildcard listener.
+	 * @param handler - The event handler to remove.
+	 * @param forcePersistent - If true, also removes persistent listeners.
 	 */
-	public offAny(handler: EventHandler): void {
-		this.anyListeners = this.anyListeners.filter(x => x !== handler);
+	public offAny(handler: EventHandler, forcePersistent: boolean = false): void {
+		this.anyListeners = this.anyListeners.filter(x => (x.handler !== handler || (forcePersistent && x.persistent)));
 	}
 
 	/**
@@ -148,14 +151,6 @@ export class EventEmitter implements RegisterablePersistent {
 	}
 
 	/**
-	 * Adds a listener function to the specified event name.
-	 *
-	 * @param event_name - The name of the event.
-	 * @param listener - The listener function to be called when the event is emitted.
-	 * @param subscriber - The subscriber object associated with the listener.
-	 * @param filtered_on_emitter_id - (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-	 */
-	/**
 	 * Registers a listener for an event.
 	 * @param event_name Name of the event.
 	 * @param listener Callback invoked when the event is emitted.
@@ -208,7 +203,7 @@ export class EventEmitter implements RegisterablePersistent {
 		});
 
 		// Wildcard listeners
-		for (const fn of this.anyListeners) fn(event_name, emitter, payload);
+		for (const item of this.anyListeners) item.handler(event_name, emitter, payload);
 
 		if (!anyoneSubscribed) {
 			console.warn(`No listeners for event "${event_name}" and emitter "${emitter.id}"!`);
@@ -222,8 +217,9 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param event_name - The name of the event.
 	 * @param listener - The listener function to remove.
 	 * @param emitter - Optional. The emitter name. If not provided, 'all' is used as the default emitter.
+	 * @param forcePersistent - If true, also removes persistent listeners.
 	 */
-	off(event_name: string, listener: EventHandler, emitter?: string): void {
+	off(event_name: string, listener: EventHandler, emitter?: EventScope, forcePersistent: boolean = false): void {
 		const key = emitter || 'all';
 		const emitterListeners = EventEmitter.instance.emitterScopeListeners[event_name]?.[key];
 		if (!emitterListeners) {
@@ -231,7 +227,7 @@ export class EventEmitter implements RegisterablePersistent {
 			return;
 		}
 		for (let item of emitterListeners) {
-			if (item.listener === listener) {
+			if (item.listener === listener && (forcePersistent || !item.persistent)) {
 				emitterListeners.delete(item);
 			}
 		}
@@ -302,8 +298,8 @@ export class EventEmitter implements RegisterablePersistent {
 				delete self.globalScopeListeners[eventName];
 			}
 		}
-		// Clear wildcard listeners (no persistence concept for onAny)
-		this.anyListeners = [];
+		// Preserve persistent wildcard listeners; remove non-persistent ones
+		this.anyListeners = this.anyListeners.filter(item => item.persistent);
 	}
 }
 
