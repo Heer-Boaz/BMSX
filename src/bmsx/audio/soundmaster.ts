@@ -1,32 +1,32 @@
 import { Registry } from '../core/registry';
-import { asset_id, AudioMeta, AudioType, id2res, RegisterablePersistent } from "../rompack/rompack";
+import { asset_id, AudioMeta, AudioType, AudioTypes, id2res, RegisterablePersistent } from "../rompack/rompack";
 
 export interface AudioMetadataWithID extends AudioMeta {
-	id: asset_id; // The ID of the audio asset.
+    id: asset_id; // The ID of the audio asset.
 }
 
 export type ModulationRange = [number, number];
 
 export interface FilterModulationParams {
-	/**
-	 * The type of the biquad filter (e.g., "lowpass", "highpass").
-	 */
-	type?: BiquadFilterType;
+    /**
+     * The type of the biquad filter (e.g., "lowpass", "highpass").
+     */
+    type?: BiquadFilterType;
 
-	/**
-	 * The frequency of the filter in Hz.
-	 */
-	frequency?: number;
+    /**
+     * The frequency of the filter in Hz.
+     */
+    frequency?: number;
 
-	/**
-	 * The quality factor (Q) of the filter.
-	 */
-	q?: number;
+    /**
+     * The quality factor (Q) of the filter.
+     */
+    q?: number;
 
-	/**
-	 * The gain of the filter in dB.
-	 */
-	gain?: number;
+    /**
+     * The gain of the filter in dB.
+     */
+    gain?: number;
 }
 
 /**
@@ -34,34 +34,34 @@ export interface FilterModulationParams {
  * These parameters allow for randomized variations in pitch, volume, offset, playback rate, and filtering.
  */
 export interface RandomModulationParams {
-	/**
-	 * Range of pitch variation, specified as an array of two numbers [min, max].
-	 * The pitch will be randomly adjusted within this range.
-	 */
-	pitchRange?: ModulationRange;
+    /**
+     * Range of pitch variation, specified as an array of two numbers [min, max].
+     * The pitch will be randomly adjusted within this range.
+     */
+    pitchRange?: ModulationRange;
 
-	/**
-	 * Range of volume variation, specified as an array of two numbers [min, max].
-	 * The volume will be randomly adjusted within this range.
-	 */
-	volumeRange?: ModulationRange;
+    /**
+     * Range of volume variation, specified as an array of two numbers [min, max].
+     * The volume will be randomly adjusted within this range.
+     */
+    volumeRange?: ModulationRange;
 
-	/**
-	 * Range of offset variation, specified as an array of two numbers [min, max].
-	 * The playback offset will be randomly adjusted within this range.
-	 */
-	offsetRange?: ModulationRange;
+    /**
+     * Range of offset variation, specified as an array of two numbers [min, max].
+     * The playback offset will be randomly adjusted within this range.
+     */
+    offsetRange?: ModulationRange;
 
-	/**
-	 * Range of playback rate variation, specified as an array of two numbers [min, max].
-	 * The playback rate will be randomly adjusted within this range.
-	 */
-	playbackRateRange?: ModulationRange;
+    /**
+     * Range of playback rate variation, specified as an array of two numbers [min, max].
+     * The playback rate will be randomly adjusted within this range.
+     */
+    playbackRateRange?: ModulationRange;
 
-	/**
-	 * Filter parameters for applying a biquad filter to the audio.
-	 */
-	filter?: FilterModulationParams;
+    /**
+     * Filter parameters for applying a biquad filter to the audio.
+     */
+    filter?: FilterModulationParams;
 }
 
 /**
@@ -69,52 +69,52 @@ export interface RandomModulationParams {
  * These parameters allow for precise control over pitch, volume, offset, playback rate, and filtering.
  */
 export interface ModulationParams {
-	/**
-	 * The change in pitch, specified as a delta value.
-	 * Positive values increase the pitch, while negative values decrease it.
-	 */
-	pitchDelta?: number;
+    /**
+     * The change in pitch, specified as a delta value.
+     * Positive values increase the pitch, while negative values decrease it.
+     */
+    pitchDelta?: number;
 
-	/**
-	 * The change in volume, specified as a delta value in decibels (dB).
-	 * Positive values increase the volume, while negative values decrease it.
-	 */
-	volumeDelta?: number;
+    /**
+     * The change in volume, specified as a delta value in decibels (dB).
+     * Positive values increase the volume, while negative values decrease it.
+     */
+    volumeDelta?: number;
 
-	/**
-	 * The playback offset in seconds.
-	 * Specifies the starting point of the audio playback.
-	 */
-	offset?: number;
+    /**
+     * The playback offset in seconds.
+     * Specifies the starting point of the audio playback.
+     */
+    offset?: number;
 
-	/**
-	 * The playback rate multiplier.
-	 * A value of 1 plays the audio at normal speed, values greater than 1 speed it up, and values less than 1 slow it down.
-	 */
-	playbackRate?: number;
+    /**
+     * The playback rate multiplier.
+     * A value of 1 plays the audio at normal speed, values greater than 1 speed it up, and values less than 1 slow it down.
+     */
+    playbackRate?: number;
 
-	/**
-	 * Filter parameters for applying a biquad filter to the audio.
-	 * Allows for advanced audio effects such as low-pass or high-pass filtering.
-	 */
-	filter?: FilterModulationParams;
+    /**
+     * Filter parameters for applying a biquad filter to the audio.
+     * Allows for advanced audio effects such as low-pass or high-pass filtering.
+     */
+    filter?: FilterModulationParams;
 }
 
 export class SoundMaster implements RegisterablePersistent {
-	public get id(): 'sm' { return 'sm'; }
-	public get registrypersistent(): true { return true; }
+    public get id(): 'sm' { return 'sm'; }
+    public get registrypersistent(): true { return true; }
 
-	/**
-	 * The singleton instance of the SoundMaster class.
-	 */
-	private static _instance: SoundMaster;
+    /**
+     * The singleton instance of the SoundMaster class.
+     */
+    private static _instance: SoundMaster;
 
-	public static get instance(): SoundMaster {
-		if (!SoundMaster._instance) {
-			SoundMaster._instance = new SoundMaster();
-		}
-		return SoundMaster._instance;
-	}
+    public static get instance(): SoundMaster {
+        if (!SoundMaster._instance) {
+            SoundMaster._instance = new SoundMaster();
+        }
+        return SoundMaster._instance;
+    }
 
     private tracks: id2res;
     private buffers: Record<string, AudioBuffer>;
@@ -138,11 +138,11 @@ export class SoundMaster implements RegisterablePersistent {
     // Ended listeners per type
     private endedListenersByType: Record<AudioType, Set<() => void>>;
 
-	constructor() {
-		Registry.instance.register(this);
-		this.tracks = {};
-		this.buffers = {};
-		this.sndContext = null; // Passed externally via the init method
+    constructor() {
+        Registry.instance.register(this);
+        this.tracks = {};
+        this.buffers = {};
+        this.sndContext = null; // Passed externally via the init method
         this.currentAudioNodeByType = { sfx: null, music: null, ui: null };
         this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
         this.nodeExtras = new WeakMap();
@@ -156,50 +156,50 @@ export class SoundMaster implements RegisterablePersistent {
         this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
     }
 
-	public async init(audioResources: id2res, sndcontext: AudioContext, startingVolume: number, gainnode?: GainNode) {
-		this.sndContext = sndcontext;
-		this.currentAudioByType = { sfx: null, music: null, ui: null };
-		this.currentAudioNodeByType = { sfx: null, music: null, ui: null };
+    public async init(audioResources: id2res, sndcontext: AudioContext, startingVolume: number, gainnode?: GainNode) {
+        this.sndContext = sndcontext;
+        this.currentAudioByType = { sfx: null, music: null, ui: null };
+        this.currentAudioNodeByType = { sfx: null, music: null, ui: null };
 
-		this.tracks = audioResources;
-		this.predecodeTracks();
+        this.tracks = audioResources;
+        this.predecodeTracks();
 
-		await this.sndContext.resume();
+        await this.sndContext.resume();
 
-		if (!gainnode) {
-			this.gainNode = this.sndContext.createGain();
-			this.gainNode.connect(this.sndContext.destination);
-		} else {
-			this.gainNode = gainnode;
-		}
-		this.volume = startingVolume ?? 0;
-	}
+        if (!gainnode) {
+            this.gainNode = this.sndContext.createGain();
+            this.gainNode.connect(this.sndContext.destination);
+        } else {
+            this.gainNode = gainnode;
+        }
+        this.volume = startingVolume ?? 0;
+    }
 
-	private predecodeTracks() {
-		this.buffers = {};
-		Object.keys(this.tracks).forEach(id => {
-			this.decode(global.$rom['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
-				.then(decoded => this.buffers[id] = decoded);
-		});
-	}
+    private predecodeTracks() {
+        this.buffers = {};
+        Object.keys(this.tracks).forEach(id => {
+            this.decode(global.$rom['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
+                .then(decoded => this.buffers[id] = decoded);
+        });
+    }
 
-	private async decode(audioData: ArrayBuffer): Promise<AudioBuffer> {
-		if (this.sndContext.decodeAudioData.length === 2) {
-			return new Promise(resolve => {
-				this.sndContext.decodeAudioData(audioData, buffer => resolve(buffer));
-			});
-		} else {
-			return this.sndContext.decodeAudioData(audioData);
-		}
-	}
+    private async decode(audioData: ArrayBuffer): Promise<AudioBuffer> {
+        if (this.sndContext.decodeAudioData.length === 2) {
+            return new Promise(resolve => {
+                this.sndContext.decodeAudioData(audioData, buffer => resolve(buffer));
+            });
+        } else {
+            return this.sndContext.decodeAudioData(audioData);
+        }
+    }
 
-	private async createNode(id: asset_id): Promise<AudioBufferSourceNode> {
-		const node = this.sndContext.createBufferSource();
-		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			Promise.resolve(node.buffer = this.buffers[id]).then(() => resolve(node))
-				.catch(e => reject(e));
-		});
-	}
+    private async createNode(id: asset_id): Promise<AudioBufferSourceNode> {
+        const node = this.sndContext.createBufferSource();
+        return new Promise<AudioBufferSourceNode>((resolve, reject) => {
+            Promise.resolve(node.buffer = this.buffers[id]).then(() => resolve(node))
+                .catch(e => reject(e));
+        });
+    }
 
     private nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
         // Remove from pool
@@ -225,72 +225,72 @@ export class SoundMaster implements RegisterablePersistent {
         });
     }
 
-	private resolvePlayParams(options: RandomModulationParams | ModulationParams): ModulationParams {
-		if (!options) return {};
-		const anyOptions = options as RandomModulationParams | ModulationParams;
+    private resolvePlayParams(options: RandomModulationParams | ModulationParams): ModulationParams {
+        if (!options) return {};
+        const anyOptions = options as RandomModulationParams | ModulationParams;
 
-		function getRandomInRange(range?: ModulationRange): number {
-			if (!range) return 0;
-			return Math.random() * (range[1] - range[0]) + range[0];
-		}
+        function getRandomInRange(range?: ModulationRange): number {
+            if (!range) return 0;
+            return Math.random() * (range[1] - range[0]) + range[0];
+        }
 
-		return {
-			offset: ((anyOptions as ModulationParams).offset ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).offsetRange),
-			pitchDelta: ((anyOptions as ModulationParams).pitchDelta ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).pitchRange),
-			volumeDelta: ((anyOptions as ModulationParams).volumeDelta ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).volumeRange),
-			playbackRate: ((anyOptions as ModulationParams).playbackRate ?? 1) + getRandomInRange((anyOptions as RandomModulationParams).playbackRateRange),
-			filter: anyOptions.filter ? { ...anyOptions.filter } as FilterModulationParams : undefined,
-		};
-	}
+        return {
+            offset: ((anyOptions as ModulationParams).offset ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).offsetRange),
+            pitchDelta: ((anyOptions as ModulationParams).pitchDelta ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).pitchRange),
+            volumeDelta: ((anyOptions as ModulationParams).volumeDelta ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).volumeRange),
+            playbackRate: ((anyOptions as ModulationParams).playbackRate ?? 1) + getRandomInRange((anyOptions as RandomModulationParams).playbackRateRange),
+            filter: anyOptions.filter ? { ...anyOptions.filter } as FilterModulationParams : undefined,
+        };
+    }
 
     private playNodeWithParams(_track: AudioMeta, node: AudioBufferSourceNode, params: ModulationParams): void {
         try {
             let destination: AudioNode = this.gainNode;
             const extras: { gain?: GainNode; filter?: BiquadFilterNode } = {};
 
-			if (params.filter) {
-				const filter = this.sndContext.createBiquadFilter();
-				if (params.filter.type) filter.type = params.filter.type;
-				if (params.filter.frequency !== undefined) filter.frequency.value = params.filter.frequency;
-				if (params.filter.q !== undefined) filter.Q.value = params.filter.q;
-				if (params.filter.gain !== undefined) filter.gain.value = params.filter.gain;
-				filter.connect(destination);
-				destination = filter;
-				extras.filter = filter;
-			}
+            if (params.filter) {
+                const filter = this.sndContext.createBiquadFilter();
+                if (params.filter.type) filter.type = params.filter.type;
+                if (params.filter.frequency !== undefined) filter.frequency.value = params.filter.frequency;
+                if (params.filter.q !== undefined) filter.Q.value = params.filter.q;
+                if (params.filter.gain !== undefined) filter.gain.value = params.filter.gain;
+                filter.connect(destination);
+                destination = filter;
+                extras.filter = filter;
+            }
 
-			if (params.volumeDelta !== undefined) {
-				const gain = this.sndContext.createGain();
-				gain.gain.value = Math.pow(10, params.volumeDelta / 20);
-				gain.connect(destination);
-				destination = gain;
-				extras.gain = gain;
-			}
+            if (params.volumeDelta !== undefined) {
+                const gain = this.sndContext.createGain();
+                gain.gain.value = Math.pow(10, params.volumeDelta / 20);
+                gain.connect(destination);
+                destination = gain;
+                extras.gain = gain;
+            }
 
-			node.connect(destination);
-			this.nodeExtras.set(node, extras);
+            node.connect(destination);
+            this.nodeExtras.set(node, extras);
 
-			const buffer = node.buffer;
-			let startOffset = params.offset ?? 0;
-			if (startOffset < 0) startOffset = 0;
-			else if (buffer && startOffset > buffer.duration) startOffset = buffer.duration - 0.001;
+            const buffer = node.buffer;
+            let startOffset = params.offset ?? 0;
+            if (startOffset < 0) startOffset = 0;
+            else if (buffer && startOffset > buffer.duration) startOffset = buffer.duration - 0.001;
 
-			if (_track['loop'] !== null && _track['loop'] !== undefined) {
-				node.loop = true;
-				node.loopStart = _track['loop']!;
-			} else {
-				node.loop = false;
-			}
+            if (_track['loop'] !== null && _track['loop'] !== undefined) {
+                node.loop = true;
+                node.loopStart = _track['loop']!;
+            } else {
+                node.loop = false;
+            }
 
-			if (buffer) {
-				if (node.loop) {
-					startOffset = ((startOffset % buffer.duration) + buffer.duration) % buffer.duration;
-				} else {
-					startOffset = Math.max(0, Math.min(startOffset, buffer.duration - 0.001));
-				}
-			}
+            if (buffer) {
+                if (node.loop) {
+                    startOffset = ((startOffset % buffer.duration) + buffer.duration) % buffer.duration;
+                } else {
+                    startOffset = Math.max(0, Math.min(startOffset, buffer.duration - 0.001));
+                }
+            }
 
-			node.playbackRate.value = (params.playbackRate ?? 1) * (1 + (params.pitchDelta ?? 0));
+            node.playbackRate.value = (params.playbackRate ?? 1) * (1 + (params.pitchDelta ?? 0));
 
             this.nodeStartTime[_track['audiotype']] = this.sndContext.currentTime;
             this.nodeStartOffset[_track['audiotype']] = startOffset;
@@ -299,6 +299,13 @@ export class SoundMaster implements RegisterablePersistent {
         } catch (error) {
             console.error(error);
         }
+    }
+
+    private effectivePlaybackRate(params: ModulationParams | null | undefined): number {
+        if (!params) return 1;
+        const base = params.playbackRate ?? 1;
+        const pitch = params.pitchDelta ?? 0;
+        return base * (1 + pitch);
     }
 
     public play(id: asset_id, options?: ModulationParams | RandomModulationParams): void {
@@ -325,9 +332,9 @@ export class SoundMaster implements RegisterablePersistent {
             this.currentPlayParamsByType[audiotype] = params;
             const startTime = this.sndContext.currentTime;
             const startOffset = (params.offset ?? 0);
-            this.playNodeWithParams(track, node, params);
-            // Capture metadata after start
+            // Add to pool before starting to avoid race where stop() can't see the node yet
             this.voicesByType[audiotype].push({ node, id, priority: track.priority ?? 0, params, startedAt: startTime, startOffset, meta: track });
+            this.playNodeWithParams(track, node, params);
         };
         this.createNode(id)
             .then(playCallback)
@@ -340,49 +347,53 @@ export class SoundMaster implements RegisterablePersistent {
             return;
         }
         const extra = this.nodeExtras.get(node);
-		try {
-			node.stop();
-		} catch { /* ignored */ }
-		node.disconnect();
-		if (extra?.gain) extra.gain.disconnect();
-		if (extra?.filter) extra.filter.disconnect();
-		this.nodeExtras.delete(node);
+        try {
+            node.stop();
+        } catch { /* ignored */ }
+        node.disconnect();
+        if (extra?.gain) extra.gain.disconnect();
+        if (extra?.filter) extra.filter.disconnect();
+        this.nodeExtras.delete(node);
         try { node.buffer = null; } catch { /* ignored */ }
     }
 
     public stop(idOrType?: asset_id | AudioType, which?: 'all' | 'oldest' | 'newest' | 'byId', id?: asset_id): void {
         // Support original behavior: stop by asset id (type inferred)
-        if (idOrType !== undefined && (typeof idOrType === 'string' || typeof idOrType === 'number')) {
+        if (idOrType in AudioTypes) {
+            const audioType = idOrType as AudioType;
+            this.stopByTypeInternal(audioType, which ?? 'all', id);
+            return;
+        } else {
             const audioRes = this.tracks[idOrType];
             const inferredType = audioRes?.['audiometa']?.['audiotype'] as AudioType | undefined;
             if (inferredType) {
                 this.stopByTypeInternal(inferredType, 'byId', idOrType);
             }
-            return;
+            else {
+                AudioTypes.forEach(type => this.stopByTypeInternal(type, 'all'));
+            }
         }
-
-        const type = (idOrType as AudioType) ?? undefined;
-        if (!type) return;
-        this.stopByTypeInternal(type, which ?? 'all', id);
     }
 
     private stopByTypeInternal(type: AudioType, which: 'all' | 'oldest' | 'newest' | 'byId', id?: asset_id): void {
         const pool = this.voicesByType[type];
-        const toStop: AudioBufferSourceNode[] = [];
+        const toStopSet = new Set<AudioBufferSourceNode>();
         switch (which) {
             case 'all':
-                for (const v of pool) toStop.push(v.node);
+                for (const v of pool) toStopSet.add(v.node);
                 pool.length = 0;
+                // Also ensure we stop the current node if not tracked (race safety)
+                if (this.currentAudioNodeByType[type]) toStopSet.add(this.currentAudioNodeByType[type]);
                 break;
             case 'oldest':
                 if (pool.length > 0) {
-                    toStop.push(pool[0].node);
+                    toStopSet.add(pool[0].node);
                     pool.shift();
                 }
                 break;
             case 'newest':
                 if (pool.length > 0) {
-                    toStop.push(pool[pool.length - 1].node);
+                    toStopSet.add(pool[pool.length - 1].node);
                     pool.pop();
                 }
                 break;
@@ -390,14 +401,14 @@ export class SoundMaster implements RegisterablePersistent {
                 if (id === undefined) return;
                 for (let i = pool.length - 1; i >= 0; i--) {
                     if (pool[i].id === id) {
-                        toStop.push(pool[i].node);
+                        toStopSet.add(pool[i].node);
                         pool.splice(i, 1);
                     }
                 }
                 break;
             }
         }
-        for (const node of toStop) this.releaseNode(node);
+        for (const node of toStopSet) this.releaseNode(node);
         const latest = pool.length > 0 ? pool[pool.length - 1] : null;
         this.currentAudioNodeByType[type] = latest ? latest.node : null;
         this.currentAudioByType[type] = latest ? { ...latest.meta, id: latest.id } : null;
@@ -430,7 +441,9 @@ export class SoundMaster implements RegisterablePersistent {
         const snapshots: { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] = [];
         const now = this.sndContext.currentTime;
         for (const v of pool) {
-            const offset = (now - v.startedAt) + (v.startOffset ?? 0);
+            const rate = this.effectivePlaybackRate(v.params);
+            const progressed = (now - v.startedAt) * rate;
+            const offset = (v.startOffset ?? 0) + progressed;
             snapshots.push({ id: v.id, offset, params: v.params, priority: v.priority });
             this.releaseNode(v.node);
         }
@@ -443,37 +456,37 @@ export class SoundMaster implements RegisterablePersistent {
         this.nodeStartOffset[type] = 0;
     }
 
-	public resume(): void {
-		if (this.sndContext.state === 'suspended') {
-			this.sndContext.resume();
-		}
-	}
+    public resume(): void {
+        if (this.sndContext.state === 'suspended') {
+            this.sndContext.resume();
+        }
+    }
 
     public get volume(): number {
         return parseFloat(this.gainNode.gain.value.toFixed(1));
     }
 
-	public set volume(_v: number) {
-		let v = parseFloat(_v.toFixed(1));
-		this.gainNode.gain.value = this.gainNode.gain.defaultValue * v;
-	}
+    public set volume(_v: number) {
+        let v = parseFloat(_v.toFixed(1));
+        this.gainNode.gain.value = this.gainNode.gain.defaultValue * v;
+    }
 
-	public currentTimeByType(type: AudioType): number | null {
-		if (this.currentAudioByType[type] === null) {
-			return null; // No audio is currently playing for this type
-		}
-		const node = this.currentAudioNodeByType[type];
-		if (node) {
-			// Calculate true playback position
-			return (node.context.currentTime - this.nodeStartTime[type]) + (this.nodeStartOffset[type] ?? 0);
-		}
-		return null;
-	}
+    public currentTimeByType(type: AudioType): number | null {
+        if (this.currentAudioByType[type] === null) {
+            return null; // No audio is currently playing for this type
+        }
+        const node = this.currentAudioNodeByType[type];
+        if (node) {
+            const rate = this.effectivePlaybackRate(this.currentPlayParamsByType[type]);
+            return (node.context.currentTime - this.nodeStartTime[type]) * rate + (this.nodeStartOffset[type] ?? 0);
+        }
+        return null;
+    }
 
-	public currentTrackByType(type: AudioType): asset_id | null {
-		const audioMeta = this.currentAudioByType[type];
-		return audioMeta ? audioMeta.id : null;
-	}
+    public currentTrackByType(type: AudioType): asset_id | null {
+        const audioMeta = this.currentAudioByType[type];
+        return audioMeta ? audioMeta.id : null;
+    }
 
     public currentTrackMetaByType(type: AudioType): AudioMeta | null {
         const audioMeta = this.currentAudioByType[type];
@@ -494,7 +507,12 @@ export class SoundMaster implements RegisterablePersistent {
 
     public snapshotVoices(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {
         const now = this.sndContext.currentTime;
-        return this.voicesByType[type].map(v => ({ id: v.id, offset: (now - v.startedAt) + (v.startOffset ?? 0), params: v.params, priority: v.priority }));
+        return this.voicesByType[type].map(v => {
+            const rate = this.effectivePlaybackRate(v.params);
+            const progressed = (now - v.startedAt) * rate;
+            const offset = (v.startOffset ?? 0) + progressed;
+            return { id: v.id, offset, params: v.params, priority: v.priority };
+        });
     }
 
     public drainPausedSnapshots(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {

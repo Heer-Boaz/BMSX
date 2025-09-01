@@ -634,13 +634,13 @@ export class Savegame {
         const SMState = this.SMState;
         if (!SMState) return;
         for (const v of (SMState.musicVoices || [])) {
-            $.sndmaster.play(v.id, { offset: v.offset, ...v.params });
+            $.sndmaster.play(v.id, { ...v.params, offset: v.offset });
         }
         for (const v of (SMState.sfxVoices || [])) {
-            $.sndmaster.play(v.id, { offset: v.offset, ...v.params });
+            $.sndmaster.play(v.id, { ...v.params, offset: v.offset });
         }
         for (const v of (SMState.uiVoices || [])) {
-            $.sndmaster.play(v.id, { offset: v.offset, ...v.params });
+            $.sndmaster.play(v.id, { ...v.params, offset: v.offset });
         }
         const aem = $.aem;
         const sfx = (SMState.sfxQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));

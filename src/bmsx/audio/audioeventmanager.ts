@@ -237,9 +237,9 @@ export class AudioEventManager implements RegisterablePersistent {
 		if (this.resumeOnNextEndByType[type]) {
 			this.resumeOnNextEndByType[type] = false;
 			const snaps = $.sndmaster.drainPausedSnapshots(type);
-			for (const s of snaps) {
-				$.sndmaster.play(s.id, { offset: s.offset, ...s.params });
-			}
+            for (const s of snaps) {
+                $.sndmaster.play(s.id, { ...s.params, offset: s.offset });
+            }
 			return; // Give priority to resuming before dequeuing
 		}
 
