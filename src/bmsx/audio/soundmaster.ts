@@ -116,35 +116,50 @@ export class SoundMaster implements RegisterablePersistent {
 		return SoundMaster._instance;
 	}
 
-	private tracks: id2res;
-	private buffers: Record<string, AudioBuffer>;
-	private sndContext: AudioContext;
-	private currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode>;
-	private currentPlayParamsByType: Record<AudioType, ModulationParams | null>;
-	private nodeExtras: WeakMap<AudioBufferSourceNode, { gain?: GainNode; filter?: BiquadFilterNode }>;
-	public currentAudioByType: Record<AudioType, AudioMetadataWithID | null>;
-	private gainNode: GainNode;
-	private nodeStartTime: Record<AudioType, number>;
-	private nodeStartOffset: Record<AudioType, number>;
+    private tracks: id2res;
+    private buffers: Record<string, AudioBuffer>;
+    private sndContext: AudioContext;
+    private currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode | null>;
+    private currentPlayParamsByType: Record<AudioType, ModulationParams | null>;
+    private nodeExtras: WeakMap<AudioBufferSourceNode, { gain?: GainNode; filter?: BiquadFilterNode }>;
+    public currentAudioByType: Record<AudioType, AudioMetadataWithID | null>;
+    private gainNode: GainNode;
+    // For API compatibility, these represent the most recently started voice per type
+    private nodeStartTime: Record<AudioType, number>;
+    private nodeStartOffset: Record<AudioType, number>;
+
+    // Multi-voice pooling per type (music stays effectively single by default)
+    private voicesByType: Record<AudioType, { node: AudioBufferSourceNode; id: asset_id; priority: number; params: ModulationParams; startedAt: number; startOffset: number; meta: AudioMeta; }[]>;
+    private defaultMaxVoicesByType: Record<AudioType, number>;
+
+    // Per-type paused snapshots for pause policy
+    private pausedByType: Record<AudioType, { id: asset_id; offset: number; params: ModulationParams; priority: number; }[]>;
+
+    // Ended listeners per type
+    private endedListenersByType: Record<AudioType, Set<() => void>>;
 
 	constructor() {
 		Registry.instance.register(this);
 		this.tracks = {};
 		this.buffers = {};
 		this.sndContext = null; // Passed externally via the init method
-		this.currentAudioNodeByType = { sfx: null, music: null };
-		this.currentPlayParamsByType = { sfx: null, music: null };
-		this.nodeExtras = new WeakMap();
-		this.currentAudioByType = { sfx: null, music: null };
-		this.gainNode = null; // Passed externally via the init method
-		this.nodeStartTime = { sfx: 0, music: 0 };
-		this.nodeStartOffset = { sfx: 0, music: 0 };
-	}
+        this.currentAudioNodeByType = { sfx: null, music: null, ui: null };
+        this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
+        this.nodeExtras = new WeakMap();
+        this.currentAudioByType = { sfx: null, music: null, ui: null };
+        this.gainNode = null; // Passed externally via the init method
+        this.nodeStartTime = { sfx: 0, music: 0, ui: 0 };
+        this.nodeStartOffset = { sfx: 0, music: 0, ui: 0 };
+        this.voicesByType = { sfx: [], music: [], ui: [] };
+        this.defaultMaxVoicesByType = { sfx: 1, music: 1, ui: 1 };
+        this.pausedByType = { sfx: [], music: [], ui: [] };
+        this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
+    }
 
 	public async init(audioResources: id2res, sndcontext: AudioContext, startingVolume: number, gainnode?: GainNode) {
 		this.sndContext = sndcontext;
-		this.currentAudioByType = { sfx: null, music: null };
-		this.currentAudioNodeByType = { sfx: null, music: null };
+		this.currentAudioByType = { sfx: null, music: null, ui: null };
+		this.currentAudioNodeByType = { sfx: null, music: null, ui: null };
 
 		this.tracks = audioResources;
 		this.predecodeTracks();
@@ -186,14 +201,29 @@ export class SoundMaster implements RegisterablePersistent {
 		});
 	}
 
-	private nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
-		// Only clear if this node is still the current one for this type
-		if (this.currentAudioNodeByType[type] === node) {
-			this.currentAudioByType[type] = null;
-			this.currentAudioNodeByType[type] = null;
-		}
-		this.releaseNode(node);
-	}
+    private nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
+        // Remove from pool
+        const pool = this.voicesByType[type];
+        const idx = pool.findIndex(v => v.node === node);
+        if (idx >= 0) {
+            pool.splice(idx, 1);
+        }
+        // If this node was considered the current one, update to latest remaining
+        if (this.currentAudioNodeByType[type] === node) {
+            const latest = pool.length > 0 ? pool[pool.length - 1] : null;
+            this.currentAudioByType[type] = latest ? { ...latest.meta, id: latest.id } : null;
+            this.currentAudioNodeByType[type] = latest ? latest.node : null;
+            this.currentPlayParamsByType[type] = latest ? latest.params : null;
+            this.nodeStartTime[type] = latest ? latest.startedAt : 0;
+            this.nodeStartOffset[type] = latest ? latest.startOffset : 0;
+        }
+        this.releaseNode(node);
+        // Notify listeners
+        const listeners = this.endedListenersByType[type];
+        listeners.forEach(fn => {
+            try { fn(); } catch (e) { console.warn(e); }
+        });
+    }
 
 	private resolvePlayParams(options: RandomModulationParams | ModulationParams): ModulationParams {
 		if (!options) return {};
@@ -213,10 +243,10 @@ export class SoundMaster implements RegisterablePersistent {
 		};
 	}
 
-	private playNodeWithParams(_track: AudioMeta, node: AudioBufferSourceNode, params: ModulationParams): void {
-		try {
-			let destination: AudioNode = this.gainNode;
-			const extras: { gain?: GainNode; filter?: BiquadFilterNode } = {};
+    private playNodeWithParams(_track: AudioMeta, node: AudioBufferSourceNode, params: ModulationParams): void {
+        try {
+            let destination: AudioNode = this.gainNode;
+            const extras: { gain?: GainNode; filter?: BiquadFilterNode } = {};
 
 			if (params.filter) {
 				const filter = this.sndContext.createBiquadFilter();
@@ -262,41 +292,54 @@ export class SoundMaster implements RegisterablePersistent {
 
 			node.playbackRate.value = (params.playbackRate ?? 1) * (1 + (params.pitchDelta ?? 0));
 
-			this.nodeStartTime[_track['audiotype']] = this.sndContext.currentTime;
-			this.nodeStartOffset[_track['audiotype']] = startOffset;
-			node.start(0, startOffset);
-			node.onended = () => this.nodeEndedHandler(node, _track['audiotype']);
-		} catch (error) {
-			console.error(error);
-		}
-	}
+            this.nodeStartTime[_track['audiotype']] = this.sndContext.currentTime;
+            this.nodeStartOffset[_track['audiotype']] = startOffset;
+            node.start(0, startOffset);
+            node.onended = () => this.nodeEndedHandler(node, _track['audiotype']);
+        } catch (error) {
+            console.error(error);
+        }
+    }
 
-	public play(id: asset_id, options?: ModulationParams | RandomModulationParams): void {
-		const params = this.resolvePlayParams(options);
-		const track = this.tracks[id]?.['audiometa'];
-		if (!track) {
-			console.error(`SoundMaster: Attempted to play unknown track with id = "${id}". Skipping.`);
-			return;
-		}
-		const audiotype = track['audiotype'];
-		const playCallback = (node: AudioBufferSourceNode) => {
-			this.stop(id);
-			this.currentAudioNodeByType[audiotype] = node;
-			this.currentAudioByType[audiotype] = { ...track, id: id };
-			this.currentPlayParamsByType[audiotype] = params;
-			this.playNodeWithParams(track, node, params);
-		};
-		this.createNode(id)
-			.then(playCallback)
-			.catch(e => console.error(e.message));
-	}
+    public play(id: asset_id, options?: ModulationParams | RandomModulationParams): void {
+        const params = this.resolvePlayParams(options);
+        const track = this.tracks[id]?.['audiometa'];
+        if (!track) {
+            console.error(`SoundMaster: Attempted to play unknown track with id = "${String(id)}". Skipping.`);
+            return;
+        }
+        const audiotype = track['audiotype'];
+        const playCallback = (node: AudioBufferSourceNode) => {
+            // Enforce capacity (music single-voice; sfx/ui configurable)
+            const pool = this.voicesByType[audiotype];
+            const maxVoices = this.defaultMaxVoicesByType[audiotype];
+            if (pool.length >= maxVoices) {
+                // Stop oldest to make space (replacement specifics handled by caller policies)
+                const oldest = pool[0]?.node;
+                if (oldest) this.releaseNode(oldest);
+                if (pool.length > 0) pool.shift();
+            }
 
-	private releaseNode(node: AudioBufferSourceNode) {
-		if (!node) {
-			console.warn(`SoundMaster: Attempted to release null node. Skipping.`);
-			return;
-		}
-		const extra = this.nodeExtras.get(node);
+            this.currentAudioNodeByType[audiotype] = node;
+            this.currentAudioByType[audiotype] = { ...track, id: id };
+            this.currentPlayParamsByType[audiotype] = params;
+            const startTime = this.sndContext.currentTime;
+            const startOffset = (params.offset ?? 0);
+            this.playNodeWithParams(track, node, params);
+            // Capture metadata after start
+            this.voicesByType[audiotype].push({ node, id, priority: track.priority ?? 0, params, startedAt: startTime, startOffset, meta: track });
+        };
+        this.createNode(id)
+            .then(playCallback)
+            .catch(e => console.error(e.message));
+    }
+
+    private releaseNode(node: AudioBufferSourceNode) {
+        if (!node) {
+            console.warn(`SoundMaster: Attempted to release null node. Skipping.`);
+            return;
+        }
+        const extra = this.nodeExtras.get(node);
 		try {
 			node.stop();
 		} catch { /* ignored */ }
@@ -304,38 +347,101 @@ export class SoundMaster implements RegisterablePersistent {
 		if (extra?.gain) extra.gain.disconnect();
 		if (extra?.filter) extra.filter.disconnect();
 		this.nodeExtras.delete(node);
-		try { node.buffer = null; } catch { } // Some browsers may not allow setting buffer to null, and we can safely ignore this error
-	}
+        try { node.buffer = null; } catch { /* ignored */ }
+    }
 
-	private stop(id: asset_id): void {
-		const audiotype = this.tracks[id]?.['audiometa']['audiotype'];
-		this.stopByType(audiotype);
-	}
+    public stop(idOrType?: asset_id | AudioType, which?: 'all' | 'oldest' | 'newest' | 'byId', id?: asset_id): void {
+        // Support original behavior: stop by asset id (type inferred)
+        if (idOrType !== undefined && (typeof idOrType === 'string' || typeof idOrType === 'number')) {
+            const audioRes = this.tracks[idOrType];
+            const inferredType = audioRes?.['audiometa']?.['audiotype'] as AudioType | undefined;
+            if (inferredType) {
+                this.stopByTypeInternal(inferredType, 'byId', idOrType);
+            }
+            return;
+        }
 
-	private stopByType(type: AudioType): void {
-		try {
-			const node = this.currentAudioNodeByType[type];
-			if (node && node.context.state !== 'closed') {
-				this.releaseNode(node);
-			}
-		} catch (e) { console.warn(e); }
-		this.currentAudioNodeByType[type] = null;
-		this.currentAudioByType[type] = null;
-	}
+        const type = (idOrType as AudioType) ?? undefined;
+        if (!type) return;
+        this.stopByTypeInternal(type, which ?? 'all', id);
+    }
 
-	public stopEffect(): void {
-		this.stopByType('sfx');
-	}
+    private stopByTypeInternal(type: AudioType, which: 'all' | 'oldest' | 'newest' | 'byId', id?: asset_id): void {
+        const pool = this.voicesByType[type];
+        const toStop: AudioBufferSourceNode[] = [];
+        switch (which) {
+            case 'all':
+                for (const v of pool) toStop.push(v.node);
+                pool.length = 0;
+                break;
+            case 'oldest':
+                if (pool.length > 0) {
+                    toStop.push(pool[0].node);
+                    pool.shift();
+                }
+                break;
+            case 'newest':
+                if (pool.length > 0) {
+                    toStop.push(pool[pool.length - 1].node);
+                    pool.pop();
+                }
+                break;
+            case 'byId': {
+                if (id === undefined) return;
+                for (let i = pool.length - 1; i >= 0; i--) {
+                    if (pool[i].id === id) {
+                        toStop.push(pool[i].node);
+                        pool.splice(i, 1);
+                    }
+                }
+                break;
+            }
+        }
+        for (const node of toStop) this.releaseNode(node);
+        const latest = pool.length > 0 ? pool[pool.length - 1] : null;
+        this.currentAudioNodeByType[type] = latest ? latest.node : null;
+        this.currentAudioByType[type] = latest ? { ...latest.meta, id: latest.id } : null;
+        this.currentPlayParamsByType[type] = latest ? latest.params : null;
+        this.nodeStartTime[type] = latest ? latest.startedAt : 0;
+        this.nodeStartOffset[type] = latest ? latest.startOffset : 0;
+    }
 
-	public stopMusic(): void {
-		this.stopByType('music');
-	}
+    public stopEffect(): void {
+        this.stop('sfx', 'all');
+    }
 
-	public pause(): void {
-		if (this.sndContext.state === 'running') {
-			this.sndContext.suspend();
-		}
-	}
+    public stopMusic(): void {
+        this.stop('music', 'all');
+    }
+
+    public stopUI(): void {
+        this.stop('ui', 'all');
+    }
+
+    public pause(type?: AudioType): void {
+        if (!type) {
+            if (this.sndContext.state === 'running') {
+                this.sndContext.suspend();
+            }
+            return;
+        }
+        // Snapshot and stop all voices for the given type
+        const pool = this.voicesByType[type];
+        const snapshots: { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] = [];
+        const now = this.sndContext.currentTime;
+        for (const v of pool) {
+            const offset = (now - v.startedAt) + (v.startOffset ?? 0);
+            snapshots.push({ id: v.id, offset, params: v.params, priority: v.priority });
+            this.releaseNode(v.node);
+        }
+        pool.length = 0;
+        this.pausedByType[type].push(...snapshots);
+        this.currentAudioNodeByType[type] = null;
+        this.currentAudioByType[type] = null;
+        this.currentPlayParamsByType[type] = null;
+        this.nodeStartTime[type] = 0;
+        this.nodeStartOffset[type] = 0;
+    }
 
 	public resume(): void {
 		if (this.sndContext.state === 'suspended') {
@@ -343,9 +449,9 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 	}
 
-	public get volume(): number {
-		return parseFloat(this.gainNode.gain.value.toFixed(1));
-	}
+    public get volume(): number {
+        return parseFloat(this.gainNode.gain.value.toFixed(1));
+    }
 
 	public set volume(_v: number) {
 		let v = parseFloat(_v.toFixed(1));
@@ -369,25 +475,52 @@ export class SoundMaster implements RegisterablePersistent {
 		return audioMeta ? audioMeta.id : null;
 	}
 
-	public currentTrackMetaByType(type: AudioType): AudioMeta | null {
-		const audioMeta = this.currentAudioByType[type];
-		return audioMeta ? audioMeta : null;
-	}
+    public currentTrackMetaByType(type: AudioType): AudioMeta | null {
+        const audioMeta = this.currentAudioByType[type];
+        return audioMeta ? audioMeta : null;
+    }
 
-	public currentModulationParamsByType(type: AudioType): ModulationParams | null {
-		return this.currentPlayParamsByType[type] || null;
-	}
+    public currentModulationParamsByType(type: AudioType): ModulationParams | null {
+        return this.currentPlayParamsByType[type] || null;
+    }
 
-	public dispose() {
-		this.tracks = null;
-		this.buffers = null;
-		this.sndContext = null;
-		this.currentAudioNodeByType = null;
-		this.currentPlayParamsByType = null;
-		this.nodeExtras = null;
-		this.currentAudioByType = null;
-		this.gainNode = null;
-		this.nodeStartTime = null;
-		this.nodeStartOffset = null;
-	}
+    public activeCountByType(type: AudioType): number {
+        return this.voicesByType[type].length;
+    }
+
+    public getActiveVoiceInfosByType(type: AudioType): { id: asset_id; priority: number; params: ModulationParams; startedAt: number; startOffset: number; meta: AudioMeta; }[] {
+        return this.voicesByType[type].map(v => ({ id: v.id, priority: v.priority, params: v.params, startedAt: v.startedAt, startOffset: v.startOffset, meta: v.meta }));
+    }
+
+    public snapshotVoices(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {
+        const now = this.sndContext.currentTime;
+        return this.voicesByType[type].map(v => ({ id: v.id, offset: (now - v.startedAt) + (v.startOffset ?? 0), params: v.params, priority: v.priority }));
+    }
+
+    public drainPausedSnapshots(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {
+        const arr = this.pausedByType[type];
+        this.pausedByType[type] = [];
+        return arr;
+    }
+
+    public addEndedListener(type: AudioType, listener: () => void): () => void {
+        this.endedListenersByType[type].add(listener);
+        return () => this.endedListenersByType[type].delete(listener);
+    }
+
+    public dispose() {
+        this.tracks = null;
+        this.buffers = null;
+        this.sndContext = null;
+        this.currentAudioNodeByType = null;
+        this.currentPlayParamsByType = null;
+        this.nodeExtras = null;
+        this.currentAudioByType = null;
+        this.gainNode = null;
+        this.nodeStartTime = null;
+        this.nodeStartOffset = null;
+        this.voicesByType = null;
+        this.pausedByType = null;
+        this.endedListenersByType = null;
+    }
 }

@@ -1,4 +1,5 @@
 import { StateMachineBlueprint } from '../fsm/fsmtypes';
+import type { ModulationParams, RandomModulationParams } from '../audio/soundmaster';
 import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
 
@@ -108,7 +109,7 @@ export interface RegisterablePersistent extends Registerable {
 /*
  * Enum representing the type of an audio asset.
  */
-export type AudioType = 'sfx' | 'music';
+export type AudioType = 'sfx' | 'music' | 'ui';
 
 /**
  * Alternative representation of a 2D vector as an array.
@@ -302,28 +303,66 @@ export interface ImgMeta {
 }
 
 export interface AudioEventPayload {
-	actorId?: Identifier;
-	targetId?: Identifier;
-	modulationPreset?: asset_id;
-	[k: string]: unknown;
+    actorId?: Identifier;
+    targetId?: Identifier;
+    modulationPreset?: asset_id;
+    modulationParams?: RandomModulationParams | ModulationParams;
+    [k: string]: unknown;
 }
 
 export interface AudioCaseMatcher {
-	equals?: Record<string, unknown>;
-	anyOf?: Record<string, unknown[]>;
-	hasTag?: string[];
+    // Basic comparisons
+    equals?: Record<string, unknown>;
+    /**
+     * Value must be in provided list per key. Alias: `in`.
+     */
+    anyOf?: Record<string, unknown[]>;
+    /**
+     * Synonym for `anyOf` for readability in YAML (IN operator).
+     */
+    in?: Record<string, unknown[]>;
+    /**
+     * All tags listed must be present in payload `tags: string[]`.
+     */
+    hasTag?: string[];
+
+    // Logical composition
+    /** All nested matchers must match in addition to this node */
+    and?: AudioCaseMatcher[];
+    /** Any nested matcher may match (OR) in addition to this node */
+    or?: AudioCaseMatcher[];
+    /** Nested matcher must NOT match. */
+    not?: AudioCaseMatcher;
 }
 
 export interface AudioAction {
-	audioId: AudioId;
-	modulationPreset?: asset_id;
-	priority?: number;
-	cooldownMs?: number;
+    audioId: AudioId;
+    modulationPreset?: asset_id;
+    priority?: number;
+    cooldownMs?: number;
 }
 
+export interface AudioActionWeighted extends AudioAction {
+    /** Relative probability when using weighted selection */
+    weight?: number;
+}
+
+/**
+ * Randomized action spec: choose one action from a list.
+ * - If any item specifies a `weight` or `pick: 'weighted'`, weighted selection is used.
+ * - `avoidRepeat`: prevent immediate repeat of the last choice for this rule.
+ */
+export interface AudioActionOneOfSpec {
+    oneOf: (AudioActionWeighted | AudioId)[];
+    pick?: 'uniform' | 'weighted';
+    avoidRepeat?: boolean;
+}
+
+export type AudioActionSpec = AudioAction | AudioActionOneOfSpec;
+
 export interface AudioEventRule {
-	when?: AudioCaseMatcher;
-	do: AudioAction;
+    when?: AudioCaseMatcher;
+    do: AudioActionSpec;
 }
 
 export interface AudioEventMapEntry {

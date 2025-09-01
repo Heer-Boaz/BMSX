@@ -552,13 +552,14 @@ export function excludeclassfromsavegame(constructor: InstanceType<any>): any {
     return constructor;
 }
 
+type VoiceState = { id: string | number; offset: number; params: ModulationParams; priority: number };
+type VoiceQueueItem = { id: string | number; params: ModulationParams; priority: number };
 type SoundMasterState = {
-    sfxTrackId?: string;
-    sfxOffset?: number;
-    musicTrackId?: string;
-    musicOffset?: number;
-    sfxModParams?: ModulationParams;
-    musicModParams?: ModulationParams;
+    sfxVoices: VoiceState[];
+    uiVoices: VoiceState[];
+    musicVoices: VoiceState[];
+    sfxQueue?: VoiceQueueItem[];
+    uiQueue?: VoiceQueueItem[];
 };
 
 type ViewState = {
@@ -606,32 +607,50 @@ export class Savegame {
 
     @onsave
     saveSoundState(o: Savegame) {
-        // Capture current sound master playback state
-        const SMState = {
-            sfxTrackId: $.sndmaster.currentTrackByType('sfx'),
-            sfxOffset: $.sndmaster.currentTimeByType('sfx'),
-            musicTrackId: $.sndmaster.currentTrackByType('music'),
-            musicOffset: $.sndmaster.currentTimeByType('music'),
-            sfxModParams: $.sndmaster.currentModulationParamsByType('sfx'),
-            musicModParams: $.sndmaster.currentModulationParamsByType('music'),
+        // Capture full sound master playback state (multi-voice aware)
+        const SMState: SoundMasterState = {
+            sfxVoices: $.sndmaster.snapshotVoices('sfx'),
+            uiVoices: $.sndmaster.snapshotVoices('ui'),
+            musicVoices: $.sndmaster.snapshotVoices('music'),
         };
+
+        // Capture queues via AudioEventManager and convert to VoiceQueueItem shape
+        const qs = $.aem.getQueues();
+        SMState.sfxQueue = qs.sfx.map(q => ({
+            id: q.audioId,
+            params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
+            priority: q.priority ?? 0,
+        }));
+        SMState.uiQueue = qs.ui.map(q => ({
+            id: q.audioId,
+            params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
+            priority: q.priority ?? 0,
+        }));
 
         return { SMState };
     }
 
     @onload
     restoreSoundState() {
-        // Restore sound master playback state
-        $.sndmaster.stopEffect(); // Stop any currently playing sound effect
-        $.sndmaster.stopMusic(); // Stop any currently playing music
-        if (this.SMState) {
-            if (this.SMState.sfxTrackId) {
-                $.sndmaster.play(this.SMState.sfxTrackId, { offset: this.SMState.sfxOffset, ...(this.SMState.sfxModParams || {}) });
-            }
-            if (this.SMState.musicTrackId) {
-                $.sndmaster.play(this.SMState.musicTrackId, { offset: this.SMState.musicOffset, ...this.SMState.musicModParams || {} });
-            }
+        // Restore multi-voice sound master state
+        $.sndmaster.stopEffect();
+        $.sndmaster.stopUI();
+        $.sndmaster.stopMusic();
+        const SMState = this.SMState;
+        if (!SMState) return;
+        for (const v of (SMState.musicVoices || [])) {
+            $.sndmaster.play(v.id, { offset: v.offset, ...v.params });
         }
+        for (const v of (SMState.sfxVoices || [])) {
+            $.sndmaster.play(v.id, { offset: v.offset, ...v.params });
+        }
+        for (const v of (SMState.uiVoices || [])) {
+            $.sndmaster.play(v.id, { offset: v.offset, ...v.params });
+        }
+        const aem = $.aem;
+        const sfx = (SMState.sfxQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
+        const ui = (SMState.uiQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
+        aem.restoreQueues({ sfx, ui });
     }
 
     @onload

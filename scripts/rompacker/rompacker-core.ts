@@ -608,6 +608,141 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 }
 
 /**
+ * Validates cross-references in Audio Event Maps (AEM):
+ * - Ensures each referenced `audioId` exists among loaded audio resources.
+ * - Ensures each referenced `modulationPreset` exists in `modulationparams` data.
+ * This check runs after all resources are loaded and prior to ROM asset generation.
+ *
+ * Throws an Error with a summary of all issues if any invalid references are found.
+ */
+export function validateAudioEventReferences(resources: Resource[]): void {
+	// Build lookup of audio resources by name and id
+	const audioByName = new Set<string>();
+	const audioById = new Set<number>();
+	for (const r of resources) {
+		if (r.type === 'audio') {
+			if (typeof r.name === 'string') audioByName.add(r.name);
+			if (typeof r.id === 'number') audioById.add(r.id);
+		}
+	}
+
+	// Build lookup of data assets (any data file). We only verify that a referenced modulation preset
+	// points to a known data asset (by name or id), not a specific preset collection.
+    const dataByName = new Set<string>();
+    const dataById = new Set<number>();
+    const dataTopLevelKeys = new Set<string>();
+    for (const r of resources) {
+        if (r.type === 'data') {
+            if (typeof r.name === 'string') dataByName.add(r.name);
+            if (typeof r.id === 'number') dataById.add(r.id);
+            // Also collect top-level keys from JSON/YAML objects for convenience (e.g., modulationparams.attacksfx)
+            if (r.buffer && (r.datatype === 'yaml' || r.datatype === 'json')) {
+                try {
+                    const raw = r.buffer.toString('utf8');
+                    const obj = r.datatype === 'yaml' ? yaml.load(raw) : JSON.parse(raw);
+                    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+                        for (const k of Object.keys(obj as Record<string, unknown>)) dataTopLevelKeys.add(k);
+                    }
+                } catch { /* ignore parse errors here; data file validity will be enforced elsewhere */ }
+            }
+        }
+    }
+
+	const errors: string[] = [];
+
+	function checkAction(ref: { audioId?: unknown; modulationPreset?: unknown }, ctx: { file: string; event?: string; ruleIndex?: number; choiceIndex?: number }): void {
+		const where = `${ctx.file}${ctx.event ? `:${ctx.event}` : ''}${ctx.ruleIndex != null ? `#rule${ctx.ruleIndex}` : ''}${ctx.choiceIndex != null ? `[${ctx.choiceIndex}]` : ''}`;
+		// audioId: string (name) or number (id)
+		if (ref.audioId === undefined || ref.audioId === null) {
+			errors.push(`Missing audioId at ${where}`);
+		} else if (typeof ref.audioId === 'string') {
+			if (!audioByName.has(ref.audioId)) errors.push(`Unknown audioId '${ref.audioId}' at ${where}`);
+		} else if (typeof ref.audioId === 'number') {
+			if (!audioById.has(ref.audioId)) errors.push(`Unknown audioId #${ref.audioId} at ${where}`);
+		} else {
+			errors.push(`Invalid audioId type (${typeof ref.audioId}) at ${where}`);
+		}
+
+		// modulationPreset: if present, must reference a known data asset (name or id)
+		if (ref.modulationPreset !== undefined) {
+			const v = ref.modulationPreset;
+            if (typeof v === 'string') {
+                if (!dataByName.has(v) && !dataTopLevelKeys.has(v)) errors.push(`Unknown data asset or key for modulationPreset '${v}' at ${where}`);
+            } else if (typeof v === 'number') {
+                if (!dataById.has(v)) errors.push(`Unknown data asset id for modulationPreset #${v} at ${where}`);
+            } else {
+                errors.push(`Invalid modulationPreset type (${typeof v}) at ${where}`);
+            }
+		}
+	}
+
+	function validateRules(rules: any[], file: string, eventName?: string) {
+		if (!Array.isArray(rules)) return;
+		rules.forEach((rule, ri) => {
+			if (!rule || typeof rule !== 'object') return;
+			const act = rule.do;
+			if (!act) { errors.push(`Missing 'do' action at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}`); return; }
+			if (typeof act === 'object' && act.oneOf && Array.isArray(act.oneOf)) {
+				act.oneOf.forEach((item: any, ci: number) => {
+					if (typeof item === 'string' || typeof item === 'number') {
+						checkAction({ audioId: item }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
+					} else if (item && typeof item === 'object') {
+						checkAction({ audioId: item.audioId, modulationPreset: item.modulationPreset }, { file, event: eventName, ruleIndex: ri, choiceIndex: ci });
+					} else {
+						errors.push(`Invalid oneOf item at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}[${ci}]`);
+					}
+				});
+			} else {
+				checkAction({ audioId: act.audioId, modulationPreset: act.modulationPreset }, { file, event: eventName, ruleIndex: ri });
+			}
+		});
+	}
+
+	// Scan all AEM files
+	for (const r of resources) {
+		if (r.type !== 'aem' || !r.buffer) continue;
+		try {
+			const raw = r.buffer.toString('utf8');
+			const doc = r.datatype === 'yaml' ? yaml.load(raw) : JSON.parse(raw);
+			if (!doc || typeof doc !== 'object') continue;
+			const obj = doc as any;
+			const fileTag = r.filepath ?? r.name;
+
+			// Prefer explicit 'events' map
+			if (obj.events && typeof obj.events === 'object') {
+				for (const evName of Object.keys(obj.events)) {
+					const ev = obj.events[evName];
+					if (ev && typeof ev === 'object' && Array.isArray(ev.rules)) {
+						validateRules(ev.rules, fileTag, evName);
+					}
+				}
+				continue;
+			}
+
+			// Otherwise, scan direct entries with 'rules'
+			for (const key of Object.keys(obj)) {
+				if (key === '$type' || key === 'name' || key === 'channel' || key === 'maxVoices' || key === 'policy' || key === 'rules') continue;
+				const ev = obj[key];
+				if (ev && typeof ev === 'object' && Array.isArray(ev.rules)) {
+					validateRules(ev.rules, fileTag, key);
+				}
+			}
+			// Fallback: if root itself looks like a single entry with 'rules'
+			if (Array.isArray((obj as any).rules)) {
+				validateRules((obj as any).rules, fileTag);
+			}
+		} catch (e) {
+			throw new Error(`Failed to parse AEM file '${r.filepath ?? r.name}': ${e?.message ?? e}`);
+		}
+	}
+
+	if (errors.length > 0) {
+		const msg = errors.map(e => ` - ${e}`).join('\n');
+		throw new Error(`Audio Event Map validation failed:\n${msg}`);
+	}
+}
+
+/**
  * Builds a list of resources located at `respaths` for the specified `romname`.
  * @param respaths An array of the paths to the resources to include in the list.
  * @param rom_name The name of the ROM pack to build the list for.

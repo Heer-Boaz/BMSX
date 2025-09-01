@@ -169,6 +169,8 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 
 	public get view(): V { return this.viewAs<V>(); }
 
+	public get aem(): AudioEventManager { return this.registry.get<AudioEventManager>('aem'); }
+
 	public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
 
 	public get input(): Input { return this.registry.get<Input>('input'); }
@@ -234,6 +236,10 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 
 	public stopMusic(): void {
 		this.sndmaster.stopMusic();
+	}
+
+	public stopUI(): void {
+		this.sndmaster.stopUI();
 	}
 
 	public set volume(volume: number) {

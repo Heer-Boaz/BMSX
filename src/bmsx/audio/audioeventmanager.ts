@@ -3,14 +3,18 @@ import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import type {
 	asset_id,
+	AudioAction,
+	AudioActionOneOfSpec,
+	AudioActionSpec,
 	AudioEventMapEntry,
 	AudioEventPayload,
 	AudioEventRule,
 	id2audioevent,
 	Identifiable,
 	Identifier,
-	RegisterablePersistent
+	RegisterablePersistent,
 } from '../rompack/rompack';
+import type { ModulationParams, RandomModulationParams } from './soundmaster';
 
 export interface AudioHandleContext {
 	name: string;
@@ -54,8 +58,8 @@ export class AudioEventManager implements RegisterablePersistent {
 		return true;
 	}
 
-	public get id(): 'amg' {
-		return 'amg';
+	public get id(): 'aem' {
+		return 'aem';
 	}
 
 	private handlers: AudioHandler[] = [];
@@ -78,7 +82,11 @@ export class AudioEventManager implements RegisterablePersistent {
 
 	private merged: Map<string, AudioEventMapEntry> = new Map();
 	private lastPlayedAt = new Map<string, number>();
+	private lastRandomPickByRule = new Map<string, number>();
 	private anyListener?: EventHandler;
+	private endUnsubByType: Partial<Record<'sfx' | 'music' | 'ui', () => void>> = {};
+	private queuesByType: Record<'sfx' | 'music' | 'ui', { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number; cooldownMs?: number; enqueuedAt: number; }[]> = { sfx: [], music: [], ui: [] };
+	private resumeOnNextEndByType: Record<'sfx' | 'music' | 'ui', boolean> = { sfx: false, music: false, ui: false };
 
 	init(maps: id2audioevent[], handlers?: AudioHandler[]): void {
 		this.handlers = handlers ?? [];
@@ -93,6 +101,13 @@ export class AudioEventManager implements RegisterablePersistent {
 			this.onEvent(event_name, payload as AudioEventPayload, emitter);
 		};
 		$.event_emitter.onAny(this.anyListener);
+
+		// subscribe to voice end events for sfx and ui to manage queue/pause
+		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx', () => this.onChannelEnded('sfx'));
+		this.endUnsubByType['ui'] = $.sndmaster.addEndedListener('ui', () => this.onChannelEnded('ui'));
+
+		// Expose instance for serializer helpers
+		(globalThis as { AudioEventManagerInstance?: AudioEventManager }).AudioEventManagerInstance = this;
 
 		// Debug: list registered audio events and handlers
 		try {
@@ -113,6 +128,19 @@ export class AudioEventManager implements RegisterablePersistent {
 		} catch { }
 	}
 
+	public getQueues(): { sfx: { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[]; ui: { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[] } {
+		return {
+			sfx: this.queuesByType.sfx.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority })),
+			ui: this.queuesByType.ui.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority })),
+		};
+	}
+
+	public restoreQueues(qs: { sfx: { name?: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[]; ui: { name?: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number }[] }): void {
+		const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+		this.queuesByType.sfx = (qs.sfx || []).map(it => ({ name: it.name ?? 'restored.sfx', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, enqueuedAt: now }));
+		this.queuesByType.ui = (qs.ui || []).map(it => ({ name: it.name ?? 'restored.ui', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, enqueuedAt: now }));
+	}
+
 	addHandler(handler: AudioHandler): void {
 		this.handlers.push(handler);
 	}
@@ -125,6 +153,8 @@ export class AudioEventManager implements RegisterablePersistent {
 		if (this.anyListener) $.event_emitter.offAny(this.anyListener);
 		this.handlers = [];
 		this.anyListener = undefined;
+		if (this.endUnsubByType['sfx']) this.endUnsubByType['sfx']();
+		if (this.endUnsubByType['ui']) this.endUnsubByType['ui']();
 	}
 
 	private onEvent(name: string, payload: AudioEventPayload = {}, emitter: Identifiable): boolean {
@@ -138,55 +168,125 @@ export class AudioEventManager implements RegisterablePersistent {
 		const entry = this.merged.get(name);
 		if (!entry) return false;
 
-		const action = this.pickAction(entry.rules, payload);
+		const action = this.pickAction(name, entry.rules, payload);
 		if (!action) return true;
 
-		// cooldown
-		const key = `${name}:${action.audioId}`;
-		const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+		// voice policy / priority handling per channel
+		const channel = entry.channel ?? 'sfx';
+		const pr = action.priority ?? $.rompack.audio[action.audioId]?.audiometa.priority ?? 0;
+		const maxVoices = entry.maxVoices ?? 1;
+		const active = $.sndmaster.activeCountByType(channel);
+		const policy = entry.policy ?? 'replace';
+
+		// stop
+		switch (policy) {
+			case 'stop':
+				$.sndmaster.stop(channel, 'all');
+				return true;
+		}
+
+		if (active >= maxVoices) {
+			switch (policy) {
+				case 'ignore':
+					return true;
+				case 'replace': {
+					const infos = $.sndmaster.getActiveVoiceInfosByType(channel);
+					let minIdx = 0; let minPr = infos[0]?.priority ?? pr; let oldestStart = infos[0]?.startedAt ?? 0;
+					for (let i = 1; i < infos.length; i++) {
+						const inf = infos[i];
+						if (inf.priority < minPr || (inf.priority === minPr && inf.startedAt < oldestStart)) { minPr = inf.priority; minIdx = i; oldestStart = inf.startedAt; }
+					}
+					if (pr < minPr) return true; // lower priority: drop
+					if (minIdx === 0) $.sndmaster.stop(channel, 'oldest');
+					else if (minIdx === infos.length - 1) $.sndmaster.stop(channel, 'newest');
+					else $.sndmaster.stop(channel, 'byId', infos[minIdx].id);
+					break;
+				}
+				case 'pause': {
+					// Pause existing voices; new voice will play; resume when it ends
+					$.sndmaster.pause(channel);
+					this.resumeOnNextEndByType[channel] = true;
+					break;
+				}
+				case 'queue': {
+					this.enqueue(channel, { name, audioId: action.audioId, modulationPreset: action.modulationPreset, priority: pr, cooldownMs: action.cooldownMs });
+					return true;
+				}
+			}
+		}
+
+		// set cooldown stamp only when actually playing now (not when queuing)
 		if (action.cooldownMs) {
+			const key = `${name}:${action.audioId}`;
+			const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 			const last = this.lastPlayedAt.get(key) || 0;
 			if ((now - last) < action.cooldownMs) return true;
 			this.lastPlayedAt.set(key, now);
 		}
 
-		// voice policy / priority (single SFX lane behavior)
-		const pr = action.priority ?? $.rompack.audio[action.audioId]?.audiometa.priority ?? 0;
-		if (entry.channel !== 'music') {
-			const currentTrackMeta = $.sndmaster.currentTrackMetaByType('sfx');
-			if (currentTrackMeta) {
-				switch (entry.policy) {
-					case 'ignore': // If any effect is playing, ignore this one
-						return true;
-					case 'replace': // If the new effect has equal or higher priority, replace the current one, otherwise we ignore it
-						if (pr < currentTrackMeta.priority) return true; // TODO: Also add cooldown handling and also keep track of the priority of the current effect *based on the rule* that started it's playback!
-						$.stopEffect();
-						break;
-					case 'stop': // Stop the current effect
-						$.stopEffect();
-						return true;
-					// TODO: IMPLEMENT!
-					case 'pause':
-						return true;
-					// TODO: IMPLEMENT!
-					case 'queue':
-						return true;
-				}
-			}
-		}
 		this.play(action.audioId, { payload: { modulationPreset: action.modulationPreset } });
 
 		return true;
 	}
 
-	private play(audioId: asset_id, ctx?: Partial<AudioHandleContext>): void {
-		const presetKey = ctx?.payload?.modulationPreset;
-		$.playAudio(audioId, $.rompack.data[presetKey]);
+	private enqueue(type: 'sfx' | 'music' | 'ui', item: { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number; cooldownMs?: number; }): void {
+		const q = this.queuesByType[type];
+		q.push({ ...item, enqueuedAt: (typeof performance !== 'undefined' ? performance.now() : Date.now()) });
 	}
 
-	private pickAction(rules: AudioEventRule[], payload: AudioEventPayload) {
-		for (const r of rules) {
-			if (this.matches(r.when, payload)) return r.do;
+	private onChannelEnded(type: 'sfx' | 'ui' | 'music'): void {
+		// Resume paused voices if requested
+		if (this.resumeOnNextEndByType[type]) {
+			this.resumeOnNextEndByType[type] = false;
+			const snaps = $.sndmaster.drainPausedSnapshots(type);
+			for (const s of snaps) {
+				$.sndmaster.play(s.id, { offset: s.offset, ...s.params });
+			}
+			return; // Give priority to resuming before dequeuing
+		}
+
+		// Dequeue next if capacity available
+		const q = this.queuesByType[type];
+		if (q.length === 0) return;
+		const entry = this.merged.get(q[0].name);
+		const maxVoices = entry?.maxVoices ?? 1;
+		const active = $.sndmaster.activeCountByType(type);
+		if (active >= maxVoices) return;
+		const item = q.shift();
+		if (!item) return;
+		// Cooldown re-check and stamp
+		const key = `${item.name}:${item.audioId}`;
+		const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+		const last = this.lastPlayedAt.get(key) || 0;
+		const cooldownMs = item.cooldownMs ?? 0;
+		if (cooldownMs > 0 && (now - last) < cooldownMs) return; // drop silently
+		if (cooldownMs > 0) this.lastPlayedAt.set(key, now);
+
+		if (item.modulationParams) {
+			this.play(item.audioId, { payload: { modulationParams: item.modulationParams } });
+		} else {
+			this.play(item.audioId, { payload: { modulationPreset: item.modulationPreset } });
+		}
+	}
+
+	private play(audioId: asset_id, ctx?: Partial<AudioHandleContext>): void {
+		const presetKey = ctx?.payload?.modulationPreset as string | number | undefined;
+		const params = ctx?.payload?.modulationParams as (RandomModulationParams | ModulationParams | undefined);
+		if (params) {
+			$.playAudio(audioId, params);
+		} else if (presetKey !== undefined) {
+			$.playAudio(audioId, $.rompack.data[presetKey]);
+		} else {
+			$.playAudio(audioId);
+		}
+	}
+
+	private pickAction(eventName: string, rules: AudioEventRule[], payload: AudioEventPayload): AudioAction | undefined {
+		for (let i = 0; i < rules.length; i++) {
+			const r = rules[i];
+			if (!this.matches(r.when, payload)) continue;
+			const resolved = this.resolveActionSpec(eventName, i, r.do);
+			if (resolved) return resolved;
 		}
 		return undefined;
 	}
@@ -194,24 +294,137 @@ export class AudioEventManager implements RegisterablePersistent {
 	private matches(m: AudioEventRule['when'], p: AudioEventPayload): boolean {
 		if (!m) return true;
 		const rec = p as Record<string, unknown>;
+
+		// Evaluate leaf constraints for this node
+		let leafOk = true;
 		if (m.equals) {
 			for (const k in m.equals) {
-				if (rec[k] !== m.equals[k]) return false;
+				if (rec[k] !== m.equals[k]) { leafOk = false; break; }
 			}
 		}
-		if (m.anyOf) {
-			for (const k in m.anyOf) {
-				const list = m.anyOf[k];
-				if (!Array.isArray(list) || !list.includes(rec[k] as unknown)) return false;
+		if (!leafOk) return false;
+
+		const anyOf = m.anyOf || m['in'];
+		if (anyOf) {
+			for (const k in anyOf) {
+				const list = anyOf[k];
+				if (!Array.isArray(list) || !list.includes(rec[k] as unknown)) { leafOk = false; break; }
 			}
 		}
+		if (!leafOk) return false;
+
 		if (m.hasTag && m.hasTag.length > 0) {
 			const tagsVal = rec['tags'];
 			if (!Array.isArray(tagsVal)) return false;
 			const tags = tagsVal as string[];
 			for (const t of m.hasTag) if (!tags.includes(t)) return false;
 		}
+
+		// Logical combinators
+		if (m.and && m.and.length > 0) {
+			for (const sub of m.and) if (!this.matches(sub, p)) return false;
+		}
+
+		if (m.not) {
+			if (this.matches(m.not, p)) return false;
+		}
+
+		if (m.or && m.or.length > 0) {
+			// If any OR child matches, accept; otherwise rely on leafOk
+			let any = false;
+			for (const sub of m.or) { if (this.matches(sub, p)) { any = true; break; } }
+			if (!any) return false;
+		}
+
 		return true;
+	}
+
+	private isOneOfSpec(spec: AudioActionSpec): spec is AudioActionOneOfSpec {
+		const maybe = spec as unknown;
+		return typeof maybe === 'object' && maybe !== null && 'oneOf' in (maybe as Record<string, unknown>) && Array.isArray((maybe as AudioActionOneOfSpec).oneOf);
+	}
+
+	private toActionChoice(x: AudioActionOneOfSpec['oneOf'][number] | AudioActionSpec | asset_id): AudioAction {
+		if (typeof x === 'string' || typeof x === 'number') return { audioId: x };
+		// x could be an action-like with audioId (possibly weighted)
+		return x as AudioAction;
+	}
+
+	private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec): AudioAction | undefined {
+		if (!this.isOneOfSpec(spec)) {
+			return spec as AudioAction;
+		}
+
+		const items = spec.oneOf;
+		if (items.length === 0) return undefined;
+
+		// Build parallel arrays of actions and weights based on the original items
+		const actions: AudioAction[] = [];
+		const weights: number[] = [];
+		for (const it of items) {
+			if (typeof it === 'string' || typeof it === 'number') {
+				actions.push({ audioId: it });
+				weights.push(1);
+			} else {
+				actions.push({ audioId: it.audioId, modulationPreset: it.modulationPreset, priority: it.priority, cooldownMs: it.cooldownMs });
+				const w = (it as { weight?: number }).weight;
+				weights.push(w != null ? Math.max(0, Number(w)) : 1);
+			}
+		}
+
+		const hasWeights = weights.some(w => w !== 1);
+		const pickMode = spec.pick ?? (hasWeights ? 'weighted' : 'uniform');
+
+		const ruleKey = `${eventName}#${ruleIndex}`;
+		const lastIdx = this.lastRandomPickByRule.get(ruleKey);
+
+		let idx = 0;
+		if (pickMode === 'weighted') {
+			const total = weights.reduce((a, b) => a + b, 0);
+			if (total <= 0) {
+				idx = this.pickUniformIndex(actions.length, spec.avoidRepeat ? lastIdx : undefined);
+			} else {
+				idx = this.pickWeightedIndex(weights, spec.avoidRepeat ? lastIdx : undefined);
+			}
+		} else {
+			idx = this.pickUniformIndex(actions.length, spec.avoidRepeat ? lastIdx : undefined);
+		}
+
+		this.lastRandomPickByRule.set(ruleKey, idx);
+		return actions[idx];
+	}
+
+	private pickUniformIndex(n: number, avoidIndex?: number): number {
+		if (n <= 1) return 0;
+		let idx = Math.floor(Math.random() * n);
+		if (avoidIndex != null && n > 1 && idx === avoidIndex) {
+			// pick a different index
+			idx = (idx + 1 + Math.floor(Math.random() * (n - 1))) % n;
+		}
+		return idx;
+	}
+
+	private pickWeightedIndex(weights: number[], avoidIndex?: number): number {
+		const n = weights.length;
+		if (n <= 1) return 0;
+		// If avoiding immediate repeat, temporarily zero out the avoided index
+		let total = 0;
+		const ws = new Array(n);
+		for (let i = 0; i < n; i++) {
+			const w = Math.max(0, weights[i] ?? 0);
+			const wAdj = (avoidIndex != null && i === avoidIndex && n > 1) ? 0 : w;
+			ws[i] = wAdj;
+			total += wAdj;
+		}
+		if (total <= 0) {
+			return this.pickUniformIndex(n, avoidIndex);
+		}
+		let r = Math.random() * total;
+		for (let i = 0; i < n; i++) {
+			r -= ws[i];
+			if (r <= 0) return i;
+		}
+		return n - 1;
 	}
 
 	private mergeMaps(maps: id2audioevent[]): Map<string, AudioEventMapEntry> {
