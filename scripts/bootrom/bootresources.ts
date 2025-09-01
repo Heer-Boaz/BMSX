@@ -1,6 +1,7 @@
-import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
+import type { Area, AudioEventMapEntry, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
+import { bootrom } from './bootrom';
 
 export async function loadImage(url: string): Promise<ImageBitmap> {
     return new Promise((resolve, reject) => {
@@ -223,7 +224,8 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
         model: {},
         data: {},
         fsm: {},
-        code: null
+        code: null,
+        audioevents: {}
     };
 
     const assetList = await loadAssetList(rom);
@@ -241,6 +243,21 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
 
 async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
     return decodeBinary(new Uint8Array(buffer));
+}
+
+function looksLikeAudioEventMap(obj: any): boolean {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+    // Accept either a single entry or a map of entries
+    const entries = Object.values(obj);
+    if (entries.length === 0) return false;
+    // If the object itself looks like an entry with rules, wrap check accordingly
+    const toCheck = entries.every(v => v && typeof v === 'object' && 'rules' in v) ? entries : [obj];
+    return toCheck.every((maybe: any) => {
+        if (!maybe || typeof maybe !== 'object') return false;
+        if (!Array.isArray(maybe.rules)) return false;
+        // Basic rule shape: do.audioId must be string
+        return maybe.rules.every((r: any) => r && typeof r === 'object' && r.do && typeof r.do.audioId === 'string');
+    });
 }
 
 export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
@@ -381,7 +398,7 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, options?: { flipY?: bo
     // If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
     const imgmeta = romImgAsset.imgmeta;
     if (!source && imgmeta.atlassed) {
-        const atlas = $.rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
+        const atlas = bootrom.rom.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
         if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
         const coords = imgmeta.texcoords;
         if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resname}'`);
@@ -491,11 +508,21 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
         case 'data':
             try {
                 if (opts && opts.loadDataFromBuffer) {
-                    romResult.data[res.resid] = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
+                    const data = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
+                    if (looksLikeAudioEventMap(data)) {
+                        Object.assign(romResult.audioevents, data as Record<string, AudioEventMapEntry>);
+                    } else {
+                        romResult.data[res.resid] = data;
+                        romResult.data[res.resname] = data;
+                    }
                 } else {
                     const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
-                    romResult.data[res.resid] = data;
-                    romResult.data[res.resname] = data;
+                    if (looksLikeAudioEventMap(data)) {
+                        Object.assign(romResult.audioevents, data as Record<string, AudioEventMapEntry>);
+                    } else {
+                        romResult.data[res.resid] = data;
+                        romResult.data[res.resname] = data;
+                    }
                 }
             } catch (err: any) {
                 throw new Error(`Failed to load 'data' from rom: ${err.message}.`);

@@ -692,7 +692,7 @@ export async function generateRomAssets(resources: Resource[]) {
 	for (const res of resources) {
 		const type = res.type;
 		let resname = res.name;
-		const resid = res.id;
+		const resid = res.name;
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
 		switch (type) {

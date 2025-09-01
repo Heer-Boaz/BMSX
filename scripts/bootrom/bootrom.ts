@@ -40,7 +40,7 @@ declare var h406A: (args: BootArgs) => Promise<void>;
 /**
  * Object representing the boot ROM.
  */
-const bootrom = {
+export const bootrom = {
 	/**
 	 * This section of code defines the boot ROM object and its properties and methods.
 	 *

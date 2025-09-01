@@ -27,7 +27,7 @@ export function startAudioOnIos(state: BootAudioState): void {
 
 export function createAudioContext(state: BootAudioState): void {
     if (state.sndcontext) return;
-    const AContext: any = window.AudioContext || window.webkitAudioContext;
+    const AContext: any = window.AudioContext || (window as any).webkitAudioContext;
     let context: AudioContext = new AContext({ latencyHint: 'interactive', sampleRate: 44100 }) as AudioContext;
     if (/(iPhone|iPad)/i.test(navigator.userAgent) && context.sampleRate !== 44100) {
         const buffer = context.createBuffer(1, 1, 44100), dummy = context.createBufferSource();
