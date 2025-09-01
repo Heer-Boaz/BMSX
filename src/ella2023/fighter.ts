@@ -1,6 +1,6 @@
 import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type RandomModulationParams, type vec2 } from '../bmsx';
 import { gamemodel } from './gamemodel';
-import { AudioId, BitmapId } from './resourceids';
+import { BitmapId } from './resourceids';
 
 export type AttackType = string;
 
@@ -150,11 +150,8 @@ export abstract class Fighter extends SpriteObject {
         this.sc.to('hitanimation.wel_au');
         opponent.sc.to('hitanimation.doet_au');
         this.hp -= getDamage(attackType);
-        if (attackType === 'punch') {
-            $.playAudio(AudioId.hit2, $.rom.data['modulationparams'].hitsfx as RandomModulationParams);
-        } else {
-            $.playAudio(AudioId.hit1, $.rom.data['modulationparams'].hitsfx as RandomModulationParams);
-        }
+        const weaponClass = (attackType === 'punch') ? 'light' : 'heavy';
+        $.emit('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
     }
 
     override paint(): void {

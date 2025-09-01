@@ -24,7 +24,7 @@ export interface AudioHandleContext {
 export type AudioHandler = (ctx: AudioHandleContext) => boolean;
 
 // Example usage
-// $.emit('combat.hit', { result: 'hit', material: 'barrier', weaponClass: 'heavy', actorId, targetId });
+// $.emit('combat.hit', this, { result: 'hit', material: 'barrier', weaponClass: 'heavy', actorId, targetId });
 
 // Example handler
 // export function makeBarrierCommentary(): AudioHandler {
@@ -80,8 +80,8 @@ export class AudioEventManager implements RegisterablePersistent {
 	private lastPlayedAt = new Map<string, number>();
 	private anyListener?: EventHandler;
 
-	init(maps: id2audioevent[], handlers: AudioHandler[]): void {
-		this.handlers = handlers;
+	init(maps: id2audioevent, handlers?: AudioHandler[]): void {
+		this.handlers = handlers ?? [];
 		this.merged = this.mergeMaps(maps);
 		this.anyListener = (event_name, emitter, ...args) => {
 			this.onEvent(event_name, { ...args } as AudioEventPayload, emitter);
@@ -89,8 +89,17 @@ export class AudioEventManager implements RegisterablePersistent {
 		$.event_emitter.onAny(this.anyListener);
 	}
 
+	addHandler(handler: AudioHandler): void {
+		this.handlers.push(handler);
+	}
+
+	removeHandler(handler: AudioHandler): void {
+		this.handlers = this.handlers.filter(h => h !== handler);
+	}
+
 	dispose(): void {
 		if (this.anyListener) $.event_emitter.offAny(this.anyListener);
+		this.handlers = [];
 		this.anyListener = undefined;
 	}
 
@@ -168,20 +177,18 @@ export class AudioEventManager implements RegisterablePersistent {
 		return true;
 	}
 
-	private mergeMaps(maps: id2audioevent[]): Map<string, AudioEventMapEntry> {
+	private mergeMaps(maps: id2audioevent): Map<string, AudioEventMapEntry> {
 		const out = new Map<string, AudioEventMapEntry>();
-		for (const m of maps) {
-			for (const [k, v] of Object.entries(m)) {
-				if (!out.has(k)) {
-					out.set(k, { ...v, rules: [...(v.rules || [])] });
-				} else {
-					const cur = out.get(k)!;
-					out.set(k, {
-						...cur,
-						...v,
-						rules: [...(v.rules || []), ...(cur.rules || [])], // ROM overlay rules prepend
-					});
-				}
+		for (const [k, v] of Object.entries(maps)) {
+			if (!out.has(k)) {
+				out.set(k, { ...v, rules: [...(v.rules || [])] });
+			} else {
+				const cur = out.get(k)!;
+				out.set(k, {
+					...cur,
+					...v,
+					rules: [...(v.rules || []), ...(cur.rules || [])], // ROM overlay rules prepend
+				});
 			}
 		}
 		return out;

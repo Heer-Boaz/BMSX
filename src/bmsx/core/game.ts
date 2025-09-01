@@ -1,4 +1,5 @@
-﻿import { PSG } from "../audio/psg";
+﻿import { AudioEventManager } from '../audio/audioeventmanager';
+import { PSG } from "../audio/psg";
 import { RandomModulationParams, SoundMaster } from "../audio/soundmaster";
 import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
@@ -347,6 +348,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		} catch (error) {
 			console.error("Failed to initialize PSG:", error);
 		}
+		AudioEventManager.instance.init(rom.audioevents, null);
 		// SM.volume = 0;
 
 		if (this.debug) {

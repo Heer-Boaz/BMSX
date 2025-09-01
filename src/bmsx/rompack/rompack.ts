@@ -13,8 +13,8 @@ export interface RomPack {
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata.
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm';
-export type asset_id = string;
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem';
+export type asset_id = string | number;
 
 /**
  * Represents an asset in a ROM pack.

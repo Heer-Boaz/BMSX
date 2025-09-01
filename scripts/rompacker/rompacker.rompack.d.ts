@@ -15,7 +15,7 @@ interface RomPackerOptions {
     useTextureAtlas: boolean;
 }
 
-export type resourcetype = asset_type | 'rommanifest' | 'romlabel' | 'fsm';
+export type resourcetype = asset_type | 'rommanifest' | 'romlabel' | 'fsm' | 'aem';
 
 export interface Resource {
     filepath?: string;

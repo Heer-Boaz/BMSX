@@ -1,10 +1,10 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
-import type { Resource, RomManifest, resourcetype } from './rompacker.rompack';
+import type { Resource, resourcetype, RomManifest } from './rompacker.rompack';
 const { build } = require('esbuild');
 const { join, parse } = require('path');
 
@@ -375,6 +375,12 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 	let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
 	let datatype: 'json' | 'yaml' | 'bin' | undefined = undefined;
 
+	function getDataSubtype(): asset_type {
+		if (name.includes('.fsm')) return 'fsm';
+		if (name.includes('.aem')) return 'aem';
+		return 'data';
+	}
+
 	switch (ext) {
 		case '.wav':
 			type = 'audio';
@@ -399,25 +405,18 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			break;
 		case '.json':
 			datatype = 'json';
-			type = 'data';
-			break;
-		case '.yaml':
-			datatype = 'yaml';
-			type = 'data';
+			type = getDataSubtype();
 			break;
 		case '.obj':
 		case '.gltf':
 		case '.glb':
 			type = 'model';
 			break;
-		case '.fsm':
-		case '.fsm.json':
-		case '.fsm.yaml':
-		case '.fsm.yml':
-		case '.fsm.bin':
-			type = 'fsm';
+		case '.yaml':
+		case '.yml':
+			datatype = 'yaml';
+			type = getDataSubtype();
 			break;
-
 	}
 	return { name, ext, type, collisionType, datatype };
 }
@@ -482,6 +481,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 				// For code files, we use the romname as the name
 				break;
 			case 'data':
+			case 'aem': // AEM files are added to the data asset list
 				// For data files, we use the name as is
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid, datatype: meta.datatype });
 				++dataid;
@@ -692,7 +692,7 @@ export async function generateRomAssets(resources: Resource[]) {
 	for (const res of resources) {
 		const type = res.type;
 		let resname = res.name;
-		const resid = res.name;
+		const resid = res.id;
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
 		switch (type) {
@@ -721,6 +721,8 @@ export async function generateRomAssets(resources: Resource[]) {
 				romAssets.push({ resid, resname, type, buffer });
 				break;
 			case 'data':
+			case 'fsm':
+			case 'aem':
 				// Encode the JSON-data via the binencoder
 				// Convert the buffer to a JSON string and then encode it
 				switch (res.datatype) {
@@ -799,28 +801,6 @@ export async function generateRomAssets(resources: Resource[]) {
 				const baseAsset = { resid, resname, type, imgmeta, buffer };
 				romAssets.push({ ...baseAsset, });
 			}
-				break;
-			case 'fsm':
-				// buffer bevat JSON/YAML/bin
-				switch (res.datatype) {
-					case 'yaml': {
-						const yamlContent = res.buffer.toString('utf8');
-						const json = yaml.load(yamlContent);
-						buffer = encodeBinary(json); // StateMachineBlueprint -> bin
-						break;
-					}
-					case 'json': {
-						const json = JSON.parse(res.buffer.toString('utf8'));
-						buffer = encodeBinary(json);
-						break;
-					}
-					case 'bin':
-						// al binair via tool; laat zoals het is
-						break;
-					default:
-						throw new Error(`Unknown FSM data type "${res.datatype}" for resource "${resname}"`);
-				}
-				romAssets.push({ resid, resname, type, buffer });
 				break;
 			case 'rommanifest':
 				break;

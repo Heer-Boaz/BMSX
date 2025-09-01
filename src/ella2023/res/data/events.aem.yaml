@@ -1,0 +1,19 @@
+$type: bmsx.audio.eventmap.v1
+events:
+combat.attack:
+  channel: sfx
+  maxVoices: 1
+  policy: replace
+  rules:
+    - when: { equals: { weaponClass: "heavy" } }
+      do:   { audioId: "kick",  modulationPreset: "attacksfx", priority: 7, cooldownMs: 40 }
+    - when: { equals: { weaponClass: "light" } }
+      do:   { audioId: "punch", modulationPreset: "attacksfx", priority: 6, cooldownMs: 40 }
+    - do:   { audioId: "punch", modulationPreset: "attacksfx", priority: 5 }
+combat.hit:
+  channel: sfx
+  policy: replace
+  rules:
+    - when: { equals: { result: block, material: shield } }
+      do:   { audioId: Hit_Shield_Clang, modulationPreset: hitsfx, priority: 7 }
+    - do:   { audioId: Hit_Generic, modulationPreset: hitsfx, priority: 4 }

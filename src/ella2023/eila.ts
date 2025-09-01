@@ -443,7 +443,7 @@ export class Eila extends Fighter {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
 						this.imgid = BitmapId.eila_highkick;
-						$.playAudio(AudioId.kick, $.rom.data['modulationparams'].attacksfx as RandomModulationParams);
+						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
 					next(this: Fighter, _state: State) {
@@ -453,7 +453,7 @@ export class Eila extends Fighter {
 				lowkick: {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
-						$.playAudio(AudioId.kick, $.rom.data['modulationparams'].attacksfx as RandomModulationParams);
+						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
 						this.imgid = BitmapId.eila_lowkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
@@ -464,7 +464,7 @@ export class Eila extends Fighter {
 				punch: {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
-						$.playAudio(AudioId.punch, $.rom.data['modulationparams'].attacksfx as RandomModulationParams);
+						$.emit('combat.attack', this, { weaponClass: 'light', actorId: this.id });
 						this.imgid = BitmapId.eila_punch;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
@@ -475,7 +475,7 @@ export class Eila extends Fighter {
 				duckkick: {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila) {
-						$.playAudio(AudioId.kick, $.rom.data['modulationparams'].attacksfx as RandomModulationParams);
+						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
 						this.imgid = BitmapId.eila_duckkick;
 					},
 					next(this: Fighter, _state: State) {
@@ -485,7 +485,7 @@ export class Eila extends Fighter {
 				flyingkick: {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
-						$.playAudio(AudioId.kick, $.rom.data['modulationparams'].attacksfx as RandomModulationParams);
+						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
 						this.imgid = BitmapId.eila_flyingkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},

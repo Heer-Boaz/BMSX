@@ -1,4 +1,4 @@
-import type { Area, AudioEventMapEntry, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { bootrom } from './bootrom';
@@ -243,21 +243,6 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
 
 async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
     return decodeBinary(new Uint8Array(buffer));
-}
-
-function looksLikeAudioEventMap(obj: any): boolean {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
-    // Accept either a single entry or a map of entries
-    const entries = Object.values(obj);
-    if (entries.length === 0) return false;
-    // If the object itself looks like an entry with rules, wrap check accordingly
-    const toCheck = entries.every(v => v && typeof v === 'object' && 'rules' in v) ? entries : [obj];
-    return toCheck.every((maybe: any) => {
-        if (!maybe || typeof maybe !== 'object') return false;
-        if (!Array.isArray(maybe.rules)) return false;
-        // Basic rule shape: do.audioId must be string
-        return maybe.rules.every((r: any) => r && typeof r === 'object' && r.do && typeof r.do.audioId === 'string');
-    });
 }
 
 export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
@@ -509,20 +494,12 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
             try {
                 if (opts && opts.loadDataFromBuffer) {
                     const data = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
-                    if (looksLikeAudioEventMap(data)) {
-                        Object.assign(romResult.audioevents, data as Record<string, AudioEventMapEntry>);
-                    } else {
-                        romResult.data[res.resid] = data;
-                        romResult.data[res.resname] = data;
-                    }
+                    romResult.data[res.resid] = data;
+                    romResult.data[res.resname] = data;
                 } else {
                     const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
-                    if (looksLikeAudioEventMap(data)) {
-                        Object.assign(romResult.audioevents, data as Record<string, AudioEventMapEntry>);
-                    } else {
-                        romResult.data[res.resid] = data;
-                        romResult.data[res.resname] = data;
-                    }
+                    romResult.data[res.resid] = data;
+                    romResult.data[res.resname] = data;
                 }
             } catch (err: any) {
                 throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
@@ -536,6 +513,18 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
                 romResult.fsm[res.resname] = blueprint;
             } catch (err: any) {
                 throw new Error(`Failed to load 'fsm' from rom: ${err.message}.`);
+            }
+            break;
+        }
+        case 'aem': {
+            try {
+                const u8 = new Uint8Array(rom.slice(res.start, res.end));
+                const audioevents = decodeBinary(u8);
+                romResult.audioevents[res.resid] = audioevents;
+                romResult.audioevents[res.resname] = audioevents;
+                console.info(`Loaded audio event map '${res.resname}' with ${Object.keys(audioevents).length} entries.`);
+            } catch (err: any) {
+                throw new Error(`Failed to load 'aem' from rom: ${err.message}.`);
             }
             break;
         }
