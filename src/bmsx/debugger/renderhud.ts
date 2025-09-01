@@ -78,7 +78,7 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
 		EventEmitter.instance.initClassBoundEventSubscriptions(this);
 	}
 
-	@subscribesToGlobalEvent('frameend')
+	@subscribesToGlobalEvent('frameend', true)
 	update(): void {
 		this.updateNow();
 	}

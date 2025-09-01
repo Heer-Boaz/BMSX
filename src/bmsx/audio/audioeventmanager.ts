@@ -100,7 +100,7 @@ export class AudioEventManager implements RegisterablePersistent {
 			}
 			this.onEvent(event_name, payload as AudioEventPayload, emitter);
 		};
-		$.event_emitter.onAny(this.anyListener);
+		$.event_emitter.onAny(this.anyListener, true);
 
 		// subscribe to voice end events for sfx and ui to manage queue/pause
 		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx', () => this.onChannelEnded('sfx'));
