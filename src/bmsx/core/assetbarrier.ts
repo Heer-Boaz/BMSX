@@ -1,4 +1,3 @@
-// assetbarrier.ts
 import { type GateCategory, type GateGroup } from './taskgate';
 
 type LoaderFn<T> = () => Promise<T>;
@@ -32,7 +31,6 @@ export class AssetBarrier<T> {
         const entry = this.ensureEntry(key, opts);
         if (!entry.promise) {
             const genAtStart = entry.gen;
-            const startedAt = performance.now();
 
             if (opts.warnIfLongerMs && opts.warnIfLongerMs > 0) {
                 setTimeout(() => {
@@ -59,7 +57,6 @@ export class AssetBarrier<T> {
                 .finally(() => {
                     const still = this.map.get(key);
                     if (still && still.gen === genAtStart) still.promise = undefined;
-                    // console.debug(`[AssetBarrier] Loaded ${key} in ${(performance.now() - startedAt).toFixed(1)}ms`);
                 });
         }
         return entry.promise!;

@@ -20,8 +20,6 @@ export interface AudioHandleContext {
 	name: string;
 	payload: AudioEventPayload;
 	emitter: Identifier;
-	// changed: play used to be typed as typeof SoundMaster.playAudio which doesn't exist / doesn't match.
-	// Provide a callable signature that handlers can use.
 	play: (audioId: asset_id, ctx?: Partial<AudioHandleContext>) => void;
 }
 
@@ -344,16 +342,10 @@ export class AudioEventManager implements RegisterablePersistent {
 		return typeof maybe === 'object' && maybe !== null && 'oneOf' in (maybe as Record<string, unknown>) && Array.isArray((maybe as AudioActionOneOfSpec).oneOf);
 	}
 
-	private toActionChoice(x: AudioActionOneOfSpec['oneOf'][number] | AudioActionSpec | asset_id): AudioAction {
-		if (typeof x === 'string' || typeof x === 'number') return { audioId: x };
-		// x could be an action-like with audioId (possibly weighted)
-		return x as AudioAction;
-	}
-
-	private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec): AudioAction | undefined {
-		if (!this.isOneOfSpec(spec)) {
-			return spec as AudioAction;
-		}
+    private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec): AudioAction | undefined {
+        if (!this.isOneOfSpec(spec)) {
+            return spec as AudioAction;
+        }
 
 		const items = spec.oneOf;
 		if (items.length === 0) return undefined;

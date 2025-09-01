@@ -13,11 +13,6 @@ function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean
 }
 
 /**
- * Serializes the input object to a string using JSON.stringify, excluding any properties that should not be serialized.
- * @param obj - The object to serialize.
- * @returns The serialized string representation of the input object.
- */
-/**
  * Provides serialization utilities for objects, supporting both reference-tracking and non-reference-tracking modes,
  * as well as optional binary serialization.
  *
@@ -39,7 +34,7 @@ function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean
  * ```
  */
 export class Serializer {
-    // ← add a place to collect all @onsave hooks by class name
+    // A place to collect all @onsave hooks by class name
     static onSaves: Record<string, ((v: any) => Record<string, any>)[]> = {};
 
     /**
