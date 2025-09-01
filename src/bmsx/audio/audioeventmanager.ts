@@ -96,9 +96,9 @@ export class AudioEventManager implements RegisterablePersistent {
 				case 'view':
 				case 'amg':
 					// Ignore events from these emitters
-					return;
+					return false;
 			}
-			this.onEvent(event_name, payload as AudioEventPayload, emitter);
+			return this.onEvent(event_name, payload as AudioEventPayload, emitter);
 		};
 		$.event_emitter.onAny(this.anyListener, true);
 
@@ -150,7 +150,7 @@ export class AudioEventManager implements RegisterablePersistent {
 	}
 
 	dispose(): void {
-		if (this.anyListener) $.event_emitter.offAny(this.anyListener);
+		if (this.anyListener) $.event_emitter.offAny(this.anyListener, true);
 		this.handlers = [];
 		this.anyListener = undefined;
 		if (this.endUnsubByType['sfx']) this.endUnsubByType['sfx']();

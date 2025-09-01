@@ -203,7 +203,7 @@ export class EventEmitter implements RegisterablePersistent {
 		});
 
 		// Wildcard listeners
-		for (const item of this.anyListeners) item.handler(event_name, emitter, payload);
+		for (const item of this.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
 
 		if (!anyoneSubscribed) {
 			console.warn(`No listeners for event "${event_name}" and emitter "${emitter.id}"!`);
