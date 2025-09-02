@@ -1,4 +1,4 @@
-import { $, GameObject, StateMachineBlueprint, build_fsm, insavegame, type State } from '../bmsx/index';
+import { $, GameObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapText, type State } from '../bmsx/index';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
 // import quizItemsData from './vragen.json';
@@ -136,7 +136,7 @@ export class quiz extends GameObject {
      */
     private setTextFromLines(lines: string[]) {
         const combined = lines.join('\n');
-        const wrappedLines = this.wrapText(combined);
+        const wrappedLines = wrapText(combined, this.maximum_characters_per_line);
 
         this.fullTextLines = wrappedLines;
         this.displayedLines = this.fullTextLines.map(() => '');
@@ -144,68 +144,9 @@ export class quiz extends GameObject {
         this.currentCharIndex = 0;
         this.isTyping = true;
 
-        this.calculateCenteredBlockX();
+        this.centeredBlockX = calculateCenteredBlockX(this.fullTextLines, 8, 256);
 
         this.updateDisplayedText();
-    }
-
-    /**
-     * Calculates the X coordinate for centering a block of text on the screen.
-     *
-     * This method determines the longest line of text from `this.fullTextLines`,
-     * calculates its width in pixels, and then computes the X coordinate needed
-     * to center this line on a screen with a fixed width of 256 pixels.
-     *
-     * @private
-     */
-    private calculateCenteredBlockX() {
-        const charWidth = 8;
-        const screenWidth = 256;
-
-        const longestLine = this.fullTextLines.reduce((a, b) => a.length > b.length ? a : b, '');
-        const longestLineWidth = longestLine.length * charWidth;
-        this.centeredBlockX = (screenWidth - longestLineWidth) / 2;
-    }
-
-    /**
-     * Splits a given text into an array of strings, where each string represents a line of text
-     * that does not exceed the maximum number of characters per line. The method also respects
-     * newline characters in the input text.
-     *
-     * @param text - The input text to be wrapped into lines.
-     * @returns An array of strings, where each string is a line of text.
-     */
-    private wrapText(text: string): string[] {
-        const words = text.match(/(\S+|\n)/g) || [];
-        const lines: string[] = [];
-        let currentLine = '';
-
-        for (const word of words) {
-            if (word === '\n') {
-                lines.push(currentLine.trim());
-                currentLine = '';
-                lines.push('');
-            } else {
-                const tentativeLine = currentLine ? currentLine + ' ' + word : word;
-                if (tentativeLine.length <= this.maximum_characters_per_line) {
-                    currentLine = tentativeLine;
-                } else {
-                    if (currentLine) {
-                        lines.push(currentLine.trim());
-                        currentLine = word;
-                    } else {
-                        lines.push(word);
-                        currentLine = '';
-                    }
-                }
-            }
-        }
-
-        if (currentLine.trim()) {
-            lines.push(currentLine.trim());
-        }
-
-        return lines;
     }
 
     /**
@@ -310,11 +251,11 @@ export class quiz extends GameObject {
                         this.typeNextCharacter();
                     },
                     input_event_handlers: {
-                        '?(a[j!c], b[j!c])': {
+                        '?(a[j!c], b[j!c])': { // Handle both answer options
                             do() { $.consumeActions(1, 'a', 'b') },
                             to: 'vraag'
                         },
-                        'down[j]': 'end',
+                        'down[j]': 'end', // Handle quiz end on "down"
                     }
                 },
 
@@ -354,27 +295,27 @@ export class quiz extends GameObject {
                         return 'end';
                     },
                     input_event_handlers: {
-                        'a[j!c]': {
+                        'a[j!c]': { // Handle answer option A
                             do(this: quiz) {
                                 $.consumeAction(1, 'a');
                                 this.currentAnswerOptionChosen = 'a';
                                 return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
                             },
                         },
-                        'b[j!c]': {
+                        'b[j!c]': { // Handle answer option B
                             do(this: quiz) {
                                 $.consumeAction(1, 'b');
                                 this.currentAnswerOptionChosen = 'b';
                                 return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
                             },
                         },
-                        'left[j!c]': {
+                        'left[j!c]': { // Handle previous question on "left"
                             do(this: quiz) {
                                 $.consumeAction(1, 'left');
                                 return { state_id: 'vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
                             },
                         },
-                        'right[j!c]': {
+                        'right[j!c]': { // Handle next question on "right"
                             do(this: quiz) {
                                 $.consumeAction(1, 'right');
                                 return { state_id: 'vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
@@ -397,7 +338,7 @@ export class quiz extends GameObject {
                         this.typeNextCharacter();
                     },
                     input_event_handlers: {
-                        '?(a[j!c], b[j!c])': {
+                        '?(a[j!c], b[j!c])': { // Handle both answer options
                             do(this: quiz) {
                                 $.consumeActions(1, 'a', 'b');
                                 if (this.currentQuestionIndex < quizItems.length - 1) {
