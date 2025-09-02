@@ -271,21 +271,17 @@ export class BoundarySystem extends System {
 				if (newx + o.size.x < 0) {
 					const payload = { d: 'left' as const, old_x_or_y: oldx };
 					EventEmitter.instance.emit('leaveScreen', o, payload);
-					o.onLeaveScreen?.(o, payload);
 				} else if (newx < 0) {
 					const payload = { d: 'left' as const, old_x_or_y: oldx };
 					EventEmitter.instance.emit('leavingScreen', o, payload);
-					o.onLeavingScreen?.(o, payload);
 				}
 			} else if (newx > oldx) {
 				if (newx >= width) {
 					const payload = { d: 'right' as const, old_x_or_y: oldx };
 					EventEmitter.instance.emit('leaveScreen', o, payload);
-					o.onLeaveScreen?.(o, payload);
 				} else if (newx + o.size.x >= width) {
 					const payload = { d: 'right' as const, old_x_or_y: oldx };
 					EventEmitter.instance.emit('leavingScreen', o, payload);
-					o.onLeavingScreen?.(o, payload);
 				}
 			}
 			// Y-axis
@@ -293,21 +289,17 @@ export class BoundarySystem extends System {
 				if (newy + o.size.y < 0) {
 					const payload = { d: 'up' as const, old_x_or_y: oldy };
 					EventEmitter.instance.emit('leaveScreen', o, payload);
-					o.onLeaveScreen?.(o, payload);
 				} else if (newy < 0) {
 					const payload = { d: 'up' as const, old_x_or_y: oldy };
 					EventEmitter.instance.emit('leavingScreen', o, payload);
-					o.onLeavingScreen?.(o, payload);
 				}
 			} else if (newy > oldy) {
 				if (newy >= height) {
 					const payload = { d: 'down' as const, old_x_or_y: oldy };
 					EventEmitter.instance.emit('leaveScreen', o, payload);
-					o.onLeaveScreen?.(o, payload);
 				} else if (newy + o.size.y >= height) {
 					const payload = { d: 'down' as const, old_x_or_y: oldy };
 					EventEmitter.instance.emit('leavingScreen', o, payload);
-					o.onLeavingScreen?.(o, payload);
 				}
 			}
 			this.prev.set(o, { x: newx, y: newy });
@@ -336,14 +328,12 @@ export class TileCollisionSystem extends System {
 			if (newx < oldx) {
 				if (hasCollidesWithTile($.model) && $.model.collidesWithTile?.(o, 'left')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'left' as const });
-					o.onWallcollide?.('left');
 					newx += TileSize - mod(newx, TileSize);
 				}
 				o.pos.x = ~~newx;
 			} else if (newx > oldx) {
 				if (hasCollidesWithTile($.model) && $.model.collidesWithTile?.(o, 'right')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'right' as const });
-					o.onWallcollide?.('right');
 					newx -= newx % TileSize;
 				}
 				o.pos.x = ~~newx;
@@ -352,14 +342,12 @@ export class TileCollisionSystem extends System {
 			if (newy < oldy) {
 				if ($.model.collidesWithTile?.(o, 'up')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'up' as const });
-					o.onWallcollide?.('up');
 					newy += TileSize - mod(newy, TileSize);
 				}
 				o.pos.y = ~~newy;
 			} else if (newy > oldy) {
 				if ($.model.collidesWithTile?.(o, 'down')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'down' as const });
-					o.onWallcollide?.('down');
 					newy -= newy % TileSize;
 				}
 				o.pos.y = ~~newy;
@@ -401,6 +389,42 @@ export class PhysicsPreSystem extends System {
 						if (comp.syncAxis?.z && comp.body.position.z !== (owner.z)) { comp.body.position.z = owner.z; changed = true; }
 						if (changed) {
 							// Mark dirty via PhysicsWorld
+							const ensureFn = (PhysicsWorld as unknown as { ensure?: () => PhysicsWorld }).ensure;
+							const world = ensureFn ? ensureFn() : undefined;
+							world?.markBodyDirty(comp.body);
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+/**
+ * PhysicsSyncBeforeStepSystem: same as PhysicsPreSystem but scheduled in Simulation
+ * after abilities so GO -> body sync includes ability impulses before the physics step.
+ */
+export class PhysicsSyncBeforeStepSystem extends System {
+	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
+	update(model: BaseModel): void {
+		const objs = model.objects;
+		for (let i = 0; i < objs.length; ++i) {
+			const o = objs[i] as GameObject;
+			const compCandidate = o?.getComponent?.(PhysicsComponent);
+			if (!isPhysicsComponent(compCandidate) || !compCandidate.enabled) continue;
+			const comp = compCandidate;
+			if (!comp.body) {
+				comp.preprocessingUpdate?.();
+			} else {
+				if (!comp.writeBack) {
+					const go = hasGetGameObject(model) ? model.getGameObject?.(o.id) : undefined;
+					const owner = hasGetGameObject(model) ? model.getGameObject?.(comp.parentid ?? '') || go : go;
+					if (owner) {
+						let changed = false;
+						if (comp.syncAxis?.x && comp.body.position.x !== (owner.x)) { comp.body.position.x = owner.x; changed = true; }
+						if (comp.syncAxis?.y && comp.body.position.y !== (owner.y)) { comp.body.position.y = owner.y; changed = true; }
+						if (comp.syncAxis?.z && comp.body.position.z !== (owner.z)) { comp.body.position.z = owner.z; changed = true; }
+						if (changed) {
 							const ensureFn = (PhysicsWorld as unknown as { ensure?: () => PhysicsWorld }).ensure;
 							const world = ensureFn ? ensureFn() : undefined;
 							world?.markBodyDirty(comp.body);

@@ -8,8 +8,10 @@ export type EffectId = string;
 export type ObjectId = string;
 
 export interface Attribute {
-	base: number;
-	current: number;
+  base: number;
+  current: number;
+  min?: number;
+  max?: number;
 }
 export type AttributeSet = Record<AttributeId, Attribute>;
 
@@ -21,11 +23,12 @@ export interface AttributeModifier {
 }
 
 export interface GameplayEffect {
-	id: EffectId;
-	durationMs?: number;           // undefined = infinite
-	periodMs?: number;             // periodic tick; undefined = no tick
-	modifiers?: ReadonlyArray<AttributeModifier>;
-	grantedTags?: ReadonlyArray<TagId>;
+  id: EffectId;
+  durationMs?: number;           // undefined = infinite
+  periodMs?: number;             // periodic tick; undefined = no tick
+  modifiers?: ReadonlyArray<AttributeModifier>;
+  grantedTags?: ReadonlyArray<TagId>;
+  onTick?: (asc: AbilitySystemRef) => void;
 }
 
 export interface ActiveEffect {
@@ -40,11 +43,12 @@ export interface AbilityCost {
 }
 
 export interface AbilitySpec {
-	id: AbilityId;
-	requiredTags?: ReadonlyArray<TagId>;
-	blockedTags?: ReadonlyArray<TagId>;
-	cost?: ReadonlyArray<AbilityCost>;
-	cooldownMs?: number;
+  id: AbilityId;
+  unique?: 'ignore' | 'restart' | 'stack';
+  requiredTags?: ReadonlyArray<TagId>;
+  blockedTags?: ReadonlyArray<TagId>;
+  cost?: ReadonlyArray<AbilityCost>;
+  cooldownMs?: number;
 }
 
 export type AbilityYield =
@@ -56,8 +60,17 @@ export type AbilityYield =
 export type AbilityCoroutine = Generator<AbilityYield, void, void>;
 
 export interface AbilityContext {
-	ownerId: ObjectId;
-	model: BaseModel;
+  ownerId: ObjectId;
+  model: BaseModel;
+  asc: AbilitySystemRef;
+  emit?: (name: string, payload?: any) => void;
+}
+
+// Minimal surface so we avoid a circular type import
+export interface AbilitySystemRef {
+  ownerId: ObjectId;
+  hasTag(tag: TagId): boolean;
+  tryActivate(id: AbilityId): boolean;
 }
 
 export interface Ability {

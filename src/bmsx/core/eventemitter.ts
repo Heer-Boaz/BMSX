@@ -79,18 +79,17 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Subscribes a listener that is called for every emitted event.
 	 * The payload is the first argument passed by the emitter (if any).
 	 */
-	public onAny(handler: EventHandler, persistent: boolean): void {
-		// default persistent to false if undefined
-		this.anyListeners.push({ handler, persistent: !!persistent });
+	public onAny(handler: EventHandler, persistent: boolean = false): void {
+		this.anyListeners.push({ handler, persistent: !persistent });
 	}
 
 	/**
 	 * Unsubscribes a previously registered wildcard listener.
 	 * @param handler - The event handler to remove.
-	 * @param forcePersistent - If true, also removes persistent listeners.
+	 * @param forcePersistentRemoval - If true, also removes persistent listeners.
 	 */
-	public offAny(handler: EventHandler, forcePersistent: boolean = false): void {
-		this.anyListeners = this.anyListeners.filter(x => (x.handler !== handler || (forcePersistent && x.persistent)));
+	public offAny(handler: EventHandler, forcePersistentRemoval: boolean = false): void {
+		this.anyListeners = this.anyListeners.filter(x => (x.handler !== handler || (forcePersistentRemoval && x.persistent)));
 	}
 
 	/**

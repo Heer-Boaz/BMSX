@@ -65,24 +65,20 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
             if (newx + this.size.x < 0) {
                 const payload: GameObjectEventPayloads['leaveScreen'] = { d: 'left', old_x_or_y: oldx };
                 EventEmitter.instance.emit('leaveScreen', this, payload);
-                this.onLeaveScreen?.(this, payload);
             }
             else if (newx < 0) {
                 const payload: GameObjectEventPayloads['leavingScreen'] = { d: 'left', old_x_or_y: oldx };
                 EventEmitter.instance.emit('leavingScreen', this, payload);
-                this.onLeavingScreen?.(this, payload);
             }
         }
         else if (newx > oldx) {
             if (newx >= $.model.gamewidth) {
                 const payload: GameObjectEventPayloads['leaveScreen'] = { d: 'right', old_x_or_y: oldx };
                 EventEmitter.instance.emit('leaveScreen', this, payload);
-                this.onLeaveScreen?.(this, payload);
             }
             else if (newx + this.size.x >= $.model.gamewidth) {
                 const payload: GameObjectEventPayloads['leavingScreen'] = { d: 'right', old_x_or_y: oldx };
                 EventEmitter.instance.emit('leavingScreen', this, payload);
-                this.onLeavingScreen?.(this, payload);
             }
         }
     }
@@ -99,24 +95,20 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
             if (newy + this.size.y < 0) {
                 const payload: GameObjectEventPayloads['leaveScreen'] = { d: 'up', old_x_or_y: oldy };
                 EventEmitter.instance.emit('leaveScreen', this, payload);
-                this.onLeaveScreen?.(this, payload);
             }
             else if (newy < 0) {
                 const payload: GameObjectEventPayloads['leavingScreen'] = { d: 'up', old_x_or_y: oldy };
                 EventEmitter.instance.emit('leavingScreen', this, payload);
-                this.onLeavingScreen?.(this, payload);
             }
         }
         else if (newy > oldy) {
             if (newy >= $.model.gameheight) {
                 const payload: GameObjectEventPayloads['leaveScreen'] = { d: 'down', old_x_or_y: oldy };
                 EventEmitter.instance.emit('leaveScreen', this, payload);
-                this.onLeaveScreen?.(this, payload);
             }
             else if (newy + this.size.y >= $.model.gameheight) {
                 const payload: GameObjectEventPayloads['leavingScreen'] = { d: 'down', old_x_or_y: oldy };
                 EventEmitter.instance.emit('leavingScreen', this, payload);
-                this.onLeavingScreen?.(this, payload);
             }
         }
     }
@@ -152,7 +144,6 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         if (newx < oldx) {
             if ($.model.collidesWithTile(this, 'left')) {
                 EventEmitter.instance.emit('wallcollide', this, { d: 'left' });
-                this.onWallcollide?.('left');
                 newx += TileSize - mod(newx, TileSize);
             }
             this.pos.x = ~~newx;
@@ -160,7 +151,6 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         else if (newx > oldx) {
             if ($.model.collidesWithTile(this, 'right')) {
                 EventEmitter.instance.emit('wallcollide', this, { d: 'right' });
-                this.onWallcollide?.('right');
                 newx -= newx % TileSize;
             }
             this.pos.x = ~~newx;
@@ -176,7 +166,6 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         if (newy < oldy) {
             if ($.model.collidesWithTile(this, 'up')) {
                 EventEmitter.instance.emit('wallcollide', this, { d: 'up' });
-                this.onWallcollide?.('up');
                 newy += TileSize - mod(newy, TileSize);
             }
             this.pos.y = ~~newy;
@@ -184,7 +173,6 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         else if (newy > oldy) {
             if ($.model.collidesWithTile(this, 'down')) {
                 EventEmitter.instance.emit('wallcollide', this, { d: 'down' });
-                this.onWallcollide?.('down');
                 newy -= newy % TileSize;
             }
             this.pos.y = ~~newy;

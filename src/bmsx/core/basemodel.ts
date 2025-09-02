@@ -1,11 +1,11 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
-import { BehaviorTreeSystem, BoundarySystem, PrePositionSystem, StateMachineSystem, SystemManager, TileCollisionSystem, PhysicsPreSystem, PhysicsPostSystem, TransformSystem, MeshAnimationSystem, TickGroup } from "../ecs/system";
-import { AbilityRuntimeSystem } from "../gas/abilityruntime";
+import { BehaviorTreeSystem, BoundarySystem, MeshAnimationSystem, PhysicsPostSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, SystemManager, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/system";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { StateDefinition } from '../fsm/statedefinition';
+import { AbilityRuntimeSystem } from "../gas/abilityruntime";
 import { Input } from "../input/input";
 import { PhysicsDescriptorComponent } from '../physics/physicsdescriptorcomponent';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
@@ -64,20 +64,6 @@ export class Space {
      * @type {() => void}
      */
     public ondispose?: () => void;
-
-    // @onsave
-    // /**
-    //  * Creates a new Space object that can be safely serialized for saving the game.
-    //  * @param {Space} o - The Space object to be serialized.
-    //  * @returns {Space} A new Space object that can be safely serialized for saving the game.
-    //  */
-    // public static tosaved(o: Space): Space {
-    //     const result = new Space(o.id);
-    //     Object.assign(result, o);
-    //     result.objects = undefined;
-    //     delete result.objects;
-    //     return result;
-    // }
 
     /**
      * Represents a space in the game world, which contains a collection of game objects.
@@ -245,7 +231,6 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     }
 
     public set activeCameraId(id: Identifier | null) {
-        // if (id !== null && !this.exists(id)) console.error(`Camera with id ${id} does not exist.`);
         this._activeCameraId = id; // Set the active camera ID, which can be null if no camera is active
     }
 
@@ -276,12 +261,13 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         SM.clear();
         // Priorities create a stable order across all systems within each TickGroup
         SM.register(new PrePositionSystem(10));
-        SM.register(new PhysicsPreSystem(15));
         SM.register(new BehaviorTreeSystem(20));
         SM.register(new MeshAnimationSystem(25));
         SM.register(new StateMachineSystem(30));
         // Ability runtime (advance effects/coroutines) after object state machines
         SM.register(new AbilityRuntimeSystem(32));
+        // Sync GO -> body after abilities, before physics step
+        SM.register(new PhysicsSyncBeforeStepSystem(34));
         SM.register(new PhysicsPostSystem(35));
         // Resolve world-space collisions first, then screen boundary events
         SM.register(new TileCollisionSystem(10));
