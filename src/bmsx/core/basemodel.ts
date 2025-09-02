@@ -1,5 +1,6 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
-import { BehaviorTreeSystem, BoundarySystem, PrePositionSystem, StateMachineSystem, SystemManager, TileCollisionSystem, PhysicsPreSystem, PhysicsPostSystem, TransformSystem, MeshAnimationSystem } from "../ecs/system";
+import { BehaviorTreeSystem, BoundarySystem, PrePositionSystem, StateMachineSystem, SystemManager, TileCollisionSystem, PhysicsPreSystem, PhysicsPostSystem, TransformSystem, MeshAnimationSystem, TickGroup } from "../ecs/system";
+import { AbilityRuntimeSystem } from "../gas/abilityruntime";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
@@ -279,9 +280,12 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         SM.register(new BehaviorTreeSystem(20));
         SM.register(new MeshAnimationSystem(25));
         SM.register(new StateMachineSystem(30));
+        // Ability runtime (advance effects/coroutines) after object state machines
+        SM.register(new AbilityRuntimeSystem(32));
         SM.register(new PhysicsPostSystem(35));
-        SM.register(new BoundarySystem(10));
-        SM.register(new TileCollisionSystem(20));
+        // Resolve world-space collisions first, then screen boundary events
+        SM.register(new TileCollisionSystem(10));
+        SM.register(new BoundarySystem(20));
         SM.register(new TransformSystem(50));
     }
 
@@ -524,8 +528,12 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public run(deltaTime: number): void {
-        this.sc.tick();
-        // Physics step & event dispatch (moved from Game.run for cleaner layering)
+        this.sc.tick(); // model-level state machine first
+
+        // Phase 1: PrePhysics + Simulation (BT, Anim, Object FSM, AbilityRuntime)
+        this.systems.updateUntil(this, TickGroup.Simulation);
+
+        // Physics step & event dispatch
         const phys = $.registry.get<PhysicsWorld>('physics_world');
         if (phys) {
             const collisionEvents: CollisionEvent[] = [];
@@ -537,19 +545,27 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
                 BaseModel._physDiagFrames++;
             }
             if (collisionEvents.length) {
-                // Batch dispatch to reduce per-contact FSM overhead
                 for (const evt of collisionEvents) {
                     const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.model.getGameObject(evt.a.userData) : evt.a.userData;
                     const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.model.getGameObject(evt.b.userData) : evt.b.userData;
                     if (goA?.sc) goA.sc.do('physics_collision_' + evt.type, goB?.id ?? goA.id, evt);
                     if (goB?.sc) goB.sc.do('physics_collision_' + evt.type, goA?.id ?? goB.id, evt);
-                    // Strongly typed optional callback using user-defined type guard
                     type CollisionAware = { onPhysicsCollision: (e: CollisionEvent, other: any) => void };
                     function isCollisionAware(o: any): o is CollisionAware { return o && typeof o.onPhysicsCollision === 'function'; }
                     if (isCollisionAware(goA)) goA.onPhysicsCollision(evt, goB);
                     if (isCollisionAware(goB)) goB.onPhysicsCollision(evt, goA);
                 }
             }
+        }
+
+        // Phase 2: PostPhysics + PreRender
+        this.systems.updateFrom(this, TickGroup.PostPhysics);
+
+        // Cleanup disposed objects
+        const objects = this.objects;
+        for (let i = objects.length - 1; i >= 0; --i) {
+            const o = objects[i];
+            if (o.disposeFlag) this.exile(o);
         }
     }
 
@@ -559,22 +575,9 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing
      */
     public static defaultrun = (): void => {
-        if ($.model.paused) {
-            return;
-        }
-        if ($.model.startAfterLoad) {
-            return;
-        }
-
-        // ECS pipeline: run registered systems in priority order
-        $.model.systems.update($.model);
-
-        // Remove all objects that are to be disposed
-        const objects = $.model.objects;
-        for (let i = objects.length - 1; i >= 0; --i) {
-            const o = objects[i];
-            if (o.disposeFlag) $.model.exile(o);
-        }
+        // Deprecated: systems are now scheduled from BaseModel.run().
+        // Intentionally left as no-op to avoid duplicate updates when legacy calls remain in FSMs.
+        return;
     };
 
     /**
