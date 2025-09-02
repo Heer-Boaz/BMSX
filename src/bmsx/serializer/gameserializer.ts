@@ -35,7 +35,7 @@ function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean
  */
 export class Serializer {
     // A place to collect all @onsave hooks by class name
-    static onSaves: Record<string, ((v: any) => Record<string, any>)[]> = {};
+    static onSaves: Record<string, ((...args: any[]) => any)[]> = {};
 
     /**
      * Main parameterized serialization entry point.
@@ -351,7 +351,7 @@ export class Serializer {
  */
 export class Reviver {
     static constructors: Record<string, new () => any> = {};
-    static onLoads: Record<string, ((result: any) => any)[]> = {};
+    static onLoads: Record<string, ((...args: any[]) => any)[]> = {};
     static excludedProperties: Record<string, Record<string, boolean>> = {};
 
     static removeSerializerProps(obj: { typename: string; }): void {
@@ -467,17 +467,21 @@ export class Reviver {
  * Marks a static method as an `@onsave` hook.  The function must
  * return an object of extra props to merge into the serialized form.
  */
-export function onsave(
-    target: any,
-    _propertyKey: string | symbol,
-    descriptor: PropertyDescriptor
-): any {
-
-    const className = target.constructor.name;
-    Serializer.onSaves[className] ??= [];
-    Serializer.onSaves[className].push(descriptor.value);
-
-    return descriptor;
+export function onsave(value: (...args: any[]) => any, context: ClassMethodDecoratorContext) {
+    const method = value;
+    const register = (ctor: any) => {
+        const className = ctor?.name ?? '(anonymous)';
+        Serializer.onSaves[className] ??= [];
+        if (!Serializer.onSaves[className].includes(method)) {
+            Serializer.onSaves[className].push(method);
+        }
+    };
+    if (context.static) {
+        context.addInitializer(function () { register(this); });
+    } else {
+        context.addInitializer(function () { register(this.constructor); });
+    }
+    // No method replacement
 }
 
 /**
@@ -487,13 +491,21 @@ export function onsave(
  * @param descriptor - The property descriptor for the property to mark as excluded.
  * @returns The modified property descriptor.
  */
-export function excludepropfromsavegame(target: Object, propertyKey: string) {
-    const type = target.constructor.name;
-    Serializer.excludedProperties[type] ??= {};
-    Serializer.excludedProperties[type][propertyKey] = true;
+export function excludepropfromsavegame(_value: undefined, context: ClassFieldDecoratorContext) {
+    const prop = String(context.name);
+    const register = (ctor: any) => {
+        const type = ctor?.name ?? '(anonymous)';
+        Serializer.excludedProperties[type] ??= {};
+        Serializer.excludedProperties[type][prop] = true;
 
-    Reviver.excludedProperties[type] ??= {};
-    Reviver.excludedProperties[type][propertyKey] = true; // <-- ook bij hydration overslaan
+        Reviver.excludedProperties[type] ??= {};
+        Reviver.excludedProperties[type][prop] = true; // also skip during hydration
+    };
+    if (context.static) {
+        context.addInitializer(function () { register(this); });
+    } else {
+        context.addInitializer(function () { register(this.constructor); });
+    }
 }
 
 
@@ -505,10 +517,22 @@ export function excludepropfromsavegame(target: Object, propertyKey: string) {
  * @param descriptor - The property descriptor for the property to set the `onload` property on.
  * @returns The modified property descriptor.
  */
-export function onload(target: any, _name: any, descriptor: PropertyDescriptor): any {
-    Reviver.onLoads ??= {};
-    Reviver.onLoads[target.constructor.name] ??= [];
-    Reviver.onLoads[target.constructor.name].push(descriptor.value);
+export function onload(value: (...args: any[]) => any, context: ClassMethodDecoratorContext) {
+    const method = value;
+    const register = (ctor: any) => {
+        const type = ctor?.name ?? '(anonymous)';
+        Reviver.onLoads ??= {};
+        Reviver.onLoads[type] ??= [];
+        if (!Reviver.onLoads[type].includes(method)) {
+            Reviver.onLoads[type].push(method);
+        }
+    };
+    if (context.static) {
+        context.addInitializer(function () { register(this); });
+    } else {
+        context.addInitializer(function () { register(this.constructor); });
+    }
+    // No method replacement
 }
 
 /**
@@ -519,16 +543,11 @@ export function onload(target: any, _name: any, descriptor: PropertyDescriptor):
  * @param fromJSON - An optional function that converts a JSON-serialized object back into an instance of the class.
  * @returns The original constructor function.
  */
-export function insavegame(constructor: InstanceType<any>, _toJSON?: () => any, _fromJSON?: (value: any, value_data: any) => any): any {
+export function insavegame(value: any, _context: ClassDecoratorContext) {
     Reviver.constructors ??= {};
-    Reviver.constructors[constructor.name] = constructor;
-    // console.debug(`Registered class '${constructor.name}' for savegame serialization.`);
-
-    // Mark the constructor so serializers can detect it (including when checking derived instances)
-    constructor.__exclude_savegame__ = false; // Default to not excluded
-    Serializer.classExcludeMap.set(constructor.name, false); // Default to not excluded
-
-    return constructor;
+    Reviver.constructors[value.name] = value as unknown as new () => any;
+    (value as any).__exclude_savegame__ = false;
+    Serializer.classExcludeMap.set(value.name, false);
 }
 
 /**
@@ -537,14 +556,10 @@ export function insavegame(constructor: InstanceType<any>, _toJSON?: () => any, 
  * @param constructor - The constructor function of the class to exclude.
  * @returns The original constructor function.
  */
-export function excludeclassfromsavegame(constructor: InstanceType<any>): any {
-    // Mark the constructor so serializers can detect it (including when checking derived instances)
-    constructor.__exclude_savegame__ = true;
-    Serializer.classExcludeMap.set(constructor.name, true); // Mark as excluded
-    Serializer.excludedObjectTypes.add(constructor.name);
-    // console.debug(`Marked class '${constructor.name}' as excluded from savegame serialization.`);
-
-    return constructor;
+export function excludeclassfromsavegame(value: any, _context: ClassDecoratorContext) {
+    (value as any).__exclude_savegame__ = true;
+    Serializer.classExcludeMap.set(value.name, true);
+    Serializer.excludedObjectTypes.add(value.name);
 }
 
 type VoiceState = { id: string | number; offset: number; params: ModulationParams; priority: number };

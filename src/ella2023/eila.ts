@@ -1,4 +1,4 @@
-import { $, Direction, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
+import { $, GameObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
 import { Fighter } from './fighter';
 import { gamemodel } from './gamemodel';
 import { Action } from './inputmapping';
@@ -20,7 +20,7 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 	 * @param old_x_or_y - The previous x or y coordinate of the game object.
 	 */
 	@subscribesToParentScopedEvent('leavingScreen')
-	public onLeavingScreen(_event_name: string, emitter: Eila, d: Direction, _old_x_or_y: number) {
+	public onLeavingScreen(_event_name: string, emitter: Eila, { d, old_x_or_y }: GameObjectEventPayloads['leavingScreen']) {
 		if (d === 'left') {
 			emitter.facing = 'right';
 		}

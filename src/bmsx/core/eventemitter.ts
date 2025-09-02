@@ -370,12 +370,19 @@ function updateAllEventSubscriptions(constructor: any) {
  * @returns A decorator function that adds the event subscription to the target class.
  */
 export function subscribesToParentScopedEvent(eventName: string, persistent?: boolean) {
-	return function (target: any, propertyKey: string) {
-		if (!target.constructor.eventSubscriptions) {
-			target.constructor.eventSubscriptions = [];
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'parent');
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'parent', persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register(this.constructor); });
 		}
-		target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'parent', persistent });
-		updateAllEventSubscriptions(target.constructor);
 	};
 }
 
@@ -386,12 +393,19 @@ export function subscribesToParentScopedEvent(eventName: string, persistent?: bo
  * @returns A decorator function that adds the event subscription to the target class.
  */
 export function subscribesToSelfScopedEvent(eventName: string, persistent?: boolean) {
-	return function (target: any, propertyKey: string) {
-		if (!target.constructor.eventSubscriptions) {
-			target.constructor.eventSubscriptions = [];
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'self');
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'self', persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register(this.constructor); });
 		}
-		target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'self', persistent });
-		updateAllEventSubscriptions(target.constructor);
 	};
 }
 
@@ -402,12 +416,19 @@ export function subscribesToSelfScopedEvent(eventName: string, persistent?: bool
  * @returns A decorator function that adds the event subscription to the target class.
  */
 export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: string, persistent?: boolean) {
-	return function (target: any, propertyKey: string, _descriptor: PropertyDescriptor) {
-		if (!target.constructor.eventSubscriptions) {
-			target.constructor.eventSubscriptions = [];
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === emitter_id);
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: emitter_id, persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register(this.constructor); });
 		}
-		target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: emitter_id, persistent });
-		updateAllEventSubscriptions(target.constructor);
 	};
 }
 
@@ -418,12 +439,19 @@ export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: st
  * @returns A function that decorates the target method.
  */
 export function subscribesToGlobalEvent(eventName: string, persistent?: boolean) {
-	return function (target: any, propertyKey: string, _descriptor: PropertyDescriptor) {
-		if (!target.constructor.eventSubscriptions) {
-			target.constructor.eventSubscriptions = [];
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'all');
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'all', persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register(this.constructor); });
 		}
-		target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'all', persistent });
-		updateAllEventSubscriptions(target.constructor);
 	};
 }
 
@@ -433,11 +461,10 @@ export function subscribesToGlobalEvent(eventName: string, persistent?: boolean)
  * @returns A decorator function that can be applied to a method.
  */
 export function emits_event(eventName: string) {
-	return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
-		const originalMethod = descriptor.value;
-		descriptor.value = function (payload: EventPayload) {
-			originalMethod.apply(this, payload);
-			// Logic to emit the event
+	return function (value: Function, _context: ClassMethodDecoratorContext) {
+		const originalMethod = value;
+		return function (this: any, payload: EventPayload) {
+			originalMethod.call(this, payload);
 			EventEmitter.instance.emit(eventName, this as Identifiable, payload);
 		};
 	};

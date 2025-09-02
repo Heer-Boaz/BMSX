@@ -265,7 +265,15 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
             // Wrap the handler to check if the component is enabled
             if (this.enabled) handler(...args);
         };
+        // First attempt: in case metadata is already present
         $.event_emitter.initClassBoundEventSubscriptions(this, wrappedHandler);
+        // New-decorator nuance: instance method decorator initializers on derived classes
+        // execute after super() returns. Our base constructor calls this initializer during super().
+        // Schedule a microtask to rebind after derived initializers have run to ensure
+        // eventSubscriptions have been attached to the constructor.
+        queueMicrotask(() => {
+            $.event_emitter.initClassBoundEventSubscriptions(this, wrappedHandler);
+        });
     }
 
     // Implement this method to handle preprocessing updates
@@ -306,12 +314,14 @@ type ConstructorWithTagsProperty = Function & {
  * @returns A decorator function.
  */
 export function componenttags_preprocessing(...tags: ComponentTag[]) {
-    return function (constructor: ConstructorWithTagsProperty) { // The constructor function is the only argument
-        if (!constructor.hasOwnProperty('tags')) { // Check if the constructor has a 'tags' property
-            constructor.tagsPre = new Set<ComponentTag>(); // If not, create a new set
+    return function (value: any, _context: ClassDecoratorContext) {
+        const ctor = value as ConstructorWithTagsProperty;
+        if (!Object.prototype.hasOwnProperty.call(ctor, 'tagsPre')) {
+            ctor.tagsPre = new Set<ComponentTag>(); // Create a new set if not present on the class itself
         }
-        tags.forEach(tag => constructor.tagsPre.add(tag)); // Add the tags to the set
-        updateAllPreprocessingTags(constructor); // Update all tags for the constructor's prototype chain
+        tags.forEach(tag => ctor.tagsPre!.add(tag));
+        updateAllPreprocessingTags(ctor);
+        // no class replacement
     };
 }
 
@@ -339,12 +349,14 @@ function updateAllPreprocessingTags(constructor: ConstructorWithTagsProperty) {
  * @returns A decorator function that adds the tags to the constructor's prototype chain.
  */
 export function componenttags_postprocessing(...tags: ComponentTag[]) {
-    return function (constructor: ConstructorWithTagsProperty) { // The constructor function is the only argument
-        if (!constructor.hasOwnProperty('tags')) { // Check if the constructor has a 'tags' property
-            constructor.tagsPost = new Set<ComponentTag>(); // If not, create a new set
+    return function (value: any, _context: ClassDecoratorContext) {
+        const constructor = value as ConstructorWithTagsProperty;
+        if (!Object.prototype.hasOwnProperty.call(constructor, 'tagsPost')) {
+            constructor.tagsPost = new Set<ComponentTag>();
         }
-        tags.forEach(tag => constructor.tagsPost.add(tag)); // Add the tags to the set
-        updateAllPostprocessingTags(constructor); // Update all tags for the constructor's prototype chain
+        tags.forEach(tag => constructor.tagsPost!.add(tag));
+        updateAllPostprocessingTags(constructor);
+        // no class replacement
     };
 }
 
@@ -374,37 +386,29 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
  * @returns A decorator function that wraps the original method and updates the tagged components.
  */
 export function update_tagged_components<T extends ComponentContainer>(...tags: ComponentTag[]) {
-    return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
-        // Store the original method in a variable to be able to call it later
-        const originalMethod = descriptor.value;
-        // Replace the original method with a new method that calls the original method and updates the tagged components before and after the call to the original method (preprocessing and postprocessing) if the component has the specified tags (tagsPre and tagsPost) and the component has not been updated yet (to avoid updating the same component multiple times)
-        descriptor.value = function (...args: any[]) {
+    return function (value: any, _context: ClassMethodDecoratorContext) {
+        const originalMethod = value as (...args: any[]) => any;
+        return function (this: any, ...args: any[]) {
             const updateComponents = (updateType: 'tagsPre' | 'tagsPost', additionalArgs?: any[]) => {
-                // Get all components of the component container and store them in a set to avoid updating the same component multiple times (e.g. if a component has multiple tags) and to avoid updating components that have been added during the update process (e.g. if a component adds another component during the update process)
                 if (!(this as T).components) return;
                 const components = Object.values((this as T).components);
                 const updatedComponents = new Set<Component>();
-
-                // Iterate over all components and update the ones that have the specified tags and have not been updated yet (to avoid updating the same component multiple times) and store them in the set of updated components to avoid updating them again later
                 for (const component of components) {
-                    if (!component.enabled) continue; // Skip disabled components
+                    if (!component.enabled) continue;
                     const componentClass = component.constructor as ConstructorWithTagsProperty;
-                    if (componentClass[updateType] && tags.some(tag => componentClass[updateType].has(tag)) && !updatedComponents.has(component)) {
-                        // Call the component's preprocessing or postprocessing update method depending on the update type and pass the additional arguments if specified (e.g. the return value of the original method) or the original arguments otherwise (e.g. the arguments of the original method)
-                        const updateMethod = updateType === 'tagsPre' ? component.preprocessingUpdate : component.postprocessingUpdate
+                    if (componentClass[updateType] && tags.some(tag => componentClass[updateType]!.has(tag)) && !updatedComponents.has(component)) {
+                        const updateMethod = updateType === 'tagsPre' ? component.preprocessingUpdate : component.postprocessingUpdate;
                         updateMethod.apply(component, additionalArgs ? [additionalArgs] : args);
-                        // Add the component to the set of updated components to avoid updating it again later
                         updatedComponents.add(component);
                     }
                 }
             };
 
-            updateComponents('tagsPre'); // Preprocessing update
-
-            let returnvalue = originalMethod.apply(this, args); // Call the original method and store the return value to pass it to the postprocessing update method later
-
-            updateComponents('tagsPost', [{ params: args, returnvalue: returnvalue }]); // Postprocessing update (pass the original arguments and the return value of the original method) to the postprocessing update method to allow the component to handle the return value (e.g. to modify it) if necessary (e.g. if the component is a collision component and the component needs to check the return value to handle a collision) and to allow the component to handle the original arguments (e.g. to modify them) if necessary (e.g. if the component is a collision component and the component needs to check the original arguments to handle a collision)
-        };
+            updateComponents('tagsPre');
+            const returnvalue = originalMethod.apply(this, args);
+            updateComponents('tagsPost', [{ params: args, returnvalue }]);
+            return returnvalue;
+        } as typeof value;
     };
 }
 
@@ -414,12 +418,11 @@ export function update_tagged_components<T extends ComponentContainer>(...tags: 
  * @param components - The components to attach.
  * @returns A decorator function that attaches the components to the game object constructor.
  */
-export function attach_components(...components: ComponentConstructor<Component>[]) {
-    return function (constructor: GameObjectConstructorWithComponentList) {
-        // Get components from parent class
-        const parentComponents = Object.getPrototypeOf(constructor).autoAddComponents || [];
-
-        // Merge parent components with current components
-        constructor.autoAddComponents = [...parentComponents, ...components];
+export function attach_components(...components: ComponentClass[]) {
+    return function (value: any, _context: ClassDecoratorContext) {
+        const ctor = value as GameObjectConstructorWithComponentList;
+        const parentComponents = (Object.getPrototypeOf(ctor) as GameObjectConstructorWithComponentList).autoAddComponents || [];
+        ctor.autoAddComponents = [...parentComponents, ...components];
+        // no class replacement
     };
 }

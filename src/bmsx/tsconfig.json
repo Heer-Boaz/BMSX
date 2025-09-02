@@ -7,6 +7,7 @@
         "declaration": true,
         "outFile": "./bmsx.js", // Concatenate and emit output to single file. WARNING: This will not work with "module": "system" or "amd" as they require "ES6" target, which does not support features like "private" or "accessors"
         "module": "system", // Won't work with "outFile" and "target": "ESNext", but is required for Codex to compile the code
+        "experimentalDecorators": false
     },
     "include": [
         ".",

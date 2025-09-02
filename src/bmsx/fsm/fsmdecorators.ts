@@ -12,12 +12,14 @@ export var StateDefinitionBuilders: Record<string, () => StateMachineBlueprint>;
  * @returns A decorator function.
  */
 export function assign_fsm(...fsms: FSMName[]) {
-    return function (constructor: ConstructorWithFSMProperty) {
-        if (!constructor.hasOwnProperty('linkedFSMs')) {
-            constructor.linkedFSMs = new Set<FSMName>();
+    return function (value: any, _context: ClassDecoratorContext) {
+        const ctor = value as ConstructorWithFSMProperty;
+        if (!Object.prototype.hasOwnProperty.call(ctor, 'linkedFSMs')) {
+            ctor.linkedFSMs = new Set<FSMName>();
         }
-        fsms.forEach(fsm => constructor.linkedFSMs.add(fsm));
-        updateAssignedFSMs(constructor);
+        fsms.forEach(fsm => ctor.linkedFSMs!.add(fsm));
+        updateAssignedFSMs(ctor);
+        // no class replacement
     };
 }
 
@@ -46,9 +48,20 @@ function updateAssignedFSMs(constructor: any) {
  * @returns A decorator function that can be used to build a finite state machine definition.
  */
 export function build_fsm(fsm_name?: Identifier) {
-    return function statedef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
-        StateDefinitionBuilders ??= {};
-        StateDefinitionBuilders[fsm_name ?? target.name] = descriptor.value;
+    return function (value: any, context: ClassMethodDecoratorContext) {
+        // For static methods: addInitializer runs at class evaluation with `this` bound to the constructor.
+        // For instance methods (not typical here), we still register using the instance's constructor when created.
+        const register = (ctor: any) => {
+            StateDefinitionBuilders ??= {};
+            const key = fsm_name ?? ctor?.name ?? '(anonymous)';
+            StateDefinitionBuilders[key] = value as () => StateMachineBlueprint;
+        };
+        if (context.static) {
+            context.addInitializer(function () { register(this); });
+        } else {
+            context.addInitializer(function () { register(this.constructor); });
+        }
+        // no method replacement
     };
 }
 

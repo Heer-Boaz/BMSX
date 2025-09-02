@@ -234,7 +234,6 @@ export class Sinterklaas extends Fighter {
             return [Number.MAX_VALUE, Number.MAX_VALUE];
         }
 
-        // @ts-ignore
         function isPlayerInPunchRange(this: Fighter): boolean {
             const [dx] = getOpponentRange.apply(this);
             const RANGE = (this.sx / 5) * 3; // Define the range
@@ -246,7 +245,6 @@ export class Sinterklaas extends Fighter {
             return false;
         }
 
-        // @ts-ignore
         function isPlayerInKickRange(this: Fighter): boolean {
             const [dx] = getOpponentRange.apply(this);
             const RANGE = (this.sx / 4) * 3; // Define the range
@@ -275,27 +273,25 @@ export class Sinterklaas extends Fighter {
             if (theOther) {
                 return theOther.isDucking;
             }
-            return false; // Placeholder logic
+            return false;
         }
 
-        // @ts-ignore
         function isOrWasPlayerHighKicking(this: Fighter): boolean {
             // Logic to check if the player is ducking
             const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
             if (theOther) {
                 return theOther.currentAttackType === 'highkick' || theOther.previousAttackType === 'highkick';
             }
-            return false; // Placeholder logic
+            return false;
         }
 
-        // @ts-ignore
         function isOrWasPlayerLowOrDuckKicking(this: Fighter): boolean {
             // Logic to check if the player is ducking
             const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
             if (theOther) {
                 return theOther.currentAttackType === 'lowkick' || theOther.previousAttackType === 'lowkick' || theOther.currentAttackType === 'duckkick' || theOther.previousAttackType === 'duckkick';
             }
-            return false; // Placeholder logic
+            return false;
         }
 
         // @ts-ignore
@@ -305,26 +301,23 @@ export class Sinterklaas extends Fighter {
             if (theOther) {
                 return theOther.isAttacking;
             }
-            return false; // Placeholder logic
+            return false;
         }
 
         function punch(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
-            // if (isBusy.apply(this)) return 'FAILED';
             this.sc.dispatch_event('go_punch', this);
             return 'SUCCESS';
         }
 
         function highkick(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
-            // if (isBusy.apply(this)) return 'FAILED';
             this.sc.dispatch_event('go_highkick', this);
             return 'SUCCESS';
         }
 
         function duckkick(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
-            // if (isBusy.apply(this)) return 'FAILED';
             this.sc.dispatch_event('go_duckkick', this);
             return 'SUCCESS';
         }
@@ -353,14 +346,12 @@ export class Sinterklaas extends Fighter {
             return 'SUCCESS';
         }
 
-        // @ts-ignore
         function idle(this: Fighter): BTStatus {
             // Logic for idle behavior
             this.sc.dispatch_event('go_idle', this);
             return 'SUCCESS';
         }
 
-        // @ts-ignore
         function walk(this: Fighter, blackboard: Blackboard): BTStatus {
             // Logic for walk behavior
             this.sc.dispatch_event('go_walk', this, this.facing);

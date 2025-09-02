@@ -123,12 +123,14 @@ export type ConstructorWithBTProperty = Function & {
  * @returns A decorator function.
  */
 export function assign_bt(...bts: BehaviorTreeID[]) {
-    return function (constructor: ConstructorWithBTProperty) {
-        if (!constructor.hasOwnProperty('linkedBTs')) {
+    return function (value: any, _context: ClassDecoratorContext) {
+        const constructor = value as ConstructorWithBTProperty;
+        if (!Object.prototype.hasOwnProperty.call(constructor, 'linkedBTs')) {
             constructor.linkedBTs = new Set<BehaviorTreeID>();
         }
-        bts.forEach(bt => constructor.linkedBTs.add(bt));
+        bts.forEach(bt => constructor.linkedBTs!.add(bt));
         updateAllAssignedBTs(constructor);
+        // no class replacement
     };
 }
 
@@ -157,9 +159,18 @@ function updateAllAssignedBTs(constructor: any) {
  * @returns A decorator function that defines the behavior tree.
  */
 export function build_bt(bt_id?: BehaviorTreeID) {
-    return function btdef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
-        behaviorTreeDefinitionsBuilders ??= {};
-        behaviorTreeDefinitionsBuilders[bt_id ?? target.name] = descriptor.value;
+    return function (value: any, context: ClassMethodDecoratorContext) {
+        const register = (ctor: any) => {
+            behaviorTreeDefinitionsBuilders ??= {};
+            const key = bt_id ?? ctor?.name ?? '(anonymous)';
+            behaviorTreeDefinitionsBuilders[key] = value as () => BehaviorTreeDefinition;
+        };
+        if (context.static) {
+            context.addInitializer(function () { register(this); });
+        } else {
+            context.addInitializer(function () { register(this.constructor); });
+        }
+        // no method replacement
     };
 }
 

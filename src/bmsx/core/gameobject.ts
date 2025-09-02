@@ -14,6 +14,13 @@ const DEFAULT_VISIBLE = true;
 const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
 const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
 
+type LeaveLeavingScreenPayload = { d: Direction, old_x_or_y: number };
+
+export type GameObjectEventPayloads = {
+	['leaveScreen']: LeaveLeavingScreenPayload;
+	['leavingScreen']: LeaveLeavingScreenPayload;
+};
+
 /**
  * Represents a game object with a position, size, state, and hitbox.
  * Implements both vec2 and vec3 interfaces.
@@ -544,7 +551,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * @param dir - The direction in which the GameObject is leaving the screen.
 	 * @param old_x_or_y - The previous x or y coordinate of the GameObject before leaving the screen.
 	 */
-	public onLeaveScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
+	public onLeaveScreen?: (ik: GameObject, { d, old_x_or_y }: GameObjectEventPayloads['leaveScreen']) => void;
 	/**
 	 * Callback function that is triggered when the game object is leaving the screen.
 	 *
@@ -552,7 +559,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * @param dir - The direction in which the game object is leaving the screen.
 	 * @param old_x_or_y - The previous x or y coordinate of the game object before leaving the screen.
 	 */
-	public onLeavingScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
+	public onLeavingScreen?: (ik: GameObject, { d, old_x_or_y }: GameObjectEventPayloads['leavingScreen']) => void;
 
 	private _direction: Direction;
 	public oldDirection: Direction;
