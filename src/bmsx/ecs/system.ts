@@ -460,6 +460,25 @@ export class PhysicsPostSystem extends ECSystem {
 	}
 }
 
+// New: sync GO -> body after tile/boundary corrections (honor syncAxis)
+export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
+	constructor(p = 0) { super(TickGroup.PostPhysics, p); }
+	update(model: BaseModel) {
+		for (const o of model.objects as GameObject[]) {
+			const pc = o.getComponent?.(PhysicsComponent);
+			if (!pc?.enabled || !pc.body) continue;
+			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
+			if (pc.writeBack) {
+				const b = pc.body, sa = pc.syncAxis;
+				if (sa.x) b.position.x = o.pos.x;
+				if (sa.y) b.position.y = o.pos.y;
+				if (sa.z && o.pos.z !== undefined) b.position.z = o.pos.z;
+				PhysicsWorld.ensure().markBodyDirty(b);
+			}
+		}
+	}
+}
+
 /** TransformSystem: update TransformComponent from GameObject state (position/orientation/scale). */
 export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
@@ -492,7 +511,7 @@ export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
-		const dtSec = $.deltaTime;
+		const dtSec = $.deltaTime / 1000;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as MeshObject;
 			if (!o || typeof o.animateStep !== 'function') continue;
