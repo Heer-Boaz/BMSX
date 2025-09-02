@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
-import { BehaviorTreeSystem, BoundarySystem, MeshAnimationSystem, PhysicsPostSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, SystemManager, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/system";
+import { BehaviorTreeSystem, BoundarySystem, ECSystemManager, MeshAnimationSystem, PhysicsPostSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/system";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
@@ -193,7 +193,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
 
     /** ECS systems runner */
     @excludepropfromsavegame
-    public systems: SystemManager = new SystemManager();
+    public systems: ECSystemManager = new ECSystemManager();
 
     /**
      * An object that maps space IDs to their corresponding Space objects.

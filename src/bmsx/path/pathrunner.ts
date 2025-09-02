@@ -1,6 +1,6 @@
 import { Q, quat } from '../render/3d/math3d';
 import { CatmullRomPath } from './catmullrompath';
-import { IPath, PathSample } from './ipath';
+import { Path, PathSample } from './ipath';
 
 // Local easing lookup for segment meta (keep lightweight)
 const EasingLookup: Record<string, (t: number) => number> = {
@@ -22,7 +22,7 @@ export class PathRunner {
     paused = false;
     private _forward = 1;
     private _distanceCache = 0;
-    readonly path: IPath;
+    readonly path: Path;
     // Orientation state
     orientation: quat = Q.ident();
     private _lastFwd = { x: 0, y: 0, z: 1 };
@@ -31,7 +31,7 @@ export class PathRunner {
     private _baseUp = { x: 0, y: 1, z: 0 };
     private _bankFactor = 0;
     private _segBankFactor: number | undefined;
-    constructor(path: IPath, opts: PathRunnerOptions = {}) { this.path = path; if (opts.speed !== undefined) this.speed = opts.speed; if (opts.distanceMode) { this.distanceMode = true; this._distanceCache = path.distanceAtU(this.u); } if (opts.playback) this.playback = opts.playback; if (opts.orientationKeys) this._orientationKeys = opts.orientationKeys.slice().sort((a, b) => a.u - b.u); if (opts.lookAt) this._lookAt = opts.lookAt; if (opts.baseUp) this._baseUp = opts.baseUp; if (opts.bankFactor) this._bankFactor = opts.bankFactor; }
+    constructor(path: Path, opts: PathRunnerOptions = {}) { this.path = path; if (opts.speed !== undefined) this.speed = opts.speed; if (opts.distanceMode) { this.distanceMode = true; this._distanceCache = path.distanceAtU(this.u); } if (opts.playback) this.playback = opts.playback; if (opts.orientationKeys) this._orientationKeys = opts.orientationKeys.slice().sort((a, b) => a.u - b.u); if (opts.lookAt) this._lookAt = opts.lookAt; if (opts.baseUp) this._baseUp = opts.baseUp; if (opts.bankFactor) this._bankFactor = opts.bankFactor; }
     setU(u: number): void { this.u = Math.min(1, Math.max(0, u)); this._updateOrientation(); }
     get distance(): number { return this.distanceMode ? this._distanceCache : this.path.distanceAtU(this.u); }
     update(dt: number): void {

@@ -19,7 +19,7 @@ export enum TickGroup {
 }
 
 @excludeclassfromsavegame
-export abstract class System {
+export abstract class ECSystem {
 	/**
 	 * Group determines coarse scheduling; priority determines order within the group.
 	 */
@@ -30,15 +30,15 @@ export abstract class System {
 }
 
 @excludeclassfromsavegame
-export class SystemManager {
-	private _systems: System[] = [];
+export class ECSystemManager {
+	private _systems: ECSystem[] = [];
 
-	register(sys: System): void {
+	register(sys: ECSystem): void {
 		this._systems.push(sys);
 		this._systems.sort((a, b) => (a.group - b.group) || (a.priority - b.priority));
 	}
 
-	unregister(sys: System): void {
+	unregister(sys: ECSystem): void {
 		const i = this._systems.indexOf(sys);
 		if (i >= 0) this._systems.splice(i, 1);
 	}
@@ -67,7 +67,7 @@ export class SystemManager {
 // --- Reference systems that replicate the prior behavior ---
 
 /** Pre-update: call preprocessingUpdate for components tagged with given tag. */
-export class PreTagSystem extends System {
+export class PreTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PrePhysics, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -182,7 +182,7 @@ function hasMarkBodyDirty(w: unknown): w is { markBodyDirty: (body: unknown) => 
 }
 
 /** Updates all BehaviorTrees attached to objects. */
-export class BehaviorTreeSystem extends System {
+export class BehaviorTreeSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -199,7 +199,7 @@ export class BehaviorTreeSystem extends System {
 }
 
 /** Ticks each object's primary state machine controller. */
-export class StateMachineSystem extends System {
+export class StateMachineSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -212,7 +212,7 @@ export class StateMachineSystem extends System {
 }
 
 /** Post-update: call postprocessingUpdate for components tagged with given tag. */
-export class PostTagSystem extends System {
+export class PostTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PostPhysics, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -231,7 +231,7 @@ export class PostTagSystem extends System {
  * PrePositionSystem captures old positions for all PositionUpdateAxisComponent
  * instances at the start of the frame.
  */
-export class PrePositionSystem extends System {
+export class PrePositionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -250,7 +250,7 @@ export class PrePositionSystem extends System {
  * BoundarySystem runs boundary checks in a single batch and invokes the
  * existing component logic (postprocessingUpdate) to keep behavior consistent.
  */
-export class BoundarySystem extends System {
+export class BoundarySystem extends ECSystem {
 	private prev = new WeakMap<GameObject, { x: number; y: number }>();
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: BaseModel): void {
@@ -310,7 +310,7 @@ export class BoundarySystem extends System {
 /**
  * TileCollisionSystem resolves tile collisions using the component logic.
  */
-export class TileCollisionSystem extends System {
+export class TileCollisionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -359,7 +359,7 @@ export class TileCollisionSystem extends System {
 /**
  * PhysicsPreSystem: builds bodies on demand and syncs GameObject -> PhysicsBody when writeBack=false.
  */
-export class PhysicsPreSystem extends System {
+export class PhysicsPreSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -404,7 +404,7 @@ export class PhysicsPreSystem extends System {
  * PhysicsSyncBeforeStepSystem: same as PhysicsPreSystem but scheduled in Simulation
  * after abilities so GO -> body sync includes ability impulses before the physics step.
  */
-export class PhysicsSyncBeforeStepSystem extends System {
+export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -435,7 +435,7 @@ export class PhysicsSyncBeforeStepSystem extends System {
 }
 
 /** PhysicsPostSystem: sync PhysicsBody -> GameObject when writeBack=true. */
-export class PhysicsPostSystem extends System {
+export class PhysicsPostSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -461,7 +461,7 @@ export class PhysicsPostSystem extends System {
 }
 
 /** TransformSystem: update TransformComponent from GameObject state (position/orientation/scale). */
-export class TransformSystem extends System {
+export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
@@ -488,7 +488,7 @@ export class TransformSystem extends System {
 }
 
 /** MeshAnimationSystem: steps GLTF-based mesh animations without calling GameObject.run(). */
-export class MeshAnimationSystem extends System {
+export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;

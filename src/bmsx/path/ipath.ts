@@ -1,7 +1,7 @@
 import type { vec3 } from '../rompack/rompack';
 
 export interface PathSample { u: number; p: vec3; fwd: vec3; }
-export interface IPath {
+export interface Path {
     readonly length: number;
     sample(u: number): PathSample;
     distanceAtU(u: number): number;
