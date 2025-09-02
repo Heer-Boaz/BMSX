@@ -274,7 +274,6 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
     }
 
     // Implement this method to handle postprocessing updates
-    // @ts-ignore
     public postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
     }
 }
