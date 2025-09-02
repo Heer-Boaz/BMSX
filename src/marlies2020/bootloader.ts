@@ -752,7 +752,7 @@ class speler extends SpriteObject {
     checkNaastIngredientOfPitaOfBord(): void {
         if (this.state.getCurrentId() == 'urgh') return;
         _model.objects.filter(o => (<any>o)?.ingredientType && this.detect_object_collision(o)).forEach(o => {
-            let i = o as any;
+            let i = o;
             switch (i.ingredientType) {
                 case 'pita':
                     _model.ProbeerEquippedInPitaTeProppen(i);

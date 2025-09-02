@@ -17,7 +17,7 @@ export async function createBackendForCanvasAsync(canvas: HTMLCanvasElement): Pr
 	// Try WebGPU first
 	if (WEBGPU_RENDERER_SUPPORT) {
 		try {
-			const nav: any = navigator as any;
+			const nav: any = navigator;
 			if (nav?.gpu && typeof canvas.getContext === 'function') {
 				const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 				if (context) {

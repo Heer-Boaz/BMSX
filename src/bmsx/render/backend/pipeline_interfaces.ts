@@ -110,7 +110,7 @@ export interface RenderPassInstanceHandle { id: number; label?: string; backendD
 
 export interface PassEncoder { fbo: unknown; desc: RenderPassDesc; }
 
-export type AnyBackend = WebGLBackend | WebGPUBackend;
+export type AnyBackend = WebGLBackend | WebGPUBackend | GPUBackend;
 
 export interface GPUBackend {
     get type(): 'webgl2' | 'webgpu';

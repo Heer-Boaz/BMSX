@@ -625,7 +625,7 @@ export function swizzlable<T extends Record<string, any> | any[]>(
         }
     };
 
-    return new Proxy(vec as any, handler);
+    return new Proxy(vec, handler);
 }
 // ------- small utils -------
 export function deepEqual(a: any, b: any): boolean {

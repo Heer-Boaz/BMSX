@@ -16,7 +16,7 @@ import { LightingSystem } from '../lighting/lightingsystem';
 import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
-import { GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
+import { AnyBackend, GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl.helpers';
 import { WebGLBackend } from './webgl_backend';
 
@@ -48,8 +48,8 @@ type PassStateTypes = {
 
 interface RegisteredPassRec {
     id: string;
-    exec: (backend: GPUBackend, fbo: unknown, state: unknown) => void;
-    prepare?: (backend: GPUBackend, state: unknown) => void;
+    exec: (backend: AnyBackend, fbo: unknown, state: unknown) => void;
+    prepare?: (backend: AnyBackend, state: unknown) => void;
     pipelineHandle?: RenderPassInstanceHandle | null;
     state?: unknown;
     bindingLayout?: RenderPassDef['bindingLayout'];
@@ -196,7 +196,7 @@ export class RenderPassLibrary {
                 depthWrite: desc.depthWrite ?? !!desc.writesDepth,
             });
         }
-        const rec: RegisteredPassRec = { id: idStr, exec: desc.exec as any, prepare: desc.prepare as any, pipelineHandle, bindingLayout: desc.bindingLayout, present: !!desc.present };
+        const rec: RegisteredPassRec = { id: idStr, exec: desc.exec, prepare: desc.prepare, pipelineHandle, bindingLayout: desc.bindingLayout, present: !!desc.present };
         // One-time bootstrap for GPU resources
         if (desc.bootstrap) {
             if (pipelineHandle && this.backend.setGraphicsPipeline) {

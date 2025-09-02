@@ -124,7 +124,7 @@ export class AbilitySystemComponent extends Component {
 		if (reason) {
 			// Optional UX/debug hook
 			const owner = this.model.getGameObject(this.ownerId) as { id: Identifier } | null;
-			EventEmitter.instance.emit('AbilityFailed', owner ?? { id: this.ownerId } as any, { id, reason });
+			EventEmitter.instance.emit('AbilityFailed', owner ?? { id: this.ownerId }, { id, reason });
 			return false;
 		}
 
@@ -148,7 +148,7 @@ export class AbilitySystemComponent extends Component {
 			asc: { ownerId: this.ownerId, hasTag: (t: TagId) => this.hasGameplayTag(t), tryActivate: (aid: AbilityId) => this.tryActivate(aid) },
 			emit: (name: string, payload?: any) => {
 				const owner = this.model.getGameObject(this.ownerId) as { id: Identifier } | null;
-				EventEmitter.instance.emit(name, owner ?? { id: this.ownerId } as any, payload);
+				EventEmitter.instance.emit(name, owner ?? { id: this.ownerId }, payload);
 			}
 		};
 		const ability = factory();
@@ -159,7 +159,7 @@ export class AbilitySystemComponent extends Component {
 		if (spec.cooldownMs) {
 			this._cooldownUntil.set(id, now + spec.cooldownMs);
 			const owner = this.model.getGameObject(this.ownerId) as { id: Identifier } | null;
-			EventEmitter.instance.emit('AbilityCooldownStart', owner ?? { id: this.ownerId } as any, { id, until: now + spec.cooldownMs });
+			EventEmitter.instance.emit('AbilityCooldownStart', owner ?? { id: this.ownerId }, { id, until: now + spec.cooldownMs });
 		}
 		const key = `${id}#${this._runnerCounter++}`;
 		this._active.set(key, { id, co: ability.activate(ctx) });
@@ -192,7 +192,7 @@ export class AbilitySystemComponent extends Component {
 			if (now >= until) {
 				this._cooldownUntil.delete(aid);
 				const owner = this.model.getGameObject(this.ownerId) as { id: Identifier } | null;
-				EventEmitter.instance.emit('AbilityCooldownEnd', owner ?? { id: this.ownerId } as any, { id: aid });
+				EventEmitter.instance.emit('AbilityCooldownEnd', owner ?? { id: this.ownerId }, { id: aid });
 			}
 		}
 		for (const [key, run] of [...this._active]) {

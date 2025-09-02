@@ -133,7 +133,7 @@ export function validateAudioEventReferences(resources: Resource[]): void {
             const raw = r.buffer.toString('utf8');
             const doc = r.datatype === 'yaml' ? yaml.load(raw) : JSON.parse(raw);
             if (!doc || typeof doc !== 'object') continue;
-            const obj = doc as any;
+            const obj = doc;
             const fileTag = r.filepath ?? r.name;
 
             // Prefer explicit 'events' map

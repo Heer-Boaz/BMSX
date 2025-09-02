@@ -439,7 +439,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		if (anyOf) {
 			for (const k in anyOf) {
 				const list = anyOf[k];
-				if (!Array.isArray(list) || !list.includes(rec[k] as unknown)) { leafOk = false; break; }
+				if (!Array.isArray(list) || !list.includes(rec[k])) { leafOk = false; break; }
 			}
 		}
 		if (!leafOk) return false;

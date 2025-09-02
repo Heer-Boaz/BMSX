@@ -68,7 +68,7 @@ export class PhysicsOverlayRenderer extends Component {
         // Gather all PhysicsDebugComponents
         const debugComponents: PhysicsDebugComponent[] = [];
         // Iterate all spaces for game objects
-        const modelAny: any = $.model as any;
+        const modelAny: any = $.model;
         const spaceMap = modelAny[Symbol.for('id2space')] || modelAny['id2space'] || modelAny['spaceid_2_space'] || modelAny['spaceid_2_space'.toString()];
         if (spaceMap) {
             for (const sid in spaceMap) {

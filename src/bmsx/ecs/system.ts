@@ -82,7 +82,7 @@ export class PreTagSystem extends System {
 	}
 }
 
-// helper type-guards to avoid using `as any`
+// helper type-guards to avoid using ``
 function isBehaviorTreeObject(o: GameObject): o is GameObject & {
 	btreecontexts: Record<string, unknown>;
 	tickTree: (id: string) => void;
@@ -100,7 +100,7 @@ function hasStateController(o: GameObject): o is GameObject & {
 	return r.sc !== undefined && typeof r.sc === 'object' && typeof (r.sc as Record<string, unknown>).tick === 'function';
 }
 
-// Additional guards and helper types to avoid `as any` elsewhere in this file
+// Additional guards and helper types to avoid `` elsewhere in this file
 function isScreenBoundaryComponent(c: unknown): c is ScreenBoundaryComponent & { oldPos?: { x: number; y: number } } {
 	if (!c) return false;
 	if (c instanceof ScreenBoundaryComponent) return true;
@@ -425,9 +425,7 @@ export class PhysicsSyncBeforeStepSystem extends System {
 						if (comp.syncAxis?.y && comp.body.position.y !== (owner.y)) { comp.body.position.y = owner.y; changed = true; }
 						if (comp.syncAxis?.z && comp.body.position.z !== (owner.z)) { comp.body.position.z = owner.z; changed = true; }
 						if (changed) {
-							const ensureFn = (PhysicsWorld as unknown as { ensure?: () => PhysicsWorld }).ensure;
-							const world = ensureFn ? ensureFn() : undefined;
-							world?.markBodyDirty(comp.body);
+							PhysicsWorld.ensure().markBodyDirty(comp.body);
 						}
 					}
 				}
@@ -494,11 +492,11 @@ export class MeshAnimationSystem extends System {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(model: BaseModel): void {
 		const objs = model.objects;
-		const dtSec = (($ as any).deltaTime ?? 16.6667) / 1000;
+		const dtSec = $.deltaTime;
 		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as unknown as MeshObject;
-			if (!o || typeof (o as any).animateStep !== 'function') continue;
-			(o as any).animateStep(dtSec);
+			const o = objs[i] as MeshObject;
+			if (!o || typeof o.animateStep !== 'function') continue;
+			o.animateStep(dtSec);
 		}
 	}
 }

@@ -351,7 +351,7 @@ export function uploadDirectionalLights(): void {
     const lights = Array.from(directionalLights.values());
     const count = Math.min(lights.length, MAX_DIR_LIGHTS);
     // Guard for non-WebGL backends or uninitialized buffers during WebGPU migration
-    const backendAny = getRenderContext().backend as any;
+    const backendAny = getRenderContext().backend;
     if (!dirLightData || !backendAny.updateUniformBuffer || !dirLightBuffer) { lightsDirty = true; return; }
     dirLightData.fill(0);
     dirLightCount[0] = count;
@@ -365,14 +365,14 @@ export function uploadDirectionalLights(): void {
         base = DIR_LIGHT_INTENSITY_OFFSET + i * 4;
         dirLightData[base] = lights[i].intensity;
     }
-    (backendAny as WebGLBackend).updateUniformBuffer(dirLightBuffer as any, dirLightData);
+    (backendAny as WebGLBackend).updateUniformBuffer(dirLightBuffer, dirLightData);
     lightsDirty = true;
 }
 export function uploadPointLights(): void {
     ensureLightBuffersInitialized();
     const lights = Array.from(pointLights.values());
     const count = Math.min(lights.length, MAX_POINT_LIGHTS);
-    const backendAny = getRenderContext().backend as any;
+    const backendAny = getRenderContext().backend;
     if (!pointLightData || !backendAny.updateUniformBuffer || !pointLightBuffer) { lightsDirty = true; return; }
     pointLightData.fill(0);
     pointLightCount[0] = count;
@@ -387,7 +387,7 @@ export function uploadPointLights(): void {
         pointLightData[base] = lights[i].range!;
         pointLightData[base + 1] = lights[i].intensity;
     }
-    (backendAny as WebGLBackend).updateUniformBuffer(pointLightBuffer as any, pointLightData);
+    (backendAny as WebGLBackend).updateUniformBuffer(pointLightBuffer, pointLightData);
     lightsDirty = true;
 }
 export function addDirectionalLight(id: Identifier, light: DirectionalLight): void { directionalLights.set(id, { type: 'directional', color: light.color, intensity: light.intensity, orientation: light.orientation }); uploadDirectionalLights(); }
@@ -737,8 +737,8 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
         const __b = getRenderContext().backend as WebGLBackend; __b.bindVertexArray(vao);
         checkWebGLError('mesh.instanced: after bindVertexArray');
         // Partition by transform reflection to maintain correct front-face under culling
-        const cw: typeof instances = [] as any; // mirrored → CW
-        const ccw: typeof instances = [] as any; // normal → CCW
+        const cw: typeof instances = []; // mirrored → CW
+        const ccw: typeof instances = []; // normal → CCW
         for (const inst of instances) {
             (isMatrixMirrored(inst.matrix) ? cw : ccw).push(inst);
         }
@@ -767,7 +767,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
                 gl.bufferSubData(gl.ARRAY_BUFFER, 0, u8slice);
                 try { (getRenderContext().backend as WebGLBackend).accountUpload('vertex', u8slice.byteLength); } catch { /* ignore */ }
                 checkWebGLError('mesh.instanced: after bufferSubData');
-                const _b = getRenderContext().backend as WebGLBackend; const _pass = { fbo: null, desc: { label: 'meshbatch' } } as any;
+                const _b = getRenderContext().backend as WebGLBackend; const _pass = { fbo: null, desc: { label: 'meshbatch' } };
                 if (indexed) _b.drawIndexedInstanced(_pass, indexCount, batchCount, 0, 0, 0, indexType);
                 else _b.drawInstanced(_pass, m.vertexCount, batchCount, 0, 0);
             }
@@ -831,13 +831,13 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions
         gl.uniformMatrix4fv(modelLocation3D, false, matrix);
         const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
         const __b2 = getRenderContext().backend as WebGLBackend; __b2.bindVertexArray(vao);
-        const _b2 = getRenderContext().backend as WebGLBackend; const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } } as any;
+        const _b2 = getRenderContext().backend as WebGLBackend; const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } };
         // EBO is captured in VAO; avoid redundant bind per draw
         checkWebGLError('mesh.single: before draw');
         // Handle mirrored transforms by flipping front face for this draw
         const mirrored = isMatrixMirrored(matrix);
         if (mirrored) gl.frontFace(gl.CW);
-        if (buffers.index) _b2.drawIndexed(_p2 as any, buffers.indexCount ?? m.indices!.length, 0, buffers.indexType); else _b2.draw(_p2 as any, 0, m.vertexCount);
+        if (buffers.index) _b2.drawIndexed(_p2, buffers.indexCount ?? m.indices!.length, 0, buffers.indexType); else _b2.draw(_p2, 0, m.vertexCount);
         if (mirrored) gl.frontFace(gl.CCW);
         checkWebGLError('mesh.single: after draw');
         __b2.bindVertexArray(null);

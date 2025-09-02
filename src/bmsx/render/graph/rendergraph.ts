@@ -504,7 +504,7 @@ export class RenderGraphRuntime {
                 };
             }
             const t0 = performance.now();
-            pass.execute(ctx, frame, data as unknown);
+            pass.execute(ctx, frame, data);
             const dt = performance.now() - t0;
             this.passStats.push({ name: pass.name, ms: dt });
             if (rp) rp.end();
