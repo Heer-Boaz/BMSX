@@ -44,58 +44,58 @@ export class sint extends SpriteObject {
      */
     static bouw(): StateMachineBlueprint {
         return {
-            states: {
+            substates: {
                 _start: {
-                    on: {
+                    event_handlers: {
                         vraag: 'vraag',
                         antwoord: 'antwoord',
                         klaar: 'klaar',
                         weg: 'weg',
                     },
-                    enter(this: sint) {
+                    entering_state(this: sint) {
                         this.setimg('quiz');
                     },
                 },
                 weg: {
-                    on: {
+                    event_handlers: {
                         vraag: 'vraag',
                         antwoord: 'antwoord',
                         klaar: 'klaar',
                     },
-                    enter(this: sint) {
+                    entering_state(this: sint) {
                         this.visible = false;
                     },
-                    exit(this: sint) {
+                    exiting_state(this: sint) {
                         this.visible = true;
                     },
                 },
                 vraag: {
-                    on: {
+                    event_handlers: {
                         antwoord: 'antwoord',
                         klaar: 'klaar',
                         weg: 'weg',
                     },
-                    enter(this: sint) {
+                    entering_state(this: sint) {
                         this.setimg('hmm');
                     },
                 },
                 antwoord: {
-                    on: {
+                    event_handlers: {
                         vraag: 'vraag',
                         klaar: 'klaar',
                         weg: 'weg',
                     },
-                    enter(this: sint) {
+                    entering_state(this: sint) {
                         this.setimg('goed');
                     },
                 },
                 klaar: {
-                    on: {
+                    event_handlers: {
                         antwoord: 'antwoord',
                         vraag: 'vraag',
                         weg: 'weg',
                     },
-                    enter(this: sint) {
+                    entering_state(this: sint) {
                         this.setimg('klaar');
                     },
                 },

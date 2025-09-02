@@ -256,7 +256,7 @@ export class quiz extends GameObject {
      */
     switchSintToQuestion(this: quiz) {
         const sint = $.getGameObject('sint');
-        sint.sc.do('vraag', sint);
+        sint.sc.dispatch_event('vraag', sint);
     }
 
     /**
@@ -266,7 +266,7 @@ export class quiz extends GameObject {
      */
     switchSintToAnswer(this: quiz) {
         const sint = $.getGameObject('sint');
-        sint.sc.do('antwoord', sint);
+        sint.sc.dispatch_event('antwoord', sint);
     }
 
     /**
@@ -276,7 +276,7 @@ export class quiz extends GameObject {
      */
     switchSintToKlaar(this: quiz) {
         const sint = $.getGameObject('sint');
-        sint.sc.do('klaar', sint);
+        sint.sc.dispatch_event('klaar', sint);
     }
 
     @build_fsm()
@@ -300,16 +300,16 @@ export class quiz extends GameObject {
         }
 
         return {
-            states: {
+            substates: {
                 _start: {
-                    enter(this: quiz) {
+                    entering_state(this: quiz) {
                         this.maximum_characters_per_line = maximum_characters_per_line_question;
                         this.setTextFromLines(['Beste Eli,', 'Welkom bij deze quiz,', 'Een speelse uitdaging,dat is wat dit is.', 'Met vragen over films,sport en spel,', 'Ben je klaar?', 'Dan beginnen we snel!']);
                     },
-                    run(this: quiz, _state: State) {
+                    tick(this: quiz, _state: State) {
                         this.typeNextCharacter();
                     },
-                    on_input: {
+                    input_event_handlers: {
                         '?(a[j!c], b[j!c])': {
                             do() { $.consumeActions(1, 'a', 'b') },
                             to: 'vraag'
@@ -319,12 +319,12 @@ export class quiz extends GameObject {
                 },
 
                 vraag: {
-                    tape: Array.from({ length: quizItems.length }, (_, i) => i),
-                    auto_reset: 'none',
-                    enter(this: quiz, state: State, args: string) {
+                    tape_data: Array.from({ length: quizItems.length }, (_, i) => i),
+                    automatic_reset_mode: 'none',
+                    entering_state(this: quiz, state: State, args: string) {
                         if (args === 'prev') {
-                            state.setHeadNoSideEffect(state.head - 2);
-                            if (state.head < 0) {
+                            state.setHeadNoSideEffect(state.tapehead_position - 2);
+                            if (state.tapehead_position < 0) {
                                 state.rewind_tape();
                             }
                         }
@@ -344,16 +344,16 @@ export class quiz extends GameObject {
                             ...currentQ.options
                         ]);
                     },
-                    run(this: quiz, _state: State) {
+                    tick(this: quiz, _state: State) {
                         this.typeNextCharacter();
                     },
-                    next(this: quiz, state: State) {
+                    tape_next(this: quiz, state: State) {
                         this.currentQuestionIndex = state.current_tape_value;
                     },
-                    end(this: quiz) {
+                    tape_end(this: quiz) {
                         return 'end';
                     },
-                    on_input: {
+                    input_event_handlers: {
                         'a[j!c]': {
                             do(this: quiz) {
                                 $.consumeAction(1, 'a');
@@ -384,7 +384,7 @@ export class quiz extends GameObject {
                 },
 
                 antwoord: {
-                    enter(this: quiz, _state: State, gekozen_antwoord: string) {
+                    entering_state(this: quiz, _state: State, gekozen_antwoord: string) {
                         this.switchSintToAnswer();
                         const currentQ = quizItems[this.currentQuestionIndex];
                         if (gekozen_antwoord === 'a') {
@@ -393,10 +393,10 @@ export class quiz extends GameObject {
                             this.setTextFromLines([currentQ.reactionB]);
                         }
                     },
-                    run(this: quiz, _state: State) {
+                    tick(this: quiz, _state: State) {
                         this.typeNextCharacter();
                     },
-                    on_input: {
+                    input_event_handlers: {
                         '?(a[j!c], b[j!c])': {
                             do(this: quiz) {
                                 $.consumeActions(1, 'a', 'b');
@@ -411,10 +411,10 @@ export class quiz extends GameObject {
                 },
 
                 end: {
-                    guards: {
-                        canExit(this: quiz) { return false; }
+                    transition_guards: {
+                        can_exit(this: quiz) { return false; }
                     },
-                    enter(this: quiz) {
+                    entering_state(this: quiz) {
                         // this.maximum_characters_per_line = maximum_characters_per_line_end;
                         this.switchSintToKlaar();
                         this.setTextFromLines([
@@ -427,7 +427,7 @@ export class quiz extends GameObject {
                             'Het was weer een grote eer,\nen zien je graag terug,een volgende keer!'
                         ]);
                     },
-                    run(this: quiz, _state: State) {
+                    tick(this: quiz, _state: State) {
                         this.typeNextCharacter();
                     }
                 }

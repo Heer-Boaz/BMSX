@@ -17,45 +17,45 @@ class SelectedPlayerIndexIcon extends SpriteObject {
     @build_fsm()
     static bouw(): StateMachineBlueprint {
         return {
-            on: {
+            event_handlers: {
                 $animation_end: {
                     do(this: SelectedPlayerIndexIcon) {
                         this.markForDisposal();
                     }
                 },
             },
-            states: {
+            substates: {
                 _default: {
-                    on: {
+                    event_handlers: {
                         controller_assigned: 'assigned',
                         controller_assigmment_cancelled: 'cancelled',
                     },
                 },
                 assigned: {
-                    tape: [true, false],
+                    tape_data: [true, false],
                     repetitions: 5,
                     auto_rewind_tape_after_end: false,
-                    ticks2move: 4,
-                    next(this: SelectedPlayerIndexIcon, state: State) {
+                    ticks2advance_tape: 4,
+                    tape_next(this: SelectedPlayerIndexIcon, state: State) {
                         this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
                     },
-                    end(this: SelectedPlayerIndexIcon) {
-                        this.sc.do('animation_end', this);
+                    tape_end(this: SelectedPlayerIndexIcon) {
+                        this.sc.dispatch_event('animation_end', this);
                     },
                 },
                 cancelled: {
-                    tape: [2],
+                    tape_data: [2],
                     repetitions: 16,
                     auto_rewind_tape_after_end: false,
-                    ticks2move: 1,
-                    enter(this: SelectedPlayerIndexIcon) {
+                    ticks2advance_tape: 1,
+                    entering_state(this: SelectedPlayerIndexIcon) {
                         this.colorize = { r: 1, g: 0, b: 0, a: .75 };
                     },
-                    next(this: SelectedPlayerIndexIcon, state: State) {
+                    tape_next(this: SelectedPlayerIndexIcon, state: State) {
                         this.y -= state.current_tape_value;
                     },
-                    end(this: SelectedPlayerIndexIcon) {
-                        this.sc.do('animation_end', this);
+                    tape_end(this: SelectedPlayerIndexIcon) {
+                        this.sc.dispatch_event('animation_end', this);
                     },
                 },
             },

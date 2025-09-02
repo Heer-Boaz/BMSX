@@ -1,4 +1,4 @@
-import { $, Direction, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
+import { $, Direction, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
 import { Fighter } from './fighter';
 import { gamemodel } from './gamemodel';
 import { Action } from './inputmapping';
@@ -90,7 +90,7 @@ export class Eila extends Fighter {
 		}
 
 		function attack(this: Fighter, attackType: string, ducking: boolean = false) {
-			this.sc.do(`animate_${attackType}`, this);
+			this.sc.dispatch_event(`animate_${attackType}`, this);
 			this.doAttackFlow(attackType, $.modelAs<gamemodel>().theOtherFighter(this));
 			this.attacking = true;
 			this.currentAttackType = attackType;
@@ -101,27 +101,27 @@ export class Eila extends Fighter {
 
 		const attacks = {
 			punch: {
-				enter: function (this: Fighter) { attack.call(this, 'punch'); },
-				exit: attackExit,
+				entering_state: function (this: Fighter) { attack.call(this, 'punch'); },
+				exiting_state: attackExit,
 			},
 			highkick: {
-				enter: function (this: Fighter) { attack.call(this, 'highkick'); },
-				exit: attackExit,
+				entering_state: function (this: Fighter) { attack.call(this, 'highkick'); },
+				exiting_state: attackExit,
 			},
 			lowkick: {
-				enter: function (this: Fighter) { attack.call(this, 'lowkick'); },
-				exit: attackExit,
+				entering_state: function (this: Fighter) { attack.call(this, 'lowkick'); },
+				exiting_state: attackExit,
 			},
 			duckkick: {
-				enter: function (this: Fighter) {
+				entering_state: function (this: Fighter) {
 					attack.call(this, 'duckkick', true);
 				},
-				exit(this: Fighter) {
+				exiting_state(this: Fighter) {
 					attackExit.apply(this);
 					this.ducking = false;
 				},
 			},
-		};
+		} as id2partial_sdef;
 
 		function duck_input_processor(this: Fighter): StateTransition | string | void {
 			if (this.isAIed) return; // AIed fighters don't process input
@@ -135,11 +135,11 @@ export class Eila extends Fighter {
 
 			if (priorityActions.includes('lowkick')) {
 				$.consumeAction(this.player_index, 'lowkick');
-				this.sc.do('go_duckkick', this);
+				this.sc.dispatch_event('go_duckkick', this);
 				return;
 			}
 			else if (!priorityActions.includes('duck')) {
-				this.sc.do('go_idle', this);
+				this.sc.dispatch_event('go_idle', this);
 				return;
 			}
 			else if (priorityActions.includes('left')) {
@@ -160,9 +160,9 @@ export class Eila extends Fighter {
 
 		const statemachine = animation_machine_name;
 		return {
-			on: {
+			event_handlers: {
 				$go_idle: {
-					if(this: Fighter, state: State) { return !state.is('stoerheidsdans') && !state.is('nagenieten') && !state.is('humiliated'); },
+					if(this: Fighter, state: State) { return !state.matches_state_path('stoerheidsdans') && !state.matches_state_path('nagenieten') && !state.matches_state_path('humiliated'); },
 					switch: '#this.idle',
 				},
 				$go_walk: '#this.walk',
@@ -175,84 +175,84 @@ export class Eila extends Fighter {
 				$go_stoerheidsdans: '#this.stoerheidsdans',
 				$go_humiliated: '#this.humiliated',
 			},
-			states: {
+			substates: {
 				_idle: {
 					process_input: default_input_processor,
-					enter(this: Fighter) {
-						this.sc.do('animate_idle', this);
+					entering_state(this: Fighter) {
+						this.sc.dispatch_event('animate_idle', this);
 						this.attacking = false;
 						this.attacked_while_jumping = false;
 					},
 				},
 				humiliated: {
-					enter(this: Fighter) {
+					entering_state(this: Fighter) {
 						this.hittable = false;
 						this.fighting = false;
 						this.resetVerticalPosition();
-						this.sc.do('animate_humiliated', this);
+						this.sc.dispatch_event('animate_humiliated', this);
 					},
-					exit(this: Fighter) {
+					exiting_state(this: Fighter) {
 						this.hittable = true;
 						this.fighting = true;
 					},
 				},
 				stoerheidsdans: {
-					auto_tick: false,
-					ticks2move: 1,
-					tape: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
+					enable_tape_autotick: false,
+					ticks2advance_tape: 1,
+					tape_data: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
 					repetitions: 2,
 					auto_rewind_tape_after_end: false,
-					on: {
+					event_handlers: {
 						$animationEnd: {
 							do(state: State) {
 								++state.ticks;
 							},
 						},
 					},
-					enter(this: Fighter, state: State) {
+					entering_state(this: Fighter, state: State) {
 						this.fighting = false;
 						// Used to reset the animation to idle when the fighter is about to start the 'stoerheidsdans' (e.g. when the fighter was just jumping and the animation needs to be reset to make sure the stoerheidsdans actually starts).
-						this.sc.do('animate_idle', this);
+						this.sc.dispatch_event('animate_idle', this);
 						this.resetVerticalPosition();
 						++state.ticks; // Perform the first attack immediately so that the 'animationEnd' event is fired after the first attack to make sure the next attack is performed via the 'animationEnd' event handler.
 					},
-					next(this: Fighter, state: State, tape_rewound: boolean) {
+					tape_next(this: Fighter, state: State, tape_rewound: boolean) {
 						if (tape_rewound) return;
 						this.facing = (this.facing === 'left' ? 'right' : 'left');
-						this.sc.do(`animate_${state.current_tape_value}`, this);
+						this.sc.dispatch_event(`animate_${state.current_tape_value}`, this);
 					},
-					end(this: Fighter) {
+					tape_end(this: Fighter) {
 						this.facing = (this.facing === 'left' ? 'right' : 'left');
 						return 'nagenieten';
 					},
 				},
 				nagenieten: {
-					enter(this: Fighter) {
-						this.sc.do('animate_idle', this);
+					entering_state(this: Fighter) {
+						this.sc.dispatch_event('animate_idle', this);
 						this.fighting = false;
 					},
 				},
 				au: {
-					enter(this: Fighter) {
+					entering_state(this: Fighter) {
 						this.sc.pause_statemachine(statemachine);
 					},
-					exit(this: Fighter) {
+					exiting_state(this: Fighter) {
 						this.sc.resume_statemachine(statemachine);
 					}
 				},
 				doetau: {
-					enter(this: Fighter) {
+					entering_state(this: Fighter) {
 						this.sc.pause_statemachine(statemachine);
 					},
-					exit(this: Fighter) {
+					exiting_state(this: Fighter) {
 						this.sc.resume_statemachine(statemachine);
 					}
 				},
 				walk: {
 					process_input: default_input_processor,
-					enter(this: Fighter) {
-						if (!this.sc.is(statemachine + '.walk')) {
-							this.sc.do('animate_walk', this);
+					entering_state(this: Fighter) {
+						if (!this.sc.matches_state_path(statemachine + '.walk')) {
+							this.sc.dispatch_event('animate_walk', this);
 						}
 						this.attacking = false;
 					},
@@ -260,24 +260,24 @@ export class Eila extends Fighter {
 				...attacks,
 				duck: {
 					process_input: duck_input_processor,
-					enter(this: Fighter) {
-						this.sc.do('animate_duck', this);
+					entering_state(this: Fighter) {
+						this.sc.dispatch_event('animate_duck', this);
 						this.ducking = true;
 					},
-					exit(this: Fighter) {
+					exiting_state(this: Fighter) {
 						this.ducking = false;
 					},
 				},
 				jump: {
-					auto_reset: 'tree',
-					enter(this: Fighter, _state: State, directional: boolean = false): StateTransition {
-						this.sc.do('animate_jump', this);
+					automatic_reset_mode: 'tree',
+					entering_state(this: Fighter, _state: State, directional: boolean = false): StateTransition {
+						this.sc.dispatch_event('animate_jump', this);
 						this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
 						this.jumping = true;
 						this.attacked_while_jumping = false;
 						return { state_id: '#this.jump_up', args: directional };
 					},
-					exit(this: Fighter) {
+					exiting_state(this: Fighter) {
 						this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
 						this.jumping = false;
 					},
@@ -287,16 +287,16 @@ export class Eila extends Fighter {
 						if (kickActions.length > 0) {
 							// Consume all kick actions
 							kickActions.forEach(action => $.consumeAction(this.player_index, action));
-							this.sc.do('go_flyingkick', this.id);
+							this.sc.dispatch_event('go_flyingkick', this.id);
 						}
 					},
-					states: {
+					substates: {
 						_jump_up: {
-							ticks2move: Fighter.JUMP_DURATION / 2,
-							enter(this: Fighter, state: State, directional: boolean = false) {
+							ticks2advance_tape: Fighter.JUMP_DURATION / 2,
+							entering_state(this: Fighter, state: State, directional: boolean = false) {
 								state.data.directional = directional;
 							},
-							run(this: Fighter, state: State) {
+							tick(this: Fighter, state: State) {
 								this.y -= Fighter.JUMP_SPEED;
 								if (state.data.directional) {
 									if (this.facing === 'left') {
@@ -306,16 +306,16 @@ export class Eila extends Fighter {
 									}
 								}
 							},
-							next(state: State) {
+							tape_next(state: State) {
 								return { state_id: 'jump_down', args: state.data.directional };
 							},
 						},
 						jump_down: {
-							ticks2move: Fighter.JUMP_DURATION / 2,
-							enter(this: Fighter, state: State, directional: boolean = false) {
+							ticks2advance_tape: Fighter.JUMP_DURATION / 2,
+							entering_state(this: Fighter, state: State, directional: boolean = false) {
 								state.data.directional = directional;
 							},
-							run(this: Fighter, state: State) {
+							tick(this: Fighter, state: State) {
 								this.y += Fighter.JUMP_SPEED;
 
 								if (state.data.directional) {
@@ -326,15 +326,15 @@ export class Eila extends Fighter {
 									}
 								}
 							},
-							next(this: Fighter, _state: State) {
+							tape_next(this: Fighter, _state: State) {
 								return '#root.idle';
 							},
 						},
 						flyingkick: {
-							parallel: true,
-							states: {
+							is_concurrent: true,
+							substates: {
 								_normal: {
-									on: {
+									event_handlers: {
 										$go_flyingkick: {
 											if(this: Fighter) { return !this.attacked_while_jumping; },
 											to: 'flyingkick',
@@ -342,17 +342,17 @@ export class Eila extends Fighter {
 									},
 								},
 								flyingkick: {
-									on: {
+									event_handlers: {
 										flyingkick_end: 'normal',
 									},
-									enter(this: Fighter, _state: State) {
-										this.sc.do('animate_flyingkick', this);
+									entering_state(this: Fighter, _state: State) {
+										this.sc.dispatch_event('animate_flyingkick', this);
 										this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
 										this.attacking = true;
 										this.attacked_while_jumping = true;
 									},
-									exit(this: Fighter) {
-										this.sc.do('animate_jump', this);
+									exiting_state(this: Fighter) {
+										this.sc.dispatch_event('animate_jump', this);
 										attackExit.call(this);
 									},
 								},
@@ -372,14 +372,14 @@ export class Eila extends Fighter {
 					case 'highkick':
 					case 'punch':
 					case 'lowkick':
-						this.sc.do('go_idle', this);
+						this.sc.dispatch_event('go_idle', this);
 						break;
 					case 'flyingkick':
-						this.sc.do('flyingkick_end', this.id);
+						this.sc.dispatch_event('flyingkick_end', this.id);
 						break;
 					case 'duckkick':
-						if (!this.sc.is('stoerheidsdans')) {
-							this.sc.do('go_duck', this);
+						if (!this.sc.matches_state_path('stoerheidsdans')) {
+							this.sc.dispatch_event('go_duck', this);
 						}
 						break;
 				}
@@ -390,19 +390,19 @@ export class Eila extends Fighter {
 	@build_fsm('player_animation')
 	public static buildAnimationFsm(): StateMachineBlueprint {
 		return {
-			parallel: true,
-			on: {
+			is_concurrent: true,
+			event_handlers: {
 				$i_was_hit: {
 					do(state: State) {
 						// This is needed to quickly end the animation of the attack action.
 						// Must be done after the state machine is resumed, otherwise the event will not be handled.
 						// It will allow the player to recuperate first, before the next attack can be done by the opponent.
-						state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
+						state.current.setTicksNoSideEffect(state.current.definition.ticks2advance_tape - 1);
 					}
 				},
 				$i_hit_face: {
 					do(state: State) {
-						state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
+						state.current.setTicksNoSideEffect(state.current.definition.ticks2advance_tape - 1);
 					}
 				},
 				$animate_idle: '#this.idle',
@@ -416,101 +416,101 @@ export class Eila extends Fighter {
 				$animate_duck: '#this.duck',
 				$animate_jump: '#this.jump',
 			},
-			states: {
+			substates: {
 				_idle: {
-					enter(this: Eila) {
+					entering_state(this: Eila) {
 						this.imgid = BitmapId.eila_idle;
 					},
 				},
 				walk: {
-					auto_reset: 'subtree', // Reset to the first state of the subtree when the state is entered and reset the states in the subtree
-					enter(this: Eila) {
+					automatic_reset_mode: 'subtree', // Reset to the first state of the subtree when the state is entered and reset the states in the subtree
+					entering_state(this: Eila) {
 						this.imgid = BitmapId.eila_walk;
 					},
-					states: {
+					substates: {
 						_walk1: {
-							ticks2move: 8,
-							enter(this: Eila) {
+							ticks2advance_tape: 8,
+							entering_state(this: Eila) {
 								this.imgid = BitmapId.eila_walk;
 							},
-							next: () => 'walk2',
+							tape_next: () => 'walk2',
 						},
 						walk2: {
-							ticks2move: 8,
-							enter(this: Eila) {
+							ticks2advance_tape: 8,
+							entering_state(this: Eila) {
 								this.imgid = BitmapId.eila_idle;
 							},
-							next: () => 'walk1',
+							tape_next: () => 'walk1',
 						},
 					}
 				},
 				highkick: {
-					ticks2move: Eila.ATTACK_DURATION,
-					enter(this: Eila, state: State, hit: boolean) {
+					ticks2advance_tape: Eila.ATTACK_DURATION,
+					entering_state(this: Eila, state: State, hit: boolean) {
 						this.imgid = BitmapId.eila_highkick;
 						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
-					next(this: Fighter, _state: State) {
+					tape_next(this: Fighter, _state: State) {
 						$.emit('animationEnd', this, { animation_name: 'highkick' });
 					},
 				},
 				lowkick: {
-					ticks2move: Eila.ATTACK_DURATION,
-					enter(this: Eila, state: State, hit: boolean) {
+					ticks2advance_tape: Eila.ATTACK_DURATION,
+					entering_state(this: Eila, state: State, hit: boolean) {
 						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
 						this.imgid = BitmapId.eila_lowkick;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
-					next(this: Fighter, _state: State) {
+					tape_next(this: Fighter, _state: State) {
 						$.emit('animationEnd', this, { animation_name: 'lowkick' });
 					},
 				},
 				punch: {
-					ticks2move: Eila.ATTACK_DURATION,
-					enter(this: Eila, state: State, hit: boolean) {
+					ticks2advance_tape: Eila.ATTACK_DURATION,
+					entering_state(this: Eila, state: State, hit: boolean) {
 						$.emit('combat.attack', this, { weaponClass: 'light', actorId: this.id });
 						this.imgid = BitmapId.eila_punch;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
-					next(this: Fighter, _state: State) {
+					tape_next(this: Fighter, _state: State) {
 						$.emit('animationEnd', this, { animation_name: 'punch' });
 					}
 				},
 				duckkick: {
-					ticks2move: Eila.ATTACK_DURATION,
-					enter(this: Eila) {
+					ticks2advance_tape: Eila.ATTACK_DURATION,
+					entering_state(this: Eila) {
 						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
 						this.imgid = BitmapId.eila_duckkick;
 					},
-					next(this: Fighter, _state: State) {
+					tape_next(this: Fighter, _state: State) {
 						$.emit('animationEnd', this, { animation_name: 'duckkick' });
 					}
 				},
 				flyingkick: {
-					ticks2move: Eila.ATTACK_DURATION,
-					enter(this: Eila, state: State, hit: boolean) {
+					ticks2advance_tape: Eila.ATTACK_DURATION,
+					entering_state(this: Eila, state: State, hit: boolean) {
 						$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
 						this.imgid = BitmapId.eila_flyingkick;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
-					next(this: Fighter, _state: State) {
+					tape_next(this: Fighter, _state: State) {
 						$.emit('animationEnd', this, { animation_name: 'flyingkick' });
 					}
 				},
 				duck: {
-					enter(this: Eila) { this.imgid = BitmapId.eila_duck; },
+					entering_state(this: Eila) { this.imgid = BitmapId.eila_duck; },
 				},
 				jump: {
-					enter(this: Eila) { this.imgid = BitmapId.eila_jump; },
+					entering_state(this: Eila) { this.imgid = BitmapId.eila_jump; },
 				},
 				humiliated: {
-					ticks2move: 300,
-					enter(this: Eila) {
+					ticks2advance_tape: 300,
+					entering_state(this: Eila) {
 						$.playAudio(AudioId.stuk, $.rom.data['modulationparams'].attacksfx as RandomModulationParams);
 						this.imgid = BitmapId.eila_humiliated;
 					},
-					next(this: Eila) {
+					tape_next(this: Eila) {
 						$.emit('humiliated_animation_end', this, { character: 'eila' });
 					}
 				},

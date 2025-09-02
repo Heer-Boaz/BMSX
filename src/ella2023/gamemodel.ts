@@ -31,7 +31,7 @@ export class gamemodel extends BaseModel {
 		const otherFighter = model.theOtherFighter(emitter);
 		if (otherFighter) {
 			otherFighter.hideHitMarker();
-			otherFighter.sc.to('hitanimation.geen_au');
+			otherFighter.sc.transition_to('hitanimation.geen_au');
 		}
 
 		if (emitter.hp <= 0) {
@@ -39,9 +39,9 @@ export class gamemodel extends BaseModel {
 			$.stopMusic();
 
 			// Handle that fighter is down
-			emitter.sc.do('go_humiliated', emitter);
+			emitter.sc.dispatch_event('go_humiliated', emitter);
 			if (otherFighter) {
-				otherFighter.sc.do('go_stoerheidsdans', otherFighter);
+				otherFighter.sc.dispatch_event('go_stoerheidsdans', otherFighter);
 			}
 		}
 	}
@@ -56,18 +56,18 @@ export class gamemodel extends BaseModel {
 		const hp_sinterklaas = sinterklaas?.hp ?? 0;
 
 		if (hp_player > 0 && hp_sinterklaas > 0) {
-			sinterklaas.sc.do('go_idle', sinterklaas);
-			player.sc.do('go_idle', player);
+			sinterklaas.sc.dispatch_event('go_idle', sinterklaas);
+			player.sc.dispatch_event('go_idle', player);
 			return;
 		}
 
 		// If one of the fighters is down, go to gameover or hoera.
 		switch (character) { // who is the fighter that is down
 			case 'eila':
-				this.sc.to('gameover'); // Game over for Eila
+				this.sc.transition_to('gameover'); // Game over for Eila
 				break;
 			case 'sinterklaas':
-				this.sc.to('hoera'); // Hoera for Eila (Sinterklaas is down)
+				this.sc.transition_to('hoera'); // Hoera for Eila (Sinterklaas is down)
 				break;
 		}
 	}
@@ -75,28 +75,28 @@ export class gamemodel extends BaseModel {
 	@build_fsm()
 	public static bouw(): StateMachineBlueprint {
 		return {
-			states: {
+			substates: {
 				_game_start: {
-					run(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+					tick(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
 						return 'titlescreen';
 					}
 				},
 				game: {
-					enter(this: gamemodel, _state: State, numOfPlayers: number) {
+					entering_state(this: gamemodel, _state: State, numOfPlayers: number) {
 						this.numOfPlayers = numOfPlayers;
 						return '#this.ffwachten';
 					},
-					states: {
+					substates: {
 						_ffwachten: {
-							ticks2move: 150,
-							enter(this: gamemodel) {
+							ticks2advance_tape: 150,
+							entering_state(this: gamemodel) {
 								$.playAudio(AudioId.start);
 								$.event_emitter.emit('its_curtains', this);
 							},
-							end: () => 'oefenen',
+							tape_end: () => 'oefenen',
 						},
 						oefenen: {
-							enter(this: gamemodel) {
+							entering_state(this: gamemodel) {
 								this.setSpace('default');
 								this.clear(); // Clear all game objects in the current space
 								this.room_mgr.loadRoom('room1');
@@ -105,7 +105,7 @@ export class gamemodel extends BaseModel {
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
 								$.playAudio(AudioId.trainen);
 							},
-							run(this: gamemodel): string | void {
+							tick(this: gamemodel): string | void {
 								const player = this.getGameObject<Fighter>('player');
 								if (player.x < 16) {
 									return 'ffwachten2';
@@ -113,14 +113,14 @@ export class gamemodel extends BaseModel {
 							},
 						},
 						ffwachten2: {
-							ticks2move: 50,
-							enter(this: gamemodel) {
+							ticks2advance_tape: 50,
+							entering_state(this: gamemodel) {
 								this.setSpace('niets');
 							},
-							end: () => 'knokken',
+							tape_end: () => 'knokken',
 						},
 						knokken: {
-							enter(this: gamemodel) {
+							entering_state(this: gamemodel) {
 								this.setSpace('default');
 								this.clear(); // Clear all game objects in the current space
 								this.room_mgr.loadRoom('room2');
@@ -132,42 +132,42 @@ export class gamemodel extends BaseModel {
 							},
 						},
 					},
-					run: BaseModel.defaultrun,
+					tick: BaseModel.defaultrun,
 				},
 				gameover: {
-					enter(this: gamemodel) {
+					entering_state(this: gamemodel) {
 						this.setSpace('gameover');
 						if (!this.getGameObject('gameover')) {
 							this.spawn(new GameOver(), new_vec3(0, 0, 0));
 						}
 						$.playAudio(AudioId.gameover);
 					},
-					run: BaseModel.defaultrun,
+					tick: BaseModel.defaultrun,
 				},
 				hoera: {
-					enter(this: gamemodel) {
+					entering_state(this: gamemodel) {
 						this.setSpace('hoera');
 						if (!this.getGameObject('hoera')) {
 							this.spawn(new Hoera(), new_vec3(0, 0, 0));
 						}
 						$.playAudio(AudioId.gameover);
 					},
-					run: BaseModel.defaultrun,
+					tick: BaseModel.defaultrun,
 				},
 				titlescreen: {
-					enter(this: gamemodel) {
+					entering_state(this: gamemodel) {
 						this.setSpace('titlescreen');
 						if (!this.getGameObject('title')) {
 							this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
 						}
-						this.getFromCurrentSpace('title').sc.do('reset', this);
+						this.getFromCurrentSpace('title').sc.dispatch_event('reset', this);
 						if (!this.getGameObject('gordijn')) {
 							this.spawn(new Gordijn(), new_vec3(0, 0, 100));
 						}
-						this.getFromCurrentSpace('gordijn').sc.do('reset', this);
+						this.getFromCurrentSpace('gordijn').sc.dispatch_event('reset', this);
 					},
-					run: BaseModel.defaultrun,
-					on: {
+					tick: BaseModel.defaultrun,
+					event_handlers: {
 						gamestart_selected: 'game',
 					},
 				},

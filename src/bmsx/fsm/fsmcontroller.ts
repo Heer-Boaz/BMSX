@@ -64,7 +64,7 @@ export class StateMachineController {
 	 * Gets the states of the current machine.
 	 * @returns The states of the current machine.
 	 */
-	get states(): id2sstate { return this.current_machine.states; }
+	get states(): id2sstate { return this.current_machine.substates; }
 
 	/**
 	 * Gets the state definition of the current machine.
@@ -137,15 +137,15 @@ export class StateMachineController {
 	 * Runs the current state of the current state machine.
 	 * Also runs all state machines that have 'parallel' set to true.
 	 */
-	run(): void {
+	tick(): void {
 		// Runs the current state of the current state machine
-		this.current_machine.run();
+		this.current_machine.tick();
 
 		// Run all state machines that have 'parallel' set to true
 		for (let id in this.statemachines) {
 			// Skip the current machine, as it has already been run
 			if (id === this.current_machine_id) continue;
-			if (this.statemachines[id].parallel) this.statemachines[id].run();
+			if (this.statemachines[id].is_concurrent) this.statemachines[id].tick();
 		}
 	}
 
@@ -158,7 +158,7 @@ export class StateMachineController {
 	 * @param newstate The new state to switch to, in the format 'statemachine.state.substate'.
 	 * @param args Optional arguments to pass to the new state.
 	 */
-	to(newstate: Identifier, ...args: any[]): void {
+	transition_to(newstate: Identifier, ...args: any[]): void {
 		const dotIndex = newstate.indexOf('.');
 		let machineid = dotIndex !== -1 ? newstate.slice(0, dotIndex) : newstate;
 		let stateids = dotIndex !== -1 ? newstate.slice(dotIndex + 1) : undefined;
@@ -171,10 +171,10 @@ export class StateMachineController {
 
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID '${machineid}'`);
-		if (!machine.parallel) { // If the machine is not running in parallel, set it as the current machine
+		if (!machine.is_concurrent) { // If the machine is not running in parallel, set it as the current machine
 			this.current_machine_id = machineid;
 		}
-		machine.to_path(stateids, ...args);
+		machine.transition_to_path(stateids, ...args);
 	}
 
 	/**
@@ -185,7 +185,7 @@ export class StateMachineController {
 	 * @param path - The path to the state machine and state ID, separated by a dot (e.g., 'machineID.stateID').
 	 * @param args - Additional arguments to pass to the state switch function.
 	 */
-	switch(path: string, ...args: any[]): void {
+	switch_to(path: string, ...args: any[]): void {
 		let parts: string[];
 		if (typeof path === 'string') {
 			parts = path.split('.');
@@ -201,7 +201,7 @@ export class StateMachineController {
 		const stateid = stateids.length > 0 ? stateids : machineid;
 
 		// Only switch the state in the specified machine, without changing the current machine
-		machine.switch_path(stateid, ...args);
+		machine.transition_switch_path(stateid, ...args);
 	}
 
 	/**
@@ -211,17 +211,17 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that triggered the event.
 	 * @param args - Additional arguments to be passed to the event handlers.
 	 */
-	public do(event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
+	public dispatch_event(event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
 		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
 
 		// Dispatch the event to the current machine
-		this.current_machine.dispatch(event_name, emitter_id, ...args);
+		this.current_machine.dispatch_event(event_name, emitter_id, ...args);
 
 		for (const id in this.statemachines) {
 			if (this.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
 			if (this.statemachines[id].paused) continue; // Skip paused machines
-			if (!this.statemachines[id].parallel) continue; // Skip machines that are not running in parallel
-			this.statemachines[id].dispatch(event_name, emitter_id, ...args);
+			if (!this.statemachines[id].is_concurrent) continue; // Skip machines that are not running in parallel
+			this.statemachines[id].dispatch_event(event_name, emitter_id, ...args);
 		}
 	}
 
@@ -233,7 +233,7 @@ export class StateMachineController {
 	 * @param args - Additional arguments to pass to the event handler.
 	 */
 	private auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
-		this.sc.do(event_name, emitter, ...args);
+		this.sc.dispatch_event(event_name, emitter, ...args);
 	}
 
 	/**
@@ -264,13 +264,13 @@ export class StateMachineController {
 	 * @returns `true` if the ID matches the current state, `false` otherwise.
 	 * @throws Error if the machine with the specified ID does not exist.
 	 */
-	is(id: string): boolean {
+	matches_state_path(id: string): boolean {
 		// const [_targetid, machineid, ...stateids] = id.split(/[:.]/);
 		const [machineid, ...stateids] = id.split('.');
 
 		// If there are no more parts, check the state of the current machine
 		if (stateids.length === 0) {
-			return this.current_machine.is(machineid);
+			return this.current_machine.matches_state_path(machineid);
 		}
 
 		const machine = this.statemachines[machineid];
@@ -279,7 +279,7 @@ export class StateMachineController {
 		}
 
 		// If there are more parts, check the state of the submachine with the given path
-		return machine.is(stateids);
+		return machine.matches_state_path(stateids);
 	}
 
 	/**
@@ -287,7 +287,7 @@ export class StateMachineController {
 	 * @param id - The ID of the state machine.
 	 */
 	run_statemachine(id: Identifier): void {
-		this.statemachines[id].run();
+		this.statemachines[id].tick();
 	}
 
 	/**
@@ -319,8 +319,8 @@ export class StateMachineController {
 	/**
 	 * Goes back to the previous state of the current state machine
 	 */
-	pop(): void {
-		this.current_machine.pop();
+	pop_and_transition(): void {
+		this.current_machine.pop_and_transition();
 	}
 
 	/**
@@ -328,7 +328,7 @@ export class StateMachineController {
 	 * @param id - The ID of the state machine.
 	 */
 	pop_statemachine(id: Identifier): void {
-		this.statemachines[id].pop();
+		this.statemachines[id].pop_and_transition();
 	}
 
 	/**
@@ -346,7 +346,7 @@ export class StateMachineController {
 	 * @param path - The ID of the state.
 	 */
 	switch_state(id: Identifier, path: Identifier): void {
-		this.statemachines[id].to(path);
+		this.statemachines[id].transition_to(path);
 	}
 
 	/**

@@ -30,17 +30,17 @@ export class StateDefinition {
     /**
      * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link StateMachineController.current_machine}.
      */
-    public parallel?: boolean;
+    public is_concurrent?: boolean;
 
     /**
      * The tape used by the BFSM.
      */
-    public tape!: Tape;
+    public tape_data: Tape;
 
     /**
      * Number of runs before tapehead moves to next statedata.
      */
-    public ticks2move: number; // Number of runs before tapehead moves to next statedata
+    public ticks2advance_tape: number; // Number of runs before tapehead moves to next statedata
 
     /**
      * Specifies whether the tapehead should automatically rewind to index `0` when it reaches the end of the tape.
@@ -48,7 +48,7 @@ export class StateDefinition {
      * - If set to `true`, the tapehead will be set to index `0` when it would go out of bounds.
      * - If set to `false`, the tapehead will remain at the end of the tape.
      */
-    public auto_tick: boolean; // Automagically increase the ticks during run
+    public enable_tape_autotick: boolean; // Automagically increase the ticks during run
 
     /**
      * Specifies the behavior for automatic state resetting.
@@ -61,7 +61,7 @@ export class StateDefinition {
      *
      * @type {'state' | 'tree' | 'subtree' | 'none'}
      */
-    public auto_reset: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
+    public automatic_reset_mode: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
 
     /**
      * Indicates whether the tapehead should automatically rewind to index 0 when it would go out of bounds.
@@ -100,21 +100,21 @@ export class StateDefinition {
     public constructor(id: Identifier = '_', partialdef?: Partial<StateDefinition>, root: StateDefinition = null) {
         this.id = id; //`${parent_id ? (parent_id + '.') : ''}${id ?? DEFAULT_BST_ID}`;
         partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
-        this.ticks2move ??= 0; // Unless already defined, ticks2move is 0
-        this.repetitions = (this.tape ? (this.repetitions ?? 1) : 0);
-        this.auto_tick = this.auto_tick ?? (this.ticks2move !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
-        this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape ? AUTO_REWIND_TAPE_AFTER_END : false); // If there is a tape, auto_rewind_tape_after_end is AUTO_REWIND_TAPE_AFTER_END. Otherwise, it is false (unless it was already defined)
-        this.auto_reset = this.auto_reset ?? 'state'; // Unless already defined, auto_reset is true
+        this.ticks2advance_tape ??= 0; // Unless already defined, ticks2move is 0
+        this.repetitions = (this.tape_data ? (this.repetitions ?? 1) : 0);
+        this.enable_tape_autotick = this.enable_tape_autotick ?? (this.ticks2advance_tape !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
+        this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape_data ? AUTO_REWIND_TAPE_AFTER_END : false); // If there is a tape, auto_rewind_tape_after_end is AUTO_REWIND_TAPE_AFTER_END. Otherwise, it is false (unless it was already defined)
+        this.automatic_reset_mode = this.automatic_reset_mode ?? 'state'; // Unless already defined, auto_reset is true
         this.data ??= {}; // Unless already defined, data is an empty object
         this.root = root ?? this; // The root state machine is either the provided root or this state machine
-        this.parallel ??= false; // Unless already defined, parallel is false
+        this.is_concurrent ??= false; // Unless already defined, parallel is false
 
-        if (this.tape) {
-            this.repeat_tape(this.tape, this.repetitions);
+        if (this.tape_data) {
+            this.repeat_tape(this.tape_data, this.repetitions);
         }
 
-        if (partialdef.states) {
-            this.construct_substate_machine(partialdef.states, this.root);
+        if (partialdef.substates) {
+            this.construct_substate_machine(partialdef.substates, this.root);
         }
     }
 
@@ -124,7 +124,7 @@ export class StateDefinition {
      * @param tape - The tape to be repeated.
      * @param repetitions - The number of times the tape should be repeated.
      */
-    private repeat_tape(tape: typeof this.tape, repetitions: typeof this.repetitions): void {
+    private repeat_tape(tape: typeof this.tape_data, repetitions: typeof this.repetitions): void {
         // Repeat the tape if necessary (and if it exists) by appending the tape to itself
         if (tape && repetitions > 1) { // If there is a tape and the tape should be repeated at least once
             let originalTape = [...tape]; // Copy the tape
@@ -140,7 +140,7 @@ export class StateDefinition {
      * @param substates - The blueprint of the substates.
      */
     private construct_substate_machine(substates: StateMachineBlueprint, root: StateDefinition): void {
-        this.states ??= {};
+        this.substates ??= {};
         const substate_ids = Object.keys(substates);
         for (let state_id of substate_ids) {
             const sub_sdef = this.#create_state(substates[state_id], state_id, root);
@@ -154,22 +154,22 @@ export class StateDefinition {
         }
         else {
             // If the start state is defined, we need to change the key of the start state to exclude the start state prefix
-            const start_state = this.states[this.start_state_id]; // Get the start state
+            const start_state = this.substates[this.start_state_id]; // Get the start state
             for (const state_id of substate_ids) {
                 if (StateDefinition.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
-                    delete this.states[state_id]; // Delete the start state from the list of states (with the old key)
-                    this.states[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
+                    delete this.substates[state_id]; // Delete the start state from the list of states (with the old key)
+                    this.substates[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
                     break; // Stop iterating over the states
                 }
             }
         }
     }
 
-    public run?: StateEventHandler;
-    public end?: StateEventHandler;
-    public next?: StateNextHandler;
-    public enter?: StateEventHandler;
-    public exit?: StateExitHandler;
+    public tick?: StateEventHandler;
+    public tape_end?: StateEventHandler;
+    public tape_next?: StateNextHandler;
+    public entering_state?: StateEventHandler;
+    public exiting_state?: StateExitHandler;
     public process_input?: StateEventHandler;
 
     /**
@@ -185,11 +185,11 @@ export class StateDefinition {
        * }
      * ```
      */
-    public on?: {
+    public event_handlers?: {
         [key: string]: Identifier | StateEventDefinition;
     };
 
-    public on_input?: {
+    public input_event_handlers?: {
         [key: string]: Identifier | StateEventDefinition;
     };
 
@@ -198,12 +198,12 @@ export class StateDefinition {
     /**
      * The guards for the state.
      */
-    public guards?: StateGuard;
+    public transition_guards?: StateGuard;
 
     /**
      * The states defined for this state machine.
      */
-    public states?: id2partial_sdef;
+    public substates?: id2partial_sdef;
 
     /**
      * The identifier of the state that the state machine should start in.
@@ -256,7 +256,7 @@ export class StateDefinition {
             state.id = state.id.substring(1); // Remove the start state prefix from the id
             this.#set_start_state(state); // Set the start state for the state machine
         }
-        this.states[state.id] = state;
+        this.substates[state.id] = state;
         state.parent = this;
         state.root = root;
     }
@@ -270,10 +270,10 @@ export class StateDefinition {
  */
 
 export function validateStateMachine(machinedef: StateDefinition, path: string = machinedef.id): void {
-    if (!machinedef.states) return;
+    if (!machinedef.substates) return;
 
     try {
-        const stateIds = Object.keys(machinedef.states);
+        const stateIds = Object.keys(machinedef.substates);
 
         if (!machinedef.start_state_id)
             throw new Error(`No start state defined for state machine '${path}'`);
@@ -282,7 +282,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
             throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${path}'.`);
 
         for (const id of stateIds) {
-            const stateDef = machinedef.states[id] as StateDefinition;
+            const stateDef = machinedef.substates[id] as StateDefinition;
             const statePath = `${path}.${stateDef.id}`;
 
             const checkTransitions = (transitions?: { [key: string]: Identifier | StateEventDefinition; }) => {
@@ -300,8 +300,8 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
                 }
             };
 
-            checkTransitions(stateDef.on);
-            checkTransitions(stateDef.on_input);
+            checkTransitions(stateDef.event_handlers);
+            checkTransitions(stateDef.input_event_handlers);
             for (const check of stateDef.run_checks ?? []) {
                 if (typeof check === 'string') {
                     resolveStateDefPath(stateDef, check, statePath);
@@ -314,7 +314,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
                 }
             }
 
-            const handlers = [stateDef.run, stateDef.enter, stateDef.exit, stateDef.next, stateDef.end, stateDef.process_input];
+            const handlers = [stateDef.tick, stateDef.entering_state, stateDef.exiting_state, stateDef.tape_next, stateDef.tape_end, stateDef.process_input];
             const handlerNames = ['run', 'enter', 'exit', 'next', 'end', 'process_input'];
             handlers.forEach((h, idx) => {
                 if (typeof h === 'string') {
@@ -356,9 +356,9 @@ function resolveStateDefPath(from: StateDefinition, target: string, origin: stri
 
     for (let i = startIndex; i < parts.length; i++) {
         const part = parts[i];
-        if (!ctx.states?.[part]) {
+        if (!ctx.substates?.[part]) {
             throw new Error(`Invalid state path '${target}' referenced from '${origin}': state '${part}' not found`);
         }
-        ctx = ctx.states[part] as StateDefinition;
+        ctx = ctx.substates[part] as StateDefinition;
     }
 }

@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type RandomModulationParams, type vec2 } from '../bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type vec2 } from '../bmsx';
 import { gamemodel } from './gamemodel';
 import { BitmapId } from './resourceids';
 
@@ -43,33 +43,33 @@ export abstract class Fighter extends SpriteObject {
     @build_fsm('hitanimation')
     static bouw_hitanimation_fsm(): StateMachineBlueprint {
         return {
-            parallel: true,
-            states: {
+            is_concurrent: true,
+            substates: {
                 _geen_au: {
                 },
                 doet_au: {
-                    enter(this: Fighter) {
+                    entering_state(this: Fighter) {
                         this.sc.pause_all_except('hitanimation');
                     },
-                    exit(this: Fighter) {
+                    exiting_state(this: Fighter) {
                         this.sc.resume_all_statemachines();
                         // No emit here, because the player that was hit needs to be able to recuperate from the hit first, so that the attacking player can't hit them again immediately.
                     },
                 },
                 wel_au: {
-                    tape: [-1, 1],
+                    tape_data: [-1, 1],
                     repetitions: 10,
-                    auto_tick: true,
-                    enter(this: Fighter) {
+                    enable_tape_autotick: true,
+                    entering_state(this: Fighter) {
                         this.sc.pause_all_except('hitanimation');
                     },
-                    next(this: Fighter, state: State) {
+                    tape_next(this: Fighter, state: State) {
                         this.x_nonotify += state.current_tape_value;
                     },
-                    end(this: Fighter) {
-                        this.sc.to('hitanimation.geen_au');
+                    tape_end(this: Fighter) {
+                        this.sc.transition_to('hitanimation.geen_au');
                     },
-                    exit(this: Fighter) {
+                    exiting_state(this: Fighter) {
                         this.sc.resume_all_statemachines();
                         $.emit('i_was_hit', this); // Allow the player to recuperate from the hit quickly.
                         $.emit('hit_animation_end', this); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
@@ -147,8 +147,8 @@ export abstract class Fighter extends SpriteObject {
     }
 
     public handleBeingHit(attackType: AttackType, opponent: Fighter) {
-        this.sc.to('hitanimation.wel_au');
-        opponent.sc.to('hitanimation.doet_au');
+        this.sc.transition_to('hitanimation.wel_au');
+        opponent.sc.transition_to('hitanimation.doet_au');
         this.hp -= getDamage(attackType);
         const weaponClass = (attackType === 'punch') ? 'light' : 'heavy';
         $.emit('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });

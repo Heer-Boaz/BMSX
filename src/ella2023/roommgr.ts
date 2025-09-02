@@ -54,9 +54,9 @@ export class Room extends SpriteObject {
         }
 
         return {
-            states: {
+            substates: {
                 _default: {
-                    run: defaultrun,
+                    tick: defaultrun,
                 },
             }
         };

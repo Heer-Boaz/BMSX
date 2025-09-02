@@ -1051,7 +1051,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		for (const id in this.btreecontexts) {
 			this.tickTree(id);
 		}
-		this.sc.run();
+		this.sc.tick();
 	}
 }
 

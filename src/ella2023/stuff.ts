@@ -3,7 +3,7 @@ import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
 	$.stopMusic();
-	$.model.sc.to('titlescreen');
+	$.model.sc.transition_to('titlescreen');
 	state.reset(); // Make sure that the tick counter is reset.
 }
 
@@ -12,9 +12,9 @@ export class GameOver extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
-			states: {
+			substates: {
 				_default: {
-					ticks2move: 500,
+					ticks2advance_tape: 500,
 					process_input(this: TitleScreen, state: State) {
 						const priorityActions = $.getPressedActions(1, { pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
@@ -26,7 +26,7 @@ export class GameOver extends SpriteObject {
 
 						wrapup(state);
 					},
-					end(this: GameOver, state: State) {
+					tape_end(this: GameOver, state: State) {
 						wrapup(state);
 					},
 				}
@@ -58,9 +58,9 @@ export class Hoera extends SpriteObject {
 	static bouw(): StateMachineBlueprint {
 
 		return {
-			states: {
+			substates: {
 				_default: {
-					ticks2move: 500,
+					ticks2advance_tape: 500,
 					process_input(this: TitleScreen, state: State) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
@@ -71,7 +71,7 @@ export class Hoera extends SpriteObject {
 						$.input.getPlayerInput(1).consumeActions(...priorityActions);
 						wrapup(state);
 					},
-					end(this: Hoera, state: State) {
+					tape_end(this: Hoera, state: State) {
 						wrapup(state);
 					},
 				}
@@ -108,16 +108,16 @@ export class TitleScreen extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
-			states: {
+			substates: {
 				_default: {
-					on: {
+					event_handlers: {
 						reset: {
 							do(this: TitleScreen) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
-								this.sc.do('players_1', this);
-								this.sc.do('resume_blink', this);
+								this.sc.dispatch_event('players_1', this);
+								this.sc.dispatch_event('resume_blink', this);
 							},
 						},
 					},
@@ -132,68 +132,68 @@ export class TitleScreen extends SpriteObject {
 						$.consumeActions(1, ...priorityActions);
 
 						if (priorityActions.some(action => action.action === 'up' || action.action === 'down')) {
-							this.sc.do('switch', this);
+							this.sc.dispatch_event('switch', this);
 							return;
 						}
 
 						// If a priority action is pressed, start the game.
 						this.cursorVisible = true;
-						this.sc.do('pause_blink', this);
+						this.sc.dispatch_event('pause_blink', this);
 						$.emit('gamestart_selected', this, { selectedPlayers: this.selectedPlayers });
 					},
-					states: {
+					substates: {
 						_players_1: {
-							on: {
+							event_handlers: {
 								$switch: 'players_2',
 							},
-							enter(this: TitleScreen, state: State) {
+							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
-								state.parent.states.blink.reset();
+								state.parent.substates.blink.reset();
 							},
 						},
 						players_2: {
-							on: {
+							event_handlers: {
 								$switch: 'players_1',
 								$players_1: 'players_1', // For resetting the TitleScreen state.
 							},
-							enter(this: TitleScreen, state: State) {
+							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
 								this.selectedPlayers = 2;
 								this.cursorVisible = true;
-								state.parent.states.blink.reset();
+								state.parent.substates.blink.reset();
 							},
 						},
 						blink: {
-							parallel: true,
-							ticks2move: 20,
-							tape: [false, true],
+							is_concurrent: true,
+							ticks2advance_tape: 20,
+							tape_data: [false, true],
 							auto_rewind_tape_after_end: true,
 							data: {
 								pause_blink: false,
 							},
-							enter(this: TitleScreen) {
+							entering_state(this: TitleScreen) {
 								this.cursorVisible = true;
 							},
-							next(this: TitleScreen, state: State) {
+							tape_next(this: TitleScreen, state: State) {
 								if (state.data.pause_blink) return;
 								this.cursorVisible = state.current_tape_value;
 							},
-							states: {
+							substates: {
 								_default: {
-									on: {
+									event_handlers: {
 										$pause_blink: 'paused',
 									},
-									enter(state: State) {
+									entering_state(state: State) {
 										state.parent.data.pause_blink = false;
 									},
 								},
 								paused: {
-									on: {
+									event_handlers: {
 										$resume_blink: 'default',
 									},
-									enter(state: State) {
+									entering_state(state: State) {
 										state.parent.data.pause_blink = true;
 									},
 								}
@@ -226,9 +226,9 @@ export class Gordijn extends GameObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
-			states: {
+			substates: {
 				_idle: {
-					on: {
+					event_handlers: {
 						its_curtains: 'its_curtains_for_you',
 						reset: {
 							do(this: Gordijn) {
@@ -238,19 +238,19 @@ export class Gordijn extends GameObject {
 					},
 				},
 				its_curtains_for_you: {
-					on: {
+					event_handlers: {
 						$curtained: 'idle',
 					},
-					ticks2move: 2,
-					tape: [8],
+					ticks2advance_tape: 2,
+					tape_data: [8],
 					repetitions: 256 / 8,
-					enter(this: Gordijn) {
+					entering_state(this: Gordijn) {
 						this.width = 0;
 					},
-					next(this: Gordijn, state: State) {
+					tape_next(this: Gordijn, state: State) {
 						this.width += state.current_tape_value;
 					},
-					end(this: Gordijn) {
+					tape_end(this: Gordijn) {
 						$.emit('curtained', this);
 					},
 				},

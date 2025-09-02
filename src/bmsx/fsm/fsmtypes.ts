@@ -140,14 +140,14 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
      * @this {T} - The stateful object.
      * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
      */
-    canEnter?: (this: T, state: State) => boolean;
+    can_enter?: (this: T, state: State) => boolean;
 
     /**
      * Checks if the state can be exited.
      * @this {T} - The stateful object.
      * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
      */
-    canExit?: (this: T, state: State) => boolean;
+    can_exit?: (this: T, state: State) => boolean;
 }
 
 /**
@@ -201,3 +201,5 @@ export type ConstructorWithFSMProperty = Function & {
      */
     linkedFSMs?: Set<FSMName>;
 };
+
+export type EventBagName = keyof Pick<StateDefinition, 'event_handlers' | 'input_event_handlers'>;

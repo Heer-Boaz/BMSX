@@ -627,3 +627,26 @@ export function swizzlable<T extends Record<string, any> | any[]>(
 
     return new Proxy(vec as any, handler);
 }
+// ------- small utils -------
+export function deepEqual(a: any, b: any): boolean {
+    if (a === b) return true;
+    if (typeof a !== typeof b) return false;
+    if (a && b && typeof a === 'object') {
+        if (Array.isArray(a) !== Array.isArray(b)) return false;
+        if (Array.isArray(a)) {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
+            return true;
+        }
+        const ak = Object.keys(a), bk = Object.keys(b);
+        if (ak.length !== bk.length) return false;
+        for (const k of ak) if (!deepEqual(a[k], b[k])) return false;
+        return true;
+    }
+    return false;
+}
+export function deepClone<T>(v: T): T {
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map(deepClone) as T;
+    return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, deepClone(val)])) as T;
+}

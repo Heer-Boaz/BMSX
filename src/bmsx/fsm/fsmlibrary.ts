@@ -1,8 +1,9 @@
 import type { EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
+import { deepClone, deepEqual } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { listed_sdef_event, StateEventDefinition, Stateful, StateMachineBlueprint } from "./fsmtypes";
+import type { EventBagName, listed_sdef_event, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 
@@ -56,7 +57,7 @@ export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefin
     reconcileStateTree(root, oldRootDef, newRootDef);
 
     // Fix current state if invalid under new definition
-    if (!root.states || !root.states[root.currentid]) {
+    if (!root.substates || !root.substates[root.currentid]) {
         const start = safeStartStateId(newRootDef);
         root.currentid = start;
     }
@@ -70,38 +71,38 @@ export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefin
 
 /** Ensure the instance’s children match the new StateDefinition tree. */
 function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
-    const newChildren = Object.keys(newDef.states ?? {});
-    const oldChildren = Object.keys(node.states ?? {});
+    const newChildren = Object.keys(newDef.substates ?? {});
+    const oldChildren = Object.keys(node.substates ?? {});
 
     // Remove stale children
     for (const id of oldChildren) {
         if (!newChildren.includes(id)) {
-            node.states[id]?.dispose?.();
-            delete node.states[id];
+            node.substates[id]?.dispose?.();
+            delete node.substates[id];
         }
     }
 
     // Add missing children
     for (const id of newChildren) {
-        if (!node.states) node.states = {};
-        if (!node.states[id]) {
+        if (!node.substates) node.substates = {};
+        if (!node.substates[id]) {
             const child = new State(id, node.target_id, node.id, node.root_id);
-            node.states[id] = child;
+            node.substates[id] = child;
             // Build deeper children from definition
-            reconcileStateTree(child, undefined, newDef.states![id] as StateDefinition);
+            reconcileStateTree(child, undefined, newDef.substates![id] as StateDefinition);
         }
     }
 
     // Recurse into common children
     for (const id of newChildren) {
-        const childInst = node.states?.[id];
+        const childInst = node.substates?.[id];
         if (childInst) {
-            const oldChildDef = oldDef?.states?.[id] as StateDefinition | undefined;
-            const newChildDef = newDef.states![id] as StateDefinition;
+            const oldChildDef = oldDef?.substates?.[id] as StateDefinition | undefined;
+            const newChildDef = newDef.substates![id] as StateDefinition;
             reconcileStateTree(childInst, oldChildDef, newChildDef);
 
             // Fix child's currentid if needed
-            if (!childInst.states || !childInst.states[childInst.currentid]) {
+            if (!childInst.substates || !childInst.substates[childInst.currentid]) {
                 childInst.currentid = safeStartStateId(newChildDef);
             }
             clampTape(childInst);
@@ -113,10 +114,10 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 function migrateDataTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
     node.data = mergeDataWithDefaults(node.data, oldDef?.data ?? {}, newDef.data ?? {});
     // Recurse
-    for (const id in node.states ?? {}) {
-        const child = node.states[id];
-        const oldChildDef = oldDef?.states?.[id] as StateDefinition | undefined;
-        const newChildDef = newDef.states?.[id] as StateDefinition | undefined;
+    for (const id in node.substates ?? {}) {
+        const child = node.substates[id];
+        const oldChildDef = oldDef?.substates?.[id] as StateDefinition | undefined;
+        const newChildDef = newDef.substates?.[id] as StateDefinition | undefined;
         if (child && newChildDef) {
             migrateDataTree(child, oldChildDef, newChildDef);
         }
@@ -166,43 +167,17 @@ function clampTape(node: State<Stateful>) {
         return;
     }
     const maxHead = tape.length - 1;
-    if (node.head > maxHead) {
+    if (node.tapehead_position > maxHead) {
         node.setHeadNoSideEffect(Math.max(-1, maxHead));
         node.setTicksNoSideEffect(0);
     }
 }
 
 function safeStartStateId(def: StateDefinition): Identifier {
-    if (def.start_state_id && def.states?.[def.start_state_id]) return def.start_state_id;
-    const first = def.states ? Object.keys(def.states)[0] : undefined;
+    if (def.start_state_id && def.substates?.[def.start_state_id]) return def.start_state_id;
+    const first = def.substates ? Object.keys(def.substates)[0] : undefined;
     if (!first) throw new Error(`StateDefinition '${def.id}' has no states.`);
     return first;
-}
-
-// ------- small utils -------
-
-function deepEqual(a: any, b: any): boolean {
-    if (a === b) return true;
-    if (typeof a !== typeof b) return false;
-    if (a && b && typeof a === 'object') {
-        if (Array.isArray(a) !== Array.isArray(b)) return false;
-        if (Array.isArray(a)) {
-            if (a.length !== b.length) return false;
-            for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
-            return true;
-        }
-        const ak = Object.keys(a), bk = Object.keys(b);
-        if (ak.length !== bk.length) return false;
-        for (const k of ak) if (!deepEqual(a[k], b[k])) return false;
-        return true;
-    }
-    return false;
-}
-
-function deepClone<T>(v: T): T {
-    if (v === null || typeof v !== 'object') return v;
-    if (Array.isArray(v)) return v.map(deepClone) as T;
-    return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, deepClone(val)])) as T;
 }
 
 /**
@@ -367,39 +342,39 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
     const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
     const addedEvents = eventMap ?? new Map<string, boolean>(); // Map to track added events to prevent duplicates
     // Start with the events defined in the machine definition
-    if (machine.on) {
+    if (machine.event_handlers) {
         // Add all events from the machine definition
-        for (const name in machine.on) {
+        for (const name in machine.event_handlers) {
             // Get the event definition
-            const definition = machine.on[name];
+            const definition = machine.event_handlers[name];
             // Add the event to the list of events
             add(name, definition);
         }
         // Remove all '$' prefixes from the event names
-        machine.on = Object.fromEntries(Object.entries(machine.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
+        machine.event_handlers = Object.fromEntries(Object.entries(machine.event_handlers).map(([name, value]) => [removeScopeFromEventName(name), value]));
     }
 
     // Get the events from the submachines
-    for (const stateId in machine.states) {
+    for (const stateId in machine.substates) {
         // Get the state definition
-        const state = machine.states[stateId];
+        const state = machine.substates[stateId];
         // Skip the state if it doesn't have a definition
         const state_def = state;
         if (!state_def) continue;
-        if (state_def.on) {
+        if (state_def.event_handlers) {
             // Add all events from the state definition
-            for (const name in state_def.on) {
+            for (const name in state_def.event_handlers) {
                 // Get the event definition
-                const definition = state_def.on[name];
+                const definition = state_def.event_handlers[name];
                 // Add the event to the list of events
                 add(name, definition);
             }
             // Remove all '$' prefixes from the event names
-            state_def.on = Object.fromEntries(Object.entries(state_def.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
+            state_def.event_handlers = Object.fromEntries(Object.entries(state_def.event_handlers).map(([name, value]) => [removeScopeFromEventName(name), value]));
         }
 
         // If the state has a submachine, recursively subscribe to its events
-        if (state_def.states) {
+        if (state_def.substates) {
             getMachineEvents(state, events, addedEvents);
         }
     }
@@ -409,32 +384,214 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 
 function makeId(parts: string[]) { return parts.join('.'); }
 
-type HandlerArgs = [state: State<Stateful>, ...args: any[]];
-type AnyHandler = (this: Stateful, ...args: HandlerArgs) => any;
+type AnyHandler = (this: any, ...args: any[]) => any;
+function annotateHandler(fn: Function, id: string): void {
+    try {
+        Object.defineProperty(fn, '_handlerId', { value: id, configurable: true, writable: true });
+    } catch {
+        // Fallback if defineProperty fails (shouldn't on functions)
+        (fn as { _handlerId?: string })._handlerId = id;
+    }
+}
 
-function hoistHandler(
-    ownerDef: any,
-    slot: string,
-    id: string,
-    registry: HandlerRegistry,
-    useProxyThunks: boolean
-) {
-    const fn = ownerDef[slot] as AnyHandler;
-    if (typeof fn !== 'function') return;
 
-    registry.register(id, fn);
+type EventSlots = { [K in keyof StateEventDefinition]-?: StateEventDefinition[K] extends Function | undefined ? K : never }[keyof StateEventDefinition];
+type GuardSlots = { [K in keyof StateGuard]-?: StateGuard[K] extends Function | undefined ? K : never }[keyof StateGuard];
+type StateDefHandlerValue = StateEventHandler | StateExitHandler | StateNextHandler;
+type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends StateDefHandlerValue | undefined ? K : never }[keyof StateDefinition];
 
+function createProxyForHandler(id: string, registry: HandlerRegistry) {
+    const base = function (this: any, ...args: any[]) {
+        const h = registry.get(id);
+        if (!h) return undefined;
+        return h.apply(this, args);
+    };
+    Object.defineProperty(base, 'name', { value: `proxy_${id}`, configurable: true });
+    annotateHandler(base as Function, id);
+    return base;
+}
+
+// Event definition handlers
+function hoistEventIf(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.if;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
     if (useProxyThunks) {
-        const proxy: AnyHandler = function proxy(this: any, ...args: HandlerArgs) {
+        const proxy: StateEventDefinition['if'] = function (this: any, state: any, ...args: any[]): boolean {
             const h = registry.get(id);
-            if (!h) return;
-            return h.apply(this, args); // args is a tuple: [State, ...]
+            if (!h) return false;
+            const out = h.apply(this, [state, ...args]);
+            return !!out;
         };
-        Object.defineProperty(proxy, 'name', { value: `proxy_${id}`, configurable: true });
-        (proxy as unknown as { _handlerId?: string })._handlerId = id;
-        ownerDef[slot] = proxy as unknown; // satisfies the slot’s function type structurally
+        annotateHandler(proxy as Function, id);
+        ownerDef.if = proxy;
     } else {
-        ownerDef[slot] = id;
+        annotateHandler(current as Function, id);
+        ownerDef.if = current;
+    }
+}
+
+function hoistEventDo(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.do;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateEventDefinition['do'] = function (this: any, state: any, ...args: any[]) {
+            const h = registry.get(id);
+            if (!h) return undefined;
+            return h.apply(this, [state, ...args]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.do = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.do = current;
+    }
+}
+
+// Guard handlers
+function hoistGuardCanEnter(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.can_enter;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateGuard['can_enter'] = function (this: any, state: any): boolean {
+            const h = registry.get(id);
+            if (!h) return false;
+            return !!h.apply(this, [state]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.can_enter = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.can_enter = current;
+    }
+}
+
+function hoistGuardCanExit(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.can_exit;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateGuard['can_exit'] = function (this: any, state: any): boolean {
+            const h = registry.get(id);
+            if (!h) return false;
+            return !!h.apply(this, [state]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.can_exit = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.can_exit = current;
+    }
+}
+
+// StateDefinition handlers
+function hoistStateTick(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.tick;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateDefinition['tick'] = function (this: any, state: any, ...args: any[]) {
+            const h = registry.get(id);
+            if (!h) return undefined;
+            return h.apply(this, [state, ...args]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.tick = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.tick = current;
+    }
+}
+
+function hoistStateTapeEnd(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.tape_end;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateDefinition['tape_end'] = function (this: any, state: any, ...args: any[]) {
+            const h = registry.get(id);
+            if (!h) return undefined;
+            return h.apply(this, [state, ...args]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.tape_end = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.tape_end = current;
+    }
+}
+
+function hoistStateTapeNext(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.tape_next;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateDefinition['tape_next'] = function (this: any, state: any, tape_rewound: boolean, ...args: any[]) {
+            const h = registry.get(id);
+            if (!h) return undefined;
+            return h.apply(this, [state, tape_rewound, ...args]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.tape_next = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.tape_next = current;
+    }
+}
+
+function hoistStateEntering(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.entering_state;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateDefinition['entering_state'] = function (this: any, state: any, ...args: any[]) {
+            const h = registry.get(id);
+            if (!h) return undefined;
+            return h.apply(this, [state, ...args]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.entering_state = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.entering_state = current;
+    }
+}
+
+function hoistStateExiting(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.exiting_state;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateDefinition['exiting_state'] = function (this: any, state: any, ...args: any[]) {
+            const h = registry.get(id);
+            if (!h) return undefined;
+            return h.apply(this, [state, ...args]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.exiting_state = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.exiting_state = current;
+    }
+}
+
+function hoistStateProcessInput(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
+    const current = ownerDef.process_input;
+    if (typeof current !== 'function') return;
+    registry.register(id, current as AnyHandler);
+    if (useProxyThunks) {
+        const proxy: StateDefinition['process_input'] = function (this: any, state: any, ...args: any[]) {
+            const h = registry.get(id);
+            if (!h) return undefined;
+            return h.apply(this, [state, ...args]);
+        };
+        annotateHandler(proxy as Function, id);
+        ownerDef.process_input = proxy;
+    } else {
+        annotateHandler(current as Function, id);
+        ownerDef.process_input = current;
     }
 }
 
@@ -445,22 +602,22 @@ function normalizeEventNameForId(name: string) {
 function hoistEventDef(
     machineName: string,
     statePath: string[],
-    bagName: 'on' | 'on_input',
+    bagName: keyof Pick<StateDefinition, 'event_handlers' | 'input_event_handlers'>,
     rawEventName: string,
-    def: any,
+    eventDefinition: StateEventDefinition,
     registry: HandlerRegistry,
     useProxyThunks: boolean
 ) {
-    if (!def || typeof def === 'string') return;
+    if (!eventDefinition || typeof eventDefinition === 'string') return;
 
     const eventName = normalizeEventNameForId(rawEventName);
     const base = [machineName, ...statePath, bagName, eventName];
 
-    if (typeof def.if === 'function') {
-        hoistHandler(def, 'if', makeId([...base, 'if']), registry, useProxyThunks);
+    if (typeof eventDefinition.if === 'function') {
+        hoistEventIf(eventDefinition, makeId([...base, 'if']), registry, useProxyThunks);
     }
-    if (typeof def.do === 'function') {
-        hoistHandler(def, 'do', makeId([...base, 'do']), registry, useProxyThunks);
+    if (typeof eventDefinition.do === 'function') {
+        hoistEventDo(eventDefinition, makeId([...base, 'do']), registry, useProxyThunks);
     }
 }
 
@@ -471,15 +628,17 @@ function walkAndHoist(
     path: string[] = [],
     useProxyThunks = true
 ) {
-    // direct slots
-    for (const slot of ['enter', 'exit', 'run', 'next', 'end', 'process_input'] as const) {
-        const maybe = (sdef as unknown as Record<string, unknown>)[slot];
-        if (typeof maybe === 'function') hoistHandler(sdef, slot, makeId([machineName, ...path, slot]), registry, useProxyThunks);
-    }
+    // direct slots — aligned with StateDefinition handler properties
+    if (typeof sdef.tick === 'function') hoistStateTick(sdef, makeId([machineName, ...path, 'tick']), registry, useProxyThunks);
+    if (typeof sdef.tape_end === 'function') hoistStateTapeEnd(sdef, makeId([machineName, ...path, 'tape_end']), registry, useProxyThunks);
+    if (typeof sdef.tape_next === 'function') hoistStateTapeNext(sdef, makeId([machineName, ...path, 'tape_next']), registry, useProxyThunks);
+    if (typeof sdef.entering_state === 'function') hoistStateEntering(sdef, makeId([machineName, ...path, 'entering_state']), registry, useProxyThunks);
+    if (typeof sdef.exiting_state === 'function') hoistStateExiting(sdef, makeId([machineName, ...path, 'exiting_state']), registry, useProxyThunks);
+    if (typeof sdef.process_input === 'function') hoistStateProcessInput(sdef, makeId([machineName, ...path, 'process_input']), registry, useProxyThunks);
 
-    // on / on_input
-    for (const bagName of ['on', 'on_input'] as const) {
-        const bag = (sdef as unknown as Record<string, any>)[bagName];
+    // event_handlers / input_event_handlers
+    for (const bagName of ['event_handlers', 'input_event_handlers'] as EventBagName[]) {
+        const bag = (sdef as StateDefinition)[bagName];
         if (!bag) continue;
         for (const rawEventName of Object.keys(bag)) {
             const evDef = bag[rawEventName];
@@ -490,34 +649,34 @@ function walkAndHoist(
     }
 
     // run_checks
-    const rc = (sdef as unknown as { run_checks?: unknown }).run_checks as Array<Record<string, unknown>> | undefined;
+    const rc = sdef.run_checks;
     if (Array.isArray(rc)) {
         rc.forEach((chk, i) => {
             if (!chk || typeof chk !== 'object') return;
             const base = [machineName, ...path, `run_checks[${i}]`];
             if (typeof chk.if === 'function') {
-                hoistHandler(chk, 'if', makeId([...base, 'if']), registry, useProxyThunks);
+                hoistEventIf(chk, makeId([...base, 'if']), registry, useProxyThunks);
             }
             if (typeof chk.do === 'function') {
-                hoistHandler(chk, 'do', makeId([...base, 'do']), registry, useProxyThunks);
+                hoistEventDo(chk, makeId([...base, 'do']), registry, useProxyThunks);
             }
         });
     }
 
     // guards
-    const g = (sdef as unknown as { guards?: { canEnter?: AnyHandler; canExit?: AnyHandler } }).guards;
+    const g = sdef.transition_guards;
     if (g && typeof g === 'object') {
-        if (typeof g.canEnter === 'function') {
-            hoistHandler(g, 'canEnter', makeId([machineName, ...path, 'guards', 'canEnter']), registry, useProxyThunks);
+        if (typeof g.can_enter === 'function') {
+            hoistGuardCanEnter(g, makeId([machineName, ...path, 'guards', 'can_enter']), registry, useProxyThunks);
         }
-        if (typeof g.canExit === 'function') {
-            hoistHandler(g, 'canExit', makeId([machineName, ...path, 'guards', 'canExit']), registry, useProxyThunks);
+        if (typeof g.can_exit === 'function') {
+            hoistGuardCanExit(g, makeId([machineName, ...path, 'guards', 'can_exit']), registry, useProxyThunks);
         }
     }
 
     // recurse children
-    if (sdef.states) {
-        for (const [childId, child] of Object.entries(sdef.states) as [string, StateDefinition][]) {
+    if (sdef.substates) {
+        for (const [childId, child] of Object.entries(sdef.substates) as [string, StateDefinition][]) {
             walkAndHoist(machineName, child, registry, [...path, childId], useProxyThunks);
         }
     }

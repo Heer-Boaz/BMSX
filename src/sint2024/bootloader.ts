@@ -1,17 +1,17 @@
-import { $, BFont, BGamepadButton, BaseModel, BootArgs, Direction, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RenderView, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
+import { $, BFont, BGamepadButton, BaseModel, BootArgs, Direction, Game, GameObject, GameView, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
 
 var _game: Game;
 let _model: gamemodel;
-var _view: RenderView;
+var _view: GameView;
 
 const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
     _model = new gamemodel();
-    _view = new RenderView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+    _view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game();
     return _game.init({ ...args, model: _model, view: _view }).then(() => {
@@ -79,22 +79,22 @@ class gamemodel extends BaseModel {
      */
     public static bouw(): StateMachineBlueprint {
         return {
-            states: {
+            substates: {
                 '#game_start': {
-                    enter(this: gamemodel) {
+                    entering_state(this: gamemodel) {
                     },
-                    run(this: gamemodel, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    tick(this: gamemodel, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         return 'default';
                     }
                 },
                 default: {
-                    enter(this: gamemodel) {
+                    entering_state(this: gamemodel) {
                         let q = new quiz();
                         $.spawn(q);
                         let s = new sint();
                         $.spawn(s);
                     },
-                    run: BaseModel.defaultrun,
+                    tick: BaseModel.defaultrun,
                 },
             }
         };

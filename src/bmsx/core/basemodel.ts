@@ -503,7 +503,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public run(deltaTime: number): void {
-        this.sc.run();
+        this.sc.tick();
         // Physics step & event dispatch (moved from Game.run for cleaner layering)
         const phys = $.registry.get<PhysicsWorld>('physics_world');
         if (phys) {
@@ -562,7 +562,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      */
     static default_input_handler_for_allow_open_gamemenu(this: BaseModel): void {
         if (Input.KC_F5) {
-            this.sc.machines.gamemenu.to('open');
+            this.sc.machines.gamemenu.transition_to('open');
         }
     }
 
@@ -575,7 +575,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      */
     static default_input_handler_for_allow_close_gamemenu(this: BaseModel): void {
         if (Input.KC_F5) {
-            this.sc.machines.gamemenu.to('closed');
+            this.sc.machines.gamemenu.transition_to('closed');
         }
     }
 
