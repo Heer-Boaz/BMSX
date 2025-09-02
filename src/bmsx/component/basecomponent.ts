@@ -175,7 +175,8 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
         this.parentid ??= parentid; // Store the parent id for later use
         this.id ??= this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
         this.enabled ??= true;
-        parentid && this.onloadSetup(); // Initialize the component if parent id is specified. If not, then the component was constructed as part of deserialization and will be initialized later.
+        // Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
+        // so do not bind here to avoid running before derived decorator initializers.
     }
 
     /**
@@ -265,15 +266,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
             // Wrap the handler to check if the component is enabled
             if (this.enabled) handler(...args);
         };
-        // First attempt: in case metadata is already present
         $.event_emitter.initClassBoundEventSubscriptions(this, wrappedHandler);
-        // New-decorator nuance: instance method decorator initializers on derived classes
-        // execute after super() returns. Our base constructor calls this initializer during super().
-        // Schedule a microtask to rebind after derived initializers have run to ensure
-        // eventSubscriptions have been attached to the constructor.
-        queueMicrotask(() => {
-            $.event_emitter.initClassBoundEventSubscriptions(this, wrappedHandler);
-        });
     }
 
     // Implement this method to handle preprocessing updates
@@ -422,7 +415,11 @@ export function attach_components(...components: ComponentClass[]) {
     return function (value: any, _context: ClassDecoratorContext) {
         const ctor = value as GameObjectConstructorWithComponentList;
         const parentComponents = (Object.getPrototypeOf(ctor) as GameObjectConstructorWithComponentList).autoAddComponents || [];
-        ctor.autoAddComponents = [...parentComponents, ...components];
+        const merged = [...parentComponents, ...components];
+        const deduped: ComponentClass[] = [];
+        const seen = new Set<ComponentClass>();
+        for (const c of merged) { if (!seen.has(c)) { seen.add(c); deduped.push(c); } }
+        ctor.autoAddComponents = deduped;
         // no class replacement
     };
 }

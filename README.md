@@ -1070,39 +1070,9 @@ See `src/bmsx/fsm.ts` for implementation details and further customization optio
 
 ### Decorators
 
-The BMSX engine uses TypeScript decorators to simplify and structure state machine definitions and assignments:
+For a complete overview of all engine decorators (serialization, components, events, FSM, BT) with usage and best practices, see:
 
-- **@build_fsm(fsm_name?)**
-  Use this decorator on a static method that returns a state machine blueprint. It registers the state machine definition under the given name (or the class name if omitted, see below). This allows the engine to automatically discover and build state machines for your game objects.
-
-  > Note that omitting the name will use the class name as the FSM name and will automatically cause the `StateMachine` to be bound to the class at game startup. Thus, it is not required to use the `@assign_fsm` decorator if you only need a single FSM for a class that uses the `@build_fsm` decorator without arguments.
-
-  ```typescript
-  @build_fsm('player_animation') // Optional name for the FSM
-  function generateMachineBlueprint(): StateMachineBlueprint {
-      return { /* ...state definitions... */ };
-  }
-
-   // No decorator required for assigning the FSM to the class, because the @build_fsm decorator is used without a name.
-   class AGameObject {
-       @build_fsm() // No name provided, uses class name
-       public static generateMachineBlueprint(): StateMachineBlueprint {
-           return { /* ...state definitions... */ };
-       }
-   }
-
-- `@assign_fsm(...fsms)`
-Attach one or more named FSMs to a class. This is useful for game objects that need to participate in multiple state machines (for example, animation and AI). The decorator ensures the FSMs are linked to the class and available at runtime.
-
-   ```typescript
-   @assign_fsm('player_animation', 'ai_controller')
-   export class Fighter { ... }
-   ```
-
-### How it works
-- The decorators automatically register FSM blueprints and assignments in global registries (StateDefinitionBuilders), so the engine can instantiate and manage them without manual wiring.
-- *FSM assignments are inherited through the class hierarchy*, so subclasses automatically get the FSMs of their parent classes unless overridden.
-See `src/bmsx/fsmdecorators.ts` for implementation details.
+- docs/decorators.md
 
 ## Event and Transition Path Syntax
 
@@ -1795,26 +1765,7 @@ BMSX features a simple event system that enables decoupled communication between
 
 ### Subscribing to Events
 
-You can subscribe to events using decorators provided in `eventemitter.ts`:
-
-- `@subscribesToGlobalEvent(eventName)`: Listen to an event globally ll emitters).
-- `@subscribesToSelfScopedEvent(eventName)`: Listen to events emitted by the object itself.
-- `@subscribesToParentScopedEvent(eventName)`: Listen to events emitted by the object's parent.
-- `@subscribesToEmitterScopedEent(eventName, emitter_id)`: Listen to events from a specific emitter by ID.
-
-Example:
-
-```typescript
-@subscribesToGlobalEvent('playerDied')
-onPlayerDied(event) {
-    // Handle player death globally
-}
-
-@subscribesToSelfScopedEvent('damaged')
-onDamaged(event) {
-    // Handle when this object is damaged
-}
-```
+See docs/decorators.md for the subscription decorators and binding lifecycle. This section focuses on the emitter API and usage patterns.
 
 ### Emitting Events
 

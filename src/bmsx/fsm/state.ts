@@ -393,9 +393,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
                 break;
             default:
                 currentContext = this.substates?.[currentPart];
-                if (!currentContext) {
-                    throw new Error(`No state with ID '${currentPart}'`);
-                }
+                if (!currentContext) throw new Error(`No state with ID '${currentPart}'`);
                 break;
         }
 

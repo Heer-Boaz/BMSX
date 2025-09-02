@@ -543,11 +543,31 @@ export function onload(value: (...args: any[]) => any, context: ClassMethodDecor
  * @param fromJSON - An optional function that converts a JSON-serialized object back into an instance of the class.
  * @returns The original constructor function.
  */
-export function insavegame(value: any, _context: ClassDecoratorContext) {
-    Reviver.constructors ??= {};
-    Reviver.constructors[value.name] = value as unknown as new () => any;
-    (value as any).__exclude_savegame__ = false;
-    Serializer.classExcludeMap.set(value.name, false);
+// Supports @insavegame and @insavegame('TypeId')
+export function insavegame<T extends abstract new (...args: any[]) => any>(value: T, context: ClassDecoratorContext<T>): void;
+export function insavegame(typeId: string): <T extends abstract new (...args: any[]) => any>(value: T, context: ClassDecoratorContext<T>) => void;
+export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext) {
+    function register(ctor: any, typeId?: string) {
+        const key = typeId ?? (ctor?.name ?? '(anonymous)');
+        Reviver.constructors ??= {};
+        Reviver.constructors[key] = ctor as unknown as new () => any;
+        (ctor as any).__exclude_savegame__ = false;
+        Serializer.classExcludeMap.set(key, false);
+    }
+
+    // Usage: @insavegame
+    if (typeof valueOrId === 'function' && maybeContext) {
+        register(valueOrId);
+        return undefined as any;
+    }
+    // Usage: @insavegame('TypeId') → returns the actual decorator
+    if (typeof valueOrId === 'string' && !maybeContext) {
+        const typeId = valueOrId as string;
+        return function <T extends abstract new (...args: any[]) => any>(value: T, _context: ClassDecoratorContext<T>) {
+            register(value, typeId);
+        };
+    }
+    return undefined as any;
 }
 
 /**

@@ -17,14 +17,14 @@ export class bclass extends SpriteObject {
     @build_fsm('bclass_animation')
     public static bouw_testfsm(): StateMachineBlueprint {
         return {
-            states: {
+            substates: {
                 ani1: {
-                    run: () => { },
-                    enter(this: bclass) { this.imgid = BitmapId.b; },
+                    tick: () => { },
+                    entering_state(this: bclass) { this.imgid = BitmapId.b; },
                 },
                 '#ani2': {
-                    run: () => { },
-                    enter(this: bclass) { this.imgid = BitmapId.b2; },
+                    tick: () => { },
+                    entering_state(this: bclass) { this.imgid = BitmapId.b2; },
                 },
             }
         };
@@ -33,26 +33,25 @@ export class bclass extends SpriteObject {
     @build_fsm('bclass_meuk')
     public static bouw_meukfsm(): StateMachineBlueprint {
         return {
-            parallel: true,
-            states: {
+            is_concurrent: true,
+            substates: {
                 '#meuk1': {
-                    run: () => { },
-                    enter(this: bclass) { this.pos.x += 10; },
-                    // submachine_id: 'bclass_meuk_submachine',
-                    states: {
+                    tick: () => { },
+                    entering_state(this: bclass) { this.pos.x += 10; },
+                    substates: {
                         '#blupperblop1': {
-                            run(this: bclass) { },
-                            enter(this: bclass) { }, //console.log('enter blupperblop1'); },
+                            tick(this: bclass) { },
+                            entering_state(this: bclass) { }, //console.log('enter blupperblop1'); },
                         },
                         blupperblop2: {
-                            run(this: bclass) { },
-                            enter(this: bclass) { }, //console.log('enter blupperblop2'); },
+                            tick(this: bclass) { },
+                            entering_state(this: bclass) { }, //console.log('enter blupperblop2'); },
                         },
                     },
                 },
                 meuk2: {
-                    run: () => { },
-                    enter(this: bclass) { }, // this.pos.y += 10; },
+                    tick: () => { },
+                    entering_state(this: bclass) { }, // this.pos.y += 10; },
                 },
             }
         };
@@ -89,43 +88,40 @@ export class bclass extends SpriteObject {
                         this.testmeuk();
                         $.event_emitter.emit('testEvent', this);
 
-                        this.sc.to('bclass.bla');
-                        this.sc.machines.bclass_animation.to('ani2');
-                        break;
+                        this.sc.machines.bclass_animation.transition_to('ani2');
+                        this.sc.transition_to('bclass.bla'); // Ugly, transitioning another state machine
                     case 'blap':
                         if (consumed) break;
                         $.input.getPlayerInput(1).consumeAction(action);
                         $.event_emitter.emit('testEventOnce', this);
 
-                        this.sc.machines.bclass_animation.to('ani1');
-                        if (this.sc.is('bclass_meuk.meuk1.blupperblop1')) {
-                            this.sc.to('bclass_meuk.meuk1.blupperblop2');
+                        this.sc.machines.bclass_animation.transition_to('ani1');
+                        if (this.sc.matches_state_path('bclass_meuk.meuk1.blupperblop1')) {
+                            return this.sc.transition_to('bclass_meuk.meuk1.blupperblop1'); // Ugly, transitioning another state machine
                         }
                         else {
-                            this.sc.to('bclass_meuk.meuk1.blupperblop1');
+                            return this.sc.transition_to('bclass_meuk.meuk1.blupperblop2'); // Ugly, transitioning another state machine
                         }
-                        this.sc.to('bclass.blap');
-
-                        break;
                 }
             }
+            return undefined; // No state transition
         }
 
         return {
-            parallel: true,
-            states: {
+            is_concurrent: true,
+            substates: {
                 bla: {
-                    on_input: {
+                    input_event_handlers: {
                         'bla[j]': {
                             do(this: bclass) {
                                 // PSG.playCustomInstrument(snareInstrument, 10000);
                             }
                         },
                     },
-                    run: blarun,
+                    tick: blarun,
                 },
                 '#blap': {
-                    run: blarun,
+                    tick: blarun,
                 },
             }
         };

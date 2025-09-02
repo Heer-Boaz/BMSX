@@ -65,9 +65,6 @@ export function build_fsm(fsm_name?: Identifier) {
     };
 }
 
-// decorators.ts
-
-// fsm-decorators.ts
 const HANDLER_META = Symbol('fsm:handlerMeta');
 
 export type FsmHandlerDecl = {

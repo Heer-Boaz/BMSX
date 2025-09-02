@@ -20,16 +20,16 @@ export class gamemodel extends BaseModel {
 	@build_fsm()
 	public static bouw(): StateMachineBlueprint {
 		return {
-			states: {
-				'#game_start': {
-					enter(this: gamemodel) {
+			substates: {
+				'_game_start': {
+					entering_state(this: gamemodel) {
 					},
-					run(this: gamemodel, s: State) {
-						s.to('default');
+					tick(this: gamemodel, s: State) {
+						return 'default';
 					}
 				},
 				default: {
-					run: BaseModel.defaultrun,
+					tick: BaseModel.defaultrun,
 				},
 			}
 		};

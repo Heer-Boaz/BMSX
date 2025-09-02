@@ -57,6 +57,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 */
 	addComponent<T extends Component>(component: T): void {
 		this.components[component.constructor.name] = component;
+		// Late-init: bind component event subscriptions and perform registry registration here,
+		// after the component has been fully constructed and added to the container.
+		component.onloadSetup();
 	}
 
 	/**
