@@ -200,7 +200,7 @@ export class HitBoxVisualizer extends Component {
     }
 
     override preprocessingUpdate(): void {
-        const parent = this.parent as SpriteObject;
+        const parent = this.parent as unknown as SpriteObject;
         // Draw polygons if available on the GameObject
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
@@ -245,7 +245,7 @@ export class ObjectHighlighterComponent extends Component {
     }
 
     override preprocessingUpdate(): void {
-        const parent = this.parent as SpriteObject;
+        const parent = this.parent as unknown as SpriteObject;
 
         // Draw polygons if available on the GameObject
         if (parent.hasHitPolygon) {

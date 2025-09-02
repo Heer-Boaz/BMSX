@@ -1,4 +1,4 @@
-import { $, GameObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
+import { $, Component, GameObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
 import { Fighter } from './fighter';
 import { gamemodel } from './gamemodel';
 import { Action } from './inputmapping';
@@ -7,7 +7,7 @@ import { AudioId, BitmapId } from './resourceids';
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
 
 @insavegame
-export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent {
+export class JumpingWhileLeavingScreenComponent extends Component {
 	constructor(_id: string) {
 		super(_id);
 		this.enabled = false; // Disabled by default
@@ -30,7 +30,7 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 
 @insavegame
 @assign_fsm('player_animation')
-@attach_components(JumpingWhileLeavingScreenComponent)
+@attach_components(ScreenBoundaryComponent, JumpingWhileLeavingScreenComponent)
 export class Eila extends Fighter {
 
 	@build_fsm()

@@ -286,12 +286,12 @@ export class AudioEventManager implements RegisterablePersistent {
 		for (let i = 0; i < entry.rules.length; i++) {
 			const r = entry.rules[i];
 			if (!this.matches(r.when, payload)) continue;
-			const d = r.do as unknown as { musicTransition?: { audioId: asset_id; sync?: unknown; fadeMs?: number; startAtLoopStart?: boolean } };
+			const d = r.do;
 			if (d && typeof d === 'object' && 'musicTransition' in d && d.musicTransition) {
 				const mt = d.musicTransition;
 				$.sndmaster.requestMusicTransition({
 					to: mt.audioId,
-					sync: (mt as any).sync,
+					sync: mt.sync,
 					fadeMs: mt.fadeMs,
 					startAtLoopStart: mt.startAtLoopStart,
 				});
@@ -571,7 +571,7 @@ export class AudioEventManager implements RegisterablePersistent {
 
 		for (const map of maps) {
 			for (const assetId in map) {
-				const v: any = (map as any)[assetId];
+				const v: any = map[assetId];
 				if (!v || typeof v !== 'object') continue;
 
 				// Case 1: Container with explicit `events` map

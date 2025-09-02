@@ -218,7 +218,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const model: BaseModel = $.model;
 		model.applyViewSettings();
 		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
+		$.model.currentSpace.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
 	}
 
 	/**

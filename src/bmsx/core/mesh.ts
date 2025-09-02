@@ -1,4 +1,3 @@
-import { update_tagged_components } from '../component/basecomponent';
 import { TransformComponent } from '../component/transformcomponent';
 import { Material } from '../render/3d/material';
 import { M4, Mat4, Q, quat } from '../render/3d/math3d';
@@ -438,10 +437,7 @@ export abstract class MeshObject extends GameObject implements Oriented, Scaled 
 		this.loadMeshModel(this.meshModel); // textures binden NA volledige opbouw
 	}
 
-	@update_tagged_components('physics_pre')
-	@update_tagged_components('physics_post')
-	public override run(): void {
-		const dtSec = $.deltaTime / 1000;
+	public animateStep(dtSec: number): void {
 		if (this.meshModel?.animations) {
 			this.animationTime += dtSec;
 			this._advanceRotationBlend(dtSec);
@@ -500,6 +496,10 @@ export abstract class MeshObject extends GameObject implements Oriented, Scaled 
 			}
 			if (nodesChanged) this.recalcMeshInstances();
 		}
+	}
+
+	public override run(): void {
+		this.animateStep($.deltaTime / 1000);
 		super.run();
 	}
 

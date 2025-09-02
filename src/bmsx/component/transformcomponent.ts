@@ -5,7 +5,6 @@ import { insavegame } from '../serializer/gameserializer';
 import { Component, componenttags_postprocessing } from './basecomponent';
 
 @insavegame
-@componenttags_postprocessing('position_update_axis')
 export class TransformComponent extends Component {
     public position: vec3arr;
     // public rotation: vec3arr; // retained for legacy callers; not authoritative if parent supplies quaternion

@@ -95,12 +95,12 @@ export function validateAudioEventReferences(resources: Resource[]): void {
                         errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: sync cannot specify both stinger and delayMs`);
                     }
                     if (hasStinger) {
-                        checkAction({ audioId: (sync as any).stinger }, { file, event: eventName, ruleIndex: ri });
-                        if ((sync as any).returnTo !== undefined) checkAction({ audioId: (sync as any).returnTo }, { file, event: eventName, ruleIndex: ri });
-                        if ((sync as any).returnTo !== undefined && (sync as any).returnToPrevious) {
+                        checkAction({ audioId: sync.stinger }, { file, event: eventName, ruleIndex: ri });
+                        if (sync.returnTo !== undefined) checkAction({ audioId: sync.returnTo }, { file, event: eventName, ruleIndex: ri });
+                        if (sync.returnTo !== undefined && sync.returnToPrevious) {
                             errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: provide either returnTo or returnToPrevious, not both`);
                         }
-                        if ((sync as any).returnTo !== undefined && (sync as any).returnTo !== mt.audioId) {
+                        if (sync.returnTo !== undefined && sync.returnTo !== mt.audioId) {
                             errors.push(`Ambiguous musicTransition at ${file}${eventName ? `:${eventName}` : ''}#rule${ri}: 'audioId' (post-stinger target) conflicts with 'returnTo' (two targets specified)`);
                         }
                     } else if (!hasDelay) {
@@ -156,8 +156,8 @@ export function validateAudioEventReferences(resources: Resource[]): void {
                 }
             }
             // Fallback: if root itself looks like a single entry with 'rules'
-            if (Array.isArray((obj as any).rules)) {
-                validateRules((obj as any).rules, fileTag);
+            if (Array.isArray((obj.rules))) {
+                validateRules(obj.rules, fileTag);
             }
         } catch (e) {
             throw new Error(`Failed to parse AEM file '${r.filepath ?? r.name}': ${e?.message ?? e}`);

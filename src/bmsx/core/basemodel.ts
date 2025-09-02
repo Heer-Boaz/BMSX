@@ -1,4 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
+import { BehaviorTreeSystem, BoundarySystem, PrePositionSystem, StateMachineSystem, SystemManager, TileCollisionSystem, PhysicsPreSystem, PhysicsPostSystem, TransformSystem, MeshAnimationSystem } from "../ecs/system";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
@@ -14,7 +15,6 @@ import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './cameraobject';
-import { EventHandler } from './eventemitter';
 import { $, runGate } from './game';
 import { GameObject } from './gameobject';
 import { AmbientLightObject, LightObject } from './lightobject';
@@ -183,10 +183,6 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
 
     public get id(): Identifier { return 'model'; } // Required for IStateful and IIdentifiable
 
-    on(event_name: string, handler: EventHandler, emitter_id: Identifier): void {
-        $.event_emitter.on(event_name, handler, this, emitter_id);
-    }
-
     // Internal physics diagnostic frame counter (temporary instrumentation)
     private static _physDiagFrames?: number;
 
@@ -207,6 +203,10 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * The controller for the state machine.
      */
     public sc: StateMachineController;
+
+    /** ECS systems runner */
+    @excludepropfromsavegame
+    public systems: SystemManager = new SystemManager();
 
     /**
      * An object that maps space IDs to their corresponding Space objects.
@@ -264,6 +264,25 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             }
         }
         return result;
+    }
+
+    /**
+     * Register a default pipeline of systems to replicate legacy behavior in a standard ECS loop.
+     * Order: Pre(position), BehaviorTrees, StateMachines, Post(position)
+     */
+    public setupDefaultSystems(): void {
+        const SM = this.systems;
+        SM.clear();
+        // Priorities create a stable order across all systems within each TickGroup
+        SM.register(new PrePositionSystem(10));
+        SM.register(new PhysicsPreSystem(15));
+        SM.register(new BehaviorTreeSystem(20));
+        SM.register(new MeshAnimationSystem(25));
+        SM.register(new StateMachineSystem(30));
+        SM.register(new PhysicsPostSystem(35));
+        SM.register(new BoundarySystem(10));
+        SM.register(new TileCollisionSystem(20));
+        SM.register(new TransformSystem(50));
     }
 
     public getActiveLights(): LightObject[] {
@@ -416,6 +435,8 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         this[objid_2_objspaceid] = {};
 
         this.paused = false;
+        // Initialize default ECS pipeline
+        this.setupDefaultSystems();
     }
 
     public init_on_boot(): void {
@@ -545,12 +566,15 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             return;
         }
 
-        let objects = $.model.objects; // Get all objects in the current space
-        // Let all game objects take a turn
-        objects.forEach(o => !o.disposeFlag && o.run && o.run());
+        // ECS pipeline: run registered systems in priority order
+        $.model.systems.update($.model);
 
         // Remove all objects that are to be disposed
-        objects.filter(o => o.disposeFlag).forEach(o => $.model.exile(o));
+        const objects = $.model.objects;
+        for (let i = objects.length - 1; i >= 0; --i) {
+            const o = objects[i];
+            if (o.disposeFlag) $.model.exile(o);
+        }
     };
 
     /**

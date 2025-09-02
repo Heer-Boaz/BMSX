@@ -15,8 +15,6 @@ export interface PhysicsComponentOptions extends Omit<PhysicsBodyDesc, 'position
 }
 
 @excludeclassfromsavegame
-@componenttags_preprocessing('physics_pre') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
-@componenttags_postprocessing('physics_post') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
 export class PhysicsComponent extends Component {
 	body: PhysicsBody | null = null;
 	syncAxis = { x: true, y: true, z: true };

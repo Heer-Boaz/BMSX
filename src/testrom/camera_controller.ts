@@ -126,6 +126,7 @@ export class CameraController extends GameObject {
 	}
 
 	override run(): void {
+		super.run();
 		const input = $.input.getPlayerInput(1);
 
 		if (input.getActionState('save').justpressed) {

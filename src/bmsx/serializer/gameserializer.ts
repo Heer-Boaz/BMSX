@@ -9,7 +9,7 @@ import { decodeBinary, encodeBinary } from "./binencoder";
 type ConstructorWithSaveGame<T = any> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
 
 function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean } {
-    return !!ctor && typeof ctor === 'function' && '__exclude_savegame__' in (ctor) && (ctor as any).__exclude_savegame__ === true;
+    return !!ctor && typeof ctor === 'function' && '__exclude_savegame__' in (ctor) && (ctor as ConstructorWithSaveGame).__exclude_savegame__ === true;
 }
 
 /**
@@ -551,14 +551,14 @@ export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext)
         const key = typeId ?? (ctor?.name ?? '(anonymous)');
         Reviver.constructors ??= {};
         Reviver.constructors[key] = ctor as unknown as new () => any;
-        (ctor as any).__exclude_savegame__ = false;
+        (ctor as ConstructorWithSaveGame).__exclude_savegame__ = false;
         Serializer.classExcludeMap.set(key, false);
     }
 
     // Usage: @insavegame
     if (typeof valueOrId === 'function' && maybeContext) {
         register(valueOrId);
-        return undefined as any;
+        return undefined;
     }
     // Usage: @insavegame('TypeId') → returns the actual decorator
     if (typeof valueOrId === 'string' && !maybeContext) {
@@ -567,7 +567,7 @@ export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext)
             register(value, typeId);
         };
     }
-    return undefined as any;
+    return undefined;
 }
 
 /**
@@ -577,7 +577,7 @@ export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext)
  * @returns The original constructor function.
  */
 export function excludeclassfromsavegame(value: any, _context: ClassDecoratorContext) {
-    (value as any).__exclude_savegame__ = true;
+    (value as ConstructorWithSaveGame).__exclude_savegame__ = true;
     Serializer.classExcludeMap.set(value.name, true);
     Serializer.excludedObjectTypes.add(value.name);
 }

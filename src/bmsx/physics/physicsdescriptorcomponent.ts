@@ -12,8 +12,6 @@ import { PhysicsComponent, PhysicsComponentOptions } from './physicscomponent';
  * Keeps save data deterministic (no transient velocities/forces stored) while allowing runtime body recreation.
  */
 @insavegame
-@componenttags_preprocessing('physics_pre')
-@componenttags_postprocessing('physics_post')
 export class PhysicsDescriptorComponent extends Component {
     shape: PhysicsBodyDesc['shape'];
     mass: number; restitution: number; friction: number; isTrigger: boolean; layer: number; mask: number;

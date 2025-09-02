@@ -14,8 +14,6 @@ import { PhysicsWorld } from './physicsworld';
  * (We avoid pulling in a hard dependency on a particular renderer here.)
  */
 @excludeclassfromsavegame
-@componenttags_preprocessing('physics_pre') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
-@componenttags_postprocessing('physics_post') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
 export class PhysicsDebugComponent extends Component {
     override get enabled() { return this._enabled; }
     override set enabled(v: boolean) { this._enabled = v; }

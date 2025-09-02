@@ -1,16 +1,10 @@
-import { $, AmbientLightObject, BaseModel, build_fsm, CameraObject, CameraPathBinder, CatmullRomPath, Direction, DirectionalLightObject, EventTimeline, GameObject, InputMap, insavegame, new_vec3, PathRunner, PhysicsWorld, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3, WaveManager } from '../bmsx';
+import { $, AmbientLightObject, BaseModel, build_fsm, CameraObject, Direction, DirectionalLightObject, GameObject, InputMap, insavegame, new_vec3, PhysicsWorld, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
-import { PhysicsDescriptorComponent } from '../bmsx/physics/physicsdescriptorcomponent';
 import { bclass } from './bclass';
 import { _model, gamepadInputMapping, keyboardInputMapping } from './bootloader';
-import { BulletManager } from './bullets';
 import { CameraController } from './camera_controller';
-import { DamageNumberManager, ExplosionEmitter, ImpactBurst, MuzzleFlash } from './effects';
-import { EnemyHealthComponent } from './enemyhealth';
-import { RailShooterHUD } from './hud';
-import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D, spawnSimpleCity } from './objects3d';
+import { AnimatedMorphSphere, Cube3D, SmallCube3D } from './objects3d';
 import { BitmapId } from './resourceids';
-import { Reticle } from './reticle';
 
 const savestring = Symbol('savestring');
 @insavegame
@@ -154,107 +148,107 @@ export class gamemodel extends BaseModel {
 
 		$.view.setSpritesAmbient(true, 1.0);
 		$.view.setParticlesAmbient(1, 1.0);
-		$.view.setSkyboxTintExposure([.5, .4, .2], .5);
+		$.view.setSkyboxTintExposure([.5, .4, .2], .1);
 
-		const rail = CatmullRomPath.fromJSON(railDef);
-		const runner = new PathRunner(rail, { playback: 'clamp', distanceMode: false });
-		// Populate multi-silhouette deterministic cityscape around the rail for motion parallax
-		spawnSimpleCity(rail, {
-			seed: 'demo-city-v2',
-			steps: 240,
-			debugLog: false,
-			worldScale: 6,
-			silhouettes: [
-				// Immediate showcase towers right at the start so user always sees scale
-				{ uStart: -0.02, uEnd: 0.05, lateralSpan: 90, minHeight: 80, maxHeight: 160, density: 0.75, gridSize: 12, footprintMinFactor: 0.50, footprintMaxFactor: 0.75 },
-				// Peripheral sprawl
-				{ uStart: 0.0, uEnd: 0.18, lateralSpan: 120, minHeight: 10, maxHeight: 40, density: 0.50, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.85 },
-				// Approaching mid-rise
-				{ uStart: 0.18, uEnd: 0.42, lateralSpan: 160, minHeight: 18, maxHeight: 70, density: 0.60, gridSize: 14, footprintMinFactor: 0.50, footprintMaxFactor: 0.80 },
-				// Dense downtown core
-				{ uStart: 0.42, uEnd: 0.75, lateralSpan: 220, minHeight: 30, maxHeight: 140, density: 0.65, gridSize: 16, footprintMinFactor: 0.45, footprintMaxFactor: 0.75 },
-				// Transition to high plateau towers
-				{ uStart: 0.75, uEnd: 0.90, lateralSpan: 250, minHeight: 50, maxHeight: 180, density: 0.60, gridSize: 18, footprintMinFactor: 0.40, footprintMaxFactor: 0.70 },
-				// Outskirts taper
-				{ uStart: 0.90, uEnd: 1.05, lateralSpan: 160, minHeight: 15, maxHeight: 60, density: 0.40, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.80 },
-			],
-		});
-		runner.speed = 0.0; // unused in deterministic playback
-		const activeCam = cam1; // bind primary camera to rail
-		// Deterministic progression (manual) across 24s
-		const totalDuration = 24;
-		let elapsed = 0;
-		// EventTimeline drives events & ranged camera effects keyed to path progress
-		const eventTimeline = new EventTimeline({ mode: 'u' });
-		for (const ev of railDef.events) eventTimeline.addInstant({ u: ev.time, name: ev.name, data: ev.data });
-		const baseFov = activeCam.camera.fovDeg;
-		eventTimeline.addRange({ startU: 0, endU: 1, update: (tn) => { const breathe = Math.sin(tn * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); }, type: 'camera.fovPulse' });
-		// Bind camera to path with look-ahead + auto-rotation
-		const camBinder = new CameraPathBinder(runner, activeCam, { autoRotate: true, lookAheadU: 0.02 });
-		// Hook timeline camera events
-		eventTimeline.on('camera.fovPulse', d => camBinder.startFovPulse(d), this);
-		eventTimeline.on('camera.shake', d => camBinder.startShake(d), this);
+		// const rail = CatmullRomPath.fromJSON(railDef);
+		// const runner = new PathRunner(rail, { playback: 'clamp', distanceMode: false });
+		// // Populate multi-silhouette deterministic cityscape around the rail for motion parallax
+		// spawnSimpleCity(rail, {
+		// 	seed: 'demo-city-v2',
+		// 	steps: 240,
+		// 	debugLog: false,
+		// 	worldScale: 6,
+		// 	silhouettes: [
+		// 		// Immediate showcase towers right at the start so user always sees scale
+		// 		{ uStart: -0.02, uEnd: 0.05, lateralSpan: 90, minHeight: 80, maxHeight: 160, density: 0.75, gridSize: 12, footprintMinFactor: 0.50, footprintMaxFactor: 0.75 },
+		// 		// Peripheral sprawl
+		// 		{ uStart: 0.0, uEnd: 0.18, lateralSpan: 120, minHeight: 10, maxHeight: 40, density: 0.50, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.85 },
+		// 		// Approaching mid-rise
+		// 		{ uStart: 0.18, uEnd: 0.42, lateralSpan: 160, minHeight: 18, maxHeight: 70, density: 0.60, gridSize: 14, footprintMinFactor: 0.50, footprintMaxFactor: 0.80 },
+		// 		// Dense downtown core
+		// 		{ uStart: 0.42, uEnd: 0.75, lateralSpan: 220, minHeight: 30, maxHeight: 140, density: 0.65, gridSize: 16, footprintMinFactor: 0.45, footprintMaxFactor: 0.75 },
+		// 		// Transition to high plateau towers
+		// 		{ uStart: 0.75, uEnd: 0.90, lateralSpan: 250, minHeight: 50, maxHeight: 180, density: 0.60, gridSize: 18, footprintMinFactor: 0.40, footprintMaxFactor: 0.70 },
+		// 		// Outskirts taper
+		// 		{ uStart: 0.90, uEnd: 1.05, lateralSpan: 160, minHeight: 15, maxHeight: 60, density: 0.40, gridSize: 14, footprintMinFactor: 0.55, footprintMaxFactor: 0.80 },
+		// 	],
+		// });
+		// runner.speed = 0.0; // unused in deterministic playback
+		// const activeCam = cam1; // bind primary camera to rail
+		// // Deterministic progression (manual) across 24s
+		// const totalDuration = 24;
+		// let elapsed = 0;
+		// // EventTimeline drives events & ranged camera effects keyed to path progress
+		// const eventTimeline = new EventTimeline({ mode: 'u' });
+		// for (const ev of railDef.events) eventTimeline.addInstant({ u: ev.time, name: ev.name, data: ev.data });
+		// const baseFov = activeCam.camera.fovDeg;
+		// eventTimeline.addRange({ startU: 0, endU: 1, update: (tn) => { const breathe = Math.sin(tn * Math.PI * 2 * 1.2) * 0.5; activeCam.camera.fovDeg = baseFov + breathe; activeCam.camera.markDirty(); }, type: 'camera.fovPulse' });
+		// // Bind camera to path with look-ahead + auto-rotation
+		// const camBinder = new CameraPathBinder(runner, activeCam, { autoRotate: true, lookAheadU: 0.02 });
+		// // Hook timeline camera events
+		// eventTimeline.on('camera.fovPulse', d => camBinder.startFovPulse(d), this);
+		// eventTimeline.on('camera.shake', d => camBinder.startShake(d), this);
 
-		// Reticle & bullets setup
-		const reticle = new Reticle();
-		_model.spawn(reticle, new_vec3(0, 0, 0));
-		const bullets = new BulletManager();
-		const dmgNums = new DamageNumberManager();
-		_model.spawn(bullets);
-		const hud = new RailShooterHUD();
-		_model.spawn(hud);
-		let bossObjId: string | null = null; hud.bossId = bossObjId;
+		// // Reticle & bullets setup
+		// const reticle = new Reticle();
+		// _model.spawn(reticle, new_vec3(0, 0, 0));
+		// const bullets = new BulletManager();
+		// const dmgNums = new DamageNumberManager();
+		// _model.spawn(bullets);
+		// const hud = new RailShooterHUD();
+		// _model.spawn(hud);
+		// let bossObjId: string | null = null; hud.bossId = bossObjId;
 
-		// Wave manager listens to rail spawn events
-		const waves = new WaveManager(eventTimeline);
-		waves.onSpawn('spawn.enemyWave', (data) => {
-			const count = data?.count ?? 3;
-			const spread = data?.spread ?? 5;
-			for (let i = 0; i < count; i++) {
-				const cube = new PhysDynamicCube(0.6);
-				const angle = (i / count) * Math.PI * 2;
-				const s = runner.sample();
-				const radius = spread;
-				const px = s.p.x + Math.cos(angle) * radius;
-				const py = s.p.y + (Math.random() * 2 - 1) * 2;
-				const pz = s.p.z + Math.sin(angle) * radius;
-				_model.spawn(cube, new_vec3(px, py, pz));
-				cube.addComponent(new PhysicsDescriptorComponent(cube.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.6, 0.6, 0.6) }, mass: 1, restitution: 0.3, friction: 0.4 }));
-				cube.addComponent(new EnemyHealthComponent(cube.id, 30, 25));
-			}
-		});
-		waves.onSpawn('spawn.enemyBoss', (data) => {
-			const size = data?.size ?? 3;
-			const boss = new PhysDynamicCube(size);
-			const s = runner.sample();
-			_model.spawn(boss, new_vec3(s.p.x, s.p.y + 4, s.p.z));
-			boss.addComponent(new PhysicsDescriptorComponent(boss.id, { shape: { kind: 'aabb', halfExtents: new_vec3(size, size, size) }, mass: 5, restitution: 0.2, friction: 0.5 }));
-			boss.addComponent(new EnemyHealthComponent(boss.id, 300, 1000, { boss: true }));
-			bossObjId = boss.id; hud.bossId = bossObjId;
-		});
+		// // Wave manager listens to rail spawn events
+		// const waves = new WaveManager(eventTimeline);
+		// waves.onSpawn('spawn.enemyWave', (data) => {
+		// 	const count = data?.count ?? 3;
+		// 	const spread = data?.spread ?? 5;
+		// 	for (let i = 0; i < count; i++) {
+		// 		const cube = new PhysDynamicCube(0.6);
+		// 		const angle = (i / count) * Math.PI * 2;
+		// 		const s = runner.sample();
+		// 		const radius = spread;
+		// 		const px = s.p.x + Math.cos(angle) * radius;
+		// 		const py = s.p.y + (Math.random() * 2 - 1) * 2;
+		// 		const pz = s.p.z + Math.sin(angle) * radius;
+		// 		_model.spawn(cube, new_vec3(px, py, pz));
+		// 		cube.addComponent(new PhysicsDescriptorComponent(cube.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.6, 0.6, 0.6) }, mass: 1, restitution: 0.3, friction: 0.4 }));
+		// 		cube.addComponent(new EnemyHealthComponent(cube.id, 30, 25));
+		// 	}
+		// });
+		// waves.onSpawn('spawn.enemyBoss', (data) => {
+		// 	const size = data?.size ?? 3;
+		// 	const boss = new PhysDynamicCube(size);
+		// 	const s = runner.sample();
+		// 	_model.spawn(boss, new_vec3(s.p.x, s.p.y + 4, s.p.z));
+		// 	boss.addComponent(new PhysicsDescriptorComponent(boss.id, { shape: { kind: 'aabb', halfExtents: new_vec3(size, size, size) }, mass: 5, restitution: 0.2, friction: 0.5 }));
+		// 	boss.addComponent(new EnemyHealthComponent(boss.id, 300, 1000, { boss: true }));
+		// 	bossObjId = boss.id; hud.bossId = bossObjId;
+		// });
 
-		// Inject runner & binder into update loop via a lightweight GameObject
-		class RailDemoDriver extends GameObject {
-			override run(): void {
-				const dtSec = $.deltaTime / 1000;
-				elapsed += dtSec; const prevParam = runner.u; const newParam = Math.min(1, elapsed / totalDuration); if (newParam !== prevParam) runner.u = newParam;
-				eventTimeline.update(dtSec, runner);
-				camBinder.update(dtSec);
-				$.view.atmosphere.progressFactor = runner.u;
-				// Reticle & firing logic
-				reticle.updateFromInput();
-				const camObj = activeCam.camera; const basis = camObj.basis ? camObj.basis() : undefined; const fBasis = basis ? basis.f : { x: 0, y: 0, z: -1 }; const rBasis = basis ? basis.r : { x: 1, y: 0, z: 0 }; const uBasis = basis ? basis.u : { x: 0, y: 1, z: 0 };
-				const aimDir = { x: fBasis.x + rBasis.x * reticle.ox + uBasis.x * reticle.oy, y: fBasis.y + rBasis.y * reticle.ox + uBasis.y * reticle.oy, z: fBasis.z + rBasis.z * reticle.ox + uBasis.z * reticle.oy };
-				hud.reticle = { ox: reticle.ox, oy: reticle.oy };
-				const aimLen = Math.hypot(aimDir.x, aimDir.y, aimDir.z) || 1; aimDir.x /= aimLen; aimDir.y /= aimLen; aimDir.z /= aimLen; const dist = 15; reticle.x = camObj.position.x + aimDir.x * dist; reticle.y = camObj.position.y + aimDir.y * dist; reticle.z = camObj.position.z + aimDir.z * dist;
-				const input = $.input.getPlayerInput(1);
-				if (input.getActionState('fire').justpressed) {
-					bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
-					_model.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
-				}
-				for (const impact of bullets.popImpacts()) { const enemy = $.model.getGameObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
-			}
-		}
+		// // Inject runner & binder into update loop via a lightweight GameObject
+		// class RailDemoDriver extends GameObject {
+		// 	override run(): void {
+		// 		const dtSec = $.deltaTime / 1000;
+		// 		elapsed += dtSec; const prevParam = runner.u; const newParam = Math.min(1, elapsed / totalDuration); if (newParam !== prevParam) runner.u = newParam;
+		// 		eventTimeline.update(dtSec, runner);
+		// 		camBinder.update(dtSec);
+		// 		$.view.atmosphere.progressFactor = runner.u;
+		// 		// Reticle & firing logic
+		// 		reticle.updateFromInput();
+		// 		const camObj = activeCam.camera; const basis = camObj.basis ? camObj.basis() : undefined; const fBasis = basis ? basis.f : { x: 0, y: 0, z: -1 }; const rBasis = basis ? basis.r : { x: 1, y: 0, z: 0 }; const uBasis = basis ? basis.u : { x: 0, y: 1, z: 0 };
+		// 		const aimDir = { x: fBasis.x + rBasis.x * reticle.ox + uBasis.x * reticle.oy, y: fBasis.y + rBasis.y * reticle.ox + uBasis.y * reticle.oy, z: fBasis.z + rBasis.z * reticle.ox + uBasis.z * reticle.oy };
+		// 		hud.reticle = { ox: reticle.ox, oy: reticle.oy };
+		// 		const aimLen = Math.hypot(aimDir.x, aimDir.y, aimDir.z) || 1; aimDir.x /= aimLen; aimDir.y /= aimLen; aimDir.z /= aimLen; const dist = 15; reticle.x = camObj.position.x + aimDir.x * dist; reticle.y = camObj.position.y + aimDir.y * dist; reticle.z = camObj.position.z + aimDir.z * dist;
+		// 		const input = $.input.getPlayerInput(1);
+		// 		if (input.getActionState('fire').justpressed) {
+		// 			bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
+		// 			_model.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
+		// 		}
+		// 		for (const impact of bullets.popImpacts()) { const enemy = $.model.getGameObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
+		// 	}
+		// }
 		// _model.spawn(new RailDemoDriver('railDriver'));
 
 		// ===== End rail shooter demo scaffold =====

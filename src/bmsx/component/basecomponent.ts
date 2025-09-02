@@ -86,7 +86,7 @@ export interface ComponentContainer extends Identifiable, Disposable {
      * @param tag - The tag of the components to update.
      * @param args - Additional arguments to pass to the components' update method.
      */
-    updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void;
+    // Removed: tag-driven updates are orchestrated by ECS Systems
 
     removeComponentsWithTag(tag: ComponentTag): void;
 
@@ -377,32 +377,7 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
  * @param tags - The tags to filter the components.
  * @returns A decorator function that wraps the original method and updates the tagged components.
  */
-export function update_tagged_components<T extends ComponentContainer>(...tags: ComponentTag[]) {
-    return function (value: any, _context: ClassMethodDecoratorContext) {
-        const originalMethod = value as (...args: any[]) => any;
-        return function (this: any, ...args: any[]) {
-            const updateComponents = (updateType: 'tagsPre' | 'tagsPost', additionalArgs?: any[]) => {
-                if (!(this as T).components) return;
-                const components = Object.values((this as T).components);
-                const updatedComponents = new Set<Component>();
-                for (const component of components) {
-                    if (!component.enabled) continue;
-                    const componentClass = component.constructor as ConstructorWithTagsProperty;
-                    if (componentClass[updateType] && tags.some(tag => componentClass[updateType]!.has(tag)) && !updatedComponents.has(component)) {
-                        const updateMethod = updateType === 'tagsPre' ? component.preprocessingUpdate : component.postprocessingUpdate;
-                        updateMethod.apply(component, additionalArgs ? [additionalArgs] : args);
-                        updatedComponents.add(component);
-                    }
-                }
-            };
-
-            updateComponents('tagsPre');
-            const returnvalue = originalMethod.apply(this, args);
-            updateComponents('tagsPost', [{ params: args, returnvalue }]);
-            return returnvalue;
-        } as typeof value;
-    };
-}
+// update_tagged_components removed — ECS Systems orchestrate component updates.
 
 /**
  * Attaches the specified components to a game object constructor.

@@ -1,5 +1,5 @@
 import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../ai/behaviourtree";
-import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, update_tagged_components } from "../component/basecomponent";
+import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../component/basecomponent";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
 import { ZCOORD_MAX } from "../render/backend/webgl.constants";
@@ -80,28 +80,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		component.detach();
 	}
 
-	/**
-	 * Updates the components with the given tag.
-	 * The components are updated in two phases: preprocessing and postprocessing.
-	 * The preprocessing update is performed first, followed by the postprocessing update
-	 * with the given arguments.
-	 * The components are filtered based on the specified tag. Only components with the
-	 * specified tags will be updated.
-	 * Note that the tags are different for preprocessing and postprocessing updates, allowing
-	 * for more fine-grained control over the update process.
-	 *
-	 * @param {ComponentTag} tag - The tag to filter components.
-	 * @param {...any} args - Additional arguments to pass to the component update methods.
-	 * @returns {void}
-	 */
-	updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void {
-		// Update components with the given tag (preprocessing)
-		Object.values(this.components).filter(component => component.hasPreprocessingTag(tag)).forEach(component => component.enabled && component.preprocessingUpdate(...args));
 
-		// TODO: I BELIEVE THIS IS A BUG. THE IS NO DISTINGUISHING BETWEEN PREPROCESSING AND POSTPROCESSING IF CALLING THIS METHOD DIRECTLY.
-		// Update components with the given tag (postprocessing)
-		Object.values(this.components).filter(component => component.hasPostprocessingTag(tag)).forEach(component => component.enabled && component.postprocessingUpdate({ params: args }));
-	}
 
 	/**
 	 * Returns the primitive value of the GameObject instance.
@@ -148,7 +127,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.setPosX(x);
 	}
 
-	@update_tagged_components('position_update_axis')
 	/**
 	 * Sets the X position of the game object.
 	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
@@ -172,7 +150,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.setPosY(y);
 	}
 
-	@update_tagged_components('position_update_axis')
 	/**
 	 * Sets the Y position of the game object.
 	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
@@ -201,7 +178,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.setPosZ(z)
 	}
 
-	@update_tagged_components('position_update_axis')
 	/**
 	 * Sets the Z position of the game object.
 	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
@@ -1056,7 +1032,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Runs the game object by updating its components and running its state.
 	 */
-	@update_tagged_components('run')
 	public run(): void {
 		for (const id in this.btreecontexts) {
 			this.tickTree(id);

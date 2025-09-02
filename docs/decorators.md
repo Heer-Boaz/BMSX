@@ -61,8 +61,8 @@ Provided by `src/bmsx/component/basecomponent.ts`.
 
 - `@update_tagged_components(...tags)`
 
-  - Method decorator for container methods (e.g., `GameObject.run`).
-  - Wrapper sequence: preprocessing(tagged) → original() → postprocessing(tagged, { params, returnvalue }).
+  - Deprecated for container-driven main loops. The default game loop is ECS-based; prefer Systems to drive component updates.
+  - Historical wrapper sequence: preprocessing(tagged) → original() → postprocessing(tagged, { params, returnvalue }).
 
 - `@attach_components(...ComponentClasses)`
   - Class decorator on GameObject subclasses. Auto‑adds the listed component types when the object is spawned.

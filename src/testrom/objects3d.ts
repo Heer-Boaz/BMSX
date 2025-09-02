@@ -12,7 +12,6 @@ export class Cube3D extends MeshObject {
     }
 
     override run(): void {
-        this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
 }
@@ -36,7 +35,6 @@ export class SmallCube3D extends MeshObject {
     }
 
     override run(): void {
-        this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
 }
@@ -50,7 +48,6 @@ export class AnimatedMorphSphere extends MeshObject {
     }
 
     override run(): void {
-        this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
 }
