@@ -6,6 +6,7 @@ import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { StateDefinition } from '../fsm/statedefinition';
 import { AbilityRuntimeSystem } from "../gas/abilityruntime";
+import { TaskRuntimeSystem } from "../gas/tasks";
 import { Input } from "../input/input";
 import { PhysicsDescriptorComponent } from '../physics/physicsdescriptorcomponent';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
@@ -266,6 +267,8 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         SM.register(new StateMachineSystem(30));
         // Ability runtime (advance effects/coroutines) after object state machines
         SM.register(new AbilityRuntimeSystem(32));
+        // Task runtime (world/actor cutscenes/behaviors)
+        SM.register(new TaskRuntimeSystem(33));
         // Sync GO -> body after abilities, before physics step
         SM.register(new PhysicsSyncBeforeStepSystem(34));
         SM.register(new PhysicsPostSystem(35));
