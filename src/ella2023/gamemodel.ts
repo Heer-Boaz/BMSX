@@ -82,7 +82,7 @@ export class gamemodel extends BaseModel {
 					}
 				},
 				game: {
-					entering_state(this: gamemodel, _state: State, numOfPlayers: number) {
+					entering_state(this: gamemodel, _state: State, { numOfPlayers }: { numOfPlayers: number }) {
 						this.numOfPlayers = numOfPlayers;
 						return '#this.ffwachten';
 					},
