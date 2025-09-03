@@ -45,6 +45,6 @@ export async function createBackendForCanvasAsync(canvas: HTMLCanvasElement): Pr
 	const gl = canvas.getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext | null;
 	if (!gl) throw new Error('Failed to acquire WebGL2 context');
 	const backend = new WebGLBackend(gl);
-	console.info(WEBGPU_RENDERER_SUPPORT ? 'Browser doesn\'t support WebGPU, fallback to WebGL2-backend' : 'Forced using WebGL2-backend as the game engine doesn\'t support WebGPU yet');
+	console.warn(WEBGPU_RENDERER_SUPPORT ? 'Browser doesn\'t support WebGPU, fallback to WebGL2-backend' : 'Forced using WebGL2-backend as the game engine doesn\'t support WebGPU yet');
 	return { backend, nativeCtx: gl };
 }

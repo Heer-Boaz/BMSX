@@ -159,7 +159,7 @@ export class Game {
 	 */
 	public modelAs<T extends BaseModel = BaseModel>(): T { return this.model as T; }
 
-	public get model(): BaseModel { return this.model; }
+	public get model(): BaseModel { return this.registry.get<BaseModel>('model'); }
 
 	/**
 	 * Retrieves the global view of type T.
@@ -167,7 +167,7 @@ export class Game {
 	 */
 	public viewAs<T extends GameView = GameView>(): T { return this.view as T; }
 
-	public get view(): GameView { return this.view; }
+	public get view(): GameView { return this.registry.get<GameView>('view'); }
 
 	public get aem(): AudioEventManager { return this.registry.get<AudioEventManager>('aem'); }
 
@@ -288,7 +288,7 @@ export class Game {
 		this.input.hideOnscreenGamepadButtons(gamepad_button_ids);
 	}
 
-	public getViewportSize(): Size {
+	public get viewportSize(): Size {
 		return this.view.viewportSize;
 	}
 
@@ -510,7 +510,6 @@ export class Game {
 		global.$.running = false;
 		window.cancelAnimationFrame(this.animationFrameRequestid);
 		window.requestAnimationFrame(() => {
-			$.view.clear.call($.view);
 			$.view.handleResize.call($.view);
 			this.sndmaster.stopEffect();
 			this.sndmaster.stopMusic();

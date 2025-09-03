@@ -521,26 +521,21 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		$.view.hideFadingOverlay();
 	}
 
-	public clear(): void { /* handled by render graph clear pass */ }
-
-	// Backend
 	public set backend(backend: GPUBackend) {
 		this._backend = backend;
 	}
 
 	public get backend(): GPUBackend { return this._backend; }
 	public initializeDefaultTextures(): void {
-		try {
-			const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
-			if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
-			this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-			// Default material textures for meshes
-			this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
-			// Normal map default (0.5,0.5,1.0)
-			this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
-			// Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
-			this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 1.0, 1.0]);
-		} catch { /* ignore */ }
+		const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
+		if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
+		this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+		// Default material textures for meshes
+		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
+		// Normal map default (0.5,0.5,1.0)
+		this.textures['_default_normal'] = this.backend.createSolidTexture2D(1, 1, [0.5, 0.5, 1.0, 1.0]);
+		// Metallic/Roughness default: neutral (mr.g=1 keeps roughnessFactor, mr.b=1 keeps metallicFactor)
+		this.textures['_default_mr'] = this.backend.createSolidTexture2D(1, 1, [1.0, 1.0, 1.0, 1.0]);
 	}
 
 	// (single handleResize implementation above in the class)
@@ -548,8 +543,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public rebuildGraph(): void {
 		const token = renderGate.begin({ blocking: true, category: 'rebuild_graph', tag: 'frame' });
 		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
-		if (!this.pipelineRegistry) { console.warn('[GameView] PipelineRegistry not set on view yet; skipping render graph build'); return; }
-		if ($.debug) console.info('[GameView] Building render graph');
+		if (!this.pipelineRegistry) {
+			console.warn('[GameView] PipelineRegistry not set on view yet; skipping render graph build');
+			return;
+		}
 		// GameView implements RenderContext directly
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
 		renderGate.end(token);

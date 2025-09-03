@@ -9,11 +9,13 @@ export function show_download_savestate_dialog() {
     const data = $.model.save();
 
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(
-        new Blob([data], {
-            type: "data:application/json"
-        })
-    );
+
+    // Ensure the Blob gets a plain ArrayBuffer-backed ArrayBufferView.
+    // This copies the data into a new ArrayBuffer (avoids issues with SharedArrayBuffer).
+    const copy = new Uint8Array(data); // copy -> backed by a normal ArrayBuffer
+    const blob = new Blob([copy], { type: "application/octet-stream" });
+
+    a.href = URL.createObjectURL(blob);
     a.download = 'savestate.bmsx';
     document.body.appendChild(a);
     a.click();

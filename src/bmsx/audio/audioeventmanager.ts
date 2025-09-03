@@ -207,22 +207,22 @@ export class AudioEventManager implements RegisterablePersistent {
 		(globalThis as { AudioEventManagerInstance?: AudioEventManager }).AudioEventManagerInstance = this;
 
 		// Debug: list registered audio events and handlers
-		try {
-			const eventsSummary = Array.from(this.merged.entries()).map(([key, v]) => {
-				const rlen = (v.rules?.length) ?? 0;
-				const ch = v.channel ? `, ${v.channel}` : '';
-				const pol = v.policy ? `, ${v.policy}` : '';
-				const rules = v.rules?.map(r => {
-					const when = r.when ? `when: ${JSON.stringify(r.when)}` : '';
-					const doAction = r.do ? `do: ${JSON.stringify(r.do)}` : '';
-					return `{ ${when}, ${doAction} }\n`;
-				}).join(', ');
-				return `${key} (${rlen} rules${ch}${pol}:\n${rules})`;
-			});
-			console.info('[AudioEventManager] events:', eventsSummary.length, eventsSummary);
-			const handlerNames = this.handlers.map(h => h.name && h.name.length > 0 ? h.name : '(anonymous)');
-			console.info('[AudioEventManager] handlers:', handlerNames.length, handlerNames);
-		} catch { }
+		// try {
+		// 	const eventsSummary = Array.from(this.merged.entries()).map(([key, v]) => {
+		// 		const rlen = (v.rules?.length) ?? 0;
+		// 		const ch = v.channel ? `, ${v.channel}` : '';
+		// 		const pol = v.policy ? `, ${v.policy}` : '';
+		// 		const rules = v.rules?.map(r => {
+		// 			const when = r.when ? `when: ${JSON.stringify(r.when)}` : '';
+		// 			const doAction = r.do ? `do: ${JSON.stringify(r.do)}` : '';
+		// 			return `{ ${when}, ${doAction} }\n`;
+		// 		}).join(', ');
+		// 		return `${key} (${rlen} rules${ch}${pol}:\n${rules})`;
+		// 	});
+		// 	console.info('[AudioEventManager] events:', eventsSummary.length, eventsSummary);
+		// 	const handlerNames = this.handlers.map(h => h.name && h.name.length > 0 ? h.name : '(anonymous)');
+		// 	console.info('[AudioEventManager] handlers:', handlerNames.length, handlerNames);
+		// } catch { }
 	}
 
 	// Direct play entrypoint so game code can route through AEM (policies/awareness)

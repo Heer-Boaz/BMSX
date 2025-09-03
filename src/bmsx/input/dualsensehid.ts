@@ -323,7 +323,9 @@ export class DualSenseHID {
         }
 
         try {
-            this.device.sendReport(report[0], report.subarray(1));
+            // Create a copied Uint8Array slice so the underlying buffer is a plain ArrayBuffer
+            // (ensures compatibility with the sendReport BufferSource typing).
+            this.device.sendReport(report[0], report.slice(1));
         } catch (error) {
             console.error('Failed to send rumble report:', error);
         }
