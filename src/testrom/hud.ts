@@ -6,7 +6,7 @@ export class RailShooterHUD extends GameObject {
     private comboFade = 0; // alpha fade for combo text when inactive
     private hitFlash = 0; // brief flash when a hit is registered
     reticle?: { ox: number; oy: number }; // lightweight reference for aiming offset
-    registerHit(now: number, damage: number, killed: boolean, scoreValue: number, comboMultiplier: number) {
+    registerHit(now: number, damage: number, killed: boolean, scoreValue: number, _comboMultiplier: number) {
         if (now - this.lastHitTime < this.comboWindow) this.combo++; else this.combo = 1;
         this.lastHitTime = now; this.comboFade = 1;
         this.score += killed ? (scoreValue * this.combo) : Math.round(damage * this.combo * 0.5);

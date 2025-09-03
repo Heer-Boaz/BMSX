@@ -122,15 +122,15 @@ export class Mesh {
 		return this.material?.gpuTextures.metallicRoughness;
 	}
 
-    /**
-     * Signature identifying the GPU state needed to render this mesh's material.
-     * Used for batching to minimize texture and shader state changes.
-     */
-    public get materialSignature(): string {
-        // Batch by shader/texture-like state only; exclude per-instance color so instancing can carry color via attribute.
-        const surf = this.material?.surface ?? 'opaque';
-        return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${surf}`;
-    }
+	/**
+	 * Signature identifying the GPU state needed to render this mesh's material.
+	 * Used for batching to minimize texture and shader state changes.
+	 */
+	public get materialSignature(): string {
+		// Batch by shader/texture-like state only; exclude per-instance color so instancing can carry color via attribute.
+		const surf = this.material?.surface ?? 'opaque';
+		return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${surf}`;
+	}
 
 	/**
 	 * Recalculate the mesh's bounding sphere in local space. Morph targets are
@@ -600,6 +600,7 @@ export abstract class MeshObject extends GameObject implements Oriented, Scaled 
 	}
 
 	@onsave
+	// @ts-ignore
 	private captureMaterialOverrides() {
 		// Store only what’s explicitly set on each mesh.material.textures (image indices).
 		const out: Record<number, PersistedMatTex> = {};

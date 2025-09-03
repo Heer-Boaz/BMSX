@@ -6,13 +6,11 @@ import { ScratchBatch } from '../../core/scratchbatch';
 export class FeatureQueue<T> {
     private _front: ScratchBatch<T>;
     private _back: ScratchBatch<T>;
-    private _frontCapacity: number;
     private _backCapacity: number;
 
     constructor(initialCapacity = 128) {
         this._front = new ScratchBatch<T>(initialCapacity);
         this._back = new ScratchBatch<T>(initialCapacity);
-        this._frontCapacity = initialCapacity;
         this._backCapacity = initialCapacity;
     }
 

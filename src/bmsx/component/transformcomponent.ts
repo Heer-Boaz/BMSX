@@ -2,10 +2,10 @@ import { GameObject } from '../core/gameobject';
 import { M4, Mat4, quat } from '../render/3d/math3d';
 import type { Identifier, Oriented, Scaled, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
-import { Component, componenttags_postprocessing } from './basecomponent';
+import { Component } from './basecomponent';
 
 @insavegame
-export class TransformComponent extends Component {
+export class TransformComponent extends Component<GameObject> {
     public position: vec3arr;
     // public rotation: vec3arr; // retained for legacy callers; not authoritative if parent supplies quaternion
     private orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented

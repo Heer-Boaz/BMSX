@@ -305,7 +305,7 @@ export function generateDetailedDrawError(
         Indices-type: ${vertexType2String(type)} (${typeToByteSize[type]} bytes per index)
         Vertex Buffer Size: ${bufferSize.vertexBuffer3D} bytes (${vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} expected)
         Index Buffer Size: ${bufferSize.indexBuffer3D} bytes (${m.indices!.length * typeToByteSize[type]} expected)
-        Valid indices: ${m.indices!.every(i => i >= 0 && i < vertexCount)}
+        Valid indices: ${m.indices!.every((i: number) => i >= 0 && i < vertexCount)}
         Buffer size correctness checks:
 ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${buffer}: ${result}`).join('\n')}
 

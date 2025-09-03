@@ -1,6 +1,6 @@
 // Mesh pipeline (formerly glview.3d) inlined from legacy module.
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
-import { makePipelineBuildDesc, shaderModule } from '../..';
+import { makePipelineBuildDesc, PassEncoder, shaderModule } from '../..';
 import { $ } from '../../core/game';
 import type { Mesh } from '../../core/mesh';
 import { Float32ArrayPool } from '../../core/utils';
@@ -227,7 +227,7 @@ function getVAOSignature(m: Mesh, instanced: boolean, morph: boolean): string {
 
 // --- Pipeline helpers -------------------------------------------------------
 function isTransparent(m: Mesh): boolean { return m.material?.surface === 'transparent'; }
-function isMasked(m: Mesh): boolean { return m.material?.surface === 'masked'; }
+// function isMasked(m: Mesh): boolean { return m.material?.surface === 'masked'; }
 function isOpaque(m: Mesh): boolean { const s = m.material?.surface; return s === undefined || s === 'opaque' || s === 'masked'; }
 function getMeshColor(m: Mesh): [number, number, number, number] { const c = m.material?.color; return [c?.[0] ?? 1, c?.[1] ?? 1, c?.[2] ?? 1, c?.[3] ?? 1]; }
 function isMatrixMirrored(mat: Float32Array): boolean {
@@ -545,7 +545,7 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     ];
     instanceColorLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_iColor');
 }
-function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, morph: boolean): WebGLVertexArrayObject {
+function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, _morph: boolean): WebGLVertexArrayObject {
     const b = getRenderContext().backend as WebGLBackend;
     const vao = b.createVertexArray() as WebGLVertexArrayObject;
     b.bindVertexArray(vao);
@@ -610,7 +610,7 @@ function cullAndSortMeshes(list: Iterable<DrawMeshOptions>): { instancedGroups: 
     }
     return { instancedGroups, singles };
 }
-function setupViewport(gl: WebGL2RenderingContext, canvasWidth: number, canvasHeight: number): void { (getRenderContext().backend as WebGLBackend).setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight }); }
+function setupViewport(_gl: WebGL2RenderingContext, canvasWidth: number, canvasHeight: number): void { (getRenderContext().backend as WebGLBackend).setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight }); }
 function setupRenderingState(gl: WebGL2RenderingContext, _state?: any): void {
     // Ensure the correct program is bound before setting uniforms
     if (gameShaderProgram3D) gl.useProgram(gameShaderProgram3D);
@@ -767,7 +767,8 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
                 gl.bufferSubData(gl.ARRAY_BUFFER, 0, u8slice);
                 try { (getRenderContext().backend as WebGLBackend).accountUpload('vertex', u8slice.byteLength); } catch { /* ignore */ }
                 checkWebGLError('mesh.instanced: after bufferSubData');
-                const _b = getRenderContext().backend as WebGLBackend; const _pass = { fbo: null, desc: { label: 'meshbatch' } };
+                const _b = getRenderContext().backend as WebGLBackend;
+                const _pass: PassEncoder = { fbo: null, desc: { label: 'meshbatch' } };
                 if (indexed) _b.drawIndexedInstanced(_pass, indexCount, batchCount, 0, 0, 0, indexType);
                 else _b.drawInstanced(_pass, m.vertexCount, batchCount, 0, 0);
             }

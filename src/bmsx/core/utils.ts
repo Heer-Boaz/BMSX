@@ -227,6 +227,22 @@ function correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
 export function middlepoint_area(a: Area): vec2 {
     return { x: ~~((a.start.x + a.end.x) / 2), y: ~~((a.start.y + a.end.y) / 2) };
 }
+
+/**
+ * Calculates the overlap area between two areas.
+ * @param a The first area.
+ * @param b The second area.
+ * @returns The overlap area between the two areas.
+ */
+export function get_overlap_area(a: Area, b: Area): Area {
+    const startX = Math.max(a.start.x, b.start.x);
+    const startY = Math.max(a.start.y, b.start.y);
+    const endX = Math.min(a.end.x, b.end.x);
+    const endY = Math.min(a.end.y, b.end.y);
+    return new_area(startX, startY, endX, endY);
+}
+
+
 /// Alternative implementation for Point.Set()
 
 export function set_vec2(p: vec2, new_x: number, new_y: number) {
@@ -380,7 +396,7 @@ export function LineLength(p1: vec3, p2: vec3): number {
 
 export function isStorageAvailable(storageType: string): boolean {
     try {
-        const storage = window[storageType];
+        const storage = (window as any)[storageType];
         const testKey = '__test__';
         storage.setItem(testKey, testKey);
         storage.removeItem(testKey);
@@ -396,14 +412,15 @@ export function isStorageAvailable(storageType: string): boolean {
         );
     }
 }
+
 /**
  * Checks if the localStorage is available in the current environment.
  * @returns {boolean} True if localStorage is available, false otherwise.
  */
-
 export function isLocalStorageAvailable(): boolean {
     return isStorageAvailable('localStorage');
 }
+
 /**
  * Checks if the session storage is available in the current browser.
  * @returns A boolean value indicating whether the session storage is available.
@@ -496,14 +513,15 @@ export function swizzlable<T extends Record<string, any> | any[]>(
     const customMap = opts?.map;
     const lettersArr = Array.from(new Set(customMap ? Object.keys(customMap) : Object.keys(defaultMap)));
     const maxLen = opts?.maxLen ?? 4;
-    const validLettersRe = new RegExp(`^[${lettersArr.join('')}] {0,${maxLen}}$`.replace(' ', '\\s'), ''); // placeholder; we'll use alternative check below
+
+    // Build a safe character class for the regex by escaping special chars
+    const charClass = lettersArr.map(ch => ch.replace(/[-\\^\]]/g, "\\$&")).join('');
+    const validLettersRe = new RegExp(`^[${charClass}]{1,${maxLen}}$`);
 
     // Helper to check swizzle token validity (allows removing whitespace)
     const isValidToken = (tok: string) => {
         const s = tok.replace(/\s+/g, '');
-        if (s.length === 0 || s.length > maxLen) return false;
-        for (let i = 0; i < s.length; i++) if (!lettersArr.includes(s[i])) return false;
-        return true;
+        return validLettersRe.test(s);
     };
 
     // Normalize access to numeric/component by letter using customMap or default behavior
@@ -554,7 +572,7 @@ export function swizzlable<T extends Record<string, any> | any[]>(
     };
 
     const handler: ProxyHandler<any> = {
-        get(target, prop, receiver) {
+        get(target, prop, _receiver) {
             if (typeof prop === 'string') {
                 // If direct property exists on target, return it (preserve numbers and methods)
                 if (prop in target && !isValidToken(prop)) {
@@ -578,7 +596,7 @@ export function swizzlable<T extends Record<string, any> | any[]>(
             // fallback to default behaviour
             return target[prop];
         },
-        set(target, prop, value, receiver) {
+        set(target, prop, value, _receiver) {
             if (typeof prop === 'string') {
                 const letters = prop.replace(/\s+/g, '');
                 if (isValidToken(letters)) {

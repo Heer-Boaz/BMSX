@@ -213,7 +213,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		renderGate.endCategory('init'); // End the init scope without a token, assuming the category is unique for init.
 	}
 
-	public drawbase(clearCanvas: boolean = true): void {
+	public drawbase(): void {
 		// Base drawing logic goes here
 		const model: BaseModel = $.model;
 		model.applyViewSettings();
@@ -229,7 +229,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	 * Rendering should be guarded by a global {@link renderGate}. When the gate is blocked (e.g. while the game state is being
 	 * revived), this method immediately returns so no WebGL state is touched prematurely.
 	 */
-	public drawgame(clearCanvas = true): void {
+	public drawgame(): void {
 		if (!renderGate.ready) return;
 		const token = renderGate.begin({ blocking: true, category: 'frame', tag: 'frame' });
 		try {
@@ -237,7 +237,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			// $.emit('framebegin', this, token);
 			this.renderer.swap();
 			const frame = buildFrameData(this);
-			this.drawbase(clearCanvas);
+			this.drawbase();
 			// No need to check for invalid or missing render graph, as we assume it's valid for the frame given the render gate that blocks rendering if no graph present
 			// $.emit('frameupdate', this, token);
 			this.renderGraph!.execute(frame);
@@ -423,33 +423,29 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public static get fullscreenEnabled() {
-		return document.fullscreenEnabled || document['webkitFullscreenEnabled'] || document['webkitFullScreenEnabled'] || document['mozFullScreenEnabled'];
+		return document.fullscreenEnabled || document.webkitFullscreenEnabled || document.webkitFullScreenEnabled || document.mozFullScreenEnabled;
 	}
 
-	public static triggerFullScreenOnFakeUserEvent(): void {
+	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
 		if (GameView.fullscreenEnabled) {
 			try {
 				global.$.paused = true;
-				document.documentElement.requestFullscreen?.()
-					.then(() => {
-						global.$.paused = false;
-					})
-					.catch(e => {
-						global.$.paused = false;
-						console.error(e);
-					});
-
-				document.documentElement['mozRequestFullScreen']?.()
-					.then(() => global.$.paused = false)
-					.catch(e => {
-						global.$.paused = false;
-						console.error(e);
-					});
-				document.documentElement['webkitRequestFullScreen']?.();
-				document.documentElement['webkitRequestFullscreen']?.();
+				const elem: any = document.documentElement as any;
+				if (elem.requestFullscreen) {
+					await elem.requestFullscreen();
+				} else if (elem.mozRequestFullScreen) {
+					await elem.mozRequestFullScreen();
+				} else if (elem.webkitRequestFullScreen) {
+					elem.webkitRequestFullScreen();
+				} else if (elem.webkitRequestFullscreen) {
+					elem.webkitRequestFullscreen();
+				}
 			}
 			catch (error) {
 				console.error(error);
+			}
+			finally {
+				global.$.paused = false;
 			}
 		}
 		window.removeEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
@@ -459,23 +455,26 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		window.addEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
 	}
 
-	public static triggerWindowedOnFakeUserEvent(): void {
+	public static async triggerWindowedOnFakeUserEvent(): Promise<void> {
 		if (GameView.fullscreenEnabled) {
 			try {
 				global.$.paused = true;
-				document.exitFullscreen?.()
-					.then(() => global.$.paused = false)
-					.catch(e => {
-						global.$.paused = false;
-						console.error(e);
-					});
-				document['webkitExitFullscreen']?.();
-				document['mozExitFullScreen']?.();
+				const doc: any = document as any;
+				if (doc.exitFullscreen) {
+					await doc.exitFullscreen();
+				} else if (doc.webkitExitFullscreen) {
+					doc.webkitExitFullscreen();
+				} else if (doc.mozExitFullScreen) {
+					doc.mozExitFullScreen();
+				}
 			}
 			catch (error) {
 				// !BUG: Heb een bug gezien waarbij dit voorkomt.
 				// Lijkt overeen te komen met het gebruik van de debugger-mogelijkheden van Boaz
 				console.error(error);
+			}
+			finally {
+				global.$.paused = false;
 			}
 		}
 		window.removeEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);

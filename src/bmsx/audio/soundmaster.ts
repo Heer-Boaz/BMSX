@@ -1,3 +1,4 @@
+import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, id2res, RegisterablePersistent } from "../rompack/rompack";
 
@@ -182,7 +183,7 @@ export class SoundMaster implements RegisterablePersistent {
     private predecodeTracks() {
         this.buffers = {};
         Object.keys(this.tracks).forEach(id => {
-            this.decode(global.$rom['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
+            this.decode($.rom['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
                 .then(decoded => this.buffers[id] = decoded);
         });
     }
@@ -556,7 +557,6 @@ export class SoundMaster implements RegisterablePersistent {
             if (sync.returnToPrevious) {
                 const prevId = this.currentTrackByType('music');
                 const prevOffset = this.currentTimeByType('music') ?? 0;
-                const prevParams = this.currentModulationParamsByType('music') ?? undefined;
                 this.pendingStingerReturnTo = prevId != null ? prevId : (opts.to ?? null);
                 // Stop music and play stinger; after end, resume prev at saved offset
                 const resumeId = this.pendingStingerReturnTo;

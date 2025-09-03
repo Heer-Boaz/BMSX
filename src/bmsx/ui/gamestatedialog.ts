@@ -85,7 +85,7 @@ function get_first_selected_file_from_openfile_dialog(files: FileList): File {
 function load_savestate(this: HTMLInputElement, _ev: Event) {
     const file = get_first_selected_file_from_openfile_dialog(setload.files);
     if (file) {
-        file.text().then(result => globalThis.model.load(result));
+        file.arrayBuffer().then(buf => $.model.load(new Uint8Array(buf)));
     }
     setload = undefined;
 }

@@ -88,7 +88,6 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
 		const contentEl = document.getElementById(HUD_ID + '-content')!;
 		const lightsHeaderEl = document.getElementById(HUD_ID + '-lights-header')!;
 		const lightsDetailEl = document.getElementById(HUD_ID + '-lights-detail')!;
-		const lightsEl = document.getElementById(HUD_ID + '-lights')!;
 		// Click/hover only on header (expanded detail stays non-clickable/non-underlined)
 		if (!this._lightToggleAdded) {
 			lightsHeaderEl.addEventListener('click', (ev) => { this.showLightDetail = !this.showLightDetail; this.updateNow(); ev.stopPropagation(); });

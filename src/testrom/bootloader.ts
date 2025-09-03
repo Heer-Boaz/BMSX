@@ -1,11 +1,12 @@
 import {
+    BaseModel,
     BFont,
     BGamepadButton, BootArgs,
     Game, GamepadInputMapping, GameView, KeyboardButton, KeyboardInputMapping,
-    new_vec2, BaseModel
+    new_vec2
 } from '../bmsx/index';
-import { BitmapId } from './resourceids';
 import { createTestromPlugin } from './modelplugin';
+import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
 import './test_gamemodel';
 
@@ -17,7 +18,7 @@ var _game: Game;
 export let _model: BaseModel;
 var _view: GameView;
 
-const _global = window || globalThis;
+const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
     _model = new BaseModel({ size: { width: 320, height: 240 }, fsmId: 'model', plugins: [createTestromPlugin()] });

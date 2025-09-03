@@ -87,6 +87,7 @@ export class CameraController extends GameObject {
 
 	}
 
+	// @ts-ignore
 	private toggleMouseControls(): void {
 		const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
 		if (!canvas) return;

@@ -1,4 +1,4 @@
-import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent } from '../bmsx';
+import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent, vec3 } from '../bmsx';
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { EilaEventService, ExtendedModel } from './modelplugin';
@@ -24,7 +24,7 @@ export class Sinterklaas extends Fighter {
         super.paint();
     }
 
-    override onspawn(spawningPos?: Vector): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         // Note: this is a hack to make sure the sinterklaasBT is initialized before the sinterklaasBT can be stopped.
         if (!this.isAIed) { // Only the player can control Sinterklaas

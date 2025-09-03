@@ -1,4 +1,4 @@
-import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, vec2 } from '../bmsx';
+import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, vec3 } from '../bmsx';
 import { Action } from './bootloader';
 import { mytree_builder } from './mytree_builder';
 import { BitmapId } from './resourceids';
@@ -138,7 +138,7 @@ export class bclass extends SpriteObject {
         this.visible = false;
     }
 
-    override onspawn(spawningPos?: vec2): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.btreecontexts['bclass_tree'].running = false; // Stop the behavior tree by default and this cannot happen in the constructor!
     }

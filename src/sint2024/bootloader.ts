@@ -7,7 +7,7 @@ var _game: Game;
 let _model: BaseModel;
 var _view: GameView;
 
-const _global = window || globalThis;
+const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
     _model = new BaseModel({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'model' });
@@ -51,6 +51,7 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 const savestring = Symbol('savestring');
+// @ts-ignore
 class SintModelFSM {
     /**
      * A string property that is saved in the game.
@@ -91,7 +92,6 @@ class SintModelFSM {
                         let s = new sint();
                         $.spawn(s);
                     },
-                    tick: BaseModel.defaultrun,
                 },
             }
         };

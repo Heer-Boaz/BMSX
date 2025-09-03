@@ -20,6 +20,11 @@ export class PathMarkers {
             if (passed) { fire(m.name, m.data); m.fired = true; }
         }
     }
-    static fromJSON(json: string | PathMarkersJSON): PathMarkers { const obj = (typeof json === 'string') ? JSON.parse(json) : json; const pm = new PathMarkers(); if (obj.instants) pm.addInstants(obj.instants.map(i => ({ domain: i.domain || 'u', value: i.value, name: i.name, data: i.data }))); return pm; }
+    static fromJSON(json: string | PathMarkersJSON): PathMarkers {
+        const obj: PathMarkersJSON = (typeof json === 'string') ? JSON.parse(json) as PathMarkersJSON : json;
+        const pm = new PathMarkers();
+        if (obj.instants) pm.addInstants(obj.instants.map(i => ({ domain: i.domain || 'u', value: i.value, name: i.name, data: i.data })));
+        return pm;
+    }
     toJSON(): PathMarkersJSON { return { instants: this.instants.map(i => ({ domain: i.domain, value: i.value, name: i.name, data: i.data })) }; }
 }

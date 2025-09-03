@@ -45,16 +45,7 @@ export function visualizeBehaviorTree(container: HTMLElement, btControllerId: Id
     container.appendChild(baseTable);
     let nodeElements = new Map<string, HTMLElement>();
 
-    function addContent(parent: HTMLElement, type: string, content: string | null): HTMLElement {
-        let element = document.createElement(type);
-        if (content !== null) {
-            element.textContent = content;
-        }
-        parent.appendChild(element);
-        return element;
-    }
-
-    function visualizeNode(node: BTNode, nodeName: string, parentElement: HTMLElement, path: string): void {
+    function visualizeNode(_node: BTNode, _nodeName: string, _parentElement: HTMLElement, _path: string): void {
         // const btController = $.get<GameObject>(btControllerId);
         // let table = document.createElement('table');
         // parentElement.appendChild(table);

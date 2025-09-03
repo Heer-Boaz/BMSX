@@ -26,19 +26,19 @@ import { GateGroup, taskGate } from './taskgate';
  * Declare global variables and types.
  */
 declare global {
-	// var $: Game;
-	// var $rom: RomPack;
-	// var debug: boolean;
+	var $: Game;
+	var $rom: RomPack;
+	var debug: boolean;
 }
 
 global = globalThis || window; // Ensure global is defined
 
 export var $: Game;
 
-export interface GameInitArgs<M extends BaseModel = BaseModel, V extends GameView = GameView> {
+export interface GameInitArgs {
 	rom: RomPack;
-	model: M;
-	view: V;
+	model: BaseModel;
+	view: GameView;
 	sndcontext: AudioContext;
 	gainnode: GainNode;
 	debug?: boolean;
@@ -57,7 +57,7 @@ export const runGate: GateGroup = taskGate.group('run:main');
 /**
  * Represents the main game loop and manages the game state.
  */
-export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView> {
+export class Game {
 	private _debug: boolean = false;
 	private initialized: boolean = false; // Indicates if the game has been initialized
 	/**
@@ -157,17 +157,17 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 	 * @returns The model instance of type T.
 	 * @template T - The type of the model.
 	 */
-	public modelAs<T extends BaseModel = BaseModel>(): T { return this.registry.get<T>('model'); }
+	public modelAs<T extends BaseModel = BaseModel>(): T { return this.model as T; }
 
-	public get model(): M { return this.modelAs<M>(); }
+	public get model(): BaseModel { return this.model; }
 
 	/**
 	 * Retrieves the global view of type T.
 	 * @returns The global view of type T.
 	 */
-	public viewAs<T extends GameView = GameView>(): T { return this.registry.get<T>('view'); }
+	public viewAs<T extends GameView = GameView>(): T { return this.view as T; }
 
-	public get view(): V { return this.viewAs<V>(); }
+	public get view(): GameView { return this.view; }
 
 	public get aem(): AudioEventManager { return this.registry.get<AudioEventManager>('aem'); }
 
@@ -226,10 +226,10 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
-    public playAudio(id: asset_id, options: RandomModulationParams = {}): void {
-        // Route through AudioEventManager so policies and per-channel handling stay consistent
-        this.aem.playDirect(id, options);
-    }
+	public playAudio(id: asset_id, options: RandomModulationParams = {}): void {
+		// Route through AudioEventManager so policies and per-channel handling stay consistent
+		this.aem.playDirect(id, options);
+	}
 
 	public stopEffect(): void {
 		this.sndmaster.stopEffect();
@@ -315,7 +315,7 @@ export class Game<M extends BaseModel = BaseModel, V extends GameView = GameView
 	 * @param gainnode - The gain node used for controlling the volume of sounds.
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
-	public async init(init: GameInitArgs<M, V>): Promise<Game> {
+	public async init(init: GameInitArgs): Promise<Game> {
 		const { rom, model, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
 		global['$rom'] = rom;
 		window['$rom'] = rom;

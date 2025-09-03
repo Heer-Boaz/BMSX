@@ -2,9 +2,9 @@ import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, Constru
 import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../component/basecomponent";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
-import { ZCOORD_MAX } from "../render/backend/webgl.constants";
 import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../rompack/rompack";
 import { insavegame, onload } from "../serializer/gameserializer";
+import { EventSubscriber } from './eventemitter';
 import { $ } from './game';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from './utils';
@@ -21,10 +21,6 @@ export type GameObjectEventPayloads = {
 	['leavingScreen']: LeaveLeavingScreenPayload;
 };
 
-/**
- * Represents a game object with a position, size, state, and hitbox.
- * Implements both vec2 and vec3 interfaces.
- */
 @insavegame
 export class GameObject implements vec3, ComponentContainer, Stateful {
 	/**
@@ -173,8 +169,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * @param z - The new z-coordinate value.
 	 */
 	public set z(z: number) {
-		if (z < 0) z = 0;
-		else if (z > ZCOORD_MAX) z = ZCOORD_MAX;
 		this.setPosZ(z)
 	}
 
@@ -255,8 +249,8 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public get sz(): number { return this.size.z; }
 	public set sz(sz: number) { this.size.z = sz; }
 
-	public get center(): vec2 {
-		return new_vec2(this.x + this.size.x / 2, this.y + this.size.y / 2);
+	public get center(): vec3 {
+		return new_vec3(this.x + this.size.x / 2, this.y + this.size.y / 2, this.z + this.size.z / 2);
 	}
 
 	public get center_x(): number {
@@ -265,6 +259,10 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 	public get center_y(): number {
 		return this.y + this.size.y / 2;
+	}
+
+	public get center_z(): number {
+		return this.z + this.size.z / 2;
 	}
 
 	/**
@@ -449,11 +447,11 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * the FSM-state to the initial state (if specified).
 	 * @param spawningPos The position to spawn the object at.
 	 */
-	public onspawn(spawningPos?: vec2): void {
+	public onspawn(spawningPos?: vec3): void {
 		if (spawningPos) {
 			this.x_nonotify = spawningPos.x ?? this.x;
 			this.y_nonotify = spawningPos.y ?? this.y;
-			this.z_nonotify = (spawningPos as vec3).z ?? this.z;
+			this.z_nonotify = spawningPos.z ?? this.z;
 		}
 
 		$.registry.register(this); // Register the object in the registry so it can be retrieved by id.
@@ -624,7 +622,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 	removeAllComponents(): void {
 		const componentsToRemove = Object.values(this.components);
-		componentsToRemove.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>));
+		componentsToRemove.forEach((component) => this.removeComponent(component.constructor as ComponentConstructor<Component>));
 	}
 
 	/**
@@ -644,7 +642,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 */
 	@onload
 	onLoadSetup() {
-		$.event_emitter.initClassBoundEventSubscriptions(this); // Initialize event subscriptions for the class.
+		// Cast to 'any' to satisfy the event emitter's expected EventSubscriberType
+		// without changing runtime behavior. This avoids TypeScript index-signature mismatches.
+		$.event_emitter.initClassBoundEventSubscriptions(this as EventSubscriber); // Initialize event subscriptions for the class.
 	}
 
 	/**
@@ -798,20 +798,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Calculates the overlap area between two areas.
-	 * @param a The first area.
-	 * @param b The second area.
-	 * @returns The overlap area between the two areas.
-	 */
-	private static get_overlap_area(a: Area, b: Area): Area {
-		const startX = Math.max(a.start.x, b.start.x);
-		const startY = Math.max(a.start.y, b.start.y);
-		const endX = Math.min(a.end.x, b.end.x);
-		const endY = Math.min(a.end.y, b.end.y);
-		return new_area(startX, startY, endX, endY);
-	}
-
-	/**
 	 * Detects AABB collision between two areas.
 	 * @param a1 The first area.
 	 * @param a2 The second area.
@@ -820,7 +806,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public static detect_aabb_collision_areas(a1: Area, a2: Area): boolean {
 		return !(a1.start.x > a2.end.x || a1.end.x < a2.start.x || a1.end.y < a2.start.y || a1.start.y > a2.end.y);
 	}
-
 
 	/**
 	 * Determines if the current `GameObject` instance collides with an `Area` instance.

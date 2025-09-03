@@ -207,13 +207,13 @@ export function setupFSMlibrary(): void {
         walkAndHoist(machineName, def, HandlerRegistry.instance, [], true);
         validateStateMachine(def);
         // Hot-swap: vervang als bestond, anders voeg toe
-        const existed = !!StateDefinitions[machineName];
+        // const existed = !!StateDefinitions[machineName];
         StateDefinitions[machineName] = def;
-        if (existed) {
-            for (const st of ActiveStateMachines.get(machineName) ?? []) {
-                // optioneel: migrate(st, def);
-            }
-        }
+        // if (existed) {
+        // for (const st of ActiveStateMachines.get(machineName) ?? []) {
+        // optioneel: migrate(st, def);
+        // }
+        // }
         addEventsToDef(def); // jouw helper
     }
 }
@@ -394,22 +394,15 @@ function annotateHandler(fn: Function, id: string): void {
     }
 }
 
-
+// @ts-ignore
 type EventSlots = { [K in keyof StateEventDefinition]-?: StateEventDefinition[K] extends Function | undefined ? K : never }[keyof StateEventDefinition];
+// @ts-ignore
 type GuardSlots = { [K in keyof StateGuard]-?: StateGuard[K] extends Function | undefined ? K : never }[keyof StateGuard];
 type StateDefHandlerValue = StateEventHandler | StateExitHandler | StateNextHandler;
+// @ts-ignore
 type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends StateDefHandlerValue | undefined ? K : never }[keyof StateDefinition];
 
-function createProxyForHandler(id: string, registry: HandlerRegistry) {
-    const base = function (this: any, ...args: any[]) {
-        const h = registry.get(id);
-        if (!h) return undefined;
-        return h.apply(this, args);
-    };
-    Object.defineProperty(base, 'name', { value: `proxy_${id}`, configurable: true });
-    annotateHandler(base as Function, id);
-    return base;
-}
+// Removed unused proxy factory (thunks not used in current code path)
 
 // Event definition handlers
 function hoistEventIf(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {

@@ -103,7 +103,7 @@ export class TitleScreen extends SpriteObject {
 	private static readonly SELECT_PLAYER_2_Y = 160;
 	private cursorY: number;
 	private selectedPlayers: number;
-	private cursorVisible;
+	private cursorVisible: boolean;
 
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {

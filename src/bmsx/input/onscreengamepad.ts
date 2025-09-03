@@ -410,8 +410,8 @@ export class OnscreenGamepad implements InputHandler {
                         elementsToFilter.push(elementUnderTouch.id);
 
                         buttonsTouched.forEach(b => filterFromReset.push(b));
-                        if (dpadMappings[elementUnderTouch.id]) {
-                            elementsToFilter.push(...dpadMappings[elementUnderTouch.id]);
+                        if (dpadMappings[elementUnderTouch.id as keyof typeof dpadMappings]) {
+                            elementsToFilter.push(...dpadMappings[elementUnderTouch.id as keyof typeof dpadMappings]);
                             dpad_omheining.classList.add(elementUnderTouch.id);
                         }
                     }

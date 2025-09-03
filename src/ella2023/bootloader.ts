@@ -8,8 +8,7 @@ let _game: Game;
 let _model: BaseModel;
 let _view: GameView;
 
-const _global = window || globalThis;
-
+const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
 	_model = new BaseModel({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'model', plugins: [EILA_PLUGIN] });

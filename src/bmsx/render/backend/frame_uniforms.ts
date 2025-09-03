@@ -60,9 +60,16 @@ export function updateAndBindFrameUniforms(backend: GPUBackend, u: FrameUniforms
     else for (let i = 24; i < 40; i++) buf[i] = (i % 5 === 4) ? 1 : 0; // identity
     if (u.cameraPos) {
         const c = u.cameraPos;
-        buf[40] = c[0] ?? 0;
-        buf[41] = c[1] ?? 0;
-        buf[42] = c[2] ?? 0;
+        if (ArrayBuffer.isView(c)) {
+            buf[40] = (c as Float32Array)[0] ?? 0;
+            buf[41] = (c as Float32Array)[1] ?? 0;
+            buf[42] = (c as Float32Array)[2] ?? 0;
+        } else {
+            const v = c as { x: number; y: number; z: number };
+            buf[40] = v.x ?? 0;
+            buf[41] = v.y ?? 0;
+            buf[42] = v.z ?? 0;
+        }
     } else {
         buf[40] = buf[41] = buf[42] = 0;
     }

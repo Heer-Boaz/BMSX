@@ -1,6 +1,6 @@
 import { Camera } from '../render/3d/camera3d';
 import { quat, V3 } from '../render/3d/math3d';
-import type { Oriented, Vector } from '../rompack/rompack';
+import type { Oriented } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 
@@ -19,7 +19,7 @@ export class CameraObject extends GameObject implements Oriented {
         this.active = true;
     }
 
-    override onspawn(pos?: Vector): void {
+    override onspawn(pos?: import('../rompack/rompack').vec3): void {
         super.onspawn(pos);
         this.camera.position = V3.of(this.pos.x, this.pos.y, this.pos.z);
         this.camera.markDirty();

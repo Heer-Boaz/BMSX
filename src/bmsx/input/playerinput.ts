@@ -22,11 +22,11 @@ export class PlayerInput {
 		gamepad: null,
 	};
 
-	/** Holds button press states from the previous frame for each handler. */
-	private previousStates: { [source in InputSource]: Partial<ButtonState> } = {
-		keyboard: {},
-		gamepad: {},
-	};
+    /** Holds per-button pressed state flags from the previous frame for each handler. */
+    private previousStates: { [source in InputSource]: Record<string, boolean> } = {
+        keyboard: {},
+        gamepad: {},
+    };
 
 	/** Manages buffered input events and button state aggregation. */
 	private stateManager: InputStateManager;
@@ -93,21 +93,19 @@ export class PlayerInput {
 		this.inputMap = inputMap;
 	}
 
-	public get supportsVibrationEffect(): boolean {
-		for (const source in this.inputHandlers) {
-			if (this.inputHandlers[source]?.supportsVibrationEffect) {
-				return true;
-			}
-		}
-		return false;
-	}
+    public get supportsVibrationEffect(): boolean {
+        for (const source of INPUT_SOURCES) {
+            if (this.inputHandlers[source]?.supportsVibrationEffect) return true;
+        }
+        return false;
+    }
 
-	public applyVibrationEffect(params: VibrationParams): void {
-		for (const source in this.inputHandlers) {
-			if (!this.inputHandlers[source]?.supportsVibrationEffect) continue;
-			this.inputHandlers[source].applyVibrationEffect(params);
-		}
-	}
+    public applyVibrationEffect(params: VibrationParams): void {
+        for (const source of INPUT_SOURCES) {
+            if (!this.inputHandlers[source]?.supportsVibrationEffect) continue;
+            this.inputHandlers[source]!.applyVibrationEffect(params);
+        }
+    }
 
 	/**
 	 * Retrieves the state of an action.
@@ -378,9 +376,9 @@ export class PlayerInput {
 			handler.pollInput();
 
 			if (source === 'gamepad') {
-				for (const button of Input.BUTTON_IDS) {
-					const state = handler.getButtonState(button);
-					const prev = this.previousStates[source][button] ?? false;
+                for (const button of Input.BUTTON_IDS) {
+                    const state = handler.getButtonState(button);
+                    const prev = this.previousStates[source][button] ?? false;
 
 					if (state.justpressed) {
 						this.stateManager.addInputEvent({
@@ -404,9 +402,9 @@ export class PlayerInput {
 				}
 			}
 			else if (source === 'keyboard') {
-				for (const key of Object.keys((handler as KeyboardInput).keyStates)) {
-					const state = handler.getButtonState(key);
-					const prev = this.previousStates[source][key] ?? false;
+                for (const key of Object.keys((handler as KeyboardInput).keyStates)) {
+                    const state = handler.getButtonState(key);
+                    const prev = this.previousStates[source][key] ?? false;
 
 					if (state.justpressed) {
 						this.stateManager.addInputEvent({
@@ -506,9 +504,9 @@ export class PlayerInput {
 	 * Resets the state of all input keys and gamepad buttons.
 	 * @param except An optional array of keys or buttons to exclude from the reset.
 	 */
-	public reset(except?: string[]): void {
-		for (const source in this.inputHandlers) {
-			this.inputHandlers[source]?.reset(except);
-		}
-	}
+    public reset(except?: string[]): void {
+        for (const source of INPUT_SOURCES) {
+            this.inputHandlers[source]?.reset(except);
+        }
+    }
 }

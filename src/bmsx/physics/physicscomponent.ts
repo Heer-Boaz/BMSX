@@ -1,4 +1,4 @@
-import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
+import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { GameObject } from '../core/gameobject';
 import { new_vec3 } from '../core/utils';
@@ -88,7 +88,6 @@ export class PhysicsComponent extends Component {
 		if (!this.writeBack) return;
 		const go = $.model.getGameObject<GameObject & Oriented>(this.parentid);
 		if (!go) return;
-		const beforeX = go.x_nonotify, beforeY = go.y_nonotify, beforeZ = go.z_nonotify;
 		if (this.syncAxis.x) go.x_nonotify = this.body.position.x;
 		if (this.syncAxis.y) go.y_nonotify = this.body.position.y;
 		if (this.syncAxis.z) go.z_nonotify = this.body.position.z;
@@ -99,7 +98,7 @@ export class PhysicsComponent extends Component {
 			go.rotationQ.z = this.body.rotationQ.z;
 			go.rotationQ.w = this.body.rotationQ.w;
 		}
-		// if (PhysicsComponent._debugFrames < 5) {
+    // if (PhysicsComponent._debugFrames < 5) {
 		// 	if (beforeX !== go.x_nonotify || beforeY !== go.y_nonotify || beforeZ !== go.z_nonotify) {
 		// 		// console.log(`[PhysSync]`, this.parentid, `body`, this.body.position, `goBefore: [${beforeX}, ${beforeY}, ${beforeZ}] goAfter: [${go.x_nonotify}, ${go.y_nonotify}, ${go.z_nonotify}]`);
 		// 	}
@@ -108,7 +107,7 @@ export class PhysicsComponent extends Component {
 		// }
 	}
 
-	private static _debugFrames = 0;
+    // private static _debugFrames = 0; // removed (unused)
 
 	override dispose(): void {
 		super.dispose();

@@ -105,7 +105,9 @@ export class Space {
 
         this[id2obj][o.id] = o; // Register the object in the `id2object`-object, so we can retrieve the object by id
         $.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
-        !skip_onspawn_event && o.onspawn?.(pos); // Trigger onspawn event after adding the object to the space. `onspawn` subscribes the object to events and starts the object's state machine
+        // Ensure we pass a full vec3 to onspawn (z defaults to 0)
+        const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z ?? 0 } : undefined;
+        !skip_onspawn_event && o.onspawn?.(spawnPos); // Trigger onspawn after adding the object to the space
 
         this.sort_by_depth(); // Sort after spawn-event, just to be sure
     }
@@ -455,15 +457,16 @@ export class BaseModel implements Stateful, RegisterablePersistent {
             // Lifecycle hooks (onTick, onLoad, dispose, onBoot) will be chained.
             // If a plugin property collides with an existing non-function property, skip it to avoid breaking the model.
             const lifecycleKeys = new Set(['onTick', 'onLoad', 'dispose', 'onBoot']);
+            const self = this as Record<string, any>;
             Object.keys(p).forEach(key => {
-                const val = p[key];
-                const hasExisting = key in this;
-                const existingVal = this[key];
+                const val = (p as Record<string, any>)[key];
+                const hasExisting = key in self;
+                const existingVal = (self as Record<string, any>)[key];
 
                 // Prefer chaining known lifecycle hooks (if plugin provides a function)
                 if (lifecycleKeys.has(key) && typeof val === 'function') {
                     const original = typeof existingVal === 'function' ? existingVal : undefined;
-                    this[key] = function (...args: any[]) {
+                    self[key] = function (...args: any[]) {
                         original?.apply(this, args);
                         val.apply(this, args);
                     };
@@ -472,14 +475,14 @@ export class BaseModel implements Stateful, RegisterablePersistent {
 
                 // If key does not exist on model, simply assign it
                 if (!hasExisting) {
-                    this[key] = val;
+                    self[key] = val;
                     return;
                 }
 
                 // If both are functions, chain them (safe general-case)
                 if (typeof existingVal === 'function' && typeof val === 'function') {
                     const original = existingVal;
-                    this[key] = function (...args: any[]) {
+                    self[key] = function (...args: any[]) {
                         original.apply(this, args);
                         val.apply(this, args);
                     };
@@ -621,17 +624,6 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Runs the game loop by calling the `run` method of all game objects and removing objects that are marked for disposal.
-     * If the game is paused or is set to start after loading, this function returns without doing anything.
-     * @returns {void} Nothing
-     */
-    public static defaultrun = (): void => {
-        // Deprecated: systems are now scheduled from BaseModel.run().
-        // Intentionally left as no-op to avoid duplicate updates when legacy calls remain in FSMs.
-        return;
-    };
-
-    /**
      * The default input handler for allowing the game menu to be opened.
      * If the F5 key is pressed, the game menu substate is set to 'open'.
      * @param {BaseModel} this - The current instance of the BaseModel.
@@ -752,13 +744,14 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      */
     public save(compress: boolean = true): Uint8Array {
         const createSavegame = () => {
-            const keys = Object.keys(this);
-            const data = {};
+            const self = this as Record<string, any>;
+            const keys = Object.keys(self);
+            const data = {} as Record<string, any>;
             for (let index = 0; index < keys.length; ++index) {
                 const key = keys[index];
                 if (BaseModel.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['Basemodel']?.[key]) continue;
-                if (this[key] !== null && this[key] !== undefined) {
-                    data[key] = this[key];
+                if (self[key] !== null && self[key] !== undefined) {
+                    data[key] = self[key];
                 }
             }
             const result = new Savegame();

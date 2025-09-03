@@ -189,7 +189,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
             const state = s as ParticlePipelineState;
             renderParticleBatch(fbo as WebGLFramebuffer, state.width, state.height, state);
         },
-        prepare: (backend, _state) => {
+        prepare: (_backend, _state) => {
             const gv = getRenderContext();
             const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
             const cam = $.model.activeCamera3D;

@@ -241,7 +241,7 @@ export class DualSenseHID {
 
         const prevGamepadState = { buttons: gamepad.buttons.map(b => b.pressed), axes: [...gamepad.axes] };
         const hidInputPromises = candidates.map(device => new Promise<{ device: HIDDevice; changed: boolean }>((resolve) => {
-            const onInput = (event: HIDInputReportEvent) => {
+            const onInput = (_event: HIDInputReportEvent) => {
                 device.removeEventListener('inputreport', onInput);
                 resolve({ device, changed: true });
             };

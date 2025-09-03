@@ -119,7 +119,7 @@ export const M4 = {
         m[0] = -2 * lr; m[5] = -2 * bt; m[10] = 2 * nf; m[12] = (l + r) * lr; m[13] = (t + b) * bt; m[14] = (f + n) * nf; m[15] = 1; return m;
     },
 
-    fisheye(fovRad: number, aspect: number, near: number, far: number): Mat4 {
+    fisheye(fovRad: number, _aspect: number, near: number, far: number): Mat4 {
         // NOTE: True fisheye is a non-linear projection (can't be represented
         // exactly with a single 4x4 matrix). Provide an approximation that
         // preserves a circular look by using equal X/Y scale. This will
@@ -178,7 +178,7 @@ export const M4 = {
         return m;
     },
     isometric(scale: number = 1): Mat4 {  // Oneindig, geen near/far
-        const sqrt2 = Math.sqrt(2), sqrt6 = Math.sqrt(6), sqrt3 = Math.sqrt(3);
+        const sqrt2 = Math.sqrt(2), sqrt6 = Math.sqrt(6);
         const m = new Float32Array(16);
         m[0] = scale * sqrt2 / 2; m[1] = -scale * sqrt2 / 2; m[2] = 0; m[3] = 0;
         m[4] = scale * sqrt2 / sqrt6; m[5] = scale * sqrt2 / sqrt6; m[6] = -scale * 2 / sqrt6; m[7] = 0;

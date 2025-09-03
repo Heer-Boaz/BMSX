@@ -110,7 +110,7 @@ export function fsmHandler(opts?: FsmHandlerOpts) {
         const memberName = ctx.name;
 
         ctx.addInitializer(function () {
-            const ctor = this.constructor;
+            const ctor = this.constructor as unknown as { [HANDLER_META]?: FsmHandlerDecl[] };
             const bag: FsmHandlerDecl[] = (ctor[HANDLER_META] ||= []);
             bag.push({
                 name: memberName,
@@ -121,5 +121,6 @@ export function fsmHandler(opts?: FsmHandlerOpts) {
 }
 
 export function getDeclaredFsmHandlers(ctor: any): FsmHandlerDecl[] {
-    return (ctor && ctor[HANDLER_META]) ? [...ctor[HANDLER_META]] : [];
+    const c = ctor as unknown as { [HANDLER_META]?: FsmHandlerDecl[] };
+    return (c && c[HANDLER_META]) ? [...c[HANDLER_META]] : [];
 }

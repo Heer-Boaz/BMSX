@@ -195,18 +195,18 @@ export class WebGLBackend implements GPUBackend {
     destroyRenderPassInstance(p: RenderPassInstanceHandle): void {
         if (p.backendData) this.gl.deleteProgram(p.backendData as WebGLProgram);
     }
-    setGraphicsPipeline(pass: PassEncoder, pipeline: RenderPassInstanceHandle): void {
+    setGraphicsPipeline(_pass: PassEncoder, pipeline: RenderPassInstanceHandle): void {
         const prog = pipeline.backendData as WebGLProgram;
         if (this.currentProgram !== prog) {
             this.gl.useProgram(prog);
             this.currentProgram = prog;
         }
     }
-    draw(pass: PassEncoder, first: number, count: number): void {
+    draw(_pass: PassEncoder, first: number, count: number): void {
         this.frameStats.draws++;
         this.gl.drawArrays(this.gl.TRIANGLES, first, count); // Assume TRIANGLES; customize if needed
     }
-    drawIndexed(pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void {
+    drawIndexed(_pass: PassEncoder, indexCount: number, firstIndex?: number, indexType?: number): void {
         this.frameStats.drawIndexed++;
         const type = (indexType ?? this.gl.UNSIGNED_SHORT);
         const bytesPerIndex = (type === this.gl.UNSIGNED_INT) ? 4 : (type === this.gl.UNSIGNED_BYTE ? 1 : 2);
@@ -296,13 +296,13 @@ export class WebGLBackend implements GPUBackend {
         this.gl.vertexAttribI4ui(index, x, y, z, w);
     }
 
-    drawInstanced(pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void {
+    drawInstanced(_pass: PassEncoder, vertexCount: number, instanceCount: number, firstVertex = 0, firstInstance = 0): void {
         this.frameStats.drawsInstanced++;
         if (CATCH_WEBGL_ERROR) checkWebGLError('drawInstanced: before drawArraysInstanced');
         this.gl.drawArraysInstanced(this.gl.TRIANGLES, firstVertex, vertexCount, instanceCount);
         if (CATCH_WEBGL_ERROR) checkWebGLError(`drawInstanced: after drawArraysInstanced. firstVertex: ${firstVertex}, vertexCount: ${vertexCount}, instanceCount: ${instanceCount}, firstInstance: ${firstInstance}`);
     }
-    drawIndexedInstanced(pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, firstInstance = 0, indexType?: number): void {
+    drawIndexedInstanced(_pass: PassEncoder, indexCount: number, instanceCount: number, firstIndex = 0, _baseVertex = 0, firstInstance = 0, indexType?: number): void {
         this.frameStats.drawIndexedInstanced++;
         const gl = this.gl;
         const type = (indexType ?? gl.UNSIGNED_SHORT);

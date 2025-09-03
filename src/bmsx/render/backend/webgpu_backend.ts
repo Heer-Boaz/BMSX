@@ -29,11 +29,11 @@ export class WebGPUBackend implements GPUBackend {
     beginFrame(): void { this._bytesUploaded = 0; }
     endFrame(): void { }
     getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }
-    accountUpload(kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
+    accountUpload(_kind: 'vertex' | 'index' | 'uniform' | 'texture', bytes: number): void {
         this._bytesUploaded += bytes;
     }
 
-    createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle {
+    createTextureFromImage(img: ImageBitmap, _desc: TextureParams): TextureHandle {
         // Use defaults since properties not in TextureParams
         const texture = this.device.createTexture({
             size: { width: img.width, height: img.height, depthOrArrayLayers: 1 },
@@ -77,7 +77,7 @@ export class WebGPUBackend implements GPUBackend {
         return texture;
     }
 
-    createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): TextureHandle {
+    createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], _desc: TextureParams): TextureHandle {
         if (faces.length !== 6 || !faces.every(f => f.width === faces[0].width && f.height === faces[0].height)) {
             throw new Error('All cubemap faces must be the same square size');
         }
@@ -102,7 +102,7 @@ export class WebGPUBackend implements GPUBackend {
         return texture;
     }
 
-    createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle {
+    createSolidCubemap(size: number, rgba: color_arr, _desc: TextureParams): TextureHandle {
         const texture = this.device.createTexture({
             size: { width: size, height: size, depthOrArrayLayers: 6 },
             format: 'rgba8unorm',
@@ -147,7 +147,7 @@ export class WebGPUBackend implements GPUBackend {
         return texture;
     }
 
-    createCubemapEmpty(size: number, desc: TextureParams): TextureHandle {
+    createCubemapEmpty(size: number, _desc: TextureParams): TextureHandle {
         return this.device.createTexture({
             size: { width: size, height: size, depthOrArrayLayers: 6 },
             format: 'rgba8unorm',
@@ -276,7 +276,7 @@ export class WebGPUBackend implements GPUBackend {
         return { maxColorAttachments: this.limits.maxColorAttachments };
     }
 
-    transitionTexture(tex: TextureHandle, fromLayout: string | undefined, toLayout: string): void {
+    transitionTexture(_tex: TextureHandle, _fromLayout: string | undefined, _toLayout: string): void {
         // WebGPU handles resource states automatically; manual transitions not required.
     }
 
@@ -408,6 +408,7 @@ export class WebGPUBackend implements GPUBackend {
     }
 
     createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): GPUBuffer {
+        void usage; // reserved for future usage hint mapping
         return this.device.createBuffer({ size: byteSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, mappedAtCreation: false });
     }
     updateUniformBuffer(buf: GPUBuffer, data: ArrayBufferView, dstByteOffset = 0): void {

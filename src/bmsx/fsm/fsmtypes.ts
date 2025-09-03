@@ -156,7 +156,7 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
  *
  * @template T - The type of the stateful object.
  */
-export type TickCheckDefinition<T extends Stateful = any> = Omit<StateEventDefinition<T>, 'scope'>;
+export type TickCheckDefinition<T extends Stateful & EventSubscriber = any> = Omit<StateEventDefinition<T>, 'scope'>;
 
 /**
  * Represents the type of a state transition (either 'to' or 'switch').
@@ -174,7 +174,7 @@ export type Tape = any[];
  * Represents an object that is stateful and can be registered, and subscribes to events.
  * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.
  */
-export interface Stateful extends Registerable, EventSubscriber {
+export interface Stateful extends Registerable { // removed EventSubscriber from extends to avoid index-signature conflicts
     /**
      * The StatemachineController of the object.
      */

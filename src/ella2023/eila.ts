@@ -20,7 +20,7 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 	 * @param old_x_or_y - The previous x or y coordinate of the game object.
 	 */
 	@subscribesToParentScopedEvent('leavingScreen')
-	public onLeavingScreen(_event_name: string, emitter: Eila, { d, old_x_or_y }: GameObjectEventPayloads['leavingScreen']) {
+	public onLeavingScreen(_event_name: string, emitter: Eila, { d }: GameObjectEventPayloads['leavingScreen']) {
 		if (d === 'left') {
 			emitter.facing = 'right';
 		}

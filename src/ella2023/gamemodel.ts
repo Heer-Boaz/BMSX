@@ -71,7 +71,6 @@ export class EilaModelFSM {
                             },
                         },
                     },
-                    tick: BaseModel.defaultrun,
                 },
                 gameover: {
                     entering_state(this: BaseModel) {
@@ -81,7 +80,6 @@ export class EilaModelFSM {
                         }
                         $.playAudio(AudioId.gameover);
                     },
-                    tick: BaseModel.defaultrun,
                 },
                 hoera: {
                     entering_state(this: BaseModel) {
@@ -91,7 +89,6 @@ export class EilaModelFSM {
                         }
                         $.playAudio(AudioId.gameover);
                     },
-                    tick: BaseModel.defaultrun,
                 },
                 titlescreen: {
                     entering_state(this: BaseModel) {
@@ -105,7 +102,6 @@ export class EilaModelFSM {
                         }
                         this.getFromCurrentSpace('gordijn').sc.dispatch_event('reset', this);
                     },
-                    tick: BaseModel.defaultrun,
                     event_handlers: {
                         gamestart_selected: 'game',
                     },

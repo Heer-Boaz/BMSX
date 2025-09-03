@@ -253,7 +253,7 @@ export class BinaryCompressor {
             a: 42,
             b: "hello",
             c: [1, 2, 3, 0xFD, 0xFE, 0xFF],
-            d: { x: true, y: null, z: undefined },
+            d: ({ x: true, y: null as null, z: undefined as undefined } as const),
             e: new Uint8Array([0, 1, 2, 0xFD, 0xFE, 0xFF]),
         };
         const encoded = encodeBinary(sample);

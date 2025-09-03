@@ -324,15 +324,6 @@ export class PhysicsWorld {
         if (this.enableMetrics) this._tBroad = performance.now() - tb0;
         if (this.enableMetrics) this.metrics.pairs = this.pairs.length;
 
-        // console.log('[PhysicsDebug] Step frame, pairs found:', this.pairs.length);
-        if (this.pairs.length > 0 && this._debugFrameCounter < 3) {
-            // console.log('[PhysicsDebug] Sample pairs:');
-            for (let i = 0; i < Math.min(3, this.pairs.length); i++) {
-                const p = this.pairs[i];
-                // console.log('  Pair', i, ':', p.a.id, '(', p.a.type, p.a.shape.kind, ') <->', p.b.id, '(', p.b.type, p.b.shape.kind, ')');
-            }
-        }
-
         // Narrowphase
         this.contacts.length = 0;
         // Reset contact pool for reuse (avoid GC churn)
@@ -343,30 +334,16 @@ export class PhysicsWorld {
         for (const p of this.pairs) {
             const layerMaskCheck = ((p.a.layer & p.b.mask) && (p.b.layer & p.a.mask));
             if (!layerMaskCheck) {
-                if (this._debugFrameCounter < 3) {
-                    // console.log('[PhysicsDebug] Pair filtered out by layer/mask:', p.a.id, '(layer:', p.a.layer, 'mask:', p.a.mask, ') <->', p.b.id, '(layer:', p.b.layer, 'mask:', p.b.mask, ')');
-                }
                 continue;
             }
             if (p.a.invMass === 0 && p.b.invMass === 0 && !p.a.isTrigger && !p.b.isTrigger) {
-                if (this._debugFrameCounter < 3) {
-                    // console.log('[PhysicsDebug] Pair filtered out (both static):', p.a.id, '<->', p.b.id);
-                }
                 continue;
             }
             if (p.a.asleep && p.b.asleep) {
-                if (this._debugFrameCounter < 3) {
-                    // console.log('[PhysicsDebug] Pair filtered out (both asleep):', p.a.id, '<->', p.b.id);
-                }
                 continue;
             }
             if (p.a.asleep && !p.b.asleep) toWake.push(p.a); else if (p.b.asleep && !p.a.asleep) toWake.push(p.b);
-            const contactsBefore = this.contacts.length;
             this.narrow.collide(p.a, p.b, this.contacts);
-            const contactsAfter = this.contacts.length;
-            if (contactsAfter > contactsBefore && this._debugFrameCounter < 3) {
-                // console.log('[PhysicsDebug] Contact generated between', p.a.id, 'and', p.b.id, 'contacts:', contactsAfter - contactsBefore);
-            }
             narrowTests++;
         }
         for (const b of toWake) b.asleep = false;
@@ -375,9 +352,6 @@ export class PhysicsWorld {
         // Solve (allow multi-iteration)
         const ts0 = this.enableMetrics ? performance.now() : 0;
         const iters = this.solver.iterations ?? 1;
-        if (this.contacts.length > 0) {
-            // console.log('[PhysicsDebug] Solving', this.contacts.length, 'contacts with', iters, 'iterations');
-        }
         for (let i = 0; i < iters; i++) this.solver.solve(this.contacts);
         if (this.enableMetrics) { this._tSolve = performance.now() - ts0; this.metrics.solvedContacts = this.solver.lastSolvedContacts; this.metrics.contacts = this.contacts.length; }
 
@@ -481,7 +455,7 @@ export class PhysicsWorld {
         if (this.logFirstFramesContacts && this._debugFrameCounter < 10) {
             // console.log('[PhysDbg]', 'frame', this._debugFrameCounter, 'pairs', this.pairs.length, 'contacts', this.contacts.length);
             if (this.contacts.length) {
-                const sample = this.contacts[0];
+                // const sample = this.contacts[0];
                 // console.log('[PhysDbg] sample contact', { pen: sample.penetration, normal: sample.normal, a: sample.a.id, b: sample.b.id });
             }
             this._debugFrameCounter++;

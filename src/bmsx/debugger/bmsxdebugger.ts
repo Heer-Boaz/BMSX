@@ -32,7 +32,6 @@ let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 export class PhysicsOverlayRenderer extends Component {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
-    private attached = false;
     private lastResizeW = 0; private lastResizeH = 0;
     constructor(id: Identifier) {
         super(id);
@@ -740,7 +739,7 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 
     // Use ObjectPropertyDialog for live-refresh
     if (obj && obj.id != null) {
-        const dlg = ObjectPropertyDialog.openDialogById(obj.id.toString(), title, ['objects']);
+        ObjectPropertyDialog.openDialogById(obj.id.toString(), title, ['objects']);
         // Optionally, position or focus dialog if needed
     } else {
         const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
@@ -818,18 +817,15 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 
 export function handleDebugMouseMove(e: MouseEvent): void {
     const { objUnderCursor } = getGameObjectAtCursor(e);
-    let dirtyFrame = false;
 
     // We can't use the player input because they are not updated when the game is paused
     // Get the state of the Control key directly from the browser API
     if (e.ctrlKey) {
         // Highlight mouse-overed objects
         highlight_object(objUnderCursor);
-        dirtyFrame = true;
     }
     else {
         highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
-        dirtyFrame = true;
     }
 
     if (draggedObj) {
@@ -844,7 +840,6 @@ export function handleDebugMouseMove(e: MouseEvent): void {
         if (!e.shiftKey) {
             draggedObj = null; // Stop dragging object when shift is released
         }
-        dirtyFrame = true;
     }
     // Vraag een enkele veilige render aan via de main loop (alleen als paused).
     // Geen directe draw -> minder batch/particle side-effects bij snel hoveren.

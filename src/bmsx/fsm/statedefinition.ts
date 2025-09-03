@@ -1,7 +1,7 @@
 import { EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from '../serializer/gameserializer';
-import { type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateMachineBlueprint, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
+import { type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
 
 /**
  * Determines whether the tape should automatically rewind to the beginning
@@ -139,7 +139,7 @@ export class StateDefinition {
      *
      * @param substates - The blueprint of the substates.
      */
-    private construct_substate_machine(substates: StateMachineBlueprint, root: StateDefinition): void {
+    private construct_substate_machine(substates: id2partial_sdef, root: StateDefinition): void {
         this.substates ??= {};
         const substate_ids = Object.keys(substates);
         for (let state_id of substate_ids) {

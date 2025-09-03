@@ -12,8 +12,10 @@ function applyImpulseLinear(b: PhysicsBody, impulse: vec3, scale: number) {
 }
 
 function cross(out: vec3, a: vec3, b: vec3) { out.x = a.y * b.z - a.z * b.y; out.y = a.z * b.x - a.x * b.z; out.z = a.x * b.y - a.y * b.x; return out; }
+// @ts-ignore
 function add(out: vec3, a: vec3, b: vec3) { out.x = a.x + b.x; out.y = a.y + b.y; out.z = a.z + b.z; return out; }
 function sub(out: vec3, a: vec3, b: vec3) { out.x = a.x - b.x; out.y = a.y - b.y; out.z = a.z - b.z; return out; }
+// @ts-ignore
 function scale(out: vec3, a: vec3, s: number) { out.x = a.x * s; out.y = a.y * s; out.z = a.z * s; return out; }
 function dot(a: vec3, b: vec3) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
@@ -69,7 +71,7 @@ export class ContactSolver {
     solve(contacts: Contact[]) {
         let solved = 0;
         const ra = new_vec3(0, 0, 0), rb = new_vec3(0, 0, 0);
-        const tmp1 = new_vec3(0, 0, 0), tmp2 = new_vec3(0, 0, 0), tmp3 = new_vec3(0, 0, 0), tmp4 = new_vec3(0, 0, 0);
+        const tmp1 = new_vec3(0, 0, 0), tmp2 = new_vec3(0, 0, 0), tmp3 = new_vec3(0, 0, 0);
         for (const c of contacts) {
             const a = c.a, b = c.b;
             // triggers: skip impulses, still allow event dispatch outside

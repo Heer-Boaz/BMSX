@@ -88,28 +88,28 @@ export class Serializer {
         return typeof value;
     }
 
-    static createInclusionCacheKey(obj: ConstructorWithSaveGame<any>): string {
+    static createInclusionCacheKey(obj: unknown): string {
         return (typeof obj === 'function')
             ? (obj as Function).name
-            : (obj as object && (obj as { constructor?: { name?: string } }).constructor?.name);
+            : ((obj as { constructor?: { name?: string } })?.constructor?.name);
     }
 
     // Ensure this method walks the prototype/constructor chain so abstract/base-class annotations are honored.
-    static shouldClassBeExcludedFromSaveGame(obj: ConstructorWithSaveGame<any>): boolean {
+    static shouldClassBeExcludedFromSaveGame(obj: unknown): boolean {
         const cacheKey = Serializer.createInclusionCacheKey(obj);
 
         const map = Serializer.classExcludeMap;
         if (cacheKey && map.has(cacheKey)) return map.get(cacheKey)! === true;
 
         // 1) Walk constructor chain (class-level decorators / flags live here)
-        let ctor: any = (typeof obj === 'function') ? obj : (obj as new () => any)?.constructor;
+        let ctor: any = (typeof obj === 'function') ? obj : (obj as { constructor?: any })?.constructor;
         while (ctor && ctor !== Object) {
             if (hasExcludeFlag(ctor)) { if (cacheKey) map.set(cacheKey, true); return true; }
             if (Serializer.excludedObjectTypes?.has?.(ctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
             ctor = Object.getPrototypeOf(ctor);
         }
         // 2) Defensively walk prototype chain of an instance
-        let proto: any = (typeof obj === 'function') ? obj.prototype : Object.getPrototypeOf(obj);
+        let proto: any = (typeof obj === 'function') ? (obj as Function).prototype : Object.getPrototypeOf(obj as object);
         while (proto && proto.constructor && proto.constructor !== Object) {
             const pctor = proto.constructor;
             if (hasExcludeFlag(pctor)) { if (cacheKey) map.set(cacheKey, true); return true; }
@@ -120,7 +120,7 @@ export class Serializer {
         return false;
     }
 
-    static shouldPropertyBeExcludedFromSaveGame(value: Object, key: string): boolean {
+    static shouldPropertyBeExcludedFromSaveGame(value: Record<string, unknown>, key: string): boolean {
         const className = Serializer.get_typename(value);
         const map = Serializer.propertyIncludeExcludeMap;
         let typeMap = map.get(className);
@@ -130,7 +130,7 @@ export class Serializer {
             map.set(className, typeMap);
         }
         // Walk prototype chain of the instance
-        let proto: any = Object.getPrototypeOf(value);
+        let proto: any = Object.getPrototypeOf(value as object);
         while (proto && proto.constructor && proto.constructor.name !== 'Object') {
             if (Serializer.excludedProperties[proto.constructor.name]?.[key] === true) { typeMap.set(key, true); return true; }
             proto = Object.getPrototypeOf(proto);
@@ -364,7 +364,7 @@ export class Reviver {
 
     static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }) {
         const { root, objects } = options.isBinary ? decodeBinary(input as Uint8Array) : JSON.parse(input as string);
-        const idToObject: Record<number, any> = {};
+        const idToObject: Record<string, any> = {};
         if (!objects || Object.keys(objects).length === 0 || !root) {
             console.error('[Reviver] Gamestate to deserialize is invalid!');
             return null;
@@ -373,11 +373,12 @@ export class Reviver {
         for (const id of Object.keys(objects)) {
             const data = objects[id];
             if (data && data.isTypedArray) {
-                const ctor = globalThis[data.typename];
-                if (typeof ctor === "function") {
-                    idToObject[id] = new ctor(data.data);
+                const ctorUnknown = (globalThis as unknown as Record<string, unknown>)[(data as { typename: string }).typename];
+                if (typeof ctorUnknown === "function") {
+                    const C = ctorUnknown as new (data: number[]) => unknown;
+                    idToObject[id] = new C((data as { data: number[] }).data);
                 } else {
-                    idToObject[id] = data.data;
+                    idToObject[id] = (data as { data: number[] }).data;
                 }
                 continue;
             }
@@ -609,7 +610,7 @@ export class Savegame {
     viewState: ViewState;
 
     @onsave
-    saveViewState(o: Savegame) {
+    saveViewState() {
         // Capture current view state
         const view = $.view as GameView;
         const viewState: ViewState = {
@@ -636,7 +637,7 @@ export class Savegame {
     }
 
     @onsave
-    saveSoundState(o: Savegame) {
+    saveSoundState() {
         // Capture full sound master playback state (multi-voice aware)
         const SMState: SoundMasterState = {
             sfxVoices: $.sndmaster.snapshotVoices('sfx'),

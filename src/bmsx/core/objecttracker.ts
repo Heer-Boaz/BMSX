@@ -11,7 +11,7 @@ export class ObjectTracker {
     /**
      * An object that tracks the properties of game objects.
      * @remarks
-     * The `trackedObjects` property is a dictionary that maps GameObjectIds to an array of tracked properties.
+     * The `trackedObjects` property is a dictionary that maps GameObjectId's to an array of tracked properties.
      * Each tracked property is represented by an object with a `property` field and an optional `key` field.
      */
     private trackedObjects: { [id: Identifier]: Array<{ property: string, key?: string }> } = {};
@@ -29,6 +29,14 @@ export class ObjectTracker {
      */
     trackObject<T extends GameObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
         this.trackedObjects[target.id] = properties as Array<{ property: string, key?: string }>;
+
+        // Initialize lastValues for this object to avoid undefined accesses later.
+        this.lastValues[target.id] = this.lastValues[target.id] || {};
+        for (const { property } of properties) {
+            // store the current value as the baseline
+            const propName = property as string;
+            this.lastValues[target.id][propName] = (target as unknown as Record<string, any>)[propName];
+        }
     }
 
     /**
@@ -49,7 +57,14 @@ export class ObjectTracker {
         for (let [id, properties] of Object.entries(this.trackedObjects)) {
             for (let { property, key } of properties) {
                 let gameObject = $.model.getGameObject<GameObject>(id);
-                let value = gameObject[property];
+                if (!gameObject) continue; // skip if object no longer exists
+
+                // Use a string-indexable view so TS accepts dynamic property access
+                const gobjRec = gameObject as Record<string, any>;
+                const value = gobjRec[property];
+
+                // Ensure lastValues[id] exists
+                this.lastValues[id] = this.lastValues[id] || {};
 
                 // Only include the property in the updates if it has changed
                 if (value !== this.lastValues[id][property]) {

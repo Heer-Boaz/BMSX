@@ -32,7 +32,7 @@ export class TextWriter {
         * @param text The text to draw on the screen.
         * @returns A boolean indicating whether the text has reached the bottom of the screen.
         */
-        const draw_string = function (text): boolean {
+        const draw_string = function (text: string): boolean {
             for (let i: number = 0; i < text.length; i++) {
                 const letter = text[i]; // Get the character to draw
                 stepX = font.char_width(letter); // Get the width of the character

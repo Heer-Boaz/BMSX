@@ -64,7 +64,7 @@ export class KeyboardInput implements InputHandler {
     public consumeButton(key: string): void {
         this.gamepadButtonStates[key].consumed = true;
         // Use the constant to map keyboard keys to gamepad buttons
-        const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[key];
+        const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[key as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
         if (keyMappedToCorrespondingGamepadButtonId) {
             this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId].consumed = true;
         }
@@ -102,7 +102,7 @@ export class KeyboardInput implements InputHandler {
             }
 
             // Use the constant to map keyboard keys to gamepad buttons
-            const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId];
+            const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
             if (keyMappedToCorrespondingGamepadButtonId) {
                 newGamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] = { ...newGamepadButtonStates[buttonId] };
             }

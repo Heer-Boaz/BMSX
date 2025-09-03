@@ -1,4 +1,4 @@
-import { $, AmbientLightObject, BaseModel, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, State, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
+import { $, AmbientLightObject, BaseModel, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { bclass } from './bclass';
 import { _model, gamepadInputMapping, keyboardInputMapping } from './bootloader';
@@ -18,7 +18,7 @@ export class gamemodel extends BaseModel {
 				'_game_start': {
 					entering_state(this: gamemodel) {
 					},
-					tick(this: gamemodel, s: State) {
+					tick(this: gamemodel) {
 						return 'default';
 					}
 				},
@@ -30,7 +30,6 @@ export class gamemodel extends BaseModel {
 						} as InputMap);
 
 						// Config: toggle if engine visual up-axis is Z instead of Y
-						const USE_Z_UP = false; // set to true if models/camera treat Z as vertical axis
 						const cube = new Cube3D();
 						const small = new SmallCube3D(1);
 						const small2 = new SmallCube3D(2);
@@ -44,7 +43,7 @@ export class gamemodel extends BaseModel {
 						const parentTf = cube.getComponent(TransformComponent);
 						const childTf = small.getComponent(TransformComponent);
 						const childTf2 = small2.getComponent(TransformComponent);
-						const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
+						// const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
 						if (parentTf && childTf) {
 							childTf.parentNode = parentTf;
 							childTf.position = [1, 0, 0];
@@ -101,6 +100,7 @@ export class gamemodel extends BaseModel {
 						// ===== Rail shooter demo scaffold =====
 						// Simple S-curve forward rail reminiscent of an urban fly-through
 						// Extended weaving rail path: dips between towers then rises above skyline
+						// @ts-ignore
 						const railDef = {
 							points: [
 								{ x: -40, y: 14, z: 80, t: 0 },
@@ -328,7 +328,6 @@ export class gamemodel extends BaseModel {
 						//     trigger.addComponent(new PhysicsDescriptorComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
 						// }
 					},
-					tick: BaseModel.defaultrun,
 				},
 			},
 		}

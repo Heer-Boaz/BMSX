@@ -270,11 +270,11 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
     }
 
     // Implement this method to handle preprocessing updates
-    public preprocessingUpdate(..._args): void {
+    public preprocessingUpdate(..._args: unknown[]): void {
     }
 
     // Implement this method to handle postprocessing updates
-    public postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+    public postprocessingUpdate(_args: ComponentUpdateParams): void {
     }
 }
 

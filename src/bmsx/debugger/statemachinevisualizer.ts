@@ -50,15 +50,6 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
     let stateElements = new Map<string, HTMLElement>();
     let machineElements = new Map<string, HTMLElement>();
 
-    function addContent(parent: HTMLElement, type: string, content: string | null): HTMLElement {
-        let element = document.createElement(type);
-        if (content !== null) {
-            element.textContent = content;
-        }
-        parent.appendChild(element);
-        return element;
-    }
-
     function visualizeMachine(machine: State, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
         const bfsmController = $.get<Stateful>(bfsmControllerId).sc;
         let table = document.createElement('table');

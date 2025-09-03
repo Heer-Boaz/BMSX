@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type vec2 } from '../bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type vec2 } from '../bmsx';
 import { ExtendedModel } from './modelplugin';
 import { BitmapId } from './resourceids';
 
@@ -161,7 +161,7 @@ export abstract class Fighter extends SpriteObject {
         this.paintHitMarker(this.currentHitMarker);
     }
 
-    override onspawn(spawningPos?: Vector): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.resetVerticalPosition();
     }

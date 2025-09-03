@@ -25,7 +25,6 @@ export class PathRunner {
     readonly path: Path;
     // Orientation state
     orientation: quat = Q.ident();
-    private _lastFwd = { x: 0, y: 0, z: 1 };
     private _orientationKeys: { u: number; q: quat }[] = [];
     private _lookAt?: () => { x: number; y: number; z: number };
     private _baseUp = { x: 0, y: 1, z: 0 };
@@ -99,7 +98,6 @@ export class PathRunner {
         if (bankUse !== 0) {
             // approximate curvature via forward delta
             const ahead = this.path.sample(Math.min(1, this.u + 0.002));
-            const dot = fwd.x * ahead.fwd.x + fwd.y * ahead.fwd.y + fwd.z * ahead.fwd.z;
             const crossX = fwd.y * ahead.fwd.z - fwd.z * ahead.fwd.y;
             const crossY = fwd.z * ahead.fwd.x - fwd.x * ahead.fwd.z;
             const crossZ = fwd.x * ahead.fwd.y - fwd.y * ahead.fwd.x;
@@ -118,7 +116,6 @@ export class PathRunner {
             };
         }
         this.orientation = Q.fromBasis(fwd, up);
-        this._lastFwd = fwd;
     }
     sample(): PathSample { return this.path.sample(this.u); }
 }

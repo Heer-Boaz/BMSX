@@ -97,12 +97,12 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param subscriber - The event subscriber.
 	 */
 	public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (...args: any[]) => any) {
-		const constr = subscriber.constructor as EventSubscriber;
+		const constr = subscriber.constructor;
 		if (!constr?.eventSubscriptions) return;
 
 		const self = EventEmitter.instance;
 		constr.eventSubscriptions.forEach(subscription => {
-			let handler = subscriber[subscription.handlerName].bind(subscriber);
+			let handler = (subscriber as Record<string, EventHandler>)[subscription.handlerName].bind(subscriber);
 			// If a wrapper function is provided, use it to call the handler
 			if (wrapper) {
 				const originalHandler = handler;
@@ -336,11 +336,20 @@ export type EventSubscription = {
 	persistent?: boolean;
 };
 
+export type EventSubscriberConstructor = Function & {
+	eventSubscriptions?: EventSubscription[]
+}
+
 /**
  * Represents an event subscriber.
  */
 export interface EventSubscriber {
-	eventSubscriptions?: EventSubscription[]
+	constructor: EventSubscriberConstructor;
+}
+
+export interface EventSubscriberWithIndexedHandlers {
+	[key: string]: EventHandler | EventSubscriberConstructor;
+	constructor: EventSubscriberConstructor;
 }
 
 /**

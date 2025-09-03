@@ -203,7 +203,6 @@ export class RenderGraphRuntime {
     // Cached per-pass dependency data (populated during compile) for use during execute (transitions, stats)
     private _passReads: { tex: RGTexHandle }[][] = [];
     private _passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
-    private _valueReads: { val: ValueHandle }[][] = [];
 
     constructor(backend: GPUBackend) { this.backend = backend; }
 
@@ -286,8 +285,8 @@ export class RenderGraphRuntime {
         if (finalRes.readPasses) for (const rp of finalRes.readPasses) markPass(rp);
         // Ensure pass that does export (if different) is included
         for (let i = 0; i < passCount; i++) {
-            // If this pass explicitly exported, include it
-            for (const w of passWrites[i]) { /* noop for now */ }
+            // If this pass explicitly exported, include it (placeholder loop to retain structure)
+            for (const _ of passWrites[i]) { /* noop for now */ }
         }
         // Mark any explicitly forced passes reachable (side-effect passes w/o resource edges)
         for (let p = 0; p < passCount; p++) {
@@ -296,7 +295,7 @@ export class RenderGraphRuntime {
         // Topological sort (Kahn) on reachable subgraph
         // Build adjacency & indegree
         const indegree = new Array(passCount).fill(0);
-        const adj: number[][] = new Array(passCount).fill(0).map(() => []);
+        const adj: number[][] = new Array(passCount).fill(0).map((): number[] => []);
         for (let p = 0; p < passCount; p++) {
             if (!this.reachable[p]) continue;
             // For each read, add edge writer -> p
@@ -383,7 +382,6 @@ export class RenderGraphRuntime {
         // Persist dependency info for execution phase (avoids rescanning resources)
         this._passReads = passReads;
         this._passWrites = passWrites;
-        this._valueReads = valueReads;
         this.compiled = true;
     }
 

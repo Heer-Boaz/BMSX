@@ -82,7 +82,7 @@ export class AssetBarrier<T> {
     }
 
     clear(disposer?: Disposer<T>): void {
-        for (const [k, e] of this.map) { e.gen++; if (e.value) disposer?.(e.value); }
+        for (const [_k, e] of this.map) { e.gen++; if (e.value) disposer?.(e.value); }
         this.map.clear();
     }
 

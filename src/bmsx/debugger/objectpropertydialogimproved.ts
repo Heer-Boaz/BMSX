@@ -8,7 +8,6 @@ class PropertyTreeState {
     static shouldAutoExpand(value: any): boolean {
         if (value === null || value === undefined) return false;
         if (typeof value !== 'object') return true;
-        const keys = Array.isArray(value) ? value : Object.keys(value);
         if (Array.isArray(value) && value.length === 0) return false;
         if (Array.isArray(value) && value.length <= 3) return true;
         if (!Array.isArray(value) && Object.keys(value).length <= 3) return true;
@@ -180,6 +179,6 @@ export class ObjectPropertyDialog {
 export function refreshAllObjectPropertyDialogs() {
     ObjectPropertyDialog.refreshAll();
 }
-export function openObjectPropertyDialogById(objId: string, objName: string, ignoreProps?: string[], parentPath?: string) {
+export function openObjectPropertyDialogById(objId: string, objName: string, ignoreProps?: string[]) {
     return ObjectPropertyDialog.openDialogById(objId, objName, ignoreProps);
 }

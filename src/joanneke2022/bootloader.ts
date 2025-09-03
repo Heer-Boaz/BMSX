@@ -66,7 +66,6 @@ class gamemodel extends BaseModel {
                         this.sc.machines.gamemenu.run();
                         if (!this.paused) ++s.ticks; // Laat timer lopen
                     },
-                    process_input: BaseModel.default_input_handler,
                 },
                 evaluatie: {
                     ticks2move: 50,
@@ -84,7 +83,6 @@ class gamemodel extends BaseModel {
                     run(s: State) {
                         ++s.ticks;
                     },
-                    process_input: BaseModel.default_input_handler,
                 },
                 hoera: {
                     enter(this: gamemodel) {
@@ -99,7 +97,6 @@ class gamemodel extends BaseModel {
                     run(this: gamemodel) {
                         BaseModel.defaultrun();
                     },
-                    process_input: BaseModel.default_input_handler,
                 },
             }
         };

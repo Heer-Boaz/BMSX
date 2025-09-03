@@ -143,12 +143,6 @@ function hasGetGameObject(m: BaseModel): m is BaseModel & { getGameObject?: (id:
 	return typeof r['getGameObject'] === 'function';
 }
 
-function hasCoordinates(o: unknown): o is { x: number; y: number; z?: number } {
-	if (!o) return false;
-	const r = o as Record<string, unknown>;
-	return typeof r['x'] === 'number' && typeof r['y'] === 'number';
-}
-
 function hasRotationQ(o: unknown): o is { rotationQ: { x: number; y: number; z: number; w: number } } {
 	if (!o) return false;
 	const r = o as Record<string, unknown>;
@@ -167,18 +161,6 @@ function hasMarkDirty(o: unknown): o is { markDirty: () => void } {
 	if (!o) return false;
 	const r = o as Record<string, unknown>;
 	return typeof r['markDirty'] === 'function';
-}
-
-function hasEnsurePhysicsWorld(pw: unknown): pw is { ensure: () => PhysicsWorld } {
-	if (!pw) return false;
-	const r = pw as Record<string, unknown>;
-	return typeof r['ensure'] === 'function';
-}
-
-function hasMarkBodyDirty(w: unknown): w is { markBodyDirty: (body: unknown) => void } {
-	if (!w) return false;
-	const r = w as Record<string, unknown>;
-	return typeof r['markBodyDirty'] === 'function';
 }
 
 /** Updates all BehaviorTrees attached to objects. */
@@ -489,11 +471,11 @@ export class TransformSystem extends ECSystem {
 			const tcCandidate = o?.getComponent?.(TransformComponent);
 			const tc = tcCandidate as TransformComponent | undefined;
 			if (!tc || !tc.enabled) continue;
-			const parent = hasGetGameObject(model) ? model.getGameObject?.((tc as unknown as Record<string, unknown>)['parentid'] as string) || o : o;
+			const parent = tc.parent;
 			if (parent?.pos) {
 				tc.position[0] = parent.pos.x;
 				tc.position[1] = parent.pos.y;
-				tc.position[2] = parent.pos.z ?? 0;
+				tc.position[2] = parent.pos.z;
 			}
 			if (hasRotationQ(parent)) tc["orientationQ"] = parent.rotationQ;
 			if (hasScale(parent)) {

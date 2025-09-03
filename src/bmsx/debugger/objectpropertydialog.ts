@@ -32,19 +32,26 @@ function isExpanded(obj: any, objName: string, path: string, depth: number): boo
 
 function setExpanded(obj: any, objName: string, path: string, expanded: boolean, depth: number) {
     const set = getAccordionSet(obj, objName);
-    if (expanded) {
-        set.add(path);
-        set.delete('!' + path);
+    // Use depth to control expansion behavior
+    if (depth > 1) {
+        if (expanded) {
+            set.add(path);
+            set.delete('!' + path);
+        } else {
+            set.delete(path);
+            set.add('!' + path);
+        }
     } else {
-        set.delete(path);
-        set.add('!' + path);
+        if (expanded) {
+            set.add(path);
+        } else {
+            set.delete(path);
+        }
     }
+
     const key = getObjectAccordionKey(obj, objName);
     harmonicaExpandedStateById.set(key, set);
 }
-
-const OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES = ['state', 'objects', 'spaces'];
-const OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT = true;
 
 function shouldPropertyBeExcluded(propName: string, parent_obj: Object): boolean {
     let parent_obj_name = parent_obj?.constructor?.name;
@@ -252,19 +259,6 @@ export function createObjectTableElement(
     return table;
 }
 
-// --- ObjectPropertyDialog class for efficient live updates ---
-interface ObjectPropertyDialogDescriptor {
-    dialog: FloatingDialog;
-    contentDiv: HTMLElement;
-    objId: string;
-    objName: string;
-    ignoreProps?: string[];
-    parentPath?: string;
-    table?: HTMLTableElement;
-}
-
-const openObjectPropertyDialogs: ObjectPropertyDialogDescriptor[] = [];
-
 export class ObjectPropertyDialogOld {
     private static openDialogs: Map<string, ObjectPropertyDialogOld> = new Map();
     private dialog: FloatingDialog;
@@ -274,7 +268,6 @@ export class ObjectPropertyDialogOld {
     private contentDiv: HTMLElement;
     private tableRoot: HTMLTableElement | null = null;
     private valueCellMap: Map<string, HTMLElement> = new Map(); // path -> cell
-    private lastObjSnapshot: string | null = null;
     private lastKeys: string[] = [];
 
     constructor(objectId: string, title: string, ignoreProps?: string[]) {
@@ -304,7 +297,7 @@ export class ObjectPropertyDialogOld {
         this.contentDiv.appendChild(this.tableRoot);
         this.lastKeys = [];
         this.buildTableRows(obj, this.title, '', 0);
-        this.lastObjSnapshot = JSON.stringify(obj);
+        // Snapshot removed (unused)
     }
 
     private buildTableRows(obj: any, objName: string, parentPath: string, depth: number): void {
@@ -498,9 +491,14 @@ export class ObjectPropertyDialogOld {
         for (const path of this.lastKeys) {
             const valueCell = this.valueCellMap.get(path);
             if (!valueCell) continue;
-            let value = obj;
+            let value: unknown = obj as unknown;
             for (const part of path.split('.')) {
-                value = value?.[part];
+                if (value != null && typeof value === 'object') {
+                    value = (value as Record<string, unknown>)[part];
+                } else {
+                    value = undefined;
+                    break;
+                }
             }
             const type = typeof value;
             if (type === 'boolean') {

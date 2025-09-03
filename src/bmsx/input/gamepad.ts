@@ -210,7 +210,7 @@ export class GamepadInput implements InputHandler {
             const gamepadButton = buttons[btnIndex];
             const pressed = typeof gamepadButton === 'object' ? gamepadButton.pressed : gamepadButton === 1.0;
             // Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
-            const buttonId = Input.INDEX2BUTTON[btnIndex];
+            const buttonId = Input.INDEX2BUTTON[btnIndex as keyof typeof Input.INDEX2BUTTON];
             const oldPressTime = this.gamepadButtonStates[buttonId].presstime ?? 0;
             this.gamepadButtonStates[buttonId].pressed = buttonId === 'left' || buttonId === 'right' || buttonId === 'up' || buttonId === 'down'
                 ? this.gamepadButtonStates[buttonId].pressed || pressed
