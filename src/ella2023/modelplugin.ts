@@ -19,12 +19,7 @@ export const EILA_PLUGIN = {
 		// Register event service for handlers
 		new EilaEventService();
 	},
-	constants: {
-		EILA_START_HP: 100,
-		SINTERKLAAS_START_HP: 100,
-		VERTICAL_POSITION_FIGHTERS: 176,
-	},
-}
+};
 
 export type ExtendedModel = BaseModel & typeof EILA_PLUGIN;
 

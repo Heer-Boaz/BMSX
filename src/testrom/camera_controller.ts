@@ -1,8 +1,21 @@
-import { $, CameraObject, CameraProjectionType, GameObject, insavegame, onload } from '../bmsx';
+import { $, build_fsm, CameraObject, CameraProjectionType, GameObject, insavegame, onload, StateMachineBlueprint } from '../bmsx';
 import { Action } from './bootloader';
 
 @insavegame
 export class CameraController extends GameObject {
+	@build_fsm()
+	public static buildFsm(): StateMachineBlueprint {
+		return {
+			substates: {
+				_default: {
+					tick(this: CameraController) {
+						this.stuff();
+					},
+				},
+			},
+		};
+	}
+
 	private cameras: CameraObject[];
 	private idx = 0;
 	private mouseControlsEnabled = false;
@@ -126,8 +139,7 @@ export class CameraController extends GameObject {
 		document.removeEventListener('focus', this.onFocus);
 	}
 
-	override run(): void {
-		super.run();
+	stuff(): void {
 		const input = $.input.getPlayerInput(1);
 
 		if (input.getActionState('save').justpressed) {

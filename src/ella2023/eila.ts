@@ -1,7 +1,8 @@
 import { $, Component, GameObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
 import { Fighter } from './fighter';
+import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
-import { EilaEventService, ExtendedModel } from './modelplugin';
+import { EilaEventService } from './modelplugin';
 import { AudioId, BitmapId } from './resourceids';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
@@ -520,7 +521,7 @@ export class Eila extends Fighter {
 
 	constructor() {
 		super('player', undefined, 'left', 1);
-		this.hp = $.modelAs<ExtendedModel>().constants.EILA_START_HP;
+		this.hp = EILA_START_HP;
 	}
 
 	override paint(): void {

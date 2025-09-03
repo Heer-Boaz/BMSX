@@ -180,6 +180,8 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 */
 	protected setPosZ(z: number) {
 		this.pos.z = z; // Set position here, as accessors cannot be decorated with update_tagged_components
+		// Mark depth-sort dirty for the object's space to ensure correct draw order
+		try { $.model.markDepthDirtyForObjectId(this.id); } catch { /* no-op if model not ready */ }
 	}
 
 	/**
@@ -231,6 +233,8 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public set z_nonotify(z: number) {
 		this.pos.z = z;
+		// Mark depth-sort dirty for the object's space to ensure correct draw order. This is still required.
+		$.model.markDepthDirtyForObjectId(this.id);
 	}
 
 	/**

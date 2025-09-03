@@ -1,5 +1,4 @@
-﻿import { BaseModel } from '../core/basemodel';
-import { BFont } from '../core/font';
+﻿import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/mesh';
@@ -214,10 +213,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public drawbase(): void {
-		// Base drawing logic goes here
-		const model: BaseModel = $.model;
-		model.applyViewSettings();
-		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
+		// Gate per-frame sorting using Space.depthSortDirty (set on add/remove/z changes)
+		if ($.model.currentSpace.depthSortDirty) $.model.currentSpace.sort_by_depth();
 		$.model.currentSpace.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
 	}
 

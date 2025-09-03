@@ -1,7 +1,8 @@
 import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent, vec3 } from '../bmsx';
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
-import { EilaEventService, ExtendedModel } from './modelplugin';
+import { SINTERKLAAS_START_HP } from './gameconstants';
+import { EilaEventService } from './modelplugin';
 import { AudioId, BitmapId } from "./resourceids";
 
 function theOtherFighter(f: Fighter) {
@@ -16,7 +17,7 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 export class Sinterklaas extends Fighter {
     constructor(aied: boolean) {
         super('sinterklaas', undefined, 'right', 2);
-        this.hp = $.modelAs<ExtendedModel>().constants.SINTERKLAAS_START_HP;
+        this.hp = SINTERKLAAS_START_HP;
         this._aied = aied;
     }
 

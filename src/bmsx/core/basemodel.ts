@@ -21,12 +21,14 @@ import { $, runGate } from './game';
 import { GameObject } from './gameobject';
 import { AmbientLightObject, LightObject } from './lightobject';
 import { Registry } from "./registry";
+import type { Component, ComponentConstructor } from "../component/basecomponent";
 
 export interface SpaceObject {
     spaceid: Identifier;
     objects: GameObject[];
 }
-
+// Backwards-compatible index proxies: runtime uses Map for performance, while
+// external code can still index with [id] due to Proxy handling.
 export type id2objectType = Record<Identifier, GameObject>;
 export type id2spaceType = Record<Identifier, Space>;
 export type obj_id2space_id_type = Record<Identifier, Identifier>;
@@ -34,16 +36,68 @@ export const id2obj = Symbol('id2object');
 export const spaceid_2_space = Symbol('id2space');
 export const objid_2_objspaceid = Symbol('obj_id2obj_space_id');
 
+// Services and plugin types
+export interface TileCollisionService {
+    collidesWithTile(o: GameObject, dir: Direction): boolean;
+    isCollisionTile(x: number, y: number): boolean;
+}
+export type ModelPlugin = { onBoot: (model: BaseModel) => void; onTick?: (model: BaseModel, dt: number) => void; onLoad?: (model: BaseModel) => void; dispose?: () => void };
+
+// Optional per-object hooks for space transitions
+interface SpaceAware { onleaveSpace?(from: Identifier): void; onenterSpace?(to: Identifier): void; }
+function isSpaceAware(x: unknown): x is SpaceAware {
+    return !!x && typeof x === 'object' && ('onleaveSpace' in (x as any) || 'onenterSpace' in (x as any));
+}
+
+// Utility: wrap a Map so `mapLike['id']` resolves to `map.get('id')` and
+// assignments delete/set through the same surface. Also exposes standard Map
+// methods bound to the underlying map.
+function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
+    return new Proxy(backing, {
+        get(target, prop, receiver) {
+            // Expose Map API (bound) for internal use
+            if (prop === 'get') return (target.get).bind(target);
+            if (prop === 'set') return (target.set).bind(target);
+            if (prop === 'has') return (target.has).bind(target);
+            if (prop === 'delete') return (target.delete).bind(target);
+            if (prop === 'clear') return (target.clear).bind(target);
+            if (prop === 'size') return (target.size);
+            if (prop === Symbol.iterator) return (target[Symbol.iterator]).bind(target);
+            if (prop === 'entries') return (target.entries).bind(target);
+            if (prop === 'keys') return (target.keys).bind(target);
+            if (prop === 'values') return (target.values).bind(target);
+            if (prop === 'forEach') return (target.forEach).bind(target);
+            // Map-like index access: proxy['id'] → map.get('id')
+            if (typeof prop === 'string') return target.get(prop as unknown as Identifier);
+            // Fallback to default behavior
+            return Reflect.get(target as any, prop, receiver);
+        },
+        set(target, prop, value) {
+            if (typeof prop === 'string') { target.set(prop as unknown as Identifier, value as V); return true; }
+            (target as any)[prop as any] = value;
+            return true;
+        },
+        has(target, prop) {
+            if (typeof prop === 'string') return target.has(prop as unknown as Identifier);
+            return prop in (target as any);
+        },
+        deleteProperty(target, prop) {
+            if (typeof prop === 'string') return target.delete(prop as unknown as Identifier);
+            delete (target as any)[prop as any];
+            return true;
+        },
+    });
+}
+
 @insavegame
 /**
  * Represents a space in the game world, which contains a collection of game objects.
  */
 export class Space {
-    /**
-     * A dictionary that maps object IDs to their corresponding GameObject instances.
-     * @type {Record<Identifier, GameObject>}
-     */
+    /** Map-backed index of id → object (exposed via Proxy for back-compat). */
     public [id2obj]: id2objectType;
+    @excludepropfromsavegame
+    private _id2objMap: Map<Identifier, GameObject>;
 
     /**
      * Returns the GameObject with the specified ID, or undefined if no such object exists in this space.
@@ -52,7 +106,7 @@ export class Space {
      * @returns {T | undefined} The GameObject with the specified ID, or undefined if no such object exists in this space.
      */
     public get<T extends GameObject>(id: Identifier): T | undefined {
-        return <T>this[id2obj][id];
+        return this._id2objMap.get(id) as T | undefined;
     }
 
     public id: Identifier;
@@ -60,11 +114,24 @@ export class Space {
     @excludepropfromsavegame
     public objects: GameObject[];
 
+    /** Z-sort dirty flag. Mark on add/remove; renderer sorts when true. */
+    @excludepropfromsavegame
+    public depthSortDirty: boolean = true;
+
+    /** Optional hooks per space lifecycle. */
+    public onactivate?: () => void;
+    public ondeactivate?: () => void;
+
     /**
      * A function that is called when the Space object is disposed of.
      * @type {() => void}
      */
     public ondispose?: () => void;
+
+    // Decouple from global `$`: prefer injected model; fallback to $.model.
+    @excludepropfromsavegame
+    private _model?: BaseModel;
+    public bindModel(m: BaseModel): void { this._model = m; }
 
     /**
      * Represents a space in the game world, which contains a collection of game objects.
@@ -74,7 +141,8 @@ export class Space {
     public constructor(id: Identifier) {
         this.id = id;
         this.objects = [];
-        this[id2obj] = {};
+        this._id2objMap = new Map<Identifier, GameObject>();
+        this[id2obj] = makeIndexProxy(this._id2objMap);
     }
 
     /**
@@ -83,7 +151,8 @@ export class Space {
      * @returns {void} Nothing
      */
     public sort_by_depth(): void {
-        this.objects.sort((o1, o2) => o1.z - o2.z);
+        this.depthSortDirty = false;
+        this.objects.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
     }
 
     /**
@@ -96,20 +165,22 @@ export class Space {
      */
     public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
-        if ($.model[objid_2_objspaceid][o.id]) {
-            console.error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${$.model[objid_2_objspaceid][o.id]}'!`);
+        const model = this._model ?? $.model;
+        if (model.objToSpaceMap?.has(o.id)) {
+            console.error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${model.objToSpaceMap.get(o.id)}'!`);
             return;
         }
 
         this.objects.push(o); // Add the object to the space
 
-        this[id2obj][o.id] = o; // Register the object in the `id2object`-object, so we can retrieve the object by id
-        $.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
+        this._id2objMap.set(o.id, o); // Register the object in the id→object map
+        model.objToSpaceMap.set(o.id, this.id); // Register the object in the obj→space map
+        model.onObjectSpawned(this, o);
         // Ensure we pass a full vec3 to onspawn (z defaults to 0)
         const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z ?? 0 } : undefined;
         !skip_onspawn_event && o.onspawn?.(spawnPos); // Trigger onspawn after adding the object to the space
-
-        this.sort_by_depth(); // Sort after spawn-event, just to be sure
+        // Mark depth sort dirty; if in a batch, collect space id once
+        if (model.depthDirtyBatch) model.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
     }
 
     /**
@@ -123,21 +194,12 @@ export class Space {
         const index = this.objects.indexOf(o);
         if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [BaseModel.exile]!`);
         !skip_ondispose_event && o.dispose?.(); // Trigger ondispose event before removing the object from the space. `ondispose` unsubscribes the object from events and removes it from the registry
-
-        if (index > -1) {
-            delete this.objects[index];
-            this.objects.splice(index, 1);
-        }
-
-        if (this[id2obj][o.id]) {
-            this[id2obj][o.id] = undefined;
-            delete this[id2obj][o.id];
-        }
-
-        if ($.model[objid_2_objspaceid][o.id]) {
-            $.model[objid_2_objspaceid][o.id] = undefined;
-            delete $.model[objid_2_objspaceid][o.id];
-        }
+        if (index > -1) this.objects.splice(index, 1);
+        this._id2objMap.delete(o.id);
+        const model = this._model ?? $.model;
+        model.objToSpaceMap.delete(o.id);
+        model.onObjectExiled(this, o);
+        if (model.depthDirtyBatch) model.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
     }
 
     /**
@@ -145,8 +207,15 @@ export class Space {
      * @returns {void} Nothing
      */
     public clear(): void {
-        const temp_array = this.objects.slice();
-        temp_array.forEach(o => this.exile(o));
+        const model = this._model ?? $.model;
+        for (const o of this.objects) {
+            model.onObjectExiled(this, o);
+            o.dispose?.();
+            model.objToSpaceMap.delete(o.id);
+        }
+        this._id2objMap.clear();
+        this.objects.length = 0;
+        this.depthSortDirty = false;
     }
 }
 
@@ -203,11 +272,15 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      * @type {id2spaceType}
      */
     public [spaceid_2_space]: id2spaceType;
+    @excludepropfromsavegame
+    public _spaceMap: Map<Identifier, Space>;
     /**
      * An object that maps object IDs to their corresponding space IDs.
      * @type {obj_id2space_id_type}
      */
     public [objid_2_objspaceid]: obj_id2space_id_type;
+    @excludepropfromsavegame
+    public objToSpaceMap: Map<Identifier, Identifier>;
 
     /**
      * Gets all game objects in the current space.
@@ -221,8 +294,8 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     protected currentSpaceid: Identifier; // Current space. On model creation, a default space is created with id 'default'
     public get current_space_id(): Identifier { return this.currentSpaceid; } // Current space id. On model creation, a default space is created with id 'default'
     public get currentSpace(): Space { return this.get_space(this.currentSpaceid); } // Current space. On model creation, a default space is created with id 'default'
-    public setSpace(newSpaceId: Identifier) { this.currentSpaceid = newSpaceId; }
-    public get_space<T extends Space>(id: Identifier) { return <T>this[spaceid_2_space][id]; }
+    // setSpace implemented later with activation hooks
+    public get_space<T extends Space>(id: Identifier) { return this._spaceMap.get(id) as T; }
 
     public paused: boolean;
     public startAfterLoad: boolean;
@@ -242,17 +315,32 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     }
 
     public get activeCamera3D(): Camera | null {
-        return this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId).camera : null;
+        const co = this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
+        return co?.camera ?? null;
     }
 
+    // Indexed cameras/lights for fast queries
+    @excludepropfromsavegame private _camerasBySpace: Map<Identifier, Set<CameraObject>> = new Map();
+    @excludepropfromsavegame private _lightsBySpace: Map<Identifier, Set<LightObject>> = new Map();
+    // Batch depth marker: when non-null, collect touched space ids and mark once at end
+    @excludepropfromsavegame public depthDirtyBatch: Set<Identifier> | null = null;
+
     public get cameras(): CameraObject[] {
-        const result: CameraObject[] = [];
-        for (const space of this.spaces) {
-            for (const obj of space.objects) {
-                if (obj instanceof CameraObject) result.push(obj);
-            }
+        const out: CameraObject[] = [];
+        for (const [, set] of this._camerasBySpace) for (const c of set) out.push(c);
+        return out;
+    }
+    public getCameras(opts: { scope?: 'current' | 'all' } = {}): CameraObject[] {
+        const scope = opts.scope ?? 'all';
+        const out: CameraObject[] = [];
+        if (scope === 'current') {
+            const set = this._camerasBySpace.get(this.currentSpaceid);
+            if (!set) return out;
+            for (const c of set) out.push(c);
+            return out;
         }
-        return result;
+        for (const [, set] of this._camerasBySpace) for (const c of set) out.push(c);
+        return out;
     }
 
     /**
@@ -282,40 +370,31 @@ export class BaseModel implements Stateful, RegisterablePersistent {
 
     }
 
-    public getActiveLights(): LightObject[] {
-        const result: LightObject[] = [];
-        for (const space of this.spaces) {
-            for (const obj of space.objects) {
-                if (obj instanceof LightObject && obj.active) result.push(obj);
-            }
+    public getActiveLights(opts: { scope?: 'current' | 'all' } = {}): LightObject[] {
+        const scope = opts.scope ?? 'all';
+        const out: LightObject[] = [];
+        if (scope === 'current') {
+            const set = this._lightsBySpace.get(this.currentSpaceid);
+            if (!set) return out;
+            for (const l of set) if (l.active) out.push(l);
+            return out;
         }
-        return result;
+        for (const [, set] of this._lightsBySpace) for (const l of set) if (l.active) out.push(l);
+        return out;
     }
 
     public get ambientLight(): AmbientLightObject | null {
         return this.getActiveLights().find(light => light.type === 'ambient') as AmbientLightObject | null;
     }
 
-    /**
-     * Applies the currently active camera and lights to the view.
-     * Should be called before drawing each frame.
-     */
-    public applyViewSettings(): void {
-        const lights = this.getActiveLights();
-        if (lights.length > 0) {
-            $.view.clearLights();
-            for (const l of lights) l.applyToView();
-        }
-    }
+    
 
     /**
      * Gets the game object with the given id from the current space only.
      * @param {Identifier} id - the id of the {@link GameObject}.
      * @returns {T} The game object with the given id from the current space only.
      */
-    public getFromCurrentSpace<T extends GameObject>(id: Identifier): T {
-        return <T>this.currentSpace[id2obj][id];
-    }
+    public getFromCurrentSpace<T extends GameObject>(id: Identifier): T | null { return this.currentSpace.get<T>(id) ?? null; }
 
     /**
      * Gets the game object with the given id across all spaces.
@@ -324,10 +403,9 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      * @returns {T | null} The object with the given id or the game model itself (when `id === 'model'`), or null if the object is not found.
      */
     public getGameObject<T extends GameObject = GameObject>(id: Identifier): T | null {
-        // Get the space that contains the object with the given id
-        const space = this.get_space(this[objid_2_objspaceid][id]);
-
-        // Return the object from the space and if the space is not found, or the object is not found in the space, return null
+        const sid = this.objToSpaceMap.get(id);
+        if (!sid) return null;
+        const space = this.get_space(sid);
         return space?.get<T>(id) ?? null;
     }
 
@@ -345,9 +423,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      * @param {Identifier} obj_id - The id of the object to search for.
      * @returns {Identifier} The id of the space that contains the object with the given id.
      */
-    public get_spaceid_that_has_obj(obj_id: Identifier): Identifier {
-        return this[objid_2_objspaceid][obj_id];
-    }
+    public get_spaceid_that_has_obj(obj_id: Identifier): Identifier { return this.objToSpaceMap.get(obj_id)!; }
 
     /**
      * Returns true if the object with the given id is in the current space.
@@ -366,13 +442,30 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      */
     public move_obj_to_space(obj_id: Identifier, spaceid_to_move_obj_to: Identifier): void {
         const obj = this.getGameObject<GameObject>(obj_id);
-        if (!obj) throw Error(`Cannot move unknown object '${obj_id}' to space '${spaceid_to_move_obj_to}'!`); // ? SHOULD THROW ERROR?
+        if (!obj) throw Error(`Cannot move unknown object '${obj_id}' to space '${spaceid_to_move_obj_to}'!`);
         const target_space = this.get_space(spaceid_to_move_obj_to);
-        if (!target_space) throw Error(`Cannot move object '${obj_id}' to unknown space '${spaceid_to_move_obj_to}'!`); // ? SHOULD THROW ERROR?
-        const origin_space = this.get_space(this.get_spaceid_that_has_obj(obj_id));
-
+        if (!target_space) throw Error(`Cannot move object '${obj_id}' to unknown space '${spaceid_to_move_obj_to}'!`);
+        const fromSid = this.objToSpaceMap.get(obj_id);
+        if (!fromSid) return; // Already absent
+        const origin_space = this.get_space(fromSid);
         origin_space.exile(obj, true);
         target_space.spawn(obj, null, true);
+    }
+
+    /**
+     * Atomically transfer an object between spaces and update all indexes.
+     * If opts.suppressLifecycleHooks is true, spawn/leave hooks are suppressed.
+     */
+    public transfer(o: GameObject, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
+        const toSpace = (to instanceof Space) ? to : this.get_space(to);
+        if (!toSpace) throw new Error(`transfer: target space not found`);
+        const fromSid = this.objToSpaceMap.get(o.id);
+        const from = fromSid ? this.get_space(fromSid) : null;
+        if (!from || from === toSpace) return;
+        const suppress = opts?.suppressLifecycleHooks ?? true;
+        from.exile(o, suppress);
+        toSpace.spawn(o, undefined, suppress);
+        if (isSpaceAware(o)) { o.onleaveSpace?.(from.id); o.onenterSpace?.(toSpace.id); }
     }
 
     /**
@@ -399,8 +492,11 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      * @param {Identifier} stateid - The id of the state to get the definition for.
      * @returns {StateDefinition} The state definition for the given machine and state id.
      */
-    public static getMachineStatedef(machineid: Identifier): StateDefinition {
-        return StateDefinitions[machineid];
+    public static getMachineStatedef(machineid: Identifier, stateid: Identifier): StateDefinition {
+        const m = StateDefinitions[machineid] as any;
+        const s = m?.states?.[stateid] ?? m?.[stateid];
+        if (!s) throw new Error(`Unknown state ${String(machineid)}.${String(stateid)}`);
+        return s as StateDefinition;
     }
 
     public static getBTdef(btid: BehaviorTreeID): BehaviorTreeDefinition {
@@ -409,19 +505,22 @@ export class BaseModel implements Stateful, RegisterablePersistent {
 
     // Model configuration (size, services, plugins)
     private _size: { width: number; height: number } = { width: 256, height: 192 };
-    private _collision?: { collidesWithTile: (o: GameObject, dir: Direction) => boolean; isCollisionTile: (x: number, y: number) => boolean };
-    private _plugins: Array<{ onBoot: (model: BaseModel) => void; onTick?: (model: BaseModel, dt: number) => void; onLoad?: (model: BaseModel) => void; dispose?: () => void }> = [];
+    private _collision?: TileCollisionService;
+    private _plugins: Array<ModelPlugin> = [];
     private _fsmId: string = 'model';
 
     public get gamewidth(): number { return this._size.width; }
     public get gameheight(): number { return this._size.height; }
 
-    private static readonly MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // Define a maximum number for wrapping
+    private static readonly MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
     protected idCounter = 0;
 
     public getNextIdNumber(): number {
+        if (this.idCounter >= BaseModel.MAX_ID_NUMBER) {
+            throw new Error('ID counter exhausted: max safe integer reached');
+        }
         const nextNumber = this.idCounter;
-        this.idCounter = this.idCounter >= BaseModel.MAX_ID_NUMBER ? 0 : this.idCounter + 1;
+        this.idCounter = this.idCounter + 1;
         return nextNumber;
     }
 
@@ -431,11 +530,13 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      * These runtime errors usually occur because the model was not created and initialized (with states),
      * while creating new game objects that reference the model or the model states
      */
-    constructor(opts?: { size?: { width: number; height: number }, collision?: { collidesWithTile: (o: GameObject, dir: Direction) => boolean; isCollisionTile: (x: number, y: number) => boolean }, plugins?: Array<{ onBoot: (model: BaseModel) => void; onTick?: (model: BaseModel, dt: number) => void; onLoad?: (model: BaseModel) => void; dispose?: () => void }>, fsmId?: string }) {
+    constructor(opts?: { size?: { width: number; height: number }, collision?: TileCollisionService, plugins?: Array<ModelPlugin>, fsmId?: string }) {
         Registry.instance.register(this);
         this.spaces = [];
-        this[spaceid_2_space] = {};
-        this[objid_2_objspaceid] = {};
+        this._spaceMap = new Map<Identifier, Space>();
+        this[spaceid_2_space] = makeIndexProxy(this._spaceMap);
+        this.objToSpaceMap = new Map<Identifier, Identifier>();
+        this[objid_2_objspaceid] = makeIndexProxy(this.objToSpaceMap);
 
         this.paused = false;
         if (opts?.size) this._size = { ...opts.size };
@@ -450,51 +551,8 @@ export class BaseModel implements Stateful, RegisterablePersistent {
         BaseModel.setup_fsmdef_library();
         BaseModel.setup_bt_library();
         this.init_event_subscriptions().init_spaces().init_model_state_machines();
-        // Plugins boot hooks
-        for (const p of this._plugins) {
-            p.onBoot(this);
-            // Also add any properties from the plugin to the model.
-            // Lifecycle hooks (onTick, onLoad, dispose, onBoot) will be chained.
-            // If a plugin property collides with an existing non-function property, skip it to avoid breaking the model.
-            const lifecycleKeys = new Set(['onTick', 'onLoad', 'dispose', 'onBoot']);
-            const self = this as Record<string, any>;
-            Object.keys(p).forEach(key => {
-                const val = (p as Record<string, any>)[key];
-                const hasExisting = key in self;
-                const existingVal = (self as Record<string, any>)[key];
-
-                // Prefer chaining known lifecycle hooks (if plugin provides a function)
-                if (lifecycleKeys.has(key) && typeof val === 'function') {
-                    const original = typeof existingVal === 'function' ? existingVal : undefined;
-                    self[key] = function (...args: any[]) {
-                        original?.apply(this, args);
-                        val.apply(this, args);
-                    };
-                    return;
-                }
-
-                // If key does not exist on model, simply assign it
-                if (!hasExisting) {
-                    self[key] = val;
-                    return;
-                }
-
-                // If both are functions, chain them (safe general-case)
-                if (typeof existingVal === 'function' && typeof val === 'function') {
-                    const original = existingVal;
-                    self[key] = function (...args: any[]) {
-                        original.apply(this, args);
-                        val.apply(this, args);
-                    };
-                    return;
-                }
-
-                // Otherwise, skip assignment to avoid overwriting existing non-function properties.
-                if (val !== undefined && val !== null) {
-                    console.warn(`Skipping plugin property '${key}' because it already exists on BaseModel and cannot be safely merged.`);
-                }
-            });
-        }
+        // Plugins boot hooks (explicit lifecycle; no property chaining)
+        for (const p of this._plugins) p.onBoot(this);
     }
 
     public dispose(): void {
@@ -556,7 +614,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
     */
     public init_model_state_machines(): this {
-        this.sc = new StateMachineController(this._fsmId, this.id);
+        this.sc = new StateMachineController(this._fsmId ?? 'model', this.id);
         this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the model, and subscribe to all events that are defined in the state machine definitions
 
         return this; // Return the current instance of the BaseModel for chaining
@@ -688,22 +746,25 @@ export class BaseModel implements Stateful, RegisterablePersistent {
             $.view.reset(); // Reset the view to the initial state
 
             const savegame = Reviver.deserialize(serializedState) as Savegame;
-            Object.assign(this, savegame.modelprops);
-
-            const persistentEntities = $.registry.getPersistentEntities();
-            persistentEntities.forEach(entity => {
-                $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
-            });
+            // Assign only plain data back to the model to avoid clobbering runtime fields
+            for (const [k, v] of Object.entries(savegame.modelprops as Record<string, unknown>)) {
+                if (typeof v !== 'function') (this as any)[k] = v;
+            }
 
             savegame.spaces.forEach(space => this.addSpace(space));
-            savegame.allSpacesObjects.forEach(space_and_objects => {
-                const space = this[spaceid_2_space][space_and_objects.spaceid];
-                const objects = space_and_objects.objects;
-                objects.forEach(o => {
-                    if (!o) return;
-                    space.spawn(o, null, true);
+            this.beginDepthBatch();
+            try {
+                savegame.allSpacesObjects.forEach(space_and_objects => {
+                    const space = this.get_space(space_and_objects.spaceid);
+                    const objects = space_and_objects.objects;
+                    objects.forEach(o => {
+                        if (!o) return;
+                        space.spawn(o, null, true);
+                    });
                 });
-            });
+            } finally {
+                this.endDepthBatch();
+            }
 
             // Plugin load hook
             for (const p of this._plugins) p.onLoad?.(this);
@@ -711,11 +772,9 @@ export class BaseModel implements Stateful, RegisterablePersistent {
             // Deferred physics world rebuild: after all objects & components are fully hydrated
             try {
                 let needs = false;
-                for (const space of this.spaces) {
-                    for (const go of space.objects) {
-                        if (go.getComponent && go.getComponent(PhysicsDescriptorComponent)) { needs = true; break; }
-                    }
-                    if (needs) break;
+                // Restrict physics world rebuild to current space to avoid cross-space coupling.
+                for (const go of this.currentSpace.objects) {
+                    if (go.getComponent && go.getComponent(PhysicsDescriptorComponent)) { needs = true; break; }
                 }
                 if (needs) {
                     const world = PhysicsWorld.rebuild();
@@ -723,7 +782,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
                 }
             } catch { /* ignore to avoid load failure if physics not present */ }
 
-            this.applyViewSettings();
+            // No need to push lighting here; renderer pulls from model each frame
         }
         catch (e) {
             console.error(`Error loading game state: ${e}`);
@@ -749,7 +808,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
             const data = {} as Record<string, any>;
             for (let index = 0; index < keys.length; ++index) {
                 const key = keys[index];
-                if (BaseModel.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['Basemodel']?.[key]) continue;
+                if (BaseModel.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['BaseModel']?.[key]) continue;
                 if (self[key] !== null && self[key] !== undefined) {
                     data[key] = self[key];
                 }
@@ -862,10 +921,13 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      */
     public addSpace(s: Space | Identifier): void {
         const new_space: Space = (s instanceof Space ? s : new Space(s));
-        if (this[spaceid_2_space][new_space.id]) throw Error(`Cannot add duplicate Space '${new_space.id}' to model!`);
-
+        new_space.bindModel(this);
+        if (this._spaceMap.has(new_space.id)) throw Error(`Cannot add duplicate Space '${new_space.id}' to model!`);
         this.spaces.push(new_space);
-        this[spaceid_2_space][new_space.id] = new_space;
+        this._spaceMap.set(new_space.id, new_space);
+        // Ensure component indexes are initialized for this space
+        this._camerasBySpace.set(new_space.id, this._camerasBySpace.get(new_space.id) ?? new Set());
+        this._lightsBySpace.set(new_space.id, this._lightsBySpace.get(new_space.id) ?? new Set());
     }
 
     /**
@@ -881,16 +943,10 @@ export class BaseModel implements Stateful, RegisterablePersistent {
         const index = this.spaces.indexOf(space);
         const id = space.id;
 
-        if (index > -1) {
-            space.clear(); // Remove all objects from the space
-            delete this.spaces[index];
-            this.spaces.splice(index, 1);
-        }
-
-        if (this[spaceid_2_space][id]) {
-            this[spaceid_2_space][id] = undefined;
-            delete this[spaceid_2_space][id];
-        }
+        if (index > -1) { space.clear(); this.spaces.splice(index, 1); }
+        this._spaceMap.delete(id);
+        this._camerasBySpace.delete(id);
+        this._lightsBySpace.delete(id);
         space.ondispose?.();
     }
 
@@ -899,5 +955,102 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     }
     public isCollisionTile(x: number, y: number): boolean {
         return this._collision?.isCollisionTile(x, y) ?? false;
+    }
+
+    /**
+     * Update per-space indexes when objects enter/leave a space.
+     */
+    public onObjectSpawned(space: Space, o: GameObject): void {
+        if (o instanceof CameraObject) {
+            const set = this._camerasBySpace.get(space.id) ?? new Set<CameraObject>();
+            set.add(o);
+            this._camerasBySpace.set(space.id, set);
+        }
+        if (o instanceof LightObject) {
+            const set = this._lightsBySpace.get(space.id) ?? new Set<LightObject>();
+            set.add(o);
+            this._lightsBySpace.set(space.id, set);
+        }
+    }
+    public onObjectExiled(space: Space, o: GameObject): void {
+        if (o instanceof CameraObject) this._camerasBySpace.get(space.id)?.delete(o);
+        if (o instanceof LightObject) this._lightsBySpace.get(space.id)?.delete(o);
+    }
+
+    /** Mark the space containing given object id as depth-sort dirty. */
+    public markDepthDirtyForObjectId(id: Identifier): void {
+        const sid = this.objToSpaceMap.get(id);
+        if (!sid) return;
+        if (this.depthDirtyBatch) { this.depthDirtyBatch.add(sid); return; }
+        const sp = this._spaceMap.get(sid);
+        if (sp) sp.depthSortDirty = true;
+    }
+
+    /** Begin a batch of mutations affecting depth ordering. */
+    public beginDepthBatch(): void { if (!this.depthDirtyBatch) this.depthDirtyBatch = new Set<Identifier>(); }
+    /** End a batch and mark all touched spaces as depth-dirty. */
+    public endDepthBatch(): void {
+        const set = this.depthDirtyBatch; this.depthDirtyBatch = null;
+        if (!set) return;
+        for (const sid of set) { const sp = this._spaceMap.get(sid); if (sp) sp.depthSortDirty = true; }
+    }
+    /** Run a function within a depth-batch scope. */
+    public runDepthBatch<T>(fn: () => T): T { this.beginDepthBatch(); try { return fn(); } finally { this.endDepthBatch(); } }
+
+    /** Mark specific spaces as depth-dirty. */
+    public markSpacesDepthDirty(spaces: Array<Identifier | Space>): void {
+        for (const s of spaces) {
+            const sid = (s instanceof Space) ? s.id : s;
+            const sp = this._spaceMap.get(sid);
+            if (sp) sp.depthSortDirty = true;
+        }
+    }
+
+    /** Transfer many objects efficiently; marks spaces dirty once. */
+    public transferMany(objs: Array<GameObject | Identifier>, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
+        const toSpace = (to instanceof Space) ? to : this.get_space(to);
+        if (!toSpace) throw new Error('transferMany: target space not found');
+        this.runDepthBatch(() => {
+            for (const it of objs) {
+                const o = (typeof it === 'string') ? this.getGameObject(it) : it;
+                if (o) this.transfer(o, toSpace, opts);
+            }
+        });
+    }
+
+    /**
+     * Iterate game objects with explicit scope.
+     */
+    public forEachGameObject(fn: (o: GameObject) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+        const scope = opts.scope ?? 'current';
+        if (scope === 'current') { for (const o of this.currentSpace.objects) fn(o); return; }
+        for (const sp of this.spaces) for (const o of sp.objects) fn(o);
+    }
+
+    public get objectsAll(): GameObject[] {
+        const out: GameObject[] = [];
+        for (const sp of this.spaces) out.push(...sp.objects);
+        return out;
+    }
+
+    /** Iterate only objects of a specific class. */
+    public forEachGameObjectOfType<T extends GameObject>(ctor: new (...args: any[]) => T, fn: (o: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+        this.forEachGameObject((o) => { if (o instanceof ctor) fn(o as T); }, opts);
+    }
+    /** Iterate objects that have a given component; passes the component instance too. */
+    public forEachGameObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: GameObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+        this.forEachGameObject((o) => { const c = (o as any).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
+    }
+
+    /**
+     * Activate a new space; fires ondeactivate/onactivate hooks.
+     */
+    public setSpace(newSpaceId: Identifier) {
+        if (newSpaceId === this.currentSpaceid) return;
+        const prev = this.get_space(this.currentSpaceid);
+        this.currentSpaceid = newSpaceId;
+        prev?.ondeactivate?.();
+        this.currentSpace?.onactivate?.();
+        $.emit('spaceChanged', this, { prev: prev?.id, curr: this.currentSpaceid });
     }
 }

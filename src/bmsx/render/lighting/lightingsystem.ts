@@ -1,5 +1,7 @@
 import { Float32ArrayPool } from '../../core/utils';
-import type { AmbientLight } from '../3d/light';
+import { $ } from '../../core/game';
+import type { AmbientLight, DirectionalLight, PointLight } from '../3d/light';
+import { DirectionalLightObject, PointLightObject } from '../../core/lightobject';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 // Avoid backend-specific imports here; use conservative defaults for pooled arrays
 const DEFAULT_MAX_DIR_LIGHTS = 4;
@@ -19,11 +21,18 @@ export class LightingSystem {
 
 	constructor() { }
 
-	update(ambient: AmbientLight | null): LightingFrameState {
+	update(_ambient: AmbientLight | null): LightingFrameState {
+		// Renderer-pulled: rebuild light lists from model indexes each frame
+		const active = $.model.getActiveLights({ scope: 'all' });
+		MeshPipeline.clearLights();
+		let ambient: AmbientLight | null = $.model.ambientLight?.light as AmbientLight || null;
+		for (const lo of active) {
+			if (lo instanceof DirectionalLightObject) MeshPipeline.addDirectionalLight(lo.id, lo.light as DirectionalLight);
+			else if (lo instanceof PointLightObject) MeshPipeline.addPointLight(lo.id, lo.light as PointLight);
+		}
 		const lightsMutated = MeshPipeline.consumeLightsDirty();
 		let ambientChanged = false;
 		if (ambient !== this._lastAmbient) {
-			// Defer ambient uniform uploads until the mesh pass prepare/state stage
 			this._lastAmbient = ambient;
 			ambientChanged = true;
 		}

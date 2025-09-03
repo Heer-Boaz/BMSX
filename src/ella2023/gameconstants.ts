@@ -1,0 +1,3 @@
+export const EILA_START_HP = 100;
+export const SINTERKLAAS_START_HP = 100;
+export const VERTICAL_POSITION_FIGHTERS = 176;
