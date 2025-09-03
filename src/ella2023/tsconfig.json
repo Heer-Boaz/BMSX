@@ -7,7 +7,7 @@
         "tsBuildInfoFile": "./tsconfig.buildinfo"
     },
     "include": [
-        ".",
+        "**/*.ts",
         "../bmsx/index.ts",
         "../bmsx/**/*"
     ],

@@ -1,7 +1,7 @@
 import { $, Component, GameObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
 import { Fighter } from './fighter';
-import { gamemodel } from './gamemodel';
 import { Action } from './inputmapping';
+import { EilaEventService, ExtendedModel } from './modelplugin';
 import { AudioId, BitmapId } from './resourceids';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
@@ -91,7 +91,7 @@ export class Eila extends Fighter {
 
 		function attack(this: Fighter, attackType: string, ducking: boolean = false) {
 			this.sc.dispatch_event(`animate_${attackType}`, this);
-			this.doAttackFlow(attackType, $.modelAs<gamemodel>().theOtherFighter(this));
+			this.doAttackFlow(attackType, $.get<EilaEventService>('eila_events').theOtherFighter(this));
 			this.attacking = true;
 			this.currentAttackType = attackType;
 			if (ducking) {
@@ -347,7 +347,7 @@ export class Eila extends Fighter {
 									},
 									entering_state(this: Fighter, _state: State) {
 										this.sc.dispatch_event('animate_flyingkick', this);
-										this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
+										this.doAttackFlow('flyingkick', $.get<EilaEventService>('eila_events').theOtherFighter(this));
 										this.attacking = true;
 										this.attacked_while_jumping = true;
 									},
@@ -520,7 +520,7 @@ export class Eila extends Fighter {
 
 	constructor() {
 		super('player', undefined, 'left', 1);
-		this.hp = gamemodel.EILA_START_HP;
+		this.hp = $.modelAs<ExtendedModel>().constants.EILA_START_HP;
 	}
 
 	override paint(): void {

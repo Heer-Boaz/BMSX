@@ -155,7 +155,7 @@ export type base_model_spaces = 'game_start' | 'default';
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
-export abstract class BaseModel implements Stateful, RegisterablePersistent {
+export class BaseModel implements Stateful, RegisterablePersistent {
     get registrypersistent(): true {
         return true;
     }
@@ -405,8 +405,14 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         return BehaviorTreeDefinitions[btid];
     }
 
-    public abstract get gamewidth(): number;
-    public abstract get gameheight(): number;
+    // Model configuration (size, services, plugins)
+    private _size: { width: number; height: number } = { width: 256, height: 192 };
+    private _collision?: { collidesWithTile: (o: GameObject, dir: Direction) => boolean; isCollisionTile: (x: number, y: number) => boolean };
+    private _plugins: Array<{ onBoot: (model: BaseModel) => void; onTick?: (model: BaseModel, dt: number) => void; onLoad?: (model: BaseModel) => void; dispose?: () => void }> = [];
+    private _fsmId: string = 'model';
+
+    public get gamewidth(): number { return this._size.width; }
+    public get gameheight(): number { return this._size.height; }
 
     private static readonly MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // Define a maximum number for wrapping
     protected idCounter = 0;
@@ -423,13 +429,17 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * These runtime errors usually occur because the model was not created and initialized (with states),
      * while creating new game objects that reference the model or the model states
      */
-    constructor() {
+    constructor(opts?: { size?: { width: number; height: number }, collision?: { collidesWithTile: (o: GameObject, dir: Direction) => boolean; isCollisionTile: (x: number, y: number) => boolean }, plugins?: Array<{ onBoot: (model: BaseModel) => void; onTick?: (model: BaseModel, dt: number) => void; onLoad?: (model: BaseModel) => void; dispose?: () => void }>, fsmId?: string }) {
         Registry.instance.register(this);
         this.spaces = [];
         this[spaceid_2_space] = {};
         this[objid_2_objspaceid] = {};
 
         this.paused = false;
+        if (opts?.size) this._size = { ...opts.size };
+        if (opts?.collision) this._collision = opts.collision;
+        if (opts?.plugins) this._plugins = opts.plugins.slice();
+        if (opts?.fsmId) this._fsmId = opts.fsmId;
         // Initialize default ECS pipeline
         this.setupDefaultSystems();
     }
@@ -437,7 +447,51 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     public init_on_boot(): void {
         BaseModel.setup_fsmdef_library();
         BaseModel.setup_bt_library();
-        this.init_event_subscriptions().init_spaces().init_model_state_machines($.model.constructor_name).do_one_time_game_init();
+        this.init_event_subscriptions().init_spaces().init_model_state_machines();
+        // Plugins boot hooks
+        for (const p of this._plugins) {
+            p.onBoot(this);
+            // Also add any properties from the plugin to the model.
+            // Lifecycle hooks (onTick, onLoad, dispose, onBoot) will be chained.
+            // If a plugin property collides with an existing non-function property, skip it to avoid breaking the model.
+            const lifecycleKeys = new Set(['onTick', 'onLoad', 'dispose', 'onBoot']);
+            Object.keys(p).forEach(key => {
+                const val = p[key];
+                const hasExisting = key in this;
+                const existingVal = this[key];
+
+                // Prefer chaining known lifecycle hooks (if plugin provides a function)
+                if (lifecycleKeys.has(key) && typeof val === 'function') {
+                    const original = typeof existingVal === 'function' ? existingVal : undefined;
+                    this[key] = function (...args: any[]) {
+                        original?.apply(this, args);
+                        val.apply(this, args);
+                    };
+                    return;
+                }
+
+                // If key does not exist on model, simply assign it
+                if (!hasExisting) {
+                    this[key] = val;
+                    return;
+                }
+
+                // If both are functions, chain them (safe general-case)
+                if (typeof existingVal === 'function' && typeof val === 'function') {
+                    const original = existingVal;
+                    this[key] = function (...args: any[]) {
+                        original.apply(this, args);
+                        val.apply(this, args);
+                    };
+                    return;
+                }
+
+                // Otherwise, skip assignment to avoid overwriting existing non-function properties.
+                if (val !== undefined && val !== null) {
+                    console.warn(`Skipping plugin property '${key}' because it already exists on BaseModel and cannot be safely merged.`);
+                }
+            });
+        }
     }
 
     public dispose(): void {
@@ -447,6 +501,8 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         this.sc.dispose();
         // Unsubscribe from all events
         $.event_emitter.removeSubscriber(this);
+        // Dispose plugins
+        for (const p of this._plugins) p.dispose?.();
         $.registry.deregister(this);
     }
 
@@ -487,7 +543,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * Required during game initialization where @see {@link init_model_state_machines} is called.
      * @see {@link this.init_model_state_machines}
      */
-    public abstract get constructor_name(): string;
+    public get constructor_name(): string { return this._fsmId; }
 
     /**
     * Init model after construction. Needed as the states have not been build at
@@ -496,8 +552,8 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     * Each derived model class should override @see {@link BaseModel.constructor_name} to get the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
     * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
     */
-    public init_model_state_machines(derived_modelclass_constructor_name: string): this {
-        this.sc = new StateMachineController(derived_modelclass_constructor_name, this.id);
+    public init_model_state_machines(): this {
+        this.sc = new StateMachineController(this._fsmId, this.id);
         this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the model, and subscribe to all events that are defined in the state machine definitions
 
         return this; // Return the current instance of the BaseModel for chaining
@@ -512,7 +568,8 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     * 2. Game is not expected to be running yet.
     * @returns {this} `this` for chaining.
      */
-    public abstract do_one_time_game_init(): this;
+    // Back-compat no-op; prefer plugins for boot logic
+    public do_one_time_game_init(): this { return this; }
 
     /**
      * Runs the current state of the model by calling the `run` method of the current state.
@@ -551,6 +608,9 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
 
         // Phase 2: PostPhysics + PreRender
         this.systems.updateFrom(this, TickGroup.PostPhysics);
+
+        // Plugin tick hooks
+        for (const p of this._plugins) p.onTick?.(this, deltaTime);
 
         // Cleanup disposed objects
         const objects = this.objects;
@@ -652,6 +712,9 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
                     space.spawn(o, null, true);
                 });
             });
+
+            // Plugin load hook
+            for (const p of this._plugins) p.onLoad?.(this);
 
             // Deferred physics world rebuild: after all objects & components are fully hydrated
             try {
@@ -838,6 +901,10 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         space.ondispose?.();
     }
 
-    public abstract collidesWithTile(o: GameObject, dir: Direction): boolean;
-    public abstract isCollisionTile(x: number, y: number): boolean;
+    public collidesWithTile(o: GameObject, dir: Direction): boolean {
+        return this._collision?.collidesWithTile(o, dir) ?? false;
+    }
+    public isCollisionTile(x: number, y: number): boolean {
+        return this._collision?.isCollisionTile(x, y) ?? false;
+    }
 }

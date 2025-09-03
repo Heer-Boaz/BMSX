@@ -1,5 +1,5 @@
 import { $, Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../bmsx';
-import { gamemodel } from "./gamemodel";
+import { EilaGameState } from './state';
 import { BitmapId } from './resourceids';
 
 @insavegame
@@ -13,8 +13,8 @@ export class RoomMgr {
     public adjacentRooms: Record<Direction, string>;
 
     public loadRoom(room_id: string) {
-        const model = $.modelAs<gamemodel>();
-        model.currentRoomId = room_id;
+        const state = $.registry.get<EilaGameState>('eila_state');
+        state.currentRoomId = room_id;
         this.adjacentRooms = {} as Record<Direction, string>;
         if (!this.rooms[room_id]) {
             this.rooms[room_id] = new Room(room_id);

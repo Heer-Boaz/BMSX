@@ -1,9 +1,12 @@
 import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent } from '../bmsx';
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
-import { gamemodel } from "./gamemodel";
+import { EilaEventService, ExtendedModel } from './modelplugin';
 import { AudioId, BitmapId } from "./resourceids";
 
+function theOtherFighter(f: Fighter) {
+    return $.get<EilaEventService>('eila_events').theOtherFighter(f);
+}
 export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'mijter_throw';
 
 @insavegame
@@ -13,7 +16,7 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 export class Sinterklaas extends Fighter {
     constructor(aied: boolean) {
         super('sinterklaas', undefined, 'right', 2);
-        this.hp = gamemodel.SINT_START_HP;
+        this.hp = $.modelAs<ExtendedModel>().constants.SINTERKLAAS_START_HP;
         this._aied = aied;
     }
 
@@ -222,7 +225,7 @@ export class Sinterklaas extends Fighter {
     @build_bt('sinterklaasBT')
     public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
         function getOpponentRange(this: Fighter): [number, number] {
-            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            const theOther = theOtherFighter(this);
 
             if (theOther) {
                 const dx = Math.abs(theOther.center_x - this.center_x);
@@ -269,7 +272,7 @@ export class Sinterklaas extends Fighter {
 
         function isPlayerDucking(this: Fighter): boolean {
             // Logic to check if the player is ducking
-            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            const theOther = theOtherFighter(this);
             if (theOther) {
                 return theOther.isDucking;
             }
@@ -278,7 +281,7 @@ export class Sinterklaas extends Fighter {
 
         function isOrWasPlayerHighKicking(this: Fighter): boolean {
             // Logic to check if the player is ducking
-            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            const theOther = theOtherFighter(this);
             if (theOther) {
                 return theOther.currentAttackType === 'highkick' || theOther.previousAttackType === 'highkick';
             }
@@ -287,7 +290,7 @@ export class Sinterklaas extends Fighter {
 
         function isOrWasPlayerLowOrDuckKicking(this: Fighter): boolean {
             // Logic to check if the player is ducking
-            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            const theOther = theOtherFighter(this);
             if (theOther) {
                 return theOther.currentAttackType === 'lowkick' || theOther.previousAttackType === 'lowkick' || theOther.currentAttackType === 'duckkick' || theOther.previousAttackType === 'duckkick';
             }
@@ -297,7 +300,7 @@ export class Sinterklaas extends Fighter {
         // @ts-ignore
         function isPlayerAttacking(this: Fighter): boolean {
             // Logic to check if the player is attacking
-            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            const theOther = theOtherFighter(this);
             if (theOther) {
                 return theOther.isAttacking;
             }
@@ -373,7 +376,7 @@ export class Sinterklaas extends Fighter {
         }
 
         function faceYourFoe(this: Fighter, _blackboard: Blackboard): BTStatus {
-            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            const theOther = theOtherFighter(this);
             let targetFacing: 'left' | 'right';
             if (theOther) {
                 if (theOther.center_x > this.center_x) {

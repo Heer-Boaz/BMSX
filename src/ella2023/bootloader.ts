@@ -1,15 +1,18 @@
-import { BFont, BootArgs, Game, GameView, MSX1ScreenHeight, MSX1ScreenWidth, new_vec2 } from '../bmsx';
-import { gamemodel } from './gamemodel';
+import { BaseModel, BFont, BootArgs, Game, GameView, MSX1ScreenHeight, MSX1ScreenWidth, new_vec2 } from '../bmsx';
+import { EILA_PLUGIN } from './modelplugin';
 import { BitmapId } from './resourceids';
+// Ensure FSM blueprint is registered
+import './gamemodel';
 
 let _game: Game;
-let _model: gamemodel;
+let _model: BaseModel;
 let _view: GameView;
 
 const _global = window || globalThis;
 
+
 _global['h406A'] = (args: BootArgs): Promise<void> => {
-	_model = new gamemodel();
+	_model = new BaseModel({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'model', plugins: [EILA_PLUGIN] });
 	_view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_game = new Game();
 	return _game.init({

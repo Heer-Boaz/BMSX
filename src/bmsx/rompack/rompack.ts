@@ -101,7 +101,7 @@ export interface Registerable extends Identifiable, Disposable {
 	registrypersistent?: boolean;
 }
 
-export interface RegisterablePersistent extends Registerable {
+export interface RegisterablePersistent extends Registerable, Identifiable, Disposable {
 	registrypersistent: true;
 }
 

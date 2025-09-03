@@ -2,28 +2,32 @@ import {
     BFont,
     BGamepadButton, BootArgs,
     Game, GamepadInputMapping, GameView, KeyboardButton, KeyboardInputMapping,
-    new_vec2
+    new_vec2, BaseModel
 } from '../bmsx/index';
 import { BitmapId } from './resourceids';
-import { gamemodel } from './test_gamemodel';
+import { createTestromPlugin } from './modelplugin';
+// Ensure FSM blueprint is registered
+import './test_gamemodel';
 
 // Find all (xyz as any) and replace them. Codex is stupid and always inserts buggy `as any`.
 // (\s*\(([^)]+?)\s+as\s+any\s*\))
 // $2
 
 var _game: Game;
-export let _model: gamemodel;
+export let _model: BaseModel;
 var _view: GameView;
 
 const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
-    _model = new gamemodel();
-    _view = new GameView(new_vec2(_model.gamewidth, _model.gameheight));
+    _model = new BaseModel({ size: { width: 320, height: 240 }, fsmId: 'model', plugins: [createTestromPlugin()] });
+    _view = new GameView(new_vec2(320, 240));
 
     _game = new Game();
     return _game.init({ ...args, model: _model, view: _view }).then(() => {
         _view.default_font = new BFont(BitmapId);
+        // Set input maps now that input is initialized
+        _game.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
         _game.start();
     });
 };

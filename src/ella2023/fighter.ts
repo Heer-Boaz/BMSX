@@ -1,5 +1,5 @@
 import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type vec2 } from '../bmsx';
-import { gamemodel } from './gamemodel';
+import { ExtendedModel } from './modelplugin';
 import { BitmapId } from './resourceids';
 
 export type AttackType = string;
@@ -167,7 +167,7 @@ export abstract class Fighter extends SpriteObject {
     }
 
     public resetVerticalPosition(): void {
-        this.y_nonotify = gamemodel.VERTICAL_POSITION_FIGHTERS - this.sy;
+        this.y_nonotify = $.modelAs<ExtendedModel>().constants.VERTICAL_POSITION_FIGHTERS - this.sy;
     }
 
     protected paintHitMarker(hitMarker: HitMarkerInfo) {

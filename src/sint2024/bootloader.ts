@@ -1,20 +1,22 @@
-import { $, BFont, BGamepadButton, BaseModel, BootArgs, Direction, Game, GameObject, GameView, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
+import { $, BFont, BGamepadButton, BaseModel, BootArgs, Game, GameView, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, new_vec2, type State } from '../bmsx/index';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
 
 var _game: Game;
-let _model: gamemodel;
+let _model: BaseModel;
 var _view: GameView;
 
 const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
-    _model = new gamemodel();
+    _model = new BaseModel({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'model' });
     _view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game();
     return _game.init({ ...args, model: _model, view: _view }).then(() => {
+        // set input map previously done in do_one_time_game_init
+        _game.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
         _game.start();
     });
 };
@@ -49,18 +51,13 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 const savestring = Symbol('savestring');
-@insavegame
-/**
- * Represents the game model which extends the BaseModel.
- * This class is responsible for handling the game state and initialization.
- */
-class gamemodel extends BaseModel {
+class SintModelFSM {
     /**
      * A string property that is saved in the game.
      */
     public [savestring]: string;
 
-    @build_fsm()
+    @build_fsm('model')
     /**
      * Constructs and returns a StateMachineBlueprint object.
      *
@@ -81,14 +78,14 @@ class gamemodel extends BaseModel {
         return {
             substates: {
                 '#game_start': {
-                    entering_state(this: gamemodel) {
+                    entering_state(this: BaseModel) {
                     },
-                    tick(this: gamemodel, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    tick(this: BaseModel, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         return 'default';
                     }
                 },
                 default: {
-                    entering_state(this: gamemodel) {
+                    entering_state(this: BaseModel) {
                         let q = new quiz();
                         $.spawn(q);
                         let s = new sint();
@@ -100,70 +97,4 @@ class gamemodel extends BaseModel {
         };
     }
 
-    /**
-     * Constructor for the gamemodel class.
-     * Initializes the base model.
-     */
-    constructor() {
-        super();
-    }
-
-    /**
-     * Gets the name of the constructor.
-     *
-     * @returns {string} The name of the constructor.
-     */
-    public get constructor_name(): string {
-        return this.constructor.name;
-    }
-
-    /**
-     * Performs one-time game initialization.
-     *
-     * @returns {this} The instance of the game model.
-     */
-    public override do_one_time_game_init(): this {
-        $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
-        return this;
-    }
-
-    /**
-     * Gets the width of the game screen.
-     *
-     * @returns {number} The width of the game screen.
-     */
-    public get gamewidth(): number {
-        return MSX1ScreenWidth;
-    }
-
-    /**
-     * Gets the height of the game screen.
-     *
-     * @returns {number} The height of the game screen.
-     */
-    public get gameheight(): number {
-        return MSX1ScreenHeight;
-    }
-
-    /**
-     * Determines if the given game object collides with a tile in the specified direction.
-     *
-     * @param {GameObject} _o - The game object.
-     * @param {Direction} _dir - The direction of the collision.
-     * @returns {boolean} False, indicating no collision.
-     */
-    public collidesWithTile(_o: GameObject, _dir: Direction): boolean {
-        return false;
-    }
-
-    /**
-     * Determines if the specified coordinates correspond to a collision tile.
-     *
-     * @param {number} _x - The x-coordinate.
-     * @param {number} _y - The y-coordinate.
-     * @returns {boolean} False, indicating no collision tile.
-     */
-    public isCollisionTile(_x: number, _y: number): boolean {
-        return false;
-    }
 }
