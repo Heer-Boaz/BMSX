@@ -5,7 +5,7 @@ const WEBGPU_RENDERER_SUPPORT = false;
 
 export interface BackendCreateResult {
 	backend: GPUBackend;
-	nativeCtx: unknown; // WebGL2RenderingContext | GPUCanvasContext
+	nativeCtx: WebGL2RenderingContext | GPUCanvasContext
 }
 
 /**
@@ -38,13 +38,15 @@ export async function createBackendForCanvasAsync(canvas: HTMLCanvasElement): Pr
 					}
 				}
 			}
-		} catch { /* fall back */ }
+		} catch(e) {
+			console.info(`WebGPU initialization failed: ${e}`);
+		}
 	}
 
 	// Fallback to WebGL2
 	const gl = canvas.getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext | null;
-	if (!gl) throw new Error('Failed to acquire WebGL2 context');
+	if (!gl) throw new Error('Failed to acquire WebGL2 context, cannot start the game :-(');
 	const backend = new WebGLBackend(gl);
-	console.warn(WEBGPU_RENDERER_SUPPORT ? 'Browser doesn\'t support WebGPU, fallback to WebGL2-backend' : 'Forced using WebGL2-backend as the game engine doesn\'t support WebGPU yet');
+	console.info(WEBGPU_RENDERER_SUPPORT ? 'Browser doesn\'t support WebGPU, fallback to WebGL2-backend' : 'Forced using WebGL2-backend as the game engine doesn\'t support WebGPU yet');
 	return { backend, nativeCtx: gl };
 }

@@ -1,4 +1,4 @@
-import { $, BaseModel, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject } from '../bmsx';
+import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject } from '../bmsx';
 import { bclass } from './bclass';
 import { CameraController } from './camera_controller';
 import { AnimatedMorphSphere, Cube3D, SmallCube3D } from './objects3d';
@@ -6,7 +6,7 @@ import { BitmapId } from './resourceids';
 
 export function createTestromPlugin() {
   return {
-    onBoot(model: BaseModel) {
+    onBoot(model: World) {
       // Scene scaffold (ported from previous do_one_time_game_init)
       const cube = new Cube3D();
       const small = new SmallCube3D(1);
@@ -51,4 +51,3 @@ export function createTestromPlugin() {
     }
   };
 }
-

@@ -1,4 +1,4 @@
-import { $, BaseModel, build_fsm, new_vec3, State, StateMachineBlueprint } from '../bmsx';
+import { $, World, build_fsm, new_vec3, State, StateMachineBlueprint } from '../bmsx';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
@@ -13,12 +13,12 @@ export class EilaModelFSM {
         return {
             substates: {
                 _game_start: {
-                    tick(this: BaseModel) {
+                    tick(this: World) {
                         return 'titlescreen';
                     }
                 },
                 game: {
-                    entering_state(this: BaseModel, _state: State, { numOfPlayers }: { numOfPlayers: number }) {
+                    entering_state(this: World, _state: State, { numOfPlayers }: { numOfPlayers: number }) {
                         const es = this.get<EilaGameState>('eila_state');
                         if (es) es.numOfPlayers = numOfPlayers;
                         return '#this.ffwachten';
@@ -26,14 +26,14 @@ export class EilaModelFSM {
                     substates: {
                         _ffwachten: {
                             ticks2advance_tape: 150,
-                            entering_state(this: BaseModel) {
+                            entering_state(this: World) {
                                 $.playAudio(AudioId.start);
                                 $.event_emitter.emit('its_curtains', this);
                             },
                             tape_end: () => 'oefenen',
                         },
                         oefenen: {
-                            entering_state(this: BaseModel) {
+                            entering_state(this: World) {
                                 this.setSpace('default');
                                 this.clear();
                                 const es = this.get<EilaGameState>('eila_state');
@@ -43,7 +43,7 @@ export class EilaModelFSM {
                                 this.spawn(new Hud(), new_vec3(0, 0, 100));
                                 $.playAudio(AudioId.trainen);
                             },
-                            tick(this: BaseModel): string | void {
+                            tick(this: World): string | void {
                                 const player = this.getGameObject<Fighter>('player');
                                 if (player?.x < 16) {
                                     return 'ffwachten2';
@@ -52,13 +52,13 @@ export class EilaModelFSM {
                         },
                         ffwachten2: {
                             ticks2advance_tape: 50,
-                            entering_state(this: BaseModel) {
+                            entering_state(this: World) {
                                 this.setSpace('niets');
                             },
                             tape_end: () => 'knokken',
                         },
                         knokken: {
-                            entering_state(this: BaseModel) {
+                            entering_state(this: World) {
                                 this.setSpace('default');
                                 this.clear();
                                 const es = this.get<EilaGameState>('eila_state');
@@ -73,7 +73,7 @@ export class EilaModelFSM {
                     },
                 },
                 gameover: {
-                    entering_state(this: BaseModel) {
+                    entering_state(this: World) {
                         this.setSpace('gameover');
                         if (!this.getGameObject('gameover')) {
                             this.spawn(new GameOver(), new_vec3(0, 0, 0));
@@ -82,7 +82,7 @@ export class EilaModelFSM {
                     },
                 },
                 hoera: {
-                    entering_state(this: BaseModel) {
+                    entering_state(this: World) {
                         this.setSpace('hoera');
                         if (!this.getGameObject('hoera')) {
                             this.spawn(new Hoera(), new_vec3(0, 0, 0));
@@ -91,7 +91,7 @@ export class EilaModelFSM {
                     },
                 },
                 titlescreen: {
-                    entering_state(this: BaseModel) {
+                    entering_state(this: World) {
                         this.setSpace('titlescreen');
                         if (!this.getGameObject('title')) {
                             this.spawn(new TitleScreen(), new_vec3(0, 0, 0));

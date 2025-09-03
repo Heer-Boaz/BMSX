@@ -1,16 +1,16 @@
-import { $, BFont, BGamepadButton, BaseModel, BootArgs, Game, GameView, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, new_vec2, type State } from '../bmsx/index';
+import { $, BFont, BGamepadButton, World, BootArgs, Game, GameView, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, new_vec2, type State } from '../bmsx/index';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
 
 var _game: Game;
-let _model: BaseModel;
+let _model: World;
 var _view: GameView;
 
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
-    _model = new BaseModel({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'model' });
+    _model = new World({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'model' });
     _view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game();
@@ -73,20 +73,20 @@ class SintModelFSM {
      *
      * - `default`: The default state of the game.
      *   - `enter`: A function that is called when entering the `default` state. It spawns a new quiz and a new sint.
-     *   - `run`: A function that is called to run the `default` state. Uses `BaseModel.defaultrun`.
+     *   - `run`: A function that is called to run the `default` state. Uses `World.defaultrun`.
      */
     public static bouw(): StateMachineBlueprint {
         return {
             substates: {
                 '#game_start': {
-                    entering_state(this: BaseModel) {
+                    entering_state(this: World) {
                     },
-                    tick(this: BaseModel, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    tick(this: World, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         return 'default';
                     }
                 },
                 default: {
-                    entering_state(this: BaseModel) {
+                    entering_state(this: World) {
                         let q = new quiz();
                         $.spawn(q);
                         let s = new sint();

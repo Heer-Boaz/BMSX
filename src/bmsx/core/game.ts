@@ -14,7 +14,7 @@ import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
-import { BaseModel } from "./basemodel";
+import { World } from "./world";
 import { EventEmitter, EventPayload } from "./eventemitter";
 import { BFont } from './font';
 import { GameObject } from "./gameobject";
@@ -37,7 +37,7 @@ export var $: Game;
 
 export interface GameInitArgs {
 	rom: RomPack;
-	model: BaseModel;
+	model: World;
 	view: GameView;
 	sndcontext: AudioContext;
 	gainnode: GainNode;
@@ -157,9 +157,9 @@ export class Game {
 	 * @returns The model instance of type T.
 	 * @template T - The type of the model.
 	 */
-	public modelAs<T extends BaseModel = BaseModel>(): T { return this.model as T; }
+	public modelAs<T extends World = World>(): T { return this.model as T; }
 
-	public get model(): BaseModel { return this.registry.get<BaseModel>('model'); }
+	public get model(): World { return this.registry.get<World>('model'); }
 
 	/**
 	 * Retrieves the global view of type T.

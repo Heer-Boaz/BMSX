@@ -1,4 +1,4 @@
-import { $, AmbientLightObject, BaseModel, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
+import { $, AmbientLightObject, World, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { bclass } from './bclass';
 import { _model, gamepadInputMapping, keyboardInputMapping } from './bootloader';
@@ -8,7 +8,7 @@ import { BitmapId } from './resourceids';
 
 const savestring = Symbol('savestring');
 @insavegame
-export class gamemodel extends BaseModel {
+export class gamemodel extends World {
 	public [savestring]: string;
 
 	@build_fsm()

@@ -1,4 +1,4 @@
-import type { BaseModel } from '../core/basemodel';
+import type { World } from '../core/world';
 import type { EventScope } from '../core/eventemitter';
 
 export type TagId = string;
@@ -61,7 +61,7 @@ export type AbilityCoroutine = Generator<AbilityYield, void, void>;
 
 export interface AbilityContext {
   ownerId: ObjectId;
-  model: BaseModel;
+  model: World;
   asc: AbilitySystemRef;
   emit?: (name: string, payload?: any) => void;
 }

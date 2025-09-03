@@ -75,7 +75,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
     /**
      * This state machine reflects the (partial) state of the game object with the given id
-     * @see {@link BaseModel.getGameObject}
+     * @see {@link World.getGameObject}
      */
     target_id: Identifier;
 
@@ -169,7 +169,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
      * Factory for creating new FSMs.
      * @param id - id of the FSM definition to use for this machine.
-     * @param target_id - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
+     * @param target_id - id of the object that is stated by this FSM. @see {@link World.getGameObject}.
      */
     public static create(id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier): State {
         let result = new State(id, target_id, parent_id, root_id);
@@ -183,7 +183,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * Represents the context of a state in a finite state machine.
      * Contains information about the current state, the state machine it belongs to, and any substate machines.
      * @param def_id - id of the state machine definition to use for this machine.
-     * @param target_id - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
+     * @param target_id - id of the object that is stated by this FSM. @see {@link World.getGameObject}.
      */
     constructor(def_id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier) {
         this.def_id = def_id ?? DEFAULT_BST_ID;

@@ -367,7 +367,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public reset(): void {
-		;
 	}
 
 	/**

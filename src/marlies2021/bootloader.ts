@@ -1,4 +1,4 @@
-import { BaseModel, Space } from '../bmsx/basemodel';
+import { World, Space } from '../bmsx/world';
 import { build_fsm, sdef, State } from '../bmsx/bfsm';
 import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
@@ -13,7 +13,7 @@ import { BitmapId } from './resourceids';
 
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
-class modelclass extends BaseModel {
+class modelclass extends World {
     public marlies: speler;
     public stressLevel: number;
     public enemyHp: number;
@@ -27,7 +27,7 @@ class modelclass extends BaseModel {
                     states: {
                         default: new sdef('default', {
                             run() {
-                                BaseModel.defaultrun();
+                                World.defaultrun();
                                 if (Input.KC_F5) {
                                     game.model.state.to('gamemenu');
                                 }

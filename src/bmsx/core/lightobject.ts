@@ -1,6 +1,5 @@
 import type { AmbientLight, DirectionalLight, Light, PointLight } from '../render/3d/light';
 import { insavegame } from '../serializer/gameserializer';
-import { $ } from './game';
 import { GameObject } from './gameobject';
 
 @insavegame
@@ -34,7 +33,6 @@ export abstract class LightObject extends GameObject {
         this.active = true;
     }
 
-    public abstract applyToView(): void;
 }
 
 @insavegame
@@ -51,13 +49,6 @@ export class AmbientLightObject extends LightObject {
         super({ type: 'ambient', color, intensity }, id);
     }
 
-    override applyToView(): void {
-        if (this.active) {
-            const l = this.light as AmbientLight;
-            $.view.setAmbientLight(l);
-        }
-    }
-
 }
 
 @insavegame
@@ -66,28 +57,12 @@ export class DirectionalLightObject extends LightObject {
         super({ type: 'directional', orientation: orientation, color, intensity }, id);
     }
 
-    override applyToView(): void {
-        if (this.active) {
-            $.view.addDirectionalLight(this.id, this.light as DirectionalLight);
-        } else {
-            $.view.removeDirectionalLight(this.id);
-        }
-    }
-
 }
 
 @insavegame
 export class PointLightObject extends LightObject {
     constructor(pos: [number, number, number], color: [number, number, number], range: number, intensity: number = 1, id?: string) {
         super({ type: 'point', pos, color, range, intensity }, id);
-    }
-
-    override applyToView(): void {
-        if (this.active) {
-            $.view.setPointLight(this.id, this.light as PointLight);
-        } else {
-            $.view.removePointLight(this.id);
-        }
     }
 
 }

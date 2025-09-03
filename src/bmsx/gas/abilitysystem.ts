@@ -1,5 +1,5 @@
 import { Component } from '../component/basecomponent';
-import type { BaseModel } from '../core/basemodel';
+import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
@@ -56,7 +56,7 @@ export class AbilitySystemComponent extends Component {
 		AbilitySystemComponent.registry.add(this);
 	}
 
-	get model(): BaseModel { return $.model; }
+	get model(): World { return $.model; }
 
 	public addTag(tag: TagId): void { this.tags.add(tag); }
 	public removeTag(tag: TagId): void { this.tags.delete(tag); }

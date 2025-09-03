@@ -1,5 +1,5 @@
 import {
-    BaseModel,
+    World,
     BFont,
     BGamepadButton, BootArgs,
     Game, GamepadInputMapping, GameView, KeyboardButton, KeyboardInputMapping,
@@ -15,13 +15,13 @@ import './test_gamemodel';
 // $2
 
 var _game: Game;
-export let _model: BaseModel;
+export let _model: World;
 var _view: GameView;
 
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
-    _model = new BaseModel({ size: { width: 320, height: 240 }, fsmId: 'model', plugins: [createTestromPlugin()] });
+    _model = new World({ size: { width: 320, height: 240 }, fsmId: 'model', plugins: [createTestromPlugin()] });
     _view = new GameView(new_vec2(320, 240));
 
     _game = new Game();

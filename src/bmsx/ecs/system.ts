@@ -1,13 +1,13 @@
 import { PositionUpdateAxisComponent, ScreenBoundaryComponent, TileCollisionComponent } from "../component/collisioncomponents";
 import { TransformComponent } from "../component/transformcomponent";
-import type { BaseModel } from "../core/basemodel";
+import type { World } from "../core/world";
 import { EventEmitter } from "../core/eventemitter";
 import { $ } from "../core/game";
 import type { GameObject } from "../core/gameobject";
 import { MeshObject } from "../core/mesh";
 import { mod } from "../core/utils";
 import { PhysicsComponent } from "../physics/physicscomponent";
-import { PhysicsWorld } from "../physics/physicsworld";
+import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { TileSize } from "../systems/msx";
 
@@ -26,7 +26,7 @@ export abstract class ECSystem {
 	readonly group: TickGroup;
 	readonly priority: number;
 	constructor(group: TickGroup, priority: number = 0) { this.group = group; this.priority = priority; }
-	abstract update(model: BaseModel): void;
+	abstract update(model: World): void;
 }
 
 @excludeclassfromsavegame
@@ -46,20 +46,20 @@ export class ECSystemManager {
 	clear(): void { this._systems.length = 0; }
 
 	/** Runs systems up to and including the given TickGroup. */
-	updateUntil(model: BaseModel, maxGroup: TickGroup): void {
+	updateUntil(model: World, maxGroup: TickGroup): void {
 		for (const s of this._systems) {
 			if (s.group <= maxGroup) s.update(model);
 		}
 	}
 
 	/** Runs systems from and including the given TickGroup. */
-	updateFrom(model: BaseModel, minGroup: TickGroup): void {
+	updateFrom(model: World, minGroup: TickGroup): void {
 		for (const s of this._systems) {
 			if (s.group >= minGroup) s.update(model);
 		}
 	}
 
-	update(model: BaseModel): void {
+	update(model: World): void {
 		for (const s of this._systems) s.update(model);
 	}
 }
@@ -69,7 +69,7 @@ export class ECSystemManager {
 /** Pre-update: call preprocessingUpdate for components tagged with given tag. */
 export class PreTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PrePhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -128,17 +128,17 @@ function isPhysicsComponent(c: unknown): c is PhysicsComponent & {
 	return 'body' in r || 'writeBack' in r || 'syncAxis' in r;
 }
 
-function hasModelDimensions(m: BaseModel): m is BaseModel & { gamewidth: number; gameheight: number } {
+function hasModelDimensions(m: World): m is World & { gamewidth: number; gameheight: number } {
 	const r = m as unknown as Record<string, unknown>;
 	return typeof r['gamewidth'] === 'number' && typeof r['gameheight'] === 'number';
 }
 
-function hasCollidesWithTile(m: BaseModel): m is BaseModel & { collidesWithTile?: (o: GameObject, d: string) => boolean } {
+function hasCollidesWithTile(m: World): m is World & { collidesWithTile?: (o: GameObject, d: string) => boolean } {
 	const r = m as unknown as Record<string, unknown>;
 	return typeof r['collidesWithTile'] === 'function';
 }
 
-function hasGetGameObject(m: BaseModel): m is BaseModel & { getGameObject?: (id: string) => GameObject | undefined } {
+function hasGetGameObject(m: World): m is World & { getGameObject?: (id: string) => GameObject | undefined } {
 	const r = m as unknown as Record<string, unknown>;
 	return typeof r['getGameObject'] === 'function';
 }
@@ -166,7 +166,7 @@ function hasMarkDirty(o: unknown): o is { markDirty: () => void } {
 /** Updates all BehaviorTrees attached to objects. */
 export class BehaviorTreeSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -183,7 +183,7 @@ export class BehaviorTreeSystem extends ECSystem {
 /** Ticks each object's primary state machine controller. */
 export class StateMachineSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -196,7 +196,7 @@ export class StateMachineSystem extends ECSystem {
 /** Post-update: call postprocessingUpdate for components tagged with given tag. */
 export class PostTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PostPhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -215,7 +215,7 @@ export class PostTagSystem extends ECSystem {
  */
 export class PrePositionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -235,7 +235,7 @@ export class PrePositionSystem extends ECSystem {
 export class BoundarySystem extends ECSystem {
 	private prev = new WeakMap<GameObject, { x: number; y: number }>();
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		const width = hasModelDimensions(model) ? model.gamewidth : 0;
 		const height = hasModelDimensions(model) ? model.gameheight : 0;
@@ -294,7 +294,7 @@ export class BoundarySystem extends ECSystem {
  */
 export class TileCollisionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject & { onWallcollide?: (d: 'left' | 'right' | 'up' | 'down') => void };
@@ -343,7 +343,7 @@ export class TileCollisionSystem extends ECSystem {
  */
 export class PhysicsPreSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -388,7 +388,7 @@ export class PhysicsPreSystem extends ECSystem {
  */
 export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -419,7 +419,7 @@ export class PhysicsSyncBeforeStepSystem extends ECSystem {
 /** PhysicsPostSystem: sync PhysicsBody -> GameObject when writeBack=true. */
 export class PhysicsPostSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -445,7 +445,7 @@ export class PhysicsPostSystem extends ECSystem {
 // New: sync GO -> body after tile/boundary corrections (honor syncAxis)
 export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	constructor(p = 0) { super(TickGroup.PostPhysics, p); }
-	update(model: BaseModel) {
+	update(model: World) {
 		for (const o of model.objects as GameObject[]) {
 			const pc = o.getComponent?.(PhysicsComponent);
 			if (!pc?.enabled || !pc.body) continue;
@@ -461,10 +461,31 @@ export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	}
 }
 
+/** PhysicsCollisionEventSystem: translate PhysicsWorld collision events to engine events. */
+export class PhysicsCollisionEventSystem extends ECSystem {
+    constructor(p = 28) { super(TickGroup.PostPhysics, p); }
+    update(model: World): void {
+        const events: CollisionEvent[] = (model as any).drainPhysicsEvents?.() ?? [];
+        if (!events || events.length === 0) return;
+        for (const evt of events) {
+            const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.model.getGameObject(evt.a.userData) : (evt.a.userData as unknown);
+            const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.model.getGameObject(evt.b.userData) : (evt.b.userData as unknown);
+            if (!goA && !goB) continue;
+            const payload = { type: evt.type, otherId: (goB as any)?.id ?? null, point: evt.point, normal: evt.normal };
+            if (goA) EventEmitter.instance.emit('physicsCollision', goA as GameObject, payload);
+            if (goB) EventEmitter.instance.emit('physicsCollision', goB as GameObject, { ...payload, otherId: (goA as any)?.id ?? null });
+            // Also emit typed events if listeners prefer name-specific subscriptions
+            const name = 'physicsCollision_' + evt.type;
+            if (goA) EventEmitter.instance.emit(name, goA as GameObject, payload);
+            if (goB) EventEmitter.instance.emit(name, goB as GameObject, { ...payload, otherId: (goA as any)?.id ?? null });
+        }
+    }
+}
+
 /** TransformSystem: update TransformComponent from GameObject state (position/orientation/scale). */
 export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
@@ -491,7 +512,7 @@ export class TransformSystem extends ECSystem {
 /** MeshAnimationSystem: steps GLTF-based mesh animations without calling GameObject.run(). */
 export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
-	update(model: BaseModel): void {
+	update(model: World): void {
 		const objs = model.objects;
 		const dtSec = $.deltaTime / 1000;
 		for (let i = 0; i < objs.length; ++i) {

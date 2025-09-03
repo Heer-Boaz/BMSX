@@ -6,7 +6,7 @@ export * from './component/basecomponent';
 export * from './component/collisioncomponents';
 export * from './component/transformcomponent';
 export * from './core/assetbarrier';
-export * from './core/basemodel';
+export * from './core/world';
 export * from './core/cameraobject';
 export * from './core/eventemitter';
 export * from './core/eventtimeline';

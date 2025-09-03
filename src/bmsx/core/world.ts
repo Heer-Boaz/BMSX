@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
-import { BehaviorTreeSystem, BoundarySystem, ECSystemManager, MeshAnimationSystem, PhysicsPostSystem, PhysicsSyncAfterWorldCollisionSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/system";
+import { BehaviorTreeSystem, BoundarySystem, ECSystemManager, MeshAnimationSystem, PhysicsCollisionEventSystem, PhysicsPostSystem, PhysicsSyncAfterWorldCollisionSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/system";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
@@ -41,7 +41,7 @@ export interface TileCollisionService {
     collidesWithTile(o: GameObject, dir: Direction): boolean;
     isCollisionTile(x: number, y: number): boolean;
 }
-export type ModelPlugin = { onBoot: (model: BaseModel) => void; onTick?: (model: BaseModel, dt: number) => void; onLoad?: (model: BaseModel) => void; dispose?: () => void };
+export type ModelPlugin = { onBoot: (model: World) => void; onTick?: (model: World, dt: number) => void; onLoad?: (model: World) => void; dispose?: () => void };
 
 // Optional per-object hooks for space transitions
 interface SpaceAware { onleaveSpace?(from: Identifier): void; onenterSpace?(to: Identifier): void; }
@@ -130,8 +130,8 @@ export class Space {
 
     // Decouple from global `$`: prefer injected model; fallback to $.model.
     @excludepropfromsavegame
-    private _model?: BaseModel;
-    public bindModel(m: BaseModel): void { this._model = m; }
+    private _model?: World;
+    public bindModel(m: World): void { this._model = m; }
 
     /**
      * Represents a space in the game world, which contains a collection of game objects.
@@ -192,7 +192,7 @@ export class Space {
      */
     public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
         const index = this.objects.indexOf(o);
-        if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [BaseModel.exile]!`);
+        if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [Model.exile]!`);
         !skip_ondispose_event && o.dispose?.(); // Trigger ondispose event before removing the object from the space. `ondispose` unsubscribes the object from events and removes it from the registry
         if (index > -1) this.objects.splice(index, 1);
         this._id2objMap.delete(o.id);
@@ -226,7 +226,7 @@ export type base_model_spaces = 'game_start' | 'default';
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
-export class BaseModel implements Stateful, RegisterablePersistent {
+export class World implements Stateful, RegisterablePersistent {
     get registrypersistent(): true {
         return true;
     }
@@ -365,6 +365,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
         // Resolve world-space collisions first, then screen boundary events
         SM.register(new TileCollisionSystem(10));
         SM.register(new BoundarySystem(20));
+        SM.register(new PhysicsCollisionEventSystem(28)); // dispatch physics collisions as engine events
         SM.register(new PhysicsSyncAfterWorldCollisionSystem(30)); // GO -> body (if writeBack)
         SM.register(new TransformSystem(50));
 
@@ -386,8 +387,6 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     public get ambientLight(): AmbientLightObject | null {
         return this.getActiveLights().find(light => light.type === 'ambient') as AmbientLightObject | null;
     }
-
-    
 
     /**
      * Gets the game object with the given id from the current space only.
@@ -516,7 +515,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     protected idCounter = 0;
 
     public getNextIdNumber(): number {
-        if (this.idCounter >= BaseModel.MAX_ID_NUMBER) {
+        if (this.idCounter >= World.MAX_ID_NUMBER) {
             throw new Error('ID counter exhausted: max safe integer reached');
         }
         const nextNumber = this.idCounter;
@@ -548,8 +547,8 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     }
 
     public init_on_boot(): void {
-        BaseModel.setup_fsmdef_library();
-        BaseModel.setup_bt_library();
+        World.setup_fsmdef_library();
+        World.setup_bt_library();
         this.init_event_subscriptions().init_spaces().init_model_state_machines();
         // Plugins boot hooks (explicit lifecycle; no property chaining)
         for (const p of this._plugins) p.onBoot(this);
@@ -567,27 +566,27 @@ export class BaseModel implements Stateful, RegisterablePersistent {
         $.registry.deregister(this);
     }
 
-    public init_event_subscriptions(): BaseModel {
+    public init_event_subscriptions(): World {
         $.event_emitter.initClassBoundEventSubscriptions(this);
-        return this; // Return the current instance of the BaseModel for chaining
+        return this; // Return the current instance of the World for chaining
     }
 
     /**
      * Initializes the spaces for the model. This method should only be executed when the model is not being revived.
      * Adds the 'default' and 'game_start' spaces to the model and sets the current space to 'game_start'.
-     * @returns {BaseModel} The current instance of the BaseModel.
+     * @returns {World} The current instance of the World.
      */
-    public init_spaces(): BaseModel { // Should only be executed when model is *not* revived
+    public init_spaces(): World { // Should only be executed when model is *not* revived
         this.addSpace('default' satisfies base_model_spaces);
         this.addSpace('game_start' satisfies base_model_spaces);
         this.setSpace('game_start' satisfies base_model_spaces);
 
-        return this; // Return the current instance of the BaseModel for chaining
+        return this; // Return the current instance of the World for chaining
     }
 
     /**
-     * Sets up the finite state machine definition library for the `BaseModel` class.
-     * This method should only be called once during the initialization of the `BaseModel` class.
+     * Sets up the finite state machine definition library for the `World` class.
+     * This method should only be called once during the initialization of the `World` class.
      * @returns {void} Nothing.
      */
     private static setup_fsmdef_library(): void {
@@ -600,7 +599,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Returns the constructor name of the specific derived class that extends this `BaseModel`.
+     * Returns the constructor name of the specific derived class that extends this `World`.
      * Required during game initialization where @see {@link init_model_state_machines} is called.
      * @see {@link this.init_model_state_machines}
      */
@@ -610,14 +609,14 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     * Init model after construction. Needed as the states have not been build at
     * the constructor's scope yet. So, this is a kind of `onspawn` for the model.
     *
-    * Each derived model class should override @see {@link BaseModel.constructor_name} to get the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
-    * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
+    * Each derived model class should override @see {@link World.constructor_name} to get the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
+    * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this World.
     */
     public init_model_state_machines(): this {
         this.sc = new StateMachineController(this._fsmId ?? 'model', this.id);
         this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the model, and subscribe to all events that are defined in the state machine definitions
 
-        return this; // Return the current instance of the BaseModel for chaining
+        return this; // Return the current instance of the World for chaining
     }
 
     /** Use this function for initializing spaces, global/static game objects, ...
@@ -642,29 +641,18 @@ export class BaseModel implements Stateful, RegisterablePersistent {
         // Phase 1: PrePhysics + Simulation (BT, Anim, Object FSM, AbilityRuntime)
         this.systems.updateUntil(this, TickGroup.Simulation);
 
-        // Physics step & event dispatch
+        // Physics step & event collection (dispatch moved to an ECS system)
         const phys = $.registry.get<PhysicsWorld>('physics_world');
         if (phys) {
             const collisionEvents: CollisionEvent[] = [];
             phys.step(deltaTime, (evt) => collisionEvents.push(evt));
-            BaseModel._physDiagFrames = BaseModel._physDiagFrames ?? 0;
-            if (BaseModel._physDiagFrames < 5) {
+            World._physDiagFrames = World._physDiagFrames ?? 0;
+            if (World._physDiagFrames < 5) {
                 const firstDyn = phys.getBodies().find(b => b.invMass && !b.isTrigger);
                 if (firstDyn) console.log('[PhysStep]', 'dt=', deltaTime, 'pos=', firstDyn.position, 'vel=', firstDyn.velocity, 'grav=', 'getGravity' in phys ? phys.getGravity() : 'n/a');
-                BaseModel._physDiagFrames++;
+                World._physDiagFrames++;
             }
-            if (collisionEvents.length) {
-                for (const evt of collisionEvents) {
-                    const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.model.getGameObject(evt.a.userData) : evt.a.userData;
-                    const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.model.getGameObject(evt.b.userData) : evt.b.userData;
-                    if (goA?.sc) goA.sc.do('physics_collision_' + evt.type, goB?.id ?? goA.id, evt);
-                    if (goB?.sc) goB.sc.do('physics_collision_' + evt.type, goA?.id ?? goB.id, evt);
-                    type CollisionAware = { onPhysicsCollision: (e: CollisionEvent, other: any) => void };
-                    function isCollisionAware(o: any): o is CollisionAware { return o && typeof o.onPhysicsCollision === 'function'; }
-                    if (isCollisionAware(goA)) goA.onPhysicsCollision(evt, goB);
-                    if (isCollisionAware(goB)) goB.onPhysicsCollision(evt, goA);
-                }
-            }
+            if (collisionEvents.length) this._physicsEventQueue.push(...collisionEvents);
         }
 
         // Phase 2: PostPhysics + PreRender
@@ -684,11 +672,11 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     /**
      * The default input handler for allowing the game menu to be opened.
      * If the F5 key is pressed, the game menu substate is set to 'open'.
-     * @param {BaseModel} this - The current instance of the BaseModel.
-     * @param {State<BaseModel>} s - The current state of the BaseModel.
+     * @param {World} this - The current instance of the World.
+     * @param {State<World>} s - The current state of the World.
      * @returns {void} Nothing.
      */
-    static default_input_handler_for_allow_open_gamemenu(this: BaseModel): void {
+    static default_input_handler_for_allow_open_gamemenu(this: World): void {
         if (Input.KC_F5) {
             this.sc.machines.gamemenu.transition_to('open');
         }
@@ -697,17 +685,17 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     /**
      * The default input handler for allowing the game menu to be closed.
      * If the F5 key is pressed, the game menu substate is set to 'closed'.
-     * @param {BaseModel} this - The current instance of the BaseModel.
-     * @param {State<BaseModel>} s - The current state of the BaseModel.
+     * @param {World} this - The current instance of the World.
+     * @param {State<World>} s - The current state of the World.
      * @returns {void} Nothing.
      */
-    static default_input_handler_for_allow_close_gamemenu(this: BaseModel): void {
+    static default_input_handler_for_allow_close_gamemenu(this: World): void {
         if (Input.KC_F5) {
             this.sc.machines.gamemenu.transition_to('closed');
         }
     }
 
-    static default_input_handler(this: BaseModel) {
+    static default_input_handler(this: World) {
     }
 
     /**
@@ -798,7 +786,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
     /**
      * Saves the current game state by creating a `Savegame` object and serializing it.
      * Pauses the game while creating the `Savegame` object to ensure consistency.
-     * Excludes keys listed in `BaseModel.keys_to_exclude_from_save` from the saved data.
+     * Excludes keys listed in `World.keys_to_exclude_from_save` from the saved data.
      * @returns {string} The serialized `Savegame` object.
      */
     public save(compress: boolean = true): Uint8Array {
@@ -808,7 +796,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
             const data = {} as Record<string, any>;
             for (let index = 0; index < keys.length; ++index) {
                 const key = keys[index];
-                if (BaseModel.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['BaseModel']?.[key]) continue;
+                if (World.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['World']?.[key]) continue;
                 if (self[key] !== null && self[key] !== undefined) {
                     data[key] = self[key];
                 }
@@ -836,8 +824,6 @@ export class BaseModel implements Stateful, RegisterablePersistent {
             returnedState = serializedState; // Use the serialized state as is if compression is not requested
         }
 
-        // console.debug(`Serialized savegame size: ${serializedState.length} bytes`);
-        // console.debug(`Compressed savegame size: ${compressedState.length} bytes, ratio: ${Math.round((compressedState.length / serializedState.length) * 100)}%`);
         return returnedState;
     }
 
@@ -938,7 +924,7 @@ export class BaseModel implements Stateful, RegisterablePersistent {
      */
     public removeSpace(s: Space | Identifier): void {
         const space: Space = (s instanceof Space ? s : this.get_space(s));
-        if (!space) throw Error(`Space '${s}' to remove from model was not found, while calling [BaseModel.removeSpace]!`);
+        if (!space) throw Error(`Space '${s}' to remove from model was not found, while calling [World.removeSpace]!`);
 
         const index = this.spaces.indexOf(space);
         const id = space.id;
@@ -984,6 +970,15 @@ export class BaseModel implements Stateful, RegisterablePersistent {
         if (this.depthDirtyBatch) { this.depthDirtyBatch.add(sid); return; }
         const sp = this._spaceMap.get(sid);
         if (sp) sp.depthSortDirty = true;
+    }
+
+    // --- Physics collision event queue (drained by ECS) ---
+    @excludepropfromsavegame private _physicsEventQueue: CollisionEvent[] = [];
+    public drainPhysicsEvents(): CollisionEvent[] {
+        if (this._physicsEventQueue.length === 0) return [];
+        const evts = this._physicsEventQueue.slice();
+        this._physicsEventQueue.length = 0;
+        return evts;
     }
 
     /** Begin a batch of mutations affecting depth ordering. */

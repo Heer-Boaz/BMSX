@@ -1,5 +1,5 @@
 import { type ModulationParams } from "../audio/soundmaster";
-import { Space, SpaceObject } from "../core/basemodel";
+import { Space, SpaceObject } from "../core/world";
 import { $ } from '../core/game';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/view';
@@ -685,7 +685,7 @@ export class Savegame {
     }
 
     @onload
-    rebuildPhysicsIfNeeded() { /* moved to BaseModel.load for correct timing */ }
+    rebuildPhysicsIfNeeded() { /* moved to World.load for correct timing */ }
 }
 
 /**

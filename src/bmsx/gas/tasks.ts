@@ -1,4 +1,4 @@
-import type { BaseModel } from '../core/basemodel';
+import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { ECSystem, TickGroup } from '../ecs/system';
@@ -12,7 +12,7 @@ export type TaskFn = (ctx: TaskContext) => Generator<TaskYield, void, void>;
 
 export interface TaskContext {
   ownerId?: Identifier;
-  model: BaseModel;
+  model: World;
   director: TaskDirector;
   emit: (name: string, payload?: any) => void;
 }
@@ -115,7 +115,7 @@ export class TaskDirector implements RegisterablePersistent {
 
 export class TaskRuntimeSystem extends ECSystem {
   constructor(priority: number = 33) { super(TickGroup.Simulation, priority); }
-  update(_model: BaseModel): void {
+  update(_model: World): void {
     const now = performance.now();
     for (const runner of [...TaskDirector.instance.runners]) {
       // Cancel actor task if owner gone

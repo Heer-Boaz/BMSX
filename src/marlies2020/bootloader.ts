@@ -1,4 +1,4 @@
-import { BaseModel, BootArgs, build_fsm, Game, GameObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
+import { World, BootArgs, build_fsm, Game, GameObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';
@@ -19,7 +19,7 @@ const INVENTORY_POS = { x: 12, y: 12 };
 
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
-class modelclass extends BaseModel {
+class modelclass extends World {
     public marlies: SpriteObject;
     public ingredientEquipped: Ingredient;
     public pitasOpBord: number;
@@ -32,7 +32,7 @@ class modelclass extends BaseModel {
                     states: {
                         default: new sdef('default', {
                             run() {
-                                BaseModel.defaultrun();
+                                World.defaultrun();
                                 if (Input.KC_F5) {
                                     game.model.state.to('gamemenu');
                                 }

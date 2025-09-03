@@ -1,4 +1,4 @@
-import { base_model_spaces, BaseModel, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, GameObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RenderView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, GameObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RenderView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -8,7 +8,7 @@ const TIME_TO_SHINE = 90;
 type model_spaces = base_model_spaces | 'uitleg' | 'evaluatie' | 'hoera!';
 // type model_states = Bla<typeof gamemodel.states.states>;
 
-class gamemodel extends BaseModel {
+class gamemodel extends World {
     public time_to_shine!: number;
     public uitleg_tekst_dinges!: number;
     public score: number = 0;
@@ -62,7 +62,7 @@ class gamemodel extends BaseModel {
                         }
                     },
                     run(this: gamemodel, s: State<gamemodel>) {
-                        BaseModel.defaultrun();
+                        World.defaultrun();
                         this.sc.machines.gamemenu.run();
                         if (!this.paused) ++s.ticks; // Laat timer lopen
                     },
@@ -95,7 +95,7 @@ class gamemodel extends BaseModel {
                         this.setSpace('uitleg');
                     },
                     run(this: gamemodel) {
-                        BaseModel.defaultrun();
+                        World.defaultrun();
                     },
                 },
             }
@@ -108,10 +108,10 @@ class gamemodel extends BaseModel {
             parallel: true,
             states: {
                 closed: {
-                    process_input: BaseModel.default_input_handler_for_allow_open_gamemenu,
+                    process_input: World.default_input_handler_for_allow_open_gamemenu,
                 },
                 open: {
-                    process_input: BaseModel.default_input_handler_for_allow_close_gamemenu,
+                    process_input: World.default_input_handler_for_allow_close_gamemenu,
                     enter(this: gamemodel) {
                         let menu = new GameMenu();
                         this.spawn(menu);

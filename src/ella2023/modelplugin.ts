@@ -1,11 +1,11 @@
-import { $, BaseModel, InputMap, insavegame } from '../bmsx';
+import { $, World, InputMap, insavegame } from '../bmsx';
 import { subscribesToGlobalEvent } from '../bmsx/core/eventemitter';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { EilaGameState } from './state';
 
 export const EILA_PLUGIN = {
-	onBoot(model: BaseModel) {
+	onBoot(model: World) {
 		// Spaces
 		model.addSpace('gameover');
 		model.addSpace('hoera');
@@ -21,7 +21,7 @@ export const EILA_PLUGIN = {
 	},
 };
 
-export type ExtendedModel = BaseModel & typeof EILA_PLUGIN;
+export type ExtendedModel = World & typeof EILA_PLUGIN;
 
 @insavegame
 export class EilaEventService {
