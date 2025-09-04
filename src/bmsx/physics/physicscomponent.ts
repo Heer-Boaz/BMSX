@@ -1,6 +1,6 @@
 import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
-import { GameObject } from '../core/gameobject';
+import { GameObject } from '../core/object/gameobject';
 import { new_vec3 } from '../core/utils';
 import type { Identifier, Oriented } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
@@ -57,7 +57,7 @@ export class PhysicsComponent extends Component {
 		// Temporary aggressive sync: always copy GameObject -> physics body before physics step.
 		// This is a diagnostic change to confirm whether lack of sync is the root cause.
 		if (this.body && !this.writeBack) {
-			const go = $.model.getGameObject(this.parentid);
+			const go = $.world.getGameObject(this.parentid);
 			if (go) {
 				let positionChanged = false;
 				if (this.syncAxis.x && this.body.position.x !== go.x) {
@@ -86,7 +86,7 @@ export class PhysicsComponent extends Component {
 	override postprocessingUpdate(): void {
 		if (!this.body) return;
 		if (!this.writeBack) return;
-		const go = $.model.getGameObject<GameObject & Oriented>(this.parentid);
+		const go = $.world.getGameObject<GameObject & Oriented>(this.parentid);
 		if (!go) return;
 		if (this.syncAxis.x) go.x_nonotify = this.body.position.x;
 		if (this.syncAxis.y) go.y_nonotify = this.body.position.y;
@@ -119,7 +119,7 @@ export class PhysicsComponent extends Component {
 	private tryBuildBody() {
 		if (this._bodyBuilt) return;
 		const world = PhysicsWorld.ensure();
-		const go = $.model.getGameObject(this.parentid);
+		const go = $.world.getGameObject(this.parentid);
 		if (!go) return; // parent not yet available
 		const startPos = new_vec3(go.x, go.y, go.z);
 		// console.log('[PhysicsComponent] Building body for', go.id, 'at position', startPos, 'shape:', this.shape, 'mass:', this.mass, 'layer:', this.layer, 'mask:', this.mask);

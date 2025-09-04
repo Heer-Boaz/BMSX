@@ -1,13 +1,13 @@
-import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../ai/behaviourtree";
-import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../component/basecomponent";
-import { StateMachineController } from "../fsm/fsmcontroller";
-import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
-import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../rompack/rompack";
-import { insavegame, onload } from "../serializer/gameserializer";
-import { EventSubscriber } from './eventemitter';
-import { $ } from './game';
+import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../../ai/behaviourtree";
+import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../../component/basecomponent";
+import { StateMachineController } from "../../fsm/fsmcontroller";
+import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
+import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
+import { insavegame, onload } from "../../serializer/gameserializer";
+import { EventSubscriber } from '../eventemitter';
+import { $ } from '../game';
 import { ObjectTracker } from "./objecttracker";
-import { middlepoint_area, new_area, new_vec2, new_vec3 } from './utils';
+import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -181,7 +181,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	protected setPosZ(z: number) {
 		this.pos.z = z; // Set position here, as accessors cannot be decorated with update_tagged_components
 		// Mark depth-sort dirty for the object's space to ensure correct draw order
-		try { $.model.markDepthDirtyForObjectId(this.id); } catch { /* no-op if model not ready */ }
+		try { $.world.markDepthDirtyForObjectId(this.id); } catch { /* no-op if model not ready */ }
 	}
 
 	/**
@@ -234,7 +234,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public set z_nonotify(z: number) {
 		this.pos.z = z;
 		// Mark depth-sort dirty for the object's space to ensure correct draw order. This is still required.
-		$.model.markDepthDirtyForObjectId(this.id);
+		$.world.markDepthDirtyForObjectId(this.id);
 	}
 
 	/**
@@ -594,7 +594,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * @returns The generated unique identifier.
 	 */
 	protected generateId(): string {
-		const model = $.model;
+		const model = $.world;
 		let result: string;
 		do {
 			const baseId = this.constructor.name;

@@ -1,4 +1,4 @@
-import { $, build_fsm, CameraObject, CameraProjectionType, GameObject, insavegame, onload, StateMachineBlueprint } from '../bmsx';
+import { $, $world, build_fsm, CameraObject, CameraProjectionType, GameObject, insavegame, onload, StateMachineBlueprint } from '../bmsx';
 import { Action } from './bootloader';
 
 @insavegame
@@ -144,16 +144,16 @@ export class CameraController extends GameObject {
 
 		if (input.getActionState('save').justpressed) {
 			this.idx = (this.idx + 1) % this.cameras.length;
-			$.model.activeCameraId = this.cameras[this.idx].id;
+			$world.activeCameraId = this.cameras[this.idx].id;
 			console.log(`Switched to camera ${this.cameras[this.idx].id}`);
 		}
 
 		// if (input.getActionState('load').justpressed) {
-		// 	const extra = $.model.getGameObject<DirectionalLightObject>('extraSun');
+		// 	const extra = $world.getGameObject<DirectionalLightObject>('extraSun');
 		// 	if (extra) extra.active = !extra.active;
 		// }
 
-		const camObj = $.model.activeCameraObject;
+		const camObj = $world.activeCameraObject;
 		if (!camObj) {
 			console.error('No active camera object found');
 			return;

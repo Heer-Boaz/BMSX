@@ -15,18 +15,18 @@ import './test_gamemodel';
 // $2
 
 var _game: Game;
-export let _model: World;
-var _view: GameView;
+export let world: World;
+var view: GameView;
 
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
-    _model = new World({ size: { width: 320, height: 240 }, fsmId: 'model', plugins: [createTestromPlugin()] });
-    _view = new GameView(new_vec2(320, 240));
+    world = new World({ size: { width: 320, height: 240 }, fsmId: 'model', plugins: [createTestromPlugin()] });
+    view = new GameView(new_vec2(320, 240));
 
     _game = new Game();
-    return _game.init({ ...args, model: _model, view: _view }).then(() => {
-        _view.default_font = new BFont(BitmapId);
+    return _game.init({ ...args, world, view }).then(() => {
+        view.default_font = new BFont(BitmapId);
         // Set input maps now that input is initialized
         _game.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
         _game.start();

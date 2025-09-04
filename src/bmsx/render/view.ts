@@ -1,7 +1,7 @@
 ﻿import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
-import type { Mesh } from '../core/mesh';
+import type { Mesh } from '../core/object/mesh';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { multiply_vec, multiply_vec2, shallowCopy } from '../core/utils';
@@ -214,8 +214,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public drawbase(): void {
 		// Gate per-frame sorting using Space.depthSortDirty (set on add/remove/z changes)
-		if ($.model.activeSpace.depthSortDirty) $.model.activeSpace.sort_by_depth();
-		$.model.activeSpace.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
+		if ($.world.activeSpace.depthSortDirty) $.world.activeSpace.sort_by_depth();
+		$.world.activeSpace.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
 	}
 
 	/**

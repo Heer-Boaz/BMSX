@@ -83,7 +83,7 @@ interface CRTOptionsCarrier {
     canvas: HTMLCanvasElement;
 }
 export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: number } } & Partial<CRTOptionsCarrier>): FrameData {
-    const mainCam = $.model.activeCamera3D as Camera | undefined;
+    const mainCam = $.world.activeCamera3D as Camera | undefined;
     const views: View[] = [];
     if (mainCam) {
         const invView = mainCam.view; // inverse not exposed

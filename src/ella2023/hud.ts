@@ -19,7 +19,7 @@ export class Hud extends SpriteObject {
     override paint(): void {
         super.paint();
         // Update hitpoints
-        const model = $.model;
+        const model = $.world;
         const view = $.view;
         const player = model.getGameObject<Fighter>('player');
         const sinterklaas = model.getGameObject<Fighter>('sinterklaas');

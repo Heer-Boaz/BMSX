@@ -3,8 +3,8 @@ import { TransformComponent } from "../component/transformcomponent";
 import type { World } from "../core/world";
 import { EventEmitter } from "../core/eventemitter";
 import { $ } from "../core/game";
-import type { GameObject } from "../core/gameobject";
-import { MeshObject } from "../core/mesh";
+import type { GameObject } from "../core/object/gameobject";
+import { MeshObject } from "../core/object/mesh";
 import { mod } from "../core/utils";
 import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
@@ -82,7 +82,7 @@ export class PreTagSystem extends ECSystem {
 	}
 }
 
-// helper type-guards to avoid using ``
+// Helper type-guards to avoid using `as any`
 function isBehaviorTreeObject(o: GameObject): o is GameObject & {
 	btreecontexts: Record<string, unknown>;
 	tickTree: (id: string) => void;
@@ -308,13 +308,13 @@ export class TileCollisionSystem extends ECSystem {
 			let newy = o.pos.y;
 			// X axis movement
 			if (newx < oldx) {
-				if (hasCollidesWithTile($.model) && $.model.collidesWithTile?.(o, 'left')) {
+				if (hasCollidesWithTile($.world) && $.world.collidesWithTile?.(o, 'left')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'left' as const });
 					newx += TileSize - mod(newx, TileSize);
 				}
 				o.pos.x = ~~newx;
 			} else if (newx > oldx) {
-				if (hasCollidesWithTile($.model) && $.model.collidesWithTile?.(o, 'right')) {
+				if (hasCollidesWithTile($.world) && $.world.collidesWithTile?.(o, 'right')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'right' as const });
 					newx -= newx % TileSize;
 				}
@@ -322,13 +322,13 @@ export class TileCollisionSystem extends ECSystem {
 			}
 			// Y axis movement
 			if (newy < oldy) {
-				if ($.model.collidesWithTile?.(o, 'up')) {
+				if ($.world.collidesWithTile?.(o, 'up')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'up' as const });
 					newy += TileSize - mod(newy, TileSize);
 				}
 				o.pos.y = ~~newy;
 			} else if (newy > oldy) {
-				if ($.model.collidesWithTile?.(o, 'down')) {
+				if ($.world.collidesWithTile?.(o, 'down')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'down' as const });
 					newy -= newy % TileSize;
 				}
@@ -468,8 +468,8 @@ export class PhysicsCollisionEventSystem extends ECSystem {
         const events: CollisionEvent[] = (model as any).drainPhysicsEvents?.() ?? [];
         if (!events || events.length === 0) return;
         for (const evt of events) {
-            const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.model.getGameObject(evt.a.userData) : (evt.a.userData as unknown);
-            const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.model.getGameObject(evt.b.userData) : (evt.b.userData as unknown);
+            const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.world.getGameObject(evt.a.userData) : (evt.a.userData as unknown);
+            const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.world.getGameObject(evt.b.userData) : (evt.b.userData as unknown);
             if (!goA && !goB) continue;
             const payload = { type: evt.type, otherId: (goB as any)?.id ?? null, point: evt.point, normal: evt.normal };
             if (goA) EventEmitter.instance.emit('physicsCollision', goA as GameObject, payload);

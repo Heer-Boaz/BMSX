@@ -20,25 +20,25 @@ export class GameplayTags implements RegisterablePersistent {
 	private static _instance: GameplayTags;
 	public static get instance(): GameplayTags { return this._instance ?? (this._instance = new GameplayTags()); }
 
-	private world = new Set<TagId>();
-	private scoped = new Map<Identifier, Set<TagId>>();
+	private worldTags = new Set<TagId>();
+	private scopedTags = new Map<Identifier, Set<TagId>>();
 
 	private constructor() { Registry.instance.register(this); }
 
 	public dispose(): void {
-		this.world.clear();
-		this.scoped.clear();
+		this.worldTags.clear();
+		this.scopedTags.clear();
 	}
 
 	// World tags
-	addWorld(tag: TagId): void { this.world.add(tag); }
-	removeWorld(tag: TagId): void { this.world.delete(tag); }
-	hasWorld(tag: TagId): boolean { return this.world.has(tag); }
+	addWorldTag(tag: TagId): void { this.worldTags.add(tag); }
+	removeWorldTag(tag: TagId): void { this.worldTags.delete(tag); }
+	hasWorldTag(tag: TagId): boolean { return this.worldTags.has(tag); }
 
 	// Scoped tags (custom scope ids)
-	add(scope: Identifier, tag: TagId): void { (this.scoped.get(scope) ?? this.scoped.set(scope, new Set()).get(scope)!).add(tag); }
-	remove(scope: Identifier, tag: TagId): void { this.scoped.get(scope)?.delete(tag); }
-	has(scope: Identifier, tag: TagId): boolean { return !!this.scoped.get(scope)?.has(tag); }
+	add(scope: Identifier, tag: TagId): void { (this.scopedTags.get(scope) ?? this.scopedTags.set(scope, new Set()).get(scope)!).add(tag); }
+	remove(scope: Identifier, tag: TagId): void { this.scopedTags.get(scope)?.delete(tag); }
+	has(scope: Identifier, tag: TagId): boolean { return !!this.scopedTags.get(scope)?.has(tag); }
 
 	// Evaluate a tag query against a set of resolvers
 	evaluate(expr: TagExpr, resolvers: Array<(t: TagId) => boolean>): boolean {

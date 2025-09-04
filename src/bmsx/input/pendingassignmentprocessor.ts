@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { SpriteObject } from '../core/sprite';
+import { SpriteObject } from '../core/object/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { State } from '../fsm/state';
@@ -184,7 +184,7 @@ export class PendingAssignmentProcessor {
      * @param positionIndex - The position index of the icon.
      */
     private createSelectPlayerIconIfNeeded(gamepadInput: InputHandler, positionIndex: number) {
-        const model = $.model;
+        const model = $.world;
         if (!this.icon) { // If the joystick icon doesn't exist yet, create it
             const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
             this.icon = joystick_icon;
@@ -250,8 +250,8 @@ export class PendingAssignmentProcessor {
             }
         }
         else {
-            if (!$.model.getFromCurrentSpace(this.icon.id)) {
-                $.model.move_obj_to_space(this.icon.id, $.model.activeSpaceId);
+            if (!$.world.getFromCurrentSpace(this.icon.id)) {
+                $.world.move_obj_to_space(this.icon.id, $.world.activeSpaceId);
             }
             this.icon.x = this.calcIconPositionX(this.pendingIndex);
             if (this.checkNonConsumedPressed('a', gamepadInput)) {
@@ -289,7 +289,7 @@ export class PendingAssignmentProcessor {
      */
     removeIcon(): void {
         if (this.icon) {
-            $.model.exile(this.icon);
+            $.world.exile(this.icon);
             this.icon = undefined;
         }
     }

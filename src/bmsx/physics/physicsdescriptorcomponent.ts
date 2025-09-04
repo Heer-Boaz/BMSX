@@ -30,7 +30,7 @@ export class PhysicsDescriptorComponent extends Component {
         }
     }
     private attachRuntime() {
-        const parent = $.model.getGameObject(this.parentid); if (!parent) return;
+        const parent = $.world.getGameObject(this.parentid); if (!parent) return;
         if (parent.getComponent(PhysicsComponent)) return;
         // console.log('[PhysicsDescriptorComponent] Attaching runtime physics to', parent.id);
         // NOTE: Do NOT force 'kinematic' here. Kinematic bodies were never integrated in PhysicsWorld.step,

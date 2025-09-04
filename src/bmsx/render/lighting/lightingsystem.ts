@@ -1,7 +1,7 @@
 import { Float32ArrayPool } from '../../core/utils';
 import { $ } from '../../core/game';
 import type { AmbientLight, DirectionalLight, PointLight } from '../3d/light';
-import { DirectionalLightObject, PointLightObject } from '../../core/lightobject';
+import { DirectionalLightObject, PointLightObject } from '../../core/object/lightobject';
 import * as MeshPipeline from '../3d/mesh_pipeline';
 // Avoid backend-specific imports here; use conservative defaults for pooled arrays
 const DEFAULT_MAX_DIR_LIGHTS = 4;
@@ -23,9 +23,9 @@ export class LightingSystem {
 
 	update(_ambient: AmbientLight | null): LightingFrameState {
 		// Renderer-pulled: rebuild light lists from model indexes each frame
-		const active = $.model.getActiveLights({ scope: 'all' });
+		const active = $.world.getActiveLights({ scope: 'all' });
 		MeshPipeline.clearLights();
-		let ambient: AmbientLight | null = $.model.ambientLight?.light as AmbientLight || null;
+		let ambient: AmbientLight | null = $.world.ambientLight?.light as AmbientLight || null;
 		for (const lo of active) {
 			if (lo instanceof DirectionalLightObject) MeshPipeline.addDirectionalLight(lo.id, lo.light as DirectionalLight);
 			else if (lo instanceof PointLightObject) MeshPipeline.addPointLight(lo.id, lo.light as PointLight);

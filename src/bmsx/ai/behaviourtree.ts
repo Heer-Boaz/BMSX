@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { GameObject } from '../core/gameobject';
+import { GameObject } from '../core/object/gameobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame } from '../serializer/gameserializer';
 
@@ -321,7 +321,7 @@ export abstract class BTNode implements Identifiable {
      * @param targetid The Identifier of the target object.
      * @returns The target object casted to the specified type.
      */
-    public getTarget<T extends GameObject>(targetid: Identifier) { return $.model.getGameObject<T>(targetid); }
+    public getTarget<T extends GameObject>(targetid: Identifier) { return $.world.getGameObject<T>(targetid); }
 
     constructor(id: BehaviorTreeID, _priority = 0) {
         this.id = id;

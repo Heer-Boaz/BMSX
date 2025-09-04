@@ -11,7 +11,7 @@ import type {
 	AttributeSet,
 	GameplayEffect,
 	TagId
-} from './types';
+} from './gastypes';
 
 type NowFn = () => number;
 
@@ -56,7 +56,7 @@ export class AbilitySystemComponent extends Component {
 		AbilitySystemComponent.registry.add(this);
 	}
 
-	get model(): World { return $.model; }
+	get model(): World { return $.world; }
 
 	public addTag(tag: TagId): void { this.tags.add(tag); }
 	public removeTag(tag: TagId): void { this.tags.delete(tag); }

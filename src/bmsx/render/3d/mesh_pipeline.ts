@@ -2,7 +2,7 @@
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
 import { makePipelineBuildDesc, PassEncoder, shaderModule } from '../..';
 import { $ } from '../../core/game';
-import type { Mesh } from '../../core/mesh';
+import type { Mesh } from '../../core/object/mesh';
 import { Float32ArrayPool } from '../../core/utils';
 import type { vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
@@ -582,7 +582,7 @@ function cullAndSortMeshes(list: Iterable<DrawMeshOptions>): { instancedGroups: 
     const temp: DrawMeshOptions[] = [];
     for (const it of list) temp.push(it);
     if (temp.length === 0) return { instancedGroups: new Map(), singles: [] };
-    const activeCamera = $.model.activeCamera3D; activeCamera.viewProjection;
+    const activeCamera = $.world.activeCamera3D; activeCamera.viewProjection;
     const filtered = temp.filter(({ mesh: m, matrix }) => {
         if (m.boundingRadius === 0) return true;
         const cx = matrix[12] + m.boundingCenter[0] * matrix[0] + m.boundingCenter[1] * matrix[4] + m.boundingCenter[2] * matrix[8];
@@ -874,7 +874,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         gl.depthMask(false);
-        const cam = $.model.activeCamera3D; const camPos = cam?.position;
+        const cam = $.world.activeCamera3D; const camPos = cam?.position;
         if (camPos) {
             transparentSingles.sort((a, b) => {
                 const da = (a.matrix[12] - camPos.x) ** 2 + (a.matrix[13] - camPos.y) ** 2 + (a.matrix[14] - camPos.z) ** 2;
@@ -936,7 +936,7 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
         prepare: (backend, _state) => {
             const gv = getRenderContext();
             const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-            const cam = $.model.activeCamera3D;
+            const cam = $.world.activeCamera3D;
             if (!cam) {
                 console.warn('[Draw Meshes] No active 3D camera found, skipping mesh draw');
                 return;

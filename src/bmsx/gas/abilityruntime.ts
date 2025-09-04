@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { ECSystem, TickGroup } from '../ecs/system';
+import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import { AbilitySystemComponent } from './abilitysystem';
 
 export class AbilityRuntimeSystem extends ECSystem {

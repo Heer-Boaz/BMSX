@@ -1,5 +1,5 @@
-import { EventEmitter } from './eventemitter';
-import { EventTimeline } from './eventtimeline';
+import { EventEmitter } from '../eventemitter';
+import { EventTimeline } from '../eventtimeline';
 import { GameObject } from './gameobject';
 
 export type SpawnFactory = (data?: any) => GameObject | void;

@@ -1,4 +1,4 @@
-import { CameraObject } from '../core/cameraobject';
+import { CameraObject } from '../core/object/cameraobject';
 import type { vec3 } from '../rompack/rompack';
 import { PathRunner } from './pathrunner';
 

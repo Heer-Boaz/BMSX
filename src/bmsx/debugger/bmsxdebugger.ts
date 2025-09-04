@@ -1,11 +1,11 @@
 import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
-import { CameraObject } from '../core/cameraobject';
+import { CameraObject } from '../core/object/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import { $ } from '../core/game';
-import { GameObject } from '../core/gameobject';
+import { GameObject } from '../core/object/gameobject';
 import { Registry } from '../core/registry';
-import { SpriteObject } from '../core/sprite';
+import { SpriteObject } from '../core/object/sprite';
 import { div_vec2, new_vec2 } from '../core/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { PhysicsDebugComponent } from '../physics/physicsdebugcomponent';
@@ -67,7 +67,7 @@ export class PhysicsOverlayRenderer extends Component {
         // Gather all PhysicsDebugComponents
         const debugComponents: PhysicsDebugComponent[] = [];
         // Iterate all spaces for game objects
-        const modelAny: any = $.model;
+        const modelAny: any = $.world;
         const spaceMap = modelAny[Symbol.for('id2space')] || modelAny['id2space'] || modelAny['spaceid_2_space'] || modelAny['spaceid_2_space'.toString()];
         if (spaceMap) {
             for (const sid in spaceMap) {
@@ -81,7 +81,7 @@ export class PhysicsOverlayRenderer extends Component {
         }
         // if (!debugComponents.length) return;
         // Camera-aware projection: project 3D -> NDC -> screen (overlay canvas coordinates)
-        const activeCamObj = $.model.getGameObject($.model.activeCameraId) as CameraObject | undefined;
+        const activeCamObj = $.world.getGameObject($.world.activeCameraId) as CameraObject | undefined;
         const cam = activeCamObj?.camera;
         if (!cam) return; // no camera yet
         const vp = cam.viewProjection; // Float32Array length 16
@@ -585,7 +585,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
     addContent(headerRow, 'th', 'Type');
     addContent(headerRow, 'th', 'ID');
 
-    $.model.activeObjects.forEach(o => {
+    $.world.activeObjects.forEach(o => {
         let row = addContent(table, 'tr', null);
         row.classList.add('selectableoption');
         addContent(row, 'td', `${o.constructor.name}`);
@@ -728,7 +728,7 @@ export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): v
         draggedObj = null; // Make sure that we stop dragging any object
     }
 
-    openObjectDetailMenu($.model, 'The Model', previous);
+    openObjectDetailMenu($.world, 'The Model', previous);
 }
 
 function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
@@ -764,7 +764,7 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | nu
 
     const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
 
-    const objsUnderCursor: GameObject[] = $.model.activeObjects.filter(o =>
+    const objsUnderCursor: GameObject[] = $.world.activeObjects.filter(o =>
         o.id !== 'debug_highlighter' &&
         o.hittable &&
         (

@@ -1,6 +1,4 @@
-import { $, GameObject, Msx1Colors, TextWriter } from '../bmsx';
-import { Pool } from '../bmsx/core/pool';
-import { PooledGameObject } from '../bmsx/core/pooledgameobject';
+import { $, $world, GameObject, Msx1Colors, Pool, PooledGameObject, TextWriter } from '../bmsx';
 
 interface P { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; max: number; r: number; g: number; b: number; a: number; size: number; grow: number; }
 
@@ -73,9 +71,9 @@ export class DamageNumberManager extends GameObject {
         });
     }
     override paint(): void {
-        const cam = $.model.activeCamera3D; if (!cam) return;
+        const cam = $world.activeCamera3D; if (!cam) return;
         const m = cam.viewProjection as Float32Array;
-        const gw = $.model.gamewidth, gh = $.model.gameheight;
+        const gw = $world.gamewidth, gh = $world.gameheight;
         this.pool.forEachActive(d => {
             const x = d.x, y = d.y, z = d.z;
             const cx = x * m[0] + y * m[4] + z * m[8] + m[12];

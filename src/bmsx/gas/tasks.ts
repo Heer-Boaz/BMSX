@@ -1,10 +1,10 @@
 import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
-import { ECSystem, TickGroup } from '../ecs/system';
+import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { AbilitySystemComponent } from './abilitysystem';
-import type { AbilityYield } from './types';
+import type { AbilityYield } from './gastypes';
 
 export type TaskYield = AbilityYield; // Reuse wait engine
 
@@ -59,7 +59,7 @@ export class TaskDirector implements RegisterablePersistent {
   private makeCtx(ownerId?: Identifier): TaskContext {
     return {
       ownerId,
-      model: $.model,
+      model: $.world,
       director: this,
       emit: (name: string, payload?: any) => EventEmitter.instance.emit(name, { id: ownerId ?? 'task' } as any, payload)
     };
@@ -119,7 +119,7 @@ export class TaskRuntimeSystem extends ECSystem {
     const now = performance.now();
     for (const runner of [...TaskDirector.instance.runners]) {
       // Cancel actor task if owner gone
-      if (runner.ownerId && !$.model.exists(runner.ownerId)) { TaskDirector.instance.cancel(runner.id); continue; }
+      if (runner.ownerId && !$.world.exists(runner.ownerId)) { TaskDirector.instance.cancel(runner.id); continue; }
       // Honor waits
       if (runner.wait) {
         if (runner.wait.kind === 'time') { if (now < runner.wait.until) continue; runner.wait = undefined; }
@@ -138,7 +138,7 @@ export class TaskRuntimeSystem extends ECSystem {
           break;
         }
         case 'waitTag': {
-          const asc = runner.ownerId ? $.model.getGameObject(runner.ownerId)?.getComponent?.(AbilitySystemComponent) as AbilitySystemComponent : undefined;
+          const asc = runner.ownerId ? $.world.getGameObject(runner.ownerId)?.getComponent?.(AbilitySystemComponent) as AbilitySystemComponent : undefined;
           if (!asc) break; // no-op if no ASC
           if ((asc as AbilitySystemComponent).hasGameplayTag(value.tag) !== value.present) {
             // emulate tag wait via polling next tick
@@ -165,13 +165,13 @@ export const WaitEvent = (name: string): TaskFn => function* () { yield { type: 
 export const WaitTag = (tag: string, present: boolean = true): TaskFn => function* () { yield { type: 'waitTag', tag, present }; };
 
 export const SetTag = (owner: Identifier, tag: string, present: boolean): TaskFn => function* (_ctx) {
-  const go = $.model.getGameObject(owner);
+  const go = $.world.getGameObject(owner);
   const asc = go?.getComponent?.(AbilitySystemComponent) as AbilitySystemComponent | undefined;
   if (asc) present ? asc.addTag(tag) : asc.removeTag(tag);
 };
 
 export const ApplyEffect = (owner: Identifier, effect: Parameters<AbilitySystemComponent['applyEffect']>[0]): TaskFn => function* () {
-  const go = $.model.getGameObject(owner);
+  const go = $.world.getGameObject(owner);
   const asc = go?.getComponent?.(AbilitySystemComponent) as AbilitySystemComponent | undefined;
   if (asc) asc.applyEffect(effect);
 };

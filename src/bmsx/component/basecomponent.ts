@@ -1,6 +1,6 @@
 import { EventEmitter, EventSubscription } from '../core/eventemitter';
 import { $ } from '../core/game';
-import { type GameObjectConstructorBaseOrAbstract } from '../core/gameobject';
+import { type GameObjectConstructorBaseOrAbstract } from '../core/object/gameobject';
 import { Registry } from '../core/registry';
 import type { Disposable, Identifiable, Identifier, Registerable } from '../rompack/rompack';
 import { AbstractConstructor } from '../rompack/rompack';

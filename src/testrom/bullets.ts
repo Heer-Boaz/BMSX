@@ -1,4 +1,4 @@
-import { $, GameObject } from '../bmsx';
+import { $, $world, GameObject } from '../bmsx';
 import { Pool } from '../bmsx/core/pool';
 import type { PhysicsWorld } from '../bmsx/physics/physicsworld';
 import { EnemyHealthComponent } from './enemyhealth';
@@ -51,7 +51,7 @@ export class BulletManager extends GameObject {
         const bodies = phys.getBodies();
         for (const body of bodies) {
             if (!body.invMass || body.isTrigger) continue;
-            const go = $.model.getGameObject(body.userData);
+            const go = $world.getGameObject(body.userData);
             if (!go) continue;
             const health = go.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent;
             if (!health || health.dead) continue;

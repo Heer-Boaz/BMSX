@@ -1,7 +1,7 @@
 import { type Identifier, Vector } from '../rompack/rompack';
 import { insavegame, excludepropfromsavegame } from '../serializer/gameserializer';
 import { $ } from './game';
-import { GameObject } from './gameobject';
+import { GameObject } from './object/gameobject';
 import { id2obj, id2objectType, World, makeIndexProxy } from './world';
 export type initial_world_spaces = 'game_start' | 'default';
 
@@ -44,7 +44,7 @@ export class Space {
      */
     public ondispose?: () => void;
 
-    // Decouple from global `$`: prefer injected model; fallback to $.model.
+    // Decouple from global `$`: prefer injected model; fallback to $world.
     @excludepropfromsavegame
     private _model?: World;
     public bindModel(m: World): void { this._model = m; }
@@ -81,7 +81,7 @@ export class Space {
      */
     public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
-        const model = this._model ?? $.model;
+        const model = this._model ?? $.world;
         if (model.objToSpaceMap?.has(o.id)) {
             console.error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${model.objToSpaceMap.get(o.id)}'!`);
             return;
@@ -113,7 +113,7 @@ export class Space {
         !skip_ondispose_event && o.dispose?.(); // Trigger ondispose event before removing the object from the space. `ondispose` unsubscribes the object from events and removes it from the registry
         if (index > -1) this.objects.splice(index, 1);
         this._id2objMap.delete(o.id);
-        const model = this._model ?? $.model;
+        const model = this._model ?? $.world;
         model.objToSpaceMap.delete(o.id);
         model.onObjectExiled(this, o);
         if (model.depthDirtyBatch) model.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
@@ -124,7 +124,7 @@ export class Space {
      * @returns {void} Nothing
      */
     public clear(): void {
-        const model = this._model ?? $.model;
+        const model = this._model ?? $.world;
         for (const o of this.objects) {
             model.onObjectExiled(this, o);
             o.dispose?.();

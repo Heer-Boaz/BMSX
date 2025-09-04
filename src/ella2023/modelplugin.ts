@@ -36,8 +36,8 @@ export class EilaEventService {
 	}
 
 	public theOtherFighter(fighter: Fighter): Fighter | null {
-		if (fighter.id === 'player') return $.model.getGameObject('sinterklaas');
-		return $.model.getGameObject('player');
+		if (fighter.id === 'player') return $.world.getGameObject('sinterklaas');
+		return $.world.getGameObject('player');
 	}
 
 	@subscribesToGlobalEvent('hit_animation_end')
@@ -62,8 +62,8 @@ export class EilaEventService {
 
 	@subscribesToGlobalEvent('humiliated_animation_end')
 	public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
-		const player = $.model.getGameObject<Fighter>('player');
-		const sinterklaas = $.model.getGameObject<Fighter>('sinterklaas');
+		const player = $.world.getGameObject<Fighter>('player');
+		const sinterklaas = $.world.getGameObject<Fighter>('sinterklaas');
 
 		const hp_player = player?.hp ?? 0;
 		const hp_sinterklaas = sinterklaas?.hp ?? 0;
@@ -76,10 +76,10 @@ export class EilaEventService {
 
 		switch (character) {
 			case 'eila':
-				$.model.sc.transition_to('gameover');
+				$.world.sc.transition_to('gameover');
 				break;
 			case 'sinterklaas':
-				$.model.sc.transition_to('hoera');
+				$.world.sc.transition_to('hoera');
 				break;
 		}
 	}

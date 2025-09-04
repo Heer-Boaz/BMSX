@@ -1,4 +1,4 @@
-import { $ } from '../bmsx';
+import { $, $world } from '../bmsx';
 import { Component, componenttags_postprocessing } from '../bmsx/component/basecomponent';
 import type { color_arr, Identifier } from '../bmsx/rompack/rompack';
 import { insavegame } from '../bmsx/serializer/gameserializer';
@@ -24,7 +24,7 @@ export class EnemyHealthComponent extends Component {
         // Handle damage flash tint (temporarily lerp base color toward flash color then restore)
         if (this.flashTimer > 0) {
             this.flashTimer -= $.deltaTime / 1000;
-            const go = $.model.getGameObject(this.parentid);
+            const go = $world.getGameObject(this.parentid);
             if (go && 'meshes' in go) {
                 const meshObj = go as unknown as { meshes: { material?: { color: color_arr; }; }[] };
                 // Capture originals once at flash start
@@ -46,7 +46,7 @@ export class EnemyHealthComponent extends Component {
                 });
             }
         } else if (this.originalColors) {
-            const go = $.model.getGameObject(this.parentid);
+            const go = $world.getGameObject(this.parentid);
             if (go && 'meshes' in go) {
                 const meshObj = go as unknown as { meshes: { material?: { color: color_arr; }; }[] };
                 meshObj.meshes.forEach((m, i) => { const mat = m.material; const o = this.originalColors?.[i]?.[0]; if (mat && o) { mat.color[0] = o[0]; mat.color[1] = o[1]; mat.color[2] = o[2]; mat.color[3] = o[3]; } });
@@ -54,7 +54,7 @@ export class EnemyHealthComponent extends Component {
             this.originalColors = undefined; // clear cache after restore
         }
         if (this.dead && this.diedAt) {
-            const t = performance.now() / 1000 - this.diedAt; if (t > this.despawnDelay) { const go = $.model.getGameObject(this.parentid); if (go) go.dispose(); }
+            const t = performance.now() / 1000 - this.diedAt; if (t > this.despawnDelay) { const go = $world.getGameObject(this.parentid); if (go) go.dispose(); }
         }
     }
 }

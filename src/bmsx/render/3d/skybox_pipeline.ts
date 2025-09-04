@@ -137,7 +137,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
             init(gl);
         },
         writesDepth: false,
-        shouldExecute: () => !!$.model.activeCamera3D && !!skyboxKey,
+        shouldExecute: () => !!$.world.activeCamera3D && !!skyboxKey,
         exec: (backend, fbo, s) => {
             const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
             drawSkyboxWithState(gl, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
@@ -145,7 +145,7 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
         prepare: (backend, _state) => {
             const gv = getRenderContext();
             const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-            const cam = $.model.activeCamera3D;
+            const cam = $.world.activeCamera3D;
             if (!cam) return;
             const tex = $.texmanager.getTexture(skyboxKey) as TextureHandle | undefined;
             if (!tex) return;

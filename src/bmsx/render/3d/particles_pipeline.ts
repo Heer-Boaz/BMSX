@@ -89,7 +89,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
         camRight.set(state.camRight);
         camUp.set(state.camUp);
     } else {
-        const activeCamera = $.model.activeCamera3D;
+        const activeCamera = $.world.activeCamera3D;
         M4.viewRightUpInto(activeCamera.view, camRight, camUp);
     }
     // Batch by texture + ambient config
@@ -112,7 +112,7 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     // Program is bound by backend pipeline
-    gl.uniformMatrix4fv(viewProjLocation, false, state ? state.viewProj : $.model.activeCamera3D.viewProjection);
+    gl.uniformMatrix4fv(viewProjLocation, false, state ? state.viewProj : $.world.activeCamera3D.viewProjection);
     gl.uniform3fv(cameraRightLocation, camRight);
     gl.uniform3fv(cameraUpLocation, camUp);
     gl.uniform1i(textureLocation, TEXTURE_UNIT_PARTICLE);
@@ -192,7 +192,7 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
         prepare: (_backend, _state) => {
             const gv = getRenderContext();
             const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
-            const cam = $.model.activeCamera3D;
+            const cam = $.world.activeCamera3D;
             if (!cam) return;
 
             M4.viewRightUpInto(cam.view, camRight, camUp);

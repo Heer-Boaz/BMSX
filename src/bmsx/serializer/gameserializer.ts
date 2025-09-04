@@ -616,7 +616,7 @@ export class Savegame {
         const view = $.view as GameView;
         const viewState: ViewState = {
             dynamicAtlasIndex: view.dynamicAtlas,
-            activeCameraId: $.model.activeCameraId ?? null,
+            activeCameraId: $.world.activeCameraId ?? null,
             skyboxFaceIds: view.skyboxFaceIds,
         };
         return { viewState };
@@ -630,7 +630,7 @@ export class Savegame {
             if (this.viewState.dynamicAtlasIndex !== undefined) {
                 view.dynamicAtlas = this.viewState.dynamicAtlasIndex;
             }
-            $.model.activeCameraId = this.viewState.activeCameraId;
+            $.world.activeCameraId = this.viewState.activeCameraId;
             if (this.viewState.skyboxFaceIds) {
                 view.setSkybox(this.viewState.skyboxFaceIds);
             }

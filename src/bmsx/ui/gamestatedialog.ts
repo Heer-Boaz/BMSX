@@ -6,7 +6,7 @@ import { $ } from '../core/game';
  * @returns void
  */
 export function show_download_savestate_dialog() {
-    const data = $.model.save();
+    const data = $.world.save();
 
     const a = document.createElement('a');
 
@@ -87,7 +87,7 @@ function get_first_selected_file_from_openfile_dialog(files: FileList): File {
 function load_savestate(this: HTMLInputElement, _ev: Event) {
     const file = get_first_selected_file_from_openfile_dialog(setload.files);
     if (file) {
-        file.arrayBuffer().then(buf => $.model.load(new Uint8Array(buf)));
+        file.arrayBuffer().then(buf => $.world.load(new Uint8Array(buf)));
     }
     setload = undefined;
 }

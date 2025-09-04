@@ -17,7 +17,7 @@ import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World } from "./world";
 import { EventEmitter, EventPayload } from "./eventemitter";
 import { BFont } from './font';
-import { GameObject } from "./gameobject";
+import { GameObject } from "./object/gameobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
@@ -155,7 +155,7 @@ export class Game {
 
 	public get rompack(): RomPack { return $rompack; }
 
-	public get model(): World { return this.registry.get<World>('model'); }
+	public get world(): World { return this.registry.get<World>('model'); }
 
 	public get view(): GameView { return this.registry.get<GameView>('view'); }
 
@@ -177,7 +177,7 @@ export class Game {
 	}
 
 	public getGameObject<T extends GameObject>(id: Identifier): T {
-		return this.model.getGameObject<T>(id);
+		return this.world.getGameObject<T>(id);
 	}
 
 	public has(id: Identifier): boolean {
@@ -193,11 +193,11 @@ export class Game {
 	}
 
 	public spawn(o: GameObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
-		this.model.spawn(o, pos, ignoreSpawnhandler);
+		this.world.spawn(o, pos, ignoreSpawnhandler);
 	}
 
 	public exile(o: GameObject): void {
-		this.model.exile(o);
+		this.world.exile(o);
 	}
 
 	public drawImg(options: DrawImgOptions): void {
@@ -306,7 +306,7 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, world, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
+		const { rompack, world, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
 		// global['$rom'] = rom;
 		// window['$rom'] = rom;
 		$rompack = rompack;
@@ -374,6 +374,7 @@ export class Game {
 
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
+		if (!world) throw new Error('World not passed to game init!');
 		$world = world;
 		world.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
 
@@ -421,7 +422,7 @@ export class Game {
 	 */
 	public update(deltaTime: number): void {
 		const game = $;
-		const model = game.model;
+		const model = game.world;
 		// Step physics first so game object logic can react to post-collision resolved positions.
 		model.run(deltaTime);
 
@@ -515,7 +516,7 @@ export class Game {
 	public canForward() { return this.rewindBuffer.canForward(); }
 
 	private loadRewindFrame(frame: RewindFrame): void {
-		this.model.load(frame.state, true);
+		this.world.load(frame.state, true);
 		window.dispatchEvent(new Event('frame'));
 	}
 

@@ -1,7 +1,7 @@
 import { $, AmbientLightObject, World, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { bclass } from './bclass';
-import { _model, gamepadInputMapping, keyboardInputMapping } from './bootloader';
+import { world, gamepadInputMapping, keyboardInputMapping } from './bootloader';
 import { CameraController } from './camera_controller';
 import { AnimatedMorphSphere, Cube3D, SmallCube3D } from './objects3d';
 import { BitmapId } from './resourceids';
@@ -34,11 +34,11 @@ export class gamemodel extends World {
 						const small = new SmallCube3D(1);
 						const small2 = new SmallCube3D(2);
 						const animatedMorphSphere = new AnimatedMorphSphere();
-						_model.spawn(new bclass(), new_vec3(100, 100, 1000));
-						_model.spawn(cube, new_vec3(0, 0, 0));
-						_model.spawn(small, new_vec3(5, 0, 0));
-						_model.spawn(small2, new_vec3(5, 5, 5));
-						_model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
+						world.spawn(new bclass(), new_vec3(100, 100, 1000));
+						world.spawn(cube, new_vec3(0, 0, 0));
+						world.spawn(small, new_vec3(5, 0, 0));
+						world.spawn(small2, new_vec3(5, 5, 5));
+						world.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
 						const parentTf = cube.getComponent(TransformComponent);
 						const childTf = small.getComponent(TransformComponent);
@@ -66,25 +66,25 @@ export class gamemodel extends World {
 
 						// Elevated starting camera to view massive scaled city
 						// Lower the camera closer to street level so spawned buildings are immediately visible
-						_model.spawn(cam1, V3.of(
+						world.spawn(cam1, V3.of(
 							-60,
 							48, // was 260
 							120
 						));
 						cam1.camera.screenLook(1.7687161091476518, -1.418966871448069, -2.6349415504373304);
-						_model.spawn(cam2, V3.of(5, 12, 27));
+						world.spawn(cam2, V3.of(5, 12, 27));
 
-						_model.activeCameraId = cam1.id;
+						world.activeCameraId = cam1.id;
 
 						const ambient = new AmbientLightObject([1.0, 1.0, 1.0], .2, 'amb');
 						const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
 						const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [1.0, 1.0, 1.0], 1, 'extraSun');
 						const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 1.0, 1.0], 6.0, 2, 'lamp');
 
-						_model.spawn(ambient);
-						_model.spawn(sun);
-						_model.spawn(extraSun);
-						_model.spawn(lamp);
+						world.spawn(ambient);
+						world.spawn(sun);
+						world.spawn(extraSun);
+						world.spawn(lamp);
 
 						$.view.setSkybox({
 							posX: BitmapId.skybox,
@@ -95,7 +95,7 @@ export class gamemodel extends World {
 							negZ: BitmapId.skybox,
 						});
 
-						_model.spawn(new CameraController(cam1, cam2));
+						world.spawn(new CameraController(cam1, cam2));
 
 						// ===== Rail shooter demo scaffold =====
 						// Simple S-curve forward rail reminiscent of an urban fly-through
@@ -228,7 +228,7 @@ export class gamemodel extends World {
 						// 			bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
 						// 			_model.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
 						// 		}
-						// 		for (const impact of bullets.popImpacts()) { const enemy = $.model.getGameObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
+						// 		for (const impact of bullets.popImpacts()) { const enemy = $world.getGameObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
 						// 	}
 						// }
 						// _model.spawn(new RailDemoDriver('railDriver'));

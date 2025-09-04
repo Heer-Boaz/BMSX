@@ -1,4 +1,4 @@
-import { GameObject } from '../core/gameobject';
+import { GameObject } from '../core/object/gameobject';
 import { M4, Mat4, quat } from '../render/3d/math3d';
 import type { Identifier, Oriented, Scaled, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';

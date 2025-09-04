@@ -160,7 +160,7 @@ export class GameMenu extends GameObject {
                     SM.play(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            $.model.sc.machines.gamemenu.pop();
+                            $world.sc.machines.gamemenu.pop();
                             break;
                         case MenuItem.ChangeOptions:
                             this.CurrentScreen = MenuItem.Options;

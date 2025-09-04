@@ -1,4 +1,4 @@
-import { $, attach_components, CatmullRomPath, color_arr, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from '../bmsx';
+import { $, $world, attach_components, CatmullRomPath, color_arr, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from '../bmsx';
 import { submitParticle } from '../bmsx/render/3d/particles_pipeline';
 import { onload } from '../bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
@@ -341,7 +341,7 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
                     const footprintScaleZ = gSize * (fMin + rng() * fRange);
                     const he: [number, number, number] = [footprintScaleX, height * 0.5, footprintScaleZ];
                     const box = new BuildingMesh([he[0], he[1], he[2]]);
-                    $.model.spawn(box, V3.of(px, s.p.y + he[1], pz));
+                    $world.spawn(box, V3.of(px, s.p.y + he[1], pz));
                     // Color selection
                     if (palette && palette.length) {
                         const col = palette[Math.floor(rng() * palette.length)];
@@ -365,7 +365,7 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
             const h = (8 + rng() * 12) * worldScale;
             const he: [number, number, number] = [(2 + rng() * 2) * worldScale, h * 0.5, (2 + rng() * 2) * worldScale];
             const box = new BuildingMesh([he[0], he[1], he[2]]);
-            $.model.spawn(box, V3.of(first.p.x + (i - 3) * 4, first.p.y + he[1], first.p.z - 6 - rng() * 6));
+            $world.spawn(box, V3.of(first.p.x + (i - 3) * 4, first.p.y + he[1], first.p.z - 6 - rng() * 6));
         }
     }
     if (debugLog) console.log('[CityGen] spawned buildings:', totalSpawned, 'segments:', segs.length, 'seed:', seed, 'skippedDuplicates:', skippedDuplicates, 'cells:', occupied.size, 'worldScale:', worldScale);

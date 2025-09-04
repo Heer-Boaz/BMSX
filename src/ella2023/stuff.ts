@@ -3,7 +3,7 @@ import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
 	$.stopMusic();
-	$.model.sc.transition_to('titlescreen');
+	$.world.sc.transition_to('titlescreen');
 	state.reset(); // Make sure that the tick counter is reset.
 }
 
