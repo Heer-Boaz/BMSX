@@ -460,7 +460,7 @@ export class Input implements RegisterablePersistent {
 	 * @param key The key pressed that triggered the event.
 	 */
 	static preventDefaultEventAction(e: UIEvent, key: string) {
-		if (global.$.running || !global.$.paused) {
+		if ($.running || !$.paused) {
 			switch (key) {
 				case 'Escape':
 				case 'Esc':
@@ -829,13 +829,13 @@ export class Input implements RegisterablePersistent {
 				case 'Space':
 					if (this.getPlayerInput(1).getButtonState(e.code, 'keyboard').consumed) break;
 					else this.getPlayerInput(1).getButtonState(e.code, 'keyboard');
-					if (!global.$.paused) {
-						global.$.paused = true;
-						global.$.debug_runSingleFrameAndPause = false;
+					if (!$.paused) {
+						$.paused = true;
+						$.debug_runSingleFrameAndPause = false;
 					}
 					else {
-						global.$.paused = false;
-						global.$.debug_runSingleFrameAndPause = this.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed;
+						$.paused = false;
+						$.debug_runSingleFrameAndPause = this.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed;
 					}
 					break;
 			}

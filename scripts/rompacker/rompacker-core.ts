@@ -1,19 +1,29 @@
 import { glsl } from "esbuild-plugin-glsl";
+// @ts-ignore
 import type { Stats } from 'fs';
 import type { asset_type, AudioMeta, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
-import type { Resource, resourcetype, RomManifest } from './rompacker.rompack';
+import type { collisiontype, Resource, resourcetype, RomManifest } from './rompacker.rompack';
+// @ts-ignore
 const { build } = require('esbuild');
+// @ts-ignore
 const { join, parse } = require('path');
 
+// @ts-ignore
 const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
+// @ts-ignore
 const { encodeBinary } = require('../../src/bmsx/serializer/binencoder');
+// @ts-ignore
 const pako = require('pako');
+// @ts-ignore
 const minify = require('@node-minify/core');
+// @ts-ignore
 const cleanCSS = require('@node-minify/clean-css');
+// @ts-ignore
 const { loadImage } = require('canvas');
+// @ts-ignore
 const yaml = require('js-yaml');
 
 // Command line parameter for texture atlas usage
@@ -38,6 +48,10 @@ const BOILERPLATE_RESOURCE_ID_MODEL = `export enum ModelId {
 
 const BOILERPLATE_RESOURCE_ID_FSM = `export enum FsmId {
 	none = 'none',`;
+
+declare global {
+	var __dirname: string;
+}
 
 /**
 * Adds a file to an array of files.
@@ -358,6 +372,7 @@ export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: str
  * @param content - The content to be compressed.
  * @returns The compressed content as a Uint8Array.
  */
+// @ts-ignore
 export function zip(content: Buffer): Uint8Array {
 	const toCompress = new Uint8Array(content);
 	return pako.deflate(toCompress);
@@ -515,7 +530,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			if (!idMap.has(r.id)) idMap.set(r.id, []);
 			idMap.get(r.id)!.push(r.name);
 		}
-		const dups = Array.from(idMap.entries()).filter(([id, names]) => names.length > 1);
+		const dups = Array.from(idMap.entries()).filter(([_id, names]) => names.length > 1);
 		if (dups.length > 0) {
 			const msg = dups.map(([id, names]) => `ID ${id} used by: ${names.join(', ')}`).join('\n');
 			throw new Error(`Duplicate ${type} resource IDs found!\n${msg}`);
@@ -531,7 +546,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			if (!nameMap.has(key)) nameMap.set(key, []);
 			nameMap.get(key)!.push(r.filepath);
 		}
-		const dups = Array.from(nameMap.entries()).filter(([name, paths]) => paths.length > 1);
+		const dups = Array.from(nameMap.entries()).filter(([_name, paths]) => paths.length > 1);
 		if (dups.length > 0) {
 			const msg = dups.map(([name, paths]) => `Name "${name}" used by: ${paths.join(', ')}`).join('\n');
 			throw new Error(`Duplicate ${type} resource names found!\n${msg}`);
@@ -564,8 +579,9 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 	/**
 	 * Loads an image from the specified resource object.
 	 * @param _meta The resource object containing information about the image to load.
- * @returns A Promise that resolves with the loaded image.
- */
+		 * @returns A Promise that resolves with the loaded image.
+	 */
+	// @ts-ignore
 	async function getImageFromBuffer(buffer: Buffer) {
 		const base64Encoded = buffer.toString('base64');
 		const dataURL = `data:images/png;base64,${base64Encoded}`;
@@ -596,9 +612,9 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 			name: megarom_filename,
 			ext: '.js',
 			type: 'code',
-			img: undefined, // Add missing fields to match Resource
+			img: undefined as any, // Add missing fields to match Resource
 			id: 1,
-			collisionType: undefined // Add missing fields to match Resource
+			collisionType: undefined as collisiontype // Add missing fields to match Resource
 		};
 	})());
 
@@ -687,6 +703,7 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
  */
 export async function generateRomAssets(resources: Resource[]) {
 	const romAssets: RomAsset[] = [];
+	// @ts-ignore
 	let romlabel_buffer: Buffer | undefined;
 
 	for (const res of resources) {
@@ -756,12 +773,14 @@ export async function generateRomAssets(resources: Resource[]) {
 
 				let texOffset = 0;
 				const imageOffsets: { start: number; end: number }[] = [];
+				// @ts-ignore
 				const texBuffers: Buffer[] = [];
 				for (let i = 0; i < parsed.imageBuffers.length; i++) {
 					const buf = parsed.imageBuffers[i];
 					const start = texOffset;
 					const end = texOffset + buf.byteLength;
 					texOffset = end;
+					// @ts-ignore
 					texBuffers.push(Buffer.from(buf));
 					imageOffsets.push({ start, end });
 				}
@@ -791,6 +810,7 @@ export async function generateRomAssets(resources: Resource[]) {
 					textures: parsed.textures,
 				};
 				buffer = encodeBinary(obj);
+				// @ts-ignore
 				const texture_buffer = Buffer.concat(texBuffers);
 				romAssets.push({ resid, resname, type, buffer, texture_buffer });
 			}
@@ -932,6 +952,7 @@ export async function finalizeRompack(
 	debug: boolean
 ) {
 	// Capture resource buffers in the order as given by the assetList
+    // @ts-ignore
 	const buffers: Buffer[] = [];
 	const outfile = `${rom_name}${debug ? '.debug' : ''}.rom`; // Use the provided rom_name as the output file name
 	let offset = 0; // Offset for the next buffer to be added
@@ -939,6 +960,7 @@ export async function finalizeRompack(
 	// First write the romlabel buffer if it exists and remove it from the assetList
 	// Note that we will use the romlabel buffer to prepend the ROM label to the final output
 	// This is useful when changing the extension of the ROM file to .PNG, which will then be recognized as a PNG file by the browser.
+    // @ts-ignore
 	let romlabel_buffer: Buffer | undefined = undefined;
 	let romlabel_index = assetList.findIndex(asset => asset.type === 'romlabel');
 	if (romlabel_index >= 0) {
@@ -952,6 +974,7 @@ export async function finalizeRompack(
 		const hasBuffer = asset.buffer !== undefined && asset.buffer.length > 0;
 		if (hasBuffer) {
 			// Copy the buffer to avoid modifying the original
+    // @ts-ignore
 			const resBuf = Buffer.from(asset.buffer);
 			// Update asset offsets
 			asset.start = offset;
@@ -960,6 +983,7 @@ export async function finalizeRompack(
 			offset += resBuf.length;
 		}
 		if (asset.texture_buffer && asset.texture_buffer.length > 0) {
+    // @ts-ignore
 			const texBuf = Buffer.from(asset.texture_buffer);
 			asset.texture_start = offset;
 			asset.texture_end = offset + texBuf.length;
@@ -969,6 +993,7 @@ export async function finalizeRompack(
 		// Per-asset metadata
 		const perMeta = asset.imgmeta ?? asset.audiometa;
 		if (perMeta) {
+    // @ts-ignore
 			const metaBuf = Buffer.from(encodeBinary(perMeta));
 			asset.metabuffer_start = offset;
 			asset.metabuffer_end = offset + metaBuf.length;
@@ -984,25 +1009,29 @@ export async function finalizeRompack(
 	}
 
 	// Global metadata
+    // @ts-ignore
 	const binaryAssetListBuffer = Buffer.from(encodeBinary(assetList));
 	const globalMetadataOffset = offset;
 	const globalMetadataLength = binaryAssetListBuffer.length;
 	buffers.push(binaryAssetListBuffer);
 
 	// Footer
+    // @ts-ignore
 	const rompackFooter = Buffer.alloc(16);
 	rompackFooter.writeBigUInt64LE(BigInt(globalMetadataOffset), 0);
 	rompackFooter.writeBigUInt64LE(BigInt(globalMetadataLength), 8);
 	buffers.push(rompackFooter);
 
 	// Write final output
+    // @ts-ignore
 	const all = Buffer.concat(buffers);
 	const zipped = zip(all);
+    // @ts-ignore
 	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped]));
 	await writeFile('./rom/_ignore/romresources.json', JSON.stringify(assetList, null, 2));
 }
 
-export async function deployToServer(rom_name: string, title: string) {
+export async function deployToServer(_rom_name: string, _title: string) {
 	throw new Error('Deploy is not implemented yet!');
 }
 
@@ -1130,8 +1159,8 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 		return false;
 	};
 
-	const shouldCheckCodeFiles = dir => dir.startsWith(bootloaderPath);
-	const shouldCheckAssets = dir => dir.startsWith(resPath);
+	const shouldCheckCodeFiles = (dir: string) => dir.startsWith(bootloaderPath);
+	const shouldCheckAssets = (dir: string) => dir.startsWith(resPath);
 
 	return await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
 		await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath)) ||

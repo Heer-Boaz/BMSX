@@ -15,8 +15,8 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 	_view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_game = new Game();
 	return _game.init({
-		rom: args.rom,
-		model: _model,
+		rompack: args.rompack,
+		world: _model,
 		view: _view,
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,

@@ -4,10 +4,10 @@ import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAs
 
 declare global {
 	interface Window {
-		getRomNameFromUrlParameter: () => string;
-		getRomFromUrlParameter: () => string;
+		getRomNameFromUrlParameter: () => string | null;
+		getRomFromUrlParameter: () => string | null;
 		bootrom: {
-			rom: RomPack | null;
+			rom: import('../../src/bmsx/rompack/rompack').RomPack | null;
 			debug: boolean;
 			romname: string | undefined;
 			sndcontext: AudioContext | null;
@@ -15,13 +15,18 @@ declare global {
 			gainnode: GainNode | null;
 			theshowsover: boolean;
 			startingGamepadIndex: number | null;
-			set defusr(rom: RomPack);
+			set defusr(rom: import('../../src/bmsx/rompack/rompack').RomPack);
 			usr: (x: number) => number;
-			bload: (url: string) => Promise<RomPack | null>;
+			bload: (url: string) => Promise<import('../../src/bmsx/rompack/rompack').RomPack | null>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
 		};
 	}
+
+	// Add globalThis augmentation so `globalThis.bootrom = ...` type checks
+	var getRomNameFromUrlParameter: () => string | null;
+	var getRomFromUrlParameter: () => string | null;
+	var bootrom: Object;
 }
 
 /**
@@ -67,7 +72,7 @@ export const bootrom = {
 	 */
 	rom: null as RomPack | null,
 	debug: false,
-	romname: undefined, // Currently, used for fetching the megarom Javascript for debug mode
+	romname: undefined as string | undefined, // Currently, used for fetching the megarom Javascript for debug mode
 	sndcontext: null as AudioContext | null,
 	snd_unlocked: false,
 	gainnode: null as GainNode | null,
@@ -123,12 +128,12 @@ export const bootrom = {
 		window.onerror = null;
 
 		h406A({
-			rom: bootrom.rom!,
+			rompack: bootrom.rom!,
 			sndcontext: bootrom.sndcontext!,
 			gainnode: bootrom.gainnode!,
 			debug: this.debug,
 			startingGamepadIndex: bootrom.startingGamepadIndex
-		}).then(() => {
+		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;
 		}).catch(err => {
@@ -218,7 +223,7 @@ export const bootrom = {
 						replaceBMSXImgWithRomLabel();
 					});
 				})
-				.then(() => loadScript(loadedRomPack, bootrom.romname))
+				.then(() => loadScript(loadedRomPack))
 				.then(() => {
 					setLoaderText('Press any key, button or touch screen to start...');
 					return awaitPressedAnyKeyPromise();
@@ -255,19 +260,19 @@ export const bootrom = {
 };
 
 if (typeof globalThis !== 'undefined') {
-	globalThis.bootrom = bootrom;
-	globalThis.getRomFromUrlParameter = (): string => {
+	globalThis.bootrom = bootrom as typeof bootrom;
+	globalThis.getRomFromUrlParameter = (): string | null => {
 		const rom = getParameterByName('rom');
 		return rom && rom !== '' ? rom : null;
 	}
 
-	globalThis.getRomNameFromUrlParameter = (): string => {
+	globalThis.getRomNameFromUrlParameter = (): string | null => {
 		const rom_name = getParameterByName('romname');
 		return rom_name && rom_name !== '' ? rom_name : null;
 	}
 }
 
-function getParameterByName(name, url = window.location.href) {
+function getParameterByName(name: string, url: string = window.location.href) {
 	name = name.replace(/[\[\]]/g, '\\$&');
 	const regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
 		results = regex.exec(url);
@@ -281,9 +286,9 @@ function getParameterByName(name, url = window.location.href) {
  * @returns A Promise that resolves when the boot animation is complete.
  */
 async function awaitBootComplete(): Promise<void> {
-	const result: Promise<void> = new Promise((resolve, reject) => {
+	const result: Promise<void> = new Promise((resolve) => {
 		const msx = <HTMLElement>document.querySelector('#msx');
-		msx.onanimationend = ev => {
+		msx.onanimationend = _ev => {
 			// let loading = <HTMLElement>document.querySelector('#loading');
 			// loading.hidden = false;
 			bootrom.theshowsover = true;
@@ -303,7 +308,7 @@ async function awaitBootComplete(): Promise<void> {
  * @returns A Promise that resolves when the script has been loaded and added to the document head.
  * If an error occurs during loading, the Promise is rejected with an error message.
  */
-async function loadScript(rom: RomPack, romname: string): Promise<void> {
+async function loadScript(rom: RomPack): Promise<void> {
 	try {
 		let scriptText: string;
 		scriptText = rom.code;

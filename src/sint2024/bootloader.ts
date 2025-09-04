@@ -14,7 +14,7 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
     _view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game();
-    return _game.init({ ...args, model: _model, view: _view }).then(() => {
+    return _game.init({ ...args, world: _model, view: _view }).then(() => {
         // set input map previously done in do_one_time_game_init
         _game.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
         _game.start();

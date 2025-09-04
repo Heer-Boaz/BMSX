@@ -511,7 +511,7 @@ function createCloseSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement
             document.body.removeChild(previous);
             previous = (previous as any).previous;
         }
-        global.$.paused = prevPausedState;
+        $.paused = prevPausedState;
     };
 
     return closeSpan;
@@ -574,8 +574,8 @@ function addContent(parent: HTMLElement, type: string, content: string | null, d
 export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
     if (e && e.type !== 'keydown') return;
     if (!previous) {
-        prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-        global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+        prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
+        $.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
     }
 
     const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
@@ -585,7 +585,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
     addContent(headerRow, 'th', 'Type');
     addContent(headerRow, 'th', 'ID');
 
-    $.model.objects.forEach(o => {
+    $.model.activeObjects.forEach(o => {
         let row = addContent(table, 'tr', null);
         row.classList.add('selectableoption');
         addContent(row, 'td', `${o.constructor.name}`);
@@ -672,8 +672,8 @@ function handleOpenListenersDialog(eventName: string, scope: string, listeners: 
 
 export function handleOpenDebugMenu(e: UIEvent): void {
     if (e && e.type !== 'keydown') return;
-    prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-    global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+    prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
+    $.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
 
     const [dialogDiv, contentDiv] = createDebugDialog();
 
@@ -723,8 +723,8 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): void {
     if (e && e.type !== 'keydown') return;
     if (!previous) {
-        prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-        global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+        prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
+        $.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
         draggedObj = null; // Make sure that we stop dragging any object
     }
 
@@ -733,8 +733,8 @@ export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): v
 
 function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
     if (!previous) {
-        prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-        global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+        prevPausedState = $.paused; // Remember the original paused-state so that we can return to that state
+        $.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
     }
 
     // Use ObjectPropertyDialog for live-refresh
@@ -764,7 +764,7 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | nu
 
     const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
 
-    const objsUnderCursor: GameObject[] = $.model.objects.filter(o =>
+    const objsUnderCursor: GameObject[] = $.model.activeObjects.filter(o =>
         o.id !== 'debug_highlighter' &&
         o.hittable &&
         (

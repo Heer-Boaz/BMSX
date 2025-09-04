@@ -1,5 +1,6 @@
 import { type ModulationParams } from "../audio/soundmaster";
-import { Space, SpaceObject } from "../core/world";
+import { SpaceObject } from '../core/space';
+import { Space } from '../core/space';
 import { $ } from '../core/game';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/view';

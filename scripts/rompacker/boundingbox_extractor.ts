@@ -1,3 +1,4 @@
+// @ts-ignore
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
 import type { Area, Polygon, vec2arr } from '../../src/bmsx/rompack/rompack';

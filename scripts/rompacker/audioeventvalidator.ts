@@ -1,5 +1,6 @@
 import { AudioAction, AudioActionOneOfSpec, AudioEventRule } from '../../src/bmsx';
 import type { Resource } from './rompacker.rompack';
+// @ts-ignore
 const yaml = require('js-yaml');
 
 /**

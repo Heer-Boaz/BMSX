@@ -113,10 +113,10 @@
       "_ignore"
     ],
     "excludeDirectories": [
-      "**/src/joanneke2022",
-      "**/src/marlies2020",
-      "**/src/marlies2021",
-      "**/src/sintervania"
+      "src/joanneke2022",
+      "src/marlies2020",
+      "src/marlies2021",
+      "src/sintervania"
     ]
   }
 }

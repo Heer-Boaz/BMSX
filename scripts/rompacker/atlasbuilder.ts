@@ -1,4 +1,5 @@
 import type { Resource } from './rompacker.rompack';
+// @ts-ignore
 const { createCanvas } = require('canvas');
 
 const ATLAS_MAX_SIZE_IN_PIXELS = 2048;
@@ -104,16 +105,6 @@ function isContained(rect1: Bin, rect2: Bin): boolean {
 	return rect1.x >= rect2.x && rect1.y >= rect2.y &&
 		rect1.x + rect1.width <= rect2.x + rect2.width &&
 		rect1.y + rect1.height <= rect2.y + rect2.height;
-}
-
-/**
- * Checks if two bins overlap.
- * @param bin1 The first bin to check.
- * @param bin2 The second bin to check.
- * @returns True if bin1 overlaps with bin2, false otherwise.
- */
-function overlaps(bin1: Bin, bin2: Bin): boolean {
-	return bin1.x < bin2.x + bin2.width && bin1.x + bin1.width > bin2.x && bin1.y < bin2.y + bin2.height && bin1.y + bin1.height > bin2.y;
 }
 
 /**
@@ -348,7 +339,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 }
 
 export function createOptimizedAtlas(imageResources: Resource[]): HTMLCanvasElement {
-	const rects = imageResources.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
+	const rects = imageResources.map(img_resource => ({ x: undefined as number, y: undefined as number, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
 	const maxrect_result = maximalRectanglesPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
 	const binpack_result = shelfBinPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);

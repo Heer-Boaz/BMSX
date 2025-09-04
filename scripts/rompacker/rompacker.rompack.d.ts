@@ -1,6 +1,7 @@
 /**
  * Interface for a loaded resource, which includes metadata about the resource.
  */
+import { Buffer } from 'buffer';
 import type { asset_type, ImgMeta } from '../../src/bmsx/rompack/rompack';
 
 interface RomPackerOptions {
@@ -16,6 +17,8 @@ interface RomPackerOptions {
 }
 
 export type resourcetype = asset_type | 'rommanifest' | 'romlabel' | 'fsm' | 'aem';
+export type collisiontype = 'concave' | 'convex' | 'aabb';
+export type datatype = 'json' | 'yaml' | 'bin';
 
 export interface Resource {
     filepath?: string;
@@ -23,8 +26,8 @@ export interface Resource {
     ext?: string;
     type: resourcetype;
     id: number;
-    collisionType?: 'concave' | 'convex' | 'aabb';
-    datatype?: 'json' | 'yaml' | 'bin';
+    collisionType?: collisiontype;
+    datatype?: datatype;
     targetAtlasIndex?: number;
     atlasid?: number;
     buffer?: Buffer;

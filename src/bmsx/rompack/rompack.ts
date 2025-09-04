@@ -66,7 +66,7 @@ export type FsmId = asset_id;
  * Arguments passed from the bootloader to the game constructor.
  */
 export interface BootArgs {
-	rom: RomPack;
+	rompack: RomPack;
 	sndcontext: AudioContext;
 	gainnode: GainNode;
 	debug?: boolean;

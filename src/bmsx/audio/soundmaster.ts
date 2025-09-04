@@ -183,7 +183,7 @@ export class SoundMaster implements RegisterablePersistent {
     private predecodeTracks() {
         this.buffers = {};
         Object.keys(this.tracks).forEach(id => {
-            this.decode($.rom['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
+            this.decode($.rompack['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
                 .then(decoded => this.buffers[id] = decoded);
         });
     }

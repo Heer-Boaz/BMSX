@@ -1,18 +1,16 @@
-import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
+import { setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
 import { BehaviorTreeSystem, BoundarySystem, ECSystemManager, MeshAnimationSystem, PhysicsCollisionEventSystem, PhysicsPostSystem, PhysicsSyncAfterWorldCollisionSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/system";
 import { StateMachineController } from "../fsm/fsmcontroller";
-import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
+import { setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
-import { StateDefinition } from '../fsm/statedefinition';
 import { AbilityRuntimeSystem } from "../gas/abilityruntime";
 import { TaskRuntimeSystem } from "../gas/tasks";
-import { Input } from "../input/input";
 import { PhysicsDescriptorComponent } from '../physics/physicsdescriptorcomponent';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
 import { renderGate } from '../render/view';
-import type { Identifier, Registerable, RegisterablePersistent } from '../rompack/rompack';
+import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
@@ -22,19 +20,14 @@ import { GameObject } from './gameobject';
 import { AmbientLightObject, LightObject } from './lightobject';
 import { Registry } from "./registry";
 import type { Component, ComponentConstructor } from "../component/basecomponent";
+import { Space, id2spaceType, initial_world_spaces, isSpaceAware, obj_id2space_id_type, objid_2_objspaceid, spaceid_2_space } from './space';
 
-export interface SpaceObject {
-    spaceid: Identifier;
-    objects: GameObject[];
-}
+const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
+
 // Backwards-compatible index proxies: runtime uses Map for performance, while
 // external code can still index with [id] due to Proxy handling.
 export type id2objectType = Record<Identifier, GameObject>;
-export type id2spaceType = Record<Identifier, Space>;
-export type obj_id2space_id_type = Record<Identifier, Identifier>;
 export const id2obj = Symbol('id2object');
-export const spaceid_2_space = Symbol('id2space');
-export const objid_2_objspaceid = Symbol('obj_id2obj_space_id');
 
 // Services and plugin types
 export interface TileCollisionService {
@@ -43,16 +36,10 @@ export interface TileCollisionService {
 }
 export type ModelPlugin = { onBoot: (model: World) => void; onTick?: (model: World, dt: number) => void; onLoad?: (model: World) => void; dispose?: () => void };
 
-// Optional per-object hooks for space transitions
-interface SpaceAware { onleaveSpace?(from: Identifier): void; onenterSpace?(to: Identifier): void; }
-function isSpaceAware(x: unknown): x is SpaceAware {
-    return !!x && typeof x === 'object' && ('onleaveSpace' in (x as any) || 'onenterSpace' in (x as any));
-}
-
 // Utility: wrap a Map so `mapLike['id']` resolves to `map.get('id')` and
 // assignments delete/set through the same surface. Also exposes standard Map
 // methods bound to the underlying map.
-function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
+export function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
     return new Proxy(backing, {
         get(target, prop, receiver) {
             // Expose Map API (bound) for internal use
@@ -91,138 +78,6 @@ function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
 
 @insavegame
 /**
- * Represents a space in the game world, which contains a collection of game objects.
- */
-export class Space {
-    /** Map-backed index of id → object (exposed via Proxy for back-compat). */
-    public [id2obj]: id2objectType;
-    @excludepropfromsavegame
-    private _id2objMap: Map<Identifier, GameObject>;
-
-    /**
-     * Returns the GameObject with the specified ID, or undefined if no such object exists in this space.
-     * @template T - The type of the GameObject to return.
-     * @param {Identifier} id - The ID of the GameObject to retrieve.
-     * @returns {T | undefined} The GameObject with the specified ID, or undefined if no such object exists in this space.
-     */
-    public get<T extends GameObject>(id: Identifier): T | undefined {
-        return this._id2objMap.get(id) as T | undefined;
-    }
-
-    public id: Identifier;
-
-    @excludepropfromsavegame
-    public objects: GameObject[];
-
-    /** Z-sort dirty flag. Mark on add/remove; renderer sorts when true. */
-    @excludepropfromsavegame
-    public depthSortDirty: boolean = true;
-
-    /** Optional hooks per space lifecycle. */
-    public onactivate?: () => void;
-    public ondeactivate?: () => void;
-
-    /**
-     * A function that is called when the Space object is disposed of.
-     * @type {() => void}
-     */
-    public ondispose?: () => void;
-
-    // Decouple from global `$`: prefer injected model; fallback to $.model.
-    @excludepropfromsavegame
-    private _model?: World;
-    public bindModel(m: World): void { this._model = m; }
-
-    /**
-     * Represents a space in the game world, which contains a collection of game objects.
-     * @constructor
-     * @param {Identifier} id - The unique identifier for the space.
-     */
-    public constructor(id: Identifier) {
-        this.id = id;
-        this.objects = [];
-        this._id2objMap = new Map<Identifier, GameObject>();
-        this[id2obj] = makeIndexProxy(this._id2objMap);
-    }
-
-    /**
-     * Sorts the objects in the space by their depth (z-coordinate).
-     * Objects with a lower z-coordinate will be drawn first, and objects with a higher z-coordinate will be drawn on top of them.
-     * @returns {void} Nothing
-     */
-    public sort_by_depth(): void {
-        this.depthSortDirty = false;
-        this.objects.sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
-    }
-
-    /**
-     * Adds object to the game and triggers it's onspawn-event.
-     * @param {GameObject} o  - GameObject to add
-     * @param {Vector} pos - Position to spawn object
-     * @param {boolean} skip_onspawn_event - Disables triggering onspawn-event.
-     * Example uses include reviving the game (part of loading a saved game) and moving objects from one space to another.
-     * @returns {void} Nothing
-     */
-    public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
-        if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
-        const model = this._model ?? $.model;
-        if (model.objToSpaceMap?.has(o.id)) {
-            console.error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${model.objToSpaceMap.get(o.id)}'!`);
-            return;
-        }
-
-        this.objects.push(o); // Add the object to the space
-
-        this._id2objMap.set(o.id, o); // Register the object in the id→object map
-        model.objToSpaceMap.set(o.id, this.id); // Register the object in the obj→space map
-        model.onObjectSpawned(this, o);
-        // Ensure we pass a full vec3 to onspawn (z defaults to 0)
-        const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z ?? 0 } : undefined;
-        !skip_onspawn_event && o.onspawn?.(spawnPos); // Trigger onspawn after adding the object to the space
-        // Mark depth sort dirty; if in a batch, collect space id once
-        if (model.depthDirtyBatch) model.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
-    }
-
-    /**
-     * Removes object from the game and triggers it's ondispose-event.
-     * @param {GameObject} o  - GameObject to dispose
-     * @param {boolean} skip_ondispose_event - Disables triggering ondispose-event.
-     * Example uses include moving objects from one space to another.
-     * @returns {void} Nothing
-     */
-    public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
-        const index = this.objects.indexOf(o);
-        if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [Model.exile]!`);
-        !skip_ondispose_event && o.dispose?.(); // Trigger ondispose event before removing the object from the space. `ondispose` unsubscribes the object from events and removes it from the registry
-        if (index > -1) this.objects.splice(index, 1);
-        this._id2objMap.delete(o.id);
-        const model = this._model ?? $.model;
-        model.objToSpaceMap.delete(o.id);
-        model.onObjectExiled(this, o);
-        if (model.depthDirtyBatch) model.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
-    }
-
-    /**
-     * Removes all objects from the current space and triggers their ondispose-event.
-     * @returns {void} Nothing
-     */
-    public clear(): void {
-        const model = this._model ?? $.model;
-        for (const o of this.objects) {
-            model.onObjectExiled(this, o);
-            o.dispose?.();
-            model.objToSpaceMap.delete(o.id);
-        }
-        this._id2objMap.clear();
-        this.objects.length = 0;
-        this.depthSortDirty = false;
-    }
-}
-
-export type base_model_spaces = 'game_start' | 'default';
-
-@insavegame
-/**
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
@@ -231,16 +86,7 @@ export class World implements Stateful, RegisterablePersistent {
         return true;
     }
 
-    /**
-     * Retrieves an entity from the registry based on its identifier.
-     * @param id The identifier of the entity to retrieve.
-     * @returns The retrieved entity if found, otherwise null.
-     */
-    public get<T extends Registerable = any>(id: Identifier): T | null {
-        return $.registry.get(id);
-    }
-
-    public get id(): Identifier { return 'model'; } // Required for IStateful and IIdentifiable
+    public get id(): 'model' { return 'model'; } // Required for IStateful and IIdentifiable
 
     // Internal physics diagnostic frame counter (temporary instrumentation)
     private static _physDiagFrames?: number;
@@ -286,19 +132,35 @@ export class World implements Stateful, RegisterablePersistent {
      * Gets all game objects in the current space.
      * @returns {GameObject[]} An array of all game objects in the current space.
      */
-    public get objects(): GameObject[] {
-        return this.currentSpace.objects;
+    public get activeObjects(): GameObject[] {
+        return this.activeSpace.objects;
+    }
+
+    public get allObjectsFromSpaces(): GameObject[] {
+        const out: GameObject[] = [];
+        for (const sp of this.spaces) out.push(...sp.objects);
+        return out;
     }
 
     public spaces: Space[]; // All spaces in the model
-    protected currentSpaceid: Identifier; // Current space. On model creation, a default space is created with id 'default'
-    public get current_space_id(): Identifier { return this.currentSpaceid; } // Current space id. On model creation, a default space is created with id 'default'
-    public get currentSpace(): Space { return this.get_space(this.currentSpaceid); } // Current space. On model creation, a default space is created with id 'default'
+    protected _activeSpaceId: Identifier; // Current space. On model creation, a default space is created with id 'default'
+    public get activeSpaceId(): Identifier { return this._activeSpaceId; } // Current space id. On model creation, a default space is created with id 'default'
+    public get activeSpace(): Space { return this.get_space(this._activeSpaceId); } // Current space. On model creation, a default space is created with id 'default'
     // setSpace implemented later with activation hooks
     public get_space<T extends Space>(id: Identifier) { return this._spaceMap.get(id) as T; }
 
+    // Model configuration (size, services, plugins)
+    private _size: { width: number; height: number } = { width: 256, height: 192 };
+    private _collision?: TileCollisionService;
+    private _plugins: Array<ModelPlugin> = [];
+    private _fsmId: string = 'model';
+
+    public get gamewidth(): number { return this._size.width; }
+    public get gameheight(): number { return this._size.height; }
+
+    protected idCounter = 0;
+
     public paused: boolean;
-    public startAfterLoad: boolean;
 
     private _activeCameraId: Identifier | null = null;
 
@@ -311,12 +173,11 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     public get activeCameraObject(): CameraObject | null {
-        return this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
+        return this._activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
     }
 
     public get activeCamera3D(): Camera | null {
-        const co = this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
-        return co?.camera ?? null;
+        return this.activeCameraObject?.camera ?? null;
     }
 
     // Indexed cameras/lights for fast queries
@@ -334,7 +195,7 @@ export class World implements Stateful, RegisterablePersistent {
         const scope = opts.scope ?? 'all';
         const out: CameraObject[] = [];
         if (scope === 'current') {
-            const set = this._camerasBySpace.get(this.currentSpaceid);
+            const set = this._camerasBySpace.get(this._activeSpaceId);
             if (!set) return out;
             for (const c of set) out.push(c);
             return out;
@@ -375,7 +236,7 @@ export class World implements Stateful, RegisterablePersistent {
         const scope = opts.scope ?? 'all';
         const out: LightObject[] = [];
         if (scope === 'current') {
-            const set = this._lightsBySpace.get(this.currentSpaceid);
+            const set = this._lightsBySpace.get(this._activeSpaceId);
             if (!set) return out;
             for (const l of set) if (l.active) out.push(l);
             return out;
@@ -393,7 +254,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @param {Identifier} id - the id of the {@link GameObject}.
      * @returns {T} The game object with the given id from the current space only.
      */
-    public getFromCurrentSpace<T extends GameObject>(id: Identifier): T | null { return this.currentSpace.get<T>(id) ?? null; }
+    public getFromCurrentSpace<T extends GameObject>(id: Identifier): T | null { return this.activeSpace.get<T>(id) ?? null; }
 
     /**
      * Gets the game object with the given id across all spaces.
@@ -430,7 +291,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {boolean} Whether the object with the given id is in the current space.
      */
     public is_obj_in_current_space(obj_id: Identifier): boolean {
-        return this.get_spaceid_that_has_obj(obj_id) === this.currentSpaceid;
+        return this.get_spaceid_that_has_obj(obj_id) === this._activeSpaceId;
     }
 
     /**
@@ -473,49 +334,11 @@ export class World implements Stateful, RegisterablePersistent {
      * @param obj_id - The identifier of the object to be moved.
      */
     public move_obj_to_current_space(obj_id: Identifier): void {
-        this.move_obj_to_space(obj_id, this.currentSpaceid);
+        this.move_obj_to_space(obj_id, this._activeSpaceId);
     }
-
-    /**
-     * Returns the machine definition for the given machine id.
-     * @param {Identifier} machineid - The id of the machine to get the definition for.
-     * @returns {StateDefinition} The machine definition for the given machine id.
-     */
-    public static getMachinedef(machineid: Identifier): StateDefinition {
-        return StateDefinitions[machineid];
-    }
-
-    /**
-     * Returns the state definition for the given machine and state id.
-     * @param {Identifier} machineid - The id of the machine to get the state definition for.
-     * @param {Identifier} stateid - The id of the state to get the definition for.
-     * @returns {StateDefinition} The state definition for the given machine and state id.
-     */
-    public static getMachineStatedef(machineid: Identifier, stateid: Identifier): StateDefinition {
-        const m = StateDefinitions[machineid] as any;
-        const s = m?.states?.[stateid] ?? m?.[stateid];
-        if (!s) throw new Error(`Unknown state ${String(machineid)}.${String(stateid)}`);
-        return s as StateDefinition;
-    }
-
-    public static getBTdef(btid: BehaviorTreeID): BehaviorTreeDefinition {
-        return BehaviorTreeDefinitions[btid];
-    }
-
-    // Model configuration (size, services, plugins)
-    private _size: { width: number; height: number } = { width: 256, height: 192 };
-    private _collision?: TileCollisionService;
-    private _plugins: Array<ModelPlugin> = [];
-    private _fsmId: string = 'model';
-
-    public get gamewidth(): number { return this._size.width; }
-    public get gameheight(): number { return this._size.height; }
-
-    private static readonly MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
-    protected idCounter = 0;
 
     public getNextIdNumber(): number {
-        if (this.idCounter >= World.MAX_ID_NUMBER) {
+        if (this.idCounter >= MAX_ID_NUMBER) {
             throw new Error('ID counter exhausted: max safe integer reached');
         }
         const nextNumber = this.idCounter;
@@ -577,9 +400,9 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {World} The current instance of the World.
      */
     public init_spaces(): World { // Should only be executed when model is *not* revived
-        this.addSpace('default' satisfies base_model_spaces);
-        this.addSpace('game_start' satisfies base_model_spaces);
-        this.setSpace('game_start' satisfies base_model_spaces);
+        this.addSpace('default' satisfies initial_world_spaces);
+        this.addSpace('game_start' satisfies initial_world_spaces);
+        this.setSpace('game_start' satisfies initial_world_spaces);
 
         return this; // Return the current instance of the World for chaining
     }
@@ -619,18 +442,6 @@ export class World implements Stateful, RegisterablePersistent {
         return this; // Return the current instance of the World for chaining
     }
 
-    /** Use this function for initializing spaces, global/static game objects, ...
-    * Is automagically called from {@link Game} and expects the model to be created and its state machines populated.
-    *
-    * **Notes:**
-    * 1. Use the state `game_start` to transition to the state in which the game will start after it started running and
-    * not this function.**
-    * 2. Game is not expected to be running yet.
-    * @returns {this} `this` for chaining.
-     */
-    // Back-compat no-op; prefer plugins for boot logic
-    public do_one_time_game_init(): this { return this; }
-
     /**
      * Runs the current state of the model by calling the `run` method of the current state.
      * @returns {void} Nothing.
@@ -662,40 +473,11 @@ export class World implements Stateful, RegisterablePersistent {
         for (const p of this._plugins) p.onTick?.(this, deltaTime);
 
         // Cleanup disposed objects
-        const objects = this.objects;
+        const objects = this.activeObjects;
         for (let i = objects.length - 1; i >= 0; --i) {
             const o = objects[i];
             if (o.disposeFlag) this.exile(o);
         }
-    }
-
-    /**
-     * The default input handler for allowing the game menu to be opened.
-     * If the F5 key is pressed, the game menu substate is set to 'open'.
-     * @param {World} this - The current instance of the World.
-     * @param {State<World>} s - The current state of the World.
-     * @returns {void} Nothing.
-     */
-    static default_input_handler_for_allow_open_gamemenu(this: World): void {
-        if (Input.KC_F5) {
-            this.sc.machines.gamemenu.transition_to('open');
-        }
-    }
-
-    /**
-     * The default input handler for allowing the game menu to be closed.
-     * If the F5 key is pressed, the game menu substate is set to 'closed'.
-     * @param {World} this - The current instance of the World.
-     * @param {State<World>} s - The current state of the World.
-     * @returns {void} Nothing.
-     */
-    static default_input_handler_for_allow_close_gamemenu(this: World): void {
-        if (Input.KC_F5) {
-            this.sc.machines.gamemenu.transition_to('closed');
-        }
-    }
-
-    static default_input_handler(this: World) {
     }
 
     /**
@@ -761,7 +543,7 @@ export class World implements Stateful, RegisterablePersistent {
             try {
                 let needs = false;
                 // Restrict physics world rebuild to current space to avoid cross-space coupling.
-                for (const go of this.currentSpace.objects) {
+                for (const go of this.activeSpace.objects) {
                     if (go.getComponent && go.getComponent(PhysicsDescriptorComponent)) { needs = true; break; }
                 }
                 if (needs) {
@@ -833,7 +615,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {GameObject[]} An array containing the filtered game objects.
      */
     public filter(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown): GameObject[] {
-        return this.objects.filter(predicate);
+        return this.activeObjects.filter(predicate);
     }
 
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
@@ -844,10 +626,10 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public filter_and_foreach(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
-        for (let i = 0; i < this.objects.length; i++) {
-            const obj = this.objects[i];
-            if (predicate(obj, i, this.objects, this)) {
-                callbackfn(obj, i, this.objects, this);
+        for (let i = 0; i < this.activeObjects.length; i++) {
+            const obj = this.activeObjects[i];
+            if (predicate(obj, i, this.activeObjects, this)) {
+                callbackfn(obj, i, this.activeObjects, this);
             }
         }
     }
@@ -857,7 +639,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public clear(): void {
-        this.currentSpace.clear();
+        this.activeSpace.clear();
     }
 
     /**
@@ -877,7 +659,7 @@ export class World implements Stateful, RegisterablePersistent {
      */
     public spawn(o: GameObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id.`);
-        this.currentSpace.spawn(o, pos, ignoreSpawnhandler);
+        this.activeSpace.spawn(o, pos, ignoreSpawnhandler);
     }
 
     /**
@@ -896,7 +678,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public exileFromCurrentSpace(o: GameObject): void {
-        this.currentSpace.exile(o);
+        this.activeSpace.exile(o);
     }
 
     /**
@@ -1018,20 +800,15 @@ export class World implements Stateful, RegisterablePersistent {
      */
     public forEachGameObject(fn: (o: GameObject) => void, opts: { scope?: 'current' | 'all' } = {}): void {
         const scope = opts.scope ?? 'current';
-        if (scope === 'current') { for (const o of this.currentSpace.objects) fn(o); return; }
+        if (scope === 'current') { for (const o of this.activeSpace.objects) fn(o); return; }
         for (const sp of this.spaces) for (const o of sp.objects) fn(o);
-    }
-
-    public get objectsAll(): GameObject[] {
-        const out: GameObject[] = [];
-        for (const sp of this.spaces) out.push(...sp.objects);
-        return out;
     }
 
     /** Iterate only objects of a specific class. */
     public forEachGameObjectOfType<T extends GameObject>(ctor: new (...args: any[]) => T, fn: (o: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
         this.forEachGameObject((o) => { if (o instanceof ctor) fn(o as T); }, opts);
     }
+
     /** Iterate objects that have a given component; passes the component instance too. */
     public forEachGameObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: GameObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
         this.forEachGameObject((o) => { const c = (o as any).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
@@ -1041,11 +818,11 @@ export class World implements Stateful, RegisterablePersistent {
      * Activate a new space; fires ondeactivate/onactivate hooks.
      */
     public setSpace(newSpaceId: Identifier) {
-        if (newSpaceId === this.currentSpaceid) return;
-        const prev = this.get_space(this.currentSpaceid);
-        this.currentSpaceid = newSpaceId;
+        if (newSpaceId === this._activeSpaceId) return;
+        const prev = this.get_space(this._activeSpaceId);
+        this._activeSpaceId = newSpaceId;
         prev?.ondeactivate?.();
-        this.currentSpace?.onactivate?.();
-        $.emit('spaceChanged', this, { prev: prev?.id, curr: this.currentSpaceid });
+        this.activeSpace?.onactivate?.();
+        $.emit('spaceChanged', this, { prev: prev?.id, curr: this._activeSpaceId });
     }
 }

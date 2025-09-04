@@ -214,8 +214,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public drawbase(): void {
 		// Gate per-frame sorting using Space.depthSortDirty (set on add/remove/z changes)
-		if ($.model.currentSpace.depthSortDirty) $.model.currentSpace.sort_by_depth();
-		$.model.currentSpace.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
+		if ($.model.activeSpace.depthSortDirty) $.model.activeSpace.sort_by_depth();
+		$.model.activeSpace.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
 	}
 
 	/**
@@ -425,7 +425,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
 		if (GameView.fullscreenEnabled) {
 			try {
-				global.$.paused = true;
+				$.paused = true;
 				const elem: any = document.documentElement as any;
 				if (elem.requestFullscreen) {
 					await elem.requestFullscreen();
@@ -441,7 +441,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				console.error(error);
 			}
 			finally {
-				global.$.paused = false;
+				$.paused = false;
 			}
 		}
 		window.removeEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
@@ -454,7 +454,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public static async triggerWindowedOnFakeUserEvent(): Promise<void> {
 		if (GameView.fullscreenEnabled) {
 			try {
-				global.$.paused = true;
+				$.paused = true;
 				const doc: any = document as any;
 				if (doc.exitFullscreen) {
 					await doc.exitFullscreen();
@@ -470,7 +470,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				console.error(error);
 			}
 			finally {
-				global.$.paused = false;
+				$.paused = false;
 			}
 		}
 		window.removeEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);

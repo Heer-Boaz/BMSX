@@ -1,5 +1,8 @@
+import { Buffer } from 'buffer';
 import type { GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../src/bmsx/rompack/rompack';
+// @ts-ignore
 const { join } = require('path');
+// @ts-ignore
 const { readFile } = require('fs/promises');
 
 export async function loadGLTFModel(data: string, dir: string, resname: string): Promise<GLTFModel> {

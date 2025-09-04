@@ -508,7 +508,7 @@ export class Eila extends Fighter {
 				humiliated: {
 					ticks2advance_tape: 300,
 					entering_state(this: Eila) {
-						$.playAudio(AudioId.stuk, $.rom.data['modulationparams'].attacksfx as RandomModulationParams);
+						$.playAudio(AudioId.stuk, $.rompack.data['modulationparams'].attacksfx as RandomModulationParams);
 						this.imgid = BitmapId.eila_humiliated;
 					},
 					tape_next(this: Eila) {

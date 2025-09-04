@@ -41,6 +41,6 @@ export function createAudioContext(state: BootAudioState): void {
     state.sndcontext = context;
 }
 
-function onStart(e: Event) {
+function onStart(_e: Event) {
     /* placeholder to satisfy removeEventListeners references */
 }

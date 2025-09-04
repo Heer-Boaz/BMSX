@@ -304,7 +304,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
     const texBytes = new Uint8Array(textureBuf);
     let imageBuffers: ArrayBuffer[] | undefined = undefined;
     if (textureBuf && Array.isArray(obj.imageOffsets)) {
-        imageBuffers = obj.imageOffsets.map(off => {
+        imageBuffers = obj.imageOffsets.map((off: any) => {
             if (off && typeof off.start === 'number' && typeof off.end === 'number') {
                 return texBytes.slice(off.start, off.end).buffer;
             }
@@ -423,7 +423,7 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, options?: { flipY?: bo
     return source;
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, _loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
     switch (res.type) {
         case 'image':
         case 'atlas':

@@ -201,7 +201,7 @@ export function setupFSMlibrary(): void {
         addEventsToDef(built);
     }
 
-    for (const [key, bp] of Object.entries($.rom.fsm)) {
+    for (const [key, bp] of Object.entries($.rompack.fsm)) {
         const machineName = key; // je hebt zowel id als naam keys
         const def = createMachine(machineName as Identifier, bp);
         walkAndHoist(machineName, def, HandlerRegistry.instance, [], true);

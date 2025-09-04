@@ -70,7 +70,7 @@ export class ECSystemManager {
 export class PreTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PrePhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			const comps = o?.components ? Object.values(o.components) : [];
@@ -167,7 +167,7 @@ function hasMarkDirty(o: unknown): o is { markDirty: () => void } {
 export class BehaviorTreeSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			if (!isBehaviorTreeObject(o)) continue;
@@ -184,7 +184,7 @@ export class BehaviorTreeSystem extends ECSystem {
 export class StateMachineSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			if (!hasStateController(o)) continue;
@@ -197,7 +197,7 @@ export class StateMachineSystem extends ECSystem {
 export class PostTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PostPhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			const comps = o?.components ? Object.values(o.components) : [];
@@ -216,7 +216,7 @@ export class PostTagSystem extends ECSystem {
 export class PrePositionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			const comps = o?.components ? Object.values(o.components) : [];
@@ -236,7 +236,7 @@ export class BoundarySystem extends ECSystem {
 	private prev = new WeakMap<GameObject, { x: number; y: number }>();
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		const width = hasModelDimensions(model) ? model.gamewidth : 0;
 		const height = hasModelDimensions(model) ? model.gameheight : 0;
 		for (let i = 0; i < objs.length; ++i) {
@@ -295,7 +295,7 @@ export class BoundarySystem extends ECSystem {
 export class TileCollisionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject & { onWallcollide?: (d: 'left' | 'right' | 'up' | 'down') => void };
 			const compCandidate = o?.getComponent?.(TileCollisionComponent);
@@ -344,7 +344,7 @@ export class TileCollisionSystem extends ECSystem {
 export class PhysicsPreSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			const compCandidate = o?.getComponent?.(PhysicsComponent);
@@ -389,7 +389,7 @@ export class PhysicsPreSystem extends ECSystem {
 export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			const compCandidate = o?.getComponent?.(PhysicsComponent);
@@ -420,7 +420,7 @@ export class PhysicsSyncBeforeStepSystem extends ECSystem {
 export class PhysicsPostSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			const compCandidate = o?.getComponent?.(PhysicsComponent);
@@ -446,7 +446,7 @@ export class PhysicsPostSystem extends ECSystem {
 export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	constructor(p = 0) { super(TickGroup.PostPhysics, p); }
 	update(model: World) {
-		for (const o of model.objects as GameObject[]) {
+		for (const o of model.activeObjects as GameObject[]) {
 			const pc = o.getComponent?.(PhysicsComponent);
 			if (!pc?.enabled || !pc.body) continue;
 			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
@@ -486,7 +486,7 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as GameObject;
 			const tcCandidate = o?.getComponent?.(TransformComponent);
@@ -513,7 +513,7 @@ export class TransformSystem extends ECSystem {
 export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(model: World): void {
-		const objs = model.objects;
+		const objs = model.activeObjects;
 		const dtSec = $.deltaTime / 1000;
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as MeshObject;

@@ -176,7 +176,7 @@ export class GameMenu extends GameObject {
                             // }
                             break;
                         case MenuItem.ExitGame:
-                            global.$.stop();
+                            $.stop();
                             break;
                     }
                     break;

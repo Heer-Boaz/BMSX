@@ -1,13 +1,19 @@
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { BOOTROM_TS_FILENAME, buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rompacker-core';
 import type { RomManifest, RomPackerOptions } from './rompacker.rompack';
+// @ts-ignore
 const term = require('terminal-kit').terminal;
+// @ts-ignore
 const _colors = require('colors');
 
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 
 type logentryType = undefined | 'error' | 'warning';
+
+declare global {
+	var process: any;
+}
 
 function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
 	const idx = args.indexOf(flag);
@@ -91,6 +97,7 @@ class ProgressReporter {
 	private completedTasks: number = 0;
 
 	constructor(tasks: string[]) {
+// @ts-ignore
 		const Gauge = require('gauge');
 		this.gauge = new Gauge(process.stdout, {
 			updateInterval: 20,

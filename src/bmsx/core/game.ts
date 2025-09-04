@@ -25,19 +25,23 @@ import { GateGroup, taskGate } from './taskgate';
 /**
  * Declare global variables and types.
  */
-declare global {
-	var $: Game;
-	var $rom: RomPack;
-	var debug: boolean;
-}
+// declare global {
+// 	var $: Game;
+// 	var $rom: RomPack;
+// 	var debug: boolean;
+// }
 
 global = globalThis || window; // Ensure global is defined
 
 export var $: Game;
+export var $rompack: RomPack;
+export var $debug: boolean;
+export var $world: World;
+export var $view: GameView;
 
 export interface GameInitArgs {
-	rom: RomPack;
-	model: World;
+	rompack: RomPack;
+	world: World;
 	view: GameView;
 	sndcontext: AudioContext;
 	gainnode: GainNode;
@@ -149,23 +153,9 @@ export class Game {
 		if (this._paused) this._pausedOneShotRenderPending = true;
 	}
 
-	public get rom(): RomPack { return global.$rom; }
-	public get rompack(): RomPack { return global.$rom; }
-
-	/**
-	 * Retrieves the model instance of type T.
-	 * @returns The model instance of type T.
-	 * @template T - The type of the model.
-	 */
-	public modelAs<T extends World = World>(): T { return this.model as T; }
+	public get rompack(): RomPack { return $rompack; }
 
 	public get model(): World { return this.registry.get<World>('model'); }
-
-	/**
-	 * Retrieves the global view of type T.
-	 * @returns The global view of type T.
-	 */
-	public viewAs<T extends GameView = GameView>(): T { return this.view as T; }
 
 	public get view(): GameView { return this.registry.get<GameView>('view'); }
 
@@ -300,9 +290,9 @@ export class Game {
 	 */
 	constructor() {
 		this.initialized = false;
-		global = globalThis;
-		global['$'] = this;
-		window['$'] = this;
+		// global = globalThis;
+		// global['$'] = this;
+		// window['$'] = this;
 		$ = this;
 	}
 
@@ -316,9 +306,10 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rom, model, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
-		global['$rom'] = rom;
-		window['$rom'] = rom;
+		const { rompack, world, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
+		// global['$rom'] = rom;
+		// window['$rom'] = rom;
+		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
@@ -326,17 +317,19 @@ export class Game {
 		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
 
 		this._debug = debug ?? this._debug;
+		$debug = this._debug;
 
-		global['debug'] = this.debug;
-		global['$rom'] = rom;
+		// global['debug'] = this.debug;
+		// global['$rom'] = rom;
 
-		GameView.imgassets = rom.img;
+		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
 		if ($.input.isOnscreenGamepadEnabled) {
 			$.input.enableOnscreenGamepad();
 		}
 		const gview = this.view;
+		$view = gview;
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
 		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
 		const { backend, nativeCtx } = await createBackendForCanvasAsync(gview.canvas);
@@ -349,28 +342,27 @@ export class Game {
 		gview.pipelineRegistry = pipelineRegistry; // Register the pipeline registry with the view before initializing
 		gview.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
-		await SoundMaster.instance.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
+		await SoundMaster.instance.init(rompack['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);
 		} catch (error) {
 			console.error("Failed to initialize PSG:", error);
 		}
-		AudioEventManager.instance.init([rom.audioevents], null);
-		// SM.volume = 0;
+		AudioEventManager.instance.init([rompack.audioevents], null);
 
 		if (this.debug) {
 			// @ts-ignore
-			window['model'] = model;
-			// @ts-ignore
-			window['view'] = view;
-			// @ts-ignore
-			window['$rom'] = global.$rom;
-			// @ts-ignore
-			window['$'] = global.$;
-			// @ts-ignore
-			window['registry'] = global.registry;
-			// @ts-ignore
-			window['eventEmitter'] = $.event_emitter;
+			// window['model'] = world;
+			// // @ts-ignore
+			// window['view'] = view;
+			// // @ts-ignore
+			// window['$rom'] = global.$rom;
+			// // @ts-ignore
+			// window['$'] = global.$;
+			// // @ts-ignore
+			// window['registry'] = global.registry;
+			// // @ts-ignore
+			// window['eventEmitter'] = $.event_emitter;
 
 			Input.instance.enableDebugMode();
 		}
@@ -382,7 +374,8 @@ export class Game {
 
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
-		model.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
+		$world = world;
+		world.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
 
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
 		if (!this.registry.has('physics_world')) {
@@ -427,7 +420,7 @@ export class Game {
 	 * @returns void
 	 */
 	public update(deltaTime: number): void {
-		const game = global.$;
+		const game = $;
 		const model = game.model;
 		// Step physics first so game object logic can react to post-collision resolved positions.
 		model.run(deltaTime);
@@ -507,7 +500,7 @@ export class Game {
 	 * @returns void
 	 */
 	public stop(): void {
-		global.$.running = false;
+		$.running = false;
 		window.cancelAnimationFrame(this.animationFrameRequestid);
 		window.requestAnimationFrame(() => {
 			$.view.handleResize.call($.view);

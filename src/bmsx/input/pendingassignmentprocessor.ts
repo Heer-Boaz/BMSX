@@ -251,7 +251,7 @@ export class PendingAssignmentProcessor {
         }
         else {
             if (!$.model.getFromCurrentSpace(this.icon.id)) {
-                $.model.move_obj_to_space(this.icon.id, $.model.current_space_id);
+                $.model.move_obj_to_space(this.icon.id, $.model.activeSpaceId);
             }
             this.icon.x = this.calcIconPositionX(this.pendingIndex);
             if (this.checkNonConsumedPressed('a', gamepadInput)) {
