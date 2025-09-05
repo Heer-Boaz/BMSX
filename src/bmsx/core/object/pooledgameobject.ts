@@ -32,7 +32,7 @@ export abstract class PooledGameObject extends GameObject {
         const sid = $world.objToSpaceMap.get(this.id);
         if (!sid) return; // not attached to any space
         const sp = $world.get_space(sid);
-        if (sp) sp.exile(this, true); // detach zonder dispose zodat allocaties behouden blijven
+        if (sp) sp.despawn(this); // detach zonder dispose zodat allocaties behouden blijven
     }
 
     /** Helper die subclasses kunnen aanroepen in hun static create(). */

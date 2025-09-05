@@ -4,7 +4,6 @@ import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
 import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
 import { insavegame, onload } from "../../serializer/gameserializer";
-import { EventSubscriber } from '../eventemitter';
 import { $ } from '../game';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
@@ -470,7 +469,16 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		// Add components that should be auto-added to this class after the object has been spawned so that the component can retrieve the object via its id
 		this.addAutoComponents();
 
+		this.eventhandling_enabled = true; // Now active for event handling
 		this.sc.start();
+	}
+
+	/**
+	 * Called when the object is removed from its space without being destroyed.
+	 * Default behavior: stop consuming events.
+	 */
+	public ondespawn(): void {
+		this.eventhandling_enabled = false;
 	}
 
 	/**
@@ -485,6 +493,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public dispose(): void {
 		// Unsubscribe from events
 		$.event_emitter.removeSubscriber(this);
+		this.eventhandling_enabled = false; // Disable event handling immediately
 
 		// Dispose of components
 		const components = Object.values(this.components);
@@ -513,6 +522,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public markForDisposal(): void {
 		this.disposeFlag = true;
 	}
+
+	/** Specific flag controlling whether this GameObject processes events. */
+	public eventhandling_enabled: boolean;
 
 	/**
 	 * Represents a callback function that is triggered when a collision occurs with another GameObject.
@@ -615,6 +627,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.pos = new_vec3(...DEFAULT_POSITION_VALUES);
 		this.size = new_vec3(...DEFAULT_SIZE_VALUES);
 		this.disposeFlag = false;
+		this.eventhandling_enabled = false; // Block event handling until spawned
 		// Create the state context that will be used to manage the state of the game object
 		this.sc = new StateMachineController(fsm_id ?? this.constructor.name, this.id);
 	}
@@ -644,12 +657,10 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Initializes the setup for the onLoad event.
 	 */
-	@onload
-	onLoadSetup() {
-		// Cast to 'any' to satisfy the event emitter's expected EventSubscriberType
-		// without changing runtime behavior. This avoids TypeScript index-signature mismatches.
-		$.event_emitter.initClassBoundEventSubscriptions(this as EventSubscriber); // Initialize event subscriptions for the class.
-	}
+    @onload
+    onLoadSetup() {
+        // Event subscriptions are now auto-registered at instance construction by decorators.
+    }
 
 	/**
 	 * Initializes the linked finite state machines (FSMs) for the current instance.

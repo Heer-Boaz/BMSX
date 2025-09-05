@@ -254,19 +254,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
     @onload
     onloadSetup() {
         $.registry.register(this); // Register the component in the entity registry
-        this.initEventSubscriptions(); // Initialize event subscriptions
-    }
-
-    /**
-     * Initializes the event subscriptions for the component.
-     * It subscribes to the specified events and binds the corresponding handlers to the component instance.
-     */
-    protected initEventSubscriptions() {
-        const wrappedHandler = (handler: (...args: any[]) => any, ...args: any[]) => {
-            // Wrap the handler to check if the component is enabled
-            if (this.enabled) handler(...args);
-        };
-        $.event_emitter.initClassBoundEventSubscriptions(this, wrappedHandler);
+        // Event subscriptions are now auto-registered at instance construction by decorators.
     }
 
     // Implement this method to handle preprocessing updates
