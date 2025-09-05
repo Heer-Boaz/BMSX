@@ -1,9 +1,10 @@
-import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
+import { Registry } from '../core/registry';
+import { subscribesToGlobalEvent } from '../core/eventemitter';
 import { $ } from '../core/game';
 import * as SpritesPipeline from '../render/2d/sprites_pipeline';
 import * as MeshPipeline from '../render/3d/mesh_pipeline';
 import * as ParticlesPipeline from '../render/3d/particles_pipeline';
-import { Identifiable } from '../rompack/rompack';
+import { RegisterablePersistent } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 
 // TODO: FIND A WAY TO NOT INITIALIZE ALL THIS STUFF WHEN THE GAME ROM IS NOT A DEBUG-ROM!
@@ -52,8 +53,9 @@ function ensureHudElement(): HTMLElement {
 }
 
 @excludeclassfromsavegame
-export class RenderHUDOverlay implements Identifiable { // Note that it is *not* required to implement Identifiable interface, but it can be useful for certain features later
+export class RenderHUDOverlay implements RegisterablePersistent {
 	public get id(): string { return 'render-hud-overlay'; }
+	public get registrypersistent(): true { return true; }
 	public enabled = false;
 	// sliding window buffers keyed by pass name; also keep a global frame totals window
 	private slidingWindowStats: { [key: string]: number[] } = {};
@@ -75,13 +77,21 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
 		this.useEMA = true;
 		// derive EMA alpha from SUMMARY_FREQUENCY: alpha = 2 / (N + 1)
 		this.emaAlpha = 2 / (this.SUMMARY_FREQUENCY + 1);
-		EventEmitter.instance.initClassBoundEventSubscriptions(this);
+		// Register for lifecycle-aware event processing
+		Registry.instance.register(this);
+	}
+
+	// Implement Disposable for Registry/Registerable compatibility
+	public dispose(): void {
+		// Unsubscribe from all events for this instance
+		$.event_emitter.removeSubscriber(this);
+		// Remove DOM overlay if present
+		const el = document.getElementById(HUD_ID);
+		if (el && el.parentElement) el.parentElement.removeChild(el);
+		this.enabled = false;
 	}
 
 	@subscribesToGlobalEvent('frameend', true)
-	update(): void {
-		this.updateNow();
-	}
 	updateNow(): void {
 		if (!this.enabled) return;
 		const el = ensureHudElement();
@@ -107,65 +117,57 @@ export class RenderHUDOverlay implements Identifiable { // Note that it is *not*
 		let total = 0;
 		for (const s of stats) total += s.ms;
 		// Backend draw call counters (if backend exposes them)
-		try {
-			const b = gv.backend;
-			const fs = b?.getFrameStats?.();
-			if (fs) {
-				const toKB = (n?: number) => ((n ?? 0) / 1024).toFixed(1);
-				const anyFs = fs as unknown as { vertexBytes?: number; indexBytes?: number; uniformBytes?: number; textureBytes?: number };
-				lines.push(
-					`draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} ` +
-					`upload:${toKB(fs.bytesUploaded)}KB (v:${toKB(anyFs.vertexBytes)}KB i:${toKB(anyFs.indexBytes)}KB u:${toKB(anyFs.uniformBytes)}KB t:${toKB(anyFs.textureBytes)}KB)`
-				);
-				// Lights summary (build separately)
-				try {
-					const dCount = MeshPipeline.getDirectionalLightCount?.() ?? 0;
-					const pCount = MeshPipeline.getPointLightCount?.() ?? 0;
-					const amb = $.world?.ambientLight?.light;
-					const ambColor = amb?.color ?? [0, 0, 0];
-					const ambI = amb?.intensity ?? 0;
-					const r = Math.max(0, Math.min(255, Math.round((ambColor[0]) * 255)));
-					const g = Math.max(0, Math.min(255, Math.round((ambColor[1]) * 255)));
-					const b = Math.max(0, Math.min(255, Math.round((ambColor[2]) * 255)));
-					const ambChip = `<span style=\"display:inline-block;width:10px;height:10px;background:rgb(${r},${g},${b});border:1px solid #222;margin-right:6px;vertical-align:middle;\"></span>`;
-					// Header text (human-friendly labels)
-					const header = `${ambChip}<strong>Ambient</strong> (intensity ${ambI.toFixed(2)})   |   Directional lights: ${dCount}   Point lights: ${pCount}   [${this.showLightDetail ? 'details shown' : 'click to show details'}]`;
-					(lightsHeaderEl as HTMLElement).innerHTML = header;
-					const dirs = MeshPipeline.getDirectionalLights?.() ?? [];
-					const pts = MeshPipeline.getPointLightsAll?.() ?? [];
-					const topDir = dirs.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
-					const topPt = pts.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
-					if (dCount || pCount) lightLines.push(`  Directional intensities: [${topDir}]   Point intensities: [${topPt}]`);
-					if (this.showLightDetail) {
-						for (let i = 0; i < dirs.length; i++) {
-							const L = dirs[i]; lightLines.push(`  Directional #${i}  Intensity:${L.intensity.toFixed(2)}  Color:[${L.color.map((c: number) => c.toFixed(2)).join(',')}]  Direction:[${L.orientation.map((c: number) => c.toFixed(2)).join(',')}]`);
-						}
-						for (let i = 0; i < pts.length; i++) {
-							const L = pts[i]; lightLines.push(`  Point #${i}  Intensity:${L.intensity.toFixed(2)}  Range:${(L.range ?? 0).toFixed(2)}  Color:[${L.color.map((c: number) => c.toFixed(2)).join(',')}]  Position:[${(L.pos ?? [0, 0, 0]).map((c: number) => c.toFixed(2)).join(',')}]`);
-						}
-					}
-				} catch { /* ignore */ }
-				try {
-					const mu = MeshPipeline.getMorphTextureUsage();
-					if (mu && (mu.pos || mu.norm)) lines.push(`morphTex pos:${mu.pos} norm:${mu.norm}`);
-				} catch { /* ignore */ }
+		const b = gv.backend;
+		const fs = b?.getFrameStats?.();
+		if (fs) {
+			const toKB = (n?: number) => ((n ?? 0) / 1024).toFixed(1);
+			const anyFs = fs as unknown as { vertexBytes?: number; indexBytes?: number; uniformBytes?: number; textureBytes?: number };
+			lines.push(
+				`draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} ` +
+				`upload:${toKB(fs.bytesUploaded)}KB (v:${toKB(anyFs.vertexBytes)}KB i:${toKB(anyFs.indexBytes)}KB u:${toKB(anyFs.uniformBytes)}KB t:${toKB(anyFs.textureBytes)}KB)`
+			);
+			// Lights summary (build separately)
+			const dCount = MeshPipeline.getDirectionalLightCount?.() ?? 0;
+			const pCount = MeshPipeline.getPointLightCount?.() ?? 0;
+			const amb = $.world?.ambientLight?.light;
+			const ambColor = amb?.color ?? [0, 0, 0];
+			const ambI = amb?.intensity ?? 0;
+			const r = Math.max(0, Math.min(255, Math.round((ambColor[0]) * 255)));
+			const g = Math.max(0, Math.min(255, Math.round((ambColor[1]) * 255)));
+			const b = Math.max(0, Math.min(255, Math.round((ambColor[2]) * 255)));
+			const ambChip = `<span style=\"display:inline-block;width:10px;height:10px;background:rgb(${r},${g},${b});border:1px solid #222;margin-right:6px;vertical-align:middle;\"></span>`;
+			// Header text (human-friendly labels)
+			const header = `${ambChip}<strong>Ambient</strong> (intensity ${ambI.toFixed(2)})   |   Directional lights: ${dCount}   Point lights: ${pCount}   [${this.showLightDetail ? 'details shown' : 'click to show details'}]`;
+			(lightsHeaderEl as HTMLElement).innerHTML = header;
+			const dirs = MeshPipeline.getDirectionalLights?.() ?? [];
+			const pts = MeshPipeline.getPointLightsAll?.() ?? [];
+			const topDir = dirs.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
+			const topPt = pts.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
+			if (dCount || pCount) lightLines.push(`  Directional intensities: [${topDir}]   Point intensities: [${topPt}]`);
+			if (this.showLightDetail) {
+				for (let i = 0; i < dirs.length; i++) {
+					const L = dirs[i]; lightLines.push(`  Directional #${i}  Intensity:${L.intensity.toFixed(2)}  Color:[${L.color.map((c: number) => c.toFixed(2)).join(',')}]  Direction:[${L.orientation.map((c: number) => c.toFixed(2)).join(',')}]`);
+				}
+				for (let i = 0; i < pts.length; i++) {
+					const L = pts[i]; lightLines.push(`  Point #${i}  Intensity:${L.intensity.toFixed(2)}  Range:${(L.range ?? 0).toFixed(2)}  Color:[${L.color.map((c: number) => c.toFixed(2)).join(',')}]  Position:[${(L.pos ?? [0, 0, 0]).map((c: number) => c.toFixed(2)).join(',')}]`);
+				}
 			}
-		} catch { /* ignore */ }
+			const mu = MeshPipeline.getMorphTextureUsage();
+			if (mu && (mu.pos || mu.norm)) lines.push(`morphTex pos:${mu.pos} norm:${mu.norm}`);
+		}
 
 		// Compute averages depending on mode (EMA or fixed sliding window)
 		const modeStr = this.useEMA ? 'EMA' : 'Window';
 		// Feature queue sizes (front/back)
-		try {
-			const sq = (SpritesPipeline).getSpriteQueueDebug();
-			const mq = (MeshPipeline).getMeshQueueDebug();
-			const pq = (ParticlesPipeline).getQueuedParticleCount();
-			if (sq || mq || pq) {
-				const s = sq ? `S f:${sq.front} b:${sq.back}` : 'S n/a';
-				const m = mq ? `M f:${mq.front} b:${mq.back}` : 'M n/a';
-				const p = pq ? `P f:${pq} b:n/a` : 'P n/a';
-				lines.push(`queues ${s} | ${m} | ${p}`);
-			}
-		} catch { /* ignore */ }
+		const sq = (SpritesPipeline).getSpriteQueueDebug();
+		const mq = (MeshPipeline).getMeshQueueDebug();
+		const pq = (ParticlesPipeline).getQueuedParticleCount();
+		if (sq || mq || pq) {
+			const s = sq ? `S f:${sq.front} b:${sq.back}` : 'S n/a';
+			const m = mq ? `M f:${mq.front} b:${mq.back}` : 'M n/a';
+			const p = pq ? `P f:${pq} b:n/a` : 'P n/a';
+			lines.push(`queues ${s} | ${m} | ${p}`);
+		}
 		if (this.useEMA) {
 			// Update EMA for frame average
 			if (this.emaFrameAvg === null) this.emaFrameAvg = total;
