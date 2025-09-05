@@ -8,13 +8,13 @@ import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
 import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
-import { TEXTMANAGER_ID, TextureManager } from "../render/texturemanager";
+import { TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
-import { World } from "./world";
+import { World, WorldConfiguration } from "./world";
 import { EventEmitter, EventPayload } from "./eventemitter";
 import { BFont } from './font';
 import { GameObject } from "./object/gameobject";
@@ -22,18 +22,10 @@ import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
 
-/**
- * Declare global variables and types.
- */
-// declare global {
-// 	var $: Game;
-// 	var $rom: RomPack;
-// 	var debug: boolean;
-// }
-
 global = globalThis || window; // Ensure global is defined
 
-export var $: Game;
+// Register global variables
+// Note that $ is defined at the bottom of the code file
 export var $rompack: RomPack;
 export var $debug: boolean;
 export var $world: World;
@@ -41,8 +33,7 @@ export var $view: GameView;
 
 export interface GameInitArgs {
 	rompack: RomPack;
-	world: World;
-	view: GameView;
+	worldConfig: WorldConfiguration;
 	sndcontext: AudioContext;
 	gainnode: GainNode;
 	debug?: boolean;
@@ -159,12 +150,12 @@ export class Game {
 
 	public get view(): GameView { return this.registry.get<GameView>('view'); }
 
-	public get aem(): AudioEventManager { return this.registry.get<AudioEventManager>('aem'); }
+	public get aem(): AudioEventManager { return AudioEventManager.instance; }
 
-	public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
+	public get event_emitter(): EventEmitter { return EventEmitter.instance; }
 
-	public get input(): Input { return this.registry.get<Input>('input'); }
-	public get texmanager(): TextureManager { return this.registry.get<TextureManager>(TEXTMANAGER_ID); }
+	public get input(): Input { return Input.instance; }
+	public get texmanager(): TextureManager { return TextureManager.instance; }
 	public get registry(): Registry { return Registry.instance; }
 	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm'); }
 
@@ -196,9 +187,10 @@ export class Game {
 		this.world.spawn(o, pos, ignoreSpawnhandler);
 	}
 
-	public exile(o: GameObject): void {
-		this.world.exile(o);
-	}
+    /** Destroy (dispose) a game object from the world. */
+    public destroy(o: GameObject): void { this.world.destroy(o); }
+    /** @deprecated Use destroy(o) */
+    public exile(o: GameObject): void { this.world.exile(o); }
 
 	public drawImg(options: DrawImgOptions): void {
 		this.view.drawImg(options);
@@ -290,10 +282,6 @@ export class Game {
 	 */
 	constructor() {
 		this.initialized = false;
-		// global = globalThis;
-		// global['$'] = this;
-		// window['$'] = this;
-		$ = this;
 	}
 
 	/**
@@ -306,9 +294,7 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, world, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
-		// global['$rom'] = rom;
-		// window['$rom'] = rom;
+		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
 		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
@@ -316,11 +302,10 @@ export class Game {
 		this.updateInterval = 1000 / this.targetFPS;
 		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
 
-		this._debug = debug ?? this._debug;
-		$debug = this._debug;
-
-		// global['debug'] = this.debug;
-		// global['$rom'] = rom;
+        this._debug = debug ?? this._debug;
+        $debug = this._debug;
+        // Surface duplicate/missing-listener logs in development
+        EventEmitter.debug = this._debug === true;
 
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
@@ -328,7 +313,7 @@ export class Game {
 		if ($.input.isOnscreenGamepadEnabled) {
 			$.input.enableOnscreenGamepad();
 		}
-		const gview = this.view;
+		const gview = new GameView(worldConfig.viewportSize);
 		$view = gview;
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
 		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
@@ -374,9 +359,9 @@ export class Game {
 
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
-		if (!world) throw new Error('World not passed to game init!');
-		$world = world;
-		world.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
+		if (!worldConfig) throw new Error('World configuration not passed to game init!');
+		$world = new World(worldConfig);
+		$world.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
 
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
 		if (!this.registry.has('physics_world')) {
@@ -562,3 +547,5 @@ export class Game {
 		return frames.length - 1 - idx;
 	}
 }
+
+export var $: Game = new Game();

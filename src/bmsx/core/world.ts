@@ -10,7 +10,7 @@ import { PhysicsDescriptorComponent } from '../physics/physicsdescriptorcomponen
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
 import { renderGate } from '../render/view';
-import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
+import type { Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
@@ -22,6 +22,7 @@ import { Registry } from "./registry";
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, id2spaceType, initial_world_spaces, isSpaceAware, obj_id2space_id_type, objid_2_objspaceid, spaceid_2_space } from './space';
 import { EventEmitter } from './eventemitter';
+import { shallowCopy } from './utils';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 
@@ -76,6 +77,13 @@ export function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
         },
     });
 }
+
+export type WorldConfiguration = {
+    viewportSize?: Size;
+    collisionService?: TileCollisionService;
+    modules?: Array<ModelPlugin>;
+    fsmId?: string;
+};
 
 @insavegame
 /**
@@ -158,14 +166,14 @@ export class World implements Stateful, RegisterablePersistent {
     // setSpace implemented later with activation hooks
     public get_space<T extends Space>(id: Identifier) { return this._spaceMap.get(id) as T; }
 
-    // Model configuration (size, services, plugins)
-    private _size: { width: number; height: number } = { width: 256, height: 192 };
+    // Model configuration (size, services, modules)
+    private _size: Size = { x: 256, y: 192 };
     private _collision?: TileCollisionService;
-    private _plugins: Array<ModelPlugin> = [];
+    private _modules: Array<ModelPlugin> = [];
     private _fsmId: string = 'world';
 
-    public get gamewidth(): number { return this._size.width; }
-    public get gameheight(): number { return this._size.height; }
+    public get gamewidth(): number { return this._size.x; }
+    public get gameheight(): number { return this._size.y; }
 
     protected idCounter = 0;
 
@@ -318,7 +326,7 @@ export class World implements Stateful, RegisterablePersistent {
         const fromSid = this.objToSpaceMap.get(obj_id);
         if (!fromSid) return; // Already absent
         const origin_space = this.get_space(fromSid);
-        origin_space.exile(obj, true);
+        origin_space.despawn(obj, true);
         target_space.spawn(obj, null, true);
     }
 
@@ -333,7 +341,7 @@ export class World implements Stateful, RegisterablePersistent {
         const from = fromSid ? this.get_space(fromSid) : null;
         if (!from || from === toSpace) return;
         const suppress = opts?.suppressLifecycleHooks ?? true;
-        from.exile(o, suppress);
+        from.despawn(o, suppress);
         toSpace.spawn(o, undefined, suppress);
         if (isSpaceAware(o)) { o.onleaveSpace?.(from.id); o.onenterSpace?.(toSpace.id); }
     }
@@ -362,7 +370,7 @@ export class World implements Stateful, RegisterablePersistent {
      * These runtime errors usually occur because the world was not created and initialized (with states),
      * while creating new game objects that reference the world or the world states
      */
-    constructor(opts?: { size?: { width: number; height: number }, collision?: TileCollisionService, plugins?: Array<ModelPlugin>, fsmId?: string }) {
+    constructor(opts: WorldConfiguration) {
         Registry.instance.register(this);
         this.spaces = [];
         this._spaceMap = new Map<Identifier, Space>();
@@ -371,24 +379,23 @@ export class World implements Stateful, RegisterablePersistent {
         this[objid_2_objspaceid] = makeIndexProxy(this.objToSpaceMap);
 
         this.paused = false;
-        if (opts?.size) this._size = { ...opts.size };
-        if (opts?.collision) this._collision = opts.collision;
-        if (opts?.plugins) this._plugins = opts.plugins.slice();
-        if (opts?.fsmId) this._fsmId = opts.fsmId;
+        if (opts.viewportSize) this._size = shallowCopy<Size>(opts.viewportSize);
+        if (opts.collisionService) this._collision = opts.collisionService;
+        if (opts.modules) this._modules = opts.modules.slice();
+        if (opts.fsmId) this._fsmId = opts.fsmId;
         // Initialize default ECS pipeline
         this.setupDefaultSystems();
     }
 
     public init_on_boot(): void {
-        // Order is important: build FSM & BT libraries before plugins spawn objects that construct state machines.
+        // Order is important: build FSM & BT libraries before modules spawn objects that construct state machines.
         // Previous order invoked registerPluginHooks (spawning objects) before setupStateMachineLib, causing
         // StateDefinitions to be undefined during GameObject construction (e.g. accessing 'Cube3D').
         this
             .initializeWorldSpaces()
             .setupStateMachineLib()      // ensures StateDefinitions populated
             .setupBTLib()                // behavior trees available prior to plugin object creation
-            .registerPluginHooks()       // plugins may now safely spawn objects relying on FSM/BT definitions
-            .registerEventSubscriptions()
+            .registerPluginHooks()       // modules may now safely spawn objects relying on FSM/BT definitions
             .startWorldStateMachine();
     }
 
@@ -399,15 +406,13 @@ export class World implements Stateful, RegisterablePersistent {
         this.sc.dispose();
         // Unsubscribe from all events
         EventEmitter.instance.removeSubscriber(this);
-        // Dispose plugins
-        for (const p of this._plugins) p.dispose?.();
+        // Dispose modules
+        for (const p of this._modules) p.dispose?.();
         $.registry.deregister(this);
     }
 
-    public registerEventSubscriptions(): World {
-        EventEmitter.instance.initClassBoundEventSubscriptions(this);
-        return this; // Return the current instance of the World for chaining
-    }
+    // Note: World no longer needs an explicit registerEventSubscriptions() call.
+    // Event-decorated methods auto-register on instance creation with lifecycle gating.
 
     /**
      * Initializes the spaces for the world. This method should only be executed when the world is not being revived.
@@ -464,8 +469,8 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     public registerPluginHooks(): this {
-        // Plugins boot hooks (explicit lifecycle; no property chaining)
-        for (const p of this._plugins) p.onBoot(this);
+        // modules boot hooks (explicit lifecycle; no property chaining)
+        for (const p of this._modules) p.onBoot(this);
 
         return this; // Return the current instance of the World for chaining
     }
@@ -498,7 +503,7 @@ export class World implements Stateful, RegisterablePersistent {
         this.systems.updateFrom(this, TickGroup.PostPhysics);
 
         // Plugin tick hooks
-        for (const p of this._plugins) p.onTick?.(this, deltaTime);
+        for (const p of this._modules) p.onTick?.(this, deltaTime);
 
         // Cleanup disposed objects
         const objects = this.activeObjects;
@@ -565,7 +570,7 @@ export class World implements Stateful, RegisterablePersistent {
             }
 
             // Plugin load hook
-            for (const p of this._plugins) p.onLoad?.(this);
+            for (const p of this._modules) p.onLoad?.(this);
 
             // Deferred physics world rebuild: after all objects & components are fully hydrated
             try {
@@ -691,23 +696,31 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Exiles a game object from all spaces in the world instance.
-     * @param {GameObject} o - The game object to exile.
-     * @returns {void} Nothing.
+     * Destroy a game object (dispose) from all spaces in the world instance.
      */
-    public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
-        this.spaces.forEach(s => s.get(o.id) && s.exile(o, skip_ondispose_event));
-        // Note that we don't need to dispose / deregister the object, as that is done in the `ondispose` method of the `GameObject` class
+    public destroy(o: GameObject): void {
+        this.spaces.forEach(s => s.get(o.id) && s.destroy(o));
     }
 
     /**
-     * Exiles a game object from the current space in the world instance.
-     * @param {GameObject} o - The game object to exile.
-     * @returns {void} Nothing.
+     * Despawn a game object from whichever space it currently lives in without disposing it.
+     * The object remains in the Registry, but event handling is disabled (via flag) so it won't react to events.
      */
-    public exileFromCurrentSpace(o: GameObject): void {
-        this.activeSpace.exile(o);
+    public despawn(o: GameObject): void {
+        for (const s of this.spaces) {
+            if (s.get(o.id)) { s.despawn(o); return; }
+        }
     }
+
+    /** Destroy a game object from the current active space. */
+    public destroyFromCurrentSpace(o: GameObject): void {
+        this.activeSpace.destroy(o);
+    }
+
+    /** @deprecated Use destroy(o) instead. */
+    public exile(o: GameObject, skip_ondispose_event: boolean = false): void { this.spaces.forEach(s => s.get(o.id) && s.exile(o, skip_ondispose_event)); }
+    /** @deprecated Use destroyFromCurrentSpace(o) instead. */
+    public exileFromCurrentSpace(o: GameObject): void { this.activeSpace.exile(o); }
 
     /**
      * Adds a new space to the world instance.

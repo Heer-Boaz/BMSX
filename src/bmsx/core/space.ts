@@ -101,22 +101,35 @@ export class Space {
     }
 
     /**
-     * Removes object from the game and triggers it's ondispose-event.
-     * @param {GameObject} o  - GameObject to dispose
-     * @param {boolean} skip_ondispose_event - Disables triggering ondispose-event.
-     * Example uses include moving objects from one space to another.
-     * @returns {void} Nothing
+     * Destroys (disposes) the object and removes it from this space.
+     * This will call GameObject.dispose(), which unsubscribes from events and deregisters it from the Registry.
      */
-    public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
+    public destroy(o: GameObject, skip_ondespawn_event: boolean = false): void {
         const index = this.objects.indexOf(o);
-        if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [Model.exile]!`);
-        !skip_ondispose_event && o.dispose?.(); // Trigger ondispose event before removing the object from the space. `ondispose` unsubscribes the object from events and removes it from the registry
+        if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [Space.despawn]!`);
+        if (!skip_ondespawn_event) o.ondespawn?.();
         if (index > -1) this.objects.splice(index, 1);
         this._id2objMap.delete(o.id);
         const model = this._model ?? $.world;
         model.objToSpaceMap.delete(o.id);
         model.onObjectExiled(this, o);
         if (model.depthDirtyBatch) model.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
+    }
+
+    /**
+     * @deprecated Use destroy(o) to dispose, or despawn(o) to detach without destroying.
+     */
+    public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
+        this.destroy(o, skip_ondispose_event);
+    }
+
+    /**
+     * Detach an object from this space without disposing it.
+     * Event handling is disabled on the object, but it remains in the Registry
+     * so pooled workflows can reuse it without reallocations.
+     */
+    public despawn(o: GameObject, skip_ondespawn_event: boolean = false): void {
+        this.exile(o, skip_ondespawn_event);
     }
 
     /**

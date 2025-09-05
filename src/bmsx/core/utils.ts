@@ -119,12 +119,12 @@ export function to_vec3arr(v: vec3 | vec3arr): vec3arr {
  * @returns A new Vector object with the same x, y and z values as the original.
  */
 
-export function shallowCopy(toCopy: {} | []) {
+export function shallowCopy<T>(toCopy: T): T {
     if (Array.isArray(toCopy)) {
-        return [...toCopy];
+        return [...toCopy] as T;
     }
     if (typeof toCopy === 'object') {
-        return { ...toCopy };
+        return { ...toCopy } as T;
     }
     return toCopy;
 }
@@ -662,6 +662,7 @@ export function deepEqual(a: any, b: any): boolean {
     }
     return false;
 }
+
 export function deepClone<T>(v: T): T {
     if (v === null || typeof v !== 'object') return v;
     if (Array.isArray(v)) return v.map(deepClone) as T;
