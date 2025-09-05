@@ -41,6 +41,22 @@ export class GamepadInput implements InputHandler {
      */
     private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
+    /** Monotonic press id generator for this device */
+    private nextPressId = 1;
+
+    /** Cached timestamp from last poll to early-out when input hasn’t changed */
+    private lastSampleTimestamp: number | null = null;
+
+    /** Digitalized axis state with hysteresis to prevent flapping */
+    private axisDigitalState: Record<'left' | 'right' | 'up' | 'down', boolean> = { left: false, right: false, up: false, down: false };
+
+    /** Hysteresis thresholds for axis digitalization */
+    private static readonly AXIS_ON = 0.5;
+    private static readonly AXIS_OFF = 0.4;
+
+    /** Radial deadzone for sticks */
+    private static readonly RADIAL_DEADZONE = 0.2;
+
     public get supportsVibrationEffect(): boolean {
         return true; // Gamepad supports vibration feedback
     }
@@ -89,31 +105,41 @@ export class GamepadInput implements InputHandler {
      * @param duration The duration of the vibration effect in milliseconds.
      * @param intensity The intensity of the vibration effect, ranging from 0.0 to 1.0.
      */
+    private lastRumbleAt: number = 0;
     public applyVibrationEffect(params: VibrationParams): void {
-        if (!this.gamepad) return; // No gamepad is assigned to this GamepadInput-object
-        if (!this.gamepad.vibrationActuator && !this.hidPad.isConnected) return; // No vibration actuator available and no HID device connected
+        const now = performance.now();
+        // Coalesce rumble updates to <= 60Hz
+        if (now - this.lastRumbleAt < 16) return;
+        this.lastRumbleAt = now;
+
+        if (!this.gamepad && !this.hidPad.isConnected) {
+            // Fallback: navigator.vibrate (Android); noop on iOS (ignored)
+            try { if ('vibrate' in navigator) { navigator.vibrate(Math.max(0, Math.round(params.duration * params.intensity))); } } catch { /* noop */ }
+            return;
+        }
+
         const strongMagnitude = params.intensity > 0.5 ? Math.round(params.intensity * 255) : 0;
         const weakMagnitude = params.intensity <= 0.5 ? Math.round(params.intensity * 255) : 0;
 
         const isDs4 = this.isDualShock4();
 
         if (this.gamepad && this.gamepad.vibrationActuator && !isDs4) {
-            this.gamepad.vibrationActuator.playEffect(params.effect, {
-                duration: params.duration,
-                weakMagnitude,
-                strongMagnitude
-            });
+            try {
+                this.gamepad.vibrationActuator.playEffect(params.effect, {
+                    duration: params.duration,
+                    weakMagnitude,
+                    strongMagnitude
+                });
+            } catch (e) {
+                // Silent dropout on disconnect
+            }
             return;
         }
 
         try {
-            this.hidPad.sendRumble({
-                strong: strongMagnitude,
-                weak: weakMagnitude,
-                duration: params.duration
-            });
+            this.hidPad.sendRumble({ strong: strongMagnitude, weak: weakMagnitude, duration: params.duration });
         } catch (e) {
-            console.warn(`HID‑rumble failed: ${e}`);
+            // Silent dropout on disconnect
         }
     }
 
@@ -173,7 +199,23 @@ export class GamepadInput implements InputHandler {
         } else {
             this._gamepad = newGamepad;
         }
-
+        // Early-out if timestamp unchanged, but still tick hold durations to allow long-press thresholds
+        const ts = this._gamepad?.timestamp ?? null;
+        const unchanged = ts != null && this.lastSampleTimestamp === ts;
+        this.lastSampleTimestamp = ts;
+        if (unchanged) {
+            // Increment presstime for any pressed buttons; clear edge flags
+            for (const button of Input.BUTTON_IDS) {
+                const st = this.gamepadButtonStates[button];
+                if (!st) continue;
+                if (st.pressed) {
+                    st.presstime = (st.presstime ?? 0) + 1;
+                    st.justpressed = false;
+                    st.justreleased = false;
+                }
+            }
+            return;
+        }
 
         // Initialize the individual gamepad button states if they are not already initialized
         Input.BUTTON_IDS.forEach(button => this.gamepadButtonStates[button] || (this.gamepadButtonStates[button] = makeButtonState()));
@@ -191,11 +233,44 @@ export class GamepadInput implements InputHandler {
      */
     private pollGamepadAxes(gamepad: Gamepad): void {
         if (!gamepad) return; // Will be null if the gamepad was disconnected
-        const [xAxis, yAxis] = gamepad.axes;
-        this.gamepadButtonStates['left'].pressed = xAxis < -0.5;
-        this.gamepadButtonStates['right'].pressed = xAxis > 0.5;
-        this.gamepadButtonStates['up'].pressed = yAxis < -0.5;
-        this.gamepadButtonStates['down'].pressed = yAxis > 0.5;
+        const now = performance.now();
+        const x = gamepad.axes?.[0] ?? 0;
+        const y = gamepad.axes?.[1] ?? 0;
+
+        // Radial deadzone and normalization
+        const mag = Math.hypot(x, y);
+        const dz = GamepadInput.RADIAL_DEADZONE;
+        let nx = 0, ny = 0, nmag = 0;
+        if (mag > dz) {
+            const k = (mag - dz) / (1 - dz);
+            if (mag > 0) { nx = (x / mag) * k; ny = (y / mag) * k; }
+            nmag = Math.min(1, Math.max(0, k));
+        }
+
+        // Update analog values on LS
+        const lsState = this.gamepadButtonStates['ls'] ?? makeButtonState();
+        lsState.value2d = [nx, ny];
+        lsState.value = nmag;
+        lsState.timestamp = now;
+        this.gamepadButtonStates['ls'] = lsState;
+
+        // Digitalize with hysteresis
+        const on = GamepadInput.AXIS_ON, off = GamepadInput.AXIS_OFF;
+        const leftNow = nx < 0 ? -nx >= (this.axisDigitalState.left ? off : on) : false;
+        const rightNow = nx > 0 ? nx >= (this.axisDigitalState.right ? off : on) : false;
+        const upNow = ny < 0 ? -ny >= (this.axisDigitalState.up ? off : on) : false;
+        const downNow = ny > 0 ? ny >= (this.axisDigitalState.down ? off : on) : false;
+
+        this.axisDigitalState.left = leftNow;
+        this.axisDigitalState.right = rightNow;
+        this.axisDigitalState.up = upNow;
+        this.axisDigitalState.down = downNow;
+
+        // Only set pressed flags here; edges handled in pollGamepadButtons
+        this.gamepadButtonStates['left'].pressed = leftNow || this.gamepadButtonStates['left'].pressed;
+        this.gamepadButtonStates['right'].pressed = rightNow || this.gamepadButtonStates['right'].pressed;
+        this.gamepadButtonStates['up'].pressed = upNow || this.gamepadButtonStates['up'].pressed;
+        this.gamepadButtonStates['down'].pressed = downNow || this.gamepadButtonStates['down'].pressed;
     }
 
     /**
@@ -206,28 +281,56 @@ export class GamepadInput implements InputHandler {
         if (!gamepad) return; // Will be null if the gamepad was disconnected
         const buttons = gamepad.buttons;
         if (!buttons) return;
+        const now = performance.now();
         for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
             const gamepadButton = buttons[btnIndex];
             const pressed = typeof gamepadButton === 'object' ? gamepadButton.pressed : gamepadButton === 1.0;
             // Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
             const buttonId = Input.INDEX2BUTTON[btnIndex as keyof typeof Input.INDEX2BUTTON];
-            const oldPressTime = this.gamepadButtonStates[buttonId].presstime ?? 0;
-            this.gamepadButtonStates[buttonId].pressed = buttonId === 'left' || buttonId === 'right' || buttonId === 'up' || buttonId === 'down'
-                ? this.gamepadButtonStates[buttonId].pressed || pressed
-                : pressed;
-
-            if (this.gamepadButtonStates[buttonId].pressed) {
-                // If the button is pressed, increment the press time counter for detecting hold actions
-                this.gamepadButtonStates[buttonId].presstime = oldPressTime + 1;
-                // Set the timestamp only if it was not set before
-                this.gamepadButtonStates[buttonId].timestamp ||= performance.now();
-                // Set the justpressed flag if the button was not pressed before this poll
-                this.gamepadButtonStates[buttonId].justpressed = oldPressTime === 0;
-                // Reset the justreleased flag since the button is currently pressed
-                this.gamepadButtonStates[buttonId].justreleased = false;
+            const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
+            const axisPress = (buttonId === 'left' && this.axisDigitalState.left)
+                || (buttonId === 'right' && this.axisDigitalState.right)
+                || (buttonId === 'up' && this.axisDigitalState.up)
+                || (buttonId === 'down' && this.axisDigitalState.down);
+            const isDown = pressed || axisPress;
+            const wasDown = !!prev.pressed;
+            if (isDown) {
+                if (!wasDown) {
+                    const pid = this.nextPressId++;
+                    this.gamepadButtonStates[buttonId] = makeButtonState({
+                        pressed: true,
+                        justpressed: true,
+                        waspressed: true,
+                        presstime: 0,
+                        timestamp: now,
+                        pressedAtMs: now,
+                        pressId: pid,
+                        value: 1,
+                    });
+                } else {
+                    const st = prev;
+                    st.pressed = true;
+                    st.justpressed = false;
+                    st.justreleased = false;
+                    st.waspressed = true;
+                    st.presstime = (st.presstime ?? 0) + 1;
+                    st.value = 1;
+                    this.gamepadButtonStates[buttonId] = st;
+                }
             } else {
-                // Reset the button state if it is not pressed
-                this.gamepadButtonStates[buttonId] = makeButtonState({ justreleased: this.gamepadButtonStates[buttonId]?.pressed ? true : false, timestamp: performance.now() });
+                const jr = wasDown;
+                this.gamepadButtonStates[buttonId] = makeButtonState({
+                    pressed: false,
+                    justpressed: false,
+                    justreleased: jr,
+                    waspressed: prev.waspressed || wasDown,
+                    wasreleased: prev.wasreleased || jr,
+                    consumed: prev.consumed || false,
+                    timestamp: now,
+                    releasedAtMs: jr ? now : prev.releasedAtMs ?? null,
+                    pressId: jr ? prev.pressId ?? null : prev.pressId ?? null,
+                    value: 0,
+                });
             }
         }
     }

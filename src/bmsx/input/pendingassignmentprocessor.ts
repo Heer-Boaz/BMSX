@@ -1,104 +1,8 @@
 import { $ } from '../core/game';
-import { SpriteObject } from '../core/object/sprite';
-import { build_fsm } from '../fsm/fsmdecorators';
-import type { StateMachineBlueprint } from '../fsm/fsmtypes';
-import type { State } from '../fsm/state';
-import { ZCOORD_MAX } from '../render/backend/webgl.constants';
-import type { Identifier } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { Input } from './input';
 import type { BGamepadButton, InputHandler } from './inputtypes';
 
-/**
- * Represents a selected player index icon that is shown when a new input device has been detected and not yet been assigned to a player.
- * The icon is also shown when an input devices is being reassigned to a player.
- */
-class SelectedPlayerIndexIcon extends SpriteObject {
-    @build_fsm()
-    static bouw(): StateMachineBlueprint {
-        return {
-            event_handlers: {
-                $animation_end: {
-                    do(this: SelectedPlayerIndexIcon) {
-                        this.markForDisposal();
-                    }
-                },
-            },
-            substates: {
-                _default: {
-                    event_handlers: {
-                        controller_assigned: 'assigned',
-                        controller_assigmment_cancelled: 'cancelled',
-                    },
-                },
-                assigned: {
-                    tape_data: [true, false],
-                    repetitions: 5,
-                    auto_rewind_tape_after_end: false,
-                    ticks2advance_tape: 4,
-                    tape_next(this: SelectedPlayerIndexIcon, state: State) {
-                        this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
-                    },
-                    tape_end(this: SelectedPlayerIndexIcon) {
-                        this.sc.dispatch_event('animation_end', this);
-                    },
-                },
-                cancelled: {
-                    tape_data: [2],
-                    repetitions: 16,
-                    auto_rewind_tape_after_end: false,
-                    ticks2advance_tape: 1,
-                    entering_state(this: SelectedPlayerIndexIcon) {
-                        this.colorize = { r: 1, g: 0, b: 0, a: .75 };
-                    },
-                    tape_next(this: SelectedPlayerIndexIcon, state: State) {
-                        this.y -= state.current_tape_value;
-                    },
-                    tape_end(this: SelectedPlayerIndexIcon) {
-                        this.sc.dispatch_event('animation_end', this);
-                    },
-                },
-            },
-        };
-    }
-
-    /**
-     * Returns the icon identifier for the specified gamepad index.
-     * If the gamepad index is not provided, it defaults to 0.
-     *
-     * @param gamepadIndex - The index of the gamepad.
-     * @returns The icon identifier.
-     */
-    public static getIconId(gamepadIndex: number): Identifier {
-        return `joystick_icon_${gamepadIndex ?? 0}`;
-    }
-
-    /**
-     * Constructs an instance of the class.
-     *
-     * @param gamepadIndex - The index of the gamepad associated with the player.
-     * This value is used to retrieve the icon ID for the selected player.
-     */
-    constructor(public gamepadIndex: number) {
-        super(SelectedPlayerIndexIcon.getIconId(gamepadIndex));
-        this.z = ZCOORD_MAX;
-        this.colorize = { r: 1, g: 1, b: 1, a: .75 };
-    }
-
-    /**
-     * Sets the player index, which updates the icon image to represent a particular player by number.
-     * @param playerIndex - The index of the player.
-     */
-    public set playerIndex(playerIndex: number) {
-        if (playerIndex === null) {
-            this.imgid = 'joystick_none';
-            return;
-        }
-        else {
-            this.imgid = `joystick${playerIndex}`;
-        }
-    }
-}
 /**
  * Represents a processor for handling pending gamepad assignments.
  * This class manages the selection of player indexes for gamepad assignments and the placement of the joystick icon.
@@ -120,10 +24,7 @@ export class PendingAssignmentProcessor {
      */
     private get pendingIndex() { return this.inputHandler.gamepadIndex; }
 
-    /**
-     * The icon representing the selected player index.
-     */
-    private icon: SelectedPlayerIndexIcon = null;
+    // UI is handled by ControllerAssignmentUI via events
 
     /**
      * Checks if a specific gamepad button is pressed and not consumed.
@@ -142,6 +43,20 @@ export class PendingAssignmentProcessor {
      * @returns The calculated X position of the icon.
      */
     private calcIconPositionX(positionIndex: number) { return PendingAssignmentProcessor.joystick_icon_start.x + (PendingAssignmentProcessor.joystick_icon_increment_x * (positionIndex ?? 0)); };
+
+    private notifyUIProposed(gamepadIndex: number, proposedPlayerIndex: number | null): void {
+        $.emit('controller_assignment_proposed', Input.instance, { gamepadIndex, proposedPlayerIndex, positionIndex: this.pendingIndex });
+    }
+
+    private lastNotified: { proposed: number | null; positionIndex: number } | null = null;
+    private maybeNotify(gamepadIndex: number, proposedPlayerIndex: number | null): void {
+        const pos = this.pendingIndex;
+        const prev = this.lastNotified;
+        if (!prev || prev.proposed !== proposedPlayerIndex || prev.positionIndex !== pos) {
+            this.lastNotified = { proposed: proposedPlayerIndex, positionIndex: pos };
+            this.notifyUIProposed(gamepadIndex, proposedPlayerIndex);
+        }
+    }
 
     /**
      * Handles the button press event for selecting the player index.
@@ -168,7 +83,7 @@ export class PendingAssignmentProcessor {
 
             if (newProposedPlayerIndex !== null) {
                 this.proposedPlayerIndex = newProposedPlayerIndex;
-                this.icon.playerIndex = newProposedPlayerIndex;
+                this.maybeNotify((this.inputHandler as any).gamepadIndex ?? 0, this.proposedPlayerIndex);
             }
             else {
                 // No new player index available for gamepad assignment found => don't do anything!
@@ -183,22 +98,7 @@ export class PendingAssignmentProcessor {
      * @param gamepadInput - The gamepad input handler.
      * @param positionIndex - The position index of the icon.
      */
-    private createSelectPlayerIconIfNeeded(gamepadInput: InputHandler, positionIndex: number) {
-        const model = $.world;
-        if (!this.icon) { // If the joystick icon doesn't exist yet, create it
-            const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
-            this.icon = joystick_icon;
-            const existingIcon = model.getGameObject<SelectedPlayerIndexIcon>(this.icon.id); // Check whether the icon already exists. This can happen when the icon was still animating while somehow the assignment needs to happen again.
-            existingIcon && model.exile(existingIcon); // Remove the existing icon so that we can replace it with a new, younger and prettier version.
-            model.spawn(joystick_icon);
-            joystick_icon.x = this.calcIconPositionX(positionIndex);
-            joystick_icon.y = PendingAssignmentProcessor.joystick_icon_start.y;
-        }
-        else if (!model.is_obj_in_current_space(this.icon.id)) { // Check whether the joystick icon is already part of the current space (scene)
-            // If the joystick icon already exists, move it to the current space (scene) (e.g. if the player changed scenes)
-            model.move_obj_to_current_space(this.icon.id);
-        }
-    }
+    // UI creation/movement handled by ControllerAssignmentUI
 
     /**
      * Constructs a new instance of the class.
@@ -222,6 +122,7 @@ export class PendingAssignmentProcessor {
                 Input.instance.removePendingGamepadAssignment(gamepadIndex); // Remove pending gamepad assignment
             }
         });
+        // Defer UI creation to ControllerAssignmentUI
     }
 
     /**
@@ -243,17 +144,13 @@ export class PendingAssignmentProcessor {
 
                 if (proposedPlayerIndex !== null) {
                     this.proposedPlayerIndex = proposedPlayerIndex;
-                    this.createSelectPlayerIconIfNeeded(this.inputHandler, this.pendingIndex);
-                    this.icon.playerIndex = proposedPlayerIndex;
+                    this.notifyUIProposed(gamepadInput.gamepadIndex, this.proposedPlayerIndex);
                     console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
                 }
             }
         }
         else {
-            if (!$.world.getFromCurrentSpace(this.icon.id)) {
-                $.world.move_obj_to_space(this.icon.id, $.world.activeSpaceId);
-            }
-            this.icon.x = this.calcIconPositionX(this.pendingIndex);
+            this.maybeNotify(gamepadInput.gamepadIndex, this.proposedPlayerIndex);
             if (this.checkNonConsumedPressed('a', gamepadInput)) {
                 // Assign gamepad to player and remove the joystick icon
                 gamepadInput.consumeButton('a');
@@ -261,16 +158,14 @@ export class PendingAssignmentProcessor {
                 // Initialize the HID pad for the gamepad input
                 await gamepadInput.init(); // *REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
                 inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
+                // Broadcast for UI and other listeners
                 $.emit('controller_assigned', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex });
-                this.icon = null;
             }
             else if (this.checkNonConsumedPressed('b', gamepadInput)) {
                 // Cancel assignment process for this gamepad and remove the joystick icon
                 gamepadInput.consumeButton('b');
                 this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
                 $.emit('controller_assignment_cancelled', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex });
-                this.icon = null;
-                // this.removeIcon();
             }
             else {
                 // Handle joystick icon movement to change the proposed player index
@@ -282,15 +177,5 @@ export class PendingAssignmentProcessor {
         }
     }
 
-    /**
-     * Removes the icon from the model if it exists.
-     * If the icon is present, it will be exiled from the model
-     * and the reference to the icon will be set to undefined.
-     */
-    removeIcon(): void {
-        if (this.icon) {
-            $.world.exile(this.icon);
-            this.icon = undefined;
-        }
-    }
+    // UI removal handled by UI controller
 }
