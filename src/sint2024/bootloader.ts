@@ -1,23 +1,17 @@
-import { $, BFont, BGamepadButton, World, BootArgs, Game, GameView, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, new_vec2, type State } from '../bmsx/index';
+import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from '../bmsx/index';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
 
-var _game: Game;
-let _model: World;
-var _view: GameView;
-
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
-    _model = new World({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'world' });
-    _view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
-    _view.default_font = new BFont(BitmapId);
-    _game = new Game();
-    return _game.init({ ...args, world: _model, view: _view }).then(() => {
+    const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintModelFSM' };
+    return $.init({ ...args, worldConfig }).then(() => {
         // set input map previously done in do_one_time_game_init
-        _game.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
-        _game.start();
+        $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
+        $.view.default_font = new BFont(BitmapId);
+        $.start();
     });
 };
 

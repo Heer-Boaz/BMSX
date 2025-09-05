@@ -1,4 +1,4 @@
-import { $, World, InputMap, insavegame } from '../bmsx';
+import { $, World, InputMap, insavegame, RegisterablePersistent } from '../bmsx';
 import { subscribesToGlobalEvent } from '../bmsx/core/eventemitter';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
@@ -24,11 +24,14 @@ export const EILA_PLUGIN = {
 export type ExtendedModel = World & typeof EILA_PLUGIN;
 
 @insavegame
-export class EilaEventService {
+export class EilaEventService implements RegisterablePersistent {
 	public id: 'eila_events' = 'eila_events';
+	get registrypersistent(): true {
+		return true;
+	}
+
 	constructor() {
 		$.registry.register(this);
-		$.event_emitter.initClassBoundEventSubscriptions(this);
 	}
 
 	public dispose() {

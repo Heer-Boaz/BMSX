@@ -2,8 +2,10 @@ import {
     World,
     BFont,
     BGamepadButton, BootArgs,
-    Game, GamepadInputMapping, GameView, KeyboardButton, KeyboardInputMapping,
-    new_vec2
+    GamepadInputMapping, GameView, KeyboardButton, KeyboardInputMapping,
+    new_vec2,
+    $,
+    WorldConfiguration
 } from '../bmsx/index';
 import { createTestromPlugin } from './modelplugin';
 import { BitmapId } from './resourceids';
@@ -14,22 +16,20 @@ import './test_gamemodel';
 // (\s*\(([^)]+?)\s+as\s+any\s*\))
 // $2
 
-var _game: Game;
 export let world: World;
 var view: GameView;
 
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
-    world = new World({ size: { width: 320, height: 240 }, fsmId: 'world', plugins: [createTestromPlugin()] });
+    const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'world', modules: [createTestromPlugin()] };
     view = new GameView(new_vec2(320, 240));
 
-    _game = new Game();
-    return _game.init({ ...args, world, view }).then(() => {
+    return $.init({ ...args, worldConfig: worldConfiguration }).then(() => {
         view.default_font = new BFont(BitmapId);
         // Set input maps now that input is initialized
-        _game.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
-        _game.start();
+        $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
+        $.start();
     });
 };
 

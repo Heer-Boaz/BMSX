@@ -47,6 +47,12 @@ export class TextureManager implements RegisterablePersistent {
     get registrypersistent(): true { return true; }
     public get id(): Identifier { return 'texmgr'; }
 
+    static _instance: TextureManager;
+
+    static get instance(): TextureManager {
+        return this._instance; // Note: don't automatically create the instance! The instance requires initialization.
+    }
+
     private imageCache = new Map<ImageKey, ImageCacheEntry>();
     private gpuCache = new Map<TextureKey, GPUCacheEntry>();
     private textureBarrier: AssetBarrier<WebGLTexture>;
@@ -54,6 +60,7 @@ export class TextureManager implements RegisterablePersistent {
     constructor(private backend?: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
         Registry.instance.register(this);
         this.textureBarrier = new AssetBarrier<WebGLTexture>(this.defaultGroup);
+        TextureManager._instance = this;
     }
 
     public setBackend(backend: GPUBackend): void {
