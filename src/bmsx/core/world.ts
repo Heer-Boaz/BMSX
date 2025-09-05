@@ -448,18 +448,8 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Returns the constructor name of the specific derived class that extends this `World`.
-     * Required during game initialization where @see {@link startWorldStateMachine} is called.
-     * @see {@link this.init_model_state_machines}
-     */
-    public get constructor_name(): string { return this._fsmId; }
-
-    /**
     * Init world after construction. Needed as the states have not been build at
     * the constructor's scope yet. So, this is a kind of `onspawn` for the world.
-    *
-    * Each derived world class should override @see {@link World.constructor_name} to get the proper constructor classname of that derived world class. We need the exact classname in order to map a state machine definition to an instance of an object.
-    * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this World.
     */
     public startWorldStateMachine(): this {
         this.sc = new StateMachineController(this._fsmId ?? 'world', this.id);

@@ -7,6 +7,7 @@ import { insavegame, onload } from "../../serializer/gameserializer";
 import { $ } from '../game';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
+import { StateDefinitions } from 'bmsx/fsm/fsmlibrary';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -628,6 +629,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.size = new_vec3(...DEFAULT_SIZE_VALUES);
 		this.disposeFlag = false;
 		this.eventhandling_enabled = false; // Block event handling until spawned
+
+		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
+		if (fsm_id && !StateDefinitions[fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${fsm_id}'"`);
 		// Create the state context that will be used to manage the state of the world object
 		this.sc = new StateMachineController(fsm_id ?? this.constructor.name, this.id);
 	}
