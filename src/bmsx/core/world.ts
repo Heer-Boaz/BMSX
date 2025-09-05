@@ -1,7 +1,7 @@
 import { setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
 import { BehaviorTreeSystem, BoundarySystem, ECSystemManager, MeshAnimationSystem, PhysicsCollisionEventSystem, PhysicsPostSystem, PhysicsSyncAfterWorldCollisionSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/ecsystem";
 import { StateMachineController } from "../fsm/fsmcontroller";
-import { setupFSMlibrary } from "../fsm/fsmlibrary";
+import { setupFSMlibrary, StateDefinitions } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { AbilityRuntimeSystem } from "../gas/abilityruntime";
@@ -452,6 +452,9 @@ export class World implements Stateful, RegisterablePersistent {
     * the constructor's scope yet. So, this is a kind of `onspawn` for the world.
     */
     public startWorldStateMachine(): this {
+        // Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
+        if (this._fsmId && !StateDefinitions[this._fsmId]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${this._fsmId}'"`);
+
         this.sc = new StateMachineController(this._fsmId ?? 'world', this.id);
         this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the world, and subscribe to all events that are defined in the state machine definitions
 
