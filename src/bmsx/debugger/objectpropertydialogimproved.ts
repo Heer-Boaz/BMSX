@@ -126,7 +126,7 @@ export class ObjectPropertyDialog {
         this.contentDiv = this.dialog.getContentElement();
         this.treeState = new PropertyTreeState();
         // Build tree once
-        const obj = $.getGameObject(this.objectId);
+        const obj = $.getWorldObject(this.objectId);
         if (!obj) {
             this.contentDiv.textContent = 'Object not found.';
             return; // Object might have been deleted or not available yet
@@ -140,7 +140,7 @@ export class ObjectPropertyDialog {
     }
     private renderTable(): void {
         // Only update values, not structure or expanded/collapsed state
-        const obj = $.getGameObject(this.objectId);
+        const obj = $.getWorldObject(this.objectId);
         if (!obj) {
             // this.contentDiv.textContent = 'Object not found.';
             // TODO: Update the dialog titleSpan to indicate that the object is currently not available

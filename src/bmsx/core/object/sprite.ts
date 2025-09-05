@@ -3,15 +3,15 @@ import { color, DrawImgOptions } from "../../render/view";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
 import { insavegame } from "../../serializer/gameserializer";
 import { $, $rompack } from '../game';
-import { GameObject } from "./gameobject";
+import { WorldObject } from "./worldobject";
 import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from '../utils';
 
 @insavegame
 /**
- * An abstract class representing a game object that can be rendered as a sprite.
- * Extends the GameObject class.
+ * An abstract class representing a world object that can be rendered as a sprite.
+ * Extends the WorldObject class.
  */
-export abstract class SpriteObject extends GameObject {
+export abstract class SpriteObject extends WorldObject {
     public get flip_h() {
         return this.sprite.flip_h;
     }

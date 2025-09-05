@@ -16,7 +16,7 @@ import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './object/cameraobject';
 import { $, runGate } from './game';
-import { GameObject } from './object/gameobject';
+import { WorldObject } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
 import type { Component, ComponentConstructor } from "../component/basecomponent";
@@ -28,12 +28,12 @@ const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 
 // Backwards-compatible index proxies: runtime uses Map for performance, while
 // external code can still index with [id] due to Proxy handling.
-export type id2objectType = Record<Identifier, GameObject>;
+export type id2objectType = Record<Identifier, WorldObject>;
 export const id2obj = Symbol('id2object');
 
 // Services and plugin types
 export interface TileCollisionService {
-    collidesWithTile(o: GameObject, dir: Direction): boolean;
+    collidesWithTile(o: WorldObject, dir: Direction): boolean;
     isCollisionTile(x: number, y: number): boolean;
 }
 export type ModelPlugin = { onBoot: (world: World) => void; onTick?: (world: World, dt: number) => void; onLoad?: (world: World) => void; dispose?: () => void };
@@ -139,22 +139,22 @@ export class World implements Stateful, RegisterablePersistent {
 
     /**
      * Gets all game objects in the current space.
-     * @returns {GameObject[]} An array of all game objects in the current space.
+     * @returns {WorldObject[]} An array of all game objects in the current space.
      */
-    public get activeObjects(): GameObject[] {
+    public get activeObjects(): WorldObject[] {
         const base = this.activeSpace.objects;
         const overlay = this._spaceMap.get('ui')?.objects ?? [];
         if (overlay.length === 0) return base;
         // Merge without copying base array reference to avoid aliasing mutations
-        const out = new Array<GameObject>(base.length + overlay.length);
+        const out = new Array<WorldObject>(base.length + overlay.length);
         let i = 0;
         for (let j = 0; j < base.length; j++) out[i++] = base[j];
         for (let j = 0; j < overlay.length; j++) out[i++] = overlay[j];
         return out;
     }
 
-    public get allObjectsFromSpaces(): GameObject[] {
-        const out: GameObject[] = [];
+    public get allObjectsFromSpaces(): WorldObject[] {
+        const out: WorldObject[] = [];
         for (const sp of this.spaces) out.push(...sp.objects);
         return out;
     }
@@ -190,7 +190,7 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     public get activeCameraObject(): CameraObject | null {
-        return this._activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
+        return this._activeCameraId ? this.getWorldObject<CameraObject>(this.activeCameraId) : null;
     }
 
     public get activeCamera3D(): Camera | null {
@@ -267,19 +267,19 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Gets the game object with the given id from the current space only.
-     * @param {Identifier} id - the id of the {@link GameObject}.
-     * @returns {T} The game object with the given id from the current space only.
+     * Gets the world object with the given id from the current space only.
+     * @param {Identifier} id - the id of the {@link WorldObject}.
+     * @returns {T} The world object with the given id from the current space only.
      */
-    public getFromCurrentSpace<T extends GameObject>(id: Identifier): T | null { return this.activeSpace.get<T>(id) ?? null; }
+    public getFromCurrentSpace<T extends WorldObject>(id: Identifier): T | null { return this.activeSpace.get<T>(id) ?? null; }
 
     /**
-     * Gets the game object with the given id across all spaces.
+     * Gets the world object with the given id across all spaces.
      * If `id === `, returns the game world instead! This is used for {@link State} to make game world as target for callbacks.
-     * @param {Identifier} id - the id of the {@link GameObject}.
+     * @param {Identifier} id - the id of the {@link WorldObject}.
      * @returns {T | null} The object with the given id or the game world itself (when `id === `), or null if the object is not found.
      */
-    public getGameObject<T extends GameObject = GameObject>(id: Identifier): T | null {
+    public getWorldObject<T extends WorldObject = WorldObject>(id: Identifier): T | null {
         if (!id) return null;
         const sid = this.objToSpaceMap.get(id);
         if (!sid) return null;
@@ -293,7 +293,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {boolean} Whether an object was found _in any space_ with the given object id.
      */
     public exists(obj_id: Identifier): boolean {
-        return this.getGameObject(obj_id) ? true : false;
+        return this.getWorldObject(obj_id) ? true : false;
     }
 
     /**
@@ -319,7 +319,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing
      */
     public move_obj_to_space(obj_id: Identifier, spaceid_to_move_obj_to: Identifier): void {
-        const obj = this.getGameObject<GameObject>(obj_id);
+        const obj = this.getWorldObject<WorldObject>(obj_id);
         if (!obj) throw Error(`Cannot move unknown object '${obj_id}' to space '${spaceid_to_move_obj_to}'!`);
         const target_space = this.get_space(spaceid_to_move_obj_to);
         if (!target_space) throw Error(`Cannot move object '${obj_id}' to unknown space '${spaceid_to_move_obj_to}'!`);
@@ -334,7 +334,7 @@ export class World implements Stateful, RegisterablePersistent {
      * Atomically transfer an object between spaces and update all indexes.
      * If opts.suppressLifecycleHooks is true, spawn/leave hooks are suppressed.
      */
-    public transfer(o: GameObject, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
+    public transfer(o: WorldObject, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
         const toSpace = (to instanceof Space) ? to : this.get_space(to);
         if (!toSpace) throw new Error(`transfer: target space not found`);
         const fromSid = this.objToSpaceMap.get(o.id);
@@ -390,7 +390,7 @@ export class World implements Stateful, RegisterablePersistent {
     public init_on_boot(): void {
         // Order is important: build FSM & BT libraries before modules spawn objects that construct state machines.
         // Previous order invoked registerPluginHooks (spawning objects) before setupStateMachineLib, causing
-        // StateDefinitions to be undefined during GameObject construction (e.g. accessing 'Cube3D').
+        // StateDefinitions to be undefined during WorldObject construction (e.g. accessing 'Cube3D').
         this
             .initializeWorldSpaces()
             .setupStateMachineLib()      // ensures StateDefinitions populated
@@ -576,8 +576,8 @@ export class World implements Stateful, RegisterablePersistent {
             try {
                 let needs = false;
                 // Restrict physics world rebuild to current space to avoid cross-space coupling.
-                for (const go of this.activeSpace.objects) {
-                    if (go.getComponent && go.getComponent(PhysicsDescriptorComponent)) { needs = true; break; }
+                for (const wo of this.activeSpace.objects) {
+                    if (wo.getComponent && wo.getComponent(PhysicsDescriptorComponent)) { needs = true; break; }
                 }
                 if (needs) {
                     const world = PhysicsWorld.rebuild();
@@ -644,21 +644,21 @@ export class World implements Stateful, RegisterablePersistent {
 
     /**
      * Filters the game objects in the world instance using the provided predicate function and returns a new array containing the filtered objects.
-     * @param {function} predicate - The function used to filter the game objects. It should take a game object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
-     * @returns {GameObject[]} An array containing the filtered game objects.
+     * @param {function} predicate - The function used to filter the game objects. It should take a world object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
+     * @returns {WorldObject[]} An array containing the filtered game objects.
      */
-    public filter(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown): GameObject[] {
+    public filter(predicate: (value: WorldObject, index: number, array: WorldObject[], thisArg?: any) => unknown): WorldObject[] {
         return this.activeObjects.filter(predicate);
     }
 
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
     /**
      * Filters the game objects in the world instance using the provided predicate function and calls the provided callback function on each filtered object.
-     * @param {function} predicate - The function used to filter the game objects. It should take a game object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
-     * @param {function} callbackfn - The function called on each filtered game object. It should take a game object as its first argument, and can optionally take the index of the object in the filtered list, the filtered list itself, and the world instance as additional arguments.
+     * @param {function} predicate - The function used to filter the game objects. It should take a world object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
+     * @param {function} callbackfn - The function called on each filtered world object. It should take a world object as its first argument, and can optionally take the index of the object in the filtered list, the filtered list itself, and the world instance as additional arguments.
      * @returns {void} Nothing.
      */
-    public filter_and_foreach(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
+    public filter_and_foreach(predicate: (value: WorldObject, index: number, array: WorldObject[], thisArg?: any) => unknown, callbackfn: (value: WorldObject, index: number, array: WorldObject[], thisArg?: any) => void): void {
         for (let i = 0; i < this.activeObjects.length; i++) {
             const obj = this.activeObjects[i];
             if (predicate(obj, i, this.activeObjects, this)) {
@@ -684,43 +684,43 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Spawns a new game object in the current space.
-     * @param {GameObject} o - The game object to spawn.
-     * @param {Vector} [pos] - The position to spawn the game object at. If not provided, the game object's default position will be used.
-     * @param {boolean} [ignoreSpawnhandler=false] - Whether to ignore the game object's spawn handler. If not provided, the spawn handler will be executed.
+     * Spawns a new world object in the current space.
+     * @param {WorldObject} o - The world object to spawn.
+     * @param {Vector} [pos] - The position to spawn the world object at. If not provided, the world object's default position will be used.
+     * @param {boolean} [ignoreSpawnhandler=false] - Whether to ignore the world object's spawn handler. If not provided, the spawn handler will be executed.
      * @returns {void} Nothing.
      */
-    public spawn(o: GameObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
+    public spawn(o: WorldObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id.`);
         this.activeSpace.spawn(o, pos, ignoreSpawnhandler);
     }
 
     /**
-     * Destroy a game object (dispose) from all spaces in the world instance.
+     * Destroy a world object (dispose) from all spaces in the world instance.
      */
-    public destroy(o: GameObject): void {
+    public destroy(o: WorldObject): void {
         this.spaces.forEach(s => s.get(o.id) && s.destroy(o));
     }
 
     /**
-     * Despawn a game object from whichever space it currently lives in without disposing it.
+     * Despawn a world object from whichever space it currently lives in without disposing it.
      * The object remains in the Registry, but event handling is disabled (via flag) so it won't react to events.
      */
-    public despawn(o: GameObject): void {
+    public despawn(o: WorldObject): void {
         for (const s of this.spaces) {
             if (s.get(o.id)) { s.despawn(o); return; }
         }
     }
 
-    /** Destroy a game object from the current active space. */
-    public destroyFromCurrentSpace(o: GameObject): void {
+    /** Destroy a world object from the current active space. */
+    public destroyFromCurrentSpace(o: WorldObject): void {
         this.activeSpace.destroy(o);
     }
 
     /** @deprecated Use destroy(o) instead. */
-    public exile(o: GameObject, skip_ondispose_event: boolean = false): void { this.spaces.forEach(s => s.get(o.id) && s.exile(o, skip_ondispose_event)); }
+    public exile(o: WorldObject, skip_ondispose_event: boolean = false): void { this.spaces.forEach(s => s.get(o.id) && s.exile(o, skip_ondispose_event)); }
     /** @deprecated Use destroyFromCurrentSpace(o) instead. */
-    public exileFromCurrentSpace(o: GameObject): void { this.activeSpace.exile(o); }
+    public exileFromCurrentSpace(o: WorldObject): void { this.activeSpace.exile(o); }
 
     /**
      * Adds a new space to the world instance.
@@ -759,7 +759,7 @@ export class World implements Stateful, RegisterablePersistent {
         space.ondispose?.();
     }
 
-    public collidesWithTile(o: GameObject, dir: Direction): boolean {
+    public collidesWithTile(o: WorldObject, dir: Direction): boolean {
         return this._collision?.collidesWithTile(o, dir) ?? false;
     }
     public isCollisionTile(x: number, y: number): boolean {
@@ -769,7 +769,7 @@ export class World implements Stateful, RegisterablePersistent {
     /**
      * Update per-space indexes when objects enter/leave a space.
      */
-    public onObjectSpawned(space: Space, o: GameObject): void {
+    public onObjectSpawned(space: Space, o: WorldObject): void {
         if (o instanceof CameraObject) {
             const set = this._camerasBySpace.get(space.id) ?? new Set<CameraObject>();
             set.add(o);
@@ -781,7 +781,7 @@ export class World implements Stateful, RegisterablePersistent {
             this._lightsBySpace.set(space.id, set);
         }
     }
-    public onObjectExiled(space: Space, o: GameObject): void {
+    public onObjectExiled(space: Space, o: WorldObject): void {
         if (o instanceof CameraObject) this._camerasBySpace.get(space.id)?.delete(o);
         if (o instanceof LightObject) this._lightsBySpace.get(space.id)?.delete(o);
     }
@@ -825,12 +825,12 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /** Transfer many objects efficiently; marks spaces dirty once. */
-    public transferMany(objs: Array<GameObject | Identifier>, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
+    public transferMany(objs: Array<WorldObject | Identifier>, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
         const toSpace = (to instanceof Space) ? to : this.get_space(to);
         if (!toSpace) throw new Error('transferMany: target space not found');
         this.runDepthBatch(() => {
             for (const it of objs) {
-                const o = (typeof it === 'string') ? this.getGameObject(it) : it;
+                const o = (typeof it === 'string') ? this.getWorldObject(it) : it;
                 if (o) this.transfer(o, toSpace, opts);
             }
         });
@@ -839,20 +839,20 @@ export class World implements Stateful, RegisterablePersistent {
     /**
      * Iterate game objects with explicit scope.
      */
-    public forEachGameObject(fn: (o: GameObject) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+    public forEachWorldObject(fn: (o: WorldObject) => void, opts: { scope?: 'current' | 'all' } = {}): void {
         const scope = opts.scope ?? 'current';
         if (scope === 'current') { for (const o of this.activeSpace.objects) fn(o); return; }
         for (const sp of this.spaces) for (const o of sp.objects) fn(o);
     }
 
     /** Iterate only objects of a specific class. */
-    public forEachGameObjectOfType<T extends GameObject>(ctor: new (...args: any[]) => T, fn: (o: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
-        this.forEachGameObject((o) => { if (o instanceof ctor) fn(o as T); }, opts);
+    public forEachWorldObjectOfType<T extends WorldObject>(ctor: new (...args: any[]) => T, fn: (o: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+        this.forEachWorldObject((o) => { if (o instanceof ctor) fn(o as T); }, opts);
     }
 
     /** Iterate objects that have a given component; passes the component instance too. */
-    public forEachGameObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: GameObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
-        this.forEachGameObject((o) => { const c = (o as any).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
+    public forEachWorldObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+        this.forEachWorldObject((o) => { const c = (o as any).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
     }
 
     /**

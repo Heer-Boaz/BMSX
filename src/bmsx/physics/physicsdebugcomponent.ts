@@ -8,7 +8,7 @@ import { PhysicsWorld } from './physicsworld';
 
 /**
  * PhysicsDebugComponent
- * Attachable to a GameObject that has some kind of render / overlay capability. It registers
+ * Attachable to a WorldObject that has some kind of render / overlay capability. It registers
  * a gizmo drawer with the PhysicsWorld. The drawer collects simple line / circle primitives
  * into arrays exposed on the component so any HUD / debug rendering system can draw them.
  * (We avoid pulling in a hard dependency on a particular renderer here.)

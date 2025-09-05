@@ -1,11 +1,11 @@
-import { $, $world, GameObject, Msx1Colors, Pool, PooledGameObject, TextWriter } from '../bmsx';
+import { $, $world, WorldObject, Msx1Colors, Pool, PooledWorldObject, TextWriter } from '../bmsx';
 
 interface P { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; max: number; r: number; g: number; b: number; a: number; size: number; grow: number; }
 
 // === Particle effect pooling ===
-// Nu via generieke PooledGameObject (in core) i.p.v. lokale abstracte klasse.
+// Nu via generieke PooledWorldObject (in core) i.p.v. lokale abstracte klasse.
 
-export class MuzzleFlash extends PooledGameObject {
+export class MuzzleFlash extends PooledWorldObject {
     private p: P = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 0.12, r: 1, g: 0.9, b: 0.4, a: 1, size: 1.2, grow: 4 };
     private static _pool = Pool.createLazy<MuzzleFlash>({
         onCreate: () => new MuzzleFlash(),
@@ -22,7 +22,7 @@ export class MuzzleFlash extends PooledGameObject {
     override paint(): void { if (!this.active) return; $.view.drawParticle({ position: [this.p.x, this.p.y, this.p.z], size: this.p.size, color: { r: this.p.r, g: this.p.g, b: this.p.b, a: this.p.a } }); }
 }
 
-export class ImpactBurst extends PooledGameObject {
+export class ImpactBurst extends PooledWorldObject {
     private ps: P[] = [];
     private static _pool = Pool.createLazy<ImpactBurst>({
         onCreate: () => new ImpactBurst(),
@@ -37,7 +37,7 @@ export class ImpactBurst extends PooledGameObject {
     override paint(): void { if (!this.active) return; for (const p of this.ps) { if (p.life < p.max) $.view.drawParticle({ position: [p.x, p.y, p.z], size: p.size, color: { r: p.r, g: p.g, b: p.b, a: p.a } }); } }
 }
 
-export class ExplosionEmitter extends PooledGameObject {
+export class ExplosionEmitter extends PooledWorldObject {
     private ps: P[] = [];
     private static _pool = Pool.createLazy<ExplosionEmitter>({
         onCreate: () => new ExplosionEmitter(),
@@ -53,7 +53,7 @@ export class ExplosionEmitter extends PooledGameObject {
 }
 
 interface DN { active: boolean; txt: string; x: number; y: number; z: number; vy: number; life: number; max: number; }
-export class DamageNumberManager extends GameObject {
+export class DamageNumberManager extends WorldObject {
     private pool = new Pool<DN>({
         warm: 32,
         onCreate: () => ({ active: false, txt: '', x: 0, y: 0, z: 0, vy: 0, life: 0, max: 0 }),

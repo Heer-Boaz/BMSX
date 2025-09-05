@@ -3,7 +3,7 @@ import { Component, componenttags_postprocessing, componenttags_preprocessing } 
 import { CameraObject } from '../core/object/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import { $ } from '../core/game';
-import { GameObject } from '../core/object/gameobject';
+import { WorldObject } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/object/sprite';
 import { div_vec2, new_vec2 } from '../core/utils';
@@ -18,7 +18,7 @@ import { StateMachineVisualizer } from './statemachinevisualizer';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
-let draggedObj: GameObject | null;
+let draggedObj: WorldObject | null;
 let draggedObjCursorOffset: vec2;
 let shiftX: number;
 let shiftY: number;
@@ -73,15 +73,15 @@ export class PhysicsOverlayRenderer extends Component {
             for (const sid in spaceMap) {
                 const space = spaceMap[sid];
                 if (!space || !space.objects) continue;
-                for (const go of space.objects) {
-                    const p = go.getComponent(PhysicsDebugComponent);
+                for (const wo of space.objects) {
+                    const p = wo.getComponent(PhysicsDebugComponent);
                     if (p && p.enabled) debugComponents.push(p);
                 }
             }
         }
         // if (!debugComponents.length) return;
         // Camera-aware projection: project 3D -> NDC -> screen (overlay canvas coordinates)
-        const activeCamObj = $.world.getGameObject($.world.activeCameraId) as CameraObject | undefined;
+        const activeCamObj = $.world.getWorldObject($.world.activeCameraId) as CameraObject | undefined;
         const cam = activeCamObj?.camera;
         if (!cam) return; // no camera yet
         const vp = cam.viewProjection; // Float32Array length 16
@@ -171,7 +171,7 @@ export class PhysicsOverlayRenderer extends Component {
 @componenttags_preprocessing('render')
 @excludeclassfromsavegame
 export class HitBoxVisualizer extends Component {
-    static toggle(obj: GameObject) {
+    static toggle(obj: WorldObject) {
         if (HitBoxVisualizer.attachedToObject(obj)) {
             HitBoxVisualizer.detachFromObject(obj);
         }
@@ -180,17 +180,17 @@ export class HitBoxVisualizer extends Component {
         }
     }
 
-    static attachToObject(obj: GameObject) {
+    static attachToObject(obj: WorldObject) {
         if (!obj.getComponent(HitBoxVisualizer)) {
             obj.addComponent(new HitBoxVisualizer(obj.id));
         }
     }
 
-    static detachFromObject(obj: GameObject) {
+    static detachFromObject(obj: WorldObject) {
         obj.removeComponent(HitBoxVisualizer);
     }
 
-    static attachedToObject(obj: GameObject) {
+    static attachedToObject(obj: WorldObject) {
         return obj.getComponent(HitBoxVisualizer);
     }
 
@@ -200,7 +200,7 @@ export class HitBoxVisualizer extends Component {
 
     override preprocessingUpdate(): void {
         const parent = this.parent as unknown as SpriteObject;
-        // Draw polygons if available on the GameObject
+        // Draw polygons if available on the WorldObject
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
@@ -216,7 +216,7 @@ export class HitBoxVisualizer extends Component {
 @excludeclassfromsavegame
 @componenttags_preprocessing('render')
 export class ObjectHighlighterComponent extends Component {
-    static toggle(obj: GameObject) {
+    static toggle(obj: WorldObject) {
         if (ObjectHighlighterComponent.attachedToObject(obj)) {
             ObjectHighlighterComponent.detachFromObject(obj);
         }
@@ -225,17 +225,17 @@ export class ObjectHighlighterComponent extends Component {
         }
     }
 
-    static attachToObject(obj: GameObject) {
+    static attachToObject(obj: WorldObject) {
         if (!obj.getComponent(ObjectHighlighterComponent)) {
             obj.addComponent(new ObjectHighlighterComponent(obj.id));
         }
     }
 
-    static detachFromObject(obj: GameObject) {
+    static detachFromObject(obj: WorldObject) {
         obj.removeComponent(ObjectHighlighterComponent);
     }
 
-    static attachedToObject(obj: GameObject) {
+    static attachedToObject(obj: WorldObject) {
         return obj.getComponent(ObjectHighlighterComponent);
     }
 
@@ -246,7 +246,7 @@ export class ObjectHighlighterComponent extends Component {
     override preprocessingUpdate(): void {
         const parent = this.parent as unknown as SpriteObject;
 
-        // Draw polygons if available on the GameObject
+        // Draw polygons if available on the WorldObject
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
@@ -254,7 +254,7 @@ export class ObjectHighlighterComponent extends Component {
             }
         }
 
-        // Draw a transparent filled rectangle around the GameObject
+        // Draw a transparent filled rectangle around the WorldObject
         if (parent.hitbox) {
             $.view.fillRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 } });
         }
@@ -263,7 +263,7 @@ export class ObjectHighlighterComponent extends Component {
 
 // @excludeclassfromsavegame
 // class ObjectHighlighter extends SpriteObject {
-//     #highlighted_obj: GameObject;
+//     #highlighted_obj: WorldObject;
 //     static readonly mijnkleur: Color = { r: 0, g: 0, b: 1, a: .5 };
 
 //     public constructor() {
@@ -275,7 +275,7 @@ export class ObjectHighlighterComponent extends Component {
 //         this.sprite.colorize = ObjectHighlighter.mijnkleur;
 //     }
 
-//     public setHighlightPos(o: GameObject) {
+//     public setHighlightPos(o: WorldObject) {
 //         if (o.hitarea) {
 //             let translate = translate_vec2(o.pos, o.hitarea.start);
 //             this.x = translate.x, this.y = translate.y;
@@ -296,7 +296,7 @@ export class ObjectHighlighterComponent extends Component {
 //         return this.#highlighted_obj;
 //     }
 
-//     public set target(o: GameObject) {
+//     public set target(o: WorldObject) {
 //         if (!o) {
 //             if (this.#highlighted_obj) {
 //                 this.#highlighted_obj.removeComponent(DebugHighlightComponent);
@@ -750,21 +750,21 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 
 export function handleDebugClick(e: MouseEvent): void {
     if (!e.shiftKey && e.ctrlKey && !draggedObj) { // Only open when main or middle button is clicked and shift is not pressed and ctrl is pressed and no object is being dragged
-        const { objUnderCursor } = getGameObjectAtCursor(e);
+        const { objUnderCursor } = getWorldObjectAtCursor(e);
         if (objUnderCursor) {
             openObjectDetailMenu(objUnderCursor, objUnderCursor.id);
         }
     }
 }
 
-function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
+function getWorldObjectAtCursor(e: MouseEvent): { objUnderCursor: WorldObject | null; offsetToCursor: vec2 | null; } {
     const x = e.offsetX;
     const y = e.offsetY;
     const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
 
     const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
 
-    const objsUnderCursor: GameObject[] = $.world.activeObjects.filter(o =>
+    const objsUnderCursor: WorldObject[] = $.world.activeObjects.filter(o =>
         o.id !== 'debug_highlighter' &&
         o.hittable &&
         (
@@ -787,7 +787,7 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | nu
 
 export function handleDebugMouseDown(e: MouseEvent): void {
     if (e.button === 1) {
-        const { objUnderCursor } = getGameObjectAtCursor(e);
+        const { objUnderCursor } = getWorldObjectAtCursor(e);
         if (objUnderCursor) {
             HitBoxVisualizer.toggle(objUnderCursor);
         }
@@ -804,10 +804,10 @@ export function handleDebugMouseDown(e: MouseEvent): void {
     }
 
     if (!draggedObj) { // Only start dragging when no object is currently being dragged
-        let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e); // Get the object under the cursor and the offset from the cursor to the object's position
+        let { objUnderCursor, offsetToCursor } = getWorldObjectAtCursor(e); // Get the object under the cursor and the offset from the cursor to the object's position
         if (objUnderCursor && offsetToCursor) { // Only start dragging when an object is under the cursor and the offset is valid (i.e. the object has a position)
             e.preventDefault();
-            startDragGameObject(objUnderCursor!, offsetToCursor!); // Start dragging the object under the cursor around
+            startDragWorldObject(objUnderCursor!, offsetToCursor!); // Start dragging the object under the cursor around
         }
         else { // Otherwise, continue dragging the object that is already being dragged
             handleDebugMouseMove(e); // Update the dragged object's position when the mouse is pressed down and moved
@@ -816,7 +816,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 }
 
 export function handleDebugMouseMove(e: MouseEvent): void {
-    const { objUnderCursor } = getGameObjectAtCursor(e);
+    const { objUnderCursor } = getWorldObjectAtCursor(e);
 
     // We can't use the player input because they are not updated when the game is paused
     // Get the state of the Control key directly from the browser API
@@ -846,7 +846,7 @@ export function handleDebugMouseMove(e: MouseEvent): void {
     $.requestPausedFrame();
 }
 
-function highlight_object(o: GameObject) {
+function highlight_object(o: WorldObject) {
     if (!o) {
         currentHighlighterComponent && currentHighlighterComponent.isAttached && currentHighlighterComponent.detach();
     }
@@ -867,8 +867,8 @@ export function handleDebugMouseOut(_e: MouseEvent): void {
     draggedObj = null;
 }
 
-function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: vec2): void {
-    draggedObj = gameobject_at_cursor;
+function startDragWorldObject(worldobject_at_cursor: WorldObject, offsetToCursor: vec2): void {
+    draggedObj = worldobject_at_cursor;
     draggedObjCursorOffset = new_vec2(~~offsetToCursor.x, ~~offsetToCursor.y);
 }
 
@@ -880,7 +880,7 @@ export function removeStateMachineVisualizer(objId: Identifier): void {
 
 export function handleContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    const { objUnderCursor } = getGameObjectAtCursor(e);
+    const { objUnderCursor } = getWorldObjectAtCursor(e);
     // Add state visualiser to the UI
     if (objUnderCursor) {
         // Verify that there is no existing state visualiser dialog on screen

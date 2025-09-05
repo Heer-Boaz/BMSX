@@ -44,7 +44,7 @@ export class EilaModelFSM {
                                 $.playAudio(AudioId.trainen);
                             },
                             tick(this: World): string | void {
-                                const player = this.getGameObject<Fighter>('player');
+                                const player = this.getWorldObject<Fighter>('player');
                                 if (player?.x < 16) {
                                     return 'ffwachten2';
                                 }
@@ -75,7 +75,7 @@ export class EilaModelFSM {
                 gameover: {
                     entering_state(this: World) {
                         this.setSpace('gameover');
-                        if (!this.getGameObject('gameover')) {
+                        if (!this.getWorldObject('gameover')) {
                             this.spawn(new GameOver(), new_vec3(0, 0, 0));
                         }
                         $.playAudio(AudioId.gameover);
@@ -84,7 +84,7 @@ export class EilaModelFSM {
                 hoera: {
                     entering_state(this: World) {
                         this.setSpace('hoera');
-                        if (!this.getGameObject('hoera')) {
+                        if (!this.getWorldObject('hoera')) {
                             this.spawn(new Hoera(), new_vec3(0, 0, 0));
                         }
                         $.playAudio(AudioId.gameover);
@@ -93,11 +93,11 @@ export class EilaModelFSM {
                 titlescreen: {
                     entering_state(this: World) {
                         this.setSpace('titlescreen');
-                        if (!this.getGameObject('title')) {
+                        if (!this.getWorldObject('title')) {
                             this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
                         }
                         this.getFromCurrentSpace('title').sc.dispatch_event('reset', this);
-                        if (!this.getGameObject('gordijn')) {
+                        if (!this.getWorldObject('gordijn')) {
                             this.spawn(new Gordijn(), new_vec3(0, 0, 100));
                         }
                         this.getFromCurrentSpace('gordijn').sc.dispatch_event('reset', this);

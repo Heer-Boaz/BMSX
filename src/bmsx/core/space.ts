@@ -1,7 +1,7 @@
 import { type Identifier, Vector } from '../rompack/rompack';
 import { insavegame, excludepropfromsavegame } from '../serializer/gameserializer';
 import { $ } from './game';
-import { GameObject } from './object/gameobject';
+import { WorldObject } from './object/worldobject';
 import { id2obj, id2objectType, World, makeIndexProxy } from './world';
 export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 
@@ -13,22 +13,22 @@ export class Space {
     /** Map-backed index of id → object (exposed via Proxy for back-compat). */
     public [id2obj]: id2objectType;
     @excludepropfromsavegame
-    private _id2objMap: Map<Identifier, GameObject>;
+    private _id2objMap: Map<Identifier, WorldObject>;
 
     /**
-     * Returns the GameObject with the specified ID, or undefined if no such object exists in this space.
-     * @template T - The type of the GameObject to return.
-     * @param {Identifier} id - The ID of the GameObject to retrieve.
-     * @returns {T | undefined} The GameObject with the specified ID, or undefined if no such object exists in this space.
+     * Returns the WorldObject with the specified ID, or undefined if no such object exists in this space.
+     * @template T - The type of the WorldObject to return.
+     * @param {Identifier} id - The ID of the WorldObject to retrieve.
+     * @returns {T | undefined} The WorldObject with the specified ID, or undefined if no such object exists in this space.
      */
-    public get<T extends GameObject>(id: Identifier): T | undefined {
+    public get<T extends WorldObject>(id: Identifier): T | undefined {
         return this._id2objMap.get(id) as T | undefined;
     }
 
     public id: Identifier;
 
     @excludepropfromsavegame
-    public objects: GameObject[];
+    public objects: WorldObject[];
 
     /** Z-sort dirty flag. Mark on add/remove; renderer sorts when true. */
     @excludepropfromsavegame
@@ -57,7 +57,7 @@ export class Space {
     public constructor(id: Identifier) {
         this.id = id;
         this.objects = [];
-        this._id2objMap = new Map<Identifier, GameObject>();
+        this._id2objMap = new Map<Identifier, WorldObject>();
         this[id2obj] = makeIndexProxy(this._id2objMap);
     }
 
@@ -73,13 +73,13 @@ export class Space {
 
     /**
      * Adds object to the game and triggers it's onspawn-event.
-     * @param {GameObject} o  - GameObject to add
+     * @param {WorldObject} o  - WorldObject to add
      * @param {Vector} pos - Position to spawn object
      * @param {boolean} skip_onspawn_event - Disables triggering onspawn-event.
      * Example uses include reviving the game (part of loading a saved game) and moving objects from one space to another.
      * @returns {void} Nothing
      */
-    public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
+    public spawn(o: WorldObject, pos?: Vector, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
         const model = this._model ?? $.world;
         if (model.objToSpaceMap?.has(o.id)) {
@@ -102,11 +102,11 @@ export class Space {
 
     /**
      * Destroys (disposes) the object and removes it from this space.
-     * This will call GameObject.dispose(), which unsubscribes from events and deregisters it from the Registry.
+     * This will call WorldObject.dispose(), which unsubscribes from events and deregisters it from the Registry.
      */
-    public destroy(o: GameObject, skip_ondespawn_event: boolean = false): void {
+    public destroy(o: WorldObject, skip_ondespawn_event: boolean = false): void {
         const index = this.objects.indexOf(o);
-        if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [Space.despawn]!`);
+        if (index < 0) throw new Error(`WorldObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [Space.despawn]!`);
         if (!skip_ondespawn_event) o.ondespawn?.();
         if (index > -1) this.objects.splice(index, 1);
         this._id2objMap.delete(o.id);
@@ -119,7 +119,7 @@ export class Space {
     /**
      * @deprecated Use destroy(o) to dispose, or despawn(o) to detach without destroying.
      */
-    public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
+    public exile(o: WorldObject, skip_ondispose_event: boolean = false): void {
         this.destroy(o, skip_ondispose_event);
     }
 
@@ -128,7 +128,7 @@ export class Space {
      * Event handling is disabled on the object, but it remains in the Registry
      * so pooled workflows can reuse it without reallocations.
      */
-    public despawn(o: GameObject, skip_ondespawn_event: boolean = false): void {
+    public despawn(o: WorldObject, skip_ondespawn_event: boolean = false): void {
         this.exile(o, skip_ondespawn_event);
     }
 
@@ -150,7 +150,7 @@ export class Space {
 }
 export interface SpaceObject {
     spaceid: Identifier;
-    objects: GameObject[];
+    objects: WorldObject[];
 }
 export type id2spaceType = Record<Identifier, Space>;
 export type obj_id2space_id_type = Record<Identifier, Identifier>;

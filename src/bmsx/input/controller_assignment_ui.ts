@@ -1,7 +1,7 @@
 import { $ } from '../core/game';
 import { subscribesToGlobalEvent } from '../core/eventemitter';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
-import { GameObject } from '../core/object/gameobject';
+import { WorldObject } from '../core/object/worldobject';
 import { SpriteObject } from '../core/object/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
@@ -75,7 +75,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 
 
 @excludeclassfromsavegame
-export class ControllerAssignmentUI extends GameObject {
+export class ControllerAssignmentUI extends WorldObject {
 	private icons = new Map<number, SelectedPlayerIndexIcon>(); // gamepadIndex -> icon
 
 	/**

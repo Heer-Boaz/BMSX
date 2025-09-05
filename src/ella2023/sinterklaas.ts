@@ -480,7 +480,7 @@ export class Sinterklaas extends Fighter {
                                                             ],
                                                         },
                                                         {
-                                                            type: 'Action', action: () => { return 'FAILED'; } // Don't do anything and go for defensive move instead
+                                                            type: 'Action', action: () => { return 'FAILED'; } // Don't do anything and wo for defensive move instead
                                                         },
                                                     ],
                                                 },

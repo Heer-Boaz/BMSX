@@ -15,25 +15,25 @@ const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
 
 type LeaveLeavingScreenPayload = { d: Direction, old_x_or_y: number };
 
-export type GameObjectEventPayloads = {
+export type WorldObjectEventPayloads = {
 	['leaveScreen']: LeaveLeavingScreenPayload;
 	['leavingScreen']: LeaveLeavingScreenPayload;
 };
 
 @insavegame
-export class GameObject implements vec3, ComponentContainer, Stateful {
+export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Represents a map of components associated with their respective keys.
 	 */
 	public components: KeyToComponentMap = {};
 
 	/**
-	 * The object tracker for the game object.
+	 * The object tracker for the world object.
 	 */
 	public objectTracker?: ObjectTracker;
 
 	/**
-	 * Retrieves a component of the specified type from the game object.
+	 * Retrieves a component of the specified type from the world object.
 	 *
 	 * @template T - The type of the component to retrieve.
 	 * @param constructor - The constructor function of the component.
@@ -44,7 +44,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Adds a component to the game object.
+	 * Adds a component to the world object.
 	 *
 	 * @template T - The type of the component.
 	 * @param {T} component - The component to be added.
@@ -58,7 +58,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Removes a component from the game object.
+	 * Removes a component from the world object.
 	 *
 	 * @template T - The type of the component to remove.
 	 * @param constructor - The constructor of the component to remove.
@@ -78,15 +78,15 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 
 	/**
-	 * Returns the primitive value of the GameObject instance.
-	 * @returns The ID of the GameObject.
+	 * Returns the primitive value of the WorldObject instance.
+	 * @returns The ID of the WorldObject.
 	 */
 	public [Symbol.toPrimitive]() {
 		return this.id;
 	}
 
 	/**
-	 * The identifier of the game object, which is a unique string that is generated based on the class name and a unique number.
+	 * The identifier of the world object, which is a unique string that is generated based on the class name and a unique number.
 	 */
 	public id: Identifier;
 
@@ -98,19 +98,19 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 	protected _pos: vec3;
 	/**
-	 * The position of the game object. The position is represented as a 3D vector with x, y, and z coordinates.
+	 * The position of the world object. The position is represented as a 3D vector with x, y, and z coordinates.
 	 */
 	public get pos(): vec3 { return this._pos; }
 
 	/**
-	 * The position of the game object. The position is represented as a 3D vector with x, y, and z coordinates.
+	 * The position of the world object. The position is represented as a 3D vector with x, y, and z coordinates.
 	 * The z-coordinate is used for layering objects in the game world.
 	 * see {@link setPosZ} for setting the z-coordinate, as it handles the z-coordinate bounds.
 	 */
 	public set pos(pos: vec3) { this._pos = pos; }
 
 	/**
-	 * Gets the x-coordinate of the game object.
+	 * Gets the x-coordinate of the world object.
 	 */
 	public get x(): number { return this.pos.x; }
 
@@ -123,7 +123,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Sets the X position of the game object.
+	 * Sets the X position of the world object.
 	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
 	 *
 	 * @param x - The new X position value.
@@ -133,7 +133,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Gets the y-coordinate of the game object.
+	 * Gets the y-coordinate of the world object.
 	 */
 	public get y(): number { return this.pos.y; }
 
@@ -146,7 +146,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Sets the Y position of the game object.
+	 * Sets the Y position of the world object.
 	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
 	 *
 	 * @param y - The new Y position value.
@@ -156,13 +156,13 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Gets the z-coordinate of the game object.
+	 * Gets the z-coordinate of the world object.
 	 * The z-coordinate is used for layering objects in the game world.
 	 * The z-coordinate is clamped between 0 and ZCOORD_MAX.
 	 */
 	public get z(): number { return this.pos.z; }
 	/**
-	 * Sets the z-coordinate of the game object. The z-coordinate is used for layering objects in the game world.
+	 * Sets the z-coordinate of the world object. The z-coordinate is used for layering objects in the game world.
 	 * The z-coordinate is clamped between 0 and ZCOORD_MAX.
 	 *
 	 * @param z - The new z-coordinate value.
@@ -172,7 +172,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Sets the Z position of the game object.
+	 * Sets the Z position of the world object.
 	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
 	 *
 	 * @param z - The new Z position value.
@@ -184,7 +184,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Gets the x coordinate of the game object.
+	 * Gets the x coordinate of the world object.
 	 * We need this accessor to allow the `x_nonotify += value` to work; Otherwise, the result is `NaN` as the `x_nonotify += value` is syntactically sugar for `x_nonotify = x_nonotify + value`.
 	 */
 	get x_nonotify(): number {
@@ -192,7 +192,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Gets the y coordinate of the game object.
+	 * Gets the y coordinate of the world object.
 	 * We need this accessor to allow the `y_nonotify += value` to work; Otherwise, the result is `NaN` as the `y_nonotify += value` is syntactically sugar for `y_nonotify = y_nonotify + value`.
 	 */
 	get y_nonotify(): number {
@@ -200,7 +200,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Gets the z coordinate of the game object.
+	 * Gets the z coordinate of the world object.
 	 * We need this accessor to allow the `z_nonotify += value` to work; Otherwise, the result is `NaN` as the `z_nonotify += value` is syntactically sugar for `z_nonotify = z_nonotify + value`.
 	 */
 	get z_nonotify(): number {
@@ -209,7 +209,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 	/**
 	 * This setter is used to set the x coordinate without sweeping, e.g., without checking for collisions.
-	 * It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	 * It is used in cases where the world object is being moved without any side effects, such as when the world object is being teleported or when the position is being set directly without any physics calculations.
 	 * @param x The new x-coordinate to set.
 	 */
 	public set x_nonotify(x: number) {
@@ -218,7 +218,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 	/**
 	 * This setter is used to set the y coordinate without sweeping, e.g., without checking for collisions.
-	 * It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	 * It is used in cases where the world object is being moved without any side effects, such as when the world object is being teleported or when the position is being set directly without any physics calculations.
 	 * @param y The new y-coordinate to set.
 	 */
 	public set y_nonotify(y: number) {
@@ -227,7 +227,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 	/**
 	 * This setter is used to set the z coordinate without sweeping, e.g., without checking for collisions.
-	 * It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	 * It is used in cases where the world object is being moved without any side effects, such as when the world object is being teleported or when the position is being set directly without any physics calculations.
 	 * @param z The new z-coordinate to set.
 	 */
 	public set z_nonotify(z: number) {
@@ -237,9 +237,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * The size of the game object. The size is represented as a 3D vector with x, y, and z coordinates.
-	 * Note that the size is only used for collision detection if the game object has no collision area and
-	 * no bounding boxes. If the game object has a collision area or bounding boxes, the size is not used for collision detection.
+	 * The size of the world object. The size is represented as a 3D vector with x, y, and z coordinates.
+	 * Note that the size is only used for collision detection if the world object has no collision area and
+	 * no bounding boxes. If the world object has a collision area or bounding boxes, the size is not used for collision detection.
 	 */
 	protected _size: vec3;
 	public get size(): vec3 { return this._size; }
@@ -269,7 +269,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * The StatemachineController of the game object.
+	 * The StatemachineController of the world object.
 	 */
 	public sc: StateMachineController;
 
@@ -335,9 +335,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * The hit area of the game object, which is used for collision detection.
+	 * The hit area of the world object, which is used for collision detection.
 	 * The hit area is an instance of the Area class, which represents a rectangular area in the game world.
-	 * If the hit area is not defined, it will be created based on the position and size of the game object.
+	 * If the hit area is not defined, it will be created based on the position and size of the world object.
 	 */
 	protected _hitarea: Area;
 
@@ -348,9 +348,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Gets the hit polygon of the game object.
+	 * Gets the hit polygon of the world object.
 	 * The hit polygon is an array of polygons, where each polygon is represented as an array of points (vec2).
-	 * The points are offset by the current position of the game object.
+	 * The points are offset by the current position of the world object.
 	 * @returns The hit polygon as an array of 2D points.
 	 */
 	public get hitpolygon(): Polygon[] {
@@ -365,9 +365,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Checks if the game object has a hit polygon defined.
-	 * The reason to have this check is to avoid unnecessary calculations before translating the hit polygon to account for the current position of the game object.
-	 * @returns True if the game object has a hit polygon, false otherwise.
+	 * Checks if the world object has a hit polygon defined.
+	 * The reason to have this check is to avoid unnecessary calculations before translating the hit polygon to account for the current position of the world object.
+	 * @returns True if the world object has a hit polygon, false otherwise.
 	 */
 	public get hasHitPolygon(): boolean {
 		return this._hitpolygon && this._hitpolygon.length > 0;
@@ -378,22 +378,22 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public hittable: boolean;
 	/**
-	 * Indicates whether the game object should be rendered or not.
+	 * Indicates whether the world object should be rendered or not.
 	 */
 	public visible: boolean;
 
 	/**
-	 * Gets the hitbox area of the game object.
+	 * Gets the hitbox area of the world object.
 	 * If the hitbox is not initialized, it creates a new area using the provided coordinates.
-	 * If there is no hitbox and no bounding boxes, it returns an area based on the position and size of the game object.
-	 * @returns The hitbox area of the game object.
+	 * If there is no hitbox and no bounding boxes, it returns an area based on the position and size of the world object.
+	 * @returns The hitbox area of the world object.
 	 */
 	public get hitbox(): Area {
 		return new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
 	}
 
 	/**
-	 * Returns the middle point of the game object's hitbox.
+	 * Returns the middle point of the world object's hitbox.
 	 *
 	 * @returns The middle point as a `vec2` object.
 	 */
@@ -482,11 +482,11 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Dispose method for the game object.
+	 * Dispose method for the world object.
 	 *
 	 * This method performs the following actions:
 	 * 1. Unsubscribes from events.
-	 * 2. Disposes of all components attached to the game object.
+	 * 2. Disposes of all components attached to the world object.
 	 * 3. Disposes all state machines.
 	 * 4. Deregisters the object from the entity registry.
 	 */
@@ -497,7 +497,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 
 		// Dispose of components
 		const components = Object.values(this.components);
-		components.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>)); // Remove the component from the game object and dispose (as part of the removal process)
+		components.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>)); // Remove the component from the world object and dispose (as part of the removal process)
 
 		// Dispose all state machines
 		this.sc.dispose();
@@ -507,11 +507,11 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Abstract method that is called when the game object should be painted as part of the game loop.
+	 * Abstract method that is called when the world object should be painted as part of the game loop.
 	 */
 	public paint?(): void;
 	/**
-	 * Abstract method that is called after the game object has been painted as part of the game loop.
+	 * Abstract method that is called after the world object has been painted as part of the game loop.
 	 * This method is used for post-processing effects such as lighting effects.
 	 */
 	public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
@@ -523,36 +523,36 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.disposeFlag = true;
 	}
 
-	/** Specific flag controlling whether this GameObject processes events. */
+	/** Specific flag controlling whether this WorldObject processes events. */
 	public eventhandling_enabled: boolean;
 
 	/**
-	 * Represents a callback function that is triggered when a collision occurs with another GameObject.
+	 * Represents a callback function that is triggered when a collision occurs with another WorldObject.
 	 *
-	 * @param src - The GameObject that triggered the collision.
+	 * @param src - The WorldObject that triggered the collision.
 	 */
-	public oncollide?: (src: GameObject) => void;
+	public oncollide?: (src: WorldObject) => void;
 	/**
-	 * Callback function that is triggered when the game object collides with a wall.
+	 * Callback function that is triggered when the world object collides with a wall.
 	 * @param dir - The direction of the collision.
 	 */
 	public onWallcollide?: (dir: Direction) => void;
 	/**
-	 * Callback function that is called when the GameObject leaves the screen.
+	 * Callback function that is called when the WorldObject leaves the screen.
 	 *
-	 * @param ik - The GameObject that is leaving the screen.
-	 * @param dir - The direction in which the GameObject is leaving the screen.
-	 * @param old_x_or_y - The previous x or y coordinate of the GameObject before leaving the screen.
+	 * @param ik - The WorldObject that is leaving the screen.
+	 * @param dir - The direction in which the WorldObject is leaving the screen.
+	 * @param old_x_or_y - The previous x or y coordinate of the WorldObject before leaving the screen.
 	 */
-	public onLeaveScreen?: (ik: GameObject, { d, old_x_or_y }: GameObjectEventPayloads['leaveScreen']) => void;
+	public onLeaveScreen?: (ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leaveScreen']) => void;
 	/**
-	 * Callback function that is triggered when the game object is leaving the screen.
+	 * Callback function that is triggered when the world object is leaving the screen.
 	 *
-	 * @param ik - The game object that is leaving the screen.
-	 * @param dir - The direction in which the game object is leaving the screen.
-	 * @param old_x_or_y - The previous x or y coordinate of the game object before leaving the screen.
+	 * @param ik - The world object that is leaving the screen.
+	 * @param dir - The direction in which the world object is leaving the screen.
+	 * @param old_x_or_y - The previous x or y coordinate of the world object before leaving the screen.
 	 */
-	public onLeavingScreen?: (ik: GameObject, { d, old_x_or_y }: GameObjectEventPayloads['leavingScreen']) => void;
+	public onLeavingScreen?: (ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leavingScreen']) => void;
 
 	private _direction: Direction;
 	public oldDirection: Direction;
@@ -561,7 +561,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public oldOrientation: vec3;
 
 	/**
-	 * Gets the orientation of the game object.
+	 * Gets the orientation of the world object.
 	 * The orientation is represented as a 3D vector with x, y, and z coordinates.
 	 * The z-coordinate is used for layering objects in the game world.
 	 */
@@ -570,7 +570,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Sets the orientation of the game object.
+	 * Sets the orientation of the world object.
 	 * The orientation is represented as a 3D vector with x, y, and z coordinates.
 	 * The z-coordinate is used for layering objects in the game world.
 	 *
@@ -582,16 +582,16 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Gets the direction of the game object.
+	 * Gets the direction of the world object.
 	 *
-	 * @returns The direction of the game object.
+	 * @returns The direction of the world object.
 	 */
 	public get direction(): Direction {
 		return this._direction;
 	}
 
 	/**
-	 * Sets the direction of the game object.
+	 * Sets the direction of the world object.
 	 *
 	 * @param value - The new direction to set.
 	 */
@@ -601,7 +601,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Generates a unique identifier for a game object.
+	 * Generates a unique identifier for a world object.
 	 * The generated identifier is a combination of the class name and a unique number.
 	 * @returns The generated unique identifier.
 	 */
@@ -628,7 +628,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.size = new_vec3(...DEFAULT_SIZE_VALUES);
 		this.disposeFlag = false;
 		this.eventhandling_enabled = false; // Block event handling until spawned
-		// Create the state context that will be used to manage the state of the game object
+		// Create the state context that will be used to manage the state of the world object
 		this.sc = new StateMachineController(fsm_id ?? this.constructor.name, this.id);
 	}
 
@@ -643,8 +643,8 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Adds auto components to the game object.
-	 * Auto components are added based on the `autoAddComponents` property of the game object's constructor.
+	 * Adds auto components to the world object.
+	 * Auto components are added based on the `autoAddComponents` property of the world object's constructor.
 	 */
 	private addAutoComponents() {
 		if ((this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
@@ -682,13 +682,13 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Initializes the behavior trees for the game object.
+	 * Initializes the behavior trees for the world object.
 	 *
 	 * This method creates behavior trees based on the 'linkedBTs' property of the constructor.
 	 * It iterates over the behavior tree names and creates the behavior trees along with their associated blackboards.
 	 *
 	 * @remarks
-	 * This method should be called during the initialization of the game object.
+	 * This method should be called during the initialization of the world object.
 	 */
 	protected initializeBehaviorTrees() {
 		// Get the constructor of the current instance
@@ -707,23 +707,23 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Calls the `oncollide` event handler with the given `GameObject` instance as the source of the collision.
-	 * @param src The `GameObject` instance that collided with this instance.
+	 * Calls the `oncollide` event handler with the given `WorldObject` instance as the source of the collision.
+	 * @param src The `WorldObject` instance that collided with this instance.
 	 */
-	public collide(src: GameObject): void {
+	public collide(src: WorldObject): void {
 		this.oncollide?.(src);
 	}
 
 	/**
-	 * Checks if this GameObject collides with another GameObject or Area or polygon.
+	 * Checks if this WorldObject collides with another WorldObject or Area or polygon.
 	 * Supports polygon-polygon, polygon-box, and box-polygon collision.
 	 * Falls back to bounding box logic if polygons are not present.
-	 * @param o The GameObject or Area to check collision with.
+	 * @param o The WorldObject or Area to check collision with.
 	 * @returns True if a collision occurs, false otherwise.
 	 */
-	public collides(o: GameObject | Area): boolean {
+	public collides(o: WorldObject | Area): boolean {
 		if (!this.hittable) return false;
-		const isGameObject = (obj: any): obj is GameObject => typeof obj === 'object' && 'id' in obj;
+		const isWorldObject = (obj: any): obj is WorldObject => typeof obj === 'object' && 'id' in obj;
 		const areaToPoly = (area: Area) => [
 			area.start.x, area.start.y,
 			area.end.x, area.start.y,
@@ -731,18 +731,18 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 			area.start.x, area.end.y
 		] as number[];
 
-		if (isGameObject(o)) {
-			const other = o as GameObject;
+		if (isWorldObject(o)) {
+			const other = o as WorldObject;
 			if (!other.hittable) return false;
 			// Quick hitbox reject using precomputed bounding boxes
-			if (!GameObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return false;
+			if (!WorldObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return false;
 
 			// If one of the objects has polygons, check polygon collision
 			if (this.hasHitPolygon || other.hasHitPolygon) {
 				// If this object has polygons, use them; otherwise convert its hitbox to a polygon
 				const thisPoly = this.hasHitPolygon ? this.hitpolygon : [areaToPoly(this.hitbox)];
 				const otherPoly = other.hasHitPolygon ? other.hitpolygon : [areaToPoly(other.hitbox)];
-				if (GameObject.polygonsIntersect(thisPoly, otherPoly)) return true;
+				if (WorldObject.polygonsIntersect(thisPoly, otherPoly)) return true;
 				return false;
 			}
 			else return true; // AABB collision already checked above
@@ -750,12 +750,12 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 			// o is Area
 
 			// Quick hitbox reject using precomputed bounding boxes
-			if (!GameObject.detect_aabb_collision_areas(this.hitbox, o as Area)) return false;
+			if (!WorldObject.detect_aabb_collision_areas(this.hitbox, o as Area)) return false;
 
 			// If this has polygons and the other is an area, convert the area to a polygon
 			if (this.hasHitPolygon) {
 				const areaPoly = areaToPoly(o as Area);
-				if (GameObject.polygonsIntersect(this.hitpolygon, [areaPoly])) {
+				if (WorldObject.polygonsIntersect(this.hitpolygon, [areaPoly])) {
 					return true;
 				}
 				return false;
@@ -765,9 +765,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		}
 	}
 
-	public getCollisionCentroid(o: GameObject): vec2arr | null {
+	public getCollisionCentroid(o: WorldObject): vec2arr | null {
 		if (!this.hittable || !o.hittable) return null;
-		const isGameObject = (obj: any): obj is GameObject => typeof obj === 'object' && 'id' in obj;
+		const isWorldObject = (obj: any): obj is WorldObject => typeof obj === 'object' && 'id' in obj;
 		const areaToPoly = (area: Area) => [
 			area.start.x, area.start.y,
 			area.end.x, area.start.y,
@@ -775,10 +775,10 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 			area.start.x, area.end.y
 		] as number[];
 
-		if (isGameObject(o)) {
-			const other = o as GameObject;
+		if (isWorldObject(o)) {
+			const other = o as WorldObject;
 			// Quick hitbox reject using precomputed bou`nding boxes
-			if (!GameObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return null;
+			if (!WorldObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return null;
 
 			// If one of the objects has polygons, check polygon collision
 			if (this.hasHitPolygon || other.hasHitPolygon) {
@@ -788,28 +788,28 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 				const otherPoly = other.hasHitPolygon ? other.hitpolygon : [areaToPoly(other.hitbox)];
 
 				// Check for polygon intersection
-				const points = GameObject.polygonsIntersectionPoints(thisPoly, otherPoly);
+				const points = WorldObject.polygonsIntersectionPoints(thisPoly, otherPoly);
 				if (points) {
-					return GameObject.getCentroidFromListOfIntersectionPoints(points);
+					return WorldObject.getCentroidFromListOfIntersectionPoints(points);
 				}
 				return null; // No intersection points found
 			}
 		}
 
-		console.warn(`'getCollisionCentroid' called by or with a GameObject that doesn't have hitpolygons, which is not supported yet. this='${this.id}', o='${o.id}'.`);
+		console.warn(`'getCollisionCentroid' called by or with a WorldObject that doesn't have hitpolygons, which is not supported yet. this='${this.id}', o='${o.id}'.`);
 		return null; // No polygons to check, so no centroid can be calculated
 	}
 
 
 	/**
-	 * Determines if the current `GameObject` instance collides with another `GameObject` instance.
+	 * Determines if the current `WorldObject` instance collides with another `WorldObject` instance.
 	 * Detects Axis-Aligned Bounding Box collision (AABB).
-	 * @param o The `GameObject` instance to check for collision.
+	 * @param o The `WorldObject` instance to check for collision.
 	 * @returns `true` if the current instance collides with the given instance, `false` otherwise.
 	 */
-	public detect_object_collision(o: GameObject): boolean {
+	public detect_object_collision(o: WorldObject): boolean {
 		if (!this.hittable || !o.hittable) return false;
-		return GameObject.detect_aabb_collision_areas(this.hitbox, o.hitbox);
+		return WorldObject.detect_aabb_collision_areas(this.hitbox, o.hitbox);
 	}
 
 	/**
@@ -823,13 +823,13 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Determines if the current `GameObject` instance collides with an `Area` instance.
+	 * Determines if the current `WorldObject` instance collides with an `Area` instance.
 	 * Detects Axis-Aligned Bounding Box collision (AABB).
 	 * @param a The `Area` instance to check for collision.
 	 * @returns `true` if the current instance collides with the given instance, `false` otherwise.
 	 */
 	public detect_aabb_collision_area(a: Area): boolean {
-		return GameObject.detect_aabb_collision_areas(this.hitbox, a);
+		return WorldObject.detect_aabb_collision_areas(this.hitbox, a);
 	}
 
 	/**
@@ -845,7 +845,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	static polygonsIntersect(polys1: Polygon[], polys2: Polygon[]): boolean {
 		for (const p1 of polys1) {
 			for (const p2 of polys2) {
-				if (GameObject.singlePolygonsIntersect(p1, p2)) return true;
+				if (WorldObject.singlePolygonsIntersect(p1, p2)) return true;
 			}
 		}
 		return false;
@@ -917,7 +917,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		const intersections: vec2arr[] = [];
 		for (const p1 of polys1) {
 			for (const p2 of polys2) {
-				intersections.push(...GameObject.singlePolygonsIntersectionPoints(p1, p2));
+				intersections.push(...WorldObject.singlePolygonsIntersectionPoints(p1, p2));
 			}
 		}
 		return intersections.length > 0 ? intersections : null;
@@ -987,8 +987,8 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * Returns the centroid from all intersection points between two sets of polygons.
 	 */
 	static getCentroidFromIntersectionPoints(polys1: Polygon[], polys2: Polygon[]): vec2arr {
-		const intersectionPoints = GameObject.polygonsIntersectionPoints(polys1, polys2);
-		return GameObject.getCentroidFromListOfIntersectionPoints(intersectionPoints);
+		const intersectionPoints = WorldObject.polygonsIntersectionPoints(polys1, polys2);
+		return WorldObject.getCentroidFromListOfIntersectionPoints(intersectionPoints);
 	}
 
 	/**
@@ -1030,7 +1030,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Runs the game object by updating its components and running its state.
+	 * Runs the world object by updating its components and running its state.
 	 */
 	public run(): void {
 		for (const id in this.btreecontexts) {
@@ -1040,9 +1040,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	}
 }
 
-// A type representing a constructor for GameObject instances.
+// A type representing a constructor for WorldObject instances.
 // It takes optional parameters _id and _fsm_id, and any additional arguments.
-export type GameObjectConstructorBase = new (_id?: Identifier, _fsm_id?: string, ...args: any[]) => GameObject;
+export type WorldObjectConstructorBase = new (_id?: Identifier, _fsm_id?: string, ...args: any[]) => WorldObject;
 
-// A type representing either a concrete GameObject constructor or an abstract constructor for GameObject.
-export type GameObjectConstructorBaseOrAbstract = GameObjectConstructorBase | AbstractConstructor<GameObject>;
+// A type representing either a concrete WorldObject constructor or an abstract constructor for WorldObject.
+export type WorldObjectConstructorBaseOrAbstract = WorldObjectConstructorBase | AbstractConstructor<WorldObject>;

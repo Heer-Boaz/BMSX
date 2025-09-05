@@ -2,7 +2,7 @@
 import { BTNode } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing } from '../component/basecomponent';
 import { $ } from '../core/game';
-import { GameObject } from '../core/object/gameobject';
+import { WorldObject } from '../core/object/worldobject';
 import type { Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { FloatingDialog } from './bmsxdebugger';
@@ -46,7 +46,7 @@ export function visualizeBehaviorTree(container: HTMLElement, btControllerId: Id
     let nodeElements = new Map<string, HTMLElement>();
 
     function visualizeNode(_node: BTNode, _nodeName: string, _parentElement: HTMLElement, _path: string): void {
-        // const btController = $.get<GameObject>(btControllerId);
+        // const btController = $.get<WorldObject>(btControllerId);
         // let table = document.createElement('table');
         // parentElement.appendChild(table);
         // let nodeNameRow = document.createElement('tr');
@@ -89,7 +89,7 @@ export function visualizeBehaviorTree(container: HTMLElement, btControllerId: Id
         // }
     }
 
-    const btController = $.get<GameObject>(btControllerId);
+    const btController = $.get<WorldObject>(btControllerId);
     for (let treeName in btController.btreecontexts) {
         let tree = btController.btreecontexts[treeName].root;
         let treeRow = document.createElement('tr');

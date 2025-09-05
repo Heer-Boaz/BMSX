@@ -1,4 +1,4 @@
-import { $, GameObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapText, type State } from '../bmsx/index';
+import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapText, type State } from '../bmsx/index';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
 // import quizItemsData from './vragen.json';
@@ -47,7 +47,7 @@ let quizItems: QuizItem[] = null;
 const maximum_characters_per_line_question = 28;
 
 @insavegame
-export class quiz extends GameObject {
+export class quiz extends WorldObject {
     /**
      * An array of strings used to store text data.
      */
@@ -191,32 +191,32 @@ export class quiz extends GameObject {
     }
 
     /**
-     * Switches the current Sint game object to a question state.
+     * Switches the current Sint world object to a question state.
      *
      * @param this - The current quiz instance.
      */
     switchSintToQuestion(this: quiz) {
-        const sint = $.getGameObject('sint');
+        const sint = $.getWorldObject('sint');
         sint.sc.dispatch_event('vraag', sint);
     }
 
     /**
-     * Switches the Sint game object to the answer state.
+     * Switches the Sint world object to the answer state.
      *
      * @param this - The current quiz instance.
      */
     switchSintToAnswer(this: quiz) {
-        const sint = $.getGameObject('sint');
+        const sint = $.getWorldObject('sint');
         sint.sc.dispatch_event('antwoord', sint);
     }
 
     /**
-     * Switches the state of the 'sint' game object to 'klaar'.
+     * Switches the state of the 'sint' world object to 'klaar'.
      *
      * @param this - The current instance of the quiz class.
      */
     switchSintToKlaar(this: quiz) {
-        const sint = $.getGameObject('sint');
+        const sint = $.getWorldObject('sint');
         sint.sc.dispatch_event('klaar', sint);
     }
 
@@ -278,7 +278,7 @@ export class quiz extends GameObject {
                         const idx = state.current_tape_value;
                         const currentQ = quizItems[idx];
                         if (currentQ.imgid) {
-                            $.getGameObject<sint>('sint').setimg(currentQ.imgid);
+                            $.getWorldObject<sint>('sint').setimg(currentQ.imgid);
                         }
                         this.setTextFromLines([
                             `Vraag ${idx + 1}/${quizItems.length}: ${currentQ.question}`,

@@ -1,4 +1,4 @@
-import { $, $world, attach_components, CatmullRomPath, color_arr, GameObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from '../bmsx';
+import { $, $world, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from '../bmsx';
 import { submitParticle } from '../bmsx/render/3d/particles_pipeline';
 import { onload } from '../bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
@@ -61,7 +61,7 @@ interface Spark {
 }
 
 @insavegame
-export class SparkEmitter extends GameObject {
+export class SparkEmitter extends WorldObject {
     private sparks: Spark[] = [];
     private textureKey: TextureKey;
     static readonly SPARK_LIFETIME = 100;
@@ -75,7 +75,7 @@ export class SparkEmitter extends GameObject {
     }
 
     public override run(): void {
-        const origin = $.getGameObject(this.parent_id);
+        const origin = $.getWorldObject(this.parent_id);
         for (let i = 0; i < 3; i++) {
             const vel: vec3arr = [
                 (Math.random() - 0.5) * 0.05,
@@ -111,12 +111,12 @@ export class SparkEmitter extends GameObject {
 
 // Append physics test objects
 @insavegame
-export class PhysTestFloor extends GameObject {
+export class PhysTestFloor extends WorldObject {
     constructor(public width = 50, public depth = 50) { super('physFloor'); }
 }
 
 @insavegame
-export class PhysTestWall extends GameObject {
+export class PhysTestWall extends WorldObject {
     // Provide defaults so Reviver (which calls ctor with no args) won't crash.
     constructor(public nameId: string = 'physTestWall', public wallSize: vec3arr = [1, 1, 1]) { super(nameId); }
 }
@@ -144,7 +144,7 @@ export class PhysDynamicSphere extends MeshObject {
 }
 
 @insavegame
-export class PhysTriggerZone extends GameObject {
+export class PhysTriggerZone extends WorldObject {
     constructor(public triggerSize: vec3arr = [1, 1, 1]) { super('physTrigger'); }
 }
 

@@ -1,6 +1,6 @@
 import { EventEmitter, EventSubscription } from '../core/eventemitter';
 import { $ } from '../core/game';
-import { type GameObjectConstructorBaseOrAbstract } from '../core/object/gameobject';
+import { type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
 import type { Disposable, Identifiable, Identifier, Registerable } from '../rompack/rompack';
 import { AbstractConstructor } from '../rompack/rompack';
@@ -21,16 +21,16 @@ export interface ConstructorWithAutoAddComponents {
 }
 
 /**
- * Represents a constructor for the GameObject that includes additional static properties or methods.
+ * Represents a constructor for the WorldObject that includes additional static properties or methods.
  * This constructor can be either a base constructor or an abstract constructor.
  * It ensures that the constructor has the necessary static properties or methods required by decorators or other functions.
  *
  * This type can be extended to include specific properties required by decorators.
- * For example, the Component decorator requires the constructor to be (derived from) GameObject, is allowed to be abstract, and to have an autoAddComponents property as well.
+ * For example, the Component decorator requires the constructor to be (derived from) WorldObject, is allowed to be abstract, and to have an autoAddComponents property as well.
  *
- * @typeparam T - The type of the GameObject.
+ * @typeparam T - The type of the WorldObject.
  */
-export type GameObjectConstructorWithComponentList = GameObjectConstructorBaseOrAbstract & ConstructorWithAutoAddComponents;
+export type WorldObjectConstructorWithComponentList = WorldObjectConstructorBaseOrAbstract & ConstructorWithAutoAddComponents;
 
 /**
  * Represents a mapping of keys to components.
@@ -108,7 +108,7 @@ export type ComponentUpdateParams = {
 
 @insavegame
 /**
- * Represents an abstract component that can be added to a game object.
+ * Represents an abstract component that can be added to a world object.
  * @abstract
  * @class
  * @implements IIdentifiable
@@ -173,7 +173,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
      */
     constructor(parentid: Identifier) {
         this.parentid ??= parentid; // Store the parent id for later use
-        this.id ??= this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
+        this.id ??= this.parentid + '_' + this.constructor.name; // Note: A component can be added once per world object
         this.enabled ??= true;
         // Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
         // so do not bind here to avoid running before derived decorator initializers.
@@ -368,15 +368,15 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
 // update_tagged_components removed — ECS Systems orchestrate component updates.
 
 /**
- * Attaches the specified components to a game object constructor.
+ * Attaches the specified components to a world object constructor.
  *
  * @param components - The components to attach.
- * @returns A decorator function that attaches the components to the game object constructor.
+ * @returns A decorator function that attaches the components to the world object constructor.
  */
 export function attach_components(...components: ComponentClass[]) {
     return function (value: any, _context: ClassDecoratorContext) {
-        const ctor = value as GameObjectConstructorWithComponentList;
-        const parentComponents = (Object.getPrototypeOf(ctor) as GameObjectConstructorWithComponentList).autoAddComponents || [];
+        const ctor = value as WorldObjectConstructorWithComponentList;
+        const parentComponents = (Object.getPrototypeOf(ctor) as WorldObjectConstructorWithComponentList).autoAddComponents || [];
         const merged = [...parentComponents, ...components];
         const deduped: ComponentClass[] = [];
         const seen = new Set<ComponentClass>();

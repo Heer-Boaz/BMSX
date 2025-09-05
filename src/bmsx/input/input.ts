@@ -671,7 +671,7 @@ export class Input implements RegisterablePersistent {
         if (!this.uiControllerSpawned) {
             const ui = $.world?.get_space?.('ui');
             if (ui) {
-                const existing = $.world.getGameObject('controller_assignment_ui');
+                const existing = $.world.getWorldObject('controller_assignment_ui');
                 if (!existing) ui.spawn(new ControllerAssignmentUI());
                 this.uiControllerSpawned = true;
             }

@@ -283,7 +283,7 @@ export class TextureManager implements RegisterablePersistent {
         const streamed = options?.streamed ?? false;
 
         if (!streamed) {
-            // atomic: wait for all faces, then create cubemap in one go
+            // atomic: wait for all faces, then create cubemap in one wo
             this.launchCubemapReplacement(key, async () => {
                 if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
                 const faces = await Promise.all(faceLoaders.map(fn => fn)) as unknown as

@@ -1,11 +1,11 @@
-import { GameObject } from '../core/object/gameobject';
+import { WorldObject } from '../core/object/worldobject';
 import { M4, Mat4, quat } from '../render/3d/math3d';
 import type { Identifier, Oriented, Scaled, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { Component } from './basecomponent';
 
 @insavegame
-export class TransformComponent extends Component<GameObject> {
+export class TransformComponent extends Component<WorldObject> {
     public position: vec3arr;
     // public rotation: vec3arr; // retained for legacy callers; not authoritative if parent supplies quaternion
     private orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
@@ -69,7 +69,7 @@ export class TransformComponent extends Component<GameObject> {
     }
 
     override postprocessingUpdate(): void {
-        const parent = this.parentAs<GameObject & Oriented & Scaled>();
+        const parent = this.parentAs<WorldObject & Oriented & Scaled>();
 
         if (parent.pos) {
             this.position[0] = parent.pos.x;

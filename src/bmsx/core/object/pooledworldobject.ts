@@ -1,6 +1,6 @@
 /**
- * PooledGameObject
- * Basis voor tijdelijke / vaak gespawnde GameObjects (particles, decals, hitmarkers, etc.)
+ * PooledWorldObject
+ * Basis voor tijdelijke / vaak gespawnde WorldObjects (particles, decals, hitmarkers, etc.)
  * die via een Pool<T> hergebruikt worden zonder GC-churn en zonder dubbele ids in het model.
  *
  * Gebruik:
@@ -9,14 +9,14 @@
  *  - In run(): als effect klaar is -> this.recycle(); (en release naar pool)
  */
 import { $world } from '../game';
-import { GameObject } from './gameobject';
+import { WorldObject } from './worldobject';
 
-export abstract class PooledGameObject extends GameObject {
+export abstract class PooledWorldObject extends WorldObject {
     protected active = true; // zichtbaar / updatebaar
 
     /** Subclasses geven een reset implementatie voor initialisatie van state. */
     protected abstract reset(...args: any[]): void; // eslint-disable-line @typescript-eslint/no-explicit-any
-    /** Subclasses must still implement run/paint like gewone GameObject lifecycle. */
+    /** Subclasses must still implement run/paint like gewone WorldObject lifecycle. */
     public abstract override run(): void;
     public abstract override paint(): void;
 

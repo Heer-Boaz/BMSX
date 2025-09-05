@@ -12,7 +12,7 @@ const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start
 @insavegame
 /**
  * Represents a state in a state machine.
- * @template T - The type of the game object or model associated with the state.
+ * @template T - The type of the world object or model associated with the state.
  */
 export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
@@ -74,8 +74,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     paused: boolean; // Iff paused, skip 'onrun'
 
     /**
-     * This state machine reflects the (partial) state of the game object with the given id
-     * @see {@link World.getGameObject}
+     * This state machine reflects the (partial) state of the world object with the given id
+     * @see {@link World.getWorldObject}
      */
     target_id: Identifier;
 
@@ -85,7 +85,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     public data: { [key: string]: any; } = {};
 
     /**
-     * Returns the game object or model that this state machine is associated with.
+     * Returns the world object or model that this state machine is associated with.
      */
     public get target(): T { return $.registry.get<T>(this.target_id); }
 
@@ -169,7 +169,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
      * Factory for creating new FSMs.
      * @param id - id of the FSM definition to use for this machine.
-     * @param target_id - id of the object that is stated by this FSM. @see {@link World.getGameObject}.
+     * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
      */
     public static create(id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier): State {
         let result = new State(id, target_id, parent_id, root_id);
@@ -183,7 +183,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * Represents the context of a state in a finite state machine.
      * Contains information about the current state, the state machine it belongs to, and any substate machines.
      * @param def_id - id of the state machine definition to use for this machine.
-     * @param target_id - id of the object that is stated by this FSM. @see {@link World.getGameObject}.
+     * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
      */
     constructor(def_id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier) {
         this.def_id = def_id ?? DEFAULT_BST_ID;

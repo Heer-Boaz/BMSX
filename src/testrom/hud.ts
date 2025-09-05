@@ -1,7 +1,7 @@
-import { $, $world, GameObject, Msx1Colors, TextWriter } from '../bmsx';
+import { $, $world, WorldObject, Msx1Colors, TextWriter } from '../bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
-export class RailShooterHUD extends GameObject {
+export class RailShooterHUD extends WorldObject {
     score = 0; combo = 1; private lastHitTime = 0; comboWindow = 1.5; bossId: string | null = null;
     private comboFade = 0; // alpha fade for combo text when inactive
     private hitFlash = 0; // brief flash when a hit is registered
@@ -35,7 +35,7 @@ export class RailShooterHUD extends GameObject {
         // Simple crosshair
         TextWriter.drawText(rx - 4, ry, '+', undefined, undefined, color);
         if (this.bossId) {
-            const boss = $world.getGameObject(this.bossId);
+            const boss = $world.getWorldObject(this.bossId);
             if (boss) {
                 const bh = boss.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent | undefined;
                 if (bh && !bh.dead) {

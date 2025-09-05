@@ -1,4 +1,4 @@
-import { base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, GameObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RenderView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RenderView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -14,10 +14,10 @@ class gamemodel extends World {
     public score: number = 0;
 
     public get diamant(): diamant {
-        return this.getGameObject('diamant');
+        return this.getWorldObject('diamant');
     }
     public get draaischijf(): draaischijf {
-        return this.getGameObject('draaischijf');
+        return this.getWorldObject('draaischijf');
     }
 
     public get_onvolmaaktheden(): onvolmaaktheid[] {
@@ -120,10 +120,10 @@ class gamemodel extends World {
                         this.paused = true;
                     },
                     run(this: gamemodel) {
-                        this.getGameObject<GameMenu>('gamemenu')?.run();
+                        this.getWorldObject<GameMenu>('gamemenu')?.run();
                     },
                     exit(this: gamemodel) {
-                        let menu = this.getGameObject<GameMenu>('gamemenu');
+                        let menu = this.getWorldObject<GameMenu>('gamemenu');
                         menu.Close();
                         this.exile(menu);
 
@@ -198,7 +198,7 @@ class gamemodel extends World {
         return MSX1ScreenHeight;
     }
 
-    public collidesWithTile(_o: GameObject, _dir: Direction): boolean {
+    public collidesWithTile(_o: WorldObject, _dir: Direction): boolean {
         return false;
     }
 
@@ -352,7 +352,7 @@ class evaluatieStuff extends SpriteObject {
     };
 };
 
-class hud extends GameObject {
+class hud extends WorldObject {
     @build_fsm('test')
     public static bouw() {
         return {
@@ -883,7 +883,7 @@ _global['h406A'] = (args: BootArgs): void => {
 // internal graining	Irregularities in crystal growth may cause some lines or textures that appear like haze on the diamond surface.
 // grain center	Although not visible from every angle, grain center looks like a transparent tornado inside the diamond..
 // feather	Any break in a diamond.There are two types: cleavage is a break that is in a cleavage plane, and fracture is one that is in any other direction.Feathers can get larger with a hard knock and thus considered more problematic than any other inclusion.
-// bearded girdle	Fine feathers scattered around the diamond’s perimeter.If it’s heavy, it can go all the way around the stone.
+// bearded girdle	Fine feathers scattered around the diamond’s perimeter.If it’s heavy, it can wo all the way around the stone.
 // bruise	A small tree - root like feather caused by a hard blow.
 // knot	A shallow opening on the surface caused by damage after cut and polish.
 // chip	A ribbon like inclusion on the diamond’s growth plane.

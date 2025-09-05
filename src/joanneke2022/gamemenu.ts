@@ -1,4 +1,4 @@
-import { Constants, Direction, GameOptions as GO, GameObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3 } from '../bmsx/bmsx';
+import { Constants, Direction, GameOptions as GO, WorldObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3 } from '../bmsx/bmsx';
 import { AudioId, BitmapId } from './resourceids';
 
 interface MenuOption {
@@ -29,7 +29,7 @@ export const enum MenuItem {
     OptionsFromMainMenu
 }
 
-export class GameMenu extends GameObject {
+export class GameMenu extends WorldObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;

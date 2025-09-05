@@ -3,7 +3,7 @@ import { SM } from '../bmsx/soundmaster';
 import { AudioId } from './resourceids';
 import { FoeExplosion } from './foeexplosion';
 import { Model } from './gamemodel';
-import { Sprite, model, GameObject } from '../bmsx/bmsx';
+import { Sprite, model, WorldObject } from '../bmsx/bmsx';
 
 export abstract class Foe extends Sprite {
     public maxHealth: number;
@@ -39,14 +39,14 @@ export abstract class Foe extends Sprite {
         }
     }
 
-    public handleHit(source: GameObject, dmg: number): void {
+    public handleHit(source: WorldObject, dmg: number): void {
         if (this.disposeFlag) return;
         this.loseHealth(source, dmg);
         (model as Model).LastFoeThatWasHit = this;
         SM.play(AudioId.Hit);
     }
 
-    protected loseHealth(source: GameObject, dmg: number): void {
+    protected loseHealth(source: WorldObject, dmg: number): void {
         if (this.disposeFlag) return;
         this.health -= dmg;
         if (this.health <= 0)

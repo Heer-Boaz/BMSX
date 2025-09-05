@@ -1,8 +1,8 @@
-import { $, $world, build_fsm, CameraObject, CameraProjectionType, GameObject, insavegame, onload, StateMachineBlueprint } from '../bmsx';
+import { $, $world, build_fsm, CameraObject, CameraProjectionType, WorldObject, insavegame, onload, StateMachineBlueprint } from '../bmsx';
 import { Action } from './bootloader';
 
 @insavegame
-export class CameraController extends GameObject {
+export class CameraController extends WorldObject {
 	@build_fsm()
 	public static buildFsm(): StateMachineBlueprint {
 		return {
@@ -149,7 +149,7 @@ export class CameraController extends GameObject {
 		}
 
 		// if (input.getActionState('load').justpressed) {
-		// 	const extra = $world.getGameObject<DirectionalLightObject>('extraSun');
+		// 	const extra = $world.getWorldObject<DirectionalLightObject>('extraSun');
 		// 	if (extra) extra.active = !extra.active;
 		// }
 

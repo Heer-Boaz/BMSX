@@ -1,6 +1,6 @@
 import type { Identifier } from '../../rompack/rompack';
 import { $world } from '../game';
-import { GameObject } from "./gameobject";
+import { WorldObject } from "./worldobject";
 
 /**
  * Class representing an ObjectTracker, which tracks the properties of game objects.
@@ -11,12 +11,12 @@ export class ObjectTracker {
     /**
      * An object that tracks the properties of game objects.
      * @remarks
-     * The `trackedObjects` property is a dictionary that maps GameObjectId's to an array of tracked properties.
+     * The `trackedObjects` property is a dictionary that maps WorldObjectId's to an array of tracked properties.
      * Each tracked property is represented by an object with a `property` field and an optional `key` field.
      */
     private trackedObjects: { [id: Identifier]: Array<{ property: string, key?: string }> } = {};
     /**
-     * Stores the last values of properties for each game object.
+     * Stores the last values of properties for each world object.
      * @remarks Used for determining which properties have changed.
      * @type {Object.<Identifier, Object.<string, any>>}
      */
@@ -27,7 +27,7 @@ export class ObjectTracker {
      * @param target - The object to track.
      * @param properties - The properties to track.
      */
-    trackObject<T extends GameObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
+    trackObject<T extends WorldObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
         this.trackedObjects[target.id] = properties as Array<{ property: string, key?: string }>;
 
         // Initialize lastValues for this object to avoid undefined accesses later.
@@ -56,11 +56,11 @@ export class ObjectTracker {
 
         for (let [id, properties] of Object.entries(this.trackedObjects)) {
             for (let { property, key } of properties) {
-                let gameObject = $world.getGameObject(id);
-                if (!gameObject) continue; // skip if object no longer exists
+                let worldObject = $world.getWorldObject(id);
+                if (!worldObject) continue; // skip if object no longer exists
 
                 // Use a string-indexable view so TS accepts dynamic property access
-                const gobjRec = gameObject as Record<string, any>;
+                const gobjRec = worldObject as Record<string, any>;
                 const value = gobjRec[property];
 
                 // Ensure lastValues[id] exists

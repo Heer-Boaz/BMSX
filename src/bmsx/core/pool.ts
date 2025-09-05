@@ -28,7 +28,7 @@ export interface PoolOptions<T> {
      * Called immediately after a slot flips to active (either reused or newly created), BEFORE onReset.
      * Gebruik voor zaken die slechts éénmaal per acquire hoeven te gebeuren vóór de state-reset,
      * bv. detach/exile uit een scene graph, timestamp capture, etc.
-     * Tip: voor PooledGameObject kun je hier `inst.prepareForReuse()` doen en in onReset het zichtbaar/actief maken.
+     * Tip: voor PooledWorldObject kun je hier `inst.prepareForReuse()` doen en in onReset het zichtbaar/actief maken.
      */
     onAcquire?: (obj: T) => void;
     /** Called when an object is (re)acquired before handing to caller. */

@@ -2,7 +2,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, Direction, Size, vec3, new_vec2, set_vec2 } from '../bmsx/bmsx';
+import { GameOptions as GO, WorldObject, Direction, Size, vec3, new_vec2, set_vec2 } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
@@ -37,7 +37,7 @@ export const enum MenuItem {
     OptionsFromMainMenu
 }
 
-export class GameMenu extends GameObject {
+export class GameMenu extends WorldObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;

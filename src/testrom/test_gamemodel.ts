@@ -209,8 +209,8 @@ export class gamemodel extends World {
 						// 	bossObjId = boss.id; hud.bossId = bossObjId;
 						// });
 
-						// // Inject runner & binder into update loop via a lightweight GameObject
-						// class RailDemoDriver extends GameObject {
+						// // Inject runner & binder into update loop via a lightweight WorldObject
+						// class RailDemoDriver extends WorldObject {
 						// 	override run(): void {
 						// 		const dtSec = $.deltaTime / 1000;
 						// 		elapsed += dtSec; const prevParam = runner.u; const newParam = Math.min(1, elapsed / totalDuration); if (newParam !== prevParam) runner.u = newParam;
@@ -228,7 +228,7 @@ export class gamemodel extends World {
 						// 			bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
 						// 			_model.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
 						// 		}
-						// 		for (const impact of bullets.popImpacts()) { const enemy = $world.getGameObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
+						// 		for (const impact of bullets.popImpacts()) { const enemy = $world.getWorldObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); _model.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); _model.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
 						// 	}
 						// }
 						// _model.spawn(new RailDemoDriver('railDriver'));
@@ -244,8 +244,8 @@ export class gamemodel extends World {
 						// phys.enableMetricsHUD();
 						// phys.setHUDAutoHide(false);
 
-						// // Spawn a debug drawer & overlay GameObject
-						// const dbgGO = new GameObject();
+						// // Spawn a debug drawer & overlay WorldObject
+						// const dbgGO = new WorldObject();
 						// _model.spawn(dbgGO);
 						// dbgGO.addComponent(new PhysicsDebugComponent(dbgGO.id));
 						// dbgGO.addComponent(new PhysicsOverlayRenderer(dbgGO.id));

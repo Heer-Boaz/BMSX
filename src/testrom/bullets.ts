@@ -1,4 +1,4 @@
-import { $, $world, GameObject } from '../bmsx';
+import { $, $world, WorldObject } from '../bmsx';
 import { Pool } from '../bmsx/core/pool';
 import type { PhysicsWorld } from '../bmsx/physics/physicsworld';
 import { EnemyHealthComponent } from './enemyhealth';
@@ -7,7 +7,7 @@ interface Bullet { active: boolean; pos: [number, number, number]; prev: [number
 
 export interface BulletImpact { enemyId: string; damage: number; position: [number, number, number]; }
 
-export class BulletManager extends GameObject {
+export class BulletManager extends WorldObject {
     private pool: Pool<Bullet>;
     private impacts: BulletImpact[] = []; // consumed each frame by game logic
     constructor(size = 64) {
@@ -51,13 +51,13 @@ export class BulletManager extends GameObject {
         const bodies = phys.getBodies();
         for (const body of bodies) {
             if (!body.invMass || body.isTrigger) continue;
-            const go = $world.getGameObject(body.userData);
-            if (!go) continue;
-            const health = go.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent;
+            const wo = $world.getWorldObject(body.userData);
+            if (!wo) continue;
+            const health = wo.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent;
             if (!health || health.dead) continue;
             if (this.segmentIntersectsBody(segFrom, segTo, body)) {
                 health.applyDamage(b.damage);
-                this.impacts.push({ enemyId: go.id, damage: b.damage, position: [segTo[0], segTo[1], segTo[2]] });
+                this.impacts.push({ enemyId: wo.id, damage: b.damage, position: [segTo[0], segTo[1], segTo[2]] });
                 b.active = false; this.pool.release(b); // bullet consumed
                 break;
             }

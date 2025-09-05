@@ -20,7 +20,7 @@ export interface PhysicsBodyDesc {
     angularDamping?: number; // [0,1] fraction per second exponential
     isTrigger?: boolean;
     type?: BodyType; // overrides mass semantics if provided
-    userData?: any; // backlink to GameObject or component
+    userData?: any; // backlink to WorldObject or component
     layer?: number; // collision layer bit (0..31)
     mask?: number;  // collision mask bits
 }

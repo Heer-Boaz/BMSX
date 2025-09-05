@@ -2,10 +2,10 @@ import { Camera } from '../../render/3d/camera3d';
 import { quat, V3 } from '../../render/3d/math3d';
 import type { Oriented } from '../../rompack/rompack';
 import { insavegame } from '../../serializer/gameserializer';
-import { GameObject } from './gameobject';
+import { WorldObject } from './worldobject';
 
 @insavegame
-export class CameraObject extends GameObject implements Oriented {
+export class CameraObject extends WorldObject implements Oriented {
     public camera: Camera;
     public active: boolean;
 

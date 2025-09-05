@@ -8,7 +8,7 @@ import type { color, DrawMeshOptions } from '../../render/view';
 import type { asset_id, color_arr, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr, vec4arr } from '../../rompack/rompack';
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave } from '../../serializer/gameserializer';
 import { $ } from '../game';
-import { GameObject } from './gameobject';
+import { WorldObject } from './worldobject';
 import { Float32ArrayPool } from '../utils';
 
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"
@@ -213,7 +213,7 @@ interface MeshInstance {
 }
 
 @insavegame
-export abstract class MeshObject extends GameObject implements Oriented, Scaled {
+export abstract class MeshObject extends WorldObject implements Oriented, Scaled {
 	@excludepropfromsavegame
 	public meshes: Mesh[] = [];
 	@excludepropfromsavegame

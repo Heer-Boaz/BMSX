@@ -1,4 +1,4 @@
-import { $, Component, GameObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
@@ -16,12 +16,12 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 
 	/**
 	 * Event handler for the 'leavingScreen' event.
-	 * @param emitter - The ID of the game object emitting the event.
-	 * @param d - The direction in which the game object is leaving the screen.
-	 * @param old_x_or_y - The previous x or y coordinate of the game object.
+	 * @param emitter - The ID of the world object emitting the event.
+	 * @param d - The direction in which the world object is leaving the screen.
+	 * @param old_x_or_y - The previous x or y coordinate of the world object.
 	 */
 	@subscribesToParentScopedEvent('leavingScreen')
-	public onLeavingScreen(_event_name: string, emitter: Eila, { d }: GameObjectEventPayloads['leavingScreen']) {
+	public onLeavingScreen(_event_name: string, emitter: Eila, { d }: WorldObjectEventPayloads['leavingScreen']) {
 		if (d === 'left') {
 			emitter.facing = 'right';
 		}

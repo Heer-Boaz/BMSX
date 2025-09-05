@@ -24,9 +24,9 @@ export class EnemyHealthComponent extends Component {
         // Handle damage flash tint (temporarily lerp base color toward flash color then restore)
         if (this.flashTimer > 0) {
             this.flashTimer -= $.deltaTime / 1000;
-            const go = $world.getGameObject(this.parentid);
-            if (go && 'meshes' in go) {
-                const meshObj = go as unknown as { meshes: { material?: { color: color_arr; }; }[] };
+            const wo = $world.getWorldObject(this.parentid);
+            if (wo && 'meshes' in wo) {
+                const meshObj = wo as unknown as { meshes: { material?: { color: color_arr; }; }[] };
                 // Capture originals once at flash start
                 if (!this.originalColors) {
                     this.originalColors = meshObj.meshes.map(m => m.material ? [[...m.material.color]] : []);
@@ -46,15 +46,15 @@ export class EnemyHealthComponent extends Component {
                 });
             }
         } else if (this.originalColors) {
-            const go = $world.getGameObject(this.parentid);
-            if (go && 'meshes' in go) {
-                const meshObj = go as unknown as { meshes: { material?: { color: color_arr; }; }[] };
+            const wo = $world.getWorldObject(this.parentid);
+            if (wo && 'meshes' in wo) {
+                const meshObj = wo as unknown as { meshes: { material?: { color: color_arr; }; }[] };
                 meshObj.meshes.forEach((m, i) => { const mat = m.material; const o = this.originalColors?.[i]?.[0]; if (mat && o) { mat.color[0] = o[0]; mat.color[1] = o[1]; mat.color[2] = o[2]; mat.color[3] = o[3]; } });
             }
             this.originalColors = undefined; // clear cache after restore
         }
         if (this.dead && this.diedAt) {
-            const t = performance.now() / 1000 - this.diedAt; if (t > this.despawnDelay) { const go = $world.getGameObject(this.parentid); if (go) go.dispose(); }
+            const t = performance.now() / 1000 - this.diedAt; if (t > this.despawnDelay) { const wo = $world.getWorldObject(this.parentid); if (wo) wo.dispose(); }
         }
     }
 }

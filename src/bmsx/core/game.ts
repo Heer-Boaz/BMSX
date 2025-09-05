@@ -17,7 +17,7 @@ import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World, WorldConfiguration } from "./world";
 import { EventEmitter, EventPayload } from "./eventemitter";
 import { BFont } from './font';
-import { GameObject } from "./object/gameobject";
+import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
@@ -167,8 +167,8 @@ export class Game {
 		return this.registry.get<T>(id);
 	}
 
-	public getGameObject<T extends GameObject>(id: Identifier): T {
-		return this.world.getGameObject<T>(id);
+	public getWorldObject<T extends WorldObject>(id: Identifier): T {
+		return this.world.getWorldObject<T>(id);
 	}
 
 	public has(id: Identifier): boolean {
@@ -183,14 +183,14 @@ export class Game {
 		this.registry.deregister(id);
 	}
 
-	public spawn(o: GameObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
+	public spawn(o: WorldObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
 		this.world.spawn(o, pos, ignoreSpawnhandler);
 	}
 
-    /** Destroy (dispose) a game object from the world. */
-    public destroy(o: GameObject): void { this.world.destroy(o); }
+    /** Destroy (dispose) a world object from the world. */
+    public destroy(o: WorldObject): void { this.world.destroy(o); }
     /** @deprecated Use destroy(o) */
-    public exile(o: GameObject): void { this.world.exile(o); }
+    public exile(o: WorldObject): void { this.world.exile(o); }
 
 	public drawImg(options: DrawImgOptions): void {
 		this.view.drawImg(options);
@@ -325,7 +325,7 @@ export class Game {
 		pipelineRegistry.registerBuiltin(gview.backend); // We first need to register the built-in passes before calling view.init
 		// Store on view for graph rebuild
 		gview.pipelineRegistry = pipelineRegistry; // Register the pipeline registry with the view before initializing
-		gview.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
+		gview.init(); // Init the view. Placed here to ensure that the world object is available to the view and that the Input module is initialized
 		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
 		await SoundMaster.instance.init(rompack['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
@@ -361,7 +361,7 @@ export class Game {
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
 		$world = new World(worldConfig);
-		$world.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
+		$world.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the world object is available to the model
 
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
 		if (!this.registry.has('physics_world')) {
@@ -408,7 +408,7 @@ export class Game {
 	public update(deltaTime: number): void {
 		const game = $;
 		const model = game.world;
-		// Step physics first so game object logic can react to post-collision resolved positions.
+		// Step physics first so world object logic can react to post-collision resolved positions.
 		model.run(deltaTime);
 
 		if (REWIND_BUFFER_ACTIVATED && (game._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {

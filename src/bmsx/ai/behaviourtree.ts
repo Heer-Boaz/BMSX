@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { GameObject } from '../core/object/gameobject';
+import { WorldObject } from '../core/object/worldobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame } from '../serializer/gameserializer';
 
@@ -177,7 +177,7 @@ export function build_bt(bt_id?: BehaviorTreeID) {
 /**
  * Constructs a behavior tree based on the specified tree name, blackboard, and target ID.
  * @param bt_id - The name of the behavior tree.
- * @param targetId - The ID of the target game object.
+ * @param targetId - The ID of the target world object.
  * @returns The constructed behavior tree node, or null if the tree definition is not found.
  */
 export function constructBehaviorTree(bt_id: BehaviorTreeID): BTNode | null {
@@ -267,7 +267,7 @@ export class Blackboard implements Identifiable {
 
     /**
      * Copies the specified properties from the given target object to the blackboard.
-     * This is useful for copying properties from a game object to the blackboard for use in the behavior tree,
+     * This is useful for copying properties from a world object to the blackboard for use in the behavior tree,
      * such as copying the position of an enemy to the blackboard for use in pathfinding.
      *
      * @template T - The type of the target object.
@@ -275,7 +275,7 @@ export class Blackboard implements Identifiable {
      * @param {Array<{ property: keyof T, key?: string }>} properties - The properties to copy, along with optional custom keys.
      * @returns {void}
      */
-    public copyPropertiesToBlackboard<T extends GameObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
+    public copyPropertiesToBlackboard<T extends WorldObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
         for (let { property, key } of properties) {
             // If no key is given, use the property name as the key
             key = key ?? (property as string);
@@ -294,7 +294,7 @@ export class Blackboard implements Identifiable {
  */
 export type BehaviorTreeID = string;
 
-// Represents the context for a behavior tree for a given game object.
+// Represents the context for a behavior tree for a given world object.
 export type BehaviorTreeContext = {
     running: boolean; // Indicates if the behavior tree is currently running
     root: BTNode; // The root node of the behavior tree
@@ -321,7 +321,7 @@ export abstract class BTNode implements Identifiable {
      * @param targetid The Identifier of the target object.
      * @returns The target object casted to the specified type.
      */
-    public getTarget<T extends GameObject>(targetid: Identifier) { return $.world.getGameObject<T>(targetid); }
+    public getTarget<T extends WorldObject>(targetid: Identifier) { return $.world.getWorldObject<T>(targetid); }
 
     constructor(id: BehaviorTreeID, _priority = 0) {
         this.id = id;

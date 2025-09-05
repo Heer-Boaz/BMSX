@@ -1,4 +1,4 @@
-import { World, BootArgs, build_fsm, Game, GameObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
+import { World, BootArgs, build_fsm, Game, WorldObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';
@@ -93,7 +93,7 @@ class modelclass extends World {
         return MSX1ScreenHeight;
     }
 
-    public collidesWithTile(o: GameObject, dir: Direction): boolean {
+    public collidesWithTile(o: WorldObject, dir: Direction): boolean {
         return false;
     }
 
@@ -455,7 +455,7 @@ class corona extends SpriteObject {
     public isEng = true;
     private moveLeft: number = 0;
 
-    private onLeavingScreenHandler(ik: GameObject, dir: Direction, old_x_or_y: number) {
+    private onLeavingScreenHandler(ik: WorldObject, dir: Direction, old_x_or_y: number) {
         prohibitLeavingScreenHandler(ik, dir, old_x_or_y);
         (ik as corona).moveLeft = randomInt(MIN_CORONA_MOVE, MAX_CORONA_MOVE);
         (ik as corona).direction = getOppositeDirection(dir);

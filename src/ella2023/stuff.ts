@@ -1,4 +1,4 @@
-import { $, DrawRectOptions, GameObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3 } from '../bmsx';
+import { $, DrawRectOptions, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3 } from '../bmsx';
 import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
@@ -220,7 +220,7 @@ export class TitleScreen extends SpriteObject {
 }
 
 @insavegame
-export class Gordijn extends GameObject {
+export class Gordijn extends WorldObject {
 	private width: number;
 
 	@build_fsm()

@@ -21,8 +21,8 @@ export class Hud extends SpriteObject {
         // Update hitpoints
         const model = $.world;
         const view = $.view;
-        const player = model.getGameObject<Fighter>('player');
-        const sinterklaas = model.getGameObject<Fighter>('sinterklaas');
+        const player = model.getWorldObject<Fighter>('player');
+        const sinterklaas = model.getWorldObject<Fighter>('sinterklaas');
 
         const HP_BAR1 = { startX: 112, endX: 40, startY: 25, endY: 29 };
         const HP_BAR2 = { startX: 216, endX: 144, startY: 25, endY: 29 };

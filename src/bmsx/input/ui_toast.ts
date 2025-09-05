@@ -1,11 +1,11 @@
 import { insavegame } from '../serializer/gameserializer';
-import { GameObject } from '../core/object/gameobject';
+import { WorldObject } from '../core/object/worldobject';
 import { $, } from '../core/game';
 import { ZCOORD_MAX } from '../render/backend/webgl.constants';
 import { TextWriter } from '../render/textwriter';
 
 @insavegame
-class Toast extends GameObject {
+class Toast extends WorldObject {
     private createdAt: number = 0;
     constructor(public text: string, public ms: number = 1800) {
         super(`toast_${Math.floor(Math.random() * 1e9)}`, 'toast');

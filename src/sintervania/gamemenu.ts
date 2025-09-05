@@ -7,7 +7,7 @@ import { SM } from "../bmsx/soundmaster";
 import { Controller } from "./gamecontroller";
 import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, mdef, model, controller } from '../bmsx/bmsx';
+import { GameOptions as GO, WorldObject, mdef, model, controller } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
 import { new_vec2, setPoint } from "../bmsx/common";
 import { view, game } from "../bmsx/bmsx";
@@ -44,7 +44,7 @@ declare module "./mainmenu" {
     }
 }
 
-export class GameMenu extends mdef implements GameObject {
+export class GameMenu extends mdef implements WorldObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;

@@ -1,9 +1,9 @@
 import type { Light } from '../../render/3d/light';
 import { insavegame } from '../../serializer/gameserializer';
-import { GameObject } from './gameobject';
+import { WorldObject } from './worldobject';
 
 @insavegame
-export abstract class LightObject extends GameObject {
+export abstract class LightObject extends WorldObject {
     public light: Light;
     public active: boolean;
 

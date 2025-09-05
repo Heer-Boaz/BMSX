@@ -1,7 +1,7 @@
 import { World, Space } from '../bmsx/world';
 import { build_fsm, sdef, State } from '../bmsx/bfsm';
 import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from '../bmsx/bmsx';
-import { GameObject } from '../bmsx/gameobject';
+import { WorldObject } from '../bmsx/worldobject';
 import { RenderView } from '../bmsx/glview';
 import { Input } from '../bmsx/input';
 import { MSX1ScreenHeight, MSX1ScreenWidth } from '../bmsx/msx';
@@ -88,7 +88,7 @@ class modelclass extends World {
         return MSX1ScreenHeight;
     }
 
-    public collidesWithTile(o: GameObject, dir: Direction): boolean {
+    public collidesWithTile(o: WorldObject, dir: Direction): boolean {
         return false;
     }
 
@@ -232,7 +232,7 @@ class monster extends SpriteObject {
         this.hittable = true;
         let me = this;
 
-        this.oncollide = (src: GameObject) => {
+        this.oncollide = (src: WorldObject) => {
             _model.enemyHp -= 10;
             if (_model.enemyHp <= 0) {
                 me.banish();

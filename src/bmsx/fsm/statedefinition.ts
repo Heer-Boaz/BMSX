@@ -45,7 +45,7 @@ export class StateDefinition {
     /**
      * Specifies whether the tapehead should automatically rewind to index `0` when it reaches the end of the tape.
      * If ticks2advance_tape is 0, the default is false. Otherwise, auto_tick is true (unless it was already defined)
-     * - If set to `true`, the tapehead will be set to index `0` when it would go out of bounds.
+     * - If set to `true`, the tapehead will be set to index `0` when it would wo out of bounds.
      * - If set to `false`, the tapehead will remain at the end of the tape.
      */
     public enable_tape_autotick: boolean; // Automagically increase the ticks during run
@@ -64,11 +64,11 @@ export class StateDefinition {
     public automatic_reset_mode: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
 
     /**
-     * Indicates whether the tapehead should automatically rewind to index 0 when it would go out of bounds.
+     * Indicates whether the tapehead should automatically rewind to index 0 when it would wo out of bounds.
      * If set to true, the tapehead will be set to index 0 when it reaches the end of the tape.
      * If set to false, the tapehead will remain at the end of the tape.
      */
-    public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
+    public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would wo out of bound. Otherwise, will remain at end
 
     /**
      * Number of times the tape should be repeated.

@@ -39,8 +39,8 @@ export class EilaEventService implements RegisterablePersistent {
 	}
 
 	public theOtherFighter(fighter: Fighter): Fighter | null {
-		if (fighter.id === 'player') return $.world.getGameObject('sinterklaas');
-		return $.world.getGameObject('player');
+		if (fighter.id === 'player') return $.world.getWorldObject('sinterklaas');
+		return $.world.getWorldObject('player');
 	}
 
 	@subscribesToGlobalEvent('hit_animation_end')
@@ -65,8 +65,8 @@ export class EilaEventService implements RegisterablePersistent {
 
 	@subscribesToGlobalEvent('humiliated_animation_end')
 	public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
-		const player = $.world.getGameObject<Fighter>('player');
-		const sinterklaas = $.world.getGameObject<Fighter>('sinterklaas');
+		const player = $.world.getWorldObject<Fighter>('player');
+		const sinterklaas = $.world.getWorldObject<Fighter>('sinterklaas');
 
 		const hp_player = player?.hp ?? 0;
 		const hp_sinterklaas = sinterklaas?.hp ?? 0;
