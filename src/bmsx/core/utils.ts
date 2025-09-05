@@ -493,8 +493,7 @@ export class Float32ArrayPool implements Pool<Float32Array> {
     }
 }
 
-
-/*
+/**
  * Add a small utility to create GLSL-like swizzling on vectors.
  * Usage:
  *   const v = swizzlable({ x: 1, y: 2, z: 3 });

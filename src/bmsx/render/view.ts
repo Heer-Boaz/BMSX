@@ -212,11 +212,18 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		renderGate.endCategory('init'); // End the init scope without a token, assuming the category is unique for init.
 	}
 
-	public drawbase(): void {
-		// Gate per-frame sorting using Space.depthSortDirty (set on add/remove/z changes)
-		if ($.world.activeSpace.depthSortDirty) $.world.activeSpace.sort_by_depth();
-		$.world.activeSpace.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
-	}
+    public drawbase(): void {
+        // Gate per-frame sorting using Space.depthSortDirty (set on add/remove/z changes)
+        const active = $.world.activeSpace;
+        if (active.depthSortDirty) active.sort_by_depth();
+        active.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
+        // Draw UI overlay space on top, unsorted or depth-sorted within its own space
+        const ui = $.world.get_space('ui');
+        if (ui) {
+            if (ui.depthSortDirty) ui.sort_by_depth();
+            ui.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
+        }
+    }
 
 	/**
 	 * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.

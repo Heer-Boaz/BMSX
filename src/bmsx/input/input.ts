@@ -5,10 +5,12 @@ import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDe
 import { toggleRenderHUD } from '../debugger/renderhud';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
+import { controllerUnassignedToast } from './ui_toast';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
+import { ControllerAssignmentUI } from './controller_assignment_ui';
 import { PlayerInput } from './playerinput';
 
 // @ts-ignore
@@ -96,13 +98,27 @@ export function getPressedState(
 }
 
 export function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
-	const { pressed = false, justpressed = false, justreleased = false, waspressed = false, wasreleased = false, consumed = false, presstime = null, timestamp = performance.now() } = partialState ?? {};
-	return { pressed, justpressed, justreleased, waspressed, wasreleased, consumed, presstime, timestamp };
+    const {
+        pressed = false,
+        justpressed = false,
+        justreleased = false,
+        waspressed = false,
+        wasreleased = false,
+        consumed = false,
+        presstime = null,
+        timestamp = performance.now(),
+        pressedAtMs = null,
+        releasedAtMs = null,
+        pressId = null,
+        value = null,
+        value2d = null,
+    } = partialState ?? {};
+    return { pressed, justpressed, justreleased, waspressed, wasreleased, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
 
 export function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {
-	const { action = actionname, alljustpressed = false, allwaspressed = false, alljustreleased = false, ...buttonState } = partialState ?? {};
-	return { action, alljustpressed, allwaspressed, alljustreleased, ...makeButtonState(buttonState) };
+    const { action = actionname, alljustpressed = false, allwaspressed = false, alljustreleased = false, ...buttonState } = partialState ?? {};
+    return { action, alljustpressed, allwaspressed, alljustreleased, ...makeButtonState(buttonState) };
 }
 
 export const options: EventListenerOptions & { passive: boolean, once: boolean } = {
@@ -161,9 +177,9 @@ export class InputStateManager {
 	 *
 	 * @param event - The input event to be added.
 	 */
-	addInputEvent(event: InputEvent): void {
-		this.inputBuffer.push(event);
-	}
+    addInputEvent(event: InputEvent): void {
+        this.inputBuffer.push(event);
+    }
 
 	/**
 	 * Retrieves the current state of a button based on its identifier.
@@ -265,14 +281,12 @@ export class InputStateManager {
 	 * @param identifier - The unique identifier of the button, which can be a string or a number.
 	 * If the button state exists, it will be marked as consumed.
 	 */
-	consumeBufferedEvent(identifier: ButtonId): void {
-		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier);
-		if (inputEvents.length > 0) {
-			inputEvents.forEach(event => {
-				event.consumed = true;
-			});
-		}
-	}
+    consumeBufferedEvent(identifier: ButtonId, pressId?: number | null): void {
+        const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (pressId == null || event.pressId === pressId));
+        if (inputEvents.length > 0) {
+            inputEvents.forEach(event => { event.consumed = true; });
+        }
+    }
 }
 
 /**
@@ -338,13 +352,16 @@ export class Input implements RegisterablePersistent {
 	 * Represents an array of pending gamepad assignments.
 	 * @see PendingAssignmentProcessor
 	 */
-	private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
+    private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
 
 	/**
 	 * Represents the onscreen gamepad.
 	 * @see OnscreenGamepad
 	 */
-	private onscreenGamepad: OnscreenGamepad;
+    private onscreenGamepad: OnscreenGamepad;
+
+    // Spawn-once guard for UI controller
+    private uiControllerSpawned = false;
 
 	/**
 	 * Gets the onscreen gamepad.
@@ -533,6 +550,30 @@ export class Input implements RegisterablePersistent {
 
 		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
 
+		// Mobile/browser UX: pointer capture and touch-action tuning on the interactive surface
+		const gamescreenEl = document.getElementById('gamescreen');
+		if (gamescreenEl instanceof HTMLElement) {
+			gamescreenEl.style.touchAction = 'manipulation';
+			gamescreenEl.addEventListener('pointerdown', (e: PointerEvent) => { try { gamescreenEl.setPointerCapture(e.pointerId); } catch { /* noop */ } }, options);
+			// Prevent iOS scroll/zoom gestures on the game surface
+			gamescreenEl.addEventListener('touchstart', (e: TouchEvent) => e.preventDefault(), options);
+			gamescreenEl.addEventListener('touchmove', (e: TouchEvent) => e.preventDefault(), options);
+		}
+
+		// Visibility lifecycle: reset edges, cancel rumble, clear transient buffers
+		const handleVisibilityLost = () => {
+			for (let i = 1; i <= Input.PLAYERS_MAX; i++) {
+				const p = this.playerInputs[i - 1];
+				if (!p) continue;
+				p.reset();
+				const hk = p.inputHandlers['keyboard']; if (hk) { try { hk.applyVibrationEffect({ effect: 'dual-rumble', duration: 0, intensity: 0 }); } catch { /* noop */ } }
+				const hg = p.inputHandlers['gamepad']; if (hg) { try { hg.applyVibrationEffect({ effect: 'dual-rumble', duration: 0, intensity: 0 }); } catch { /* noop */ } }
+			}
+			try { if ('vibrate' in navigator) { navigator.vibrate(0); } } catch { /* noop */ }
+		};
+		document.addEventListener('visibilitychange', () => { if (document.hidden) handleVisibilityLost(); }, options);
+		window.addEventListener('pagehide', handleVisibilityLost, options);
+
 		const initAlreadyConnectedGamepads = () => {
 			// Handle gamepad input initialization
 			// Initialize gamepad states for already connected gamepads
@@ -561,6 +602,9 @@ export class Input implements RegisterablePersistent {
 			// If no starting gamepad index is provided, initialize all connected gamepads
 			initAlreadyConnectedGamepads();
 		}
+
+		// Spawn UI controller in the persistent UI space when the space is ready.
+        // Defer spawning ControllerAssignmentUI until spaces are guaranteed to exist; see pollInput()
 	}
 
 	/**
@@ -603,7 +647,6 @@ export class Input implements RegisterablePersistent {
 	 */
 	public dispose(): void {
 		// Remove all pending gamepad assignments
-		this.pendingGamepadAssignments.forEach(pending => pending.removeIcon());
 		this.pendingGamepadAssignments = [];
 
 		// Remove all player inputs
@@ -622,11 +665,20 @@ export class Input implements RegisterablePersistent {
 	/**
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
-	public pollInput(): void {
-		const now = performance.now();
-		this.playerInputs.forEach(player => {
-			player.pollInput();
-			player.update(now);
+    public pollInput(): void {
+        const now = performance.now();
+        // Ensure UI controller exists once spaces are ready
+        if (!this.uiControllerSpawned) {
+            const ui = $.world?.get_space?.('ui');
+            if (ui) {
+                const existing = $.world.getGameObject('controller_assignment_ui');
+                if (!existing) ui.spawn(new ControllerAssignmentUI());
+                this.uiControllerSpawned = true;
+            }
+        }
+        this.playerInputs.forEach(player => {
+            player.pollInput();
+            player.update(now);
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');
@@ -634,6 +686,7 @@ export class Input implements RegisterablePersistent {
 					gamepadInput.reset();
 					player.inputHandlers['gamepad'] = null;
 					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
+					controllerUnassignedToast();
 				}
 			}
 		});

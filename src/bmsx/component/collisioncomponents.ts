@@ -21,8 +21,8 @@ export abstract class PositionUpdateAxisComponent extends Component<GameObject> 
      */
     protected oldPos: vec2;
 
-    constructor(_id: Identifier) {
-        super(_id);
+    constructor(id: Identifier) {
+        super(id);
         this.oldPos = new_vec2(0, 0)
     }
 

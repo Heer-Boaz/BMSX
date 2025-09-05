@@ -194,8 +194,8 @@ export class HitBoxVisualizer extends Component {
         return obj.getComponent(HitBoxVisualizer);
     }
 
-    constructor(_id: Identifier) {
-        super(_id);
+    constructor(id: Identifier) {
+        super(id);
     }
 
     override preprocessingUpdate(): void {
@@ -239,8 +239,8 @@ export class ObjectHighlighterComponent extends Component {
         return obj.getComponent(ObjectHighlighterComponent);
     }
 
-    constructor(_id: Identifier) {
-        super(_id);
+    constructor(id: Identifier) {
+        super(id);
     }
 
     override preprocessingUpdate(): void {
@@ -916,5 +916,8 @@ function refreshDialogs() {
 }
 
 // Attach to frame event for live-refresh of property dialogs and state machine visualizers
-window.addEventListener('frame', refreshDialogs);
-window.addEventListener('rewind', refreshDialogs);
+// Guard against Node environment (rompacker) where 'window' is not defined
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('frame', refreshDialogs);
+    window.addEventListener('rewind', refreshDialogs);
+}

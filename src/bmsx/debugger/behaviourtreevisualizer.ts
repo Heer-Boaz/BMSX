@@ -13,8 +13,8 @@ export class BTVisualizer extends Component {
     private dialog: FloatingDialog;
     private machineElements: Map<string, HTMLElement>;
 
-    constructor(_id: string) {
-        super(_id);
+    constructor(id: string) {
+        super(id);
         this.enabled = false;
     }
 

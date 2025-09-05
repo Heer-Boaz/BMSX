@@ -157,15 +157,17 @@ export class PendingAssignmentProcessor {
                 inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
                 // Initialize the HID pad for the gamepad input
                 await gamepadInput.init(); // *REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
+                // Reset states so the confirming button does not leak into gameplay
+                gamepadInput.reset();
                 inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
                 // Broadcast for UI and other listeners
-                $.emit('controller_assigned', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex });
+                $.emit('controller_assigned', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
             }
             else if (this.checkNonConsumedPressed('b', gamepadInput)) {
                 // Cancel assignment process for this gamepad and remove the joystick icon
                 gamepadInput.consumeButton('b');
                 this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
-                $.emit('controller_assignment_cancelled', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex });
+                $.emit('controller_assignment_cancelled', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
             }
             else {
                 // Handle joystick icon movement to change the proposed player index
@@ -173,6 +175,11 @@ export class PendingAssignmentProcessor {
                 this.handleSelectPlayerIndexButtonPress('right', 1, gamepadInput);
                 this.handleSelectPlayerIndexButtonPress('down', -1, gamepadInput);
                 this.handleSelectPlayerIndexButtonPress('left', -1, gamepadInput);
+                // Consume any other pressed buttons on this device to prevent gameplay leakage while selecting
+                for (const btn of Input.BUTTON_IDS) {
+                    const st = gamepadInput.getButtonState(btn);
+                    if (st?.pressed && !st.consumed) gamepadInput.consumeButton(btn);
+                }
             }
         }
     }

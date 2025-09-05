@@ -155,7 +155,7 @@ export class Game {
 
 	public get rompack(): RomPack { return $rompack; }
 
-	public get world(): World { return this.registry.get<World>('model'); }
+	public get world(): World { return this.registry.get<World>('world'); }
 
 	public get view(): GameView { return this.registry.get<GameView>('view'); }
 
@@ -352,7 +352,7 @@ export class Game {
 
 		if (this.debug) {
 			// @ts-ignore
-			// window['model'] = world;
+			// window[] = world;
 			// // @ts-ignore
 			// window['view'] = view;
 			// // @ts-ignore

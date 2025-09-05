@@ -30,8 +30,9 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
             event_handlers: {
                 animation_end: { do(this: SelectedPlayerIndexIcon) { this.markForDisposal(); } },
                 controller_assignment_proposed: {
-                    do(this: SelectedPlayerIndexIcon, _state: State, payload?: { proposedPlayerIndex?: number | null }) {
-                        // Update icon immediately on proposed changes
+                    do(this: SelectedPlayerIndexIcon, _state: State, payload?: { proposedPlayerIndex?: number | null, gamepadIndex?: number }) {
+                        // Only update the icon that belongs to the originating gamepad
+                        if (payload?.gamepadIndex !== this.gamepadIndex) return;
                         const idx = payload?.proposedPlayerIndex ?? null;
                         this.playerIndex = (idx === undefined ? null : idx);
                     }
@@ -77,11 +78,11 @@ export class ControllerAssignmentUI extends GameObject {
 
     private ensureIcon(gpIndex: number): SelectedPlayerIndexIcon {
         let icon = this.icons.get(gpIndex);
-        if (icon) return icon;
-        // Try to reuse existing instance from model (e.g., revived)
-        icon = $.world.getGameObject<SelectedPlayerIndexIcon>(SelectedPlayerIndexIcon.getIconId(gpIndex)) ?? undefined;
-        if (!icon) { icon = new SelectedPlayerIndexIcon(gpIndex); $.world.get_space('ui').spawn(icon); }
-        this.icons.set(gpIndex, icon);
+        if (!icon) {
+            icon = new SelectedPlayerIndexIcon(gpIndex);
+            $.world.get_space('ui').spawn(icon);
+            this.icons.set(gpIndex, icon);
+        }
         return icon;
     }
 
@@ -94,15 +95,15 @@ export class ControllerAssignmentUI extends GameObject {
     }
 
     @subscribesToGlobalEvent('controller_assigned', true)
-    onAssigned(_source: any, _payload: any) {
+    onAssigned(_source: any, payload: { gamepadIndex?: number }) {
         // Icons listen to FSM events declared in their blueprint; no manual dispatch required.
-        // Clear our map references; icons self-dispose via their FSM.
-        this.icons.clear();
+        // Remove only the icon for the given gamepad; it will self-dispose via FSM.
+        if (payload?.gamepadIndex != null) this.icons.delete(payload.gamepadIndex);
     }
 
     @subscribesToGlobalEvent('controller_assignment_cancelled', true)
-    onCancelled(_source: any, _payload: any) {
+    onCancelled(_source: any, payload: { gamepadIndex?: number }) {
         // Icons listen to FSM events declared in their blueprint; no manual dispatch required.
-        this.icons.clear();
+        if (payload?.gamepadIndex != null) this.icons.delete(payload.gamepadIndex);
     }
 }

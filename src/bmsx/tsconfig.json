@@ -12,10 +12,19 @@
         // Relax unused checks within the engine package (editor/debug code intentionally has helper stubs)
         "noUnusedLocals": false,
         "noUnusedParameters": false
+        ,"baseUrl": "./"
+        ,"paths": {
+            "bmsx": [
+                "./",
+                "./index.ts"
+            ],
+            "bmsx/*": [
+                "./*"
+            ]
+        }
     },
     "include": [
-        ".",
-        "rompack/rompack.ts",
+        "**/*.ts"
         // "../../dist/aynoiseprocessor.js",
     ],
     "exclude": [

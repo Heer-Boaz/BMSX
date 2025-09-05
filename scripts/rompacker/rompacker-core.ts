@@ -1,7 +1,7 @@
 import { glsl } from "esbuild-plugin-glsl";
 // @ts-ignore
 import type { Stats } from 'fs';
-import type { asset_type, AudioMeta, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, GLTFMesh, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
@@ -13,6 +13,9 @@ const { join, parse } = require('path');
 
 // @ts-ignore
 const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
+// @ts-ignore
+// Import encodeBinary from the public API surface
+// Use direct path to avoid pulling entire engine via public alias during Node execution
 // @ts-ignore
 const { encodeBinary } = require('../../src/bmsx/serializer/binencoder');
 // @ts-ignore
@@ -749,14 +752,17 @@ export async function generateRomAssets(resources: Resource[]) {
 						const jsonContent = yaml.load(yamlContent);
 						// res.buffer = jsonContent;
 						const encodedYamlData = encodeBinary(jsonContent);
-						buffer = encodedYamlData;
+						// Ensure Buffer instance (encodeBinary returns Uint8Array)
+						// @ts-ignore
+						buffer = Buffer.from(encodedYamlData);
 						break;
 					case 'json':
 						// If the data is a JSON file, we need to convert it to a string first
 						const json = JSON.parse(res.buffer.toString('utf8'));
 						const encodedData = encodeBinary(json);
 
-						buffer = encodedData;
+						// @ts-ignore
+						buffer = Buffer.from(encodedData);
 						break;
 					case 'bin':
 						// If the data is a binary file, we can use it as is
@@ -785,7 +791,7 @@ export async function generateRomAssets(resources: Resource[]) {
 					imageOffsets.push({ start, end });
 				}
 				const obj = {
-					meshes: parsed.meshes.map(m => ({
+					meshes: parsed.meshes.map((m: GLTFMesh) => ({
 						positions: m.positions,
 						texcoords: m.texcoords,
 						normals: m.normals,
@@ -809,7 +815,9 @@ export async function generateRomAssets(resources: Resource[]) {
 					imageOffsets,
 					textures: parsed.textures,
 				};
-				buffer = encodeBinary(obj);
+				const encodedObj = encodeBinary(obj);
+				// @ts-ignore
+				buffer = Buffer.from(encodedObj);
 				// @ts-ignore
 				const texture_buffer = Buffer.concat(texBuffers);
 				romAssets.push({ resid, resname, type, buffer, texture_buffer });

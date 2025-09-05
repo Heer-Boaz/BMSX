@@ -56,15 +56,17 @@ export type KeyOrButtonId2ButtonState = { [index: ButtonId]: ButtonState; };
 /**
  * Represents a mapping of keyboard inputs to actions.
  */ 5;
+export type KeyboardBinding = string | { id: string; scale?: number; invert?: boolean };
 export type KeyboardInputMapping = {
-    [action: string]: KeyboardButton[];
+    [action: string]: KeyboardBinding[];
 };
 /**
  * Represents a mapping of gamepad inputs to gamepad buttons.
  */
 
+export type GamepadBinding = BGamepadButton | { id: BGamepadButton; scale?: number; invert?: boolean };
 export type GamepadInputMapping = {
-    [action: string]: BGamepadButton[];
+    [action: string]: GamepadBinding[];
 };
 /**
  * Represents the input mapping for a game.
@@ -79,7 +81,7 @@ export interface InputMap {
  * It can be one of the predefined keys or a custom string.
  */
 
-export type KeyboardButton = string | BGamepadButton;
+export type KeyboardButton = string | BGamepadButton; // Back-compat alias for code still referencing this
 /**
  * Represents a gamepad button.
  * @typedef {keyof typeof Input.BUTTON2INDEX } BGamepadButton
@@ -91,14 +93,23 @@ export type BGamepadButton = (typeof Input.BUTTON_IDS)[number];
  */
 
 export type ButtonState = {
+    // Binary/edge fields
     pressed: boolean;
     justpressed: boolean;
     justreleased: boolean;
     waspressed: boolean;
     wasreleased: boolean;
     consumed: boolean;
-    presstime: number | null;
-    timestamp: number | null;
+    // Timing fields
+    presstime: number | null; // ms since pressed
+    timestamp: number | null; // last transition timestamp (ms)
+    pressedAtMs?: number | null; // absolute press timestamp (ms)
+    releasedAtMs?: number | null; // absolute release timestamp (ms)
+    // Identity of this press cycle, increases monotonically per-device
+    pressId?: number | null;
+    // Analog values
+    value?: number | null; // 1D analog value in [-1,1] or [0,1]
+    value2d?: readonly [number, number] | null; // 2D analog value
 };
 /**
  * Represents the input event that is stored when a key or button is pressed or released.
@@ -108,6 +119,7 @@ export type InputEvent = {
     identifier: ButtonId; // Key code or button name
     timestamp: number;
     consumed: boolean;
+    pressId?: number | null; // identity of the press this event belongs to
 };
 /**
  * Represents the state of an action, including the action name and button state.

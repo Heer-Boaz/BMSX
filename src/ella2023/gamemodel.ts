@@ -8,7 +8,7 @@ import { EilaGameState } from './state';
 import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
 
 export class EilaModelFSM {
-    @build_fsm('model')
+    @build_fsm()
     public static bouw(): StateMachineBlueprint {
         return {
             substates: {

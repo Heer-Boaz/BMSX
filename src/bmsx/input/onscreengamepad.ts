@@ -24,9 +24,7 @@ export class OnscreenGamepad implements InputHandler {
     }
 
     public applyVibrationEffect(params: VibrationParams): void {
-        if (navigator?.vibrate) {
-            navigator.vibrate(params.intensity);
-        }
+        try { if ('vibrate' in navigator) { navigator.vibrate(Math.max(0, Math.round(params.duration * params.intensity))); } } catch { /* noop */ }
     }
 
     /**
@@ -83,7 +81,7 @@ export class OnscreenGamepad implements InputHandler {
             if (buttonData) {
                 buttonData.buttons.forEach(button => {
                     if (d.dataset.touched === 'true') {
-                        const oldPressTime = this.gamepadButtonStates[button].presstime ?? 0;
+                        const oldPressTime = this.gamepadButtonStates[button]?.presstime ?? 0;
                         // Update the state only if the button is currently pressed
                         newGamepadButtonStates[button].pressed = true;
                         newGamepadButtonStates[button].presstime = oldPressTime + 1;
@@ -94,7 +92,14 @@ export class OnscreenGamepad implements InputHandler {
                     } else {
                         // Set to false only if no other element is pressing this button
                         if (!this.isOtherElementPressingButton(button)) {
-                            newGamepadButtonStates[button].justreleased = this.gamepadButtonStates[button].pressed ? true : false; // Set justreleased to true if the button was pressed before
+                            const wasPressed = this.gamepadButtonStates[button]?.pressed ? true : false;
+                            // Edge: just released in this frame if it was pressed before
+                            newGamepadButtonStates[button].justreleased = wasPressed;
+                            newGamepadButtonStates[button].justpressed = false;
+                            newGamepadButtonStates[button].pressed = false;
+                            newGamepadButtonStates[button].presstime = 0;
+                            // Clear consumption on release so next press can trigger actions again
+                            newGamepadButtonStates[button].consumed = false;
                             newGamepadButtonStates[button].timestamp = performance.now(); // Update the timestamp to the current time
                         }
                     }
@@ -124,7 +129,8 @@ export class OnscreenGamepad implements InputHandler {
      * @param button The button to consume.
      */
     public consumeButton(button: string) {
-        if (this.gamepadButtonStates[button]) this.gamepadButtonStates[button].consumed = true;
+        if (!this.gamepadButtonStates[button]) this.gamepadButtonStates[button] = makeButtonState();
+        this.gamepadButtonStates[button].consumed = true;
     }
 
     /**
@@ -270,8 +276,10 @@ export class OnscreenGamepad implements InputHandler {
      */
     public reset(except?: string[]): void {
         if (!except) {
-            // Initialize the states of all gamepad buttons and axes
-            Input.BUTTON_IDS.forEach(buttonId => Object.assign(this.gamepadButtonStates[buttonId], makeButtonState()));
+            // Initialize (or reinitialize) the states of all gamepad buttons and axes
+            Input.BUTTON_IDS.forEach(buttonId => {
+                this.gamepadButtonStates[buttonId] = makeButtonState();
+            });
         }
         else {
             resetObject(this.gamepadButtonStates, except);
@@ -302,7 +310,8 @@ export class OnscreenGamepad implements InputHandler {
             const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[element_id];
             if (buttonData) {
                 buttonData.buttons.forEach(button => {
-                    this.gamepadButtonStates[button].pressed = false;
+                    const st = this.gamepadButtonStates[button] ?? (this.gamepadButtonStates[button] = makeButtonState());
+                    st.pressed = false;
                 });
             }
         };

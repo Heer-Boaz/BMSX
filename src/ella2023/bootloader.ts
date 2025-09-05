@@ -11,7 +11,8 @@ let _view: GameView;
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
-	_model = new World({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'model', plugins: [EILA_PLUGIN] });
+	// Use FSM id matching the registered blueprint (@build_fsm on EilaModelFSM.bouw()) so world state machine runs.
+	_model = new World({ size: { width: MSX1ScreenWidth, height: MSX1ScreenHeight }, fsmId: 'EilaModelFSM', plugins: [EILA_PLUGIN] });
 	_view = new GameView(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_game = new Game();
 	return _game.init({

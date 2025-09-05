@@ -64,16 +64,19 @@ export * from './render/3d/material';
 export * from './render/3d/math3d';
 export * from './render/3d/meshinstance';
 export * from './render/3d/shadowmap';
-export * from './render/backend/pipeline_interfaces';
-export * from './render/backend/renderpasslib';
-export * from './render/backend/shader_module';
-export * from './render/backend/webgl.constants';
-export * from './render/backend/webgl_backend';
 export * from './render/graph/rendergraph';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';
 export * from './render/textwriter';
 export * from './render/view';
+// Ensure pipeline helpers & backends for higher-level pipelines
+export * from './render/backend/renderpass_builder';
+export * from './render/backend/webgpu_backend';
+// Re-export backend interfaces & helpers needed by higher-level pipelines
+export * from './render/backend/pipeline_interfaces';
+export * from './render/backend/shader_module';
+export * from './render/backend/renderpasslib';
+export * from './render/backend/webgl_backend';
 export * from './rompack/rompack';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';

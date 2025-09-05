@@ -3,7 +3,7 @@ import { insavegame, excludepropfromsavegame } from '../serializer/gameserialize
 import { $ } from './game';
 import { GameObject } from './object/gameobject';
 import { id2obj, id2objectType, World, makeIndexProxy } from './world';
-export type initial_world_spaces = 'game_start' | 'default';
+export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 
 @insavegame
 /**

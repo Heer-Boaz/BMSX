@@ -1,8 +1,9 @@
 import { ActionDefinitionEvaluator } from './actionparser';
 import { Input, InputStateManager, makeActionState, makeButtonState } from './input';
-import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, InputHandler, InputMap, KeyboardButton, VibrationParams } from './inputtypes';
-import type { KeyboardInput } from './keyboardinput';
+import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, InputHandler, InputMap, KeyboardBinding, VibrationParams } from './inputtypes';
+import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
+import { ContextStack, MappingContext } from './context';
 
 export const INPUT_SOURCES = ['keyboard', 'gamepad'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
@@ -28,8 +29,14 @@ export class PlayerInput {
         gamepad: {},
     };
 
-	/** Manages buffered input events and button state aggregation. */
-	private stateManager: InputStateManager;
+    /** Manages buffered input events and button state aggregation. */
+    private stateManager: InputStateManager;
+
+    /** Context stack for layered action maps */
+    private contexts: ContextStack = new ContextStack();
+
+    /** Pending rebind operation, if any */
+    private pendingRebind: { action: string; source: InputSource; mode: 'append' | 'replace' } | null = null;
 
 	/**
 	 * Indicates whether the player is the main player.
@@ -89,9 +96,22 @@ export class PlayerInput {
 	 * Sets the input map for a specific player.
 	 * @param inputMap - The input map to set.
 	 */
-	public setInputMap(inputMap: InputMap): void {
-		this.inputMap = inputMap;
-	}
+    public setInputMap(inputMap: InputMap): void {
+        this.inputMap = inputMap;
+        // Mirror into a base context for layered merging semantics
+        const base = new MappingContext('base', 0, true, inputMap.keyboard ?? {}, inputMap.gamepad ?? {});
+        // Reset stack to base
+        this.contexts = new ContextStack();
+        this.contexts.push(base);
+    }
+
+    /** Add a higher-priority mapping context */
+    public pushContext(id: string, keyboard: import('./inputtypes').KeyboardInputMapping | undefined, gamepad: import('./inputtypes').GamepadInputMapping | undefined, priority = 100, enabled = true): void {
+        this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}));
+    }
+    public popContext(id?: string): void { this.contexts.pop(id); }
+    public enableContext(id: string, enabled: boolean): void { this.contexts.enable(id, enabled); }
+    public setContextPriority(id: string, priority: number): void { this.contexts.setPriority(id, priority); }
 
     public get supportsVibrationEffect(): boolean {
         for (const source of INPUT_SOURCES) {
@@ -118,8 +138,14 @@ export class PlayerInput {
 		const inputMap = this.inputMap;
 		if (!inputMap) return makeActionState(action);
 
-		const keyboardKeys = inputMap.keyboard?.[action];
-		const gamepadButtons = inputMap.gamepad?.[action];
+        const keyboardKeysRaw = this.contexts.getBindings(action, 'keyboard');
+        const gamepadButtonsRaw = this.contexts.getBindings(action, 'gamepad');
+        const keyboardKeys: ButtonId[] | null = (keyboardKeysRaw && keyboardKeysRaw.length > 0)
+            ? keyboardKeysRaw.map(k => (typeof k === 'string' ? k : k.id))
+            : null;
+        const gamepadButtons: ButtonId[] | null = (gamepadButtonsRaw && gamepadButtonsRaw.length > 0)
+            ? gamepadButtonsRaw.map(b => (typeof b === 'string' ? b : b.id))
+            : null;
 
 		/**
 		 * Retrieves the state of the specified action, which can be a combination of keyboard keys or gamepad buttons or a single key/button.
@@ -134,85 +160,118 @@ export class PlayerInput {
 		 *  - `leastPressTime`: The minimum press time among the specified keys/buttons, or `null` if none are pressed.
 		 *  - `recentestTimestamp`: The maximum timestamp among the specified keys/buttons, or `null` if none are pressed.
 		 */
-		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState) => {
-			let allPressed = true;
-			let allJustPressed = true;
-			let anyJustPressed = false;
-			let allJustReleased = true;
-			let anyJustReleased = false;
-			let allWasPressed = true;
-			let anyWasPressed = false;
-			let anyWasReleased = false;
-			let allWasReleased = true;
-			let anyConsumed = false;
-			let anyPressed: boolean = false; // To track if any button is pressed, specifically needed for the anyJustReleased
-			let leastPressTime = Infinity;
-			let recentestTimestamp = -Infinity;
+        type Agg = {
+            allPressed: boolean; anyJustPressed: boolean; allJustPressed: boolean;
+            anyWasPressed: boolean; allWasPressed: boolean; anyJustReleased: boolean;
+            allJustReleased: boolean; anyWasReleased: boolean; allWasReleased: boolean;
+            anyConsumed: boolean; leastPressTime: number; recentestTimestamp: number;
+            best1DVal: number | null; best1DAbs: number; best2DVal: [number, number] | null; best2DAbs: number;
+        };
+        const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState): Agg => {
+            let allPressed = true;
+            let allJustPressed = true;
+            let anyJustPressed = false;
+            let allJustReleased = true;
+            let anyJustReleased = false;
+            let allWasPressed = true;
+            let anyWasPressed = false;
+            let anyWasReleased = false;
+            let allWasReleased = true;
+            let anyConsumed = false;
+            let anyPressed: boolean = false; // To track if any button is pressed, specifically needed for the anyJustReleased
+            let leastPressTime = Infinity;
+            let recentestTimestamp = -Infinity;
+            let best1DVal: number | null = null; let best1DAbs = -Infinity;
+            let best2DVal: [number, number] | null = null; let best2DAbs = -Infinity;
 
-			if (keys_or_buttons) {
-				for (const key of keys_or_buttons) {
-					const state = getStateFunc(key, framewindow);
-					allPressed = allPressed && (state?.pressed ?? false);
-					anyPressed = anyPressed || (state?.pressed ?? false);
-					allJustPressed = allJustPressed && (state?.justpressed ?? false);
-					anyJustPressed = anyJustPressed || (state?.justpressed ?? false);
-					allJustReleased = allJustReleased && (state?.justreleased ?? false);
-					anyJustReleased = anyJustReleased || (state?.justreleased ?? false);
-					allWasPressed = allWasPressed && (state?.waspressed ?? false);
-					anyWasPressed = anyWasPressed || (state?.waspressed ?? false);
-					allWasReleased = allWasReleased && (state?.wasreleased ?? false);
-					anyWasReleased = anyWasReleased || (state?.wasreleased ?? false);
-					anyConsumed = anyConsumed || (state?.consumed ?? false);
-					if (state?.presstime) {
-						leastPressTime = Math.min(leastPressTime, state.presstime);
-					}
-					if (state?.timestamp) {
-						recentestTimestamp = Math.max(recentestTimestamp, state.timestamp);
-					}
-				}
-			} else {
-				allPressed = allJustPressed = allWasPressed = allJustReleased = anyWasReleased = allJustReleased = false;
-				leastPressTime = recentestTimestamp = null;
-			}
+            if (keys_or_buttons && keys_or_buttons.length > 0) {
+                for (const key of keys_or_buttons) {
+                    const state = getStateFunc(key, framewindow);
+                    allPressed = allPressed && (state?.pressed ?? false);
+                    anyPressed = anyPressed || (state?.pressed ?? false);
+                    allJustPressed = allJustPressed && (state?.justpressed ?? false);
+                    anyJustPressed = anyJustPressed || (state?.justpressed ?? false);
+                    allJustReleased = allJustReleased && (state?.justreleased ?? false);
+                    anyJustReleased = anyJustReleased || (state?.justreleased ?? false);
+                    allWasPressed = allWasPressed && (state?.waspressed ?? false);
+                    anyWasPressed = anyWasPressed || (state?.waspressed ?? false);
+                    allWasReleased = allWasReleased && (state?.wasreleased ?? false);
+                    anyWasReleased = anyWasReleased || (state?.wasreleased ?? false);
+                    anyConsumed = anyConsumed || (state?.consumed ?? false);
+                    if (state?.presstime) {
+                        leastPressTime = Math.min(leastPressTime, state.presstime);
+                    }
+                    if (state?.timestamp) {
+                        recentestTimestamp = Math.max(recentestTimestamp, state.timestamp);
+                    }
+                    if (typeof state?.value === 'number') {
+                        const abs = Math.abs(state.value);
+                        if (abs > best1DAbs) { best1DAbs = abs; best1DVal = state.value; }
+                    }
+                    if (state?.value2d) {
+                        const [vx, vy] = state.value2d;
+                        const mag = Math.hypot(vx, vy);
+                        if (mag > best2DAbs) { best2DAbs = mag; best2DVal = [vx, vy]; }
+                    }
+                }
+            } else {
+                allPressed = allJustPressed = allWasPressed = allJustReleased = anyWasReleased = allJustReleased = false;
+                leastPressTime = recentestTimestamp = null;
+            }
 
 			// Only consider anyJustPressed if all buttons are pressed, because if any button is not pressed then the action is not just pressed
 			anyJustPressed = anyJustPressed && allPressed;
 			// Only consider anyJustReleased if none of the buttons are pressed, because if any button is pressed then the action is not just released
 			anyJustReleased = anyJustReleased && !anyPressed;
 
-			return { allPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp };
-		};
+            return { allPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyJustReleased, allJustReleased, anyWasReleased, allWasReleased, anyConsumed, leastPressTime, recentestTimestamp, best1DVal, best1DAbs, best2DVal, best2DAbs };
+        };
 
-		const keyboardState = getStates(
-			keyboardKeys,
-			(key: ButtonId, framewindow?: number) => framewindow !== null
-				? this.stateManager.getButtonState(key, framewindow)
-				: this.getButtonState(key, 'keyboard')
-		);
-		const gamepadState = getStates(
-			gamepadButtons,
-			(button: ButtonId, framewindow?: number) => framewindow !== null
-				? this.stateManager.getButtonState(button, framewindow)
-				: this.getButtonState(button, 'gamepad')
-		);
-		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
-		const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
+        const keyboardState = getStates(
+            keyboardKeys,
+            (key: ButtonId, framewindow?: number) => framewindow !== null
+                ? this.stateManager.getButtonState(key, framewindow)
+                : this.getButtonState(key, 'keyboard')
+        );
+        const gamepadState = getStates(
+            gamepadButtons,
+            (button: ButtonId, framewindow?: number) => framewindow !== null
+                ? this.stateManager.getButtonState(button, framewindow)
+                : this.getButtonState(button, 'gamepad')
+        );
+        const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
+        const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
+        // Deterministic analog merge: prefer higher magnitude; on tie, prefer gamepad over keyboard
+        const pick1D = () => {
+            if (gamepadState.best1DAbs > keyboardState.best1DAbs) return gamepadState.best1DVal ?? null;
+            if (gamepadState.best1DAbs < keyboardState.best1DAbs) return keyboardState.best1DVal ?? null;
+            return gamepadState.best1DVal ?? keyboardState.best1DVal ?? null;
+        };
+        const pick2D = () => {
+            if (gamepadState.best2DAbs > keyboardState.best2DAbs) return gamepadState.best2DVal ?? null;
+            if (gamepadState.best2DAbs < keyboardState.best2DAbs) return keyboardState.best2DVal ?? null;
+            return gamepadState.best2DVal ?? keyboardState.best2DVal ?? null;
+        };
+        const merged1D = pick1D();
+        const merged2D = pick2D();
 
-		return {
-			action: action,
-			pressed: keyboardState.allPressed || gamepadState.allPressed,
-			justpressed: keyboardState.anyJustPressed || gamepadState.anyJustPressed,
-			alljustpressed: keyboardState.allJustPressed || gamepadState.allJustPressed,
-			justreleased: keyboardState.anyJustReleased || gamepadState.anyJustReleased,
-			alljustreleased: keyboardState.allJustReleased || gamepadState.allJustReleased,
-			waspressed: keyboardState.anyWasPressed || gamepadState.anyWasPressed,
-			wasreleased: keyboardState.anyWasReleased || gamepadState.anyWasReleased,
-			allwaspressed: keyboardState.allWasPressed || gamepadState.allWasPressed,
-			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
-			presstime: minPresstime === Infinity ? null : minPresstime,
-			timestamp: maxTimestamp === -Infinity ? null : maxTimestamp,
-		};
-	}
+        return {
+            action: action,
+            pressed: keyboardState.allPressed || gamepadState.allPressed,
+            justpressed: keyboardState.anyJustPressed || gamepadState.anyJustPressed,
+            alljustpressed: keyboardState.allJustPressed || gamepadState.allJustPressed,
+            justreleased: keyboardState.anyJustReleased || gamepadState.anyJustReleased,
+            alljustreleased: keyboardState.allJustReleased || gamepadState.allJustReleased,
+            waspressed: keyboardState.anyWasPressed || gamepadState.anyWasPressed,
+            wasreleased: keyboardState.anyWasReleased || gamepadState.anyWasReleased,
+            allwaspressed: keyboardState.allWasPressed || gamepadState.allWasPressed,
+            consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
+            presstime: minPresstime === Infinity ? null : minPresstime,
+            timestamp: maxTimestamp === -Infinity ? null : maxTimestamp,
+            value: typeof merged1D === 'number' ? merged1D : null,
+            value2d: merged2D,
+        };
+    }
 
 	/**
 	 * Returns all actions that have been pressed for a given player index.
@@ -274,20 +333,32 @@ export class PlayerInput {
 		// Determine the action string
 		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
-		for (const source of INPUT_SOURCES) {
-			if (!this.inputHandlers[source] || !inputMap[source]) continue;
-			const keysOrButtons: KeyboardButton[] | BGamepadButton[] = inputMap[source][action];
-			if (!keysOrButtons) continue;
-			for (const key of keysOrButtons) {
-				const buttonState = this.inputHandlers[source].getButtonState(key);
-				if (buttonState.pressed && !buttonState.consumed) {
-					this.inputHandlers[source].consumeButton(key);
-				}
-				// TODO: Only consume a buffered event corresponding to the same logical press that originated the action
-				this.stateManager.consumeBufferedEvent(key);
-			}
-		}
-	}
+        for (const source of INPUT_SOURCES) {
+            const handler = this.inputHandlers[source];
+            if (!handler || !inputMap[source]) continue;
+            if (source === 'keyboard') {
+                const keysOrButtons: KeyboardBinding[] = inputMap.keyboard?.[action] ?? [];
+                for (const binding of keysOrButtons) {
+                    const key = typeof binding === 'string' ? binding : binding.id;
+                    const buttonState = handler.getButtonState(key);
+                    if (buttonState.pressed && !buttonState.consumed) {
+                        handler.consumeButton(key);
+                    }
+                    this.stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
+                }
+            } else {
+                const keysOrButtons: GamepadBinding[] = inputMap.gamepad?.[action] ?? [];
+                for (const binding of keysOrButtons) {
+                    const key = typeof binding === 'string' ? binding : binding.id;
+                    const buttonState = handler.getButtonState(key);
+                    if (buttonState.pressed && !buttonState.consumed) {
+                        handler.consumeButton(key);
+                    }
+                    this.stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
+                }
+            }
+        }
+    }
 
 	/**
 	 * Consumes a list of actions.
@@ -369,66 +440,128 @@ export class PlayerInput {
 	/**
 	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
 	 */
-	pollInput(): void {
-		for (const source of INPUT_SOURCES) {
-			const handler: InputHandler = this.inputHandlers[source];
-			if (!handler) continue;
-			handler.pollInput();
+    pollInput(): void {
+        for (const source of INPUT_SOURCES) {
+            const handler: InputHandler = this.inputHandlers[source];
+            if (!handler) continue;
+            handler.pollInput();
 
 			if (source === 'gamepad') {
                 for (const button of Input.BUTTON_IDS) {
                     const state = handler.getButtonState(button);
                     const prev = this.previousStates[source][button] ?? false;
 
-					if (state.justpressed) {
-						this.stateManager.addInputEvent({
-							eventType: 'press',
-							identifier: button,
-							timestamp: state.timestamp,
-							consumed: false,
-						});
-					}
+                if (state.justpressed) {
+                    this.stateManager.addInputEvent({
+                        eventType: 'press',
+                        identifier: button,
+                        timestamp: state.timestamp,
+                        consumed: false,
+                        pressId: state.pressId ?? null,
+                    });
+                }
 
-					if (!state.pressed && prev) {
-						this.stateManager.addInputEvent({
-							eventType: 'release',
-							identifier: button,
-							timestamp: state.timestamp,
-							consumed: false,
-						});
-					}
+                if (!state.pressed && prev) {
+                    this.stateManager.addInputEvent({
+                        eventType: 'release',
+                        identifier: button,
+                        timestamp: state.timestamp,
+                        consumed: false,
+                        pressId: state.pressId ?? null,
+                    });
+                }
 
 					this.previousStates[source][button] = state.pressed;
 				}
 			}
-			else if (source === 'keyboard') {
-                for (const key of Object.keys((handler as KeyboardInput).keyStates)) {
-                    const state = handler.getButtonState(key);
+            else if (source === 'keyboard') {
+                const kbHandler = handler instanceof KeyboardInput ? handler : null;
+                if (!kbHandler) continue;
+                for (const key of Object.keys(kbHandler.keyStates)) {
+                    const state = kbHandler.getButtonState(key);
                     const prev = this.previousStates[source][key] ?? false;
 
-					if (state.justpressed) {
-						this.stateManager.addInputEvent({
-							eventType: 'press',
-							identifier: key,
-							timestamp: state.timestamp,
-							consumed: false,
-						});
-					}
+                    if (state.justpressed) {
+                        this.stateManager.addInputEvent({
+                            eventType: 'press',
+                            identifier: key,
+                            timestamp: state.timestamp,
+                            consumed: false,
+                            pressId: state.pressId ?? null,
+                        });
+                    }
 
-					if (!state.pressed && prev) {
-						this.stateManager.addInputEvent({
-							eventType: 'release',
-							identifier: key,
-							timestamp: state.timestamp,
-							consumed: false,
-						});
-					}
+                    if (!state.pressed && prev) {
+                        this.stateManager.addInputEvent({
+                            eventType: 'release',
+                            identifier: key,
+                            timestamp: state.timestamp,
+                            consumed: false,
+                            pressId: state.pressId ?? null,
+                        });
+                    }
 
-					this.previousStates[source][key] = state.pressed;
-				}
-			}
-		}
-	}
+                    this.previousStates[source][key] = state.pressed;
+                }
+            }
+        }
+
+        // If rebinding, capture first just-pressed binding on the selected source
+        if (this.pendingRebind) {
+            const { action, source, mode } = this.pendingRebind;
+            const handler = this.inputHandlers[source];
+            if (handler) {
+                let capturedKb: string | null = null;
+                let capturedGp: BGamepadButton | null = null;
+                if (source === 'gamepad') {
+                    for (const button of Input.BUTTON_IDS) {
+                        const st = handler.getButtonState(button);
+                        if (st?.justpressed) { capturedGp = button; break; }
+                    }
+                } else if (handler instanceof KeyboardInput) {
+                    for (const key of Object.keys(handler.keyStates)) {
+                        const st = handler.getButtonState(key);
+                        if (st?.justpressed) { capturedKb = key; break; }
+                    }
+                }
+                if (capturedKb !== null || capturedGp !== null) {
+                    if (capturedKb !== null) {
+                        const id = capturedKb;
+                        const arr: KeyboardBinding[] = this.inputMap.keyboard[action] ?? [];
+                        const exists = arr.some((b) => (typeof b === 'string' ? b : b.id) === id);
+                        const base: KeyboardBinding[] = (mode === 'replace') ? [] : (exists ? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id) : arr);
+                        base.push(id);
+                        this.inputMap.keyboard[action] = base;
+                        // Conflict policy
+                        for (const act in this.inputMap.keyboard) {
+                            if (act === action) continue;
+                            this.inputMap.keyboard[act] = (this.inputMap.keyboard[act] ?? []).filter(b => (typeof b === 'string' ? b : b.id) !== id);
+                        }
+                    } else if (capturedGp !== null) {
+                        const id = capturedGp;
+                        const arr: GamepadBinding[] = this.inputMap.gamepad[action] ?? [];
+                        const exists = arr.some((b) => (typeof b === 'string' ? b : b.id) === id);
+                        const base: GamepadBinding[] = (mode === 'replace') ? [] : (exists ? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id) : arr);
+                        base.push(id);
+                        this.inputMap.gamepad[action] = base;
+                        // Conflict policy
+                        for (const act in this.inputMap.gamepad) {
+                            if (act === action) continue;
+                            this.inputMap.gamepad[act] = (this.inputMap.gamepad[act] ?? []).filter(b => (typeof b === 'string' ? b : b.id) !== id);
+                        }
+                    }
+
+                    // Persist
+                    try { localStorage.setItem(`bmsx_bindings_p${this.playerIndex}`, JSON.stringify(this.inputMap)); } catch {
+                        /* ignore */
+                        console.warn(`Failed to persist bindings to localStorage for player ${this.playerIndex}.`);
+                    }
+
+                    this.pendingRebind = null;
+                }
+            }
+        }
+    }
 
 	/** Updates aggregated button states and cleans up stale events. */
 	update(currentTime: number): void {

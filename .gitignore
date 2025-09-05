@@ -31,5 +31,6 @@ dist/game.html
 dist/manifest.json
 !src/bmsx/**.d.ts
 src/bmsx/bmsx.d.ts
+!src/bmsx/types/globals.d.ts
 src/testrom/res/_ignore/detective_piet/**
 tsconfig.buildinfo

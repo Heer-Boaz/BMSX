@@ -11,9 +11,7 @@ let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 
 type logentryType = undefined | 'error' | 'warning';
 
-declare global {
-	var process: any;
-}
+// `process` is provided by Node and declared in @types/node; no local ambient needed.
 
 function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
 	const idx = args.indexOf(flag);

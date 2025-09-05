@@ -50,7 +50,7 @@
     "useDefineForClassFields": true,
     "noImplicitOverride": true,
     "typeRoots": ["node_modules/@types", "node_modules"],
-    "types": ["@webgpu/types"],
+    "types": ["node", "@webgpu/types"],
     /* Type declaration files to be included in compilation. */
     // "types": [],
     // "allowSyntheticDefaultImports": true,  /* Allow default imports from modules with no default export. This does not affect code emit, just typechecking. */
@@ -62,7 +62,12 @@
     "inlineSources": false /* Emit the source alongside the sourcemaps within a single file; requires '--inlineSourceMap' or '--sourceMap' to be set. */,
     /* Experimental Options */
     "experimentalDecorators": false /* Use new decorators (TS 5+). */,
-    "emitDecoratorMetadata": false /* Not used with new decorators. */
+    "emitDecoratorMetadata": false /* Not used with new decorators. */,
+    "baseUrl": ".",
+    "paths": {
+      "bmsx": ["bmsx.ts", "src/bmsx/index.ts"],
+      "bmsx/*": ["src/bmsx/*"]
+    }
   },
   "references": [
     {
@@ -82,6 +87,7 @@
   ],
   "files": [], // No files are included in the compilation, only references
   "include": [
+    "bmsx.ts",
     "scripts/bootrom/bootrom.ts",
     "scripts/bootrom/bootaudio.ts",
     "scripts/bootrom/bootresources.ts",

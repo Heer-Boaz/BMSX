@@ -31,6 +31,8 @@ export class KeyboardInput implements InputHandler {
      */
     public readonly gamepadIndex = 0;
 
+    private nextPressId = 1;
+
     constructor() {
         this.keyStates = {};
         this.gamepadButtonStates = {};
@@ -91,25 +93,76 @@ export class KeyboardInput implements InputHandler {
      * @returns void
      */
     pollInput(): void {
-        // Reset gamepad button states
-        const newGamepadButtonStates: KeyOrButtonId2ButtonState = {};
+        const now = performance.now();
+        // Update existing keys in place, create states on demand
         Object.keys(this.keyStates).forEach(buttonId => {
-            if (this.keyStates[buttonId].pressed) {
-                // Update the state only if the button is currently pressed
-                newGamepadButtonStates[buttonId] = makeButtonState({ pressed: true, presstime: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) + 1, consumed: this.gamepadButtonStates[buttonId]?.consumed ?? false, timestamp: this.gamepadButtonStates[buttonId]?.timestamp ?? performance.now(), justpressed: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) === 0 });
+            const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
+            const isDown = this.keyStates[buttonId].pressed;
+            const wasDown = !!prev.pressed;
+            if (isDown) {
+                const just = !wasDown;
+                if (just) {
+                    const pid = this.nextPressId++;
+                    this.gamepadButtonStates[buttonId] = makeButtonState({
+                        pressed: true,
+                        justpressed: true,
+                        waspressed: true,
+                        presstime: 0,
+                        timestamp: now,
+                        pressedAtMs: now,
+                        pressId: pid,
+                        value: 1,
+                    });
+                } else {
+                    const st = this.gamepadButtonStates[buttonId] ?? makeButtonState();
+                    st.pressed = true;
+                    st.justpressed = false;
+                    st.waspressed = true;
+                    st.justreleased = false;
+                    st.presstime = (st.presstime ?? 0) + 1;
+                    st.value = 1;
+                    // preserve pressId, pressedAtMs, timestamp from first frame
+                    this.gamepadButtonStates[buttonId] = st;
+                }
             } else {
-                newGamepadButtonStates[buttonId] = makeButtonState({ justreleased: this.gamepadButtonStates[buttonId]?.pressed ? true : false });
+                const st = this.gamepadButtonStates[buttonId] ?? makeButtonState();
+                const jr = wasDown;
+                this.gamepadButtonStates[buttonId] = makeButtonState({
+                    pressed: false,
+                    justpressed: false,
+                    justreleased: jr,
+                    waspressed: st.waspressed || wasDown,
+                    wasreleased: st.wasreleased || jr,
+                    consumed: st.consumed || false,
+                    timestamp: now,
+                    releasedAtMs: jr ? now : st.releasedAtMs ?? null,
+                    pressId: jr ? st.pressId ?? null : st.pressId ?? null,
+                    value: 0,
+                });
             }
 
-            // Use the constant to map keyboard keys to gamepad buttons
-            const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
-            if (keyMappedToCorrespondingGamepadButtonId) {
-                newGamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] = { ...newGamepadButtonStates[buttonId] };
+            // Mirror to the corresponding gamepad button mapping for keyboard (so consumers can treat keyboard as a gamepad-like source)
+            const mapped = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId as keyof typeof Input.KEYBOARDKEY2GAMEPADBUTTON];
+            if (mapped) {
+                const src = this.gamepadButtonStates[buttonId];
+                const dst = this.gamepadButtonStates[mapped] ?? makeButtonState();
+                // copy fields shallowly
+                dst.pressed = src.pressed;
+                dst.justpressed = src.justpressed;
+                dst.justreleased = src.justreleased;
+                dst.waspressed = src.waspressed;
+                dst.wasreleased = src.wasreleased;
+                dst.consumed = src.consumed;
+                dst.presstime = src.presstime;
+                dst.timestamp = src.timestamp;
+                dst.pressedAtMs = src.pressedAtMs;
+                dst.releasedAtMs = src.releasedAtMs;
+                dst.pressId = src.pressId;
+                dst.value = src.value;
+                dst.value2d = src.value2d ?? null;
+                this.gamepadButtonStates[mapped] = dst;
             }
         });
-
-        // Update the button states with the new states
-        this.gamepadButtonStates = newGamepadButtonStates;
     }
 
     /**
@@ -119,8 +172,7 @@ export class KeyboardInput implements InputHandler {
     keydown(key_code: KeyboardButtonId | string): void {
         if (!this.keyStates[key_code]) {
             this.keyStates[key_code] = makeButtonState({ pressed: true, justpressed: true, presstime: 0, timestamp: performance.now() });
-        }
-        else {
+        } else {
             this.keyStates[key_code].pressed = true;
         }
     }
@@ -131,7 +183,6 @@ export class KeyboardInput implements InputHandler {
      */
     keyup(key_code: KeyboardButtonId | string): void {
         if (!this.keyStates[key_code]) return;
-
         this.keyStates[key_code] = makeButtonState();
     }
 

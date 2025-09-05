@@ -21,6 +21,7 @@ import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, id2spaceType, initial_world_spaces, isSpaceAware, obj_id2space_id_type, objid_2_objspaceid, spaceid_2_space } from './space';
+import { EventEmitter } from './eventemitter';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 
@@ -34,7 +35,7 @@ export interface TileCollisionService {
     collidesWithTile(o: GameObject, dir: Direction): boolean;
     isCollisionTile(x: number, y: number): boolean;
 }
-export type ModelPlugin = { onBoot: (model: World) => void; onTick?: (model: World, dt: number) => void; onLoad?: (model: World) => void; dispose?: () => void };
+export type ModelPlugin = { onBoot: (world: World) => void; onTick?: (world: World, dt: number) => void; onLoad?: (world: World) => void; dispose?: () => void };
 
 // Utility: wrap a Map so `mapLike['id']` resolves to `map.get('id')` and
 // assignments delete/set through the same surface. Also exposes standard Map
@@ -78,7 +79,7 @@ export function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
 
 @insavegame
 /**
- * The base model class for the game. Contains all the spaces and objects in the game world.
+ * The base world class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
 export class World implements Stateful, RegisterablePersistent {
@@ -86,7 +87,7 @@ export class World implements Stateful, RegisterablePersistent {
         return true;
     }
 
-    public get id(): 'model' { return 'model'; } // Required for IStateful and IIdentifiable
+    public get id(): 'world' { return 'world'; } // Required for IStateful and IIdentifiable
 
     // Internal physics diagnostic frame counter (temporary instrumentation)
     private static _physDiagFrames?: number;
@@ -133,7 +134,15 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {GameObject[]} An array of all game objects in the current space.
      */
     public get activeObjects(): GameObject[] {
-        return this.activeSpace.objects;
+        const base = this.activeSpace.objects;
+        const overlay = this._spaceMap.get('ui')?.objects ?? [];
+        if (overlay.length === 0) return base;
+        // Merge without copying base array reference to avoid aliasing mutations
+        const out = new Array<GameObject>(base.length + overlay.length);
+        let i = 0;
+        for (let j = 0; j < base.length; j++) out[i++] = base[j];
+        for (let j = 0; j < overlay.length; j++) out[i++] = overlay[j];
+        return out;
     }
 
     public get allObjectsFromSpaces(): GameObject[] {
@@ -142,10 +151,10 @@ export class World implements Stateful, RegisterablePersistent {
         return out;
     }
 
-    public spaces: Space[]; // All spaces in the model
-    protected _activeSpaceId: Identifier; // Current space. On model creation, a default space is created with id 'default'
-    public get activeSpaceId(): Identifier { return this._activeSpaceId; } // Current space id. On model creation, a default space is created with id 'default'
-    public get activeSpace(): Space { return this.get_space(this._activeSpaceId); } // Current space. On model creation, a default space is created with id 'default'
+    public spaces: Space[]; // All spaces in the world
+    protected _activeSpaceId: Identifier; // Current space. On world creation, a default space is created with id 'default'
+    public get activeSpaceId(): Identifier { return this._activeSpaceId; } // Current space id. On world creation, a default space is created with id 'default'
+    public get activeSpace(): Space { return this.get_space(this._activeSpaceId); } // Current space. On world creation, a default space is created with id 'default'
     // setSpace implemented later with activation hooks
     public get_space<T extends Space>(id: Identifier) { return this._spaceMap.get(id) as T; }
 
@@ -153,7 +162,7 @@ export class World implements Stateful, RegisterablePersistent {
     private _size: { width: number; height: number } = { width: 256, height: 192 };
     private _collision?: TileCollisionService;
     private _plugins: Array<ModelPlugin> = [];
-    private _fsmId: string = 'model';
+    private _fsmId: string = 'world';
 
     public get gamewidth(): number { return this._size.width; }
     public get gameheight(): number { return this._size.height; }
@@ -258,11 +267,12 @@ export class World implements Stateful, RegisterablePersistent {
 
     /**
      * Gets the game object with the given id across all spaces.
-     * If `id === 'model'`, returns the game model instead! This is used for {@link State} to make game model as target for callbacks.
+     * If `id === `, returns the game world instead! This is used for {@link State} to make game world as target for callbacks.
      * @param {Identifier} id - the id of the {@link GameObject}.
-     * @returns {T | null} The object with the given id or the game model itself (when `id === 'model'`), or null if the object is not found.
+     * @returns {T | null} The object with the given id or the game world itself (when `id === `), or null if the object is not found.
      */
     public getGameObject<T extends GameObject = GameObject>(id: Identifier): T | null {
+        if (!id) return null;
         const sid = this.objToSpaceMap.get(id);
         if (!sid) return null;
         const space = this.get_space(sid);
@@ -349,8 +359,8 @@ export class World implements Stateful, RegisterablePersistent {
     /** **DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!**
      *
      * _Trying to add logic here will most often result in runtime errors!_
-     * These runtime errors usually occur because the model was not created and initialized (with states),
-     * while creating new game objects that reference the model or the model states
+     * These runtime errors usually occur because the world was not created and initialized (with states),
+     * while creating new game objects that reference the world or the world states
      */
     constructor(opts?: { size?: { width: number; height: number }, collision?: TileCollisionService, plugins?: Array<ModelPlugin>, fsmId?: string }) {
         Registry.instance.register(this);
@@ -370,11 +380,16 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     public init_on_boot(): void {
-        World.setup_fsmdef_library();
-        World.setup_bt_library();
-        this.init_event_subscriptions().init_spaces().init_model_state_machines();
-        // Plugins boot hooks (explicit lifecycle; no property chaining)
-        for (const p of this._plugins) p.onBoot(this);
+        // Order is important: build FSM & BT libraries before plugins spawn objects that construct state machines.
+        // Previous order invoked registerPluginHooks (spawning objects) before setupStateMachineLib, causing
+        // StateDefinitions to be undefined during GameObject construction (e.g. accessing 'Cube3D').
+        this
+            .initializeWorldSpaces()
+            .setupStateMachineLib()      // ensures StateDefinitions populated
+            .setupBTLib()                // behavior trees available prior to plugin object creation
+            .registerPluginHooks()       // plugins may now safely spawn objects relying on FSM/BT definitions
+            .registerEventSubscriptions()
+            .startWorldStateMachine();
     }
 
     public dispose(): void {
@@ -383,25 +398,26 @@ export class World implements Stateful, RegisterablePersistent {
         // Dispose the state machine controller and deregister all state machines
         this.sc.dispose();
         // Unsubscribe from all events
-        $.event_emitter.removeSubscriber(this);
+        EventEmitter.instance.removeSubscriber(this);
         // Dispose plugins
         for (const p of this._plugins) p.dispose?.();
         $.registry.deregister(this);
     }
 
-    public init_event_subscriptions(): World {
-        $.event_emitter.initClassBoundEventSubscriptions(this);
+    public registerEventSubscriptions(): World {
+        EventEmitter.instance.initClassBoundEventSubscriptions(this);
         return this; // Return the current instance of the World for chaining
     }
 
     /**
-     * Initializes the spaces for the model. This method should only be executed when the model is not being revived.
-     * Adds the 'default' and 'game_start' spaces to the model and sets the current space to 'game_start'.
+     * Initializes the spaces for the world. This method should only be executed when the world is not being revived.
+     * Adds the 'default' and 'game_start' spaces to the world and sets the current space to 'game_start'.
      * @returns {World} The current instance of the World.
      */
-    public init_spaces(): World { // Should only be executed when model is *not* revived
+    public initializeWorldSpaces(): World { // Should only be executed when world is *not* revived
         this.addSpace('default' satisfies initial_world_spaces);
         this.addSpace('game_start' satisfies initial_world_spaces);
+        this.addSpace('ui' satisfies initial_world_spaces);
         this.setSpace('game_start' satisfies initial_world_spaces);
 
         return this; // Return the current instance of the World for chaining
@@ -410,44 +426,56 @@ export class World implements Stateful, RegisterablePersistent {
     /**
      * Sets up the finite state machine definition library for the `World` class.
      * This method should only be called once during the initialization of the `World` class.
-     * @returns {void} Nothing.
+     * @returns {World} The current instance of the World for chaining.
      */
-    private static setup_fsmdef_library(): void {
+    private setupStateMachineLib(): World {
         setupFSMlibrary();
+        return this;
     }
 
-    private static setup_bt_library(): void {
+    /**
+     * @returns {World} The current instance of the World for chaining.
+     */
+    private setupBTLib(): World {
         setup_btdef_library();
         setup_bt_library();
+        return this;
     }
 
     /**
      * Returns the constructor name of the specific derived class that extends this `World`.
-     * Required during game initialization where @see {@link init_model_state_machines} is called.
+     * Required during game initialization where @see {@link startWorldStateMachine} is called.
      * @see {@link this.init_model_state_machines}
      */
     public get constructor_name(): string { return this._fsmId; }
 
     /**
-    * Init model after construction. Needed as the states have not been build at
-    * the constructor's scope yet. So, this is a kind of `onspawn` for the model.
+    * Init world after construction. Needed as the states have not been build at
+    * the constructor's scope yet. So, this is a kind of `onspawn` for the world.
     *
-    * Each derived model class should override @see {@link World.constructor_name} to get the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
+    * Each derived world class should override @see {@link World.constructor_name} to get the proper constructor classname of that derived world class. We need the exact classname in order to map a state machine definition to an instance of an object.
     * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this World.
     */
-    public init_model_state_machines(): this {
-        this.sc = new StateMachineController(this._fsmId ?? 'model', this.id);
-        this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the model, and subscribe to all events that are defined in the state machine definitions
+    public startWorldStateMachine(): this {
+        this.sc = new StateMachineController(this._fsmId ?? 'world', this.id);
+        this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the world, and subscribe to all events that are defined in the state machine definitions
+
+        return this; // Return the current instance of the World for chaining
+    }
+
+    public registerPluginHooks(): this {
+        // Plugins boot hooks (explicit lifecycle; no property chaining)
+        for (const p of this._plugins) p.onBoot(this);
 
         return this; // Return the current instance of the World for chaining
     }
 
     /**
-     * Runs the current state of the model by calling the `run` method of the current state.
+     * Runs the current state of the world by calling the `run` method of the current state.
      * @returns {void} Nothing.
      */
     public run(deltaTime: number): void {
-        this.sc.tick(); // model-level state machine first
+        this.sc.tick(); // world-level state machine first
 
         // Phase 1: PrePhysics + Simulation (BT, Anim, Object FSM, AbilityRuntime)
         this.systems.updateUntil(this, TickGroup.Simulation);
@@ -481,26 +509,26 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Loads a serialized game state and applies it to the current model instance.
-     * Clears all spaces and removes all objects from the model instance before loading the new state.
+     * Loads a serialized game state and applies it to the current world instance.
+     * Clears all spaces and removes all objects from the world instance before loading the new state.
      * @param {string} serialized - The serialized game state to load.
      * @returns {void} Nothing.
      */
     public load(serialized: Uint8Array, compressed: boolean = true): void {
         // Block rendering during (de)serialization to avoid corrupt WebGL state.
-        // Also block the game update/run loop while the model is being hydrated.
+        // Also block the game update/run loop while the world is being hydrated.
         renderGate.bump();
         const gateToken = renderGate.begin({ blocking: true, tag: 'load' });
 
-        // Prevent the main update loop from running while loading the model
+        // Prevent the main update loop from running while loading the world
         runGate.bump();
         const runGateToken = runGate.begin({ blocking: true, tag: 'load' });
         try {
             this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
-            $.event_emitter.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
+            EventEmitter.instance.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
 
-            const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
-            temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
+            const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the world instance
+            temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the world instance before loading the new state (otherwise, spaces from the previous state will still be present)
 
             let serializedState: Uint8Array;
             if (compressed) {
@@ -509,14 +537,14 @@ export class World implements Stateful, RegisterablePersistent {
                 serializedState = serialized; // Use the serialized state as is
             }
 
-            $.registry.clear(); // Clear the registry before loading the new state (otherwise, registered objects from the previous state will still be present). Note that this will not clear the model instance itself, as the model instance has the property `registrypersistent: true` and will not be cleared. The same applies to Input, View, and other persistent objects.
+            $.registry.clear(); // Clear the registry before loading the new state (otherwise, registered objects from the previous state will still be present). Note that this will not clear the world instance itself, as the world instance has the property `registrypersistent: true` and will not be cleared. The same applies to Input, View, and other persistent objects.
 
             // Remove all cached textures and images from the texture manager
             $.texmanager.clear();
             $.view.reset(); // Reset the view to the initial state
 
             const savegame = Reviver.deserialize(serializedState) as Savegame;
-            // Assign only plain data back to the model to avoid clobbering runtime fields
+            // Assign only plain data back to the world to avoid clobbering runtime fields
             for (const [k, v] of Object.entries(savegame.modelprops as Record<string, unknown>)) {
                 if (typeof v !== 'function') (this as any)[k] = v;
             }
@@ -552,7 +580,7 @@ export class World implements Stateful, RegisterablePersistent {
                 }
             } catch { /* ignore to avoid load failure if physics not present */ }
 
-            // No need to push lighting here; renderer pulls from model each frame
+            // No need to push lighting here; renderer pulls from world each frame
         }
         catch (e) {
             console.error(`Error loading game state: ${e}`);
@@ -610,7 +638,7 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Filters the game objects in the model instance using the provided predicate function and returns a new array containing the filtered objects.
+     * Filters the game objects in the world instance using the provided predicate function and returns a new array containing the filtered objects.
      * @param {function} predicate - The function used to filter the game objects. It should take a game object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
      * @returns {GameObject[]} An array containing the filtered game objects.
      */
@@ -620,9 +648,9 @@ export class World implements Stateful, RegisterablePersistent {
 
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
     /**
-     * Filters the game objects in the model instance using the provided predicate function and calls the provided callback function on each filtered object.
+     * Filters the game objects in the world instance using the provided predicate function and calls the provided callback function on each filtered object.
      * @param {function} predicate - The function used to filter the game objects. It should take a game object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
-     * @param {function} callbackfn - The function called on each filtered game object. It should take a game object as its first argument, and can optionally take the index of the object in the filtered list, the filtered list itself, and the model instance as additional arguments.
+     * @param {function} callbackfn - The function called on each filtered game object. It should take a game object as its first argument, and can optionally take the index of the object in the filtered list, the filtered list itself, and the world instance as additional arguments.
      * @returns {void} Nothing.
      */
     public filter_and_foreach(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
@@ -635,7 +663,7 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Clears the current space in the model instance by calling the `clear` method on the current space.
+     * Clears the current space in the world instance by calling the `clear` method on the current space.
      * @returns {void} Nothing.
      */
     public clear(): void {
@@ -643,7 +671,7 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Clears all spaces in the model instance by calling the `clear` method on each space.
+     * Clears all spaces in the world instance by calling the `clear` method on each space.
      * @returns {void} Nothing.
      */
     public clearAllSpaces(): void {
@@ -663,7 +691,7 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Exiles a game object from all spaces in the model instance.
+     * Exiles a game object from all spaces in the world instance.
      * @param {GameObject} o - The game object to exile.
      * @returns {void} Nothing.
      */
@@ -673,7 +701,7 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Exiles a game object from the current space in the model instance.
+     * Exiles a game object from the current space in the world instance.
      * @param {GameObject} o - The game object to exile.
      * @returns {void} Nothing.
      */
@@ -682,15 +710,15 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Adds a new space to the model instance.
-     * @param {Space | Identifier} s - The space to add to the model instance. Can be a `Space` object or a string representing the ID of the new space.
+     * Adds a new space to the world instance.
+     * @param {Space | Identifier} s - The space to add to the world instance. Can be a `Space` object or a string representing the ID of the new space.
      * @returns {void} Nothing.
-     * @throws {Error} Throws an error if a space with the same ID already exists in the model instance.
+     * @throws {Error} Throws an error if a space with the same ID already exists in the world instance.
      */
     public addSpace(s: Space | Identifier): void {
         const new_space: Space = (s instanceof Space ? s : new Space(s));
         new_space.bindModel(this);
-        if (this._spaceMap.has(new_space.id)) throw Error(`Cannot add duplicate Space '${new_space.id}' to model!`);
+        if (this._spaceMap.has(new_space.id)) throw Error(`Cannot add duplicate Space '${new_space.id}' to world!`);
         this.spaces.push(new_space);
         this._spaceMap.set(new_space.id, new_space);
         // Ensure component indexes are initialized for this space
@@ -699,14 +727,14 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Removes a space from the model instance.
-     * @param {Space | Identifier} s - The space to remove from the model instance. Can be a `Space` object or a string representing the ID of the space to remove.
+     * Removes a space from the world instance.
+     * @param {Space | Identifier} s - The space to remove from the world instance. Can be a `Space` object or a string representing the ID of the space to remove.
      * @returns {void} Nothing.
-     * @throws {Error} Throws an error if the space to remove is not found in the model instance.
+     * @throws {Error} Throws an error if the space to remove is not found in the world instance.
      */
     public removeSpace(s: Space | Identifier): void {
         const space: Space = (s instanceof Space ? s : this.get_space(s));
-        if (!space) throw Error(`Space '${s}' to remove from model was not found, while calling [World.removeSpace]!`);
+        if (!space) throw Error(`Space '${s}' to remove from world was not found, while calling [World.removeSpace]!`);
 
         const index = this.spaces.indexOf(space);
         const id = space.id;

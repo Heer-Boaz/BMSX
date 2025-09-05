@@ -21,7 +21,7 @@ var view: GameView;
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
-    world = new World({ size: { width: 320, height: 240 }, fsmId: 'model', plugins: [createTestromPlugin()] });
+    world = new World({ size: { width: 320, height: 240 }, fsmId: 'world', plugins: [createTestromPlugin()] });
     view = new GameView(new_vec2(320, 240));
 
     _game = new Game();

@@ -44,7 +44,7 @@ export class StateDefinition {
 
     /**
      * Specifies whether the tapehead should automatically rewind to index `0` when it reaches the end of the tape.
-     * Defaults to `true`.
+     * If ticks2advance_tape is 0, the default is false. Otherwise, auto_tick is true (unless it was already defined)
      * - If set to `true`, the tapehead will be set to index `0` when it would go out of bounds.
      * - If set to `false`, the tapehead will remain at the end of the tape.
      */
@@ -97,12 +97,12 @@ export class StateDefinition {
      * @param id - The ID of the `bfsm` instance.
      * @param partialdef - An optional partial definition to assign to the `bfsm` instance.
      */
-    public constructor(id: Identifier = '_', partialdef?: Partial<StateDefinition>, root: StateDefinition = null) {
+    public constructor(id: Identifier, partialdef?: Partial<StateDefinition>, root: StateDefinition = null) {
         this.id = id; //`${parent_id ? (parent_id + '.') : ''}${id ?? DEFAULT_BST_ID}`;
         partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
         this.ticks2advance_tape ??= 0; // Unless already defined, ticks2move is 0
         this.repetitions = (this.tape_data ? (this.repetitions ?? 1) : 0);
-        this.enable_tape_autotick = this.enable_tape_autotick ?? (this.ticks2advance_tape !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
+        this.enable_tape_autotick = this.enable_tape_autotick ?? (this.ticks2advance_tape !== 0 ? true : false); // If ticks2advance_tape is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
         this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape_data ? AUTO_REWIND_TAPE_AFTER_END : false); // If there is a tape, auto_rewind_tape_after_end is AUTO_REWIND_TAPE_AFTER_END. Otherwise, it is false (unless it was already defined)
         this.automatic_reset_mode = this.automatic_reset_mode ?? 'state'; // Unless already defined, auto_reset is true
         this.data ??= {}; // Unless already defined, data is an empty object

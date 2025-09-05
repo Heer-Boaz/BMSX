@@ -9,8 +9,8 @@ export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
 
 @insavegame
 export class JumpingWhileLeavingScreenComponent extends Component {
-	constructor(_id: string) {
-		super(_id);
+	constructor(id: string) {
+		super(id);
 		this.enabled = false; // Disabled by default
 	}
 

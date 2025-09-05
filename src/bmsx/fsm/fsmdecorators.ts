@@ -53,7 +53,15 @@ export function build_fsm(fsm_name?: Identifier) {
         // For instance methods (not typical here), we still register using the instance's constructor when created.
         const register = (ctor: any) => {
             StateDefinitionBuilders ??= {};
-            const key = fsm_name ?? ctor?.name ?? '(anonymous)';
+            const raw = fsm_name ?? ctor?.name ?? '(anonymous)';
+            // If no explicit fsm_name was supplied and the inferred class name starts with underscore
+            // (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
+            let key = raw;
+            if (!fsm_name && raw.startsWith('_')) {
+                key = raw.replace(/^_+/, '');
+                // Keep the raw key too (backwards compatibility) but primary lookup should succeed without underscore.
+                StateDefinitionBuilders[raw] = value as () => StateMachineBlueprint;
+            }
             StateDefinitionBuilders[key] = value as () => StateMachineBlueprint;
         };
         if (context.static) {
