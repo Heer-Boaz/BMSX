@@ -1,29 +1,27 @@
 import { $, AmbientLightObject, World, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { bclass } from './bclass';
-import { world, gamepadInputMapping, keyboardInputMapping } from './bootloader';
+import { gamepadInputMapping, keyboardInputMapping } from './bootloader';
 import { CameraController } from './camera_controller';
 import { AnimatedMorphSphere, Cube3D, SmallCube3D } from './objects3d';
 import { BitmapId } from './resourceids';
 
-const savestring = Symbol('savestring');
 @insavegame
-export class gamemodel extends World {
-	public [savestring]: string;
-
+export class testrom_world_fsm extends World {
 	@build_fsm()
 	public static bouw(): StateMachineBlueprint {
 		return {
 			substates: {
 				'_game_start': {
-					entering_state(this: gamemodel) {
+					entering_state(this: testrom_world_fsm) {
 					},
-					tick(this: gamemodel) {
+					tick(this: testrom_world_fsm) {
 						return 'default';
 					}
 				},
 				default: {
-					entering_state(this: gamemodel) {
+					entering_state(this: testrom_world_fsm) {
+						return;
 						$.input.getPlayerInput(1).setInputMap({
 							keyboard: keyboardInputMapping,
 							gamepad: gamepadInputMapping,
@@ -34,11 +32,11 @@ export class gamemodel extends World {
 						const small = new SmallCube3D(1);
 						const small2 = new SmallCube3D(2);
 						const animatedMorphSphere = new AnimatedMorphSphere();
-						world.spawn(new bclass(), new_vec3(100, 100, 1000));
-						world.spawn(cube, new_vec3(0, 0, 0));
-						world.spawn(small, new_vec3(5, 0, 0));
-						world.spawn(small2, new_vec3(5, 5, 5));
-						world.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
+						$.spawn(new bclass(), new_vec3(100, 100, 1000));
+						$.spawn(cube, new_vec3(0, 0, 0));
+						$.spawn(small, new_vec3(5, 0, 0));
+						$.spawn(small2, new_vec3(5, 5, 5));
+						$.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
 						const parentTf = cube.getComponent(TransformComponent);
 						const childTf = small.getComponent(TransformComponent);
@@ -66,25 +64,25 @@ export class gamemodel extends World {
 
 						// Elevated starting camera to view massive scaled city
 						// Lower the camera closer to street level so spawned buildings are immediately visible
-						world.spawn(cam1, V3.of(
+						$.spawn(cam1, V3.of(
 							-60,
 							48, // was 260
 							120
 						));
 						cam1.camera.screenLook(1.7687161091476518, -1.418966871448069, -2.6349415504373304);
-						world.spawn(cam2, V3.of(5, 12, 27));
+						$.spawn(cam2, V3.of(5, 12, 27));
 
-						world.activeCameraId = cam1.id;
+						$.world.activeCameraId = cam1.id;
 
 						const ambient = new AmbientLightObject([1.0, 1.0, 1.0], .2, 'amb');
 						const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
 						const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [1.0, 1.0, 1.0], 1, 'extraSun');
 						const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 1.0, 1.0], 6.0, 2, 'lamp');
 
-						world.spawn(ambient);
-						world.spawn(sun);
-						world.spawn(extraSun);
-						world.spawn(lamp);
+						$.spawn(ambient);
+						$.spawn(sun);
+						$.spawn(extraSun);
+						$.spawn(lamp);
 
 						$.view.setSkybox({
 							posX: BitmapId.skybox,
@@ -95,7 +93,7 @@ export class gamemodel extends World {
 							negZ: BitmapId.skybox,
 						});
 
-						world.spawn(new CameraController(cam1, cam2));
+						$.spawn(new CameraController(cam1, cam2));
 
 						// ===== Rail shooter demo scaffold =====
 						// Simple S-curve forward rail reminiscent of an urban fly-through

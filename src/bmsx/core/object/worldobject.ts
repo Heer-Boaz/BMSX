@@ -7,7 +7,7 @@ import { insavegame, onload } from "../../serializer/gameserializer";
 import { $ } from '../game';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
-import { StateDefinitions } from 'bmsx/fsm/fsmlibrary';
+import { StateDefinitions } from '../../fsm/fsmlibrary';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;

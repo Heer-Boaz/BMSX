@@ -1,7 +1,7 @@
 import { $ } from '../core/game';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
-import { ActiveStateMachines, StateDefinitions } from './fsmlibrary';
+import { ActiveStateMachines } from './fsmlibrary';
 import { type Stateful, type id2sstate } from './fsmtypes';
 import { State } from './state';
 import { StateDefinition } from './statedefinition';
