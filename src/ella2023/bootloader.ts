@@ -2,7 +2,7 @@ import { BFont, BootArgs, MSX1ScreenHeight, MSX1ScreenWidth, WorldConfiguration,
 import { EILA_PLUGIN } from './modelplugin';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
-import './gamemodel';
+import './world_fsm';
 
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 

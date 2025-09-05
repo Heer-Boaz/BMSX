@@ -6,7 +6,7 @@ import { sint } from './sint';
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
-    const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintModelFSM' };
+    const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintWorldFSM' };
     return $.init({ ...args, worldConfig }).then(() => {
         // set input map previously done in do_one_time_game_init
         $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
@@ -44,15 +44,8 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'b': ['b'],
 };
 
-const savestring = Symbol('savestring');
-// @ts-ignore
-class SintModelFSM {
-    /**
-     * A string property that is saved in the game.
-     */
-    public [savestring]: string;
-
-    @build_fsm('model')
+export class SintWorldFSM { // export to prevent potential tree-shaking (not happened) and unused-definition compiler errors
+    @build_fsm()
     /**
      * Constructs and returns a StateMachineBlueprint object.
      *
@@ -62,12 +55,11 @@ class SintModelFSM {
      *
      * The blueprint contains the following states:
      * - `#game_start`: The initial state of the game.
-     *   - `enter`: A function that is called when entering the `#game_start` state.
-     *   - `run`: A function that is called to run the `#game_start` state. Returns the next state as 'default'.
+     *   - `entering_state`: A function that is called when entering the `#game_start` state.
+     *   - `tick`: A function that is called to run the `#game_start` state. Returns the next state as 'default'.
      *
      * - `default`: The default state of the game.
-     *   - `enter`: A function that is called when entering the `default` state. It spawns a new quiz and a new sint.
-     *   - `run`: A function that is called to run the `default` state. Uses `World.defaultrun`.
+     *   - `entering_state`: A function that is called when entering the `default` state. It spawns a new quiz and a new sint.
      */
     public static bouw(): StateMachineBlueprint {
         return {

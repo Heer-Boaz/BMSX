@@ -22,19 +22,16 @@
     /* Specify library files to be included in the compilation.*/
     // "allowJs": true,                       /* Allow javascript files to be compiled. */
     "checkJs": false /* Report errors in .js files. */,
-    // "jsx": "preserve",                     /* Specify JSX code generation: 'preserve', 'react-native', or 'react'. */
-    // "declarationMap": true,                /* Generates a sourcemap for each corresponding '.d.ts' file. */
+    "assumeChangesOnlyAffectDirectDependencies": true /* Speed up incremental compilation by assuming that changes in a file will only affect files directly depending on it. */,
+    "noEmitHelpers": true,
     "sourceMap": false /* Generates corresponding '.map' file. */,
-    // "outFile": "rom/tsout.js", /* Concatenate and emit output to single file. */
     "rootDir": "." /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */,
-    // "tsBuildInfoFile": "./",               /* Specify file to store incremental compilation information */
     "removeComments": true /* Do not emit comments to output. */,
-    // "noEmit": true,                        /* Do not emit outputs. */
     "importHelpers": true /* Import emit helpers from 'tslib'. */,
     "downlevelIteration": false /* Provide full support for iterables in 'for-of', spread, and destructuring when targeting 'ES5' or 'ES3'. */,
-    // "isolatedModules": true,               /* Transpile each file as a separate module (similar to 'ts.transpileModule'). */
     /* Strict Type-Checking Options */
     "strict": false /* Enable all strict type-checking options. */,
+    "suppressImplicitAnyIndexErrors": true, /* Suppress noImplicitAny errors for indexing objects lacking index signatures. */
     "noImplicitAny": true /* Raise error on expressions and declarations with an implied 'any' type. */,
     "strictNullChecks": false /* Enable strict null checks. */,
     "strictFunctionTypes": true /* Enable strict checking of function types. */,
@@ -114,11 +111,11 @@
       "**/node_modules/**",
       "**/bmsx.d.ts",
       "**/bmsx.js",
-      "dist",
-      "scripts",
-      "_ignore"
     ],
     "excludeDirectories": [
+      "dist",
+      "scripts",
+      "_ignore",
       "src/joanneke2022",
       "src/marlies2020",
       "src/marlies2021",
