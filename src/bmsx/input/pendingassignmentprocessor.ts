@@ -8,15 +8,6 @@ import type { BGamepadButton, InputHandler } from './inputtypes';
  * This class manages the selection of player indexes for gamepad assignments and the placement of the joystick icon.
  */
 export class PendingAssignmentProcessor {
-    /**
-     * The starting position of the joystick icon in pixels.
-     */
-    private static readonly joystick_icon_start = { x: 0, y: 0 };
-
-    /**
-     * The amount of increment in the x-axis for the joystick icon in pixels.
-     */
-    private static readonly joystick_icon_increment_x = 32;
 
     /**
      * Gets the pending index of the gamepad input.
@@ -37,15 +28,12 @@ export class PendingAssignmentProcessor {
         return gamepadInput.getButtonState(button).pressed && !gamepadInput.getButtonState(button).consumed;
     }
 
-    /**
-     * Calculates the X position of the assignment-icon based on the given position index.
-     * @param positionIndex The index of the position.
-     * @returns The calculated X position of the icon.
-     */
-    private calcIconPositionX(positionIndex: number) { return PendingAssignmentProcessor.joystick_icon_start.x + (PendingAssignmentProcessor.joystick_icon_increment_x * (positionIndex ?? 0)); };
-
     private notifyUIProposed(gamepadIndex: number, proposedPlayerIndex: number | null): void {
-        $.emit('controller_assignment_proposed', Input.instance, { gamepadIndex, proposedPlayerIndex, positionIndex: this.pendingIndex });
+        $.emit('controller_assignment_proposed', Input.instance, { gamepadIndex, proposedPlayerIndex });
+    }
+
+    private notifyUIAssignmentStart(gamepadIndex: number, proposedPlayerIndex: number | null): void {
+        $.emit('controller_assignment_start', Input.instance, { gamepadIndex, proposedPlayerIndex });
     }
 
     private lastNotified: { proposed: number | null; positionIndex: number } | null = null;
@@ -93,14 +81,6 @@ export class PendingAssignmentProcessor {
     }
 
     /**
-     * Creates a select player icon if it doesn't exist yet and handles its placement in the scene.
-     *
-     * @param gamepadInput - The gamepad input handler.
-     * @param positionIndex - The position index of the icon.
-     */
-    // UI creation/movement handled by ControllerAssignmentUI
-
-    /**
      * Constructs a new instance of the class.
      *
      * @param inputHandler - An object that handles input from the gamepad.
@@ -144,7 +124,7 @@ export class PendingAssignmentProcessor {
 
                 if (proposedPlayerIndex !== null) {
                     this.proposedPlayerIndex = proposedPlayerIndex;
-                    this.notifyUIProposed(gamepadInput.gamepadIndex, this.proposedPlayerIndex);
+                    this.notifyUIAssignmentStart(gamepadInput.gamepadIndex, this.proposedPlayerIndex);
                     console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
                 }
             }

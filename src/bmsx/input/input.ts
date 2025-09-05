@@ -352,7 +352,7 @@ export class Input implements RegisterablePersistent {
 	 * Represents an array of pending gamepad assignments.
 	 * @see PendingAssignmentProcessor
 	 */
-    private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
+    public pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
 
 	/**
 	 * Represents the onscreen gamepad.

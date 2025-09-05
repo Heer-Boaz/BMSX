@@ -271,6 +271,22 @@ export class GamepadInput implements InputHandler {
         this.gamepadButtonStates['right'].pressed = rightNow || this.gamepadButtonStates['right'].pressed;
         this.gamepadButtonStates['up'].pressed = upNow || this.gamepadButtonStates['up'].pressed;
         this.gamepadButtonStates['down'].pressed = downNow || this.gamepadButtonStates['down'].pressed;
+
+        // Right stick analog capture (axes 2,3)
+        const rx = gamepad.axes?.[2] ?? 0;
+        const ry = gamepad.axes?.[3] ?? 0;
+        const rmag = Math.hypot(rx, ry);
+        let rnx = 0, rny = 0, rnmag = 0;
+        if (rmag > dz) {
+            const rk = (rmag - dz) / (1 - dz);
+            if (rmag > 0) { rnx = (rx / rmag) * rk; rny = (ry / rmag) * rk; }
+            rnmag = Math.min(1, Math.max(0, rk));
+        }
+        const rsState = this.gamepadButtonStates['rs'] ?? makeButtonState();
+        rsState.value2d = [rnx, rny];
+        rsState.value = rnmag;
+        rsState.timestamp = now;
+        this.gamepadButtonStates['rs'] = rsState;
     }
 
     /**
@@ -305,7 +321,7 @@ export class GamepadInput implements InputHandler {
                         timestamp: now,
                         pressedAtMs: now,
                         pressId: pid,
-                        value: 1,
+                        value: (typeof (gamepadButton as any).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton as any).value)) : 1,
                     });
                 } else {
                     const st = prev;
@@ -314,7 +330,7 @@ export class GamepadInput implements InputHandler {
                     st.justreleased = false;
                     st.waspressed = true;
                     st.presstime = (st.presstime ?? 0) + 1;
-                    st.value = 1;
+                    st.value = (typeof (gamepadButton as any).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton as any).value)) : 1;
                     this.gamepadButtonStates[buttonId] = st;
                 }
             } else {
