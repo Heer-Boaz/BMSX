@@ -7,7 +7,6 @@ import { WorldObject } from './worldobject';
 @insavegame
 export class CameraObject extends WorldObject implements Oriented {
     public camera: Camera;
-    public active: boolean;
 
     public get rotationQ(): quat {
         return this.camera.rotationQ;

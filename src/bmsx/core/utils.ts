@@ -396,19 +396,22 @@ export function LineLength(p1: vec3, p2: vec3): number {
 
 export function isStorageAvailable(storageType: string): boolean {
     try {
-        const storage = (window as any)[storageType];
+        // Convert window -> unknown -> Record<string, Storage|undefined> to satisfy TS
+        const storage = (window as unknown as Record<string, Storage | undefined>)[storageType];
+        if (!storage) return false;
         const testKey = '__test__';
         storage.setItem(testKey, testKey);
         storage.removeItem(testKey);
         return true;
     } catch (error) {
-        return error.hasOwnProperty('code') && (
-            error.code === 22 || // everything except Firefox
-            error.code === 1014 || // Firefox
-            error.hasOwnProperty('name') && (
-                error.name === 'QuotaExceededError' || // everything except Firefox
-                error.name === 'NS_ERROR_DOM_QUOTA_REACHED' // Firefox
-            )
+        const e = error as any;
+        return e && e.hasOwnProperty('code') && (
+            e.code === 22 || // everything except Firefox
+            e.code === 1014 || // Firefox
+            (e.hasOwnProperty('name') && (
+                e.name === 'QuotaExceededError' || // everything except Firefox
+                e.name === 'NS_ERROR_DOM_QUOTA_REACHED' // Firefox
+            ))
         );
     }
 }

@@ -86,10 +86,8 @@ export class RenderPassLibrary {
                     logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
                 });
                 // Ambient now resides in the Frame UBO
-                try {
-                    const amb = $.world.ambientLight?.light;
-                    updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
-                } catch { /* ignore */ }
+                const amb = $.world.ambientLight?.light;
+                updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
             },
         });
         // Removed: standalone fog pass. Fog state is produced in FrameSharedState.
@@ -169,12 +167,10 @@ export class RenderPassLibrary {
                 }
             }
             if (passId === 'meshbatch') {
-                try {
-                    const dirBuf = MeshPipeline.getDirectionalLightBuffer();
-                    const ptBuf = MeshPipeline.getPointLightBuffer();
-                    if (!dirBuf) console.warn(`[validate] ${pass.name}: DirLightBlock buffer not initialized`);
-                    if (!ptBuf) console.warn(`[validate] ${pass.name}: PointLightBlock buffer not initialized`);
-                } catch { /* ignore */ }
+                const dirBuf = MeshPipeline.getDirectionalLightBuffer();
+                const ptBuf = MeshPipeline.getPointLightBuffer();
+                if (!dirBuf) console.warn(`[validate] ${pass.name}: DirLightBlock buffer not initialized`);
+                if (!ptBuf) console.warn(`[validate] ${pass.name}: PointLightBlock buffer not initialized`);
             }
         } catch {
             console.error(`[validate] ${pass?.name ?? 'unknown'}: error occurred during validation`);
@@ -304,18 +300,16 @@ export class RenderPassLibrary {
                     fogYMax: gv.atmosphere.fogYMax,
                 };
                 this.setState('frame_shared', { view: viewState, lighting, fog });
-                try {
-                    updateAndBindFrameUniforms(gv.backend, {
-                        offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
-                        logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
-                        time: frame?.time ?? 0,
-                        delta: frame?.delta ?? 0,
-                        view: cam.view,
-                        proj: cam.projection,
-                        cameraPos: cam.position,
-                        ambient: lighting?.ambient ? { color: lighting.ambient.color, intensity: lighting.ambient.intensity } : undefined,
-                    });
-                } catch { /* ignore if backend does not support UBOs */ }
+                updateAndBindFrameUniforms(gv.backend, {
+                    offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
+                    logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
+                    time: frame?.time ?? 0,
+                    delta: frame?.delta ?? 0,
+                    view: cam.view,
+                    proj: cam.projection,
+                    cameraPos: cam.position,
+                    ambient: lighting?.ambient ? { color: lighting.ambient.color, intensity: lighting.ambient.intensity } : undefined,
+                });
             }
         });
 

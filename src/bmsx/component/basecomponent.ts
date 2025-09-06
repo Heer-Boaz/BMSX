@@ -1,4 +1,5 @@
-import { EventEmitter, EventSubscription } from '../core/eventemitter';
+import { EventEmitter, EventSubscription, type EventSubscriber } from '../core/eventemitter';
+import { normalizeDecoratedClassName } from '../core/decorators';
 import { $ } from '../core/game';
 import { type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
@@ -56,7 +57,7 @@ export type ComponentId = string;
 /**
  * Represents a container for components.
  */
-export interface ComponentContainer extends Identifiable, Disposable {
+export interface ComponentContainer extends Identifiable, Registerable, Disposable {
     /**
      * A map of components, where the key is the component name and the value is the component instance.
      */
@@ -113,7 +114,7 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export abstract class Component<T extends ComponentContainer = ComponentContainer> implements Identifiable {
+export abstract class Component<T extends ComponentContainer = ComponentContainer> implements Identifiable, EventSubscriber {
     /**
      * The identifier of the parent component.
      */
@@ -122,7 +123,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
      * The component id is the parent id plus the component name.
      */
     public id: ComponentId; // The component id is the parent id + the component name
-    public get name(): string { return this.constructor.name; }
+    public get name(): string { return normalizeDecoratedClassName(this.constructor?.name); }
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
@@ -131,7 +132,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
      *
      * @returns The parent component.
      */
-    public get parent(): T { return Registry.instance.get(this.parentid); }
+    public get parent(): T | undefined { return Registry.instance.get<T>(this.parentid); }
     public parentAs<T extends Registerable>(): T | undefined { return Registry.instance.get<T>(this.parentid); }
     protected _enabled: boolean;
     /**
@@ -173,7 +174,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
      */
     constructor(parentid: Identifier) {
         this.parentid ??= parentid; // Store the parent id for later use
-        this.id ??= this.parentid + '_' + this.constructor.name; // Note: A component can be added once per world object
+        this.id ??= this.parentid + '_' + normalizeDecoratedClassName(this.constructor?.name); // Note: A component can be added once per world object
         this.enabled ??= true;
         // Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
         // so do not bind here to avoid running before derived decorator initializers.
@@ -186,11 +187,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
         this.detach();
         this.enabled = false;
         // Remove event subscriptions
-        const eventEmitter = EventEmitter.instance;
-        eventEmitter.removeSubscriber(this);
-
-        // Deregister the component from the entity registry
-        $.registry.deregister(this);
+        this.unbind();
     }
 
     public attach(newParent?: Identifier) {
@@ -202,7 +199,8 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
 
         const parent = this.parent;
         if (!parent) {
-            console.error(`Component ${this.id} has no parent to attach to.`);
+            // Gracefully no-op if parent is not available (e.g., during dehydration/hydration or debug toggles)
+            console.debug(`Component ${this.id} has no parent to attach to.`);
             return;
         }
         else if (!parent.components[this.name]) {
@@ -217,8 +215,8 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
         const parent = this.parent;
         if (!parent) {
             console.debug(`Component ${this.id} has no parent to detach from.`);
-            // throw new Error(`Component ${this.id} has no parent to detach from.`);
-            return; // If there's no parent, there's nothing to detach, fail silently (as this might happen with the debugging object highlighter as we are dehydrating game states)
+            // If there's no parent, there's nothing to detach; fail silently (common during dehydration/debugger operations)
+            return;
         }
 
         // Pass the constructor function (not a string). Cast to ComponentConstructor to satisfy TS.
@@ -253,8 +251,20 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
      */
     @onload
     onloadSetup() {
-        $.registry.register(this); // Register the component in the entity registry
-        // Event subscriptions are now auto-registered at instance construction by decorators.
+        this.bind();
+    }
+
+    /** Wire decorator-declared subscriptions for this component. */
+    public bind(): void {
+        Registry.instance.register(this); // Register the component in the entity registry
+        EventEmitter.instance.initClassBoundEventSubscriptions(this);
+    }
+
+    /** Unwire all subscriptions for this component. */
+    public unbind(): void {
+        // Deregister the component from the entity registry
+        EventEmitter.instance.removeSubscriber(this);
+        $.registry.deregister(this);
     }
 
     // Implement this method to handle preprocessing updates

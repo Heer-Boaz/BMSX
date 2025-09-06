@@ -1,4 +1,4 @@
-import { $ } from '../core/game';
+import { EventEmitter } from 'bmsx/core/eventemitter';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { ActiveStateMachines } from './fsmlibrary';
@@ -16,7 +16,6 @@ export const BST_MAX_HISTORY = 10;
  */
 export const DEFAULT_BST_ID = 'master';
 
-
 @insavegame
 /**
  * Represents a state machine controller that manages multiple state machines.
@@ -25,7 +24,12 @@ export class StateMachineController {
 	/**
 	 * The substate object that holds the state context for each substate.
 	 */
-	statemachines: Record<Identifier, State>;
+    statemachines: Record<Identifier, State>;
+    /** If true, controller will be advanced by systems. */
+    public tickEnabled: boolean = true;
+	// NOTE THAT THE STATE MACHINES ARE NOT STARTED AUTOMATICALLY
+	// THE TARGET OBJECT MUST CALL start() TO START THE STATE MACHINES
+	// ALSO NOTE THAT THE eventhandling_enabled FLAG OF THE **target** IS USED TO DETERMINE WHETHER EVENTS SHOULD BE DISPATCHED TO THE STATE MACHINES
 
 	/**
 	 * Gets the state machines.
@@ -64,13 +68,12 @@ export class StateMachineController {
 	 * Gets the states of the current machine.
 	 * @returns The states of the current machine.
 	 */
-    get states(): id2sstate { return this.current_machine.substates; }
+	get states(): id2sstate { return this.current_machine.substates; }
 
 	/**
 	 * Gets the state definition of the current machine.
 	 */
-    get definition(): StateDefinition { return this.current_machine.definition; }
-
+	get definition(): StateDefinition { return this.current_machine.definition; }
 
 	constructor(fsm_id?: string, id?: string) {
 		// Support parameterless construction for deserialization. In normal runtime code,
@@ -97,12 +100,62 @@ export class StateMachineController {
 	 * Starts the state machine by initializing and starting all state machines.
 	 */
     start(): void {
-        // Idempotent: initLoadSetup() avoids re-registering duplicate listeners
-        this.initLoadSetup();
+        // Ensure event subscriptions are installed before starting machines
+        this.bind();
+        // Start all state machines
+        for (const id in this.statemachines) {
+            this.statemachines[id].start();
+        }
+        this.resume();
+    }
 
-		// Start all state machines
+    /** Resume ticking without reinitializing state. */
+    public resume(): void { this.tickEnabled = true; }
+    /** Pause ticking (machines retain state). */
+    public pause(): void { this.tickEnabled = false; }
+
+	/** Wire all event subscriptions declared in machine definitions. */
+	public bind(): void {
 		for (const id in this.statemachines) {
-			this.statemachines[id].start(); // Start the state machine with the given id (i.e., set the start state as the current state) and run the start state (i.e., run the start state's 'onenter' function)
+			const machine = this.statemachines[id];
+
+			// Subscribe to all events that are defined in the machine definition for the machine and its submachines
+			const events = machine.definition?.event_list;
+			if (events && events.length > 0) {
+				events.forEach(event => {
+					let scope = event.scope;
+					switch (scope) {
+						case 'self':
+							scope = machine.target.id; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
+							break;
+						case 'all':
+						default:
+							scope = undefined; // If the scope is 'all' or undefined, subscribe to the event with the given name and scope and dispatch it to the machine with the given id and global scope, meaning that the event will be dispatched to all machines
+							break;
+					}
+					// Subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope (or global scope if no scope is provided)
+					// EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
+					EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, scope);
+				});
+			}
+		}
+	}
+
+	/** Unwire all event subscriptions declared in machine definitions. */
+	public unbind(): void {
+		for (const id in this.statemachines) {
+			const machine = this.statemachines[id];
+			const events = machine.definition?.event_list;
+			if (!events) continue;
+			events.forEach(event => {
+				let scope = event.scope;
+				switch (scope) {
+					case 'self': scope = machine.target.id; break;
+					case 'all':
+					default: scope = undefined; break;
+				}
+				EventEmitter.instance.off(event.name, this.auto_dispatch as any, scope as any, true);
+			});
 		}
 	}
 
@@ -110,37 +163,16 @@ export class StateMachineController {
 	/**
 	 * Initializes all statemachines by subscribing to events defined in the machine definition and allowing dispatching events to the appropriate machines.
 	 */
-    initLoadSetup(): void {
-        for (const id in this.statemachines) {
-            const machine = this.statemachines[id];
-
-            // Subscribe to all events that are defined in the machine definition for the machine and its submachines
-            const events = machine.definition?.event_list;
-            if (events && events.length > 0) {
-                events.forEach(event => {
-                    let scope = event.scope;
-                    switch (scope) {
-                        case 'self':
-                            scope = machine.target.id; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
-                            break;
-                        case 'all':
-                        default:
-                            scope = undefined; // If the scope is 'all' or undefined, subscribe to the event with the given name and scope and dispatch it to the machine with the given id and global scope, meaning that the event will be dispatched to all machines
-                            break;
-                    }
-                    // Subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope (or global scope if no scope is provided)
-                    // EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
-                    $.event_emitter.on(event.name, this.auto_dispatch, machine.target, scope);
-                });
-            }
-        }
-    }
+	initLoadSetup(): void {
+		this.bind();
+	}
 
 	/**
 	 * Runs the current state of the current state machine.
 	 * Also runs all state machines that have 'parallel' set to true.
 	 */
 	tick(): void {
+		if (!this.tickEnabled) return;
 		// Runs the current state of the current state machine
 		this.current_machine.tick();
 
@@ -236,6 +268,7 @@ export class StateMachineController {
 	 * @param args - Additional arguments to pass to the event handler.
 	 */
 	private auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
+		if (this.eventhandling_enabled === false) return;
 		this.sc.dispatch_event(event_name, emitter, ...args);
 	}
 

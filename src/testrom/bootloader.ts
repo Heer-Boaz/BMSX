@@ -10,9 +10,9 @@ import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
 import './test_gamemodel';
 
-// Find all (xyz as any) and replace them. Codex is stupid and always inserts buggy `as any`.
+// Find all(xyz) and replace them. Codex is stupid and always inserts buggy `as any`.
 // (\s*\(([^)]+?)\s+as\s+any\s*\))
-// $2
+// ($2)
 
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 

@@ -58,9 +58,17 @@ export class TextureManager implements RegisterablePersistent {
     private textureBarrier: AssetBarrier<WebGLTexture>;
 
     constructor(private backend?: GPUBackend, private defaultGroup: GateGroup = taskGate.group('texture:default')) {
-        Registry.instance.register(this);
         this.textureBarrier = new AssetBarrier<WebGLTexture>(this.defaultGroup);
         TextureManager._instance = this;
+        this.bind();
+    }
+
+    public bind(): void {
+        Registry.instance.register(this);
+    }
+
+    public unbind(): void {
+        Registry.instance.deregister(this);
     }
 
     public setBackend(backend: GPUBackend): void {

@@ -71,7 +71,7 @@ export class PendingAssignmentProcessor {
 
             if (newProposedPlayerIndex !== null) {
                 this.proposedPlayerIndex = newProposedPlayerIndex;
-                this.maybeNotify((this.inputHandler as any).gamepadIndex ?? 0, this.proposedPlayerIndex);
+                this.maybeNotify((this.inputHandler).gamepadIndex ?? 0, this.proposedPlayerIndex);
             }
             else {
                 // No new player index available for gamepad assignment found => don't do anything!

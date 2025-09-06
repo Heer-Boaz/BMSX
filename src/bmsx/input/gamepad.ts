@@ -321,7 +321,7 @@ export class GamepadInput implements InputHandler {
                         timestamp: now,
                         pressedAtMs: now,
                         pressId: pid,
-                        value: (typeof (gamepadButton as any).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton as any).value)) : 1,
+                        value:(typeof (gamepadButton).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton).value)) : 1,
                     });
                 } else {
                     const st = prev;
@@ -330,7 +330,7 @@ export class GamepadInput implements InputHandler {
                     st.justreleased = false;
                     st.waspressed = true;
                     st.presstime = (st.presstime ?? 0) + 1;
-                    st.value = (typeof (gamepadButton as any).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton as any).value)) : 1;
+                    st.value =(typeof (gamepadButton).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton).value)) : 1;
                     this.gamepadButtonStates[buttonId] = st;
                 }
             } else {

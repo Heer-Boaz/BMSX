@@ -260,27 +260,27 @@ export function updateBuffers(
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertexcoords.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
-    try { backend.accountUpload('vertex', vertexcoords.byteLength); } catch { /* ignore */ }
+    backend.accountUpload('vertex', vertexcoords.byteLength);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, texcoords.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
-    try { backend.accountUpload('vertex', texcoords.byteLength); } catch { /* ignore */ }
+    backend.accountUpload('vertex', texcoords.byteLength);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, zBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, zcoords.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
-    try { backend.accountUpload('vertex', zcoords.byteLength); } catch { /* ignore */ }
+    backend.accountUpload('vertex', zcoords.byteLength);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, color_override.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
-    try { backend.accountUpload('vertex', color_override.byteLength); } catch { /* ignore */ }
+    backend.accountUpload('vertex', color_override.byteLength);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, atlasid.byteLength, gl.DYNAMIC_DRAW);
     gl.bufferSubData(gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
-    try { backend.accountUpload('vertex', atlasid.byteLength); } catch { /* ignore */ }
+    backend.accountUpload('vertex', atlasid.byteLength);
 }
 
 export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number): [number, number, number, number] {
@@ -366,10 +366,9 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
             // Update per-frame defaults that depend on logical viewport size
             setupDefaultUniformValues(be, 1.0, [baseWidth, baseHeight] as unknown as vec2arr);
             // Ensure atlases are bound to expected texture units once per frame
-            try {
-                if (spriteState.atlasTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS); be.bindTexture2D(spriteState.atlasTex as unknown as WebGLTexture); }
-                if (spriteState.atlasDynamicTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS_DYNAMIC); be.bindTexture2D(spriteState.atlasDynamicTex as unknown as WebGLTexture); }
-            } catch { /* ignore if not WebGL backend */ }
+            // TODO: BAD WEBGL-SPECIFIC STUFF!!!!!!
+            if (spriteState.atlasTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS); be.bindTexture2D(spriteState.atlasTex as unknown as WebGLTexture); }
+            if (spriteState.atlasDynamicTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS_DYNAMIC); be.bindTexture2D(spriteState.atlasDynamicTex as unknown as WebGLTexture); }
             // Validate binding layout vs resources
             registry.validatePassResources('sprites', backend);
         },

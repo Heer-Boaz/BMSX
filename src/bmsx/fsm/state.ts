@@ -1,3 +1,4 @@
+import { Registry } from 'bmsx/core/registry';
 import { $ } from '../core/game';
 import { Input } from '../input/input';
 import { Identifiable, Identifier } from '../rompack/rompack';
@@ -30,7 +31,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
      * The parent state of the state (machine).
      */
-    public get parent(): State { return $.registry.get(this.parent_id); }
+    public get parent(): State { return Registry.instance.get(this.parent_id); }
 
     /**
      * The identifier of this specific instance of the state machine's root machine.
@@ -41,7 +42,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
      * The root state of the state (machine).
      */
-    public get root(): State { return $.registry.get(this.root_id); }
+    public get root(): State { return Registry.instance.get(this.root_id); }
 
     /**
      * The unique identifier for the bfsm.
@@ -198,7 +199,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
             this.id = this.make_id();
             this.transition_queue = [];
             this.critical_section_counter = 0;
-            $.registry.register(this);
+            this.bind();
         }
         this.root_id = root_id ?? this.id;
     }
@@ -906,11 +907,18 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * Also deregisters all substates.
      */
     public dispose(): void {
-        $.registry.deregister(this);
         // Also deregister all substates
         for (let state in this.substates) {
             this.substates[state].dispose();
         }
+    }
+
+    public bind(): void {
+        Registry.instance.register(this);
+    }
+
+    public unbind(): void {
+        Registry.instance.deregister(this);
     }
 
     /**

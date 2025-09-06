@@ -23,11 +23,23 @@ export class GameplayTags implements RegisterablePersistent {
 	private worldTags = new Set<TagId>();
 	private scopedTags = new Map<Identifier, Set<TagId>>();
 
-	private constructor() { Registry.instance.register(this); }
+	private constructor() {
+		this.bind();
+	}
 
 	public dispose(): void {
+		this.unbind();
 		this.worldTags.clear();
 		this.scopedTags.clear();
+	}
+
+	// Bind the tags to the registry
+	public bind(): void {
+		Registry.instance.register(this);
+	}
+
+	public unbind(): void {
+		Registry.instance.deregister(this);
 	}
 
 	// World tags

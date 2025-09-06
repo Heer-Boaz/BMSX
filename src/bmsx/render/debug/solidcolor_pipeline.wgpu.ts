@@ -43,17 +43,13 @@ export function registerSolidColorPass_WebGPU(library: RenderPassLibrary): void 
 		exec: (backend: GPUBackend, fbo: unknown) => {
 			const be = backend as WebGPUBackend;
 			// Scope validation errors around this draw for lightweight debugging
-			try { be.device.pushErrorScope('validation'); } catch { /* older runtimes */ }
+			be.device.pushErrorScope('validation');
 			be.draw(fbo as WebGPUPassEncoder, 0, 3);
 			// Pop the error scope once submitted work completes
-			try {
-				void be.device.queue.onSubmittedWorkDone().then(async () => {
-					try {
-						const err = await be.device.popErrorScope?.();
-						if (err) console.error('WebGPU validation error (debug_solid):', err.message ?? err);
-					} catch { /* ignore */ }
-				});
-			} catch { /* ignore */ }
+			void be.device.queue.onSubmittedWorkDone().then(async () => {
+				const err = await be.device.popErrorScope?.();
+				if (err) console.error('WebGPU validation error (debug_solid):', err.message ?? err);
+			});
 		},
 	});
 }

@@ -1,6 +1,7 @@
 import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
-import { withClassRegistrationAndDeferredInstanceInit } from './decorators';
+import { normalizeDecoratedClassName } from './decorators';
+import { $ } from './game';
 
 export type EventPayload = Record<string, any>;
 export type EventHandler = (event_name: string, emitter: Identifiable, payload?: EventPayload) => any;
@@ -24,7 +25,6 @@ type EventSubscriberType = EventSubscriber | (EventSubscriber & Parentable) | (E
  */
 export class EventEmitter implements RegisterablePersistent {
 	// Toggle to enable verbose event logs
-	public static debug: boolean = false;
 	get registrypersistent(): true {
 		return true;
 	}
@@ -42,6 +42,15 @@ export class EventEmitter implements RegisterablePersistent {
 	 */
 	public dispose(): void {
 		EventEmitter.instance.clear();
+	}
+
+	public bind(): void {
+		Registry.instance.register(this);
+	}
+
+	public unbind(): void {
+		// No-op
+		Registry.instance.deregister(this);
 	}
 
 	/**
@@ -75,7 +84,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Constructs a new instance of the EventEmitter class.
 	 */
 	constructor() {
-		Registry.instance.register(this);
+		this.bind();
 	}
 
 	/**
@@ -102,7 +111,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * - Auto-registers all methods declared via subscribesTo* decorators on the instance.
 	 * - Idempotent per instance: subsequent calls are no-ops.
 	 * - Throws if the subscriber does not expose an `id` (decorators require Identifiable).
-     * - Applies lifecycle gating on delivery: eventhandling_enabled/active/enabled flags, id/parentid registry checks.
+	 * - Applies lifecycle gating on delivery: eventhandling_enabled/active/enabled flags, id/parentid registry checks.
 	 * - Optional `wrapper` allows callers to intercept handler invocation (after gating).
 	 */
 	public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (handler: EventHandler, event_name: string, emitter: Identifiable, payload?: EventPayload) => any) {
@@ -112,7 +121,7 @@ export class EventEmitter implements RegisterablePersistent {
 		const self = EventEmitter.instance;
 
 		// Stable handler cache on the subscriber to avoid duplicate registrations
-		type BoundCarrier = { [EventEmitter._BOUND_HANDLER_MAP]?: Map<string, EventHandler>;[EventEmitter._INIT_DONE]?: boolean };
+		type BoundCarrier = { [EventEmitter._BOUND_HANDLER_MAP]?: Map<string, EventHandler>; [EventEmitter._INIT_DONE]?: boolean; [EventEmitter._REG_KEYS]?: Set<string> };
 		const getHandlerMap = (obj: EventSubscriberType & BoundCarrier): Map<string, EventHandler> => {
 			let m = obj[EventEmitter._BOUND_HANDLER_MAP];
 			if (!m) {
@@ -124,7 +133,7 @@ export class EventEmitter implements RegisterablePersistent {
 
 		const sid = (subscriber as Identifiable).id;
 		const ctorName = (typeof subscriber === 'object' && subscriber !== null && 'constructor' in subscriber)
-			? ((subscriber as { constructor?: { name?: string } }).constructor?.name ?? 'object')
+			? normalizeDecoratedClassName(((subscriber as { constructor?: { name?: string } }).constructor?.name ?? 'object'))
 			: 'object';
 
 		// Enforce Identifiable for decorator-based subscriptions
@@ -134,25 +143,29 @@ export class EventEmitter implements RegisterablePersistent {
 		const carrier = subscriber as EventSubscriberType & BoundCarrier;
 		if (carrier[EventEmitter._INIT_DONE]) return;
 
-			const shouldProcess = (_event_name: string, _emitter: Identifiable, _payload?: EventPayload): boolean => {
-				try {
-					const obj = subscriber as unknown as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier; parentid?: Identifier };
-					if (obj.eventhandling_enabled === false) return false;
-					if (obj.active === false) return false;
-					if (obj.enabled === false) return false;
-					if (obj.id != null && !Registry.instance.has(obj.id)) return false;
-					if (obj.parentid != null && !Registry.instance.has(obj.parentid)) return false;
-				} catch { /* ignore gating errors */ }
-				return true;
-			};
+		const shouldProcess = (_event_name: string, _emitter: Identifiable, _payload?: EventPayload): boolean => {
+			const obj = subscriber as unknown as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier; parentid?: Identifier };
+			if (obj.eventhandling_enabled === false) return false;
+			if (obj.active === false) return false;
+			if (obj.enabled === false) return false;
+			if (obj.id != null && !Registry.instance.has(obj.id)) return false;
+			if (obj.parentid != null && !Registry.instance.has(obj.parentid)) return false;
+			return true;
+		};
 
 		const handlerMap = getHandlerMap(carrier);
+		// Per-instance registration key set (idempotency)
+		let regKeys = carrier[EventEmitter._REG_KEYS];
+		if (!regKeys) {
+			Object.defineProperty(carrier, EventEmitter._REG_KEYS, { value: new Set<string>(), enumerable: false, configurable: false });
+			regKeys = carrier[EventEmitter._REG_KEYS]!;
+		}
 		constr.eventSubscriptions.forEach(subscription => {
 			const key = `${subscription.scope}|${subscription.eventName}|${subscription.handlerName}`;
 			let handler = handlerMap.get(key);
 			if (!handler) {
 				const method = (subscriber as unknown as Record<string, unknown>)[subscription.handlerName];
-				if (typeof method !== 'function') throw new Error(`Event handler '${subscription.handlerName}' is not a function on ${subscriber.constructor?.name ?? 'object'}`);
+				if (typeof method !== 'function') throw new Error(`Event handler '${subscription.handlerName}' is not a function on ${normalizeDecoratedClassName(subscriber.constructor?.name) ?? 'object'}`);
 				const bound = (method as EventHandler).bind(subscriber);
 				// Compose default gating with optional caller-provided wrapper
 				handler = ((event_name: string, emitter: Identifiable, payload?: EventPayload) => {
@@ -168,17 +181,27 @@ export class EventEmitter implements RegisterablePersistent {
 				case 'all': emitterFilter = undefined; break;
 				case 'parent':
 					emitterFilter = (subscriber as Parentable).parentid;
-					if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as Identifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have a 'parentid'.`);
+					if (!emitterFilter) {
+						if ($.debug) console.warn(`Deferred subscription: '${(subscriber as Identifiable).id}' → '${subscription.eventName}' (scope: parent) because 'parentid' is not set yet on ${normalizeDecoratedClassName(subscriber.constructor?.name)}.`);
+						return; // Skip for now; callers (e.g., @onload) may re-invoke to bind once parentid exists
+					}
 					break;
 				case 'self':
 					emitterFilter = (subscriber as Identifiable).id;
-					if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as Identifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have an 'id'.`);
+					if (!emitterFilter) {
+						if ($.debug) console.warn(`Deferred subscription: '${subscription.eventName}' (scope: self) because 'id' is not set yet on ${normalizeDecoratedClassName(subscriber.constructor?.name)}.`);
+						return;
+					}
 					break;
 				default:
 					// Custom emitter id
 					emitterFilter = subscription.scope as Identifier;
 			}
-			self.on(subscription.eventName, handler, subscriber, emitterFilter, !!subscription.persistent);
+			// Idempotent: avoid duplicate registrations for this instance+key
+			if (!regKeys.has(key)) {
+				self.on(subscription.eventName, handler, subscriber, emitterFilter, !!subscription.persistent);
+				regKeys.add(key);
+			}
 		});
 
 		// Remember we initialized this instance
@@ -227,7 +250,7 @@ export class EventEmitter implements RegisterablePersistent {
 				self.emitterScopeListeners[event_name][filtered_on_emitter_id] = new Set();
 			}
 			if (self.checkIfListenerExists(event_name, listener, subscriber, filtered_on_emitter_id)) {
-				if (EventEmitter.debug) console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
+				if ($.debug) console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
 				return; // Prevent adding the same listener multiple times
 			}
 			self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber, persistent });
@@ -236,7 +259,7 @@ export class EventEmitter implements RegisterablePersistent {
 				self.globalScopeListeners[event_name] = new Set();
 			}
 			if (self.checkIfListenerExists(event_name, listener, subscriber)) {
-				if (EventEmitter.debug) console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
+				if ($.debug) console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
 				return; // Prevent adding the same listener multiple times
 			}
 			self.globalScopeListeners[event_name].add({ listener, subscriber, persistent });
@@ -265,7 +288,7 @@ export class EventEmitter implements RegisterablePersistent {
 		// Wildcard listeners
 		for (const item of self.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
 
-		if (!anyoneSubscribed && EventEmitter.debug) {
+		if (!anyoneSubscribed && $.debug) {
 			console.warn(`No listeners for event "${event_name}" and emitter "${emitter.id}"!`);
 			if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
 		}
@@ -414,6 +437,7 @@ export namespace EventEmitter {
 	// Using a namespace to hold a private-like symbol that survives downlevel
 	export const _BOUND_HANDLER_MAP: unique symbol = Symbol('bmsx.boundEventHandlers');
 	export const _INIT_DONE: unique symbol = Symbol('bmsx.boundEventHandlersInitDone');
+	export const _REG_KEYS: unique symbol = Symbol('bmsx.boundEventHandlersRegisteredKeys');
 }
 
 export interface EventSubscriberWithIndexedHandlers {
@@ -459,11 +483,11 @@ export function subscribesToParentScopedEvent(eventName: string, persistent?: bo
             if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'parent', persistent });
             updateAllEventSubscriptions(ctor);
         };
-        withClassRegistrationAndDeferredInstanceInit(
-            context,
-            register,
-            (instance) => EventEmitter.instance.initClassBoundEventSubscriptions(instance as unknown as EventSubscriber),
-        );
+        if (context.static) {
+            context.addInitializer(function () { register(this); });
+        } else {
+            context.addInitializer(function () { register((this).constructor); });
+        }
     };
 }
 
@@ -481,11 +505,11 @@ export function subscribesToSelfScopedEvent(eventName: string, persistent?: bool
             if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'self', persistent });
             updateAllEventSubscriptions(ctor);
         };
-        withClassRegistrationAndDeferredInstanceInit(
-            context,
-            register,
-            (instance) => EventEmitter.instance.initClassBoundEventSubscriptions(instance as unknown as EventSubscriber),
-        );
+        if (context.static) {
+            context.addInitializer(function () { register(this); });
+        } else {
+            context.addInitializer(function () { register((this).constructor); });
+        }
     };
 }
 
@@ -503,11 +527,11 @@ export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: st
             if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: emitter_id, persistent });
             updateAllEventSubscriptions(ctor);
         };
-        withClassRegistrationAndDeferredInstanceInit(
-            context,
-            register,
-            (instance) => EventEmitter.instance.initClassBoundEventSubscriptions(instance as unknown as EventSubscriber),
-        );
+        if (context.static) {
+            context.addInitializer(function () { register(this); });
+        } else {
+            context.addInitializer(function () { register((this).constructor); });
+        }
     };
 }
 
@@ -525,11 +549,11 @@ export function subscribesToGlobalEvent(eventName: string, persistent?: boolean)
             if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'all', persistent });
             updateAllEventSubscriptions(ctor);
         };
-        withClassRegistrationAndDeferredInstanceInit(
-            context,
-            register,
-            (instance) => EventEmitter.instance.initClassBoundEventSubscriptions(instance as unknown as EventSubscriber),
-        );
+        if (context.static) {
+            context.addInitializer(function () { register(this); });
+        } else {
+            context.addInitializer(function () { register((this).constructor); });
+        }
     };
 }
 

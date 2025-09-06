@@ -364,34 +364,32 @@ export class WebGPUBackend implements GPUBackend {
         const expectedCount = this.pipelineBindingEntryCount.get(pipelineHandle.id) ?? 0;
         if (expectedCount === 0) return;
         const expectList = this.pipelineExpected.get(pipelineHandle.id) ?? [];
-        try {
-            let bg = this.bindGroupCache.get(pipelineHandle.id);
-            const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
-            if (!bg) {
-                const entries: GPUBindGroupEntry[] = [];
-                let missing = false;
-                for (const exp of expectList) {
-                    if (exp.kind === 'buffer') {
-                        const buf = this.uniformBindings.get(exp.binding);
-                        if (!buf) { missing = true; break; }
-                        entries.push({ binding: exp.binding, resource: { buffer: buf } });
-                    } else if (exp.kind === 'texture') {
-                        const view = this.textureBindings.get(exp.binding);
-                        if (!view) { missing = true; break; }
-                        entries.push({ binding: exp.binding, resource: view });
-                    } else if (exp.kind === 'sampler') {
-                        const samp = this.samplerBindings.get(exp.binding);
-                        if (!samp) { missing = true; break; }
-                        entries.push({ binding: exp.binding, resource: samp });
-                    }
-                }
-                if (!missing && entries.length === expectList.length) {
-                    bg = this.device.createBindGroup({ layout, entries });
-                    this.bindGroupCache.set(pipelineHandle.id, bg);
+        let bg = this.bindGroupCache.get(pipelineHandle.id);
+        const layout = (pipeline as GPURenderPipeline).getBindGroupLayout(0);
+        if (!bg) {
+            const entries: GPUBindGroupEntry[] = [];
+            let missing = false;
+            for (const exp of expectList) {
+                if (exp.kind === 'buffer') {
+                    const buf = this.uniformBindings.get(exp.binding);
+                    if (!buf) { missing = true; break; }
+                    entries.push({ binding: exp.binding, resource: { buffer: buf } });
+                } else if (exp.kind === 'texture') {
+                    const view = this.textureBindings.get(exp.binding);
+                    if (!view) { missing = true; break; }
+                    entries.push({ binding: exp.binding, resource: view });
+                } else if (exp.kind === 'sampler') {
+                    const samp = this.samplerBindings.get(exp.binding);
+                    if (!samp) { missing = true; break; }
+                    entries.push({ binding: exp.binding, resource: samp });
                 }
             }
-            if (bg && enc) enc.setBindGroup(0, bg);
-        } catch { /* ignore if layout 0 absent */ }
+            if (!missing && entries.length === expectList.length) {
+                bg = this.device.createBindGroup({ layout, entries });
+                this.bindGroupCache.set(pipelineHandle.id, bg);
+            }
+        }
+        if (bg && enc) enc.setBindGroup(0, bg);
     }
 
     draw(pass: WebGPUPassEncoder, first: number, count: number): void { const enc = pass.encoder ?? this._activePassEncoder; if (enc) enc.draw(count, 1, first, 0); }
@@ -422,16 +420,14 @@ export class WebGPUBackend implements GPUBackend {
     }
 
     bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: GPUTexture, samplerDesc?: { mag?: 'nearest' | 'linear'; min?: 'nearest' | 'linear'; wrapS?: 'clamp' | 'repeat'; wrapT?: 'clamp' | 'repeat' }): void {
-        try {
-            const view = texture.createView();
-            const mag = samplerDesc?.mag === 'linear' ? 'linear' : 'nearest';
-            const min = samplerDesc?.min === 'linear' ? 'linear' : 'nearest';
-            const address = (wrap: 'clamp' | 'repeat' | undefined): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
-            const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(samplerDesc?.wrapS), addressModeV: address(samplerDesc?.wrapT) });
-            this.textureBindings.set(texBinding, view);
-            this.samplerBindings.set(samplerBinding, sampler);
-            this.bindGroupCache.clear();
-        } catch { /* ignore if not a GPUTexture */ }
+        const view = texture.createView();
+        const mag = samplerDesc?.mag === 'linear' ? 'linear' : 'nearest';
+        const min = samplerDesc?.min === 'linear' ? 'linear' : 'nearest';
+        const address = (wrap: 'clamp' | 'repeat' | undefined): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
+        const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(samplerDesc?.wrapS), addressModeV: address(samplerDesc?.wrapT) });
+        this.textureBindings.set(texBinding, view);
+        this.samplerBindings.set(samplerBinding, sampler);
+        this.bindGroupCache.clear();
     }
 
     // Optional hook for RenderGraphRuntime to provide the active GPURenderPassEncoder

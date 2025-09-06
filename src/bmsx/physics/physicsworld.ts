@@ -1,6 +1,7 @@
+import { Registry } from 'bmsx';
 import { $ } from '../core/game';
 import { new_vec3 } from '../core/utils';
-import type { vec3 } from '../rompack/rompack';
+import type { RegisterablePersistent, vec3 } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { BroadphasePair, BroadphaseSAP } from './broadphase';
 import { ContactSolver } from './contactsolver';
@@ -21,9 +22,10 @@ export interface RaycastHit { body: PhysicsBody; point: vec3; normal: vec3; dist
 export interface ShapeCastHit extends RaycastHit { time: number; }
 
 @excludeclassfromsavegame
-export class PhysicsWorld {
+export class PhysicsWorld implements RegisterablePersistent {
     id = 'physics_world';
     registrypersistent: true = true; // kept pattern from existing codebase
+
     private bodies: PhysicsBody[] = [];
     private broadphase = new BroadphaseSAP();
     private narrow = new Narrowphase();
@@ -95,17 +97,27 @@ export class PhysicsWorld {
         let w = $.get<PhysicsWorld>('physics_world');
         if (!w) {
             w = new PhysicsWorld(opts);
-            $.register(w);
+            Registry.instance.register(w);
         }
         return w;
     }
 
+    public bind(): void {
+        // Bind the world to the registry
+        Registry.instance.register(this);
+    }
+
+    public unbind(): void {
+        // Unbind the world from the registry
+        Registry.instance.deregister(this, true);
+    }
+
     /** Dispose existing world (if any) and create a fresh one; bodies/components must recreate runtime data afterwards */
     static rebuild(opts: PhysicsWorldOptions = {}): PhysicsWorld {
-        let existing = $.get<PhysicsWorld>('physics_world');
+        let existing = Registry.instance.get<PhysicsWorld>('physics_world');
         if (existing) existing.dispose();
         const w = new PhysicsWorld(opts);
-        $.register(w);
+        w.bind();
         return w;
     }
 
@@ -122,6 +134,7 @@ export class PhysicsWorld {
     }
 
     dispose(): void {
+        this.unbind();
         this.bodies.length = 0;
         this.previousFramePairs.clear();
         this.pairInfo.clear();

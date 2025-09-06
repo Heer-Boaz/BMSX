@@ -6,16 +6,13 @@ import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { AbilityRuntimeSystem } from "../gas/abilityruntime";
 import { TaskRuntimeSystem } from "../gas/tasks";
-import { PhysicsDescriptorComponent } from '../physics/physicsdescriptorcomponent';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
-import { renderGate } from '../render/view';
 import type { Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
-import { BinaryCompressor } from "../serializer/bincompressor";
-import { Reviver, Savegame, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
+import { excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './object/cameraobject';
-import { $, runGate } from './game';
+import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
@@ -57,23 +54,25 @@ export function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
             if (prop === 'values') return (target.values).bind(target);
             if (prop === 'forEach') return (target.forEach).bind(target);
             // Map-like index access: proxy['id'] → map.get('id')
-            if (typeof prop === 'string') return target.get(prop as unknown as Identifier);
+            if (typeof prop === 'string') return target.get(prop as Identifier);
             // Fallback to default behavior
-            return Reflect.get(target as any, prop, receiver);
+            return Reflect.get(target, prop, receiver);
         },
         set(target, prop, value) {
-            if (typeof prop === 'string') { target.set(prop as unknown as Identifier, value as V); return true; }
-            (target as any)[prop as any] = value;
+            if (typeof prop === 'string') { target.set(prop as Identifier, value as V); return true; }
+            // Use Reflect to safely handle symbol keys / non-string property keys
+            Reflect.set(target, prop as PropertyKey, value);
             return true;
         },
         has(target, prop) {
-            if (typeof prop === 'string') return target.has(prop as unknown as Identifier);
-            return prop in (target as any);
+            if (typeof prop === 'string') return target.has(prop as Identifier);
+            // Use Reflect.has for non-string keys (symbols)
+            return Reflect.has(target, prop);
         },
         deleteProperty(target, prop) {
-            if (typeof prop === 'string') return target.delete(prop as unknown as Identifier);
-            delete (target as any)[prop as any];
-            return true;
+            if (typeof prop === 'string') return target.delete(prop as Identifier);
+            // Use Reflect.deleteProperty for symbol/non-string keys
+            return Reflect.deleteProperty(target, prop);
         },
     });
 }
@@ -410,6 +409,16 @@ export class World implements Stateful, RegisterablePersistent {
         $.registry.deregister(this);
     }
 
+    /** Wire decorator-declared subscriptions for the world. */
+    public bind(): void {
+        // World may have decorator-declared listeners in derived games
+        $.event_emitter.initClassBoundEventSubscriptions(this);
+        // World SC binds via startWorldStateMachine() when started
+    }
+
+    /** Unwire world subscriptions and FSM listeners. */
+    public unbind(): void { /* decorator listeners removed via removeSubscriber if needed elsewhere */ }
+
     // Note: World no longer needs an explicit registerEventSubscriptions() call.
     // Event-decorated methods auto-register on instance creation with lifecycle gating.
 
@@ -422,7 +431,6 @@ export class World implements Stateful, RegisterablePersistent {
         this.addSpace('default' satisfies initial_world_spaces);
         this.addSpace('game_start' satisfies initial_world_spaces);
         this.addSpace('ui' satisfies initial_world_spaces);
-        this.setSpace('game_start' satisfies initial_world_spaces);
 
         return this; // Return the current instance of the World for chaining
     }
@@ -478,7 +486,7 @@ export class World implements Stateful, RegisterablePersistent {
         this.systems.updateUntil(this, TickGroup.Simulation);
 
         // Physics step & event collection (dispatch moved to an ECS system)
-        const phys = $.registry.get<PhysicsWorld>('physics_world');
+        const phys = Registry.instance.get<PhysicsWorld>('physics_world');
         if (phys) {
             const collisionEvents: CollisionEvent[] = [];
             phys.step(deltaTime, (evt) => collisionEvents.push(evt));
@@ -501,7 +509,7 @@ export class World implements Stateful, RegisterablePersistent {
         const objects = this.activeObjects;
         for (let i = objects.length - 1; i >= 0; --i) {
             const o = objects[i];
-            if (o.disposeFlag) this.exile(o);
+            if (o.disposeFlag) this.destroy(o);
         }
     }
 
@@ -513,83 +521,6 @@ export class World implements Stateful, RegisterablePersistent {
      */
     public load(serialized: Uint8Array, compressed: boolean = true): void {
         $.load(serialized, compressed);
-        return;
-        // Block rendering during (de)serialization to avoid corrupt WebGL state.
-        // Also block the game update/run loop while the world is being hydrated.
-        renderGate.bump();
-        const gateToken = renderGate.begin({ blocking: true, tag: 'load' });
-
-        // Prevent the main update loop from running while loading the world
-        runGate.bump();
-        const runGateToken = runGate.begin({ blocking: true, tag: 'load' });
-        try {
-            this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
-            EventEmitter.instance.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
-
-            const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the world instance
-            temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the world instance before loading the new state (otherwise, spaces from the previous state will still be present)
-
-            let serializedState: Uint8Array;
-            if (compressed) {
-                serializedState = BinaryCompressor.decompressBinary(serialized); // Decompress the serialized state
-            } else {
-                serializedState = serialized; // Use the serialized state as is
-            }
-
-            $.registry.clear(); // Clear the registry before loading the new state (otherwise, registered objects from the previous state will still be present). Note that this will not clear the world instance itself, as the world instance has the property `registrypersistent: true` and will not be cleared. The same applies to Input, View, and other persistent objects.
-
-            // Remove all cached textures and images from the texture manager
-            $.texmanager.clear();
-            $.view.reset(); // Reset the view to the initial state
-
-            const savegame = Reviver.deserialize(serializedState) as Savegame;
-            // Assign only plain data back to the world to avoid clobbering runtime fields
-            for (const [k, v] of Object.entries(savegame.modelprops as Record<string, unknown>)) {
-                if (typeof v !== 'function') (this as any)[k] = v;
-            }
-
-            savegame.spaces.forEach(space => this.addSpace(space));
-            this.beginDepthBatch();
-            try {
-                savegame.allSpacesObjects.forEach(space_and_objects => {
-                    const space = this.get_space(space_and_objects.spaceid);
-                    const objects = space_and_objects.objects;
-                    objects.forEach(o => {
-                        if (!o) return;
-                        space.spawn(o, null, true);
-                    });
-                });
-            } finally {
-                this.endDepthBatch();
-            }
-
-            // Plugin load hook
-            for (const p of this._modules) p.onLoad?.(this);
-
-            // Deferred physics world rebuild: after all objects & components are fully hydrated
-            try {
-                let needs = false;
-                // Restrict physics world rebuild to current space to avoid cross-space coupling.
-                for (const wo of this.activeSpace.objects) {
-                    if (wo.getComponent && wo.getComponent(PhysicsDescriptorComponent)) { needs = true; break; }
-                }
-                if (needs) {
-                    const world = PhysicsWorld.rebuild();
-                    if (world.solver) world.solver.iterations = 4; // tune stability
-                }
-            } catch { /* ignore to avoid load failure if physics not present */ }
-
-            // No need to push lighting here; renderer pulls from world each frame
-        }
-        catch (e) {
-            console.error(`Error loading game state: ${e}`);
-        }
-        finally {
-            $.wasupdated = true; // Set the update flag to true to indicate that the game has been updated
-            renderGate.end(gateToken);
-            runGate.end(runGateToken);
-            $.requestPausedFrame();
-        }
     }
 
     /**
@@ -600,41 +531,6 @@ export class World implements Stateful, RegisterablePersistent {
      */
     public save(compress: boolean = true): Uint8Array {
         return $.save(compress);
-        // const createSavegame = () => {
-        //     const self = this as Record<string, any>;
-        //     const keys = Object.keys(self);
-        //     const data = {} as Record<string, any>;
-        //     for (let index = 0; index < keys.length; ++index) {
-        //         const key = keys[index];
-        //         if (World.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['World']?.[key]) continue;
-        //         if (self[key] !== null && self[key] !== undefined) {
-        //             data[key] = self[key];
-        //         }
-        //     }
-        //     const result = new Savegame();
-        //     result.modelprops = data;
-        //     result.spaces = this.spaces;
-        //     result.allSpacesObjects = [];
-        //     for (let space of this.spaces) {
-        //         result.allSpacesObjects.push({
-        //             spaceid: space.id,
-        //             objects: [...(space.objects)]
-        //         });
-        //     }
-
-        //     return result;
-        // };
-
-        // const savegame = createSavegame();
-        // const serializedState = Serializer.serialize(savegame) as Uint8Array; // Serialize the savegame to a binary format
-        // let returnedState: Uint8Array;
-        // if (compress) {
-        //     returnedState = BinaryCompressor.compressBinary(serializedState); // Compress the serialized state if requested
-        // } else {
-        //     returnedState = serializedState; // Use the serialized state as is if compression is not requested
-        // }
-
-        // return returnedState;
     }
 
     /**
@@ -847,7 +743,7 @@ export class World implements Stateful, RegisterablePersistent {
 
     /** Iterate objects that have a given component; passes the component instance too. */
     public forEachWorldObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
-        this.forEachWorldObject((o) => { const c = (o as any).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
+        this.forEachWorldObject((o) => { const c =(o).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
     }
 
     /**

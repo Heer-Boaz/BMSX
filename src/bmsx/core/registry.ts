@@ -1,4 +1,5 @@
 import { Identifier, Registerable } from '../rompack/rompack';
+import { normalizeDecoratedClassName } from './decorators';
 
 export class Registry {
     private static _instance: Registry;
@@ -70,10 +71,12 @@ export class Registry {
     }
 
     public getRegisteredEntityIdsByType(type: string): Identifier[] {
-        return this.getRegisteredEntities().filter(e => e.constructor.name === type).map(e => e.id);
+        const wanted = normalizeDecoratedClassName(type);
+        return this.getRegisteredEntities().filter(e => normalizeDecoratedClassName(e.constructor.name) === wanted).map(e => e.id);
     }
 
     public getRegisteredEntitiesByType(type: string): Registerable[] {
-        return this.getRegisteredEntities().filter(e => e.constructor.name === type);
+        const wanted = normalizeDecoratedClassName(type);
+        return this.getRegisteredEntities().filter(e => normalizeDecoratedClassName(e.constructor.name) === wanted);
     }
 }

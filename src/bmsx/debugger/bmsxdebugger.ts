@@ -15,6 +15,7 @@ import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
+import { normalizeDecoratedClassName } from '../core/decorators';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
@@ -588,7 +589,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
     $.world.activeObjects.forEach(o => {
         let row = addContent(table, 'tr', null);
         row.classList.add('selectableoption');
-        addContent(row, 'td', `${o.constructor.name}`);
+        addContent(row, 'td', `${normalizeDecoratedClassName(o.constructor?.name)}`);
         addContent(row, 'td', `${o.id}`);
 
         row.onclick = (_) => {
@@ -664,7 +665,7 @@ function handleOpenListenersDialog(eventName: string, scope: string, listeners: 
     listeners.forEach(({ listener, subscriber }) => {
         const row = addContent(table, 'tr', null);
         addContent(row, 'td', listener.name || 'anonymous');
-        addContent(row, 'td', subscriber.constructor.name);
+        addContent(row, 'td', normalizeDecoratedClassName(subscriber.constructor?.name));
     });
 
     document.body.insertBefore(dialogDiv, null);

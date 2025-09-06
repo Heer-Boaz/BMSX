@@ -143,7 +143,7 @@ export class SoundMaster implements RegisterablePersistent {
     private pendingStingerReturnTo: asset_id | null = null;
 
     constructor() {
-        Registry.instance.register(this);
+        this.bind();
         this.tracks = {};
         this.buffers = {};
         this.sndContext = null; // Passed externally via the init method
@@ -178,6 +178,16 @@ export class SoundMaster implements RegisterablePersistent {
             this.gainNode = gainnode;
         }
         this.volume = startingVolume ?? 0;
+    }
+
+    public bind(): void {
+        // Bind the sound master to the registry
+        Registry.instance.register(this);
+    }
+
+    public unbind(): void {
+        // Unbind the sound master from the registry
+        Registry.instance.deregister(this, true);
     }
 
     private predecodeTracks() {
@@ -359,7 +369,7 @@ export class SoundMaster implements RegisterablePersistent {
         if (extra?.gain) extra.gain.disconnect();
         if (extra?.filter) extra.filter.disconnect();
         this.nodeExtras.delete(node);
-        try { node.buffer = null; } catch { /* ignored */ }
+        if (node?.buffer) node.buffer = null; // Help GC
     }
 
     private isAudioType(value: unknown): value is AudioType {
@@ -630,13 +640,11 @@ export class SoundMaster implements RegisterablePersistent {
 
         // Ramp down old music if possible
         if (currentExtras?.gain) {
-            try {
-                const g = currentExtras.gain.gain;
-                g.cancelScheduledValues(ctxTime);
-                const cur = g.value;
-                g.setValueAtTime(cur, ctxTime);
-                g.linearRampToValueAtTime(0.0001, ctxTime + fadeSec);
-            } catch { /* ignore */ }
+            const g = currentExtras.gain.gain;
+            g.cancelScheduledValues(ctxTime);
+            const cur = g.value;
+            g.setValueAtTime(cur, ctxTime);
+            g.linearRampToValueAtTime(0.0001, ctxTime + fadeSec);
         }
 
         this.createNode(target).then(node => {
@@ -653,11 +661,9 @@ export class SoundMaster implements RegisterablePersistent {
             const extras = this.nodeExtras.get(node);
             const g = extras?.gain?.gain;
             if (g) {
-                try {
-                    g.cancelScheduledValues(this.sndContext.currentTime);
-                    g.setValueAtTime(g.value, this.sndContext.currentTime);
-                    g.linearRampToValueAtTime(1.0, this.sndContext.currentTime + fadeSec);
-                } catch { /* ignore */ }
+                g.cancelScheduledValues(this.sndContext.currentTime);
+                g.setValueAtTime(g.value, this.sndContext.currentTime);
+                g.linearRampToValueAtTime(1.0, this.sndContext.currentTime + fadeSec);
             }
 
             if (currentNode) {
@@ -682,5 +688,6 @@ export class SoundMaster implements RegisterablePersistent {
         this.voicesByType = null;
         this.pausedByType = null;
         this.endedListenersByType = null;
+        this.unbind();
     }
 }

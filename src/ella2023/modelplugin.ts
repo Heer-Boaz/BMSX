@@ -16,7 +16,7 @@ export const EILA_PLUGIN = {
 		// Register persistent Eila game state service
 		new EilaGameState();
 		// Register event service for handlers
-		new EilaEventService();
+		new EilaEventService().activate();
 	},
 };
 
@@ -29,18 +29,11 @@ export class EilaEventService extends Service {
         super('eila_events');
     }
 
-    public override dispose() {
-        // Remove any event subscriptions and force deregister persistent record
-        $.event_emitter.removeSubscriber(this);
-        this.disableEvents();
-        $.registry.deregister(this, true);
-    }
-
     // Example service state (DTO) participation: opt-in via getState/setState.
-    public getState() { return { humiliationCount: this._humiliationCount }; }
-    public setState(dto: unknown): void {
+    public override getState() { return { humiliationCount: this._humiliationCount }; }
+    public override setState(dto: unknown): void {
         if (dto && typeof dto === 'object' && 'humiliationCount' in dto) {
-            const n = (dto as any).humiliationCount;
+            const n = dto.humiliationCount;
             if (typeof n === 'number' && isFinite(n)) this._humiliationCount = n;
         }
     }

@@ -12,7 +12,7 @@ import { CLASS_REGISTRATION_DONE } from './symbols';
 export function defer(fn: () => void): void {
     try {
         // Prefer microtask if available on globalThis
-        const qm = (globalThis as any).queueMicrotask;
+        const qm =(globalThis).queueMicrotask;
         if (typeof qm === 'function') { qm(fn); return; }
         // Fallback to Promise microtask
         Promise.resolve().then(fn);
@@ -45,7 +45,7 @@ export function withClassRegistrationAndDeferredInstanceInit(
     init: (instance: object) => void,
 ): void {
     // Guard in case the decorator context implementation doesn't provide addInitializer.
-    const addInit = (context as any).addInitializer;
+    const addInit =(context).addInitializer;
     if (typeof addInit !== 'function') {
         // Best-effort fallback: if there's no addInitializer, avoid throwing.
         // In such environments we cannot reliably defer instance init or register from an instance initializer,

@@ -98,27 +98,27 @@ export function getPressedState(
 }
 
 export function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
-    const {
-        pressed = false,
-        justpressed = false,
-        justreleased = false,
-        waspressed = false,
-        wasreleased = false,
-        consumed = false,
-        presstime = null,
-        timestamp = performance.now(),
-        pressedAtMs = null,
-        releasedAtMs = null,
-        pressId = null,
-        value = null,
-        value2d = null,
-    } = partialState ?? {};
-    return { pressed, justpressed, justreleased, waspressed, wasreleased, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
+	const {
+		pressed = false,
+		justpressed = false,
+		justreleased = false,
+		waspressed = false,
+		wasreleased = false,
+		consumed = false,
+		presstime = null,
+		timestamp = performance.now(),
+		pressedAtMs = null,
+		releasedAtMs = null,
+		pressId = null,
+		value = null,
+		value2d = null,
+	} = partialState ?? {};
+	return { pressed, justpressed, justreleased, waspressed, wasreleased, consumed, presstime, timestamp, pressedAtMs, releasedAtMs, pressId, value, value2d };
 }
 
 export function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {
-    const { action = actionname, alljustpressed = false, allwaspressed = false, alljustreleased = false, ...buttonState } = partialState ?? {};
-    return { action, alljustpressed, allwaspressed, alljustreleased, ...makeButtonState(buttonState) };
+	const { action = actionname, alljustpressed = false, allwaspressed = false, alljustreleased = false, ...buttonState } = partialState ?? {};
+	return { action, alljustpressed, allwaspressed, alljustreleased, ...makeButtonState(buttonState) };
 }
 
 export const options: EventListenerOptions & { passive: boolean, once: boolean } = {
@@ -177,9 +177,9 @@ export class InputStateManager {
 	 *
 	 * @param event - The input event to be added.
 	 */
-    addInputEvent(event: InputEvent): void {
-        this.inputBuffer.push(event);
-    }
+	addInputEvent(event: InputEvent): void {
+		this.inputBuffer.push(event);
+	}
 
 	/**
 	 * Retrieves the current state of a button based on its identifier.
@@ -281,12 +281,12 @@ export class InputStateManager {
 	 * @param identifier - The unique identifier of the button, which can be a string or a number.
 	 * If the button state exists, it will be marked as consumed.
 	 */
-    consumeBufferedEvent(identifier: ButtonId, pressId?: number | null): void {
-        const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (pressId == null || event.pressId === pressId));
-        if (inputEvents.length > 0) {
-            inputEvents.forEach(event => { event.consumed = true; });
-        }
-    }
+	consumeBufferedEvent(identifier: ButtonId, pressId?: number | null): void {
+		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (pressId == null || event.pressId === pressId));
+		if (inputEvents.length > 0) {
+			inputEvents.forEach(event => { event.consumed = true; });
+		}
+	}
 }
 
 /**
@@ -352,16 +352,16 @@ export class Input implements RegisterablePersistent {
 	 * Represents an array of pending gamepad assignments.
 	 * @see PendingAssignmentProcessor
 	 */
-    public pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
+	public pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
 
 	/**
 	 * Represents the onscreen gamepad.
 	 * @see OnscreenGamepad
 	 */
-    private onscreenGamepad: OnscreenGamepad;
+	private onscreenGamepad: OnscreenGamepad;
 
-    // Spawn-once guard for UI controller
-    private uiControllerSpawned = false;
+	// Spawn-once guard for UI controller
+	private uiControllerSpawned = false;
 
 	/**
 	 * Gets the onscreen gamepad.
@@ -520,6 +520,91 @@ export class Input implements RegisterablePersistent {
 	 * @param debug Whether to enable debug mode. Default is true.
 	 */
 	constructor(startingGamepadIndex?: number) {
+		this.bind();
+
+		const initAlreadyConnectedGamepads = () => {
+			// Handle gamepad input initialization
+			// Initialize gamepad states for already connected gamepads
+			// *Must happen after the starting gamepad index is set, if any, to ensure that any related HID device is initialized first based on the gamepad whose input started the game*
+			const gamepads = navigator.getGamepads();
+			for (let i = 0; i < gamepads.length; i++) {
+				const gamepad = gamepads[i];
+				if (!gamepad) continue;
+				// Skip the gamepad if it is the starting gamepad index (already initialized) or if it does not have 'gamepad' in its id
+				if (typeof startingGamepadIndex === 'number' && gamepad.index === startingGamepadIndex) continue;
+
+				this.addPendingGamepadAssignment(gamepad);
+			}
+		}
+
+		if (typeof startingGamepadIndex === 'number') {
+			const gp = navigator.getGamepads?.()[startingGamepadIndex];
+			if (gp) {
+				const gamepadInput = new GamepadInput(gp);
+				this.assignGamepadToPlayer(gamepadInput, 1);
+				// Call init to ensure user interaction for permission before initializing all other connected gamepads
+				gamepadInput.init().then(initAlreadyConnectedGamepads);
+			}
+		}
+		else {
+			// If no starting gamepad index is provided, initialize all connected gamepads
+			initAlreadyConnectedGamepads();
+		}
+
+		// Spawn UI controller in the persistent UI space when the space is ready.
+		// Defer spawning ControllerAssignmentUI until spaces are guaranteed to exist; see pollInput()
+	}
+
+	/**
+	 * Checks if the onscreen gamepad is enabled.
+	 * @returns {boolean} True if the onscreen gamepad is enabled, false otherwise.
+	 */
+	public get isOnscreenGamepadEnabled(): boolean {
+		const controls = document.getElementById('d-pad-controls');
+		return !controls!.hidden;
+	}
+
+	/**
+	 * Enables the onscreen gamepad and assigns it as the gamepad input for player 1.
+	 */
+	public enableOnscreenGamepad(): void {
+		this.onscreenGamepad ??= new OnscreenGamepad();
+		this.onscreenGamepad.init();
+		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
+	}
+
+	/**
+	 * Enables the debug mode for the game screen.
+	 * Attaches event listeners to the game screen element to handle debug events.
+	 */
+	public enableDebugMode(): void {
+		const gamescreen = document.getElementById('gamescreen');
+		gamescreen.addEventListener('click', this.handleDebugEvents, options);
+		gamescreen.addEventListener('mousedown', this.handleDebugEvents, options);
+		gamescreen.addEventListener('mousemove', this.handleDebugEvents, options);
+		gamescreen.addEventListener('mouseup', this.handleDebugEvents, options);
+		gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
+		gamescreen.addEventListener('contextmenu', e => this.handleDebugEvents(e), options);
+		window.addEventListener('keydown', e => this.handleDebugEvents(e), options);
+	}
+
+	/**
+	 * Disposes the input system by removing all pending gamepad assignments,
+	 * player inputs, event subscriptions, and deregistering the input system.
+	 * Also removes the input instance.
+	 */
+	public dispose(): void {
+		// Remove all pending gamepad assignments
+		this.pendingGamepadAssignments = [];
+
+		// Remove all player inputs
+		this.playerInputs = [];
+		this.unbind();
+		// Remove the input instance
+		Input._instance = undefined;
+	}
+
+	public bind(): void {
 		// Register the input system
 		Registry.instance.register(this);
 
@@ -573,112 +658,33 @@ export class Input implements RegisterablePersistent {
 		};
 		document.addEventListener('visibilitychange', () => { if (document.hidden) handleVisibilityLost(); }, options);
 		window.addEventListener('pagehide', handleVisibilityLost, options);
-
-		const initAlreadyConnectedGamepads = () => {
-			// Handle gamepad input initialization
-			// Initialize gamepad states for already connected gamepads
-			// *Must happen after the starting gamepad index is set, if any, to ensure that any related HID device is initialized first based on the gamepad whose input started the game*
-			const gamepads = navigator.getGamepads();
-			for (let i = 0; i < gamepads.length; i++) {
-				const gamepad = gamepads[i];
-				if (!gamepad) continue;
-				// Skip the gamepad if it is the starting gamepad index (already initialized) or if it does not have 'gamepad' in its id
-				if (typeof startingGamepadIndex === 'number' && gamepad.index === startingGamepadIndex) continue;
-
-				this.addPendingGamepadAssignment(gamepad);
-			}
-		}
-
-		if (typeof startingGamepadIndex === 'number') {
-			const gp = navigator.getGamepads?.()[startingGamepadIndex];
-			if (gp) {
-				const gamepadInput = new GamepadInput(gp);
-				this.assignGamepadToPlayer(gamepadInput, 1);
-				// Call init to ensure user interaction for permission before initializing all other connected gamepads
-				gamepadInput.init().then(initAlreadyConnectedGamepads);
-			}
-		}
-		else {
-			// If no starting gamepad index is provided, initialize all connected gamepads
-			initAlreadyConnectedGamepads();
-		}
-
-		// Spawn UI controller in the persistent UI space when the space is ready.
-        // Defer spawning ControllerAssignmentUI until spaces are guaranteed to exist; see pollInput()
 	}
 
-	/**
-	 * Checks if the onscreen gamepad is enabled.
-	 * @returns {boolean} True if the onscreen gamepad is enabled, false otherwise.
-	 */
-	public get isOnscreenGamepadEnabled(): boolean {
-		const controls = document.getElementById('d-pad-controls');
-		return !controls!.hidden;
-	}
-
-	/**
-	 * Enables the onscreen gamepad and assigns it as the gamepad input for player 1.
-	 */
-	public enableOnscreenGamepad(): void {
-		this.onscreenGamepad ??= new OnscreenGamepad();
-		this.onscreenGamepad.init();
-		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
-	}
-
-	/**
-	 * Enables the debug mode for the game screen.
-	 * Attaches event listeners to the game screen element to handle debug events.
-	 */
-	public enableDebugMode(): void {
-		const gamescreen = document.getElementById('gamescreen');
-		gamescreen.addEventListener('click', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mousedown', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mousemove', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mouseup', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
-		gamescreen.addEventListener('contextmenu', e => this.handleDebugEvents(e), options);
-		window.addEventListener('keydown', e => this.handleDebugEvents(e), options);
-	}
-
-	/**
-	 * Disposes the input system by removing all pending gamepad assignments,
-	 * player inputs, event subscriptions, and deregistering the input system.
-	 * Also removes the input instance.
-	 */
-	public dispose(): void {
-		// Remove all pending gamepad assignments
-		this.pendingGamepadAssignments = [];
-
-		// Remove all player inputs
-		this.playerInputs = [];
-
+	public unbind(): void {
 		// Remove all event subscriptions
 		EventEmitter.instance.removeSubscriber(this);
 
 		// Deregister the input system
 		Registry.instance.deregister(this);
-
-		// Remove the input instance
-		Input._instance = undefined;
 	}
 
 	/**
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
-    public pollInput(): void {
-        const now = performance.now();
-        // Ensure UI controller exists once spaces are ready
-        if (!this.uiControllerSpawned) {
-            const ui = $.world?.get_space?.('ui');
-            if (ui) {
-                const existing = $.world.getWorldObject('controller_assignment_ui');
-                if (!existing) ui.spawn(new ControllerAssignmentUI());
-                this.uiControllerSpawned = true;
-            }
-        }
-        this.playerInputs.forEach(player => {
-            player.pollInput();
-            player.update(now);
+	public pollInput(): void {
+		const now = performance.now();
+		// Ensure UI controller exists once spaces are ready
+		if (!this.uiControllerSpawned) {
+			const ui = $.world?.get_space?.('ui');
+			if (ui) {
+				const existing = $.world.getWorldObject('controller_assignment_ui');
+				if (!existing) ui.spawn(new ControllerAssignmentUI());
+				this.uiControllerSpawned = true;
+			}
+		}
+		this.playerInputs.forEach(player => {
+			player.pollInput();
+			player.update(now);
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');

@@ -389,11 +389,9 @@ export class RenderGraphRuntime {
         // If an external asset/task gate system is present (optional), we can delay execution until
         // blocking async loads finish, and then invalidate once to rebuild resource lifetimes.
         // Integration contract: global taskGate?.group('render') or similar provides readiness.
-        try {
-            const gateGroup = taskGate.group('render');
-            if (gateGroup && !gateGroup.ready) return; // Defer frame until required assets loaded
-            if (gateGroup && gateGroup.ready && this._pendingInvalidateOnReady) { this.invalidate(); this._pendingInvalidateOnReady = false; }
-        } catch { /* ignore if taskGate not wired */ }
+        const gateGroup = taskGate.group('render');
+        if (gateGroup && !gateGroup.ready) return; // Defer frame until required assets loaded
+        if (gateGroup && gateGroup.ready && this._pendingInvalidateOnReady) { this.invalidate(); this._pendingInvalidateOnReady = false; }
         checkWebGLError('Before compile');
         if (!this.compiled) this.compile(frame);
         checkWebGLError('After compile');

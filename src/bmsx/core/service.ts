@@ -1,5 +1,8 @@
 import { type RegisterablePersistent, type Identifier, type Identifiable } from '../rompack/rompack';
-import { $ } from './game';
+import { EventEmitter } from './eventemitter';
+import { Stateful } from '../fsm/fsmtypes';
+import { StateMachineController } from '../fsm/fsmcontroller';
+import { Registry } from './registry';
 
 /**
  * Base class for non-world-bound, persistent services (UE-style Subsystems).
@@ -11,61 +14,101 @@ import { $ } from './game';
  * - Decorator-driven event subscriptions are initialized via the shared decorator logic
  *   (they will run after construction and after Registry.register due to deferred init).
  */
-export abstract class Service implements Identifiable, RegisterablePersistent {
-  /** Unique identifier for the service (override or pass via constructor). */
-  public readonly id: Identifier;
+export abstract class Service implements Stateful, Identifiable, RegisterablePersistent {
+	/** Unique identifier for the service (override or pass via constructor). */
+	public id: Identifier;
+	sc: StateMachineController;
+    /** True when the service participates in gameplay. */
+    public active: boolean = false;
+    /** If false, systems should not advance time-based logic for this service. */
+    public tickEnabled: boolean = true;
 
-  /**
-   * If true, service survives Registry.clear() calls (e.g., during world reloads).
-   */
-  public get registrypersistent(): true { return true; }
+	/**
+	 * If true, service survives Registry.clear() calls (e.g., during world reloads).
+	 */
+	public get registrypersistent(): true { return true; }
 
-  /**
-   * Controls whether the service processes events (checked by EventEmitter gating).
-   * Services default to listening immediately; subclasses may toggle as needed.
-   */
-  public eventhandling_enabled: boolean = true;
+	/**
+	 * Controls whether the service processes events (checked by EventEmitter gating).
+	 * Services default to listening immediately; subclasses may toggle as needed.
+	 */
+	public eventhandling_enabled: boolean = false;
 
-  /** Optional state snapshot API; implement in subclasses to participate in Savegame. */
-  public abstract getState?(): unknown;
-  public abstract setState?(dto: unknown): void;
+	// Default no-op state hooks; subclasses override to participate in Savegame.
+	public getState(): unknown { return undefined; }
+	public setState(_: unknown): void { /* no-op by default */ }
 
-  /**
-   * Construct a new Service.
-   * @param id Unique identifier. If omitted, defaults to the class name in lower_snake_case.
-   * @param opts Optional flags for initial state.
-   */
-  protected constructor(id?: Identifier, opts?: { eventhandlingEnabled?: boolean }) {
-    this.id = id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
-    if (opts?.eventhandlingEnabled === false) this.disableEvents();
-    $.registry.register(this);
-  }
+	/**
+	 * Construct a new Service.
+	 * @param id Unique identifier. If omitted, defaults to the class name in lower_snake_case.
+	 * @param opts Optional flags for initial state.
+	 */
+	protected constructor(id?: Identifier) {
+		this.id = id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
+		// Register service in global registry
+		this.bind();
 
-  /**
-   * Convenience: enable event processing for this service.
-   */
-  public enableEvents(): void { this.eventhandling_enabled = true; }
-  /**
-   * Convenience: disable event processing for this service.
-   */
-  public disableEvents(): void { this.eventhandling_enabled = false; }
+		this.sc = new StateMachineController(this.constructor.name, this.id);
+	}
 
-  /**
-   * Dispose the service; unsubscribes from events and deregisters from the Registry.
-   * Note: persistent records are preserved by default in this codebase; pass `true` to
-   * Registry.deregister's second argument if removal of the persistent record is required.
-   */
-  public dispose(): void {
-    $.event_emitter.removeSubscriber(this);
-    this.eventhandling_enabled = false;
-    // For persistent services, the Registry retains the record by default; callers may
-    // deregister with force if complete removal is desired.
-    $.registry.deregister(this);
-  }
+	/**
+	 * Convenience: enable event processing for this service.
+	 */
+	public enableEvents(): void { this.eventhandling_enabled = true; }
 
-  private static deriveIdFromConstructor(name: string): Identifier {
-    // Convert PascalCase/MyService to lower_snake_case: my_service
-    const snake = name.replace(/^_+/, '').replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
-    return (snake || 'service') as Identifier;
-  }
+	/**
+	 * Convenience: disable event processing for this service.
+	 */
+	public disableEvents(): void { this.eventhandling_enabled = false; }
+
+	/**
+	 * Dispose the service; unsubscribes from events and deregisters from the Registry.
+	 * Note: persistent records are preserved by default in this codebase; pass `true` to
+	 * Registry.deregister's second argument if removal of the persistent record is required.
+	 */
+	public dispose(): void {
+		// Remove all event subscriptions for this service and mark it inactive.
+		EventEmitter.instance.removeSubscriber(this);
+		this.disableEvents();
+		// Deregister, preserving persistence behavior unless caller forces removal.
+		Registry.instance.deregister(this, true);
+	}
+
+	/** Wire decorator-declared subscriptions for this service. */
+	public bind(): void {
+		Registry.instance.register(this);
+		EventEmitter.instance.initClassBoundEventSubscriptions(this);
+		// Bind controller subscriptions (no start on revive/bind)
+		this.sc?.bind();
+	}
+
+	/** Unwire all subscriptions for this service. */
+	public unbind(): void {
+		Registry.instance.deregister(this);
+		EventEmitter.instance.removeSubscriber(this);
+	}
+
+	/** BeginPlay-style activation for services (starts FSM). */
+	public activate(): void {
+		this.active = true;
+		this.enableEvents();
+		this.sc.start();
+	}
+
+	public deactivate(): void {
+		this.active = false;
+		this.disableEvents();
+		this.sc.pause();
+	}
+
+	private static deriveIdFromConstructor(name: string): Identifier {
+		// Convert PascalCase/MyService to lower_snake_case: my_service
+		const snake = name
+			.replace(/^_+/, '') // strip leading underscores
+			.replace(/([a-z0-9])([A-Z])/g, '$1_$2') // aA -> a_A
+			.replace(/[-\s]+/g, '_') // dashes/spaces -> underscore
+			.replace(/__+/g, '_') // collapse duplicate underscores
+			.toLowerCase();
+		return (snake || 'service') as Identifier;
+	}
 }

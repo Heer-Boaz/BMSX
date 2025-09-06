@@ -12,8 +12,6 @@ import { $world } from '../game';
 import { WorldObject } from './worldobject';
 
 export abstract class PooledWorldObject extends WorldObject {
-    protected active = true; // zichtbaar / updatebaar
-
     /** Subclasses geven een reset implementatie voor initialisatie van state. */
     protected abstract reset(...args: any[]): void; // eslint-disable-line @typescript-eslint/no-explicit-any
     /** Subclasses must still implement run/paint like gewone WorldObject lifecycle. */

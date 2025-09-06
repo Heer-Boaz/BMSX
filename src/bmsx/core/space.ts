@@ -94,7 +94,11 @@ export class Space {
         model.onObjectSpawned(this, o);
         // Ensure we pass a full vec3 to onspawn (z defaults to 0)
         const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z ?? 0 } : undefined;
-        !skip_onspawn_event && o.onspawn?.(spawnPos); // Trigger onspawn after adding the object to the space
+        // Activate object (BeginPlay). WorldObject guarantees this API.
+        if (!skip_onspawn_event) {
+            o.onspawn?.(spawnPos);
+            o.activate();
+        }
 
         // Mark depth sort dirty; if in a batch, collect space id once
         if (model.depthDirtyBatch) model.depthDirtyBatch.add(this.id); else this.depthSortDirty = true;
@@ -158,5 +162,5 @@ export const spaceid_2_space = Symbol('id2space');
 export const objid_2_objspaceid = Symbol('obj_id2obj_space_id');// Optional per-object hooks for space transitions
 interface SpaceAware { onleaveSpace?(from: Identifier): void; onenterSpace?(to: Identifier): void; }
 export function isSpaceAware(x: unknown): x is SpaceAware {
-    return !!x && typeof x === 'object' && ('onleaveSpace' in (x as any) || 'onenterSpace' in (x as any));
+    return !!x && typeof x === 'object' &&('onleaveSpace' in (x) || 'onenterSpace' in(x));
 }

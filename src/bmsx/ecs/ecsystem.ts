@@ -10,6 +10,8 @@ import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { TileSize } from "../systems/msx";
+import { Identifiable } from "bmsx/rompack/rompack";
+import { Stateful } from "bmsx";
 
 export enum TickGroup {
 	PrePhysics = 10,
@@ -92,12 +94,8 @@ function isBehaviorTreeObject(o: WorldObject): o is WorldObject & {
 	return r.btreecontexts !== undefined && typeof r.btreecontexts === 'object' && typeof r.tickTree === 'function';
 }
 
-function hasStateController(o: WorldObject): o is WorldObject & {
-	sc: { tick: () => void };
-	disposeFlag?: boolean;
-} {
-	const r = o as unknown as Record<string, unknown>;
-	return r.sc !== undefined && typeof r.sc === 'object' && typeof (r.sc as Record<string, unknown>).tick === 'function';
+function hasStateController(o: Stateful): o is Stateful {
+	return o.sc?.tick !== undefined;
 }
 
 // Additional guards and helper types to avoid `` elsewhere in this file
@@ -171,6 +169,8 @@ export class BehaviorTreeSystem extends ECSystem {
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as WorldObject;
 			if (!isBehaviorTreeObject(o)) continue;
+			if ((o as any).active === false) continue;
+			if ((o as any).tickEnabled === false) continue;
 			const bts = o.btreecontexts;
 			if (!bts) continue;
 			for (const id in bts) {
@@ -184,12 +184,18 @@ export class BehaviorTreeSystem extends ECSystem {
 export class StateMachineSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
 	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			if (!hasStateController(o)) continue;
-			if (!o.disposeFlag) o.sc.tick();
-		}
+        // Tick all world objects' state machines (gated)
+        const objs = model.activeObjects;
+        for (let i = 0; i < objs.length; ++i) {
+            const o = objs[i] as WorldObject;
+            if (!hasStateController(o)) continue;
+            if (o.disposeFlag) continue;
+            const sc = o.sc;
+            if (!sc.tickEnabled) continue;
+            sc.tick();
+        }
+		// Tick all service's state machines
+		
 	}
 }
 
@@ -464,20 +470,20 @@ export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 /** PhysicsCollisionEventSystem: translate PhysicsWorld collision events to engine events. */
 export class PhysicsCollisionEventSystem extends ECSystem {
     constructor(p = 28) { super(TickGroup.PostPhysics, p); }
-    update(model: World): void {
-        const events: CollisionEvent[] = (model as any).drainPhysicsEvents?.() ?? [];
+    update(world: World): void {
+        const events: CollisionEvent[] = world.drainPhysicsEvents() ?? [];
         if (!events || events.length === 0) return;
         for (const evt of events) {
             const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.world.getWorldObject(evt.a.userData) : (evt.a.userData as unknown);
             const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.world.getWorldObject(evt.b.userData) : (evt.b.userData as unknown);
             if (!goA && !goB) continue;
-            const payload = { type: evt.type, otherId: (goB as any)?.id ?? null, point: evt.point, normal: evt.normal };
+            const payload = { type: evt.type, otherId: (goB as Identifiable).id ?? null, point: evt.point, normal: evt.normal };
             if (goA) EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payload);
-            if (goB) EventEmitter.instance.emit('physicsCollision', goB as WorldObject, { ...payload, otherId: (goA as any)?.id ?? null });
+            if (goB) EventEmitter.instance.emit('physicsCollision', goB as WorldObject, { ...payload, otherId: (goA as Identifiable).id ?? null });
             // Also emit typed events if listeners prefer name-specific subscriptions
             const name = 'physicsCollision_' + evt.type;
             if (goA) EventEmitter.instance.emit(name, goA as WorldObject, payload);
-            if (goB) EventEmitter.instance.emit(name, goB as WorldObject, { ...payload, otherId: (goA as any)?.id ?? null });
+            if (goB) EventEmitter.instance.emit(name, goB as WorldObject, { ...payload, otherId: (goA as Identifiable)?.id ?? null });
         }
     }
 }

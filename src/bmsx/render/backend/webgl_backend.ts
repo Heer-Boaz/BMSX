@@ -42,7 +42,7 @@ export class WebGLBackend implements GPUBackend {
         // No internal manager; caller creates PipelineManager with this backend
     }
     // (Static helpers have moved to core/gl_resources.ts; existing external usages should import from there.)
-    createTextureFromImage(img: ImageBitmap, desc: TextureParams): WebGLTexture { const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null); try { this.frameStats.bytesUploaded += img.width * img.height * 4; this.frameStats.textureBytes += img.width * img.height * 4; } catch { /* ignore */ } return t; }
+    createTextureFromImage(img: ImageBitmap, desc: TextureParams): WebGLTexture { const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null); this.frameStats.bytesUploaded += img.width * img.height * 4; this.frameStats.textureBytes += img.width * img.height * 4; return t; }
     createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {
         const gl = this.gl;
         gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
@@ -56,7 +56,9 @@ export class WebGLBackend implements GPUBackend {
             data[i * 4 + 3] = Math.round(rgba[3] * 255);
         }
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-        try { const bytes = width * height * 4; this.frameStats.bytesUploaded += bytes; this.frameStats.textureBytes += bytes; } catch { /* ignore */ }
+        const bytes = width * height * 4;
+        this.frameStats.bytesUploaded += bytes;
+        this.frameStats.textureBytes += bytes;
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_BASE_LEVEL, 0);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
@@ -312,32 +314,28 @@ export class WebGLBackend implements GPUBackend {
         // Inline detailed diagnostics on error to pinpoint root cause
         const err = CATCH_WEBGL_ERROR ? gl.getError() : gl.NO_ERROR;
         if (CATCH_WEBGL_ERROR && err !== gl.NO_ERROR) {
-            try {
-                const vao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
-                const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
-                // Attempt to inspect a few common attributes
-                const posLoc = this.getAttribLocation('a_position');
-                const instLocs = ['a_i0', 'a_i1', 'a_i2', 'a_i3'].map(n => this.getAttribLocation(n));
-                const attribState = (loc: number) => (loc >= 0 ? {
-                    enabled: !!gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_ENABLED),
-                    divisor: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_DIVISOR) as number,
-                    buf: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) as WebGLBuffer | null,
-                } : null);
-                const pos = attribState(posLoc);
-                const inst = instLocs.map(attribState);
-                let u0: WebGLBuffer | null = null, u1: WebGLBuffer | null = null;
-                try {
-                    u0 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 0) as WebGLBuffer | null;
-                    u1 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 1) as WebGLBuffer | null;
-                } catch { }
-                console.error(
-                    `WebGL error ${err} after drawElementsInstanced; ` +
-                    `firstIndex=${firstIndex} indexCount=${indexCount} instanceCount=${instanceCount} firstInstance=${firstInstance} indexType=${type}; ` +
-                    `vao=${!!vao} ebo=${!!ebo} ubo0=${!!u0} ubo1=${!!u1}; ` +
-                    `pos=${pos ? `en=${pos.enabled} buf=${!!pos.buf}` : 'n/a'}; ` +
-                    `inst=${inst.map(s => s ? `en=${s.enabled} div=${s.divisor} buf=${!!s.buf}` : 'n/a').join(',')}`
-                );
-            } catch { /* ignore diagnostics errors */ }
+            const vao = gl.getParameter(gl.VERTEX_ARRAY_BINDING) as WebGLVertexArrayObject | null;
+            const ebo = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING) as WebGLBuffer | null;
+            // Attempt to inspect a few common attributes
+            const posLoc = this.getAttribLocation('a_position');
+            const instLocs = ['a_i0', 'a_i1', 'a_i2', 'a_i3'].map(n => this.getAttribLocation(n));
+            const attribState = (loc: number) => (loc >= 0 ? {
+                enabled: !!gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_ENABLED),
+                divisor: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_DIVISOR) as number,
+                buf: gl.getVertexAttrib(loc, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) as WebGLBuffer | null,
+            } : null);
+            const pos = attribState(posLoc);
+            const inst = instLocs.map(attribState);
+            let u0: WebGLBuffer | null = null, u1: WebGLBuffer | null = null;
+            u0 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 0) as WebGLBuffer | null;
+            u1 = gl.getIndexedParameter(gl.UNIFORM_BUFFER_BINDING, 1) as WebGLBuffer | null;
+            console.error(
+                `WebGL error ${err} after drawElementsInstanced; ` +
+                `firstIndex=${firstIndex} indexCount=${indexCount} instanceCount=${instanceCount} firstInstance=${firstInstance} indexType=${type}; ` +
+                `vao=${!!vao} ebo=${!!ebo} ubo0=${!!u0} ubo1=${!!u1}; ` +
+                `pos=${pos ? `en=${pos.enabled} buf=${!!pos.buf}` : 'n/a'}; ` +
+                `inst=${inst.map(s => s ? `en=${s.enabled} div=${s.divisor} buf=${!!s.buf}` : 'n/a').join(',')}`
+            );
         }
     }
 

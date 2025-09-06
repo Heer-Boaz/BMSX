@@ -12,7 +12,15 @@ export class EilaGameState implements RegisterablePersistent {
 	public room_mgr: RoomMgr = new RoomMgr();
 	public numOfPlayers: number = 1;
 
-	constructor() { Registry.instance.register(this); }
+	constructor() { this.bind(); }
+
+	public bind(): void {
+		Registry.instance.register(this);
+	}
+
+	public unbind(): void {
+		Registry.instance.deregister(this);
+	}
 
 	public dispose(): void {
 	}

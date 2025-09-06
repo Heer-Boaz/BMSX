@@ -6,6 +6,11 @@ import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";
 
+function normalizeTypeName(raw: string | undefined | null): string {
+    if (!raw) return '';
+    return raw.startsWith('_') ? raw.replace(/^_+/, '') : raw;
+}
+
 // Decorators onload/onsave are defined locally in this file
 type ConstructorWithSaveGame<T = any> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
 
@@ -78,21 +83,19 @@ export class Serializer {
     static get_typename(value: any): string {
         if (!value) return '';
         if (typeof value === 'function') {
-            // Dit is een class/constructor; geef de classnaam terug
-            return value.name || '(anonymous)';
+            return normalizeTypeName((value as Function).name) || '(anonymous)';
         }
         if (typeof value === 'object') {
-            // Instance → pak constructornaam
-            return value.constructor?.name ?? 'Object';
+            const raw = (value as { constructor?: { name?: string } })?.constructor?.name ?? 'Object';
+            return normalizeTypeName(raw) || raw;
         }
-        // primitives / symbol / etc.
         return typeof value;
     }
 
     static createInclusionCacheKey(obj: unknown): string {
-        return (typeof obj === 'function')
-            ? (obj as Function).name
-            : ((obj as { constructor?: { name?: string } })?.constructor?.name);
+        if (typeof obj === 'function') return normalizeTypeName((obj as Function).name);
+        const name = (obj as { constructor?: { name?: string } })?.constructor?.name;
+        return normalizeTypeName(name);
     }
 
     // Ensure this method walks the prototype/constructor chain so abstract/base-class annotations are honored.
@@ -133,7 +136,8 @@ export class Serializer {
         // Walk prototype chain of the instance
         let proto: any = Object.getPrototypeOf(value as object);
         while (proto && proto.constructor && proto.constructor.name !== 'Object') {
-            if (Serializer.excludedProperties[proto.constructor.name]?.[key] === true) { typeMap.set(key, true); return true; }
+            const tname = Serializer.get_typename(proto.constructor);
+            if (Serializer.excludedProperties[tname]?.[key] === true) { typeMap.set(key, true); return true; }
             proto = Object.getPrototypeOf(proto);
         }
         // Check whether the type of the property itself should be excluded
@@ -298,7 +302,8 @@ export class Serializer {
             let proto = Object.getPrototypeOf(value);
             const saveFunctions: ((...args: any[]) => any)[] = [];
             while (proto && proto.constructor && proto.constructor.name !== 'Object') {
-                const s = Serializer.onSaves[proto.constructor.name];
+                const cname = Serializer.get_typename(proto.constructor);
+                const s = Serializer.onSaves[cname];
                 s && saveFunctions.push(...s);
                 proto = Object.getPrototypeOf(proto);
             }
@@ -360,7 +365,7 @@ export class Reviver {
         delete obj.typename;
     }
     static get_constructor_for_type(typename: string): new () => any {
-        return Reviver.constructors[typename];
+        return Reviver.constructors[typename] ?? Reviver.constructors[normalizeTypeName(typename)];
     }
 
     static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }) {
@@ -388,7 +393,8 @@ export class Reviver {
                 if (!ctor) {
                     console.error(`[Reviver] No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
                     // Add the typename to the excluded properties to prevent deserialization again after raising the error
-                    Reviver.excludedProperties[data.typename].id = true;
+                    Reviver.excludedProperties[normalizeTypeName(data.typename)] ??= {};
+                    Reviver.excludedProperties[normalizeTypeName(data.typename)].id = true;
                     idToObject[id] = null; // Mark as null to avoid further processing
                     continue;
                 }
@@ -445,7 +451,8 @@ export class Reviver {
             let proto = Object.getPrototypeOf(obj);
             let reviverFunctions = [];
             while (proto && proto.constructor && proto.constructor.name !== 'Object') {
-                const revivers = Reviver.onLoads[proto.constructor.name];
+                const cname = Serializer.get_typename(proto.constructor);
+                const revivers = Reviver.onLoads[cname];
                 revivers && reviverFunctions.push(...revivers);
                 proto = Object.getPrototypeOf(proto);
             }
@@ -586,8 +593,9 @@ export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext)
  */
 export function excludeclassfromsavegame(value: any, _context: ClassDecoratorContext) {
     (value as ConstructorWithSaveGame).__exclude_savegame__ = true;
-    Serializer.classExcludeMap.set(value.name, true);
-    Serializer.excludedObjectTypes.add(value.name);
+    const key = normalizeTypeName((value as Function)?.name);
+    Serializer.classExcludeMap.set(key, true);
+    Serializer.excludedObjectTypes.add(key);
 }
 
 type VoiceState = { id: string | number; offset: number; params: ModulationParams; priority: number };

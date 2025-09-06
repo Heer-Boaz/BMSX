@@ -5,6 +5,7 @@ import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import type { EventBagName, listed_sdef_event, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
+import { normalizeDecoratedClassName } from '../core/decorators';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 
 /**
@@ -30,7 +31,7 @@ export class HandlerRegistry {
 // assign-fsm-augment.ts (unchanged logic, now gets keys from decorator)
 export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set<string>) {
     const reg = HandlerRegistry.instance;
-    const className = ctor.name || 'Anonymous';
+    const className = normalizeDecoratedClassName(ctor.name) || 'Anonymous';
     const entries = getDeclaredFsmHandlers(ctor);
     if (!entries.length || !linkedMachines?.size) return;
 

@@ -9,6 +9,8 @@ import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
 import { StateDefinitions } from '../../fsm/fsmlibrary';
 import { normalizeDecoratedClassName } from '../decorators';
+import { EventEmitter } from "../eventemitter";
+import { Registry } from "../registry";
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -79,8 +81,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		component.detach();
 	}
 
-
-
 	/**
 	 * Returns the primitive value of the WorldObject instance.
 	 * @returns The ID of the WorldObject.
@@ -94,11 +94,15 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public id: Identifier;       
 
-	/**
-	 * Indicates whether the object is flagged for disposal.
-	 * If true, the object will be disposed of at the end of the game's current update cycle.
-	 */
-	public disposeFlag: boolean;
+    /** True when the object is part of the world and should participate in gameplay. */
+    public active: boolean;
+    /** If false, systems should not advance time-based logic for this object. */
+    public tickEnabled: boolean;
+    /**
+     * Indicates whether the object is flagged for disposal.
+     * If true, the object will be disposed of at the end of the game's current update cycle.
+     */
+    public disposeFlag: boolean;
 
 	protected _pos: vec3;
 	/**
@@ -473,17 +477,23 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		// Add components that should be auto-added to this class after the object has been spawned so that the component can retrieve the object via its id
 		this.addAutoComponents();
 
-        this.eventhandling_enabled = true; // Now active for event handling
-        // Start the object's state machines on fresh spawn
-        // (Revive path skips onspawn, so revived machines are not reset.)
-        try { this.sc.start(); } catch (e) { console.error(`FSM start failed for ${this.id}:`, e); }
+		this.active = true;
+		this.tickEnabled = true;
+		this.eventhandling_enabled = true; // Now active for event handling
+		// Start the object's state machines on fresh spawn
+		// (Revive path skips onspawn, so revived machines are not reset.)
+		this.sc.start();
     }
+
+    /** BeginPlay-style activation entry; mirrors onspawn behavior. */
+    public activate(): void { this.onspawn(); }
 
 	/**
 	 * Called when the object is removed from its space without being destroyed.
 	 * Default behavior: stop consuming events.
 	 */
 	public ondespawn(): void {
+		this.active = false;
 		this.eventhandling_enabled = false;
 	}
 
@@ -498,7 +508,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public dispose(): void {
 		// Unsubscribe from events
-		$.event_emitter.removeSubscriber(this);
+		this.active = false;
 		this.eventhandling_enabled = false; // Disable event handling immediately
 
 		// Dispose of components
@@ -509,7 +519,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.sc.dispose();
 
 		// Deregister the object from the entity registry
-		$.registry.deregister(this);
+		this.unbind();
 	}
 
 	/**
@@ -634,8 +644,10 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.visible = DEFAULT_VISIBLE;
 		this.pos = new_vec3(...DEFAULT_POSITION_VALUES);
 		this.size = new_vec3(...DEFAULT_SIZE_VALUES);
-		this.disposeFlag = false;
-		this.eventhandling_enabled = false; // Block event handling until spawned
+        this.disposeFlag = false;
+        this.active = false;
+        this.tickEnabled = true;
+        this.eventhandling_enabled = false; // Block event handling until spawned
 
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (fsm_id && !StateDefinitions[fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${fsm_id}'"`);
@@ -671,21 +683,24 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
     @onload
     onLoadSetup() {
         // Ensure object is registered after revive (onspawn is skipped during revive)
-        $.registry.register(this);
         // Binding is orchestrated by the engine wiring phase via bind()
         // Do not force-enable event handling here; rely on lifecycle hooks (onspawn/ondespawn)
+		this.bind();
     }
 
-    /** Wire decorator-declared subscriptions and FSM listeners for this object. */
+    /** Wire decorator-declared subscriptions for this object and bind its controller (revive path). */
     public bind(): void {
-        $.event_emitter.initClassBoundEventSubscriptions(this);
-        this.sc?.initLoadSetup();
+        Registry.instance.register(this);
+        EventEmitter.instance.initClassBoundEventSubscriptions(this);
+        this.sc.bind();
     }
 
     /** Unwire subscriptions and FSM listeners for this object. */
     public unbind(): void {
         // Best-effort: remove sc listeners by removing the subscriber (target) as well
-        $.event_emitter.removeSubscriber(this);
+		this.sc.unbind();
+		EventEmitter.instance.removeSubscriber(this);
+        Registry.instance.deregister(this);
     }
 
 	/**

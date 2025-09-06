@@ -9,7 +9,7 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
     const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintWorldFSM' };
     return $.init({ ...args, worldConfig }).then(() => {
         // set input map previously done in do_one_time_game_init
-        $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as any);
+        $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
         $.view.default_font = new BFont(BitmapId);
         $.start();
     });

@@ -97,11 +97,17 @@ export interface Disposable {
 	dispose(): void;
 }
 
-export interface Registerable extends Identifiable, Disposable {
-	registrypersistent?: boolean;
+export interface Bindable {
+	bind(): void;
+	unbind(): void;
 }
 
-export interface RegisterablePersistent extends Registerable, Identifiable, Disposable {
+export interface Registerable extends Identifiable, Disposable, Bindable {
+	registrypersistent?: boolean;
+	eventhandling_enabled?: boolean;
+}
+
+export interface RegisterablePersistent extends Registerable {
 	registrypersistent: true;
 }
 

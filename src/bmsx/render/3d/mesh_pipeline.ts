@@ -287,7 +287,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
             // WebGL2: RGBA16F for positions + per-target scale in A
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, texels);
             gl.bindTexture(gl.TEXTURE_2D, null);
-            try { backend.accountUpload('texture', texels.byteLength); } catch { /* ignore */ }
+            backend.accountUpload('texture', texels.byteLength);
             buffers.morphPosTex = tex;
             buffers.morphPosTexSize = { w: width, h: height };
             buffers.morphCount = targetCount;
@@ -337,7 +337,7 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, width, height, 0, gl.RG, gl.HALF_FLOAT, texels);
             gl.bindTexture(gl.TEXTURE_2D, null);
-            try { backend.accountUpload('texture', texels.byteLength); } catch { /* ignore */ }
+            backend.accountUpload('texture', texels.byteLength);
             buffers.morphNormTex = tex;
             buffers.morphNormTexSize = { w: width, h: height };
             buffers.morphNormCount = nCount;
@@ -765,7 +765,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
                 const bytes = batchCount * INSTANCE_STRIDE_BYTES;
                 const u8slice = instanceScratchU8.subarray(0, bytes);
                 gl.bufferSubData(gl.ARRAY_BUFFER, 0, u8slice);
-                try { (getRenderContext().backend as WebGLBackend).accountUpload('vertex', u8slice.byteLength); } catch { /* ignore */ }
+                (getRenderContext().backend as WebGLBackend).accountUpload('vertex', u8slice.byteLength);
                 checkWebGLError('mesh.instanced: after bufferSubData');
                 const _b = getRenderContext().backend as WebGLBackend;
                 const _pass: PassEncoder = { fbo: null, desc: { label: 'meshbatch' } };

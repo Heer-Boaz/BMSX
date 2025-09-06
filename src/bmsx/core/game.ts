@@ -311,8 +311,8 @@ export class Game {
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
-		if ($.input.isOnscreenGamepadEnabled) {
-			$.input.enableOnscreenGamepad();
+		if (this.input.isOnscreenGamepadEnabled) {
+			this.input.enableOnscreenGamepad();
 		}
 		const gview = new GameView(worldConfig.viewportSize);
 		$view = gview;
@@ -335,8 +335,6 @@ export class Game {
 			console.error("Failed to initialize PSG:", error);
 		}
 		AudioEventManager.instance.init([rompack.audioevents], null);
-		// Wire global audio event listener (AEM is not a Registerable entity)
-		this.aem.bind(this.event_emitter);
 
 		if (this.debug) {
 			// @ts-ignore
@@ -350,7 +348,7 @@ export class Game {
 			// // @ts-ignore
 			// window['registry'] = global.registry;
 			// // @ts-ignore
-			// window['eventEmitter'] = $.event_emitter;
+			// window['eventEmitter'] = this.event_emitter;
 
 			Input.instance.enableDebugMode();
 		}
@@ -367,18 +365,18 @@ export class Game {
 		$world.init_on_boot(); // build definitions, spawn modules, etc.
 
 		// Wiring phase (fresh boot): bind all registered entities (services, world, objects, components)
-		for (const ent of this.registry.getRegisteredEntities()) {
-			const binder = (ent as unknown as { bind?: (bus: EventEmitter) => void }).bind;
-			if (typeof binder === 'function') binder.call(ent, this.event_emitter);
-		}
+        for (const ent of this.registry.getRegisteredEntities()) {
+            const maybe = ent as { bind?: (bus: EventEmitter) => void };
+            if (typeof maybe.bind === 'function') maybe.bind(this.event_emitter);
+        }
 
-		// Activate: start FSMs for freshly spawned objects (revive path skips start)
-		this.world.forEachWorldObject((o) => { try { (o).sc?.start?.(); } catch (e) { console.error(`FSM start failed for ${o?.id}:`, e); } }, { scope: 'all' });
+		// Activation: services begin play here (objects already activated in onspawn)
+        for (const ent of this.registry.getRegisteredEntities()) {
+            if (ent instanceof Service) { ent.activate(); }
+        }
 
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
-		if (!this.registry.has('physics_world')) {
-			this.registry.register(new PhysicsWorld());
-		}
+		new PhysicsWorld().bind();
 
 		this.initialized = true; // Mark the game as initialized
 		return this; // Allow chaining
@@ -498,10 +496,10 @@ export class Game {
 	 * @returns void
 	 */
 	public stop(): void {
-		$.running = false;
+		this.running = false;
 		window.cancelAnimationFrame(this.animationFrameRequestid);
 		window.requestAnimationFrame(() => {
-			$.view.handleResize.call($.view);
+			this.view.handleResize.call(this.view);
 			this.sndmaster.stopEffect();
 			this.sndmaster.stopMusic();
 		});
@@ -560,10 +558,10 @@ export class Game {
 			tempSpaces.forEach(s => this.world.removeSpace(s));
 
 			// Reset registries except persistent entities
-			$.registry.clear();
+			this.registry.clear();
 			// Purge textures and reset view
-			$.texmanager.clear();
-			$.view.reset();
+			this.texmanager.clear();
+			this.view.reset();
 
 			// Apply plain model props back to world
 			for (const [k, v] of Object.entries(sg.modelprops as Record<string, unknown>)) {
@@ -587,28 +585,26 @@ export class Game {
 						// (FSM state remains as revived; do not call sc.start())
 					});
 				});
-			} finally { this.world.endDepthBatch(); }
+			} finally {
+				this.world.endDepthBatch();
+			}
 
 			// Plugin load hooks
 			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);
 
 			// Wiring phase (revive): bind all registered entities (no FSM start here)
-			for (const ent of this.registry.getRegisteredEntities()) {
-				const binder = (ent as unknown as { bind?: (bus: EventEmitter) => void }).bind;
-				if (typeof binder === 'function') binder.call(ent, this.event_emitter);
-			}
+            for (const ent of this.registry.getRegisteredEntities()) {
+				ent?.bind();
+            }
 
-			// Wire global audio event listener (AEM isn't a Registerable)
-			this.aem.bind(this.event_emitter);
-
-			// Activate: enable event handling on revived objects only (FSMs are alreaSdy revived)
-			this.world.forEachWorldObject((o) => { (o).eventhandling_enabled = true; }, { scope: 'all' });
+			// Activate: enable event handling on revived objects only (FSMs are already revived)
+			// this.world.forEachWorldObject((o) => { o.eventhandling_enabled = true; }, { scope: 'all' });
 
 			// Restore service state (opt-in)
 			const services = sg.servicesState ?? {};
 			for (const [id, dto] of Object.entries(services)) {
-				const svc = this.registry.get(id);
-				if (svc && typeof (svc as Service).setState === 'function') (svc as Service).setState!(dto);
+				const svc = this.registry.get(id) as Service | undefined;
+				svc?.setState?.(dto);
 			}
 		} catch (e) {
 			console.error(`Error loading game state: ${e}`);

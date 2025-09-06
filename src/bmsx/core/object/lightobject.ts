@@ -5,7 +5,6 @@ import { WorldObject } from './worldobject';
 @insavegame
 export abstract class LightObject extends WorldObject {
     public light: Light;
-    public active: boolean;
 
     public get color() {
         return this.light.color;

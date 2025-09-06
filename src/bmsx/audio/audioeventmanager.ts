@@ -1,4 +1,4 @@
-import { EventHandler } from '../core/eventemitter';
+import { EventEmitter, EventHandler } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import type {
@@ -185,19 +185,19 @@ export class AudioEventManager implements RegisterablePersistent {
 	private queuesByType: Record<AudioType, AudioEventQueue> = { sfx: [], music: [], ui: [] };
 	private resumeOnNextEndByType: Record<AudioType, boolean> = { sfx: false, music: false, ui: false };
 
-	init(maps: id2audioevent[], handlers?: AudioHandler[]): void {
-		this.handlers = handlers ?? [];
-		this.merged = this.mergeMaps(maps);
-		this.anyListener = (event_name, emitter, payload) => {
-			switch (emitter.id) {
-				case 'view':
-				case 'amg':
-					// Ignore events from these emitters
-					return false;
-			}
-			return this.onEvent(event_name, payload as AudioEventPayload, emitter);
-		};
-		$.event_emitter.onAny(this.anyListener, true);
+    init(maps: id2audioevent[], handlers?: AudioHandler[]): void {
+        this.handlers = handlers ?? [];
+        this.merged = this.mergeMaps(maps);
+        this.anyListener = (event_name, emitter, payload) => {
+            switch (emitter.id) {
+                case 'view':
+                case 'amg':
+                    // Ignore events from these emitters
+                    return false;
+            }
+            return this.onEvent(event_name, payload as AudioEventPayload, emitter);
+        };
+        // Wiring subscription is performed via bind(bus) to centralize lifecycle
 
 		// subscribe to voice end events for sfx and ui to manage queue/pause
 		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx' as AudioType, () => this.onChannelEnded('sfx'));
@@ -264,12 +264,21 @@ export class AudioEventManager implements RegisterablePersistent {
 	}
 
 	dispose(): void {
-		if (this.anyListener) $.event_emitter.offAny(this.anyListener, true);
-		this.handlers = [];
-		this.anyListener = undefined;
-		if (this.endUnsubByType['sfx']) this.endUnsubByType['sfx']();
-		if (this.endUnsubByType['ui']) this.endUnsubByType['ui']();
-	}
+        if (this.anyListener) $.event_emitter.offAny(this.anyListener, true);
+        this.handlers = [];
+        this.anyListener = undefined;
+        if (this.endUnsubByType['sfx']) this.endUnsubByType['sfx']();
+        if (this.endUnsubByType['ui']) this.endUnsubByType['ui']();
+    }
+
+    /** Wire global audio event listener. */
+    public bind(): void {
+        if (this.anyListener) EventEmitter.instance.onAny(this.anyListener, true);
+    }
+    /** Unwire global audio event listener. */
+    public unbind(): void {
+        if (this.anyListener) EventEmitter.instance.offAny(this.anyListener, true);
+    }
 
 	private onEvent(name: string, payload: AudioEventPayload = {}, emitter: Identifiable): boolean {
 		// 1) allow complex handlers to preempt

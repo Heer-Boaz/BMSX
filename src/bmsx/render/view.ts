@@ -102,7 +102,16 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public get id(): 'view' { return 'view'; }
 	public dispose(): void {
-		// Deregister from registry
+		this.unbind();
+	}
+
+	public bind(): void {
+		// Bind the view to the registry
+		Registry.instance.register(this);
+	}
+
+	public unbind(): void {
+		// Unbind the view from the registry
 		Registry.instance.deregister(this);
 	}
 

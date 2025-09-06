@@ -1,11 +1,11 @@
 import { Registry } from '../core/registry';
-import { subscribesToGlobalEvent } from '../core/eventemitter';
-import { $ } from '../core/game';
+import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
 import * as SpritesPipeline from '../render/2d/sprites_pipeline';
 import * as MeshPipeline from '../render/3d/mesh_pipeline';
 import * as ParticlesPipeline from '../render/3d/particles_pipeline';
 import { RegisterablePersistent } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { $ } from 'bmsx/core/game';
 
 // TODO: FIND A WAY TO NOT INITIALIZE ALL THIS STUFF WHEN THE GAME ROM IS NOT A DEBUG-ROM!
 const HUD_ID = 'bmsx-render-hud';
@@ -72,28 +72,28 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 	private _lightToggleAdded = false;
 	private readonly SUMMARY_FREQUENCY = 500; // 500 frames (is 10 seconds, given the strict 50fps)
 
-	constructor() {
-		this.enabled = false;
-		this.useEMA = true;
-		// derive EMA alpha from SUMMARY_FREQUENCY: alpha = 2 / (N + 1)
-		this.emaAlpha = 2 / (this.SUMMARY_FREQUENCY + 1);
-		// Register for lifecycle-aware event processing
-		Registry.instance.register(this);
-	}
+    constructor() {
+        this.enabled = false;
+        this.useEMA = true;
+        // derive EMA alpha from SUMMARY_FREQUENCY: alpha = 2 / (N + 1)
+        this.emaAlpha = 2 / (this.SUMMARY_FREQUENCY + 1);
+        // Register for lifecycle-aware event processing
+        Registry.instance.register(this);
+    }
 
 	// Implement Disposable for Registry/Registerable compatibility
 	public dispose(): void {
 		// Unsubscribe from all events for this instance
-		$.event_emitter.removeSubscriber(this);
+		EventEmitter.instance.removeSubscriber(this);
 		// Remove DOM overlay if present
 		const el = document.getElementById(HUD_ID);
 		if (el && el.parentElement) el.parentElement.removeChild(el);
 		this.enabled = false;
 	}
 
-	@subscribesToGlobalEvent('frameend', true)
-	updateNow(): void {
-		if (!this.enabled) return;
+    @subscribesToGlobalEvent('frameend', true)
+    updateNow(): void {
+        if (!this.enabled) return;
 		const el = ensureHudElement();
 		const contentEl = document.getElementById(HUD_ID + '-content')!;
 		const lightsHeaderEl = document.getElementById(HUD_ID + '-lights-header')!;
@@ -105,6 +105,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 			lightsHeaderEl.addEventListener('mouseleave', () => { lightsHeaderEl.style.textDecoration = 'none'; lightsHeaderEl.style.cursor = 'default'; });
 			this._lightToggleAdded = true;
 		}
+
 		const gv = $.view;
 		const rg = gv.renderGraph;
 		if (!rg) { el.textContent = 'Render HUD: no graph'; return; }
@@ -250,6 +251,16 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		this.enabled = false;
 		const el = document.getElementById(HUD_ID);
 		if (el) el.style.display = 'none';
+	}
+
+    /** Wire decorator-declared subscriptions for this overlay. */
+    public bind(): void {
+        EventEmitter.instance.initClassBoundEventSubscriptions(this);
+    }
+
+    /** Unwire overlay subscriptions. */
+    public unbind(): void {
+        EventEmitter.instance.removeSubscriber(this);
 	}
 
 	// Toggle EMA vs fixed window averaging

@@ -32,7 +32,7 @@ export function glCreateBuffer(
     if (!data) return buffer;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-    try { getRenderContext().backend.accountUpload?.('vertex', data.byteLength); } catch { /* ignore */ }
+    getRenderContext().backend.accountUpload?.('vertex', data.byteLength);
     return buffer;
 }
 
@@ -44,7 +44,7 @@ export function glCreateElementBuffer(
     if (!data) return buffer;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-    try { getRenderContext().backend.accountUpload?.('index', data.byteLength); } catch { /* ignore */ }
+    getRenderContext().backend.accountUpload?.('index', data.byteLength);
     return buffer;
 }
 
@@ -111,10 +111,10 @@ export function glCreateTexture(
 
     if (img) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-        try { getRenderContext().backend.accountUpload?.('texture', img.width * img.height * 4); } catch { /* ignore */ }
+        getRenderContext().backend.accountUpload?.('texture', img.width * img.height * 4);
     } else if (size) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, size.x, size.y, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        try { getRenderContext().backend.accountUpload?.('texture', size.x * size.y * 4); } catch { /* ignore */ }
+        getRenderContext().backend.accountUpload?.('texture', size.x * size.y * 4);
     }
 
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -143,7 +143,7 @@ export function glCreateShadowMapTextureAndFramebuffer(
         gl.UNSIGNED_SHORT,
         null,
     );
-    try { getRenderContext().backend.accountUpload?.('texture', desc.size.x * desc.size.y * 2); } catch { /* ignore */ }
+    getRenderContext().backend.accountUpload?.('texture', desc.size.x * desc.size.y * 2);
 
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -194,7 +194,7 @@ export function glCreateDepthTexture(
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, width, height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
-    try { getRenderContext().backend.accountUpload?.('texture', width * height * 2); } catch { /* ignore */ }
+    getRenderContext().backend.accountUpload?.('texture', width * height * 2);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
