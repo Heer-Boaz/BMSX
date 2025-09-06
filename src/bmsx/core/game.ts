@@ -23,6 +23,7 @@ import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
+import { SpaceObject } from './space';
 
 global = globalThis || window; // Ensure global is defined
 
@@ -306,8 +307,6 @@ export class Game {
 
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
-		// Surface duplicate/missing-listener logs in development
-		EventEmitter.debug = this._debug === true;
 
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
@@ -336,6 +335,8 @@ export class Game {
 			console.error("Failed to initialize PSG:", error);
 		}
 		AudioEventManager.instance.init([rompack.audioevents], null);
+		// Wire global audio event listener (AEM is not a Registerable entity)
+		this.aem.bind(this.event_emitter);
 
 		if (this.debug) {
 			// @ts-ignore
@@ -363,7 +364,16 @@ export class Game {
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
 		$world = new World(worldConfig);
-		$world.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the world object is available to the model
+		$world.init_on_boot(); // build definitions, spawn modules, etc.
+
+		// Wiring phase (fresh boot): bind all registered entities (services, world, objects, components)
+		for (const ent of this.registry.getRegisteredEntities()) {
+			const binder = (ent as unknown as { bind?: (bus: EventEmitter) => void }).bind;
+			if (typeof binder === 'function') binder.call(ent, this.event_emitter);
+		}
+
+		// Activate: start FSMs for freshly spawned objects (revive path skips start)
+		this.world.forEachWorldObject((o) => { try { (o).sc?.start?.(); } catch (e) { console.error(`FSM start failed for ${o?.id}:`, e); } }, { scope: 'all' });
 
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
 		if (!this.registry.has('physics_world')) {
@@ -504,7 +514,7 @@ export class Game {
 		const worldAny = this.world as unknown as Record<string, unknown>;
 		const keys = Object.keys(worldAny);
 		const data: Record<string, unknown> = {};
-		const WorldCtor: any = this.world.constructor as any;
+		const WorldCtor: any = this.world.constructor;
 		for (let i = 0; i < keys.length; ++i) {
 			const k = keys[i];
 			// Respect World.keys_to_exclude_from_save and dynamic excludes
@@ -515,9 +525,9 @@ export class Game {
 		const sg = new Savegame();
 		sg.modelprops = data;
 		sg.spaces = this.world.spaces;
-		sg.allSpacesObjects = [] as any;
+		sg.allSpacesObjects = [] as SpaceObject[];
 		for (const space of this.world.spaces) {
-			(sg.allSpacesObjects as any).push({ spaceid: space.id, objects: [...space.objects] });
+			sg.allSpacesObjects.push({ spaceid: space.id, objects: [...space.objects] });
 		}
 
 		// Capture service state DTOs (opt-in via getState)
@@ -557,7 +567,7 @@ export class Game {
 
 			// Apply plain model props back to world
 			for (const [k, v] of Object.entries(sg.modelprops as Record<string, unknown>)) {
-				if (typeof v !== 'function') (this.world as any)[k] = v;
+				if (typeof v !== 'function') (this.world as { [key: string]: any })[k] = v;
 			}
 
 			// Recreate spaces and spawn objects
@@ -566,13 +576,33 @@ export class Game {
 			try {
 				sg.allSpacesObjects.forEach(space_and_objects => {
 					const space = this.world.get_space(space_and_objects.spaceid);
-					const objects = space_and_objects.objects as any[];
-					objects.forEach(o => { if (o) space.spawn(o, null as any, true); });
+					const objects = space_and_objects.objects as WorldObject[];
+					objects.forEach(o => {
+						if (!o) return;
+						// Attach to space without invoking onspawn (we'll re-register and rewire below)
+						space.spawn(o, null, true);
+						// Ensure revived objects are present in the Registry so components can resolve parent links
+						if (!this.registry.has(o.id)) this.registry.register(o);
+						// Allow event handlers to process for this object after hydration
+						// (FSM state remains as revived; do not call sc.start())
+					});
 				});
 			} finally { this.world.endDepthBatch(); }
 
 			// Plugin load hooks
-			for (const p of (this.world as any)._plugins ?? []) p.onLoad?.(this.world);
+			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);
+
+			// Wiring phase (revive): bind all registered entities (no FSM start here)
+			for (const ent of this.registry.getRegisteredEntities()) {
+				const binder = (ent as unknown as { bind?: (bus: EventEmitter) => void }).bind;
+				if (typeof binder === 'function') binder.call(ent, this.event_emitter);
+			}
+
+			// Wire global audio event listener (AEM isn't a Registerable)
+			this.aem.bind(this.event_emitter);
+
+			// Activate: enable event handling on revived objects only (FSMs are alreaSdy revived)
+			this.world.forEachWorldObject((o) => { (o).eventhandling_enabled = true; }, { scope: 'all' });
 
 			// Restore service state (opt-in)
 			const services = sg.servicesState ?? {};

@@ -8,6 +8,7 @@ import { $ } from '../game';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
 import { StateDefinitions } from '../../fsm/fsmlibrary';
+import { normalizeDecoratedClassName } from '../decorators';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -40,10 +41,10 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-	getComponent<T extends Component>(constructor: ComponentConstructor<T>) {
-		const key = (constructor as any).name;
-		return this.components[key] as T | undefined;
-	}
+    getComponent<T extends Component>(constructor: ComponentConstructor<T>) {
+        const key = normalizeDecoratedClassName((constructor)?.name);
+        return this.components[key] as T | undefined;
+    }
 
 	/**
 	 * Adds a component to the world object.
@@ -52,12 +53,12 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param {T} component - The component to be added.
 	 * @returns {void}
 	 */
-	addComponent<T extends Component>(component: T): void {
-		this.components[component.constructor.name] = component;
-		// Late-init: bind component event subscriptions and perform registry registration here,
-		// after the component has been fully constructed and added to the container.
-		component.onloadSetup();
-	}
+    addComponent<T extends Component>(component: T): void {
+        this.components[normalizeDecoratedClassName(component.constructor?.name)] = component;
+        // Late-init: bind component event subscriptions and perform registry registration here,
+        // after the component has been fully constructed and added to the container.
+        component.onloadSetup();
+    }
 
 	/**
 	 * Removes a component from the world object.
@@ -66,13 +67,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor of the component to remove.
 	 * @returns void
 	 */
-	removeComponent(constructor: { name: string } | Function): void {
-		const key = (constructor as any).name;
-		const component = this.components[key];
-		if (!component) return;
-		// Remove from the components map first to avoid recursive cycles when component.dispose()
-		// calls back into removeComponent. This makes removal idempotent from the container side.
-		delete this.components[key];
+    removeComponent(constructor: { name: string } | Function): void {
+        const key = normalizeDecoratedClassName((constructor)?.name);
+        const component = this.components[key];
+        if (!component) return;
+        // Remove from the components map first to avoid recursive cycles when component.dispose()
+        // calls back into removeComponent. This makes removal idempotent from the container side.
+        delete this.components[key];
 
 		// If the component exposes a detach method, call it (best-effort).
 		component.detach();
@@ -91,7 +92,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * The identifier of the world object, which is a unique string that is generated based on the class name and a unique number.
 	 */
-	public id: Identifier;
+	public id: Identifier;       
 
 	/**
 	 * Indicates whether the object is flagged for disposal.
@@ -183,7 +184,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	protected setPosZ(z: number) {
 		this.pos.z = z; // Set position here, as accessors cannot be decorated with update_tagged_components
 		// Mark depth-sort dirty for the object's space to ensure correct draw order
-		try { $.world.markDepthDirtyForObjectId(this.id); } catch { /* no-op if model not ready */ }
+		$.world.markDepthDirtyForObjectId(this.id);
 	}
 
 	/**
@@ -453,7 +454,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * the FSM-state to the initial state (if specified).
 	 * @param spawningPos The position to spawn the object at.
 	 */
-	public onspawn(spawningPos?: vec3): void {
+    public onspawn(spawningPos?: vec3): void {
 		if (spawningPos) {
 			this.x_nonotify = spawningPos.x ?? this.x;
 			this.y_nonotify = spawningPos.y ?? this.y;
@@ -472,9 +473,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		// Add components that should be auto-added to this class after the object has been spawned so that the component can retrieve the object via its id
 		this.addAutoComponents();
 
-		this.eventhandling_enabled = true; // Now active for event handling
-		this.sc.start();
-	}
+        this.eventhandling_enabled = true; // Now active for event handling
+        // Start the object's state machines on fresh spawn
+        // (Revive path skips onspawn, so revived machines are not reset.)
+        try { this.sc.start(); } catch (e) { console.error(`FSM start failed for ${this.id}:`, e); }
+    }
 
 	/**
 	 * Called when the object is removed from its space without being destroyed.
@@ -612,7 +615,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		const model = $.world;
 		let result: string;
 		do {
-			const baseId = this.constructor.name;
+			const baseId = normalizeDecoratedClassName(this.constructor?.name);
 			const uniqueNumber = model.getNextIdNumber();
 			result = `${baseId}_${uniqueNumber}`;
 		} while (model.exists(result));
@@ -637,7 +640,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (fsm_id && !StateDefinitions[fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${fsm_id}'"`);
 		// Create the state context that will be used to manage the state of the world object
-		this.sc = new StateMachineController(fsm_id ?? this.constructor.name, this.id);
+		this.sc = new StateMachineController(fsm_id ?? normalizeDecoratedClassName(this.constructor?.name), this.id);
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {
@@ -667,9 +670,22 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
     @onload
     onLoadSetup() {
-        // Event subscriptions are auto-registered by decorators at instance construction.
-        // Do not force-enable event handling here; rely on the revived value and lifecycle hooks
-        // (onspawn/ondespawn) to manage eventhandling_enabled appropriately.
+        // Ensure object is registered after revive (onspawn is skipped during revive)
+        $.registry.register(this);
+        // Binding is orchestrated by the engine wiring phase via bind()
+        // Do not force-enable event handling here; rely on lifecycle hooks (onspawn/ondespawn)
+    }
+
+    /** Wire decorator-declared subscriptions and FSM listeners for this object. */
+    public bind(): void {
+        $.event_emitter.initClassBoundEventSubscriptions(this);
+        this.sc?.initLoadSetup();
+    }
+
+    /** Unwire subscriptions and FSM listeners for this object. */
+    public unbind(): void {
+        // Best-effort: remove sc listeners by removing the subscriber (target) as well
+        $.event_emitter.removeSubscriber(this);
     }
 
 	/**

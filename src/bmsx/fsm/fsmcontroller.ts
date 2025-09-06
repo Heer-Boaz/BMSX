@@ -64,12 +64,13 @@ export class StateMachineController {
 	 * Gets the states of the current machine.
 	 * @returns The states of the current machine.
 	 */
-	get states(): id2sstate { return this.current_machine.substates; }
+    get states(): id2sstate { return this.current_machine.substates; }
 
 	/**
 	 * Gets the state definition of the current machine.
 	 */
-	get definition(): StateDefinition { return this.current_machine.definition; }
+    get definition(): StateDefinition { return this.current_machine.definition; }
+
 
 	constructor(fsm_id?: string, id?: string) {
 		// Support parameterless construction for deserialization. In normal runtime code,
@@ -95,8 +96,9 @@ export class StateMachineController {
 	/**
 	 * Starts the state machine by initializing and starting all state machines.
 	 */
-	start(): void {
-		this.initLoadSetup();
+    start(): void {
+        // Idempotent: initLoadSetup() avoids re-registering duplicate listeners
+        this.initLoadSetup();
 
 		// Start all state machines
 		for (const id in this.statemachines) {
@@ -108,30 +110,31 @@ export class StateMachineController {
 	/**
 	 * Initializes all statemachines by subscribing to events defined in the machine definition and allowing dispatching events to the appropriate machines.
 	 */
-	initLoadSetup(): void {
-		for (const id in this.statemachines) {
-			const machine = this.statemachines[id];
+    initLoadSetup(): void {
+        for (const id in this.statemachines) {
+            const machine = this.statemachines[id];
 
-			// Subscribe to all events that are defined in the machine definition for the machine and its submachines
-			const events = machine.definition?.event_list;
-			if (events && events.length > 0) {
-				events.forEach(event => {
-					let scope = event.scope;
-					switch (scope) {
-						case 'self':
-							scope = machine.target.id; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
-							break;
-						case 'all':
-						default:
-							scope = undefined; // If the scope is 'all' or undefined, subscribe to the event with the given name and scope and dispatch it to the machine with the given id and global scope, meaning that the event will be dispatched to all machines
-							break;
-					}
-					// Subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope (or global scope if no scope is provided)
-					$.event_emitter.on(event.name, this.auto_dispatch, machine.target, scope);
-				});
-			}
-		}
-	}
+            // Subscribe to all events that are defined in the machine definition for the machine and its submachines
+            const events = machine.definition?.event_list;
+            if (events && events.length > 0) {
+                events.forEach(event => {
+                    let scope = event.scope;
+                    switch (scope) {
+                        case 'self':
+                            scope = machine.target.id; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
+                            break;
+                        case 'all':
+                        default:
+                            scope = undefined; // If the scope is 'all' or undefined, subscribe to the event with the given name and scope and dispatch it to the machine with the given id and global scope, meaning that the event will be dispatched to all machines
+                            break;
+                    }
+                    // Subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope (or global scope if no scope is provided)
+                    // EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
+                    $.event_emitter.on(event.name, this.auto_dispatch, machine.target, scope);
+                });
+            }
+        }
+    }
 
 	/**
 	 * Runs the current state of the current state machine.
