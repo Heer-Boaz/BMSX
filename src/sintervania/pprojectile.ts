@@ -1,6 +1,6 @@
 import { Foe } from './foe';
 import { Model } from './gamemodel';
-import { Sprite, model } from '../bmsx/bmsx';
+import { Sprite, model } from 'bmsx';
 
 export abstract class PlayerProjectile extends Sprite {
     protected foesThatWereHit: Foe[];

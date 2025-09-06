@@ -1,10 +1,10 @@
 import { Model, MainWeaponType } from "./gamemodel";
 import { TriRoe } from "./triroe";
-import { SM } from "../bmsx/soundmaster";
+import { SM } from "bmsx/soundmaster";
 import { AudioId } from "./resourceids";
-import { waitDuration, copyPoint, Direction, Point } from "../bmsx/common";
+import { waitDuration, copyPoint, Direction, Point } from "bmsx/common";
 import { Cross } from "./cross";
-import { model } from '../bmsx/bmsx';
+import { model } from 'bmsx';
 
 export class WeaponFireHandler {
     private static readonly msCrossCooldown: number = 20;

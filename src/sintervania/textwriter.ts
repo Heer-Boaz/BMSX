@@ -1,6 +1,6 @@
 import { BitmapId } from "./resourceids";
-import { GameOptions as GO, vec3 } from "../bmsx/bmsx";
-import { Color } from '../bmsx/view';
+import { GameOptions as GO, vec3 } from 'bmsx';
+import { Color } from 'bmsx/view';
 
 export class TextWriter {
     public static FontWidth: number = 8;

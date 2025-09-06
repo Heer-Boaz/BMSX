@@ -19,7 +19,9 @@
 				"-title",
 				"${input:romtobuild}",
 				"--debug",
-				"--nodeploy"
+				"--nodeploy",
+				"--skiptypecheck",
+				"--usepkgtsconfig",
 			],
 			"problemMatcher": [
 				"$node-sass",
@@ -67,6 +69,8 @@
 				"--debug",
 				"--nodeploy",
 				"--force",
+				"--skiptypecheck",
+				"--usepkgtsconfig",
 			],
 			"problemMatcher": [
 				"$node-sass",

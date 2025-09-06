@@ -1,6 +1,4 @@
-import { $, $world, WorldObject } from '../bmsx';
-import { Pool } from '../bmsx/core/pool';
-import type { PhysicsWorld } from '../bmsx/physics/physicsworld';
+import { $, $world, WorldObject, Pool, PhysicsWorld } from 'bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
 interface Bullet { active: boolean; pos: [number, number, number]; prev: [number, number, number]; dir: [number, number, number]; speed: number; life: number; maxLife: number; damage: number; }
@@ -53,7 +51,7 @@ export class BulletManager extends WorldObject {
             if (!body.invMass || body.isTrigger) continue;
             const wo = $world.getWorldObject(body.userData);
             if (!wo) continue;
-            const health = wo.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent;
+            const health = wo.getComponent<EnemyHealthComponent>(EnemyHealthComponent);
             if (!health || health.dead) continue;
             if (this.segmentIntersectsBody(segFrom, segTo, body)) {
                 health.applyDamage(b.damage);

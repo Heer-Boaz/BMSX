@@ -4,7 +4,7 @@ import {
     GamepadInputMapping,KeyboardButton, KeyboardInputMapping,
     $,
     WorldConfiguration,
-} from '../bmsx/index';
+} from 'bmsx';
 import { createTestromPlugin } from './modelplugin';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered

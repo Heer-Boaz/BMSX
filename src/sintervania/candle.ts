@@ -1,10 +1,10 @@
 import { Foe } from "./foe";
-import { BStopwatch } from "../bmsx/bmsx";
+import { BStopwatch } from 'bmsx';
 import { ItemType } from "./item";
-import { Animation } from "../bmsx/animation"
+import { Animation } from "bmsx/animation"
 import { BitmapId } from "./resourceids";
-import { newArea } from "../bmsx/common";
-import { Area } from "../bmsx/common";
+import { newArea } from "bmsx/common";
+import { Area } from "bmsx/common";
 
 export class Candle extends Foe {
 	public get respawnOnRoomEntry(): boolean { return true; }

@@ -14,6 +14,12 @@ interface RomPackerOptions {
     buildreslist: boolean;
     deploy: boolean;
     useTextureAtlas: boolean;
+    /** Optional path to a directory of bmsx declarations to use for type-checking games. */
+    enginedts?: string;
+    /** When true, instruct rompacker to use per-game tsconfig.pkg.json for bundling/type-checking. */
+    usePkgTsconfig?: boolean;
+    /** When true, skip type-checking for the game. */
+    skipTypecheck?: boolean;
 }
 
 export type resourcetype = asset_type | 'rommanifest' | 'romlabel' | 'fsm' | 'aem';

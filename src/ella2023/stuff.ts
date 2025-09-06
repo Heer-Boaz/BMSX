@@ -1,4 +1,4 @@
-import { $, DrawRectOptions, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3 } from '../bmsx';
+import { $, DrawRectOptions, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3 } from 'bmsx';
 import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {

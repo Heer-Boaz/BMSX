@@ -1,4 +1,4 @@
-import { World, BootArgs, build_fsm, Game, WorldObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
+import { World, BootArgs, build_fsm, Game, WorldObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from 'bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';

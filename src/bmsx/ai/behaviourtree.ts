@@ -1,4 +1,5 @@
 import { $ } from '../core/game';
+import { normalizeDecoratedClassName } from '../core/decorators';
 import { WorldObject } from '../core/object/worldobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame } from '../serializer/gameserializer';
@@ -162,7 +163,9 @@ export function build_bt(bt_id?: BehaviorTreeID) {
     return function (value: any, context: ClassMethodDecoratorContext) {
         const register = (ctor: any) => {
             behaviorTreeDefinitionsBuilders ??= {};
-            const key = bt_id ?? ctor?.name ?? '(anonymous)';
+            // If no explicit bt_id supplied, normalize inferred class name for public key.
+            const inferred = ctor?.name ?? '(anonymous)';
+            const key = bt_id ? bt_id : normalizeDecoratedClassName(inferred);
             behaviorTreeDefinitionsBuilders[key] = value as () => BehaviorTreeDefinition;
         };
         if (context.static) {

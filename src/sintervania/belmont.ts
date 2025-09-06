@@ -1,10 +1,10 @@
-import { BStopwatch, Sprite, model, controller } from "../bmsx/bmsx";
-import { Animation } from "../bmsx/animation";
+import { BStopwatch, Sprite, model, controller } from 'bmsx';
+import { Animation } from "bmsx/animation";
 import { BitmapId, AudioId } from './resourceids';
-import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, new_vec2, mod } from '../bmsx/common';
-import { TileSize } from '../bmsx/msx';
-import { SM } from '../bmsx/soundmaster';
-import { Input } from '../bmsx/input';
+import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, new_vec2, mod } from 'bmsx/common';
+import { TileSize } from 'bmsx/msx';
+import { SM } from 'bmsx/soundmaster';
+import { Input } from 'bmsx/input';
 import { Room, NearingRoomExitResult } from './room';
 import { Model } from './gamemodel';
 import { GameConstants as CS } from './gameconstants';

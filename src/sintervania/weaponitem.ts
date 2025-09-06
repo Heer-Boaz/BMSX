@@ -1,10 +1,10 @@
-import { Sprite, model, controller } from "../bmsx/bmsx";
+import { Sprite, model, controller } from 'bmsx';
 import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
 import { BitmapId } from "./resourceids";
-import { moveArea, area2size, newArea } from "../bmsx/common";
+import { moveArea, area2size, newArea } from "bmsx/common";
 import { Controller } from "./gamecontroller";
-import { Area, Point } from "../bmsx/common";
+import { Area, Point } from "bmsx/common";
 
 export class WeaponItem extends Sprite {
     public static ItemHitArea: Area = newArea(0, 0, 16, 16);

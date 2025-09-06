@@ -1,4 +1,4 @@
-import { $, $world, WorldObject, Msx1Colors, TextWriter } from '../bmsx';
+import { $, $world, WorldObject, Msx1Colors, TextWriter } from 'bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
 export class RailShooterHUD extends WorldObject {

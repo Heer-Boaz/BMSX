@@ -1,4 +1,4 @@
-import { $, $world, WorldObject, Msx1Colors, Pool, PooledWorldObject, TextWriter } from '../bmsx';
+import { $, $world, WorldObject, Msx1Colors, Pool, PooledWorldObject, TextWriter } from 'bmsx';
 
 interface P { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; max: number; r: number; g: number; b: number; a: number; size: number; grow: number; }
 

@@ -1,4 +1,4 @@
-import { BehaviorTreeDefinition, WaitForActionCompletionDecorator } from '../bmsx';
+import { BehaviorTreeDefinition, WaitForActionCompletionDecorator } from 'bmsx';
 import { bclass } from './bclass';
 
 export function mytree_builder(): BehaviorTreeDefinition {

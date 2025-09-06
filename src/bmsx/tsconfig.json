@@ -1,35 +1,16 @@
 {
-    "extends": "../../tsconfig.json", // Path to the main tsconfig.json file
-    "compilerOptions": {
-        "composite": true, // Enable project compilation
-        "rootDir": "./",
-        "tsBuildInfoFile": "./tsconfig.buildinfo",
-    // NOTE: Keep declaration true because composite projects require it. To avoid shipping the file you can exclude it in publishing pipeline instead.
-    "declaration": true,
-    // "outFile": "./bmsx.js", // Disabled intentionally to reduce bundle complexity
-        "module": "system", // Won't work with "outFile" and "target": "ESNext", but is required for Codex to compile the code
-        "experimentalDecorators": false,
-        // Relax unused checks within the engine package (editor/debug code intentionally has helper stubs)
-        "noUnusedLocals": false,
-        "noUnusedParameters": false
-        ,"baseUrl": "./"
-        ,"paths": {
-            "bmsx": [
-                "./",
-                "./index.ts"
-            ],
-            "bmsx/*": [
-                "./*"
-            ]
-        }
-    },
-    "include": [
-        "**/*.ts"
-        // "../../dist/aynoiseprocessor.js",
-    ],
-    "exclude": [
-        "node_modules",
-        "**/bmsx.d.ts",
-        "**/bmsx.js",
-    ]
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "rootDir": "./",
+    "baseUrl": "./",
+    "paths": {
+      "bmsx": ["./", "./index.ts"],
+      "bmsx/*": ["./*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.d.ts"],
+  "exclude": ["node_modules"]
 }
+

@@ -1,13 +1,13 @@
-import { World, Space } from '../bmsx/world';
-import { build_fsm, sdef, State } from '../bmsx/bfsm';
-import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from '../bmsx/bmsx';
-import { WorldObject } from '../bmsx/worldobject';
-import { RenderView } from '../bmsx/glview';
-import { Input } from '../bmsx/input';
-import { MSX1ScreenHeight, MSX1ScreenWidth } from '../bmsx/msx';
-import { SpriteObject } from '../bmsx/sprite';
-import { TextWriter } from '../bmsx/textwriter';
-import { DrawImgFlags, paintSprite } from '../bmsx/view';
+import { World, Space } from 'bmsx/world';
+import { build_fsm, sdef, State } from 'bmsx/bfsm';
+import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from 'bmsx';
+import { WorldObject } from 'bmsx/worldobject';
+import { RenderView } from 'bmsx/glview';
+import { Input } from 'bmsx/input';
+import { MSX1ScreenHeight, MSX1ScreenWidth } from 'bmsx/msx';
+import { SpriteObject } from 'bmsx/sprite';
+import { TextWriter } from 'bmsx/textwriter';
+import { DrawImgFlags, paintSprite } from 'bmsx/view';
 import { GameMenu } from './gamemenu';
 import { BitmapId } from './resourceids';
 

@@ -217,8 +217,8 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
         const parent = this.parent;
         if (!parent) {
             console.debug(`Component ${this.id} has no parent to detach from.`);
-            throw new Error(`Component ${this.id} has no parent to detach from.`);
-            return; // If there's no parent, there's nothing to detach
+            // throw new Error(`Component ${this.id} has no parent to detach from.`);
+            return; // If there's no parent, there's nothing to detach, fail silently (as this might happen with the debugging object highlighter as we are dehydrating game states)
         }
 
         // Pass the constructor function (not a string). Cast to ComponentConstructor to satisfy TS.

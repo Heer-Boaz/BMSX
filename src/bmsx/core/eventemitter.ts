@@ -83,7 +83,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * The payload is the first argument passed by the emitter (if any).
 	 */
 	public onAny(handler: EventHandler, persistent: boolean = false): void {
-		this.anyListeners.push({ handler, persistent: !persistent });
+		EventEmitter.instance.anyListeners.push({ handler, persistent: !persistent });
 	}
 
 	/**
@@ -92,7 +92,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param forcePersistentRemoval - If true, also removes persistent listeners.
 	 */
 	public offAny(handler: EventHandler, forcePersistentRemoval: boolean = false): void {
-		this.anyListeners = this.anyListeners.filter(x => (x.handler !== handler || (forcePersistentRemoval && x.persistent)));
+		EventEmitter.instance.anyListeners = EventEmitter.instance.anyListeners.filter(x => (x.handler !== handler || (forcePersistentRemoval && x.persistent)));
 	}
 
 	/**
@@ -251,22 +251,23 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param args - Additional arguments to pass to the listeners.
 	 */
 	emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void {
+		const self = EventEmitter.instance;
 		let anyoneSubscribed = false;
-		EventEmitter.instance.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
+		self.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
 			anyoneSubscribed = true;
 			listener.call(subscriber, event_name, emitter, payload);
 		});
-		EventEmitter.instance.globalScopeListeners[event_name]?.forEach(({ listener, subscriber }) => {
+		self.globalScopeListeners[event_name]?.forEach(({ listener, subscriber }) => {
 			anyoneSubscribed = true;
 			listener.call(subscriber, event_name, emitter, payload);
 		});
 
 		// Wildcard listeners
-		for (const item of this.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
+		for (const item of self.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
 
 		if (!anyoneSubscribed && EventEmitter.debug) {
 			console.warn(`No listeners for event "${event_name}" and emitter "${emitter.id}"!`);
-			if (this.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
+			if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
 		}
 	}
 
@@ -357,8 +358,9 @@ export class EventEmitter implements RegisterablePersistent {
 				delete self.globalScopeListeners[eventName];
 			}
 		}
+
 		// Preserve persistent wildcard listeners; remove non-persistent ones
-		this.anyListeners = this.anyListeners.filter(item => item.persistent);
+		self.anyListeners = self.anyListeners.filter(item => item.persistent);
 	}
 }
 

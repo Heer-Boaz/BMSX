@@ -1,9 +1,9 @@
 import { ItemType } from './item';
 import { WeaponType, WeaponItem } from './weaponitem';
-import { Point, Direction } from '../bmsx/common';
-import { BStopwatch, WorldObject, view } from '../bmsx/bmsx';
-import { BaseModelOld } from "../bmsx/basemodel_old";
-import { Savegame } from '../bmsx/gamepersistor';
+import { Point, Direction } from 'bmsx/common';
+import { BStopwatch, WorldObject, view } from 'bmsx';
+import { BaseModelOld } from "bmsx/basemodel_old";
+import { Savegame } from 'bmsx/gamepersistor';
 import { Foe } from './foe';
 import { Belmont } from './belmont';
 import { Room } from './room';
@@ -17,7 +17,7 @@ import { EndDemo } from './enddemo';
 import { GameConstants } from './gameconstants';
 import { RoomFactory } from './RoomFactory';
 import { TextWriter } from './textwriter';
-import { DrawImgFlags } from '../bmsx/view';
+import { DrawImgFlags } from 'bmsx/view';
 import { BitmapId } from './resourceids';
 
 export const enum GameState {

@@ -1,4 +1,4 @@
-import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapText, type State } from '../bmsx/index';
+import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapText, type State } from 'bmsx';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
 // import quizItemsData from './vragen.json';

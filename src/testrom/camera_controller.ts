@@ -1,4 +1,4 @@
-import { $, $world, build_fsm, CameraObject, CameraProjectionType, WorldObject, insavegame, onload, StateMachineBlueprint } from '../bmsx';
+import { $, $world, build_fsm, CameraObject, CameraProjectionType, WorldObject, insavegame, onload, StateMachineBlueprint } from 'bmsx';
 import { Action } from './bootloader';
 
 @insavegame

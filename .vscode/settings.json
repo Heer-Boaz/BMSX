@@ -1,3 +1,4 @@
 {
-    "typescript.tsdk": "node_modules/typescript/lib"
+    "typescript.tsdk": "node_modules/typescript/lib",
+    // "typescript.disableAutomaticTypeAcquisition": true // Dit voorkomt dat VSCode zelf met een fake project en oude libs gaat gokken en dat er 100+ foutmeldingen ontstaan bij het openen van gegenereerde `.d.ts`-bestanden
 }

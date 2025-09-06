@@ -1,10 +1,10 @@
-import { Sprite, model, controller } from "../bmsx/bmsx";
-import { newArea, area2size, moveArea } from "../bmsx/common";
+import { Sprite, model, controller } from 'bmsx';
+import { newArea, area2size, moveArea } from "bmsx/common";
 import { Model } from "./gamemodel";
-import { SM } from "../bmsx/soundmaster";
+import { SM } from "bmsx/soundmaster";
 import { Controller } from "./gamecontroller";
 import { AudioId, BitmapId } from "./resourceids";
-import { Area, Point } from "../bmsx/common";
+import { Area, Point } from "bmsx/common";
 
 export const enum ItemType {
     None,

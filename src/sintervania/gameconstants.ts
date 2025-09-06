@@ -1,4 +1,4 @@
-import { TileSize, MSX2ScreenWidth, MSX2ScreenHeight } from "../bmsx/msx";
+import { TileSize, MSX2ScreenWidth, MSX2ScreenHeight } from "bmsx/msx";
 import { GameState, GameSubstate } from "./gamemodel";
 
 export namespace GameConstants {

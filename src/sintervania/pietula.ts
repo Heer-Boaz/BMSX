@@ -1,12 +1,12 @@
-import { TileSize, Tile } from '../bmsx/msx';
+import { TileSize, Tile } from 'bmsx/msx';
 import { GameConstants } from './gameconstants';
-import { Area, newArea, Point, new_vec2, copyPoint, addPoints } from '../bmsx/common';
-import { mdef, view, model, controller, sdef } from '../bmsx/bmsx';
+import { Area, newArea, Point, new_vec2, copyPoint, addPoints } from 'bmsx/common';
+import { mdef, view, model, controller, sdef } from 'bmsx';
 import { BitmapId, AudioId } from './resourceids';
 import { Controller } from './gamecontroller';
 import { GameSubstate, Model } from './gamemodel';
-import { DrawImgFlags } from '../bmsx/view';
-import { SM } from '../bmsx/soundmaster';
+import { DrawImgFlags } from 'bmsx/view';
+import { SM } from 'bmsx/soundmaster';
 import { FoeExplosion } from './foeexplosion';
 import { Foe } from './foe';
 

@@ -9,6 +9,8 @@ import type { collisiontype, Resource, resourcetype, RomManifest } from './rompa
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
+const { spawnSync } = require('child_process');
+// @ts-ignore
 const { join, parse } = require('path');
 
 // @ts-ignore
@@ -124,55 +126,176 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
  * @param {string} bootloader_path - The path to the bootloader file.
  * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
  */
-export async function esbuild(romname: string, bootloader_path: string, debug: boolean): Promise<void> {
+export async function esbuild(romname: string, bootloader_path: string, debug: boolean, tsconfigProjectOverride?: string): Promise<void> {
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
+    // Prefer the game's tsconfig.json if present to ensure path mappings (e.g. "bmsx") resolve correctly
+    // @ts-ignore
+    const tsconfigPath = (() => {
+        const fs = require('fs');
+        try {
+            if (tsconfigProjectOverride) {
+                const p0 = tsconfigProjectOverride.startsWith('.') || tsconfigProjectOverride.startsWith('src/')
+                    ? join(process.cwd(), tsconfigProjectOverride)
+                    : tsconfigProjectOverride;
+                fs.accessSync(p0);
+                return p0;
+            }
+            const p = join(process.cwd(), bootloader_path, 'tsconfig.json');
+            fs.accessSync(p);
+            // If the tsconfig extends another file, make sure that file exists to avoid esbuild errors
+            const raw = fs.readFileSync(p, 'utf8');
+            try {
+                const json = JSON.parse(raw);
+                if (typeof json.extends === 'string') {
+                    const base = json.extends.startsWith('.') || json.extends.startsWith('..')
+                        ? join(process.cwd(), bootloader_path, json.extends)
+                        : json.extends;
+                    try { fs.accessSync(base); } catch { return undefined; }
+                }
+            } catch { /* ignore JSON parse errors; let esbuild decide */ }
+            return p;
+        } catch { return undefined; }
+    })();
 	try {
 		if (debug) {
-			await build({
-				entryPoints: [bootloader_ts_path], // Entry point for the rompack
-				bundle: true, // Bundle all dependencies into a single file
-				sourcemap: 'inline', // Include inline source maps for debugging
-				sourcesContent: false,
-				outfile: `./rom/${romname}.js`, // Output file for the bundled code
-				platform: 'browser', // Target platform for the bundle
-				target: 'es2020', // Specify the ECMAScript version to target
-				// Specify the ECMAScript version to target
-				loader: { '.glsl': 'text' }, // Handles GLSL files as text
-				plugins: [glsl({
-					minify: true
-				})],
-				define: { 'process.env.NODE_ENV': '"production"' },
-				minify: false,
-				keepNames: true,
-				external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-				treeShaking: true,
-			});
-		}
-		else {
-			await build({
-				entryPoints: [bootloader_ts_path], // Entry point for the rompack
-				bundle: true, // Bundle all dependencies into a single file
-				sourcemap: false,
-				sourcesContent: false,
-				outfile: `./rom/${romname}.js`, // Output file for the bundled code
-				platform: 'browser', // Target platform for the bundle
-				target: 'es2020', // Specify the ECMAScript version to target
-				// Specify the ECMAScript version to target
-				loader: { '.glsl': 'text' }, // Handles GLSL files as text
-				plugins: [glsl({
-					minify: true
-				})],
-				define: { 'process.env.NODE_ENV': '"production"' },
-				minify: true,
-				keepNames: true,
-				external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-				treeShaking: true,
-			});
-		}
+            await build({
+                entryPoints: [bootloader_ts_path], // Entry point for the rompack
+                bundle: true, // Bundle all dependencies into a single file
+                sourcemap: 'inline', // Include inline source maps for debugging
+                sourcesContent: false,
+                outfile: `./rom/${romname}.js`, // Output file for the bundled code
+                platform: 'browser', // Target platform for the bundle
+                target: 'es2024', // Specify the ECMAScript version to target
+                // Specify the ECMAScript version to target
+                loader: { '.glsl': 'text' }, // Handles GLSL files as text
+                plugins: [glsl({
+                    minify: true
+                })],
+                tsconfig: tsconfigPath,
+                define: { 'process.env.NODE_ENV': '"production"' },
+                minify: false,
+                keepNames: true,
+                external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+                treeShaking: true,
+            });
+        }
+        else {
+            await build({
+                entryPoints: [bootloader_ts_path], // Entry point for the rompack
+                bundle: true, // Bundle all dependencies into a single file
+                sourcemap: false,
+                sourcesContent: false,
+                outfile: `./rom/${romname}.js`, // Output file for the bundled code
+                platform: 'browser', // Target platform for the bundle
+                target: 'es2024', // Specify the ECMAScript version to target
+                // Specify the ECMAScript version to target
+                loader: { '.glsl': 'text' }, // Handles GLSL files as text
+                plugins: [glsl({
+                    minify: true
+                })],
+                tsconfig: tsconfigPath,
+                define: { 'process.env.NODE_ENV': '"production"' },
+                minify: true,
+                keepNames: true,
+                external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+                treeShaking: true,
+            });
+        }
 		return null;
 	} catch (err) {
 		throw err;
 	}
+}
+
+/**
+ * Type-check the engine and the selected game without emitting files.
+ * Aborts on first error.
+ */
+export function typecheckBeforeBuild(bootloader_path: string, gameProjectOverride?: string): void {
+    // Resolve local TypeScript CLI entry
+    let tscBin: string;
+    try {
+        // @ts-ignore
+        tscBin = require.resolve('typescript/bin/tsc');
+    } catch {
+        throw new Error('TypeScript is not installed locally. Install it with: npm i -D typescript');
+    }
+
+    const run = (projectPath: string, label: string) => {
+        const args = [tscBin, '-p', projectPath, '--noEmit'];
+        const res = spawnSync(process.execPath, args, { stdio: 'inherit' });
+        if (res.status !== 0) {
+            throw new Error(`Type-check failed for ${label} (project: ${projectPath}).`);
+        }
+    };
+
+    // Engine (if project config exists)
+    try {
+        require('fs').accessSync('src/bmsx/tsconfig.json');
+        run('src/bmsx/tsconfig.json', 'engine');
+    } catch {
+        // No engine tsconfig found; skip engine type-check
+    }
+    // Game (optional if no local tsconfig exists)
+    try {
+        const fs = require('fs');
+        const gameTsconfig = gameProjectOverride
+            ? (gameProjectOverride.startsWith('.') || gameProjectOverride.startsWith('src/')
+                ? join(process.cwd(), gameProjectOverride)
+                : gameProjectOverride)
+            : join(process.cwd(), bootloader_path, 'tsconfig.json');
+        fs.accessSync(gameTsconfig);
+        run(gameTsconfig, 'game');
+    } catch {
+        // No per-game tsconfig.json; skip
+    }
+}
+
+// split-engine helpers removed
+
+/** Concatenate engine and game JS into a single buffer for packing. */
+// split-engine concatenation removed
+
+/** Type-check the game against a provided directory of engine declaration files. */
+export function typecheckGameWithDts(bootloader_path: string, dtsDir: string, baseProjectOverride?: string): void {
+    let tscBin: string;
+    try { tscBin = require.resolve('typescript/bin/tsc'); }
+    catch { throw new Error('TypeScript is not installed locally. Install it with: npm i -D typescript'); }
+
+    const fs = require('fs');
+    const path = require('path');
+    const gameTsconfig = (() => {
+        try {
+            const p = path.join(process.cwd(), bootloader_path, 'tsconfig.json');
+            fs.accessSync(p);
+            return p;
+        } catch { return undefined; }
+    })();
+
+    const tmpCfg = path.join(process.cwd(), 'rom', '_ignore', 'tsconfig.game.with.dts.json');
+    const extendsPath = (baseProjectOverride
+        ? ((baseProjectOverride.startsWith('.') || baseProjectOverride.startsWith('src/'))
+            ? path.join(process.cwd(), baseProjectOverride)
+            : baseProjectOverride)
+        : gameTsconfig) ?? path.join(process.cwd(), 'tsconfig.base.json');
+    const cfg = {
+        extends: path.relative(path.dirname(tmpCfg), extendsPath),
+        compilerOptions: {
+            noEmit: true,
+            baseUrl: '.',
+            paths: {
+                bmsx: [path.relative(path.dirname(tmpCfg), path.join(dtsDir, 'index.d.ts'))],
+                'bmsx/*': [path.relative(path.dirname(tmpCfg), path.join(dtsDir, '*'))]
+            }
+        },
+        include: [path.join(bootloader_path, '**/*.ts')]
+    } as any;
+    const dir = path.dirname(tmpCfg);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(tmpCfg, JSON.stringify(cfg, null, 2));
+
+    const res = spawnSync(process.execPath, [tscBin, '-p', tmpCfg], { stdio: 'inherit' });
+    if (res.status !== 0) throw new Error('Type-check with engine declarations failed.');
 }
 
 /**
@@ -1077,7 +1200,7 @@ export async function buildBootromScriptIfNewer(debug: boolean, forceBuild: bool
 				bundle: true,
 				sourcesContent: debug ? true : false, // Don't include source content in production builds
 				platform: 'browser',
-				target: 'es2020',
+				target: 'es2024',
 				format: 'iife',
 				minify: debug ? false : true, // Don't minify in debug mode
 				keepNames: true,

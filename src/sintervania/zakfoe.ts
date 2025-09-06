@@ -1,9 +1,9 @@
 import { Foe } from "./foe";
 import { ItemType } from "./item";
-import { Area, Direction, newArea, new_vec2 } from "../bmsx/common";
+import { Area, Direction, newArea, new_vec2 } from "bmsx/common";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
-import { BSTEventType, sdef, model } from "../bmsx/bmsx";
+import { BSTEventType, sdef, model } from 'bmsx';
 
 type AniType = { i: BitmapId, dy: number; };
 

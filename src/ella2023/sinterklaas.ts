@@ -1,4 +1,4 @@
-import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent, vec3 } from '../bmsx';
+import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent, vec3 } from 'bmsx';
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';

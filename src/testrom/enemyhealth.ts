@@ -1,7 +1,7 @@
-import { $, $world } from '../bmsx';
-import { Component, componenttags_postprocessing } from '../bmsx/component/basecomponent';
-import type { color_arr, Identifier } from '../bmsx/rompack/rompack';
-import { insavegame } from '../bmsx/serializer/gameserializer';
+import { $, $world } from 'bmsx';
+import { Component, componenttags_postprocessing } from 'bmsx';
+import type { color_arr, Identifier } from 'bmsx';
+import { insavegame } from 'bmsx';
 
 @insavegame
 @componenttags_postprocessing('enemy_post')

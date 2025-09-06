@@ -1,9 +1,9 @@
-import { Animation } from "../bmsx/animation";
+import { Animation } from "bmsx/animation";
 import { Candle } from "./candle";
 import { BitmapId } from "./resourceids";
 import { ItemType } from "./item";
-import { newArea } from "../bmsx/common";
-import { Area } from "../bmsx/common";
+import { newArea } from "bmsx/common";
+import { Area } from "bmsx/common";
 
 export class GardenCandle extends Candle {
     protected static CandleHitArea: Area = newArea(0, 0, 16, 16);

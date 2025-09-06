@@ -447,7 +447,7 @@ export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	constructor(p = 0) { super(TickGroup.PostPhysics, p); }
 	update(model: World) {
 		for (const o of model.activeObjects as WorldObject[]) {
-			const pc = o.getComponent?.(PhysicsComponent);
+			const pc = o.getComponent(PhysicsComponent);
 			if (!pc?.enabled || !pc.body) continue;
 			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
 			if (pc.writeBack) {

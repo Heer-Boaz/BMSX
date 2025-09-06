@@ -1,4 +1,4 @@
-import { Constants, Direction, GameOptions as GO, WorldObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3 } from '../bmsx/bmsx';
+import { Constants, Direction, GameOptions as GO, WorldObject, Input, Msx1Colors, Msx1ExtColors, Size, TextWriter, new_vec2, set_vec2, vec2, vec3, $, $world } from 'bmsx';
 import { AudioId, BitmapId } from './resourceids';
 
 interface MenuOption {
@@ -92,7 +92,7 @@ export class GameMenu extends WorldObject {
         this.visible = true;
         this.CurrentScreen = currentscreen;
         if (this.CurrentScreen == MenuItem.Main)
-            SM.play(AudioId.selectie);
+            $.playAudio(AudioId.selectie);
     }
 
     public Close(): void {
@@ -150,17 +150,17 @@ export class GameMenu extends WorldObject {
                 default:
                     this.CurrentScreen = MenuItem.Main;
                     this.selectedItemIndex = 0;
-                    SM.play(AudioId.selectie);
+                    $.playAudio(AudioId.selectie);
                     break;
             }
         }
         if (Input.KC_SPACE || Input.KC_BTN1) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
-                    SM.play(AudioId.selectie);
+                    $.playAudio(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            $world.sc.machines.gamemenu.pop();
+                            $world.sc.machines.gamemenu.pop_and_transition();
                             break;
                         case MenuItem.ChangeOptions:
                             this.CurrentScreen = MenuItem.Options;
@@ -185,7 +185,7 @@ export class GameMenu extends WorldObject {
                 case MenuItem.LoadFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            SM.play(AudioId.selectie);
+                            $.playAudio(AudioId.selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.LoadFromGameOver:
                                 case MenuItem.LoadFromMainMenu:
@@ -204,7 +204,7 @@ export class GameMenu extends WorldObject {
                     }
                     break;
                 case MenuItem.Save:
-                    SM.play(AudioId.selectie);
+                    $.playAudio(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
                             this.CurrentScreen = MenuItem.Main;
@@ -221,7 +221,7 @@ export class GameMenu extends WorldObject {
                 case MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            SM.play(AudioId.selectie);
+                            $.playAudio(AudioId.selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.OptionsFromMainMenu:
                                     this.Close();
@@ -233,7 +233,7 @@ export class GameMenu extends WorldObject {
                             }
                             break;
                         default:
-                            SM.play(AudioId.fout);
+                            $.playAudio(AudioId.fout);
                             break;
                     }
                     break;
@@ -258,7 +258,7 @@ export class GameMenu extends WorldObject {
                                 GO.VolumePercentage += 10;
                                 if (GO.VolumePercentage > 100)
                                     GO.VolumePercentage = 100;
-                                SM.volume += .1;
+                                $.sndmaster.volume += .1;
                             }
                             break;
                     }
@@ -284,7 +284,7 @@ export class GameMenu extends WorldObject {
                                 GO.VolumePercentage -= 10;
                                 if (GO.VolumePercentage < 0)
                                     GO.VolumePercentage = 0;
-                                SM.volume -= .1;
+                                $.sndmaster.volume -= .1;
                             }
                             break;
                     }
@@ -292,7 +292,7 @@ export class GameMenu extends WorldObject {
             }
         }
         if (selectionChanged) {
-            SM.play(AudioId.selectie);
+            $.playAudio(AudioId.selectie);
         }
     }
 
@@ -480,7 +480,7 @@ export class GameMenu extends WorldObject {
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.soundVolumeText.length * $.view.default_font.char_width('a');
-                                    GO.VolumePercentage = ~~(SM.volume * 100); // TODO: LELIJK!!!!
+                                    GO.VolumePercentage = ~~($.sndmaster.volume * 100); // TODO: LELIJK!!!!
                                     let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);
                                 }

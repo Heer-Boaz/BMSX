@@ -1,9 +1,9 @@
-import { BStopwatch, WorldObject, controller } from "../bmsx/bmsx";
-import { TileSize } from "../bmsx/msx"
-import { waitDuration } from "../bmsx/common";
-import { view } from "../bmsx/bmsx";
+import { BStopwatch, WorldObject, controller } from 'bmsx';
+import { TileSize } from "bmsx/msx"
+import { waitDuration } from "bmsx/common";
+import { view } from 'bmsx';
 import { Controller } from "./gamecontroller";
-import { Point } from "../bmsx/common";
+import { Point } from "bmsx/common";
 import { BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 

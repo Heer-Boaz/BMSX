@@ -1,6 +1,6 @@
-import { model, view } from "../bmsx/bmsx";
-import { Point } from "../bmsx/common";
-import { RenderView } from '../bmsx/glview';
+import { model, view } from 'bmsx';
+import { Point } from "bmsx/common";
+import { RenderView } from 'bmsx/glview';
 import { GameConstants as CS } from "./gameconstants";
 import { GameState, GameSubstate, Model } from "./gamemodel";
 

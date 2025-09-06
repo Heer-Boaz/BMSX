@@ -1,13 +1,13 @@
 import { Model } from "./gamemodel";
-import { Direction, Point } from "../bmsx/common";
+import { Direction, Point } from "bmsx/common";
 import { TextWriter } from "./textwriter";
-import { view, model, WorldObject, controller } from "../bmsx/bmsx";
+import { view, model, WorldObject, controller } from 'bmsx';
 import { AudioId, BitmapId } from "./resourceids";
-import { Input } from "../bmsx/input";
-import { SM as S, SM } from "../bmsx/soundmaster";
+import { Input } from "bmsx/input";
+import { SM as S, SM } from "bmsx/soundmaster";
 import { Controller } from "./gamecontroller";
 import { MenuItem } from "./mainmenu";
-import { Msx1Colors } from "../bmsx/msx";
+import { Msx1Colors } from "bmsx/msx";
 
 export const enum State {
     SelectContOrLoad,

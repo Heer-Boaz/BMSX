@@ -1,14 +1,13 @@
 import { Chapter, GameState, Model } from "./gamemodel";
-import { SM as S } from "../bmsx/soundmaster";
-import { Direction } from "../bmsx/common";
+import { SM as S } from "bmsx/soundmaster";
+import { Direction } from "bmsx/common";
 import { Controller } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
-import { view, model, controller } from "../bmsx/bmsx";
-import { Constants as CS } from "../bmsx/bmsx";
-import { Input } from "../bmsx/input";
-import { SlotExists } from "../bmsx/gamepersistor";
+import { view, model, controller, Constants as CS } from 'bmsx';
+import { Input } from "bmsx/input";
+import { SlotExists } from "bmsx/gamepersistor";
 import { AudioId, BitmapId } from "./resourceids";
-import { Msx1Colors } from "../bmsx/msx";
+import { Msx1Colors } from "bmsx/msx";
 
 export const enum State {
     SelectMain,

@@ -1,11 +1,11 @@
-import { Sprite, model } from "../bmsx/bmsx";
-import { Animation } from "../bmsx/animation"
+import { Sprite, model } from 'bmsx';
+import { Animation } from "bmsx/animation"
 import { AudioId, BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
-import { newArea } from "../bmsx/common";
+import { newArea } from "bmsx/common";
 import { Model, belmont } from "./gamemodel";
-import { SM } from "../bmsx/soundmaster";
-import { Area } from "../bmsx/common";
+import { SM } from "bmsx/soundmaster";
+import { Area } from "bmsx/common";
 
 export const enum HeartSmallState {
 	Flying,

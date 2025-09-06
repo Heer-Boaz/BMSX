@@ -1,10 +1,10 @@
 import { ItemType } from "./item";
-import { Animation, AniData } from "../bmsx/animation"
+import { Animation, AniData } from "bmsx/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
 import { BitmapId } from "./resourceids";
-import { addPoints } from "../bmsx/common";
-import { model } from '../bmsx/bmsx';
+import { addPoints } from "bmsx/common";
+import { model } from 'bmsx';
 
 /*[Serializable]*/
 export class FoeExplosion extends FX {

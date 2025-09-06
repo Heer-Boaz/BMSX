@@ -87,7 +87,9 @@ export class GateGroup {
 
     public endCategory(category: GateCategory): void {
         const b = this.gate._bucket(this.name);
-        b.live.values().forEach(token => token.category === category && this.end(token));
+        for (const token of b.live.values()) {
+            if (token.category === category) this.end(token);
+        }
     }
 
     /** Is this group ready with respect to blocking scopes? */

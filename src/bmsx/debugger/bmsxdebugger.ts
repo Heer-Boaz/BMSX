@@ -854,7 +854,7 @@ function highlight_object(o: WorldObject) {
         if (!currentHighlighterComponent) {
             currentHighlighterComponent = new ObjectHighlighterComponent(o.id);
         }
-        currentHighlighterComponent.attach(o.id); // Also automatically detaches it
+        currentHighlighterComponent. attach(o.id); // Also automatically detaches it
     }
 }
 

@@ -1,4 +1,4 @@
-import { BFont, BootArgs, MSX1ScreenHeight, MSX1ScreenWidth, WorldConfiguration, $ } from '../bmsx';
+import { BFont, BootArgs, MSX1ScreenHeight, MSX1ScreenWidth, WorldConfiguration, $ } from 'bmsx';
 import { EILA_PLUGIN } from './modelplugin';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered

@@ -1,12 +1,11 @@
 import { AudioId, BitmapId } from "./resourceids";
-import { TextWriter } from "../bmsx/textwriter";
-import { SM } from "../bmsx/soundmaster";
-// import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, WorldObject, Direction, Size, vec3, new_vec2, set_vec2 } from '../bmsx/bmsx';
-import { Constants } from "../bmsx/bmsx";
-import { Input } from "../bmsx/input";
-import { Msx1ExtColors } from "../bmsx/msx";
-import { DrawImgFlags } from '../bmsx/view';
+import { TextWriter } from "bmsx/textwriter";
+import { SM } from "bmsx/soundmaster";
+// import { SlotExists, LoadGame } from "bmsx/gamepersistor";
+import { GameOptions as GO, WorldObject, Direction, Size, vec3, new_vec2, set_vec2, Constants } from 'bmsx';
+import { Input } from "bmsx/input";
+import { Msx1ExtColors } from "bmsx/msx";
+import { DrawImgFlags } from 'bmsx/view';
 
 interface MenuOption {
     type: MenuItem;

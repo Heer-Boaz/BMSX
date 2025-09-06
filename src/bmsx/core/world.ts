@@ -13,7 +13,7 @@ import { renderGate } from '../render/view';
 import type { Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
-import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
+import { Reviver, Savegame, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './object/cameraobject';
 import { $, runGate } from './game';
 import { WorldObject } from './object/worldobject';
@@ -246,7 +246,6 @@ export class World implements Stateful, RegisterablePersistent {
         SM.register(new PhysicsCollisionEventSystem(28)); // dispatch physics collisions as engine events
         SM.register(new PhysicsSyncAfterWorldCollisionSystem(30)); // GO -> body (if writeBack)
         SM.register(new TransformSystem(50));
-
     }
 
     public getActiveLights(opts: { scope?: 'current' | 'all' } = {}): LightObject[] {
@@ -513,6 +512,8 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public load(serialized: Uint8Array, compressed: boolean = true): void {
+        $.load(serialized, compressed);
+        return;
         // Block rendering during (de)serialization to avoid corrupt WebGL state.
         // Also block the game update/run loop while the world is being hydrated.
         renderGate.bump();
@@ -598,41 +599,42 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {string} The serialized `Savegame` object.
      */
     public save(compress: boolean = true): Uint8Array {
-        const createSavegame = () => {
-            const self = this as Record<string, any>;
-            const keys = Object.keys(self);
-            const data = {} as Record<string, any>;
-            for (let index = 0; index < keys.length; ++index) {
-                const key = keys[index];
-                if (World.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['World']?.[key]) continue;
-                if (self[key] !== null && self[key] !== undefined) {
-                    data[key] = self[key];
-                }
-            }
-            const result = new Savegame();
-            result.modelprops = data;
-            result.spaces = this.spaces;
-            result.allSpacesObjects = [];
-            for (let space of this.spaces) {
-                result.allSpacesObjects.push({
-                    spaceid: space.id,
-                    objects: [...(space.objects)]
-                });
-            }
+        return $.save(compress);
+        // const createSavegame = () => {
+        //     const self = this as Record<string, any>;
+        //     const keys = Object.keys(self);
+        //     const data = {} as Record<string, any>;
+        //     for (let index = 0; index < keys.length; ++index) {
+        //         const key = keys[index];
+        //         if (World.keys_to_exclude_from_save.includes(key) || Serializer.excludedProperties['World']?.[key]) continue;
+        //         if (self[key] !== null && self[key] !== undefined) {
+        //             data[key] = self[key];
+        //         }
+        //     }
+        //     const result = new Savegame();
+        //     result.modelprops = data;
+        //     result.spaces = this.spaces;
+        //     result.allSpacesObjects = [];
+        //     for (let space of this.spaces) {
+        //         result.allSpacesObjects.push({
+        //             spaceid: space.id,
+        //             objects: [...(space.objects)]
+        //         });
+        //     }
 
-            return result;
-        };
+        //     return result;
+        // };
 
-        const savegame = createSavegame();
-        const serializedState = Serializer.serialize(savegame) as Uint8Array; // Serialize the savegame to a binary format
-        let returnedState: Uint8Array;
-        if (compress) {
-            returnedState = BinaryCompressor.compressBinary(serializedState); // Compress the serialized state if requested
-        } else {
-            returnedState = serializedState; // Use the serialized state as is if compression is not requested
-        }
+        // const savegame = createSavegame();
+        // const serializedState = Serializer.serialize(savegame) as Uint8Array; // Serialize the savegame to a binary format
+        // let returnedState: Uint8Array;
+        // if (compress) {
+        //     returnedState = BinaryCompressor.compressBinary(serializedState); // Compress the serialized state if requested
+        // } else {
+        //     returnedState = serializedState; // Use the serialized state as is if compression is not requested
+        // }
 
-        return returnedState;
+        // return returnedState;
     }
 
     /**

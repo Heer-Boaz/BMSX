@@ -1,4 +1,4 @@
-import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject } from '../bmsx';
+import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject } from 'bmsx';
 import { bclass } from './bclass';
 import { CameraController } from './camera_controller';
 import { AnimatedMorphSphere, Cube3D, SmallCube3D } from './objects3d';

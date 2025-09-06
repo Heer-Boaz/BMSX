@@ -1,5 +1,6 @@
 import type { Identifier } from '../rompack/rompack';
 import type { ConstructorWithFSMProperty, FSMName, StateMachineBlueprint } from "./fsmtypes";
+import { normalizeDecoratedClassName } from '../core/decorators';
 
 /**
  * A record that maps string keys to functions that build machine states.
@@ -54,14 +55,8 @@ export function build_fsm(fsm_name?: Identifier) {
         const register = (ctor: any) => {
             StateDefinitionBuilders ??= {};
             const raw = fsm_name ?? ctor?.name ?? '(anonymous)';
-            // If no explicit fsm_name was supplied and the inferred class name starts with underscore
-            // (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
-            let key = raw;
-            if (!fsm_name && raw.startsWith('_')) {
-                key = raw.replace(/^_+/, '');
-                // Keep the raw key too (backwards compatibility) but primary lookup should succeed without underscore.
-                StateDefinitionBuilders[raw] = value as () => StateMachineBlueprint;
-            }
+            // If no explicit fsm_name was supplied, normalize inferred class name for public key.
+            const key = fsm_name ? raw : normalizeDecoratedClassName(raw);
             StateDefinitionBuilders[key] = value as () => StateMachineBlueprint;
         };
         if (context.static) {

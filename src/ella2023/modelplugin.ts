@@ -1,5 +1,4 @@
-import { $, World, InputMap, insavegame, RegisterablePersistent } from '../bmsx';
-import { subscribesToGlobalEvent } from '../bmsx/core/eventemitter';
+import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent } from 'bmsx';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { EilaGameState } from './state';
@@ -24,19 +23,27 @@ export const EILA_PLUGIN = {
 export type ExtendedModel = World & typeof EILA_PLUGIN;
 
 @insavegame
-export class EilaEventService implements RegisterablePersistent {
-	public id: 'eila_events' = 'eila_events';
-	get registrypersistent(): true {
-		return true;
-	}
+export class EilaEventService extends Service {
+    private _humiliationCount = 0;
+    constructor() {
+        super('eila_events');
+    }
 
-	constructor() {
-		$.registry.register(this);
-	}
+    public override dispose() {
+        // Remove any event subscriptions and force deregister persistent record
+        $.event_emitter.removeSubscriber(this);
+        this.disableEvents();
+        $.registry.deregister(this, true);
+    }
 
-	public dispose() {
-		$.registry.deregister(this, true);
-	}
+    // Example service state (DTO) participation: opt-in via getState/setState.
+    public getState() { return { humiliationCount: this._humiliationCount }; }
+    public setState(dto: unknown): void {
+        if (dto && typeof dto === 'object' && 'humiliationCount' in dto) {
+            const n = (dto as any).humiliationCount;
+            if (typeof n === 'number' && isFinite(n)) this._humiliationCount = n;
+        }
+    }
 
 	public theOtherFighter(fighter: Fighter): Fighter | null {
 		if (fighter.id === 'player') return $.world.getWorldObject('sinterklaas');
@@ -64,7 +71,9 @@ export class EilaEventService implements RegisterablePersistent {
 	}
 
 	@subscribesToGlobalEvent('humiliated_animation_end')
-	public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
+    public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
+        // Track total humiliations for demo state persistence
+        this._humiliationCount++;
 		const player = $.world.getWorldObject<Fighter>('player');
 		const sinterklaas = $.world.getWorldObject<Fighter>('sinterklaas');
 

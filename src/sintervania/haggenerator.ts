@@ -1,7 +1,7 @@
 import { Hag } from "./hag";
-import { WorldObject, model } from "../bmsx/bmsx";
-import { Direction, Point } from "../bmsx/common";
-import { mdef } from "../bmsx/bmsx";
+import { WorldObject, model } from 'bmsx';
+import { Direction, Point } from "bmsx/common";
+import { mdef } from 'bmsx';
 import { belmont } from "./gamemodel";
 import { GameConstants } from "./gameconstants";
 

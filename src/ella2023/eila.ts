@@ -1,4 +1,4 @@
-import { $, Component, WorldObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from 'bmsx';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';

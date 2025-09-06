@@ -22,6 +22,17 @@ export function defer(fn: () => void): void {
     }
 }
 
+/**
+ * Normalizes a class name inferred by decorators.
+ *
+ * Some TS decorator transforms bind the class to a temporary with a leading underscore
+ * (e.g. `_MyClass`) which then leaks into `ctor.name`. For public registries/keys
+ * we strip those leading underscores when no explicit id is provided.
+ */
+export function normalizeDecoratedClassName(raw: string | undefined | null): string {
+    if (!raw) return '(anonymous)';
+    return raw.startsWith('_') ? raw.replace(/^_+/, '') : raw;
+}
 
 /**
  * Adds initializers for class-level registration and deferred instance init.

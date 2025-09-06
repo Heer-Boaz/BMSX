@@ -1,4 +1,4 @@
-import { $, AmbientLightObject, World, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, StateMachineBlueprint, TransformComponent, V3 } from '../bmsx';
+import { $, AmbientLightObject, World, build_fsm, CameraObject, DirectionalLightObject, InputMap, insavegame, new_vec3, PointLightObject, StateMachineBlueprint, TransformComponent, V3 } from 'bmsx';
 // RailDeterministicPlayer now exported via barrel
 import { bclass } from './bclass';
 import { gamepadInputMapping, keyboardInputMapping } from './bootloader';

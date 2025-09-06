@@ -1,4 +1,4 @@
-import { $, Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../bmsx';
+import { $, Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from 'bmsx';
 import { EilaGameState } from './state';
 import { BitmapId } from './resourceids';
 

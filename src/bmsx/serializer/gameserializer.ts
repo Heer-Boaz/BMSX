@@ -510,7 +510,6 @@ export function excludepropfromsavegame(_value: undefined, context: ClassFieldDe
     }
 }
 
-
 /**
  * Sets the `onload` property of the target object to the provided function.
  * This function will be called during deserialization to allow the object to perform any custom deserialization logic.
@@ -550,7 +549,14 @@ export function insavegame<T extends abstract new (...args: any[]) => any>(value
 export function insavegame(typeId: string): <T extends abstract new (...args: any[]) => any>(value: T, context: ClassDecoratorContext<T>) => void;
 export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext) {
     function register(ctor: any, typeId?: string) {
-        const key = typeId ?? (ctor?.name ?? '(anonymous)');
+        let key = typeId ?? (ctor?.name ?? '(anonymous)');
+
+        // If no explicit typeId was supplied and the inferred class name starts with underscore
+        // (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
+        if (!typeId && key.startsWith('_')) {
+            key = key.replace(/^_+/, '');
+        }
+
         Reviver.constructors ??= {};
         Reviver.constructors[key] = ctor as unknown as new () => any;
         (ctor as ConstructorWithSaveGame).__exclude_savegame__ = false;
@@ -609,6 +615,8 @@ export class Savegame {
     spaces: Space[];
     SMState: SoundMasterState;
     viewState: ViewState;
+    /** Optional per-service DTO map captured by Game.save(). */
+    servicesState?: Record<string, unknown>;
 
     @onsave
     saveViewState() {
@@ -684,9 +692,6 @@ export class Savegame {
         const ui = (SMState.uiQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
         aem.restoreQueues({ sfx, ui });
     }
-
-    @onload
-    rebuildPhysicsIfNeeded() { /* moved to World.load for correct timing */ }
 }
 
 /**

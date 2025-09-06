@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type vec2 } from '../bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type vec2 } from 'bmsx';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
 

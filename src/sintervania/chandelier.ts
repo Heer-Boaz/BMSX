@@ -1,12 +1,12 @@
-import { BStopwatch, model } from "../bmsx/bmsx";
-import { Direction } from "../bmsx/common";
-import { Animation, AniData } from "../bmsx/animation";
+import { BStopwatch, model } from 'bmsx';
+import { Direction } from "bmsx/common";
+import { Animation, AniData } from "bmsx/animation";
 import { Foe } from "./foe";
 import { ItemType } from "./item";
 import { BitmapId } from "./resourceids";
-import { newArea, new_vec2 } from "../bmsx/common";
+import { newArea, new_vec2 } from "bmsx/common";
 import { Model } from "./gamemodel";
-import { Area } from "../bmsx/common";
+import { Area } from "bmsx/common";
 
 const enum ChandelierState {
 	None,

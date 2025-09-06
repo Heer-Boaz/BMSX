@@ -40,8 +40,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-	getComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
-		return this.components[constructor.name] as T | undefined;
+	getComponent<T extends Component>(constructor: ComponentConstructor<T>) {
+		const key = (constructor as any).name;
+		return this.components[key] as T | undefined;
 	}
 
 	/**
@@ -65,12 +66,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor of the component to remove.
 	 * @returns void
 	 */
-	removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void {
-		const component = this.components[constructor.name];
+	removeComponent(constructor: { name: string } | Function): void {
+		const key = (constructor as any).name;
+		const component = this.components[key];
 		if (!component) return;
 		// Remove from the components map first to avoid recursive cycles when component.dispose()
 		// calls back into removeComponent. This makes removal idempotent from the container side.
-		delete this.components[constructor.name];
+		delete this.components[key];
 
 		// If the component exposes a detach method, call it (best-effort).
 		component.detach();
@@ -618,8 +620,10 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * @param id The id of the newly created object. If not given, defaults to generated id. @see {@link generateId}.
-	 * @param fsm_id The id of the state machine that will be created for this object. Defaults to `this.constructor.name`. If there is no state machine with the given (default) name, the state machine factory will ensure that an "empty" state machine is created. @see {@link statecontext.create}.
+	 * @param id The id of the newly created object. If not given, defaults to generated id. This ID is unique within the world and is used to identify the object.@see {@link generateId}.
+	 * @note IT IS THUS NOT REQUIRED TO GENERATE A RANDOM ID YOURSELF!!
+	 * @param fsm_id The id of the state machine that will be created for this object.
+	 * If there is no state machine for this object, don't pass any value!! The state machine factory will ensure that an "empty" state machine is created. @see {@link statecontext.create}.
 	 */
 	constructor(id?: string, fsm_id?: string) {
 		this.id = id ?? this.generateId();
@@ -663,7 +667,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
     @onload
     onLoadSetup() {
-        // Event subscriptions are now auto-registered at instance construction by decorators.
+        // Event subscriptions are auto-registered by decorators at instance construction.
+        // Do not force-enable event handling here; rely on the revived value and lifecycle hooks
+        // (onspawn/ondespawn) to manage eventhandling_enabled appropriately.
     }
 
 	/**

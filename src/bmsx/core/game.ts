@@ -10,9 +10,11 @@ import { createBackendForCanvasAsync } from "../render/backend/backend_selector"
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
-import { color, DrawImgOptions, DrawRectOptions, GameView } from "../render/view";
+import { color, DrawImgOptions, DrawRectOptions, GameView, renderGate } from "../render/view";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
+import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
+import { Service } from "./service";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World, WorldConfiguration } from "./world";
 import { EventEmitter, EventPayload } from "./eventemitter";
@@ -187,10 +189,10 @@ export class Game {
 		this.world.spawn(o, pos, ignoreSpawnhandler);
 	}
 
-    /** Destroy (dispose) a world object from the world. */
-    public destroy(o: WorldObject): void { this.world.destroy(o); }
-    /** @deprecated Use destroy(o) */
-    public exile(o: WorldObject): void { this.world.exile(o); }
+	/** Destroy (dispose) a world object from the world. */
+	public destroy(o: WorldObject): void { this.world.destroy(o); }
+	/** @deprecated Use destroy(o) */
+	public exile(o: WorldObject): void { this.world.exile(o); }
 
 	public drawImg(options: DrawImgOptions): void {
 		this.view.drawImg(options);
@@ -302,10 +304,10 @@ export class Game {
 		this.updateInterval = 1000 / this.targetFPS;
 		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
 
-        this._debug = debug ?? this._debug;
-        $debug = this._debug;
-        // Surface duplicate/missing-listener logs in development
-        EventEmitter.debug = this._debug === true;
+		this._debug = debug ?? this._debug;
+		$debug = this._debug;
+		// Surface duplicate/missing-listener logs in development
+		EventEmitter.debug = this._debug === true;
 
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
@@ -496,12 +498,104 @@ export class Game {
 		window.removeEventListener('beforeunload', this.onBeforeUnload, true);
 	}
 
+	/** Serialize the full game state: world + selected services. */
+	public save(compress: boolean = true): Uint8Array {
+		// Assemble Savegame DTO using the same rules as World.save but orchestrated here
+		const worldAny = this.world as unknown as Record<string, unknown>;
+		const keys = Object.keys(worldAny);
+		const data: Record<string, unknown> = {};
+		const WorldCtor: any = this.world.constructor as any;
+		for (let i = 0; i < keys.length; ++i) {
+			const k = keys[i];
+			// Respect World.keys_to_exclude_from_save and dynamic excludes
+			if (WorldCtor.keys_to_exclude_from_save?.includes?.(k)) continue;
+			if ((Serializer.excludedProperties['World'] ?? {})[k]) continue;
+			const v = worldAny[k]; if (v !== null && v !== undefined) data[k] = v;
+		}
+		const sg = new Savegame();
+		sg.modelprops = data;
+		sg.spaces = this.world.spaces;
+		sg.allSpacesObjects = [] as any;
+		for (const space of this.world.spaces) {
+			(sg.allSpacesObjects as any).push({ spaceid: space.id, objects: [...space.objects] });
+		}
+
+		// Capture service state DTOs (opt-in via getState)
+		const servicesState: Record<string, unknown> = {};
+		for (const ent of this.registry.getPersistentEntities()) {
+			if (ent instanceof Service && typeof ent.getState === 'function') {
+				const dto = ent.getState();
+				if (dto !== undefined) servicesState[ent.id] = dto as unknown;
+			}
+		}
+		if (Object.keys(servicesState).length > 0) sg.servicesState = servicesState;
+
+		const serialized = Serializer.serialize(sg) as Uint8Array;
+		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
+	}
+
+	/** Load a game save: restores world, services, and engine state. */
+	public load(serialized: Uint8Array, compressed: boolean = true): void {
+		const gateToken = renderGate.begin({ blocking: true, tag: 'load' });
+		const runToken = runGate.begin({ blocking: true, tag: 'load' });
+		try {
+			const buf = compressed ? BinaryCompressor.decompressBinary(serialized) : serialized;
+			const sg = Reviver.deserialize(buf) as Savegame;
+
+			// World hydration (ported from World.load)
+			this.world.clearAllSpaces();
+			EventEmitter.instance.dispose();
+
+			const tempSpaces = this.world.spaces.slice();
+			tempSpaces.forEach(s => this.world.removeSpace(s));
+
+			// Reset registries except persistent entities
+			$.registry.clear();
+			// Purge textures and reset view
+			$.texmanager.clear();
+			$.view.reset();
+
+			// Apply plain model props back to world
+			for (const [k, v] of Object.entries(sg.modelprops as Record<string, unknown>)) {
+				if (typeof v !== 'function') (this.world as any)[k] = v;
+			}
+
+			// Recreate spaces and spawn objects
+			sg.spaces.forEach(space => this.world.addSpace(space));
+			this.world.beginDepthBatch();
+			try {
+				sg.allSpacesObjects.forEach(space_and_objects => {
+					const space = this.world.get_space(space_and_objects.spaceid);
+					const objects = space_and_objects.objects as any[];
+					objects.forEach(o => { if (o) space.spawn(o, null as any, true); });
+				});
+			} finally { this.world.endDepthBatch(); }
+
+			// Plugin load hooks
+			for (const p of (this.world as any)._plugins ?? []) p.onLoad?.(this.world);
+
+			// Restore service state (opt-in)
+			const services = sg.servicesState ?? {};
+			for (const [id, dto] of Object.entries(services)) {
+				const svc = this.registry.get(id);
+				if (svc && typeof (svc as Service).setState === 'function') (svc as Service).setState!(dto);
+			}
+		} catch (e) {
+			console.error(`Error loading game state: ${e}`);
+		} finally {
+			this.wasupdated = true;
+			renderGate.end(gateToken);
+			runGate.end(runToken);
+			this.requestPausedFrame();
+		}
+	}
+
 	// --- Rewind API ---
 	public canRewind() { return this.rewindBuffer.canRewind(); }
 	public canForward() { return this.rewindBuffer.canForward(); }
 
 	private loadRewindFrame(frame: RewindFrame): void {
-		this.world.load(frame.state, true);
+		this.load(frame.state, true);
 		window.dispatchEvent(new Event('frame'));
 	}
 

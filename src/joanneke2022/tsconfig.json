@@ -1,19 +1,13 @@
 {
-    "extends": "../../tsconfig.json", // path to the main tsconfig.json file
+    "extends": "../../tsconfig.base.json", // path to the shared base config
     "compilerOptions": {
-        "composite": true, /* Enable project compilation */
-        "declaration": true,
-        "rootDir": "../",
-        "tsBuildInfoFile": "./tsconfig.buildinfo",
-        "paths": {
-            "bmsx": [
-                "../bmsx/bmsx.ts"
-            ]
-        }
+        "composite": false,
+        "noEmit": true,
+        "rootDir": "../"
     },
     "include": [
         ".",
-        "../bmsx/bmsx.ts",
+        "../bmsx/index.ts",
         "../bmsx/**/*"
     ]
 }

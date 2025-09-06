@@ -1,10 +1,10 @@
-import { BStopwatch } from "../bmsx/bmsx";
-import { Animation, AniData } from "../bmsx/animation";
+import { BStopwatch } from 'bmsx';
+import { Animation, AniData } from "bmsx/animation";
 import { BitmapId } from "./resourceids";
 import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
-import { Direction, Size, Area, Point } from "../bmsx/common";
+import { Direction, Size, Area, Point } from "bmsx/common";
 import { Model, belmont } from "./gamemodel";
 
 export class Hag extends Foe {

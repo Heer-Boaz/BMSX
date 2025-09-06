@@ -1,18 +1,79 @@
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { BOOTROM_TS_FILENAME, buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired } from './rompacker-core';
+import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomManifest, RomPackerOptions } from './rompacker.rompack';
-// @ts-ignore
 const term = require('terminal-kit').terminal;
-// @ts-ignore
 const _colors = require('colors');
 
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 
 type logentryType = undefined | 'error' | 'warning';
+type TaskName =
+	'Checken of rebuild nodig is' |
+	'Rom manifest zoekeren en parseren' |
+	'Game type-checkeren' |
+	'Game compileren+bundleren' |
+	'Resource lijst bouwen' |
+	'Resources laden en metadata genereren' |
+	'Atlassen puzellen (indien nodig)' |
+	'Rom-assets genereren' |
+	'Rompakket finaliseren' |
+	`bootrom compileren` |
+	'HTML+CSS bouwen' |
+	'Deployeren' |
+	'ROM PACKING GE-DONUT!! :-)';
+
+const taskList: TaskName[] = [
+	'Checken of rebuild nodig is',
+	'Rom manifest zoekeren en parseren',
+	'Game type-checkeren',
+	'Game compileren+bundleren',
+	'Resource lijst bouwen',
+	'Resources laden en metadata genereren',
+	'Atlassen puzellen (indien nodig)',
+	'Rom-assets genereren',
+	'Rompakket finaliseren',
+	`bootrom compileren`,
+	'HTML+CSS bouwen',
+	'Deployeren',
+	'ROM PACKING GE-DONUT!! :-)',
+];
+
+// --- Individual lists that allow us to easily remove tasks from the main task list (visualisation only!) ---
+const romBuildTasks: TaskName[] = [
+	'Rom manifest zoekeren en parseren',
+	'Game compileren+bundleren',
+	'Resource lijst bouwen',
+	'Resources laden en metadata genereren',
+	'Atlassen puzellen (indien nodig)',
+	'Rom-assets genereren',
+	'Rompakket finaliseren',
+];
+
+const deployTasks: TaskName[] = [
+	'Deployeren',
+];
+
+// const bootromBuildTasks: TaskName[] = [
+// 	`bootrom compileren`,
+// ];
+
+// const webTasks: TaskName[] = [
+// 	'HTML+CSS bouwen',
+// ];
+
+const rebuildCheckTasks: TaskName[] = [
+	'Checken of rebuild nodig is',
+];
+
+const typecheckTasks: TaskName[] = [
+	'Game type-checkeren',
+];
+
+// engine split task removed
+
 
 // `process` is provided by Node and declared in @types/node; no local ambient needed.
-
 function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
 	const idx = args.indexOf(flag);
 	if (idx !== -1 && args[idx + 1]) return args[idx + 1];
@@ -22,7 +83,7 @@ function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: s
 
 function parseOptions(args: string[]): RomPackerOptions {
 	// Check for unrecognized arguments
-	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas'];
+	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas', '--skiptypecheck', '--enginedts', '--usepkgtsconfig'];
 	const unrecognizedArgs = args.filter(arg => arg.startsWith('-') && !knownArgs.includes(arg));
 	if (unrecognizedArgs.length > 0) {
 		throw new Error(`Unrecognized argument(s): ${unrecognizedArgs.join(', ')}`);
@@ -41,6 +102,8 @@ function parseOptions(args: string[]): RomPackerOptions {
 		writeOut(`  --buildreslist         Build resource list`, 'warning');
 		writeOut(`  --nodeploy             Skip deployment`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
+		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game`, 'warning');
+		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
 		process.exit(0);
 	}
 
@@ -60,6 +123,10 @@ function parseOptions(args: string[]): RomPackerOptions {
 	const debug = args.includes('--debug');
 	const buildreslist = args.includes('--buildreslist');
 	const deploy = !args.includes('--nodeploy');
+	const skipTypecheck = args.includes('--skiptypecheck');
+    const enginedtsIdx = args.indexOf('--enginedts');
+    const enginedts = enginedtsIdx !== -1 ? args[enginedtsIdx + 1] : undefined;
+    const usePkgTsconfig = args.includes('--usepkgtsconfig');
 
 	return {
 		rom_name,
@@ -70,8 +137,11 @@ function parseOptions(args: string[]): RomPackerOptions {
 		debug,
 		buildreslist,
 		deploy,
-		useTextureAtlas
-	};
+        useTextureAtlas,
+        enginedts,
+        usePkgTsconfig,
+        skipTypecheck,
+    };
 }
 
 function writeOut(_tolog: string, type?: logentryType): void {
@@ -95,7 +165,7 @@ class ProgressReporter {
 	private completedTasks: number = 0;
 
 	constructor(tasks: string[]) {
-// @ts-ignore
+		// @ts-ignore
 		const Gauge = require('gauge');
 		this.gauge = new Gauge(process.stdout, {
 			updateInterval: 20,
@@ -145,41 +215,34 @@ class ProgressReporter {
 		}
 	}
 
+	public removeTasks(tasks: string[]) {
+		for (const task of tasks) {
+			this.removeTask(task);
+		}
+	}
+
 	public async showDone() {
-		this.gauge.show('ROM PACKING GE-DONUT!! :-)', 1);
+		// this.gauge.show('ROM PACKING GE-DONUT!! :-)', 1);
 		await this.pulse();
 	}
 
 	public async pulse() {
 		this.gauge.pulse();
-		await timer(10);
+		await timer(20);
 	}
 }
 
 async function main() {
 	const outputError = (e: any) => writeOut(`\n[GEFAALD] ${e?.stack ?? e?.message ?? e ?? 'Geen melding en/of stacktrace beschikbaar :-('} \n`, 'error');
-	const taskList = [
-		'Rom manifest zoekeren en parseren',
-		'Game compileren+bundleren',
-		'Resource lijst bouwen',
-		'Resources laden en metadata genereren',
-		'Atlassen puzellen (indien nodig)',
-		'Rom-assets genereren',
-		'Rompakket finaliseren',
-		`"${BOOTROM_TS_FILENAME}" compileren(als nodig)`,
-		'"game.html" en "game_debug.html" bouwen',
-		'Deployeren',
-		'ROM PACKING GE-DONUT!! :-)',
-	];
 	const progress = new ProgressReporter(taskList);
 	try {
-		// #region stuff
 		term.clear();
-		writeOut(_colors.brightGreen.bold('┏————————————————————————————————————————————————————————————————————————————————┓\n'));
-		writeOut(_colors.brightGreen.bold('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
-		writeOut(_colors.brightGreen.bold('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
+		writeOut(_colors.brightGreen.bold('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n'));
+		writeOut(_colors.brightGreen.bold('┃                          BMSX ROMPACKER DOOR BOAZ©®™                           ┃\n'));
+		writeOut(_colors.brightGreen.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'));
+
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 
 		// Define common assets path
@@ -217,9 +280,34 @@ async function main() {
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 		if (!commonResPath) throw new Error("Cannot determine common resource path; 'rom_name' is required.");
 
+		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
+		if (usePkgTsconfig) {
+			writeOut(`Using per-game tsconfig.pkg.json for bundling/type-checking.\n`);
+			const path = require('path');
+			const fs = require('fs');
+			const candidates = [
+				path.join(path.resolve(bootloader_path), 'node_modules', 'bmsx', 'package.json'),
+				path.join(process.cwd(), 'node_modules', 'bmsx', 'package.json'),
+			];
+			let found = false;
+			for (const p of candidates) {
+				try { fs.accessSync(p); found = true; break; } catch { /* try next */ }
+			}
+			if (!found) {
+				writeOut(
+					`ERROR: package "bmsx" not found in node_modules for this game.\n` +
+					`Run "npm install" at the repo root (workspaces) or pin a tarball in the game's package.json, then try again.\n` +
+					`Cannot proceed with --usepkgtsconfig.\n`,
+					'error'
+				);
+				throw new Error('Missing package "bmsx" for --usepkgtsconfig');
+			}
+		}
+
 		let rebuildRequired = true;
 		if (force) {
 			writeOut(`Note: Recompilation and building forced via ${_colors.yellow.bold('--force')} \n`);
+			progress.removeTasks(rebuildCheckTasks);
 		}
 		else {
 			writeOut(`Note: Recompilation and building only if required (based on file modification times).\n`);
@@ -230,27 +318,27 @@ async function main() {
 		else {
 			writeOut(`Note: Texture atlas generation disabled via ${_colors.brightRed.bold('--textureatlas no')} \n`);
 		}
-		if (!deploy) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')} \n`);
+		if (!deploy) {
+			writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')} \n`);
+			progress.removeTasks(deployTasks);
+		}
+		if (skipTypecheck) {
+			writeOut(`Skipping type-checking of the game as per ${_colors.brightRed.bold('--skiptypecheck')}.\n`);
+			progress.removeTasks(typecheckTasks);
+		}
+        // split-engine removed
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
 		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
+		if (usePkgTsconfig) writeOut(`Using per-game tsconfig.pkg.json for bundling/type-checking.\n`);
 		if (debug) {
 			writeOut(`${_colors.cyan.bold('Building DEBUG version of rompack.')}.\n`);
 		}
 		else {
 			writeOut(`${_colors.cyan.bold('Building NON-DEBUG version of rompack.')}.\n`);
 		}
-		progress.showInitial();
-		await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
-
 		try {
-			let romManifest: RomManifest;
-			let short_name: string = 'BMSX';
-			romManifest = await getRomManifest(respath);
-			await progress.taskCompleted();
-			if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-			rom_name = romManifest?.rom_name ?? rom_name;
-			title = romManifest?.title ?? title;
-			short_name = romManifest?.short_name ?? short_name;
+			progress.showInitial();
+			await progress?.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
 
 			if (!force) {
 				rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath);
@@ -261,20 +349,40 @@ async function main() {
 						writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
 					}
 				}
+				await progress?.taskCompleted();
 			} else rebuildRequired = true;
-
-			if (!deploy) progress.removeTask('Deployeren');
 			if (!rebuildRequired) {
-				progress.skipTasks(6);
+				progress?.removeTasks(romBuildTasks);
 			}
 
-			// #endregion
+			let romManifest: RomManifest;
+			let short_name: string = 'BMSX';
+			romManifest = await getRomManifest(respath);
+			await progress.taskCompleted();
+			if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
+			rom_name = romManifest?.rom_name ?? rom_name;
+			title = romManifest?.title ?? title;
+			short_name = romManifest?.short_name ?? short_name;
+
 			if (rebuildRequired) {
-				await esbuild(rom_name, bootloader_path, debug);
-				await progress?.taskCompleted();
-				const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
-				await progress?.taskCompleted();
-				const resources = await getResourcesList(romResMetaList, rom_name);
+				// Type-check engine and game prior to bundling unless skipped
+				if (!skipTypecheck) {
+					const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
+					try {
+						if (enginedts) typecheckGameWithDts(bootloader_path, enginedts, tsProject);
+						else typecheckBeforeBuild(bootloader_path, tsProject);
+					} catch (e) { throw e; }
+
+					// Ensure tasks are removed
+					await progress?.taskCompleted();
+				}
+				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
+				await esbuild(rom_name, bootloader_path, debug, tsProject);
+                await progress?.taskCompleted();
+                const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
+                await progress?.taskCompleted();
+                // Build resources
+                let resources = await getResourcesList(romResMetaList, rom_name);
 				await progress?.taskCompleted();
 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
@@ -291,6 +399,7 @@ async function main() {
 				await finalizeRompack(romAssets, rom_name, debug);
 				await progress?.taskCompleted();
 			}
+
 			await buildBootromScriptIfNewer(force, debug);
 			await progress?.taskCompleted();
 			await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
@@ -299,7 +408,7 @@ async function main() {
 				await deployToServer(rom_name, title);
 				await progress?.taskCompleted();
 			}
-			await progress.showDone();
+			await progress?.showDone();
 			writeOut(`\n`);
 		} catch (e) {
 			await progress.pulse();

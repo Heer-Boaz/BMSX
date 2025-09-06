@@ -1,4 +1,4 @@
-import { $, World, build_fsm, new_vec3, State, StateMachineBlueprint } from '../bmsx';
+import { $, World, build_fsm, new_vec3, State, StateMachineBlueprint } from 'bmsx';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';

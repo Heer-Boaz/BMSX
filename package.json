@@ -1,7 +1,14 @@
 {
-  "name": "bmsx",
+  "name": "bmsx-workspace",
+  "private": true,
   "version": "1.0.0",
   "description": "",
+  "workspaces": [
+    "src/bmsx",
+    "src/testrom",
+    "src/ella2023",
+    "src/sint2024"
+  ],
   "dependencies": {
     "blob": "*",
     "node-fetch": "*",
@@ -47,13 +54,16 @@
     "tsx": "^4.20.5",
     "typescript": "^5.8.3"
   },
+  
   "scripts": {
     "build:game": "npx tsx scripts/rompacker.ts --nodeploy -romname testrom",
     "build:all": "npm run pack:resources && npm run build:force",
     "build:force": "npx tsx scripts/rompacker.ts --nodeploy --force -romname testrom",
     "pack:resources": "npx tsx scripts/rompacker.ts --buildreslist -respath ./src/testrom/res",
     "build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
-    "Watch!": "npx tsc --watch --project tsconfig.json"
+    "Watch!": "npx tsc -b -w",
+    "typecheck:scripts": "npx tsc -p tsconfig.scripts.json",
+    "pack:engine": "npm pack ./src/bmsx"
   },
   "repository": {
     "type": "git",

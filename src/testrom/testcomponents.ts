@@ -1,4 +1,4 @@
-import { Component, componenttags_preprocessing, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx';
+import { Component, componenttags_preprocessing, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from 'bmsx';
 
 
 @insavegame

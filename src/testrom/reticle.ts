@@ -1,4 +1,4 @@
-import { $, SpriteObject, new_area } from '../bmsx';
+import { $, SpriteObject, new_area } from 'bmsx';
 import { BitmapId } from './resourceids';
 
 export class Reticle extends SpriteObject {

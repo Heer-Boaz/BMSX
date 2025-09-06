@@ -1,9 +1,9 @@
 import { ItemType } from './item';
-import { SM } from '../bmsx/soundmaster';
+import { SM } from 'bmsx/soundmaster';
 import { AudioId } from './resourceids';
 import { FoeExplosion } from './foeexplosion';
 import { Model } from './gamemodel';
-import { Sprite, model, WorldObject } from '../bmsx/bmsx';
+import { Sprite, model, WorldObject } from 'bmsx';
 
 export abstract class Foe extends Sprite {
     public maxHealth: number;

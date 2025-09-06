@@ -71,17 +71,15 @@ export class StateMachineController {
 	 */
 	get definition(): StateDefinition { return this.current_machine.definition; }
 
-	constructor(fsm_id: string, id: string) {
-		if (!fsm_id) throw new Error(`[StateMachineController] Invalid FSM ID: "'${fsm_id}'"`);
-
+	constructor(fsm_id?: string, id?: string) {
+		// Support parameterless construction for deserialization. In normal runtime code,
+		// WorldObject passes explicit ids. When fsm_id is supplied, eagerly add the machine.
 		this.statemachines = {};
-		this.add_statemachine(fsm_id, id);
-
-		// Get all active state machines with the same ID
-		const activeStateMachinesWithSameId = ActiveStateMachines.get(fsm_id) ?? [];
-
-		// Add the current machine to the list of active machines. We want to keep track of all active instances so that we can do hot-swapping!
-		ActiveStateMachines.set(fsm_id, [...activeStateMachinesWithSameId, this.current_machine]);
+		if (fsm_id && id) {
+			this.add_statemachine(fsm_id, id);
+			const activeStateMachinesWithSameId = ActiveStateMachines.get(fsm_id) ?? [];
+			ActiveStateMachines.set(fsm_id, [...activeStateMachinesWithSameId, this.current_machine]);
+		}
 	}
 
 	/**

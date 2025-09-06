@@ -1,4 +1,4 @@
-import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, vec3 } from '../bmsx';
+import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, vec3 } from 'bmsx';
 import { Action } from './bootloader';
 import { mytree_builder } from './mytree_builder';
 import { BitmapId } from './resourceids';

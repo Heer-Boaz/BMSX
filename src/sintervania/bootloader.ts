@@ -1,7 +1,7 @@
-import { controller, Game, game, model } from '../bmsx/bmsx';
-import { setPoint } from '../bmsx/common';
-import { Tile } from '../bmsx/msx';
-import type { BootArgs } from '../bmsx/rompack';
+import { controller, Game, game, model } from 'bmsx';
+import { setPoint } from 'bmsx/common';
+import { Tile } from 'bmsx/msx';
+import type { BootArgs } from 'bmsx/rompack';
 import { GameConstants } from './gameconstants';
 import { Controller } from './gamecontroller';
 import { Chapter, Model } from './gamemodel';

@@ -1,19 +1,18 @@
 import { MenuItem } from "./mainmenu";
 import { AudioId, BitmapId } from "./resourceids";
-import { Direction } from "../bmsx/common";
+import { Direction } from "bmsx/common";
 import { TextWriter } from "./textwriter";
-import { Size, Point } from "../bmsx/common";
-import { SM } from "../bmsx/soundmaster";
+import { Size, Point } from "bmsx/common";
+import { SM } from "bmsx/soundmaster";
 import { Controller } from "./gamecontroller";
 import { GameState, Model } from "./gamemodel";
-import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, WorldObject, mdef, model, controller } from '../bmsx/bmsx';
-import { Constants } from "../bmsx/bmsx";
-import { new_vec2, setPoint } from "../bmsx/common";
-import { view, game } from "../bmsx/bmsx";
-import { Input } from "../bmsx/input";
-import { Msx1ExtColors } from "../bmsx/msx";
-import { DrawImgFlags } from '../bmsx/view';
+import { SlotExists, LoadGame } from "bmsx/gamepersistor";
+import { GameOptions as GO, WorldObject, mdef, model, controller, Constants } from 'bmsx';
+import { new_vec2, setPoint } from "bmsx/common";
+import { view, game } from 'bmsx';
+import { Input } from "bmsx/input";
+import { Msx1ExtColors } from "bmsx/msx";
+import { DrawImgFlags } from 'bmsx/view';
 
 interface MenuOption {
     type: MenuItem;

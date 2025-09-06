@@ -115,4 +115,12 @@ export class BFont {
         return letter;
     }
 
+    public textWidth(text: string): number {
+        let width = 0;
+        for (const char of text) {
+            width += this.char_width(char);
+        }
+        return width;
+    }
+
 }

@@ -1,4 +1,4 @@
-import { BFont } from "../bmsx/rompack";
+import { BFont } from "bmsx/rompack";
 import { BitmapId } from "./resourceids";
 
 export class KonamiFont implements BFont {

@@ -1,8 +1,8 @@
 import { Candle } from './candle';
-import { TileSize, Tile } from "../bmsx/msx";
-import { Direction, Point } from "../bmsx/common";
+import { TileSize, Tile } from "bmsx/msx";
+import { Direction, Point } from "bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
-import { view, WorldObject, model, controller } from "../bmsx/bmsx";
+import { view, WorldObject, model, controller } from 'bmsx';
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
