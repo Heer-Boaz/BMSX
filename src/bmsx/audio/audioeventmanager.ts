@@ -330,7 +330,7 @@ export class AudioEventManager implements RegisterablePersistent {
 					if (pr < minPr) return true; // lower priority: drop
 					if (minIdx === 0) $.sndmaster.stop(channel, 'oldest');
 					else if (minIdx === infos.length - 1) $.sndmaster.stop(channel, 'newest');
-					else $.sndmaster.stop(channel, 'byId', infos[minIdx].id);
+					else $.sndmaster.stop(channel, 'byid', infos[minIdx].id);
 					break;
 				}
 				case 'pause': {

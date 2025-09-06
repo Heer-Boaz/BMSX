@@ -50,6 +50,7 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 - [game.html](#gamehtml)
 - [Multi-Game Support](#multi-game-support)
 - [Build Pipeline Overview](#build-pipeline-overview)
+- [Engine Package Mode](#engine-package-mode)
 - [Example: Adding a New Game](#example-adding-a-new-game)
 - [Best Practices](#best-practices)
 - [References](#references)
@@ -1834,3 +1835,6 @@ This ensures that event handlers are always up-to-date and that no memory leaks 
 - [`src/bmsx/gameobject.ts`](src/bmsx/gameobject.ts): Game object lifecycle, including `onspawn` and `dispose`.
 
 ---
+## Engine Package Mode
+
+For per‑game engine pinning and using the installed `bmsx` package instead of the source alias, see `ENGINE_PACKAGE_MODE.md`.

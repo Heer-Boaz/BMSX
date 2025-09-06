@@ -6,7 +6,7 @@ export interface AudioMetadataWithID extends AudioMeta {
     id: asset_id; // The ID of the audio asset.
 }
 
-export type AudioStopSelector = 'all' | 'oldest' | 'newest' | 'byId'
+export type AudioStopSelector = 'all' | 'oldest' | 'newest' | 'byid'
 export type ModulationRange = [number, number];
 
 export interface FilterModulationParams {
@@ -377,7 +377,7 @@ export class SoundMaster implements RegisterablePersistent {
             const audioRes = this.tracks[idOrType];
             const inferredType = audioRes?.['audiometa']?.['audiotype'] as AudioType | undefined;
             if (inferredType) {
-                this.stopByTypeInternal(inferredType, 'byId', idOrType);
+                this.stopByTypeInternal(inferredType, 'byid', idOrType);
             }
         }
     }
@@ -404,7 +404,7 @@ export class SoundMaster implements RegisterablePersistent {
                     pool.pop();
                 }
                 break;
-            case 'byId': {
+            case 'byid': {
                 if (id === undefined) return;
                 for (let i = pool.length - 1; i >= 0; i--) {
                     if (pool[i].id === id) {
