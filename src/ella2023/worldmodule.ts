@@ -3,7 +3,7 @@ import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { EilaGameState } from './state';
 
-export const EILA_PLUGIN = {
+export const EILA_MODULE = {
 	onBoot(model: World) {
 		// Spaces
 		model.addSpace('gameover');
@@ -19,8 +19,6 @@ export const EILA_PLUGIN = {
 		new EilaEventService().activate();
 	},
 };
-
-export type ExtendedModel = World & typeof EILA_PLUGIN;
 
 @insavegame
 export class EilaEventService extends Service {

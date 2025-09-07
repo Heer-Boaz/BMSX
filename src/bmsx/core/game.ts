@@ -336,23 +336,6 @@ export class Game {
 		}
 		AudioEventManager.instance.init([rompack.audioevents], null);
 
-		if (this.debug) {
-			// @ts-ignore
-			// window[] = world;
-			// // @ts-ignore
-			// window['view'] = view;
-			// // @ts-ignore
-			// window['$rom'] = global.$rom;
-			// // @ts-ignore
-			// window['$'] = global.$;
-			// // @ts-ignore
-			// window['registry'] = global.registry;
-			// // @ts-ignore
-			// window['eventEmitter'] = this.event_emitter;
-
-			Input.instance.enableDebugMode();
-		}
-
 		// Prevent the user from accidentally closing the game window if not in debug mode
 		if (!this.debug) {
 			window.addEventListener('beforeunload', this.onBeforeUnload, true);
@@ -378,6 +361,22 @@ export class Game {
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
 		new PhysicsWorld().bind();
 
+		if (this.debug) {
+			// @ts-ignore
+			// window[] = world;
+			// // @ts-ignore
+			// window['view'] = view;
+			// // @ts-ignore
+			// window['$rom'] = global.$rom;
+			// // @ts-ignore
+			// window['$'] = global.$;
+			// // @ts-ignore
+			// window['registry'] = global.registry;
+			// // @ts-ignore
+			// window['eventEmitter'] = this.event_emitter;
+
+			Input.instance.enableDebugMode(); // Do this after the world is initialized to prevent race conditions
+		}
 		this.initialized = true; // Mark the game as initialized
 		return this; // Allow chaining
 	}
@@ -424,7 +423,7 @@ export class Game {
 		if (REWIND_BUFFER_ACTIVATED && (game._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
 			// --- Rewind snapshot logic ---
 			try {
-				const snapshot = model.save(false);
+				const snapshot = game.save(false);
 				const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
 				this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
 			} catch (e) {
@@ -552,7 +551,7 @@ export class Game {
 
 			// World hydration (ported from World.load)
 			this.world.clearAllSpaces();
-			EventEmitter.instance.dispose();
+			EventEmitter.instance.clear();
 
 			const tempSpaces = this.world.spaces.slice();
 			tempSpaces.forEach(s => this.world.removeSpace(s));
@@ -580,7 +579,6 @@ export class Game {
 						// Attach to space without invoking onspawn (we'll re-register and rewire below)
 						space.spawn(o, null, true);
 						// Ensure revived objects are present in the Registry so components can resolve parent links
-						if (!this.registry.has(o.id)) this.registry.register(o);
 						// Allow event handlers to process for this object after hydration
 						// (FSM state remains as revived; do not call sc.start())
 					});
@@ -589,16 +587,35 @@ export class Game {
 				this.world.endDepthBatch();
 			}
 
+			// Ensure all objects are registered, including all inner objects
+			sg.flattenedObjectsList.forEach(o => o.id && this.registry.register(o as Registerable));
+
 			// Plugin load hooks
 			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);
 
-			// Wiring phase (revive): bind all registered entities (no FSM start here)
+            // Wiring phase (revive): bind all registered entities (no FSM start here)
+            for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
+
+            // Reactivate revived entities without resetting state: mark active and resume controllers
+            // World-level controller
+            this.world.sc?.resume();
+
+            // Services: active + resume
             for (const ent of this.registry.getRegisteredEntities()) {
-				ent?.bind();
+                if (ent instanceof Service) {
+                    ent.active = true;
+                    ent.enableEvents();
+                    ent.sc.resume();
+                }
             }
 
-			// Activate: enable event handling on revived objects only (FSMs are already revived)
-			// this.world.forEachWorldObject((o) => { o.eventhandling_enabled = true; }, { scope: 'all' });
+            // WorldObjects: active + resume
+            this.world.forEachWorldObject((o) => {
+                o.active = true;
+                o.tickEnabled = true;
+                o.eventhandling_enabled = true;
+                o.sc.resume();
+            }, { scope: 'all' });
 
 			// Restore service state (opt-in)
 			const services = sg.servicesState ?? {};

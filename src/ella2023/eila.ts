@@ -2,7 +2,7 @@ import { $, Component, WorldObjectEventPayloads, Identifier, RandomModulationPar
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
-import { EilaEventService } from './modelplugin';
+import { EilaEventService } from './worldmodule';
 import { AudioId, BitmapId } from './resourceids';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';

@@ -116,6 +116,7 @@ export class StateMachineController {
 
 	/** Wire all event subscriptions declared in machine definitions. */
 	public bind(): void {
+		const subscribed = new Set<string>();
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
 
@@ -133,9 +134,12 @@ export class StateMachineController {
 							scope = undefined; // If the scope is 'all' or undefined, subscribe to the event with the given name and scope and dispatch it to the machine with the given id and global scope, meaning that the event will be dispatched to all machines
 							break;
 					}
-					// Subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope (or global scope if no scope is provided)
-					// EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
-					EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, scope);
+					const key = `${event.name}-${scope || 'global'}`;
+					if (!subscribed.has(key)) {
+						// EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
+						EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, scope, true);
+						subscribed.add(key);
+					}
 				});
 			}
 		}
@@ -154,7 +158,8 @@ export class StateMachineController {
 					case 'all':
 					default: scope = undefined; break;
 				}
-				EventEmitter.instance.off(event.name, this.auto_dispatch as any, scope as any, true);
+				// Pass undefined explicitly for global scope so EventEmitter.off removes global listeners
+				EventEmitter.instance.off(event.name, this.auto_dispatch, scope, true);
 			});
 		}
 	}

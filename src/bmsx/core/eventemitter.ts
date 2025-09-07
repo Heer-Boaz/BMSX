@@ -92,7 +92,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * The payload is the first argument passed by the emitter (if any).
 	 */
 	public onAny(handler: EventHandler, persistent: boolean = false): void {
-		EventEmitter.instance.anyListeners.push({ handler, persistent: !persistent });
+		EventEmitter.instance.anyListeners.push({ handler, persistent });
 	}
 
 	/**
@@ -295,24 +295,50 @@ export class EventEmitter implements RegisterablePersistent {
 	}
 
 	/**
-	 * Removes a listener function from the specified event and emitter.
+	 * Removes a listener function from the specified event and emitter scope.
+	 *
+	 * Behavior:
+	 * - If 'emitter' is undefined, removes from the global scope listeners.
+	 * - If 'emitter' is provided (string or Identifier), removes from the emitter-scoped listeners for that id.
 	 *
 	 * @param event_name - The name of the event.
 	 * @param listener - The listener function to remove.
-	 * @param emitter - Optional. The emitter name. If not provided, 'all' is used as the default emitter.
+	 * @param emitter - Optional. The emitter id for scoped listeners. If omitted, the listener is removed from global scope.
 	 * @param forcePersistent - If true, also removes persistent listeners.
 	 */
 	off(event_name: string, listener: EventHandler, emitter?: EventScope, forcePersistent: boolean = false): void {
-		const key = emitter || 'all';
-		const emitterListeners = EventEmitter.instance.emitterScopeListeners[event_name]?.[key];
+		const self = EventEmitter.instance;
+		if (emitter === undefined) {
+			// Global-scope removal
+			const globalListeners = self.globalScopeListeners[event_name];
+			if (!globalListeners) {
+				console.warn(`No listeners for event "${event_name}" in global scope`);
+				return;
+			}
+			for (const item of Array.from(globalListeners)) {
+				if (item.listener === listener && (forcePersistent || !item.persistent)) {
+					globalListeners.delete(item);
+				}
+			}
+			if (globalListeners.size === 0) delete self.globalScopeListeners[event_name];
+			return;
+		}
+
+		// Emitter-scoped removal
+		const key = emitter;
+		const emitterListeners = self.emitterScopeListeners[event_name]?.[key];
 		if (!emitterListeners) {
 			console.warn(`No listeners for event "${event_name}" and emitter "${key}"`);
 			return;
 		}
-		for (let item of emitterListeners) {
+		for (const item of Array.from(emitterListeners)) {
 			if (item.listener === listener && (forcePersistent || !item.persistent)) {
 				emitterListeners.delete(item);
 			}
+		}
+		if (emitterListeners.size === 0) {
+			delete self.emitterScopeListeners[event_name][key];
+			if (Object.keys(self.emitterScopeListeners[event_name]).length === 0) delete self.emitterScopeListeners[event_name];
 		}
 	}
 

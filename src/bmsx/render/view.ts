@@ -442,7 +442,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				const elem: any = document.documentElement as any;
+				const elem: any = document.documentElement;
 				if (elem.requestFullscreen) {
 					await elem.requestFullscreen();
 				} else if (elem.mozRequestFullScreen) {
@@ -471,7 +471,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				const doc: any = document as any;
+				const doc: any = document;
 				if (doc.exitFullscreen) {
 					await doc.exitFullscreen();
 				} else if (doc.webkitExitFullscreen) {

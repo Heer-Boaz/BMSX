@@ -289,7 +289,7 @@ export function typecheckGameWithDts(bootloader_path: string, dtsDir: string, ba
             }
         },
         include: [path.join(bootloader_path, '**/*.ts')]
-    } as any;
+    };
     const dir = path.dirname(tmpCfg);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(tmpCfg, JSON.stringify(cfg, null, 2));

@@ -199,7 +199,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
             this.id = this.make_id();
             this.transition_queue = [];
             this.critical_section_counter = 0;
-            this.bind();
+            Registry.instance.register(this);
         }
         this.root_id = root_id ?? this.id;
     }
@@ -209,6 +209,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * Performs the setup logic when the component is loaded.
      */
     public onLoadSetup(): void {
+        // Ensure revived states are present in the registry without traversing parent/root getters.
+        // Avoid calling parent/root during onload to prevent re-entrant resolution while revive is linking.
+        // if (this.id && !Registry.instance.has(this.id)) {
+        //     Registry.instance.register(this);
+        // }
     }
 
     /**
@@ -246,6 +251,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
         this.enterCriticalSection();
         try {
+            if (!Registry.instance.has(this.id)) {
+                Registry.instance.register(this);
+            }
             // Run substates first
             this.runSubstateMachines();
 

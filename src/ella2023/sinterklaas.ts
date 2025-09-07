@@ -2,7 +2,7 @@ import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteOb
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';
-import { EilaEventService } from './modelplugin';
+import { EilaEventService } from './worldmodule';
 import { AudioId, BitmapId } from "./resourceids";
 
 function theOtherFighter(f: Fighter) {

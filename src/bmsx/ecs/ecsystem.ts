@@ -12,6 +12,8 @@ import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { TileSize } from "../systems/msx";
 import { Identifiable } from "bmsx/rompack/rompack";
 import { Stateful } from "bmsx";
+import { Service } from '../core/service';
+import { Registry } from '../core/registry';
 
 export enum TickGroup {
 	PrePhysics = 10,
@@ -66,8 +68,6 @@ export class ECSystemManager {
 	}
 }
 
-// --- Reference systems that replicate the prior behavior ---
-
 /** Pre-update: call preprocessingUpdate for components tagged with given tag. */
 export class PreTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PrePhysics, priority); }
@@ -84,7 +84,6 @@ export class PreTagSystem extends ECSystem {
 	}
 }
 
-// Helper type-guards to avoid using `as any`
 function isBehaviorTreeObject(o: WorldObject): o is WorldObject & {
 	btreecontexts: Record<string, unknown>;
 	tickTree: (id: string) => void;
@@ -169,8 +168,8 @@ export class BehaviorTreeSystem extends ECSystem {
 		for (let i = 0; i < objs.length; ++i) {
 			const o = objs[i] as WorldObject;
 			if (!isBehaviorTreeObject(o)) continue;
-			if ((o as any).active === false) continue;
-			if ((o as any).tickEnabled === false) continue;
+			if (o.active === false) continue;
+			if (o.tickEnabled === false) continue;
 			const bts = o.btreecontexts;
 			if (!bts) continue;
 			for (const id in bts) {
@@ -187,15 +186,23 @@ export class StateMachineSystem extends ECSystem {
         // Tick all world objects' state machines (gated)
         const objs = model.activeObjects;
         for (let i = 0; i < objs.length; ++i) {
-            const o = objs[i] as WorldObject;
+            const o = objs[i] as WorldObject & { active?: boolean; tickEnabled?: boolean };
             if (!hasStateController(o)) continue;
             if (o.disposeFlag) continue;
+            if (o.active === false) continue;
+            if (o.tickEnabled === false) continue;
             const sc = o.sc;
             if (!sc.tickEnabled) continue;
             sc.tick();
         }
 		// Tick all service's state machines
-		
+		for (const ent of Registry.instance.getRegisteredEntities()) {
+			if (ent instanceof Service) {
+				if (ent.active && ent.tickEnabled && ent.sc && ent.sc.tickEnabled) {
+					ent.sc.tick();
+				}
+			}
+		}
 	}
 }
 

@@ -404,7 +404,7 @@ export function isStorageAvailable(storageType: string): boolean {
         storage.removeItem(testKey);
         return true;
     } catch (error) {
-        const e = error as any;
+        const e = error;
         return e && e.hasOwnProperty('code') && (
             e.code === 22 || // everything except Firefox
             e.code === 1014 || // Firefox

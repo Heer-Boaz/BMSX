@@ -413,7 +413,8 @@ export class World implements Stateful, RegisterablePersistent {
     public bind(): void {
         // World may have decorator-declared listeners in derived games
         $.event_emitter.initClassBoundEventSubscriptions(this);
-        // World SC binds via startWorldStateMachine() when started
+        // Ensure FSM controller event wiring is active on revive as well
+        this.sc?.bind?.();
     }
 
     /** Unwire world subscriptions and FSM listeners. */
@@ -431,6 +432,8 @@ export class World implements Stateful, RegisterablePersistent {
         this.addSpace('default' satisfies initial_world_spaces);
         this.addSpace('game_start' satisfies initial_world_spaces);
         this.addSpace('ui' satisfies initial_world_spaces);
+
+        this._activeSpaceId = 'game_start';
 
         return this; // Return the current instance of the World for chaining
     }
@@ -511,26 +514,6 @@ export class World implements Stateful, RegisterablePersistent {
             const o = objects[i];
             if (o.disposeFlag) this.destroy(o);
         }
-    }
-
-    /**
-     * Loads a serialized game state and applies it to the current world instance.
-     * Clears all spaces and removes all objects from the world instance before loading the new state.
-     * @param {string} serialized - The serialized game state to load.
-     * @returns {void} Nothing.
-     */
-    public load(serialized: Uint8Array, compressed: boolean = true): void {
-        $.load(serialized, compressed);
-    }
-
-    /**
-     * Saves the current game state by creating a `Savegame` object and serializing it.
-     * Pauses the game while creating the `Savegame` object to ensure consistency.
-     * Excludes keys listed in `World.keys_to_exclude_from_save` from the saved data.
-     * @returns {string} The serialized `Savegame` object.
-     */
-    public save(compress: boolean = true): Uint8Array {
-        return $.save(compress);
     }
 
     /**
@@ -743,7 +726,7 @@ export class World implements Stateful, RegisterablePersistent {
 
     /** Iterate objects that have a given component; passes the component instance too. */
     public forEachWorldObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
-        this.forEachWorldObject((o) => { const c =(o).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
+        this.forEachWorldObject((o) => { const c = (o).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
     }
 
     /**

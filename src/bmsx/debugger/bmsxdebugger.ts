@@ -739,13 +739,16 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
     }
 
     // Use ObjectPropertyDialog for live-refresh
-    if (obj && obj.id != null) {
-        ObjectPropertyDialog.openDialogById(obj.id.toString(), title, ['objects']);
-        // Optionally, position or focus dialog if needed
-    } else {
-        const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
-        createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
-        document.body.insertBefore(dialogDiv, null);
+    if (obj) {
+        if (obj.id != null) {
+            ObjectPropertyDialog.openDialogById(obj.id, title, ['objects']);
+            // Optionally, position or focus dialog if needed
+        }
+        else {
+            const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
+            createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
+            document.body.insertBefore(dialogDiv, null);
+        }
     }
 }
 
@@ -855,7 +858,7 @@ function highlight_object(o: WorldObject) {
         if (!currentHighlighterComponent) {
             currentHighlighterComponent = new ObjectHighlighterComponent(o.id);
         }
-        currentHighlighterComponent. attach(o.id); // Also automatically detaches it
+        currentHighlighterComponent.attach(o.id); // Also automatically detaches it
     }
 }
 

@@ -12,7 +12,7 @@ export type TaskYield = AbilityYield; // Reuse wait engine
 export type TaskFn = (ctx: TaskContext) => Generator<TaskYield, void, void>;
 
 export interface TaskContext {
-	ownerId?: Identifier;
+	owner_id?: Identifier;
 	model: World;
 	director: TaskDirector;
 	emit: (name: string, payload?: any) => void;
@@ -66,12 +66,12 @@ export class TaskDirector implements RegisterablePersistent {
 
 	public get runners(): Iterable<TaskRunner> { return this._runners.values(); }
 
-	private makeCtx(ownerId?: Identifier): TaskContext {
+	private makeCtx(owner_id?: Identifier): TaskContext {
 		return {
-			ownerId,
+			owner_id: owner_id,
 			model: $.world,
 			director: this,
-			emit: (name: string, payload?: any) => EventEmitter.instance.emit(name, { id: ownerId ?? 'task' } as any, payload)
+			emit: (name: string, payload?: any) => EventEmitter.instance.emit(name, $.get(owner_id), payload)
 		};
 	}
 
@@ -82,10 +82,10 @@ export class TaskDirector implements RegisterablePersistent {
 		return id;
 	}
 
-	public playActor(ownerId: Identifier, task: TaskFn): string {
+	public playActor(owner_id: Identifier, task: TaskFn): string {
 		const id = `t#${this._counter++}`;
-		const co = task(this.makeCtx(ownerId));
-		this._runners.set(id, new TaskRunner(id, 'actor', co, ownerId));
+		const co = task(this.makeCtx(owner_id));
+		this._runners.set(id, new TaskRunner(id, 'actor', co, owner_id));
 		return id;
 	}
 

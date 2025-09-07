@@ -89,6 +89,8 @@ export interface Identifiable {
 	id: Identifier;
 }
 
+export type MaybeRegisterable = Partial<Registerable>;
+
 export interface Parentable {
 	parentid?: Identifier;
 }

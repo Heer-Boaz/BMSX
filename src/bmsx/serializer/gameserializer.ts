@@ -5,6 +5,7 @@ import { $ } from '../core/game';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";
+import { MaybeRegisterable } from "bmsx/rompack/rompack";
 
 function normalizeTypeName(raw: string | undefined | null): string {
     if (!raw) return '';
@@ -620,11 +621,19 @@ type ViewState = {
 export class Savegame {
     modelprops: {};
     allSpacesObjects: SpaceObject[];
+    servicesState?: Record<string, unknown>;
     spaces: Space[];
     SMState: SoundMasterState;
     viewState: ViewState;
     /** Optional per-service DTO map captured by Game.save(). */
-    servicesState?: Record<string, unknown>;
+
+    public get flattenedObjectsList(): MaybeRegisterable[] {
+        // Map each SpaceObject to its objects array, then deeply flatten in case there are nested arrays.
+        // The previous implementation `flatMap(obj => obj)` did not extract `.objects` and would not deep-flatten.
+        return this.allSpacesObjects
+            .map(s => (s.objects as unknown as MaybeRegisterable[]))
+            .flat(Infinity) as MaybeRegisterable[];
+    }
 
     @onsave
     saveViewState() {
