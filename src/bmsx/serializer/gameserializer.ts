@@ -449,6 +449,7 @@ export class Reviver {
         for (const id of Object.keys(idToObject)) {
             if (objects[id]?.isTypedArray) continue;
             const obj = idToObject[id];
+            if (obj === null || obj === undefined) continue; // skip unknown or filtered types
             let proto = Object.getPrototypeOf(obj);
             let reviverFunctions = [];
             while (proto && proto.constructor && proto.constructor.name !== 'Object') {
@@ -628,11 +629,11 @@ export class Savegame {
     /** Optional per-service DTO map captured by Game.save(). */
 
     public get flattenedObjectsList(): MaybeRegisterable[] {
-        // Map each SpaceObject to its objects array, then deeply flatten in case there are nested arrays.
-        // The previous implementation `flatMap(obj => obj)` did not extract `.objects` and would not deep-flatten.
-        return this.allSpacesObjects
-            .map(s => (s.objects as unknown as MaybeRegisterable[]))
-            .flat(Infinity) as MaybeRegisterable[];
+        // Flatten all space.objects arrays, skipping null/undefined entries to guard against
+        // unknown or excluded types during revive.
+        return (this.allSpacesObjects ?? [])
+            .flatMap(s => (s?.objects ?? []) as unknown as MaybeRegisterable[])
+            .filter((o): o is MaybeRegisterable => !!o && typeof o === 'object');
     }
 
     @onsave

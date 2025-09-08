@@ -234,6 +234,30 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 }
 
 function getImageURL(buffer: ArrayBuffer): string {
+    // When opened via file:// some browsers restrict blob: URLs or handle them
+    // differently which can cause image loading to fail (see error about
+    // "Failed to load image's URL: blob:file:///..."). Prefer a data: URL
+    // fallback when running from the file protocol to avoid that problem.
+    try {
+        if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+            const u8 = new Uint8Array(buffer);
+            // Convert Uint8Array to base64 in chunks to avoid call-size limits
+            const CHUNK = 0x8000;
+            let index = 0;
+            let binary = '';
+            while (index < u8.length) {
+                const slice = u8.subarray(index, Math.min(index + CHUNK, u8.length));
+                binary += String.fromCharCode.apply(null, Array.from(slice));
+                index += CHUNK;
+            }
+            return 'data:image/png;base64,' + btoa(binary);
+        }
+    } catch (e) {
+        // ignore and fall back to blob URL
+        // (we prefer not to throw here because callers expect a URL string)
+        // console.warn('getImageURL file:// fallback failed, using blob URL', e);
+    }
+
     return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
 }
 

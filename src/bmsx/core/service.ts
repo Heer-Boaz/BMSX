@@ -68,10 +68,9 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	 */
 	public dispose(): void {
 		// Remove all event subscriptions for this service and mark it inactive.
-		EventEmitter.instance.removeSubscriber(this);
 		this.disableEvents();
 		// Deregister, preserving persistence behavior unless caller forces removal.
-		Registry.instance.deregister(this, true);
+		this.unbind();
 	}
 
 	/** Wire decorator-declared subscriptions for this service. */
@@ -84,13 +83,14 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 
 	/** Unwire all subscriptions for this service. */
 	public unbind(): void {
-		Registry.instance.deregister(this);
 		EventEmitter.instance.removeSubscriber(this);
+		Registry.instance.deregister(this, true);
 	}
 
 	/** BeginPlay-style activation for services (starts FSM). */
 	public activate(): void {
 		this.active = true;
+		this.bind();
 		this.enableEvents();
 		this.sc.start();
 	}

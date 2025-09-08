@@ -87,7 +87,7 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
     for (const id of newChildren) {
         if (!node.substates) node.substates = {};
         if (!node.substates[id]) {
-            const child = new State(id, node.target_id, node.id, node.root_id);
+            const child = new State(id, node.target_id, node, node.root);
             node.substates[id] = child;
             // Build deeper children from definition
             reconcileStateTree(child, undefined, newDef.substates![id] as StateDefinition);

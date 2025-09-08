@@ -590,24 +590,27 @@ export class Game {
 			// Ensure all objects are registered, including all inner objects
 			sg.flattenedObjectsList.forEach(o => o.id && this.registry.register(o as Registerable));
 
-			// Plugin load hooks
-			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);
-
             // Wiring phase (revive): bind all registered entities (no FSM start here)
             for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
-
-            // Reactivate revived entities without resetting state: mark active and resume controllers
-            // World-level controller
-            this.world.sc?.resume();
 
             // Services: active + resume
             for (const ent of this.registry.getRegisteredEntities()) {
                 if (ent instanceof Service) {
                     ent.active = true;
+					ent.bind();
                     ent.enableEvents();
                     ent.sc.resume();
+					console.log(`Service ${ent.id} resumed`);
                 }
             }
+
+			// Plugin load hooks
+			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);
+
+
+            // Reactivate revived entities without resetting state: mark active and resume controllers
+            // World-level controller
+            this.world.sc?.resume();
 
             // WorldObjects: active + resume
             this.world.forEachWorldObject((o) => {

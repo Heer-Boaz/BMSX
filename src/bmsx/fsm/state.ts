@@ -23,26 +23,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     id: Identifier;
 
     /**
-     * The identifier of this specific instance of the state machine's parent.
-     * @see {@link make_id}
+     * Direct reference to parent state (not serialized).
      */
-    parent_id: Identifier;
+    private parent_ref?: State;
 
     /**
-     * The parent state of the state (machine).
+     * Direct reference to root state (not serialized).
      */
-    public get parent(): State { return Registry.instance.get(this.parent_id); }
+    private root_ref?: State;
 
-    /**
-     * The identifier of this specific instance of the state machine's root machine.
-     * @see {@link make_id}
-     */
-    root_id: Identifier;
-
-    /**
-     * The root state of the state (machine).
-     */
-    public get root(): State { return Registry.instance.get(this.root_id); }
+    /** Parent state of this state (machine). */
+    public get parent(): State | undefined { return this.parent_ref; }
+    /** Root state of this state (machine). */
+    public get root(): State { return this.root_ref ?? this; }
 
     /**
      * The unique identifier for the bfsm.
@@ -172,8 +165,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * @param id - id of the FSM definition to use for this machine.
      * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
      */
-    public static create(id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier): State {
-        let result = new State(id, target_id, parent_id, root_id);
+    public static create(id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
+        let result = new State(id, target_id, parent, root);
         result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their substates
         result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
@@ -186,10 +179,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * @param def_id - id of the state machine definition to use for this machine.
      * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
      */
-    constructor(def_id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier) {
+    constructor(def_id: Identifier, target_id: Identifier, parent?: State, root?: State) {
         this.def_id = def_id ?? DEFAULT_BST_ID;
         this.target_id = target_id;
-        this.parent_id = (target_id == parent_id ? undefined : parent_id); // If the target_id is the same as the parent_id, don't set the parent_id to denote that this is the root state
+        this.parent_ref = parent;
+        // If no explicit root provided, inherit from parent or become own root
+        this.root_ref = root ?? parent?.root ?? this;
         this.paused ??= false;
         // Note: do not initailize the states here, as this will be done in the populateStates function. Also, do not initialize the currentid here, as this will be done in the reset function
         // Note: do not initialize the history here, as this will be done in the reset function
@@ -199,9 +194,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
             this.id = this.make_id();
             this.transition_queue = [];
             this.critical_section_counter = 0;
-            Registry.instance.register(this);
+            // Registry.instance.register(this);
         }
-        this.root_id = root_id ?? this.id;
     }
 
     @onload
@@ -209,10 +203,18 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * Performs the setup logic when the component is loaded.
      */
     public onLoadSetup(): void {
-        // Ensure revived states are present in the registry without traversing parent/root getters.
-        // Avoid calling parent/root during onload to prevent re-entrant resolution while revive is linking.
-        // if (this.id && !Registry.instance.has(this.id)) {
-        //     Registry.instance.register(this);
+        // Link parent/root references after revive using the existing tree shape.
+        // If no parent is wired, treat this as a root node.
+        // if (!this.parent_ref) this.root_ref = this;
+        // Wire children to this as parent and propagate root
+        // if (this.substates) {
+        //     for (const id in this.substates) {
+        //         const child = this.substates[id];
+        //         if (child) {
+        //             child.parent_ref = this;
+        //             child.root_ref = this.root;
+        //         }
+        //     }
         // }
     }
 
@@ -476,7 +478,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
             this.root.transition_to_path(restParts, ...args);
         }
         else { // If the state is not local, check if it is a state in the parent state machine or a state in the root state machine hierarchy
-            if (this.parent_id) { // If there is a parent, switch to the state in the parent state machine
+            if (this.parent) { // If there is a parent, switch to the state in the parent state machine
                 this.parent.transition_to_path(state_id, ...args); // Switch to the state in the parent state machine
             }
             else { // If there is no parent, this is the root state machine, so we can just switch to the state in the current state machine
@@ -509,6 +511,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
         else if (state_id.startsWith(`${STATE_PARENT_PREFIX}.`)) {
             // Remove the `${STATE_PARENT_PREFIX}.` prefix and continue to the next state from the parent
             const restParts = state_id.slice(`${STATE_PARENT_PREFIX}.`.length);
+            if (!this.parent) throw new Error(`Cannot switch via '${STATE_PARENT_PREFIX}' from root state.`);
             // If there are more parts, switch to the state in the parent state machine
             this.parent.transition_switch_path(restParts, ...args);
         }
@@ -519,7 +522,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
             this.root.transition_switch_path(restParts, ...args);
         }
         else {
-            this.parent.transition_switch_path(state_id, ...args); // Switch to the state in the parent state machine
+            if (this.parent) this.parent.transition_switch_path(state_id, ...args);
+            else this.transition_switch_path(state_id, ...args);
         }
     }
 
@@ -839,7 +843,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
         this.substates = {}; // Initialize the states object to an empty object
         for (let sdef_id in sdef.substates) {
-            let state = new State(sdef_id, this.target_id, this.id, this.root_id);
+            let state = new State(sdef_id, this.target_id, this, this.root);
             this.add(state);
             state.populateStates(); // Populate the substates of the state
         }
@@ -902,11 +906,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
     /**
      * Generates a unique identifier for the current instance.
-     * The identifier is created by concatenating the `parent_id`, `target_id`, and `def_id`.
+     * The identifier is created by concatenating the parent machine's id (or the `target_id` for root machines) and the `def_id`.
      * @returns The generated identifier.
      */
     private make_id(): Identifier {
-        let id = `${this.parent_id ?? this.target_id}.${this.def_id}`; // The id is the parent_id + the target_id + the def_id (e.g. 'parent_id.target_id.def_id') to create a unique id
+        const parentPart = this.parent_ref?.id ?? this.target_id;
+        const id = `${parentPart}.${this.def_id}`;
         return id;
     }
 
@@ -922,11 +927,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     }
 
     public bind(): void {
-        Registry.instance.register(this);
+        // No-op
+        // Registry.instance.register(this);
     }
 
     public unbind(): void {
-        Registry.instance.deregister(this);
+        // No-op
+        // Registry.instance.deregister(this);
     }
 
     /**

@@ -16,7 +16,8 @@
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
 			"sourceMapPathOverrides": {
-				"file:///B:/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
+				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
+				// "file:///B:/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
 				// "../scripts/*": "${workspaceFolder}/scripts/*",
 				"*": "${workspaceFolder}/src/*"
 			},
@@ -97,6 +98,29 @@
 			"name": "http://127.0.0.1:3000/scripts/ascii_shader.html",
 			"request": "launch",
 			"url": "http://127.0.0.1:3000/scripts/ascii_shader.html"
+		},
+		{
+			"type": "msedge",
+			"request": "launch",
+			"name": "Debug the game! (WSL)",
+			"url": "file:////wsl$/Ubuntu/home/boaz/BMSX/dist/game_debug.html",
+			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
+			"runtimeArgs": [
+				"--nolazy",
+				"--allow-file-access-from-files",
+				"--disable-session-crashed-bubble",
+				"--disable-features=IsolateOrigins,site-per-process,web-security"
+			],
+			"webRoot": "${workspaceFolder}",
+			"sourceMaps": true,
+			"sourceMapPathOverrides": {
+				"file:///home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
+				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
+				"*": "${workspaceFolder}/src/*"
+			},
+			"showAsyncStacks": true,
+			"smartStep": true,
+			"disableNetworkCache": true
 		}
 	],
 	// "compounds": [

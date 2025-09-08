@@ -282,13 +282,12 @@ export class StateMachineController {
 	 *
 	 * @param id - The ID of the state machine.
 	 * @param target_id - The ID of the target machine.
-	 * @param parent_id - The ID of the target object.
-	 */
-	add_statemachine(id: Identifier, target_id: Identifier): void {
-		this.statemachines[id] = State.create(id, target_id, target_id, null);
-		// If this is the first id that was added, set it as the current machine
-		if (!this.current_machine_id) this.current_machine_id = id;
-	}
+     */
+    add_statemachine(id: Identifier, target_id: Identifier): void {
+        this.statemachines[id] = State.create(id, target_id);
+        // If this is the first id that was added, set it as the current machine
+        if (!this.current_machine_id) this.current_machine_id = id;
+    }
 
 	/**
 	 * Gets the state machine with the given ID.
