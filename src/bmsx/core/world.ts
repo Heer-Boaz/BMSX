@@ -57,19 +57,6 @@ export class World implements Stateful, RegisterablePersistent {
     private static _physDiagFrames?: number;
 
     /**
-     * An array of keys to exclude from the serialized game state when saving the game.
-     * These keys include references to objects and spaces that should not be saved.
-     */
-    public static readonly keys_to_exclude_from_save = [
-        'objects',
-        'id2object',
-        'spaces',
-        'id2space',
-        'obj_id2obj_space_id',
-        'registry',
-    ];
-
-    /**
      * The controller for the state machine.
      */
     public sc: StateMachineController;
@@ -501,17 +488,11 @@ export class World implements Stateful, RegisterablePersistent {
     public clearAllSpaces(): void {
         for (const o of this.objects({ scope: 'all' })) o.dispose();
         for (const s of this.spaces) s.clear();
+    }
 
-        // Snapshot unique objects before clearing
-        // const unique: WorldObject[] = [];
-        // const seen = new Set<Identifier>();
-        // for (const sp of this.spaces) {
-        //     for (const o of sp.objects) { if (!seen.has(o.id)) { seen.add(o.id); unique.push(o); } }
-        // }
-        // Detach from all spaces (no disposal in Space.clear)
-        // this.spaces.forEach(s => s.clear());
-        // Dispose each object exactly once
-        // for (const o of unique) o.dispose();
+    public disposeAndRemoveAllSpaces(): void {
+        for (const s of this.spaces) s.dispose?.();
+        this.spaces.length = 0;
     }
 
     /**
@@ -584,7 +565,7 @@ export class World implements Stateful, RegisterablePersistent {
         this._spaceMap.delete(id);
         this._camerasBySpace.delete(id);
         this._lightsBySpace.delete(id);
-        space.ondispose?.();
+        space.dispose?.();
     }
 
     public collidesWithTile(o: WorldObject, dir: Direction): boolean {
@@ -731,8 +712,8 @@ export class World implements Stateful, RegisterablePersistent {
         if (newSpaceId === this._activeSpaceId) return;
         const prev = this[id_to_space_symbol][this._activeSpaceId];
         this._activeSpaceId = newSpaceId;
-        prev?.ondeactivate?.();
-        this.activeSpace?.onactivate?.();
+        prev?.deactivate?.();
+        this.activeSpace?.activate?.();
         EventEmitter.instance.emit('spaceChanged', this, { prev: prev?.id, curr: this._activeSpaceId });
     }
 }

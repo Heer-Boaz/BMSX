@@ -3,6 +3,7 @@ import { EventEmitter } from './eventemitter';
 import { Stateful } from '../fsm/fsmtypes';
 import { StateMachineController } from '../fsm/fsmcontroller';
 import { Registry } from './registry';
+import { onload } from '../serializer/gameserializer';
 
 /**
  * Base class for non-world-bound, persistent services (UE-style Subsystems).
@@ -74,6 +75,7 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	}
 
 	/** Wire decorator-declared subscriptions for this service. */
+	@onload
 	public bind(): void {
 		Registry.instance.register(this);
 		EventEmitter.instance.initClassBoundEventSubscriptions(this);

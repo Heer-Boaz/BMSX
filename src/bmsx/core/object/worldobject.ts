@@ -3,7 +3,7 @@ import { Component, ComponentConstructor, ComponentContainer, ComponentTag, Cons
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
 import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
-import { insavegame, onload } from "../../serializer/gameserializer";
+import { insavegame, onload, excludepropfromsavegame } from "../../serializer/gameserializer";
 import { $ } from '../game';
 import type { Space } from '../space';
 import { ObjectTracker } from "./objecttracker";
@@ -48,18 +48,18 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	/**
 	 * Retrieves a component of the specified type from the world object.
-     * Note: 'abstract' classes in TypeScript emit regular constructor functions at runtime.
-     * instanceof checks the prototype chain against ctor.prototype, so using an abstract
-     * base class here (ctor) will correctly return true for derived instances.
+	 * Note: 'abstract' classes in TypeScript emit regular constructor functions at runtime.
+	 * instanceof checks the prototype chain against ctor.prototype, so using an abstract
+	 * base class here (ctor) will correctly return true for derived instances.
 	 *
 	 * @template T - The type of the component to retrieve.
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-    getComponent<T extends Component>(constructor: ComponentConstructor<T> | AbstractConstructor<T>) {
-        const key = normalizeDecoratedClassName((constructor)?.name);
-        return this.componentMap[key] as T | undefined;
-    }
+	getComponent<T extends Component>(constructor: ComponentConstructor<T> | AbstractConstructor<T>) {
+		const key = normalizeDecoratedClassName((constructor)?.name);
+		return this.componentMap[key] as T | undefined;
+	}
 
 	/**
 	 * Adds a component to the world object.
@@ -68,12 +68,12 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param {T} component - The component to be added.
 	 * @returns {void}
 	 */
-    addComponent<T extends Component>(component: T): void {
-        this.componentMap[normalizeDecoratedClassName(component.constructor?.name)] = component;
-        // Late-init: bind component event subscriptions and perform registry registration here,
-        // after the component has been fully constructed and added to the container.
-        component.onloadSetup();
-    }
+	addComponent<T extends Component>(component: T): void {
+		this.componentMap[normalizeDecoratedClassName(component.constructor?.name)] = component;
+		// Late-init: bind component event subscriptions and perform registry registration here,
+		// after the component has been fully constructed and added to the container.
+		component.onloadSetup();
+	}
 
 	/**
 	 * Removes a component from the world object.
@@ -82,13 +82,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor of the component to remove.
 	 * @returns void
 	 */
-    removeComponent(constructor: { name: string } | Function): void {
-        const key = normalizeDecoratedClassName((constructor)?.name);
-        const component = this.componentMap[key];
-        if (!component) return;
-        // Remove from the components map first to avoid recursive cycles when component.dispose()
-        // calls back into removeComponent. This makes removal idempotent from the container side.
-        delete this.componentMap[key];
+	removeComponent(constructor: { name: string } | Function): void {
+		const key = normalizeDecoratedClassName((constructor)?.name);
+		const component = this.componentMap[key];
+		if (!component) return;
+		// Remove from the components map first to avoid recursive cycles when component.dispose()
+		// calls back into removeComponent. This makes removal idempotent from the container side.
+		delete this.componentMap[key];
 
 		// If the component exposes a detach method, call it (best-effort).
 		component.detach();
@@ -105,20 +105,22 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * The identifier of the world object, which is a unique string that is generated based on the class name and a unique number.
 	 */
-	public id: Identifier;       
+	public id: Identifier;
 
-    /** True when the object is part of the world and should participate in gameplay. */
-    public active: boolean = false;
-    /** If false, systems should not advance time-based logic for this object. */
-    public tickEnabled: boolean = false;
-	
-    public _disposeFlag: boolean = false;
+	/** True when the object is part of the world and should participate in gameplay. */
+	public active: boolean = false;
+	/** If false, systems should not advance time-based logic for this object. */
+	public tickEnabled: boolean = false;
 
-    /**
-     * Indicates whether the object is flagged for disposal.
-     * If true, the object will be disposed of at the end of the game's current update cycle.
+	public _disposeFlag: boolean = false;
+	@excludepropfromsavegame
+	private _disposed: boolean = false;
+
+	/**
+	 * Indicates whether the object is flagged for disposal.
+	 * If true, the object will be disposed of at the end of the game's current update cycle.
 	 * @note We do not expose `setDisposeFlag` because we want to ensure that the @see {markForDisposal} is called instead.
-     */
+	 */
 	public get disposeFlag(): boolean { return this._disposeFlag; }
 
 	protected _pos: vec3 = new_vec3(...DEFAULT_POSITION_VALUES);
@@ -255,7 +257,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * It is used in cases where the world object is being moved without any side effects, such as when the world object is being teleported or when the position is being set directly without any physics calculations.
 	 * @param z The new z-coordinate to set.
 	 */
-    public set z_nonotify(z: number) {
+	public set z_nonotify(z: number) {
 		this.pos.z = z;
 		// Mark depth-sort dirty for the object's space to ensure correct draw order. This is still required.
 		$.world.markDepthDirtyForObjectId(this.id);
@@ -265,18 +267,14 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * Read-only: the identifier of the Space this object currently belongs to, or null if not in a space.
 	 */
 	public get spaceId(): Identifier | null {
-		const world = $.world;
-		if (!world) return null;
-		if (!world.objToSpaceMap.has(this.id)) return null;
-		return world.get_spaceid_that_has_obj(this.id);
+		return this.space?.id ?? null;
 	}
 
 	/**
 	 * Read-only: the Space this object currently belongs to, or null if not attached.
 	 */
 	public get space(): Space | null {
-		const sid = this.spaceId;
-		return sid ? $.world.get_space<Space>(sid) ?? null : null;
+		return $.world.getSpaceOfObject(this.id);
 	}
 
 	/**
@@ -493,17 +491,23 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * the FSM-state to the initial state (if specified).
 	 * @param spawningPos The position to spawn the object at.
 	 */
-    public onspawn(spawningPos?: vec3): void {
+	public onspawn(spawningPos?: vec3, opts?: { reason?: 'fresh' | 'revive' | 'transfer' }): void {
 		if (spawningPos) {
 			this.x_nonotify = spawningPos.x ?? this.x;
 			this.y_nonotify = spawningPos.y ?? this.y;
 			this.z_nonotify = spawningPos.z ?? this.z;
 		}
-		this.activate();
-    }
+		const reason = opts?.reason ?? 'fresh';
+		if (reason === 'fresh') {
+			// Fresh spawn: full BeginPlay
+			this.activate();
+		}
+		// Revive and transfer: do not mutate flags or controller; revived state is already set by deserialization,
+		// and transfers should not trigger BeginPlay again.
+	}
 
-    /** BeginPlay-style activation entry; mirrors onspawn behavior. */
-    public activate(): void {
+	/** BeginPlay-style activation entry; mirrors onspawn behavior. */
+	public activate(): void {
 		Registry.instance.register(this); // Register the object in the registry so it can be retrieved by id.
 
 		// Call the method to initialize event subscriptions
@@ -529,7 +533,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.active = false;
 		this.eventhandling_enabled = false;
 		this.tickEnabled = false;
-		this.sc && (this.sc.tickEnabled = false);
+		if (this.sc) { this.sc.pause(); }
 	}
 
 	/**
@@ -551,6 +555,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * 4. Deregisters the object from the entity registry.
 	 */
 	public dispose(): void {
+		if (this._disposed) return; // idempotent
+		this._disposed = true;
 		// Unsubscribe from events, mark as inactive, and stop all ticks
 		this.deactivate();
 
@@ -620,6 +626,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param old_x_or_y - The previous x or y coordinate of the world object before leaving the screen.
 	 */
 	public onLeavingScreen?: (ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leavingScreen']) => void;
+
+	public onleaveSpace?: (from: Identifier) => void;
+	public onenterSpace?: (to: Identifier) => void;
 
 	private _direction: Direction;
 	public oldDirection: Direction;
@@ -723,28 +732,27 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Initializes the setup for the onLoad event.
 	 */
-    @onload
-    onLoadSetup() {
-        // Ensure object is registered after revive (onspawn is skipped during revive)
-        // Binding is orchestrated by the engine wiring phase via bind()
-        // Do not force-enable event handling here; rely on lifecycle hooks (onspawn/ondespawn)
+	@onload
+	onLoadSetup() {
+		// Ensure object is registered after revive (onspawn is skipped during revive)
+		// Binding is orchestrated by the engine wiring phase via bind()
+		// Do not force-enable event handling here; rely on lifecycle hooks (onspawn/ondespawn)
 		this.bind();
-    }
+	}
 
-    /** Wire decorator-declared subscriptions for this object and bind its controller (revive path). */
-    public bind(): void {
-        Registry.instance.register(this);
-        EventEmitter.instance.initClassBoundEventSubscriptions(this);
-        this.sc.bind();
-    }
+	/** Wire decorator-declared subscriptions for this object and bind its controller (revive path). */
+	public bind(): void {
+		Registry.instance.register(this);
+		EventEmitter.instance.initClassBoundEventSubscriptions(this);
+	}
 
-    /** Unwire subscriptions and FSM listeners for this object. */
-    public unbind(): void {
-        // Best-effort: remove sc listeners by removing the subscriber (target) as well
+	/** Unwire subscriptions and FSM listeners for this object. */
+	public unbind(): void {
+		// Best-effort: remove sc listeners by removing the subscriber (target) as well
 		this.sc.unbind();
 		EventEmitter.instance.removeSubscriber(this);
-        Registry.instance.deregister(this);
-    }
+		Registry.instance.deregister(this);
+	}
 
 	/**
 	 * Initializes the linked finite state machines (FSMs) for the current instance.

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'bmsx/core/eventemitter';
 import { Identifiable, Identifier } from '../rompack/rompack';
-import { insavegame, onload } from '../serializer/gameserializer';
+import { insavegame, onload, excludepropfromsavegame } from '../serializer/gameserializer';
 import { ActiveStateMachines } from './fsmlibrary';
 import { type Stateful, type id2sstate } from './fsmtypes';
 import { State } from './state';
@@ -27,6 +27,14 @@ export class StateMachineController {
     statemachines: Record<Identifier, State>;
     /** If true, controller will be advanced by systems. */
     public tickEnabled: boolean = true;
+    /** True after a successful start(); prevents double-start. */
+    @excludepropfromsavegame
+    private _started: boolean = false;
+
+	@excludepropfromsavegame
+	private readonly _subscribedCache = new Set<string>();
+
+
 	// NOTE THAT THE STATE MACHINES ARE NOT STARTED AUTOMATICALLY
 	// THE TARGET OBJECT MUST CALL start() TO START THE STATE MACHINES
 	// ALSO NOTE THAT THE eventhandling_enabled FLAG OF THE **target** IS USED TO DETERMINE WHETHER EVENTS SHOULD BE DISPATCHED TO THE STATE MACHINES
@@ -94,18 +102,21 @@ export class StateMachineController {
 		for (let id in this.statemachines) {
 			this.statemachines[id].dispose();
 		}
+		this._started = false;
 	}
 
 	/**
 	 * Starts the state machine by initializing and starting all state machines.
 	 */
     start(): void {
+        if (this._started) return;
         // Ensure event subscriptions are installed before starting machines
         this.bind();
         // Start all state machines
         for (const id in this.statemachines) {
             this.statemachines[id].start();
         }
+        this._started = true;
         this.resume();
     }
 
@@ -116,7 +127,6 @@ export class StateMachineController {
 
 	/** Wire all event subscriptions declared in machine definitions. */
 	public bind(): void {
-		const subscribed = new Set<string>();
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
 
@@ -135,10 +145,10 @@ export class StateMachineController {
 							break;
 					}
 					const key = `${event.name}-${scope || 'global'}`;
-					if (!subscribed.has(key)) {
+					if (!this._subscribedCache.has(key)) {
 						// EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
 						EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, scope, true);
-						subscribed.add(key);
+						this._subscribedCache.add(key);
 					}
 				});
 			}
@@ -169,6 +179,7 @@ export class StateMachineController {
 	 * Initializes all statemachines by subscribing to events defined in the machine definition and allowing dispatching events to the appropriate machines.
 	 */
 	initLoadSetup(): void {
+		this._subscribedCache.clear(); // Clear the subscribed cache
 		this.bind();
 	}
 

@@ -1,4 +1,4 @@
-import { Identifier, Registerable } from '../rompack/rompack';
+import { AbstractConstructor, Constructor, Identifier, Registerable } from '../rompack/rompack';
 import { normalizeDecoratedClassName } from './decorators';
 
 export class Registry {
@@ -64,6 +64,16 @@ export class Registry {
 
     public getRegisteredEntities(): Registerable[] {
         return Object.values(this._registry);
+    }
+
+    public *iterate<T extends Registerable>(type?: Constructor<T> | AbstractConstructor<T>, persistent?: boolean): Generator<T> {
+        for (const id in this._registry) {
+            if (!type || this._registry[id] instanceof type) {
+                if (!persistent || this._registry[id].registrypersistent) {
+                    yield this._registry[id] as T;
+                }
+            }
+        }
     }
 
     public getRegisteredEntityIds(): Identifier[] {

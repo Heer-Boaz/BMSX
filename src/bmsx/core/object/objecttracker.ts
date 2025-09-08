@@ -1,5 +1,5 @@
 import type { Identifier } from '../../rompack/rompack';
-import { $world } from '../game';
+import { $ } from '../game';
 import { WorldObject } from "./worldobject";
 
 /**
@@ -56,7 +56,7 @@ export class ObjectTracker {
 
         for (let [id, properties] of Object.entries(this.trackedObjects)) {
             for (let { property, key } of properties) {
-                let worldObject = $world.getWorldObject(id);
+                let worldObject = $.world.getWorldObject(id);
                 if (!worldObject) continue; // skip if object no longer exists
 
                 // Use a string-indexable view so TS accepts dynamic property access

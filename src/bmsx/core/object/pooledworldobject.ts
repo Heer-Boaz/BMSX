@@ -8,7 +8,7 @@
  *  - Bij acquire(): inst.prepareForReuse(); inst.markActive(); inst.reset(...);
  *  - In run(): als effect klaar is -> this.recycle(); (en release naar pool)
  */
-import { $world } from '../game';
+import { $ } from '../game';
 import { WorldObject } from './worldobject';
 
 export abstract class PooledWorldObject extends WorldObject {
@@ -27,9 +27,9 @@ export abstract class PooledWorldObject extends WorldObject {
     /** Zorgt dat het object niet nog in de model space hangt voordat we hem opnieuw gebruiken. */
     protected prepareForReuse(): void {
         // Fast-path: directly find the current space and exile once without disposing
-        const sid = $world.objToSpaceMap.get(this.id);
+        const sid = $.world.objToSpaceMap.get(this.id);
         if (!sid) return; // not attached to any space
-        const sp = $world.get_space(sid);
+        const sp = $.world.getSpaceOfObject(sid);
         if (sp) sp.despawn(this); // detach zonder dispose zodat allocaties behouden blijven
     }
 

@@ -1,11 +1,10 @@
 import { type ModulationParams } from "../audio/soundmaster";
-import { SpaceObject } from '../core/space';
 import { Space } from '../core/space';
 import { $ } from '../core/game';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";
-import { MaybeRegisterable } from "bmsx/rompack/rompack";
+// import { MaybeRegisterable } from "bmsx/rompack/rompack";
 
 function normalizeTypeName(raw: string | undefined | null): string {
     if (!raw) return '';
@@ -625,20 +624,19 @@ type ViewState = {
  */
 export class Savegame {
     modelprops: {};
-    allSpacesObjects: SpaceObject[];
     servicesState?: Record<string, unknown>;
     spaces: Space[];
     SMState: SoundMasterState;
     viewState: ViewState;
     /** Optional per-service DTO map captured by Game.save(). */
 
-    public get flattenedObjectsList(): MaybeRegisterable[] {
-        // Flatten all space.objects arrays, skipping null/undefined entries to guard against
-        // unknown or excluded types during revive.
-        return (this.allSpacesObjects ?? [])
-            .flatMap(s => (s?.objects ?? []) as unknown as MaybeRegisterable[])
-            .filter((o): o is MaybeRegisterable => !!o && typeof o === 'object');
-    }
+    // public get flattenedObjectsList(): MaybeRegisterable[] {
+    //     // Flatten all space.objects arrays, skipping null/undefined entries to guard against
+    //     // unknown or excluded types during revive.
+    //     return (this.allSpacesObjects)
+    //         .flatMap(s => s.objects as MaybeRegisterable[])
+    //         .filter((o): o is MaybeRegisterable => !!o && typeof o === 'object');
+    // }
 
     @onsave
     saveViewState() {

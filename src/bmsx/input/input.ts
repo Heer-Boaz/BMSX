@@ -12,6 +12,7 @@ import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from './controller_assignment_ui';
 import { PlayerInput } from './playerinput';
+import { id_to_space_symbol } from 'bmsx/core/space';
 
 // @ts-ignore
 function svgToPng(svgElement, filename) {
@@ -675,7 +676,7 @@ export class Input implements RegisterablePersistent {
 		const now = performance.now();
 		// Ensure UI controller exists once spaces are ready
 		if (!this.uiControllerSpawned) {
-			const ui = $.world?.get_space?.('ui');
+			const ui = $.world[id_to_space_symbol]['ui'];
 			if (ui) {
 				const existing = $.world.getWorldObject('controller_assignment_ui');
 				if (!existing) ui.spawn(new ControllerAssignmentUI());

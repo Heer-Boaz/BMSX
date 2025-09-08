@@ -1,4 +1,5 @@
-﻿import { BFont } from '../core/font';
+﻿import { id_to_space_symbol } from 'bmsx/core/space';
+import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/object/mesh';
@@ -227,7 +228,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
         if (active.depthSortDirty) active.sort_by_depth();
         active.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
         // Draw UI overlay space on top, unsorted or depth-sorted within its own space
-        const ui = $.world.get_space('ui');
+        const ui = $.world[id_to_space_symbol]['ui'];
         if (ui) {
             if (ui.depthSortDirty) ui.sort_by_depth();
             ui.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });

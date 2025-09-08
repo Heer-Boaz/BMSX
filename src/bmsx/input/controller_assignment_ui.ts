@@ -9,6 +9,7 @@ import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/backend/webgl.constants';
 import type { Identifier } from '../rompack/rompack';
 import { Input } from './input';
+import { id_to_space_symbol } from 'bmsx/core/space';
 
 // Branded types (compile-time only)
 export type PlayerIndex = number & { readonly __brand: 'PlayerIndex' };
@@ -114,7 +115,7 @@ export class ControllerAssignmentUI extends WorldObject {
 		if (!icon) {
 			icon = new SelectedPlayerIndexIcon(gpIndex);
 			this.icons.set(gpIndex, icon);
-			$.world.get_space('ui').spawn(icon);
+			$.world[id_to_space_symbol]['ui'].spawn(icon);
 		}
 		return icon;
 	}

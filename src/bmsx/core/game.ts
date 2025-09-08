@@ -23,7 +23,7 @@ import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
-import { id_to_space_symbol, SpaceObject } from './space';
+// No direct space helpers needed here; Spaces are revived as part of the world.
 
 global = globalThis || window; // Ensure global is defined
 
@@ -505,29 +505,22 @@ export class Game {
 		const worldAny = this.world as unknown as Record<string, unknown>;
 		const keys = Object.keys(worldAny);
 		const data: Record<string, unknown> = {};
-		const WorldCtor: any = this.world.constructor;
+		const worldCtor: any = this.world.constructor;
 		for (let i = 0; i < keys.length; ++i) {
 			const k = keys[i];
 			// Respect World.keys_to_exclude_from_save and dynamic excludes
-			if (WorldCtor.keys_to_exclude_from_save?.includes?.(k)) continue;
-			if ((Serializer.excludedProperties['World'] ?? {})[k]) continue;
+			if (Serializer.excludedProperties[worldCtor.name]?.[k]) continue;
 			const v = worldAny[k]; if (v !== null && v !== undefined) data[k] = v;
 		}
 		const sg = new Savegame();
 		sg.modelprops = data;
-		sg.spaces = this.world.spaces;
-		sg.allSpacesObjects = [] as SpaceObject[];
-		for (const space of this.world.spaces) {
-			sg.allSpacesObjects.push({ spaceid: space.id, objects: [...space.objects] });
-		}
+		sg.spaces = this.world.spaces; // Spaces and their contained objects are serialized directly via references.
 
 		// Capture service state DTOs (opt-in via getState)
 		const servicesState: Record<string, unknown> = {};
-		for (const ent of this.registry.getPersistentEntities()) {
-			if (ent instanceof Service && typeof ent.getState === 'function') {
-				const dto = ent.getState();
-				if (dto !== undefined) servicesState[ent.id] = dto as unknown;
-			}
+		for (const ent of this.registry.iterate(Service, true)) {
+			const dto = ent.getState();
+			if (dto !== undefined) servicesState[ent.id] = dto as unknown;
 		}
 		if (Object.keys(servicesState).length > 0) sg.servicesState = servicesState;
 
@@ -544,11 +537,10 @@ export class Game {
 
 			// World hydration (ported from World.load)
 			this.world.clearAllSpaces();
-			EventEmitter.instance.clear();
+			this.world.disposeAndRemoveAllSpaces();
 
-			const tempSpaces = this.world.spaces.slice();
-			tempSpaces.forEach(s => this.world.removeSpace(s));
-
+			// Clear event listeners
+			this.event_emitter.clear();
 			// Reset registries except persistent entities
 			this.registry.clear();
 			// Purge textures and reset view
@@ -556,37 +548,16 @@ export class Game {
 			this.view.reset();
 
 			const sg = Reviver.deserialize(buf) as Savegame;
-			// Apply plain model props back to world
+			// Apply plain world props back to world
 			for (const [k, v] of Object.entries(sg.modelprops as Record<string, unknown>)) {
 				if (typeof v !== 'function') (this.world as { [key: string]: any })[k] = v;
 			}
 
-			// Recreate spaces and spawn objects
-			sg.spaces.forEach(space => this.world.addSpace(space));
-			this.world.beginDepthBatch();
-			sg.allSpacesObjects.forEach(space_and_objects => {
-				const space = this.world[id_to_space_symbol][space_and_objects.spaceid];
-				const objects = space_and_objects.objects as WorldObject[];
-				objects.forEach(o => {
-					// Attach to space and invoke onspawn in 'revive' mode; no FSM reset
-					space.spawn(o, undefined, { reason: 'revive' });
-				});
-			});
-			this.world.endDepthBatch();
+			// Recreate spaces; revived Space.@onload wires internal maps and world indexes.
+			// sg.spaces.forEach(space => this.world.addSpace(space));
 
 			// Wiring phase (revive): bind all registered entities; no FSM start on revived instances
-			for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
-
-			// Services: active + resume
-			for (const ent of this.registry.getRegisteredEntities()) {
-				if (ent instanceof Service) {
-					ent.active = true;
-					ent.bind();
-					ent.enableEvents();
-					ent.sc.resume();
-					console.log(`Service ${ent.id} resumed`);
-				}
-			}
+			// for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
 
 			// Plugin load hooks
 			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);

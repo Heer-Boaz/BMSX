@@ -4,6 +4,7 @@ import { $, } from '../core/game';
 import { ZCOORD_MAX } from '../render/backend/webgl.constants';
 import { TextWriter } from '../render/textwriter';
 import { BFont } from '../core/font';
+import { id_to_space_symbol } from 'bmsx/core/space';
 
 const TOAST_DURATION = 1800;
 
@@ -41,7 +42,7 @@ class Toast extends WorldObject {
 
 export function spawnToast(text: string, font?: BFont, ms?: number): void {
     const o = new Toast(text, font, ms);
-    $.world.get_space('ui').spawn(o);
+    $.world[id_to_space_symbol]['ui'].spawn(o);
 }
 
 export function controllerUnassignedToast(): void {
