@@ -465,7 +465,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			this.z_nonotify = spawningPos.z ?? this.z;
 		}
 
-		$.registry.register(this); // Register the object in the registry so it can be retrieved by id.
+		Registry.instance.register(this); // Register the object in the registry so it can be retrieved by id.
 
 		// Call the method to initialize event subscriptions
 		this.onLoadSetup();
@@ -764,7 +764,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public collides(o: WorldObject | Area): boolean {
 		if (!this.hittable) return false;
-		const isWorldObject = (obj: any): obj is WorldObject => typeof obj === 'object' && 'id' in obj;
 		const areaToPoly = (area: Area) => [
 			area.start.x, area.start.y,
 			area.end.x, area.start.y,
@@ -772,7 +771,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			area.start.x, area.end.y
 		] as number[];
 
-		if (isWorldObject(o)) {
+		if ((o as WorldObject)?.id) {
 			const other = o as WorldObject;
 			if (!other.hittable) return false;
 			// Quick hitbox reject using precomputed bounding boxes
@@ -808,7 +807,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	public getCollisionCentroid(o: WorldObject): vec2arr | null {
 		if (!this.hittable || !o.hittable) return null;
-		const isWorldObject = (obj: any): obj is WorldObject => typeof obj === 'object' && 'id' in obj;
 		const areaToPoly = (area: Area) => [
 			area.start.x, area.start.y,
 			area.end.x, area.start.y,
@@ -816,7 +814,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			area.start.x, area.end.y
 		] as number[];
 
-		if (isWorldObject(o)) {
+		if (o?.id) {
 			const other = o as WorldObject;
 			// Quick hitbox reject using precomputed bou`nding boxes
 			if (!WorldObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return null;

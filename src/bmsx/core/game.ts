@@ -575,7 +575,9 @@ export class Game {
 					const space = this.world.get_space(space_and_objects.spaceid);
 					const objects = space_and_objects.objects as WorldObject[];
 					objects.forEach(o => {
-						if (!o) return;
+						// if (!o) return;
+						Registry.instance.register(o);
+						if (o.active) o.activate();
 						// Attach to space without invoking onspawn (we'll re-register and rewire below)
 						space.spawn(o, null, true);
 						// Ensure revived objects are present in the Registry so components can resolve parent links

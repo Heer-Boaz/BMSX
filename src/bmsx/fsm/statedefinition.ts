@@ -98,7 +98,7 @@ export class StateDefinition {
      * @param partialdef - An optional partial definition to assign to the `bfsm` instance.
      */
     public constructor(id: Identifier, partialdef?: Partial<StateDefinition>, root: StateDefinition = null) {
-        this.id = id; //`${parent_id ? (parent_id + '.') : ''}${id ?? DEFAULT_BST_ID}`;
+        this.id = id;
         partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
         this.ticks2advance_tape ??= 0; // Unless already defined, ticks2move is 0
         this.repetitions = (this.tape_data ? (this.repetitions ?? 1) : 0);

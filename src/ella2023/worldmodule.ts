@@ -41,7 +41,7 @@ export class EilaEventService extends Service {
 		return $.world.getWorldObject('player');
 	}
 
-	@subscribesToGlobalEvent('hit_animation_end')
+	@subscribesToGlobalEvent('hit_animation_end', true)
 	public handleHitAnimationEndEvent(_event_name: string, emitter: Fighter): void {
 		const otherFighter = this.theOtherFighter(emitter);
 		if (otherFighter) {
@@ -61,7 +61,7 @@ export class EilaEventService extends Service {
 		}
 	}
 
-	@subscribesToGlobalEvent('humiliated_animation_end')
+	@subscribesToGlobalEvent('humiliated_animation_end', true)
     public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
         // Track total humiliations for demo state persistence
         this._humiliationCount++;

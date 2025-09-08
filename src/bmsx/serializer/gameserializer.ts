@@ -415,20 +415,24 @@ export class Reviver {
                 if (data.typename && Reviver.excludedProperties[data.typename]?.[key]) continue;
                 const val = data[key];
                 if (Array.isArray(val)) {
-                    // If every element is a { r: ... }, resolve all
+                    // If every element is a { r: ... }, resolve all and drop nulls
                     if (val.every(v => v && typeof v === 'object' && 'r' in v)) {
-                        target[key] = val.map(v => idToObject[v.r]);
+                        target[key] = val
+                            .map(v => idToObject[v.r])
+                            .filter(v => v !== null && v !== undefined);
                     } else {
-                        // For nested arrays (e.g. hitpolygon: vec2[][]), resolve recursively
+                        // For nested arrays (e.g. hitpolygon: vec2[][]), resolve recursively and drop nulls at each level
                         target[key] = val.map(v => {
                             if (Array.isArray(v)) {
-                                return v.map(w => (w && typeof w === 'object' && 'r' in w) ? idToObject[w.r] : w);
+                                return v
+                                    .map(w => (w && typeof w === 'object' && 'r' in w) ? idToObject[w.r] : w)
+                                    .filter(w => w !== null && w !== undefined);
                             } else if (v && typeof v === 'object' && 'r' in v) {
                                 return idToObject[v.r];
                             } else {
                                 return v;
                             }
-                        });
+                        }).filter(v => v !== null && v !== undefined);
                     }
                 } else if (val && typeof val === 'object' && 'r' in val) {
                     target[key] = idToObject[val.r];
