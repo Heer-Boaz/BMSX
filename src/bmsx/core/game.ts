@@ -23,7 +23,7 @@ import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
-import { SpaceObject } from './space';
+import { id_to_space_symbol, SpaceObject } from './space';
 
 global = globalThis || window; // Ensure global is defined
 
@@ -31,8 +31,6 @@ global = globalThis || window; // Ensure global is defined
 // Note that $ is defined at the bottom of the code file
 export var $rompack: RomPack;
 export var $debug: boolean;
-export var $world: World;
-export var $view: GameView;
 
 export interface GameInitArgs {
 	rompack: RomPack;
@@ -190,10 +188,7 @@ export class Game {
 		this.world.spawn(o, pos, ignoreSpawnhandler);
 	}
 
-	/** Destroy (dispose) a world object from the world. */
-	public destroy(o: WorldObject): void { this.world.destroy(o); }
-	/** @deprecated Use destroy(o) */
-	public exile(o: WorldObject): void { this.world.exile(o); }
+	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
 
 	public drawImg(options: DrawImgOptions): void {
 		this.view.drawImg(options);
@@ -315,7 +310,6 @@ export class Game {
 			this.input.enableOnscreenGamepad();
 		}
 		const gview = new GameView(worldConfig.viewportSize);
-		$view = gview;
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
 		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
 		const { backend, nativeCtx } = await createBackendForCanvasAsync(gview.canvas);
@@ -344,19 +338,19 @@ export class Game {
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
-		$world = new World(worldConfig);
-		$world.init_on_boot(); // build definitions, spawn modules, etc.
+		new World(worldConfig);
+		$.world.init_on_boot(); // build definitions, spawn modules, etc.
 
 		// Wiring phase (fresh boot): bind all registered entities (services, world, objects, components)
-        for (const ent of this.registry.getRegisteredEntities()) {
-            const maybe = ent as { bind?: (bus: EventEmitter) => void };
-            if (typeof maybe.bind === 'function') maybe.bind(this.event_emitter);
-        }
+		for (const ent of this.registry.getRegisteredEntities()) {
+			const maybe = ent as { bind?: (bus: EventEmitter) => void };
+			if (typeof maybe.bind === 'function') maybe.bind(this.event_emitter);
+		}
 
 		// Activation: services begin play here (objects already activated in onspawn)
-        for (const ent of this.registry.getRegisteredEntities()) {
-            if (ent instanceof Service) { ent.activate(); }
-        }
+		for (const ent of this.registry.getRegisteredEntities()) {
+			if (ent instanceof Service) { ent.activate(); }
+		}
 
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
 		new PhysicsWorld().bind();
@@ -547,7 +541,6 @@ export class Game {
 		const runToken = runGate.begin({ blocking: true, tag: 'load' });
 		try {
 			const buf = compressed ? BinaryCompressor.decompressBinary(serialized) : serialized;
-			const sg = Reviver.deserialize(buf) as Savegame;
 
 			// World hydration (ported from World.load)
 			this.world.clearAllSpaces();
@@ -562,6 +555,7 @@ export class Game {
 			this.texmanager.clear();
 			this.view.reset();
 
+			const sg = Reviver.deserialize(buf) as Savegame;
 			// Apply plain model props back to world
 			for (const [k, v] of Object.entries(sg.modelprops as Record<string, unknown>)) {
 				if (typeof v !== 'function') (this.world as { [key: string]: any })[k] = v;
@@ -570,57 +564,34 @@ export class Game {
 			// Recreate spaces and spawn objects
 			sg.spaces.forEach(space => this.world.addSpace(space));
 			this.world.beginDepthBatch();
-			try {
-				sg.allSpacesObjects.forEach(space_and_objects => {
-					const space = this.world.get_space(space_and_objects.spaceid);
-					const objects = space_and_objects.objects as WorldObject[];
-					objects.forEach(o => {
-						// if (!o) return;
-						Registry.instance.register(o);
-						if (o.active) o.activate();
-						// Attach to space without invoking onspawn (we'll re-register and rewire below)
-						space.spawn(o, null, true);
-						// Ensure revived objects are present in the Registry so components can resolve parent links
-						// Allow event handlers to process for this object after hydration
-						// (FSM state remains as revived; do not call sc.start())
-					});
+			sg.allSpacesObjects.forEach(space_and_objects => {
+				const space = this.world[id_to_space_symbol][space_and_objects.spaceid];
+				const objects = space_and_objects.objects as WorldObject[];
+				objects.forEach(o => {
+					// Attach to space and invoke onspawn in 'revive' mode; no FSM reset
+					space.spawn(o, undefined, { reason: 'revive' });
 				});
-			} finally {
-				this.world.endDepthBatch();
-			}
+			});
+			this.world.endDepthBatch();
 
-			// Ensure all objects are registered, including all inner objects
-			sg.flattenedObjectsList.forEach(o => o.id && this.registry.register(o as Registerable));
+			// Wiring phase (revive): bind all registered entities; no FSM start on revived instances
+			for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
 
-            // Wiring phase (revive): bind all registered entities (no FSM start here)
-            for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
-
-            // Services: active + resume
-            for (const ent of this.registry.getRegisteredEntities()) {
-                if (ent instanceof Service) {
-                    ent.active = true;
+			// Services: active + resume
+			for (const ent of this.registry.getRegisteredEntities()) {
+				if (ent instanceof Service) {
+					ent.active = true;
 					ent.bind();
-                    ent.enableEvents();
-                    ent.sc.resume();
+					ent.enableEvents();
+					ent.sc.resume();
 					console.log(`Service ${ent.id} resumed`);
-                }
-            }
+				}
+			}
 
 			// Plugin load hooks
 			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);
 
-
-            // Reactivate revived entities without resetting state: mark active and resume controllers
-            // World-level controller
-            this.world.sc?.resume();
-
-            // WorldObjects: active + resume
-            this.world.forEachWorldObject((o) => {
-                o.active = true;
-                o.tickEnabled = true;
-                o.eventhandling_enabled = true;
-                o.sc.resume();
-            }, { scope: 'all' });
+			// Do not override revived flags or controller state; onspawn('revive') and @onload hooks handled wiring.
 
 			// Restore service state (opt-in)
 			const services = sg.servicesState ?? {};

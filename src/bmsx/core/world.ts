@@ -12,14 +12,13 @@ import type { AbstractConstructor, Constructor, Identifier, RegisterablePersiste
 import { Direction, Vector } from "../rompack/rompack";
 import { excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './object/cameraobject';
-import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
 import type { Component, ComponentConstructor } from "../component/basecomponent";
-import { Space, id2spaceType, initial_world_spaces, isSpaceAware, obj_id2space_id_type, objid_2_objspaceid, spaceid_2_space } from './space';
+import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
-import { shallowCopy } from './utils';
+import { makeIndexProxy, shallowCopy } from './utils';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 
@@ -34,48 +33,6 @@ export interface TileCollisionService {
     isCollisionTile(x: number, y: number): boolean;
 }
 export type ModelPlugin = { onBoot: (world: World) => void; onTick?: (world: World, dt: number) => void; onLoad?: (world: World) => void; dispose?: () => void };
-
-// Utility: wrap a Map so `mapLike['id']` resolves to `map.get('id')` and
-// assignments delete/set through the same surface. Also exposes standard Map
-// methods bound to the underlying map.
-export function makeIndexProxy<V>(backing: Map<Identifier, V>): any {
-    return new Proxy(backing, {
-        get(target, prop, receiver) {
-            // Expose Map API (bound) for internal use
-            if (prop === 'get') return (target.get).bind(target);
-            if (prop === 'set') return (target.set).bind(target);
-            if (prop === 'has') return (target.has).bind(target);
-            if (prop === 'delete') return (target.delete).bind(target);
-            if (prop === 'clear') return (target.clear).bind(target);
-            if (prop === 'size') return (target.size);
-            if (prop === Symbol.iterator) return (target[Symbol.iterator]).bind(target);
-            if (prop === 'entries') return (target.entries).bind(target);
-            if (prop === 'keys') return (target.keys).bind(target);
-            if (prop === 'values') return (target.values).bind(target);
-            if (prop === 'forEach') return (target.forEach).bind(target);
-            // Map-like index access: proxy['id'] → map.get('id')
-            if (typeof prop === 'string') return target.get(prop as Identifier);
-            // Fallback to default behavior
-            return Reflect.get(target, prop, receiver);
-        },
-        set(target, prop, value) {
-            if (typeof prop === 'string') { target.set(prop as Identifier, value as V); return true; }
-            // Use Reflect to safely handle symbol keys / non-string property keys
-            Reflect.set(target, prop as PropertyKey, value);
-            return true;
-        },
-        has(target, prop) {
-            if (typeof prop === 'string') return target.has(prop as Identifier);
-            // Use Reflect.has for non-string keys (symbols)
-            return Reflect.has(target, prop);
-        },
-        deleteProperty(target, prop) {
-            if (typeof prop === 'string') return target.delete(prop as Identifier);
-            // Use Reflect.deleteProperty for symbol/non-string keys
-            return Reflect.deleteProperty(target, prop);
-        },
-    });
-}
 
 export type WorldConfiguration = {
     viewportSize?: Size;
@@ -125,14 +82,14 @@ export class World implements Stateful, RegisterablePersistent {
      * An object that maps space IDs to their corresponding Space objects.
      * @type {id2spaceType}
      */
-    public [spaceid_2_space]: id2spaceType;
+    public [id_to_space_symbol]: id2spaceType;
     @excludepropfromsavegame
     public _spaceMap: Map<Identifier, Space>;
     /**
      * An object that maps object IDs to their corresponding space IDs.
      * @type {obj_id2space_id_type}
      */
-    public [objid_2_objspaceid]: obj_id2space_id_type;
+    public [obj_id_to_space_id_symbol]: obj_id2space_id_type;
     @excludepropfromsavegame
     public objToSpaceMap: Map<Identifier, Identifier>;
 
@@ -161,9 +118,7 @@ export class World implements Stateful, RegisterablePersistent {
     public spaces: Space[]; // All spaces in the world
     protected _activeSpaceId: Identifier; // Current space. On world creation, a default space is created with id 'default'
     public get activeSpaceId(): Identifier { return this._activeSpaceId; } // Current space id. On world creation, a default space is created with id 'default'
-    public get activeSpace(): Space { return this.get_space(this._activeSpaceId); } // Current space. On world creation, a default space is created with id 'default'
-    // setSpace implemented later with activation hooks
-    public get_space<T extends Space>(id: Identifier) { return this._spaceMap.get(id) as T; }
+    public get activeSpace(): Space { return this[id_to_space_symbol][this._activeSpaceId]; } // Current space. On world creation, a default space is created with id 'default'
 
     // Model configuration (size, services, modules)
     private _size: Size = { x: 256, y: 192 };
@@ -202,12 +157,11 @@ export class World implements Stateful, RegisterablePersistent {
     // Batch depth marker: when non-null, collect touched space ids and mark once at end
     @excludepropfromsavegame public depthDirtyBatch: Set<Identifier> | null = null;
 
-    public get cameras(): CameraObject[] {
-        const out: CameraObject[] = [];
-        for (const [, set] of this._camerasBySpace) for (const c of set) out.push(c);
-        return out;
+    public get camerasInActiveSpace(): CameraObject[] {
+        return this.getActiveCameras({ scope: 'current' });
     }
-    public getCameras(opts: { scope?: 'current' | 'all' } = {}): CameraObject[] {
+
+    public getActiveCameras(opts: { scope?: 'current' | 'all' } = {}): CameraObject[] {
         const scope = opts.scope ?? 'all';
         const out: CameraObject[] = [];
         if (scope === 'current') {
@@ -281,8 +235,14 @@ export class World implements Stateful, RegisterablePersistent {
         if (!id) return null;
         const sid = this.objToSpaceMap.get(id);
         if (!sid) return null;
-        const space = this.get_space(sid);
+        const space = this[id_to_space_symbol][sid];
         return space?.get<T>(id) ?? null;
+    }
+
+    public getSpaceOfObject(obj_id: Identifier): Space | null {
+        const sid = this[obj_id_to_space_id_symbol][obj_id];
+        if (!sid) return null;
+        return this[id_to_space_symbol][sid];
     }
 
     /**
@@ -295,22 +255,6 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Returns the id of the space that contains the object with the given id.
-     * @param {Identifier} obj_id - The id of the object to search for.
-     * @returns {Identifier} The id of the space that contains the object with the given id.
-     */
-    public get_spaceid_that_has_obj(obj_id: Identifier): Identifier { return this.objToSpaceMap.get(obj_id)!; }
-
-    /**
-     * Returns true if the object with the given id is in the current space.
-     * @param {Identifier} obj_id - The id of the object to check.
-     * @returns {boolean} Whether the object with the given id is in the current space.
-     */
-    public is_obj_in_current_space(obj_id: Identifier): boolean {
-        return this.get_spaceid_that_has_obj(obj_id) === this._activeSpaceId;
-    }
-
-    /**
      * Moves an object from one space to another. Object should exist in a space, otherwise error is thrown!
      * @param {Identifier} obj_id - id of object to move.
      * @param {Identifier} spaceid_to_move_obj_to - id of the new space of the object to move.
@@ -319,11 +263,11 @@ export class World implements Stateful, RegisterablePersistent {
     public move_obj_to_space(obj_id: Identifier, spaceid_to_move_obj_to: Identifier): void {
         const obj = this.getWorldObject<WorldObject>(obj_id);
         if (!obj) throw Error(`Cannot move unknown object '${obj_id}' to space '${spaceid_to_move_obj_to}'!`);
-        const target_space = this.get_space(spaceid_to_move_obj_to);
+        const target_space = this[id_to_space_symbol][spaceid_to_move_obj_to];
         if (!target_space) throw Error(`Cannot move object '${obj_id}' to unknown space '${spaceid_to_move_obj_to}'!`);
         const fromSid = this.objToSpaceMap.get(obj_id);
         if (!fromSid) return; // Already absent
-        const origin_space = this.get_space(fromSid);
+        const origin_space = this[id_to_space_symbol][fromSid];
         origin_space.despawn(obj, true);
         target_space.spawn(obj, null, true);
     }
@@ -333,15 +277,16 @@ export class World implements Stateful, RegisterablePersistent {
      * If opts.suppressLifecycleHooks is true, spawn/leave hooks are suppressed.
      */
     public transfer(o: WorldObject, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
-        const toSpace = (to instanceof Space) ? to : this.get_space(to);
+        const toSpace = (to instanceof Space) ? to : this[id_to_space_symbol][to];
         if (!toSpace) throw new Error(`transfer: target space not found`);
         const fromSid = this.objToSpaceMap.get(o.id);
-        const from = fromSid ? this.get_space(fromSid) : null;
+        const from = fromSid ? this[id_to_space_symbol][fromSid] : null;
         if (!from || from === toSpace) return;
         const suppress = opts?.suppressLifecycleHooks ?? true;
         from.despawn(o, suppress);
         toSpace.spawn(o, undefined, suppress);
-        if (isSpaceAware(o)) { o.onleaveSpace?.(from.id); o.onenterSpace?.(toSpace.id); }
+        o.onleaveSpace?.(from.id);
+        o.onenterSpace?.(toSpace.id);
     }
 
     /**
@@ -372,9 +317,9 @@ export class World implements Stateful, RegisterablePersistent {
         Registry.instance.register(this);
         this.spaces = [];
         this._spaceMap = new Map<Identifier, Space>();
-        this[spaceid_2_space] = makeIndexProxy(this._spaceMap);
+        this[id_to_space_symbol] = makeIndexProxy(this._spaceMap);
         this.objToSpaceMap = new Map<Identifier, Identifier>();
-        this[objid_2_objspaceid] = makeIndexProxy(this.objToSpaceMap);
+        this[obj_id_to_space_id_symbol] = makeIndexProxy(this.objToSpaceMap);
 
         this.paused = false;
         if (opts.viewportSize) this._size = shallowCopy<Size>(opts.viewportSize);
@@ -406,15 +351,15 @@ export class World implements Stateful, RegisterablePersistent {
         EventEmitter.instance.removeSubscriber(this);
         // Dispose modules
         for (const p of this._modules) p.dispose?.();
-        $.registry.deregister(this);
+        Registry.instance.deregister(this);
     }
 
     /** Wire decorator-declared subscriptions for the world. */
     public bind(): void {
         // World may have decorator-declared listeners in derived games
-        $.event_emitter.initClassBoundEventSubscriptions(this);
+        EventEmitter.instance.initClassBoundEventSubscriptions(this);
         // Ensure FSM controller event wiring is active on revive as well
-        this.sc?.bind?.();
+        this.sc?.bind();
     }
 
     /** Unwire world subscriptions and FSM listeners. */
@@ -512,7 +457,7 @@ export class World implements Stateful, RegisterablePersistent {
         const objects = this.activeObjects;
         for (let i = objects.length - 1; i >= 0; --i) {
             const o = objects[i];
-            if (o.disposeFlag) this.destroy(o);
+            if (o.disposeFlag) this.despawnFromAllSpaces(o);
         }
     }
 
@@ -550,11 +495,23 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Clears all spaces in the world instance by calling the `clear` method on each space.
-     * @returns {void} Nothing.
+     * Clears all spaces in the world instance and disposes each object once.
+     * Detaches all objects from their spaces first, then disposes unique objects.
      */
     public clearAllSpaces(): void {
-        this.spaces.forEach(s => s.clear());
+        for (const o of this.objects({ scope: 'all' })) o.dispose();
+        for (const s of this.spaces) s.clear();
+
+        // Snapshot unique objects before clearing
+        // const unique: WorldObject[] = [];
+        // const seen = new Set<Identifier>();
+        // for (const sp of this.spaces) {
+        //     for (const o of sp.objects) { if (!seen.has(o.id)) { seen.add(o.id); unique.push(o); } }
+        // }
+        // Detach from all spaces (no disposal in Space.clear)
+        // this.spaces.forEach(s => s.clear());
+        // Dispose each object exactly once
+        // for (const o of unique) o.dispose();
     }
 
     /**
@@ -570,31 +527,29 @@ export class World implements Stateful, RegisterablePersistent {
     }
 
     /**
-     * Destroy a world object (dispose) from all spaces in the world instance.
-     */
-    public destroy(o: WorldObject): void {
-        this.spaces.forEach(s => s.get(o.id) && s.destroy(o));
-    }
-
-    /**
      * Despawn a world object from whichever space it currently lives in without disposing it.
      * The object remains in the Registry, but event handling is disabled (via flag) so it won't react to events.
      */
-    public despawn(o: WorldObject): void {
+    public despawnFromAllSpaces(o: WorldObject): void {
         for (const s of this.spaces) {
             if (s.get(o.id)) { s.despawn(o); return; }
         }
     }
 
-    /** Destroy a world object from the current active space. */
-    public destroyFromCurrentSpace(o: WorldObject): void {
-        this.activeSpace.destroy(o);
+    public despawnFromSpace(o: WorldObject, space_id: Identifier): void {
+        const space = this[id_to_space_symbol][space_id];
+        if (space && space.get(o.id)) {
+            space.despawn(o);
+        }
     }
 
-    /** @deprecated Use destroy(o) instead. */
-    public exile(o: WorldObject, skip_ondispose_event: boolean = false): void { this.spaces.forEach(s => s.get(o.id) && s.exile(o, skip_ondispose_event)); }
-    /** @deprecated Use destroyFromCurrentSpace(o) instead. */
-    public exileFromCurrentSpace(o: WorldObject): void { this.activeSpace.exile(o); }
+    /**
+     * Destroy a world object that currently lives in the active space: detach then dispose.
+     * If the object is not in the active space, no action is taken.
+     */
+    public despawnFromActiveSpace(o: WorldObject): void {
+        this.despawnFromSpace(o, this._activeSpaceId);
+    }
 
     /**
      * Adds a new space to the world instance.
@@ -604,7 +559,6 @@ export class World implements Stateful, RegisterablePersistent {
      */
     public addSpace(s: Space | Identifier): void {
         const new_space: Space = (s instanceof Space ? s : new Space(s));
-        new_space.bindModel(this);
         if (this._spaceMap.has(new_space.id)) throw Error(`Cannot add duplicate Space '${new_space.id}' to world!`);
         this.spaces.push(new_space);
         this._spaceMap.set(new_space.id, new_space);
@@ -620,7 +574,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @throws {Error} Throws an error if the space to remove is not found in the world instance.
      */
     public removeSpace(s: Space | Identifier): void {
-        const space: Space = (s instanceof Space ? s : this.get_space(s));
+        const space: Space = (s instanceof Space ? s : this[id_to_space_symbol][s]);
         if (!space) throw Error(`Space '${s}' to remove from world was not found, while calling [World.removeSpace]!`);
 
         const index = this.spaces.indexOf(space);
@@ -700,7 +654,7 @@ export class World implements Stateful, RegisterablePersistent {
 
     /** Transfer many objects efficiently; marks spaces dirty once. */
     public transferMany(objs: Array<WorldObject | Identifier>, to: Space | Identifier, opts?: { suppressLifecycleHooks?: boolean }): void {
-        const toSpace = (to instanceof Space) ? to : this.get_space(to);
+        const toSpace = (to instanceof Space) ? to : this[id_to_space_symbol][to];
         if (!toSpace) throw new Error('transferMany: target space not found');
         this.runDepthBatch(() => {
             for (const it of objs) {
@@ -775,10 +729,10 @@ export class World implements Stateful, RegisterablePersistent {
      */
     public setSpace(newSpaceId: Identifier) {
         if (newSpaceId === this._activeSpaceId) return;
-        const prev = this.get_space(this._activeSpaceId);
+        const prev = this[id_to_space_symbol][this._activeSpaceId];
         this._activeSpaceId = newSpaceId;
         prev?.ondeactivate?.();
         this.activeSpace?.onactivate?.();
-        $.emit('spaceChanged', this, { prev: prev?.id, curr: this._activeSpaceId });
+        EventEmitter.instance.emit('spaceChanged', this, { prev: prev?.id, curr: this._activeSpaceId });
     }
 }
