@@ -144,7 +144,7 @@ export class Space {
         const model = this._model ?? $.world;
         for (const o of this.objects) {
             model.onObjectExiled(this, o);
-            o.dispose?.();
+            o.dispose();
             model.objToSpaceMap.delete(o.id);
         }
         this._id2objMap.clear();

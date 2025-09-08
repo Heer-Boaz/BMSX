@@ -11,7 +11,6 @@ import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { TileSize } from "../systems/msx";
 import { Identifiable } from "bmsx/rompack/rompack";
-import { Stateful } from "bmsx";
 import { Service } from '../core/service';
 import { Registry } from '../core/registry';
 
@@ -71,73 +70,25 @@ export class ECSystemManager {
 /** Pre-update: call preprocessingUpdate for components tagged with given tag. */
 export class PreTagSystem extends ECSystem {
 	constructor(private tag: string, priority: number) { super(TickGroup.PrePhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			const comps = o?.components ? Object.values(o.components) : [];
-			for (let j = 0; j < comps.length; ++j) {
-				const c = comps[j];
-				if (c?.enabled && c.hasPreprocessingTag?.(this.tag)) c.preprocessingUpdate();
+	update(world: World): void {
+		for (let o of world.objects({ scope: 'current'}) ) {
+			for (let c of o.iterateComponents()) {
+				if (c.enabled && c.hasPreprocessingTag(this.tag)) c.preprocessingUpdate();
 			}
 		}
 	}
 }
 
-function isBehaviorTreeObject(o: WorldObject): o is WorldObject & {
-	btreecontexts: Record<string, unknown>;
-	tickTree: (id: string) => void;
-	disposeFlag?: boolean;
-} {
-	const r = o as unknown as Record<string, unknown>;
-	return r.btreecontexts !== undefined && typeof r.btreecontexts === 'object' && typeof r.tickTree === 'function';
-}
-
-function hasStateController(o: Stateful): o is Stateful {
-	return o.sc?.tick !== undefined;
-}
-
-// Additional guards and helper types to avoid `` elsewhere in this file
-function isScreenBoundaryComponent(c: unknown): c is ScreenBoundaryComponent & { oldPos?: { x: number; y: number } } {
-	if (!c) return false;
-	if (c instanceof ScreenBoundaryComponent) return true;
-	const r = c as Record<string, unknown>;
-	return typeof r['oldPos'] === 'object' || 'oldPos' in r;
-}
-
-function isTileCollisionComponent(c: unknown): c is TileCollisionComponent & { oldPos?: { x: number; y: number } } {
-	if (!c) return false;
-	if (c instanceof TileCollisionComponent) return true;
-	const r = c as Record<string, unknown>;
-	return typeof r['oldPos'] === 'object' || 'oldPos' in r;
-}
-
-function isPhysicsComponent(c: unknown): c is PhysicsComponent & {
-	body?: { position: { x: number; y: number; z: number }; rotationQ?: { x: number; y: number; z: number; w: number } };
-	writeBack?: boolean;
-	parentid?: string;
-	syncAxis?: { x?: boolean; y?: boolean; z?: boolean };
-	preprocessingUpdate?: () => void;
-} {
-	if (!c) return false;
-	if (c instanceof PhysicsComponent) return true;
-	const r = c as Record<string, unknown>;
-	return 'body' in r || 'writeBack' in r || 'syncAxis' in r;
-}
-
-function hasModelDimensions(m: World): m is World & { gamewidth: number; gameheight: number } {
-	const r = m as unknown as Record<string, unknown>;
-	return typeof r['gamewidth'] === 'number' && typeof r['gameheight'] === 'number';
-}
-
-function hasCollidesWithTile(m: World): m is World & { collidesWithTile?: (o: WorldObject, d: string) => boolean } {
-	const r = m as unknown as Record<string, unknown>;
-	return typeof r['collidesWithTile'] === 'function';
-}
-
-function hasGetWorldObject(m: World): m is World & { getWorldObject?: (id: string) => WorldObject | undefined } {
-	const r = m as unknown as Record<string, unknown>;
-	return typeof r['getWorldObject'] === 'function';
+/** Post-update: call postprocessingUpdate for components tagged with given tag. */
+export class PostTagSystem extends ECSystem {
+	constructor(private tag: string, priority: number) { super(TickGroup.PostPhysics, priority); }
+	update(world: World): void {
+		for (let o of world.objects({ scope: 'current' })) {
+			for (let c of o.iterateComponents()) {
+				if (c.enabled && c.hasPostprocessingTag(this.tag)) c.postprocessingUpdate({ params: [] });
+			}
+		}
+	}
 }
 
 function hasRotationQ(o: unknown): o is { rotationQ: { x: number; y: number; z: number; w: number } } {
@@ -163,17 +114,14 @@ function hasMarkDirty(o: unknown): o is { markDirty: () => void } {
 /** Updates all BehaviorTrees attached to objects. */
 export class BehaviorTreeSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			if (!isBehaviorTreeObject(o)) continue;
+	update(world: World): void {
+		for (let o of world.objects({ scope: 'current'})) {
 			if (o.active === false) continue;
 			if (o.tickEnabled === false) continue;
 			const bts = o.btreecontexts;
 			if (!bts) continue;
 			for (const id in bts) {
-				if (!o.disposeFlag) o.tickTree(id);
+				o.tickTree(id);
 			}
 		}
 	}
@@ -182,41 +130,22 @@ export class BehaviorTreeSystem extends ECSystem {
 /** Ticks each object's primary state machine controller. */
 export class StateMachineSystem extends ECSystem {
 	constructor(priority: number) { super(TickGroup.Simulation, priority); }
-	update(model: World): void {
-        // Tick all world objects' state machines (gated)
-        const objs = model.activeObjects;
-        for (let i = 0; i < objs.length; ++i) {
-            const o = objs[i] as WorldObject & { active?: boolean; tickEnabled?: boolean };
-            if (!hasStateController(o)) continue;
-            if (o.disposeFlag) continue;
-            if (o.active === false) continue;
-            if (o.tickEnabled === false) continue;
-            const sc = o.sc;
-            if (!sc.tickEnabled) continue;
-            sc.tick();
-        }
+	update(world: World): void {
+		// Tick all world objects' state machines (gated)
+		for (let o of world.objects({ scope: 'current' })) {
+			if (o.active === false) continue;
+			if (o.tickEnabled === false) continue;
+			const sc = o.sc;
+			if (!sc.tickEnabled) continue;
+			sc.tick();
+		}
+
 		// Tick all service's state machines
 		for (const ent of Registry.instance.getRegisteredEntities()) {
 			if (ent instanceof Service) {
-				if (ent.active && ent.tickEnabled && ent.sc && ent.sc.tickEnabled) {
+				if (ent.active && ent.tickEnabled) {
 					ent.sc.tick();
 				}
-			}
-		}
-	}
-}
-
-/** Post-update: call postprocessingUpdate for components tagged with given tag. */
-export class PostTagSystem extends ECSystem {
-	constructor(private tag: string, priority: number) { super(TickGroup.PostPhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			const comps = o?.components ? Object.values(o.components) : [];
-			for (let j = 0; j < comps.length; ++j) {
-				const c = comps[j];
-				if (c?.enabled && c.hasPostprocessingTag?.(this.tag)) c.postprocessingUpdate({ params: [] });
 			}
 		}
 	}
@@ -228,16 +157,10 @@ export class PostTagSystem extends ECSystem {
  */
 export class PrePositionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			const comps = o?.components ? Object.values(o.components) : [];
-			for (let j = 0; j < comps.length; ++j) {
-				const c = comps[j];
-				if (c instanceof PositionUpdateAxisComponent) c.preprocessingUpdate();
-			}
-		}
+	update(world: World): void {
+		const objs = world.objectsWithComponent(PositionUpdateAxisComponent, { scope: 'current' });
+		// Preprocess all PositionUpdateAxisComponents
+		for (const [_o, c] of objs) c.enabled && c.preprocessingUpdate();
 	}
 }
 
@@ -248,14 +171,11 @@ export class PrePositionSystem extends ECSystem {
 export class BoundarySystem extends ECSystem {
 	private prev = new WeakMap<WorldObject, { x: number; y: number }>();
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		const width = hasModelDimensions(model) ? model.gamewidth : 0;
-		const height = hasModelDimensions(model) ? model.gameheight : 0;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject & { onLeavingScreen?: Function; onLeaveScreen?: Function };
-			const compCandidate = o?.getComponent?.(ScreenBoundaryComponent);
-			if (!isScreenBoundaryComponent(compCandidate) || !compCandidate.enabled) continue;
+	update(world: World): void {
+		const width = world.gamewidth;
+		const height = world.gameheight;
+		for (let [o, c] of world.objectsWithComponent(ScreenBoundaryComponent, { scope: 'current' })) {
+			if (!c.enabled) continue;
 			const prev = this.prev.get(o) || { x: o.pos.x, y: o.pos.y };
 			const oldx = prev.x;
 			const oldy = prev.y;
@@ -307,27 +227,22 @@ export class BoundarySystem extends ECSystem {
  */
 export class TileCollisionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject & { onWallcollide?: (d: 'left' | 'right' | 'up' | 'down') => void };
-			const compCandidate = o?.getComponent?.(TileCollisionComponent);
-			if (!isTileCollisionComponent(compCandidate)) continue;
-			const comp = compCandidate;
-			if (!comp || !comp.enabled) continue;
-			const oldx = comp.oldPos?.x ?? o.pos.x;
-			const oldy = comp.oldPos?.y ?? o.pos.y;
+	update(world: World): void {
+		for (let [o, c] of world.objectsWithComponent(TileCollisionComponent, { scope: 'current' })) {
+			if (!c.enabled) continue;
+			const oldx = c.oldPos?.x ?? o.pos.x;
+			const oldy = c.oldPos?.y ?? o.pos.y;
 			let newx = o.pos.x;
 			let newy = o.pos.y;
 			// X axis movement
 			if (newx < oldx) {
-				if (hasCollidesWithTile($.world) && $.world.collidesWithTile?.(o, 'left')) {
+				if ($.world.collidesWithTile?.(o, 'left')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'left' as const });
 					newx += TileSize - mod(newx, TileSize);
 				}
 				o.pos.x = ~~newx;
 			} else if (newx > oldx) {
-				if (hasCollidesWithTile($.world) && $.world.collidesWithTile?.(o, 'right')) {
+				if ($.world.collidesWithTile?.(o, 'right')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'right' as const });
 					newx -= newx % TileSize;
 				}
@@ -356,38 +271,30 @@ export class TileCollisionSystem extends ECSystem {
  */
 export class PhysicsPreSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			const compCandidate = o?.getComponent?.(PhysicsComponent);
-			if (!isPhysicsComponent(compCandidate) || !compCandidate.enabled) continue;
-			const comp = compCandidate;
-			// Inline tryBuildBody and GO->body sync (subset) via public API
+	update(world: World): void {
+		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+			if (!c.enabled) continue;
+			// Inline tryBuildBody and WO->body sync (subset) via public API
 			// Ensure body exists
-			if (!comp.body) {
+			if (!c.body) {
 				// Calling private dangles isn’t possible; ensure by reusing public behavior: constructing PhysicsComponent already tries build;
 				// here we assume it might have failed earlier due to timing; rely on preprocessingUpdate behavior
 				// We mirror minimal behavior using available fields
 				// Fallback: call preprocessingUpdate to ensure body
-				comp.preprocessingUpdate?.();
+				c.preprocessingUpdate?.();
 			} else {
-				// If not writing back, push GO -> body
-				if (!comp.writeBack) {
-					const wo = hasGetWorldObject(model) ? model.getWorldObject?.(o.id) : undefined;
-					// However, comp.parentid points to Go id; prefer that
-					const owner = hasGetWorldObject(model) ? model.getWorldObject?.(comp.parentid ?? '') || wo : wo;
-					if (owner) {
-						let changed = false;
-						if (comp.syncAxis?.x && comp.body.position.x !== (owner.x)) { comp.body.position.x = owner.x; changed = true; }
-						if (comp.syncAxis?.y && comp.body.position.y !== (owner.y)) { comp.body.position.y = owner.y; changed = true; }
-						if (comp.syncAxis?.z && comp.body.position.z !== (owner.z)) { comp.body.position.z = owner.z; changed = true; }
-						if (changed) {
-							// Mark dirty via PhysicsWorld
-							const ensureFn = (PhysicsWorld as unknown as { ensure?: () => PhysicsWorld }).ensure;
-							const world = ensureFn ? ensureFn() : undefined;
-							world?.markBodyDirty(comp.body);
-						}
+				// If not writing back, push WO -> body
+				if (!c.writeBack) {
+					// However, c.parentid points to WO id; prefer that
+					const owner = c.parentid ? world.getWorldObject(c.parentid) : o;
+					if (!owner) continue;
+					let changed = false;
+					if (c.syncAxis?.x && c.body.position.x !== (owner.x)) { c.body.position.x = owner.x; changed = true; }
+					if (c.syncAxis?.y && c.body.position.y !== (owner.y)) { c.body.position.y = owner.y; changed = true; }
+					if (c.syncAxis?.z && c.body.position.z !== (owner.z)) { c.body.position.z = owner.z; changed = true; }
+					if (changed) {
+						// Mark dirty via PhysicsWorld
+						PhysicsWorld.ensure().markBodyDirty(c.body);
 					}
 				}
 			}
@@ -401,28 +308,19 @@ export class PhysicsPreSystem extends ECSystem {
  */
 export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			const compCandidate = o?.getComponent?.(PhysicsComponent);
-			if (!isPhysicsComponent(compCandidate) || !compCandidate.enabled) continue;
-			const comp = compCandidate;
-			if (!comp.body) {
-				comp.preprocessingUpdate?.();
+	update(world: World): void {
+		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+			if (!c.enabled) continue;
+			if (!c.body) {
+				c.preprocessingUpdate?.();
 			} else {
-				if (!comp.writeBack) {
-					const wo = hasGetWorldObject(model) ? model.getWorldObject?.(o.id) : undefined;
-					const owner = hasGetWorldObject(model) ? model.getWorldObject?.(comp.parentid ?? '') || wo : wo;
-					if (owner) {
-						let changed = false;
-						if (comp.syncAxis?.x && comp.body.position.x !== (owner.x)) { comp.body.position.x = owner.x; changed = true; }
-						if (comp.syncAxis?.y && comp.body.position.y !== (owner.y)) { comp.body.position.y = owner.y; changed = true; }
-						if (comp.syncAxis?.z && comp.body.position.z !== (owner.z)) { comp.body.position.z = owner.z; changed = true; }
-						if (changed) {
-							PhysicsWorld.ensure().markBodyDirty(comp.body);
-						}
-					}
+				if (c.writeBack) continue;
+				let changed = false;
+				if (c.syncAxis?.x && c.body.position.x !== (o.x)) { c.body.position.x = o.x; changed = true; }
+				if (c.syncAxis?.y && c.body.position.y !== (o.y)) { c.body.position.y = o.y; changed = true; }
+				if (c.syncAxis?.z && c.body.position.z !== (o.z)) { c.body.position.z = o.z; changed = true; }
+				if (changed) {
+					PhysicsWorld.ensure().markBodyDirty(c.body);
 				}
 			}
 		}
@@ -432,24 +330,18 @@ export class PhysicsSyncBeforeStepSystem extends ECSystem {
 /** PhysicsPostSystem: sync PhysicsBody -> WorldObject when writeBack=true. */
 export class PhysicsPostSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			const compCandidate = o?.getComponent?.(PhysicsComponent);
-			if (!isPhysicsComponent(compCandidate) || !compCandidate.enabled || !compCandidate.body) continue;
-			const comp = compCandidate;
-			if (!comp.writeBack) continue;
-			const wo = hasGetWorldObject(model) ? model.getWorldObject?.(comp.parentid ?? '') || o : o;
-			if (!wo) continue;
-			if (comp.syncAxis?.x) wo.x_nonotify = comp.body.position.x;
-			if (comp.syncAxis?.y) wo.y_nonotify = comp.body.position.y;
-			if (comp.syncAxis?.z) wo.z_nonotify = comp.body.position.z;
-			if (hasRotationQ(wo) && comp.body.rotationQ) {
-				wo.rotationQ.x = comp.body.rotationQ.x;
-				wo.rotationQ.y = comp.body.rotationQ.y;
-				wo.rotationQ.z = comp.body.rotationQ.z;
-				wo.rotationQ.w = comp.body.rotationQ.w;
+	update(world: World): void {
+		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+			if (!c.enabled) continue;
+			if (!c.writeBack) continue;
+			if (c.syncAxis?.x) o.x_nonotify = c.body.position.x;
+			if (c.syncAxis?.y) o.y_nonotify = c.body.position.y;
+			if (c.syncAxis?.z) o.z_nonotify = c.body.position.z;
+			if (hasRotationQ(o) && c.body.rotationQ) {
+				o.rotationQ.x = c.body.rotationQ.x;
+				o.rotationQ.y = c.body.rotationQ.y;
+				o.rotationQ.z = c.body.rotationQ.z;
+				o.rotationQ.w = c.body.rotationQ.w;
 			}
 		}
 	}
@@ -458,13 +350,12 @@ export class PhysicsPostSystem extends ECSystem {
 // New: sync GO -> body after tile/boundary corrections (honor syncAxis)
 export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	constructor(p = 0) { super(TickGroup.PostPhysics, p); }
-	update(model: World) {
-		for (const o of model.activeObjects as WorldObject[]) {
-			const pc = o.getComponent(PhysicsComponent);
-			if (!pc?.enabled || !pc.body) continue;
+	update(world: World) {
+		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+			if (!c?.enabled || !c.body) continue;
 			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
-			if (pc.writeBack) {
-				const b = pc.body, sa = pc.syncAxis;
+			if (c.writeBack) {
+				const b = c.body, sa = c.syncAxis;
 				if (sa.x) b.position.x = o.pos.x;
 				if (sa.y) b.position.y = o.pos.y;
 				if (sa.z && o.pos.z !== undefined) b.position.z = o.pos.z;
@@ -476,48 +367,43 @@ export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 
 /** PhysicsCollisionEventSystem: translate PhysicsWorld collision events to engine events. */
 export class PhysicsCollisionEventSystem extends ECSystem {
-    constructor(p = 28) { super(TickGroup.PostPhysics, p); }
-    update(world: World): void {
-        const events: CollisionEvent[] = world.drainPhysicsEvents() ?? [];
-        if (!events || events.length === 0) return;
-        for (const evt of events) {
-            const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.world.getWorldObject(evt.a.userData) : (evt.a.userData as unknown);
-            const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.world.getWorldObject(evt.b.userData) : (evt.b.userData as unknown);
-            if (!goA && !goB) continue;
-            const payload = { type: evt.type, otherId: (goB as Identifiable).id ?? null, point: evt.point, normal: evt.normal };
-            if (goA) EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payload);
-            if (goB) EventEmitter.instance.emit('physicsCollision', goB as WorldObject, { ...payload, otherId: (goA as Identifiable).id ?? null });
-            // Also emit typed events if listeners prefer name-specific subscriptions
-            const name = 'physicsCollision_' + evt.type;
-            if (goA) EventEmitter.instance.emit(name, goA as WorldObject, payload);
-            if (goB) EventEmitter.instance.emit(name, goB as WorldObject, { ...payload, otherId: (goA as Identifiable)?.id ?? null });
-        }
-    }
+	constructor(p = 28) { super(TickGroup.PostPhysics, p); }
+	update(world: World): void {
+		const events: CollisionEvent[] = world.drainPhysicsEvents() ?? [];
+		if (!events || events.length === 0) return;
+		for (const evt of events) {
+			const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.world.getWorldObject(evt.a.userData) : (evt.a.userData as unknown);
+			const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.world.getWorldObject(evt.b.userData) : (evt.b.userData as unknown);
+			if (!goA && !goB) continue;
+			const payload = { type: evt.type, otherId: (goB as Identifiable).id ?? null, point: evt.point, normal: evt.normal };
+			if (goA) EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payload);
+			if (goB) EventEmitter.instance.emit('physicsCollision', goB as WorldObject, { ...payload, otherId: (goA as Identifiable).id ?? null });
+			// Also emit typed events if listeners prefer name-specific subscriptions
+			const name = 'physicsCollision_' + evt.type;
+			if (goA) EventEmitter.instance.emit(name, goA as WorldObject, payload);
+			if (goB) EventEmitter.instance.emit(name, goB as WorldObject, { ...payload, otherId: (goA as Identifiable)?.id ?? null });
+		}
+	}
 }
 
 /** TransformSystem: update TransformComponent from WorldObject state (position/orientation/scale). */
 export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as WorldObject;
-			const tcCandidate = o?.getComponent?.(TransformComponent);
-			const tc = tcCandidate as TransformComponent | undefined;
-			if (!tc || !tc.enabled) continue;
-			const parent = tc.parent;
-			if (parent?.pos) {
-				tc.position[0] = parent.pos.x;
-				tc.position[1] = parent.pos.y;
-				tc.position[2] = parent.pos.z;
+	update(world: World): void {
+		for (let [o, c] of world.objectsWithComponent(TransformComponent, { scope: 'current' })) {
+			if (!c || !c.enabled) continue;
+			if (o?.pos) {
+				c.position[0] = o.pos.x;
+				c.position[1] = o.pos.y;
+				c.position[2] = o.pos.z;
 			}
-			if (hasRotationQ(parent)) tc["orientationQ"] = parent.rotationQ;
-			if (hasScale(parent)) {
-				tc.scale[0] = parent.scale[0];
-				tc.scale[1] = parent.scale[1];
-				tc.scale[2] = parent.scale[2];
+			if (hasRotationQ(o)) c["orientationQ"] = o.rotationQ;
+			if (hasScale(o)) {
+				c.scale[0] = o.scale[0];
+				c.scale[1] = o.scale[1];
+				c.scale[2] = o.scale[2];
 			}
-			if (hasMarkDirty(tc)) tc.markDirty();
+			if (hasMarkDirty(c)) c.markDirty();
 		}
 	}
 }
@@ -525,12 +411,9 @@ export class TransformSystem extends ECSystem {
 /** MeshAnimationSystem: steps GLTF-based mesh animations without calling WorldObject.run(). */
 export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
-	update(model: World): void {
-		const objs = model.activeObjects;
+	update(world: World): void {
 		const dtSec = $.deltaTime / 1000;
-		for (let i = 0; i < objs.length; ++i) {
-			const o = objs[i] as MeshObject;
-			if (!o || typeof o.animateStep !== 'function') continue;
+		for (let o of world.objectsOfType(MeshObject, { scope: 'current' })) {
 			o.animateStep(dtSec);
 		}
 	}

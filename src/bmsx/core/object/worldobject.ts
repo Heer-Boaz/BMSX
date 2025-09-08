@@ -5,6 +5,7 @@ import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
 import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
 import { insavegame, onload } from "../../serializer/gameserializer";
 import { $ } from '../game';
+import type { Space } from '../space';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
 import { StateDefinitions } from '../../fsm/fsmlibrary';
@@ -29,7 +30,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Represents a map of components associated with their respective keys.
 	 */
-	public components: KeyToComponentMap = {};
+	public componentMap: KeyToComponentMap = {};
 
 	/**
 	 * The object tracker for the world object.
@@ -37,15 +38,27 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public objectTracker?: ObjectTracker;
 
 	/**
+	 * Iterates all components from the object.
+	 *
+	 * @returns An iterator for all components in the object.
+	 */
+	public *iterateComponents(): IterableIterator<Component> {
+		yield* Object.values(this.componentMap);
+	}
+
+	/**
 	 * Retrieves a component of the specified type from the world object.
+     * Note: 'abstract' classes in TypeScript emit regular constructor functions at runtime.
+     * instanceof checks the prototype chain against ctor.prototype, so using an abstract
+     * base class here (ctor) will correctly return true for derived instances.
 	 *
 	 * @template T - The type of the component to retrieve.
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-    getComponent<T extends Component>(constructor: ComponentConstructor<T>) {
+    getComponent<T extends Component>(constructor: ComponentConstructor<T> | AbstractConstructor<T>) {
         const key = normalizeDecoratedClassName((constructor)?.name);
-        return this.components[key] as T | undefined;
+        return this.componentMap[key] as T | undefined;
     }
 
 	/**
@@ -56,7 +69,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @returns {void}
 	 */
     addComponent<T extends Component>(component: T): void {
-        this.components[normalizeDecoratedClassName(component.constructor?.name)] = component;
+        this.componentMap[normalizeDecoratedClassName(component.constructor?.name)] = component;
         // Late-init: bind component event subscriptions and perform registry registration here,
         // after the component has been fully constructed and added to the container.
         component.onloadSetup();
@@ -71,11 +84,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
     removeComponent(constructor: { name: string } | Function): void {
         const key = normalizeDecoratedClassName((constructor)?.name);
-        const component = this.components[key];
+        const component = this.componentMap[key];
         if (!component) return;
         // Remove from the components map first to avoid recursive cycles when component.dispose()
         // calls back into removeComponent. This makes removal idempotent from the container side.
-        delete this.components[key];
+        delete this.componentMap[key];
 
 		// If the component exposes a detach method, call it (best-effort).
 		component.detach();
@@ -95,16 +108,20 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public id: Identifier;       
 
     /** True when the object is part of the world and should participate in gameplay. */
-    public active: boolean;
+    public active: boolean = false;
     /** If false, systems should not advance time-based logic for this object. */
-    public tickEnabled: boolean;
+    public tickEnabled: boolean = false;
+	
+    public _disposeFlag: boolean = false;
+
     /**
      * Indicates whether the object is flagged for disposal.
      * If true, the object will be disposed of at the end of the game's current update cycle.
+	 * @note We do not expose `setDisposeFlag` because we want to ensure that the @see {markForDisposal} is called instead.
      */
-    public disposeFlag: boolean;
+	public get disposeFlag(): boolean { return this._disposeFlag; }
 
-	protected _pos: vec3;
+	protected _pos: vec3 = new_vec3(...DEFAULT_POSITION_VALUES);
 	/**
 	 * The position of the world object. The position is represented as a 3D vector with x, y, and z coordinates.
 	 */
@@ -238,10 +255,28 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * It is used in cases where the world object is being moved without any side effects, such as when the world object is being teleported or when the position is being set directly without any physics calculations.
 	 * @param z The new z-coordinate to set.
 	 */
-	public set z_nonotify(z: number) {
+    public set z_nonotify(z: number) {
 		this.pos.z = z;
 		// Mark depth-sort dirty for the object's space to ensure correct draw order. This is still required.
 		$.world.markDepthDirtyForObjectId(this.id);
+	}
+
+	/**
+	 * Read-only: the identifier of the Space this object currently belongs to, or null if not in a space.
+	 */
+	public get spaceId(): Identifier | null {
+		const world = $.world;
+		if (!world) return null;
+		if (!world.objToSpaceMap.has(this.id)) return null;
+		return world.get_spaceid_that_has_obj(this.id);
+	}
+
+	/**
+	 * Read-only: the Space this object currently belongs to, or null if not attached.
+	 */
+	public get space(): Space | null {
+		const sid = this.spaceId;
+		return sid ? $.world.get_space<Space>(sid) ?? null : null;
 	}
 
 	/**
@@ -249,7 +284,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * Note that the size is only used for collision detection if the world object has no collision area and
 	 * no bounding boxes. If the world object has a collision area or bounding boxes, the size is not used for collision detection.
 	 */
-	protected _size: vec3;
+	protected _size: vec3 = new_vec3(...DEFAULT_SIZE_VALUES);
 	public get size(): vec3 { return this._size; }
 	public set size(value: vec3) { this._size = value; }
 
@@ -384,11 +419,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Indicates whether the object is hittable. If false, collision detection will be skipped and always return false.
 	 */
-	public hittable: boolean;
+	public hittable: boolean = DEFAULT_HITTABLE;
 	/**
 	 * Indicates whether the world object should be rendered or not.
 	 */
-	public visible: boolean;
+	public visible: boolean = DEFAULT_VISIBLE;
 
 	/**
 	 * Gets the hitbox area of the world object.
@@ -464,7 +499,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			this.y_nonotify = spawningPos.y ?? this.y;
 			this.z_nonotify = spawningPos.z ?? this.z;
 		}
+		this.activate();
+    }
 
+    /** BeginPlay-style activation entry; mirrors onspawn behavior. */
+    public activate(): void {
 		Registry.instance.register(this); // Register the object in the registry so it can be retrieved by id.
 
 		// Call the method to initialize event subscriptions
@@ -477,16 +516,21 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		// Add components that should be auto-added to this class after the object has been spawned so that the component can retrieve the object via its id
 		this.addAutoComponents();
 
-		this.active = true;
-		this.tickEnabled = true;
 		this.eventhandling_enabled = true; // Now active for event handling
+		this.tickEnabled = true;
+		this.sc && (this.sc.tickEnabled = true);
+		this.active = true;
 		// Start the object's state machines on fresh spawn
 		// (Revive path skips onspawn, so revived machines are not reset.)
 		this.sc.start();
-    }
+	}
 
-    /** BeginPlay-style activation entry; mirrors onspawn behavior. */
-    public activate(): void { this.onspawn(); }
+	public deactivate(): void {
+		this.active = false;
+		this.eventhandling_enabled = false;
+		this.tickEnabled = false;
+		this.sc && (this.sc.tickEnabled = false);
+	}
 
 	/**
 	 * Called when the object is removed from its space without being destroyed.
@@ -507,12 +551,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * 4. Deregisters the object from the entity registry.
 	 */
 	public dispose(): void {
-		// Unsubscribe from events
-		this.active = false;
-		this.eventhandling_enabled = false; // Disable event handling immediately
+		// Unsubscribe from events, mark as inactive, and stop all ticks
+		this.deactivate();
 
 		// Dispose of components
-		const components = Object.values(this.components);
+		const components = Object.values(this.componentMap);
 		components.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>)); // Remove the component from the world object and dispose (as part of the removal process)
 
 		// Dispose all state machines
@@ -533,14 +576,22 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
 
 	/**
-	* Gebruik ik als event handler voor e.g. onLeaveScreen
-	*/
+	 * Marks the object to be disposed at the end of the current update cycle.
+	 *
+	 * Sets the internal dispose flag so the engine will perform actual cleanup
+	 * later, and immediately deactivates the object to stop ticking and event handling.
+	 *
+	 * @remarks
+	 * Prefer calling this over dispose() when you want safe, end-of-frame removal
+	 * (avoids tearing down resources while other systems may still reference the object).
+	 */
 	public markForDisposal(): void {
-		this.disposeFlag = true;
+		this._disposeFlag = true;
+		this.deactivate();
 	}
 
 	/** Specific flag controlling whether this WorldObject processes events. */
-	public eventhandling_enabled: boolean;
+	public eventhandling_enabled: boolean = false;
 
 	/**
 	 * Represents a callback function that is triggered when a collision occurs with another WorldObject.
@@ -639,29 +690,21 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * If there is no state machine for this object, don't pass any value!! The state machine factory will ensure that an "empty" state machine is created. @see {@link statecontext.create}.
 	 */
 	constructor(id?: string, fsm_id?: string) {
-		this.id = id ?? this.generateId();
-		this.hittable = DEFAULT_HITTABLE;
-		this.visible = DEFAULT_VISIBLE;
-		this.pos = new_vec3(...DEFAULT_POSITION_VALUES);
-		this.size = new_vec3(...DEFAULT_SIZE_VALUES);
-        this.disposeFlag = false;
-        this.active = false;
-        this.tickEnabled = true;
-        this.eventhandling_enabled = false; // Block event handling until spawned
+		this.id = id ?? this.id ?? this.generateId();
 
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (fsm_id && !StateDefinitions[fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${fsm_id}'"`);
 		// Create the state context that will be used to manage the state of the world object
-		this.sc = new StateMachineController(fsm_id ?? normalizeDecoratedClassName(this.constructor?.name), this.id);
+		this.sc = new StateMachineController(fsm_id ?? normalizeDecoratedClassName(this.constructor.name), this.id);
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {
-		const componentsToRemove = Object.values(this.components).filter(component => component.hasTag(tag));
+		const componentsToRemove = Object.values(this.componentMap).filter(component => component.hasTag(tag));
 		componentsToRemove.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>));
 	}
 
 	removeAllComponents(): void {
-		const componentsToRemove = Object.values(this.components);
+		const componentsToRemove = Object.values(this.componentMap);
 		componentsToRemove.forEach((component) => this.removeComponent(component.constructor as ComponentConstructor<Component>));
 	}
 
@@ -814,9 +857,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			area.start.x, area.end.y
 		] as number[];
 
-		if (o?.id) {
+		if (o) { // TypeScript handles strong typing
 			const other = o as WorldObject;
-			// Quick hitbox reject using precomputed bou`nding boxes
+			// Quick hitbox reject using precomputed bounding boxes
 			if (!WorldObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return null;
 
 			// If one of the objects has polygons, check polygon collision
@@ -838,7 +881,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		console.warn(`'getCollisionCentroid' called by or with a WorldObject that doesn't have hitpolygons, which is not supported yet. this='${this.id}', o='${o.id}'.`);
 		return null; // No polygons to check, so no centroid can be calculated
 	}
-
 
 	/**
 	 * Determines if the current `WorldObject` instance collides with another `WorldObject` instance.

@@ -51,7 +51,7 @@ export type KeyToComponentMap = { [key: string]: Component };
  *
  * @notImplementedYet
  */
-export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property). NOT IMPLEMENTED YET.
+export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property)
 export type ComponentId = string;
 
 /**
@@ -61,7 +61,7 @@ export interface ComponentContainer extends Identifiable, Registerable, Disposab
     /**
      * A map of components, where the key is the component name and the value is the component instance.
      */
-    components: KeyToComponentMap;
+    componentMap: KeyToComponentMap;
 
     /**
      * Retrieves a component of the specified type from the container.
@@ -203,7 +203,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
             console.debug(`Component ${this.id} has no parent to attach to.`);
             return;
         }
-        else if (!parent.components[this.name]) {
+        else if (!parent.componentMap[this.name]) {
             parent.addComponent(this);
         }
         else {

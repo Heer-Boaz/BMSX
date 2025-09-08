@@ -232,7 +232,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
         const startStateDef = this.get_sstate(startStateId)?.definition; // Get the start state definition from the state machine definition
 
-
         // Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
         this.enterCriticalSection();
         startStateDef?.entering_state?.call(this.target, this.get_sstate(startStateId));

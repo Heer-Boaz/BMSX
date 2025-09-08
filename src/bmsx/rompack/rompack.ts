@@ -71,12 +71,15 @@ export interface BootArgs {
 	gainnode: GainNode;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
-}/**
+}
+
+export type Constructor<T> = new (...args: any[]) => T;
+
+/**
  * Represents a type that is a constructor function with a prototype of type T.
  * This effectively allows it to match any class (including abstract classes) that produces T instances.
  * Used for attaching abstract classes to game objects.
  */
-
 export type AbstractConstructor<T> = Function & { prototype: T; };
 
 /**

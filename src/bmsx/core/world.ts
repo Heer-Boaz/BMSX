@@ -8,7 +8,7 @@ import { AbilityRuntimeSystem } from "../gas/abilityruntime";
 import { TaskRuntimeSystem } from "../gas/tasks";
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
-import type { Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
+import type { AbstractConstructor, Constructor, Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
 import { excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import { CameraObject } from './object/cameraobject';
@@ -727,6 +727,47 @@ export class World implements Stateful, RegisterablePersistent {
     /** Iterate objects that have a given component; passes the component instance too. */
     public forEachWorldObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
         this.forEachWorldObject((o) => { const c = (o).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
+    }
+
+    /**
+     * Generator method: the leading `*` indicates this is a generator function.
+     * It returns an IterableIterator<WorldObject> and yields objects lazily via `yield`.
+     */
+    public *objects(opts: { scope?: 'current' | 'all' } = {}): IterableIterator<WorldObject> {
+        const scope = opts.scope ?? 'current';
+        if (scope === 'current') {
+            const base = this.activeSpace.objects;
+            for (let i = 0; i < base.length; i++) yield base[i];
+            const overlay = this._spaceMap.get('ui')?.objects ?? [];
+            for (let i = 0; i < overlay.length; i++) yield overlay[i];
+            return;
+        }
+        for (const sp of this.spaces) {
+            const arr = sp.objects;
+            for (let i = 0; i < arr.length; i++) yield arr[i];
+        }
+    }
+
+    /** Iterate only objects of a specific class as an iterable.
+     *
+     * Note: 'abstract' classes in TypeScript emit regular constructor functions at runtime.
+     * instanceof checks the prototype chain against ctor.prototype, so using an abstract
+     * base class here (ctor) will correctly return true for derived instances.
+     */
+    public *objectsOfType<T extends WorldObject>(ctor: Constructor<T> | AbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<T> {
+        for (const o of this.objects(opts)) { if (o instanceof ctor) yield o as T; }
+    }
+
+    /** Iterate objects that have a given component; yields [object, component].
+     * Note: 'abstract' classes in TypeScript emit regular constructor functions at runtime.
+     * instanceof checks the prototype chain against ctor.prototype, so using an abstract
+     * base class here (ctor) will correctly return true for derived instances.
+     */
+    public *objectsWithComponent<T extends Component>(component: ComponentConstructor<T> | AbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
+        for (const o of this.objects(opts)) {
+            const c = o.getComponent(component) as T | undefined;
+            if (c) yield [o, c];
+        }
     }
 
     /**

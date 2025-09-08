@@ -30,7 +30,7 @@ export function defer(fn: () => void): void {
  * we strip those leading underscores when no explicit id is provided.
  */
 export function normalizeDecoratedClassName(raw: string | undefined | null): string {
-    if (!raw) return '(anonymous)';
+    // TODO: REMOVE THIS AND PLACE THE LOGIC FOR FIXING ALL DECORATED CLASSES INSIDE THE GAME.INIT OR SOMETHING!!
     return raw.startsWith('_') ? raw.replace(/^_+/, '') : raw;
 }
 
