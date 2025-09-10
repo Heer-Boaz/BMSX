@@ -34,32 +34,32 @@ class modelclass extends World {
                             run() {
                                 World.defaultrun();
                                 if (Input.KC_F5) {
-                                    game.model.state.to('gamemenu');
+                                    game.world.state.to('gamemenu');
                                 }
                             },
                         }),
                         'gamemenu': new sdef('gamemenu', {
                             enter() {
                                 let menu = new GameMenu();
-                                game.model.spawn(menu);
+                                game.world.spawn(menu);
                                 menu.Open();
                             },
                             run() {
-                                let menu = game.model.get('gamemenu') as GameMenu;
+                                let menu = game.world.get('gamemenu') as GameMenu;
                                 menu.run();
                                 if (Input.KC_F5) {
-                                    game.model.state.to('default');
+                                    game.world.state.to('default');
                                 }
                             },
                             exit() {
-                                let menu = game.model.get('gamemenu') as GameMenu;
+                                let menu = game.world.get('gamemenu') as GameMenu;
                                 menu.Close();
-                                game.model.exile(menu);
+                                game.world.exile(menu);
                             },
                         }),
                         'hoera!': new sdef('hoera!', {
                             enter() {
-                                game.model.setSpace('hoera!');
+                                game.world.setSpace('hoera!');
                             }
                         }),
                     }
@@ -850,25 +850,25 @@ _global['h406A'] = (args: BootArgs): void => {
 
     global.game.start();
     let model = game.model;
-    model.spawn(new keuken(), new_vec2(0, 0));
-    model.spawn(new invFrame(), new_vec2(4, 4));
+    world.spawn(new keuken(), new_vec2(0, 0));
+    world.spawn(new invFrame(), new_vec2(4, 4));
     let marlies = new speler(START_COLUMN);
     _model.marlies = marlies;
-    model.spawn(marlies, new_vec2(COLUMN_X[START_COLUMN], 16));
+    world.spawn(marlies, new_vec2(COLUMN_X[START_COLUMN], 16));
 
-    model.spawn(new bord(), new_vec2(160, 74));
-    model.spawn(new bord(), new_vec2(160, 100));
-    model.spawn(new bord(), new_vec2(200, 74));
-    model.spawn(new bord(), new_vec2(200, 100));
+    world.spawn(new bord(), new_vec2(160, 74));
+    world.spawn(new bord(), new_vec2(160, 100));
+    world.spawn(new bord(), new_vec2(200, 74));
+    world.spawn(new bord(), new_vec2(200, 100));
 
-    model.spawn(new komkommer(), new_vec2(26, 40));
-    // model.spawn(new komkommer(), newPoint(26, 64));
-    model.spawn(new tomaatjes(), new_vec2(26, 88));
-    // model.spawn(new tomaatjes(), newPoint(26, 112));
-    model.spawn(new mes(), new_vec2(26, 136));
-    model.spawn(new falafel(), new_vec2(100, 64));
-    // model.spawn(new falafel(), newPoint(100, 40));
-    model.spawn(new pita(), new_vec2(100, 88));
-    // model.spawn(new pita(), newPoint(100, 112));
-    // model.spawn(new mes(), newPoint(100, 136));
+    world.spawn(new komkommer(), new_vec2(26, 40));
+    // world.spawn(new komkommer(), newPoint(26, 64));
+    world.spawn(new tomaatjes(), new_vec2(26, 88));
+    // world.spawn(new tomaatjes(), newPoint(26, 112));
+    world.spawn(new mes(), new_vec2(26, 136));
+    world.spawn(new falafel(), new_vec2(100, 64));
+    // world.spawn(new falafel(), newPoint(100, 40));
+    world.spawn(new pita(), new_vec2(100, 88));
+    // world.spawn(new pita(), newPoint(100, 112));
+    // world.spawn(new mes(), newPoint(100, 136));
 };

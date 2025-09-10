@@ -1,11 +1,10 @@
 import { EventEmitter, EventSubscription, type EventSubscriber } from '../core/eventemitter';
-import { normalizeDecoratedClassName } from '../core/decorators';
 import { $ } from '../core/game';
 import { type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
 import type { Disposable, Identifiable, Identifier, Registerable } from '../rompack/rompack';
-import { AbstractConstructor } from '../rompack/rompack';
-import { insavegame, onload } from '../serializer/gameserializer';
+import { ConcreteOrAbstractConstructor } from '../rompack/rompack';
+import { insavegame, onload, type RevivableObjectArgs } from '../serializer/gameserializer';
 
 /**
  * Represents a constructor that includes the autoAddComponents property.
@@ -51,7 +50,7 @@ export type KeyToComponentMap = { [key: string]: Component };
  *
  * @notImplementedYet
  */
-export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property)
+export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | ConcreteOrAbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property)
 export type ComponentId = string;
 
 /**
@@ -123,7 +122,7 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
      * The component id is the parent id plus the component name.
      */
     public id: ComponentId; // The component id is the parent id + the component name
-    public get name(): string { return normalizeDecoratedClassName(this.constructor?.name); }
+    public get name(): string { return this.constructor?.name; }
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
@@ -172,9 +171,9 @@ export abstract class Component<T extends ComponentContainer = ComponentContaine
      *
      * @param parentid - The identifier of the parent.
      */
-    constructor(parentid: Identifier) {
-        this.parentid ??= parentid; // Store the parent id for later use
-        this.id ??= this.parentid + '_' + normalizeDecoratedClassName(this.constructor?.name); // Note: A component can be added once per world object
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+        this.parentid ??= opts.parentid; // Store the parent id for later use
+        this.id ??= this.parentid + '_' + this.constructor?.name; // Note: A component can be added once per world object
         this.enabled ??= true;
         // Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
         // so do not bind here to avoid running before derived decorator initializers.

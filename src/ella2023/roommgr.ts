@@ -1,10 +1,10 @@
-import { $, Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from 'bmsx';
+import { $, Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame, type RevivableObjectArgs } from 'bmsx';
 import { EilaGameState } from './state';
 import { BitmapId } from './resourceids';
 
 @insavegame
 export class RoomMgr {
-    constructor() {
+    constructor(_opts?: RevivableObjectArgs) {
         this.rooms = {};
         this.adjacentRooms = {} as Record<Direction, string>;
     }
@@ -17,7 +17,7 @@ export class RoomMgr {
         state.currentRoomId = room_id;
         this.adjacentRooms = {} as Record<Direction, string>;
         if (!this.rooms[room_id]) {
-            this.rooms[room_id] = new Room(room_id);
+            this.rooms[room_id] = new Room({ room_id });
         }
         switch (room_id) {
             case 'room1':
@@ -36,9 +36,9 @@ export class RoomMgr {
 
 @insavegame
 export class Room extends SpriteObject {
-    constructor(room_id: string) {
-        super(room_id);
-        switch (room_id) {
+    constructor(opts: RevivableObjectArgs & { room_id: string }) {
+        super({ id: opts.room_id });
+        switch (opts.room_id) {
             case 'room1':
                 this.imgid = BitmapId.hallway;
                 break;

@@ -141,7 +141,7 @@ export class PhysicsWorld implements RegisterablePersistent {
     }
 
     addBody(desc: PhysicsBodyDesc): PhysicsBody {
-        const b = new PhysicsBody(desc);
+        const b = new PhysicsBody({ desc });
         this.bodies.push(b);
         this.broadphase.addBody(b);
         if (b.id > this.maxBodyId) this.maxBodyId = b.id;

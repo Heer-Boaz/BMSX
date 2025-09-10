@@ -107,11 +107,11 @@ export class GameMenu extends WorldObject {
         this.selectedItemIndex = 0;
         switch (this.CurrentScreen) {
             case MenuItem.LoadFromGameOver:
-                // model.MainMenu.GameMenuClosed();
+                // world.MainMenu.GameMenuClosed();
                 break;
             case MenuItem.LoadFromMainMenu:
             case MenuItem.OptionsFromMainMenu:
-                // model.MainMenu.GameMenuClosed();
+                // world.MainMenu.GameMenuClosed();
                 break;
             default:
                 break;
@@ -168,7 +168,7 @@ export class GameMenu extends WorldObject {
                     SM.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            game.model.state.pop();
+                            game.world.state.pop();
                             // (controller as Controller).CloseGameMenu();
                             break;
                         case MenuItem.ChangeOptions:

@@ -1,4 +1,4 @@
-import { insavegame } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { WorldObject } from '../core/object/worldobject';
 import { $, } from '../core/game';
 import { ZCOORD_MAX } from '../render/backend/webgl.constants';
@@ -11,10 +11,16 @@ const TOAST_DURATION = 1800;
 @insavegame
 class Toast extends WorldObject {
     private createdAt: number = 0;
+    private text: string;
+    private font?: BFont;
+    private ms: number;
 
-    constructor(public text: string, public font?: BFont, public ms: number = TOAST_DURATION) {
-        super();
+    constructor(opts: RevivableObjectArgs & { text: string; font?: BFont; ms?: number }) {
+        super(opts);
         this.z = ZCOORD_MAX; // draw on top
+        this.text = opts.text;
+        this.font = opts.font;
+        this.ms = opts.ms ?? TOAST_DURATION;
     }
     
     override onspawn(): void {
@@ -41,7 +47,7 @@ class Toast extends WorldObject {
 }
 
 export function spawnToast(text: string, font?: BFont, ms?: number): void {
-    const o = new Toast(text, font, ms);
+    const o = new Toast({ text, font, ms });
     $.world[id_to_space_symbol]['ui'].spawn(o);
 }
 

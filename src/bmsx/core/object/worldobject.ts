@@ -2,14 +2,13 @@ import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, Constru
 import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
-import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
-import { insavegame, onload, excludepropfromsavegame } from "../../serializer/gameserializer";
+import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
+import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from "../../serializer/gameserializer";
 import { $ } from '../game';
 import type { Space } from '../space';
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
 import { StateDefinitions } from '../../fsm/fsmlibrary';
-import { normalizeDecoratedClassName } from '../decorators';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
 
@@ -56,8 +55,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-	getComponent<T extends Component>(constructor: ComponentConstructor<T> | AbstractConstructor<T>) {
-		const key = normalizeDecoratedClassName((constructor)?.name);
+	getComponent<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>) {
+		const key = (constructor)?.name;
 		return this.componentMap[key] as T | undefined;
 	}
 
@@ -69,7 +68,10 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @returns {void}
 	 */
 	addComponent<T extends Component>(component: T): void {
-		this.componentMap[normalizeDecoratedClassName(component.constructor?.name)] = component;
+		// Ensure parent linkage is correct even if caller used legacy constructor
+		if (!component.parentid) component.parentid = this.id;
+		if (!component.id) component.id = component.parentid + '_' + component.constructor?.name;
+		this.componentMap[component.constructor?.name] = component;
 		// Late-init: bind component event subscriptions and perform registry registration here,
 		// after the component has been fully constructed and added to the container.
 		component.onloadSetup();
@@ -83,7 +85,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @returns void
 	 */
 	removeComponent(constructor: { name: string } | Function): void {
-		const key = normalizeDecoratedClassName((constructor)?.name);
+		const key = (constructor)?.name;
 		const component = this.componentMap[key];
 		if (!component) return;
 		// Remove from the components map first to avoid recursive cycles when component.dispose()
@@ -682,13 +684,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @returns The generated unique identifier.
 	 */
 	protected generateId(): string {
-		const model = $.world;
+		const world = $.world;
 		let result: string;
 		do {
-			const baseId = normalizeDecoratedClassName(this.constructor?.name);
-			const uniqueNumber = model.getNextIdNumber();
+			const baseId = (this.constructor?.name);
+			const uniqueNumber = world.getNextIdNumber();
 			result = `${baseId}_${uniqueNumber}`;
-		} while (model.exists(result));
+		} while (world.exists(result));
 		return result;
 	}
 
@@ -698,13 +700,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param fsm_id The id of the state machine that will be created for this object.
 	 * If there is no state machine for this object, don't pass any value!! The state machine factory will ensure that an "empty" state machine is created. @see {@link statecontext.create}.
 	 */
-	constructor(id?: string, fsm_id?: string) {
-		this.id = id ?? this.id ?? this.generateId();
+	constructor(opts?: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
+		this.id = opts?.id ?? this.id ?? this.generateId();
 
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
-		if (fsm_id && !StateDefinitions[fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${fsm_id}'"`);
+		if (opts?.fsm_id && !StateDefinitions[opts.fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: '${opts.fsm_id}'`);
 		// Create the state context that will be used to manage the state of the world object
-		this.sc = new StateMachineController(fsm_id ?? normalizeDecoratedClassName(this.constructor.name), this.id);
+		this.sc = new StateMachineController(opts?.fsm_id ?? (this.constructor.name), this.id);
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {
@@ -724,7 +726,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	private addAutoComponents() {
 		if ((this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
 			for (const componentClass of (this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
-				this.addComponent(new componentClass(this.id));
+				// Pass options object to support revive-compatible constructors
+				const opts: RevivableObjectArgs & { parentid: Identifier } = { parentid: this.id };
+				this.addComponent(new componentClass(opts));
 			}
 		}
 	}
@@ -748,8 +752,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	/** Unwire subscriptions and FSM listeners for this object. */
 	public unbind(): void {
-		// Best-effort: remove sc listeners by removing the subscriber (target) as well
-		this.sc.unbind();
 		EventEmitter.instance.removeSubscriber(this);
 		Registry.instance.deregister(this);
 	}
@@ -789,7 +791,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 		// Iterate over the behavior tree names and create the behavior trees
 		constructor.linkedBTs?.forEach(bt_id => {
-			let blackboard = new Blackboard(bt_id);
+			let blackboard = new Blackboard({ id: bt_id });
 			this._btreecontexts[bt_id] = {
 				root: BehaviorTrees[bt_id],
 				blackboard: blackboard,
@@ -1134,4 +1136,4 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 export type WorldObjectConstructorBase = new (_id?: Identifier, _fsm_id?: string, ...args: any[]) => WorldObject;
 
 // A type representing either a concrete WorldObject constructor or an abstract constructor for WorldObject.
-export type WorldObjectConstructorBaseOrAbstract = WorldObjectConstructorBase | AbstractConstructor<WorldObject>;
+export type WorldObjectConstructorBaseOrAbstract = ConcreteOrAbstractConstructor<WorldObject>;

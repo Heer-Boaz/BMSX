@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type vec2 } from 'bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type RevivableObjectArgs, type vec2 } from 'bmsx';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
 
@@ -91,12 +91,12 @@ export abstract class Fighter extends SpriteObject {
      */
     public player_index: number;
 
-    constructor(id: Identifier, fsm_id: string, facing: 'left' | 'right' = 'right', playerIndex: number) {
-        super(id, fsm_id);
+    constructor(opts: RevivableObjectArgs & { id: Identifier; fsm_id?: Identifier; facing?: 'left' | 'right'; playerIndex?: number }) {
+        super(opts);
         this._hitarea = new_area(0, 0, 0, 0); // Populate the hitarea with a default value. It is updated in the imgid setter.
-        this.facing = facing;
+        this.facing = opts.facing ?? 'right';
         this.currentHitMarker = null;
-        this.player_index = playerIndex;
+        this.player_index = opts.playerIndex ?? 1;
     }
 
     public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {

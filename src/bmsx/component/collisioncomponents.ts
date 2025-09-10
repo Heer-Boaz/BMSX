@@ -4,7 +4,7 @@ import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobjec
 import { mod, new_vec2, set_inplace_vec2 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
 import { vec2 } from '../rompack/rompack';
-import { insavegame } from "../serializer/gameserializer";
+import { insavegame, type RevivableObjectArgs } from "../serializer/gameserializer";
 import { TileSize } from "../systems/msx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from "./basecomponent";
 
@@ -21,8 +21,8 @@ export abstract class PositionUpdateAxisComponent extends Component<WorldObject>
 	 */
 	public oldPos: vec2;
 
-	constructor(id: Identifier) {
-		super(id);
+	constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+		super(opts);
 		this.oldPos = new_vec2(0, 0);
 	}
 

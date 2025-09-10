@@ -1,4 +1,4 @@
-import { $, Component, WorldObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from 'bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
@@ -9,8 +9,8 @@ export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
 
 @insavegame
 export class JumpingWhileLeavingScreenComponent extends Component {
-	constructor(id: string) {
-		super(id);
+	constructor(opts: RevivableObjectArgs & { parentid: string }) {
+		super(opts);
 		this.enabled = false; // Disabled by default
 	}
 
@@ -519,8 +519,8 @@ export class Eila extends Fighter {
 		};
 	}
 
-	constructor() {
-		super('player', undefined, 'left', 1);
+	constructor(opts?: RevivableObjectArgs & { id?: Identifier }) {
+		super({ ...opts ?? {}, id: opts?.id ?? 'eila' });
 		this.hp = EILA_START_HP;
 	}
 

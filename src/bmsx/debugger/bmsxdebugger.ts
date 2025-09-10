@@ -10,12 +10,11 @@ import { div_vec2, new_vec2 } from '../core/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { PhysicsDebugComponent } from '../physics/physicsdebugcomponent';
 import type { Identifier, vec2 } from '../rompack/rompack';
-import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
-import { normalizeDecoratedClassName } from '../core/decorators';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
@@ -34,8 +33,8 @@ export class PhysicsOverlayRenderer extends Component {
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private lastResizeW = 0; private lastResizeH = 0;
-    constructor(id: Identifier) {
-        super(id);
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+        super(opts);
         // Create or reuse overlay canvas
         let c = document.getElementById(PHYSICS_OVERLAY_ID) as HTMLCanvasElement | null;
         if (!c) {
@@ -183,7 +182,7 @@ export class HitBoxVisualizer extends Component {
 
     static attachToObject(obj: WorldObject) {
         if (!obj.getComponent(HitBoxVisualizer)) {
-            obj.addComponent(new HitBoxVisualizer(obj.id));
+            obj.addComponent(new HitBoxVisualizer({ parentid: obj.id }));
         }
     }
 
@@ -195,8 +194,8 @@ export class HitBoxVisualizer extends Component {
         return obj.getComponent(HitBoxVisualizer);
     }
 
-    constructor(id: Identifier) {
-        super(id);
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+        super(opts);
     }
 
     override preprocessingUpdate(): void {
@@ -228,7 +227,7 @@ export class ObjectHighlighterComponent extends Component {
 
     static attachToObject(obj: WorldObject) {
         if (!obj.getComponent(ObjectHighlighterComponent)) {
-            obj.addComponent(new ObjectHighlighterComponent(obj.id));
+            obj.addComponent(new ObjectHighlighterComponent({ parentid: obj.id }));
         }
     }
 
@@ -240,8 +239,8 @@ export class ObjectHighlighterComponent extends Component {
         return obj.getComponent(ObjectHighlighterComponent);
     }
 
-    constructor(id: Identifier) {
-        super(id);
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+        super(opts);
     }
 
     override preprocessingUpdate(): void {
@@ -589,7 +588,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
     $.world.activeObjects.forEach(o => {
         let row = addContent(table, 'tr', null);
         row.classList.add('selectableoption');
-        addContent(row, 'td', `${normalizeDecoratedClassName(o.constructor?.name)}`);
+        addContent(row, 'td', `${o.constructor?.name}`);
         addContent(row, 'td', `${o.id}`);
 
         row.onclick = (_) => {
@@ -664,8 +663,8 @@ function handleOpenListenersDialog(eventName: string, scope: string, listeners: 
 
     listeners.forEach(({ listener, subscriber }) => {
         const row = addContent(table, 'tr', null);
-        addContent(row, 'td', listener.name || 'anonymous');
-        addContent(row, 'td', normalizeDecoratedClassName(subscriber.constructor?.name));
+        addContent(row, 'td', listener.name);
+        addContent(row, 'td', subscriber.constructor?.name);
     });
 
     document.body.insertBefore(dialogDiv, null);
@@ -856,7 +855,7 @@ function highlight_object(o: WorldObject) {
     }
     else {
         if (!currentHighlighterComponent) {
-            currentHighlighterComponent = new ObjectHighlighterComponent(o.id);
+            currentHighlighterComponent = new ObjectHighlighterComponent({ parentid: o.id });
         }
         currentHighlighterComponent.attach(o.id); // Also automatically detaches it
     }

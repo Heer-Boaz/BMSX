@@ -16,6 +16,14 @@ export const BST_MAX_HISTORY = 10;
  */
 export const DEFAULT_BST_ID = 'master';
 
+export interface FSMControllerOptions {
+	/** The ID of the state machine. */
+	fsm_id: string;
+	/** The ID of the object being controlled. */
+	id: string;
+	
+}
+
 @insavegame
 /**
  * Represents a state machine controller that manages multiple state machines.
@@ -98,11 +106,13 @@ export class StateMachineController {
 	 * Disposes the BFStateMachine and deregisters all machines.
 	 */
 	public dispose(): void {
+		this.pause();
+		this._started = false;
 		// Deregister all machines
 		for (let id in this.statemachines) {
 			this.statemachines[id].dispose();
 		}
-		this._started = false;
+		this.unbind();
 	}
 
 	/**

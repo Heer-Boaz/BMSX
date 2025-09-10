@@ -29,32 +29,32 @@ class modelclass extends World {
                             run() {
                                 World.defaultrun();
                                 if (Input.KC_F5) {
-                                    game.model.state.to('gamemenu');
+                                    game.world.state.to('gamemenu');
                                 }
                             },
                         }),
                         'gamemenu': new sdef('gamemenu', {
                             enter() {
                                 let menu = new GameMenu();
-                                game.model.spawn(menu);
+                                game.world.spawn(menu);
                                 menu.Open();
                             },
                             run() {
-                                let menu = game.model.get('gamemenu') as GameMenu;
+                                let menu = game.world.get('gamemenu') as GameMenu;
                                 menu.run();
                                 if (Input.KC_F5) {
-                                    game.model.state.to('default');
+                                    game.world.state.to('default');
                                 }
                             },
                             exit() {
-                                let menu = game.model.get('gamemenu') as GameMenu;
+                                let menu = game.world.get('gamemenu') as GameMenu;
                                 menu.Close();
-                                game.model.exile(menu);
+                                game.world.exile(menu);
                             },
                         }),
                         'hoera!': new sdef('hoera!', {
                             enter() {
-                                game.model.setSpace('hoera!');
+                                game.world.setSpace('hoera!');
                             }
                         }),
                     }
@@ -595,11 +595,11 @@ _global['h406A'] = (args: BootArgs): void => {
         game.view.default_font = new BFont(BitmapId);
         global.game.start();
         let model = game.model;
-        model.spawn(new yakuzi(), new_vec2(0, 32));
-        model.spawn(new hud(), new_vec2(0, 0));
+        world.spawn(new yakuzi(), new_vec2(0, 32));
+        world.spawn(new hud(), new_vec2(0, 0));
         let marlies = new speler();
         _model.marlies = marlies;
-        model.spawn(marlies, new_vec2(30, 142));
+        world.spawn(marlies, new_vec2(30, 142));
     });
 
 };

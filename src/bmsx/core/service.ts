@@ -3,7 +3,7 @@ import { EventEmitter } from './eventemitter';
 import { Stateful } from '../fsm/fsmtypes';
 import { StateMachineController } from '../fsm/fsmcontroller';
 import { Registry } from './registry';
-import { onload } from '../serializer/gameserializer';
+import { onload, type RevivableObjectArgs } from '../serializer/gameserializer';
 
 /**
  * Base class for non-world-bound, persistent services (UE-style Subsystems).
@@ -44,8 +44,8 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	 * @param id Unique identifier. If omitted, defaults to the class name in lower_snake_case.
 	 * @param opts Optional flags for initial state.
 	 */
-	protected constructor(id?: Identifier) {
-		this.id = id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
+	protected constructor(opts?: RevivableObjectArgs & { id?: Identifier }) {
+		this.id = opts?.id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
 		// Register service in global registry
 		this.bind();
 

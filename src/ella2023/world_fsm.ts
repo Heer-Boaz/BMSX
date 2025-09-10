@@ -65,7 +65,7 @@ export class EilaModelFSM {
                                 es.room_mgr.loadRoom('room2');
                                 this.spawn(es.room_mgr.rooms[es.currentRoomId], new_vec3(0, 0, 0));
                                 this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
-                                this.spawn(new Sinterklaas(($.get<EilaGameState>('eila_state')?.numOfPlayers ?? 1) === 1), new_vec3(60, 0, 10));
+                                this.spawn(new Sinterklaas({ aied: ($.get<EilaGameState>('eila_state')?.numOfPlayers ?? 1) === 1 }), new_vec3(60, 0, 10));
                                 this.spawn(new Hud(), new_vec3(0, 0, 100));
                                 $.playAudio(AudioId.knokken);
                             },

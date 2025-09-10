@@ -1,6 +1,6 @@
 import { new_vec3 } from '../core/utils';
 import type { vec3 } from '../rompack/rompack';
-import { insavegame } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import type { Contact } from './narrowphase';
 import { PhysicsBody } from './physicsbody';
 
@@ -67,6 +67,9 @@ export class ContactSolver {
     lastSolvedContacts = 0;
     frictionEpsilon = 1e-4; // below this, treat friction as zero
     tangentialSpeedEpsilon = 1e-3; // skip friction calc when tangential speed tiny
+
+    constructor(_opts?: RevivableObjectArgs) {
+    }
 
     solve(contacts: Contact[]) {
         let solved = 0;

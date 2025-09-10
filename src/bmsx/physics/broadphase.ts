@@ -1,4 +1,4 @@
-import { insavegame } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { computeAABB } from './collisionshape';
 import { PhysicsBody } from './physicsbody';
 
@@ -10,6 +10,9 @@ export class BroadphaseSAP {
     private axis: { body: PhysicsBody; min: number; max: number; minY: number; maxY: number; minZ: number; maxZ: number }[] = [];
     private dirty = new Set<PhysicsBody>();
     yzPruneThreshold = 64; // enable extra axis pruning when many bodies
+
+    constructor(_opts?: RevivableObjectArgs) {
+    }
 
     addBody(b: PhysicsBody) {
         const aabb = computeAABB(b.shape, b.position);

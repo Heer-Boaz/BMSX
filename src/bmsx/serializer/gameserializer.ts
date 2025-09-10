@@ -1,21 +1,30 @@
+/**
+ * File summary:
+ * - Serializer: builds a reference-preserving representation of an object graph (root + objects),
+ *   supports JSON or binary encoding, honors exclusion rules and @onsave hooks.
+ * - Reviver: reconstructs instances from serialized graphs, resolves references, runs @onload hooks,
+ *   and uses a constructor registry populated via @insavegame.
+ * - Decorators: @insavegame, @onsave, @onload, @excludepropfromsavegame, excludeclassfromsavegame.
+ * - Savegame: a concrete class that demonstrates usage (captures view & sound state).
+ *
+ * Purpose: centralize save/load (serialization/deserialization) logic for game state with support
+ * for custom class registration, reference cycles, typed arrays and binary snapshots.
+ */
+
 import { type ModulationParams } from "../audio/soundmaster";
 import { Space } from '../core/space';
 import { $ } from '../core/game';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";
-// import { MaybeRegisterable } from "bmsx/rompack/rompack";
-
-function normalizeTypeName(raw: string | undefined | null): string {
-    if (!raw) return '';
-    return raw.startsWith('_') ? raw.replace(/^_+/, '') : raw;
-}
+import { Bindable } from "bmsx/rompack/rompack";
+import { normalizeDecoratedClassName } from "bmsx/core/decorators";
 
 // Decorators onload/onsave are defined locally in this file
-type ConstructorWithSaveGame<T = any> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
+type ConstructorWithSaveGame<T = Bindable> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
 
 function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean } {
-    return !!ctor && typeof ctor === 'function' && '__exclude_savegame__' in (ctor) && (ctor as ConstructorWithSaveGame).__exclude_savegame__ === true;
+	return !!ctor && typeof ctor === 'function' && '__exclude_savegame__' in (ctor) && (ctor as ConstructorWithSaveGame).__exclude_savegame__ === true;
 }
 
 /**
@@ -40,293 +49,293 @@ function hasExcludeFlag(ctor: unknown): ctor is { __exclude_savegame__?: boolean
  * ```
  */
 export class Serializer {
-    // A place to collect all @onsave hooks by class name
-    static onSaves: Record<string, ((...args: any[]) => any)[]> = {};
+	// A place to collect all @onsave hooks by class name
+	static onSaves: Record<string, ((...args: any[]) => any)[]> = {};
 
-    /**
-     * Main parameterized serialization entry point.
-     *
-     * @param obj - The object to serialize.
-     * @param options - Serialization options.
-     * @param options.binary - If true, serializes to a binary format. Defaults to true.
-     * @returns The serialized representation of the object, either as a JSON string or a Uint8Array for binary serialization.
-     */
-    static serialize(obj: any, options: { binary?: boolean } = { binary: true }): string | Uint8Array {
-        return Serializer.serializeAnyWithRefs(obj, options);
-    }
+	/**
+	 * Main parameterized serialization entry point.
+	 *
+	 * @param obj - The object to serialize.
+	 * @param options - Serialization options.
+	 * @param options.binary - If true, serializes to a binary format. Defaults to true.
+	 * @returns The serialized representation of the object, either as a JSON string or a Uint8Array for binary serialization.
+	 */
+	static serialize(obj: any, options: { binary?: boolean } = { binary: true }): string | Uint8Array {
+		return Serializer.serializeAnyWithRefs(obj, options);
+	}
 
-    /**
-     * Serializes an object with reference tracking, supporting both JSON and binary formats.
-     *
-     * This method constructs a reference graph from the input object to handle circular references
-     * and shared objects. It then serializes the graph either as a JSON string or as a binary
-     * `Uint8Array`, depending on the provided options.
-     *
-     * @param obj - The object to serialize, which may contain circular references.
-     * @param opts - Optional serialization options.
-     * @param opts.binary - If `true`, serializes to a binary format (`Uint8Array`); otherwise, serializes to a JSON string.
-     * @returns The serialized representation of the object, either as a JSON string or a `Uint8Array`.
-     */
-    private static serializeAnyWithRefs(obj: any, opts: { binary?: boolean } = {}): string | Uint8Array {
-        const { root, objects } = Serializer.buildReferenceGraph(obj);
-        if (opts.binary) {
-            return encodeBinary({ root, objects });
-        } else {
-            return JSON.stringify({ root, objects });
-        }
-    }
+	/**
+	 * Serializes an object with reference tracking, supporting both JSON and binary formats.
+	 *
+	 * This method constructs a reference graph from the input object to handle circular references
+	 * and shared objects. It then serializes the graph either as a JSON string or as a binary
+	 * `Uint8Array`, depending on the provided options.
+	 *
+	 * @param obj - The object to serialize, which may contain circular references.
+	 * @param opts - Optional serialization options.
+	 * @param opts.binary - If `true`, serializes to a binary format (`Uint8Array`); otherwise, serializes to a JSON string.
+	 * @returns The serialized representation of the object, either as a JSON string or a `Uint8Array`.
+	 */
+	private static serializeAnyWithRefs(obj: any, opts: { binary?: boolean } = {}): string | Uint8Array {
+		const { root, objects } = Serializer.buildReferenceGraph(obj);
+		if (opts.binary) {
+			return encodeBinary({ root, objects });
+		} else {
+			return JSON.stringify({ root, objects });
+		}
+	}
 
-    static excludedProperties: Record<string, Record<string, boolean>> = {};
-    static excludedObjectTypes: Set<string> = new Set<string>();
-    static propertyIncludeExcludeMap: Map<string, Map<string, boolean>> = new Map<string, Map<string, boolean>>();
-    static classExcludeMap: Map<string, boolean> = new Map<string, boolean>();
-    static get_typename(value: any): string {
-        if (!value) return '';
-        if (typeof value === 'function') {
-            return normalizeTypeName((value as Function).name) || '(anonymous)';
-        }
-        if (typeof value === 'object') {
-            const raw = (value as { constructor?: { name?: string } })?.constructor?.name ?? 'Object';
-            return normalizeTypeName(raw) || raw;
-        }
-        return typeof value;
-    }
+	static excludedProperties: Record<string, Record<string, boolean>> = {};
+	static excludedObjectTypes: Set<string> = new Set<string>();
+	static propertyIncludeExcludeMap: Map<string, Map<string, boolean>> = new Map<string, Map<string, boolean>>();
+	static classExcludeMap: Map<string, boolean> = new Map<string, boolean>();
+	static get_typename(value: any): string {
+		if (!value) return '';
+		if (typeof value === 'function') {
+			return (value as Function).name;
+		}
+		if (typeof value === 'object') {
+			const raw = (value as { constructor?: { name?: string } })?.constructor?.name ?? 'Object';
+			return raw;
+		}
+		return typeof value;
+	}
 
-    static createInclusionCacheKey(obj: unknown): string {
-        if (typeof obj === 'function') return normalizeTypeName((obj as Function).name);
-        const name = (obj as { constructor?: { name?: string } })?.constructor?.name;
-        return normalizeTypeName(name);
-    }
+	static createInclusionCacheKey(obj: unknown): string {
+		if (typeof obj === 'function') return (obj as Function).name;
+		const name = (obj as { constructor?: { name?: string } })?.constructor?.name;
+		return name;
+	}
 
-    // Ensure this method walks the prototype/constructor chain so abstract/base-class annotations are honored.
-    static shouldClassBeExcludedFromSaveGame(obj: unknown): boolean {
-        const cacheKey = Serializer.createInclusionCacheKey(obj);
+	// Ensure this method walks the prototype/constructor chain so abstract/base-class annotations are honored.
+	static shouldClassBeExcludedFromSaveGame(obj: unknown): boolean {
+		const cacheKey = Serializer.createInclusionCacheKey(obj);
 
-        const map = Serializer.classExcludeMap;
-        if (cacheKey && map.has(cacheKey)) return map.get(cacheKey)! === true;
+		const map = Serializer.classExcludeMap;
+		if (cacheKey && map.has(cacheKey)) return map.get(cacheKey)! === true;
 
-        // 1) Walk constructor chain (class-level decorators / flags live here)
-        let ctor: any = (typeof obj === 'function') ? obj : (obj as { constructor?: any })?.constructor;
-        while (ctor && ctor !== Object) {
-            if (hasExcludeFlag(ctor)) { if (cacheKey) map.set(cacheKey, true); return true; }
-            if (Serializer.excludedObjectTypes?.has?.(ctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
-            ctor = Object.getPrototypeOf(ctor);
-        }
-        // 2) Defensively walk prototype chain of an instance
-        let proto: any = (typeof obj === 'function') ? (obj as Function).prototype : Object.getPrototypeOf(obj as object);
-        while (proto && proto.constructor && proto.constructor !== Object) {
-            const pctor = proto.constructor;
-            if (hasExcludeFlag(pctor)) { if (cacheKey) map.set(cacheKey, true); return true; }
-            if (Serializer.excludedObjectTypes?.has?.(pctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
-            proto = Object.getPrototypeOf(proto);
-        }
-        if (cacheKey) map.set(cacheKey, false);
-        return false;
-    }
+		// 1) Walk constructor chain (class-level decorators / flags live here)
+		let ctor: any = (typeof obj === 'function') ? obj : (obj as { constructor?: any })?.constructor;
+		while (ctor && ctor !== Object) {
+			if (hasExcludeFlag(ctor)) { if (cacheKey) map.set(cacheKey, true); return true; }
+			if (Serializer.excludedObjectTypes?.has?.(ctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
+			ctor = Object.getPrototypeOf(ctor);
+		}
+		// 2) Defensively walk prototype chain of an instance
+		let proto: any = (typeof obj === 'function') ? (obj as Function).prototype : Object.getPrototypeOf(obj as object);
+		while (proto && proto.constructor && proto.constructor !== Object) {
+			const pctor = proto.constructor;
+			if (hasExcludeFlag(pctor)) { if (cacheKey) map.set(cacheKey, true); return true; }
+			if (Serializer.excludedObjectTypes?.has?.(pctor.name)) { if (cacheKey) map.set(cacheKey, true); return true; }
+			proto = Object.getPrototypeOf(proto);
+		}
+		if (cacheKey) map.set(cacheKey, false);
+		return false;
+	}
 
-    static shouldPropertyBeExcludedFromSaveGame(value: Record<string, unknown>, key: string): boolean {
-        const className = Serializer.get_typename(value);
-        const map = Serializer.propertyIncludeExcludeMap;
-        let typeMap = map.get(className);
-        if (typeMap && typeMap.has(key)) return typeMap.get(key)! === true;
-        if (!typeMap) {
-            typeMap = new Map<string, boolean>();
-            map.set(className, typeMap);
-        }
-        // Walk prototype chain of the instance
-        let proto: any = Object.getPrototypeOf(value as object);
-        while (proto && proto.constructor && proto.constructor.name !== 'Object') {
-            const tname = Serializer.get_typename(proto.constructor);
-            if (Serializer.excludedProperties[tname]?.[key] === true) { typeMap.set(key, true); return true; }
-            proto = Object.getPrototypeOf(proto);
-        }
-        // Check whether the type of the property itself should be excluded
-        const propertyValue = value[key];
-        if (propertyValue && typeof propertyValue === 'object') {
-            const ctorCandidate = propertyValue.constructor;
-            if (ctorCandidate && typeof ctorCandidate === 'function') {
-                if (Serializer.shouldClassBeExcludedFromSaveGame(ctorCandidate)) { typeMap.set(key, true); return true; }
-            }
-        }
-        typeMap.set(key, false);
-        return false;
-    }
+	static shouldPropertyBeExcludedFromSaveGame(value: Record<string, unknown>, key: string): boolean {
+		const className = Serializer.get_typename(value);
+		const map = Serializer.propertyIncludeExcludeMap;
+		let typeMap = map.get(className);
+		if (typeMap && typeMap.has(key)) return typeMap.get(key)! === true;
+		if (!typeMap) {
+			typeMap = new Map<string, boolean>();
+			map.set(className, typeMap);
+		}
+		// Walk prototype chain of the instance
+		let proto: any = Object.getPrototypeOf(value as object);
+		while (proto && proto.constructor && proto.constructor.name !== 'Object') {
+			const tname = Serializer.get_typename(proto.constructor);
+			if (Serializer.excludedProperties[tname]?.[key] === true) { typeMap.set(key, true); return true; }
+			proto = Object.getPrototypeOf(proto);
+		}
+		// Check whether the type of the property itself should be excluded
+		const propertyValue = value[key];
+		if (propertyValue && typeof propertyValue === 'object') {
+			const ctorCandidate = propertyValue.constructor;
+			if (ctorCandidate && typeof ctorCandidate === 'function') {
+				if (Serializer.shouldClassBeExcludedFromSaveGame(ctorCandidate)) { typeMap.set(key, true); return true; }
+			}
+		}
+		typeMap.set(key, false);
+		return false;
+	}
 
-    /**
-     * Builds a reference graph for the given object, serializing it into a structure that preserves object references.
-     *
-     * This method traverses the input object, assigning unique IDs to each encountered object and replacing references
-     * with `$ref` objects to handle circular references and shared instances. It also serializes arrays and handles
-     * custom type information using `Serializer` and `Reviver` utilities.
-     *
-     * @param obj - The root object to serialize and build the reference graph from.
-     * @returns An object containing:
-     *   - `root`: The serialized root object, with references replaced by `$ref` objects.
-     *   - `objects`: A mapping from unique object IDs to their serialized representations.
-     *
-     * @throws Error if a non-plain object is encountered without a known constructor (missing `@insavegame`).
-     */
-    private static buildReferenceGraph(obj: any): { root: any, objects: Record<number, any> } {
-        const objectMap = new Map<any, number>();
-        const objects: Record<number, any> = {};
-        let idCounter = 1;
-        function getIdForObject(o: any): number {
-            if (objectMap.has(o)) return objectMap.get(o)!;
-            const id = idCounter++;
-            objectMap.set(o, id);
-            return id;
-        }
+	/**
+	 * Builds a reference graph for the given object, serializing it into a structure that preserves object references.
+	 *
+	 * This method traverses the input object, assigning unique IDs to each encountered object and replacing references
+	 * with `$ref` objects to handle circular references and shared instances. It also serializes arrays and handles
+	 * custom type information using `Serializer` and `Reviver` utilities.
+	 *
+	 * @param obj - The root object to serialize and build the reference graph from.
+	 * @returns An object containing:
+	 *   - `root`: The serialized root object, with references replaced by `$ref` objects.
+	 *   - `objects`: A mapping from unique object IDs to their serialized representations.
+	 *
+	 * @throws Error if a non-plain object is encountered without a known constructor (missing `@insavegame`).
+	 */
+	private static buildReferenceGraph(obj: any): { root: any, objects: Record<number, any> } {
+		const objectMap = new Map<any, number>();
+		const objects: Record<number, any> = {};
+		let idCounter = 1;
+		function getIdForObject(o: any): number {
+			if (objectMap.has(o)) return objectMap.get(o)!;
+			const id = idCounter++;
+			objectMap.set(o, id);
+			return id;
+		}
 
-        // Iterative stack-based traversal
-        const stack: Array<{ value: any; parent: any; key: string | number | undefined; plain?: any; typename?: string; theConstructor?: any }> = [];
-        let rootRef: any = undefined;
-        stack.push({ value: obj, parent: null, key: undefined });
-        while (stack.length > 0) {
-            const frame = stack.pop()!;
-            const { value, parent, key } = frame;
-            if (value === null || value === undefined) {
-                if (parent && key !== undefined) parent[key] = value;
-                else rootRef = value;
-                continue;
-            }
-            const typeoff = typeof value;
-            if (typeoff !== 'object') {
-                if (parent && key !== undefined) parent[key] = value;
-                else rootRef = value;
-                continue;
-            }
-            if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-                const id = getIdForObject(value);
-                const typename = Serializer.get_typename(value);
-                const taPlain: { typename: string; data: number[]; isTypedArray: true } = { typename, data: Array.from(value as unknown as ArrayLike<number>), isTypedArray: true };
-                if (parent && key !== undefined) parent[key] = { r: id };
-                else rootRef = { r: id };
-                objects[id] = taPlain;
-                continue;
-            }
-            if (Array.isArray(value)) {
-                const arr = value.length > 0 ? new Array(value.length) : [];
-                if (parent && key !== undefined) parent[key] = arr;
-                else rootRef = arr;
-                for (let i = value.length - 1; i >= 0; --i) {
-                    stack.push({ value: value[i], parent: arr, key: i });
-                }
-                continue;
-            }
-            if (objectMap.has(value)) {
-                // Use { r: id } instead of { $ref: id }
-                const ref = { r: objectMap.get(value) };
-                if (parent && key !== undefined) parent[key] = ref;
-                else rootRef = ref;
-                continue;
-            }
-            const id = getIdForObject(value);
-            const typename = Serializer.get_typename(value);
-            if (Serializer.shouldClassBeExcludedFromSaveGame(value)) {
-                // Skip completely: do not include this property in serialized output
-                // console.log(`Class '${typename}' is excluded from serialization.`);
-                continue;
-            }
-            // Only add typename if needed
-            const knownConstructorForType = Reviver.get_constructor_for_type(typename);
-            const isPlainObject = (typename === 'Object' || typename === 'object');
-            const hasConstructor = (!isPlainObject && knownConstructorForType);
-            if (!isPlainObject && !knownConstructorForType && !Serializer.shouldClassBeExcludedFromSaveGame(value)) {
-                console.warn(`[Serializer] Object of type '${typename}' encountered without a known constructor. Did you forget to add '@insavegame' to the class definition?`);
-                // Add the typename to the excluded properties to prevent serialization again after raising the error
-                const key = Serializer.createInclusionCacheKey(value.constructor as ConstructorWithSaveGame<any>);
-                Serializer.classExcludeMap.set(key, true); // Exclude from serialization
-                (value.constructor as ConstructorWithSaveGame).__exclude_savegame__ = true;
-                continue;
-            }
-            // Create a plain object for serialization
-            // If we have a known constructor, we can use the typename
-            // Otherwise, we just use an empty object
-            const plain: Record<string, unknown> = hasConstructor ? { typename } : {};
-            // Use { r: id } for references
-            if (parent && key !== undefined) parent[key] = { r: id };
-            else rootRef = { r: id };
-            // Only enumerate own properties
-            const keys = Object.keys(value);
-            for (let i = keys.length - 1; i >= 0; --i) {
-                const k = keys[i];
-                // Inline exclusion logic for performance
-                const v = (value as Record<string, unknown>)[k];
-                if (v === null || v === undefined) continue;
-                if (k && Serializer.shouldPropertyBeExcludedFromSaveGame(value, k)) {
-                    // console.debug(`Property '${k}' of type '${typename}' is excluded from serialization.`);
-                    continue;
-                }
-                const vType = typeof v;
-                switch (vType) {
-                    case 'function':
-                    case 'undefined':
-                        continue;
-                    case 'object':
-                        if (Array.isArray(v)) break;
-                        const valType = Serializer.get_typename(v);
-                        switch (valType.toLowerCase()) {
-                            case 'object':
-                                // We can handle plain objects without a known constructor without having to invoke the constructor
-                                break;
-                            case 'float32array':
-                            case 'float64array':
-                            case 'sharedarraybuffer':
-                            case 'dataview':
-                            case 'arraybuffer':
-                                // We can handle typed arrays and array buffers without a known constructor
-                                break;
-                            case 'webgltexture':
-                                continue; // Skip WebGL textures
-                            case 'set':
-                                // We can handle Sets without a known constructor
-                                break;
-                            default:
-                                if (!Reviver.get_constructor_for_type(valType)) {
-                                    console.warn(`[Serializer] Property '${typename}.${k}' cannot be serialized, because object of type '${valType}' isn't a known constructor. Did you forget to add '@insavegame' to the class definition?`);
-                                    const key = Serializer.createInclusionCacheKey(v.constructor as ConstructorWithSaveGame<any>);
-                                    Serializer.classExcludeMap.set(key, true); // Exclude from serialization
-                                    (v.constructor as ConstructorWithSaveGame).__exclude_savegame__ = true;
-                                    continue;
-                                }
-                                break;
-                        }
-                        // Avoid cycles
-                        if (objectMap.has(v)) break;
-                        break;
-                }
-                stack.push({ value: v, parent: plain, key: k });
-            }
-            // Run @onsave hooks
-            // Collect @onsave hooks from the prototype chain (like Reviver.onLoads)
-            let proto = Object.getPrototypeOf(value);
-            const saveFunctions: ((...args: any[]) => any)[] = [];
-            while (proto && proto.constructor && proto.constructor.name !== 'Object') {
-                const cname = Serializer.get_typename(proto.constructor);
-                const s = Serializer.onSaves[cname];
-                s && saveFunctions.push(...s);
-                proto = Object.getPrototypeOf(proto);
-            }
-            // Call in reverse order so base-class hooks run first (same approach as Reviver)
-            for (let i = saveFunctions.length - 1; i >= 0; i--) {
-                let res;
-                const fn = saveFunctions[i];
-                if (fn.length === 1) {
-                    // static-style: call with constructor as `this`, pass object as arg
-                    res = fn.call(value.constructor, value);
-                } else {
-                    // instance-style: call with object as `this`
-                    res = fn.call(value);
-                }
-                const extras = res || {};
-                for (const k of Object.keys(extras)) {
-                    plain[k] = extras[k];
-                }
-            }
-            objects[id] = plain;
-        }
-        return { root: rootRef, objects };
-    }
+		// Iterative stack-based traversal
+		const stack: Array<{ value: any; parent: any; key: string | number | undefined; plain?: any; typename?: string; theConstructor?: any }> = [];
+		let rootRef: any = undefined;
+		stack.push({ value: obj, parent: null, key: undefined });
+		while (stack.length > 0) {
+			const frame = stack.pop()!;
+			const { value, parent, key } = frame;
+			if (value === null || value === undefined) {
+				if (parent && key !== undefined) parent[key] = value;
+				else rootRef = value;
+				continue;
+			}
+			const typeoff = typeof value;
+			if (typeoff !== 'object') {
+				if (parent && key !== undefined) parent[key] = value;
+				else rootRef = value;
+				continue;
+			}
+			if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+				const id = getIdForObject(value);
+				const typename = Serializer.get_typename(value);
+				const taPlain: { typename: string; data: number[]; isTypedArray: true } = { typename, data: Array.from(value as unknown as ArrayLike<number>), isTypedArray: true };
+				if (parent && key !== undefined) parent[key] = { r: id };
+				else rootRef = { r: id };
+				objects[id] = taPlain;
+				continue;
+			}
+			if (Array.isArray(value)) {
+				const arr = value.length > 0 ? new Array(value.length) : [];
+				if (parent && key !== undefined) parent[key] = arr;
+				else rootRef = arr;
+				for (let i = value.length - 1; i >= 0; --i) {
+					stack.push({ value: value[i], parent: arr, key: i });
+				}
+				continue;
+			}
+			if (objectMap.has(value)) {
+				// Use { r: id } instead of { $ref: id }
+				const ref = { r: objectMap.get(value) };
+				if (parent && key !== undefined) parent[key] = ref;
+				else rootRef = ref;
+				continue;
+			}
+			const id = getIdForObject(value);
+			const typename = Serializer.get_typename(value);
+			if (Serializer.shouldClassBeExcludedFromSaveGame(value)) {
+				// Skip completely: do not include this property in serialized output
+				// console.log(`Class '${typename}' is excluded from serialization.`);
+				continue;
+			}
+			// Only add typename if needed
+			const knownConstructorForType = Reviver.get_constructor_for_type(typename);
+			const isPlainObject = (typename === 'Object' || typename === 'object');
+			const hasConstructor = (!isPlainObject && knownConstructorForType);
+			if (!isPlainObject && !knownConstructorForType && !Serializer.shouldClassBeExcludedFromSaveGame(value)) {
+				console.warn(`[Serializer] Object of type '${typename}' encountered without a known constructor. Did you forget to add '@insavegame' to the class definition?`);
+				// Add the typename to the excluded properties to prevent serialization again after raising the error
+				const key = Serializer.createInclusionCacheKey(value.constructor as ConstructorWithSaveGame<any>);
+				Serializer.classExcludeMap.set(key, true); // Exclude from serialization
+				(value.constructor as ConstructorWithSaveGame).__exclude_savegame__ = true;
+				continue;
+			}
+			// Create a plain object for serialization
+			// If we have a known constructor, we can use the typename
+			// Otherwise, we just use an empty object
+			const plain: Record<string, unknown> = hasConstructor ? { typename } : {};
+			// Use { r: id } for references
+			if (parent && key !== undefined) parent[key] = { r: id };
+			else rootRef = { r: id };
+			// Only enumerate own properties
+			const keys = Object.keys(value);
+			for (let i = keys.length - 1; i >= 0; --i) {
+				const k = keys[i];
+				// Inline exclusion logic for performance
+				const v = (value as Record<string, unknown>)[k];
+				if (v === null || v === undefined) continue;
+				if (k && Serializer.shouldPropertyBeExcludedFromSaveGame(value, k)) {
+					// console.debug(`Property '${k}' of type '${typename}' is excluded from serialization.`);
+					continue;
+				}
+				const vType = typeof v;
+				switch (vType) {
+					case 'function':
+					case 'undefined':
+						continue;
+					case 'object':
+						if (Array.isArray(v)) break;
+						const valType = Serializer.get_typename(v);
+						switch (valType.toLowerCase()) {
+							case 'object':
+								// We can handle plain objects without a known constructor without having to invoke the constructor
+								break;
+							case 'float32array':
+							case 'float64array':
+							case 'sharedarraybuffer':
+							case 'dataview':
+							case 'arraybuffer':
+								// We can handle typed arrays and array buffers without a known constructor
+								break;
+							case 'webgltexture':
+								continue; // Skip WebGL textures
+							case 'set':
+								// We can handle Sets without a known constructor
+								break;
+							default:
+								if (!Reviver.get_constructor_for_type(valType)) {
+									console.warn(`[Serializer] Property '${typename}.${k}' cannot be serialized, because object of type '${valType}' isn't a known constructor. Did you forget to add '@insavegame' to the class definition?`);
+									const key = Serializer.createInclusionCacheKey(v.constructor as ConstructorWithSaveGame<any>);
+									Serializer.classExcludeMap.set(key, true); // Exclude from serialization
+									(v.constructor as ConstructorWithSaveGame).__exclude_savegame__ = true;
+									continue;
+								}
+								break;
+						}
+						// Avoid cycles
+						if (objectMap.has(v)) break;
+						break;
+				}
+				stack.push({ value: v, parent: plain, key: k });
+			}
+			// Run @onsave hooks
+			// Collect @onsave hooks from the prototype chain (like Reviver.onLoads)
+			let proto = Object.getPrototypeOf(value);
+			const saveFunctions: ((...args: any[]) => any)[] = [];
+			while (proto && proto.constructor && proto.constructor.name !== 'Object') {
+				const cname = Serializer.get_typename(proto.constructor);
+				const s = Serializer.onSaves[cname];
+				s && saveFunctions.push(...s);
+				proto = Object.getPrototypeOf(proto);
+			}
+			// Call in reverse order so base-class hooks run first (same approach as Reviver)
+			for (let i = saveFunctions.length - 1; i >= 0; i--) {
+				let res;
+				const fn = saveFunctions[i];
+				if (fn.length === 1) {
+					// static-style: call with constructor as `this`, pass object as arg
+					res = fn.call(value.constructor, value);
+				} else {
+					// instance-style: call with object as `this`
+					res = fn.call(value);
+				}
+				const extras = res || {};
+				for (const k of Object.keys(extras)) {
+					plain[k] = extras[k];
+				}
+			}
+			objects[id] = plain;
+		}
+		return { root: rootRef, objects };
+	}
 }
 
 /**
@@ -356,125 +365,125 @@ export class Serializer {
  * const obj = Reviver.deserializeWithRefsBinary(binaryData);
  */
 export class Reviver {
-    static constructors: Record<string, new () => any> = {};
-    static onLoads: Record<string, ((...args: any[]) => any)[]> = {};
-    static excludedProperties: Record<string, Record<string, boolean>> = {};
+	static constructors: Record<string, new () => any> = {};
+	static onLoads: Record<string, ((...args: any[]) => any)[]> = {};
+	static excludedProperties: Record<string, Record<string, boolean>> = {};
 
-    static removeSerializerProps(obj: { typename: string; }): void {
-        obj.typename = undefined;
-        delete obj.typename;
-    }
-    static get_constructor_for_type(typename: string): new () => any {
-        return Reviver.constructors[typename] ?? Reviver.constructors[normalizeTypeName(typename)];
-    }
+	static removeSerializerProps(obj: { typename: string; }): void {
+		obj.typename = undefined;
+		delete obj.typename;
+	}
+	static get_constructor_for_type(typename: string): new () => any {
+		return Reviver.constructors[typename] ?? Reviver.constructors[typename];
+	}
 
-    static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }) {
-        const { root, objects } = options.isBinary ? decodeBinary(input as Uint8Array) : JSON.parse(input as string);
-        const idToObject: Record<string, any> = {};
-        if (!objects || Object.keys(objects).length === 0 || !root) {
-            console.error('[Reviver] Gamestate to deserialize is invalid!');
-            return null;
-        }
-        // First pass: create all objects (empty shells)
-        for (const id of Object.keys(objects)) {
-            const data = objects[id];
-            if (data && data.isTypedArray) {
-                const ctorUnknown = (globalThis as unknown as Record<string, unknown>)[(data as { typename: string }).typename];
-                if (typeof ctorUnknown === "function") {
-                    const C = ctorUnknown as new (data: number[]) => unknown;
-                    idToObject[id] = new C((data as { data: number[] }).data);
-                } else {
-                    idToObject[id] = (data as { data: number[] }).data;
-                }
-                continue;
-            }
-            if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
-                const ctor = Reviver.get_constructor_for_type(data.typename);
-                if (!ctor) {
-                    console.error(`[Reviver] No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
-                    // Add the typename to the excluded properties to prevent deserialization again after raising the error
-                    Reviver.excludedProperties[normalizeTypeName(data.typename)] ??= {};
-                    Reviver.excludedProperties[normalizeTypeName(data.typename)].id = true;
-                    idToObject[id] = null; // Mark as null to avoid further processing
-                    continue;
-                }
-                else idToObject[id] = new ctor();
-            } else {
-                idToObject[id] = Array.isArray(data) ? [] : {};
-            }
-        }
-        // Second pass: assign properties
-        for (const id of Object.keys(objects)) {
-            const data = objects[id];
-            if (data?.isTypedArray) continue;
-            const target = idToObject[id];
-            if (target === null || target === undefined) continue; // guard: geen assignment naar null/undefined
-            for (const key of Object.keys(data)) {
-                if (key === 'typename') continue;
-                if (data.typename && Reviver.excludedProperties[data.typename]?.[key]) continue;
-                const val = data[key];
-                if (Array.isArray(val)) {
-                    // If every element is a { r: ... }, resolve all and drop nulls
-                    if (val.every(v => v && typeof v === 'object' && 'r' in v)) {
-                        target[key] = val
-                            .map(v => idToObject[v.r])
-                            .filter(v => v !== null && v !== undefined);
-                    } else {
-                        // For nested arrays (e.g. hitpolygon: vec2[][]), resolve recursively and drop nulls at each level
-                        target[key] = val.map(v => {
-                            if (Array.isArray(v)) {
-                                return v
-                                    .map(w => (w && typeof w === 'object' && 'r' in w) ? idToObject[w.r] : w)
-                                    .filter(w => w !== null && w !== undefined);
-                            } else if (v && typeof v === 'object' && 'r' in v) {
-                                return idToObject[v.r];
-                            } else {
-                                return v;
-                            }
-                        }).filter(v => v !== null && v !== undefined);
-                    }
-                } else if (val && typeof val === 'object' && 'r' in val) {
-                    target[key] = idToObject[val.r];
-                } else {
-                    target[key] = val;
-                }
-            }
-            if (typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
-                Reviver.removeSerializerProps(target);
-                idToObject[id] = target; // Update the object in the map
-                // If the object has an `id` property, register it in the global registry
-                if (target.id && !target.registrypersistent) { // Only register if not persistent
-                    Registry.instance.register(target);
-                }
-            }
-        }
-        // --- Third pass: call all registered @onload methods if present ---
-        for (const id of Object.keys(idToObject)) {
-            if (objects[id]?.isTypedArray) continue;
-            const obj = idToObject[id];
-            if (obj === null || obj === undefined) continue; // skip unknown or filtered types
-            let proto = Object.getPrototypeOf(obj);
-            let reviverFunctions = [];
-            while (proto && proto.constructor && proto.constructor.name !== 'Object') {
-                const cname = Serializer.get_typename(proto.constructor);
-                const revivers = Reviver.onLoads[cname];
-                revivers && reviverFunctions.push(...revivers);
-                proto = Object.getPrototypeOf(proto);
-            }
-            for (let i = reviverFunctions.length - 1; i >= 0; i--) {
-                // Detect static method: if the function's 'length' is 1, assume it's static and expects the object as argument
-                if (reviverFunctions[i].length === 1) {
-                    // Static: call with the revived object as argument, and 'this' as the constructor
-                    reviverFunctions[i].call(obj.constructor, obj);
-                } else {
-                    // Instance: call with the object as 'this'
-                    reviverFunctions[i].call(obj);
-                }
-            }
-        }
-        // Return root object (resolve { r: id })
-        return (root && root.r !== undefined) ? idToObject[root.r] : root;
-    }
+	static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }) {
+		const { root, objects } = options.isBinary ? decodeBinary(input as Uint8Array) : JSON.parse(input as string);
+		const idToObject: Record<string, any> = {};
+		if (!objects || Object.keys(objects).length === 0 || !root) {
+			console.error('[Reviver] Gamestate to deserialize is invalid!');
+			return null;
+		}
+		// First pass: create all objects (empty shells)
+		for (const id of Object.keys(objects)) {
+			const data = objects[id];
+			if (data && data.isTypedArray) {
+				const ctorUnknown = (globalThis as unknown as Record<string, unknown>)[(data as { typename: string }).typename];
+				if (typeof ctorUnknown === "function") {
+					const C = ctorUnknown as new (data: number[]) => unknown;
+					idToObject[id] = new C((data as { data: number[] }).data);
+				} else {
+					idToObject[id] = (data as { data: number[] }).data;
+				}
+				continue;
+			}
+			if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
+				const ctor = Reviver.get_constructor_for_type(data.typename);
+				if (!ctor) {
+					console.error(`[Reviver] No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
+					// Add the typename to the excluded properties to prevent deserialization again after raising the error
+					Reviver.excludedProperties[data.typename] ??= {};
+					Reviver.excludedProperties[data.typename].id = true;
+					idToObject[id] = null; // Mark as null to avoid further processing
+					continue;
+				}
+				else idToObject[id] = new ctor();
+			} else {
+				idToObject[id] = Array.isArray(data) ? [] : {};
+			}
+		}
+		// Second pass: assign properties
+		for (const id of Object.keys(objects)) {
+			const data = objects[id];
+			if (data?.isTypedArray) continue;
+			const target = idToObject[id];
+			if (target === null || target === undefined) continue; // guard: geen assignment naar null/undefined
+			for (const key of Object.keys(data)) {
+				if (key === 'typename') continue;
+				if (data.typename && Reviver.excludedProperties[data.typename]?.[key]) continue;
+				const val = data[key];
+				if (Array.isArray(val)) {
+					// If every element is a { r: ... }, resolve all and drop nulls
+					if (val.every(v => v && typeof v === 'object' && 'r' in v)) {
+						target[key] = val
+							.map(v => idToObject[v.r])
+							.filter(v => v !== null && v !== undefined);
+					} else {
+						// For nested arrays (e.g. hitpolygon: vec2[][]), resolve recursively and drop nulls at each level
+						target[key] = val.map(v => {
+							if (Array.isArray(v)) {
+								return v
+									.map(w => (w && typeof w === 'object' && 'r' in w) ? idToObject[w.r] : w)
+									.filter(w => w !== null && w !== undefined);
+							} else if (v && typeof v === 'object' && 'r' in v) {
+								return idToObject[v.r];
+							} else {
+								return v;
+							}
+						}).filter(v => v !== null && v !== undefined);
+					}
+				} else if (val && typeof val === 'object' && 'r' in val) {
+					target[key] = idToObject[val.r];
+				} else {
+					target[key] = val;
+				}
+			}
+			if (typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
+				Reviver.removeSerializerProps(target);
+				idToObject[id] = target; // Update the object in the map
+				// If the object has an `id` property, register it in the global registry
+				if (target.id && !target.registrypersistent) { // Only register if not persistent
+					Registry.instance.register(target);
+				}
+			}
+		}
+		// --- Third pass: call all registered @onload methods if present ---
+		for (const id of Object.keys(idToObject)) {
+			if (objects[id]?.isTypedArray) continue;
+			const obj = idToObject[id];
+			if (obj === null || obj === undefined) continue; // skip unknown or filtered types
+			let proto = Object.getPrototypeOf(obj);
+			let reviverFunctions = [];
+			while (proto && proto.constructor && proto.constructor.name !== 'Object') {
+				const cname = Serializer.get_typename(proto.constructor);
+				const revivers = Reviver.onLoads[cname];
+				revivers && reviverFunctions.push(...revivers);
+				proto = Object.getPrototypeOf(proto);
+			}
+			for (let i = reviverFunctions.length - 1; i >= 0; i--) {
+				// Detect static method: if the function's 'length' is 1, assume it's static and expects the object as argument
+				if (reviverFunctions[i].length === 1) {
+					// Static: call with the revived object as argument, and 'this' as the constructor
+					reviverFunctions[i].call(obj.constructor, obj);
+				} else {
+					// Instance: call with the object as 'this'
+					reviverFunctions[i].call(obj);
+				}
+			}
+		}
+		// Return root object (resolve { r: id })
+		return (root && root.r !== undefined) ? idToObject[root.r] : root;
+	}
 }
 
 /**
@@ -482,20 +491,20 @@ export class Reviver {
  * return an object of extra props to merge into the serialized form.
  */
 export function onsave(value: (...args: any[]) => any, context: ClassMethodDecoratorContext) {
-    const method = value;
-    const register = (ctor: any) => {
-        const className = ctor?.name ?? '(anonymous)';
-        Serializer.onSaves[className] ??= [];
-        if (!Serializer.onSaves[className].includes(method)) {
-            Serializer.onSaves[className].push(method);
-        }
-    };
-    if (context.static) {
-        context.addInitializer(function () { register(this); });
-    } else {
-        context.addInitializer(function () { register(this.constructor); });
-    }
-    // No method replacement
+	const method = value;
+	const register = (ctor: any) => {
+		const className = ctor?.name;
+		Serializer.onSaves[className] ??= [];
+		if (!Serializer.onSaves[className].includes(method)) {
+			Serializer.onSaves[className].push(method);
+		}
+	};
+	if (context.static) {
+		context.addInitializer(function () { register(this); });
+	} else {
+		context.addInitializer(function () { register(this.constructor); });
+	}
+	// No method replacement
 }
 
 /**
@@ -506,20 +515,20 @@ export function onsave(value: (...args: any[]) => any, context: ClassMethodDecor
  * @returns The modified property descriptor.
  */
 export function excludepropfromsavegame(_value: undefined, context: ClassFieldDecoratorContext) {
-    const prop = String(context.name);
-    const register = (ctor: any) => {
-        const type = ctor?.name ?? '(anonymous)';
-        Serializer.excludedProperties[type] ??= {};
-        Serializer.excludedProperties[type][prop] = true;
+	const prop = String(context.name);
+	const register = (ctor: any) => {
+		const type = normalizeDecoratedClassName(ctor?.name);
+		Serializer.excludedProperties[type] ??= {};
+		Serializer.excludedProperties[type][prop] = true;
 
-        Reviver.excludedProperties[type] ??= {};
-        Reviver.excludedProperties[type][prop] = true; // also skip during hydration
-    };
-    if (context.static) {
-        context.addInitializer(function () { register(this); });
-    } else {
-        context.addInitializer(function () { register(this.constructor); });
-    }
+		Reviver.excludedProperties[type] ??= {};
+		Reviver.excludedProperties[type][prop] = true; // also skip during hydration
+	};
+	if (context.static) {
+		context.addInitializer(function () { register(this); });
+	} else {
+		context.addInitializer(function () { register(this.constructor); });
+	}
 }
 
 /**
@@ -531,63 +540,130 @@ export function excludepropfromsavegame(_value: undefined, context: ClassFieldDe
  * @returns The modified property descriptor.
  */
 export function onload(value: (...args: any[]) => any, context: ClassMethodDecoratorContext) {
-    const method = value;
-    const register = (ctor: any) => {
-        const type = ctor?.name ?? '(anonymous)';
-        Reviver.onLoads ??= {};
-        Reviver.onLoads[type] ??= [];
-        if (!Reviver.onLoads[type].includes(method)) {
-            Reviver.onLoads[type].push(method);
-        }
-    };
-    if (context.static) {
-        context.addInitializer(function () { register(this); });
-    } else {
-        context.addInitializer(function () { register(this.constructor); });
-    }
-    // No method replacement
+	const method = value;
+	const register = (ctor: any) => {
+		const type = normalizeDecoratedClassName(ctor?.name);
+
+		Reviver.onLoads ??= {};
+		Reviver.onLoads[type] ??= [];
+		if (!Reviver.onLoads[type].includes(method)) {
+			Reviver.onLoads[type].push(method);
+		}
+	};
+	if (context.static) {
+		context.addInitializer(function () { register(this); });
+	} else {
+		context.addInitializer(function () { register(this.constructor); });
+	}
+	// No method replacement
 }
 
 /**
- * A decorator function that registers a class as a serializable object for use with the game's save system.
- * * Note: Does not work with `accessor`'s!*
- * @param constructor - The constructor function of the class to register.
- * @param toJSON - An optional function that converts the object to a JSON-serializable format.
- * @param fromJSON - An optional function that converts a JSON-serialized object back into an instance of the class.
- * @returns The original constructor function.
+ * Class-decorator overload of `@insavegame` used when no explicit type id is provided.
+ *
+ * When applied as `@insavegame` directly on a class, the decorator registers the class
+ * in the savegame constructor registry (Reviver.constructors) under the class's
+ * (normalized) name so instances can be serialized and deserialized.
+ *
+ * The decorator also marks the class as includable in savegames (internal flags
+ * are adjusted accordingly).
+ *
+ * @param value - The class constructor being decorated.
+ * @param context - The decorator context supplied by the TypeScript decorator transform.
  */
-// Supports @insavegame and @insavegame('TypeId')
-export function insavegame<T extends abstract new (...args: any[]) => any>(value: T, context: ClassDecoratorContext<T>): void;
-export function insavegame(typeId: string): <T extends abstract new (...args: any[]) => any>(value: T, context: ClassDecoratorContext<T>) => void;
+// Accept either:
+// - abstract classes without a declared constructor, or
+// - concrete classes whose constructor's first argument is an object type
+//   that at least has `constructReason?: 'revived' | undefined`.
+export type RevivableObjectArgs = { constructReason?: 'revive' | undefined } & {};
+// Utility types to discriminate constructor shapes
+type IsAny<T> = 0 extends (1 & T) ? true : false;
+type ParamsOf<C> = C extends abstract new (...args: infer P) => any ? P : never;
+type FirstArg<C> = ParamsOf<C> extends [infer A, ...any[]] ? A : never;
+type HasAtLeastOneParam<C> = ParamsOf<C> extends [any, ...any[]] ? true : false;
+type IsZeroParams<C> = ParamsOf<C> extends [] ? true : false;
+// "No declared constructor" heuristic: param list is widened any[] (not tuple [] or [..])
+type HasNoDeclaredCtor<C> = HasAtLeastOneParam<C> extends true ? false : (IsZeroParams<C> extends true ? false : true);
+
+// Concrete classes must declare a first argument matching RevivableObjectArgs (and not 'any')
+type ConcreteAcceptable<C extends new (...args: any[]) => any> = HasAtLeastOneParam<C> extends true
+    ? (IsAny<FirstArg<C>> extends true ? never : (FirstArg<C> extends RevivableObjectArgs ? C : never))
+    : never;
+// Abstract classes are acceptable if they have no declared constructor,
+// or if they declare one whose first parameter matches RevivableObjectArgs
+type AbstractAcceptable<C extends abstract new (...args: any[]) => any> =
+    HasNoDeclaredCtor<C> extends true
+        ? C
+        : (HasAtLeastOneParam<C> extends true
+            ? (IsAny<FirstArg<C>> extends true ? never : (FirstArg<C> extends RevivableObjectArgs ? C : never))
+            : never);
+
+export function insavegame<C extends new (...args: any[]) => any>(value: ConcreteAcceptable<C>, context: ClassDecoratorContext<C>): void;
+export function insavegame<C extends abstract new (...args: any[]) => any>(value: AbstractAcceptable<C>, context: ClassDecoratorContext<C>): void;
+
+/**
+ * Overload: when supplied with a string typeId this returns a class decorator factory.
+ *
+ * Use `@insavegame('TypeId')` to register a class under an explicit savegame type identifier
+ * which will be used for serialization and deserialization.
+ *
+ * @param typeId - Explicit type identifier to register the class under.
+ * @returns A class decorator that registers the decorated class with the provided type id.
+ */
+export function insavegame(typeId: string): {
+    <C extends new (...args: any[]) => any>(value: ConcreteAcceptable<C>, context: ClassDecoratorContext<C>): void;
+    <C extends abstract new (...args: any[]) => any>(value: AbstractAcceptable<C>, context: ClassDecoratorContext<C>): void;
+};
+
+/**
+ * Implementation for the `@insavegame` decorator. This function supports two usage patterns:
+ *
+ * 1. As a class decorator: `@insavegame` — the decorator will register the decorated class
+ *    under its (possibly normalized) constructor name as a serializable type used by the
+ *    save/load system.
+ *
+ * 2. As a decorator factory: `@insavegame('TypeId')` — returns a decorator that registers
+ *    the decorated class under the explicit `TypeId` instead of the inferred constructor name.
+ *
+ * When a class is registered, the function ensures:
+ * - The constructor is added to Reviver.constructors under the chosen key.
+ * - The class is marked as includable for savegames (internal exclude flag set to false).
+ * - The Serializer.classExcludeMap is updated to allow serialization of that type.
+ *
+ * Parameters:
+ * - valueOrId: Either the class constructor (when used directly as a decorator) or a string
+ *   type identifier (when used as a decorator factory).
+ * - maybeContext: Provided by the decorator transform when the function is used directly as a decorator.
+ *
+ * Returns:
+ * - When used as a decorator factory, returns a decorator function.
+ * - Otherwise returns undefined.
+ */
 export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext) {
-    function register(ctor: any, typeId?: string) {
-        let key = typeId ?? (ctor?.name ?? '(anonymous)');
-
-        // If no explicit typeId was supplied and the inferred class name starts with underscore
-        // (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
-        if (!typeId && key.startsWith('_')) {
-            key = key.replace(/^_+/, '');
-        }
-
-        Reviver.constructors ??= {};
-        Reviver.constructors[key] = ctor as unknown as new () => any;
-        (ctor as ConstructorWithSaveGame).__exclude_savegame__ = false;
-        Serializer.classExcludeMap.set(key, false);
-    }
-
-    // Usage: @insavegame
-    if (typeof valueOrId === 'function' && maybeContext) {
-        register(valueOrId);
-        return undefined;
-    }
-    // Usage: @insavegame('TypeId') → returns the actual decorator
-    if (typeof valueOrId === 'string' && !maybeContext) {
-        const typeId = valueOrId as string;
-        return function <T extends abstract new (...args: any[]) => any>(value: T, _context: ClassDecoratorContext<T>) {
-            register(value, typeId);
-        };
-    }
-    return undefined;
+	function register(ctor: any, typeId?: string) {
+		let key = typeId ?? (ctor?.name);
+		if (!key) throw new Error('[@insavegame]: Failed to register class: no valid key found.');
+		// If no explicit typeId was supplied and the inferred class name starts with underscore
+		// (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
+		if (!typeId) key = normalizeDecoratedClassName(key);
+		
+		Reviver.constructors ??= {};
+		Reviver.constructors[key] = ctor;
+		(ctor as ConstructorWithSaveGame).__exclude_savegame__ = false;
+		Serializer.classExcludeMap.set(key, false);
+	}
+	if (typeof valueOrId === 'function' && maybeContext) {
+		register(valueOrId);
+		return undefined;
+	}
+	// Usage: @insavegame('TypeId') → returns the actual decorator
+	if (typeof valueOrId === 'string' && !maybeContext) {
+		const typeId = valueOrId as string;
+		return function <T extends abstract new (...args: any[]) => any>(value: T, _context: ClassDecoratorContext<T>) {
+			register(value, typeId);
+		};
+	}
+	return undefined;
 }
 
 /**
@@ -597,121 +673,118 @@ export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext)
  * @returns The original constructor function.
  */
 export function excludeclassfromsavegame(value: any, _context: ClassDecoratorContext) {
-    (value as ConstructorWithSaveGame).__exclude_savegame__ = true;
-    const key = normalizeTypeName((value as Function)?.name);
-    Serializer.classExcludeMap.set(key, true);
-    Serializer.excludedObjectTypes.add(key);
+	(value as ConstructorWithSaveGame).__exclude_savegame__ = true;
+	const key = normalizeDecoratedClassName((value as Function)?.name);
+	Serializer.classExcludeMap.set(key, true);
+	Serializer.excludedObjectTypes.add(key);
 }
 
 type VoiceState = { id: string | number; offset: number; params: ModulationParams; priority: number };
 type VoiceQueueItem = { id: string | number; params: ModulationParams; priority: number };
 type SoundMasterState = {
-    sfxVoices: VoiceState[];
-    uiVoices: VoiceState[];
-    musicVoices: VoiceState[];
-    sfxQueue?: VoiceQueueItem[];
-    uiQueue?: VoiceQueueItem[];
+	sfxVoices: VoiceState[];
+	uiVoices: VoiceState[];
+	musicVoices: VoiceState[];
+	sfxQueue?: VoiceQueueItem[];
+	uiQueue?: VoiceQueueItem[];
 };
 
 type ViewState = {
-    dynamicAtlasIndex: number;
-    activeCameraId: string | null;
-    skyboxFaceIds: SkyboxImageIds | undefined;
+	dynamicAtlasIndex: number;
+	activeCameraId: string | null;
+	skyboxFaceIds: SkyboxImageIds | undefined;
 };
+
 @insavegame
 /**
  * Represents a savegame object that contains all the necessary data to save and load the game state.
  */
 export class Savegame {
-    modelprops: {};
-    servicesState?: Record<string, unknown>;
-    spaces: Space[];
-    SMState: SoundMasterState;
-    viewState: ViewState;
-    /** Optional per-service DTO map captured by Game.save(). */
+	modelprops: {};
+	servicesState?: Record<string, unknown>;
+	spaces: Space[];
+	SMState: SoundMasterState;
+	viewState: ViewState;
+	timestamp: number;
 
-    // public get flattenedObjectsList(): MaybeRegisterable[] {
-    //     // Flatten all space.objects arrays, skipping null/undefined entries to guard against
-    //     // unknown or excluded types during revive.
-    //     return (this.allSpacesObjects)
-    //         .flatMap(s => s.objects as MaybeRegisterable[])
-    //         .filter((o): o is MaybeRegisterable => !!o && typeof o === 'object');
-    // }
+	constructor(_opts?: RevivableObjectArgs) {
+		this.timestamp = Date.now();
+	}
 
-    @onsave
-    saveViewState() {
-        // Capture current view state
-        const view = $.view as GameView;
-        const viewState: ViewState = {
-            dynamicAtlasIndex: view.dynamicAtlas,
-            activeCameraId: $.world.activeCameraId ?? null,
-            skyboxFaceIds: view.skyboxFaceIds,
-        };
-        return { viewState };
-    }
+	@onsave
+	saveViewState() {
+		// Capture current view state
+		const view = $.view as GameView;
+		const viewState: ViewState = {
+			dynamicAtlasIndex: view.dynamicAtlas,
+			activeCameraId: $.world.activeCameraId ?? null,
+			skyboxFaceIds: view.skyboxFaceIds,
+		};
+		return { viewState };
+	}
 
-    @onload
-    restoreViewState() {
-        const view = $.view as GameView;
-        // Restore view state
-        if (this.viewState) {
-            if (this.viewState.dynamicAtlasIndex !== undefined) {
-                view.dynamicAtlas = this.viewState.dynamicAtlasIndex;
-            }
-            $.world.activeCameraId = this.viewState.activeCameraId;
-            if (this.viewState.skyboxFaceIds) {
-                view.setSkybox(this.viewState.skyboxFaceIds);
-            }
-        }
-    }
+	@onload
+	restoreViewState() {
+		const view = $.view as GameView;
+		// Restore view state
+		if (this.viewState) {
+			if (this.viewState.dynamicAtlasIndex !== undefined) {
+				view.dynamicAtlas = this.viewState.dynamicAtlasIndex;
+			}
+			$.world.activeCameraId = this.viewState.activeCameraId;
+			if (this.viewState.skyboxFaceIds) {
+				view.setSkybox(this.viewState.skyboxFaceIds);
+			}
+		}
+	}
 
-    @onsave
-    saveSoundState() {
-        // Capture full sound master playback state (multi-voice aware)
-        const SMState: SoundMasterState = {
-            sfxVoices: $.sndmaster.snapshotVoices('sfx'),
-            uiVoices: $.sndmaster.snapshotVoices('ui'),
-            musicVoices: $.sndmaster.snapshotVoices('music'),
-        };
+	@onsave
+	saveSoundState() {
+		// Capture full sound master playback state (multi-voice aware)
+		const SMState: SoundMasterState = {
+			sfxVoices: $.sndmaster.snapshotVoices('sfx'),
+			uiVoices: $.sndmaster.snapshotVoices('ui'),
+			musicVoices: $.sndmaster.snapshotVoices('music'),
+		};
 
-        // Capture queues via AudioEventManager and convert to VoiceQueueItem shape
-        const qs = $.aem.getQueues();
-        SMState.sfxQueue = qs.sfx.map(q => ({
-            id: q.audioId,
-            params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
-            priority: q.priority ?? 0,
-        }));
-        SMState.uiQueue = qs.ui.map(q => ({
-            id: q.audioId,
-            params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
-            priority: q.priority ?? 0,
-        }));
+		// Capture queues via AudioEventManager and convert to VoiceQueueItem shape
+		const qs = $.aem.getQueues();
+		SMState.sfxQueue = qs.sfx.map(q => ({
+			id: q.audioId,
+			params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
+			priority: q.priority ?? 0,
+		}));
+		SMState.uiQueue = qs.ui.map(q => ({
+			id: q.audioId,
+			params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
+			priority: q.priority ?? 0,
+		}));
 
-        return { SMState };
-    }
+		return { SMState };
+	}
 
-    @onload
-    restoreSoundState() {
-        // Restore multi-voice sound master state
-        $.sndmaster.stopEffect();
-        $.sndmaster.stopUI();
-        $.sndmaster.stopMusic();
-        const SMState = this.SMState;
-        if (!SMState) return;
-        for (const v of (SMState.musicVoices || [])) {
-            $.sndmaster.play(v.id, { ...v.params, offset: v.offset });
-        }
-        for (const v of (SMState.sfxVoices || [])) {
-            $.sndmaster.play(v.id, { ...v.params, offset: v.offset });
-        }
-        for (const v of (SMState.uiVoices || [])) {
-            $.sndmaster.play(v.id, { ...v.params, offset: v.offset });
-        }
-        const aem = $.aem;
-        const sfx = (SMState.sfxQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
-        const ui = (SMState.uiQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
-        aem.restoreQueues({ sfx, ui });
-    }
+	@onload
+	restoreSoundState() {
+		// Restore multi-voice sound master state
+		$.sndmaster.stopEffect();
+		$.sndmaster.stopUI();
+		$.sndmaster.stopMusic();
+		const SMState = this.SMState;
+		if (!SMState) return;
+		for (const v of (SMState.musicVoices || [])) {
+			$.sndmaster.play(v.id, { ...v.params, offset: v.offset });
+		}
+		for (const v of (SMState.sfxVoices || [])) {
+			$.sndmaster.play(v.id, { ...v.params, offset: v.offset });
+		}
+		for (const v of (SMState.uiVoices || [])) {
+			$.sndmaster.play(v.id, { ...v.params, offset: v.offset });
+		}
+		const aem = $.aem;
+		const sfx = (SMState.sfxQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
+		const ui = (SMState.uiQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
+		aem.restoreQueues({ sfx, ui });
+	}
 }
 
 /**
@@ -720,10 +793,10 @@ export class Savegame {
  * @returns A human-readable JSON string.
  */
 export function debugPrintBinarySnapshot(buf: Uint8Array): string {
-    try {
-        const obj = decodeBinary(buf);
-        return JSON.stringify(obj, null, 2);
-    } catch (e) {
-        return `Failed to decode binary snapshot: ${e}`;
-    }
+	try {
+		const obj = decodeBinary(buf);
+		return JSON.stringify(obj, null, 2);
+	} catch (e) {
+		return `Failed to decode binary snapshot: ${e}`;
+	}
 }

@@ -1,15 +1,15 @@
-import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent } from 'bmsx';
+import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { EilaGameState } from './state';
 
 export const EILA_MODULE = {
-	onBoot(model: World) {
+	onBoot(world: World) {
 		// Spaces
-		model.addSpace('gameover');
-		model.addSpace('hoera');
-		model.addSpace('titlescreen');
-		model.addSpace('niets');
+		world.addSpace('gameover');
+		world.addSpace('hoera');
+		world.addSpace('titlescreen');
+		world.addSpace('niets');
 		// Input maps
 		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as InputMap);
 		$.input.getPlayerInput(2).setInputMap({ keyboard: null, gamepad: gamepadInputMapping } as InputMap);
@@ -23,8 +23,8 @@ export const EILA_MODULE = {
 @insavegame
 export class EilaEventService extends Service {
     private _humiliationCount = 0;
-    constructor() {
-        super('eila_events');
+    constructor(opts?: RevivableObjectArgs) {
+        super({ id: 'eila_events', ...opts });
     }
 
     // Example service state (DTO) participation: opt-in via getState/setState.

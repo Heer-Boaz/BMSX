@@ -100,11 +100,11 @@ export class GameMenu extends WorldObject {
         this.selectedItemIndex = 0;
         switch (this.CurrentScreen) {
             case MenuItem.LoadFromGameOver:
-                // model.MainMenu.GameMenuClosed();
+                // world.MainMenu.GameMenuClosed();
                 break;
             case MenuItem.LoadFromMainMenu:
             case MenuItem.OptionsFromMainMenu:
-                // model.MainMenu.GameMenuClosed();
+                // world.MainMenu.GameMenuClosed();
                 break;
             default:
                 break;

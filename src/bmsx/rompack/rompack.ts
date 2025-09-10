@@ -80,7 +80,8 @@ export type Constructor<T> = new (...args: any[]) => T;
  * This effectively allows it to match any class (including abstract classes) that produces T instances.
  * Used for attaching abstract classes to game objects.
  */
-export type AbstractConstructor<T> = Function & { prototype: T; };
+export type ConcreteOrAbstractConstructor<T> = Function & { prototype: T; };
+// export type AbstractConstructor<T> = (abstract new (...args: any[]) => T);
 
 /**
  * Represents the direction values.
@@ -102,12 +103,12 @@ export interface Disposable {
 	dispose(): void;
 }
 
-export interface Bindable {
+export interface Bindable extends Disposable {
 	bind(): void;
-	unbind(): void;
+	// unbind(): void;
 }
 
-export interface Registerable extends Identifiable, Disposable, Bindable {
+export interface Registerable extends Identifiable, Bindable {
 	registrypersistent?: boolean;
 	eventhandling_enabled?: boolean;
 }

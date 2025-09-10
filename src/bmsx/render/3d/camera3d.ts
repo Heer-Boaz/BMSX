@@ -1,5 +1,5 @@
 import { Oriented, vec3 } from '../../rompack/rompack';
-import { excludepropfromsavegame, insavegame, onload, onsave } from '../../serializer/gameserializer';
+import { excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { extractFrustumPlanes, M4, Mat4, Plane, Q, quat, sphereInFrustum, V3 } from './math3d';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+
@@ -44,10 +44,10 @@ export class Camera implements Oriented {
 	@excludepropfromsavegame
 	private _dirty = true;
 
-        constructor() {
-            // Touch decorator-attached methods to satisfy noUnusedLocals without changing behavior
-            this.__keepForDecorators();
-        }
+	constructor(_opts?: RevivableObjectArgs) {
+		// Touch decorator-attached methods to satisfy noUnusedLocals without changing behavior
+		this.__keepForDecorators();
+	}
 
 	public get rotationQ(): quat {
 		return this._q;
@@ -231,7 +231,7 @@ export class Camera implements Oriented {
 	}
 
 	/** Werk yaw/pitch/roll bij uit _q, consistent met syncEulerToQuat orde. */
-        private updateEulerFromQuat(): void {
+	private updateEulerFromQuat(): void {
 		// Huidige basis uit _q
 		const basis = Q.basis(this._q);
 		const f = basis.f; // forward
@@ -262,10 +262,10 @@ export class Camera implements Oriented {
 		const newRoll = Math.atan2(s, dot);
 
 		this.roll = unwrapAngle(this.roll, newRoll);
-        }
+	}
 
-        // Internal no-op to mark decorator methods as referenced for TS's unused checks
-        private __keepForDecorators(): void { void (this.onLoad, this.onSave, this.syncEulerToQuat); }
+	// Internal no-op to mark decorator methods as referenced for TS's unused checks
+	private __keepForDecorators(): void { void (this.onLoad, this.onSave, this.syncEulerToQuat); }
 
 }
 

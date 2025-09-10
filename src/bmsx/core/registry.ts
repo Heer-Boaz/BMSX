@@ -1,5 +1,4 @@
-import { AbstractConstructor, Constructor, Identifier, Registerable } from '../rompack/rompack';
-import { normalizeDecoratedClassName } from './decorators';
+import { ConcreteOrAbstractConstructor, Identifier, Registerable } from '../rompack/rompack';
 
 export class Registry {
     private static _instance: Registry;
@@ -66,7 +65,7 @@ export class Registry {
         return Object.values(this._registry);
     }
 
-    public *iterate<T extends Registerable>(type?: Constructor<T> | AbstractConstructor<T>, persistent?: boolean): Generator<T> {
+    public *iterate<T extends Registerable>(type?: ConcreteOrAbstractConstructor<T>, persistent?: boolean): Generator<T> {
         for (const id in this._registry) {
             if (!type || this._registry[id] instanceof type) {
                 if (!persistent || this._registry[id].registrypersistent) {
@@ -80,13 +79,11 @@ export class Registry {
         return Object.keys(this._registry);
     }
 
-    public getRegisteredEntityIdsByType(type: string): Identifier[] {
-        const wanted = normalizeDecoratedClassName(type);
-        return this.getRegisteredEntities().filter(e => normalizeDecoratedClassName(e.constructor.name) === wanted).map(e => e.id);
+    public getRegisteredEntityIdsByType(wanted: string): Identifier[] {
+        return this.getRegisteredEntities().filter(e => e.constructor.name === wanted).map(e => e.id);
     }
 
-    public getRegisteredEntitiesByType(type: string): Registerable[] {
-        const wanted = normalizeDecoratedClassName(type);
-        return this.getRegisteredEntities().filter(e => normalizeDecoratedClassName(e.constructor.name) === wanted);
+    public getRegisteredEntitiesByType(wanted: string): Registerable[] {
+        return this.getRegisteredEntities().filter(e => e.constructor.name === wanted);
     }
 }

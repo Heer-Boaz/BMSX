@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { subscribesToGlobalEvent } from '../core/eventemitter';
-import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { WorldObject } from '../core/object/worldobject';
 import { SpriteObject } from '../core/object/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';
@@ -65,7 +65,7 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 	}
 	public static getIconId(gamepadIndex: number): Identifier { return `joystick_icon_${gamepadIndex ?? 0}`; }
 	constructor(public gamepadIndex: number) {
-		super(SelectedPlayerIndexIcon.getIconId(gamepadIndex));
+		super({ id: SelectedPlayerIndexIcon.getIconId(gamepadIndex) });
 		this.z = ZCOORD_MAX; this.colorize = { r: 1, g: 1, b: 1, a: .75 };
 		this.imgid = 'joystick_none';
 
@@ -95,8 +95,8 @@ export class ControllerAssignmentUI extends WorldObject {
 	 */
 	private calcIconPositionX(positionIndex: number) { return ControllerAssignmentUI.start.x + (ControllerAssignmentUI.stepX * (positionIndex ?? 0)); };
 
-	constructor() {
-		super('controller_assignment_ui');
+	constructor(opts?: RevivableObjectArgs & { id: Identifier }) {
+		super(opts);
 		// Initial sync: pending assignments may already exist when UI spawns late.
 		const pending = Input.instance.pendingGamepadAssignments ?? [];
 		for (const p of pending) {

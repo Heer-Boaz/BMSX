@@ -1,5 +1,5 @@
 import { type Identifier, Vector } from '../rompack/rompack';
-import { insavegame, excludepropfromsavegame, onload } from '../serializer/gameserializer';
+import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { id2obj, id2objectType } from './world';
@@ -61,8 +61,8 @@ export class Space  {
      * @constructor
      * @param {Identifier} id - The unique identifier for the space.
      */
-    public constructor(id: Identifier) {
-        this.id = id;
+    public constructor(opts: RevivableObjectArgs & { id: Identifier }) {
+        this.id = opts.id;
         this.objects = [];
         this._id2objMap = new Map<Identifier, WorldObject>();
         this[id2obj] = makeIndexProxy(this._id2objMap);

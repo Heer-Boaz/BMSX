@@ -409,27 +409,26 @@ export class Game {
 	 * @returns void
 	 */
 	public update(deltaTime: number): void {
-		const game = $;
-		const model = game.world;
+		const world = $.world;
 		// Step physics first so world object logic can react to post-collision resolved positions.
-		model.run(deltaTime);
+		world.run(deltaTime);
 
-		if (REWIND_BUFFER_ACTIVATED && (game._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
+		if (REWIND_BUFFER_ACTIVATED && ($._turnCounter % REWIND_BUFFER_WRITE_FREQUENCY === 0)) {
 			// --- Rewind snapshot logic ---
 			try {
-				const snapshot = game.save(false);
+				const snapshot = $.save(false);
 				const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
 				this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
 			} catch (e) {
 				console.warn('Rewind snapshot failed:', e);
 			}
 		}
-		if (game.debug_runSingleFrameAndPause) {
-			game.debug_runSingleFrameAndPause = false;
-			game.paused = true;
+		if ($.debug_runSingleFrameAndPause) {
+			$.debug_runSingleFrameAndPause = false;
+			$.paused = true;
 		}
-		game._turnCounter++;
-		game.wasupdated = true;
+		$._turnCounter++;
+		$.wasupdated = true;
 	}
 
 	/**

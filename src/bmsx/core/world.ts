@@ -8,9 +8,9 @@ import { AbilityRuntimeSystem } from "../gas/abilityruntime";
 import { TaskRuntimeSystem } from "../gas/tasks";
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
-import type { AbstractConstructor, Constructor, Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
+import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
 import { Direction, Vector } from "../rompack/rompack";
-import { excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
+import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from "../serializer/gameserializer";
 import { CameraObject } from './object/cameraobject';
 import { WorldObject } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
@@ -300,7 +300,7 @@ export class World implements Stateful, RegisterablePersistent {
      * These runtime errors usually occur because the world was not created and initialized (with states),
      * while creating new game objects that reference the world or the world states
      */
-    constructor(opts: WorldConfiguration) {
+    constructor(opts: RevivableObjectArgs & WorldConfiguration) {
         Registry.instance.register(this);
         this.spaces = [];
         this._spaceMap = new Map<Identifier, Space>();
@@ -539,7 +539,7 @@ export class World implements Stateful, RegisterablePersistent {
      * @throws {Error} Throws an error if a space with the same ID already exists in the world instance.
      */
     public addSpace(s: Space | Identifier): void {
-        const new_space: Space = (s instanceof Space ? s : new Space(s));
+        const new_space: Space = (s instanceof Space ? s : new Space({ id: s }));
         if (this._spaceMap.has(new_space.id)) throw Error(`Cannot add duplicate Space '${new_space.id}' to world!`);
         this.spaces.push(new_space);
         this._spaceMap.set(new_space.id, new_space);
@@ -689,7 +689,7 @@ export class World implements Stateful, RegisterablePersistent {
      * instanceof checks the prototype chain against ctor.prototype, so using an abstract
      * base class here (ctor) will correctly return true for derived instances.
      */
-    public *objectsOfType<T extends WorldObject>(ctor: Constructor<T> | AbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<T> {
+    public *objectsOfType<T extends WorldObject>(ctor: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<T> {
         for (const o of this.objects(opts)) { if (o instanceof ctor) yield o as T; }
     }
 
@@ -698,7 +698,7 @@ export class World implements Stateful, RegisterablePersistent {
      * instanceof checks the prototype chain against ctor.prototype, so using an abstract
      * base class here (ctor) will correctly return true for derived instances.
      */
-    public *objectsWithComponent<T extends Component>(component: ComponentConstructor<T> | AbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
+    public *objectsWithComponent<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
         for (const o of this.objects(opts)) {
             const c = o.getComponent(component) as T | undefined;
             if (c) yield [o, c];

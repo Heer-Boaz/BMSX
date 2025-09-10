@@ -1,7 +1,7 @@
 import { DEFAULT_VERTEX_COLOR } from "../../render/backend/webgl.constants";
 import { color, DrawImgOptions } from "../../render/view";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
-import { insavegame } from "../../serializer/gameserializer";
+import { insavegame, type RevivableObjectArgs } from "../../serializer/gameserializer";
 import { $, $rompack } from '../game';
 import { WorldObject } from "./worldobject";
 import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from '../utils';
@@ -98,8 +98,8 @@ export abstract class SpriteObject extends WorldObject {
 
     sprite: Sprite;
 
-    constructor(id?: string, fsm_id?: string) {
-        super(id, fsm_id);
+    constructor(opts: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
+        super(opts);
         this.sprite ??= new Sprite();
     }
 
@@ -155,7 +155,9 @@ export class Sprite {
         this.options.imgid = v;
     }
 
-    constructor() {
+    constructor(opts?: RevivableObjectArgs) {
+        if (opts?.constructReason === 'revive') return;
+
         this.options ??= {
             imgid: 'none',
             pos: new_vec3(0, 0, 0),

@@ -1,6 +1,6 @@
 import { Registry } from 'bmsx/core/registry';
 import type { Identifier, RegisterablePersistent } from 'bmsx/rompack/rompack';
-import { insavegame } from 'bmsx/serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/gameserializer';
 import { RoomMgr } from './roommgr';
 
 @insavegame
@@ -12,7 +12,7 @@ export class EilaGameState implements RegisterablePersistent {
 	public room_mgr: RoomMgr = new RoomMgr();
 	public numOfPlayers: number = 1;
 
-	constructor() { this.bind(); }
+	constructor(_opts?: RevivableObjectArgs) { this.bind(); }
 
 	public bind(): void {
 		Registry.instance.register(this);

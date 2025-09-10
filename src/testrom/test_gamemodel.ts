@@ -275,7 +275,7 @@ export class testrom_world_fsm extends World {
 						//     ];
 						//     const box = new PhysStaticBox(d.he, d.name, ci, null, colorVariants[ci]);
 						//     _model.spawn(box, new_vec3(d.pos[0], d.pos[1], d.pos[2]));
-						//     box.addComponent(new PhysicsDescriptorComponent(box.id, { shape: { kind: 'aabb', halfExtents: new_vec3(d.he[0], d.he[1], d.he[2]) }, mass: 0, restitution: 0.1, friction: 0.8 }));
+						//     box.addComponent(new PhysicsDescriptorComponent({ parentid: box.id }, { shape: { kind: 'aabb', halfExtents: new_vec3(d.he[0], d.he[1], d.he[2]) }, mass: 0, restitution: 0.1, friction: 0.8 }));
 						// }
 
 						// const DROP_HEIGHT = 150;
@@ -286,44 +286,44 @@ export class testrom_world_fsm extends World {
 						//         _model.spawn(dc, new_vec3(-4 + i * 1.2, DROP_HEIGHT + i * 0.2, 0));
 						//         _model.spawn(new SparkEmitter(dc.id));
 
-						//         dc.addComponent(new PhysicsDescriptorComponent(dc.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
+						//         dc.addComponent(new PhysicsDescriptorComponent({ parentid: dc.id }, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
 						//     }
 						//     // Dynamic spheres
 						//     for (let i = 0; i < 5; i++) {
 						//         const ds = new PhysDynamicSphere(0.25);
 						//         _model.spawn(ds, new_vec3(4 - i * 1.2, DROP_HEIGHT + i * 0.2, 0.6)); // slight z offset
-						//         ds.addComponent(new PhysicsDescriptorComponent(ds.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
+						//         ds.addComponent(new PhysicsDescriptorComponent({ parentid: ds.id }, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
 						//     }
 						//     // Fast sphere for CCD test (moving along Z across arena)
 						//     const fastSphere = new PhysDynamicSphere(0.25);
 						//     _model.spawn(fastSphere, new_vec3(0, DROP_HEIGHT + 1, -12));
-						//     fastSphere.addComponent(new PhysicsDescriptorComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
+						//     fastSphere.addComponent(new PhysicsDescriptorComponent({ parentid: fastSphere.id }, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
 						//     const fsPhysComp = fastSphere.getComponent(PhysicsComponent);
 						//     if (fsPhysComp) fsPhysComp.body.velocity.z = 20;
 						//     // Trigger zone centered
 						//     const trigger = new PhysTriggerZone([3, 3, 3]);
 						//     _model.spawn(trigger, new_vec3(0, DROP_HEIGHT, 0));
-						//     trigger.addComponent(new PhysicsDescriptorComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
+						//     trigger.addComponent(new PhysicsDescriptorComponent({ parentid: trigger.id }, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
 						// } else {
 						//     // Z-up variant: swap Y/Z usage
 						//     for (let i = 0; i < 5; i++) {
 						//         const dc = new PhysDynamicCube(0.25);
 						//         _model.spawn(dc, new_vec3(-4 + i * 1.2, 0.6, DROP_HEIGHT + i * 0.2));
-						//         dc.addComponent(new PhysicsDescriptorComponent(dc.id, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
+						//         dc.addComponent(new PhysicsDescriptorComponent({ parentid: dc.id }, { shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
 						//     }
 						//     for (let i = 0; i < 5; i++) {
 						//         const ds = new PhysDynamicSphere(0.25);
 						//         _model.spawn(ds, new_vec3(4 - i * 1.2, 0.6, DROP_HEIGHT + i * 0.2));
-						//         ds.addComponent(new PhysicsDescriptorComponent(ds.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
+						//         ds.addComponent(new PhysicsDescriptorComponent({ parentid: ds.id }, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
 						//     }
 						//     const fastSphere = new PhysDynamicSphere(0.25);
 						//     _model.spawn(fastSphere, new_vec3(0, -12, DROP_HEIGHT + 1));
-						//     fastSphere.addComponent(new PhysicsDescriptorComponent(fastSphere.id, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
+						//     fastSphere.addComponent(new PhysicsDescriptorComponent({ parentid: fastSphere.id }, { shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
 						//     const fsPhysComp2 = fastSphere.getComponent(PhysicsComponent);
 						//     if (fsPhysComp2) fsPhysComp2.body.velocity.y = 20;
 						//     const trigger = new PhysTriggerZone([3, 3, 3]);
 						//     _model.spawn(trigger, new_vec3(0, 0, DROP_HEIGHT));
-						//     trigger.addComponent(new PhysicsDescriptorComponent(trigger.id, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
+						//     trigger.addComponent(new PhysicsDescriptorComponent({ parentid: trigger.id }, { shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
 						// }
 					},
 				},

@@ -2,7 +2,7 @@ import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { new_vec3 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
-import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { PhysicsBody } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
 
@@ -72,7 +72,7 @@ export class PhysicsDebugComponent extends Component {
 
     private _axesAdded = false;
 
-    constructor(parentid: Identifier) { super(parentid); }
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier }) { super(opts); }
 
     private drawBody(b: PhysicsBody) {
         if (b.shape.kind === 'aabb') {

@@ -1,7 +1,7 @@
 import { new_vec3 } from '../core/utils';
 import { Q, quat } from '../render/3d/math3d';
 import type { Oriented, vec3 } from '../rompack/rompack';
-import { insavegame } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import type { CollisionShape } from './collisionshape';
 
 let _nextBodyId = 1;
@@ -49,7 +49,8 @@ export class PhysicsBody implements Oriented {
     angularVelocity: vec3;
     invInertia: vec3; // diagonal inertia inverse (approx for box/sphere) in local frame
 
-    constructor(desc: PhysicsBodyDesc) {
+    constructor(opts: RevivableObjectArgs & { desc: PhysicsBodyDesc }) {
+        const { desc } = opts;
         this.id = _nextBodyId++;
         this.position = desc.position;
         this.previousPosition = new_vec3(desc.position.x, desc.position.y, desc.position.z);

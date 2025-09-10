@@ -33,7 +33,7 @@ export class FoeExplosion extends FX {
             if (this.animation.finished === true) {
                 this.disposeFlag = true;
                 if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
-                    model.spawn(new HeartSmall(), addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 }));
+                    world.spawn(new HeartSmall(), addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 }));
                 }
             }
         }

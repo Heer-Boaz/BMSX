@@ -1,6 +1,6 @@
 import { new_vec3 } from '../core/utils';
 import type { vec3 } from '../rompack/rompack';
-import { insavegame } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { PhysicsBody } from './physicsbody';
 
 export interface Contact {
@@ -22,6 +22,9 @@ export class Narrowphase {
     // Contact & vec3 pooling to avoid per-frame allocations on low-end devices
     private pool: Contact[] = [];
     private poolIndex = 0;
+
+    constructor(_opts?: RevivableObjectArgs) {
+    }
 
     resetPool() { this.poolIndex = 0; }
 

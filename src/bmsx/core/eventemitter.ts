@@ -1,6 +1,5 @@
 import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
-import { normalizeDecoratedClassName } from './decorators';
 import { $ } from './game';
 
 export type EventPayload = Record<string, any>;
@@ -133,7 +132,7 @@ export class EventEmitter implements RegisterablePersistent {
 
 		const sid = (subscriber as Identifiable).id;
 		const ctorName = (typeof subscriber === 'object' && subscriber !== null && 'constructor' in subscriber)
-			? normalizeDecoratedClassName(((subscriber as { constructor?: { name?: string } }).constructor?.name ?? 'object'))
+			? ((subscriber as { constructor?: { name?: string } }).constructor?.name ?? 'object')
 			: 'object';
 
 		// Enforce Identifiable for decorator-based subscriptions
@@ -165,7 +164,7 @@ export class EventEmitter implements RegisterablePersistent {
 			let handler = handlerMap.get(key);
 			if (!handler) {
 				const method = (subscriber as unknown as Record<string, unknown>)[subscription.handlerName];
-				if (typeof method !== 'function') throw new Error(`Event handler '${subscription.handlerName}' is not a function on ${normalizeDecoratedClassName(subscriber.constructor?.name) ?? 'object'}`);
+				if (typeof method !== 'function') throw new Error(`Event handler '${subscription.handlerName}' is not a function on ${subscriber.constructor?.name ?? 'object'}`);
 				const bound = (method as EventHandler).bind(subscriber);
 				// Compose default gating with optional caller-provided wrapper
 				handler = ((event_name: string, emitter: Identifiable, payload?: EventPayload) => {
@@ -182,14 +181,14 @@ export class EventEmitter implements RegisterablePersistent {
 				case 'parent':
 					emitterFilter = (subscriber as Parentable).parentid;
 					if (!emitterFilter) {
-						if ($.debug) console.warn(`Deferred subscription: '${(subscriber as Identifiable).id}' → '${subscription.eventName}' (scope: parent) because 'parentid' is not set yet on ${normalizeDecoratedClassName(subscriber.constructor?.name)}.`);
+						if ($.debug) console.warn(`Deferred subscription: '${(subscriber as Identifiable).id}' → '${subscription.eventName}' (scope: parent) because 'parentid' is not set yet on ${subscriber.constructor?.name}.`);
 						return; // Skip for now; callers (e.g., @onload) may re-invoke to bind once parentid exists
 					}
 					break;
 				case 'self':
 					emitterFilter = (subscriber as Identifiable).id;
 					if (!emitterFilter) {
-						if ($.debug) console.warn(`Deferred subscription: '${subscription.eventName}' (scope: self) because 'id' is not set yet on ${normalizeDecoratedClassName(subscriber.constructor?.name)}.`);
+						if ($.debug) console.warn(`Deferred subscription: '${subscription.eventName}' (scope: self) because 'id' is not set yet on ${subscriber.constructor?.name}.`);
 						return;
 					}
 					break;

@@ -32,7 +32,7 @@ export class HagGenerator extends mdef implements WorldObject {
     }
 
     spawn(pos?: Point): HagGenerator {
-        model.spawn(this, pos);
+        world.spawn(this, pos);
         return this;
     }
 

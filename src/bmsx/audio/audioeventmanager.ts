@@ -220,7 +220,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		// 		return `${key} (${rlen} rules${ch}${pol}:\n${rules})`;
 		// 	});
 		// 	console.info('[AudioEventManager] events:', eventsSummary.length, eventsSummary);
-		// 	const handlerNames = this.handlers.map(h => h.name && h.name.length > 0 ? h.name : '(anonymous)');
+		// 	const handlerNames = this.handlers.map(h => h.name);
 		// 	console.info('[AudioEventManager] handlers:', handlerNames.length, handlerNames);
 		// } catch { }
 	}

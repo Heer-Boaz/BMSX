@@ -1,4 +1,4 @@
-import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent, vec3 } from 'bmsx';
+import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent, vec3, type RevivableObjectArgs } from 'bmsx';
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';
@@ -15,10 +15,10 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 @assign_bt('sinterklaasBT')
 @attach_components(JumpingWhileLeavingScreenComponent, BTVisualizer)
 export class Sinterklaas extends Fighter {
-    constructor(aied: boolean) {
-        super('sinterklaas', undefined, 'right', 2);
+    constructor(opts?: RevivableObjectArgs & { aied: boolean }) {
+        super({ id: 'sinterklaas', fsm_id: undefined, facing: 'right', playerIndex: 2 });
         this.hp = SINTERKLAAS_START_HP;
-        this._aied = aied;
+        this._aied = opts?.aied ?? false;
     }
 
     override paint(): void {

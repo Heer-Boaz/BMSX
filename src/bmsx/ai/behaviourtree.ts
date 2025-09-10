@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import { normalizeDecoratedClassName } from '../core/decorators';
 import { WorldObject } from '../core/object/worldobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
-import { excludeclassfromsavegame, insavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 
 /**
  * Represents the definition of a behavior tree.
@@ -164,7 +164,7 @@ export function build_bt(bt_id?: BehaviorTreeID) {
         const register = (ctor: any) => {
             behaviorTreeDefinitionsBuilders ??= {};
             // If no explicit bt_id supplied, normalize inferred class name for public key.
-            const inferred = ctor?.name ?? '(anonymous)';
+            const inferred = ctor?.name;
             const key = bt_id ? bt_id : normalizeDecoratedClassName(inferred);
             behaviorTreeDefinitionsBuilders[key] = value as () => BehaviorTreeDefinition;
         };
@@ -218,8 +218,8 @@ export class Blackboard implements Identifiable {
     public executionPath: { node: BTNode, result: BTNodeFeedback }[] = [];
 
     // The constructor for the blackboard, which initializes the blackboard with the specified identifier
-    constructor(_id: string) {
-        this.id = _id;
+    constructor(opts: RevivableObjectArgs & { id: string }) {
+        this.id = opts.id;
     }
 
     // The method for setting a value in the blackboard with the specified key

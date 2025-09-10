@@ -2,7 +2,7 @@ import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { new_vec3 } from '../core/utils';
 import type { Identifier } from '../rompack/rompack';
-import { insavegame, onload } from '../serializer/gameserializer';
+import { insavegame, onload, type RevivableObjectArgs } from '../serializer/gameserializer';
 import type { PhysicsBodyDesc } from './physicsbody';
 import { PhysicsComponent, PhysicsComponentOptions } from './physicscomponent';
 
@@ -17,8 +17,8 @@ export class PhysicsDescriptorComponent extends Component {
     mass: number; restitution: number; friction: number; isTrigger: boolean; layer: number; mask: number;
     syncAxis?: { x?: boolean; y?: boolean; z?: boolean };
     writeBack: boolean = true;
-    constructor(parent: Identifier, desc?: { shape: PhysicsBodyDesc['shape']; mass?: number; restitution?: number; friction?: number; isTrigger?: boolean; layer?: number; mask?: number; syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; writeBack?: boolean /* future: bodyType?: PhysicsBodyDesc['type'] */ }) {
-        super(parent);
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier }, desc?: { shape: PhysicsBodyDesc['shape']; mass?: number; restitution?: number; friction?: number; isTrigger?: boolean; layer?: number; mask?: number; syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; writeBack?: boolean /* future: bodyType?: PhysicsBodyDesc['type'] */ }) {
+        super(opts);
         // Reviver may call ctor with undefined; defer full init till @onload if so.
         if (desc && desc.shape) {
             this.shape = desc.shape; this.mass = desc.mass ?? 0; this.restitution = desc.restitution ?? 0; this.friction = desc.friction ?? 0.2; this.isTrigger = !!desc.isTrigger; this.layer = desc.layer ?? 1; this.mask = desc.mask ?? 0xFFFFFFFF; this.syncAxis = desc.syncAxis; this.writeBack = desc.writeBack ?? true;
@@ -49,7 +49,7 @@ export class PhysicsDescriptorComponent extends Component {
             writeBack: this.writeBack,
             // type: desc?.bodyType // future extension
         };
-        parent.addComponent(new PhysicsComponent(this.parentid, opts));
+        parent.addComponent(new PhysicsComponent({ parentid: this.parentid, physicsOptions: opts }));
     }
     @onload restore() { this.attachRuntime(); }
     // No-op update hooks (tags present so descriptor participates consistently if needed)

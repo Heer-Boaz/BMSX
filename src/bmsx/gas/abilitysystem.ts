@@ -3,7 +3,7 @@ import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
-import { excludepropfromsavegame } from '../serializer/gameserializer';
+import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import type {
 	Ability, AbilityContext, AbilityCoroutine, AbilityId, AbilitySpec,
 	AbilityYield,
@@ -20,6 +20,7 @@ type WaitState =
 	| { kind: 'tag'; tag: TagId; present: boolean }
 	| { kind: 'event'; name: string; unsub: () => void };
 
+@insavegame
 export class AbilitySystemComponent extends Component {
 	readonly ownerId: string;
 
@@ -49,10 +50,10 @@ export class AbilitySystemComponent extends Component {
 
 	private _runnerCounter = 0;
 
-	constructor(ownerId: string, now: NowFn = () => performance.now()) {
-		super(ownerId);
-		this.ownerId = ownerId;
-		this.now = now;
+	constructor(opts: RevivableObjectArgs & { parentid: string, now?: NowFn }) {
+		super(opts);
+		this.ownerId = opts.parentid;
+		this.now = opts.now ?? (() => performance.now());
 		AbilitySystemComponent.registry.add(this);
 	}
 
@@ -123,7 +124,7 @@ export class AbilitySystemComponent extends Component {
 		const reason = this.canActivateReason(id);
 		if (reason) {
 			// Optional UX/debug hook
-			const owner = this.model.getWorldObject(this.ownerId) as { id: Identifier } | null;
+			const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
 			EventEmitter.instance.emit('AbilityFailed', owner ?? { id: this.ownerId }, { id, reason });
 			return false;
 		}
@@ -147,7 +148,7 @@ export class AbilitySystemComponent extends Component {
 			model: this.model,
 			asc: { ownerId: this.ownerId, hasTag: (t: TagId) => this.hasGameplayTag(t), tryActivate: (aid: AbilityId) => this.tryActivate(aid) },
 			emit: (name: string, payload?: any) => {
-				const owner = this.model.getWorldObject(this.ownerId) as { id: Identifier } | null;
+				const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
 				EventEmitter.instance.emit(name, owner ?? { id: this.ownerId }, payload);
 			}
 		};
@@ -158,7 +159,7 @@ export class AbilitySystemComponent extends Component {
 		const now = this.now();
 		if (spec.cooldownMs) {
 			this._cooldownUntil.set(id, now + spec.cooldownMs);
-			const owner = this.model.getWorldObject(this.ownerId) as { id: Identifier } | null;
+			const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
 			EventEmitter.instance.emit('AbilityCooldownStart', owner ?? { id: this.ownerId }, { id, until: now + spec.cooldownMs });
 		}
 		const key = `${id}#${this._runnerCounter++}`;
@@ -191,7 +192,7 @@ export class AbilitySystemComponent extends Component {
 		for (const [aid, until] of [...this._cooldownUntil]) {
 			if (now >= until) {
 				this._cooldownUntil.delete(aid);
-				const owner = this.model.getWorldObject(this.ownerId) as { id: Identifier } | null;
+				const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
 				EventEmitter.instance.emit('AbilityCooldownEnd', owner ?? { id: this.ownerId }, { id: aid });
 			}
 		}

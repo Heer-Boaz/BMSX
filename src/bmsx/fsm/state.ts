@@ -2,7 +2,7 @@ import { Registry } from 'bmsx/core/registry';
 import { $ } from '../core/game';
 import { Input } from '../input/input';
 import { Identifiable, Identifier } from '../rompack/rompack';
-import { insavegame, onload } from '../serializer/gameserializer';
+import { insavegame, onload, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
 import { STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX, type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType } from './fsmtypes';
@@ -162,11 +162,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
     /**
      * Factory for creating new FSMs.
-     * @param id - id of the FSM definition to use for this machine.
+     * @param def_id - id of the FSM definition to use for this machine.
      * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
      */
-    public static create(id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
-        let result = new State(id, target_id, parent, root);
+    public static create(def_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
+        let result = new State({ def_id, target_id, parent, root });
         result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their substates
         result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
@@ -179,18 +179,18 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * @param def_id - id of the state machine definition to use for this machine.
      * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
      */
-    constructor(def_id: Identifier, target_id: Identifier, parent?: State, root?: State) {
-        this.def_id = def_id ?? DEFAULT_BST_ID;
-        this.target_id = target_id;
-        this.parent_ref = parent;
+    constructor(opts: RevivableObjectArgs & { def_id: Identifier, target_id: Identifier, parent?: State, root?: State }) {
+        this.def_id = opts.def_id ?? DEFAULT_BST_ID;
+        this.target_id = opts.target_id;
+        this.parent_ref = opts.parent;
         // If no explicit root provided, inherit from parent or become own root
-        this.root_ref = root ?? parent?.root ?? this;
+        this.root_ref = opts.root ?? opts.parent?.root ?? this;
         this.paused ??= false;
         // Note: do not initailize the states here, as this will be done in the populateStates function. Also, do not initialize the currentid here, as this will be done in the reset function
         // Note: do not initialize the history here, as this will be done in the reset function
         // Note: do not set the states to an empty object, as this state might not have any states defined. Instead, leave it as undefined, so that it can be checked if the state has states defined
         // When parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-        if (def_id && target_id) {
+        if (opts.def_id && opts.target_id) {
             this.id = this.make_id();
             this.transition_queue = [];
             this.critical_section_counter = 0;
@@ -842,7 +842,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
         this.substates = {}; // Initialize the states object to an empty object
         for (let sdef_id in sdef.substates) {
-            let state = new State(sdef_id, this.target_id, this, this.root);
+            let state = new State({ def_id: sdef_id, target_id: this.target_id, parent: this, root: this.root });
             this.add(state);
             state.populateStates(); // Populate the substates of the state
         }

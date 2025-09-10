@@ -1,4 +1,4 @@
-import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d } from 'bmsx';
+import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { BitmapId } from './resourceids';
 
@@ -19,10 +19,10 @@ export class Hud extends SpriteObject {
     override paint(): void {
         super.paint();
         // Update hitpoints
-        const model = $.world;
+        const world = $.world;
         const view = $.view;
-        const player = model.getWorldObject<Fighter>('player');
-        const sinterklaas = model.getWorldObject<Fighter>('sinterklaas');
+        const player = world.getWorldObject<Fighter>('player');
+        const sinterklaas = world.getWorldObject<Fighter>('sinterklaas');
 
         const HP_BAR1 = { startX: 112, endX: 40, startY: 25, endY: 29 };
         const HP_BAR2 = { startX: 216, endX: 144, startY: 25, endY: 29 };
@@ -45,8 +45,8 @@ export class Hud extends SpriteObject {
         TextWriter.drawText(144, 32, 'ei la');
     }
 
-    constructor() {
-        super('hud');
+    constructor(opts?: RevivableObjectArgs) {
+        super({ id: 'hud', ...opts ?? {} });
         this.imgid = BitmapId.hud;
     }
 

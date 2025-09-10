@@ -54,7 +54,7 @@ export function build_fsm(fsm_name?: Identifier) {
         // For instance methods (not typical here), we still register using the instance's constructor when created.
         const register = (ctor: any) => {
             StateDefinitionBuilders ??= {};
-            const raw = fsm_name ?? ctor?.name ?? '(anonymous)';
+            const raw = fsm_name ?? ctor?.name;
             // If no explicit fsm_name was supplied, normalize inferred class name for public key.
             const key = fsm_name ? raw : normalizeDecoratedClassName(raw);
             StateDefinitionBuilders[key] = value as () => StateMachineBlueprint;
@@ -113,7 +113,7 @@ export function fsmHandler(opts?: FsmHandlerOpts) {
         const memberName = ctx.name;
 
         ctx.addInitializer(function () {
-            const ctor = this.constructor as unknown as { [HANDLER_META]?: FsmHandlerDecl[] };
+            const ctor = this.constructor as { [HANDLER_META]?: FsmHandlerDecl[] };
             const bag: FsmHandlerDecl[] = (ctor[HANDLER_META] ||= []);
             bag.push({
                 name: memberName,
@@ -124,6 +124,6 @@ export function fsmHandler(opts?: FsmHandlerOpts) {
 }
 
 export function getDeclaredFsmHandlers(ctor: any): FsmHandlerDecl[] {
-    const c = ctor as unknown as { [HANDLER_META]?: FsmHandlerDecl[] };
+    const c = ctor as { [HANDLER_META]?: FsmHandlerDecl[] };
     return (c && c[HANDLER_META]) ? [...c[HANDLER_META]] : [];
 }

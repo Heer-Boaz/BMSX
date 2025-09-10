@@ -1,5 +1,5 @@
 import type { Light } from '../../render/3d/light';
-import { insavegame } from '../../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { WorldObject } from './worldobject';
 
 @insavegame
@@ -26,9 +26,9 @@ export abstract class LightObject extends WorldObject {
         return this.light.type;
     }
 
-    constructor(light: Light, id?: string) {
-        super(id);
-        this.light = light;
+    constructor(opts: RevivableObjectArgs & { light: Light, id?: string }) {
+        super(opts);
+        this.light = opts.light;
         this.active = true;
     }
 
@@ -41,27 +41,27 @@ export class AmbientLightObject extends LightObject {
     public static readonly DEFAULT_ID: string = 'ambient_light';
 
     public static createDefault(): AmbientLightObject {
-        return new AmbientLightObject(AmbientLightObject.DEFAULT_COLOR, AmbientLightObject.DEFAULT_INTENSITY, AmbientLightObject.DEFAULT_ID);
+        return new AmbientLightObject({ color: AmbientLightObject.DEFAULT_COLOR, intensity: AmbientLightObject.DEFAULT_INTENSITY });
     }
 
-    constructor(color: [number, number, number], intensity: number, id?: string) {
-        super({ type: 'ambient', color, intensity }, id);
+    constructor(opts: RevivableObjectArgs & { color: [number, number, number], intensity: number }) {
+        super({ light: { type: 'ambient', ...opts } });
     }
 
 }
 
 @insavegame
 export class DirectionalLightObject extends LightObject {
-    constructor(orientation: [number, number, number], color: [number, number, number], intensity: number = 1, id?: string) {
-        super({ type: 'directional', orientation: orientation, color, intensity }, id);
+    constructor(opts: RevivableObjectArgs & { orientation: [number, number, number], color: [number, number, number], intensity: number, id?: string }) {
+        super({ light: { type: 'directional', ...opts } });
     }
 
 }
 
 @insavegame
 export class PointLightObject extends LightObject {
-    constructor(pos: [number, number, number], color: [number, number, number], range: number, intensity: number = 1, id?: string) {
-        super({ type: 'point', pos, color, range, intensity }, id);
+    constructor(opts: RevivableObjectArgs & { light: { pos: [number, number, number], color: [number, number, number], range: number, intensity: number, id?: string } }) {
+        super({ light: { type: 'point', ...opts.light } });
     }
 
 }

@@ -1,7 +1,7 @@
 import { WorldObject } from '../core/object/worldobject';
 import { M4, Mat4, quat } from '../render/3d/math3d';
 import type { Identifier, Oriented, Scaled, vec3arr } from '../rompack/rompack';
-import { insavegame } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { Component } from './basecomponent';
 
 @insavegame
@@ -18,11 +18,11 @@ export class TransformComponent extends Component<WorldObject> {
     private worldMatrix: Mat4 = M4.identity();
     private dirty = true;
 
-    constructor(parentid: Identifier, opts?: { position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
-        super(parentid);
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier, position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
+        super(opts);
         this.position = opts?.position ?? [0, 0, 0];
         this.scale = opts?.scale ?? [1, 1, 1];
-        if (opts?.orientationQ) this.orientationQ = opts.orientationQ;
+        this.orientationQ ??= opts?.orientationQ;
     }
 
     public get parentNode(): TransformComponent | null {

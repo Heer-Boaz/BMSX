@@ -35,3 +35,4 @@ export interface AreaLight extends BaseLight {
     normal: vec3arr;
 }
 export type Light = AmbientLight | DirectionalLight | PointLight | SpotLight | AreaLight;
+export type LightType = Light['type'];

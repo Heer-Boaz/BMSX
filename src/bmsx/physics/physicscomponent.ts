@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
 import { new_vec3 } from '../core/utils';
 import type { Identifier, Oriented } from '../rompack/rompack';
-import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
 
@@ -32,21 +32,21 @@ export class PhysicsComponent extends Component {
 	private isKinematic = false;
 	private _bodyBuilt = false;
 
-	constructor(parentid: Identifier, opts: PhysicsComponentOptions) {
-		super(parentid);
-		this.syncAxis = { ...this.syncAxis, ...(opts.syncAxis || {}) };
-		this.writeBack = opts.writeBack ?? true;
-		this.layer = opts.layer ?? 1;
-		this.mask = opts.mask ?? 0xFFFFFFFF;
-		this.shape = opts.shape;
-		this.mass = opts.mass ?? 0;
-		this.restitution = opts.restitution ?? 0;
-		this.friction = opts.friction ?? 0.2;
-		this.linearDamping = opts.linearDamping ?? 0;
-		this.angularDamping = opts.angularDamping ?? 0;
-		if (opts.angularVelocity) this.angularVelocity = opts.angularVelocity;
-		this.isTrigger = !!opts.isTrigger;
-		this.isKinematic = opts.type === 'kinematic';
+	constructor(opts: RevivableObjectArgs & { parentid: Identifier, physicsOptions: PhysicsComponentOptions }) {
+		super(opts);
+		this.syncAxis = { ...this.syncAxis, ...(opts.physicsOptions.syncAxis || {}) };
+		this.writeBack = opts.physicsOptions.writeBack ?? true;
+		this.layer = opts.physicsOptions.layer ?? 1;
+		this.mask = opts.physicsOptions.mask ?? 0xFFFFFFFF;
+		this.shape = opts.physicsOptions.shape;
+		this.mass = opts.physicsOptions.mass ?? 0;
+		this.restitution = opts.physicsOptions.restitution ?? 0;
+		this.friction = opts.physicsOptions.friction ?? 0.2;
+		this.linearDamping = opts.physicsOptions.linearDamping ?? 0;
+		this.angularDamping = opts.physicsOptions.angularDamping ?? 0;
+		if (opts.physicsOptions.angularVelocity) this.angularVelocity = opts.physicsOptions.angularVelocity;
+		this.isTrigger = !!opts.physicsOptions.isTrigger;
+		this.isKinematic = opts.physicsOptions.type === 'kinematic';
 		this.tryBuildBody();
 	}
 

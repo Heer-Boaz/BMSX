@@ -12,31 +12,31 @@ export function createTestromPlugin() {
       const small = new SmallCube3D(1);
       const small2 = new SmallCube3D(2);
       const animatedMorphSphere = new AnimatedMorphSphere();
-      model.spawn(new bclass(), new_vec3(100, 100, 1000));
-      model.spawn(cube, new_vec3(0, 0, 0));
-      model.spawn(small, new_vec3(5, 0, 0));
-      model.spawn(small2, new_vec3(5, 5, 5));
-      model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
+      world.spawn(new bclass(), new_vec3(100, 100, 1000));
+      world.spawn(cube, new_vec3(0, 0, 0));
+      world.spawn(small, new_vec3(5, 0, 0));
+      world.spawn(small2, new_vec3(5, 5, 5));
+      world.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
       const cam1 = new CameraObject('cam1');
-      cam1.camera.setAspect(model.gamewidth / model.gameheight);
+      cam1.camera.setAspect(world.gamewidth / world.gameheight);
       const cam2 = new CameraObject('cam2');
-      cam2.camera.setAspect(model.gamewidth / model.gameheight);
+      cam2.camera.setAspect(world.gamewidth / world.gameheight);
 
-      model.spawn(cam1, V3.of(-60, 48, 120));
+      world.spawn(cam1, V3.of(-60, 48, 120));
       cam1.camera.screenLook(1.7687161091476518, -1.418966871448069, -2.6349415504373304);
-      model.spawn(cam2, V3.of(5, 12, 27));
-      model.activeCameraId = cam1.id;
+      world.spawn(cam2, V3.of(5, 12, 27));
+      world.activeCameraId = cam1.id;
 
       const ambient = new AmbientLightObject([1.0, 1.0, 1.0], 0.2, 'amb');
       const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
       const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [1.0, 1.0, 1.0], 1, 'extraSun');
       const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 1.0, 1.0], 6.0, 2, 'lamp');
 
-      model.spawn(ambient);
-      model.spawn(sun);
-      model.spawn(extraSun);
-      model.spawn(lamp);
+      world.spawn(ambient);
+      world.spawn(sun);
+      world.spawn(extraSun);
+      world.spawn(lamp);
 
       $.view.setSkybox({
         posX: BitmapId.skybox,
@@ -47,7 +47,7 @@ export function createTestromPlugin() {
         negZ: BitmapId.skybox,
       });
 
-      model.spawn(new CameraController(cam1, cam2));
+      world.spawn(new CameraController(cam1, cam2));
     }
   };
 }

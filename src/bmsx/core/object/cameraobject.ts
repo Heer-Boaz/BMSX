@@ -1,7 +1,7 @@
 import { Camera } from '../../render/3d/camera3d';
 import { quat, V3 } from '../../render/3d/math3d';
 import type { Oriented } from '../../rompack/rompack';
-import { insavegame } from '../../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { WorldObject } from './worldobject';
 
 @insavegame
@@ -12,9 +12,11 @@ export class CameraObject extends WorldObject implements Oriented {
         return this.camera.rotationQ;
     }
 
-    constructor(id?: string) {
-        super(id);
-        this.camera = new Camera();
+    constructor(opts?: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
+        super(opts);
+        if (opts?.constructReason === 'revive') return;
+
+        this.camera = new Camera(opts);
         this.active = true;
     }
 

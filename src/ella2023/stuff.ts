@@ -1,4 +1,4 @@
-import { $, DrawRectOptions, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3 } from 'bmsx';
+import { $, DrawRectOptions, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs } from 'bmsx';
 import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
@@ -46,8 +46,8 @@ export class GameOver extends SpriteObject {
 		$.drawText(x, y, lines);
 	}
 
-	constructor() {
-		super('gameover');
+	constructor(opts?: RevivableObjectArgs) {
+		super({ id: 'gameover', ...opts });
 		this.imgid = BitmapId.gameover;
 	}
 }
@@ -91,8 +91,8 @@ export class Hoera extends SpriteObject {
 		$.drawText(x, y, lines);
 	}
 
-	constructor() {
-		super('hoera');
+	constructor(opts?: RevivableObjectArgs) {
+		super({ id: 'hoera', ...opts });
 		this.imgid = BitmapId.hoera;
 	}
 }
@@ -213,8 +213,8 @@ export class TitleScreen extends SpriteObject {
 
 	}
 
-	constructor() {
-		super('title');
+	constructor(opts?: RevivableObjectArgs) {
+		super({ id: 'title', ...opts });
 		this.imgid = BitmapId.title;
 	}
 }
@@ -258,8 +258,8 @@ export class Gordijn extends WorldObject {
 		}
 	}
 
-	constructor() {
-		super('gordijn');
+	constructor(opts?: RevivableObjectArgs) {
+		super({ id: 'gordijn', ...opts });
 		this.width = 0;
 	}
 

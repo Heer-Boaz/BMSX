@@ -157,7 +157,7 @@ class gamemodel extends World {
     /**
      * Initializes the game state and spawns necessary game objects.
      * This method should only be called once at the beginning of the $.
-     * @returns This instance of the game model.
+     * @returns This instance of the game world.
      */
     public do_one_time_game_init(): this {
         // this.state.machines['gamemenu' satisfies model_machines].to('closed' );

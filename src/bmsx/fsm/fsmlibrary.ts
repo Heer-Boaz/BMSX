@@ -5,7 +5,6 @@ import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import type { EventBagName, listed_sdef_event, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
-import { normalizeDecoratedClassName } from '../core/decorators';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 
 /**
@@ -31,7 +30,7 @@ export class HandlerRegistry {
 // assign-fsm-augment.ts (unchanged logic, now gets keys from decorator)
 export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set<string>) {
     const reg = HandlerRegistry.instance;
-    const className = normalizeDecoratedClassName(ctor.name) || 'Anonymous';
+    const className = ctor.name;
     const entries = getDeclaredFsmHandlers(ctor);
     if (!entries.length || !linkedMachines?.size) return;
 
@@ -84,13 +83,13 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
     }
 
     // Add missing children
-    for (const id of newChildren) {
+    for (const def_id of newChildren) {
         if (!node.substates) node.substates = {};
-        if (!node.substates[id]) {
-            const child = new State(id, node.target_id, node, node.root);
-            node.substates[id] = child;
+        if (!node.substates[def_id]) {
+            const child = new State({ def_id, target_id: node.target_id, parent: node, root: node.root });
+            node.substates[def_id] = child;
             // Build deeper children from definition
-            reconcileStateTree(child, undefined, newDef.substates![id] as StateDefinition);
+            reconcileStateTree(child, undefined, newDef.substates![def_id] as StateDefinition);
         }
     }
 

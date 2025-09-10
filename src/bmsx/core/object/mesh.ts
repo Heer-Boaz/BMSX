@@ -6,7 +6,7 @@ import { DEFAULT_VERTEX_COLOR } from '../../render/backend/webgl.constants';
 import type { TextureKey } from '../../render/texturemanager';
 import type { color, DrawMeshOptions } from '../../render/view';
 import type { asset_id, color_arr, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr, vec4arr } from '../../rompack/rompack';
-import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave } from '../../serializer/gameserializer';
+import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { $ } from '../game';
 import { WorldObject } from './worldobject';
 import { Float32ArrayPool } from '../utils';
@@ -317,8 +317,8 @@ export abstract class MeshObject extends WorldObject implements Oriented, Scaled
 		});
 	}
 
-	constructor(id?: string, fsm_id?: string) {
-		super(id, fsm_id);
+	constructor(opts: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
+		super(opts);
 		// Euler rotation removed
 		this.scale ??= [1, 1, 1];
 		this.worldPool = new Float32ArrayPool(16);

@@ -1,7 +1,7 @@
 /**
  * PooledWorldObject
  * Basis voor tijdelijke / vaak gespawnde WorldObjects (particles, decals, hitmarkers, etc.)
- * die via een Pool<T> hergebruikt worden zonder GC-churn en zonder dubbele ids in het model.
+ * die via een Pool<T> hergebruikt worden zonder GC-churn en zonder dubbele ids in het world.
  *
  * Gebruik:
  *  - Maak een subclass die een static Pool<T> heeft.
