@@ -1,5 +1,5 @@
-import { $ } from '../../core/game';
-import { M4 } from '../3d/math3d';
+import { $ } from '../../../core/game';
+import { M4 } from '../../3d/math3d';
 
 // Global toggle for WebGL error checking. Disable in normal builds for performance.
 export const CATCH_WEBGL_ERROR = false;

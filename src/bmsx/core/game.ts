@@ -23,6 +23,15 @@ import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
+// Choose and apply an ECS pipeline here (gameplay/headless/editor)
+import { DefaultECSPipelineRegistry as ECSReg } from "../ecs/pipeline";
+import { registerBuiltinECS } from "../ecs/builtin_pipeline";
+import type { NodeSpec } from "../ecs/pipeline";
+import { gameplaySpec } from "./pipelines/gameplay";
+import { headlessSpec } from "./pipelines/headless";
+import { editorSpec } from "./pipelines/editor";
+import { collectEcsPipelineExtensions } from "../ecs/extensions";
+import { dumpEcsPipeline } from "../ecs/debug";
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
 global = globalThis || window; // Ensure global is defined
@@ -39,6 +48,10 @@ export interface GameInitArgs {
 	gainnode: GainNode;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
+    /**
+     * ECS pipeline selection. Provide a spec or a profile string. Defaults to 'gameplay'.
+     */
+    ecsPipeline?: NodeSpec[] | 'gameplay' | 'headless' | 'editor';
 }
 
 const GAME_FPS = 50;
@@ -292,7 +305,7 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
+		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, ecsPipeline } = init;
 		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
@@ -339,7 +352,19 @@ export class Game {
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
 		new World(worldConfig);
-		$.world.init_on_boot(); // build definitions, spawn modules, etc.
+		// Register built-in ECS systems; allow plugins to register extensions on boot
+		registerBuiltinECS();
+		// Initialize world (spaces, FSM/BT libraries, plugins onBoot)
+		$.world.init_on_boot();
+		// Compose pipeline spec from profile/custom and plugin extensions
+		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
+			? ecsPipeline
+			: (ecsPipeline === 'headless' ? headlessSpec() : ecsPipeline === 'editor' ? editorSpec() : gameplaySpec());
+		const extensions = collectEcsPipelineExtensions({ world: $.world, profile: (Array.isArray(ecsPipeline) ? 'custom' : (ecsPipeline ?? 'gameplay')), registry: ECSReg });
+		const finalSpec = baseSpec.concat(extensions);
+		const diag = ECSReg.build($.world, finalSpec);
+		if (this.debug) dumpEcsPipeline(diag);
+
 
 		// Wiring phase (fresh boot): bind all registered entities (services, world, objects, components)
 		for (const ent of this.registry.getRegisteredEntities()) {

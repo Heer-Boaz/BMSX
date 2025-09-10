@@ -6,8 +6,8 @@ import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
 import { TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary, SkyboxPipelineState } from '../backend/renderpasslib';
-import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl.constants';
-import { WebGLBackend } from '../backend/webgl_backend';
+import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl/webgl.constants';
+import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../view';
 

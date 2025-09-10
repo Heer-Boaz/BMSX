@@ -6,8 +6,8 @@ import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identi
 import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from "../../serializer/gameserializer";
 import { $ } from '../game';
 import type { Space } from '../space';
-import { ObjectTracker } from "./objecttracker";
-import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../utils';
+import { ObjectTracker } from "../../utils/objecttracker";
+import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../../utils/utils';
 import { StateDefinitions } from '../../fsm/fsmlibrary';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";

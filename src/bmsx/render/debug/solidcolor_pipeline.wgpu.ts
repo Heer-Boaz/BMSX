@@ -1,6 +1,6 @@
 import { GPUBackend } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary } from '../backend/renderpasslib';
-import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu_backend';
+import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/webgpu_backend';
 
 // Minimal solid-color writer for WebGPU. Uses a fullscreen triangle and emits a constant color.
 const VS_SOLID = /* wgsl */ `

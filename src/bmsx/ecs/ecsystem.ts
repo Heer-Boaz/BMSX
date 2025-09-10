@@ -5,7 +5,7 @@ import { EventEmitter } from "../core/eventemitter";
 import { $ } from "../core/game";
 import type { WorldObject } from "../core/object/worldobject";
 import { MeshObject } from "../core/object/mesh";
-import { mod } from "../core/utils";
+import { mod } from "../utils/utils";
 import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
@@ -34,37 +34,66 @@ export abstract class ECSystem {
 
 @excludeclassfromsavegame
 export class ECSystemManager {
-	private _systems: ECSystem[] = [];
+    private _systems: ECSystem[] = [];
+    // Per-frame timing stats captured during updateUntil/updateFrom
+    private _stats: { id: string; name: string; group: TickGroup; priority: number; ms: number }[] = [];
 
-	register(sys: ECSystem): void {
-		this._systems.push(sys);
-		this._systems.sort((a, b) => (a.group - b.group) || (a.priority - b.priority));
-	}
+    register(sys: ECSystem): void {
+        this._systems.push(sys);
+        this._systems.sort((a, b) => (a.group - b.group) || (a.priority - b.priority));
+    }
 
 	unregister(sys: ECSystem): void {
 		const i = this._systems.indexOf(sys);
 		if (i >= 0) this._systems.splice(i, 1);
 	}
 
-	clear(): void { this._systems.length = 0; }
+    clear(): void { this._systems.length = 0; }
 
-	/** Runs systems up to and including the given TickGroup. */
-	updateUntil(model: World, maxGroup: TickGroup): void {
-		for (const s of this._systems) {
-			if (s.group <= maxGroup) s.update(model);
-		}
-	}
+    /** Reset per-frame stats. Call at the start of a world frame. */
+    beginFrame(): void { this._stats.length = 0; }
 
-	/** Runs systems from and including the given TickGroup. */
-	updateFrom(model: World, minGroup: TickGroup): void {
-		for (const s of this._systems) {
-			if (s.group >= minGroup) s.update(model);
-		}
-	}
+    /** Return last captured per-system timing stats in update order. */
+    getStats(): ReadonlyArray<{ id: string; name: string; group: TickGroup; priority: number; ms: number }> { return this._stats; }
 
-	update(model: World): void {
-		for (const s of this._systems) s.update(model);
-	}
+    /** Runs systems up to and including the given TickGroup. */
+    updateUntil(model: World, maxGroup: TickGroup): void {
+        for (const s of this._systems) {
+            if (s.group <= maxGroup) {
+                const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                s.update(model);
+                const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                const anyS = s as unknown as { __ecsId?: string };
+                const id = anyS.__ecsId ?? s.constructor.name;
+                this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
+            }
+        }
+    }
+
+    /** Runs systems from and including the given TickGroup. */
+    updateFrom(model: World, minGroup: TickGroup): void {
+        for (const s of this._systems) {
+            if (s.group >= minGroup) {
+                const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                s.update(model);
+                const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                const anyS = s as unknown as { __ecsId?: string };
+                const id = anyS.__ecsId ?? s.constructor.name;
+                this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
+            }
+        }
+    }
+
+    update(model: World): void {
+        for (const s of this._systems) {
+            const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+            s.update(model);
+            const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+            const anyS = s as unknown as { __ecsId?: string };
+            const id = anyS.__ecsId ?? s.constructor.name;
+            this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
+        }
+    }
 }
 
 /** Pre-update: call preprocessingUpdate for components tagged with given tag. */

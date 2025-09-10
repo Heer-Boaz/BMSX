@@ -12,8 +12,8 @@ import { color_arr } from '../../rompack/rompack';
 import { Camera } from '../3d/camera3d';
 import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
-import { checkWebGLError } from '../backend/webgl.helpers';
-import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu_backend';
+import { checkWebGLError } from '../backend/webgl/webgl.helpers';
+import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/webgpu_backend';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;

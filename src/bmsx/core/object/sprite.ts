@@ -1,10 +1,10 @@
-import { DEFAULT_VERTEX_COLOR } from "../../render/backend/webgl.constants";
+import { DEFAULT_VERTEX_COLOR } from "../../render/backend/webgl/webgl.constants";
 import { color, DrawImgOptions } from "../../render/view";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
 import { insavegame, type RevivableObjectArgs } from "../../serializer/gameserializer";
 import { $, $rompack } from '../game';
 import { WorldObject } from "./worldobject";
-import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from '../utils';
+import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from '../../utils/utils';
 
 @insavegame
 /**

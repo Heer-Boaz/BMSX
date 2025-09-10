@@ -1,5 +1,6 @@
 import type { GPUBackend } from './pipeline_interfaces';
-import { WebGLBackend } from './webgl_backend';
+import { WebGLBackend } from './webgl/webgl_backend';
+import { WebGPUBackend } from './webgpu/webgpu_backend';
 
 const WEBGPU_RENDERER_SUPPORT = false;
 
@@ -32,7 +33,6 @@ export async function createBackendForCanvasAsync(canvas: HTMLCanvasElement): Pr
 							console.error('Failed to configure WebGPU canvas context:', e);
 							throw e;
 						}
-						const { WebGPUBackend } = await import('./webgpu_backend');
 						const backend = new WebGPUBackend(device, context);
 						return { backend, nativeCtx: context };
 					}

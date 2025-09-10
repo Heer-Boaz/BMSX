@@ -3,7 +3,7 @@ import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs }
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { id2obj, id2objectType } from './world';
-import { makeIndexProxy } from "./utils";
+import { makeIndexProxy } from "../utils/utils";
 export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 
 export interface SpaceObject {

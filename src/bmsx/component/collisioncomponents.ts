@@ -1,7 +1,7 @@
 import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitter";
 import { $ } from '../core/game';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
-import { mod, new_vec2, set_inplace_vec2 } from '../core/utils';
+import { mod, new_vec2, set_inplace_vec2 } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { vec2 } from '../rompack/rompack';
 import { insavegame, type RevivableObjectArgs } from "../serializer/gameserializer";

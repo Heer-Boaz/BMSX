@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { normalizeDecoratedClassName } from '../core/decorators';
+import { normalizeDecoratedClassName } from '../utils/decorators';
 import { WorldObject } from '../core/object/worldobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';

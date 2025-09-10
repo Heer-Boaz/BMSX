@@ -1,5 +1,5 @@
 import { GPUBackend, RenderPassLibrary, WebGLBackend } from '../..';
-import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl.constants';
+import { TEXTURE_UNIT_POST_PROCESSING_SOURCE } from '../backend/webgl/webgl.constants';
 import fragmentShaderCRTCode from './shaders/crt.frag.glsl';
 import vertexShaderCRTCode from './shaders/crt.vert.glsl';
 // Local copy of CRTState to avoid import issues after refactor (remove duplication later)

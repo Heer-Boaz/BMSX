@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
-import { color_arr } from '../../rompack/rompack';
-import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from './pipeline_interfaces';
+import { color_arr } from '../../../rompack/rompack';
+import { BackendCaps, GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle, TextureParams } from '../pipeline_interfaces';
 
 export type WebGPUPassEncoder = PassEncoder & { encoder: GPURenderPassEncoder };
 

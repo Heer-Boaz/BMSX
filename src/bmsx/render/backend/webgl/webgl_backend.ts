@@ -1,8 +1,8 @@
 // WebGL backend implementation extracted from legacy gpu_backend.ts
-import { color_arr } from '../../rompack/rompack';
+import { color_arr } from '../../../rompack/rompack';
 // Legacy-specific pipeline hooks removed; pipelines own their setup/exec.
 import * as GLR from './gl_resources';
-import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, TextureParams } from './pipeline_interfaces';
+import { GPUBackend, GraphicsPipelineBuildDesc, PassEncoder, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateRegistry, RenderTargetHandle, TextureParams } from '../pipeline_interfaces';
 import { TEXTURE_UNIT_SKYBOX, TEXTURE_UNIT_UPLOAD } from './webgl.constants';
 import { CATCH_WEBGL_ERROR, checkWebGLError } from './webgl.helpers';
 

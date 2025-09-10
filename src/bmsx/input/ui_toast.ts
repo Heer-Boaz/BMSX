@@ -1,7 +1,7 @@
 import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { WorldObject } from '../core/object/worldobject';
 import { $, } from '../core/game';
-import { ZCOORD_MAX } from '../render/backend/webgl.constants';
+import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import { TextWriter } from '../render/textwriter';
 import { BFont } from '../core/font';
 import { id_to_space_symbol } from 'bmsx/core/space';

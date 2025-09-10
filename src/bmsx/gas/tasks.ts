@@ -5,7 +5,7 @@ import { ECSystem, TickGroup } from '../ecs/ecsystem';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { AbilitySystemComponent } from './abilitysystem';
 import type { AbilityYield } from './gastypes';
-import { Registry } from 'bmsx';
+import { Registry } from 'bmsx/core/registry';
 
 export type TaskYield = AbilityYield; // Reuse wait engine
 
@@ -125,7 +125,7 @@ export class TaskDirector implements RegisterablePersistent {
 
 export class TaskRuntimeSystem extends ECSystem {
 	constructor(priority: number = 33) { super(TickGroup.Simulation, priority); }
-	update(_model: World): void {
+	update(): void {
 		const now = performance.now();
 		for (const runner of [...TaskDirector.instance.runners]) {
 			// Cancel actor task if owner gone
@@ -176,13 +176,15 @@ export const WaitTag = (tag: string, present: boolean = true): TaskFn => functio
 
 export const SetTag = (owner: Identifier, tag: string, present: boolean): TaskFn => function* (_ctx) {
 	const wo = $.world.getWorldObject(owner);
-	const asc = wo?.getComponent?.(AbilitySystemComponent) as AbilitySystemComponent | undefined;
+	if (!wo) return;
+	const asc = wo.getComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
 	if (asc) present ? asc.addTag(tag) : asc.removeTag(tag);
 };
 
 export const ApplyEffect = (owner: Identifier, effect: Parameters<AbilitySystemComponent['applyEffect']>[0]): TaskFn => function* () {
 	const wo = $.world.getWorldObject(owner);
-	const asc = wo?.getComponent?.(AbilitySystemComponent) as AbilitySystemComponent | undefined;
+	if (!wo) return;
+	const asc = wo.getComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
 	if (asc) asc.applyEffect(effect);
 };
 

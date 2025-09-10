@@ -3,11 +3,11 @@ import { $ } from '../../core/game';
 import type { vec3arr } from '../../rompack/rompack';
 import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';
-import { FeatureQueue } from '../backend/feature_queue';
+import { FeatureQueue } from '../../utils/feature_queue';
 import { PassEncoder } from '../backend/pipeline_interfaces';
 import { ParticlePipelineState, RenderPassLibrary } from '../backend/renderpasslib';
-import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl.constants';
-import { WebGLBackend } from '../backend/webgl_backend';
+import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl/webgl.constants';
+import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { color } from '../view';
 import { M4 } from './math3d';
 

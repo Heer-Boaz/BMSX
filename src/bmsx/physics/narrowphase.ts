@@ -1,4 +1,4 @@
-import { new_vec3 } from '../core/utils';
+import { new_vec3 } from '../utils/utils';
 import type { vec3 } from '../rompack/rompack';
 import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
 import { PhysicsBody } from './physicsbody';

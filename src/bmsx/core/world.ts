@@ -1,11 +1,9 @@
 import { setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
-import { BehaviorTreeSystem, BoundarySystem, ECSystemManager, MeshAnimationSystem, PhysicsCollisionEventSystem, PhysicsPostSystem, PhysicsSyncAfterWorldCollisionSystem, PhysicsSyncBeforeStepSystem, PrePositionSystem, StateMachineSystem, TickGroup, TileCollisionSystem, TransformSystem } from "../ecs/ecsystem";
+import { ECSystemManager, TickGroup } from "../ecs/ecsystem";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import { setupFSMlibrary, StateDefinitions } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
-import { AbilityRuntimeSystem } from "../gas/abilityruntime";
-import { TaskRuntimeSystem } from "../gas/tasks";
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
 import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
@@ -18,7 +16,7 @@ import { Registry } from "./registry";
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
-import { makeIndexProxy, shallowCopy } from './utils';
+import { makeIndexProxy, shallowCopy } from '../utils/utils';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 
@@ -45,6 +43,9 @@ export type WorldConfiguration = {
 /**
  * The base world class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
+ *
+ * Pipeline note: the World owns the system manager and update loop, but pipelines
+ * (which systems run) are selected and applied by the Game (see core/pipelines/*).
  */
 export class World implements Stateful, RegisterablePersistent {
     get registrypersistent(): true {
@@ -161,33 +162,6 @@ export class World implements Stateful, RegisterablePersistent {
         return out;
     }
 
-    /**
-     * Register a default pipeline of systems to replicate legacy behavior in a standard ECS loop.
-     * Order: Pre(position), BehaviorTrees, StateMachines, Post(position)
-     */
-    public setupDefaultSystems(): void {
-        const SM = this.systems;
-        SM.clear();
-        // Priorities create a stable order across all systems within each TickGroup
-        SM.register(new PrePositionSystem(10));
-        SM.register(new BehaviorTreeSystem(20));
-        SM.register(new MeshAnimationSystem(25));
-        SM.register(new StateMachineSystem(30));
-        // Ability runtime (advance effects/coroutines) after object state machines
-        SM.register(new AbilityRuntimeSystem(32));
-        // Task runtime (world/actor cutscenes/behaviors)
-        SM.register(new TaskRuntimeSystem(33));
-        // Sync GO -> body after abilities, before physics step
-        SM.register(new PhysicsSyncBeforeStepSystem(34));
-        SM.register(new PhysicsPostSystem(35));
-        // Resolve world-space collisions first, then screen boundary events
-        SM.register(new TileCollisionSystem(10));
-        SM.register(new BoundarySystem(20));
-        SM.register(new PhysicsCollisionEventSystem(28)); // dispatch physics collisions as engine events
-        SM.register(new PhysicsSyncAfterWorldCollisionSystem(30)); // GO -> body (if writeBack)
-        SM.register(new TransformSystem(50));
-    }
-
     public getActiveLights(opts: { scope?: 'current' | 'all' } = {}): LightObject[] {
         const scope = opts.scope ?? 'all';
         const out: LightObject[] = [];
@@ -302,6 +276,8 @@ export class World implements Stateful, RegisterablePersistent {
      */
     constructor(opts: RevivableObjectArgs & WorldConfiguration) {
         Registry.instance.register(this);
+        if (opts.constructReason === 'revive') return;
+
         this.spaces = [];
         this._spaceMap = new Map<Identifier, Space>();
         this[id_to_space_symbol] = makeIndexProxy(this._spaceMap);
@@ -313,8 +289,7 @@ export class World implements Stateful, RegisterablePersistent {
         if (opts.collisionService) this._collision = opts.collisionService;
         if (opts.modules) this._modules = opts.modules.slice();
         if (opts.fsmId) this._fsmId = opts.fsmId;
-        // Initialize default ECS pipeline
-        this.setupDefaultSystems();
+        // Note: ECS pipeline is configured by the Game (see ECSPipeline.md).
     }
 
     public init_on_boot(): void {
@@ -415,6 +390,8 @@ export class World implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public run(deltaTime: number): void {
+        // Reset ECS per-frame stats at frame start
+        this.systems.beginFrame();
         this.sc.tick(); // world-level state machine first
 
         // Phase 1: PrePhysics + Simulation (BT, Anim, Object FSM, AbilityRuntime)

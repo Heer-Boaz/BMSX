@@ -1,6 +1,6 @@
 import type { EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
-import { deepClone, deepEqual } from '../core/utils';
+import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import type { EventBagName, listed_sdef_event, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";

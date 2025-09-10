@@ -1,7 +1,7 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, Size } from '../../rompack/rompack';
-import { WebGLBackend } from './webgl_backend';
-import { WebGPUBackend } from './webgpu_backend';
+import { WebGLBackend } from './webgl/webgl_backend';
+import { WebGPUBackend } from './webgpu/webgpu_backend';
 
 // Minimal, unified render interfaces for both backends
 

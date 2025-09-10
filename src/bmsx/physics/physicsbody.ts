@@ -1,4 +1,4 @@
-import { new_vec3 } from '../core/utils';
+import { new_vec3 } from '../utils/utils';
 import { Q, quat } from '../render/3d/math3d';
 import type { Oriented, vec3 } from '../rompack/rompack';
 import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';

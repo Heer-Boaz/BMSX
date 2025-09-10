@@ -1,12 +1,12 @@
 // Sprites pipeline (formerly glview.2d) inlined from legacy module.
 // Provides batched 2D sprite + primitive rendering using shared buffers.
 import { $, makePipelineBuildDesc, shaderModule, WebGLBackend } from '../..';
-import { new_vec2, new_vec3 } from '../../core/utils';
+import { new_vec2, new_vec3 } from '../../utils/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
-import { FeatureQueue } from '../backend/feature_queue';
-import * as GLR from '../backend/gl_resources';
+import { FeatureQueue } from '../../utils/feature_queue';
+import * as GLR from '../backend/webgl/gl_resources';
 import { GPUBackend } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary, SpritesPipelineState } from '../backend/renderpasslib';
 import {
@@ -31,7 +31,7 @@ import {
     ZCOORD_COMPONENTS,
     ZCOORD_MAX,
     ZCOORDS_SIZE
-} from '../backend/webgl.constants';
+} from '../backend/webgl/webgl.constants';
 import { color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
 import { bvec } from './vertexutils2d';
 

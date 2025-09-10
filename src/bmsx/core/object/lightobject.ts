@@ -1,3 +1,4 @@
+import type { Identifier } from 'bmsx/rompack/rompack';
 import type { Light } from '../../render/3d/light';
 import { insavegame, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { WorldObject } from './worldobject';
@@ -44,7 +45,7 @@ export class AmbientLightObject extends LightObject {
         return new AmbientLightObject({ color: AmbientLightObject.DEFAULT_COLOR, intensity: AmbientLightObject.DEFAULT_INTENSITY });
     }
 
-    constructor(opts: RevivableObjectArgs & { color: [number, number, number], intensity: number }) {
+    constructor(opts: RevivableObjectArgs & { id?: Identifier, color: [number, number, number], intensity: number }) {
         super({ light: { type: 'ambient', ...opts } });
     }
 

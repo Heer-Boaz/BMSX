@@ -1,5 +1,5 @@
 import { $ } from '../../core/game';
-import * as GLR from '../backend/gl_resources';
+import * as GLR from '../backend/webgl/gl_resources';
 
 export class ShadowMap {
     public texture: WebGLTexture | null = null;

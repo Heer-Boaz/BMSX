@@ -6,50 +6,82 @@ import * as ParticlesPipeline from '../render/3d/particles_pipeline';
 import { RegisterablePersistent } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { $ } from 'bmsx/core/game';
+import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 
 // TODO: FIND A WAY TO NOT INITIALIZE ALL THIS STUFF WHEN THE GAME ROM IS NOT A DEBUG-ROM!
 const HUD_ID = 'bmsx-render-hud';
 
 function ensureHudElement(): HTMLElement {
-	let el = document.getElementById(HUD_ID);
-	if (!el) {
-		el = document.createElement('div');
-		el.id = HUD_ID;
-		el.style.position = 'absolute';
-		el.style.left = '8px';
-		el.style.top = '8px';
-		el.style.padding = '6px 8px';
-		el.style.font = '12px/1.2 monospace';
-		el.style.background = 'rgba(0,0,0,0.55)';
-		el.style.color = '#cce';
-		el.style.pointerEvents = 'auto';
-		el.style.zIndex = '9001';
-		el.style.borderRadius = '4px';
-		el.style.maxWidth = '40vw';
-		el.style.whiteSpace = 'pre';
-		const content = document.createElement('div');
-		content.id = HUD_ID + '-content';
-		const lights = document.createElement('div');
-		lights.id = HUD_ID + '-lights';
-		lights.style.marginTop = '6px';
-		const lightsHeader = document.createElement('div');
-		lightsHeader.id = HUD_ID + '-lights-header';
-		const lightsDetail = document.createElement('div');
-		lightsDetail.id = HUD_ID + '-lights-detail';
-		lights.appendChild(lightsHeader);
-		lights.appendChild(lightsDetail);
-		el.appendChild(content);
-		el.appendChild(lights);
-		document.body.appendChild(el);
-		// Improve readability and wrapping
-		el.style.whiteSpace = 'pre-wrap';
-		(content as HTMLElement).style.whiteSpace = 'pre-wrap';
-		(content as HTMLElement).style.wordBreak = 'break-word';
-		(lightsHeader as HTMLElement).style.whiteSpace = 'pre-wrap';
-		(lightsDetail as HTMLElement).style.whiteSpace = 'pre-wrap';
-		(lightsDetail as HTMLElement).style.wordBreak = 'break-word';
-	}
-	return el;
+    let el = document.getElementById(HUD_ID);
+    if (!el) {
+        el = document.createElement('div');
+        el.id = HUD_ID;
+        el.style.padding = '6px 8px';
+        el.style.font = '12px/1.2 monospace';
+        el.style.background = 'rgba(0,0,0,0.55)';
+        el.style.color = '#cce';
+        el.style.pointerEvents = 'auto';
+        el.style.zIndex = '9001';
+        el.style.borderRadius = '4px';
+        el.style.maxWidth = '40vw';
+        el.style.whiteSpace = 'pre-wrap';
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.fontWeight = 'bold';
+        header.style.marginBottom = '4px';
+        header.style.userSelect = 'none';
+        const title = document.createElement('span');
+        title.textContent = 'Render HUD';
+        const buttons = document.createElement('span');
+        const btnMin = document.createElement('span');
+        btnMin.textContent = '–';
+        btnMin.title = 'Minimize';
+        btnMin.style.cursor = 'pointer';
+        btnMin.style.marginRight = '8px';
+        const btnClose = document.createElement('span');
+        btnClose.textContent = '×';
+        btnClose.title = 'Close';
+        btnClose.style.cursor = 'pointer';
+        buttons.appendChild(btnMin);
+        buttons.appendChild(btnClose);
+        const content = document.createElement('div');
+        content.id = HUD_ID + '-content';
+        const lights = document.createElement('div');
+        lights.id = HUD_ID + '-lights';
+        lights.style.marginTop = '6px';
+        const lightsHeader = document.createElement('div');
+        lightsHeader.id = HUD_ID + '-lights-header';
+        const lightsDetail = document.createElement('div');
+        lightsDetail.id = HUD_ID + '-lights-detail';
+        lights.appendChild(lightsHeader);
+        lights.appendChild(lightsDetail);
+        header.appendChild(title);
+        header.appendChild(buttons);
+        el.appendChild(header);
+        el.appendChild(content);
+        el.appendChild(lights);
+        attachHudPanel(el, 'top-left');
+        makeHudPanelDraggable(el, header);
+
+        // Header controls
+        let collapsed = false;
+        btnMin.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            collapsed = !collapsed;
+            (content as HTMLElement).style.display = collapsed ? 'none' : '';
+            (lights as HTMLElement).style.display = collapsed ? 'none' : '';
+            btnMin.textContent = collapsed ? '+' : '–';
+        });
+        btnClose.addEventListener('click', (ev) => { ev.stopPropagation(); overlay.disable(); });
+        (content as HTMLElement).style.whiteSpace = 'pre-wrap';
+        (content as HTMLElement).style.wordBreak = 'break-word';
+        (lightsHeader as HTMLElement).style.whiteSpace = 'pre-wrap';
+        (lightsDetail as HTMLElement).style.whiteSpace = 'pre-wrap';
+        (lightsDetail as HTMLElement).style.wordBreak = 'break-word';
+    }
+    return el;
 }
 
 @excludeclassfromsavegame

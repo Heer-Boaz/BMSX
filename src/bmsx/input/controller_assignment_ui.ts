@@ -6,7 +6,7 @@ import { SpriteObject } from '../core/object/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { State } from '../fsm/state';
-import { ZCOORD_MAX } from '../render/backend/webgl.constants';
+import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import type { Identifier } from '../rompack/rompack';
 import { Input } from './input';
 import { id_to_space_symbol } from 'bmsx/core/space';

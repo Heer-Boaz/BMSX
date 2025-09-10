@@ -1,6 +1,6 @@
 import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
-import { new_vec3 } from '../core/utils';
+import { new_vec3 } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from '../serializer/gameserializer';
 import type { PhysicsBodyDesc } from './physicsbody';

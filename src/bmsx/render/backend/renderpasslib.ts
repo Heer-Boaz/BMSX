@@ -17,8 +17,8 @@ import { registerCRT_WebGL } from '../post/crt_pipeline';
 import { registerCRT_WebGPU } from '../post/crt_pipeline.wgpu';
 import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_uniforms';
 import { AnyBackend, GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
-import { checkWebGLError } from './webgl.helpers';
-import { WebGLBackend } from './webgl_backend';
+import { checkWebGLError } from './webgl/webgl.helpers';
+import { WebGLBackend } from './webgl/webgl_backend';
 
 export type FogUniforms = {
     fogD50: number;

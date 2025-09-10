@@ -6,7 +6,7 @@ import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/object/sprite';
-import { div_vec2, new_vec2 } from '../core/utils';
+import { div_vec2, new_vec2 } from '../utils/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { PhysicsDebugComponent } from '../physics/physicsdebugcomponent';
 import type { Identifier, vec2 } from '../rompack/rompack';

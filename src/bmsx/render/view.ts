@@ -5,7 +5,7 @@ import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/object/mesh';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
-import { multiply_vec, multiply_vec2, shallowCopy } from '../core/utils';
+import { multiply_vec, multiply_vec2, shallowCopy } from '../utils/utils';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2, vec3arr } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
@@ -16,7 +16,7 @@ import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
 import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
-import type { WebGLBackend } from './backend/webgl_backend';
+import type { WebGLBackend } from './backend/webgl/webgl_backend';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 

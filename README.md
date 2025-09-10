@@ -61,6 +61,7 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 - [Game Objects and Spaces](#game-objects-and-spaces)
 - [Component System](#component-system)
 - [Graphics and Rendering](#graphics-and-rendering)
+- [ECS Pipelines](#ecs-pipelines)
 - [Sound and Music](#sound-and-music)
 - [Registry](#registry)
 - [State Machine](#state-machine)
@@ -1838,3 +1839,9 @@ This ensures that event handlers are always up-to-date and that no memory leaks 
 ## Engine Package Mode
 
 For per‑game engine pinning and using the installed `bmsx` package instead of the source alias, see `ENGINE_PACKAGE_MODE.md`.
+
+---
+
+# ECS Pipelines
+
+The World owns the ECS system manager and update loop, but the concrete list and order of systems (the pipeline) is selected and applied by the Game. Pipelines are not serialized; after loading a save, re-apply the selected pipeline. See ECSPipeline.md for details, available variants (gameplay, headless, editor), and usage of the `ecsPipeline` init option.

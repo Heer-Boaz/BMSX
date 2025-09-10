@@ -1,6 +1,6 @@
 import type { Identifier } from '../rompack/rompack';
 import type { ConstructorWithFSMProperty, FSMName, StateMachineBlueprint } from "./fsmtypes";
-import { normalizeDecoratedClassName } from '../core/decorators';
+import { normalizeDecoratedClassName } from '../utils/decorators';
 
 /**
  * A record that maps string keys to functions that build machine states.

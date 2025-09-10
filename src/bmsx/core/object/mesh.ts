@@ -2,14 +2,14 @@ import { TransformComponent } from '../../component/transformcomponent';
 import { Material } from '../../render/3d/material';
 import { M4, Mat4, Q, quat } from '../../render/3d/math3d';
 import { ShadowMap } from '../../render/3d/shadowmap';
-import { DEFAULT_VERTEX_COLOR } from '../../render/backend/webgl.constants';
+import { DEFAULT_VERTEX_COLOR } from '../../render/backend/webgl/webgl.constants';
 import type { TextureKey } from '../../render/texturemanager';
 import type { color, DrawMeshOptions } from '../../render/view';
 import type { asset_id, color_arr, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr, vec4arr } from '../../rompack/rompack';
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { $ } from '../game';
 import { WorldObject } from './worldobject';
-import { Float32ArrayPool } from '../utils';
+import { Float32ArrayPool } from '../../utils/utils';
 
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"
 type RuntimeNodeTRS = { t?: vec3arr; r?: vec4arr; s?: vec3arr };

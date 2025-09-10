@@ -18,7 +18,7 @@ import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/view';
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable } from "bmsx/rompack/rompack";
-import { normalizeDecoratedClassName } from "bmsx/core/decorators";
+import { normalizeDecoratedClassName } from "bmsx/utils/decorators";
 
 // Decorators onload/onsave are defined locally in this file
 type ConstructorWithSaveGame<T = Bindable> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };

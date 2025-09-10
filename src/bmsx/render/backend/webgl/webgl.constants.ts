@@ -1,4 +1,4 @@
-import type { color } from '../view';
+import type { color } from '../../view';
 
 export const DEFAULT_VERTEX_COLOR: color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_RED: color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
