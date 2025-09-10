@@ -1,7 +1,7 @@
 import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
-import { EilaGameState } from './state';
+import { YieArGameState } from './yieargamestate';
 
 export const EILA_MODULE = {
 	onBoot(world: World) {
@@ -14,7 +14,7 @@ export const EILA_MODULE = {
 		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as InputMap);
 		$.input.getPlayerInput(2).setInputMap({ keyboard: null, gamepad: gamepadInputMapping } as InputMap);
 		// Register persistent Eila game state service
-		new EilaGameState();
+		new YieArGameState();
 		// Register event service for handlers
 		new EilaEventService().activate();
 	},

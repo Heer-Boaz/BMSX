@@ -84,10 +84,6 @@ export abstract class Fighter extends SpriteObject {
     public hp: number;
     /**
      * The player index of the fighter.
-     * 1 = player 1
-     * 2 = player 2
-     * 3 = player 3
-     * 4 = player 4
      */
     public player_index: number;
 

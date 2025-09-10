@@ -4,7 +4,7 @@ import { Fighter } from './fighter';
 import { Hud } from './hud';
 import { AudioId } from './resourceids';
 import { Sinterklaas } from './sinterklaas';
-import { EilaGameState } from './state';
+import { YieArGameState } from './yieargamestate';
 import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
 
 export class EilaModelFSM {
@@ -19,7 +19,7 @@ export class EilaModelFSM {
                 },
                 game: {
                     entering_state(this: World, _state: State, { numOfPlayers }: { numOfPlayers: number }) {
-                        const es = $.get<EilaGameState>('eila_state');
+                        const es = $.get<YieArGameState>('yiear_state');
                         if (es) es.numOfPlayers = numOfPlayers;
                         return '#this.ffwachten';
                     },
@@ -36,7 +36,7 @@ export class EilaModelFSM {
                             entering_state(this: World) {
                                 this.setSpace('default');
                                 this.clear();
-                                const es = $.get<EilaGameState>('eila_state');
+                                const es = $.get<YieArGameState>('yiear_state');
                                 es.room_mgr.loadRoom('room1');
                                 this.spawn(es.room_mgr.rooms[es.currentRoomId], new_vec3(0, 0, 0));
                                 this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
@@ -61,11 +61,11 @@ export class EilaModelFSM {
                             entering_state(this: World) {
                                 this.setSpace('default');
                                 this.clear();
-                                const es = $.get<EilaGameState>('eila_state');
+                                const es = $.get<YieArGameState>('yiear_state');
                                 es.room_mgr.loadRoom('room2');
                                 this.spawn(es.room_mgr.rooms[es.currentRoomId], new_vec3(0, 0, 0));
                                 this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
-                                this.spawn(new Sinterklaas({ aied: ($.get<EilaGameState>('eila_state')?.numOfPlayers ?? 1) === 1 }), new_vec3(60, 0, 10));
+                                this.spawn(new Sinterklaas({ aied: ($.get<YieArGameState>('yiear_state')?.numOfPlayers ?? 1) === 1 }), new_vec3(60, 0, 10));
                                 this.spawn(new Hud(), new_vec3(0, 0, 100));
                                 $.playAudio(AudioId.knokken);
                             },

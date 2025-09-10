@@ -4,9 +4,9 @@ import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/gameserial
 import { RoomMgr } from './roommgr';
 
 @insavegame
-export class EilaGameState implements RegisterablePersistent {
+export class YieArGameState implements RegisterablePersistent {
 	get registrypersistent(): true { return true; }
-	public get id(): Identifier { return 'eila_state'; }
+	public get id(): Identifier { return 'yiear_state'; }
 
 	public currentRoomId: string = '';
 	public room_mgr: RoomMgr = new RoomMgr();
