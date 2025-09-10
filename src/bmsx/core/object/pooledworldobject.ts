@@ -15,8 +15,6 @@ export abstract class PooledWorldObject extends WorldObject {
     /** Subclasses geven een reset implementatie voor initialisatie van state. */
     protected abstract reset(...args: any[]): void; // eslint-disable-line @typescript-eslint/no-explicit-any
     /** Subclasses must still implement run/paint like gewone WorldObject lifecycle. */
-    public abstract override run(): void;
-    public abstract override paint(): void;
 
     /** Markeer object opnieuw als actief na acquire uit pool. */
     public markActive(): void { this.active = true; }

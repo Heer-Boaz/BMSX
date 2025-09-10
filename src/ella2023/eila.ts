@@ -524,7 +524,5 @@ export class Eila extends Fighter {
 		this.hp = EILA_START_HP;
 	}
 
-	override paint(): void {
-		super.paint();
-	}
+    // No custom enumerateDrawOptions needed; base sprite handled by SpriteObject
 };

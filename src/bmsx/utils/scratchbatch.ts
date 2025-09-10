@@ -48,7 +48,7 @@ export class ScratchBatch<T> implements Iterable<T> {
         return {
             next(): IteratorResult<T> {
                 if (i < n) return { value: arr[i++], done: false };
-                return { value: undefined as unknown as T, done: true };
+                return { value: undefined as T, done: true };
             },
         };
     }

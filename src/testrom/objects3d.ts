@@ -1,4 +1,4 @@
-import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from 'bmsx';
+import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, type RenderSubmitQueue } from 'bmsx';
 import { submitParticle } from 'bmsx/render/3d/particles_pipeline';
 import { onload, type RevivableObjectArgs } from 'bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
@@ -102,9 +102,9 @@ export class SparkEmitter extends WorldObject {
         }
     }
 
-    public override paint(): void {
+    public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
         for (const s of this.sparks) {
-            submitParticle({ position: s.pos, size: .5, color: s.color, texture: s.texture });
+            queue.submit.particle({ position: s.pos, size: .5, color: s.color, texture: s.texture });
         }
     }
 }

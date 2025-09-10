@@ -160,7 +160,7 @@ export class RenderPassLibrary {
                 console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
             }
             if (passId === 'sprites') {
-                const hasTextures = (v: unknown): v is { textures: { [k: string]: unknown | null } } => typeof v === 'object' && !!v && 'textures' in (v as unknown as Record<string, unknown>);
+                const hasTextures = (v: unknown): v is { textures: { [k: string]: unknown | null } } => typeof v === 'object' && !!v && 'textures' in (v as Record<string, unknown>);
                 if (hasTextures(gv)) {
                     if (!gv.textures?.['_atlas']) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
                     if (!gv.textures?.['_atlas_dynamic']) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);

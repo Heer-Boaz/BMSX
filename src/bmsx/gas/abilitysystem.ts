@@ -249,12 +249,12 @@ export class AbilitySystemComponent extends Component {
 					// Use a unique subscriber token so we can remove precisely this handler
 					const token: any = { __ascWait: true, key };
 					if (!scope || scope === 'all') {
-						const listener = (evName: string) => { if (evName === name) handler(evName) as unknown as (event_name: string, emitter: any, payload?: any) => any; };
+						const listener = (evName: string) => { if (evName === name) handler(evName); };
 						EventEmitter.instance.on(name, listener, token, undefined, false);
 						unsub = () => EventEmitter.instance.removeSubscriber(token);
 					} else {
 						const filter: Identifier = (scope === 'self') ? (this.ownerId as Identifier) : (scope as Identifier);
-						const listener = (evName: string) => { if (evName === name) handler(evName) as unknown as (event_name: string, emitter: any, payload?: any) => any; };
+						const listener = (evName: string) => { if (evName === name) handler(evName); };
 						EventEmitter.instance.on(name, listener, token, filter, false);
 						unsub = () => EventEmitter.instance.removeSubscriber(token);
 					}

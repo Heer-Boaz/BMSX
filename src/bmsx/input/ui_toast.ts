@@ -28,11 +28,11 @@ class Toast extends WorldObject {
         this.createdAt = performance.now();
     }
 
-    override paint(): void {
+    override *queueRenderSubmissions() {
         const now = performance.now();
         const t = now - this.createdAt;
         // TODO: PRETTY UGLY TO NOT USE A (SIMPLE) STATE MACHINE FOR THIS
-        if (t >= this.ms) { this.markForDisposal(); return; } // time's up
+        if (t >= this.ms) { this.markForDisposal(); return null; } // time's up
         const vp = $.view.viewportSize;
         const centerX = vp.x / 2;
         const topY = 12;
@@ -41,8 +41,8 @@ class Toast extends WorldObject {
         const font = this.font ?? $.view.default_font;
         const textWidth = font.textWidth(this.text) + 2 * padX;
         const rect = { area: { start: { x: centerX - textWidth / 2 - padX, y: topY - padY, z: this.z }, end: { x: centerX + textWidth / 2 + padX, y: topY + 10 + padY, z: this.z } }, color: { r: 0, g: 0, b: 0, a: 0.85 * alpha } };
-        $.view.fillRectangle(rect);
         TextWriter.drawText(centerX - textWidth / 2, topY, this.text, this.z, undefined, { r: 255, g: 255, b: 255, a: Math.max(0, Math.min(1, alpha)) });
+        return { ...rect, layer: 'ui', kind: 'fill' };
     }
 }
 

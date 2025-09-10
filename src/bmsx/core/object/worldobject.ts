@@ -11,6 +11,7 @@ import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../../utils/util
 import { StateDefinitions } from '../../fsm/fsmlibrary';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
+import type { RenderSubmitQueue } from 'bmsx/render/gameview';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -31,6 +32,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public componentMap: KeyToComponentMap = {};
 
+	public components: Component[] = []; // Array of all components in the object for easy iteration
+
 	/**
 	 * The object tracker for the world object.
 	 */
@@ -42,7 +45,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @returns An iterator for all components in the object.
 	 */
 	public *iterateComponents(): IterableIterator<Component> {
-		yield* Object.values(this.componentMap);
+		yield* this.components;
 	}
 
 	/**
@@ -72,6 +75,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		if (!component.parentid) component.parentid = this.id;
 		if (!component.id) component.id = component.parentid + '_' + component.constructor?.name;
 		this.componentMap[component.constructor?.name] = component;
+		this.components.push(component);
 		// Late-init: bind component event subscriptions and perform registry registration here,
 		// after the component has been fully constructed and added to the container.
 		component.onloadSetup();
@@ -91,6 +95,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		// Remove from the components map first to avoid recursive cycles when component.dispose()
 		// calls back into removeComponent. This makes removal idempotent from the container side.
 		delete this.componentMap[key];
+		this.components = this.components.filter(c => c !== component);
 
 		// If the component exposes a detach method, call it (best-effort).
 		component.detach();
@@ -574,14 +579,17 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/**
-	 * Abstract method that is called when the world object should be painted as part of the game loop.
+	 * Method that is called when the world object should be painted as part of the game loop.
 	 */
-	public paint?(): void;
-	/**
-	 * Abstract method that is called after the world object has been painted as part of the game loop.
-	 * This method is used for post-processing effects such as lighting effects.
-	 */
-	public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+	public queueRenderSubmissions?(_queue: RenderSubmitQueue): void {
+		// TODO: Generate draw commands for the object's components
+		// for (const component of this.iterateComponents()) {
+		// 	const commands = component.queueRenderSubmissions?.();
+		// 	if (commands) {
+		// 		yield* commands;
+		// 	}
+		// }
+	}
 
 	/**
 	 * Marks the object to be disposed at the end of the current update cycle.
@@ -710,12 +718,12 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {
-		const componentsToRemove = Object.values(this.componentMap).filter(component => component.hasTag(tag));
+		const componentsToRemove = this.components.filter(component => component.hasTag(tag));
 		componentsToRemove.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>));
 	}
 
 	removeAllComponents(): void {
-		const componentsToRemove = Object.values(this.componentMap);
+		const componentsToRemove = this.components;
 		componentsToRemove.forEach((component) => this.removeComponent(component.constructor as ComponentConstructor<Component>));
 	}
 

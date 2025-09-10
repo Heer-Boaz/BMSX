@@ -10,7 +10,7 @@ import { createBackendForCanvasAsync } from "../render/backend/backend_selector"
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
-import { color, DrawImgOptions, DrawRectOptions, GameView, renderGate } from "../render/gameview";
+import { color, GameView, renderGate } from "../render/gameview";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
@@ -28,8 +28,6 @@ import { DefaultECSPipelineRegistry as ECSReg } from "../ecs/pipeline";
 import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { gameplaySpec } from "./pipelines/gameplay";
-import { headlessSpec } from "./pipelines/headless";
-import { editorSpec } from "./pipelines/editor";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
 import { dumpEcsPipeline } from "../ecs/debug";
 // No direct space helpers needed here; Spaces are revived as part of the world.
@@ -203,18 +201,6 @@ export class Game {
 
 	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
 
-	public drawImg(options: DrawImgOptions): void {
-		this.view.drawImg(options);
-	}
-
-	public drawRectangle(options: DrawRectOptions): void {
-		this.view.drawRectangle(options);
-	}
-
-	public fillRectangle(options: DrawRectOptions): void {
-		this.view.fillRectangle(options);
-	}
-
 	public drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: color, backgroundColor?: color): void {
 		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
@@ -359,7 +345,7 @@ export class Game {
 		// Compose pipeline spec from profile/custom and plugin extensions
 		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
 			? ecsPipeline
-			: (ecsPipeline === 'headless' ? headlessSpec() : ecsPipeline === 'editor' ? editorSpec() : gameplaySpec());
+			: gameplaySpec();
 		const extensions = collectEcsPipelineExtensions({ world: $.world, profile: (Array.isArray(ecsPipeline) ? 'custom' : (ecsPipeline ?? 'gameplay')), registry: ECSReg });
 		const finalSpec = baseSpec.concat(extensions);
 		const diag = ECSReg.build($.world, finalSpec);
@@ -544,7 +530,7 @@ export class Game {
 		const servicesState: Record<string, unknown> = {};
 		for (const ent of this.registry.iterate(Service, true)) {
 			const dto = ent.getState();
-			if (dto !== undefined) servicesState[ent.id] = dto as unknown;
+			if (dto !== undefined) servicesState[ent.id] = dto;
 		}
 		if (Object.keys(servicesState).length > 0) sg.servicesState = servicesState;
 

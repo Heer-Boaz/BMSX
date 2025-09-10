@@ -203,6 +203,7 @@ export class RenderGraphRuntime {
     // Cached per-pass dependency data (populated during compile) for use during execute (transitions, stats)
     private _passReads: { tex: RGTexHandle }[][] = [];
     private _passWrites: { tex: RGTexHandle; clear?: { color?: color_arr; depth?: number } }[][] = [];
+    private _setupData: unknown[] = []; // per-pass setup() return values
 
     constructor(backend: GPUBackend) { this.backend = backend; }
 
@@ -378,7 +379,7 @@ export class RenderGraphRuntime {
         // Store textures & only keep value resources that are actually read (cull unused)
         for (const [handle, res] of texMap) (this.texResources as InternalTexResource[])[handle] = res;
         for (const [handle, res] of valueMap) if (res.readers > 0) (this.valueResources as InternalValueResource[])[handle] = res;
-        (this as unknown as { _setupData: unknown[] })._setupData = setupData;
+        this._setupData = setupData;
         // Persist dependency info for execution phase (avoids rescanning resources)
         this._passReads = passReads;
         this._passWrites = passWrites;
@@ -395,7 +396,7 @@ export class RenderGraphRuntime {
         checkWebGLError('Before compile');
         if (!this.compiled) this.compile(frame);
         checkWebGLError('After compile');
-        const setupData: unknown[] = (this as unknown as { _setupData: unknown[] })._setupData;
+        const setupData: unknown[] = this._setupData;
 
         const ctx: PassContext = {
             getTex: (h) => this.texResources[h]?.tex ?? null,

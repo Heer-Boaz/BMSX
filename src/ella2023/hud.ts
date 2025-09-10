@@ -1,4 +1,4 @@
-import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d, type RevivableObjectArgs } from 'bmsx';
+import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d, type RenderSubmitQueue, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { BitmapId } from './resourceids';
 
@@ -16,11 +16,10 @@ export class Hud extends SpriteObject {
         }
     }
 
-    override paint(): void {
-        super.paint();
+    public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
+        super.queueRenderSubmissions(queue);
         // Update hitpoints
         const world = $.world;
-        const view = $.view;
         const player = world.getWorldObject<Fighter>('player');
         const sinterklaas = world.getWorldObject<Fighter>('sinterklaas');
 
@@ -37,9 +36,9 @@ export class Hud extends SpriteObject {
         const hp2EndX = HP_BAR2.endX - (HP_BAR2.endX - HP_BAR2.startX) * hp2 / MAX_HP;
 
         let area = new_area3d(HP_BAR1.startX, HP_BAR1.startY, Z, hp1EndX, HP_BAR1.endY, Z);
-        view.fillRectangle({ area, color });
+        queue.submit.typed({ type: 'rect', area, color, layer: 'ui', kind: 'fill' });
         area = new_area3d(hp2EndX, HP_BAR2.startY, Z, HP_BAR2.endX, HP_BAR2.endY, Z);
-        view.fillRectangle({ area, color });
+        queue.submit.typed({ type: 'rect', area, color, layer: 'ui', kind: 'fill' });
 
         TextWriter.drawText(40, 32, 'sen kai la');
         TextWriter.drawText(144, 32, 'ei la');

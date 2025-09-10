@@ -10,6 +10,7 @@ export function saveTextureToFile(): void {
 
     // 1. Bind the framebuffer that has the texture attached
     // Access legacy framebuffer through the documented getter (RenderView exposes _legacyFramebuffer)
+    // TODO: BUG!!!!!!!!!
     const legacyFbo: WebGLFramebuffer | null = (view as unknown as { _legacyFramebuffer: WebGLFramebuffer | null })._legacyFramebuffer;
     gl.bindFramebuffer(gl.FRAMEBUFFER, legacyFbo);
 

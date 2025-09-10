@@ -42,7 +42,7 @@ export class BulletManager extends WorldObject {
 			if (phys) this.checkHitsSegment(b, phys);
 		});
 	}
-	override paint(): void {
+	override queueRenderSubmissions(): void {
 		// Draw bullet tracers as small fading particles along current segment
 		this.pool.forEachActive(b => {
 			const t = b.life / b.maxLife; const a = 1 - t; // fade

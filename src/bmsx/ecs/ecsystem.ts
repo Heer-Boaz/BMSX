@@ -28,6 +28,7 @@ export abstract class ECSystem {
 	 */
 	readonly group: TickGroup;
 	readonly priority: number;
+	public __ecsId: string;
 	constructor(group: TickGroup, priority: number = 0) { this.group = group; this.priority = priority; }
 	abstract update(model: World): void;
 }
@@ -63,8 +64,7 @@ export class ECSystemManager {
                 const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                 s.update(model);
                 const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-                const anyS = s as unknown as { __ecsId?: string };
-                const id = anyS.__ecsId ?? s.constructor.name;
+                const id = s.__ecsId ?? s.constructor.name;
                 this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
             }
         }
@@ -77,7 +77,7 @@ export class ECSystemManager {
                 const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
                 s.update(model);
                 const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-                const anyS = s as unknown as { __ecsId?: string };
+                const anyS = s;
                 const id = anyS.__ecsId ?? s.constructor.name;
                 this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
             }
@@ -89,7 +89,7 @@ export class ECSystemManager {
             const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
             s.update(model);
             const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-            const anyS = s as unknown as { __ecsId?: string };
+            const anyS = s;
             const id = anyS.__ecsId ?? s.constructor.name;
             this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
         }
@@ -401,8 +401,8 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 		const events: CollisionEvent[] = world.drainPhysicsEvents() ?? [];
 		if (!events || events.length === 0) return;
 		for (const evt of events) {
-			const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.world.getWorldObject(evt.a.userData) : (evt.a.userData as unknown);
-			const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.world.getWorldObject(evt.b.userData) : (evt.b.userData as unknown);
+			const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.world.getWorldObject(evt.a.userData) : (evt.a.userData);
+			const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.world.getWorldObject(evt.b.userData) : (evt.b.userData);
 			if (!goA && !goB) continue;
 			const payload = { type: evt.type, otherId: (goB as Identifiable).id ?? null, point: evt.point, normal: evt.normal };
 			if (goA) EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payload);

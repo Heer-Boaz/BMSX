@@ -14,7 +14,7 @@ import { MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpass
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl/webgl.constants';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { DrawMeshOptions } from '../gameview';
+import { MeshRenderSubmission } from '../gameview';
 import type { DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
 
@@ -33,7 +33,7 @@ function getRenderContext() {
 }
 
 // Legacy direct submission array removed. Use submitMesh() with feature queue.
-const meshQueue = new FeatureQueue<DrawMeshOptions>(256);
+const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
 export function getQueuedMeshCount(): number { return meshQueue.sizeBack(); }
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
 
@@ -577,9 +577,9 @@ function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
     b.bindVertexArray(null);
     return vao;
 }
-function cullAndSortMeshes(list: Iterable<DrawMeshOptions>): { instancedGroups: Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>; singles: DrawMeshOptions[] } {
+function cullAndSortMeshes(list: Iterable<MeshRenderSubmission>): { instancedGroups: Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>; singles: MeshRenderSubmission[] } {
     // Gather into a transient array for filtering + sorting
-    const temp: DrawMeshOptions[] = [];
+    const temp: MeshRenderSubmission[] = [];
     for (const it of list) temp.push(it);
     if (temp.length === 0) return { instancedGroups: new Map(), singles: [] };
     const activeCamera = $.world.activeCamera3D; activeCamera.viewProjection;
@@ -598,7 +598,7 @@ function cullAndSortMeshes(list: Iterable<DrawMeshOptions>): { instancedGroups: 
     const dist = (mat: Float32Array) => { const dx = mat[12] - camPos.x; const dy = mat[13] - camPos.y; const dz = mat[14] - camPos.z; return dx * dx + dy * dy + dz * dz; };
     filtered.sort((a, b) => { const sa = a.mesh.materialSignature; const sb = b.mesh.materialSignature; if (sa !== sb) return sa < sb ? -1 : 1; return dist(a.matrix) - dist(b.matrix); });
     const instancedGroups = new Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>();
-    const singles: DrawMeshOptions[] = [];
+    const singles: MeshRenderSubmission[] = [];
     for (const entry of filtered) {
         const m = entry.mesh;
         if (!m.hasSkinning && !m.hasMorphTargets && isOpaque(m)) {
@@ -806,7 +806,7 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
     gl.uniform1f(alphaCutoffLocation3D, mat?.alphaCutoff ?? 0.5);
     lastMaterialSig = sig;
 }
-function renderSingleMeshes(gl: WebGL2RenderingContext, singles: DrawMeshOptions[], framebuffer: WebGLFramebuffer): void {
+function renderSingleMeshes(gl: WebGL2RenderingContext, singles: MeshRenderSubmission[], framebuffer: WebGLFramebuffer): void {
     setUseInstancing(gl, false);
     for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) {
         const buffers = getMeshBuffers(gl, m);
@@ -852,14 +852,14 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     _morphUsage.pos = 0; _morphUsage.norm = 0;
     // Single dynamic buffer; no ring state
     // Adapt to FeatureQueue API without exposing storage
-    const collected: DrawMeshOptions[] = [];
+    const collected: MeshRenderSubmission[] = [];
     meshQueue.forEachFront((it) => { collected.push(it); });
     const { instancedGroups, singles } = cullAndSortMeshes(collected);
     setupViewport(gl, canvasWidth, canvasHeight);
     setupRenderingState(gl, state);
     // Split singles by surface type
-    const opaqueSingles: DrawMeshOptions[] = [];
-    const transparentSingles: DrawMeshOptions[] = [];
+    const opaqueSingles: MeshRenderSubmission[] = [];
+    const transparentSingles: MeshRenderSubmission[] = [];
     for (const s of singles) { (isTransparent(s.mesh) ? transparentSingles : opaqueSingles).push(s); }
     // Filter instanced groups to only opaque/masked
     const opaqueInstanced = new Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>();
@@ -888,7 +888,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     // FeatureQueue back buffer cleared on swap; nothing else to do
 }
 
-export function submitMesh(o: DrawMeshOptions): void { meshQueue.submit({ ...o }); }
+export function submitMesh(o: MeshRenderSubmission): void { meshQueue.submit({ ...o }); }
 export function reset(_gl: WebGL2RenderingContext): void { normal9Pool.reset(); clearLights(); }
 export function getMeshQueueDebug(): { front: number; back: number } { return { front: meshQueue.sizeFront(), back: meshQueue.sizeBack() }; }
 

@@ -13,7 +13,7 @@ export class RailShooterHUD extends WorldObject {
         this.hitFlash = 0.12;
     }
     override run(): void { const now = performance.now() / 1000; if (now - this.lastHitTime > this.comboWindow) { this.combo = 1; } if (this.comboFade > 0) this.comboFade -= ($.deltaTime / 1000) * 1.5; if (this.hitFlash > 0) this.hitFlash -= $.deltaTime / 1000; }
-    override paint(): void {
+    override queueRenderSubmissions(): void {
         // Score right aligned top-right
         const s = `SCORE ${this.score}`;
         const gw = $.world.gamewidth;

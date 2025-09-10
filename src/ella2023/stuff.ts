@@ -1,4 +1,4 @@
-import { $, DrawRectOptions, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs } from 'bmsx';
+import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs, type RenderSubmission, type RenderSubmitQueue } from 'bmsx';
 import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
@@ -34,15 +34,13 @@ export class GameOver extends SpriteObject {
 		}
 	}
 
-	override paint(): void {
-		super.paint();
+	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
+		super.queueRenderSubmissions(queue);
 		const x = 8;
 		const y = 144;
-
-		const options: DrawRectOptions = { area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] };
-		$.fillRectangle(options);
+		const options: RenderSubmission = { type: 'rect', area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0], layer: 'ui', kind: 'fill' };
+		queue.submit.typed(options);
 		const lines = ['je bent toch niet', 'de strijder die ik nodig heb.', 'ik ben een beetje', 'teleurgesteld in jouw ouders...'];
-
 		$.drawText(x, y, lines);
 	}
 
@@ -79,15 +77,13 @@ export class Hoera extends SpriteObject {
 		}
 	}
 
-	override paint(): void {
-		super.paint();
+	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
+		super.queueRenderSubmissions(queue);
 		const x = 16;
 		const y = 160;
-
-		const options: DrawRectOptions = { area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] };
-		$.fillRectangle(options);
+		const options: RenderSubmission = { type: 'rect', area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0], layer: 'ui', kind: 'fill' };
+		queue.submit.typed(options);
 		const lines = ['dat heb je', 'redelijk gedaan Elly!', 'ik bedoel: Ei La!'];
-
 		$.drawText(x, y, lines);
 	}
 
@@ -205,12 +201,11 @@ export class TitleScreen extends SpriteObject {
 		}
 	}
 
-	override paint(): void {
-		super.paint();
+	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
+		super.queueRenderSubmissions(queue);
 		if (this.cursorVisible) {
-			$.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, this.cursorY, this.z + 1) });
+			queue.submit.typed({ type: 'img', imgid: BitmapId.menu_arrow, pos: new_vec3(80, this.cursorY, this.z + 1), layer: 'ui' });
 		}
-
 	}
 
 	constructor(opts?: RevivableObjectArgs) {
@@ -263,12 +258,9 @@ export class Gordijn extends WorldObject {
 		this.width = 0;
 	}
 
-	override paint(): void {
-		if (this.width === 0) {
-			return;
-		}
-		super.paint?.();
-		const options: DrawRectOptions = { area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0] };
-		$.fillRectangle(options);
+	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
+		if (this.width === 0) return;
+		const options: RenderSubmission = { type: 'rect', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui', kind: 'fill' };
+		queue.submit.typed(options);
 	}
 }

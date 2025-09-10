@@ -3,7 +3,7 @@ import { SM as S } from "bmsx/soundmaster";
 import { Direction } from "bmsx/common";
 import { Controller } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
-import { view, model, controller, Constants as CS } from 'bmsx';
+import { $, new_area3d, new_vec3, model, controller, Constants as CS } from 'bmsx';
 import { Input } from "bmsx/input";
 import { SlotExists } from "bmsx/gamepersistor";
 import { AudioId, BitmapId } from "./resourceids";
@@ -175,9 +175,9 @@ export class MainMenu {
     }
 
     public Paint(): void {
-        view.drawImg(BitmapId.Title, 0, 0);
-        view.fillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, Msx1Colors[4]);
-        view.drawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, Msx1Colors[15]);
+        $.view.drawImg({ imgid: BitmapId.Title, pos: new_vec3(0, 0, 0) });
+        $.view.renderer.submit.fillRect({ area: new_area3d(MainMenu.boxX, MainMenu.boxY, 0, MainMenu.boxEndX, MainMenu.boxEndY, 0), color: Msx1Colors[4], layer: 'ui' });
+        $.view.renderer.submit.rect({ area: new_area3d(MainMenu.boxX, MainMenu.boxY, 0, MainMenu.boxEndX, MainMenu.boxEndY, 0), color: Msx1Colors[15], layer: 'ui' });
         switch (this.state) {
             case State.SubMenu:
             case State.SelectMain:
@@ -200,7 +200,7 @@ export class MainMenu {
                 }
                 break;
         }
-        view.drawImg(BitmapId.MenuCursor, this.cursorX, this.cursorY);
+        $.view.drawImg({ imgid: BitmapId.MenuCursor, pos: new_vec3(this.cursorX, this.cursorY, 0), layer: 'ui' });
 
     }
 

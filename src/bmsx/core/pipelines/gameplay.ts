@@ -17,5 +17,7 @@ export function gameplaySpec(): NodeSpec[] {
     { ref: 'physicsCollisionEvents' },
     { ref: 'physicsSyncAfterWorld', after: ['boundary', 'tileCollision'] },
     { ref: 'transform' },
+    // Submit renderables (PreRender group)
+    { ref: 'renderSubmit' },
   ];
 }

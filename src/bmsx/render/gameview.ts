@@ -1,5 +1,4 @@
-﻿import { id_to_space_symbol } from 'bmsx/core/space';
-import { BFont } from '../core/font';
+﻿import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
 import type { Mesh } from '../core/object/mesh';
@@ -22,18 +21,28 @@ import { LightingSystem } from './lighting/lightingsystem';
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
+export type RenderSubmitQueue = Pick<Pick<GameView, 'renderer'>['renderer'], 'submit'>;
+export type color = {
+	r: number;
+	g: number;
+	b: number;
+	a: number;
+};
 
-export interface FlipOptions {
+export type FlipOptions = {
 	flip_h: boolean;
 	flip_v: boolean;
 }
 
-export interface DrawRectOptions {
+export type RectRenderSubmission = {
+	kind: 'rect' | 'fill';
 	area: Area;
 	color: color;
+	// Optional sprite layer for sorting/grouping: 'world' (default) or 'ui'
+	layer?: 'world' | 'ui';
 }
 
-export interface DrawImgOptions {
+export type ImgRenderSubmission = {
 	imgid: string;
 	pos: Vector;
 	scale?: vec2;
@@ -46,21 +55,23 @@ export interface DrawImgOptions {
 	layer?: 'world' | 'ui';
 }
 
-export type color = {
-	r: number;
-	g: number;
-	b: number;
-	a: number;
+export type PolyRenderSubmission = {
+	kind: 'poly';
+	points: Polygon;
+	z: number;
+	color: color;
+	thickness?: number;
+	layer?: 'world' | 'ui';
 };
 
-export interface DrawMeshOptions {
+export type MeshRenderSubmission = {
 	mesh: Mesh;
 	matrix: Float32Array;
 	jointMatrices?: Float32Array[];
 	morphWeights?: number[];
 }
 
-export interface DrawParticleOptions {
+export type ParticleRenderSubmission = {
 	position: vec3arr;
 	size: number;
 	color: color;
@@ -70,7 +81,7 @@ export interface DrawParticleOptions {
 	ambientFactor?: number; // 0..1
 }
 
-export interface SkyboxImageIds {
+export type SkyboxImageIds = {
 	posX: string;
 	negX: string;
 	posY: string;
@@ -176,15 +187,41 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	// Renderer submission facade (no legacy queues)
 	public renderer: {
-		submit: { particle: (o: DrawParticleOptions) => void; sprite: (o: DrawImgOptions) => void; mesh: (o: DrawMeshOptions) => void };
-		swap: () => void;
+		submit: {
+			typed: (o: RenderSubmission) => void;
+			particle: (o: ParticleRenderSubmission) => void;
+			sprite: (o: ImgRenderSubmission) => void;
+			mesh: (o: MeshRenderSubmission) => void;
+			rect: (o: RectRenderSubmission) => void;
+			poly: (o: { points: Polygon; z: number; color: color; thickness?: number; layer?: 'world' | 'ui' }) => void;
+		};
 	} = {
 			submit: {
-				particle: (o: DrawParticleOptions) => { ParticlesPipeline.submitParticle({ ...o }); },
-				sprite: (o: DrawImgOptions) => { this.drawImg(o); },
-				mesh: (o: DrawMeshOptions) => { MeshPipeline.submitMesh({ ...o }); },
+				typed: (o: RenderSubmission) => {
+					switch (o?.type) { // <--- Optional chaining because opt can be null
+						case 'img':
+							this.renderer.submit.sprite(o);
+							break;
+						case 'mesh':
+							this.renderer.submit.mesh(o);
+							break;
+						case 'particle':
+							this.renderer.submit.particle(o);
+							break;
+						case 'rect':
+							this.renderer.submit.rect(o);
+							break;
+						case 'poly':
+							this.renderer.submit.poly(o);
+							break;
+					}
+				},
+				particle: (o: ParticleRenderSubmission) => { ParticlesPipeline.submitParticle({ ...o }); },
+				sprite: (o: ImgRenderSubmission) => { SpritesPipeline.drawImg(o); },
+				mesh: (o: MeshRenderSubmission) => { MeshPipeline.submitMesh({ ...o }); },
+				rect: (o: RectRenderSubmission) => { o.kind === 'fill' ? SpritesPipeline.fillRectangle(o) : SpritesPipeline.drawRectangle(o); },
+				poly: (o: { points: Polygon; z: number; color: color; thickness?: number; layer?: 'world' | 'ui' }) => { SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer); },
 			},
-			swap: () => { /* no-op: feature queues handle their own swapping */ },
 		};
 
 	// --- Ambient controls API (best-practice toggles) -------------------------
@@ -222,19 +259,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		renderGate.endCategory('init'); // End the init scope without a token, assuming the category is unique for init.
 	}
 
-    public drawbase(): void {
-        // Gate per-frame sorting using Space.depthSortDirty (set on add/remove/z changes)
-        const active = $.world.activeSpace;
-        if (active.depthSortDirty) active.sort_by_depth();
-        active.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
-        // Draw UI overlay space on top, unsorted or depth-sorted within its own space
-        const ui = $.world[id_to_space_symbol]['ui'];
-        if (ui) {
-            if (ui.depthSortDirty) ui.sort_by_depth();
-            ui.objects.forEach(o => { if (!o.disposeFlag && o.visible) o.paint?.(); });
-        }
-    }
-
 	/**
 	 * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.
 	 * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method
@@ -249,9 +273,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		try {
 			this._backend.beginFrame();
 			// $.emit('framebegin', this, token);
-			this.renderer.swap();
 			const frame = buildFrameData(this);
-			this.drawbase();
+			// Submit draw calls via PreRender ECS system (renderSubmit)
 			// No need to check for invalid or missing render graph, as we assume it's valid for the frame given the render gate that blocks rendering if no graph present
 			// $.emit('frameupdate', this, token);
 			this.renderGraph!.execute(frame);
@@ -565,25 +588,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		renderGate.end(token);
 	}
 
-	public drawImg(options: DrawImgOptions): void {
-		SpritesPipeline.drawImg(options);
-	}
-
-	public drawRectangle(options: DrawRectOptions): void { SpritesPipeline.drawRectangle(options); }
-
-	public fillRectangle(options: DrawRectOptions): void { SpritesPipeline.fillRectangle(options); }
-
-	/**
-	 * Draws the outline of a polygon by drawing lines between its vertices.
-	 * @param points Array of {x, y, z?} points (polygon vertices, in order)
-	 * @param color Color to use for the outline
-	 * @param thickness Line thickness in pixels (default 1)
-	 */
-	public drawPolygon(points: Polygon, z: number, color: color, thickness: number): void { SpritesPipeline.drawPolygon(points, z, color, thickness); }
-
-	public drawMesh(options: DrawMeshOptions): void { this.renderer.submit.mesh(options); }
-
-	public drawParticle(options: DrawParticleOptions): void { ParticlesPipeline.submitParticle({ position: options.position, size: options.size, color: options.color, texture: options.texture }); }
+	public drawParticle(options: ParticleRenderSubmission): void { ParticlesPipeline.submitParticle({ position: options.position, size: options.size, color: options.color, texture: options.texture }); }
 
 	public getPointLight(id: Identifier): PointLight | undefined { return MeshPipeline.getPointLight(id); }
 	public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(id, light); }
@@ -669,4 +674,5 @@ export function registerAtmosphereHotkeys(): void {
 			console.info('Fog color gradient toggled');
 		}
 	});
-}
+} export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission);
+

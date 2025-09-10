@@ -1,7 +1,7 @@
 import { Model } from "./gamemodel";
 import { Direction, Point } from "bmsx/common";
 import { TextWriter } from "./textwriter";
-import { view, model, WorldObject, controller } from 'bmsx';
+import { $, model, WorldObject, controller, new_area3d, new_vec3 } from 'bmsx';
 import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "bmsx/input";
 import { SM as S, SM } from "bmsx/soundmaster";
@@ -109,10 +109,10 @@ export class GameOver implements WorldObject {
     public paint(): void {
         TextWriter.drawText(60, 56, ["Je bent vernederd!"]);
         TextWriter.drawText(32, 80, ["Wat ga je doen, Ronan?"]);
-        view.drawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, Msx1Colors[15]);
+        $.view.renderer.submit.rect({ area: new_area3d(GameOver.boxX, GameOver.boxY, 0, GameOver.boxEndX, GameOver.boxEndY, 0), color: Msx1Colors[15], layer: 'ui' });
         for (let i = 0; i < GameOver.items.length; i++)
             TextWriter.drawText(GameOver.itemsX, GameOver.itemYs[i], [GameOver.items[i]]);
-        view.drawImg(BitmapId.MenuCursor, this.cursorX, this.cursorY);
+        $.view.drawImg({ imgid: BitmapId.MenuCursor, pos: new_vec3(this.cursorX, this.cursorY, 0), layer: 'ui' });
     }
 
     public GameMenuClosed(): void {

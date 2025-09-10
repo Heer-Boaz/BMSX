@@ -26,7 +26,7 @@ export class EnemyHealthComponent extends Component {
             this.flashTimer -= $.deltaTime / 1000;
             const wo = $.world.getWorldObject(this.parentid);
             if (wo && 'meshes' in wo) {
-                const meshObj = wo as unknown as { meshes: { material?: { color: color_arr; }; }[] };
+                const meshObj = wo as { meshes: { material?: { color: color_arr; }; }[] };
                 // Capture originals once at flash start
                 if (!this.originalColors) {
                     this.originalColors = meshObj.meshes.map(m => m.material ? [[...m.material.color]] : []);
@@ -48,7 +48,7 @@ export class EnemyHealthComponent extends Component {
         } else if (this.originalColors) {
             const wo = $.world.getWorldObject(this.parentid);
             if (wo && 'meshes' in wo) {
-                const meshObj = wo as unknown as { meshes: { material?: { color: color_arr; }; }[] };
+                const meshObj = wo as { meshes: { material?: { color: color_arr; }; }[] };
                 meshObj.meshes.forEach((m, i) => { const mat = m.material; const o = this.originalColors?.[i]?.[0]; if (mat && o) { mat.color[0] = o[0]; mat.color[1] = o[1]; mat.color[2] = o[2]; mat.color[3] = o[3]; } });
             }
             this.originalColors = undefined; // clear cache after restore

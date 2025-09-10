@@ -35,7 +35,7 @@ export class ObjectTracker {
         for (const { property } of properties) {
             // store the current value as the baseline
             const propName = property as string;
-            this.lastValues[target.id][propName] = (target as unknown as Record<string, any>)[propName];
+            this.lastValues[target.id][propName] = (target as Record<string, any>)[propName];
         }
     }
 

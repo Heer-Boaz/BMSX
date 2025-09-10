@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type RevivableObjectArgs, type vec2 } from 'bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type RevivableObjectArgs, type vec2, type RenderSubmission, type RenderSubmitQueue } from 'bmsx';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
 
@@ -80,7 +80,13 @@ export abstract class Fighter extends SpriteObject {
     }
 
     protected currentHitMarker: HitMarkerInfo;
-    public facing: 'left' | 'right';
+    private _facing: 'left' | 'right';
+    public get facing(): 'left' | 'right' { return this._facing; }
+    public set facing(v: 'left' | 'right') {
+        this._facing = v;
+        // Drive sprite horizontal flip from facing. Default art faces left; mirror when facing right.
+        this.flip_h = (v !== 'left');
+    }
     public hp: number;
     /**
      * The player index of the fighter.
@@ -150,11 +156,22 @@ export abstract class Fighter extends SpriteObject {
         $.emit('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
     }
 
-    override paint(): void {
-        this.flip_h = this.facing !== 'left';
-        super.paint();
-
-        this.paintHitMarker(this.currentHitMarker);
+    public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
+        // Base sprite
+        super.queueRenderSubmissions(queue);
+        // Overlays: hit marker sprite if present
+        if (this.currentHitMarker) {
+            let hitMarkerImgId: string | undefined;
+            switch (this.currentHitMarker.type) {
+                case 'player_hit': hitMarkerImgId = BitmapId.au_p1; break;
+                case 'enemy_hit': hitMarkerImgId = BitmapId.au_p2; break;
+                case 'poef': hitMarkerImgId = BitmapId.poef; break;
+            }
+            if (hitMarkerImgId) {
+                const imgSub: RenderSubmission = { type: 'img', imgid: hitMarkerImgId, pos: this.currentHitMarker.pos };
+                queue.submit.typed(imgSub);
+            }
+        }
     }
 
     override onspawn(spawningPos?: vec3): void {
@@ -182,10 +199,7 @@ export abstract class Fighter extends SpriteObject {
                     break;
             }
 
-            $.view.drawImg({
-                imgid: hitMarkerImgId,
-                pos: hitMarker.pos
-            });
+            $.view.renderer.submit.sprite({ imgid: hitMarkerImgId, pos: hitMarker.pos });
         }
     }
 

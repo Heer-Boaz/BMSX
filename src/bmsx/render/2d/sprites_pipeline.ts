@@ -32,7 +32,7 @@ import {
     ZCOORD_MAX,
     ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
-import { color, DrawImgOptions, DrawRectOptions, GameView } from '../gameview';
+import { color, ImgRenderSubmission, RectRenderSubmission, GameView } from '../gameview';
 import { bvec } from './vertexutils2d';
 
 export let spriteShaderProgram: WebGLProgram;
@@ -62,7 +62,7 @@ const spriteShaderData = {
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
 // Feature-local, double-buffered submission queue (UE-like feature queue)
-type SpriteSubmission = { options: DrawImgOptions; imgmeta: ImgMeta };
+type SpriteSubmission = { options: ImgRenderSubmission; imgmeta: ImgMeta };
 const spriteQueue = new FeatureQueue<SpriteSubmission>(256);
 
 function getRenderContext() {
@@ -166,7 +166,7 @@ export function renderSpriteBatch(
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
-    backend.bindVertexArray(spriteVAO as unknown as WebGLVertexArrayObject);
+    backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
 
     // Sort by layer (world/ui), then z, then ambient state (to reduce uniform flips without breaking painter order)
     const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100; // quantize to 0.01 steps
@@ -192,7 +192,7 @@ export function renderSpriteBatch(
         updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
         gl.uniform1i(spriteAmbientEnabledLocation, currentAmbientEnabled ?? 0);
         gl.uniform1f(spriteAmbientFactorLocation, currentAmbientFactor);
-        const passStub = { fbo, desc: { label: 'sprites' } } as unknown as Parameters<GPUBackend['draw']>[0];
+        const passStub = { fbo, desc: { label: 'sprites' } } as Parameters<GPUBackend['draw']>[0];
         backend.draw(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
         i = 0;
     };
@@ -221,7 +221,7 @@ export function renderSpriteBatch(
     // FeatureQueue back buffer already cleared on swap
 }
 
-export function drawImg(options: DrawImgOptions): void {
+export function drawImg(options: ImgRenderSubmission): void {
     const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
     // Deep-copy nested objects to freeze values at submission time
     spriteQueue.submit({
@@ -289,31 +289,31 @@ export function correctAreaStartEnd(x: number, y: number, ex: number, ey: number
     return [x, y, ex, ey];
 }
 
-export function drawRectangle(options: DrawRectOptions): void {
+export function drawRectangle(options: RectRenderSubmission): void {
     let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, 1), colorize: c });
-    drawImg({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(ex - x, 1), colorize: c });
-    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c });
-    drawImg({ pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c });
+    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, 1), colorize: c, layer: options.layer });
+    drawImg({ pos: new_vec3(x, ey, z), imgid, scale: new_vec2(ex - x, 1), colorize: c, layer: options.layer });
+    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c, layer: options.layer });
+    drawImg({ pos: new_vec3(ex, y, z), imgid, scale: new_vec2(1, ey - y), colorize: c, layer: options.layer });
 }
 
-export function fillRectangle(options: DrawRectOptions): void {
+export function fillRectangle(options: RectRenderSubmission): void {
     let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; const c = options.color; const imgid = 'whitepixel';[x, y, ex, ey] = correctAreaStartEnd(x, y, ex, ey);
-    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
+    drawImg({ pos: new_vec3(x, y, z), imgid, scale: new_vec2(ex - x, ey - y), colorize: c, layer: options.layer });
 }
 
-export function drawPolygon(coords: Polygon, z: number, color: color, thickness: number = 1): void {
+export function drawPolygon(coords: Polygon, z: number, color: color, thickness: number = 1, layer?: 'world' | 'ui'): void {
     if (!coords || coords.length < 4) return; const imgid = 'whitepixel';
     for (let i = 0; i < coords.length; i += 2) {
         let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]); const next = (i + 2) % coords.length; let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
         const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1; let err = dx - dy;
         if (dx > dy) {
             while (true) {
-                drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); break; } if (e2 < dx) { err += dx; y0 += sy; }
+                drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); break; } if (e2 < dx) { err += dx; y0 += sy; }
             }
         } else {
             while (true) {
-                drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color }); break; } if (e2 < dx) { err += dx; y0 += sy; }
+                drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (x0 === x1 && y0 === y1) { drawImg({ pos: new_vec3(x0, y0, z), imgid, scale: new_vec2(thickness, thickness), colorize: color, layer }); break; } if (e2 < dx) { err += dx; y0 += sy; }
             }
         }
     }
@@ -364,11 +364,11 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
             const be = backend as WebGLBackend;
             registry.setState('sprites', spriteState);
             // Update per-frame defaults that depend on logical viewport size
-            setupDefaultUniformValues(be, 1.0, [baseWidth, baseHeight] as unknown as vec2arr);
+            setupDefaultUniformValues(be, 1.0, [baseWidth, baseHeight]);
             // Ensure atlases are bound to expected texture units once per frame
             // TODO: BAD WEBGL-SPECIFIC STUFF!!!!!!
-            if (spriteState.atlasTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS); be.bindTexture2D(spriteState.atlasTex as unknown as WebGLTexture); }
-            if (spriteState.atlasDynamicTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS_DYNAMIC); be.bindTexture2D(spriteState.atlasDynamicTex as unknown as WebGLTexture); }
+            if (spriteState.atlasTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS); be.bindTexture2D(spriteState.atlasTex as WebGLTexture); }
+            if (spriteState.atlasDynamicTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS_DYNAMIC); be.bindTexture2D(spriteState.atlasDynamicTex as WebGLTexture); }
             // Validate binding layout vs resources
             registry.validatePassResources('sprites', backend);
         },

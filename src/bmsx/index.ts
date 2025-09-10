@@ -72,6 +72,7 @@ export * from './render/graph/rendergraph';
 export * from './ecs/pipeline';
 export * from './ecs/builtin_pipeline';
 export * from './ecs/extensions';
+export * from './ecs/prerender_submit_system';
 export * from './ecs/debug';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';

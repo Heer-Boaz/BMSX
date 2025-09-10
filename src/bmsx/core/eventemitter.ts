@@ -143,7 +143,7 @@ export class EventEmitter implements RegisterablePersistent {
 		if (carrier[EventEmitter._INIT_DONE]) return;
 
 		const shouldProcess = (_event_name: string, _emitter: Identifiable, _payload?: EventPayload): boolean => {
-			const obj = subscriber as unknown as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier; parentid?: Identifier };
+			const obj = subscriber as { eventhandling_enabled?: boolean; active?: boolean; enabled?: boolean; id?: Identifier; parentid?: Identifier };
 			if (obj.eventhandling_enabled === false) return false;
 			if (obj.active === false) return false;
 			if (obj.enabled === false) return false;
@@ -163,7 +163,7 @@ export class EventEmitter implements RegisterablePersistent {
 			const key = `${subscription.scope}|${subscription.eventName}|${subscription.handlerName}`;
 			let handler = handlerMap.get(key);
 			if (!handler) {
-				const method = (subscriber as unknown as Record<string, unknown>)[subscription.handlerName];
+				const method = (subscriber as Record<string, unknown>)[subscription.handlerName];
 				if (typeof method !== 'function') throw new Error(`Event handler '${subscription.handlerName}' is not a function on ${subscriber.constructor?.name ?? 'object'}`);
 				const bound = (method as EventHandler).bind(subscriber);
 				// Compose default gating with optional caller-provided wrapper

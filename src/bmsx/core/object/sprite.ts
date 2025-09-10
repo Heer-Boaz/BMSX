@@ -1,8 +1,8 @@
 import { DEFAULT_VERTEX_COLOR } from "../../render/backend/webgl/webgl.constants";
-import { color, DrawImgOptions } from "../../render/gameview";
+import { color, ImgRenderSubmission, type RenderSubmitQueue } from "../../render/gameview";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
 import { insavegame, type RevivableObjectArgs } from "../../serializer/gameserializer";
-import { $, $rompack } from '../game';
+import { $rompack } from '../game';
 import { WorldObject } from "./worldobject";
 import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from '../../utils/utils';
 
@@ -58,6 +58,7 @@ export abstract class SpriteObject extends WorldObject {
     private updateHitareas() {
         if (!this._hitarea) return; // Only update the hitarea if it exists
         const imgmeta = $rompack['img'][this.sprite.imgid]?.['imgmeta'];
+        if (!imgmeta) return; // No image metadata available (e.g. for image 'none'), cannot update hitarea
         const boundingbox = imgmeta['boundingbox']; // Get the bounding box of the image
         if (boundingbox) { // Only update the hitarea if the bounding box exists
             set_inplace_area(this._hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)
@@ -103,8 +104,12 @@ export abstract class SpriteObject extends WorldObject {
         this.sprite ??= new Sprite();
     }
 
-    override paint() {
-        this.sprite.paint_offset.call(this.sprite, this);
+    /**
+     * Enumerate draw options for this sprite without issuing draw calls.
+     * Submits a single DrawImgOptions describing the current sprite.
+     */
+    override queueRenderSubmissions(queue: RenderSubmitQueue): void {
+        queue.submit.sprite(this.sprite.paint_offset(this));
     }
 }
 
@@ -117,7 +122,7 @@ export class Sprite {
     public x: number;
     public y: number;
     public z: number;
-    public options: DrawImgOptions;
+    public options: { type: 'img' } & ImgRenderSubmission;
     public get sx(): number {
         return this.options.scale.x;
     }
@@ -159,6 +164,7 @@ export class Sprite {
         if (opts?.constructReason === 'revive') return;
 
         this.options ??= {
+            type: 'img',
             imgid: 'none',
             pos: new_vec3(0, 0, 0),
             flip: { flip_h: false, flip_v: false },
@@ -172,6 +178,6 @@ export class Sprite {
 
     public paint_offset(offset: vec3) {
         set_inplace_vec3(this.options.pos as vec3, translate_vec3(this, offset));
-        $.view.drawImg(this.options);
+        return this.options;
     }
 }

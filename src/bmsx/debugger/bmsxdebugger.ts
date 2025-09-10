@@ -199,16 +199,16 @@ export class HitBoxVisualizer extends Component {
     }
 
     override preprocessingUpdate(): void {
-        const parent = this.parent as unknown as SpriteObject;
+        const parent = this.parent as SpriteObject;
         // Draw polygons if available on the WorldObject
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
-                $.view.drawPolygon(poly, parent.z + 1, { ...Msx1Colors[2], a: 0.5 }, 1);
+                $.view.renderer.submit.poly({ points: poly, z: parent.z + 1, color: { ...Msx1Colors[2], a: 0.5 }, thickness: 1, layer: 'ui' });
             }
         }
         if (parent.hitbox) {
-            $.view.drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 } });
+            $.view.renderer.submit.rect({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'rect' });
         }
     }
 }
@@ -250,13 +250,13 @@ export class ObjectHighlighterComponent extends Component {
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
-                $.view.drawPolygon(poly, parent.z, { ...Msx1Colors[6], a: 0.5 }, 1);
+                $.view.renderer.submit.poly({ points: poly, z: parent.z, color: { ...Msx1Colors[6], a: 0.5 }, thickness: 1, layer: 'ui' });
             }
         }
 
         // Draw a transparent filled rectangle around the WorldObject
         if (parent.hitbox) {
-            $.view.fillRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 } });
+            $.view.renderer.submit.rect({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'fill' });
         }
     }
 }

@@ -21,9 +21,7 @@ export class Sinterklaas extends Fighter {
         this._aied = opts?.aied ?? false;
     }
 
-    override paint(): void {
-        super.paint();
-    }
+    // Base rendering handled by Fighter.enumerateDrawOptions
 
     override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);

@@ -2,7 +2,7 @@ import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions as GO } from '../core/gameoptions';
 import { vec2, vec3 } from "../rompack/rompack";
-import { color, type DrawRectOptions } from './gameview';
+import { color, type RectRenderSubmission } from './gameview';
 
 /**
  * A utility class for drawing text on the screen.
@@ -39,11 +39,11 @@ export class TextWriter {
                 stepY = font.char_height(letter) > stepY ? font.char_height(letter) : stepY; // Ensure stepY is the maximum height of the characters
                 if (backgroundColor) {
                     // Fill rectangle behind the character
-                    const rectoptions: DrawRectOptions = { area: { start: { x: pos.x, y: pos.y }, end: { x: pos.x + stepX, y: pos.y + stepY } }, color: backgroundColor };
-                    $.view.fillRectangle(rectoptions);
+                    const rectoptions: RectRenderSubmission = { area: { start: { x: pos.x, y: pos.y }, end: { x: pos.x + stepX, y: pos.y + stepY } }, color: backgroundColor, kind: 'fill' };
+                    $.view.renderer.submit.rect(rectoptions);
                 }
                 // Draw the character image
-                $.view.drawImg({ imgid: font.char_to_img(text[i]), pos, colorize: color });
+                $.view.renderer.submit.sprite({ imgid: font.char_to_img(text[i]), pos, colorize: color });
                 // Move the position to the right for the next character
                 pos.x += stepX;
             }

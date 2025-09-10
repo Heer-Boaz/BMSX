@@ -1,7 +1,7 @@
 import { Animation } from "bmsx/animation"
 import { Point } from "bmsx/common";
 import { BitmapId } from "./resourceids";
-import { view, WorldObject } from 'bmsx';
+import { $, WorldObject, new_vec3 } from 'bmsx';
 
 export const enum State {
 	WaitForIt,
@@ -56,7 +56,7 @@ export class Title implements WorldObject {
 	public run(): void {
 	}
 
-	public paint(): void {
-		view.drawImg(BitmapId.Title, 0, 0);
-	}
+    public paint(): void {
+        $.view.drawImg({ imgid: BitmapId.Title, pos: new_vec3(0, 0, 0) });
+    }
 }
