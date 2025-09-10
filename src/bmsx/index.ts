@@ -76,7 +76,7 @@ export * from './ecs/debug';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';
 export * from './render/textwriter';
-export * from './render/view';
+export * from './render/gameview';
 // Ensure pipeline helpers & backends for higher-level pipelines
 export * from './render/backend/renderpass_builder';
 export * from './render/backend/webgpu/webgpu_backend';

@@ -1,5 +1,5 @@
 import { ATLAS_ID_ATTRIBUTE_SIZE, ATLAS_ID_SIZE, COLOR_OVERRIDE_ATTRIBUTE_SIZE, COLOR_OVERRIDE_SIZE, TEXTURECOORDS_SIZE, VERTEXCOORDS_SIZE, ZCOORDS_SIZE, ZCOORD_ATTRIBUTE_SIZE } from '../backend/webgl/webgl.constants';
-import type { color } from '../view';
+import type { color } from '../gameview';
 
 
 export const bvec = {

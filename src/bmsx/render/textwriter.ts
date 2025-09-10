@@ -2,7 +2,7 @@ import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions as GO } from '../core/gameoptions';
 import { vec2, vec3 } from "../rompack/rompack";
-import { color, type DrawRectOptions } from './view';
+import { color, type DrawRectOptions } from './gameview';
 
 /**
  * A utility class for drawing text on the screen.

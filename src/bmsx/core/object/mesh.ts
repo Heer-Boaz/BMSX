@@ -4,7 +4,7 @@ import { M4, Mat4, Q, quat } from '../../render/3d/math3d';
 import { ShadowMap } from '../../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../../render/backend/webgl/webgl.constants';
 import type { TextureKey } from '../../render/texturemanager';
-import type { color, DrawMeshOptions } from '../../render/view';
+import type { color, DrawMeshOptions } from '../../render/gameview';
 import type { asset_id, color_arr, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr, vec4arr } from '../../rompack/rompack';
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { $ } from '../game';

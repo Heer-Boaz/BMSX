@@ -9,7 +9,7 @@ import { RenderPassLibrary, SkyboxPipelineState } from '../backend/renderpasslib
 import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
-import { GameView, SkyboxImageIds } from '../view';
+import { GameView, SkyboxImageIds } from '../gameview';
 
 function getRenderContext() {
     return $.view;

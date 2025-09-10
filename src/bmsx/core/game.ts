@@ -10,7 +10,7 @@ import { createBackendForCanvasAsync } from "../render/backend/backend_selector"
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
-import { color, DrawImgOptions, DrawRectOptions, GameView, renderGate } from "../render/view";
+import { color, DrawImgOptions, DrawRectOptions, GameView, renderGate } from "../render/gameview";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";

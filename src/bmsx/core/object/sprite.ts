@@ -1,5 +1,5 @@
 import { DEFAULT_VERTEX_COLOR } from "../../render/backend/webgl/webgl.constants";
-import { color, DrawImgOptions } from "../../render/view";
+import { color, DrawImgOptions } from "../../render/gameview";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
 import { insavegame, type RevivableObjectArgs } from "../../serializer/gameserializer";
 import { $, $rompack } from '../game';

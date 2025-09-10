@@ -1,4 +1,4 @@
-import { color } from "../render/view";
+import { color } from "../render/gameview";
 import { vec2 } from "../rompack/rompack";
 
 export const TileSize: number = 16;

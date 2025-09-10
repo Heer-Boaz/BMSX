@@ -8,7 +8,7 @@ import { PassEncoder } from '../backend/pipeline_interfaces';
 import { ParticlePipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { color } from '../view';
+import { color } from '../gameview';
 import { M4 } from './math3d';
 
 function getRenderContext() {

@@ -15,7 +15,7 @@ import { type ModulationParams } from "../audio/soundmaster";
 import { Space } from '../core/space';
 import { $ } from '../core/game';
 import { Registry } from "../core/registry";
-import { GameView, SkyboxImageIds } from '../render/view';
+import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable } from "bmsx/rompack/rompack";
 import { normalizeDecoratedClassName } from "bmsx/utils/decorators";

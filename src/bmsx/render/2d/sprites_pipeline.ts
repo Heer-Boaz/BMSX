@@ -32,7 +32,7 @@ import {
     ZCOORD_MAX,
     ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
-import { color, DrawImgOptions, DrawRectOptions, GameView } from '../view';
+import { color, DrawImgOptions, DrawRectOptions, GameView } from '../gameview';
 import { bvec } from './vertexutils2d';
 
 export let spriteShaderProgram: WebGLProgram;

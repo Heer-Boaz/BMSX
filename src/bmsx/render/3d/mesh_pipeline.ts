@@ -14,7 +14,7 @@ import { MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpass
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl/webgl.constants';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { DrawMeshOptions } from '../view';
+import { DrawMeshOptions } from '../gameview';
 import type { DirectionalLight, PointLight } from './light';
 import { M4 } from './math3d';
 
