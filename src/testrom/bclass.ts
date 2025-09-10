@@ -1,4 +1,4 @@
-import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, vec3 } from 'bmsx';
+import { $, assign_bt, assign_fsm, attach_components, BehaviorTreeDefinition, build_bt, build_fsm, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, vec3, type RevivableObjectArgs } from 'bmsx';
 import { Action } from './bootloader';
 import { mytree_builder } from './mytree_builder';
 import { BitmapId } from './resourceids';
@@ -131,8 +131,8 @@ export class bclass extends SpriteObject {
         // console.log('testmeuk');
     }
 
-    constructor() {
-        super('The B');
+    constructor(_opts?: RevivableObjectArgs) {
+        super({ id: 'The B' });
         this.imgid = BitmapId.b2;
         this._hitarea = new_area(0, 0, 14, 18);
         this.visible = false;

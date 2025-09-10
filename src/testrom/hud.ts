@@ -1,4 +1,4 @@
-import { $, $world, WorldObject, Msx1Colors, TextWriter } from 'bmsx';
+import { $, WorldObject, Msx1Colors, TextWriter } from 'bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
 export class RailShooterHUD extends WorldObject {
@@ -16,7 +16,7 @@ export class RailShooterHUD extends WorldObject {
     override paint(): void {
         // Score right aligned top-right
         const s = `SCORE ${this.score}`;
-        const gw = $world.gamewidth;
+        const gw = $.world.gamewidth;
         const x = gw - s.length * 8 - 4;
         TextWriter.drawText(x, 4, s);
         if (this.combo > 1 || this.comboFade > 0) {
@@ -25,7 +25,7 @@ export class RailShooterHUD extends WorldObject {
             TextWriter.drawText(4, 4, `x${this.combo}`, undefined, undefined, Msx1Colors[alpha > 0.5 ? 15 : 11]);
         }
         // Reticle (screen center + offset from aiming)
-        const gh = $world.gameheight;
+        const gh = $.world.gameheight;
         const cx = Math.floor(gw / 2); const cy = Math.floor(gh / 2);
         const ox = (this.reticle?.ox ?? 0) * 110; // scale normalized offset to pixels
         const oy = -(this.reticle?.oy ?? 0) * 110; // Y inverted for screen space
@@ -35,7 +35,7 @@ export class RailShooterHUD extends WorldObject {
         // Simple crosshair
         TextWriter.drawText(rx - 4, ry, '+', undefined, undefined, color);
         if (this.bossId) {
-            const boss = $world.getWorldObject(this.bossId);
+            const boss = $.world.getWorldObject(this.bossId);
             if (boss) {
                 const bh = boss.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent | undefined;
                 if (bh && !bh.dead) {

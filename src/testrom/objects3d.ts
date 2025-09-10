@@ -1,13 +1,13 @@
-import { $, $world, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from 'bmsx';
+import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr } from 'bmsx';
 import { submitParticle } from 'bmsx/render/3d/particles_pipeline';
-import { onload } from 'bmsx/serializer/gameserializer';
+import { onload, type RevivableObjectArgs } from 'bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
 
 @insavegame
 @attach_components(TransformComponent)
 export class Cube3D extends MeshObject {
-    constructor() {
-        super('cube');
+    constructor(opts?: RevivableObjectArgs) {
+        super({ id: 'cube', ...opts });
         this.model_id = ModelId.cube;
     }
 
@@ -19,15 +19,15 @@ export class Cube3D extends MeshObject {
 @insavegame
 @attach_components(TransformComponent)
 export class SmallCube3D extends MeshObject {
-    constructor(overrideTextureIndex?: number) {
-        super(`smallCube${overrideTextureIndex ?? ''}`);
+    constructor(opts?: RevivableObjectArgs & { overrideTextureIndex?: number }) {
+        super({ id: `smallCube${opts?.overrideTextureIndex ?? ''}`, ...opts });
         this.model_id = ModelId.cube;
-        if (overrideTextureIndex !== undefined) {
+        if (opts?.overrideTextureIndex !== undefined) {
             const mesh = this.meshes[0];
             if (mesh?.material) {
-                mesh.material.textures.albedo = overrideTextureIndex;
+                mesh.material.textures.albedo = opts.overrideTextureIndex;
                 $.texmanager.fetchModelTextures(this.meshModel).then(tex => {
-                    mesh.material.gpuTextures.albedo = tex[overrideTextureIndex];
+                    mesh.material.gpuTextures.albedo = tex[opts.overrideTextureIndex];
                 });
             }
         }
@@ -42,8 +42,8 @@ export class SmallCube3D extends MeshObject {
 @insavegame
 @attach_components(TransformComponent)
 export class AnimatedMorphSphere extends MeshObject {
-    constructor() {
-        super('animatedSphere');
+    constructor(opts?: RevivableObjectArgs) {
+        super({ id: 'animatedSphere', ...opts });
         this.model_id = ModelId.animatedmorphsphere;
     }
 
@@ -67,9 +67,9 @@ export class SparkEmitter extends WorldObject {
     static readonly SPARK_LIFETIME = 100;
     private parent_id: Identifier;
 
-    constructor(parent_id: Identifier) {
-        super();
-        this.parent_id = parent_id;
+    constructor(opts: RevivableObjectArgs & { parent_id: Identifier }) {
+        super(opts);
+        this.parent_id = opts.parent_id;
         // Request spark texture from Texture Manager
         this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbinYFlipped, undefined);
     }
@@ -112,20 +112,20 @@ export class SparkEmitter extends WorldObject {
 // Append physics test objects
 @insavegame
 export class PhysTestFloor extends WorldObject {
-    constructor(public width = 50, public depth = 50) { super('physFloor'); }
+    constructor(public width = 50, public depth = 50) { super({ id: 'physFloor' }); }
 }
 
 @insavegame
 export class PhysTestWall extends WorldObject {
     // Provide defaults so Reviver (which calls ctor with no args) won't crash.
-    constructor(public nameId: string = 'physTestWall', public wallSize: vec3arr = [1, 1, 1]) { super(nameId); }
+    constructor(public nameId: string = 'physTestWall', public wallSize: vec3arr = [1, 1, 1]) { super({ id: nameId }); }
 }
 
 @insavegame
 export class PhysDynamicCube extends MeshObject {
     private static _counter = 0;
     constructor(public halfExtent = 0.5) {
-        super(`physDynCube_${PhysDynamicCube._counter++}`);
+        super({ id: `physDynCube_${PhysDynamicCube._counter++}` });
         this.model_id = ModelId.cube;
         // Scale mesh so that its rendered half-extents match physics halfExtents (base cube assumed unit size +/-0.5)
         this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2];
@@ -136,7 +136,7 @@ export class PhysDynamicCube extends MeshObject {
 export class PhysDynamicSphere extends MeshObject {
     private static _counter = 0;
     constructor(public radius = 0.5) {
-        super(`physDynSphere_${PhysDynamicSphere._counter++}`);
+        super({ id: `physDynSphere_${PhysDynamicSphere._counter++}` });
         this.model_id = ModelId.animatedmorphsphere;
         // Scale mesh so rendered sphere radius matches physics radius
         this.scale = [radius * 2, radius * 2, radius * 2];
@@ -145,7 +145,7 @@ export class PhysDynamicSphere extends MeshObject {
 
 @insavegame
 export class PhysTriggerZone extends WorldObject {
-    constructor(public triggerSize: vec3arr = [1, 1, 1]) { super('physTrigger'); }
+    constructor(public triggerSize: vec3arr = [1, 1, 1]) { super({ id: 'physTrigger' }); }
 }
 
 // Simple static box (visual + physics via PhysicsComponent attached externally)
@@ -166,7 +166,7 @@ export class PhysStaticBox extends MeshObject {
         public metallicFactor?: number,
         public roughnessFactor?: number,
     ) {
-        super(nameId);
+        super({ id: nameId });
         this.model_id = ModelId.cube;
         this.applyHalfExtentsToScale();
         // Direct overrides via engine API (persistable)
@@ -197,7 +197,7 @@ export class PhysStaticBox extends MeshObject {
 export class BuildingMesh extends MeshObject {
     private static _counter = 0;
     constructor(public halfExtents: vec3arr = [0.5, 0.5, 0.5]) {
-        super(`building_${BuildingMesh._counter++}`);
+        super({ id: `building_${BuildingMesh._counter++}` });
         // model id added to resourceids.ts (ModelId.building)
         // Use direct assignment like other mesh objects; fallback safety retained
         this.model_id = ModelId.building ?? ModelId.cube;
@@ -341,7 +341,7 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
                     const footprintScaleZ = gSize * (fMin + rng() * fRange);
                     const he: [number, number, number] = [footprintScaleX, height * 0.5, footprintScaleZ];
                     const box = new BuildingMesh([he[0], he[1], he[2]]);
-                    $world.spawn(box, V3.of(px, s.p.y + he[1], pz));
+                    $.world.spawn(box, V3.of(px, s.p.y + he[1], pz));
                     // Color selection
                     if (palette && palette.length) {
                         const col = palette[Math.floor(rng() * palette.length)];
@@ -365,7 +365,7 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
             const h = (8 + rng() * 12) * worldScale;
             const he: [number, number, number] = [(2 + rng() * 2) * worldScale, h * 0.5, (2 + rng() * 2) * worldScale];
             const box = new BuildingMesh([he[0], he[1], he[2]]);
-            $world.spawn(box, V3.of(first.p.x + (i - 3) * 4, first.p.y + he[1], first.p.z - 6 - rng() * 6));
+            $.world.spawn(box, V3.of(first.p.x + (i - 3) * 4, first.p.y + he[1], first.p.z - 6 - rng() * 6));
         }
     }
     if (debugLog) console.log('[CityGen] spawned buildings:', totalSpawned, 'segments:', segs.length, 'seed:', seed, 'skippedDuplicates:', skippedDuplicates, 'cells:', occupied.size, 'worldScale:', worldScale);

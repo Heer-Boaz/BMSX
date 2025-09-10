@@ -1,4 +1,4 @@
-import { $, $world, build_fsm, CameraObject, CameraProjectionType, WorldObject, insavegame, onload, StateMachineBlueprint } from 'bmsx';
+import { $, build_fsm, CameraObject, CameraProjectionType, WorldObject, insavegame, onload, StateMachineBlueprint, type RevivableObjectArgs } from 'bmsx';
 import { Action } from './bootloader';
 
 @insavegame
@@ -78,9 +78,9 @@ export class CameraController extends WorldObject {
 		document.exitPointerLock();
 	}
 
-	constructor(...cams: CameraObject[]) {
-		super('camctrl');
-		this.cameras = cams;
+	constructor(opts: RevivableObjectArgs & { cams: CameraObject[] }) {
+		super({ ...opts, id: 'camctrl' });
+		this.cameras = opts.cams;
 		this.setupMouseControls();
 	}
 
@@ -144,7 +144,7 @@ export class CameraController extends WorldObject {
 
 		if (input.getActionState('save').justpressed) {
 			this.idx = (this.idx + 1) % this.cameras.length;
-			$world.activeCameraId = this.cameras[this.idx].id;
+			$.world.activeCameraId = this.cameras[this.idx].id;
 			console.log(`Switched to camera ${this.cameras[this.idx].id}`);
 		}
 
@@ -153,7 +153,7 @@ export class CameraController extends WorldObject {
 		// 	if (extra) extra.active = !extra.active;
 		// }
 
-		const camObj = $world.activeCameraObject;
+		const camObj = $.world.activeCameraObject;
 		if (!camObj) {
 			console.error('No active camera object found');
 			return;
