@@ -1,4 +1,4 @@
-import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, type RenderSubmitQueue } from 'bmsx';
+import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, type RenderSubmitQueue, build_fsm, type StateMachineBlueprint } from 'bmsx';
 import { onload, type RevivableObjectArgs } from 'bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
 
@@ -8,10 +8,6 @@ export class Cube3D extends MeshObject {
     constructor(opts?: RevivableObjectArgs) {
         super({ id: 'cube', ...opts });
         this.model_id = ModelId.cube;
-    }
-
-    override run(): void {
-        super.run();
     }
 }
 
@@ -32,10 +28,6 @@ export class SmallCube3D extends MeshObject {
         }
         this.scale = [0.5, 0.5, 0.5];
     }
-
-    override run(): void {
-        super.run();
-    }
 }
 
 @insavegame
@@ -44,10 +36,6 @@ export class AnimatedMorphSphere extends MeshObject {
     constructor(opts?: RevivableObjectArgs) {
         super({ id: 'animatedSphere', ...opts });
         this.model_id = ModelId.animatedmorphsphere;
-    }
-
-    override run(): void {
-        super.run();
     }
 }
 
@@ -66,6 +54,17 @@ export class SparkEmitter extends WorldObject {
     static readonly SPARK_LIFETIME = 100;
     private parent_id: Identifier;
 
+    @build_fsm()
+    public static blueprint(): StateMachineBlueprint {
+        return {
+            states: {
+                _default: {
+                    tick(this: SparkEmitter) { this.run(); },
+                },
+            },
+        };
+    }
+
     constructor(opts: RevivableObjectArgs & { parent_id: Identifier }) {
         super(opts);
         this.parent_id = opts.parent_id;
@@ -73,7 +72,7 @@ export class SparkEmitter extends WorldObject {
         this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbinYFlipped, undefined);
     }
 
-    public override run(): void {
+    public run(): void {
         const origin = $.getWorldObject(this.parent_id);
         for (let i = 0; i < 3; i++) {
             const vel: vec3arr = [

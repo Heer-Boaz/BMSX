@@ -1,4 +1,4 @@
-import { $, WorldObject, Msx1Colors, Pool, PooledWorldObject, TextWriter } from 'bmsx';
+import { $, WorldObject, Msx1Colors, Pool, PooledWorldObject, TextWriter, build_fsm, type StateMachineBlueprint } from 'bmsx';
 
 interface P { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; max: number; r: number; g: number; b: number; a: number; size: number; grow: number; }
 
@@ -6,6 +6,17 @@ interface P { x: number; y: number; z: number; vx: number; vy: number; vz: numbe
 // Nu via generieke PooledWorldObject (in core) i.p.v. lokale abstracte klasse.
 
 export class MuzzleFlash extends PooledWorldObject {
+    @build_fsm()
+    public static blueprint(): StateMachineBlueprint {
+        return {
+            states: {
+                _default: {
+                    tick(this: MuzzleFlash) { this.run(); },
+                },
+            },
+        };
+    }
+
     private p: P = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, max: 0.12, r: 1, g: 0.9, b: 0.4, a: 1, size: 1.2, grow: 4 };
     private static _pool = Pool.createLazy<MuzzleFlash>({
         onCreate: () => new MuzzleFlash(),
@@ -18,11 +29,22 @@ export class MuzzleFlash extends PooledWorldObject {
     protected reset(pos: [number, number, number]): void {
         this.p.x = pos[0]; this.p.y = pos[1]; this.p.z = pos[2]; this.p.life = 0; this.p.max = 0.12; this.p.size = 1.2; this.p.a = 1;
     }
-    override run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; this.p.life += dt; if (this.p.life >= this.p.max) { this.active = false; MuzzleFlash.pool.release(this); return; } this.p.size += this.p.grow * dt; this.p.a = 1 - this.p.life / this.p.max; }
+    run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; this.p.life += dt; if (this.p.life >= this.p.max) { this.active = false; MuzzleFlash.pool.release(this); return; } this.p.size += this.p.grow * dt; this.p.a = 1 - this.p.life / this.p.max; }
     override queueRenderSubmissions(): void { if (!this.active) return; $.view.drawParticle({ position: [this.p.x, this.p.y, this.p.z], size: this.p.size, color: { r: this.p.r, g: this.p.g, b: this.p.b, a: this.p.a } }); }
 }
 
 export class ImpactBurst extends PooledWorldObject {
+    @build_fsm()
+    public static blueprint(): StateMachineBlueprint {
+        return {
+            states: {
+                _default: {
+                    tick(this: ImpactBurst) { this.run(); },
+                },
+            },
+        };
+    }
+
     private ps: P[] = [];
     private static _pool = Pool.createLazy<ImpactBurst>({
         onCreate: () => new ImpactBurst(),
@@ -33,11 +55,22 @@ export class ImpactBurst extends PooledWorldObject {
     private static get pool(): Pool<ImpactBurst> { return this._pool.get(); }
     static create(pos: [number, number, number]): ImpactBurst { const inst = this.pool.acquire() ?? new ImpactBurst(); inst.reset(pos); return inst; }
     protected reset(pos: [number, number, number]): void { this.ps.length = 0; for (let i = 0; i < 10; i++) { const th = Math.random() * Math.PI * 2; const ph = Math.random() * Math.PI; const sp = 3 + Math.random() * 4; this.ps.push({ x: pos[0], y: pos[1], z: pos[2], vx: Math.cos(th) * Math.sin(ph) * sp, vy: Math.cos(ph) * sp * 0.3, vz: Math.sin(th) * Math.sin(ph) * sp, life: 0, max: 0.5, r: 1, g: 0.6 + Math.random() * 0.3, b: 0.1, a: 1, size: 0.4, grow: -0.4 }); } }
-    override run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; let alive = false; for (const p of this.ps) { p.life += dt; if (p.life < p.max) alive = true; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 4 * dt; p.size = Math.max(0.05, p.size + p.grow * dt); p.a = 1 - p.life / p.max; } if (!alive) { this.active = false; ImpactBurst.pool.release(this); } }
+    run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; let alive = false; for (const p of this.ps) { p.life += dt; if (p.life < p.max) alive = true; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 4 * dt; p.size = Math.max(0.05, p.size + p.grow * dt); p.a = 1 - p.life / p.max; } if (!alive) { this.active = false; ImpactBurst.pool.release(this); } }
     override queueRenderSubmissions(): void { if (!this.active) return; for (const p of this.ps) { if (p.life < p.max) $.view.drawParticle({ position: [p.x, p.y, p.z], size: p.size, color: { r: p.r, g: p.g, b: p.b, a: p.a } }); } }
 }
 
 export class ExplosionEmitter extends PooledWorldObject {
+        @build_fsm()
+    public static blueprint(): StateMachineBlueprint {
+        return {
+            states: {
+                _default: {
+                    tick(this: ExplosionEmitter) { this.run(); },
+                },
+            },
+        };
+    }
+
     private ps: P[] = [];
     private static _pool = Pool.createLazy<ExplosionEmitter>({
         onCreate: () => new ExplosionEmitter(),
@@ -48,12 +81,23 @@ export class ExplosionEmitter extends PooledWorldObject {
     private static get pool(): Pool<ExplosionEmitter> { return this._pool.get(); }
     static create(pos: [number, number, number]): ExplosionEmitter { const inst = this.pool.acquire() ?? new ExplosionEmitter(); inst.reset(pos); return inst; }
     protected reset(pos: [number, number, number]): void { this.ps.length = 0; for (let i = 0; i < 30; i++) { const th = Math.random() * Math.PI * 2; const ph = Math.random() * Math.PI; const sp = 2 + Math.random() * 6; this.ps.push({ x: pos[0], y: pos[1], z: pos[2], vx: Math.cos(th) * Math.sin(ph) * sp, vy: Math.cos(ph) * sp, vz: Math.sin(th) * Math.sin(ph) * sp, life: 0, max: 0.8, r: 1, g: 0.4 + Math.random() * 0.2, b: 0, a: 1, size: 0.6, grow: -0.5 }); } }
-    override run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; let alive = false; for (const p of this.ps) { p.life += dt; if (p.life < p.max) alive = true; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 6 * dt; p.size = Math.max(0.05, p.size + p.grow * dt); p.a = 1 - p.life / p.max; } if (!alive) { this.active = false; ExplosionEmitter.pool.release(this); } }
+    run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; let alive = false; for (const p of this.ps) { p.life += dt; if (p.life < p.max) alive = true; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 6 * dt; p.size = Math.max(0.05, p.size + p.grow * dt); p.a = 1 - p.life / p.max; } if (!alive) { this.active = false; ExplosionEmitter.pool.release(this); } }
     override queueRenderSubmissions(): void { if (!this.active) return; for (const p of this.ps) { if (p.life < p.max) $.view.drawParticle({ position: [p.x, p.y, p.z], size: p.size, color: { r: p.r, g: p.g, b: p.b, a: p.a } }); } }
 }
 
 interface DN { active: boolean; txt: string; x: number; y: number; z: number; vy: number; life: number; max: number; }
 export class DamageNumberManager extends WorldObject {
+        @build_fsm()
+    public static blueprint(): StateMachineBlueprint {
+        return {
+            states: {
+                _default: {
+                    tick(this: DamageNumberManager) { this.run(); },
+                },
+            },
+        };
+    }
+    
     private pool = new Pool<DN>({
         warm: 32,
         onCreate: () => ({ active: false, txt: '', x: 0, y: 0, z: 0, vy: 0, life: 0, max: 0 }),
@@ -63,7 +107,7 @@ export class DamageNumberManager extends WorldObject {
         const d = this.pool.acquire(); if (!d) return;
         d.txt = `${dmg}`; d.x = pos[0]; d.y = pos[1]; d.z = pos[2];
     }
-    override run(): void {
+    run(): void {
         const dt = $.deltaTime / 1000;
         this.pool.forEachActive(d => {
             d.life += dt; d.y += d.vy * dt;

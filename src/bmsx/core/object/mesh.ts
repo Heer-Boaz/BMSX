@@ -499,11 +499,6 @@ export abstract class MeshObject extends WorldObject implements Oriented, Scaled
 		}
 	}
 
-	public override run(): void {
-		this.animateStep($.deltaTime / 1000);
-		super.run();
-	}
-
 	private sampleAnimation(s: GLTFAnimationSampler, time: number, stride: number): Float32Array {
 		const input = s.input;
 		const output = s.output;

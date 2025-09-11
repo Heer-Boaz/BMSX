@@ -1127,16 +1127,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			return new_vec2(p.x - this.hitbox_left, p.y - this.hitbox_top);
 		return null;
 	}
-
-	/**
-	 * Runs the world object by updating its components and running its state.
-	 */
-	public run(): void {
-		for (const id in this.btreecontexts) {
-			this.tickTree(id);
-		}
-		this.sc.tick();
-	}
 }
 
 // A type representing a constructor for WorldObject instances.

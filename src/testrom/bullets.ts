@@ -1,4 +1,4 @@
-import { $, WorldObject, Pool, PhysicsWorld } from 'bmsx';
+import { $, WorldObject, Pool, PhysicsWorld, type StateMachineBlueprint, build_fsm } from 'bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
 interface Bullet { active: boolean; pos: [number, number, number]; prev: [number, number, number]; dir: [number, number, number]; speed: number; life: number; maxLife: number; damage: number; }
@@ -6,6 +6,17 @@ interface Bullet { active: boolean; pos: [number, number, number]; prev: [number
 export interface BulletImpact { enemyId: string; damage: number; position: [number, number, number]; }
 
 export class BulletManager extends WorldObject {
+	@build_fsm()
+    public static blueprint(): StateMachineBlueprint {
+        return {
+            states: {
+                _default: {
+                    tick(this: BulletManager) { this.run(); },
+                },
+            },
+        };
+    }
+
 	private pool: Pool<Bullet>;
 	private impacts: BulletImpact[] = []; // consumed each frame by game logic
 	constructor(size = 64) {
@@ -31,7 +42,7 @@ export class BulletManager extends WorldObject {
 		return arr;
 	}
 
-	override run(): void {
+	run(): void {
 		const dt = $.deltaTime / 1000;
 		const phys = $.get<PhysicsWorld>('physics_world');
 		this.pool.forEachActive(b => {
@@ -87,3 +98,4 @@ export class BulletManager extends WorldObject {
 	}
 	forEach(cb: (b: Bullet) => void) { this.pool.forEachActive(cb); }
 }
+

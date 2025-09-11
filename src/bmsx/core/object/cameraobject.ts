@@ -1,6 +1,6 @@
 import { Camera } from '../../render/3d/camera3d';
 import { quat, V3 } from '../../render/3d/math3d';
-import type { Oriented } from '../../rompack/rompack';
+import type { Oriented, vec3 } from '../../rompack/rompack';
 import { insavegame, type RevivableObjectArgs } from '../../serializer/gameserializer';
 import { WorldObject } from './worldobject';
 
@@ -20,17 +20,10 @@ export class CameraObject extends WorldObject implements Oriented {
         this.active = true;
     }
 
-    override onspawn(pos?: import('../../rompack/rompack').vec3): void {
+    override onspawn(pos?: vec3): void {
         super.onspawn(pos);
         this.camera.position = V3.of(this.pos.x, this.pos.y, this.pos.z);
         this.camera.markDirty();
-    }
-
-    override run(): void {
-        super.run();
-        this.x_nonotify = this.camera.position.x;
-        this.y_nonotify = this.camera.position.y;
-        this.z_nonotify = this.camera.position.z;
     }
 
     override dispose(): void {

@@ -4,7 +4,7 @@ import { $, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from 'b
 @insavegame
 export class sint extends SpriteObject {
     constructor() {
-        super('sint');
+        super({ id: 'sint' });
     }
 
     /**

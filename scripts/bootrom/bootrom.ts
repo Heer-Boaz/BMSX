@@ -7,7 +7,7 @@ declare global {
 		getRomNameFromUrlParameter: () => string | null;
 		getRomFromUrlParameter: () => string | null;
 		bootrom: {
-			rom: import('../../src/bmsx/rompack/rompack').RomPack | null;
+			rom: RomPack | null;
 			debug: boolean;
 			romname: string | undefined;
 			sndcontext: AudioContext | null;
@@ -15,9 +15,9 @@ declare global {
 			gainnode: GainNode | null;
 			theshowsover: boolean;
 			startingGamepadIndex: number | null;
-			set defusr(rom: import('../../src/bmsx/rompack/rompack').RomPack);
+			set defusr(rom: RomPack);
 			usr: (x: number) => number;
-			bload: (url: string) => Promise<import('../../src/bmsx/rompack/rompack').RomPack | null>;
+			bload: (url: string) => Promise<RomPack | null>;
 			outputError: (errormsg: string) => void;
 			resizeHandler: () => void;
 		};

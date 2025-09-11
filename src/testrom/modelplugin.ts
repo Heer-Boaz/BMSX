@@ -1,7 +1,7 @@
-import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject, CatmullRomPath, PathRunner, CameraPathBinder, EventTimeline, PhysicsComponent, PhysicsDebugComponent, PhysicsOverlayRenderer, PhysicsWorld, WaveManager, WorldObject, type color_arr, build_fsm, type StateMachineBlueprint } from 'bmsx';
+import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject, CatmullRomPath, PathRunner, CameraPathBinder, EventTimeline, WaveManager, WorldObject, build_fsm, type StateMachineBlueprint } from 'bmsx';
 import { bclass } from './bclass';
 import { CameraController } from './camera_controller';
-import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, PhysDynamicSphere, PhysStaticBox, PhysTriggerZone, SmallCube3D, spawnSimpleCity } from './objects3d';
+import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D, spawnSimpleCity } from './objects3d';
 import { BitmapId } from './resourceids';
 import { PhysicsDescriptorComponent } from 'bmsx/physics/physicsdescriptorcomponent';
 import { BulletManager } from './bullets';
@@ -9,6 +9,114 @@ import { DamageNumberManager, MuzzleFlash, ExplosionEmitter, ImpactBurst } from 
 import { EnemyHealthComponent } from './enemyhealth';
 import { RailShooterHUD } from './hud';
 import { Reticle } from './reticle';
+
+// --- moved RailDemoDriver to module scope so it can be constructed with injected deps ---
+class RailDemoDriver extends WorldObject {
+	@build_fsm()
+	public static b(): StateMachineBlueprint {
+		return {
+			initial: 'default',
+			states: {
+				default: {
+					tick(this: RailDemoDriver) { this.run(); }
+				},
+			},
+		};
+	}
+
+	runner: PathRunner;
+	eventTimeline: EventTimeline;
+	camBinder: CameraPathBinder;
+	activeCam: CameraObject;
+	reticle: Reticle;
+	bullets: BulletManager;
+	hud: RailShooterHUD;
+	dmgNums: DamageNumberManager;
+	totalDuration: number;
+	elapsedRef: { value: number };
+
+	constructor(opts: {
+		id?: string;
+		runner: PathRunner;
+		eventTimeline: EventTimeline;
+		camBinder: CameraPathBinder;
+		activeCam: CameraObject;
+		reticle: Reticle;
+		bullets: BulletManager;
+		hud: RailShooterHUD;
+		dmgNums: DamageNumberManager;
+		totalDuration: number;
+		elapsedRef: { value: number };
+	}) {
+		const { id } = opts;
+		super({ id });
+		this.runner = opts.runner;
+		this.eventTimeline = opts.eventTimeline;
+		this.camBinder = opts.camBinder;
+		this.activeCam = opts.activeCam;
+		this.reticle = opts.reticle;
+		this.bullets = opts.bullets;
+		this.hud = opts.hud;
+		this.dmgNums = opts.dmgNums;
+		this.totalDuration = opts.totalDuration;
+		this.elapsedRef = opts.elapsedRef;
+	}
+
+	run(): void {
+		const dtSec = $.deltaTime / 1000;
+		this.elapsedRef.value += dtSec;
+		const prevParam = this.runner.u;
+		const newParam = Math.min(1, this.elapsedRef.value / this.totalDuration);
+		if (newParam !== prevParam) this.runner.u = newParam;
+		this.eventTimeline.update(dtSec, this.runner);
+		this.camBinder.update(dtSec);
+		$.view.atmosphere.progressFactor = this.runner.u;
+
+		// Reticle & firing logic
+		this.reticle.updateFromInput();
+		const camObj = this.activeCam.camera;
+		const basis = camObj.basis ? camObj.basis() : undefined;
+		const fBasis = basis ? basis.f : { x: 0, y: 0, z: -1 };
+		const rBasis = basis ? basis.r : { x: 1, y: 0, z: 0 };
+		const uBasis = basis ? basis.u : { x: 0, y: 1, z: 0 };
+		const aimDir = {
+			x: fBasis.x + rBasis.x * this.reticle.ox + uBasis.x * this.reticle.oy,
+			y: fBasis.y + rBasis.y * this.reticle.ox + uBasis.y * this.reticle.oy,
+			z: fBasis.z + rBasis.z * this.reticle.ox + uBasis.z * this.reticle.oy
+		};
+		this.hud.reticle = { ox: this.reticle.ox, oy: this.reticle.oy };
+		const aimLen = Math.hypot(aimDir.x, aimDir.y, aimDir.z) || 1;
+		aimDir.x /= aimLen; aimDir.y /= aimLen; aimDir.z /= aimLen;
+		const dist = 15;
+		this.reticle.x = camObj.position.x + aimDir.x * dist;
+		this.reticle.y = camObj.position.y + aimDir.y * dist;
+		this.reticle.z = camObj.position.z + aimDir.z * dist;
+
+		const input = $.input.getPlayerInput(1);
+		if (input.getActionState('fire').justpressed) {
+			this.bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
+			$.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
+		}
+
+		for (const impact of this.bullets.popImpacts()) {
+			const enemy = $.world.getWorldObject(impact.enemyId);
+			if (enemy) {
+				const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent;
+				if (health) {
+					const now = performance.now() / 1000;
+					if (health.dead) {
+						this.hud.registerHit(now, impact.damage, true, health.scoreValue, this.hud.combo);
+						$.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z]));
+					} else {
+						this.hud.registerHit(now, impact.damage, false, health.scoreValue, this.hud.combo);
+						$.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z]));
+					}
+					this.dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage);
+				}
+			}
+		}
+	}
+}
 
 export function createTestromPlugin() {
 	return {
@@ -112,7 +220,8 @@ export function createTestromPlugin() {
 			const activeCam = cam1; // bind primary camera to rail
 			// Deterministic progression (manual) across 24s
 			const totalDuration = 24;
-			let elapsed = 0;
+			const elapsedRef = { value: 0 };
+
 			// EventTimeline drives events & ranged camera effects keyed to path progress
 			const eventTimeline = new EventTimeline({ mode: 'u' });
 			for (const ev of railDef.events) eventTimeline.addInstant({ u: ev.time, name: ev.name, data: ev.data });
@@ -162,117 +271,21 @@ export function createTestromPlugin() {
 				bossObjId = boss.id; hud.bossId = bossObjId;
 			});
 
-			// Inject runner & binder into update loop via a lightweight WorldObject
-			class RailDemoDriver extends WorldObject {
-				@build_fsm()
-				public static b(): StateMachineBlueprint {
-					return {
-						// initial: 'idle',
-						initial: 'default',
-						states: {
-							default: {
-								tick(this: RailDemoDriver) { this.run(); }
-							},
-							// idle: {
-							// 	on: {
-							// 		START: 'moving'
-							// 	}
-							// },
-							// moving: {
-							// 	on: {
-							// 		STOP: 'idle'
-							// 	}
-							// }
-						},
-					};
-				}
+			// instantiate the top-level driver and inject runtime dependencies
+			$.spawn(new RailDemoDriver({
+				id: 'railDriver',
+				runner,
+				eventTimeline,
+				camBinder,
+				activeCam,
+				reticle,
+				bullets,
+				hud,
+				dmgNums,
+				totalDuration,
+				elapsedRef
+			}));
 
-
-				override run(): void {
-					const dtSec = $.deltaTime / 1000;
-					elapsed += dtSec; const prevParam = runner.u; const newParam = Math.min(1, elapsed / totalDuration); if (newParam !== prevParam) runner.u = newParam;
-					eventTimeline.update(dtSec, runner);
-					camBinder.update(dtSec);
-					$.view.atmosphere.progressFactor = runner.u;
-					// Reticle & firing logic
-					reticle.updateFromInput();
-					const camObj = activeCam.camera; const basis = camObj.basis ? camObj.basis() : undefined; const fBasis = basis ? basis.f : { x: 0, y: 0, z: -1 }; const rBasis = basis ? basis.r : { x: 1, y: 0, z: 0 }; const uBasis = basis ? basis.u : { x: 0, y: 1, z: 0 };
-					const aimDir = { x: fBasis.x + rBasis.x * reticle.ox + uBasis.x * reticle.oy, y: fBasis.y + rBasis.y * reticle.ox + uBasis.y * reticle.oy, z: fBasis.z + rBasis.z * reticle.ox + uBasis.z * reticle.oy };
-					hud.reticle = { ox: reticle.ox, oy: reticle.oy };
-					const aimLen = Math.hypot(aimDir.x, aimDir.y, aimDir.z) || 1; aimDir.x /= aimLen; aimDir.y /= aimLen; aimDir.z /= aimLen; const dist = 15; reticle.x = camObj.position.x + aimDir.x * dist; reticle.y = camObj.position.y + aimDir.y * dist; reticle.z = camObj.position.z + aimDir.z * dist;
-					const input = $.input.getPlayerInput(1);
-					if (input.getActionState('fire').justpressed) {
-						bullets.spawn([camObj.position.x, camObj.position.y, camObj.position.z], [aimDir.x, aimDir.y, aimDir.z]);
-						$.spawn(MuzzleFlash.create([camObj.position.x + aimDir.x * 2, camObj.position.y + aimDir.y * 2, camObj.position.z + aimDir.z * 2]));
-					}
-					for (const impact of bullets.popImpacts()) { const enemy = $.world.getWorldObject(impact.enemyId); if (enemy) { const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent; if (health) { const now = performance.now() / 1000; if (health.dead) { hud.registerHit(now, impact.damage, true, health.scoreValue, hud.combo); $.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z])); } else { hud.registerHit(now, impact.damage, false, health.scoreValue, hud.combo); $.spawn(ImpactBurst.create([enemy.x, enemy.y, enemy.z])); } dmgNums.add([enemy.x, enemy.y + 2, enemy.z], impact.damage); } } }
-				}
-			}
-
-			$.spawn(new RailDemoDriver({ id: 'railDriver' }));
-
-			// ===== End rail shooter demo scaffold =====
-
-			// Physics test setup(visual + physics bound objects)
-			const phys = PhysicsWorld.ensure({ gravity: new_vec3(0, 0, -300) });
-			phys.setGravity(new_vec3(0, 0, -300));
-			// For visibility ensure nothing sleeps while diagnosing
-			phys.setSleepingEnabled(false);
-			// Enable metrics HUD (force visible)
-			phys.enableMetricsHUD();
-			phys.setHUDAutoHide(false);
-
-			// Spawn a debug drawer & overlay WorldObject
-			const dbgGO = new WorldObject();
-			$.spawn(dbgGO);
-			dbgGO.addComponent(new PhysicsDebugComponent({ parentid: dbgGO.id }));
-			dbgGO.addComponent(new PhysicsOverlayRenderer({ parentid: dbgGO.id }));
-
-			// Static floor & small enclosing walls (much smaller test arena)
-			// Floor at Y(or Z)=0 so dynamics clearly drop toward it
-			const staticDefs: { name: string; pos: [number, number, number]; he: [number, number, number]; }[] = [
-				{ name: 'floor', pos: [0, 0, 0], he: [10, 10, 0.5] }, // thin in Z when Z is up
-				{ name: 'wall_north', pos: [0, 0, -10], he: [10, 10, 0.5] },
-				{ name: 'wall_south', pos: [0, 0, 10], he: [10, 10, 0.5] },
-				{ name: 'wall_west', pos: [-10, 0, 0], he: [0.5, 10, 10] },
-				{ name: 'wall_east', pos: [10, 0, 0], he: [0.5, 10, 10] }
-			];
-			let colorIdx = 0;
-			for (const d of staticDefs) {
-				// assign cycling albedo index (demo) + distinct color factor to visualize even if atlas identical
-				const ci = Math.max(colorIdx++ % 4, 1);
-				const colorVariants: color_arr[] = [
-					[1, 0.3, 0.3, 1],
-					[0.3, 1, 0.3, 1],
-					[0.3, 0.3, 1, 1],
-					[1, 1, 0.3, 1],
-				];
-				const box = new PhysStaticBox(d.he, d.name, ci, null, colorVariants[ci]);
-				$.spawn(box, new_vec3(d.pos[0], d.pos[1], d.pos[2]));
-				box.addComponent(new PhysicsDescriptorComponent({ parentid: box.id, shape: { kind: 'aabb', halfExtents: new_vec3(d.he[0], d.he[1], d.he[2]) }, mass: 0, restitution: 0.1, friction: 0.8 }));
-			}
-
-			const DROP_HEIGHT = 150;
-			// Z-up variant: swap Y/Z usage
-			for (let i = 0; i < 5; i++) {
-				const dc = new PhysDynamicCube(0.25);
-				$.spawn(dc, new_vec3(-4 + i * 1.2, 0.6, DROP_HEIGHT + i * 0.2));
-				dc.addComponent(new PhysicsDescriptorComponent({ parentid: dc.id, shape: { kind: 'aabb', halfExtents: new_vec3(0.25, 0.25, 0.25) }, mass: 1, restitution: 0.6, friction: 0.4 }));
-			}
-			for (let i = 0; i < 5; i++) {
-				const ds = new PhysDynamicSphere(0.25);
-				$.spawn(ds, new_vec3(4 - i * 1.2, 0.6, DROP_HEIGHT + i * 0.2));
-				ds.addComponent(new PhysicsDescriptorComponent({ parentid: ds.id, shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.85, friction: 0.25 }));
-			}
-			const fastSphere = new PhysDynamicSphere(0.25);
-			$.spawn(fastSphere, new_vec3(0, -12, DROP_HEIGHT + 1));
-			fastSphere.addComponent(new PhysicsDescriptorComponent({ parentid: fastSphere.id, shape: { kind: 'sphere', radius: 0.25 }, mass: 1, restitution: 0.5, friction: 0.15 }));
-			const fsPhysComp2 = fastSphere.getComponent(PhysicsComponent);
-			if (fsPhysComp2) fsPhysComp2.body.velocity.y = 20;
-			const trigger = new PhysTriggerZone([3, 3, 3]);
-			$.spawn(trigger, new_vec3(0, 0, DROP_HEIGHT));
-			trigger.addComponent(new PhysicsDescriptorComponent({ parentid: trigger.id, shape: { kind: 'aabb', halfExtents: new_vec3(3, 3, 3) }, mass: 0, restitution: 0, friction: 0, isTrigger: true, layer: 2 }));
-
-		}
-	};
-}
+		} // end onBoot
+	}; // end returned plugin object
+} // end createTestromPlugin

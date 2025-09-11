@@ -1,6 +1,6 @@
 import { ActionDefinitionEvaluator } from './actionparser';
 import { Input, InputStateManager, makeActionState, makeButtonState } from './input';
-import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, InputHandler, InputMap, KeyboardBinding, VibrationParams } from './inputtypes';
+import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, VibrationParams } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { ContextStack, MappingContext } from './context';
@@ -106,7 +106,7 @@ export class PlayerInput {
     }
 
     /** Add a higher-priority mapping context */
-    public pushContext(id: string, keyboard: import('./inputtypes').KeyboardInputMapping | undefined, gamepad: import('./inputtypes').GamepadInputMapping | undefined, priority = 100, enabled = true): void {
+    public pushContext(id: string, keyboard: KeyboardInputMapping | undefined, gamepad: GamepadInputMapping | undefined, priority = 100, enabled = true): void {
         this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}));
     }
     public popContext(id?: string): void { this.contexts.pop(id); }

@@ -1,4 +1,4 @@
-import { $, WorldObject, Msx1Colors, TextWriter } from 'bmsx';
+import { $, WorldObject, Msx1Colors, TextWriter, build_fsm, type StateMachineBlueprint } from 'bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
 export class RailShooterHUD extends WorldObject {
@@ -12,7 +12,19 @@ export class RailShooterHUD extends WorldObject {
         this.score += killed ? (scoreValue * this.combo) : Math.round(damage * this.combo * 0.5);
         this.hitFlash = 0.12;
     }
-    override run(): void { const now = performance.now() / 1000; if (now - this.lastHitTime > this.comboWindow) { this.combo = 1; } if (this.comboFade > 0) this.comboFade -= ($.deltaTime / 1000) * 1.5; if (this.hitFlash > 0) this.hitFlash -= $.deltaTime / 1000; }
+
+    @build_fsm()
+    public static blueprint(): StateMachineBlueprint {
+        return {
+            states: {
+                _default: {
+                    tick(this: RailShooterHUD) { this.run(); },
+                },
+            },
+        };
+    }
+
+    run(): void { const now = performance.now() / 1000; if (now - this.lastHitTime > this.comboWindow) { this.combo = 1; } if (this.comboFade > 0) this.comboFade -= ($.deltaTime / 1000) * 1.5; if (this.hitFlash > 0) this.hitFlash -= $.deltaTime / 1000; }
     override queueRenderSubmissions(): void {
         // Score right aligned top-right
         const s = `SCORE ${this.score}`;
