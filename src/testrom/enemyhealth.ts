@@ -13,7 +13,7 @@ export class EnemyHealthComponent extends Component {
     private flashDur = 0.15;
     private originalColors?: color_arr[][]; // per mesh index may contain multiple stored originals if multi-mesh
     boss = false;
-    constructor(opts?: RevivableObjectArgs & { parentid: Identifier, hp?: number, scoreValue?: number, boss?: boolean }) {
+    constructor(opts?: RevivableObjectArgs & { parentid: Identifier, hp?: number, maxHp?: number, scoreValue?: number, boss?: boolean }) {
         super(opts); this.hp = opts.hp ?? 20; this.maxHp = opts.hp ?? 20; this.scoreValue = opts.scoreValue ?? 50; this.boss = !!opts?.boss;
     }
     applyDamage(d: number) {

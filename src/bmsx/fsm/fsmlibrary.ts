@@ -57,7 +57,7 @@ export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefin
     reconcileStateTree(root, oldRootDef, newRootDef);
 
     // Fix current state if invalid under new definition
-    if (!root.substates || !root.substates[root.currentid]) {
+    if (!root.states || !root.states[root.currentid]) {
         const start = safeStartStateId(newRootDef);
         root.currentid = start;
     }
@@ -71,38 +71,38 @@ export function migrateMachineDiff(root: State<Stateful>, oldRootDef: StateDefin
 
 /** Ensure the instance’s children match the new StateDefinition tree. */
 function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
-    const newChildren = Object.keys(newDef.substates ?? {});
-    const oldChildren = Object.keys(node.substates ?? {});
+    const newChildren = Object.keys(newDef.states ?? {});
+    const oldChildren = Object.keys(node.states ?? {});
 
     // Remove stale children
     for (const id of oldChildren) {
         if (!newChildren.includes(id)) {
-            node.substates[id]?.dispose?.();
-            delete node.substates[id];
+            node.states[id]?.dispose?.();
+            delete node.states[id];
         }
     }
 
     // Add missing children
     for (const def_id of newChildren) {
-        if (!node.substates) node.substates = {};
-        if (!node.substates[def_id]) {
+        if (!node.states) node.states = {};
+        if (!node.states[def_id]) {
             const child = new State({ def_id, target_id: node.target_id, parent: node, root: node.root });
-            node.substates[def_id] = child;
+            node.states[def_id] = child;
             // Build deeper children from definition
-            reconcileStateTree(child, undefined, newDef.substates![def_id] as StateDefinition);
+            reconcileStateTree(child, undefined, newDef.states![def_id] as StateDefinition);
         }
     }
 
     // Recurse into common children
     for (const id of newChildren) {
-        const childInst = node.substates?.[id];
+        const childInst = node.states?.[id];
         if (childInst) {
-            const oldChildDef = oldDef?.substates?.[id] as StateDefinition | undefined;
-            const newChildDef = newDef.substates![id] as StateDefinition;
+            const oldChildDef = oldDef?.states?.[id] as StateDefinition | undefined;
+            const newChildDef = newDef.states![id] as StateDefinition;
             reconcileStateTree(childInst, oldChildDef, newChildDef);
 
             // Fix child's currentid if needed
-            if (!childInst.substates || !childInst.substates[childInst.currentid]) {
+            if (!childInst.states || !childInst.states[childInst.currentid]) {
                 childInst.currentid = safeStartStateId(newChildDef);
             }
             clampTape(childInst);
@@ -114,10 +114,10 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 function migrateDataTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
     node.data = mergeDataWithDefaults(node.data, oldDef?.data ?? {}, newDef.data ?? {});
     // Recurse
-    for (const id in node.substates ?? {}) {
-        const child = node.substates[id];
-        const oldChildDef = oldDef?.substates?.[id] as StateDefinition | undefined;
-        const newChildDef = newDef.substates?.[id] as StateDefinition | undefined;
+    for (const id in node.states ?? {}) {
+        const child = node.states[id];
+        const oldChildDef = oldDef?.states?.[id] as StateDefinition | undefined;
+        const newChildDef = newDef.states?.[id] as StateDefinition | undefined;
         if (child && newChildDef) {
             migrateDataTree(child, oldChildDef, newChildDef);
         }
@@ -174,8 +174,8 @@ function clampTape(node: State<Stateful>) {
 }
 
 function safeStartStateId(def: StateDefinition): Identifier {
-    if (def.start_state_id && def.substates?.[def.start_state_id]) return def.start_state_id;
-    const first = def.substates ? Object.keys(def.substates)[0] : undefined;
+    if (def.initial && def.states?.[def.initial]) return def.initial;
+    const first = def.states ? Object.keys(def.states)[0] : undefined;
     if (!first) throw new Error(`StateDefinition '${def.id}' has no states.`);
     return first;
 }
@@ -221,10 +221,10 @@ export function setupFSMlibrary(): void {
 /**
  * Creates a new machine with the given machine name and machine definition.
  * If the machine definition has states, it creates a new machine definition for each state.
- * If a state has substates, it creates a new machine definition for each substate.
+ * If a state has states, it creates a new machine definition for each substate.
  *
  * @param machine_name - The name of the machine.
- * @param machine_definition - The definition of the machine, including its states and substates.
+ * @param machine_definition - The definition of the machine, including its states and states.
  */
 function createMachine(machine_name: Identifier, machine_definition: StateMachineBlueprint): StateDefinition {
     // If the machine has states defined, create a new machine definition for each state
@@ -342,39 +342,39 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
     const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
     const addedEvents = eventMap ?? new Map<string, boolean>(); // Map to track added events to prevent duplicates
     // Start with the events defined in the machine definition
-    if (machine.event_handlers) {
+    if (machine.on) {
         // Add all events from the machine definition
-        for (const name in machine.event_handlers) {
+        for (const name in machine.on) {
             // Get the event definition
-            const definition = machine.event_handlers[name];
+            const definition = machine.on[name];
             // Add the event to the list of events
             add(name, definition);
         }
         // Remove all '$' prefixes from the event names
-        machine.event_handlers = Object.fromEntries(Object.entries(machine.event_handlers).map(([name, value]) => [removeScopeFromEventName(name), value]));
+        machine.on = Object.fromEntries(Object.entries(machine.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
     }
 
     // Get the events from the submachines
-    for (const stateId in machine.substates) {
+    for (const stateId in machine.states) {
         // Get the state definition
-        const state = machine.substates[stateId];
+        const state = machine.states[stateId];
         // Skip the state if it doesn't have a definition
         const state_def = state;
         if (!state_def) continue;
-        if (state_def.event_handlers) {
+        if (state_def.on) {
             // Add all events from the state definition
-            for (const name in state_def.event_handlers) {
+            for (const name in state_def.on) {
                 // Get the event definition
-                const definition = state_def.event_handlers[name];
+                const definition = state_def.on[name];
                 // Add the event to the list of events
                 add(name, definition);
             }
             // Remove all '$' prefixes from the event names
-            state_def.event_handlers = Object.fromEntries(Object.entries(state_def.event_handlers).map(([name, value]) => [removeScopeFromEventName(name), value]));
+            state_def.on = Object.fromEntries(Object.entries(state_def.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
         }
 
         // If the state has a submachine, recursively subscribe to its events
-        if (state_def.substates) {
+        if (state_def.states) {
             getMachineEvents(state, events, addedEvents);
         }
     }
@@ -595,7 +595,7 @@ function normalizeEventNameForId(name: string) {
 function hoistEventDef(
     machineName: string,
     statePath: string[],
-    bagName: keyof Pick<StateDefinition, 'event_handlers' | 'input_event_handlers'>,
+    bagName: keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>,
     rawEventName: string,
     eventDefinition: StateEventDefinition,
     registry: HandlerRegistry,
@@ -629,8 +629,8 @@ function walkAndHoist(
     if (typeof sdef.exiting_state === 'function') hoistStateExiting(sdef, makeId([machineName, ...path, 'exiting_state']), registry, useProxyThunks);
     if (typeof sdef.process_input === 'function') hoistStateProcessInput(sdef, makeId([machineName, ...path, 'process_input']), registry, useProxyThunks);
 
-    // event_handlers / input_event_handlers
-    for (const bagName of ['event_handlers', 'input_event_handlers'] as EventBagName[]) {
+    // on / input_event_handlers
+    for (const bagName of ['on', 'input_event_handlers'] as EventBagName[]) {
         const bag = (sdef as StateDefinition)[bagName];
         if (!bag) continue;
         for (const rawEventName of Object.keys(bag)) {
@@ -668,8 +668,8 @@ function walkAndHoist(
     }
 
     // recurse children
-    if (sdef.substates) {
-        for (const [childId, child] of Object.entries(sdef.substates) as [string, StateDefinition][]) {
+    if (sdef.states) {
+        for (const [childId, child] of Object.entries(sdef.states) as [string, StateDefinition][]) {
             walkAndHoist(machineName, child, registry, [...path, childId], useProxyThunks);
         }
     }

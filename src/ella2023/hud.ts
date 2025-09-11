@@ -7,7 +7,7 @@ export class Hud extends SpriteObject {
     @build_fsm()
     static bouw(): StateMachineBlueprint {
         return {
-            substates: {
+            states: {
                 _default: {
                     tick(this: Hud) {
                     }

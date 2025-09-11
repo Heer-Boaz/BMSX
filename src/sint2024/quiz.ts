@@ -241,7 +241,7 @@ export class quiz extends WorldObject {
         }
 
         return {
-            substates: {
+            states: {
                 _start: {
                     entering_state(this: quiz) {
                         this.maximum_characters_per_line = maximum_characters_per_line_question;

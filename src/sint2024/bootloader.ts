@@ -63,7 +63,7 @@ export class SintWorldFSM { // export to prevent potential tree-shaking (not hap
      */
     public static bouw(): StateMachineBlueprint {
         return {
-            substates: {
+            states: {
                 '#game_start': {
                     entering_state(this: World) {
                     },

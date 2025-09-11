@@ -17,7 +17,7 @@ export class bclass extends SpriteObject {
     @build_fsm('bclass_animation')
     public static bouw_testfsm(): StateMachineBlueprint {
         return {
-            substates: {
+            states: {
                 ani1: {
                     tick: () => { },
                     entering_state(this: bclass) { this.imgid = BitmapId.b; },
@@ -34,11 +34,11 @@ export class bclass extends SpriteObject {
     public static bouw_meukfsm(): StateMachineBlueprint {
         return {
             is_concurrent: true,
-            substates: {
+            states: {
                 '#meuk1': {
                     tick: () => { },
                     entering_state(this: bclass) { this.pos.x += 10; },
-                    substates: {
+                    states: {
                         '#blupperblop1': {
                             tick(this: bclass) { },
                             entering_state(this: bclass) { }, //console.log('enter blupperblop1'); },
@@ -109,7 +109,7 @@ export class bclass extends SpriteObject {
 
         return {
             is_concurrent: true,
-            substates: {
+            states: {
                 bla: {
                     input_event_handlers: {
                         'bla[j]': {

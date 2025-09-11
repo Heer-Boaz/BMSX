@@ -84,7 +84,7 @@ export class StateMachineController {
 	 * Gets the states of the current machine.
 	 * @returns The states of the current machine.
 	 */
-	get states(): id2sstate { return this.current_machine.substates; }
+	get states(): id2sstate { return this.current_machine.states; }
 
 	/**
 	 * Gets the state definition of the current machine.

@@ -44,7 +44,7 @@ export abstract class Fighter extends SpriteObject {
     static bouw_hitanimation_fsm(): StateMachineBlueprint {
         return {
             is_concurrent: true,
-            substates: {
+            states: {
                 _geen_au: {
                 },
                 doet_au: {

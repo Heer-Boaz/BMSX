@@ -12,7 +12,7 @@ export class GameOver extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
-			substates: {
+			states: {
 				_default: {
 					ticks2advance_tape: 500,
 					process_input(this: TitleScreen, state: State) {
@@ -56,7 +56,7 @@ export class Hoera extends SpriteObject {
 	static bouw(): StateMachineBlueprint {
 
 		return {
-			substates: {
+			states: {
 				_default: {
 					ticks2advance_tape: 500,
 					process_input(this: TitleScreen, state: State) {
@@ -104,9 +104,9 @@ export class TitleScreen extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
-			substates: {
+			states: {
 				_default: {
-					event_handlers: {
+					on: {
 						reset: {
 							do(this: TitleScreen) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
@@ -137,20 +137,20 @@ export class TitleScreen extends SpriteObject {
 						this.sc.dispatch_event('pause_blink', this);
 						$.emit('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
 					},
-					substates: {
+					states: {
 						_players_1: {
-							event_handlers: {
+							on: {
 								$switch: 'players_2',
 							},
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
 								this.selectedPlayers = 1;
 								this.cursorVisible = true;
-								state.parent.substates.blink.reset();
+								state.parent.states.blink.reset();
 							},
 						},
 						players_2: {
-							event_handlers: {
+							on: {
 								$switch: 'players_1',
 								$players_1: 'players_1', // For resetting the TitleScreen state.
 							},
@@ -158,7 +158,7 @@ export class TitleScreen extends SpriteObject {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
 								this.selectedPlayers = 2;
 								this.cursorVisible = true;
-								state.parent.substates.blink.reset();
+								state.parent.states.blink.reset();
 							},
 						},
 						blink: {
@@ -176,9 +176,9 @@ export class TitleScreen extends SpriteObject {
 								if (state.data.pause_blink) return;
 								this.cursorVisible = state.current_tape_value;
 							},
-							substates: {
+							states: {
 								_default: {
-									event_handlers: {
+									on: {
 										$pause_blink: 'paused',
 									},
 									entering_state(state: State) {
@@ -186,7 +186,7 @@ export class TitleScreen extends SpriteObject {
 									},
 								},
 								paused: {
-									event_handlers: {
+									on: {
 										$resume_blink: 'default',
 									},
 									entering_state(state: State) {
@@ -221,9 +221,9 @@ export class Gordijn extends WorldObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
-			substates: {
+			states: {
 				_idle: {
-					event_handlers: {
+					on: {
 						its_curtains: 'its_curtains_for_you',
 						reset: {
 							do(this: Gordijn) {
@@ -233,7 +233,7 @@ export class Gordijn extends WorldObject {
 					},
 				},
 				its_curtains_for_you: {
-					event_handlers: {
+					on: {
 						$curtained: 'idle',
 					},
 					ticks2advance_tape: 2,

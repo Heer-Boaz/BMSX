@@ -55,13 +55,13 @@ export class StateDefinition {
      *
      * @remarks
      * When set to 'state', the state will be automatically reset upon entry.
-     * If set to 'tree', the state and all its substates will be reset.
-     * Choosing 'subtree' will reset only the substates, while 'none' disables automatic resetting.
+     * If set to 'tree', the state and all its states will be reset.
+     * Choosing 'subtree' will reset only the states, while 'none' disables automatic resetting.
      * The default value is 'state'.
      *
      * @type {'state' | 'tree' | 'subtree' | 'none'}
      */
-    public automatic_reset_mode: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
+    public automatic_reset_mode: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its states) (defaults to 'state')
 
     /**
      * Indicates whether the tapehead should automatically rewind to index 0 when it would wo out of bounds.
@@ -113,8 +113,8 @@ export class StateDefinition {
             this.repeat_tape(this.tape_data, this.repetitions);
         }
 
-        if (partialdef.substates) {
-            this.construct_substate_machine(partialdef.substates, this.root);
+        if (partialdef.states) {
+            this.construct_substate_machine(partialdef.states, this.root);
         }
     }
 
@@ -135,30 +135,30 @@ export class StateDefinition {
     }
 
     /**
-     * Constructs the substate machine based on the provided substates.
+     * Constructs the substate machine based on the provided states.
      *
-     * @param substates - The blueprint of the substates.
+     * @param states - The blueprint of the states.
      */
-    private construct_substate_machine(substates: id2partial_sdef, root: StateDefinition): void {
-        this.substates ??= {};
-        const substate_ids = Object.keys(substates);
+    private construct_substate_machine(states: id2partial_sdef, root: StateDefinition): void {
+        this.states ??= {};
+        const substate_ids = Object.keys(states);
         for (let state_id of substate_ids) {
-            const sub_sdef = this.#create_state(substates[state_id], state_id, root);
+            const sub_sdef = this.#create_state(states[state_id], state_id, root);
             validateStateMachine(sub_sdef as StateDefinition);
             this.replace_partialsdef_with_sdef(sub_sdef, root);
         }
-        if (substate_ids.length > 0 && !this.start_state_id) { // Only look for a start state if we have at least one state in our definition
-            this.start_state_id = substate_ids[0]; // If no default state was defined, we default to the first state found in the list of states
+        if (substate_ids.length > 0 && !this.initial) { // Only look for a start state if we have at least one state in our definition
+            this.initial = substate_ids[0]; // If no default state was defined, we default to the first state found in the list of states
 
             // If the start state is not defined, we don't need to change the key of the start state
         }
         else {
             // If the start state is defined, we need to change the key of the start state to exclude the start state prefix
-            const start_state = this.substates[this.start_state_id]; // Get the start state
+            const start_state = this.states[this.initial]; // Get the start state
             for (const state_id of substate_ids) {
                 if (StateDefinition.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
-                    delete this.substates[state_id]; // Delete the start state from the list of states (with the old key)
-                    this.substates[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
+                    delete this.states[state_id]; // Delete the start state from the list of states (with the old key)
+                    this.states[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
                     break; // Stop iterating over the states
                 }
             }
@@ -185,7 +185,7 @@ export class StateDefinition {
        * }
      * ```
      */
-    public event_handlers?: {
+    public on?: {
         [key: string]: Identifier | StateEventDefinition;
     };
 
@@ -203,12 +203,12 @@ export class StateDefinition {
     /**
      * The states defined for this state machine.
      */
-    public substates?: id2partial_sdef;
+    public states?: id2partial_sdef;
 
     /**
      * The identifier of the state that the state machine should start in.
      */
-    public start_state_id?: Identifier;
+    public initial?: Identifier;
 
     /**
      * The prefix used to identify the start state.
@@ -241,24 +241,28 @@ export class StateDefinition {
      * @param state The state to set as the start state.
      */
     #set_start_state(state: StateDefinition): void {
-        this.start_state_id = state.id;
+        this.initial = state.id;
     }
 
     /**
      * Appends a state to the list of states defined for this state machine.
-     * @param state The state to append.
+     * @param sub_sdef The state to append.
      * @throws An error if the state is missing an id or if a state with the same id already exists for this state machine.
      */
-    public replace_partialsdef_with_sdef(state: StateDefinition, root: StateDefinition): void {
-        if (!state.id) throw new Error(`'sdef' is missing an id, while attempting to add it to this 'sdef'!`);
+    public replace_partialsdef_with_sdef(sub_sdef: StateDefinition, root: StateDefinition): void {
+        if (!sub_sdef.id) throw new Error(`'sub_sdef' is missing an id, while attempting to add it to this 'sdef'!`);
         // if (this.states[state.id]) throw new Error(`'sdef' with id='${state.id}' already exists for this 'sdef'!`);
-        if (this.#is_start_state(state)) { // If the state is a start state, set it as the start state
-            state.id = state.id.substring(1); // Remove the start state prefix from the id
-            this.#set_start_state(state); // Set the start state for the state machine
+        let initial_state = this.initial;
+        if (this.#is_start_state(sub_sdef)) { // If the state is a start state, set it as the start state
+            sub_sdef.id = sub_sdef.id.substring(1); // Remove the start state prefix from the id
+            if (initial_state && initial_state !== sub_sdef.id) { // If there is already a start state defined, and it is a start state
+                throw `State machine '${this.id}' already has a start state defined ('${initial_state}'). Thus, you chose to define multiple start states ('${initial_state}' and '${sub_sdef.id}'). Please define only one start state!`;
+            }
+            this.#set_start_state(sub_sdef); // Set the start state for the state machine
         }
-        this.substates[state.id] = state;
-        state.parent = this;
-        state.root = root;
+        this.states[sub_sdef.id] = sub_sdef;
+        sub_sdef.parent = this;
+        sub_sdef.root = root;
     }
 }
 
@@ -270,19 +274,19 @@ export class StateDefinition {
  */
 
 export function validateStateMachine(machinedef: StateDefinition, path: string = machinedef.id): void {
-    if (!machinedef.substates) return;
+    if (!machinedef.states) return;
 
     try {
-        const stateIds = Object.keys(machinedef.substates);
+        const stateIds = Object.keys(machinedef.states);
 
-        if (!machinedef.start_state_id)
+        if (!machinedef.initial)
             throw new Error(`No start state defined for state machine '${path}'`);
 
-        if (!stateIds.includes(machinedef.start_state_id))
-            throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${path}'.`);
+        if (!stateIds.includes(machinedef.initial))
+            throw new Error(`Invalid start state '${machinedef.initial}', as that state doesn't exist in the machine '${path}'.`);
 
         for (const id of stateIds) {
-            const stateDef = machinedef.substates[id] as StateDefinition;
+            const stateDef = machinedef.states[id] as StateDefinition;
             const statePath = `${path}.${stateDef.id}`;
 
             const checkTransitions = (transitions?: { [key: string]: Identifier | StateEventDefinition; }) => {
@@ -300,7 +304,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
                 }
             };
 
-            checkTransitions(stateDef.event_handlers);
+            checkTransitions(stateDef.on);
             checkTransitions(stateDef.input_event_handlers);
             for (const check of stateDef.run_checks ?? []) {
                 if (typeof check === 'string') {
@@ -356,9 +360,9 @@ function resolveStateDefPath(from: StateDefinition, target: string, origin: stri
 
     for (let i = startIndex; i < parts.length; i++) {
         const part = parts[i];
-        if (!ctx.substates?.[part]) {
+        if (!ctx.states?.[part]) {
             throw new Error(`Invalid state path '${target}' referenced from '${origin}': state '${part}' not found`);
         }
-        ctx = ctx.substates[part] as StateDefinition;
+        ctx = ctx.states[part] as StateDefinition;
     }
 }

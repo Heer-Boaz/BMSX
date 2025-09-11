@@ -1,5 +1,4 @@
 import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, type RenderSubmitQueue } from 'bmsx';
-import { submitParticle } from 'bmsx/render/3d/particles_pipeline';
 import { onload, type RevivableObjectArgs } from 'bmsx/serializer/gameserializer';
 import { BitmapId, ModelId } from './resourceids';
 

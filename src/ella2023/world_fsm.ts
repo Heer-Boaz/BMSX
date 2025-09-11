@@ -11,7 +11,7 @@ export class EilaModelFSM {
     @build_fsm()
     public static bouw(): StateMachineBlueprint {
         return {
-            substates: {
+            states: {
                 _game_start: {
                     tick(this: World) {
                         return 'titlescreen';
@@ -23,7 +23,7 @@ export class EilaModelFSM {
                         if (es) es.numOfPlayers = numOfPlayers;
                         return '#this.ffwachten';
                     },
-                    substates: {
+                    states: {
                         _ffwachten: {
                             ticks2advance_tape: 150,
                             entering_state(this: World) {
@@ -102,7 +102,7 @@ export class EilaModelFSM {
                         }
                         this.getFromCurrentSpace('gordijn').sc.dispatch_event('reset', this);
                     },
-                    event_handlers: {
+                    on: {
                         gamestart_selected: 'game',
                     },
                 },

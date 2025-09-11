@@ -61,8 +61,8 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
         table.appendChild(machineNameRow);
         machineElements.set(path, machineNameCell);
 
-        for (let stateId in machine.substates) {
-            let state = machine.substates?.[stateId];
+        for (let stateId in machine.states) {
+            let state = machine.states?.[stateId];
             let stateRow = document.createElement('tr');
             let stateCell = document.createElement('td');
             stateCell.textContent = state?.def_id ?? 'undefined';
@@ -79,7 +79,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
                 stateDialog.updateSize();
             };
             stateElements.set(newpath, stateCell);
-            if (state.substates) {
+            if (state.states) {
                 let subTableCell = document.createElement('td');
                 stateRow.appendChild(subTableCell);
                 visualizeMachine(state, state.def_id, subTableCell, isActive && machine.currentid === stateId, newpath);
@@ -125,7 +125,7 @@ export function highlightCurrentState(stateElements: Map<string, HTMLElement>, m
         } else if (machine.is_concurrent) {
             machineElement?.classList.add('parallel-machine');
         }
-        for (let state_id in machine.substates) {
+        for (let state_id in machine.states) {
             const newpath = `${path}.${state_id}`;
             let stateElement = stateElements.get(newpath);
             if (stateElement) {
@@ -133,11 +133,11 @@ export function highlightCurrentState(stateElements: Map<string, HTMLElement>, m
             }
             if (isActive && machine.currentid === state_id) {
                 stateElement?.classList.add('active-machine-or-state');
-            } else if (machine.substates[state_id].is_concurrent) {
+            } else if (machine.states[state_id].is_concurrent) {
                 stateElement?.classList.add('parallel-machine');
             }
-            let state = machine.substates?.[state_id];
-            updateMachineClasses(state, state.def_id, isActive && (machine.currentid === state_id || machine.substates[state_id].is_concurrent), newpath);
+            let state = machine.states?.[state_id];
+            updateMachineClasses(state, state.def_id, isActive && (machine.currentid === state_id || machine.states[state_id].is_concurrent), newpath);
         }
     }
     for (let machineName in bfsmController.machines) {

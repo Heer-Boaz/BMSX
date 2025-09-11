@@ -28,12 +28,12 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
-			event_handlers: {
+			on: {
 				animation_end: { do(this: SelectedPlayerIndexIcon) { this.markForDisposal(); } },
 			},
-			substates: {
+			states: {
 				_default: {
-					event_handlers: {
+					on: {
 						// Guard transitions so only the icon for the matching gamepad reacts.
 						controller_assigned: {
 							do(this: SelectedPlayerIndexIcon, _src: any, payload: { gamepadIndex?: number }) {

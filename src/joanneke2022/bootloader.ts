@@ -103,7 +103,7 @@ class gamemodel extends World {
     }
 
     @build_fsm('model_substate')
-    public static substates(): StateMachineBlueprint {
+    public static states(): StateMachineBlueprint {
         return {
             parallel: true,
             states: {

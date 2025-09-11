@@ -161,7 +161,7 @@ export class Eila extends Fighter {
 
 		const statemachine = animation_machine_name;
 		return {
-			event_handlers: {
+			on: {
 				$go_idle: {
 					if(this: Fighter, state: State) { return !state.matches_state_path('stoerheidsdans') && !state.matches_state_path('nagenieten') && !state.matches_state_path('humiliated'); },
 					switch: '#this.idle',
@@ -176,7 +176,7 @@ export class Eila extends Fighter {
 				$go_stoerheidsdans: '#this.stoerheidsdans',
 				$go_humiliated: '#this.humiliated',
 			},
-			substates: {
+			states: {
 				_idle: {
 					process_input: default_input_processor,
 					entering_state(this: Fighter) {
@@ -203,7 +203,7 @@ export class Eila extends Fighter {
 					tape_data: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
 					repetitions: 2,
 					auto_rewind_tape_after_end: false,
-					event_handlers: {
+					on: {
 						$animationEnd: {
 							do(state: State) {
 								++state.ticks;
@@ -291,7 +291,7 @@ export class Eila extends Fighter {
 							this.sc.dispatch_event('go_flyingkick', this.id);
 						}
 					},
-					substates: {
+					states: {
 						_jump_up: {
 							ticks2advance_tape: Fighter.JUMP_DURATION / 2,
 							entering_state(this: Fighter, state: State, directional: boolean = false) {
@@ -333,9 +333,9 @@ export class Eila extends Fighter {
 						},
 						flyingkick: {
 							is_concurrent: true,
-							substates: {
+							states: {
 								_normal: {
-									event_handlers: {
+									on: {
 										$go_flyingkick: {
 											if(this: Fighter) { return !this.attacked_while_jumping; },
 											to: 'flyingkick',
@@ -343,7 +343,7 @@ export class Eila extends Fighter {
 									},
 								},
 								flyingkick: {
-									event_handlers: {
+									on: {
 										flyingkick_end: 'normal',
 									},
 									entering_state(this: Fighter, _state: State) {
@@ -392,7 +392,7 @@ export class Eila extends Fighter {
 	public static buildAnimationFsm(): StateMachineBlueprint {
 		return {
 			is_concurrent: true,
-			event_handlers: {
+			on: {
 				$i_was_hit: {
 					do(state: State) {
 						// This is needed to quickly end the animation of the attack action.
@@ -417,7 +417,7 @@ export class Eila extends Fighter {
 				$animate_duck: '#this.duck',
 				$animate_jump: '#this.jump',
 			},
-			substates: {
+			states: {
 				_idle: {
 					entering_state(this: Eila) {
 						this.imgid = BitmapId.eila_idle;
@@ -428,7 +428,7 @@ export class Eila extends Fighter {
 					entering_state(this: Eila) {
 						this.imgid = BitmapId.eila_walk;
 					},
-					substates: {
+					states: {
 						_walk1: {
 							ticks2advance_tape: 8,
 							entering_state(this: Eila) {

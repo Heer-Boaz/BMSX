@@ -45,7 +45,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
      * Represents the states of the Bfsm.
      */
-    substates: id2sstate;
+    states: id2sstate;
 
     /**
      * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link StateMachineController.current_machine}.
@@ -86,7 +86,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     /**
      * Returns the current state of the FSM
      */
-    public get current(): State { return this.substates?.[this.currentid]; }
+    public get current(): State { return this.states?.[this.currentid]; }
 
     /**
      * Gets the state with the given id from the state machine.
@@ -94,19 +94,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * of referencing states from the state machine definition.
      * @param id - id of the state, according to its definition
      */
-    public get_sstate(id: Identifier) { return this.substates?.[id]; }
+    public get_sstate(id: Identifier) { return this.states?.[id]; }
 
     /**
      * Gets the definition of the current state machine.
      * @returns The definition of the current state machine.
      */
-    public get definition(): StateDefinition { return (this.parent ? this.parent.definition.substates[this.def_id] : StateDefinitions[this.def_id]) as StateDefinition; }
+    public get definition(): StateDefinition { return (this.parent ? this.parent.definition.states[this.def_id] : StateDefinitions[this.def_id]) as StateDefinition; }
 
     /**
      * Gets the id of the start state of the FSM.
      * @returns The id of the start state of the FSM.
      */
-    public get start_state_id(): Identifier { return this.definition?.start_state_id; }
+    public get start_state_id(): Identifier { return this.definition?.initial; }
 
     /**
      * Represents the counter for the critical section.
@@ -167,7 +167,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      */
     public static create(def_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
         let result = new State({ def_id, target_id, parent, root });
-        result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their substates
+        result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their states
         result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
         return result;
@@ -207,9 +207,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
         // If no parent is wired, treat this as a root node.
         // if (!this.parent_ref) this.root_ref = this;
         // Wire children to this as parent and propagate root
-        // if (this.substates) {
-        //     for (const id in this.substates) {
-        //         const child = this.substates[id];
+        // if (this.states) {
+        //     for (const id in this.states) {
+        //         const child = this.states[id];
         //         if (child) {
         //             child.parent_ref = this;
         //             child.root_ref = this.root;
@@ -226,7 +226,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     public start(): void {
         const startStateId = this.start_state_id;
         if (!startStateId) {
-            if (!this.substates) return; // If there are no states defined, there is no start state to start the state machine with and we can return early
+            if (!this.states) return; // If there are no states defined, there is no start state to start the state machine with and we can return early
             throw new Error(`No start state defined for state machine '${this.id}', while the state machine has states defined.'`); // If there are states defined, but no start state, throw an error as we can't start the state machine
         }
 
@@ -238,7 +238,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
         this.leaveCriticalSection();
 
         // Start the state machine for the current active state
-        this.substates[startStateId].start();
+        this.states[startStateId].start();
     }
 
     /**
@@ -255,7 +255,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
             if (!Registry.instance.has(this.id)) {
                 Registry.instance.register(this);
             }
-            // Run substates first
+            // Run states first
             this.runSubstateMachines();
 
             // Process input for the current state
@@ -278,7 +278,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
         if (this.paused) return;
 
         // Note that the input procesing is run first in the lowest substate, then in the parent state, and then in the parent of the parent state, and so on.
-        // That is because the `runSubstateMachines` function is called before the `processInput` function, which means that the input processing is run in the substates first.
+        // That is because the `runSubstateMachines` function is called before the `processInput` function, which means that the input processing is run in the states first.
         this.processInputForCurrentState();
 
         const next_state = this.definition.process_input?.call(this.target, this);
@@ -324,12 +324,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      * Runs the substate machines.
      */
     runSubstateMachines(): void {
-        if (!this.substates) return;
+        if (!this.states) return;
 
         this.current.tick();
-        for (const id in this.substates) {
+        for (const id in this.states) {
             if (id === this.currentid) continue;
-            if (this.substates[id].is_concurrent) this.substates[id].tick();
+            if (this.states[id].is_concurrent) this.states[id].tick();
         }
     }
 
@@ -342,7 +342,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
         // Run checks in the current state.
         // Note that the run checks are run first in the lowest substate, then in the parent state, and then in the parent of the parent state, and so on.
-        // That is because the `runSubstateMachines` function is called before the `doRunChecks` function, which means that the run checks are run in the substates first.
+        // That is because the `runSubstateMachines` function is called before the `doRunChecks` function, which means that the run checks are run in the states first.
         this.runChecksForCurrentState();
     }
 
@@ -402,7 +402,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
                 [currentPart, ...restParts] = restParts;
                 break;
             default:
-                currentContext = this.substates?.[currentPart];
+                currentContext = this.states?.[currentPart];
                 if (!currentContext) throw new Error(`No state with ID '${currentPart}'`);
                 break;
         }
@@ -547,7 +547,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
             return this.currentid === stateid;
         }
 
-        const state = this.substates[stateid];
+        const state = this.states[stateid];
         if (!state) {
             throw new Error(`No state with ID '${stateid}'`);
         }
@@ -566,7 +566,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      */
     private checkStateGuardConditions(target_state_id: Identifier): boolean {
         const currentStateDefinition = this.current_state_definition;
-        const targetStateDefinition = this.definition.substates[target_state_id];
+        const targetStateDefinition = this.definition.states[target_state_id];
 
         // Check if the current state has a canExit guard and if it returns false, prevent the transition
         if (currentStateDefinition.transition_guards?.can_exit && !currentStateDefinition.transition_guards.can_exit.call(this.target, this)) {
@@ -574,7 +574,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
         }
 
         // Get the target state itself (and not the definition) to check the canEnter guard
-        const target_state = this.substates[target_state_id];
+        const target_state = this.states[target_state_id];
         // Check if the target state has a canEnter guard and if it returns false, prevent the transition
         if (targetStateDefinition.transition_guards?.can_enter && !targetStateDefinition.transition_guards.can_enter.call(this.target, target_state)) {
             return false;
@@ -668,12 +668,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
         }
 
         // If this state has children, dispatch the event to the child states
-        if (this.substates && Object.keys(this.substates).length > 0) {
+        if (this.states && Object.keys(this.states).length > 0) {
             // Dispatch the event to the current active state
             this.current?.dispatch_event(eventName, emitter_id, ...args);
 
             // Also dispatch the event to all parallel states
-            Object.values(this.substates).forEach(state => state.is_concurrent && state.dispatch_event(eventName, emitter_id, ...args));
+            Object.values(this.states).forEach(state => state.is_concurrent && state.dispatch_event(eventName, emitter_id, ...args));
         } else {
             // This is the deepest part of the state machine, dispatch the event here
             // Bubble up the event to the parent states
@@ -744,7 +744,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
         this.enterCriticalSection();
         try {
-            const state_id_or_handler = this.definition?.event_handlers?.[eventName];
+            const state_id_or_handler = this.definition?.on?.[eventName];
             if (state_id_or_handler) {
                 if (typeof state_id_or_handler !== 'string') {
                     const emitterId = state_id_or_handler.scope;
@@ -830,24 +830,24 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
      */
     public populateStates(): void {
         const sdef = this.definition;
-        if (!sdef || !sdef.substates) { // If no state machine definition is defined, don't populate the states
-            this.substates = undefined; // Set the states to undefined to denote that there are no states defined (as opposed to an empty object). Note that states should already be undefined, but just to be sure, set it to undefined here as well
+        if (!sdef || !sdef.states) { // If no state machine definition is defined, don't populate the states
+            this.states = undefined; // Set the states to undefined to denote that there are no states defined (as opposed to an empty object). Note that states should already be undefined, but just to be sure, set it to undefined here as well
             return; // Don't populate the states
         }
-        const state_ids = Object.keys(sdef.substates);
+        const state_ids = Object.keys(sdef.states);
         if (state_ids.length === 0) { // If there are no states defined in the state machine definition, don't populate the states
-            this.substates = undefined;
+            this.states = undefined;
             return;
         }
 
-        this.substates = {}; // Initialize the states object to an empty object
-        for (let sdef_id in sdef.substates) {
+        this.states = {}; // Initialize the states object to an empty object
+        for (let sdef_id in sdef.states) {
             let state = new State({ def_id: sdef_id, target_id: this.target_id, parent: this, root: this.root });
             this.add(state);
-            state.populateStates(); // Populate the substates of the state
+            state.populateStates(); // Populate the states of the state
         }
         // If no current state is set, set the state to the first state that it finds in the set of states
-        if (!this.currentid) this.currentid = Object.keys(this.substates)[0];
+        if (!this.currentid) this.currentid = Object.keys(this.states)[0];
     }
 
     /**
@@ -859,8 +859,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     private add(...states: State[]): void {
         for (let state of states) {
             if (!state.def_id) throw new Error(`State is missing an id, while attempting to add it to this sstate '${this.def_id}'!`);
-            if (this.substates[state.def_id]) throw new Error(`State ${state.def_id} already exists for sstate '${this.def_id}'!`);
-            this.substates[state.def_id] = state;
+            if (this.states[state.def_id]) throw new Error(`State ${state.def_id} already exists for sstate '${this.def_id}'!`);
+            this.states[state.def_id] = state;
         }
     }
 
@@ -916,12 +916,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
     /**
      * Disposes the current state machine and deregisters it from the registry.
-     * Also deregisters all substates.
+     * Also deregisters all states.
      */
     public dispose(): void {
-        // Also deregister all substates
-        for (let state in this.substates) {
-            this.substates[state].dispose();
+        // Also deregister all states
+        for (let state in this.states) {
+            this.states[state].dispose();
         }
     }
 
@@ -1102,7 +1102,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     // The history of previous states is cleared and the state machine is unpaused.
     public resetSubmachine(reset_tree: boolean = true): void {
         // N.B. doesn't trigger the onenter-event!
-        const start = this.definition?.start_state_id; // Definition doesn't need to exist
+        const start = this.definition?.initial; // Definition doesn't need to exist
         this.currentid = start; // Set the current state to the start state (if it exists)
         this.past_states = new Array();
         this.paused = false;
@@ -1110,8 +1110,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
         this.data = { ...this.definition.data }; // Reset the state machine data by shallow copying the definition's data
         if (reset_tree) {
             // Call the reset function for each state
-            for (let state in this.substates) {
-                this.substates[state].reset(reset_tree);
+            for (let state in this.states) {
+                this.states[state].reset(reset_tree);
             }
         }
     }

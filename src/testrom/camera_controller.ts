@@ -6,7 +6,7 @@ export class CameraController extends WorldObject {
 	@build_fsm()
 	public static buildFsm(): StateMachineBlueprint {
 		return {
-			substates: {
+			states: {
 				_default: {
 					tick(this: CameraController) {
 						this.stuff();

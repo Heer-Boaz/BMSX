@@ -202,4 +202,4 @@ export type ConstructorWithFSMProperty = Function & {
     linkedFSMs?: Set<FSMName>;
 };
 
-export type EventBagName = keyof Pick<StateDefinition, 'event_handlers' | 'input_event_handlers'>;
+export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>;

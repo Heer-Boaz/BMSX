@@ -66,7 +66,7 @@ export class Sinterklaas extends Fighter {
     public static buildAnimationFsm(): StateMachineBlueprint {
         return {
             is_concurrent: true,
-            event_handlers: {
+            on: {
                 $i_was_hit: {
                     do(state: State) {
                         // This is needed to quickly end the animation of the attack action.
@@ -91,7 +91,7 @@ export class Sinterklaas extends Fighter {
                 $animate_duck: '#this.duck',
                 $animate_jump: '#this.jump',
             },
-            substates: {
+            states: {
                 _idle: {
                     entering_state(this: SpriteObject) {
                         this.imgid = BitmapId.sint_idle;
@@ -102,7 +102,7 @@ export class Sinterklaas extends Fighter {
                     entering_state(this: SpriteObject) {
                         this.imgid = BitmapId.sint_walk;
                     },
-                    substates: {
+                    states: {
                         _walk1: {
                             ticks2advance_tape: 8,
                             entering_state(this: SpriteObject) {
@@ -186,7 +186,7 @@ export class Sinterklaas extends Fighter {
                         $.playAudio(AudioId.stuk);
                         this.imgid = BitmapId.sint_humiliated_1;
                     },
-                    substates: {
+                    states: {
                         _wait: {
                             ticks2advance_tape: 50,
                             entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
@@ -199,7 +199,7 @@ export class Sinterklaas extends Fighter {
                             auto_rewind_tape_after_end: true,
                             tape_next: (state: State) => `#this.${state.current_tape_value}`,
                             tape_end: () => 'waitEnd',
-                            substates: {
+                            states: {
                                 _humiliated1: {
                                     entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                                 },

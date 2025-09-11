@@ -17,11 +17,11 @@ export class PhysicsDescriptorComponent extends Component {
     mass: number; restitution: number; friction: number; isTrigger: boolean; layer: number; mask: number;
     syncAxis?: { x?: boolean; y?: boolean; z?: boolean };
     writeBack: boolean = true;
-    constructor(opts: RevivableObjectArgs & { parentid: Identifier }, desc?: { shape: PhysicsBodyDesc['shape']; mass?: number; restitution?: number; friction?: number; isTrigger?: boolean; layer?: number; mask?: number; syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; writeBack?: boolean /* future: bodyType?: PhysicsBodyDesc['type'] */ }) {
+    constructor(opts: RevivableObjectArgs & { parentid: Identifier; shape: PhysicsBodyDesc['shape']; mass?: number; restitution?: number; friction?: number; isTrigger?: boolean; layer?: number; mask?: number; syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; writeBack?: boolean /* future: bodyType?: PhysicsBodyDesc['type'] */ }) {
         super(opts);
         // Reviver may call ctor with undefined; defer full init till @onload if so.
-        if (desc && desc.shape) {
-            this.shape = desc.shape; this.mass = desc.mass ?? 0; this.restitution = desc.restitution ?? 0; this.friction = desc.friction ?? 0.2; this.isTrigger = !!desc.isTrigger; this.layer = desc.layer ?? 1; this.mask = desc.mask ?? 0xFFFFFFFF; this.syncAxis = desc.syncAxis; this.writeBack = desc.writeBack ?? true;
+        if (opts.shape) {
+            this.shape = opts.shape; this.mass = opts.mass ?? 0; this.restitution = opts.restitution ?? 0; this.friction = opts.friction ?? 0.2; this.isTrigger = !!opts.isTrigger; this.layer = opts.layer ?? 1; this.mask = opts.mask ?? 0xFFFFFFFF; this.syncAxis = opts.syncAxis; this.writeBack = opts.writeBack ?? true;
             this.attachRuntime();
         } else {
             // Safe defaults; will be overwritten by deserialized fields before @onload

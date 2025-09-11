@@ -44,9 +44,9 @@ export class sint extends SpriteObject {
      */
     static bouw(): StateMachineBlueprint {
         return {
-            substates: {
+            states: {
                 _start: {
-                    event_handlers: {
+                    on: {
                         vraag: 'vraag',
                         antwoord: 'antwoord',
                         klaar: 'klaar',
@@ -57,7 +57,7 @@ export class sint extends SpriteObject {
                     },
                 },
                 weg: {
-                    event_handlers: {
+                    on: {
                         vraag: 'vraag',
                         antwoord: 'antwoord',
                         klaar: 'klaar',
@@ -70,7 +70,7 @@ export class sint extends SpriteObject {
                     },
                 },
                 vraag: {
-                    event_handlers: {
+                    on: {
                         antwoord: 'antwoord',
                         klaar: 'klaar',
                         weg: 'weg',
@@ -80,7 +80,7 @@ export class sint extends SpriteObject {
                     },
                 },
                 antwoord: {
-                    event_handlers: {
+                    on: {
                         vraag: 'vraag',
                         klaar: 'klaar',
                         weg: 'weg',
@@ -90,7 +90,7 @@ export class sint extends SpriteObject {
                     },
                 },
                 klaar: {
-                    event_handlers: {
+                    on: {
                         antwoord: 'antwoord',
                         vraag: 'vraag',
                         weg: 'weg',
