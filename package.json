@@ -63,7 +63,9 @@
     "build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
     "Watch!": "npx tsc -b -w",
     "typecheck:scripts": "npx tsc -p tsconfig.scripts.json",
-    "pack:engine": "npm pack ./src/bmsx"
+    "pack:engine": "npm pack ./src/bmsx",
+    "serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
+    "serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist"
   },
   "repository": {
     "type": "git",
