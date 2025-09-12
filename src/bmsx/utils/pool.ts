@@ -15,6 +15,8 @@
  * - Returned handle is the item itself; pool tracks actives separately.
  */
 
+import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+
 export interface PoolOptions<T> {
     /** Preallocate this many instances eagerly (warm pool). */
     warm?: number;
@@ -144,5 +146,32 @@ export class Pool<T> {
             },
             stats: () => ({ active: singleton?.sizeActive ?? 0, total: singleton?.sizeTotal ?? 0 })
         };
+    }
+}
+
+export interface IPool<T> {
+    ensure(): T;
+    reset(): void;
+}
+
+@excludeclassfromsavegame // This class is excluded from savegame serialization
+// Growable pool for Float32Array buffers, which avoids frequent allocations and deallocations.
+export class Float32ArrayPool implements IPool<Float32Array> {
+    private pool: Float32Array[] = [];
+    private index: number = 0;
+
+    constructor(private arraySize: number) {
+        this.pool.push(new Float32Array(this.arraySize));
+    }
+
+    ensure(): Float32Array {
+        if (this.index >= this.pool.length) {
+            this.pool.push(new Float32Array(this.arraySize));
+        }
+        return this.pool[this.index++];
+    }
+
+    reset(): void {
+        this.index = 0;
     }
 }

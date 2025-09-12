@@ -1,4 +1,4 @@
-import { Float32ArrayPool } from '../../utils/utils';
+import { Float32ArrayPool } from 'bmsx/utils/pool';
 import { $ } from '../../core/game';
 import type { AmbientLight, DirectionalLight, PointLight } from '../3d/light';
 import { DirectionalLightObject, PointLightObject } from '../../core/object/lightobject';

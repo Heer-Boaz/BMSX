@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { subscribesToGlobalEvent } from '../core/eventemitter';
-import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
 import { SpriteObject } from '../core/object/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';

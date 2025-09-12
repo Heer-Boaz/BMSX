@@ -4,7 +4,7 @@ import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobjec
 import { mod, new_vec2, set_inplace_vec2 } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { vec2 } from '../rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from "../serializer/gameserializer";
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { TileSize } from "../systems/msx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from "./basecomponent";
 

@@ -11,7 +11,7 @@ import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TextureManager } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { color, GameView, renderGate } from "../render/gameview";
-import { asset_id, Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
+import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
@@ -195,7 +195,7 @@ export class Game {
 		this.registry.deregister(id);
 	}
 
-	public spawn(o: WorldObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
+	public spawn(o: WorldObject, pos?: vec3, ignoreSpawnhandler?: boolean): void {
 		this.world.spawn(o, pos, ignoreSpawnhandler);
 	}
 
@@ -267,7 +267,7 @@ export class Game {
 		this.input.hideOnscreenGamepadButtons(gamepad_button_ids);
 	}
 
-	public get viewportSize(): Size {
+	public get viewportSize(): vec2 {
 		return this.view.viewportSize;
 	}
 

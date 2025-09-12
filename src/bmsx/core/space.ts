@@ -1,5 +1,5 @@
-import { type Identifier, Vector } from '../rompack/rompack';
-import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { type Identifier, vec3 } from '../rompack/rompack';
+import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { id2obj, id2objectType } from './world';
@@ -84,12 +84,12 @@ export class Space  {
     /**
      * Adds object to the game and triggers it's onspawn-event.
      * @param {WorldObject} o  - WorldObject to add
-     * @param {Vector} pos - Position to spawn object
+     * @param {vec3} pos - Position to spawn object
      * @param {boolean | { skipOnSpawn?: boolean; reason?: 'fresh' | 'revive' | 'transfer' }} options - Either a legacy boolean (skip), or an options object with a spawn reason.
      * Example uses include reviving the game (part of loading a saved game) and moving objects from one space to another.
      * @returns {void} Nothing
      */
-    public spawn(o: WorldObject, pos?: Vector, options?: boolean | { skipOnSpawn?: boolean; reason?: 'fresh' | 'revive' | 'transfer' }): void {
+    public spawn(o: WorldObject, pos?: vec3, options?: boolean | { skipOnSpawn?: boolean; reason?: 'fresh' | 'revive' | 'transfer' }): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
         const world = $.world;
         if (world.objToSpaceMap?.has(o.id)) {

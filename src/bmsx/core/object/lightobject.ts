@@ -1,6 +1,6 @@
 import type { Identifier } from 'bmsx/rompack/rompack';
 import type { Light } from '../../render/3d/light';
-import { insavegame, type RevivableObjectArgs } from '../../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { WorldObject } from './worldobject';
 
 @insavegame

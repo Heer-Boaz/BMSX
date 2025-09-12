@@ -1,4 +1,4 @@
-import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs, type RenderSubmission, type RenderSubmitQueue } from 'bmsx';
+import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs, wrapText } from 'bmsx';
 import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
@@ -34,19 +34,17 @@ export class GameOver extends SpriteObject {
 		}
 	}
 
-	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-		super.queueRenderSubmissions(queue);
-		const x = 8;
-		const y = 144;
-		const options: RenderSubmission = { type: 'rect', area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0], layer: 'ui', kind: 'fill' };
-		queue.submit.typed(options);
-		const lines = ['je bent toch niet', 'de strijder die ik nodig heb.', 'ik ben een beetje', 'teleurgesteld in jouw ouders...'];
-		$.drawText(x, y, lines);
-	}
-
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gameover', ...opts });
 		this.imgid = BitmapId.gameover;
+		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+			rc.submitRect({ kind: 'fill', area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] });
+			const x = 8, y = 144;
+			// const lines = ['je bent toch niet', 'de strijder die ik nodig heb.', 'ik ben een beetje', 'teleurgesteld in jouw ouders...'];
+			const textToWrite = 'je bent toch niet de strijder die ik nodig heb.\nik ben een beetje teleurgesteld in jouw ouders...';
+			const lines = wrapText(textToWrite, 30);
+			$.drawText(x, y, lines);
+		});
 	}
 }
 
@@ -77,20 +75,20 @@ export class Hoera extends SpriteObject {
 		}
 	}
 
-	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-		super.queueRenderSubmissions(queue);
-		const x = 16;
-		const y = 160;
-		const options: RenderSubmission = { type: 'rect', area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0], layer: 'ui', kind: 'fill' };
-		queue.submit.typed(options);
-		const lines = ['dat heb je', 'redelijk gedaan Elly!', 'ik bedoel: Ei La!'];
-		$.drawText(x, y, lines);
-	}
-
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'hoera', ...opts });
 		this.imgid = BitmapId.hoera;
-	}
+		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+			rc.submitRect({ kind: 'fill', area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] });
+			const x = 16, y = 160;
+            // const lines = ['dat heb je', 'redelijk gedaan Elly!', 'ik bedoel: Ei La!'];
+			const textToWrite = 'Dat heb je redelijk gedaan Elly!\nIk bedoel: Ei La!';
+			const lines = wrapText(textToWrite, 30);
+
+            // Draw on UI layer so it appears above the fill rectangle
+            $.drawText(x, y, lines, 950);
+        });
+    }
 }
 
 @insavegame
@@ -201,16 +199,14 @@ export class TitleScreen extends SpriteObject {
 		}
 	}
 
-	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-		super.queueRenderSubmissions(queue);
-		if (this.cursorVisible) {
-			queue.submit.typed({ type: 'img', imgid: BitmapId.menu_arrow, pos: new_vec3(80, this.cursorY, this.z + 1), layer: 'ui' });
-		}
-	}
-
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'title', ...opts });
 		this.imgid = BitmapId.title;
+		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+			// base sprite
+			rc.submitSprite(this.sprite.paint_offset(this));
+			if (this.cursorVisible) rc.submitSprite({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, this.cursorY, this.z + 1), layer: 'ui' });
+		});
 	}
 }
 
@@ -256,11 +252,9 @@ export class Gordijn extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gordijn', ...opts });
 		this.width = 0;
-	}
-
-	public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-		if (this.width === 0) return;
-		const options: RenderSubmission = { type: 'rect', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui', kind: 'fill' };
-		queue.submit.typed(options);
+		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+			if (this.width === 0) return;
+			rc.submitRect({ kind: 'fill', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui' });
+		});
 	}
 }

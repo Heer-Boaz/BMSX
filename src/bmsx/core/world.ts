@@ -6,9 +6,9 @@ import { Stateful } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
-import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, Size } from '../rompack/rompack';
-import { Direction, Vector } from "../rompack/rompack";
-import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from "../serializer/gameserializer";
+import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, vec2 } from '../rompack/rompack';
+import { Direction, vec3 } from "../rompack/rompack";
+import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { CameraObject } from './object/cameraobject';
 import { WorldObject } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
@@ -33,7 +33,7 @@ export interface TileCollisionService {
 export type ModelPlugin = { onBoot: (world: World) => void; onTick?: (world: World, dt: number) => void; onLoad?: (world: World) => void; dispose?: () => void };
 
 export type WorldConfiguration = {
-    viewportSize?: Size;
+    viewportSize?: vec2;
     collisionService?: TileCollisionService;
     modules?: Array<ModelPlugin>;
     fsmId?: string;
@@ -109,7 +109,7 @@ export class World implements Stateful, RegisterablePersistent {
     public get activeSpace(): Space { return this[id_to_space_symbol][this._activeSpaceId]; } // Current space. On world creation, a default space is created with id 'default'
 
     // Model configuration (size, services, modules)
-    private _size: Size = { x: 256, y: 192 };
+    private _size: vec2 = { x: 256, y: 192 };
     private _collision?: TileCollisionService;
     private _modules: Array<ModelPlugin> = [];
     private _fsmId: string = 'world';
@@ -285,7 +285,7 @@ export class World implements Stateful, RegisterablePersistent {
         this[obj_id_to_space_id_symbol] = makeIndexProxy(this.objToSpaceMap);
 
         this.paused = false;
-        if (opts.viewportSize) this._size = shallowCopy<Size>(opts.viewportSize);
+        if (opts.viewportSize) this._size = shallowCopy<vec2>(opts.viewportSize);
         if (opts.collisionService) this._collision = opts.collisionService;
         if (opts.modules) this._modules = opts.modules.slice();
         if (opts.fsmId) this._fsmId = opts.fsmId;
@@ -475,11 +475,11 @@ export class World implements Stateful, RegisterablePersistent {
     /**
      * Spawns a new world object in the current space.
      * @param {WorldObject} o - The world object to spawn.
-     * @param {Vector} [pos] - The position to spawn the world object at. If not provided, the world object's default position will be used.
+     * @param {vec3} [pos] - The position to spawn the world object at. If not provided, the world object's default position will be used.
      * @param {boolean} [ignoreSpawnhandler=false] - Whether to ignore the world object's spawn handler. If not provided, the spawn handler will be executed.
      * @returns {void} Nothing.
      */
-    public spawn(o: WorldObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
+    public spawn(o: WorldObject, pos?: vec3, ignoreSpawnhandler?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id.`);
         this.activeSpace.spawn(o, pos, ignoreSpawnhandler);
     }

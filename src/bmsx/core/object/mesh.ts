@@ -4,13 +4,13 @@ import { M4, Mat4, Q, quat } from '../../render/3d/math3d';
 import { ShadowMap } from '../../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../../render/backend/webgl/webgl.constants';
 import type { TextureKey } from '../../render/texturemanager';
-import type { color, RenderSubmitQueue } from '../../render/gameview';
+import type { color } from '../../render/gameview';
 import type { asset_id, color_arr, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, Oriented, Scaled, vec3arr, vec4arr } from '../../rompack/rompack';
-import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/gameserializer';
+import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { $ } from '../game';
 import { WorldObject } from './worldobject';
-import { Float32ArrayPool } from '../../utils/utils';
-import type { RenderSubmission } from 'bmsx/render/gameview';
+import { Float32ArrayPool } from 'bmsx/utils/pool';
+// Render ops now go through GenericRendererComponent (fetched via WorldObject helper)
 
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"
 type RuntimeNodeTRS = { t?: vec3arr; r?: vec4arr; s?: vec3arr };
@@ -323,6 +323,36 @@ export abstract class MeshObject extends WorldObject implements Oriented, Scaled
 		// Euler rotation removed
 		this.scale ??= [1, 1, 1];
 		this.worldPool = new Float32ArrayPool(16);
+		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+			if (this.meshInstances.length === 0) return;
+			const transform = this.getUniqueComponent(TransformComponent);
+			const base = this._base;
+			if (transform) {
+				base.set(transform.getWorldMatrix());
+			} else {
+				const q = this._rotationQ;
+				M4.setIdentity(base);
+				M4.translateSelf(base, this.x, this.y, this.z);
+				const rot = this.worldPool.ensure();
+				M4.quatToMat4Into(rot, [q.x, q.y, q.z, q.w]);
+				M4.mulInto(base, base, rot);
+				M4.scaleSelf(base, this.scale[0], this.scale[1], this.scale[2]);
+			}
+			for (const inst of this.meshInstances) {
+				if (inst.nodeIndex !== undefined && this.meshModel?.nodes?.[inst.nodeIndex]?.visible === false) continue;
+				const mesh = inst.mesh;
+				if (!mesh || !mesh.positions || mesh.positions.length === 0) continue;
+				const world = this.worldPool.ensure();
+				M4.mulInto(world, base, inst.matrix);
+				rc.submitMesh({
+					mesh,
+					matrix: world,
+					jointMatrices: inst.skinIndex !== undefined ? this.computeSkinMatrices(inst.skinIndex) : undefined,
+					morphWeights: inst.morphWeights,
+				});
+			}
+			this.worldPool.reset();
+		});
 	}
 
 	/** Convenience getter returning the first mesh */
@@ -825,45 +855,5 @@ export abstract class MeshObject extends WorldObject implements Oriented, Scaled
 		super.dispose();
 	}
 
-	override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-		if (this.meshInstances.length === 0) return;
-		// Euler path removed; always use quaternion orientation
-
-		const transform = this.getUniqueComponent(TransformComponent);
-		const base = this._base; // Float32Array(16) hergebruikt
-
-		if (transform) {
-			base.set(transform.getWorldMatrix()); // aanname: column-major 4x4
-		} else {
-			const q = this._rotationQ;
-			M4.setIdentity(base);
-			M4.translateSelf(base, this.x, this.y, this.z);
-			const rot = this.worldPool.ensure();
-			M4.quatToMat4Into(rot, [q.x, q.y, q.z, q.w]);
-			M4.mulInto(base, base, rot);
-			M4.scaleSelf(base, this.scale[0], this.scale[1], this.scale[2]);
-		}
-
-		for (const inst of this.meshInstances) {
-			// Skip instances whose source node is explicitly invisible
-			if (inst.nodeIndex !== undefined && this.meshModel?.nodes?.[inst.nodeIndex]?.visible === false) continue;
-
-			const mesh = inst.mesh;
-			if (!mesh || !mesh.positions || mesh.positions.length === 0) continue;
-
-			// world = base * inst.matrix
-			const world = this.worldPool.ensure();
-			M4.mulInto(world, base, inst.matrix);
-
-			const options: RenderSubmission = {
-				type: 'mesh',
-				mesh,
-				matrix: world,
-				jointMatrices: inst.skinIndex !== undefined ? this.computeSkinMatrices(inst.skinIndex) : undefined,
-				morphWeights: inst.morphWeights,
-			};
-			queue.submit.typed(options);
-		}
-		this.worldPool.reset();
-	}
+    // queueRenderSubmissions removed; rendering handled by GenericRendererComponent producer
 }

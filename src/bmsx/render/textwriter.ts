@@ -1,7 +1,7 @@
 import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions as GO } from '../core/gameoptions';
-import { vec2, vec3 } from "../rompack/rompack";
+import { vec2 } from "../rompack/rompack";
 import { color, type RectRenderSubmission } from './gameview';
 
 /**
@@ -17,7 +17,7 @@ export class TextWriter {
      * @param _font The font to use for the text. If not specified, the default font will be used.
      * @param color The color to use for the text. If not specified, the default color will be used.
      */
-    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: color, backgroundColor?: color): void {
+    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: color, backgroundColor?: color, layer?: 'world' | 'ui'): void {
         let font = _font ?? $.view.default_font;
         if (!font) {
             console.error('No default font available for TextWriter.drawText');
@@ -25,7 +25,7 @@ export class TextWriter {
         let startPos: vec2 = { x: x, y: y };
         let stepX: number = 0;
         let stepY: number = 0;
-        let pos: vec3 = { x: startPos.x, y: startPos.y, z: z };
+        let pos: vec2 = { x: startPos.x, y: startPos.y, z: z };
 
         /**
         * Draws a string of text on the screen at the current position.
@@ -39,11 +39,11 @@ export class TextWriter {
                 stepY = font.char_height(letter) > stepY ? font.char_height(letter) : stepY; // Ensure stepY is the maximum height of the characters
                 if (backgroundColor) {
                     // Fill rectangle behind the character
-                    const rectoptions: RectRenderSubmission = { area: { start: { x: pos.x, y: pos.y }, end: { x: pos.x + stepX, y: pos.y + stepY } }, color: backgroundColor, kind: 'fill' };
+                    const rectoptions: RectRenderSubmission = { area: { start: { x: pos.x, y: pos.y }, end: { x: pos.x + stepX, y: pos.y + stepY } }, color: backgroundColor, kind: 'fill', layer };
                     $.view.renderer.submit.rect(rectoptions);
                 }
                 // Draw the character image
-                $.view.renderer.submit.sprite({ imgid: font.char_to_img(text[i]), pos, colorize: color });
+                $.view.renderer.submit.sprite({ imgid: font.char_to_img(text[i]), pos, colorize: color, layer });
                 // Move the position to the right for the next character
                 pos.x += stepX;
             }

@@ -1,5 +1,5 @@
 /// <reference types="@webgpu/types" />
-import { color_arr, Size } from '../../rompack/rompack';
+import { color_arr, type vec2 } from '../../rompack/rompack';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { WebGPUBackend } from './webgpu/webgpu_backend';
 
@@ -13,7 +13,7 @@ export type BufferHandle = WebGLBuffer | GPUBuffer | unknown;
 export type RenderTargetHandle =
     | WebGLFramebuffer               // persistent GL object
     | {
-        size: Size;
+        size: vec2;
         colors: GPUTexture[];                // textures you own
         depth?: GPUTexture;
         colorViews: GPUTextureView[];        // pre-created views for speed
@@ -25,7 +25,7 @@ export type RenderTargetHandle =
 // keep your existing alias names for other handles:
 
 export interface TextureParams {
-    size?: Size;
+    size?: vec2;
     wrapS?: number;
     wrapT?: number;
     minFilter?: number;

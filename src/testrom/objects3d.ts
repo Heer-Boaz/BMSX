@@ -1,5 +1,4 @@
-import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, type RenderSubmitQueue, build_fsm, type StateMachineBlueprint } from 'bmsx';
-import { onload, type RevivableObjectArgs } from 'bmsx/serializer/gameserializer';
+import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, build_fsm, type StateMachineBlueprint, type RevivableObjectArgs, onload } from 'bmsx';
 import { BitmapId, ModelId } from './resourceids';
 
 @insavegame
@@ -65,13 +64,6 @@ export class SparkEmitter extends WorldObject {
         };
     }
 
-    constructor(opts: RevivableObjectArgs & { parent_id: Identifier }) {
-        super(opts);
-        this.parent_id = opts.parent_id;
-        // Request spark texture from Texture Manager
-        this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbinYFlipped, undefined);
-    }
-
     public run(): void {
         const origin = $.getWorldObject(this.parent_id);
         for (let i = 0; i < 3; i++) {
@@ -100,10 +92,15 @@ export class SparkEmitter extends WorldObject {
         }
     }
 
-    public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-        for (const s of this.sparks) {
-            queue.submit.particle({ position: s.pos, size: .5, color: s.color, texture: s.texture });
-        }
+    constructor(opts: RevivableObjectArgs & { parent_id: Identifier }) {
+        super(opts);
+        this.parent_id = opts.parent_id;
+        // Request spark texture from Texture Manager
+        this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbinYFlipped, undefined);
+        // Producer: submit particles for each spark
+        this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+            for (const s of this.sparks) rc.submitParticle({ position: s.pos, size: .5, color: s.color, texture: s.texture });
+        });
     }
 }
 

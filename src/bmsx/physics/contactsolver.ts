@@ -1,6 +1,6 @@
 import { new_vec3 } from '../utils/utils';
 import type { vec3 } from '../rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import type { Contact } from './narrowphase';
 import { PhysicsBody } from './physicsbody';
 

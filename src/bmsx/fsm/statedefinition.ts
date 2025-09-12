@@ -1,6 +1,6 @@
 import { EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
-import { excludepropfromsavegame } from '../serializer/gameserializer';
+import { excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
 
 /**

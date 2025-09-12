@@ -4,7 +4,7 @@ import * as SpritesPipeline from '../render/2d/sprites_pipeline';
 import * as MeshPipeline from '../render/3d/mesh_pipeline';
 import * as ParticlesPipeline from '../render/3d/particles_pipeline';
 import { RegisterablePersistent } from '../rompack/rompack';
-import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { $ } from 'bmsx/core/game';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 

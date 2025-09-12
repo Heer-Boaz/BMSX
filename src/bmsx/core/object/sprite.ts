@@ -1,7 +1,7 @@
 import { DEFAULT_VERTEX_COLOR } from "../../render/backend/webgl/webgl.constants";
-import { color, ImgRenderSubmission, type RenderSubmitQueue } from "../../render/gameview";
+import { color, ImgRenderSubmission } from "../../render/gameview";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
-import { insavegame, type RevivableObjectArgs } from "../../serializer/gameserializer";
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { $rompack } from '../game';
 import { WorldObject } from "./worldobject";
 import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from '../../utils/utils';
@@ -102,15 +102,17 @@ export abstract class SpriteObject extends WorldObject {
     constructor(opts: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
         super(opts);
         this.sprite ??= new Sprite();
+        // Adapter: enqueue sprite draw via a GenericRendererComponent producer
+        this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+            rc.submitSprite(this.sprite.paint_offset(this));
+        });
     }
 
     /**
      * Enumerate draw options for this sprite without issuing draw calls.
      * Submits a single DrawImgOptions describing the current sprite.
      */
-    override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-        queue.submit.sprite(this.sprite.paint_offset(this));
-    }
+    // queueRenderSubmissions removed; rendering handled by SpriteRendererComponent/GenericRendererComponent producer
 }
 
 @insavegame

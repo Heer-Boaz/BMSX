@@ -144,17 +144,7 @@ export type vec4arr = [number, number, number, number];
 /**
  * Represents a 2D vector.
  */
-export interface vec2 {
-	/**
-	 * The x-coordinate of the vector.
-	 */
-	x: number;
-
-	/**
-	 * The y-coordinate of the vector.
-	 */
-	y: number;
-}
+export interface vec2 { x: number; y: number; z?: number;}
 
 /**
  * Represents a 3-dimensional vector.
@@ -164,22 +154,14 @@ export interface vec3 extends vec2 {
 	z: number;
 }
 
-export type Vector = vec2 & { z?: number };
-
-/**
- * Represents the size of an object.
- * It can be either a 2D vector or a 3D vector.
- */
-export type Size = Vector;
-
 export type x_y_w_h_arr = vec4arr;
 
 /**
  * Represents an area defined by a start and end point.
  */
 export interface Area {
-	start: Vector;
-	end: Vector;
+	start: vec2;
+	end: vec2;
 }
 
 export type Polygon = number[];

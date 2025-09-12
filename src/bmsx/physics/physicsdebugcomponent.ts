@@ -2,7 +2,7 @@ import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { new_vec3 } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
-import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { PhysicsBody } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
 

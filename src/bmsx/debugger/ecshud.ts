@@ -1,6 +1,6 @@
 import { Registry } from '../core/registry';
 import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
-import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { DefaultECSPipelineRegistry as ECSReg } from '../ecs/pipeline';
 import { TickGroup } from '../ecs/ecsystem';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';

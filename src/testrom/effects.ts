@@ -30,7 +30,7 @@ export class MuzzleFlash extends PooledWorldObject {
         this.p.x = pos[0]; this.p.y = pos[1]; this.p.z = pos[2]; this.p.life = 0; this.p.max = 0.12; this.p.size = 1.2; this.p.a = 1;
     }
     run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; this.p.life += dt; if (this.p.life >= this.p.max) { this.active = false; MuzzleFlash.pool.release(this); return; } this.p.size += this.p.grow * dt; this.p.a = 1 - this.p.life / this.p.max; }
-    override queueRenderSubmissions(): void { if (!this.active) return; $.view.drawParticle({ position: [this.p.x, this.p.y, this.p.z], size: this.p.size, color: { r: this.p.r, g: this.p.g, b: this.p.b, a: this.p.a } }); }
+    constructor() { super({ id: 'muzzleFlash' }); this.getOrCreateGenericRenderer().setProducer(({ rc }) => { if (!this.active) return; rc.submitParticle({ position: [this.p.x, this.p.y, this.p.z], size: this.p.size, color: { r: this.p.r, g: this.p.g, b: this.p.b, a: this.p.a } }); }); }
 }
 
 export class ImpactBurst extends PooledWorldObject {
@@ -56,7 +56,7 @@ export class ImpactBurst extends PooledWorldObject {
     static create(pos: [number, number, number]): ImpactBurst { const inst = this.pool.acquire() ?? new ImpactBurst(); inst.reset(pos); return inst; }
     protected reset(pos: [number, number, number]): void { this.ps.length = 0; for (let i = 0; i < 10; i++) { const th = Math.random() * Math.PI * 2; const ph = Math.random() * Math.PI; const sp = 3 + Math.random() * 4; this.ps.push({ x: pos[0], y: pos[1], z: pos[2], vx: Math.cos(th) * Math.sin(ph) * sp, vy: Math.cos(ph) * sp * 0.3, vz: Math.sin(th) * Math.sin(ph) * sp, life: 0, max: 0.5, r: 1, g: 0.6 + Math.random() * 0.3, b: 0.1, a: 1, size: 0.4, grow: -0.4 }); } }
     run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; let alive = false; for (const p of this.ps) { p.life += dt; if (p.life < p.max) alive = true; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 4 * dt; p.size = Math.max(0.05, p.size + p.grow * dt); p.a = 1 - p.life / p.max; } if (!alive) { this.active = false; ImpactBurst.pool.release(this); } }
-    override queueRenderSubmissions(): void { if (!this.active) return; for (const p of this.ps) { if (p.life < p.max) $.view.drawParticle({ position: [p.x, p.y, p.z], size: p.size, color: { r: p.r, g: p.g, b: p.b, a: p.a } }); } }
+    constructor() { super({ id: 'impactBurst' }); this.getOrCreateGenericRenderer().setProducer(({ rc }) => { if (!this.active) return; for (const p of this.ps) { if (p.life < p.max) rc.submitParticle({ position: [p.x, p.y, p.z], size: p.size, color: { r: p.r, g: p.g, b: p.b, a: p.a } }); } }); }
 }
 
 export class ExplosionEmitter extends PooledWorldObject {
@@ -82,7 +82,7 @@ export class ExplosionEmitter extends PooledWorldObject {
     static create(pos: [number, number, number]): ExplosionEmitter { const inst = this.pool.acquire() ?? new ExplosionEmitter(); inst.reset(pos); return inst; }
     protected reset(pos: [number, number, number]): void { this.ps.length = 0; for (let i = 0; i < 30; i++) { const th = Math.random() * Math.PI * 2; const ph = Math.random() * Math.PI; const sp = 2 + Math.random() * 6; this.ps.push({ x: pos[0], y: pos[1], z: pos[2], vx: Math.cos(th) * Math.sin(ph) * sp, vy: Math.cos(ph) * sp, vz: Math.sin(th) * Math.sin(ph) * sp, life: 0, max: 0.8, r: 1, g: 0.4 + Math.random() * 0.2, b: 0, a: 1, size: 0.6, grow: -0.5 }); } }
     run(): void { if (!this.active) return; const dt = $.deltaTime / 1000; let alive = false; for (const p of this.ps) { p.life += dt; if (p.life < p.max) alive = true; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 6 * dt; p.size = Math.max(0.05, p.size + p.grow * dt); p.a = 1 - p.life / p.max; } if (!alive) { this.active = false; ExplosionEmitter.pool.release(this); } }
-    override queueRenderSubmissions(): void { if (!this.active) return; for (const p of this.ps) { if (p.life < p.max) $.view.drawParticle({ position: [p.x, p.y, p.z], size: p.size, color: { r: p.r, g: p.g, b: p.b, a: p.a } }); } }
+    constructor() { super({ id: 'explosionEmitter' }); this.getOrCreateGenericRenderer().setProducer(({ rc }) => { if (!this.active) return; for (const p of this.ps) { if (p.life < p.max) rc.submitParticle({ position: [p.x, p.y, p.z], size: p.size, color: { r: p.r, g: p.g, b: p.b, a: p.a } }); } }); }
 }
 
 interface DN { active: boolean; txt: string; x: number; y: number; z: number; vy: number; life: number; max: number; }
@@ -114,7 +114,7 @@ export class DamageNumberManager extends WorldObject {
             if (d.life >= d.max) { d.active = false; this.pool.release(d); }
         });
     }
-    override queueRenderSubmissions(): void {
+    constructor() { super({ id: 'damageNums' }); this.getOrCreateGenericRenderer().setProducer(() => {
         const cam = $.world.activeCamera3D; if (!cam) return;
         const m = cam.viewProjection as Float32Array;
         const gw = $.world.gamewidth, gh = $.world.gameheight;
@@ -129,5 +129,5 @@ export class DamageNumberManager extends WorldObject {
             const sy = Math.round((-ny * 0.5 + 0.5) * gh);
             TextWriter.drawText(sx, sy, d.txt, undefined, undefined, Msx1Colors[15]);
         });
-    }
+    }); }
 }

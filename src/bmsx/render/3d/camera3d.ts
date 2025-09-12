@@ -1,5 +1,5 @@
 import { Oriented, vec3 } from '../../rompack/rompack';
-import { excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from '../../serializer/gameserializer';
+import { excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { extractFrustumPlanes, M4, Mat4, Plane, Q, quat, sphereInFrustum, V3 } from './math3d';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+

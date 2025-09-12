@@ -10,7 +10,7 @@ import { div_vec2, new_vec2 } from '../utils/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { PhysicsDebugComponent } from '../physics/physicsdebugcomponent';
 import type { Identifier, vec2 } from '../rompack/rompack';
-import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';

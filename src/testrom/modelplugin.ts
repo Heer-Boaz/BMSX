@@ -101,7 +101,7 @@ class RailDemoDriver extends WorldObject {
 		for (const impact of this.bullets.popImpacts()) {
 			const enemy = $.world.getWorldObject(impact.enemyId);
 			if (enemy) {
-				const health = enemy.getComponent?.(EnemyHealthComponent) as EnemyHealthComponent;
+				const health = enemy.getFirstComponent(EnemyHealthComponent);
 				if (health) {
 					const now = performance.now() / 1000;
 					if (health.dead) {

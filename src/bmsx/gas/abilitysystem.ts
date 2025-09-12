@@ -3,7 +3,7 @@ import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
-import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import type {
 	Ability, AbilityContext, AbilityCoroutine, AbilityId, AbilitySpec,
 	AbilityYield,

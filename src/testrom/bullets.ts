@@ -19,14 +19,6 @@ export class BulletManager extends WorldObject {
 
 	private pool: Pool<Bullet>;
 	private impacts: BulletImpact[] = []; // consumed each frame by game logic
-	constructor(size = 64) {
-		super({ id: 'bullets' });
-		this.pool = new Pool<Bullet>({
-			warm: size,
-			onCreate: () => ({ active: false, pos: [0, 0, 0], prev: [0, 0, 0], dir: [0, 0, -1], speed: 90, life: 0, maxLife: 0.8, damage: 10 }),
-			onReset: (b) => { b.active = true; b.life = 0; b.maxLife = 0.9; b.damage = 10; }
-		});
-	}
 	spawn(p: [number, number, number], d: [number, number, number]) {
 		const b = this.pool.acquire();
 		if (!b) return; // pool exhausted but we keep it silent for now
@@ -53,12 +45,19 @@ export class BulletManager extends WorldObject {
 			if (phys) this.checkHitsSegment(b, phys);
 		});
 	}
-	override queueRenderSubmissions(): void {
-		// Draw bullet tracers as small fading particles along current segment
-		this.pool.forEachActive(b => {
-			const t = b.life / b.maxLife; const a = 1 - t; // fade
-			$.view.drawParticle({ position: [b.pos[0], b.pos[1], b.pos[2]], size: 0.25, color: { r: 1, g: 0.9, b: 0.4, a } });
-			$.view.drawParticle({ position: [b.prev[0], b.prev[1], b.prev[2]], size: 0.15, color: { r: 1, g: 0.6, b: 0.2, a: a * 0.6 } });
+	constructor(size = 64) {
+		super({ id: 'bullets' });
+		this.pool = new Pool<Bullet>({
+			warm: size,
+			onCreate: () => ({ active: false, pos: [0, 0, 0], prev: [0, 0, 0], dir: [0, 0, -1], speed: 90, life: 0, maxLife: 0.8, damage: 10 }),
+			onReset: (b) => { b.active = true; b.life = 0; b.maxLife = 0.9; b.damage = 10; }
+		});
+		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+			this.pool.forEachActive(b => {
+				const t = b.life / b.maxLife; const a = 1 - t;
+				rc.submitParticle({ position: [b.pos[0], b.pos[1], b.pos[2]], size: 0.25, color: { r: 1, g: 0.9, b: 0.4, a } });
+				rc.submitParticle({ position: [b.prev[0], b.prev[1], b.prev[2]], size: 0.15, color: { r: 1, g: 0.6, b: 0.2, a: a * 0.6 } });
+			});
 		});
 	}
 	
@@ -69,7 +68,7 @@ export class BulletManager extends WorldObject {
 			if (!body.invMass || body.isTrigger) continue;
 			const wo = $.world.getWorldObject(body.userData);
 			if (!wo) continue;
-			const health = wo.getComponent<EnemyHealthComponent>(EnemyHealthComponent);
+			const health = wo.getFirstComponent(EnemyHealthComponent);
 			if (!health || health.dead) continue;
 			if (this.segmentIntersectsBody(segFrom, segTo, body)) {
 				health.applyDamage(b.damage);
@@ -98,4 +97,3 @@ export class BulletManager extends WorldObject {
 	}
 	forEach(cb: (b: Bullet) => void) { this.pool.forEachActive(cb); }
 }
-

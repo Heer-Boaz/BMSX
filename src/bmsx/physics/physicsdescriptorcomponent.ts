@@ -2,7 +2,7 @@ import { Component } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { new_vec3 } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
-import { insavegame, onload, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { insavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import type { PhysicsBodyDesc } from './physicsbody';
 import { PhysicsComponent, PhysicsComponentOptions } from './physicscomponent';
 

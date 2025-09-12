@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type RevivableObjectArgs, type vec2, type RenderSubmission, type RenderSubmitQueue } from 'bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type GenericRendererComponent, type RevivableObjectArgs, type vec2 } from 'bmsx';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
 
@@ -8,13 +8,13 @@ export type HitMarkerType = 'player_hit' | 'enemy_hit' | 'poef';
 
 export type HitMarkerInfo = {
     type: HitMarkerType,
-    pos: vec3, // Offset from the fighter's position
+    pos: vec2, // Offset from the fighter's position
 };
 
 function getDamage(attackType: AttackType): number {
     switch (attackType) {
         default:
-            return 10;
+            return 1000;
     }
 }
 
@@ -99,6 +99,12 @@ export abstract class Fighter extends SpriteObject {
         this.facing = opts.facing ?? 'right';
         this.currentHitMarker = null;
         this.player_index = opts.playerIndex ?? 1;
+        // Producer: base sprite + optional hit marker overlay
+        this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+            // Base sprite from SpriteObject
+            rc.submitSprite(this.sprite.paint_offset(this));
+            this.paintHitMarker(this.currentHitMarker, rc);
+        });
     }
 
     public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
@@ -156,23 +162,7 @@ export abstract class Fighter extends SpriteObject {
         $.emit('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
     }
 
-    public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-        // Base sprite
-        super.queueRenderSubmissions(queue);
-        // Overlays: hit marker sprite if present
-        if (this.currentHitMarker) {
-            let hitMarkerImgId: string | undefined;
-            switch (this.currentHitMarker.type) {
-                case 'player_hit': hitMarkerImgId = BitmapId.au_p1; break;
-                case 'enemy_hit': hitMarkerImgId = BitmapId.au_p2; break;
-                case 'poef': hitMarkerImgId = BitmapId.poef; break;
-            }
-            if (hitMarkerImgId) {
-                const imgSub: RenderSubmission = { type: 'img', imgid: hitMarkerImgId, pos: this.currentHitMarker.pos };
-                queue.submit.typed(imgSub);
-            }
-        }
-    }
+    // queueRenderSubmissions removed; rendering handled by GenericRendererComponent producer
 
     override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
@@ -183,23 +173,25 @@ export abstract class Fighter extends SpriteObject {
         this.y_nonotify = VERTICAL_POSITION_FIGHTERS - this.sy;
     }
 
-    protected paintHitMarker(hitMarker: HitMarkerInfo) {
+    protected paintHitMarker(hitMarker: HitMarkerInfo, rc: GenericRendererComponent): void {
         // Show hit marker if there is one
         if (hitMarker) {
-            let hitMarkerImgId: string;
+            let imgid: string;
             switch (hitMarker.type) {
                 case 'player_hit':
-                    hitMarkerImgId = BitmapId.au_p1;
+                    imgid = BitmapId.au_p1;
                     break;
                 case 'enemy_hit':
-                    hitMarkerImgId = BitmapId.au_p2;
+                    imgid = BitmapId.au_p2;
                     break;
                 case 'poef':
-                    hitMarkerImgId = BitmapId.poef;
+                    imgid = BitmapId.poef;
                     break;
             }
 
-            $.view.renderer.submit.sprite({ imgid: hitMarkerImgId, pos: hitMarker.pos });
+            rc.submitSprite({ imgid, pos: hitMarker.pos });
+
+            $.view.renderer.submit.sprite({ imgid, pos: hitMarker.pos });
         }
     }
 

@@ -6,8 +6,8 @@
 // - Optional pooling for item reuse via Pool<T>.
 // - Excluded from savegame serialization.
 
-import { Pool } from './pool';
-import { excludeclassfromsavegame } from '../serializer/gameserializer';
+import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import type { Pool } from './pool';
 
 @excludeclassfromsavegame
 export class ScratchBatch<T> implements Iterable<T> {

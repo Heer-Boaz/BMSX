@@ -1,5 +1,6 @@
-import { color_arr, insavegame } from '../..';
+import { insavegame } from 'bmsx/serializer/serializationhooks';
 import type { TextureKey } from '../texturemanager';
+import type { color_arr } from 'bmsx/rompack/rompack';
 
 export interface MaterialTextures {
     albedo?: number;

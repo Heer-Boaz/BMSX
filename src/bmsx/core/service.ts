@@ -3,7 +3,7 @@ import { EventEmitter } from './eventemitter';
 import { Stateful } from '../fsm/fsmtypes';
 import { StateMachineController } from '../fsm/fsmcontroller';
 import { Registry } from './registry';
-import { onload, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 
 /**
  * Base class for non-world-bound, persistent services (UE-style Subsystems).

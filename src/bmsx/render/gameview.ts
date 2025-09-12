@@ -6,7 +6,7 @@ import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { multiply_vec, multiply_vec2, shallowCopy } from '../utils/utils';
 import { Input } from '../input/input';
-import type { Area, Polygon, Size, Vector, id2imgres, vec2, vec3arr } from '../rompack/rompack';
+import type { Area, Polygon, id2imgres, vec2, vec3arr } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import * as SpritesPipeline from './2d/sprites_pipeline';
 import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
@@ -44,7 +44,7 @@ export type RectRenderSubmission = {
 
 export type ImgRenderSubmission = {
 	imgid: string;
-	pos: Vector;
+	pos: vec2;
 	scale?: vec2;
 	flip?: FlipOptions;
 	colorize?: color;
@@ -132,13 +132,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public static imgassets: id2imgres = {};
 	public accessor default_font: BFont;
 
-	public windowSize: Size;
-	public availableWindowSize: Size;
-	public viewportSize: Size; // The size of the viewport, which is the size of the game buffer (e.g. 256x212 for the MSX2)
+	public windowSize: vec2;
+	public availableWindowSize: vec2;
+	public viewportSize: vec2; // The size of the viewport, which is the size of the game buffer (e.g. 256x212 for the MSX2)
 	public dx: number;
 	public dy: number;
 	public viewportScale: number;
-	public canvasSize: Size; // The size of the canvas, which may be different from the viewport size (e.g. when the RenderView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
+	public canvasSize: vec2; // The size of the canvas, which may be different from the viewport size (e.g. when the RenderView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
 
 	public canvas_dx: number;
 	public canvas_dy: number;
@@ -236,10 +236,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 	}
 
-	constructor(viewportSize: Size, canvasSize?: Size,) {
+	constructor(viewportSize: vec2, canvasSize?: vec2) {
 		Registry.instance.register(this);
-		this.viewportSize = shallowCopy(viewportSize) as Size;
-		this.canvasSize = (shallowCopy(canvasSize) ?? multiply_vec2(viewportSize, 2)) as Size; // By default, the canvas is twice the size of the viewport!!
+		this.viewportSize = shallowCopy(viewportSize) as vec2;
+		this.canvasSize = (shallowCopy(canvasSize) ?? multiply_vec2(viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		this.canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 		// Offscreen resolution for internal render graph targets (view-agnostic)
 		this.offscreenCanvasSize = multiply_vec(viewportSize, 2);

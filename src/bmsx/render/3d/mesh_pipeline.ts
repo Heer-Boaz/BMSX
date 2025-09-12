@@ -3,7 +3,7 @@
 import { makePipelineBuildDesc, PassEncoder, shaderModule } from '../..';
 import { $ } from '../../core/game';
 import type { Mesh } from '../../core/object/mesh';
-import { Float32ArrayPool } from '../../utils/utils';
+import { Float32ArrayPool } from 'bmsx/utils/pool';
 import type { vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import meshFS from '../3d/shaders/3d.frag.glsl';

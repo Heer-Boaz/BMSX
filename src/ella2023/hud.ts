@@ -1,6 +1,7 @@
-import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d, type RenderSubmitQueue, type RevivableObjectArgs } from 'bmsx';
+import { $, Msx1Colors, SpriteObject, StateMachineBlueprint, build_fsm, insavegame, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { BitmapId } from './resourceids';
+import { computeBarArea } from 'bmsx/utils/utils';
 
 @insavegame
 export class Hud extends SpriteObject {
@@ -16,37 +17,29 @@ export class Hud extends SpriteObject {
         }
     }
 
-    public override queueRenderSubmissions(queue: RenderSubmitQueue): void {
-        super.queueRenderSubmissions(queue);
-        // Update hitpoints
-        const world = $.world;
-        const player = world.getWorldObject<Fighter>('player');
-        const sinterklaas = world.getWorldObject<Fighter>('sinterklaas');
+	constructor(opts?: RevivableObjectArgs) {
+		super({ id: 'hud', ...opts ?? {} });
+		this.imgid = BitmapId.hud;
+		// Producer: HUD elements (health bars + text)
+		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+			const world = $.world;
+			const player = world.getWorldObject<Fighter>('player');
+			const sinterklaas = world.getWorldObject<Fighter>('sinterklaas');
+			const HP_BAR1 = { startX: 112, endX: 40, startY: 25, endY: 29 };
+			const HP_BAR2 = { startX: 216, endX: 144, startY: 25, endY: 29 };
+			const MAX_HP = 100;
+			const color = Msx1Colors[4];
+			const Z = 200;
+			const hp1 = sinterklaas?.hp ?? 100; // Note that the computeBarArea handles clamping
+			const hp2 = player?.hp ?? 100; // Note that the computeBarArea handles clamping
 
-        const HP_BAR1 = { startX: 112, endX: 40, startY: 25, endY: 29 };
-        const HP_BAR2 = { startX: 216, endX: 144, startY: 25, endY: 29 };
-        const MAX_HP = 100;
-        const color = Msx1Colors[4];
-        const Z = 200;
-
-        const hp1 = sinterklaas?.hp ?? 100;
-        const hp2 = player?.hp ?? 100;
-
-        const hp1EndX = HP_BAR1.startX + (HP_BAR1.endX - HP_BAR1.startX) * hp1 / MAX_HP;
-        const hp2EndX = HP_BAR2.endX - (HP_BAR2.endX - HP_BAR2.startX) * hp2 / MAX_HP;
-
-        let area = new_area3d(HP_BAR1.startX, HP_BAR1.startY, Z, hp1EndX, HP_BAR1.endY, Z);
-        queue.submit.typed({ type: 'rect', area, color, layer: 'ui', kind: 'fill' });
-        area = new_area3d(hp2EndX, HP_BAR2.startY, Z, HP_BAR2.endX, HP_BAR2.endY, Z);
-        queue.submit.typed({ type: 'rect', area, color, layer: 'ui', kind: 'fill' });
-
-        TextWriter.drawText(40, 32, 'sen kai la');
-        TextWriter.drawText(144, 32, 'ei la');
-    }
-
-    constructor(opts?: RevivableObjectArgs) {
-        super({ id: 'hud', ...opts ?? {} });
-        this.imgid = BitmapId.hud;
-    }
+			const area1 = computeBarArea(HP_BAR1, hp1, MAX_HP, Z, false);
+			rc.submitRect({ kind: 'fill', area: area1, color });
+			const area2 = computeBarArea(HP_BAR2, hp2, MAX_HP, Z, true);
+			rc.submitRect({ kind: 'fill', area: area2, color });
+			$.drawText(40, 32, 'sen kai la');
+			$.drawText(144, 32, 'ei la');
+		});
+	}
 
 }

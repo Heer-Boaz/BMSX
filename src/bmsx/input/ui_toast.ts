@@ -1,4 +1,4 @@
-import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
 import { $, } from '../core/game';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';

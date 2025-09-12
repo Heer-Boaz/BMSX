@@ -1,6 +1,6 @@
 import { Registry } from 'bmsx/core/registry';
 import type { Identifier, RegisterablePersistent } from 'bmsx/rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { RoomMgr } from './roommgr';
 
 @insavegame

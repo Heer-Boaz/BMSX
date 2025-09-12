@@ -1,7 +1,7 @@
 import { WorldObject } from '../core/object/worldobject';
 import { M4, Mat4, quat } from '../render/3d/math3d';
 import type { Identifier, Oriented, Scaled, vec3arr } from '../rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from '../serializer/gameserializer';
+import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { Component } from './basecomponent';
 
 @insavegame
