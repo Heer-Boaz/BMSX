@@ -829,7 +829,7 @@ export abstract class MeshObject extends WorldObject implements Oriented, Scaled
 		if (this.meshInstances.length === 0) return;
 		// Euler path removed; always use quaternion orientation
 
-		const transform = this.getComponent(TransformComponent);
+		const transform = this.getUniqueComponent(TransformComponent);
 		const base = this._base; // Float32Array(16) hergebruikt
 
 		if (transform) {

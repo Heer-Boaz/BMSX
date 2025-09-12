@@ -30,6 +30,7 @@ let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 @excludeclassfromsavegame
 @componenttags_postprocessing('render')
 export class PhysicsOverlayRenderer extends Component {
+    static unique = true;
     private canvas: HTMLCanvasElement;
     private ctx: CanvasRenderingContext2D;
     private lastResizeW = 0; private lastResizeH = 0;
@@ -74,8 +75,8 @@ export class PhysicsOverlayRenderer extends Component {
                 const space = spaceMap[sid];
                 if (!space || !space.objects) continue;
                 for (const wo of space.objects) {
-                    const p = wo.getComponent(PhysicsDebugComponent);
-                    if (p && p.enabled) debugComponents.push(p);
+                    const ps = wo.getComponents(PhysicsDebugComponent);
+                    for (const p of ps) if (p && p.enabled) debugComponents.push(p);
                 }
             }
         }
@@ -171,6 +172,7 @@ export class PhysicsOverlayRenderer extends Component {
 @componenttags_preprocessing('render')
 @excludeclassfromsavegame
 export class HitBoxVisualizer extends Component {
+    static unique = true;
     static toggle(obj: WorldObject) {
         if (HitBoxVisualizer.attachedToObject(obj)) {
             HitBoxVisualizer.detachFromObject(obj);
@@ -181,17 +183,17 @@ export class HitBoxVisualizer extends Component {
     }
 
     static attachToObject(obj: WorldObject) {
-        if (!obj.getComponent(HitBoxVisualizer)) {
+        if (!obj.getUniqueComponent(HitBoxVisualizer)) {
             obj.addComponent(new HitBoxVisualizer({ parentid: obj.id }));
         }
     }
 
     static detachFromObject(obj: WorldObject) {
-        obj.removeComponent(HitBoxVisualizer);
+        obj.removeComponents(HitBoxVisualizer);
     }
 
     static attachedToObject(obj: WorldObject) {
-        return obj.getComponent(HitBoxVisualizer);
+        return obj.getUniqueComponent(HitBoxVisualizer);
     }
 
     constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
@@ -216,6 +218,7 @@ export class HitBoxVisualizer extends Component {
 @excludeclassfromsavegame
 @componenttags_preprocessing('render')
 export class ObjectHighlighterComponent extends Component {
+    static unique = true;
     static toggle(obj: WorldObject) {
         if (ObjectHighlighterComponent.attachedToObject(obj)) {
             ObjectHighlighterComponent.detachFromObject(obj);
@@ -226,17 +229,17 @@ export class ObjectHighlighterComponent extends Component {
     }
 
     static attachToObject(obj: WorldObject) {
-        if (!obj.getComponent(ObjectHighlighterComponent)) {
+        if (!obj.getUniqueComponent(ObjectHighlighterComponent)) {
             obj.addComponent(new ObjectHighlighterComponent({ parentid: obj.id }));
         }
     }
 
     static detachFromObject(obj: WorldObject) {
-        obj.removeComponent(ObjectHighlighterComponent);
+        obj.removeComponents(ObjectHighlighterComponent);
     }
 
     static attachedToObject(obj: WorldObject) {
-        return obj.getComponent(ObjectHighlighterComponent);
+        return obj.getUniqueComponent(ObjectHighlighterComponent);
     }
 
     constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {

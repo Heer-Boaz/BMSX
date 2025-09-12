@@ -17,7 +17,7 @@ import { insavegame, onload, type RevivableObjectArgs } from '../serializer/game
 export type ComponentClass<T extends Component = Component> = new (...args: any[]) => T;
 
 export interface ConstructorWithAutoAddComponents {
-    autoAddComponents?: ComponentClass[];
+	autoAddComponents?: ComponentClass[];
 }
 
 /**
@@ -35,7 +35,7 @@ export type WorldObjectConstructorWithComponentList = WorldObjectConstructorBase
 /**
  * Represents a mapping of keys to components.
  */
-export type KeyToComponentMap = { [key: string]: Component };
+export type KeyToComponentMap = { [key: string]: Component[] };
 /**
  * Represents a constructor for a component.
  *
@@ -57,43 +57,58 @@ export type ComponentId = string;
  * Represents a container for components.
  */
 export interface ComponentContainer extends Identifiable, Registerable, Disposable {
-    /**
-     * A map of components, where the key is the component name and the value is the component instance.
-     */
-    componentMap: KeyToComponentMap;
+	/**
+	 * A map of components, where the key is the component name and the value is the component instance.
+	 */
+	componentMap: KeyToComponentMap;
 
-    /**
-     * Retrieves a component of the specified type from the container.
-     * @param constructor - The constructor function of the component type.
-     * @returns The component instance of the specified type, or undefined if not found.
-     */
-    getComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
+	/**
+	 * Retrieves a component of the specified type from the container.
+	 * @param constructor - The constructor function of the component type.
+	 * @returns The component instance of the specified type, or undefined if not found.
+	 */
+	getComponents<T extends Component>(constructor: ComponentConstructor<T>): T[];
 
-    /**
-     * Adds a component to the container.
-     * @param component - The component instance to add.
-     */
-    addComponent<T extends Component>(component: T): void;
+	/** Convenience: return the first instance of a component type, if any. */
+	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
 
-    /**
-     * Remove a component to the container.
-     * @param component - The component instance to remove.
-     */
-    removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void;
+	/**
+	 * Returns the unique instance of a component type if present; throws if multiple instances are attached.
+	 * Useful when the type is expected to be singular (e.g., Transform, Physics, ASC).
+	 */
+	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
 
-    /**
-     * Updates all components with the specified tag in the container.
-     * @param tag - The tag of the components to update.
-     * @param args - Additional arguments to pass to the components' update method.
-     */
-    // Removed: tag-driven updates are orchestrated by ECS Systems
+	/** Require a unique instance; throws if missing or if multiples are present. */
+	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T;
 
-    removeComponentsWithTag(tag: ComponentTag): void;
+	/**
+	 * Adds a component to the container.
+	 * @param component - The component instance to add.
+	 */
+	addComponent<T extends Component>(component: T): void;
 
-    /**
-     * Detaches all components from the container.
-     */
-    removeAllComponents(): void;
+	/**
+	 * Remove a component to the container.
+	 * @param component - The component instance to remove.
+	 */
+	removeComponents<T extends Component>(constructor: ComponentConstructor<T>): void;
+
+	/** Remove a specific component instance from the container. */
+	removeComponentInstance<T extends Component>(component: T): void;
+
+	/**
+	 * Updates all components with the specified tag in the container.
+	 * @param tag - The tag of the components to update.
+	 * @param args - Additional arguments to pass to the components' update method.
+	 */
+	// Removed: tag-driven updates are orchestrated by ECS Systems
+
+	removeComponentsWithTag(tag: ComponentTag): void;
+
+	/**
+	 * Detaches all components from the container.
+	 */
+	removeAllComponents(): void;
 }
 
 /**
@@ -102,8 +117,8 @@ export interface ComponentContainer extends Identifiable, Registerable, Disposab
  * and thus does not need a separate type.
  */
 export type ComponentUpdateParams = {
-    params: any[]; // The parameters of the original method
-    returnvalue?: any; //  The return value of the original method
+	params: any[]; // The parameters of the original method
+	returnvalue?: any; //  The return value of the original method
 };
 
 @insavegame
@@ -114,165 +129,171 @@ export type ComponentUpdateParams = {
  * @implements IIdentifiable
  */
 export abstract class Component<T extends ComponentContainer = ComponentContainer> implements Identifiable, EventSubscriber {
-    /**
-     * The identifier of the parent component.
-     */
-    public parentid: Identifier;
-    /**
-     * The component id is the parent id plus the component name.
-     */
-    public id: ComponentId; // The component id is the parent id + the component name
-    public get name(): string { return this.constructor?.name; }
-    public static tagsPre: Set<ComponentTag>;
-    public static tagsPost: Set<ComponentTag>;
-    public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
-    /**
-     * Gets the parent of the component.
-     *
-     * @returns The parent component.
-     */
-    public get parent(): T | undefined { return Registry.instance.get<T>(this.parentid); }
-    public parentAs<T extends Registerable>(): T | undefined { return Registry.instance.get<T>(this.parentid); }
-    protected _enabled: boolean;
-    /**
-     * Sets the enabled state of the component. If the component is disabled, it will not be updated.
-     *
-     * @param value - The new value for the enabled state.
-     */
-    public set enabled(value: boolean) { this._enabled = value; }
-    /**
-     * Gets the value indicating whether the component is enabled. If the component is disabled, it will not be updated.
-     *
-     * @returns {boolean} The value indicating whether the component is enabled.
-     */
-    public get enabled() { return this._enabled; }
+	/**
+	 * The identifier of the parent component.
+	 */
+	public parentid: Identifier;
+	/**
+	 * The component id is the parent id plus the component name.
+	 */
+	public id: ComponentId; // The component id is the parent id + the component name
+	public get name(): string { return this.constructor?.name; }
+	public static tagsPre: Set<ComponentTag>;
+	public static tagsPost: Set<ComponentTag>;
+	public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
+	/**
+	 * Gets the parent of the component.
+	 *
+	 * @returns The parent component.
+	 */
+	public get parent(): T | undefined { return Registry.instance.get<T>(this.parentid); }
+	public parentAs<T extends Registerable>(): T | undefined { return Registry.instance.get<T>(this.parentid); }
+	protected _enabled: boolean;
+	/**
+	 * Sets the enabled state of the component. If the component is disabled, it will not be updated.
+	 *
+	 * @param value - The new value for the enabled state.
+	 */
+	public set enabled(value: boolean) { this._enabled = value; }
+	/**
+	 * Gets the value indicating whether the component is enabled. If the component is disabled, it will not be updated.
+	 *
+	 * @returns {boolean} The value indicating whether the component is enabled.
+	 */
+	public get enabled() { return this._enabled; }
 
-    public get isAttached() { return !!this.parentid; }
+	public get isAttached() { return !!this.parentid; }
 
-    public get tagsPre() { return (this.constructor as ConstructorWithTagsProperty).tagsPre; }
-    public get tagsPost() { return (this.constructor as ConstructorWithTagsProperty).tagsPost; }
+	public get tagsPre() { return (this.constructor as ConstructorWithTagsProperty).tagsPre; }
+	public get tagsPost() { return (this.constructor as ConstructorWithTagsProperty).tagsPost; }
 
-    /**
-     * Returns a predicate function that checks whether this component's class
-     * (including inherited classes) has the given preprocessing or postprocessing tag.
-     *
-     * Advantage:
-     * - Provides a ready-to-use predicate bound to this instance (safe to pass around).
-     * - Avoids repeated method lookup when used heavily (small performance benefit).
-     * - Guards against missing tag sets on the constructor prototypes.
-     */
-    public get hasTag(): (tag: ComponentTag) => boolean {
-        return (tag: ComponentTag) =>
-            (this.tagsPre?.has(tag) ?? false) || (this.tagsPost?.has(tag) ?? false);
-    }
+	/**
+	 * Returns a predicate function that checks whether this component's class
+	 * (including inherited classes) has the given preprocessing or postprocessing tag.
+	 *
+	 * Advantage:
+	 * - Provides a ready-to-use predicate bound to this instance (safe to pass around).
+	 * - Avoids repeated method lookup when used heavily (small performance benefit).
+	 * - Guards against missing tag sets on the constructor prototypes.
+	 */
+	public get hasTag(): (tag: ComponentTag) => boolean {
+		return (tag: ComponentTag) =>
+			(this.tagsPre?.has(tag) ?? false) || (this.tagsPost?.has(tag) ?? false);
+	}
 
-    /**
-     * Constructs a new component with the specified parent id.
-     *
-     * @param parentid - The identifier of the parent.
-     */
-    constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
-        this.parentid ??= opts.parentid; // Store the parent id for later use
-        this.id ??= this.parentid + '_' + this.constructor?.name; // Note: A component can be added once per world object
-        this.enabled ??= true;
-        // Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
-        // so do not bind here to avoid running before derived decorator initializers.
-    }
+	/**
+	 * Constructs a new component with the specified parent id.
+	 *
+	 * @param parentid - The identifier of the parent.
+	 */
+	constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+		this.parentid ??= opts.parentid; // Store the parent id for later use
+		this.id ??= this.parentid + '_' + this.constructor?.name; // Final id may be suffixed when attached if multiples exist
+		this.enabled ??= true;
+		// Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
+		// so do not bind here to avoid running before derived decorator initializers.
+	}
 
-    /**
-     * Disposes the component by disabling it, removing event subscriptions, and deregistering it from the entity registry.
-     */
-    public dispose() {
-        this.detach();
-        this.enabled = false;
-        // Remove event subscriptions
-        this.unbind();
-    }
+	/**
+	 * Disposes the component by disabling it, removing event subscriptions, and deregistering it from the entity registry.
+	 */
+	public dispose() {
+		this.detach();
+		this.enabled = false;
+		// Remove event subscriptions
+		this.unbind();
+	}
 
-    public attach(newParent?: Identifier) {
-        // If a new parent is specified, detach from the old parent
-        if (newParent) {
-            this.isAttached && this.detach();
-            this.parentid = newParent;
-        }
+	public attach(newParent?: Identifier) {
+		// If a new parent is specified, detach from the old parent
+		if (newParent) {
+			this.isAttached && this.detach();
+			this.parentid = newParent;
+		}
 
-        const parent = this.parent;
-        if (!parent) {
-            // Gracefully no-op if parent is not available (e.g., during dehydration/hydration or debug toggles)
-            console.debug(`Component ${this.id} has no parent to attach to.`);
-            return;
-        }
-        else if (!parent.componentMap[this.name]) {
-            parent.addComponent(this);
-        }
-        else {
-            console.debug(`Component ${this.id} is already attached to parent ${parent.id}.`);
-        }
-    }
+		const parent = this.parent;
+		if (!parent) {
+			// Gracefully no-op if parent is not available (e.g., during dehydration/hydration or debug toggles)
+			console.debug(`Component ${this.id} has no parent to attach to.`);
+			return;
+		}
 
-    public detach() {
-        const parent = this.parent;
-        if (!parent) {
-            console.debug(`Component ${this.id} has no parent to detach from.`);
-            // If there's no parent, there's nothing to detach; fail silently (common during dehydration/debugger operations)
-            return;
-        }
+		// Enforce uniqueness if the component class declares it
+		const ctor = this.constructor as ConstructorWithTagsProperty & { unique?: boolean };
+		const existing = parent.getComponents?.(this.constructor as any) ?? [];
+		if (ctor.unique && existing.length > 0) {
+			throw new Error(`Component '${this.name}' is marked unique and is already attached to '${parent.id}'.`);
+		}
+		// Attach always allows multiple instances; container will assign final id and bind
+		parent.addComponent(this);
+		this.bind();
+	}
 
-        // Pass the constructor function (not a string). Cast to ComponentConstructor to satisfy TS.
-        parent.removeComponent(this.constructor as ComponentConstructor<Component>);
+	public detach() {
+		const parent = this.parent;
+		if (!parent) {
+			console.debug(`Component ${this.id} has no parent to detach from.`);
+			// If there's no parent, there's nothing to detach; fail silently (common during dehydration/debugger operations)
+			return;
+		}
 
-        // Clear the parent id to indicate that the component is no longer attached
-        this.parentid = null;
-    }
+		// Remove this instance from the parent
+		parent.removeComponentInstance(this);
 
-    /**
-     * Checks if the component has the specified tag.
-     * @param tag The tag to check.
-     * @returns True if the component has the tag, false otherwise.
-     */
-    hasPreprocessingTag(tag: ComponentTag): boolean {
-        const componentClass = this.constructor as ConstructorWithTagsProperty; // Get the component's constructor
-        return componentClass.tagsPre?.has(tag) ?? false; // Check if the component has the specified tag
-    }
+		this.unbind();
 
-    /**
-     * Checks if the component has the specified tag.
-     * @param tag The tag to check.
-     * @returns True if the component has the tag, false otherwise.
-     */
-    hasPostprocessingTag(tag: ComponentTag): boolean {
-        const componentClass = this.constructor as ConstructorWithTagsProperty; // Get the component's constructor
-        return componentClass.tagsPost?.has(tag) ?? false; // Check if the component has the specified tag
-    }
+		// Clear the parent id to indicate that the component is no longer attached
+		this.parentid = null;
+	}
 
-    /**
-     * Initializes the component.
-     */
-    @onload
-    onloadSetup() {
-        this.bind();
-    }
+	/**
+	 * Checks if the component has the specified tag.
+	 * @param tag The tag to check.
+	 * @returns True if the component has the tag, false otherwise.
+	 */
+	hasPreprocessingTag(tag: ComponentTag): boolean {
+		const componentClass = this.constructor as ConstructorWithTagsProperty; // Get the component's constructor
+		return componentClass.tagsPre?.has(tag) ?? false; // Check if the component has the specified tag
+	}
 
-    /** Wire decorator-declared subscriptions for this component. */
-    public bind(): void {
-        Registry.instance.register(this); // Register the component in the entity registry
-        EventEmitter.instance.initClassBoundEventSubscriptions(this);
-    }
+	/**
+	 * Checks if the component has the specified tag.
+	 * @param tag The tag to check.
+	 * @returns True if the component has the tag, false otherwise.
+	 */
+	hasPostprocessingTag(tag: ComponentTag): boolean {
+		const componentClass = this.constructor as ConstructorWithTagsProperty; // Get the component's constructor
+		return componentClass.tagsPost?.has(tag) ?? false; // Check if the component has the specified tag
+	}
 
-    /** Unwire all subscriptions for this component. */
-    public unbind(): void {
-        // Deregister the component from the entity registry
-        EventEmitter.instance.removeSubscriber(this);
-        $.registry.deregister(this);
-    }
+	/**
+	 * Initializes the component.
+	 */
+	@onload
+	onloadSetup() {
+		this.bind();
+	}
 
-    // Implement this method to handle preprocessing updates
-    public preprocessingUpdate(..._args: unknown[]): void {
-    }
+	/** Wire decorator-declared subscriptions for this component. */
+	public bind(): void {
+		Registry.instance.register(this); // Register the component in the entity registry
+		EventEmitter.instance.initClassBoundEventSubscriptions(this);
+	}
 
-    // Implement this method to handle postprocessing updates
-    public postprocessingUpdate(_args: ComponentUpdateParams): void {
-    }
+	/** Unwire all subscriptions for this component. */
+	public unbind(): void {
+		// Deregister the component from the entity registry
+		EventEmitter.instance.removeSubscriber(this);
+		$.registry.deregister(this);
+	}
+
+	// Implement this method to handle preprocessing updates
+	public preprocessingUpdate(..._args: unknown[]): void {
+	}
+
+	// Implement this method to handle postprocessing updates
+	public postprocessingUpdate(_args: ComponentUpdateParams): void {
+	}
 }
 
 /**
@@ -283,15 +304,15 @@ export type ComponentTag = string;
  * Represents a constructor function with optional tags properties.
  */
 type ConstructorWithTagsProperty = Function & {
-    /**
-     * The set of tags that should be applied before a method is executed.
-     */
-    tagsPre?: Set<ComponentTag>;
+	/**
+	 * The set of tags that should be applied before a method is executed.
+	 */
+	tagsPre?: Set<ComponentTag>;
 
-    /**
-     * The set of tags that should be applied after a method is executed.
-     */
-    tagsPost?: Set<ComponentTag>;
+	/**
+	 * The set of tags that should be applied after a method is executed.
+	 */
+	tagsPost?: Set<ComponentTag>;
 };
 
 /**
@@ -303,15 +324,15 @@ type ConstructorWithTagsProperty = Function & {
  * @returns A decorator function.
  */
 export function componenttags_preprocessing(...tags: ComponentTag[]) {
-    return function (value: any, _context: ClassDecoratorContext) {
-        const ctor = value as ConstructorWithTagsProperty;
-        if (!Object.prototype.hasOwnProperty.call(ctor, 'tagsPre')) {
-            ctor.tagsPre = new Set<ComponentTag>(); // Create a new set if not present on the class itself
-        }
-        tags.forEach(tag => ctor.tagsPre!.add(tag));
-        updateAllPreprocessingTags(ctor);
-        // no class replacement
-    };
+	return function (value: any, _context: ClassDecoratorContext) {
+		const ctor = value as ConstructorWithTagsProperty;
+		if (!Object.prototype.hasOwnProperty.call(ctor, 'tagsPre')) {
+			ctor.tagsPre = new Set<ComponentTag>(); // Create a new set if not present on the class itself
+		}
+		tags.forEach(tag => ctor.tagsPre!.add(tag));
+		updateAllPreprocessingTags(ctor);
+		// no class replacement
+	};
 }
 
 /**
@@ -319,17 +340,17 @@ export function componenttags_preprocessing(...tags: ComponentTag[]) {
  * @param constructor - The constructor function.
  */
 function updateAllPreprocessingTags(constructor: ConstructorWithTagsProperty) {
-    const tags = new Set<ComponentTag>(); // Use a set to avoid duplicate tags
-    let currentClass = constructor as ConstructorWithTagsProperty; // Start with the given constructor
+	const tags = new Set<ComponentTag>(); // Use a set to avoid duplicate tags
+	let currentClass = constructor as ConstructorWithTagsProperty; // Start with the given constructor
 
-    while (currentClass && currentClass !== Object) { // Traverse the prototype chain
-        if (currentClass.tagsPre) { // Check if the current class has tags
-            currentClass.tagsPre.forEach((tag: ComponentTag) => tags.add(tag)); // Add the tags to the set
-        }
-        currentClass = Object.getPrototypeOf(currentClass); // Get the next class in the prototype chain
-    }
+	while (currentClass && currentClass !== Object) { // Traverse the prototype chain
+		if (currentClass.tagsPre) { // Check if the current class has tags
+			currentClass.tagsPre.forEach((tag: ComponentTag) => tags.add(tag)); // Add the tags to the set
+		}
+		currentClass = Object.getPrototypeOf(currentClass); // Get the next class in the prototype chain
+	}
 
-    constructor.tagsPre = tags; // Update the tags
+	constructor.tagsPre = tags; // Update the tags
 }
 
 /**
@@ -338,15 +359,15 @@ function updateAllPreprocessingTags(constructor: ConstructorWithTagsProperty) {
  * @returns A decorator function that adds the tags to the constructor's prototype chain.
  */
 export function componenttags_postprocessing(...tags: ComponentTag[]) {
-    return function (value: any, _context: ClassDecoratorContext) {
-        const constructor = value as ConstructorWithTagsProperty;
-        if (!Object.prototype.hasOwnProperty.call(constructor, 'tagsPost')) {
-            constructor.tagsPost = new Set<ComponentTag>();
-        }
-        tags.forEach(tag => constructor.tagsPost!.add(tag));
-        updateAllPostprocessingTags(constructor);
-        // no class replacement
-    };
+	return function (value: any, _context: ClassDecoratorContext) {
+		const constructor = value as ConstructorWithTagsProperty;
+		if (!Object.prototype.hasOwnProperty.call(constructor, 'tagsPost')) {
+			constructor.tagsPost = new Set<ComponentTag>();
+		}
+		tags.forEach(tag => constructor.tagsPost!.add(tag));
+		updateAllPostprocessingTags(constructor);
+		// no class replacement
+	};
 }
 
 /**
@@ -354,17 +375,17 @@ export function componenttags_postprocessing(...tags: ComponentTag[]) {
  * @param constructor - The constructor function.
  */
 function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
-    const tags = new Set<ComponentTag>(); // Use a set to avoid duplicate tags
-    let currentClass = constructor as ConstructorWithTagsProperty; // Start with the given constructor
+	const tags = new Set<ComponentTag>(); // Use a set to avoid duplicate tags
+	let currentClass = constructor as ConstructorWithTagsProperty; // Start with the given constructor
 
-    while (currentClass && currentClass !== Object) { // Traverse the prototype chain
-        if (currentClass.tagsPost) { // Check if the current class has tags
-            currentClass.tagsPost.forEach((tag: ComponentTag) => tags.add(tag)); // Add the tags to the set
-        }
-        currentClass = Object.getPrototypeOf(currentClass); // Get the next class in the prototype chain
-    }
+	while (currentClass && currentClass !== Object) { // Traverse the prototype chain
+		if (currentClass.tagsPost) { // Check if the current class has tags
+			currentClass.tagsPost.forEach((tag: ComponentTag) => tags.add(tag)); // Add the tags to the set
+		}
+		currentClass = Object.getPrototypeOf(currentClass); // Get the next class in the prototype chain
+	}
 
-    constructor.tagsPost = tags; // Update the tags
+	constructor.tagsPost = tags; // Update the tags
 }
 
 /**
@@ -383,14 +404,14 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
  * @returns A decorator function that attaches the components to the world object constructor.
  */
 export function attach_components(...components: ComponentClass[]) {
-    return function (value: any, _context: ClassDecoratorContext) {
-        const ctor = value as WorldObjectConstructorWithComponentList;
-        const parentComponents = (Object.getPrototypeOf(ctor) as WorldObjectConstructorWithComponentList).autoAddComponents || [];
-        const merged = [...parentComponents, ...components];
-        const deduped: ComponentClass[] = [];
-        const seen = new Set<ComponentClass>();
-        for (const c of merged) { if (!seen.has(c)) { seen.add(c); deduped.push(c); } }
-        ctor.autoAddComponents = deduped;
-        // no class replacement
-    };
+	return function (value: any, _context: ClassDecoratorContext) {
+		const ctor = value as WorldObjectConstructorWithComponentList;
+		const parentComponents = (Object.getPrototypeOf(ctor) as WorldObjectConstructorWithComponentList).autoAddComponents || [];
+		const merged = [...parentComponents, ...components];
+		const deduped: ComponentClass[] = [];
+		const seen = new Set<ComponentClass>();
+		for (const c of merged) { if (!seen.has(c)) { seen.add(c); deduped.push(c); } }
+		ctor.autoAddComponents = deduped;
+		// no class replacement
+	};
 }

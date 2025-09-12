@@ -10,6 +10,7 @@ import { FloatingDialog } from './bmsxdebugger';
 @componenttags_postprocessing('render')
 @excludeclassfromsavegame
 export class BTVisualizer extends Component {
+    static unique = true;
     private dialog: FloatingDialog;
     private machineElements: Map<string, HTMLElement>;
 

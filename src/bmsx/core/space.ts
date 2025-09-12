@@ -145,7 +145,7 @@ export class Space  {
      * World.clearAllSpaces() performs disposal once for each unique object.
      */
     public clear(): void {
-        for (const o of this.objects) this.despawn(o, true);
+        for (const o of this.objects) this.despawn(o, false);
         this.depthSortDirty = false;
     }
 

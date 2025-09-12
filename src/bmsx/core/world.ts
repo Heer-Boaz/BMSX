@@ -636,9 +636,12 @@ export class World implements Stateful, RegisterablePersistent {
         this.forEachWorldObject((o) => { if (o instanceof ctor) fn(o as T); }, opts);
     }
 
-    /** Iterate objects that have a given component; passes the component instance too. */
-    public forEachWorldObjectWithComponent<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
-        this.forEachWorldObject((o) => { const c = (o).getComponent?.(component) as T | undefined; if (c) fn(o, c); }, opts);
+    /** Iterate objects that have instances of a given component; passes each component instance. */
+    public forEachWorldObjectWithComponents<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+        this.forEachWorldObject((o) => {
+            const list = (o).getComponents?.(component) as T[] | undefined;
+            if (list && list.length) for (const c of list) fn(o, c);
+        }, opts);
     }
 
     /**
@@ -670,15 +673,15 @@ export class World implements Stateful, RegisterablePersistent {
         for (const o of this.objects(opts)) { if (o instanceof ctor) yield o as T; }
     }
 
-    /** Iterate objects that have a given component; yields [object, component].
+    /** Iterate objects that have a given component; yields [object, component] for each instance.
      * Note: 'abstract' classes in TypeScript emit regular constructor functions at runtime.
      * instanceof checks the prototype chain against ctor.prototype, so using an abstract
      * base class here (ctor) will correctly return true for derived instances.
      */
-    public *objectsWithComponent<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
+    public *objectsWithComponents<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
         for (const o of this.objects(opts)) {
-            const c = o.getComponent(component) as T | undefined;
-            if (c) yield [o, c];
+            const list = o.getComponents(component) as T[] | undefined;
+            if (list && list.length) for (const c of list) yield [o, c];
         }
     }
 

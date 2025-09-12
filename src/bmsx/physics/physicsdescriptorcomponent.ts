@@ -13,6 +13,7 @@ import { PhysicsComponent, PhysicsComponentOptions } from './physicscomponent';
  */
 @insavegame
 export class PhysicsDescriptorComponent extends Component {
+    static unique = true;
     shape: PhysicsBodyDesc['shape'];
     mass: number; restitution: number; friction: number; isTrigger: boolean; layer: number; mask: number;
     syncAxis?: { x?: boolean; y?: boolean; z?: boolean };
@@ -31,7 +32,7 @@ export class PhysicsDescriptorComponent extends Component {
     }
     private attachRuntime() {
         const parent = $.world.getWorldObject(this.parentid); if (!parent) return;
-        if (parent.getComponent(PhysicsComponent)) return;
+        if (parent.getUniqueComponent(PhysicsComponent)) return;
         // console.log('[PhysicsDescriptorComponent] Attaching runtime physics to', parent.id);
         // NOTE: Do NOT force 'kinematic' here. Kinematic bodies were never integrated in PhysicsWorld.step,
         // causing everything spawned via descriptor to freeze. Default behavior should remain

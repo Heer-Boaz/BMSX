@@ -23,12 +23,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
     id: Identifier;
 
     /**
-     * Direct reference to parent state (not serialized).
+     * Direct reference to parent state
      */
     private parent_ref?: State;
 
     /**
-     * Direct reference to root state (not serialized).
+     * Direct reference to root state
      */
     private root_ref?: State;
 

@@ -148,7 +148,7 @@ export class TaskRuntimeSystem extends ECSystem {
 					break;
 				}
 				case 'waitTag': {
-					const asc = runner.ownerId ? $.world.getWorldObject(runner.ownerId)?.getComponent?.(AbilitySystemComponent) as AbilitySystemComponent : undefined;
+					const asc = runner.ownerId ? ($.world.getWorldObject(runner.ownerId)?.getComponents?.(AbilitySystemComponent)?.[0] as AbilitySystemComponent | undefined) : undefined;
 					if (!asc) break; // no-op if no ASC
 					if ((asc as AbilitySystemComponent).hasGameplayTag(value.tag) !== value.present) {
 						// emulate tag wait via polling next tick
@@ -177,14 +177,14 @@ export const WaitTag = (tag: string, present: boolean = true): TaskFn => functio
 export const SetTag = (owner: Identifier, tag: string, present: boolean): TaskFn => function* (_ctx) {
 	const wo = $.world.getWorldObject(owner);
 	if (!wo) return;
-	const asc = wo.getComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
+    const asc = wo.getUniqueComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
 	if (asc) present ? asc.addTag(tag) : asc.removeTag(tag);
 };
 
 export const ApplyEffect = (owner: Identifier, effect: Parameters<AbilitySystemComponent['applyEffect']>[0]): TaskFn => function* () {
 	const wo = $.world.getWorldObject(owner);
 	if (!wo) return;
-	const asc = wo.getComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
+    const asc = wo.getUniqueComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
 	if (asc) asc.applyEffect(effect);
 };
 

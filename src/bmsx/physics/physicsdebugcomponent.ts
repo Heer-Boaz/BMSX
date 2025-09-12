@@ -15,6 +15,7 @@ import { PhysicsWorld } from './physicsworld';
  */
 @excludeclassfromsavegame
 export class PhysicsDebugComponent extends Component {
+    static unique = true;
     override get enabled() { return this._enabled; }
     override set enabled(v: boolean) { this._enabled = v; }
 

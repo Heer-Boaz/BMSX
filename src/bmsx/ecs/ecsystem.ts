@@ -187,7 +187,7 @@ export class StateMachineSystem extends ECSystem {
 export class PrePositionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
 	update(world: World): void {
-		const objs = world.objectsWithComponent(PositionUpdateAxisComponent, { scope: 'current' });
+		const objs = world.objectsWithComponents(PositionUpdateAxisComponent, { scope: 'current' });
 		// Preprocess all PositionUpdateAxisComponents
 		for (const [_o, c] of objs) c.enabled && c.preprocessingUpdate();
 	}
@@ -203,7 +203,7 @@ export class BoundarySystem extends ECSystem {
 	update(world: World): void {
 		const width = world.gamewidth;
 		const height = world.gameheight;
-		for (let [o, c] of world.objectsWithComponent(ScreenBoundaryComponent, { scope: 'current' })) {
+		for (let [o, c] of world.objectsWithComponents(ScreenBoundaryComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
 			const prev = this.prev.get(o) || { x: o.pos.x, y: o.pos.y };
 			const oldx = prev.x;
@@ -257,7 +257,7 @@ export class BoundarySystem extends ECSystem {
 export class TileCollisionSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponent(TileCollisionComponent, { scope: 'current' })) {
+		for (let [o, c] of world.objectsWithComponents(TileCollisionComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
 			const oldx = c.oldPos?.x ?? o.pos.x;
 			const oldy = c.oldPos?.y ?? o.pos.y;
@@ -301,7 +301,7 @@ export class TileCollisionSystem extends ECSystem {
 export class PhysicsPreSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
 			// Inline tryBuildBody and WO->body sync (subset) via public API
 			// Ensure body exists
@@ -338,7 +338,7 @@ export class PhysicsPreSystem extends ECSystem {
 export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
 			if (!c.body) {
 				c.preprocessingUpdate?.();
@@ -360,7 +360,7 @@ export class PhysicsSyncBeforeStepSystem extends ECSystem {
 export class PhysicsPostSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
 			if (!c.writeBack) continue;
 			if (c.syncAxis?.x) o.x_nonotify = c.body.position.x;
@@ -380,7 +380,7 @@ export class PhysicsPostSystem extends ECSystem {
 export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	constructor(p = 0) { super(TickGroup.PostPhysics, p); }
 	update(world: World) {
-		for (let [o, c] of world.objectsWithComponent(PhysicsComponent, { scope: 'current' })) {
+		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c?.enabled || !c.body) continue;
 			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
 			if (c.writeBack) {
@@ -419,7 +419,7 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
 	update(world: World): void {
-		for (let [o, c] of world.objectsWithComponent(TransformComponent, { scope: 'current' })) {
+		for (let [o, c] of world.objectsWithComponents(TransformComponent, { scope: 'current' })) {
 			if (!c || !c.enabled) continue;
 			if (o?.pos) {
 				c.position[0] = o.pos.x;

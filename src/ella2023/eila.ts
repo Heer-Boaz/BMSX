@@ -273,13 +273,13 @@ export class Eila extends Fighter {
 					automatic_reset_mode: 'tree',
 					entering_state(this: Fighter, _state: State, directional: boolean = false): StateTransition {
 						this.sc.dispatch_event('animate_jump', this);
-						this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
+						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
 						this.jumping = true;
 						this.attacked_while_jumping = false;
 						return { state_id: '#this.jump_up', args: directional };
 					},
 					exiting_state(this: Fighter) {
-						this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
+						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = false;
 						this.jumping = false;
 					},
 					process_input(this: Fighter) {
@@ -520,7 +520,7 @@ export class Eila extends Fighter {
 	}
 
 	constructor(opts?: RevivableObjectArgs & { id?: Identifier }) {
-		super({ ...opts ?? {}, id: opts?.id ?? 'eila' });
+		super({ ...opts ?? {}, id: opts?.id ?? 'player' });
 		this.hp = EILA_START_HP;
 	}
 

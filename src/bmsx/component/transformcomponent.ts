@@ -6,6 +6,7 @@ import { Component } from './basecomponent';
 
 @insavegame
 export class TransformComponent extends Component<WorldObject> {
+    static unique = true;
     public position: vec3arr;
     // public rotation: vec3arr; // retained for legacy callers; not authoritative if parent supplies quaternion
     private orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented

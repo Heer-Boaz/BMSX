@@ -1,5 +1,5 @@
 import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../../ai/behaviourtree";
-import { Component, ComponentConstructor, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../../component/basecomponent";
+import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
 import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
@@ -30,7 +30,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Represents a map of components associated with their respective keys.
 	 */
-	public componentMap: KeyToComponentMap = {};
+    public componentMap: KeyToComponentMap = {};
 
 	public components: Component[] = []; // Array of all components in the object for easy iteration
 
@@ -44,9 +44,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 *
 	 * @returns An iterator for all components in the object.
 	 */
-	public *iterateComponents(): IterableIterator<Component> {
-		yield* this.components;
-	}
+    public *iterateComponents(): IterableIterator<Component> {
+        yield* this.components;
+    }
 
 	/**
 	 * Retrieves a component of the specified type from the world object.
@@ -58,10 +58,18 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-	getComponent<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>) {
-		const key = (constructor)?.name;
-		return this.componentMap[key] as T | undefined;
-	}
+    getComponents<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): T[] {
+        const key = (constructor)?.name;
+        const arr = this.componentMap[key] as T[] | undefined;
+        return arr ? [...arr] : [];
+    }
+
+    /** Return the unique instance of a component type; throws if multiple are attached. */
+    getUniqueComponent<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): T | undefined {
+        const key = (constructor)?.name;
+        const arr = this.componentMap[key] as T[] | undefined;
+        return arr && arr.length > 0 ? arr[0] : undefined;
+    }
 
 	/**
 	 * Adds a component to the world object.
@@ -70,16 +78,26 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param {T} component - The component to be added.
 	 * @returns {void}
 	 */
-	addComponent<T extends Component>(component: T): void {
-		// Ensure parent linkage is correct even if caller used legacy constructor
-		if (!component.parentid) component.parentid = this.id;
-		if (!component.id) component.id = component.parentid + '_' + component.constructor?.name;
-		this.componentMap[component.constructor?.name] = component;
-		this.components.push(component);
-		// Late-init: bind component event subscriptions and perform registry registration here,
-		// after the component has been fully constructed and added to the container.
-		component.onloadSetup();
-	}
+    addComponent<T extends Component>(component: T): void {
+        // Ensure parent linkage is correct even if caller used legacy constructor
+        if (!component.parentid) component.parentid = this.id;
+        // Attach into type bucket array
+        const key = component.constructor?.name;
+        const bucket = (this.componentMap[key] ||= []);
+        // Assign unique id suffix if another instance with same base id exists
+        const baseId = `${component.parentid}_${key}`;
+        let suffix = 0;
+        let finalId = baseId;
+        const used = new Set(this.components.map(c => c.id));
+        while (used.has(finalId)) { finalId = `${baseId}_${++suffix}`; }
+        component.id = finalId;
+        // Insert
+        bucket.push(component);
+        this.components.push(component);
+        // Late-init: bind component event subscriptions and perform registry registration here,
+        // after the component has been fully constructed and added to the container.
+        component.onloadSetup();
+    }
 
 	/**
 	 * Removes a component from the world object.
@@ -88,18 +106,30 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor of the component to remove.
 	 * @returns void
 	 */
-	removeComponent(constructor: { name: string } | Function): void {
-		const key = (constructor)?.name;
-		const component = this.componentMap[key];
-		if (!component) return;
-		// Remove from the components map first to avoid recursive cycles when component.dispose()
-		// calls back into removeComponent. This makes removal idempotent from the container side.
-		delete this.componentMap[key];
-		this.components = this.components.filter(c => c !== component);
+    removeComponents(constructor: { name: string } | Function): void {
+        const key = (constructor)?.name;
+        const arr = this.componentMap[key];
+        if (!arr || arr.length === 0) return;
+        // Remove all instances of this type
+        for (const c of [...arr]) this.removeComponentInstance(c);
+    }
 
-		// If the component exposes a detach method, call it (best-effort).
-		component.detach();
-	}
+    removeComponentInstance<T extends Component>(component: T): void {
+        // Remove from type bucket
+        const key = component.constructor?.name;
+        const arr = this.componentMap[key];
+        if (arr) {
+            const idx = arr.indexOf(component);
+            if (idx !== -1) arr.splice(idx, 1);
+            if (arr.length === 0) delete this.componentMap[key];
+        }
+        // Remove from flat list
+        const i2 = this.components.indexOf(component);
+        if (i2 !== -1) this.components.splice(i2, 1);
+        // Unbind and clear parent linkage
+        component.unbind();
+        component.parentid = null as any;
+    }
 
 	/**
 	 * Returns the primitive value of the WorldObject instance.
@@ -568,8 +598,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.deactivate();
 
 		// Dispose of components
-		const components = Object.values(this.componentMap);
-		components.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>)); // Remove the component from the world object and dispose (as part of the removal process)
+        for (const c of [...this.components]) this.removeComponentInstance(c);
 
 		// Dispose all state machines
 		this.sc.dispose();
@@ -717,15 +746,14 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.sc = new StateMachineController(opts?.fsm_id ?? (this.constructor.name), this.id);
 	}
 
-	removeComponentsWithTag(tag: ComponentTag): void {
-		const componentsToRemove = this.components.filter(component => component.hasTag(tag));
-		componentsToRemove.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>));
-	}
+    removeComponentsWithTag(tag: ComponentTag): void {
+        const componentsToRemove = this.components.filter(component => component.hasTag(tag));
+        componentsToRemove.forEach(component => this.removeComponentInstance(component));
+    }
 
-	removeAllComponents(): void {
-		const componentsToRemove = this.components;
-		componentsToRemove.forEach((component) => this.removeComponent(component.constructor as ComponentConstructor<Component>));
-	}
+    removeAllComponents(): void {
+        for (const c of [...this.components]) this.removeComponentInstance(c);
+    }
 
 	/**
 	 * Adds auto components to the world object.
@@ -736,7 +764,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			for (const componentClass of (this.constructor as ConstructorWithAutoAddComponents).autoAddComponents) {
 				// Pass options object to support revive-compatible constructors
 				const opts: RevivableObjectArgs & { parentid: Identifier } = { parentid: this.id };
-				this.addComponent(new componentClass(opts));
+				const component = new componentClass(opts);
+				component.attach(this.id);
 			}
 		}
 	}
