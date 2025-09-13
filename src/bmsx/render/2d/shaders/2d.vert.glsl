@@ -15,13 +15,13 @@ uniform float u_scale;      // Scaling factor for the position
 
 // Frame-shared UBO (std140). Only first fields are used in this shader.
 layout(std140) uniform FrameUniforms {
-    vec2 u_offscreenSize;
-    vec2 u_logicalSize;
-    vec4 u_timeDelta; // x=time, y=delta, z,w unused
-    mat4 u_view;
-    mat4 u_proj;
-    vec4 u_cameraPos; // xyz, w pad
-    vec4 u_ambient_frame; // rgb,intensity (kept for block parity with FS)
+	vec2 u_offscreenSize;
+	vec2 u_logicalSize;
+	vec4 u_timeDelta; // x=time, y=delta, z,w unused
+	mat4 u_view;
+	mat4 u_proj;
+	vec4 u_cameraPos; // xyz, w pad
+	vec4 u_ambient_frame; // rgb,intensity (kept for block parity with FS)
 };
 
 // Output variables to pass to the fragment shader

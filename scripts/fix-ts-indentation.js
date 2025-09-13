@@ -7,10 +7,10 @@ const root = path.resolve(__dirname, '..');
 function walk(dir, list=[]) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
-    if (e.name === 'node_modules' || e.name === '.git') continue;
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) walk(full, list);
-    else if (e.isFile() && full.endsWith('.ts')) list.push(full);
+	if (e.name === 'node_modules' || e.name === '.git') continue;
+	const full = path.join(dir, e.name);
+	if (e.isDirectory()) walk(full, list);
+	else if (e.isFile() && full.endsWith('.ts')) list.push(full);
   }
   return list;
 }
@@ -19,10 +19,10 @@ function convertLeadingIndent(line, tabWidth=4) {
   let i = 0;
   let spaces = 0;
   while (i < line.length) {
-    const ch = line[i];
-    if (ch === ' ') { spaces++; i++; }
-    else if (ch === '\t') { spaces += tabWidth; i++; }
-    else break;
+	const ch = line[i];
+	if (ch === ' ') { spaces++; i++; }
+	else if (ch === '\t') { spaces += tabWidth; i++; }
+	else break;
   }
   if (spaces === 0 && i === 0) return line; // no leading indent
   const tabs = Math.floor(spaces / tabWidth);
@@ -36,8 +36,8 @@ function fixFile(file) {
   const lines = src.split(/\r?\n/);
   const out = lines.map(l => convertLeadingIndent(l, 4)).join('\n');
   if (out !== src) {
-    fs.writeFileSync(file, out, 'utf8');
-    return true;
+	fs.writeFileSync(file, out, 'utf8');
+	return true;
   }
   return false;
 }
@@ -46,18 +46,18 @@ function main() {
   const files = walk(root);
   let changed = [];
   for (const f of files) {
-    try {
-      if (fixFile(f)) changed.push(path.relative(root, f));
-    } catch (err) {
-      console.error('Error processing', f, err.message);
-    }
+	try {
+	  if (fixFile(f)) changed.push(path.relative(root, f));
+	} catch (err) {
+	  console.error('Error processing', f, err.message);
+	}
   }
   if (changed.length) {
-    console.log('Modified files:');
-    changed.forEach(x => console.log('  ' + x));
-    process.exit(0);
+	console.log('Modified files:');
+	changed.forEach(x => console.log('  ' + x));
+	process.exit(0);
   } else {
-    console.log('No changes needed');
+	console.log('No changes needed');
   }
 }
 

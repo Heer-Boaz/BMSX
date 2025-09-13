@@ -4,6 +4,6 @@
   "type": "module",
   "version": "0.0.0",
   "dependencies": {
-    "bmsx": "0.0.0-dev"
+	"bmsx": "0.0.0-dev"
   }
 }

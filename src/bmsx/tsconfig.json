@@ -1,14 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true,
-    "composite": false,
-    "rootDir": "./",
-    "baseUrl": "./",
-    "paths": {
-      "bmsx": ["./", "./index.ts"],
-      "bmsx/*": ["./*"]
-    }
+	"noEmit": true,
+	"composite": false,
+	"rootDir": "./",
+	"baseUrl": "./",
+	"paths": {
+	  "bmsx": ["./", "./index.ts"],
+	  "bmsx/*": ["./*"]
+	}
   },
   "include": ["**/*.ts", "**/*.d.ts"],
   "exclude": ["node_modules"]

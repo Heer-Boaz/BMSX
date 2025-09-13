@@ -11,14 +11,14 @@ CACHE="no-store"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --port) PORT="${2:-8080}"; shift 2;;
-    --dir) DIR="${2:-dist}"; shift 2;;
-    --spa) SPA=1; shift;;
-    --cache) CACHE="${2:-no-store}"; shift 2;;
-    -h|--help)
-      echo "Usage: $0 [--port 8080] [--dir dist] [--spa] [--cache no-store]"
-      exit 0;;
-    *) echo "Unknown arg: $1"; exit 1;;
+	--port) PORT="${2:-8080}"; shift 2;;
+	--dir) DIR="${2:-dist}"; shift 2;;
+	--spa) SPA=1; shift;;
+	--cache) CACHE="${2:-no-store}"; shift 2;;
+	-h|--help)
+	  echo "Usage: $0 [--port 8080] [--dir dist] [--spa] [--cache no-store]"
+	  exit 0;;
+	*) echo "Unknown arg: $1"; exit 1;;
   esac
 done
 
@@ -32,21 +32,21 @@ if grep -qi microsoft /proc/version 2>/dev/null; then is_wsl=1; fi
 if [[ "$is_wsl" == "1" ]]; then
   # Best-effort: ignore failures (e.g., no admin privileges). Pass PORT via env.
   PORT="$PORT" /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -Command '
-    try {
-      [int]$p = [int]$env:PORT
-      $name = "BMSX Dist $p"
-      if (-not (Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)) {
-        New-NetFirewallRule -DisplayName $name -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow -Profile Private | Out-Null
-      }
-    } catch { }
+	try {
+	  [int]$p = [int]$env:PORT
+	  $name = "BMSX Dist $p"
+	  if (-not (Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue)) {
+		New-NetFirewallRule -DisplayName $name -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow -Profile Private | Out-Null
+	  }
+	} catch { }
   ' >/dev/null 2>&1 || true
 
   # Fetch Windows active IPv4 addresses to display friendly URLs
   WIN_IPS=$(/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -Command '
-    try {
-      $ips = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne $null -and $_.NetAdapter.Status -eq "Up" } | ForEach-Object { $_.IPv4Address.IPAddress }
-      ($ips -join " ")
-    } catch { "" }
+	try {
+	  $ips = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne $null -and $_.NetAdapter.Status -eq "Up" } | ForEach-Object { $_.IPv4Address.IPAddress }
+	  ($ips -join " ")
+	} catch { "" }
   ' | tr -d '\r')
 else
   WIN_IPS=""

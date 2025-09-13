@@ -1,6 +1,6 @@
 root = true
 
-[*.ts]
+[*.{ts,tsx,js,jsx,jsm,json,md,css,html,ps1,sh,glsl}]
 indent_style = tab
 indent_size = 4
 tab_width = 4

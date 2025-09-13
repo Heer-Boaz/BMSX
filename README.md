@@ -108,61 +108,61 @@ The BMSX project is organized to support modular engine development, multiple ga
 
   - The core engine source code, organized into subfolders by concern. Each folder contains reusable engine modules:
 
-    - **`ai/`**: AI-specific logic and helpers.
+	- **`ai/`**: AI-specific logic and helpers.
 
-    - **`audio/`**: Sound and music engine code.
+	- **`audio/`**: Sound and music engine code.
 
-    - **`component/`**: Component system and modular logic.
+	- **`component/`**: Component system and modular logic.
 
-    - **`core/`**: Core engine functionality, including game objects, spaces, and the base model. Also event system and global registry.
+	- **`core/`**: Core engine functionality, including game objects, spaces, and the base model. Also event system and global registry.
 
-    - **`debugger/`**: Debugging and visualization tools.
+	- **`debugger/`**: Debugging and visualization tools.
 
-    - **`fsm/`**: General-purpose finite state machine system.
+	- **`fsm/`**: General-purpose finite state machine system.
 
-    - **`input/`**: Input handling for keyboard, gamepad, and touch.
+	- **`input/`**: Input handling for keyboard, gamepad, and touch.
 
-    - **`render/`**: Rendering, view, and graphics-related code.
+	- **`render/`**: Rendering, view, and graphics-related code.
 
-    - **`rompack/`**: ROM packaging and resource management.
+	- **`rompack/`**: ROM packaging and resource management.
 
-    - **`serializer/`**: Save/load, compression, and serialization logic.
+	- **`serializer/`**: Save/load, compression, and serialization logic.
 
-    - **`systems/`**: Platform simulation for retro systems.
+	- **`systems/`**: Platform simulation for retro systems.
 
-    - **`ui/`**: User interface and dialog systems.
+	- **`ui/`**: User interface and dialog systems.
 
-    > See each folder for more details on its contents and responsibilities.
+	> See each folder for more details on its contents and responsibilities.
 
 - **`src/<game>/`**
   Each game has its own folder under `src/`.
   A game folder typically contains:
   - **`bootloader.ts`**: The entry point for the game, responsible for initializing game-specific logic and resources.
   - **`res/`**: All game-specific resources (images, audio, data files). Subfolders may include:
-    - `img/` – Sprites and textures
-    - `snd/` – Sound effects
-    - `mus/` – Music tracks
-    - `models/` – 3D models (glTF files, textures, and binary data)
-    - `data/` – Game-specific data files (JSON, level definitions, etc.)
-    - `manifest/` – Resource manifests
-    - `_ignore/` – Source art or unused assets
+	- `img/` – Sprites and textures
+	- `snd/` – Sound effects
+	- `mus/` – Music tracks
+	- `models/` – 3D models (glTF files, textures, and binary data)
+	- `data/` – Game-specific data files (JSON, level definitions, etc.)
+	- `manifest/` – Resource manifests
+	- `_ignore/` – Source art or unused assets
   - **`resourceids.ts`**: Enumerations for all image and audio IDs used in the game.
   - **Game logic files**: Game-specific objects, spaces, scenes, and scripts.
 
 - **`scripts/`**
   - **`rompacker/`**
-    The main build and packaging scripts for the BMSX engine and games:
-    - **`rompacker-core.ts`**: Core utilities and shared logic used by `rompacker.ts`.
-    - **`rompacker.ts`**: The main build script that packages the engine, game code, and resources into a `.rom` file and generates HTML loaders.
-    - **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
-    - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
-    - **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
-    - **`gltfloader.ts`**: Loads glTF models and textures.
-    - **`rompacker.rompack.d.ts`**: Type definitions for the ROM pack format and resources.
+	The main build and packaging scripts for the BMSX engine and games:
+	- **`rompacker-core.ts`**: Core utilities and shared logic used by `rompacker.ts`.
+	- **`rompacker.ts`**: The main build script that packages the engine, game code, and resources into a `.rom` file and generates HTML loaders.
+	- **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
+	- **`atlasbuilder.ts`**: Builds texture atlases from individual images.
+	- **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
+	- **`gltfloader.ts`**: Loads glTF models and textures.
+	- **`rompacker.rompack.d.ts`**: Type definitions for the ROM pack format and resources.
   - **`rominspector/`**
-    A utility for inspecting and debugging ROM files:
-    - **`rominspector.ts`**: The main script that reads a ROM file, extracts metadata, and displays information about its contents (images, audio, models, code).
-    - **`asciiart.ts`**: Utility for generating ASCII art representations of images, audio, and models.
+	A utility for inspecting and debugging ROM files:
+	- **`rominspector.ts`**: The main script that reads a ROM file, extracts metadata, and displays information about its contents (images, audio, models, code).
+	- **`asciiart.ts`**: Utility for generating ASCII art representations of images, audio, and models.
 - **`dist/`**
   Output directory for built games and HTML loaders:
   - `<game>.rom` – The packaged ROM file for each game.
@@ -1084,7 +1084,7 @@ The BMSX FSM system uses a flexible syntax for denoting events and state transit
   - Prefix an event name with `$` (e.g., `$click`) to indicate the event should be handled in the *local/self* scope (the current state or object).
   - Event names without `$` are handled in the *global* scope (dispatched to all listeners).
   - Example:
-    ```typescript
+	```typescript
     on: {
       '$click': 'idle',        // Local event handler
       'game_end': 'gameover',  // Global event handler
@@ -1093,14 +1093,14 @@ The BMSX FSM system uses a flexible syntax for denoting events and state transit
 
 - **Transition Paths**:
   - State transitions can target substates or other machines using dot notation:
-    - `main.idle.substate` targets a substate within a hierarchy.
+	- `main.idle.substate` targets a substate within a hierarchy.
   - Special prefixes can be used for relative transitions:
-    - `#this.` or `this.`: Transition within the current state machine.
-    - `#parent.` or `parent.`: Transition within the parent state machine.
-    - `#root.` or `root.`: Transition from the root of the state machine hierarchy.
+	- `#this.` or `this.`: Transition within the current state machine.
+	- `#parent.` or `parent.`: Transition within the parent state machine.
+	- `#root.` or `root.`: Transition from the root of the state machine hierarchy.
   - If no prefix is given, the transition is relative to the current context.
   - Example:
-    ```typescript
+	```typescript
     // Transition to a substate in the current machine
     to: 'idle.substate'
     // Transition to a state in the parent machine
@@ -1114,7 +1114,7 @@ The BMSX FSM system uses a flexible syntax for denoting events and state transit
 - **Usage in Handlers**:
   - In `on` and `on_input` handlers, you can use these notations for both event names and transition targets.
   - Example:
-    ```typescript
+	```typescript
     on: {
       '$customEvent': {
         do(this: MyObj) { /* ... */ },
@@ -1393,13 +1393,13 @@ BMSX supports flexible input from multiple sources and players, with runtime dev
 
 - **Multi-Player Input Access:**
   - Use the main game API to access input for any player:
-    - `$.getActionState(playerIndex, action)`
-    - `$.getPressedActions(playerIndex, query)`
-    - `$.consumeAction(playerIndex, action)`
-    - `$.setInputMap(playerIndex, inputMap)`
+	- `$.getActionState(playerIndex, action)`
+	- `$.getPressedActions(playerIndex, query)`
+	- `$.consumeAction(playerIndex, action)`
+	- `$.setInputMap(playerIndex, inputMap)`
   - The `Input` singleton also provides `getPlayerInput(playerIndex)` to access the `PlayerInput` instance for a given player (1–4).
   - Example: Get the state of the 'jump' action for Player 1:
-    ```typescript
+	```typescript
     const jumpState = $.getActionState(1, 'jump[t{>50}]'); // playerIndex is 1-based
     if (jumpState.pressed && !jumpState.consumed) {
         // Player 2 is holding jump
@@ -1407,7 +1407,7 @@ BMSX supports flexible input from multiple sources and players, with runtime dev
 
     ```
   - Example: Check if Player 2 triggered a low kick action:
-    ```typescript
+	```typescript
     if ($.getActionState(2, 'down[p] && kick[j]')) {
         // Player 2 performed a low kick
     }
@@ -1433,7 +1433,7 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
 - **Action Priority:**
   Actions can be prioritized in the following ways:
   - Using `getPressedActions(query?: ActionStateQuery)` to retrieve actions based on their state, where the `ActionStateQuery` includes the property `actionsByPriority: string[]` to specify the order of action processing. Example:
-      ```typescript
+	  ```typescript
                const priorityActions = $.getPressedActions(this.player_index, { pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
 
                // If no actions are pressed, switch to idle
@@ -1472,7 +1472,7 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
             }
       ```
   - Using `State.on_input` to register input handlers that can specify their own priority, allowing for flexible action resolution based on game state. The `State.on_input` property accepts multiple handlers, which are processed in the order they were registered, allowing for prioritization of certain actions over others. Example:
-      ```typescript
+	  ```typescript
             on_input: {
                'a[j]': {
                      do(this: quiz) {
@@ -1511,78 +1511,78 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
 There are multiple function nodes in the action parser, allowing for complex expressions and combinations.
 
   - `&`: **All true**
-    Returns `true` if **all** actions inside the parentheses are true in the current frame.
-    Example:
-    ```typescript
+	Returns `true` if **all** actions inside the parentheses are true in the current frame.
+	Example:
+	```typescript
     '&(up[!p], down[p], left[!p], right[p])' // triggers if up is not pressed, down is pressed, left is not pressed, and right is pressed
     ```
-    This triggers only if all four actions are true in the current frame.
+	This triggers only if all four actions are true in the current frame.
   - `?`: **Any true**
-    Returns `true` if **any** of the actions inside the parentheses are true in the current frame.
-    Example:
-    ```typescript
+	Returns `true` if **any** of the actions inside the parentheses are true in the current frame.
+	Example:
+	```typescript
     '?((up[!p] && down[p]), left[!p], right[p])' // triggers if up is not pressed and down is pressed, or left is not pressed, or right is pressed
     ```
-    This triggers if any of the conditions are true in the current frame.
+	This triggers if any of the conditions are true in the current frame.
   - `?jp(...)`: **Any Just Pressed**
-    Returns `true` if **any** of the actions inside the parentheses were just pressed in the current frame.
-    Example:
-    ```typescript
+	Returns `true` if **any** of the actions inside the parentheses were just pressed in the current frame.
+	Example:
+	```typescript
     '?jp(a, b)'
     ```
-    This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just pressed and not consumed.
+	This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just pressed and not consumed.
 
   - [&jp(...)](http://_vscodecontentref_/1): **All Just Pressed**
-    Returns `true` if **all** of the actions inside the parentheses were just pressed in the current frame.
-    Example:
-    ```typescript
+	Returns `true` if **all** of the actions inside the parentheses were just pressed in the current frame.
+	Example:
+	```typescript
     '&jp(up[j], down[j])'
     ```
-    This triggers only if both `up` and `down` were just pressed simultaneously.
+	This triggers only if both `up` and `down` were just pressed simultaneously.
   - `?jr(...)`: **Any Just Released**
-    Returns `true` if **any** of the actions inside the parentheses were just released in the current frame.
-    Example:
-    ```typescript
+	Returns `true` if **any** of the actions inside the parentheses were just released in the current frame.
+	Example:
+	```typescript
     '?jr(a, b)'
     ```
-    This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just released.
+	This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just released.
   - `&jr(...)`: **All Just Released**
-    Returns `true` if **all** of the actions inside the parentheses were just released in the current frame.
-    Example:
-    ```typescript
+	Returns `true` if **all** of the actions inside the parentheses were just released in the current frame.
+	Example:
+	```typescript
     '&jr(up, down)'
     ```
-    This triggers only if both `up` and `down` were just released simultaneously.
+	This triggers only if both `up` and `down` were just released simultaneously.
 
   - `?wp{n}(...)`: **Any Was Pressed in Window**
-    Returns `true` if **any** of the actions inside the parentheses was pressed at any time within the last `n` frames (input buffer window).
-    Example:
-    ```typescript
+	Returns `true` if **any** of the actions inside the parentheses was pressed at any time within the last `n` frames (input buffer window).
+	Example:
+	```typescript
     '?wp{10}(punch, kick)'
     ```
-    This triggers if either `punch` or `kick` was pressed at any point in the last 10 frames, regardless of whether it is still held.
+	This triggers if either `punch` or `kick` was pressed at any point in the last 10 frames, regardless of whether it is still held.
 
   - `&wp{n}(...)`: **All Were Pressed in Window**
-    Returns `true` if **all** of the actions inside the parentheses were pressed at least once within the last `n` frames.
-    Example:
-    ```typescript
+	Returns `true` if **all** of the actions inside the parentheses were pressed at least once within the last `n` frames.
+	Example:
+	```typescript
     '&w{20}(left, right, jump)'
     ```
-    This triggers only if all three actions ([left](http://_vscodecontentref_/2), [right](http://_vscodecontentref_/3), and `jump`) were pressed at least once in the last 20 frames.
+	This triggers only if all three actions ([left](http://_vscodecontentref_/2), [right](http://_vscodecontentref_/3), and `jump`) were pressed at least once in the last 20 frames.
   - `?wr{n}(...)`: **Any Was Released in Window**
-    Returns `true` if **any** of the actions inside the parentheses was released at any time within the last `n` frames.
-    Example:
-    ```typescript
+	Returns `true` if **any** of the actions inside the parentheses was released at any time within the last `n` frames.
+	Example:
+	```typescript
     '?wr{10}(punch, kick)'
     ```
-    This triggers if either `punch` or `kick` was released at any point in the last 10 frames.
+	This triggers if either `punch` or `kick` was released at any point in the last 10 frames.
   - `&wr{n}(...)`: **All Were Released in Window**
-    Returns `true` if **all** of the actions inside the parentheses were released at least once within the last `n` frames.
-    Example:
-    ```typescript
+	Returns `true` if **all** of the actions inside the parentheses were released at least once within the last `n` frames.
+	Example:
+	```typescript
     '&wr{10}(punch, kick)'
     ```
-    This triggers only if both `punch` and `kick` were released at least once in the last 10 frames.
+	This triggers only if both `punch` and `kick` were released at least once in the last 10 frames.
 
   **How it works:**
   - These functions are parsed by the action parser in `actionparser.ts`.
