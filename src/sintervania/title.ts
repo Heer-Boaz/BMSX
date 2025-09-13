@@ -56,7 +56,7 @@ export class Title implements WorldObject {
 	public run(): void {
 	}
 
-    public paint(): void {
-        $.view.drawImg({ imgid: BitmapId.Title, pos: new_vec3(0, 0, 0) });
-    }
+	public paint(): void {
+		$.view.drawImg({ imgid: BitmapId.Title, pos: new_vec3(0, 0, 0) });
+	}
 }

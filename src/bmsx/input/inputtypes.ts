@@ -8,40 +8,40 @@
 import type { Input } from "./input";
 
 export type ActionStateQuery = {
-    /**
-     * An optional array of filters to apply when querying for action states.
-     */
-    filter?: string[];
+	/**
+	 * An optional array of filters to apply when querying for action states.
+	 */
+	filter?: string[];
 
-    /**
-     * Specifies whether the action is currently pressed.
-     */
-    pressed?: boolean;
+	/**
+	 * Specifies whether the action is currently pressed.
+	 */
+	pressed?: boolean;
 
-    /**
-     * Specifies whether the action was just released
-     */
-    justReleased?: boolean;
+	/**
+	 * Specifies whether the action was just released
+	 */
+	justReleased?: boolean;
 
-    /**
-     * Specifies whether the action was not pressed before (i.e., it was just pressed).
-     */
-    justPressed?: boolean;
+	/**
+	 * Specifies whether the action was not pressed before (i.e., it was just pressed).
+	 */
+	justPressed?: boolean;
 
-    /**
-     * Specifies whether the action has been consumed.
-     */
-    consumed?: boolean;
+	/**
+	 * Specifies whether the action has been consumed.
+	 */
+	consumed?: boolean;
 
-    /**
-     * The time at which the action was pressed, in milliseconds.
-     */
-    pressTime?: number;
+	/**
+	 * The time at which the action was pressed, in milliseconds.
+	 */
+	pressTime?: number;
 
-    /**
-     * An optional array of action names, ordered by priority, to use when querying for action states.
-     */
-    actionsByPriority?: string[];
+	/**
+	 * An optional array of action names, ordered by priority, to use when querying for action states.
+	 */
+	actionsByPriority?: string[];
 };
 /**
  * Represents the ID of a button.
@@ -58,7 +58,7 @@ export type KeyOrButtonId2ButtonState = { [index: ButtonId]: ButtonState; };
  */ 5;
 export type KeyboardBinding = string | { id: string; scale?: number; invert?: boolean };
 export type KeyboardInputMapping = {
-    [action: string]: KeyboardBinding[];
+	[action: string]: KeyboardBinding[];
 };
 /**
  * Represents a mapping of gamepad inputs to gamepad buttons.
@@ -66,15 +66,15 @@ export type KeyboardInputMapping = {
 
 export type GamepadBinding = BGamepadButton | { id: BGamepadButton; scale?: number; invert?: boolean };
 export type GamepadInputMapping = {
-    [action: string]: GamepadBinding[];
+	[action: string]: GamepadBinding[];
 };
 /**
  * Represents the input mapping for a game.
  */
 
 export interface InputMap {
-    keyboard: KeyboardInputMapping;
-    gamepad: GamepadInputMapping;
+	keyboard: KeyboardInputMapping;
+	gamepad: GamepadInputMapping;
 }
 /**
  * Represents a keyboard button.
@@ -93,33 +93,33 @@ export type BGamepadButton = (typeof Input.BUTTON_IDS)[number];
  */
 
 export type ButtonState = {
-    // Binary/edge fields
-    pressed: boolean;
-    justpressed: boolean;
-    justreleased: boolean;
-    waspressed: boolean;
-    wasreleased: boolean;
-    consumed: boolean;
-    // Timing fields
-    presstime: number | null; // ms since pressed
-    timestamp: number | null; // last transition timestamp (ms)
-    pressedAtMs?: number | null; // absolute press timestamp (ms)
-    releasedAtMs?: number | null; // absolute release timestamp (ms)
-    // Identity of this press cycle, increases monotonically per-device
-    pressId?: number | null;
-    // Analog values
-    value?: number | null; // 1D analog value in [-1,1] or [0,1]
-    value2d?: readonly [number, number] | null; // 2D analog value
+	// Binary/edge fields
+	pressed: boolean;
+	justpressed: boolean;
+	justreleased: boolean;
+	waspressed: boolean;
+	wasreleased: boolean;
+	consumed: boolean;
+	// Timing fields
+	presstime: number | null; // ms since pressed
+	timestamp: number | null; // last transition timestamp (ms)
+	pressedAtMs?: number | null; // absolute press timestamp (ms)
+	releasedAtMs?: number | null; // absolute release timestamp (ms)
+	// Identity of this press cycle, increases monotonically per-device
+	pressId?: number | null;
+	// Analog values
+	value?: number | null; // 1D analog value in [-1,1] or [0,1]
+	value2d?: readonly [number, number] | null; // 2D analog value
 };
 /**
  * Represents the input event that is stored when a key or button is pressed or released.
  */
 export type InputEvent = {
-    eventType: 'press' | 'release';
-    identifier: ButtonId; // Key code or button name
-    timestamp: number;
-    consumed: boolean;
-    pressId?: number | null; // identity of the press this event belongs to
+	eventType: 'press' | 'release';
+	identifier: ButtonId; // Key code or button name
+	timestamp: number;
+	consumed: boolean;
+	pressId?: number | null; // identity of the press this event belongs to
 };
 /**
  * Represents the state of an action, including the action name and button state.
@@ -131,9 +131,9 @@ export type ActionState = { action: string; alljustpressed: boolean; allwaspress
  * Represents the parameters for a vibration effect on the gamepad.
  */
 export interface VibrationParams {
-    effect: GamepadHapticEffectType;
-    duration: number;
-    intensity: number;
+	effect: GamepadHapticEffectType;
+	duration: number;
+	intensity: number;
 };
 
 /**
@@ -141,48 +141,48 @@ export interface VibrationParams {
  * consuming buttons, resetting input, and getting the gamepad index.
  */
 export interface InputHandler {
-    /**
-     * Polls the input to update the button states.
-     */
-    pollInput(): void;
+	/**
+	 * Polls the input to update the button states.
+	 */
+	pollInput(): void;
 
-    /**
-     * Gets the state of the specified button.
-     * @param btn - The button name or null to get the state of all buttons.
-     * @returns The state of the button.
-     */
-    getButtonState(btn: ButtonId): ButtonState;
+	/**
+	 * Gets the state of the specified button.
+	 * @param btn - The button name or null to get the state of all buttons.
+	 * @returns The state of the button.
+	 */
+	getButtonState(btn: ButtonId): ButtonState;
 
-    /**
-     * Consumes the specified button, marking it as processed.
-     * @param button - The button name to consume.
-     */
-    consumeButton(button: ButtonId): void;
+	/**
+	 * Consumes the specified button, marking it as processed.
+	 * @param button - The button name to consume.
+	 */
+	consumeButton(button: ButtonId): void;
 
-    /**
-     * Resets the input, optionally excluding specified buttons.
-     * @param except - An optional array of button names to exclude from the reset.
-     */
-    reset(except?: string[]): void;
+	/**
+	 * Resets the input, optionally excluding specified buttons.
+	 * @param except - An optional array of button names to exclude from the reset.
+	 */
+	reset(except?: string[]): void;
 
-    /**
-     * Gets the index of the gamepad.
-     */
-    get gamepadIndex(): number;
+	/**
+	 * Gets the index of the gamepad.
+	 */
+	get gamepadIndex(): number;
 
-    /**
-     * Provides haptic feedback on the input device.
-     * @param effect - The type of haptic feedback to provide.
-     */
-    applyVibrationEffect: (params: VibrationParams) => void;
+	/**
+	 * Provides haptic feedback on the input device.
+	 * @param effect - The type of haptic feedback to provide.
+	 */
+	applyVibrationEffect: (params: VibrationParams) => void;
 
-    /**
-     * Checks if the gamepad has haptic feedback capabilities.
-     */
-    get supportsVibrationEffect(): boolean;
+	/**
+	 * Checks if the gamepad has haptic feedback capabilities.
+	 */
+	get supportsVibrationEffect(): boolean;
 
-    /**
-     * Disposes of the input handler, cleaning up resources and event listeners.
-     */
-    dispose(): void;
+	/**
+	 * Disposes of the input handler, cleaning up resources and event listeners.
+	 */
+	dispose(): void;
 }

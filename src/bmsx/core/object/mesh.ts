@@ -323,7 +323,7 @@ export abstract class MeshObject extends WorldObject implements Oriented, Scaled
 		// Euler rotation removed
 		this.scale ??= [1, 1, 1];
 		this.worldPool = new Float32ArrayPool(16);
-		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
 			if (this.meshInstances.length === 0) return;
 			const transform = this.getUniqueComponent(TransformComponent);
 			const base = this._base;
@@ -855,5 +855,5 @@ export abstract class MeshObject extends WorldObject implements Oriented, Scaled
 		super.dispose();
 	}
 
-    // queueRenderSubmissions removed; rendering handled by GenericRendererComponent producer
+	// queueRenderSubmissions removed; rendering handled by GenericRendererComponent producer
 }

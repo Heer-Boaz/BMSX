@@ -124,9 +124,9 @@ function parseOptions(args: string[]): RomPackerOptions {
 	const buildreslist = args.includes('--buildreslist');
 	const deploy = !args.includes('--nodeploy');
 	const skipTypecheck = args.includes('--skiptypecheck');
-    const enginedtsIdx = args.indexOf('--enginedts');
-    const enginedts = enginedtsIdx !== -1 ? args[enginedtsIdx + 1] : undefined;
-    const usePkgTsconfig = args.includes('--usepkgtsconfig');
+	const enginedtsIdx = args.indexOf('--enginedts');
+	const enginedts = enginedtsIdx !== -1 ? args[enginedtsIdx + 1] : undefined;
+	const usePkgTsconfig = args.includes('--usepkgtsconfig');
 
 	return {
 		rom_name,
@@ -137,11 +137,11 @@ function parseOptions(args: string[]): RomPackerOptions {
 		debug,
 		buildreslist,
 		deploy,
-        useTextureAtlas,
-        enginedts,
-        usePkgTsconfig,
-        skipTypecheck,
-    };
+		useTextureAtlas,
+		enginedts,
+		usePkgTsconfig,
+		skipTypecheck,
+	};
 }
 
 function writeOut(_tolog: string, type?: logentryType): void {
@@ -326,7 +326,7 @@ async function main() {
 			writeOut(`Skipping type-checking of the game as per ${_colors.brightRed.bold('--skiptypecheck')}.\n`);
 			progress.removeTasks(typecheckTasks);
 		}
-        // split-engine removed
+		// split-engine removed
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
 		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
 		if (usePkgTsconfig) writeOut(`Using per-game tsconfig.pkg.json for bundling/type-checking.\n`);
@@ -378,11 +378,11 @@ async function main() {
 				}
 				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
 				await esbuild(rom_name, bootloader_path, debug, tsProject);
-                await progress?.taskCompleted();
-                const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
-                await progress?.taskCompleted();
-                // Build resources
-                let resources = await getResourcesList(romResMetaList, rom_name);
+				await progress?.taskCompleted();
+				const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
+				await progress?.taskCompleted();
+				// Build resources
+				let resources = await getResourcesList(romResMetaList, rom_name);
 				await progress?.taskCompleted();
 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {

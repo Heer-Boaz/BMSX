@@ -19,10 +19,10 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	/** Unique identifier for the service (override or pass via constructor). */
 	public id: Identifier;
 	sc: StateMachineController;
-    /** True when the service participates in gameplay. */
-    public active: boolean = false;
-    /** If false, systems should not advance time-based logic for this service. */
-    public tickEnabled: boolean = true;
+	/** True when the service participates in gameplay. */
+	public active: boolean = false;
+	/** If false, systems should not advance time-based logic for this service. */
+	public tickEnabled: boolean = true;
 
 	/**
 	 * If true, service survives Registry.clear() calls (e.g., during world reloads).

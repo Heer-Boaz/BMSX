@@ -64,7 +64,7 @@ export interface StateEventHandler<T extends Stateful = any> { (state: State<T>,
 export interface StateExitHandler<T extends Stateful = any> { (state: State<T>, ...args: any[]): void; }
 export interface StateNextHandler<T extends Stateful = any> extends StateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): StateTransition | Identifier | void; }
 export interface StateEventCondition<T extends Stateful & EventSubscriber = any> {
-    (state: State<T>, ...args: any[]): boolean;
+	(state: State<T>, ...args: any[]): boolean;
 }
 
 export type listed_sdef_event = { name: string, scope: EventScope };
@@ -73,25 +73,25 @@ export type listed_sdef_event = { name: string, scope: EventScope };
  * Represents a state transition.
  */
 export type StateTransition = {
-    /**
-     * The next state to transition to.
-     */
-    state_id: Identifier;
+	/**
+	 * The next state to transition to.
+	 */
+	state_id: Identifier;
 
-    /**
-     * The arguments for the state transition.
-     */
-    args?: any;
+	/**
+	 * The arguments for the state transition.
+	 */
+	args?: any;
 
-    /**
-     * The transition type: 'to' or 'switch', where 'to' is the default.
-     */
-    transition_type?: TransitionType;
+	/**
+	 * The transition type: 'to' or 'switch', where 'to' is the default.
+	 */
+	transition_type?: TransitionType;
 
-    /**
-     * If set to `true`, the state will transition to the same state, even if the state is already the current state.
-     */
-    force_transition_to_same_state?: boolean;
+	/**
+	 * If set to `true`, the state will transition to the same state, even if the state is already the current state.
+	 */
+	force_transition_to_same_state?: boolean;
 };
 
 /**
@@ -104,30 +104,30 @@ export type StateTransitionWithType = StateTransition & { transition_type: Trans
  * @template T - The type of the stateful object that the event is associated with.
  */
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
-    /**
-     * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-     */
-    to?: StateTransition | Identifier,
+	/**
+	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 */
+	to?: StateTransition | Identifier,
 
-    /**
-     * The state ID to transition to.(as switch-type)  If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-     */
-    switch?: StateTransition | Identifier,
+	/**
+	 * The state ID to transition to.(as switch-type)  If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 */
+	switch?: StateTransition | Identifier,
 
-    /**
-     * The condition that must be met for the transition to occur.
-     */
-    if?: StateEventCondition<T>,
+	/**
+	 * The condition that must be met for the transition to occur.
+	 */
+	if?: StateEventCondition<T>,
 
-    /**
-     * The action that is executed when the transition occurs.
-     */
-    do?: StateEventHandler<T>,
+	/**
+	 * The action that is executed when the transition occurs.
+	 */
+	do?: StateEventHandler<T>,
 
-    /**
-     * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-     */
-    scope?: EventScope,
+	/**
+	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
+	 */
+	scope?: EventScope,
 };
 
 /**
@@ -135,19 +135,19 @@ export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
  * @template T - The type of the stateful object that implements `IStateful` and `IEventSubscriber`.
  */
 export interface StateGuard<T extends Stateful & EventSubscriber = any> {
-    /**
-     * Checks if the state can be entered.
-     * @this {T} - The stateful object.
-     * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
-     */
-    can_enter?: (this: T, state: State) => boolean;
+	/**
+	 * Checks if the state can be entered.
+	 * @this {T} - The stateful object.
+	 * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
+	 */
+	can_enter?: (this: T, state: State) => boolean;
 
-    /**
-     * Checks if the state can be exited.
-     * @this {T} - The stateful object.
-     * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
-     */
-    can_exit?: (this: T, state: State) => boolean;
+	/**
+	 * Checks if the state can be exited.
+	 * @this {T} - The stateful object.
+	 * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
+	 */
+	can_exit?: (this: T, state: State) => boolean;
 }
 
 /**
@@ -175,16 +175,16 @@ export type Tape = any[];
  * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.
  */
 export interface Stateful extends Registerable { // removed EventSubscriber from extends to avoid index-signature conflicts
-    /**
-     * The StatemachineController of the object.
-     */
-    sc: StateMachineController;
+	/**
+	 * The StatemachineController of the object.
+	 */
+	sc: StateMachineController;
 
-    /**
-     * The player index of the stateful object.
-     * If the player index is not set, it defaults to 1 (the first/main player).
-     */
-    player_index?: number;
+	/**
+	 * The player index of the stateful object.
+	 * If the player index is not set, it defaults to 1 (the first/main player).
+	 */
+	player_index?: number;
 }
 
 /**
@@ -196,10 +196,10 @@ export type FSMName = string;
  * Represents a constructor function with an optional property for linked FSMs.
  */
 export type ConstructorWithFSMProperty = Function & {
-    /**
-     * A set of FSM names that are linked to this constructor.
-     */
-    linkedFSMs?: Set<FSMName>;
+	/**
+	 * A set of FSM names that are linked to this constructor.
+	 */
+	linkedFSMs?: Set<FSMName>;
 };
 
 export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>;

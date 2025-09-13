@@ -8,18 +8,18 @@ import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '
  * Represents the definition of a behavior tree.
  */
 export type BehaviorTreeDefinition =
-    | { type: 'Selector'; children: BehaviorTreeDefinition[]; priority?: number }
-    | { type: 'Sequence'; children: BehaviorTreeDefinition[]; priority?: number }
-    | { type: 'Parallel'; children: BehaviorTreeDefinition[]; successPolicy: 'ONE' | 'ALL'; priority?: number }
-    | { type: 'Decorator'; child: BehaviorTreeDefinition; decorator: NodeDecorator; priority?: number }
-    | { type: 'Condition'; condition: NodeCondition; modifier?: NodeConditionModifier; parameters?: any[]; priority?: number }
-    | { type: 'CompositeCondition'; conditions: NodeCondition[]; modifier: NodeCompositeConditionModifier; parameters?: any[]; priority?: number }
-    | { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string; priority?: number }
-    | { type: 'Limit'; child: BehaviorTreeDefinition; limit: number, count_propname: string, priority?: number }
-    | { type: 'PrioritySelector'; children: BehaviorTreeDefinition[]; priority?: number }
-    | { type: 'Wait'; wait_time: number, wait_propname: string; priority?: number }
-    | { type: 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
-    | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[]; parameters?: any[]; priority?: number };
+	| { type: 'Selector'; children: BehaviorTreeDefinition[]; priority?: number }
+	| { type: 'Sequence'; children: BehaviorTreeDefinition[]; priority?: number }
+	| { type: 'Parallel'; children: BehaviorTreeDefinition[]; successPolicy: 'ONE' | 'ALL'; priority?: number }
+	| { type: 'Decorator'; child: BehaviorTreeDefinition; decorator: NodeDecorator; priority?: number }
+	| { type: 'Condition'; condition: NodeCondition; modifier?: NodeConditionModifier; parameters?: any[]; priority?: number }
+	| { type: 'CompositeCondition'; conditions: NodeCondition[]; modifier: NodeCompositeConditionModifier; parameters?: any[]; priority?: number }
+	| { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string; priority?: number }
+	| { type: 'Limit'; child: BehaviorTreeDefinition; limit: number, count_propname: string, priority?: number }
+	| { type: 'PrioritySelector'; children: BehaviorTreeDefinition[]; priority?: number }
+	| { type: 'Wait'; wait_time: number, wait_propname: string; priority?: number }
+	| { type: 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
+	| { type: 'CompositeAction'; actions: BehaviorTreeDefinition[]; parameters?: any[]; priority?: number };
 
 /**
  * Represents the definitions of behavior trees that are stored in the library to be constructed later.
@@ -41,22 +41,22 @@ export var BehaviorTrees: { [key: BehaviorTreeID]: BTNode } | null = null;
  * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_bt_library(): void {
-    BehaviorTrees = {};
-    for (let bt_id in BehaviorTreeDefinitions) {
-        let bt_def = BehaviorTreeDefinitions[bt_id];
-        if (bt_def) BehaviorTrees[bt_id] = constructBehaviorTree(bt_id);
-    }
+	BehaviorTrees = {};
+	for (let bt_id in BehaviorTreeDefinitions) {
+		let bt_def = BehaviorTreeDefinitions[bt_id];
+		if (bt_def) BehaviorTrees[bt_id] = constructBehaviorTree(bt_id);
+	}
 }
 
 /**
  * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_btdef_library(): void {
-    BehaviorTreeDefinitions = {};
-    for (let bt_id in behaviorTreeDefinitionsBuilders) {
-        let bt_def = behaviorTreeDefinitionsBuilders[bt_id]();
-        if (bt_def) BehaviorTreeDefinitions[bt_id] = bt_def;
-    }
+	BehaviorTreeDefinitions = {};
+	for (let bt_id in behaviorTreeDefinitionsBuilders) {
+		let bt_def = behaviorTreeDefinitionsBuilders[bt_id]();
+		if (bt_def) BehaviorTreeDefinitions[bt_id] = bt_def;
+	}
 }
 
 /**
@@ -80,42 +80,42 @@ let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTree
  * @returns The root node of the built behavior tree, which can consist of multiple nodes (sub trees).
  */
 function buildBehaviorTree(config: BehaviorTreeDefinition, id: BehaviorTreeID): BTNode {
-    switch (config.type) {
-        case 'Selector':
-            return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
-        case 'Sequence':
-            return new SequenceNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
-        case 'Parallel':
-            return new ParallelNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.successPolicy, config.priority);
-        case 'Decorator':
-            return new DecoratorNode(id, buildBehaviorTree(config.child, id), config.decorator, config.priority);
-        case 'Condition':
-            return new ConditionNode(id, config.condition, config.modifier, config.priority, config.parameters);
-        case 'CompositeCondition':
-            return new CompositeConditionNode(id, config.conditions, config.modifier, config.priority, config.parameters);
-        case 'RandomSelector':
-            return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.currentchild_propname, config.priority);
-        case 'Limit':
-            return new LimitNode(id, config.limit, config.count_propname, buildBehaviorTree(config.child, id), config.priority);
-        case 'PrioritySelector':
-            return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
-        case 'Wait':
-            return new WaitNode(id, config.wait_time, config.wait_propname, config.priority);
-        case 'Action':
-            return new ActionNode(id, config.action, config.priority, config.parameters);
-        case 'CompositeAction':
-            return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTree(actionConfig, id) as ActionNode), config.priority, config.parameters);
-    }
+	switch (config.type) {
+		case 'Selector':
+			return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
+		case 'Sequence':
+			return new SequenceNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
+		case 'Parallel':
+			return new ParallelNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.successPolicy, config.priority);
+		case 'Decorator':
+			return new DecoratorNode(id, buildBehaviorTree(config.child, id), config.decorator, config.priority);
+		case 'Condition':
+			return new ConditionNode(id, config.condition, config.modifier, config.priority, config.parameters);
+		case 'CompositeCondition':
+			return new CompositeConditionNode(id, config.conditions, config.modifier, config.priority, config.parameters);
+		case 'RandomSelector':
+			return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.currentchild_propname, config.priority);
+		case 'Limit':
+			return new LimitNode(id, config.limit, config.count_propname, buildBehaviorTree(config.child, id), config.priority);
+		case 'PrioritySelector':
+			return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
+		case 'Wait':
+			return new WaitNode(id, config.wait_time, config.wait_propname, config.priority);
+		case 'Action':
+			return new ActionNode(id, config.action, config.priority, config.parameters);
+		case 'CompositeAction':
+			return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTree(actionConfig, id) as ActionNode), config.priority, config.parameters);
+	}
 }
 
 /**
  * Represents a constructor with a behavior tree property.
  */
 export type ConstructorWithBTProperty = Function & {
-    /**
-     * A set of behavior tree names that are linked to this constructor.
-     */
-    linkedBTs?: Set<BehaviorTreeID>;
+	/**
+	 * A set of behavior tree names that are linked to this constructor.
+	 */
+	linkedBTs?: Set<BehaviorTreeID>;
 };
 
 /**
@@ -124,15 +124,15 @@ export type ConstructorWithBTProperty = Function & {
  * @returns A decorator function.
  */
 export function assign_bt(...bts: BehaviorTreeID[]) {
-    return function (value: any, _context: ClassDecoratorContext) {
-        const constructor = value as ConstructorWithBTProperty;
-        if (!Object.prototype.hasOwnProperty.call(constructor, 'linkedBTs')) {
-            constructor.linkedBTs = new Set<BehaviorTreeID>();
-        }
-        bts.forEach(bt => constructor.linkedBTs!.add(bt));
-        updateAllAssignedBTs(constructor);
-        // no class replacement
-    };
+	return function (value: any, _context: ClassDecoratorContext) {
+		const constructor = value as ConstructorWithBTProperty;
+		if (!Object.prototype.hasOwnProperty.call(constructor, 'linkedBTs')) {
+			constructor.linkedBTs = new Set<BehaviorTreeID>();
+		}
+		bts.forEach(bt => constructor.linkedBTs!.add(bt));
+		updateAllAssignedBTs(constructor);
+		// no class replacement
+	};
 }
 
 /**
@@ -141,17 +141,17 @@ export function assign_bt(...bts: BehaviorTreeID[]) {
  * @param constructor - The constructor function.
  */
 function updateAllAssignedBTs(constructor: any) {
-    const linkedBTs = new Set<BehaviorTreeID>();
-    let currentClass: any = constructor;
+	const linkedBTs = new Set<BehaviorTreeID>();
+	let currentClass: any = constructor;
 
-    while (currentClass && currentClass !== Object) {
-        if (currentClass.linkedBTs) {
-            currentClass.linkedBTs.forEach((bt: BehaviorTreeID) => linkedBTs.add(bt));
-        }
-        currentClass = Object.getPrototypeOf(currentClass);
-    }
+	while (currentClass && currentClass !== Object) {
+		if (currentClass.linkedBTs) {
+			currentClass.linkedBTs.forEach((bt: BehaviorTreeID) => linkedBTs.add(bt));
+		}
+		currentClass = Object.getPrototypeOf(currentClass);
+	}
 
-    constructor.linkedBTs = linkedBTs;
+	constructor.linkedBTs = linkedBTs;
 }
 
 /**
@@ -160,21 +160,21 @@ function updateAllAssignedBTs(constructor: any) {
  * @returns A decorator function that defines the behavior tree.
  */
 export function build_bt(bt_id?: BehaviorTreeID) {
-    return function (value: any, context: ClassMethodDecoratorContext) {
-        const register = (ctor: any) => {
-            behaviorTreeDefinitionsBuilders ??= {};
-            // If no explicit bt_id supplied, normalize inferred class name for public key.
-            const inferred = ctor?.name;
-            const key = bt_id ? bt_id : normalizeDecoratedClassName(inferred);
-            behaviorTreeDefinitionsBuilders[key] = value as () => BehaviorTreeDefinition;
-        };
-        if (context.static) {
-            context.addInitializer(function () { register(this); });
-        } else {
-            context.addInitializer(function () { register(this.constructor); });
-        }
-        // no method replacement
-    };
+	return function (value: any, context: ClassMethodDecoratorContext) {
+		const register = (ctor: any) => {
+			behaviorTreeDefinitionsBuilders ??= {};
+			// If no explicit bt_id supplied, normalize inferred class name for public key.
+			const inferred = ctor?.name;
+			const key = bt_id ? bt_id : normalizeDecoratedClassName(inferred);
+			behaviorTreeDefinitionsBuilders[key] = value as () => BehaviorTreeDefinition;
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register(this.constructor); });
+		}
+		// no method replacement
+	};
 }
 
 /**
@@ -184,9 +184,9 @@ export function build_bt(bt_id?: BehaviorTreeID) {
  * @returns The constructed behavior tree node, or null if the tree definition is not found.
  */
 export function constructBehaviorTree(bt_id: BehaviorTreeID): BTNode | null {
-    const btdef = BehaviorTreeDefinitions[bt_id];
-    if (btdef) return buildBehaviorTree(btdef, bt_id);
-    return null;
+	const btdef = BehaviorTreeDefinitions[bt_id];
+	if (btdef) return buildBehaviorTree(btdef, bt_id);
+	return null;
 }
 
 /**
@@ -199,8 +199,8 @@ export type BTStatus = 'RUNNING' | 'SUCCESS' | 'FAILED';
  * Represents the feedback of a behavior tree node.
  */
 export type BTNodeFeedback = {
-    status: BTStatus, // The status of the node after the tick operation
-    updates?: (blackboard: Blackboard) => void; // The updates to apply to the blackboard
+	status: BTStatus, // The status of the node after the tick operation
+	updates?: (blackboard: Blackboard) => void; // The updates to apply to the blackboard
 };
 
 /**
@@ -208,88 +208,88 @@ export type BTNodeFeedback = {
  */
 @insavegame
 export class Blackboard implements Identifiable {
-    // The identifier of the blackboard
-    public id: string;
-    // The data stored in the blackboard
-    public data: { [key: string]: any } = {};
-    // The node data stored in the blackboard (used for storing node-specific data, such as wait times))
-    public nodedata: { [key: string]: any } = {};
-    // The execution path of the behavior tree (used for debugging)
-    public executionPath: { node: BTNode, result: BTNodeFeedback }[] = [];
+	// The identifier of the blackboard
+	public id: string;
+	// The data stored in the blackboard
+	public data: { [key: string]: any } = {};
+	// The node data stored in the blackboard (used for storing node-specific data, such as wait times))
+	public nodedata: { [key: string]: any } = {};
+	// The execution path of the behavior tree (used for debugging)
+	public executionPath: { node: BTNode, result: BTNodeFeedback }[] = [];
 
-    // The constructor for the blackboard, which initializes the blackboard with the specified identifier
-    constructor(opts: RevivableObjectArgs & { id: string }) {
-        this.id = opts.id;
-    }
+	// The constructor for the blackboard, which initializes the blackboard with the specified identifier
+	constructor(opts: RevivableObjectArgs & { id: string }) {
+		this.id = opts.id;
+	}
 
-    // The method for setting a value in the blackboard with the specified key
-    set<T>(key: string, value: T): void {
-        this.data[key] = value;
-    }
+	// The method for setting a value in the blackboard with the specified key
+	set<T>(key: string, value: T): void {
+		this.data[key] = value;
+	}
 
-    // The method for getting a value from the blackboard with the specified key
-    get<T>(key: string): T | undefined {
-        return this.data[key] as T;
-    }
+	// The method for getting a value from the blackboard with the specified key
+	get<T>(key: string): T | undefined {
+		return this.data[key] as T;
+	}
 
-    // The method for clearing all the data in the blackboard that is node-specific
-    public clearAllNodeData(): void {
-        delete this.nodedata;
-        this.nodedata = {};
-    }
+	// The method for clearing all the data in the blackboard that is node-specific
+	public clearAllNodeData(): void {
+		delete this.nodedata;
+		this.nodedata = {};
+	}
 
-    // Returns whether an action is currently in progress
-    public get actionInProgress(): boolean {
-        return this.nodedata['actionInProgress'] ?? false;
-    }
+	// Returns whether an action is currently in progress
+	public get actionInProgress(): boolean {
+		return this.nodedata['actionInProgress'] ?? false;
+	}
 
-    // Sets whether an action is currently in progress
-    public set actionInProgress(inProgress: boolean) {
-        this.nodedata['actionInProgress'] = inProgress;
-    }
+	// Sets whether an action is currently in progress
+	public set actionInProgress(inProgress: boolean) {
+		this.nodedata['actionInProgress'] = inProgress;
+	}
 
-    /**
-     * Applies updates to the behaviour tree.
-     * It is used in combination with the ObjectTracker, which tracks changes of given properties in game objects.
-     * The updates are applied to the blackboard, which is used by the behaviour tree to determine the next action.
-     * This allows for easily updating the blackboard with the changes that have occurred in the game objects.
-     *
-     * @param updates - An object containing updates for the behaviour tree.
-     * @param updates.id - The ID of the update.
-     * @param updates.id[].property - The property to update.
-     * @param updates.id[].value - The new value for the property.
-     * @param updates.id[].key - The key associated with the property (optional).
-     */
-    applyUpdates(updates: { [id: string]: Array<{ property: string, value: any, key?: string }> }): void {
-        for (let properties of Object.values(updates)) {
-            for (let { value, key } of properties) {
-                this.set(key, value);
-            }
-        }
-    }
+	/**
+	 * Applies updates to the behaviour tree.
+	 * It is used in combination with the ObjectTracker, which tracks changes of given properties in game objects.
+	 * The updates are applied to the blackboard, which is used by the behaviour tree to determine the next action.
+	 * This allows for easily updating the blackboard with the changes that have occurred in the game objects.
+	 *
+	 * @param updates - An object containing updates for the behaviour tree.
+	 * @param updates.id - The ID of the update.
+	 * @param updates.id[].property - The property to update.
+	 * @param updates.id[].value - The new value for the property.
+	 * @param updates.id[].key - The key associated with the property (optional).
+	 */
+	applyUpdates(updates: { [id: string]: Array<{ property: string, value: any, key?: string }> }): void {
+		for (let properties of Object.values(updates)) {
+			for (let { value, key } of properties) {
+				this.set(key, value);
+			}
+		}
+	}
 
-    /**
-     * Copies the specified properties from the given target object to the blackboard.
-     * This is useful for copying properties from a world object to the blackboard for use in the behavior tree,
-     * such as copying the position of an enemy to the blackboard for use in pathfinding.
-     *
-     * @template T - The type of the target object.
-     * @param {T} target - The target object from which to copy the properties.
-     * @param {Array<{ property: keyof T, key?: string }>} properties - The properties to copy, along with optional custom keys.
-     * @returns {void}
-     */
-    public copyPropertiesToBlackboard<T extends WorldObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
-        for (let { property, key } of properties) {
-            // If no key is given, use the property name as the key
-            key = key ?? (property as string);
+	/**
+	 * Copies the specified properties from the given target object to the blackboard.
+	 * This is useful for copying properties from a world object to the blackboard for use in the behavior tree,
+	 * such as copying the position of an enemy to the blackboard for use in pathfinding.
+	 *
+	 * @template T - The type of the target object.
+	 * @param {T} target - The target object from which to copy the properties.
+	 * @param {Array<{ property: keyof T, key?: string }>} properties - The properties to copy, along with optional custom keys.
+	 * @returns {void}
+	 */
+	public copyPropertiesToBlackboard<T extends WorldObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
+		for (let { property, key } of properties) {
+			// If no key is given, use the property name as the key
+			key = key ?? (property as string);
 
-            // Get the property value from the target
-            const value = target[property];
+			// Get the property value from the target
+			const value = target[property];
 
-            // Set the blackboard entry
-            this.set(key as string, value);
-        }
-    }
+			// Set the blackboard entry
+			this.set(key as string, value);
+		}
+	}
 }
 
 /**
@@ -299,9 +299,9 @@ export type BehaviorTreeID = string;
 
 // Represents the context for a behavior tree for a given world object.
 export type BehaviorTreeContext = {
-    running: boolean; // Indicates if the behavior tree is currently running
-    root: BTNode; // The root node of the behavior tree
-    blackboard: Blackboard; // The blackboard associated with the behavior tree
+	running: boolean; // Indicates if the behavior tree is currently running
+	root: BTNode; // The root node of the behavior tree
+	blackboard: Blackboard; // The blackboard associated with the behavior tree
 };
 
 /**
@@ -312,48 +312,48 @@ export type BehaviorTreeContext = {
  */
 @excludeclassfromsavegame
 export abstract class BTNode implements Identifiable {
-    public id: BehaviorTreeID;
-    public priority: number;
-    private running: boolean = true;
-    public get enabled() { return this.running; } // NOTE: LOGIC FOR THIS IS IMPLEMENTED IN THE GAMEOBJECT CLASS!
-    public start() { this.running = true; }
-    public stop() { this.running = false; }
+	public id: BehaviorTreeID;
+	public priority: number;
+	private running: boolean = true;
+	public get enabled() { return this.running; } // NOTE: LOGIC FOR THIS IS IMPLEMENTED IN THE GAMEOBJECT CLASS!
+	public start() { this.running = true; }
+	public stop() { this.running = false; }
 
-    /**
-     * Retrieves the target object with the specified Identifier and casts it to the specified type.
-     * @param targetid The Identifier of the target object.
-     * @returns The target object casted to the specified type.
-     */
-    public getTarget<T extends WorldObject>(targetid: Identifier) { return $.world.getWorldObject<T>(targetid); }
+	/**
+	 * Retrieves the target object with the specified Identifier and casts it to the specified type.
+	 * @param targetid The Identifier of the target object.
+	 * @returns The target object casted to the specified type.
+	 */
+	public getTarget<T extends WorldObject>(targetid: Identifier) { return $.world.getWorldObject<T>(targetid); }
 
-    constructor(id: BehaviorTreeID, _priority = 0) {
-        this.id = id;
-        this.priority = _priority;
-    }
+	constructor(id: BehaviorTreeID, _priority = 0) {
+		this.id = id;
+		this.priority = _priority;
+	}
 
-    debug_tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        // Call the actual tick method
-        const result = this.tick(targetid, blackboard);
+	debug_tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		// Call the actual tick method
+		const result = this.tick(targetid, blackboard);
 
-        // Add this node and its result to the execution path
-        blackboard.executionPath.push({ node: this, result });
+		// Add this node and its result to the execution path
+		blackboard.executionPath.push({ node: this, result });
 
-        return result;
-    }
+		return result;
+	}
 
-    abstract tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback;
+	abstract tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback;
 }
 
 /**
  * Represents an abstract class for a parametrized behavior tree node.
  */
 export abstract class ParametrizedBTNode extends BTNode {
-    public parameters: any[];
+	public parameters: any[];
 
-    constructor(id: BehaviorTreeID, _priority = 0, parameters: any[] = []) {
-        super(id, _priority);
-        this.parameters = parameters;
-    }
+	constructor(id: BehaviorTreeID, _priority = 0, parameters: any[] = []) {
+		super(id, _priority);
+		this.parameters = parameters;
+	}
 }
 
 
@@ -361,94 +361,94 @@ export abstract class ParametrizedBTNode extends BTNode {
  * Represents a sequence node in a behavior tree.
  */
 export class SequenceNode extends BTNode {
-    public children: BTNode[];
+	public children: BTNode[];
 
-    constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
-        super(id, _priority);
-        this.children = children;
-    }
+	constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
+		super(id, _priority);
+		this.children = children;
+	}
 
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        for (const child of this.children) {
-            const result = child.tick(targetid, blackboard);
-            switch (result.status) {
-                case 'FAILED':
-                case 'RUNNING':
-                    return { status: result.status };
-            }
-        }
-        // Assuming success if none failed
-        return { status: 'SUCCESS' };
-    }
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		for (const child of this.children) {
+			const result = child.tick(targetid, blackboard);
+			switch (result.status) {
+				case 'FAILED':
+				case 'RUNNING':
+					return { status: result.status };
+			}
+		}
+		// Assuming success if none failed
+		return { status: 'SUCCESS' };
+	}
 }
 
 /**
  * Represents a selector node in a behavior tree.
  */
 export class SelectorNode extends BTNode {
-    public children: BTNode[];
+	public children: BTNode[];
 
-    constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
-        super(id, _priority);
-        this.children = children;
-    }
+	constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
+		super(id, _priority);
+		this.children = children;
+	}
 
-    /**
-     * Executes the tick operation on the selector node.
-     * @returns The feedback of the tick operation.
-     */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        for (const child of this.children) {
-            const result = child.tick(targetid, blackboard);
-            if (result.status !== 'FAILED') {
-                return result;
-            }
-        }
-        return { status: 'FAILED' };
-    }
+	/**
+	 * Executes the tick operation on the selector node.
+	 * @returns The feedback of the tick operation.
+	 */
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		for (const child of this.children) {
+			const result = child.tick(targetid, blackboard);
+			if (result.status !== 'FAILED') {
+				return result;
+			}
+		}
+		return { status: 'FAILED' };
+	}
 }
 
 /**
  * Represents a parallel node in a behavior tree.
  */
 export class ParallelNode extends BTNode {
-    public children: BTNode[];
-    public successPolicy: 'ONE' | 'ALL';
+	public children: BTNode[];
+	public successPolicy: 'ONE' | 'ALL';
 
-    constructor(id: BehaviorTreeID, children: BTNode[], successPolicy: 'ONE' | 'ALL', _priority = 0) {
-        super(id, _priority);
-        this.children = children;
-        this.successPolicy = successPolicy;
-    }
+	constructor(id: BehaviorTreeID, children: BTNode[], successPolicy: 'ONE' | 'ALL', _priority = 0) {
+		super(id, _priority);
+		this.children = children;
+		this.successPolicy = successPolicy;
+	}
 
-    /**
-     * Executes the tick operation on the parallel node.
-     * @returns The feedback of the tick operation.
-     */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        let successCount = 0;
-        let running = false;
+	/**
+	 * Executes the tick operation on the parallel node.
+	 * @returns The feedback of the tick operation.
+	 */
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		let successCount = 0;
+		let running = false;
 
-        for (const child of this.children) {
-            const result = child.tick(targetid, blackboard);
-            if (result.status === 'SUCCESS') {
-                successCount++;
-                if (this.successPolicy === 'ONE') {
-                    return { status: 'SUCCESS' };
-                }
-            } else if (result.status === 'RUNNING') {
-                running = true;
-            }
-        }
+		for (const child of this.children) {
+			const result = child.tick(targetid, blackboard);
+			if (result.status === 'SUCCESS') {
+				successCount++;
+				if (this.successPolicy === 'ONE') {
+					return { status: 'SUCCESS' };
+				}
+			} else if (result.status === 'RUNNING') {
+				running = true;
+			}
+		}
 
-        if (this.successPolicy === 'ALL' && successCount === this.children.length) {
-            return { status: 'SUCCESS' };
-        } else if (running) {
-            return { status: 'RUNNING' };
-        } else {
-            return { status: 'FAILED' };
-        }
-    }
+		if (this.successPolicy === 'ALL' && successCount === this.children.length) {
+			return { status: 'SUCCESS' };
+		} else if (running) {
+			return { status: 'RUNNING' };
+		} else {
+			return { status: 'FAILED' };
+		}
+	}
 }
 
 /**
@@ -464,20 +464,20 @@ type NodeDecorator = (status: BTStatus, targetid: Identifier, blackboard: Blackb
  * Represents a decorator node in a behavior tree.
  */
 export class DecoratorNode extends BTNode {
-    public child: BTNode;
-    public decorator: (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
+	public child: BTNode;
+	public decorator: (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
 
-    constructor(id: BehaviorTreeID, child: BTNode, decorator: NodeDecorator, _priority = 0) {
-        super(id, _priority);
-        this.child = child;
-        this.decorator = decorator;
-    }
+	constructor(id: BehaviorTreeID, child: BTNode, decorator: NodeDecorator, _priority = 0) {
+		super(id, _priority);
+		this.child = child;
+		this.decorator = decorator;
+	}
 
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        const childResult = this.child.tick(targetid, blackboard);
-        const modifiedResult = this.decorator(childResult.status, targetid, blackboard);
-        return { status: modifiedResult };
-    }
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		const childResult = this.child.tick(targetid, blackboard);
+		const modifiedResult = this.decorator(childResult.status, targetid, blackboard);
+		return { status: modifiedResult };
+	}
 }
 
 /**
@@ -489,9 +489,9 @@ export class DecoratorNode extends BTNode {
  * @returns The inverted status of the node.
  */
 export const InvertorDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, _blackboard: Blackboard) => {
-    if (status === 'SUCCESS') return 'FAILED';
-    if (status === 'FAILED') return 'SUCCESS';
-    return status;
+	if (status === 'SUCCESS') return 'FAILED';
+	if (status === 'FAILED') return 'SUCCESS';
+	return status;
 };
 
 /**
@@ -504,14 +504,14 @@ export const InvertorDecorator: NodeDecorator = (status: BTStatus, _targetid: Id
  * @returns The updated status of the action.
  */
 export const WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, blackboard: Blackboard, actionName?: string) => {
-    if (status === 'RUNNING') {
-        if (actionName) { blackboard.set(actionName, true); }
-        else { blackboard.actionInProgress = true; }
-    } else {
-        if (actionName) { blackboard.set(actionName, false); }
-        else { blackboard.actionInProgress = false; }
-    }
-    return status;
+	if (status === 'RUNNING') {
+		if (actionName) { blackboard.set(actionName, true); }
+		else { blackboard.actionInProgress = true; }
+	} else {
+		if (actionName) { blackboard.set(actionName, false); }
+		else { blackboard.actionInProgress = false; }
+	}
+	return status;
 };
 
 /**
@@ -541,26 +541,26 @@ type NodeCompositeConditionModifier = 'AND' | 'OR';
  * Represents a node in a behavior tree that evaluates a condition.
  */
 export class ConditionNode extends ParametrizedBTNode {
-    public condition: NodeCondition;
-    public modifier: NodeConditionModifier;
+	public condition: NodeCondition;
+	public modifier: NodeConditionModifier;
 
-    constructor(id: BehaviorTreeID, condition: (blackboard: Blackboard) => boolean, modifier: NodeConditionModifier, _priority = 0, parameters?: any[]) {
-        super(id, _priority, parameters);
-        this.condition = condition;
-        this.modifier = modifier;
-    }
+	constructor(id: BehaviorTreeID, condition: (blackboard: Blackboard) => boolean, modifier: NodeConditionModifier, _priority = 0, parameters?: any[]) {
+		super(id, _priority, parameters);
+		this.condition = condition;
+		this.modifier = modifier;
+	}
 
-    /**
-     * Executes the condition node and returns the feedback based on the evaluation result.
-     * @returns The feedback indicating the status of the condition node.
-     */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        let conditionResult = this.condition.call(this.getTarget(targetid), blackboard, ...this.parameters);
-        if (this.modifier === 'NOT') {
-            conditionResult = !conditionResult;
-        }
-        return conditionResult ? { status: 'SUCCESS' } : { status: 'FAILED' };
-    }
+	/**
+	 * Executes the condition node and returns the feedback based on the evaluation result.
+	 * @returns The feedback indicating the status of the condition node.
+	 */
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		let conditionResult = this.condition.call(this.getTarget(targetid), blackboard, ...this.parameters);
+		if (this.modifier === 'NOT') {
+			conditionResult = !conditionResult;
+		}
+		return conditionResult ? { status: 'SUCCESS' } : { status: 'FAILED' };
+	}
 }
 
 /**
@@ -568,168 +568,168 @@ export class ConditionNode extends ParametrizedBTNode {
  * This node evaluates a set of conditions and returns a feedback based on the operator.
  */
 export class CompositeConditionNode extends ParametrizedBTNode {
-    public conditions: NodeCondition[];
-    public operator: NodeCompositeConditionModifier;
+	public conditions: NodeCondition[];
+	public operator: NodeCompositeConditionModifier;
 
-    constructor(id: BehaviorTreeID, conditions: NodeCondition[], operator: NodeCompositeConditionModifier, _priority = 0, parameters?: any[]) {
-        super(id, _priority, parameters);
-        this.conditions = conditions;
-        this.operator = operator;
-    }
+	constructor(id: BehaviorTreeID, conditions: NodeCondition[], operator: NodeCompositeConditionModifier, _priority = 0, parameters?: any[]) {
+		super(id, _priority, parameters);
+		this.conditions = conditions;
+		this.operator = operator;
+	}
 
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        const target = this.getTarget(targetid);
-        let combinedResult = (this.operator === 'AND');
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		const target = this.getTarget(targetid);
+		let combinedResult = (this.operator === 'AND');
 
-        for (const condition of this.conditions) {
-            const result = condition.call(target, blackboard, ...this.parameters);
-            if (this.operator === 'AND') {
-                combinedResult = combinedResult && result;
-            } else if (this.operator === 'OR') {
-                combinedResult = combinedResult || result;
-            }
-        }
+		for (const condition of this.conditions) {
+			const result = condition.call(target, blackboard, ...this.parameters);
+			if (this.operator === 'AND') {
+				combinedResult = combinedResult && result;
+			} else if (this.operator === 'OR') {
+				combinedResult = combinedResult || result;
+			}
+		}
 
-        return combinedResult ? { status: 'SUCCESS' } : { status: 'FAILED' };
-    }
+		return combinedResult ? { status: 'SUCCESS' } : { status: 'FAILED' };
+	}
 }
 
 /**
  * Represents a node in a behavior tree that randomly selects and executes one of its child nodes.
  */
 export class RandomSelectorNode extends BTNode {
-    public children: BTNode[];
-    public currentchild_propname: string;
+	public children: BTNode[];
+	public currentchild_propname: string;
 
-    constructor(id: BehaviorTreeID, children: BTNode[], _currentchild_propname: string, _priority = 0) {
-        super(id, _priority);
-        this.children = children;
-        this.currentchild_propname = _currentchild_propname;
-    }
+	constructor(id: BehaviorTreeID, children: BTNode[], _currentchild_propname: string, _priority = 0) {
+		super(id, _priority);
+		this.children = children;
+		this.currentchild_propname = _currentchild_propname;
+	}
 
-    /**
-     * Executes the random selection logic and ticks the selected child node.
-     * @returns The feedback from the selected child node.
-     */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        let currentChildIndex = blackboard.nodedata[this.currentchild_propname] as number;
+	/**
+	 * Executes the random selection logic and ticks the selected child node.
+	 * @returns The feedback from the selected child node.
+	 */
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		let currentChildIndex = blackboard.nodedata[this.currentchild_propname] as number;
 
-        // If there is no currently executing child, select a random child
-        if (!currentChildIndex) {
-            currentChildIndex = Math.floor(Math.random() * this.children.length);
-            blackboard.nodedata[this.currentchild_propname] = currentChildIndex;
-        }
+		// If there is no currently executing child, select a random child
+		if (!currentChildIndex) {
+			currentChildIndex = Math.floor(Math.random() * this.children.length);
+			blackboard.nodedata[this.currentchild_propname] = currentChildIndex;
+		}
 
-        // Tick the currently executing child
-        const feedback = this.children[currentChildIndex].tick(targetid, blackboard);
+		// Tick the currently executing child
+		const feedback = this.children[currentChildIndex].tick(targetid, blackboard);
 
-        // If the child has finished executing (either succeeded or failed), reset the current child index
-        if (feedback.status !== 'RUNNING') {
-            delete blackboard.nodedata[this.currentchild_propname];
-        }
-        return feedback;
-    }
+		// If the child has finished executing (either succeeded or failed), reset the current child index
+		if (feedback.status !== 'RUNNING') {
+			delete blackboard.nodedata[this.currentchild_propname];
+		}
+		return feedback;
+	}
 }
 
 /**
  * Represents a node in a behavior tree that limits the number of times its child node can be executed.
  */
 export class LimitNode extends BTNode {
-    public count_propname: string;
-    public limit: number;
-    public child: BTNode;
+	public count_propname: string;
+	public limit: number;
+	public child: BTNode;
 
-    constructor(id: BehaviorTreeID, limit: number, _count_propname: string, child: BTNode, _priority = 0) {
-        super(id, _priority);
-        this.limit = limit;
-        this.child = child;
-        this.count_propname = _count_propname;
-    }
+	constructor(id: BehaviorTreeID, limit: number, _count_propname: string, child: BTNode, _priority = 0) {
+		super(id, _priority);
+		this.limit = limit;
+		this.child = child;
+		this.count_propname = _count_propname;
+	}
 
-    /**
-     * Executes the node's logic.
-     * @returns The feedback of the node's execution.
-     */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        let count = blackboard.nodedata[this.count_propname] as number;
-        if (!count) {
-            count = 0;
-            blackboard.nodedata[this.count_propname] = count;
-        }
+	/**
+	 * Executes the node's logic.
+	 * @returns The feedback of the node's execution.
+	 */
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		let count = blackboard.nodedata[this.count_propname] as number;
+		if (!count) {
+			count = 0;
+			blackboard.nodedata[this.count_propname] = count;
+		}
 
-        if (count < this.limit) {
-            const result = this.child.tick(targetid, blackboard);
-            if (result.status !== 'RUNNING') {
-                ++count;
-                blackboard.nodedata[this.count_propname] = count;
-            }
-            return result;
-        }
-        return { status: 'FAILED' };
-    }
+		if (count < this.limit) {
+			const result = this.child.tick(targetid, blackboard);
+			if (result.status !== 'RUNNING') {
+				++count;
+				blackboard.nodedata[this.count_propname] = count;
+			}
+			return result;
+		}
+		return { status: 'FAILED' };
+	}
 }
 
 /**
  * Represents a node in a behavior tree that selects and executes the highest priority child node.
  */
 export class PrioritySelectorNode extends BTNode {
-    public children: BTNode[];
+	public children: BTNode[];
 
-    constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
-        super(id, _priority);
-        this.children = children;
-    }
+	constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
+		super(id, _priority);
+		this.children = children;
+	}
 
-    /**
-     * Executes the priority selection logic and ticks the highest priority child node.
-     * @returns The feedback from the highest priority child node.
-     */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        this.children.sort((a, b) => b.priority - a.priority);
-        for (const child of this.children) {
-            const result = child.tick(targetid, blackboard);
-            if (result.status !== 'FAILED') {
-                return result;
-            }
-        }
-        return { status: 'FAILED' };
-    }
+	/**
+	 * Executes the priority selection logic and ticks the highest priority child node.
+	 * @returns The feedback from the highest priority child node.
+	 */
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		this.children.sort((a, b) => b.priority - a.priority);
+		for (const child of this.children) {
+			const result = child.tick(targetid, blackboard);
+			if (result.status !== 'FAILED') {
+				return result;
+			}
+		}
+		return { status: 'FAILED' };
+	}
 }
 
 /**
  * Represents a node in a behavior tree that waits for a specific amount of time before returning success.
  */
 export class WaitNode extends BTNode {
-    public wait_propname: string;
-    public wait_time: number;
+	public wait_propname: string;
+	public wait_time: number;
 
-    constructor(id: BehaviorTreeID, waitTime: number, _wait_propname: string, _priority = 0) {
-        super(id, _priority);
-        this.wait_time = waitTime;
-        this.wait_propname = _wait_propname;
-    }
+	constructor(id: BehaviorTreeID, waitTime: number, _wait_propname: string, _priority = 0) {
+		super(id, _priority);
+		this.wait_time = waitTime;
+		this.wait_propname = _wait_propname;
+	}
 
-    /**
-     * Executes the tick logic of the node.
-     * @returns The feedback of the node.
-     */
-    tick(_targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        let currentTick = blackboard.nodedata[this.wait_propname] as number;
-        if (!currentTick) {
-            currentTick = 0;
-            blackboard.nodedata[this.wait_propname] = currentTick;
-        }
+	/**
+	 * Executes the tick logic of the node.
+	 * @returns The feedback of the node.
+	 */
+	tick(_targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		let currentTick = blackboard.nodedata[this.wait_propname] as number;
+		if (!currentTick) {
+			currentTick = 0;
+			blackboard.nodedata[this.wait_propname] = currentTick;
+		}
 
-        if (currentTick < this.wait_time) {
-            ++currentTick;
-            blackboard.nodedata[this.wait_propname] = currentTick;
-            return { status: 'RUNNING' };
-        } else {
-            currentTick = 0;
-            delete blackboard.nodedata[this.wait_propname];
-            return { status: 'SUCCESS' };
-        }
-    }
+		if (currentTick < this.wait_time) {
+			++currentTick;
+			blackboard.nodedata[this.wait_propname] = currentTick;
+			return { status: 'RUNNING' };
+		} else {
+			currentTick = 0;
+			delete blackboard.nodedata[this.wait_propname];
+			return { status: 'SUCCESS' };
+		}
+	}
 }
 
 /**
@@ -749,22 +749,22 @@ export type NodeAction = (blackboard: Blackboard, ...parameters: any[]) => BTSta
  * Represents a node in a behavior tree that performs an action.
  */
 export class ActionNode extends ParametrizedBTNode {
-    public action: NodeAction;
+	public action: NodeAction;
 
-    constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0, parameters?: any[]) {
-        super(id, _priority, parameters);
-        this.action = action;
-    }
+	constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0, parameters?: any[]) {
+		super(id, _priority, parameters);
+		this.action = action;
+	}
 
-    /**
-     * Executes the action associated with this node.
-     * @returns The feedback of the action execution.
-     */
-    tick(targetId: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        // Perform the action
-        const result = this.action.call(this.getTarget(targetId), blackboard, ...this.parameters);
-        return { status: result };
-    }
+	/**
+	 * Executes the action associated with this node.
+	 * @returns The feedback of the action execution.
+	 */
+	tick(targetId: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		// Perform the action
+		const result = this.action.call(this.getTarget(targetId), blackboard, ...this.parameters);
+		return { status: result };
+	}
 }
 
 /**
@@ -773,28 +773,28 @@ export class ActionNode extends ParametrizedBTNode {
  * When ticked, it executes all the child action nodes in sequence.
  */
 export class CompositeActionNode extends ParametrizedBTNode {
-    public actions: ActionNode[];
+	public actions: ActionNode[];
 
-    constructor(id: BehaviorTreeID, actions: ActionNode[], _priority = 0, parameters?: any[]) {
-        super(id, _priority, parameters);
-        this.actions = actions;
-    }
+	constructor(id: BehaviorTreeID, actions: ActionNode[], _priority = 0, parameters?: any[]) {
+		super(id, _priority, parameters);
+		this.actions = actions;
+	}
 
-    /**
-     * Executes the tick logic of the node.
-     * @returns The feedback of the node.
-     */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        let feedback: BTNodeFeedback = { status: 'SUCCESS' };
-        for (const action of this.actions) {
-            const result = action.tick(targetid, blackboard);
-            if (result.status === 'FAILED') {
-                return result;
-            }
-            if (result.status === 'RUNNING') { // If any action is running, return running
-                feedback = result;
-            }
-        }
-        return feedback
-    }
+	/**
+	 * Executes the tick logic of the node.
+	 * @returns The feedback of the node.
+	 */
+	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+		let feedback: BTNodeFeedback = { status: 'SUCCESS' };
+		for (const action of this.actions) {
+			const result = action.tick(targetid, blackboard);
+			if (result.status === 'FAILED') {
+				return result;
+			}
+			if (result.status === 'RUNNING') { // If any action is running, return running
+				feedback = result;
+			}
+		}
+		return feedback
+	}
 }

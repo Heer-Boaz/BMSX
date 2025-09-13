@@ -5,65 +5,65 @@ import { GameConstants as CS } from "./gameconstants";
 import { GameState, GameSubstate, Model } from "./gamemodel";
 
 export class UglyView extends RenderView {
-    private static _instance: UglyView;
+	private static _instance: UglyView;
 
-    public static get _(): UglyView {
-        return UglyView._instance;
-    }
+	public static get _(): UglyView {
+		return UglyView._instance;
+	}
 
-    constructor(viewportSize: Point) {
-        super(viewportSize);
-        UglyView._instance = this;
-    }
+	constructor(viewportSize: Point) {
+		super(viewportSize);
+		UglyView._instance = this;
+	}
 
-    public drawgame(): void {
-        view.clear();
-        if ((model as Model).startAfterLoad)
-            return;
+	public drawgame(): void {
+		view.clear();
+		if ((model as Model).startAfterLoad)
+			return;
 
-        switch ((model as Model).gameState) {
-            case GameState.LoadTheGame:
-                break;
-            case GameState.TitleScreen:
-                (model as Model).Title.paint();
-                super.drawSprites();
-                break;
+		switch ((model as Model).gameState) {
+			case GameState.LoadTheGame:
+				break;
+			case GameState.TitleScreen:
+				(model as Model).Title.paint();
+				super.drawSprites();
+				break;
 
-            case GameState.EndDemo:
-                (model as Model).EndDemo.Paint();
-                super.drawSprites();
-                break;
+			case GameState.EndDemo:
+				(model as Model).EndDemo.Paint();
+				super.drawSprites();
+				break;
 
-            case GameState.Game:
-            case GameState.Event:
-                let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
+			case GameState.Game:
+			case GameState.Event:
+				let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
 
-                if ((model as Model).gameSubstate == GameSubstate.ItsCurtainsForYou || (model as Model).gameSubstate == GameSubstate.ToEndDemo) {
-                    (model as Model).ItsCurtains.paint();
-                }
-                else if ((model as Model).gameSubstate == GameSubstate.GameOver) {
-                    (model as Model).ItsCurtains.paint();
-                    (model as Model).GameOverScreen.paint();
-                }
+				if ((model as Model).gameSubstate == GameSubstate.ItsCurtainsForYou || (model as Model).gameSubstate == GameSubstate.ToEndDemo) {
+					(model as Model).ItsCurtains.paint();
+				}
+				else if ((model as Model).gameSubstate == GameSubstate.GameOver) {
+					(model as Model).ItsCurtains.paint();
+					(model as Model).GameOverScreen.paint();
+				}
 
-                if ((model as Model).gameSubstate != GameSubstate.SwitchRoom) {
-                    super.drawgame(gamescreenOffset, false);
-                }
-                (model as Model).Hud.paint();
+				if ((model as Model).gameSubstate != GameSubstate.SwitchRoom) {
+					super.drawgame(gamescreenOffset, false);
+				}
+				(model as Model).Hud.paint();
 
-                switch ((model as Model).gameSubstate) {
-                    case GameSubstate.SwitchRoom:
-                    case GameSubstate.BelmontDies:
-                    case GameSubstate.ItsCurtainsForYou:
-                    case GameSubstate.ToEndDemo:
-                    case GameSubstate.GameOver:
-                        break;
-                    default:
-                        break;
-                }
+				switch ((model as Model).gameSubstate) {
+					case GameSubstate.SwitchRoom:
+					case GameSubstate.BelmontDies:
+					case GameSubstate.ItsCurtainsForYou:
+					case GameSubstate.ToEndDemo:
+					case GameSubstate.GameOver:
+						break;
+					default:
+						break;
+				}
 
-                super.drawSprites();
-                break;
-        }
-    }
+				super.drawSprites();
+				break;
+		}
+	}
 }

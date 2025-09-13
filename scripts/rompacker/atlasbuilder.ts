@@ -379,23 +379,23 @@ export function createOptimizedAtlas(imageResources: Resource[]): HTMLCanvasElem
  * @returns An object containing the UV coordinates of the image in the texture atlas.
  */
 function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-        const result = { width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[] };
-        const left = x / width;
-        const top = y / height;
-        const right = (x + imageWidth) / width;
-        const bottom = (y + imageHeight) / height;
+		const result = { width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[] };
+		const left = x / width;
+		const top = y / height;
+		const right = (x + imageWidth) / width;
+		const bottom = (y + imageHeight) / height;
 
-        // The vertex order for quads starts at the top-left corner and
-        // proceeds counter-clockwise after the Y-axis flip in the vertex shader.
-        // Arrange the texture coordinates in the same order so sprites are
-        // oriented correctly when drawn.
-        result.texcoords.push(
-            left, top,
-            left, bottom,
-            right, top,
-            right, top,
-            left, bottom,
-            right, bottom
-        );
-        return result;
+		// The vertex order for quads starts at the top-left corner and
+		// proceeds counter-clockwise after the Y-axis flip in the vertex shader.
+		// Arrange the texture coordinates in the same order so sprites are
+		// oriented correctly when drawn.
+		result.texcoords.push(
+			left, top,
+			left, bottom,
+			right, top,
+			right, top,
+			left, bottom,
+			right, bottom
+		);
+		return result;
 }

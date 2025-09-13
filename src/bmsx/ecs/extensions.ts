@@ -7,19 +7,19 @@ export type ECSPipelineExtension = (ctx: { world: World; profile?: string; regis
 const _extensions: ECSPipelineExtension[] = [];
 
 export function registerEcsPipelineExtension(ext: ECSPipelineExtension): void {
-  _extensions.push(ext);
+	_extensions.push(ext);
 }
 
 export function collectEcsPipelineExtensions(ctx: { world: World; profile?: string; registry: ECSPipelineRegistry }): NodeSpec[] {
-  const out: NodeSpec[] = [];
-  for (const fn of _extensions) {
-    try {
-      const res = fn(ctx);
-      if (Array.isArray(res)) out.push(...res);
-    } catch (e) {
-      console.error('[ECS] Extension error:', e);
-    }
-  }
-  return out;
+	const out: NodeSpec[] = [];
+	for (const fn of _extensions) {
+		try {
+			const res = fn(ctx);
+			if (Array.isArray(res)) out.push(...res);
+		} catch (e) {
+			console.error('[ECS] Extension error:', e);
+		}
+	}
+	return out;
 }
 

@@ -500,20 +500,20 @@ function updateAllEventSubscriptions(constructor: any) {
  * - If `persistent` is true, the listener survives EventEmitter.clear() (e.g., across loads) similar to persistent registry objects.
  */
 export function subscribesToParentScopedEvent(eventName: string, persistent?: boolean) {
-    return function (_value: Function, context: ClassMethodDecoratorContext) {
-        const handlerName = String(context.name);
-        const register = (ctor: any) => {
-            ctor.eventSubscriptions ??= [];
-            const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'parent');
-            if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'parent', persistent });
-            updateAllEventSubscriptions(ctor);
-        };
-        if (context.static) {
-            context.addInitializer(function () { register(this); });
-        } else {
-            context.addInitializer(function () { register((this).constructor); });
-        }
-    };
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'parent');
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'parent', persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register((this).constructor); });
+		}
+	};
 }
 
 /**
@@ -522,20 +522,20 @@ export function subscribesToParentScopedEvent(eventName: string, persistent?: bo
  * See subscribesToParentScopedEvent for lifecycle and persistence semantics.
  */
 export function subscribesToSelfScopedEvent(eventName: string, persistent?: boolean) {
-    return function (_value: Function, context: ClassMethodDecoratorContext) {
-        const handlerName = String(context.name);
-        const register = (ctor: any) => {
-            ctor.eventSubscriptions ??= [];
-            const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'self');
-            if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'self', persistent });
-            updateAllEventSubscriptions(ctor);
-        };
-        if (context.static) {
-            context.addInitializer(function () { register(this); });
-        } else {
-            context.addInitializer(function () { register((this).constructor); });
-        }
-    };
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'self');
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'self', persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register((this).constructor); });
+		}
+	};
 }
 
 /**
@@ -544,20 +544,20 @@ export function subscribesToSelfScopedEvent(eventName: string, persistent?: bool
  * See subscribesToParentScopedEvent for lifecycle and persistence semantics.
  */
 export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: string, persistent?: boolean) {
-    return function (_value: Function, context: ClassMethodDecoratorContext) {
-        const handlerName = String(context.name);
-        const register = (ctor: any) => {
-            ctor.eventSubscriptions ??= [];
-            const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === emitter_id);
-            if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: emitter_id, persistent });
-            updateAllEventSubscriptions(ctor);
-        };
-        if (context.static) {
-            context.addInitializer(function () { register(this); });
-        } else {
-            context.addInitializer(function () { register((this).constructor); });
-        }
-    };
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === emitter_id);
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: emitter_id, persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register((this).constructor); });
+		}
+	};
 }
 
 /**
@@ -566,20 +566,20 @@ export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: st
  * See subscribesToParentScopedEvent for lifecycle and persistence semantics.
  */
 export function subscribesToGlobalEvent(eventName: string, persistent?: boolean) {
-    return function (_value: Function, context: ClassMethodDecoratorContext) {
-        const handlerName = String(context.name);
-        const register = (ctor: any) => {
-            ctor.eventSubscriptions ??= [];
-            const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'all');
-            if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'all', persistent });
-            updateAllEventSubscriptions(ctor);
-        };
-        if (context.static) {
-            context.addInitializer(function () { register(this); });
-        } else {
-            context.addInitializer(function () { register((this).constructor); });
-        }
-    };
+	return function (_value: Function, context: ClassMethodDecoratorContext) {
+		const handlerName = String(context.name);
+		const register = (ctor: any) => {
+			ctor.eventSubscriptions ??= [];
+			const exists = (ctor.eventSubscriptions as EventSubscription[]).some(s => s.eventName === eventName && s.handlerName === handlerName && s.scope === 'all');
+			if (!exists) ctor.eventSubscriptions.push({ eventName, handlerName, scope: 'all', persistent });
+			updateAllEventSubscriptions(ctor);
+		};
+		if (context.static) {
+			context.addInitializer(function () { register(this); });
+		} else {
+			context.addInitializer(function () { register((this).constructor); });
+		}
+	};
 }
 
 /**

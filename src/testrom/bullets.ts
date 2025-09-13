@@ -7,15 +7,15 @@ export interface BulletImpact { enemyId: string; damage: number; position: [numb
 
 export class BulletManager extends WorldObject {
 	@build_fsm()
-    public static blueprint(): StateMachineBlueprint {
-        return {
-            states: {
-                _default: {
-                    tick(this: BulletManager) { this.run(); },
-                },
-            },
-        };
-    }
+	public static blueprint(): StateMachineBlueprint {
+		return {
+			states: {
+				_default: {
+					tick(this: BulletManager) { this.run(); },
+				},
+			},
+		};
+	}
 
 	private pool: Pool<Bullet>;
 	private impacts: BulletImpact[] = []; // consumed each frame by game logic
@@ -52,7 +52,7 @@ export class BulletManager extends WorldObject {
 			onCreate: () => ({ active: false, pos: [0, 0, 0], prev: [0, 0, 0], dir: [0, 0, -1], speed: 90, life: 0, maxLife: 0.8, damage: 10 }),
 			onReset: (b) => { b.active = true; b.life = 0; b.maxLife = 0.9; b.damage = 10; }
 		});
-		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
 			this.pool.forEachActive(b => {
 				const t = b.life / b.maxLife; const a = 1 - t;
 				rc.submitParticle({ position: [b.pos[0], b.pos[1], b.pos[2]], size: 0.25, color: { r: 1, g: 0.9, b: 0.4, a } });

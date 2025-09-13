@@ -5,23 +5,23 @@ import { computeBarArea } from 'bmsx/utils/utils';
 
 @insavegame
 export class Hud extends SpriteObject {
-    @build_fsm()
-    static bouw(): StateMachineBlueprint {
-        return {
-            states: {
-                _default: {
-                    tick(this: Hud) {
-                    }
-                }
-            }
-        }
-    }
+	@build_fsm()
+	static bouw(): StateMachineBlueprint {
+		return {
+			states: {
+				_default: {
+					tick(this: Hud) {
+					}
+				}
+			}
+		}
+	}
 
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'hud', ...opts ?? {} });
 		this.imgid = BitmapId.hud;
 		// Producer: HUD elements (health bars + text)
-		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
 			const world = $.world;
 			const player = world.getWorldObject<Fighter>('player');
 			const sinterklaas = world.getWorldObject<Fighter>('sinterklaas');
@@ -37,8 +37,8 @@ export class Hud extends SpriteObject {
 			rc.submitRect({ kind: 'fill', area: area1, color });
 			const area2 = computeBarArea(HP_BAR2, hp2, MAX_HP, Z, true);
 			rc.submitRect({ kind: 'fill', area: area2, color });
-			$.drawText(40, 32, 'sen kai la');
-			$.drawText(144, 32, 'ei la');
+			rc.submitGlyphs({ x: 40, y: 32, glyphs: 'sen kai la' });
+			rc.submitGlyphs({ x: 144, y: 32, glyphs: 'ei la' });
 		});
 	}
 

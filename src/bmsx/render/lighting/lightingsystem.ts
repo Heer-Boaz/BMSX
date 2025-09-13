@@ -132,8 +132,8 @@ export function resetLightingDescriptorPools(): void {
 export function buildLightingDescriptorPooled(frame: LightingFrameState): LightingDescriptor {
 	const dirs = MeshPipeline.getDirectionalLights();
 	const pts = MeshPipeline.getPointLightsAll();
-    const dirCount = Math.min(dirs.length, frame.dirCount, DEFAULT_MAX_DIR_LIGHTS);
-    const pointCount = Math.min(pts.length, frame.pointCount, DEFAULT_MAX_POINT_LIGHTS);
+	const dirCount = Math.min(dirs.length, frame.dirCount, DEFAULT_MAX_DIR_LIGHTS);
+	const pointCount = Math.min(pts.length, frame.pointCount, DEFAULT_MAX_POINT_LIGHTS);
 
 	const dirDirections = poolDirDirections.ensure();
 	const dirColors = poolDirColors.ensure();

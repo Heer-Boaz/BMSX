@@ -8,34 +8,34 @@ import { model } from 'bmsx';
 
 /*[Serializable]*/
 export class FoeExplosion extends FX {
-    protected static AnimationFrames: AniData<BitmapId>[] = new Array(
-        { time: 8, data: BitmapId.Foekill_1 },
-        { time: 8, data: BitmapId.Foekill_2 },
-        { time: 8, data: BitmapId.Foekill_1 },
-        { time: 8, data: BitmapId.Foekill_2 },
-    );
+	protected static AnimationFrames: AniData<BitmapId>[] = new Array(
+		{ time: 8, data: BitmapId.Foekill_1 },
+		{ time: 8, data: BitmapId.Foekill_2 },
+		{ time: 8, data: BitmapId.Foekill_1 },
+		{ time: 8, data: BitmapId.Foekill_2 },
+	);
 
-    protected frameIndex: number;
-    protected itemSpawnedAfterKill: ItemType;
+	protected frameIndex: number;
+	protected itemSpawnedAfterKill: ItemType;
 
-    constructor(itemSpawned: ItemType = ItemType.None) {
-        super();
-        this.animation = new Animation(FoeExplosion.AnimationFrames, null, false);
-        this.init();
-        this.itemSpawnedAfterKill = itemSpawned;
-        this.z = 50;
-    }
+	constructor(itemSpawned: ItemType = ItemType.None) {
+		super();
+		this.animation = new Animation(FoeExplosion.AnimationFrames, null, false);
+		this.init();
+		this.itemSpawnedAfterKill = itemSpawned;
+		this.z = 50;
+	}
 
-    public run(): void {
-        let nextStep = this.animation.doAnimation(this.timer);
-        if (nextStep.next) {
-            this.imgid = nextStep.stepValue;
-            if (this.animation.finished === true) {
-                this.disposeFlag = true;
-                if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
-                    world.spawn(new HeartSmall(), addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 }));
-                }
-            }
-        }
-    }
+	public run(): void {
+		let nextStep = this.animation.doAnimation(this.timer);
+		if (nextStep.next) {
+			this.imgid = nextStep.stepValue;
+			if (this.animation.finished === true) {
+				this.disposeFlag = true;
+				if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
+					world.spawn(new HeartSmall(), addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 }));
+				}
+			}
+		}
+	}
 }

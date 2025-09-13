@@ -32,12 +32,12 @@ export class StateMachineController {
 	/**
 	 * The substate object that holds the state context for each substate.
 	 */
-    statemachines: Record<Identifier, State>;
-    /** If true, controller will be advanced by systems. */
-    public tickEnabled: boolean = true;
-    /** True after a successful start(); prevents double-start. */
-    @excludepropfromsavegame
-    private _started: boolean = false;
+	statemachines: Record<Identifier, State>;
+	/** If true, controller will be advanced by systems. */
+	public tickEnabled: boolean = true;
+	/** True after a successful start(); prevents double-start. */
+	@excludepropfromsavegame
+	private _started: boolean = false;
 
 	@excludepropfromsavegame
 	private readonly _subscribedCache = new Set<string>();
@@ -117,22 +117,22 @@ export class StateMachineController {
 	/**
 	 * Starts the state machine by initializing and starting all state machines.
 	 */
-    start(): void {
-        if (this._started) return;
-        // Ensure event subscriptions are installed before starting machines
-        this.bind();
-        // Start all state machines
-        for (const id in this.statemachines) {
-            this.statemachines[id].start();
-        }
-        this._started = true;
-        this.resume();
-    }
+	start(): void {
+		if (this._started) return;
+		// Ensure event subscriptions are installed before starting machines
+		this.bind();
+		// Start all state machines
+		for (const id in this.statemachines) {
+			this.statemachines[id].start();
+		}
+		this._started = true;
+		this.resume();
+	}
 
-    /** Resume ticking without reinitializing state. */
-    public resume(): void { this.tickEnabled = true; }
-    /** Pause ticking (machines retain state). */
-    public pause(): void { this.tickEnabled = false; }
+	/** Resume ticking without reinitializing state. */
+	public resume(): void { this.tickEnabled = true; }
+	/** Pause ticking (machines retain state). */
+	public pause(): void { this.tickEnabled = false; }
 
 	/** Wire all event subscriptions declared in machine definitions. */
 	public bind(): void {
@@ -302,12 +302,12 @@ export class StateMachineController {
 	 *
 	 * @param id - The ID of the state machine.
 	 * @param target_id - The ID of the target machine.
-     */
-    add_statemachine(id: Identifier, target_id: Identifier): void {
-        this.statemachines[id] = State.create(id, target_id);
-        // If this is the first id that was added, set it as the current machine
-        if (!this.current_machine_id) this.current_machine_id = id;
-    }
+	 */
+	add_statemachine(id: Identifier, target_id: Identifier): void {
+		this.statemachines[id] = State.create(id, target_id);
+		// If this is the first id that was added, set it as the current machine
+		if (!this.current_machine_id) this.current_machine_id = id;
+	}
 
 	/**
 	 * Gets the state machine with the given ID.

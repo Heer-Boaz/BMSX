@@ -524,5 +524,5 @@ export class Eila extends Fighter {
 		this.hp = EILA_START_HP;
 	}
 
-    // No custom enumerateDrawOptions needed; base sprite handled by SpriteObject
+	// No custom enumerateDrawOptions needed; base sprite handled by SpriteObject
 };

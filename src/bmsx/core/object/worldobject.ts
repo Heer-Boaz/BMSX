@@ -12,7 +12,7 @@ import { StateDefinitions } from '../../fsm/fsmlibrary';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
 import type { RenderSubmitQueue } from 'bmsx/render/gameview';
-import { GenericRendererComponent } from '../../component/generic_renderer_component';
+import { CustomVisualComponent } from '../../component/customvisual_component';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -629,10 +629,10 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	/** Ensure a GenericRendererComponent exists on this object and return it. */
-	public getOrCreateGenericRenderer(): GenericRendererComponent {
-		const existing = this.getFirstComponent(GenericRendererComponent);
+	public getOrCreateCustomRenderer(): CustomVisualComponent {
+		const existing = this.getFirstComponent(CustomVisualComponent);
 		if (existing) return existing;
-		const rc = new GenericRendererComponent({ parentid: this.id });
+		const rc = new CustomVisualComponent({ parentid: this.id });
 		this.addComponent(rc);
 		return rc;
 	}

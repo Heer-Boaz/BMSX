@@ -1,4 +1,5 @@
-import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs, wrapText } from 'bmsx';
+import { $, WorldObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3, type RevivableObjectArgs } from 'bmsx';
+import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
@@ -37,13 +38,11 @@ export class GameOver extends SpriteObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gameover', ...opts });
 		this.imgid = BitmapId.gameover;
-		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
 			rc.submitRect({ kind: 'fill', area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] });
 			const x = 8, y = 144;
-			// const lines = ['je bent toch niet', 'de strijder die ik nodig heb.', 'ik ben een beetje', 'teleurgesteld in jouw ouders...'];
 			const textToWrite = 'je bent toch niet de strijder die ik nodig heb.\nik ben een beetje teleurgesteld in jouw ouders...';
-			const lines = wrapText(textToWrite, 30);
-			$.drawText(x, y, lines);
+			rc.submitGlyphs({ x, y, glyphs: textToWrite, wrapChars: 30 });
 		});
 	}
 }
@@ -78,17 +77,13 @@ export class Hoera extends SpriteObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'hoera', ...opts });
 		this.imgid = BitmapId.hoera;
-		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
 			rc.submitRect({ kind: 'fill', area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] });
 			const x = 16, y = 160;
-            // const lines = ['dat heb je', 'redelijk gedaan Elly!', 'ik bedoel: Ei La!'];
 			const textToWrite = 'Dat heb je redelijk gedaan Elly!\nIk bedoel: Ei La!';
-			const lines = wrapText(textToWrite, 30);
-
-            // Draw on UI layer so it appears above the fill rectangle
-            $.drawText(x, y, lines, 950);
-        });
-    }
+			rc.submitGlyphs({ x, y, glyphs: textToWrite, wrapChars: 30 });
+		});
+	}
 }
 
 @insavegame
@@ -98,6 +93,7 @@ export class TitleScreen extends SpriteObject {
 	private cursorY: number;
 	private selectedPlayers: number;
 	private cursorVisible: boolean;
+	private _cursorSprite!: SpriteComponent;
 
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
@@ -141,11 +137,12 @@ export class TitleScreen extends SpriteObject {
 								$switch: 'players_2',
 							},
 							entering_state(this: TitleScreen, state: State) {
-								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
-								this.selectedPlayers = 1;
-								this.cursorVisible = true;
-								state.parent.states.blink.reset();
-							},
+						this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
+						this.selectedPlayers = 1;
+						this.cursorVisible = true;
+						state.parent.states.blink.reset();
+						if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1) as any;
+					},
 						},
 						players_2: {
 							on: {
@@ -153,11 +150,12 @@ export class TitleScreen extends SpriteObject {
 								$players_1: 'players_1', // For resetting the TitleScreen state.
 							},
 							entering_state(this: TitleScreen, state: State) {
-								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
-								this.selectedPlayers = 2;
-								this.cursorVisible = true;
-								state.parent.states.blink.reset();
-							},
+						this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
+						this.selectedPlayers = 2;
+						this.cursorVisible = true;
+						state.parent.states.blink.reset();
+						if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1) as any;
+					},
 						},
 						blink: {
 							is_concurrent: true,
@@ -168,12 +166,13 @@ export class TitleScreen extends SpriteObject {
 								pause_blink: false,
 							},
 							entering_state(this: TitleScreen) {
-								this.cursorVisible = true;
-							},
-							tape_next(this: TitleScreen, state: State) {
-								if (state.data.pause_blink) return;
-								this.cursorVisible = state.current_tape_value;
-							},
+							this.cursorVisible = true;
+						},
+						tape_next(this: TitleScreen, state: State) {
+							if (state.data.pause_blink) return;
+							this.cursorVisible = state.current_tape_value;
+							if (this._cursorSprite) this._cursorSprite.enabled = !!this.cursorVisible;
+						},
 							states: {
 								_default: {
 									on: {
@@ -202,11 +201,10 @@ export class TitleScreen extends SpriteObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'title', ...opts });
 		this.imgid = BitmapId.title;
-		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
-			// base sprite
-			rc.submitSprite(this.sprite.paint_offset(this));
-			if (this.cursorVisible) rc.submitSprite({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, this.cursorY, this.z + 1), layer: 'ui' });
-		});
+		// Cursor sprite component (secondary)
+		this._cursorSprite = new SpriteComponent({ parentid: this.id, imgid: BitmapId.menu_arrow });
+		this.addComponent(this._cursorSprite);
+		this._cursorSprite.layer = 'ui';
 	}
 }
 
@@ -252,7 +250,7 @@ export class Gordijn extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'gordijn', ...opts });
 		this.width = 0;
-		this.getOrCreateGenericRenderer().setProducer(({ rc }) => {
+		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
 			if (this.width === 0) return;
 			rc.submitRect({ kind: 'fill', area: new_area3d(0, 0, this.z + 1, this.width, 192, this.z), color: Msx1Colors[0], layer: 'ui' });
 		});

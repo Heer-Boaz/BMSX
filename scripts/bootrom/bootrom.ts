@@ -309,14 +309,14 @@ async function awaitBootComplete(): Promise<void> {
  * If an error occurs during loading, the Promise is rejected with an error message.
  */
 async function loadScript(rom: RomPack): Promise<void> {
-    try {
-        const romcode = document.createElement('script');
-        romcode.async = false;
-        romcode.textContent = rom.code;
-        document.head.appendChild(romcode);
-    } catch (err) {
-        throw new Error(`Error in loadScript: ${err.message}`);
-    }
+	try {
+		const romcode = document.createElement('script');
+		romcode.async = false;
+		romcode.textContent = rom.code;
+		document.head.appendChild(romcode);
+	} catch (err) {
+		throw new Error(`Error in loadScript: ${err.message}`);
+	}
 }
 
 /**

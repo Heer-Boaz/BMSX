@@ -22,7 +22,7 @@ type WaitState =
 
 @insavegame
 export class AbilitySystemComponent extends Component {
-    static unique = true;
+	static unique = true;
 	readonly ownerId: string;
 
 	public static readonly registry = new Set<AbilitySystemComponent>();

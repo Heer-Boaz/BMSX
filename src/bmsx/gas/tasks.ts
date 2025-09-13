@@ -177,14 +177,14 @@ export const WaitTag = (tag: string, present: boolean = true): TaskFn => functio
 export const SetTag = (owner: Identifier, tag: string, present: boolean): TaskFn => function* (_ctx) {
 	const wo = $.world.getWorldObject(owner);
 	if (!wo) return;
-    const asc = wo.getUniqueComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
+	const asc = wo.getUniqueComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
 	if (asc) present ? asc.addTag(tag) : asc.removeTag(tag);
 };
 
 export const ApplyEffect = (owner: Identifier, effect: Parameters<AbilitySystemComponent['applyEffect']>[0]): TaskFn => function* () {
 	const wo = $.world.getWorldObject(owner);
 	if (!wo) return;
-    const asc = wo.getUniqueComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
+	const asc = wo.getUniqueComponent(AbilitySystemComponent) as AbilitySystemComponent | undefined;
 	if (asc) asc.applyEffect(effect);
 };
 

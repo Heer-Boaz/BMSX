@@ -22,19 +22,19 @@ export const EILA_MODULE = {
 
 @insavegame
 export class EilaEventService extends Service {
-    private _humiliationCount = 0;
-    constructor(opts?: RevivableObjectArgs) {
-        super({ id: 'eila_events', ...opts });
-    }
+	private _humiliationCount = 0;
+	constructor(opts?: RevivableObjectArgs) {
+		super({ id: 'eila_events', ...opts });
+	}
 
-    // Example service state (DTO) participation: opt-in via getState/setState.
-    public override getState() { return { humiliationCount: this._humiliationCount }; }
-    public override setState(dto: unknown): void {
-        if (dto && typeof dto === 'object' && 'humiliationCount' in dto) {
-            const n = dto.humiliationCount;
-            if (typeof n === 'number' && isFinite(n)) this._humiliationCount = n;
-        }
-    }
+	// Example service state (DTO) participation: opt-in via getState/setState.
+	public override getState() { return { humiliationCount: this._humiliationCount }; }
+	public override setState(dto: unknown): void {
+		if (dto && typeof dto === 'object' && 'humiliationCount' in dto) {
+			const n = dto.humiliationCount;
+			if (typeof n === 'number' && isFinite(n)) this._humiliationCount = n;
+		}
+	}
 
 	public theOtherFighter(fighter: Fighter): Fighter | null {
 		if (fighter.id === 'player') return $.world.getWorldObject('sinterklaas');
@@ -62,9 +62,9 @@ export class EilaEventService extends Service {
 	}
 
 	@subscribesToGlobalEvent('humiliated_animation_end', true)
-    public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
-        // Track total humiliations for demo state persistence
-        this._humiliationCount++;
+	public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, { character }: { character: string }): void {
+		// Track total humiliations for demo state persistence
+		this._humiliationCount++;
 		const player = $.world.getWorldObject<Fighter>('player');
 		const sinterklaas = $.world.getWorldObject<Fighter>('sinterklaas');
 

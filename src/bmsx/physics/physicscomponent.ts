@@ -99,7 +99,7 @@ export class PhysicsComponent extends Component {
 			wo.rotationQ.z = this.body.rotationQ.z;
 			wo.rotationQ.w = this.body.rotationQ.w;
 		}
-    // if (PhysicsComponent._debugFrames < 5) {
+	// if (PhysicsComponent._debugFrames < 5) {
 		// 	if (beforeX !== wo.x_nonotify || beforeY !== wo.y_nonotify || beforeZ !== wo.z_nonotify) {
 		// 		// console.log(`[PhysSync]`, this.parentid, `body`, this.body.position, `goBefore: [${beforeX}, ${beforeY}, ${beforeZ}] goAfter: [${wo.x_nonotify}, ${wo.y_nonotify}, ${wo.z_nonotify}]`);
 		// 	}
@@ -108,7 +108,7 @@ export class PhysicsComponent extends Component {
 		// }
 	}
 
-    // private static _debugFrames = 0; // removed (unused)
+	// private static _debugFrames = 0; // removed (unused)
 
 	override dispose(): void {
 		super.dispose();

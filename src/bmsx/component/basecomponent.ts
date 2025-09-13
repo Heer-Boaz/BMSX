@@ -1,6 +1,6 @@
 import { EventEmitter, EventSubscription, type EventSubscriber } from '../core/eventemitter';
 import { $ } from '../core/game';
-import { type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
+import { type WorldObject, type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
 import type { Disposable, Identifiable, Identifier, Registerable } from '../rompack/rompack';
 import { ConcreteOrAbstractConstructor } from '../rompack/rompack';
@@ -128,7 +128,7 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export abstract class Component<T extends ComponentContainer = ComponentContainer> implements Identifiable, EventSubscriber {
+export abstract class Component<T extends WorldObject = WorldObject> implements Identifiable, EventSubscriber {
 	/**
 	 * The identifier of the parent component.
 	 */

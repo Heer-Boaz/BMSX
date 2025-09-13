@@ -5,7 +5,7 @@ export * from './audio/soundmaster';
 export * from './component/basecomponent';
 export * from './component/collisioncomponents';
 export * from './component/transformcomponent';
-export * from './component/generic_renderer_component';
+export * from './component/customvisual_component';
 export * from './core/assetbarrier';
 export * from './core/world';
 export * from './core/object/cameraobject';
@@ -72,8 +72,12 @@ export * from './ecs/prerender_submit_system';
 export * from './ecs/debug';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';
-export * from './render/textwriter';
+// Text utility (immediate-mode). Preferred usage: TextComponent + TextRenderSystem
+export * from './render/glyphs';
 export * from './render/gameview';
+// Typed rendering components
+export * from './component/sprite_component';
+export * from './component/mesh_component';
 // Ensure pipeline helpers & backends for higher-level pipelines
 export * from './render/backend/renderpass_builder';
 export * from './render/backend/webgpu/webgpu_backend';
@@ -96,3 +100,7 @@ export * from './utils/decorators';
 export * from './utils/symbols';
 export * from './utils/utils';
 export * from './utils/pool';
+export * from './component/mesh_component';
+export * from './component/sprite_component';
+export * from './component/text_component';
+export * from './render/glyphs';

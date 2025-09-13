@@ -12,9 +12,9 @@ struct VSOut {
 @vertex
 fn main(@builtin(vertex_index) vid : u32) -> VSOut {
   var pos = array<vec2<f32>, 3>(
-    vec2<f32>(-1.0, -3.0),
-    vec2<f32>(3.0, 1.0),
-    vec2<f32>(-1.0, 1.0)
+	vec2<f32>(-1.0, -3.0),
+	vec2<f32>(3.0, 1.0),
+	vec2<f32>(-1.0, 1.0)
   );
   var out : VSOut;
   out.Position = vec4<f32>(pos[vid], 0.0, 1.0);

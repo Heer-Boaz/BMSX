@@ -7,21 +7,21 @@ declare global {
 
   // Vendor-prefixed fullscreen APIs (optional at runtime)
   interface Document {
-    webkitFullscreenEnabled?: boolean;
-    webkitFullScreenEnabled?: boolean;
-    mozFullScreenEnabled?: boolean;
-    webkitExitFullscreen?: () => Promise<void> | void;
-    mozExitFullScreen?: () => Promise<void> | void;
+	webkitFullscreenEnabled?: boolean;
+	webkitFullScreenEnabled?: boolean;
+	mozFullScreenEnabled?: boolean;
+	webkitExitFullscreen?: () => Promise<void> | void;
+	mozExitFullScreen?: () => Promise<void> | void;
   }
 
   interface HTMLElement {
-    mozRequestFullScreen?: () => Promise<void> | void;
-    webkitRequestFullScreen?: () => Promise<void> | void; // Note: This is a vendor-prefixed version of the standard requestFullscreen method.
-    webkitRequestFullscreen?: () => Promise<void> | void; // Note: This is a slightly different vendor-prefixed version (i.e. "screen" vs "Screen").
+	mozRequestFullScreen?: () => Promise<void> | void;
+	webkitRequestFullScreen?: () => Promise<void> | void; // Note: This is a vendor-prefixed version of the standard requestFullscreen method.
+	webkitRequestFullscreen?: () => Promise<void> | void; // Note: This is a slightly different vendor-prefixed version (i.e. "screen" vs "Screen").
   }
 
   interface Window {
-    isFullScreen?: boolean;
+	isFullScreen?: boolean;
   }
 }
 

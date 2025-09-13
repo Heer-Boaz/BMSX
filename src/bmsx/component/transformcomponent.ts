@@ -6,89 +6,89 @@ import { Component } from './basecomponent';
 
 @insavegame
 export class TransformComponent extends Component<WorldObject> {
-    static unique = true;
-    public position: vec3arr;
-    // public rotation: vec3arr; // retained for legacy callers; not authoritative if parent supplies quaternion
-    private orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
-    public scale: vec3arr;
+	static unique = true;
+	public position: vec3arr;
+	// public rotation: vec3arr; // retained for legacy callers; not authoritative if parent supplies quaternion
+	private orientationQ: quat = { x: 0, y: 0, z: 0, w: 1 }; // authoritative when parent implements Oriented
+	public scale: vec3arr;
 
-    private _parentNode: TransformComponent | null = null;
-    private children: TransformComponent[] = [];
+	private _parentNode: TransformComponent | null = null;
+	private children: TransformComponent[] = [];
 
-    private localMatrix: Mat4 = M4.identity();
-    private worldMatrix: Mat4 = M4.identity();
-    private dirty = true;
+	private localMatrix: Mat4 = M4.identity();
+	private worldMatrix: Mat4 = M4.identity();
+	private dirty = true;
 
-    constructor(opts: RevivableObjectArgs & { parentid: Identifier, position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
-        super(opts);
-        this.position = opts?.position ?? [0, 0, 0];
-        this.scale = opts?.scale ?? [1, 1, 1];
-        this.orientationQ ??= opts?.orientationQ;
-    }
+	constructor(opts: RevivableObjectArgs & { parentid: Identifier, position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
+		super(opts);
+		this.position = opts?.position ?? [0, 0, 0];
+		this.scale = opts?.scale ?? [1, 1, 1];
+		this.orientationQ ??= opts?.orientationQ;
+	}
 
-    public get parentNode(): TransformComponent | null {
-        return this._parentNode;
-    }
+	public get parentNode(): TransformComponent | null {
+		return this._parentNode;
+	}
 
-    public set parentNode(p: TransformComponent | null) {
-        if (this._parentNode === p) return;
-        if (this._parentNode) {
-            const idx = this._parentNode.children.indexOf(this);
-            if (idx >= 0) this._parentNode.children.splice(idx, 1);
-        }
-        this._parentNode = p;
-        if (p) p.children.push(this);
-        this.markDirty();
-    }
+	public set parentNode(p: TransformComponent | null) {
+		if (this._parentNode === p) return;
+		if (this._parentNode) {
+			const idx = this._parentNode.children.indexOf(this);
+			if (idx >= 0) this._parentNode.children.splice(idx, 1);
+		}
+		this._parentNode = p;
+		if (p) p.children.push(this);
+		this.markDirty();
+	}
 
-    public markDirty(): void {
-        if (!this.dirty) {
-            this.dirty = true;
-            for (const c of this.children) c.markDirty();
-        }
-    }
+	public markDirty(): void {
+		if (!this.dirty) {
+			this.dirty = true;
+			for (const c of this.children) c.markDirty();
+		}
+	}
 
-    private updateMatrices(): void {
-        this.localMatrix = M4.identity();
-        M4.translateSelf(this.localMatrix, this.position[0], this.position[1], this.position[2]);
-        const rot = new Float32Array(16);
-        M4.quatToMat4Into(rot, [this.orientationQ.x, this.orientationQ.y, this.orientationQ.z, this.orientationQ.w]);
-        M4.mulInto(this.localMatrix, this.localMatrix, rot);
-        M4.scaleSelf(this.localMatrix, this.scale[0], this.scale[1], this.scale[2]);
-        if (this._parentNode) {
-            const pw = this._parentNode.getWorldMatrix();
-            this.worldMatrix = M4.mul(pw, this.localMatrix);
-        } else {
-            this.worldMatrix = this.localMatrix;
-        }
-        this.dirty = false;
-    }
+	private updateMatrices(): void {
+		this.localMatrix = M4.identity();
+		M4.translateSelf(this.localMatrix, this.position[0], this.position[1], this.position[2]);
+		const rot = new Float32Array(16);
+		M4.quatToMat4Into(rot, [this.orientationQ.x, this.orientationQ.y, this.orientationQ.z, this.orientationQ.w]);
+		M4.mulInto(this.localMatrix, this.localMatrix, rot);
+		M4.scaleSelf(this.localMatrix, this.scale[0], this.scale[1], this.scale[2]);
+		if (this._parentNode) {
+			const pw = this._parentNode.getWorldMatrix();
+			this.worldMatrix = M4.mul(pw, this.localMatrix);
+		} else {
+			this.worldMatrix = this.localMatrix;
+		}
+		this.dirty = false;
+	}
 
-    public getWorldMatrix(): Mat4 {
-        if (this.dirty) this.updateMatrices();
-        return this.worldMatrix;
-    }
+	public getWorldMatrix(): Mat4 {
+		if (this.dirty) this.updateMatrices();
+		return this.worldMatrix;
+	}
 
-    override postprocessingUpdate(): void {
-        const parent = this.parentAs<WorldObject & Oriented & Scaled>();
+	override postprocessingUpdate(): void {
+		const parent = this.parentAs<WorldObject & Oriented & Scaled>();
 
-        if (parent.pos) {
-            this.position[0] = parent.pos.x;
-            this.position[1] = parent.pos.y;
-            this.position[2] = parent.pos.z ?? 0;
-        }
+		if (parent.pos) {
+			this.position[0] = parent.pos.x;
+			this.position[1] = parent.pos.y;
+			this.position[2] = parent.pos.z ?? 0;
+		}
 
-        const oriented = parent as Oriented;
-        if (oriented.rotationQ) {
-            this.orientationQ = oriented.rotationQ;
-        }
+		const oriented = parent as Oriented;
+		if (oriented.rotationQ) {
+			this.orientationQ = oriented.rotationQ;
+		}
 
-        if (parent.scale) {
-            this.scale[0] = parent.scale[0];
-            this.scale[1] = parent.scale[1];
-            this.scale[2] = parent.scale[2];
-        }
+		if (parent.scale) {
+			this.scale[0] = parent.scale[0];
+			this.scale[1] = parent.scale[1];
+			this.scale[2] = parent.scale[2];
+		}
 
-        this.markDirty();
-    }
+		this.markDirty();
+	}
 }

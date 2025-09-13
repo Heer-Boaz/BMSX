@@ -7,14 +7,14 @@ interface Handler { name: string; fn: SpawnFactory; }
 
 // Generic wave / spawn manager listening to an EventTimeline instead of rail events.
 export class WaveManager extends EventEmitter {
-    private timeline: EventTimeline; private handlers: Handler[] = [];
-    constructor(timeline: EventTimeline) { super(); this.timeline = timeline; }
-    onSpawn(eventName: string, factory: SpawnFactory): this {
-        this.handlers.push({ name: eventName, fn: factory });
-        this.timeline.on(eventName, (data: any) => {
-            const wo = factory(data);
-            if (wo) this.emit('spawned', wo);
-        }, this);
-        return this;
-    }
+	private timeline: EventTimeline; private handlers: Handler[] = [];
+	constructor(timeline: EventTimeline) { super(); this.timeline = timeline; }
+	onSpawn(eventName: string, factory: SpawnFactory): this {
+		this.handlers.push({ name: eventName, fn: factory });
+		this.timeline.on(eventName, (data: any) => {
+			const wo = factory(data);
+			if (wo) this.emit('spawned', wo);
+		}, this);
+		return this;
+	}
 }

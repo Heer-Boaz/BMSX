@@ -22,22 +22,22 @@
  * @param capacityItems - Total number of items the ring cursor can allocate.
  */
 export class RingCursor {
-    private head = 0;
-    constructor(private readonly capacityItems: number) { }
-    reset(): void { this.head = 0; }
-    alloc(count: number): number {
-        if (count > this.capacityItems) {
-            // Clamp: caller requested more than total capacity; place at start
-            this.head = 0; return 0;
-        }
-        if (this.head + count > this.capacityItems) {
-            // Wrap to start
-            this.head = 0;
-        }
-        const start = this.head;
-        this.head += count;
-        return start;
-    }
-    get capacity(): number { return this.capacityItems; }
+	private head = 0;
+	constructor(private readonly capacityItems: number) { }
+	reset(): void { this.head = 0; }
+	alloc(count: number): number {
+		if (count > this.capacityItems) {
+			// Clamp: caller requested more than total capacity; place at start
+			this.head = 0; return 0;
+		}
+		if (this.head + count > this.capacityItems) {
+			// Wrap to start
+			this.head = 0;
+		}
+		const start = this.head;
+		this.head += count;
+		return start;
+	}
+	get capacity(): number { return this.capacityItems; }
 }
 

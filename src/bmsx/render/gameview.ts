@@ -18,6 +18,7 @@ import { RenderPassLibrary } from './backend/renderpasslib';
 import type { WebGLBackend } from './backend/webgl/webgl_backend';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
+import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -34,12 +35,14 @@ export type FlipOptions = {
 	flip_v: boolean;
 }
 
+export type RenderLayer = 'world' | 'ui';
+
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';
 	area: Area;
 	color: color;
 	// Optional sprite layer for sorting/grouping: 'world' (default) or 'ui'
-	layer?: 'world' | 'ui';
+	layer?: RenderLayer;
 }
 
 export type ImgRenderSubmission = {
@@ -52,16 +55,15 @@ export type ImgRenderSubmission = {
 	ambientAffected?: boolean;
 	ambientFactor?: number; // 0..1
 	// Optional sprite layer for sorting/grouping: 'world' (default) or 'ui'
-	layer?: 'world' | 'ui';
+	layer?: RenderLayer;
 }
 
 export type PolyRenderSubmission = {
-	kind: 'poly';
 	points: Polygon;
 	z: number;
 	color: color;
 	thickness?: number;
-	layer?: 'world' | 'ui';
+	layer?: RenderLayer;
 };
 
 export type MeshRenderSubmission = {
@@ -79,6 +81,21 @@ export type ParticleRenderSubmission = {
 	// Optional ambient override
 	ambientMode?: 0 | 1; // 0=unlit, 1=ambient
 	ambientFactor?: number; // 0..1
+}
+
+export type GlyphRenderSubmission = {
+	x: number;
+	y: number;
+	z?: number;
+	glyphs: string | string[];
+	font?: BFont;
+	color?: color;
+	backgroundColor?: color;
+	wrapChars?: number;
+	centerBlockWidth?: number;
+	align?: CanvasTextAlign;
+	baseline?: CanvasTextBaseline;
+	layer?: RenderLayer;
 }
 
 export type SkyboxImageIds = {
@@ -193,7 +210,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			sprite: (o: ImgRenderSubmission) => void;
 			mesh: (o: MeshRenderSubmission) => void;
 			rect: (o: RectRenderSubmission) => void;
-			poly: (o: { points: Polygon; z: number; color: color; thickness?: number; layer?: 'world' | 'ui' }) => void;
+			poly: (o: PolyRenderSubmission) => void;
+			glyphs: (o: GlyphRenderSubmission) => void;
 		};
 	} = {
 			submit: {
@@ -214,13 +232,33 @@ export class GameView implements RegisterablePersistent, RenderContext {
 						case 'poly':
 							this.renderer.submit.poly(o);
 							break;
+						case 'glyphs':
+							this.renderer.submit.glyphs(o);
+							break;
 					}
 				},
 				particle: (o: ParticleRenderSubmission) => { ParticlesPipeline.submitParticle({ ...o }); },
 				sprite: (o: ImgRenderSubmission) => { SpritesPipeline.drawImg(o); },
 				mesh: (o: MeshRenderSubmission) => { MeshPipeline.submitMesh({ ...o }); },
 				rect: (o: RectRenderSubmission) => { o.kind === 'fill' ? SpritesPipeline.fillRectangle(o) : SpritesPipeline.drawRectangle(o); },
-				poly: (o: { points: Polygon; z: number; color: color; thickness?: number; layer?: 'world' | 'ui' }) => { SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer); },
+				poly: (o: PolyRenderSubmission) => { SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer); },
+				glyphs: (o: GlyphRenderSubmission) => {
+					let lines: string | string[] = o.glyphs;
+					if (!o.font) o.font = this.default_font;
+					if (!o.font) { console.error('No font available for glyph rendering'); return; }
+					
+					// Optional char-based wrapping
+					if (typeof lines === 'string' && o.wrapChars > 0 && o.wrapChars > 0) {
+						lines = wrapGlyphs(lines, o.wrapChars);
+					}
+					let xx = o.x;
+					// Optional simple centering within a block of width (pixels)
+					if (o.centerBlockWidth && o.centerBlockWidth > 0) {
+						const arr = Array.isArray(lines) ? lines : [lines];
+						xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.centerBlockWidth);
+					}
+					renderGlyphs(xx, o.y, lines, o?.z ?? 950, o?.font, o?.color, o?.backgroundColor, o?.layer);
+				},
 			},
 		};
 
@@ -674,5 +712,5 @@ export function registerAtmosphereHotkeys(): void {
 			console.info('Fog color gradient toggled');
 		}
 	});
-} export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission);
+} export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
 

@@ -2,14 +2,14 @@ import { RenderPassLibrary } from '../backend/renderpasslib';
 
 // WebGPU stub: registers the Skybox pass for WebGPU builds.
 export function registerSkyboxPass_WebGPU(library: RenderPassLibrary): void {
-    library.register({
-        id: 'skybox',
-        label: 'skybox',
-        name: 'Skybox (WebGPU)',
-        writesDepth: true,
-        stateOnly: true,
-        shouldExecute: () => false,
-        exec: () => { /* no-op */ },
-        prepare: () => { /* set skybox state here when implemented */ },
-    });
+	library.register({
+		id: 'skybox',
+		label: 'skybox',
+		name: 'Skybox (WebGPU)',
+		writesDepth: true,
+		stateOnly: true,
+		shouldExecute: () => false,
+		exec: () => { /* no-op */ },
+		prepare: () => { /* set skybox state here when implemented */ },
+	});
 }

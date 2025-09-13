@@ -9,7 +9,7 @@ import { PhysicsWorld } from '../physics/physicsworld';
 import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TextureManager } from "../render/texturemanager";
-import { TextWriter } from "../render/textwriter";
+import { renderGlyphs } from "../render/glyphs";
 import { color, GameView, renderGate } from "../render/gameview";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
@@ -46,10 +46,10 @@ export interface GameInitArgs {
 	gainnode: GainNode;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
-    /**
-     * ECS pipeline selection. Provide a spec or a profile string. Defaults to 'gameplay'.
-     */
-    ecsPipeline?: NodeSpec[] | 'gameplay' | 'headless' | 'editor';
+	/**
+	 * ECS pipeline selection. Provide a spec or a profile string. Defaults to 'gameplay'.
+	 */
+	ecsPipeline?: NodeSpec[] | 'gameplay' | 'headless' | 'editor';
 }
 
 const GAME_FPS = 50;
@@ -201,8 +201,8 @@ export class Game {
 
 	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
 
-	public drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: color, backgroundColor?: color): void {
-		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
+	public renderGlyphs(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: color, backgroundColor?: color): void {
+		renderGlyphs(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
 	public playAudio(id: asset_id, options: RandomModulationParams = {}): void {

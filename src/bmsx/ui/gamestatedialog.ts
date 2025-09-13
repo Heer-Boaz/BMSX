@@ -6,21 +6,21 @@ import { $ } from '../core/game';
  * @returns void
  */
 export function show_download_savestate_dialog() {
-    const data = $.save();
+	const data = $.save();
 
-    const a = document.createElement('a');
+	const a = document.createElement('a');
 
-    // Ensure the Blob gets a plain ArrayBuffer-backed ArrayBufferView.
-    // This copies the data into a new ArrayBuffer (avoids issues with SharedArrayBuffer).
-    const copy = new Uint8Array(data); // copy -> backed by a normal ArrayBuffer
-    const blob = new Blob([copy], { type: "application/octet-stream" });
+	// Ensure the Blob gets a plain ArrayBuffer-backed ArrayBufferView.
+	// This copies the data into a new ArrayBuffer (avoids issues with SharedArrayBuffer).
+	const copy = new Uint8Array(data); // copy -> backed by a normal ArrayBuffer
+	const blob = new Blob([copy], { type: "application/octet-stream" });
 
-    a.href = URL.createObjectURL(blob);
-    a.download = 'savestate.bmsx';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(a.href);
+	a.href = URL.createObjectURL(blob);
+	a.download = 'savestate.bmsx';
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	URL.revokeObjectURL(a.href);
 }
 
 let setload: HTMLInputElement = undefined;
@@ -34,14 +34,14 @@ let setload: HTMLInputElement = undefined;
  * @returns void
  */
 export function show_openfile_dialog(options: { multiple: boolean, accept: string, eventlistener: (this: HTMLInputElement, ev: Event) => any }) {
-    setload = document.createElement('input');
-    setload.type = 'file';
-    setload.multiple = options.multiple;
-    setload.accept = options.accept;
-    setload.style.display = 'none';
-    setload.click();
+	setload = document.createElement('input');
+	setload.type = 'file';
+	setload.multiple = options.multiple;
+	setload.accept = options.accept;
+	setload.style.display = 'none';
+	setload.click();
 
-    setload.addEventListener('change', options.eventlistener);
+	setload.addEventListener('change', options.eventlistener);
 }
 
 /**
@@ -49,7 +49,7 @@ export function show_openfile_dialog(options: { multiple: boolean, accept: strin
  * @returns void
  */
 export function show_load_savestate_dialog() {
-    show_openfile_dialog({ multiple: false, accept: '.bmsx', eventlistener: load_savestate });
+	show_openfile_dialog({ multiple: false, accept: '.bmsx', eventlistener: load_savestate });
 }
 
 /**
@@ -58,7 +58,7 @@ export function show_load_savestate_dialog() {
  * @returns A boolean indicating whether any files are selected.
  */
 function are_any_files_selected_via_openfile_dialog(files: FileList) {
-    return files && files.length !== 0;
+	return files && files.length !== 0;
 }
 
 /**
@@ -68,14 +68,14 @@ function are_any_files_selected_via_openfile_dialog(files: FileList) {
  * @returns The first selected file, or undefined if no files are selected.
  */
 function get_first_selected_file_from_openfile_dialog(files: FileList): File {
-    if (!are_any_files_selected_via_openfile_dialog(files)) {
-        // Do nothing
-        console.info('Geen bestand geselecteerd!');
-        return undefined;
-    }
-    else {
-        return files[0];
-    }
+	if (!are_any_files_selected_via_openfile_dialog(files)) {
+		// Do nothing
+		console.info('Geen bestand geselecteerd!');
+		return undefined;
+	}
+	else {
+		return files[0];
+	}
 }
 
 /**
@@ -85,9 +85,9 @@ function get_first_selected_file_from_openfile_dialog(files: FileList): File {
  * @returns void
  */
 function load_savestate(this: HTMLInputElement, _ev: Event) {
-    const file = get_first_selected_file_from_openfile_dialog(setload.files);
-    if (file) {
-        file.arrayBuffer().then(buf => $.load(new Uint8Array(buf)));
-    }
-    setload = undefined;
+	const file = get_first_selected_file_from_openfile_dialog(setload.files);
+	if (file) {
+		file.arrayBuffer().then(buf => $.load(new Uint8Array(buf)));
+	}
+	setload = undefined;
 }

@@ -652,66 +652,6 @@ export function deepClone<T>(v: T): T {
 	return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, deepClone(val)])) as T;
 }
 
-/**
- * Calculates the X coordinate for centering a block of text on the screen.
- *
- * This method determines the longest line of text from `this.fullTextLines`,
- * calculates its width in pixels, and then computes the X coordinate needed
- * to center this line on a screen with a fixed width of 256 pixels.
- *
- * @param fullTextLines - The array of text lines to be centered.
- * @param charWidth - The width of each character in pixels.
- * @param blockWidth - The total width of the block to center the text within.
- * @returns The X coordinate for centering the text block.
- */
-export function calculateCenteredBlockX(fullTextLines: string[], charWidth: number, blockWidth: number): number {
-	const longestLine = fullTextLines.reduce((a, b) => a.length > b.length ? a : b, '');
-	const longestLineWidth = longestLine.length * charWidth;
-	return (blockWidth - longestLineWidth) / 2;
-}
-
-/**
- * Splits a given text into an array of strings, where each string represents a line of text
- * that does not exceed the maximum number of characters per line. The method also respects
- * newline characters in the input text.
- *
- * @param text - The input text to be wrapped into lines.
- * @param maxLineLength - The maximum number of characters allowed per line.
- * @returns An array of strings, where each string is a line of text.
- */
-export function wrapText(text: string, maxLineLength: number): string[] {
-	const words = text.match(/(\S+|\n)/g) || [];
-	const lines: string[] = [];
-	let currentLine = '';
-
-	for (const word of words) {
-		if (word === '\n') {
-			lines.push(currentLine.trim());
-			currentLine = '';
-			lines.push('');
-		} else {
-			const tentativeLine = currentLine ? currentLine + ' ' + word : word;
-			if (tentativeLine.length <= maxLineLength) {
-				currentLine = tentativeLine;
-			} else {
-				if (currentLine) {
-					lines.push(currentLine.trim());
-					currentLine = word;
-				} else {
-					lines.push(word);
-					currentLine = '';
-				}
-			}
-		}
-	}
-
-	if (currentLine.trim()) {
-		lines.push(currentLine.trim());
-	}
-
-	return lines;
-}
-
 // Utility: wrap a Map so `mapLike['id']` resolves to `map.get('id')` and
 // assignments delete/set through the same surface. Also exposes standard Map
 // methods bound to the underlying map.
