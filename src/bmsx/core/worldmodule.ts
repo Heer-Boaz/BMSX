@@ -1,7 +1,7 @@
 import type { InputMap } from '../input/inputtypes';
 import type { World } from './world';
 
-export type PluginOpts = {
+export type WorldModuleTemplate = {
 	spaces?: string[];
 	inputMaps?: Array<{ playerIndex: number; map: InputMap }>;
 	onBoot?: (model: World) => void;

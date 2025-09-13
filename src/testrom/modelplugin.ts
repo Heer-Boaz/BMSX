@@ -163,6 +163,8 @@ export function createTestromPlugin() {
 
 			world.spawn(new CameraController({ cams: [cam1, cam2] }));
 
+			return;
+
 			// ===== Rail shooter demo scaffold =====
 			// Simple S-curve forward rail reminiscent of an urban fly-through
 			// Extended weaving rail path: dips between towers then rises above skyline
