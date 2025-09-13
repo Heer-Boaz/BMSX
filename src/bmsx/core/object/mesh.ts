@@ -9,7 +9,7 @@ import type { asset_id, color_arr, GLTFAnimationSampler, GLTFMesh, GLTFModel, GL
 import { excludeclassfromsavegame, excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { $ } from '../game';
 import { WorldObject } from './worldobject';
-import { Float32ArrayPool } from 'bmsx/utils/pool';
+import { Float32ArrayPool } from '../../utils/pool';
 // Render ops now go through GenericRendererComponent (fetched via WorldObject helper)
 
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>"

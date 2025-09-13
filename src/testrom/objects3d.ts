@@ -1,40 +1,36 @@
-import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, MeshObject, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, build_fsm, type StateMachineBlueprint, type RevivableObjectArgs, onload } from 'bmsx';
+import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, build_fsm, type StateMachineBlueprint, type RevivableObjectArgs, onload } from 'bmsx';
+import { MeshRendererComponent } from 'bmsx/render/components/mesh_renderer_component';
 import { BitmapId, ModelId } from './resourceids';
 
 @insavegame
 @attach_components(TransformComponent)
-export class Cube3D extends MeshObject {
+export class Cube3D extends WorldObject {
     constructor(opts?: RevivableObjectArgs) {
         super({ id: 'cube', ...opts });
-        this.model_id = ModelId.cube;
+        this.addComponent(new MeshRendererComponent({ parentid: this.id, modelId: ModelId.cube }));
     }
 }
 
 @insavegame
 @attach_components(TransformComponent)
-export class SmallCube3D extends MeshObject {
+export class SmallCube3D extends WorldObject {
+    public scale: vec3arr = [0.5, 0.5, 0.5];
     constructor(opts?: RevivableObjectArgs & { overrideTextureIndex?: number }) {
         super({ id: `smallCube${opts?.overrideTextureIndex ?? ''}`, ...opts });
-        this.model_id = ModelId.cube;
+        this.addComponent(new MeshRendererComponent({ parentid: this.id, modelId: ModelId.cube }));
         if (opts?.overrideTextureIndex !== undefined) {
-            const mesh = this.meshes[0];
-            if (mesh?.material) {
-                mesh.material.textures.albedo = opts.overrideTextureIndex;
-                $.texmanager.fetchModelTextures(this.meshModel).then(tex => {
-                    mesh.material.gpuTextures.albedo = tex[opts.overrideTextureIndex];
-                });
-            }
+            const rc = this.getFirstComponent(MeshRendererComponent);
+            rc?.setMaterialOverride(0, { albedo: opts.overrideTextureIndex });
         }
-        this.scale = [0.5, 0.5, 0.5];
     }
 }
 
 @insavegame
 @attach_components(TransformComponent)
-export class AnimatedMorphSphere extends MeshObject {
+export class AnimatedMorphSphere extends WorldObject {
     constructor(opts?: RevivableObjectArgs) {
         super({ id: 'animatedSphere', ...opts });
-        this.model_id = ModelId.animatedmorphsphere;
+        this.addComponent(new MeshRendererComponent({ parentid: this.id, modelId: ModelId.animatedmorphsphere }));
     }
 }
 
@@ -117,24 +113,24 @@ export class PhysTestWall extends WorldObject {
 }
 
 @insavegame
-export class PhysDynamicCube extends MeshObject {
+export class PhysDynamicCube extends WorldObject {
     private static _counter = 0;
+    public scale: vec3arr;
     constructor(public halfExtent = 0.5) {
         super({ id: `physDynCube_${PhysDynamicCube._counter++}` });
-        this.model_id = ModelId.cube;
-        // Scale mesh so that its rendered half-extents match physics halfExtents (base cube assumed unit size +/-0.5)
         this.scale = [halfExtent * 2, halfExtent * 2, halfExtent * 2];
+        this.addComponent(new MeshRendererComponent({ parentid: this.id, modelId: ModelId.cube }));
     }
 }
 
 @insavegame
-export class PhysDynamicSphere extends MeshObject {
+export class PhysDynamicSphere extends WorldObject {
     private static _counter = 0;
+    public scale: vec3arr;
     constructor(public radius = 0.5) {
         super({ id: `physDynSphere_${PhysDynamicSphere._counter++}` });
-        this.model_id = ModelId.animatedmorphsphere;
-        // Scale mesh so rendered sphere radius matches physics radius
         this.scale = [radius * 2, radius * 2, radius * 2];
+        this.addComponent(new MeshRendererComponent({ parentid: this.id, modelId: ModelId.animatedmorphsphere }));
     }
 }
 
@@ -145,8 +141,9 @@ export class PhysTriggerZone extends WorldObject {
 
 // Simple static box (visual + physics via PhysicsComponent attached externally)
 @insavegame
-export class PhysStaticBox extends MeshObject {
+export class PhysStaticBox extends WorldObject {
     private static _counter = 0;
+    public scale: vec3arr;
 
     constructor(
         public halfExtents: vec3arr = [0.5, 0.5, 0.5],
@@ -162,41 +159,34 @@ export class PhysStaticBox extends MeshObject {
         public roughnessFactor?: number,
     ) {
         super({ id: nameId });
-        this.model_id = ModelId.cube;
-        this.applyHalfExtentsToScale();
-        // Direct overrides via engine API (persistable)
+        this.scale = [this.halfExtents[0] * 2, this.halfExtents[1] * 2, this.halfExtents[2] * 2];
+        this.addComponent(new MeshRendererComponent({ parentid: this.id, modelId: ModelId.cube }));
         this.applyOverrides();
     }
-    private applyHalfExtentsToScale() {
-        if (!this.halfExtents) return;
-        const he = this.halfExtents;
-        this.scale = [he[0] * 2, he[1] * 2, he[2] * 2];
-    }
     private applyOverrides() {
-        const mesh = this.meshes[0];
-        if (!mesh) return;
+        const rc = this.getFirstComponent(MeshRendererComponent);
+        if (!rc) return;
         const overrides: any = {};
         if (this.albedoTextureIndex !== undefined) overrides.albedo = this.albedoTextureIndex;
         if (this.normalTextureIndex !== undefined) overrides.normal = this.normalTextureIndex;
         if (this.overrideColor) overrides.color = this.overrideColor;
         if (this.metallicFactor !== undefined) overrides.metallicFactor = this.metallicFactor;
         if (this.roughnessFactor !== undefined) overrides.roughnessFactor = this.roughnessFactor;
-        if (Object.keys(overrides).length) this.setMaterialOverride(0, overrides);
+        if (Object.keys(overrides).length) rc.setMaterialOverride(0, overrides);
     }
     @onload
-    public rehydrateScale() { this.applyHalfExtentsToScale(); this.applyOverrides(); }
+    public rehydrateScale() { this.applyOverrides(); }
 }
 
 // Lightweight building mesh (uses dedicated building.gltf model) for procedural city; avoids PhysStaticBox overhead
 @insavegame
-export class BuildingMesh extends MeshObject {
+export class BuildingMesh extends WorldObject {
     private static _counter = 0;
+    public scale: vec3arr;
     constructor(public halfExtents: vec3arr = [0.5, 0.5, 0.5]) {
         super({ id: `building_${BuildingMesh._counter++}` });
-        // model id added to resourceids.ts (ModelId.building)
-        // Use direct assignment like other mesh objects; fallback safety retained
-        this.model_id = ModelId.building ?? ModelId.cube;
         this.scale = [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2];
+        this.addComponent(new MeshRendererComponent({ parentid: this.id, modelId: (ModelId as any).building ?? ModelId.cube }));
     }
 }
 
@@ -338,13 +328,16 @@ export function spawnSimpleCity(rail: CatmullRomPath, options: SpawnCityOptions 
                     const box = new BuildingMesh([he[0], he[1], he[2]]);
                     $.world.spawn(box, V3.of(px, s.p.y + he[1], pz));
                     // Color selection
-                    if (palette && palette.length) {
-                        const col = palette[Math.floor(rng() * palette.length)];
-                        box.setMaterialOverride(0, { color: col });
-                    } else {
-                        const base = 0.50 + rng() * 0.40; // neutral brightness
-                        const accent = base * (0.85 + rng() * 0.25);
-                        box.setMaterialOverride(0, { color: [base, accent, base * 0.75, 1] });
+                    const rc = box.getFirstComponent?.(MeshRendererComponent);
+                    if (rc) {
+                        if (palette && palette.length) {
+                            const col = palette[Math.floor(rng() * palette.length)];
+                            rc.setMaterialOverride(0, { color: col });
+                        } else {
+                            const base = 0.50 + rng() * 0.40; // neutral brightness
+                            const accent = base * (0.85 + rng() * 0.25);
+                            rc.setMaterialOverride(0, { color: [base, accent, base * 0.75, 1] });
+                        }
                     }
                     totalSpawned++;
                 }
