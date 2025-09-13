@@ -63,28 +63,28 @@ export class ZakFoe extends Foe {
 
 					switch (this.direction) {
 						case 'left':
-							this.setx(this.pos.x - 1);
+							this.setx(this.x - 1);
 							break;
 						case 'right':
-							this.setx(this.pos.x + 1);
+							this.setx(this.x + 1);
 							break;
 					}
 					this.flippedH = this.direction == 'left' ? true : false;
 
 					if (!(model as Model).currentRoom.isCollisionTile(this.hitbox_sx + 4, this.hitbox_ey + 12)) {
-						this.pos.y += 4;
+						this.y += 4;
 					}
 					break;
 				case BSTEventType.Init:
 					this.imgid = (<AniType>s.current).i;
-					this.pos.y += (<AniType>s.current).dy;
+					this.y += (<AniType>s.current).dy;
 				break;
 				case BSTEventType.End:
 					this.to(1);
 					break;
 				case BSTEventType.Next:
 					this.imgid = (<AniType>s.current).i;
-					this.pos.y += (<AniType>s.current).dy;
+					this.y += (<AniType>s.current).dy;
 					break;
 			}
 		};

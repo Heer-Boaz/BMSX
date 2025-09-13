@@ -86,4 +86,4 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
 	'fire': ['a'],
 };
 
-// Custom view subclass was removed; using RenderView directly. Extend here only if per-ROM overrides are needed.
+// Custom view subclass was removed; using GameView directly. Extend here only if per-ROM overrides are needed.

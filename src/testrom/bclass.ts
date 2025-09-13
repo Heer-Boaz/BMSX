@@ -37,7 +37,7 @@ export class bclass extends SpriteObject {
 			states: {
 				'#meuk1': {
 					tick: () => { },
-					entering_state(this: bclass) { this.pos.x += 10; },
+					entering_state(this: bclass) { this.x += 10; },
 					states: {
 						'#blupperblop1': {
 							tick(this: bclass) { },
@@ -51,7 +51,7 @@ export class bclass extends SpriteObject {
 				},
 				meuk2: {
 					tick: () => { },
-					entering_state(this: bclass) { }, // this.pos.y += 10; },
+					entering_state(this: bclass) { }, // this.y += 10; },
 				},
 			}
 		};
@@ -142,5 +142,4 @@ export class bclass extends SpriteObject {
 		super.onspawn(spawningPos);
 		this.btreecontexts['bclass_tree'].running = false; // Stop the behavior tree by default and this cannot happen in the constructor!
 	}
-
 }

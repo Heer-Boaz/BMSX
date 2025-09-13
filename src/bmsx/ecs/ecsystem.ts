@@ -4,7 +4,7 @@ import type { World } from "../core/world";
 import { EventEmitter } from "../core/eventemitter";
 import { $ } from "../core/game";
 import type { WorldObject } from "../core/object/worldobject";
-import { MeshObject } from "../core/object/mesh";
+import { MeshComponent } from "../component/mesh_component";
 import { mod } from "../utils/utils";
 import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
@@ -205,11 +205,11 @@ export class BoundarySystem extends ECSystem {
 		const height = world.gameheight;
 		for (let [o, c] of world.objectsWithComponents(ScreenBoundaryComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
-			const prev = this.prev.get(o) || { x: o.pos.x, y: o.pos.y };
+			const prev = this.prev.get(o) || { x: o.x, y: o.y };
 			const oldx = prev.x;
 			const oldy = prev.y;
-			const newx = o.pos.x;
-			const newy = o.pos.y;
+			const newx = o.x;
+			const newy = o.y;
 			// X-axis
 			if (newx < oldx) {
 				if (newx + o.size.x < 0) {
@@ -259,23 +259,23 @@ export class TileCollisionSystem extends ECSystem {
 	update(world: World): void {
 		for (let [o, c] of world.objectsWithComponents(TileCollisionComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
-			const oldx = c.oldPos?.x ?? o.pos.x;
-			const oldy = c.oldPos?.y ?? o.pos.y;
-			let newx = o.pos.x;
-			let newy = o.pos.y;
+			const oldx = c.oldPos?.x ?? o.x;
+			const oldy = c.oldPos?.y ?? o.y;
+			let newx = o.x;
+			let newy = o.y;
 			// X axis movement
 			if (newx < oldx) {
 				if ($.world.collidesWithTile?.(o, 'left')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'left' as const });
 					newx += TileSize - mod(newx, TileSize);
 				}
-				o.pos.x = ~~newx;
+				o.x = ~~newx;
 			} else if (newx > oldx) {
 				if ($.world.collidesWithTile?.(o, 'right')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'right' as const });
 					newx -= newx % TileSize;
 				}
-				o.pos.x = ~~newx;
+				o.x = ~~newx;
 			}
 			// Y axis movement
 			if (newy < oldy) {
@@ -283,13 +283,13 @@ export class TileCollisionSystem extends ECSystem {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'up' as const });
 					newy += TileSize - mod(newy, TileSize);
 				}
-				o.pos.y = ~~newy;
+				o.y = ~~newy;
 			} else if (newy > oldy) {
 				if ($.world.collidesWithTile?.(o, 'down')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'down' as const });
 					newy -= newy % TileSize;
 				}
-				o.pos.y = ~~newy;
+				o.y = ~~newy;
 			}
 		}
 	}
@@ -385,9 +385,9 @@ export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
 			if (c.writeBack) {
 				const b = c.body, sa = c.syncAxis;
-				if (sa.x) b.position.x = o.pos.x;
-				if (sa.y) b.position.y = o.pos.y;
-				if (sa.z && o.pos.z !== undefined) b.position.z = o.pos.z;
+				if (sa.x) b.position.x = o.x;
+				if (sa.y) b.position.y = o.y;
+				if (sa.z && o.z !== undefined) b.position.z = o.z;
 				PhysicsWorld.ensure().markBodyDirty(b);
 			}
 		}
@@ -422,9 +422,9 @@ export class TransformSystem extends ECSystem {
 		for (let [o, c] of world.objectsWithComponents(TransformComponent, { scope: 'current' })) {
 			if (!c || !c.enabled) continue;
 			if (o?.pos) {
-				c.position[0] = o.pos.x;
-				c.position[1] = o.pos.y;
-				c.position[2] = o.pos.z;
+				c.position[0] = o.x;
+				c.position[1] = o.y;
+				c.position[2] = o.z;
 			}
 			if (hasRotationQ(o)) c["orientationQ"] = o.rotationQ;
 			if (hasScale(o)) {
@@ -442,8 +442,9 @@ export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
 	update(world: World): void {
 		const dtSec = $.deltaTime / 1000;
-		for (let o of world.objectsOfType(MeshObject, { scope: 'current' })) {
-			o.animateStep(dtSec);
+		for (const [, c] of world.objectsWithComponents(MeshComponent, { scope: 'current' })) {
+			if (!c?.enabled) continue;
+			c.stepAnimation(dtSec);
 		}
 	}
 }

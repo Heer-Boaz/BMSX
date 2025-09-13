@@ -1,5 +1,6 @@
 import { CameraObject } from '../core/object/cameraobject';
 import type { vec3 } from '../rompack/rompack';
+// (no direct math usage here; camera.lookAt handles orientation)
 import { PathRunner } from './pathrunner';
 
 export interface CameraPathBindOptions {
@@ -56,16 +57,8 @@ export class CameraPathBinder {
 				const dx = ahead.p.x - s.p.x, dy = ahead.p.y - s.p.y, dz = ahead.p.z - s.p.z; const L = Math.hypot(dx, dy, dz); if (L > 1e-5) f = { x: dx / L, y: dy / L, z: dz / L };
 			}
 			const up = this.opts.worldUp ?? { x: 0, y: 1, z: 0 };
-			const rx = up.y * f.z - up.z * f.y; const ry = up.z * f.x - up.x * f.z; const rz = up.x * f.y - up.y * f.x;
-			const rlen = Math.hypot(rx, ry, rz) || 1; const rnx = rx / rlen, rny = ry / rlen, rnz = rz / rlen;
-			const ux = f.y * rnz - f.z * rny; const uy = f.z * rnx - f.x * rnz; const uz = f.x * rny - f.y * rnx;
-			const m00 = rnx, m01 = rny, m02 = rnz; const m10 = ux, m11 = uy, m12 = uz; const m20 = f.x, m21 = f.y, m22 = f.z;
-			const tr = m00 + m11 + m22; let q: any;
-			if (tr > 0) { const S = Math.sqrt(tr + 1.0) * 2; q = { w: 0.25 * S, x: (m21 - m12) / S, y: (m02 - m20) / S, z: (m10 - m01) / S }; }
-			else if ((m00 > m11) && (m00 > m22)) { const S = Math.sqrt(1.0 + m00 - m11 - m22) * 2; q = { w: (m21 - m12) / S, x: 0.25 * S, y: (m01 + m10) / S, z: (m02 + m20) / S }; }
-			else if (m11 > m22) { const S = Math.sqrt(1.0 + m11 - m00 - m22) * 2; q = { w: (m02 - m20) / S, x: (m01 + m10) / S, y: 0.25 * S, z: (m12 + m21) / S }; }
-			else { const S = Math.sqrt(1.0 + m22 - m00 - m11) * 2; q = { w: (m10 - m01) / S, x: (m02 + m20) / S, y: (m12 + m21) / S, z: 0.25 * S }; }
-			cam.setRotationQ(q, true);
+			const tgt = { x: cam.position.x + f.x, y: cam.position.y + f.y, z: cam.position.z + f.z };
+			cam.lookAt(tgt, up);
 		}
 		if (this.fovPulseActive) {
 			if (this.tAccum >= this.fovPulseEnd) { cam.fovDeg = this.baseFov; this.fovPulseActive = false; }

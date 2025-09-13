@@ -11,16 +11,14 @@ import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 export class MeshRenderSystem extends ECSystem {
 	constructor(priority = 9) { super(TickGroup.PreRender, priority); }
 	update(world: World): void {
-		const dtSec = ($.deltaTime ?? 16) / 1000;
 		const cam = $.world.activeCamera3D;
+		const base = new Float32Array(16);
 		for (const [o, mc] of world.objectsWithComponents(MeshComponent, { scope: 'current' })) {
 			if (!mc.enabled) continue;
-			mc.stepAnimation(dtSec);
 			const parent = o as WorldObject;
-			const base = M4.identity();
 			const tc = parent.getUniqueComponent(TransformComponent);
 			if (tc) {
-				base.set(tc.getWorldMatrix());
+				M4.copyInto(base, tc.getWorldMatrix());
 			} else {
 				M4.setIdentity(base);
 				M4.translateSelf(base, (parent as any).x ?? 0, (parent as any).y ?? 0, (parent as any).z ?? 0);
@@ -36,10 +34,7 @@ export class MeshRenderSystem extends ECSystem {
 					const cx = m[0] * c[0] + m[4] * c[1] + m[8] * c[2] + m[12];
 					const cy = m[1] * c[0] + m[5] * c[1] + m[9] * c[2] + m[13];
 					const cz = m[2] * c[0] + m[6] * c[1] + m[10] * c[2] + m[14];
-					const sx = Math.hypot(m[0], m[1], m[2]);
-					const sy = Math.hypot(m[4], m[5], m[6]);
-					const sz = Math.hypot(m[8], m[9], m[10]);
-					const scale = Math.max(sx, sy, sz) || 1;
+					const scale = M4.maxScale(m);
 					const radius = s.mesh.boundingRadius * scale;
 					if (mc.enableCulling && !cam.sphereInFrustum([cx, cy, cz], radius)) continue;
 					// Simple LOD: beyond thresholds, drop morph weights to save work

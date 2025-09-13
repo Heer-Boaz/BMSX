@@ -1,10 +1,10 @@
 import { model, view } from 'bmsx';
 import { Point } from "bmsx/common";
-import { RenderView } from 'bmsx/glview';
+import { GameView } from 'bmsx/glview';
 import { GameConstants as CS } from "./gameconstants";
 import { GameState, GameSubstate, Model } from "./gamemodel";
 
-export class UglyView extends RenderView {
+export class UglyView extends GameView {
 	private static _instance: UglyView;
 
 	public static get _(): UglyView {

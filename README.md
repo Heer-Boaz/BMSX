@@ -465,11 +465,11 @@ The build system supports special annotations in filenames to control how assets
 
 # Game Objects and Spaces
 
-BMSX organizes all interactive entities as `GameObject` instances, which are managed within one or more `Space` objects. This system enables flexible world partitioning, scene management, and efficient object lookup, while supporting advanced features like serialization, event handling, and modular composition.
+BMSX organizes all interactive entities as `WorldObject` instances, which are managed within one or more `Space` objects. This system enables flexible world partitioning, scene management, and efficient object lookup, while supporting advanced features like serialization, event handling, and modular composition.
 
 ## Game Objects
 
-- **GameObject Class:**
+- **WorldObject Class:**
   - The core entity type in BMSX, representing anything with a position, size, state, and behavior.
   - Implements position (`x`, `y`, `z`), size, hitbox, hit polygons, direction, and more.
   - Supports attaching components for modular behavior (see Component System).
@@ -486,7 +486,7 @@ BMSX organizes all interactive entities as `GameObject` instances, which are man
   - `updateComponentsWithTag(tag, ...)`: Update all components with a given tag (used for preprocessing/postprocessing logic).
 
 - **SpriteObject:**
-  - Extends `GameObject` for entities with visual representation.
+  - Extends `WorldObject` for entities with visual representation.
   - Manages image ID, flipping, colorizing, and hitbox/polygon updates based on sprite state.
   - Integrates with the rendering system for efficient drawing.
 
@@ -499,8 +499,8 @@ BMSX organizes all interactive entities as `GameObject` instances, which are man
   - Supports sorting objects by depth (`z`) for correct rendering order.
   - Spaces can be dynamically created, removed, or switched at runtime.
 
-- **BaseModel and World Management:**
-  - The `BaseModel` class manages all spaces and provides APIs to get, move, and query objects across spaces.
+- **World and World Management:**
+  - The `World` class manages all spaces and provides APIs to get, move, and query objects across spaces.
   - Methods like `getGameObject`, `getFromCurrentSpace`, `move_obj_to_space`, and `setSpace` allow flexible world and scene management.
   - The model tracks which objects are in which spaces, enabling efficient lookups and serialization.
 
@@ -532,7 +532,7 @@ BMSX provides a simple and extensible system for collision detection and movemen
 ### Position and Movement
 
 - **Position Properties:**
-  - Every `GameObject` has a 3D position (`x`, `y`, `z`) and size (`sx`, `sy`, `sz`), accessible via properties or as a `vec3`.
+  - Every `WorldObject` has a 3D position (`x`, `y`, `z`) and size (`sx`, `sy`, `sz`), accessible via properties or as a `vec3`.
   - The `z` coordinate is used for depth sorting (rendering order), while `x` and `y` are for spatial placement.
 
 - **Setting Position:**
@@ -547,9 +547,9 @@ BMSX provides a simple and extensible system for collision detection and movemen
 
 - **AABB (Axis-Aligned Bounding Box) Collision:**
   - By default, collision is checked using the object's `hitbox`, which is an area defined by its position and size (or a custom `hitarea`).
-  - Use `gameobject.collides(other)` to check collision with another `GameObject` or an `Area`.
+  - Use `gameobject.collides(other)` to check collision with another `WorldObject` or an `Area`.
   - Use `gameobject.detect_object_collision(other)` for a fast AABB check.
-  - The static method `GameObject.detect_aabb_collision_areas(a1, a2)` checks collision between two areas.
+  - The static method `WorldObject.detect_aabb_collision_areas(a1, a2)` checks collision between two areas.
 
 - **Polygon-Based Collision:**
   - For more precise collision, objects can define a `hitpolygon` (concave or convex), typically extracted from the sprite image using the bounding box extractor during the build process.
@@ -577,7 +577,7 @@ BMSX provides a simple and extensible system for collision detection and movemen
 ### Sprite Integration
 
 - **SpriteObject:**
-  - Extends `GameObject` and manages image ID, flipping, colorizing, and hitbox/polygon updates based on sprite state.
+  - Extends `WorldObject` and manages image ID, flipping, colorizing, and hitbox/polygon updates based on sprite state.
   - When the sprite's image or flip state changes, hitboxes and polygons are updated automatically to match the new orientation.
 
 - **Automatic Hitbox/Polygon Updates:**
@@ -587,7 +587,7 @@ BMSX provides a simple and extensible system for collision detection and movemen
 
 - **Movement and Collision Components:**
   - Use built-in components like `ScreenBoundaryComponent`, `TileCollisionComponent`, and `ProhibitLeavingScreenComponent` for modular movement and collision logic.
-  - Components can be attached to any `GameObject` and participate in preprocessing/postprocessing update phases.
+  - Components can be attached to any `WorldObject` and participate in preprocessing/postprocessing update phases.
 
 - **Component Update Flow:**
   - When you set `.x`, `.y`, or `.z`, the engine automatically updates all components tagged for `'position_update_axis'`.
@@ -642,14 +642,14 @@ if (player.overlaps_point({ x: mouseX, y: mouseY })) {
 ## Best Practices
 
 - Use spaces to partition your world into logical areas (levels, rooms, scenes) for efficient management.
-- Extend `GameObject` or `SpriteObject` for custom entities, and use components for modular behavior.
+- Extend `WorldObject` or `SpriteObject` for custom entities, and use components for modular behavior.
 - Use the model's APIs to move, spawn, or remove objects as gameplay requires.
 - Leverage event hooks and the registry for decoupled, flexible logic.
 - Ensure each object has a unique `id` and is properly registered for serialization and event handling.
 
 ## References
 
-- See [`src/bmsx/gameobject.ts`](src/bmsx/gameobject.ts) for the `GameObject` and `SpriteObject` classes.
+- See [`src/bmsx/gameobject.ts`](src/bmsx/gameobject.ts) for the `WorldObject` and `SpriteObject` classes.
 - See [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) for the model, space management, and world APIs.
 - See [`src/bmsx/sprite.ts`](src/bmsx/sprite.ts) for sprite rendering and hitbox logic.
 - (Legacy reference updated) See [`src/bmsx/render/view/render_view.ts`](src/bmsx/render/view/render_view.ts) for rendering integration.
@@ -706,13 +706,13 @@ class MyComponent extends Component {
 }
 
 // Attach components to a game object
-const obj = new GameObject('player');
+const obj = new WorldObject('player');
 obj.addComponent(new ScreenBoundaryComponent(obj.id));
 obj.addComponent(new MyComponent(obj.id));
 
 // Use auto-attach decorator
 @attach_components(ScreenBoundaryComponent, TileCollisionComponent)
-class Enemy extends GameObject { ... }
+class Enemy extends WorldObject { ... }
 
 // Update tagged components in your object's update method
 @update_tagged_components('position_update_axis')
@@ -745,7 +745,7 @@ BMSX features a simple, modern, efficient graphics and rendering system designed
   - Efficient sprite batching and atlas management allow for hundreds of objects to be drawn per frame with minimal overhead.
 
 - **Canvas Renderer:**
-  - The `BaseView` class provides a fallback 2D canvas renderer, supporting all core drawing operations and view management.
+  - The `GameView` class provides a fallback 2D canvas renderer, supporting all core drawing operations and view management.
 
 - **Texture Atlases:**
   - All game graphics are packed into one or more texture atlases for efficient GPU usage and fast rendering.
@@ -764,7 +764,7 @@ BMSX features a simple, modern, efficient graphics and rendering system designed
   - Objects in each space are sorted by their z-coordinate before drawing, ensuring correct layering and overlap.
 
 - **Component-Based Rendering:**
-  - Each `GameObject` can implement a `paint()` method for custom rendering, and can update render components before drawing.
+  - Each `WorldObject` can implement a `paint()` method for custom rendering, and can update render components before drawing.
 
 - **Screen Overlays and UI:**
   - Built-in support for overlays (pause, resume, fading text) and on-screen gamepad.
@@ -785,7 +785,7 @@ $.view.drawImg({
 ## Example: Custom Paint Method
 
 ```typescript
-class MyObject extends GameObject {
+class MyObject extends WorldObject {
   paint() {
     $.view.drawRectangle({
       area: { start: { x: this.x, y: this.y }, end: { x: this.x + 16, y: this.y + 16 } },
@@ -830,9 +830,9 @@ BMSX uses a simple sprite system for rendering game objects. Sprites are describ
    > The sprite will automatically update its image, flip state, and color when the `Sprite` properties change, ensuring that the visual representation is always in sync with the game logic.
 
 ### `drawImg` Options
-> **Note**: The `Sprite` will automatically draw itself when its `paint()` method is called, which is typically done by the view system during the rendering loop. Therefore, you do not need to call `drawImg` directly for sprites; instead, the game engine handles this for you (via the loop in the `BaseModel`).
+> **Note**: The `Sprite` will automatically draw itself when its `paint()` method is called, which is typically done by the view system during the rendering loop. Therefore, you do not need to call `drawImg` directly for sprites; instead, the game engine handles this for you (via the loop in the `World`).
 
-The `drawImg` method (see `GLView` and `BaseView`) is the core API for drawing images and sprites. It accepts a `DrawImgOptions` object with the following properties:
+The `drawImg` method (see `GLView` and `GameView`) is the core API for drawing images and sprites. It accepts a `DrawImgOptions` object with the following properties:
 
 - `imgid`: **(string, required)** – The image asset ID to draw (must exist in the texture atlas).
 - `pos`: **({ x, y, z? })** – The position to draw the image. `z` is optional and used for depth sorting.

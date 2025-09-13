@@ -1,13 +1,21 @@
-import { Component } from 'bmsx/component/basecomponent';
+import { Component, type ComponentAttachOptions } from 'bmsx/component/basecomponent';
 import { $ } from 'bmsx/core/game';
 import { M4 } from 'bmsx/render/3d/math3d';
-import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler } from 'bmsx/rompack/rompack';
-import { Mesh as RenderMesh } from 'bmsx/core/object/mesh';
+import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler, GLTFNode, color_arr, vec3arr, vec4arr } from 'bmsx/rompack/rompack';
+import { Mesh as RenderMesh } from 'bmsx/render/3d/mesh';
 import { Material } from 'bmsx/render/3d/material';
-import { insavegame, excludepropfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, excludepropfromsavegame, onsave, onload } from 'bmsx/serializer/serializationhooks';
 import type { MeshRenderSubmission } from 'bmsx/render/gameview';
 
 type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; skinIndex?: number; morphWeights?: number[] };
+
+// Runtime snapshot types for save/load
+type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>" (or detached)
+type RuntimeNodeTRS = { t?: vec3arr; r?: vec4arr; s?: vec3arr };
+type RuntimeNodeState = { trs?: RuntimeNodeTRS; weights?: number[]; visible?: boolean };
+type RuntimeAnim = { time?: number; speed?: number; activeClip?: string | number; loop?: boolean };
+type PersistedMatTex = Partial<{ albedo: number; normal: number; metallicRoughness: number; color: color_arr; metallicFactor: number; roughnessFactor: number }>;
+type MeshRuntime = { version: 1; model_id?: asset_id; nodes?: Record<NodeKey, RuntimeNodeState>; anim?: RuntimeAnim };
 
 @insavegame
 export class MeshComponent extends Component {
@@ -25,9 +33,14 @@ export class MeshComponent extends Component {
 	@excludepropfromsavegame private worldMatrices: Float32Array[] = [];
 	@excludepropfromsavegame private nodeDirty: boolean[] = [];
 	@excludepropfromsavegame private renderMeshes: RenderMesh[] = [];
+	@excludepropfromsavegame private _tmpLocal: Float32Array = new Float32Array(16);
+	private static readonly _ID: Float32Array = (() => { const m = new Float32Array(16); M4.setIdentity(m); return m; })();
+
+	// Runtime snapshot used solely during (de)serialization
+	private _runtime?: MeshRuntime;
 
 	// Persisted material overrides by GLTF mesh index
-	public materialOverrides?: Record<number, Partial<{ albedo: number; normal: number; metallicRoughness: number; color: [number, number, number, number]; metallicFactor: number; roughnessFactor: number }>>;
+	public materialOverrides?: Record<number, PersistedMatTex>;
 
 	// Rendering config
 	/** Enable per-instance frustum culling (default true). */
@@ -37,7 +50,7 @@ export class MeshComponent extends Component {
 	/** Distance in world units beyond which morphs are fully disabled (default 120). Set <= 0 to disable. */
 	public lodMorphDisableDistance: number = 120;
 
-	constructor(opts: RevivableObjectArgs & { parentid: string; modelId: asset_id }) {
+	constructor(opts: ComponentAttachOptions & { modelId: asset_id }) {
 		super(opts);
 		this.modelId = opts.modelId;
 		this.tryLoadModelAndBuild();
@@ -110,13 +123,13 @@ export class MeshComponent extends Component {
 		}
 
 		// Initialize per-node caches
-		this.worldMatrices = nodes.map(() => M4.identity());
+		this.worldMatrices = nodes.map(() => { const m = new Float32Array(16); M4.setIdentity(m); return m; });
 		this.nodeDirty = nodes.map(() => true);
 
 		// Traverse active scene roots to build instances similar to MeshObject
 		if (model.scenes && model.scenes.length > 0) {
 			const scene = model.scenes[model.scene ?? 0];
-			if (scene) for (const root of scene.nodes) this.traverse(root, M4.identity());
+			if (scene) for (const root of scene.nodes) this.traverse(root, MeshComponent._ID);
 		} else {
 			// Fallback: no nodes/scenes, one instance per mesh at identity
 			for (let i = 0; i < this.renderMeshes.length; i++) {
@@ -129,7 +142,7 @@ export class MeshComponent extends Component {
 	private traverse(nodeIndex: number, parent: Float32Array): void {
 		if (!this.model?.nodes) return;
 		const world = this.getWorldMatrixFrom(nodeIndex, parent);
-		const node: any = this.model.nodes[nodeIndex];
+		const node: GLTFNode = this.model.nodes[nodeIndex];
 		if (node.mesh !== undefined) {
 			const mesh = this.renderMeshes[node.mesh];
 			if (mesh) {
@@ -143,8 +156,8 @@ export class MeshComponent extends Component {
 
 	private getWorldMatrixFrom(nodeIndex: number, parent: Float32Array): Float32Array {
 		if (this.nodeDirty[nodeIndex]) {
-			const node: any = this.model!.nodes![nodeIndex];
-			const local = node.matrix ? new Float32Array(node.matrix) : this.composeNodeMatrix(node);
+			const node: GLTFNode = this.model!.nodes![nodeIndex];
+			const local = node.matrix ? new Float32Array(node.matrix) : this.composeNodeMatrixInto(this._tmpLocal, node);
 			const world = this.worldMatrices[nodeIndex] ?? (this.worldMatrices[nodeIndex] = new Float32Array(16));
 			M4.mulInto(world, parent, local);
 			this.nodeDirty[nodeIndex] = false;
@@ -152,11 +165,11 @@ export class MeshComponent extends Component {
 		return this.worldMatrices[nodeIndex];
 	}
 
-	private composeNodeMatrix(node: any): Float32Array {
+	private composeNodeMatrixInto(out: Float32Array, node: GLTFNode): Float32Array {
 		const t = node.translation ?? [0, 0, 0];
 		const q = node.rotation ?? undefined;
 		const s = node.scale ?? [1, 1, 1];
-		return M4.fromTRS([t[0], t[1], t[2]], q, [s[0], s[1], s[2]]);
+		return M4.fromTRSInto(out, [t[0], t[1], t[2]], q, [s[0], s[1], s[2]]);
 	}
 
 	private computeSkinMatrices(skinIndex: number): Float32Array[] | undefined {
@@ -166,7 +179,7 @@ export class MeshComponent extends Component {
 		for (let i = 0; i < skin.joints.length; i++) {
 			const jointIdx = skin.joints[i];
 			const jointWorld = this.worldMatrices[jointIdx];
-			const inv = skin.inverseBindMatrices?.[i] ?? M4.identity();
+			const inv = skin.inverseBindMatrices?.[i] ?? MeshComponent._ID;
 			const buf = new Float32Array(16);
 			M4.mulInto(buf, jointWorld, inv);
 			out.push(buf);
@@ -188,7 +201,7 @@ export class MeshComponent extends Component {
 				const comp = sampler.interpolation === 'CUBICSPLINE' ? stride / 3 : stride;
 				const value = this.sampleAnimation(sampler, this.animationTime, comp);
 				if (channel.target.node !== undefined && this.model?.nodes) {
-					const node: any = this.model.nodes[channel.target.node];
+					const node: GLTFNode = this.model.nodes[channel.target.node];
 					switch (channel.target.path) {
 						case 'rotation': {
 							const q = { x: value[0], y: value[1], z: value[2], w: value[3] };
@@ -226,7 +239,7 @@ export class MeshComponent extends Component {
 			for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
 			if (this.model.scenes && this.model.scenes.length > 0) {
 				const scene = this.model.scenes[this.model.scene ?? 0];
-				if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, M4.identity());
+				if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);
 			}
 		}
 	}
@@ -284,7 +297,7 @@ export class MeshComponent extends Component {
 	}
 
 	/** Apply lightweight material overrides for all instances of a GLTF mesh index and persist the override. */
-	public setMaterialOverride(meshIndex: number, overrides: Partial<{ albedo: number; normal: number; metallicRoughness: number; color: [number, number, number, number]; metallicFactor: number; roughnessFactor: number }>): void {
+	public setMaterialOverride(meshIndex: number, overrides: PersistedMatTex): void {
 		this.materialOverrides ??= {};
 		this.materialOverrides[meshIndex] = { ...(this.materialOverrides[meshIndex] ?? {}), ...overrides };
 		if (!this.model) return;
@@ -340,12 +353,143 @@ export class MeshComponent extends Component {
 	public collectSubmissions(base: Float32Array, receiveShadow: boolean = true): MeshRenderSubmission[] {
 		const out: MeshRenderSubmission[] = [];
 		for (const inst of this.instances) {
-			const localNow = this.model && inst.nodeIndex !== undefined ? this.worldMatrices[inst.nodeIndex] : M4.identity();
-			const world = M4.mul(base, localNow);
+			const localNow = this.model && inst.nodeIndex !== undefined ? this.worldMatrices[inst.nodeIndex] : MeshComponent._ID;
+			const world = new Float32Array(16);
+			M4.mulInto(world, base, localNow);
 			const joints = (inst.skinIndex !== undefined) ? this.computeSkinMatrices(inst.skinIndex) : undefined;
 			if (!receiveShadow && (inst.mesh as any).shadow) { (inst.mesh as any).shadow = undefined; }
 			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights });
 		}
 		return out;
+	}
+
+	// --- Runtime save/load -------------------------------------------------
+
+	// Stable node key map for savegames
+	private static buildNodeKeyMap(model: GLTFModel): { toKey: (i: number) => NodeKey; toIndex: (k: NodeKey) => number | undefined } {
+		const nodes = model.nodes ?? [];
+		const sceneIndex = model.scene ?? 0;
+		const scene = model.scenes?.[sceneIndex];
+		if (!scene) {
+			const map = new Map<string, number>();
+			for (let i = 0; i < nodes.length; i++) map.set(`s-1/${i}`, i);
+			return { toKey: (i) => `s-1/${i}`, toIndex: (k) => map.get(k) };
+		}
+		const parentOf: number[] = new Array(nodes.length).fill(-1);
+		for (let p = 0; p < nodes.length; p++) {
+			const ch = nodes[p]?.children ?? [];
+			for (const c of ch) parentOf[c] = p;
+		}
+		const cacheKey: (string | undefined)[] = new Array(nodes.length);
+		const keyOf = (i: number): string => {
+			if (cacheKey[i] !== undefined) return cacheKey[i]!;
+			let p = parentOf[i];
+			let path = `${i}`;
+			while (p !== -1) { path = `${p}/${path}`; p = parentOf[p]; }
+			const isRooted = scene.nodes.includes(parseInt(path.split('/')[0], 10));
+			const key = isRooted ? `s${sceneIndex}/${path}` : `s${sceneIndex}#detached/${path}`;
+			cacheKey[i] = key; return key;
+		};
+		const map = new Map<string, number>();
+		for (let i = 0; i < nodes.length; i++) map.set(keyOf(i), i);
+		return { toKey: keyOf, toIndex: (k) => map.get(k) };
+	}
+
+	@onsave
+	public saveRuntime(): { _runtime: MeshRuntime } {
+		const runtime: MeshRuntime = { version: 1 };
+		if (this.modelId !== undefined) runtime.model_id = this.modelId;
+
+		if (this.model?.nodes && this.model.scenes?.length) {
+			const { toKey } = MeshComponent.buildNodeKeyMap(this.model);
+			const map: Record<NodeKey, RuntimeNodeState> = {};
+			for (let i = 0; i < this.model.nodes.length; i++) {
+				const n = this.model.nodes[i];
+				const k = toKey(i);
+				const st: RuntimeNodeState = {};
+				if (n.translation || n.rotation || n.scale) {
+					st.trs = {};
+					if (n.translation) st.trs.t = [...n.translation] as vec3arr;
+					if (n.rotation) st.trs.r = [...n.rotation] as vec4arr;
+					if (n.scale) st.trs.s = [...n.scale] as vec3arr;
+				}
+				if (n.weights) st.weights = [...n.weights];
+				if (n.visible !== undefined) st.visible = !!n.visible;
+				if (st.trs || st.weights || st.visible !== undefined) map[k] = st;
+			}
+			if (Object.keys(map).length) runtime.nodes = map;
+		}
+
+		if (this.animationTime !== undefined) runtime.anim = { time: this.animationTime ?? 0 };
+		return { _runtime: runtime };
+	}
+
+	@onsave
+	// @ts-ignore
+	private captureMaterialOverrides() {
+		const out: Record<number, PersistedMatTex> = {};
+		for (let i = 0; i < this.renderMeshes.length; i++) {
+			const m = this.renderMeshes[i];
+			const t = m?.material?.textures; if (!t) continue;
+			const o: PersistedMatTex = {};
+			if (t.albedo !== undefined) o.albedo = t.albedo;
+			if (t.normal !== undefined) o.normal = t.normal;
+			if (t.metallicRoughness !== undefined) o.metallicRoughness = t.metallicRoughness;
+			if (Object.keys(o).length) out[i] = o;
+		}
+		if (Object.keys(out).length) return { materialOverrides: out };
+		return {};
+	}
+
+	@onload
+	public onLoad(): void {
+		const rt = this._runtime;
+		if (this._runtime) delete this._runtime;
+
+		if (rt?.model_id !== undefined) this.modelId = rt.model_id;
+		const model = $.rompack.model?.[this.modelId] ?? this.model;
+		if (!model) return;
+
+		this.model = model;
+		this.buildInstances();
+
+		if (rt?.nodes && this.model?.nodes) {
+			const { toIndex } = MeshComponent.buildNodeKeyMap(this.model);
+			let anyDirty = false;
+			for (const [k, ns] of Object.entries(rt.nodes)) {
+				const idx = toIndex(k);
+				if (idx === undefined) continue;
+				const node = this.model.nodes[idx];
+				if (ns.trs) {
+					if (ns.trs.t) node.translation = [...ns.trs.t] as vec3arr;
+					if (ns.trs.r) node.rotation = [...ns.trs.r] as vec4arr;
+					if (ns.trs.s) node.scale = [...ns.trs.s] as vec3arr;
+					node.matrix = undefined;
+					anyDirty = true;
+				}
+				if (ns.weights) {
+					node.weights = [...(ns.weights)];
+					for (const inst of this.instances) if (inst.nodeIndex === idx) inst.morphWeights = node.weights;
+				}
+				if (ns.visible !== undefined) node.visible = !!ns.visible;
+			}
+			if (anyDirty) {
+				for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
+				if (this.model.scenes && this.model.scenes.length > 0) {
+				const scene = this.model.scenes[this.model.scene ?? 0];
+				if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);
+				}
+			}
+		}
+
+		this.applyMaterialOverrides();
+
+		if (!this.model.gpuTextures) {
+			$.texmanager.fetchModelTextures(this.model).then(keys => {
+				if (this.model) { this.model.gpuTextures = keys; this.rebindMaterialTexturesFromModelKeys(); }
+			});
+		} else {
+			this.rebindMaterialTexturesFromModelKeys();
+		}
 	}
 }

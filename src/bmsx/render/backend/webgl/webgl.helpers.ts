@@ -9,7 +9,7 @@ export function saveTextureToFile(): void {
 	const gl = view.nativeCtx as WebGLRenderingContext;
 
 	// 1. Bind the framebuffer that has the texture attached
-	// Access legacy framebuffer through the documented getter (RenderView exposes _legacyFramebuffer)
+	// Access legacy framebuffer through the documented getter (GameView exposes _legacyFramebuffer)
 	// TODO: BUG!!!!!!!!!
 	const legacyFbo: WebGLFramebuffer | null = (view as unknown as { _legacyFramebuffer: WebGLFramebuffer | null })._legacyFramebuffer;
 	gl.bindFramebuffer(gl.FRAMEBUFFER, legacyFbo);
@@ -297,8 +297,10 @@ export function generateDetailedDrawError(
 	};
 
 	const matColor = m.material?.color ?? [1, 1, 1, 1];
-	const mvp = M4.mul(activeCamera.viewProjectionMatrix, identityMatrix);
-	const normalMat = M4.normal3(identityMatrix);
+	const mvp = new Float32Array(16);
+	M4.mulInto(mvp, activeCamera.viewProjectionMatrix as any, identityMatrix);
+	const normalMat = new Float32Array(9);
+	M4.normal3Into(normalMat, identityMatrix);
 
 	return `Mesh ${m.name} has indices but drawElements failed. Vertex count: ${vertexCount}, Indices length: ${m.indices!.length}
 		Max index: ${maxIndex} (must be < ${vertexCount})

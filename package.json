@@ -54,12 +54,12 @@
 	"tsx": "^4.20.5",
 	"typescript": "^5.8.3"
   },
-  
+
   "scripts": {
-	"build:game": "npx tsx scripts/rompacker.ts --nodeploy -romname testrom",
+	"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom",
 	"build:all": "npm run pack:resources && npm run build:force",
-	"build:force": "npx tsx scripts/rompacker.ts --nodeploy --force -romname testrom",
-	"pack:resources": "npx tsx scripts/rompacker.ts --buildreslist -respath ./src/testrom/res",
+	"build:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --force -romname testrom",
+	"pack:resources": "npx tsx scripts/rompacker/rompacker.ts --buildreslist -respath ./src/testrom/res",
 	"build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
 	"Watch!": "npx tsc -b -w",
 	"typecheck:scripts": "npx tsc -p tsconfig.scripts.json",

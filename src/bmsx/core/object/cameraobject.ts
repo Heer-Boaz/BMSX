@@ -22,7 +22,7 @@ export class CameraObject extends WorldObject implements Oriented {
 
 	override onspawn(pos?: vec3): void {
 		super.onspawn(pos);
-		this.camera.position = V3.of(this.pos.x, this.pos.y, this.pos.z);
+		this.camera.position = V3.of(this.x, this.y, this.z);
 		this.camera.markDirty();
 	}
 

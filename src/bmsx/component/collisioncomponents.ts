@@ -2,11 +2,10 @@ import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitte
 import { $ } from '../core/game';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { mod, new_vec2, set_inplace_vec2 } from '../utils/utils';
-import type { Identifier } from '../rompack/rompack';
 import { vec2 } from '../rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame } from 'bmsx/serializer/serializationhooks';
 import { TileSize } from "../systems/msx";
-import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from "./basecomponent";
+import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams, type ComponentAttachOptions } from "./basecomponent";
 
 /**
  * Represents a component responsible for updating the position of a world object along a specific axis.
@@ -21,7 +20,7 @@ export abstract class PositionUpdateAxisComponent extends Component<WorldObject>
 	 */
 	public oldPos: vec2;
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+	constructor(opts: ComponentAttachOptions) {
 		super(opts);
 		this.oldPos = new_vec2(0, 0);
 	}
@@ -148,14 +147,14 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 				EventEmitter.instance.emit('wallcollide', this, { d: 'left' });
 				newx += TileSize - mod(newx, TileSize);
 			}
-			this.pos.x = ~~newx;
+			this.x = ~~newx;
 		}
 		else if (newx > oldx) {
 			if ($.world.collidesWithTile(this, 'right')) {
 				EventEmitter.instance.emit('wallcollide', this, { d: 'right' });
 				newx -= newx % TileSize;
 			}
-			this.pos.x = ~~newx;
+			this.x = ~~newx;
 		}
 	}
 
@@ -170,14 +169,14 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 				EventEmitter.instance.emit('wallcollide', this, { d: 'up' });
 				newy += TileSize - mod(newy, TileSize);
 			}
-			this.pos.y = ~~newy;
+			this.y = ~~newy;
 		}
 		else if (newy > oldy) {
 			if ($.world.collidesWithTile(this, 'down')) {
 				EventEmitter.instance.emit('wallcollide', this, { d: 'down' });
 				newy -= newy % TileSize;
 			}
-			this.pos.y = ~~newy;
+			this.y = ~~newy;
 		}
 	}
 }
@@ -211,10 +210,10 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leaveScreen']): void {
 	switch (d) {
 		case 'left': case 'right':
-			ik.pos.x = old_x_or_y;
+			ik.x = old_x_or_y;
 			break;
 		case 'up': case 'down':
-			ik.pos.y = old_x_or_y;
+			ik.y = old_x_or_y;
 			break;
 	}
 }

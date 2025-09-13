@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
-import { Component, componenttags_postprocessing, componenttags_preprocessing } from '../component/basecomponent';
+import { Component, componenttags_postprocessing, componenttags_preprocessing, type ComponentAttachOptions } from '../component/basecomponent';
 import { CameraObject } from '../core/object/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import { $ } from '../core/game';
@@ -10,7 +10,7 @@ import { div_vec2, new_vec2 } from '../utils/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { PhysicsDebugComponent } from '../physics/physicsdebugcomponent';
 import type { Identifier, vec2 } from '../rompack/rompack';
-import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
@@ -34,7 +34,7 @@ export class PhysicsOverlayRenderer extends Component {
 	private canvas: HTMLCanvasElement;
 	private ctx: CanvasRenderingContext2D;
 	private lastResizeW = 0; private lastResizeH = 0;
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+	constructor(opts: ComponentAttachOptions) {
 		super(opts);
 		// Create or reuse overlay canvas
 		let c = document.getElementById(PHYSICS_OVERLAY_ID) as HTMLCanvasElement | null;
@@ -196,7 +196,7 @@ export class HitBoxVisualizer extends Component {
 		return obj.getUniqueComponent(HitBoxVisualizer);
 	}
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+	constructor(opts: ComponentAttachOptions) {
 		super(opts);
 	}
 
@@ -242,7 +242,7 @@ export class ObjectHighlighterComponent extends Component {
 		return obj.getUniqueComponent(ObjectHighlighterComponent);
 	}
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+	constructor(opts: ComponentAttachOptions) {
 		super(opts);
 	}
 

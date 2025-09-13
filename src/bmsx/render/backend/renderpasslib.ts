@@ -287,7 +287,8 @@ export class RenderPassLibrary {
 			setup: () => null,
 			execute: (_ctx, frame) => {
 				const cam = $.world.activeCamera3D; if (!cam) return;
-				const viewState = { camPos: cam.position, viewProj: cam.viewProjection, skyboxView: cam.skyboxView, proj: cam.projection };
+				const mats = cam.getMatrices();
+				const viewState = { camPos: cam.position, viewProj: mats.vp, skyboxView: cam.skyboxView, proj: mats.proj };
 				const lighting = lightingSystem.update($.world.ambientLight?.light as AmbientLight);
 				// Build fog state alongside frame-shared so consumers can rely on it
 				const gv = $.view;
@@ -305,8 +306,8 @@ export class RenderPassLibrary {
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
 					time: frame?.time ?? 0,
 					delta: frame?.delta ?? 0,
-					view: cam.view,
-					proj: cam.projection,
+					view: mats.view,
+					proj: mats.proj,
 					cameraPos: cam.position,
 					ambient: lighting?.ambient ? { color: lighting.ambient.color, intensity: lighting.ambient.intensity } : undefined,
 				});

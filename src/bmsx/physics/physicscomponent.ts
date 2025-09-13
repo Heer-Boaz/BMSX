@@ -1,9 +1,9 @@
-import { Component } from '../component/basecomponent';
+import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
 import { new_vec3 } from '../utils/utils';
-import type { Identifier, Oriented } from '../rompack/rompack';
-import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import type { Oriented } from '../rompack/rompack';
+import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
 
@@ -33,7 +33,7 @@ export class PhysicsComponent extends Component {
 	private isKinematic = false;
 	private _bodyBuilt = false;
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier, physicsOptions: PhysicsComponentOptions }) {
+	constructor(opts: ComponentAttachOptions & { physicsOptions: PhysicsComponentOptions }) {
 		super(opts);
 		this.syncAxis = { ...this.syncAxis, ...(opts.physicsOptions.syncAxis || {}) };
 		this.writeBack = opts.physicsOptions.writeBack ?? true;

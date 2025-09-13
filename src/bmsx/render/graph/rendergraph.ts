@@ -86,8 +86,8 @@ export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: numb
 	const mainCam = $.world.activeCamera3D as Camera | undefined;
 	const views: View[] = [];
 	if (mainCam) {
-		const invView = mainCam.view; // inverse not exposed
-		const invProj = mainCam.projection; // inverse not exposed
+		const invView = mainCam.inverseView;
+		const invProj = mainCam.inverseProjection;
 		const cameraPos = mainCam.position;
 		views.push({
 			name: 'Main',

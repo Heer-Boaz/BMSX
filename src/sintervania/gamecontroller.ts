@@ -292,16 +292,16 @@ export class Controller extends BaseControllerOld {
 		let Belmont = (model as Model).Belmont;
 		switch (dir) {
 			case 'up':
-				setPoint(Belmont.pos, Belmont.pos.x, Tile.toStageCoord(GameConstants.StageScreenHeightTiles) - (Belmont.size.y + 4));
+				setPoint(Belmont.pos, Belmont.x, Tile.toStageCoord(GameConstants.StageScreenHeightTiles) - (Belmont.size.y + 4));
 				break;
 			case 'right':
-				setPoint(Belmont.pos, 4, Belmont.pos.y);
+				setPoint(Belmont.pos, 4, Belmont.y);
 				break;
 			case 'down':
-				setPoint(Belmont.pos, Belmont.pos.x, 4);
+				setPoint(Belmont.pos, Belmont.x, 4);
 				break;
 			case 'left':
-				setPoint(Belmont.pos, Tile.toStageCoord(GameConstants.StageScreenWidthTiles) - (Belmont.size.x + 4), Belmont.pos.y);
+				setPoint(Belmont.pos, Tile.toStageCoord(GameConstants.StageScreenWidthTiles) - (Belmont.size.x + 4), Belmont.y);
 				break;
 		}
 		this.DoRoomExit(targetRoom);

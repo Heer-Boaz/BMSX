@@ -35,7 +35,7 @@
   - Don't introduce unused variables.
   - Don't introduce assertions like `typeof foo === 'function'`.
   - Don't use `require` in non-script code (e.g. `rompacker-core.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
-  - Avoid direct references to GameObjects or Components. Rather, use the `BaseModel`-class (e.g. `$.getGameObject` or `$.getFromCurrentSpace`, `$.get`).
+  - Avoid direct references to GameObjects or Components. Rather, use the `World`-class (e.g. `$.getGameObject` or `$.getFromCurrentSpace`, `$.get`).
   - Ensure that registry persistent objects are not serialized.
   - Use the annotations provided in the codebase to maintain consistency, these include:
 	- `@attach_components`: Indicates that the decorated class should have `Component`s automatically attached.
@@ -47,7 +47,7 @@
 	- `@insavegame`: Indicates that the decorated class is included in the serialized game state.
 	- `@excludefromsavegame`: Indicates that the decorated class is excluded from the serialized game state.
 	- `@excludepropfromsavegame`: Indicates that the decorated class-property is excluded from the serialized game state.
-  - Don't introduce any game logic in `game.ts`, instead, place it in appropriate systems or components. High-level game logic should be invoked from `BaseModel.run`.
+  - Don't introduce any game logic in `game.ts`, instead, place it in appropriate systems or components. High-level game logic should be invoked from `World.run`.
   - Ensure that any new render logic is implemented in the rendering system, and not directly in the game logic files.
   - Ensure that any debugging UI or features are implemented in the debugging system (e.g. `bmsxdebugger.ts`).
   - When introducing new features, consider how they can be serialized and deserialized as part of the game state. Also consider that many objects/properties should be *excluded* from serialization.

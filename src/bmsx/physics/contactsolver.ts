@@ -3,6 +3,7 @@ import type { vec3 } from '../rompack/rompack';
 import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import type { Contact } from './narrowphase';
 import { PhysicsBody } from './physicsbody';
+import { V3i } from '../render/3d/math3d';
 
 function applyImpulseLinear(b: PhysicsBody, impulse: vec3, scale: number) {
 	if (b.invMass === 0) return;
@@ -11,13 +12,7 @@ function applyImpulseLinear(b: PhysicsBody, impulse: vec3, scale: number) {
 	b.velocity.z += impulse.z * b.invMass * scale;
 }
 
-function cross(out: vec3, a: vec3, b: vec3) { out.x = a.y * b.z - a.z * b.y; out.y = a.z * b.x - a.x * b.z; out.z = a.x * b.y - a.y * b.x; return out; }
-// @ts-ignore
-function add(out: vec3, a: vec3, b: vec3) { out.x = a.x + b.x; out.y = a.y + b.y; out.z = a.z + b.z; return out; }
-function sub(out: vec3, a: vec3, b: vec3) { out.x = a.x - b.x; out.y = a.y - b.y; out.z = a.z - b.z; return out; }
-// @ts-ignore
-function scale(out: vec3, a: vec3, s: number) { out.x = a.x * s; out.y = a.y * s; out.z = a.z * s; return out; }
-function dot(a: vec3, b: vec3) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+// in-place vector helpers are centralized in math3d.V3i
 
 // Rotate world vector v into local space by q*: q^-1 * v * q (optimized for quaternion stored on body)
 function rotateWorldToLocal(b: PhysicsBody, v: vec3, out: vec3) {
@@ -47,7 +42,7 @@ function rotateLocalToWorld(b: PhysicsBody, v: vec3, out: vec3) {
 // Apply angular impulse using full (diagonal local) inertia tensor transformed by orientation
 function applyAngularImpulseFull(b: PhysicsBody, r: vec3, impulse: vec3, scaleSign: number, tmpA: vec3, tmpB: vec3) {
 	if (b.invMass === 0) return;
-	cross(tmpA, r, impulse); // torque = r x J
+    V3i.cross(tmpA, r, impulse); // torque = r x J
 	// world torque -> local
 	rotateWorldToLocal(b, tmpA, tmpB);
 	// multiply by inverse inertia diag
@@ -79,10 +74,10 @@ export class ContactSolver {
 			const a = c.a, b = c.b;
 			// triggers: skip impulses, still allow event dispatch outside
 			if (a.isTrigger || b.isTrigger) continue;
-			sub(ra, c.point, a.position); sub(rb, c.point, b.position);
+			V3i.sub(ra, c.point, a.position); V3i.sub(rb, c.point, b.position);
 			// Relative velocity at contact including angular parts
-			cross(tmp1, a.angularVelocity, ra); // wa x ra
-			cross(tmp2, b.angularVelocity, rb); // wb x rb
+			V3i.cross(tmp1, a.angularVelocity, ra); // wa x ra
+			V3i.cross(tmp2, b.angularVelocity, rb); // wb x rb
 			const rvx = (b.velocity.x + tmp2.x) - (a.velocity.x + tmp1.x);
 			const rvy = (b.velocity.y + tmp2.y) - (a.velocity.y + tmp1.y);
 			const rvz = (b.velocity.z + tmp2.z) - (a.velocity.z + tmp1.z);
@@ -91,18 +86,18 @@ export class ContactSolver {
 			const e = Math.min(a.restitution, b.restitution);
 			// Effective mass denominator including angular inertia
 			// term = invMass + n·((Ia^-1 (ra x n)) x ra) + same for b
-			cross(tmp1, ra, c.normal); // ra x n
+			V3i.cross(tmp1, ra, c.normal); // ra x n
 			rotateWorldToLocal(a, tmp1, tmp2); // to local
 			tmp2.x *= a.invInertia.x; tmp2.y *= a.invInertia.y; tmp2.z *= a.invInertia.z; // Ia^-1 * (ra x n) local
 			rotateLocalToWorld(a, tmp2, tmp3); // back to world
-			cross(tmp3, tmp3, ra); // (Ia^-1 (ra x n)) x ra
-			let denom = a.invMass + dot(tmp3, c.normal);
-			cross(tmp1, rb, c.normal);
+			V3i.cross(tmp3, tmp3, ra); // (Ia^-1 (ra x n)) x ra
+			let denom = a.invMass + V3i.dot(tmp3, c.normal);
+			V3i.cross(tmp1, rb, c.normal);
 			rotateWorldToLocal(b, tmp1, tmp2);
 			tmp2.x *= b.invInertia.x; tmp2.y *= b.invInertia.y; tmp2.z *= b.invInertia.z;
 			rotateLocalToWorld(b, tmp2, tmp3);
-			cross(tmp3, tmp3, rb);
-			denom += b.invMass + dot(tmp3, c.normal);
+			V3i.cross(tmp3, tmp3, rb);
+			denom += b.invMass + V3i.dot(tmp3, c.normal);
 			if (denom === 0) continue;
 			const j = -(1 + e) * velAlongNormal / denom;
 			const impulse = new_vec3(c.normal.x * j, c.normal.y * j, c.normal.z * j);
@@ -120,10 +115,10 @@ export class ContactSolver {
 			if (mu > this.frictionEpsilon && tLen > this.tangentialSpeedEpsilon) {
 				const nx = tvx / tLen, ny = tvy / tLen, nz = tvz / tLen;
 				// Effective mass for tangent
-				cross(tmp1, ra, { x: nx, y: ny, z: nz });
-				rotateWorldToLocal(a, tmp1, tmp2); tmp2.x *= a.invInertia.x; tmp2.y *= a.invInertia.y; tmp2.z *= a.invInertia.z; rotateLocalToWorld(a, tmp2, tmp3); cross(tmp3, tmp3, ra);
-				let denomT = a.invMass + dot(tmp3, { x: nx, y: ny, z: nz });
-				cross(tmp1, rb, { x: nx, y: ny, z: nz }); rotateWorldToLocal(b, tmp1, tmp2); tmp2.x *= b.invInertia.x; tmp2.y *= b.invInertia.y; tmp2.z *= b.invInertia.z; rotateLocalToWorld(b, tmp2, tmp3); cross(tmp3, tmp3, rb); denomT += b.invMass + dot(tmp3, { x: nx, y: ny, z: nz });
+				V3i.cross(tmp1, ra, { x: nx, y: ny, z: nz });
+				rotateWorldToLocal(a, tmp1, tmp2); tmp2.x *= a.invInertia.x; tmp2.y *= a.invInertia.y; tmp2.z *= a.invInertia.z; rotateLocalToWorld(a, tmp2, tmp3); V3i.cross(tmp3, tmp3, ra);
+				let denomT = a.invMass + V3i.dot(tmp3, { x: nx, y: ny, z: nz });
+				V3i.cross(tmp1, rb, { x: nx, y: ny, z: nz }); rotateWorldToLocal(b, tmp1, tmp2); tmp2.x *= b.invInertia.x; tmp2.y *= b.invInertia.y; tmp2.z *= b.invInertia.z; rotateLocalToWorld(b, tmp2, tmp3); V3i.cross(tmp3, tmp3, rb); denomT += b.invMass + V3i.dot(tmp3, { x: nx, y: ny, z: nz });
 				const jt = denomT === 0 ? 0 : -tLen / denomT;
 				const maxFriction = Math.abs(j) * mu;
 				const jtClamped = Math.abs(jt) > maxFriction ? (jt < 0 ? -maxFriction : maxFriction) : jt;

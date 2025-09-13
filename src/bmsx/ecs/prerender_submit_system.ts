@@ -14,10 +14,8 @@ export class PreRenderSubmitSystem extends ECSystem {
 		for (const o of space.objects) {
 			if (o.disposeFlag || !o.visible) continue;
 			// Flush all GenericRendererComponent instances, including subclasses
-			for (const c of o.iterateComponents()) {
-				if (c instanceof CustomVisualComponent) {
-					c.flush($.view.renderer);
-				}
+			for (const c of o.iterateComponentsByType(CustomVisualComponent)) {
+				c.flush($.view.renderer);
 			}
 		}
 	}

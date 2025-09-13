@@ -51,7 +51,14 @@ export type KeyToComponentMap = { [key: string]: Component[] };
  * @notImplementedYet
  */
 export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | ConcreteOrAbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property)
-export type ComponentId = string;
+export type ComponentId = `${Identifier}_${Identifier}` | `${Identifier}_${Identifier}_${Identifier}`; // `${parentid}_${componentname}` | `${parentid}_${componentname}_${localid}`
+
+/**
+ * Options for constructing or attaching a component.
+ * - `idLocal` lets callers specify a human-friendly, per-owner suffix (e.g., 'left', 'primary')
+ *   without needing to know the parent id. The final id becomes `${parentid}_${Type}_${idLocal}`.
+ */
+export type ComponentAttachOptions = RevivableObjectArgs & { parentid: Identifier, id_local?: string };
 
 /**
  * Represents a container for components.
@@ -68,6 +75,29 @@ export interface ComponentContainer extends Identifiable, Registerable, Disposab
 	 * @returns The component instance of the specified type, or undefined if not found.
 	 */
 	getComponents<T extends Component>(constructor: ComponentConstructor<T>): T[];
+
+	/**
+	 * Retrieves a specific component instance by its global id.
+	 * @param id - The component id (unique within the registry).
+	 */
+	getComponentById<T extends Component = Component>(id: ComponentId): T | undefined;
+
+	/**
+	 * Retrieves the Nth component instance of a given type attached to this object.
+	 * @param constructor - The component class (abstract allowed).
+	 * @param index - Zero-based index in attachment order.
+	 */
+	getComponentAt<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined;
+
+	/**
+	 * Finds the first component of a given type matching a predicate.
+	 */
+	findComponent<T extends Component>(predicate: (c: T, index: number) => boolean): T | undefined;
+
+	/**
+	 * Finds all components of a given type matching a predicate.
+	 */
+	findComponents<T extends Component>(predicate: (c: T, index: number) => boolean): T[];
 
 	/** Convenience: return the first instance of a component type, if any. */
 	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
@@ -137,6 +167,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * The component id is the parent id plus the component name.
 	 */
 	public id: ComponentId; // The component id is the parent id + the component name
+	public id_local: Identifier;
 	public get name(): string { return this.constructor?.name; }
 	public static tagsPre: Set<ComponentTag>;
 	public static tagsPost: Set<ComponentTag>;
@@ -186,9 +217,13 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 *
 	 * @param parentid - The identifier of the parent.
 	 */
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier }) {
+	constructor(opts: ComponentAttachOptions) {
 		this.parentid ??= opts.parentid; // Store the parent id for later use
-		this.id ??= this.parentid + '_' + this.constructor?.name; // Final id may be suffixed when attached if multiples exist
+		// If a local id is supplied, build a compatible id using the parent id and component type name.
+		// Otherwise default to `${parentid}_${Type}`. The container may suffix to ensure uniqueness.
+		const typeName = this.constructor?.name;
+		this.id ??= `${this.parentid}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
+		this.id_local ??= opts.id_local;;
 		this.enabled ??= true;
 		// Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
 		// so do not bind here to avoid running before derived decorator initializers.

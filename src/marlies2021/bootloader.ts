@@ -2,7 +2,7 @@ import { World, Space } from 'bmsx/world';
 import { build_fsm, sdef, State } from 'bmsx/bfsm';
 import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from 'bmsx';
 import { WorldObject } from 'bmsx/worldobject';
-import { RenderView } from 'bmsx/glview';
+import { GameView } from 'bmsx/glview';
 import { Input } from 'bmsx/input';
 import { MSX1ScreenHeight, MSX1ScreenWidth } from 'bmsx/msx';
 import { SpriteObject } from 'bmsx/sprite';
@@ -126,9 +126,9 @@ class fles extends SpriteObject {
 							},
 							run: (s: State, ik: fles): void => {
 								++s.nudges;
-								ik.setx(ik.pos.x + 4);
+								ik.setx(ik.x + 4);
 								if (_model.monster) {
-									if (ik.pos.x >= _model.monster.pos.x - 12) {
+									if (ik.x >= _model.monster.x - 12) {
 										_model.monster.collide(ik);
 										ik.banish();
 									}
@@ -383,12 +383,12 @@ class speler extends SpriteObject {
 									ik.state.to('gooi');
 								}
 								if (Input.KD_RIGHT) {
-									if (ik.pos.x <= 148)
-										ik.setx(ik.pos.x + 1);
+									if (ik.x <= 148)
+										ik.setx(ik.x + 1);
 								}
 								if (Input.KD_LEFT) {
-									if (ik.pos.x >= 30)
-										ik.setx(ik.pos.x - 1);
+									if (ik.x >= 30)
+										ik.setx(ik.x - 1);
 								}
 							},
 							enter: (_, ik: speler) => {
@@ -430,8 +430,8 @@ class speler extends SpriteObject {
 								++s.nudges;
 							},
 							next: (s: State, ik: speler): void => {
-								ik.floatbit && --ik.pos.y;
-								(!ik.floatbit) && ++ik.pos.y;
+								ik.floatbit && --ik.y;
+								(!ik.floatbit) && ++ik.y;
 								ik.floatbit = !ik.floatbit;
 							},
 						}),
@@ -464,7 +464,7 @@ class speler extends SpriteObject {
 							end: (_, ik: speler): void => {
 								ik.state.to('boos', 'anistate');
 								ik.state.to('fight');
-								_model.spawn(new fles(), new_vec2(ik.pos.x + 16, ik.pos.y));
+								_model.spawn(new fles(), new_vec2(ik.x + 16, ik.y));
 							}
 						}),
 
@@ -577,7 +577,7 @@ class hud extends SpriteObject {
 	};
 };
 
-class viewclass extends RenderView {
+class viewclass extends GameView {
 	override drawgame(): void {
 		super.drawgame();
 		super.drawSprites();

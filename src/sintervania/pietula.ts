@@ -57,8 +57,8 @@ export class Pietula extends Foe {
 		intro_wacht.onexit = (s) => this.hover.paused = false;
 		let naarlinks = fst.add('naarlinks');
 		naarlinks.onrun = (s) => {
-			this.pos.x -= floatspeed;
-			if (this.pos.x <= vanlinks_naarrechts) {
+			this.x -= floatspeed;
+			if (this.x <= vanlinks_naarrechts) {
 				++this.loops;
 				if (this.loops >= loops_tot_boos) {
 					this.loops = 0;
@@ -72,8 +72,8 @@ export class Pietula extends Foe {
 		};
 		let naarrechts = fst.add('naarrechts');
 		naarrechts.onrun = (s) => {
-			this.pos.x += floatspeed;
-			if (this.pos.x >= vanrechts_naarlinks) {
+			this.x += floatspeed;
+			if (this.x >= vanrechts_naarlinks) {
 				++this.loops;
 				if (this.loops >= loops_tot_boos) {
 					this.loops = 0;
@@ -109,39 +109,39 @@ export class Pietula extends Foe {
 				flipped: false,
 				paint(offset: Point) {
 					if (this.imgid !== BitmapId.None)
-						view.drawImg(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, this.flipped ? DrawImgFlags.HFLIP : DrawImgFlags.None);
+						view.drawImg(this.imgid, this.x + offset.x, this.y + offset.y, this.flipped ? DrawImgFlags.HFLIP : DrawImgFlags.None);
 				},
 				pos: { x: 0, y: 0 },
 			};
 			switch (plek) {
 				case 0:
-					this.pos.x = vanlinks_naarrechts;
-					this.pos.y = Tile.toStageCoord(4);
+					this.x = vanlinks_naarrechts;
+					this.y = Tile.toStageCoord(4);
 					this.flippedH = true;
 					this.bliksem.flipped = false;
-					this.bliksem.pos.x = this.pos.x + 41;
-					this.bliksem.pos.y = this.pos.y - 28;
+					this.bliksem.x = this.x + 41;
+					this.bliksem.y = this.y - 28;
 					break;
 				case 1:
-					this.pos.x = vanlinks_naarrechts;
-					this.pos.y = Tile.toStageCoord(7);
+					this.x = vanlinks_naarrechts;
+					this.y = Tile.toStageCoord(7);
 					this.flippedH = true;
 					this.bliksem.flipped = false;
-					this.bliksem.pos.x = this.pos.x + 41;
-					this.bliksem.pos.y = this.pos.y - 28;
+					this.bliksem.x = this.x + 41;
+					this.bliksem.y = this.y - 28;
 					break;
 				case 2:
-					this.pos.x = vanrechts_naarlinks;
-					this.pos.y = Tile.toStageCoord(4);
-					this.bliksem.pos.x = this.pos.x - 256;
-					this.bliksem.pos.y = this.pos.y - 28;
+					this.x = vanrechts_naarlinks;
+					this.y = Tile.toStageCoord(4);
+					this.bliksem.x = this.x - 256;
+					this.bliksem.y = this.y - 28;
 					this.bliksem.flipped = true;
 					break;
 				case 3:
-					this.pos.x = vanrechts_naarlinks;
-					this.pos.y = Tile.toStageCoord(7);
-					this.bliksem.pos.x = this.pos.x - 256;
-					this.bliksem.pos.y = this.pos.y - 28;
+					this.x = vanrechts_naarlinks;
+					this.y = Tile.toStageCoord(7);
+					this.bliksem.x = this.x - 256;
+					this.bliksem.y = this.y - 28;
 					this.bliksem.flipped = true;
 					break;
 			}
@@ -168,12 +168,12 @@ export class Pietula extends Foe {
 			if ((model as Model).Belmont.areaCollide(
 				<Area>{
 					start: {
-						x: this.bliksem.pos.x,
-						y: this.bliksem.pos.y + 6
+						x: this.bliksem.x,
+						y: this.bliksem.y + 6
 					},
 					end: {
-						x: this.bliksem.pos.x + 256,
-						y: this.bliksem.pos.y + 48
+						x: this.bliksem.x + 256,
+						y: this.bliksem.y + 48
 					}
 				}
 			)) {
@@ -251,7 +251,7 @@ export class Pietula extends Foe {
 		];
 		hovers0.ticks2move = 2;
 		hovers0.onrun = (s: sdef) => ++s.nudges;
-		hovers0.onnext = (s: sdef) => this.pos.y += s.current;
+		hovers0.onnext = (s: sdef) => this.y += s.current;
 		hovers0.onend = (s: sdef) => s.setHeadNoSideEffect(0);
 
 		let blink = new mdef();

@@ -19,8 +19,8 @@ export class HagGenerator extends mdef implements WorldObject {
 		state0.onrun = (s) => ++s.nudges;
 		state0.onnext = (s) => {
 			// Poop hags based on where Belmont is
-			let spawnPoint = { x: 0, y: this.pos.y };
-			if (belmont.pos.x <= GameConstants.ViewportWidth / 2) {
+			let spawnPoint = { x: 0, y: this.y };
+			if (belmont.x <= GameConstants.ViewportWidth / 2) {
 				spawnPoint.x = GameConstants.ViewportWidth - Hag.HagSize.y;
 				new Hag('left').spawn(spawnPoint);
 			}

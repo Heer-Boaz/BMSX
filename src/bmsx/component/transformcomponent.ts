@@ -1,8 +1,8 @@
 import { WorldObject } from '../core/object/worldobject';
-import { M4, Mat4, quat } from '../render/3d/math3d';
-import type { Identifier, Oriented, Scaled, vec3arr } from '../rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
-import { Component } from './basecomponent';
+import { M4, Mat4Float32, quat } from '../render/3d/math3d';
+import type { Oriented, Scaled, vec3arr } from '../rompack/rompack';
+import { insavegame } from 'bmsx/serializer/serializationhooks';
+import { Component, type ComponentAttachOptions } from './basecomponent';
 
 @insavegame
 export class TransformComponent extends Component<WorldObject> {
@@ -15,15 +15,17 @@ export class TransformComponent extends Component<WorldObject> {
 	private _parentNode: TransformComponent | null = null;
 	private children: TransformComponent[] = [];
 
-	private localMatrix: Mat4 = M4.identity();
-	private worldMatrix: Mat4 = M4.identity();
+	private localMatrix: Mat4Float32 = new Float32Array(16);
+	private worldMatrix: Mat4Float32 = new Float32Array(16);
 	private dirty = true;
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier, position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
+	constructor(opts: ComponentAttachOptions & { position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
 		super(opts);
 		this.position = opts?.position ?? [0, 0, 0];
 		this.scale = opts?.scale ?? [1, 1, 1];
 		this.orientationQ ??= opts?.orientationQ;
+		M4.setIdentity(this.localMatrix);
+		M4.setIdentity(this.worldMatrix);
 	}
 
 	public get parentNode(): TransformComponent | null {
@@ -49,22 +51,22 @@ export class TransformComponent extends Component<WorldObject> {
 	}
 
 	private updateMatrices(): void {
-		this.localMatrix = M4.identity();
-		M4.translateSelf(this.localMatrix, this.position[0], this.position[1], this.position[2]);
-		const rot = new Float32Array(16);
-		M4.quatToMat4Into(rot, [this.orientationQ.x, this.orientationQ.y, this.orientationQ.z, this.orientationQ.w]);
-		M4.mulInto(this.localMatrix, this.localMatrix, rot);
-		M4.scaleSelf(this.localMatrix, this.scale[0], this.scale[1], this.scale[2]);
+		M4.fromTRSInto(
+			this.localMatrix,
+			[this.position[0], this.position[1], this.position[2]],
+			[this.orientationQ.x, this.orientationQ.y, this.orientationQ.z, this.orientationQ.w],
+			[this.scale[0], this.scale[1], this.scale[2]]
+		);
 		if (this._parentNode) {
 			const pw = this._parentNode.getWorldMatrix();
-			this.worldMatrix = M4.mul(pw, this.localMatrix);
+			M4.mulInto(this.worldMatrix, pw, this.localMatrix);
 		} else {
-			this.worldMatrix = this.localMatrix;
+			M4.copyInto(this.worldMatrix, this.localMatrix);
 		}
 		this.dirty = false;
 	}
 
-	public getWorldMatrix(): Mat4 {
+	public getWorldMatrix(): Mat4Float32 {
 		if (this.dirty) this.updateMatrices();
 		return this.worldMatrix;
 	}
@@ -73,9 +75,9 @@ export class TransformComponent extends Component<WorldObject> {
 		const parent = this.parentAs<WorldObject & Oriented & Scaled>();
 
 		if (parent.pos) {
-			this.position[0] = parent.pos.x;
-			this.position[1] = parent.pos.y;
-			this.position[2] = parent.pos.z ?? 0;
+			this.position[0] = parent.x;
+			this.position[1] = parent.y;
+			this.position[2] = parent.z;
 		}
 
 		const oriented = parent as Oriented;

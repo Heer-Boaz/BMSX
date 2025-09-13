@@ -2,6 +2,7 @@ import { new_vec3 } from '../utils/utils';
 import type { vec3 } from '../rompack/rompack';
 import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { PhysicsBody } from './physicsbody';
+import { V3i } from '../render/3d/math3d';
 
 export interface Contact {
 	a: PhysicsBody; b: PhysicsBody;
@@ -11,10 +12,7 @@ export interface Contact {
 	// triggers flagged externally if a/b.isTrigger
 }
 
-function dot(a: vec3, b: vec3) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-function sub(out: vec3, a: vec3, b: vec3) { out.x = a.x - b.x; out.y = a.y - b.y; out.z = a.z - b.z; return out; }
-function len(a: vec3) { return Math.hypot(a.x, a.y, a.z); }
-function normalize(out: vec3, a: vec3) { const l = len(a) || 1; out.x = a.x / l; out.y = a.y / l; out.z = a.z / l; return out; }
+// In-place vector math centralized in math3d.V3i
 
 @insavegame
 export class Narrowphase {
@@ -51,15 +49,15 @@ export class Narrowphase {
 
 	private sphereSphere(a: PhysicsBody, b: PhysicsBody, out: Contact[]) {
 		if (a.shape.kind !== 'sphere' || b.shape.kind !== 'sphere') return; // guard for TS
-		sub(this.vtmp, b.position, a.position);
+		V3i.sub(this.vtmp, b.position, a.position);
 		const r = a.shape.radius + b.shape.radius;
-		const dist2 = dot(this.vtmp, this.vtmp);
+		const dist2 = V3i.dot(this.vtmp, this.vtmp);
 		if (dist2 > r * r) return;
 		const d = Math.sqrt(dist2) || 1;
 		const pen = r - d;
 		const c = this.getPooledContact(a, b);
 		const normal = c.normal;
-		normalize(normal, this.vtmp);
+		V3i.normalize(normal, this.vtmp);
 		const point = c.point;
 		point.x = a.position.x + normal.x * (a.shape.radius - pen * 0.5);
 		point.y = a.position.y + normal.y * (a.shape.radius - pen * 0.5);
@@ -119,8 +117,8 @@ export class Narrowphase {
 			Math.max(bp.y - h.y, Math.min(c.y, bp.y + h.y)),
 			Math.max(bp.z - h.z, Math.min(c.z, bp.z + h.z))
 		);
-		sub(this.vtmp, c, closest);
-		const dist2 = dot(this.vtmp, this.vtmp);
+		V3i.sub(this.vtmp, c, closest);
+		const dist2 = V3i.dot(this.vtmp, this.vtmp);
 		const r = sphere.shape.radius;
 		if (dist2 > r * r) return;
 		const d = Math.sqrt(dist2) || 1;
@@ -128,7 +126,7 @@ export class Narrowphase {
 		const contact = this.getPooledContact(flip ? box : sphere, flip ? sphere : box);
 		const normal = contact.normal;
 		if (d === 0) { normal.x = 0; normal.y = 1; normal.z = 0; }
-		else normalize(normal, this.vtmp);
+		else V3i.normalize(normal, this.vtmp);
 		if (flip) { normal.x = -normal.x; normal.y = -normal.y; normal.z = -normal.z; }
 		contact.point.x = closest.x; contact.point.y = closest.y; contact.point.z = closest.z;
 		contact.penetration = pen;

@@ -1,9 +1,9 @@
-import { Component } from '../component/basecomponent';
+import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
-import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { excludepropfromsavegame, insavegame } from 'bmsx/serializer/serializationhooks';
 import type {
 	Ability, AbilityContext, AbilityCoroutine, AbilityId, AbilitySpec,
 	AbilityYield,
@@ -51,7 +51,7 @@ export class AbilitySystemComponent extends Component {
 
 	private _runnerCounter = 0;
 
-	constructor(opts: RevivableObjectArgs & { parentid: string, now?: NowFn }) {
+	constructor(opts: ComponentAttachOptions & { now?: NowFn }) {
 		super(opts);
 		this.ownerId = opts.parentid;
 		this.now = opts.now ?? (() => performance.now());

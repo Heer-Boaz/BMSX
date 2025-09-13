@@ -1,6 +1,6 @@
 import { Oriented, vec3 } from '../../rompack/rompack';
 import { excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
-import { extractFrustumPlanes, M4, Mat4, Plane, Q, quat, sphereInFrustum, V3 } from './math3d';
+import { extractFrustumPlanes, M4, Mat4Float32, Plane, Q, quat, sphereInFrustum, V3 } from './math3d';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+
 // | Projectie                   | Type                    | Dieptevervorming      | Gebruikscase                 | Matrixelementen                              |
@@ -34,20 +34,39 @@ export class Camera implements Oriented {
 
 	private _q: quat = Q.ident();       // <-- bron van waarheid
 	@excludepropfromsavegame
-	private _view: Mat4 = M4.identity();
+    private _view: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
-	private _proj: Mat4 = M4.identity();
+    private _proj: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
-	private _vp: Mat4 = M4.identity();
+    private _vp: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
 	private _planes: Plane[] = [];
 	@excludepropfromsavegame
+    private _skyboxView: Mat4Float32 = new Float32Array(16);
+	@excludepropfromsavegame
+    private _tmpLookAt: Mat4Float32 = new Float32Array(16);
+    @excludepropfromsavegame
+    private _invView: Mat4Float32 = new Float32Array(16);
+    @excludepropfromsavegame
+    private _invProj: Mat4Float32 = new Float32Array(16);
+    @excludepropfromsavegame
+    private _invVP: Mat4Float32 = new Float32Array(16);
+	@excludepropfromsavegame
 	private _dirty = true;
 
-	constructor(_opts?: RevivableObjectArgs) {
-		// Touch decorator-attached methods to satisfy noUnusedLocals without changing behavior
-		this.__keepForDecorators();
-	}
+    constructor(_opts?: RevivableObjectArgs) {
+        // Touch decorator-attached methods to satisfy noUnusedLocals without changing behavior
+        this.__keepForDecorators();
+        // Initialize matrices to identity
+        M4.setIdentity(this._view);
+        M4.setIdentity(this._proj);
+        M4.setIdentity(this._vp);
+        M4.setIdentity(this._skyboxView);
+        M4.setIdentity(this._tmpLookAt);
+        M4.setIdentity(this._invView);
+        M4.setIdentity(this._invProj);
+        M4.setIdentity(this._invVP);
+    }
 
 	public get rotationQ(): quat {
 		return this._q;
@@ -153,58 +172,82 @@ export class Camera implements Oriented {
 	setFov(deg: number) { this.fovDeg = deg; this._dirty = true; }
 	setClip(n: number, f: number) { this.near = n; this.far = f; this._dirty = true; }
 
+	/** Orient the camera to look at a world-space target using an up vector. */
+	public lookAt(target: vec3, up: vec3 = V3.of(0, 1, 0)): void {
+		// Build temporary view matrix and extract basis to compute quaternion
+		M4.lookAtInto(this._tmpLookAt, this.position, target, up);
+		// Columns are [right, up, back]; forward = -back
+		const fx = -this._tmpLookAt[8], fy = -this._tmpLookAt[9], fz = -this._tmpLookAt[10];
+		const ux = this._tmpLookAt[4], uy = this._tmpLookAt[5], uz = this._tmpLookAt[6];
+		const q = Q.fromBasis({ x: fx, y: fy, z: fz }, { x: ux, y: uy, z: uz });
+		this.setRotationQ(q, true);
+	}
+
 	// ====== Matrices ======
 	private rebuild(): void {
 		const { r, u, f } = this.basis();
 		const back = V3.scale(f, -1);
-		this._view = M4.viewFromBasis(this.position, r, u, back);
+		M4.viewFromBasisInto(this._view, this.position, r, u, back);
 
 		switch (this._projectionType) {
 			case 'perspective':
-				this._proj = M4.perspective(this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far);
+				M4.perspectiveInto(this._proj, this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far);
 				break;
 			case 'orthographic':
 				const w = this.fovDeg, h = w / this.aspect;
-				this._proj = M4.orthographic(-w / 2, w / 2, -h / 2, h / 2, this.near, this.far);
+				M4.orthographicInto(this._proj, -w / 2, w / 2, -h / 2, h / 2, this.near, this.far);
 				break;
 			case 'fisheye':
-				this._proj = M4.fisheye(this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far);
+				M4.fisheyeInto(this._proj, this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far);
 				break;
 			case 'panorama':
-				this._proj = M4.panorama(this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far);
+				M4.panoramaInto(this._proj, this.fovDeg * Math.PI / 180, this.aspect, this.near, this.far);
 				break;
 			case 'asymmetricFrustum':
 				// Voorbeeld: M4.asymmetricFrustum(-1, 1, -0.5, 0.5, this.near, this.far);
-				this._proj = M4.asymmetricFrustum(-this.aspect, this.aspect, -1, 1, this.near, this.far);
+				M4.asymmetricFrustumInto(this._proj, -this.aspect, this.aspect, -1, 1, this.near, this.far);
 				break;
 			case 'oblique':
 				// oblique(l: number, r: number, b: number, t: number, n: number, f: number, alphaRad: number, betaRad: number):
-				this._proj = M4.oblique(-this.aspect, this.aspect, -1, 1, this.near, this.far, 0, 0);
+				M4.obliqueInto(this._proj, -this.aspect, this.aspect, -1, 1, this.near, this.far, 0, 0);
 				break;
 			case 'isometric':
-				this._proj = M4.isometric(.1);
+				M4.isometricInto(this._proj, .1);
 				break;
 			case 'infinitePerspective':
-				this._proj = M4.infinitePerspective(this.fovDeg * Math.PI / 180, this.aspect, this.near);
+				M4.infinitePerspectiveInto(this._proj, this.fovDeg * Math.PI / 180, this.aspect, this.near);
 				break;
 			case 'viewFromBasis':
-				this._proj = M4.viewFromBasis(this.position, r, u, back);
+				M4.viewFromBasisInto(this._proj, this.position, r, u, back);
 				break;
 			default:
 				console.error(`Unknown projection type: ${this._projectionType ?? '<undefined>'}`);
 				break;
 		}
 
-		this._vp = M4.mul(this._proj, this._view);
-		this._planes = extractFrustumPlanes(this._vp);
-		this._dirty = false;
-	}
+        M4.mulInto(this._vp, this._proj, this._view);
+        // Update inverse caches for reprojection
+        M4.invertRigidInto(this._invView, this._view);
+        M4.invertInto(this._invProj, this._proj);
+        M4.mulInto(this._invVP, this._invProj, this._invView);
+        this._planes = extractFrustumPlanes(this._vp);
+        this._dirty = false;
+    }
 
-	get view(): Mat4 { if (this._dirty) this.rebuild(); return this._view; }
-	get projection(): Mat4 { if (this._dirty) this.rebuild(); return this._proj; }
-	get viewProjection(): Mat4 { if (this._dirty) this.rebuild(); return this._vp; }
+	get view(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._view; }
+	get projection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._proj; }
+	get viewProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._vp; }
 	get frustumPlanes(): Plane[] { if (this._dirty) this.rebuild(); return this._planes; }
-	get skyboxView(): Mat4 { return M4.skyboxFromView(this.view); }
+    get skyboxView(): Mat4Float32 { return M4.skyboxFromViewInto(this._skyboxView, this.view); }
+    get inverseView(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invView; }
+    get inverseProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invProj; }
+    get inverseViewProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invVP; }
+
+	/** Efficient bundle getter to reduce repeated property access in passes. */
+	public getMatrices(): { view: Mat4Float32; proj: Mat4Float32; vp: Mat4Float32; invView: Mat4Float32; invProj: Mat4Float32; invVP: Mat4Float32 } {
+		if (this._dirty) this.rebuild();
+		return { view: this._view, proj: this._proj, vp: this._vp, invView: this._invView, invProj: this._invProj, invVP: this._invVP };
+	}
 
 	sphereInFrustum(center: [number, number, number], radius: number): boolean {
 		if (this._dirty) this.rebuild();

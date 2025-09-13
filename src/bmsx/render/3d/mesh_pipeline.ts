@@ -2,7 +2,7 @@
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
 import { makePipelineBuildDesc, PassEncoder, shaderModule } from '../..';
 import { $ } from '../../core/game';
-import type { Mesh } from '../../core/object/mesh';
+import type { Mesh } from './mesh';
 import { Float32ArrayPool } from 'bmsx/utils/pool';
 import type { vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
@@ -588,10 +588,7 @@ function cullAndSortMeshes(list: Iterable<MeshRenderSubmission>): { instancedGro
 		const cx = matrix[12] + m.boundingCenter[0] * matrix[0] + m.boundingCenter[1] * matrix[4] + m.boundingCenter[2] * matrix[8];
 		const cy = matrix[13] + m.boundingCenter[0] * matrix[1] + m.boundingCenter[1] * matrix[5] + m.boundingCenter[2] * matrix[9];
 		const cz = matrix[14] + m.boundingCenter[0] * matrix[2] + m.boundingCenter[1] * matrix[6] + m.boundingCenter[2] * matrix[10];
-		const scaleX = Math.hypot(matrix[0], matrix[1], matrix[2]);
-		const scaleY = Math.hypot(matrix[4], matrix[5], matrix[6]);
-		const scaleZ = Math.hypot(matrix[8], matrix[9], matrix[10]);
-		const radius = m.boundingRadius * Math.max(scaleX, scaleY, scaleZ);
+		const radius = m.boundingRadius * M4.maxScale(matrix);
 		return activeCamera.sphereInFrustum([cx, cy, cz] as vec3arr, radius);
 	});
 	const camPos = activeCamera.position;
@@ -942,11 +939,12 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 				return;
 			}
 			const frameShared = registry.getState('frame_shared');
+			const mats = cam.getMatrices();
 			const meshState: MeshBatchPipelineState = {
 				width,
 				height,
 				camPos: cam.position,
-				viewProj: cam.viewProjection,
+				viewProj: mats.vp,
 				lighting: frameShared ? frameShared.lighting : undefined,
 			};
 			registry.setState('meshbatch', meshState);

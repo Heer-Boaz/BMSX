@@ -1,4 +1,4 @@
-import { base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RenderView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, GameView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from 'bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -181,11 +181,11 @@ class gamemodel extends World {
 		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new hud());
 		this[spaceid_2_space]['default' satisfies model_spaces].spawn(_diamant);
 		this[spaceid_2_space]['default' satisfies model_spaces].spawn(_draaischijf, new_vec2(96, 120));
-		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 30, _diamant.pos.y + 10)));
-		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 60, _diamant.pos.y + 40)));
-		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 110, _diamant.pos.y + 20)));
-		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 80, _diamant.pos.y + 60)));
-		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Boven, new_vec2(_diamant.pos.x + 90, _diamant.pos.y + 100)));
+		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.x + 30, _diamant.y + 10)));
+		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.x + 60, _diamant.y + 40)));
+		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.x + 110, _diamant.y + 20)));
+		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.x + 80, _diamant.y + 60)));
+		this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Boven, new_vec2(_diamant.x + 90, _diamant.y + 100)));
 
 		return this;
 	}
@@ -560,9 +560,9 @@ class draaischijf extends SpriteObject {
 					},
 					next(this: draaischijf, s: State<draaischijf>) {
 						this.imgid = s.current_tape_value;
-						if (s.head === 0) ++this.pos.y;
-						else --this.pos.y;
-						_model.spawn(new stoom(), new_vec2(randomInt(this.pos.x, this.pos.x + this.size.x), randomInt(this.pos.y, this.pos.y + this.size.y)));
+						if (s.head === 0) ++this.y;
+						else --this.y;
+						_model.spawn(new stoom(), new_vec2(randomInt(this.x, this.x + this.size.x), randomInt(this.y, this.y + this.size.y)));
 					},
 				}),
 				slijpen_afkoel: new StateDefinition('slijpen_afkoel', {
@@ -852,7 +852,7 @@ class barst extends onvolmaaktheid {
 	}
 }
 
-class gameview extends RenderView {
+class gameview extends GameView {
 }
 
 let _game: Game;

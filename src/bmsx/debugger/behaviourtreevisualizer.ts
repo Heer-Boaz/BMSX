@@ -1,10 +1,10 @@
 // BehaviourTreeVisualizer extracted from bmsxdebugger.ts
 import { BTNode } from '../ai/behaviourtree';
-import { Component, componenttags_postprocessing } from '../component/basecomponent';
+import { Component, componenttags_postprocessing, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
 import type { Identifier } from '../rompack/rompack';
-import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { FloatingDialog } from './bmsxdebugger';
 
 @componenttags_postprocessing('render')
@@ -14,7 +14,7 @@ export class BTVisualizer extends Component {
 	private dialog: FloatingDialog;
 	private machineElements: Map<string, HTMLElement>;
 
-	constructor(opts: RevivableObjectArgs & { parentid: string }) {
+	constructor(opts: ComponentAttachOptions) {
 		super(opts);
 		this.enabled = false;
 	}

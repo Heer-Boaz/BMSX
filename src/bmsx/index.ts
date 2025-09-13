@@ -17,7 +17,7 @@ export * from './core/service';
 export * from './core/object/worldobject';
 export * from './core/gameoptions';
 export * from './core/object/lightobject';
-export * from './core/object/mesh';
+export * from './render/3d/mesh';
 export * from './core/object/pooledworldobject';
 export * from './core/object/wavemanager';
 export * from './core/registry';

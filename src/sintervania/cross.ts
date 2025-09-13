@@ -16,8 +16,8 @@ export class Cross extends PlayerProjectile {
 
 	public run(): void {
 		switch (this.direction) {
-			case 'left': this.setx(this.pos.x - 2); break;
-			case 'right': this.setx(this.pos.x + 2); break;
+			case 'left': this.setx(this.x - 2); break;
+			case 'right': this.setx(this.x + 2); break;
 		}
 		if (this.checkAndInvokeHit()) {
 			this.disposeFlag = true;

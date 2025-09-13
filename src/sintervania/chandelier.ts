@@ -53,13 +53,13 @@ export class Chandelier extends Foe {
 	public run(): void {
 		switch (this.state) {
 			case ChandelierState.None:
-				if ((model as Model).Belmont.x_plus_width >= this.pos.x && (model as Model).Belmont.pos.x <= this.x_plus_width) {
+				if ((model as Model).Belmont.x_plus_width >= this.x && (model as Model).Belmont.x <= this.x_plus_width) {
 					this.state = ChandelierState.Falling;
 				}
 				break;
 			case ChandelierState.Falling:
-				this.pos.y += 8;
-				//if ((model as Model).CurrentRoom.AnyCollisionsTiles(true, (this.pos.x, this.y_plus_height), (this.x_plus_width, this.y_plus_height))) {
+				this.y += 8;
+				//if ((model as Model).CurrentRoom.AnyCollisionsTiles(true, (this.x, this.y_plus_height), (this.x_plus_width, this.y_plus_height))) {
 				//	this.state = ChandelierState.Crashing;
 				//	this.timer.Start();
 				//	this.imgid = this.animation.stepValue();

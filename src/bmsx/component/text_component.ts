@@ -1,6 +1,6 @@
-import { Component } from 'bmsx/component/basecomponent';
-import type { Identifier, vec3 } from 'bmsx/rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { Component, type ComponentAttachOptions } from 'bmsx/component/basecomponent';
+import type { vec3 } from 'bmsx/rompack/rompack';
+import { insavegame } from 'bmsx/serializer/serializationhooks';
 import type { color, RenderLayer } from 'bmsx/render/gameview';
 import type { BFont } from 'bmsx/core/font';
 
@@ -22,7 +22,7 @@ export class TextComponent extends Component {
 	// Optional: future font override
 	// public font?: BFont;
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier; text?: string | string[] }) {
+	constructor(opts: ComponentAttachOptions & { text?: string | string[] }) {
 		super(opts);
 		if (opts?.text !== undefined) this.text = opts.text;
 	}

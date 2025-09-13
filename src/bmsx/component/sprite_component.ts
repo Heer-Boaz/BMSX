@@ -1,7 +1,7 @@
-import { componenttags_postprocessing } from 'bmsx/component/basecomponent';
+import { componenttags_postprocessing, type ComponentAttachOptions } from 'bmsx/component/basecomponent';
 import { Component } from 'bmsx/component/basecomponent';
-import type { Identifier, vec2, vec3 } from 'bmsx/rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import type { vec2, vec3 } from 'bmsx/rompack/rompack';
+import { insavegame } from 'bmsx/serializer/serializationhooks';
 import type { color, FlipOptions, RenderLayer } from 'bmsx/render/gameview';
 import { new_vec2 } from 'bmsx/utils/utils';
 
@@ -18,7 +18,7 @@ export class SpriteComponent extends Component {
 	// Local offset relative to parent
 	public offset: vec3 = { x: 0, y: 0, z: 0 };
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier; imgid?: string }) {
+	constructor(opts: ComponentAttachOptions & { imgid?: string }) {
 		super(opts);
 		if (opts?.imgid) this.imgid = opts.imgid ?? 'none';
 	}

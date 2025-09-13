@@ -1,4 +1,4 @@
-import { World, BootArgs, build_fsm, Game, WorldObject, getOppositeDirection, RenderView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from 'bmsx';
+import { World, BootArgs, build_fsm, Game, WorldObject, getOppositeDirection, GameView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from 'bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';
@@ -116,8 +116,8 @@ class modelclass extends World {
 			else if (type != 'pita' && type != 'komkommer') { // Kan alleen gevulde pita of ingredienten oppakken en ook geen ongesneden komkommer
 				if (this.ingredientEquipped) return;
 				this.ingredientEquipped = o as Ingredient | Pita;
-				this.ingredientEquipped.pos.x = INVENTORY_POS.x;
-				this.ingredientEquipped.pos.y = INVENTORY_POS.y;
+				this.ingredientEquipped.x = INVENTORY_POS.x;
+				this.ingredientEquipped.y = INVENTORY_POS.y;
 				this.ingredientEquipped.z = 2100;
 				// _model.currentSpace.sortObjectsByPriority();
 			}
@@ -151,8 +151,8 @@ class modelclass extends World {
 
 		// Plaats pita op bord
 		bord.nuGevuld();
-		this.ingredientEquipped.pos.x = bord.pos.x;
-		this.ingredientEquipped.pos.y = bord.pos.y; // Plaats pita op bord
+		this.ingredientEquipped.x = bord.x;
+		this.ingredientEquipped.y = bord.y; // Plaats pita op bord
 		this.ingredientEquipped.z = 850;
 		// _model.currentSpace.sortObjectsByPriority();
 
@@ -175,7 +175,7 @@ class brandblusser extends SpriteObject {
 						bla: new sdef('bla', {
 							ticks2move: 20,
 							run: (s: sstate, ik: brandblusser): void => {
-								set_vec2(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
+								set_vec2(ik.pos, _model.marlies.x, _model.marlies.y + 12);
 								// let oldPrio = ik.z;
 								if (_model.marlies.direction == 'up') ik.z = 950;
 								else ik.z = 1050;
@@ -346,10 +346,10 @@ class vuur extends SpriteObject {
 							run: (s: sstate, ik: vuur): void => {
 								++s.nudges;
 								switch (ik.direction) {
-									case 'up': ik.pos.y -= 3; break;
-									case 'right': ik.pos.x += 3; break;
-									case 'down': ik.pos.y += 3; break;
-									case 'left': ik.pos.x -= 3; break;
+									case 'up': ik.y -= 3; break;
+									case 'right': ik.x += 3; break;
+									case 'down': ik.y += 3; break;
+									case 'left': ik.x -= 3; break;
 								}
 							},
 							next: (s: sstate, ik: vuur): void => {
@@ -405,10 +405,10 @@ class corona extends SpriteObject {
 									ik.state.to('sterf');
 								}
 								switch (ik.direction) {
-									case 'up': ik.sety(ik.pos.y - 1); break;
-									case 'right': ik.setx(ik.pos.x + 1); break;
-									case 'down': ik.sety(ik.pos.y + 1); break;
-									case 'left': ik.setx(ik.pos.x - 1); break;
+									case 'up': ik.sety(ik.y - 1); break;
+									case 'right': ik.setx(ik.x + 1); break;
+									case 'down': ik.sety(ik.y + 1); break;
+									case 'left': ik.setx(ik.x - 1); break;
 								}
 
 								if (--ik.moveLeft <= 0) {
@@ -503,15 +503,15 @@ class speler extends SpriteObject {
 
 			switch (ik.state.getCurrentId()) {
 				case 'switchleft':
-					ik.pos.x -= 2;
-					if (ik.pos.x <= COLUMN_X[ik.column - 1]) {
+					ik.x -= 2;
+					if (ik.x <= COLUMN_X[ik.column - 1]) {
 						ik.column -= 1;
 						switchToOld();
 					}
 					break;
 				case 'switchright':
-					ik.pos.x += 2;
-					if (ik.pos.x >= COLUMN_X[ik.column + 1]) {
+					ik.x += 2;
+					if (ik.x >= COLUMN_X[ik.column + 1]) {
 						ik.column += 1;
 						switchToOld();
 					}
@@ -547,10 +547,10 @@ class speler extends SpriteObject {
 									}
 								}
 								else if (Input.KD_UP) {
-									if (ik.pos.y >= 4 && ik.column !== 0) {
+									if (ik.y >= 4 && ik.column !== 0) {
 										if ((ik.column !== 3 && ik.column !== 4) ||
-											(ik.pos.y > 104 || ik.pos.y <= 80)) {
-											ik.pos.y -= 2;
+											(ik.y > 104 || ik.y <= 80)) {
+											ik.y -= 2;
 										}
 									}
 									if (ik.state.getCurrentId('anistate') !== 'up') {
@@ -559,10 +559,10 @@ class speler extends SpriteObject {
 									}
 								}
 								else if (Input.KD_DOWN) {
-									if (ik.pos.y <= _model.gameheight - 32 && ik.column !== 0) {
+									if (ik.y <= _model.gameheight - 32 && ik.column !== 0) {
 										if ((ik.column !== 3 && ik.column !== 4) ||
-											(ik.pos.y < 44 || ik.pos.y >= 80)) {
-											ik.pos.y += 2;
+											(ik.y < 44 || ik.y >= 80)) {
+											ik.y += 2;
 										}
 									}
 									if (ik.state.getCurrentId('anistate') !== 'down') {
@@ -737,7 +737,7 @@ class speler extends SpriteObject {
 		_model.spawn(brand3, brandpos3);
 
 		let blusser = new brandblusser();
-		_model.spawn(blusser, new_vec2(this.pos.x, this.pos.y + 12));
+		_model.spawn(blusser, new_vec2(this.x, this.y + 12));
 	}
 
 	doeCoronaTest(): void {
@@ -771,9 +771,9 @@ class speler extends SpriteObject {
 	private get canSwitchLeft(): boolean {
 		switch (this.column) {
 			case 0: return false;
-			case 1: return this.pos.y >= 144;
+			case 1: return this.y >= 144;
 			case 2: return true;
-			case 3: return (this.pos.y <= 12 || this.pos.y >= 144);
+			case 3: return (this.y <= 12 || this.y >= 144);
 			case 4: return true;
 			default: return false;
 		}
@@ -782,7 +782,7 @@ class speler extends SpriteObject {
 	private get canSwitchRight(): boolean {
 		switch (this.column) {
 			case 0: case 1: return true;
-			case 2: return (this.pos.y <= 12 || this.pos.y >= 144);
+			case 2: return (this.y <= 12 || this.y >= 144);
 			case 3: return true;
 			case 4: return false;
 			default: return false;
@@ -831,7 +831,7 @@ class keuken extends SpriteObject {
 	}
 };
 
-class viewclass extends RenderView {
+class viewclass extends GameView {
 	override drawgame(): void {
 		super.drawgame();
 		super.drawSprites();

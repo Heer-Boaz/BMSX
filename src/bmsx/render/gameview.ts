@@ -1,7 +1,7 @@
 ﻿import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
-import type { Mesh } from '../core/object/mesh';
+import type { Mesh } from './3d/mesh';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { multiply_vec, multiply_vec2, shallowCopy } from '../utils/utils';
@@ -121,7 +121,7 @@ export function generateAtlasName(atlasIndex: number): string {
 }
 
 /**
- * The `BaseView` class is an abstract class that serves as the base for all views in the application.
+ * The `GameView` class is an abstract class that serves as the base for all views in the application.
  * It provides common functionality and properties that are shared across all views.
  */
 export class GameView implements RegisterablePersistent, RenderContext {
@@ -155,7 +155,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public dx: number;
 	public dy: number;
 	public viewportScale: number;
-	public canvasSize: vec2; // The size of the canvas, which may be different from the viewport size (e.g. when the RenderView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
+	public canvasSize: vec2; // The size of the canvas, which may be different from the viewport size (e.g. when the GameView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
 
 	public canvas_dx: number;
 	public canvas_dy: number;
@@ -246,7 +246,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 					let lines: string | string[] = o.glyphs;
 					if (!o.font) o.font = this.default_font;
 					if (!o.font) { console.error('No font available for glyph rendering'); return; }
-					
+
 					// Optional char-based wrapping
 					if (typeof lines === 'string' && o.wrapChars > 0 && o.wrapChars > 0) {
 						lines = wrapGlyphs(lines, o.wrapChars);
@@ -713,4 +713,3 @@ export function registerAtmosphereHotkeys(): void {
 		}
 	});
 } export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
-

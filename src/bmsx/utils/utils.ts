@@ -1,4 +1,5 @@
 import { Area, Direction, vec2, vec2arr, vec3arr, vec3, type Identifier } from '../rompack/rompack';
+import { V3 } from '../render/3d/math3d';
 
 /**
  * Calculates the modulus of a number.
@@ -60,18 +61,14 @@ export function translate_inplace_vec2(a: vec2, b: vec2): void {
  * @returns The resulting translated 3D vector.
  */
 
-export function translate_vec3(a: vec3, b: vec3): vec3 {
-	return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
-}
+export function translate_vec3(a: vec3, b: vec3): vec3 { return V3.add(a, b); }
 /**
  * Translates the given vec3 in place by adding the values of another vec3.
  * @param a - The vec3 to be translated.
  * @param b - The vec3 containing the translation values.
  */
 
-export function translate_inplace_vec3(a: vec3, b: vec3): void {
-	set_inplace_vec3(a, { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
-}
+export function translate_inplace_vec3(a: vec3, b: vec3): void { V3.addSelf(a, b); }
 
 /**
  * Generates a random integer between the specified minimum and maximum values (inclusive).
@@ -145,9 +142,7 @@ export function new_vec2(x: number, y: number): vec2 {
  * @returns A new vec3 object with the specified coordinates.
  */
 
-export function new_vec3(x: number, y: number, z: number): vec3 {
-	return { x: x, y: y, z: z };
-}
+export function new_vec3(x: number, y: number, z: number): vec3 { return V3.of(x, y, z); }
 
 export function to_vec2(v: vec2 | vec2arr): vec2 {
 	return Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
@@ -157,13 +152,9 @@ export function to_vec2arr(v: vec2 | vec2arr): vec2arr {
 	return Array.isArray(v) ? v : [v.x, v.y];
 }
 
-export function to_vec3(v: vec3 | vec3arr): vec3 {
-	return Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : { x: v.x, y: v.y, z: v.z };
-}
+export function to_vec3(v: vec3 | vec3arr): vec3 { return V3.toVec3(v); }
 
-export function to_vec3arr(v: vec3 | vec3arr): vec3arr {
-	return Array.isArray(v) ? v : [v.x, v.y, v.z];
-}
+export function to_vec3arr(v: vec3 | vec3arr): vec3arr { return V3.toArr(v); }
 
 /**
  * Creates a copy of a Vector object.
@@ -196,9 +187,7 @@ export function trunc_vec2(p: vec2): vec2 {
  * @param p - The vec3 object to truncate.
  * @returns A new vec3 object with truncated values.
  */
-export function trunc_vec3(p: vec3): vec3 {
-	return { x: ~~p.x, y: ~~p.y, z: ~~p.z };
-}
+export function trunc_vec3(p: vec3): vec3 { return V3.trunc(p); }
 /**
  * Multiplies a vec2 or vec3 by a factor.
  * @param toMult The vec2 or vec3 to multiply.
@@ -206,13 +195,8 @@ export function trunc_vec3(p: vec3): vec3 {
  * @returns The multiplied vec2 or vec3.
  */
 export function multiply_vec(toMult: vec2 | vec3, factor: number): vec2 | vec3 {
-	if ('z' in toMult) {
-		const { x, y, z } = toMult as vec3;
-		return { x: x * factor, y: y * factor, z: z * factor };
-	} else {
-		const { x, y } = toMult as vec2;
-		return { x: x * factor, y: y * factor };
-	}
+	if ('z' in toMult) { return V3.scale(toMult as vec3, factor); }
+	else { const { x, y } = toMult as vec2; return { x: x * factor, y: y * factor }; }
 }
 /**
  * Multiplies a vec2 by a factor.
@@ -303,9 +287,7 @@ export function copy_vec2arr(p: vec2arr): vec2arr {
 	return [p[0], p[1]];
 }
 
-export function copy_vec3(p: vec3): vec3 {
-	return { x: p.x, y: p.y, z: p.z };
-}
+export function copy_vec3(p: vec3): vec3 { return V3.copy(p); }
 
 export function copy_vec2(p: vec2): vec2 {
 	return { x: p.x, y: p.y };
@@ -316,10 +298,7 @@ export function vec2arr_equals(a: vec2arr, b: vec2arr): boolean {
 	return a[0] === b[0] && a[1] === b[1];
 }
 
-export function vec3arr_equals(a: vec3arr, b: vec3arr): boolean {
-	if (a?.length !== b?.length) return false;
-	return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
-}
+export function vec3arr_equals(a: vec3arr, b: vec3arr): boolean { return V3.equalsArr(a, b); }
 
 /**
  * Overwrites the values of a vec2 with the values of another vec2.
@@ -339,22 +318,14 @@ export function set_inplace_vec2(p: vec2, n: vec2) {
  * @param new_z - The new value for the z coordinate.
  */
 
-export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) {
-	p.x = new_x;
-	p.y = new_y;
-	p.z = new_z;
-}
+export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) { V3.set(p, new_x, new_y, new_z); }
 /**
  * Overwrites the values of a vec3 with the values from another vec3.
  * @param to_overwrite - The vec3 to be overwritten.
  * @param data - The vec3 containing the new values.
  */
 
-export function set_inplace_vec3(to_overwrite: vec3, data: vec3) {
-	to_overwrite.x = data.x;
-	to_overwrite.y = data.y;
-	to_overwrite.z = data.z;
-}
+export function set_inplace_vec3(to_overwrite: vec3, data: vec3) { V3.assign(to_overwrite, data); }
 
 /**
  * Calculates the delta vector from a source point to a target point.

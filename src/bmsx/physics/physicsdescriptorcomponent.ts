@@ -1,8 +1,7 @@
-import { Component } from '../component/basecomponent';
+import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { new_vec3 } from '../utils/utils';
-import type { Identifier } from '../rompack/rompack';
-import { insavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, onload } from 'bmsx/serializer/serializationhooks';
 import type { PhysicsBodyDesc } from './physicsbody';
 import { PhysicsComponent, PhysicsComponentOptions } from './physicscomponent';
 
@@ -18,7 +17,7 @@ export class PhysicsDescriptorComponent extends Component {
 	mass: number; restitution: number; friction: number; isTrigger: boolean; layer: number; mask: number;
 	syncAxis?: { x?: boolean; y?: boolean; z?: boolean };
 	writeBack: boolean = true;
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier; shape: PhysicsBodyDesc['shape']; mass?: number; restitution?: number; friction?: number; isTrigger?: boolean; layer?: number; mask?: number; syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; writeBack?: boolean /* future: bodyType?: PhysicsBodyDesc['type'] */ }) {
+	constructor(opts: ComponentAttachOptions & { shape: PhysicsBodyDesc['shape']; mass?: number; restitution?: number; friction?: number; isTrigger?: boolean; layer?: number; mask?: number; syncAxis?: { x?: boolean; y?: boolean; z?: boolean }; writeBack?: boolean /* future: bodyType?: PhysicsBodyDesc['type'] */ }) {
 		super(opts);
 		// Reviver may call ctor with undefined; defer full init till @onload if so.
 		if (opts.shape) {

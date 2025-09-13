@@ -45,8 +45,8 @@ export class Hag extends Foe {
 
 		let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
 		this.imgid = stepValue;
-		this.pos.x += this.direction == 'left' ? -2 : 2;
-		if (this.pos.x >= GameConstants.GameScreenWidth || (0 > this.pos.x + this.size.x)) {
+		this.x += this.direction == 'left' ? -2 : 2;
+		if (this.x >= GameConstants.GameScreenWidth || (0 > this.x + this.size.x)) {
 			this.disposeFlag = true;
 		}
 	}

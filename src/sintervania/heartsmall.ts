@@ -34,7 +34,7 @@ export class HeartSmall extends Sprite {
 	}
 
 	protected get floorCollision(): boolean {
-		return (model as Model).currentRoom.isCollisionTile(this.pos.x + 5, this.pos.y + 8);
+		return (model as Model).currentRoom.isCollisionTile(this.x + 5, this.y + 8);
 	}
 
 	protected uglyBitThing: boolean;
@@ -43,20 +43,20 @@ export class HeartSmall extends Sprite {
 		if (this.State === HeartSmallState.Flying) {
 			let delta = this.animation.doAnimation(1, 0).stepValue;
 
-			this.pos.x += delta;
+			this.x += delta;
 			if (this.uglyBitThing)
-				++this.pos.y;
+				++this.y;
 
 			this.uglyBitThing = !this.uglyBitThing;
 
-			if (this.pos.y > GameConstants.GameScreenHeight) {
+			if (this.y > GameConstants.GameScreenHeight) {
 				this.disposeFlag = true;
 				return;
 			}
 
 			if (this.floorCollision) {
 				this.State = HeartSmallState.Standing;
-				this.pos.y -= 3;
+				this.y -= 3;
 				this.imgid = BitmapId.Heart_small;
 			}
 		}

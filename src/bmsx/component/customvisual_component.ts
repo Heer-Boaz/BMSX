@@ -1,12 +1,9 @@
-import { Component } from './basecomponent';
-import type { Identifier } from 'bmsx/rompack/rompack';
-import { insavegame, excludepropfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
-import type { RenderSubmitQueue, ImgRenderSubmission, RectRenderSubmission, PolyRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, color, GlyphRenderSubmission } from 'bmsx/render/gameview';
+import { Component, type ComponentAttachOptions } from './basecomponent';
+import { insavegame, excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
+import type { RenderSubmitQueue, ImgRenderSubmission, RectRenderSubmission, PolyRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, GlyphRenderSubmission } from 'bmsx/render/gameview';
 import type { RenderSubmission } from 'bmsx/render/gameview';
 import type { WorldObject } from 'bmsx/core/object/worldobject';
 import { onload } from 'bmsx/serializer/serializationhooks';
-import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from 'bmsx/render/glyphs';
-import type { BFont } from 'bmsx/core/font';
 import { $ } from 'bmsx/core/game';
 
 export type RenderProducer = (ctx: { parent: WorldObject; rc: CustomVisualComponent }) => void;
@@ -23,7 +20,7 @@ export class CustomVisualComponent extends Component {
 	@excludepropfromsavegame
 	private producer?: RenderProducer;
 
-	constructor(opts: RevivableObjectArgs & { parentid: Identifier, producer?: RenderProducer }) {
+	constructor(opts: ComponentAttachOptions & { producer?: RenderProducer }) {
 		super(opts);
 		this.producer = opts.producer;
 	}

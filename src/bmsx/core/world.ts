@@ -679,10 +679,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * base class here (ctor) will correctly return true for derived instances.
 	 */
 	public *objectsWithComponents<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
-		for (const o of this.objects(opts)) {
-			const list = o.getComponents(component) as T[] | undefined;
-			if (list && list.length) for (const c of list) yield [o, c];
-		}
+		for (const o of this.objects(opts)) { for (const c of o.iterateComponentsByType(component)) yield [o, c]; }
 	}
 
 	/**

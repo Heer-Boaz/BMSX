@@ -166,8 +166,8 @@ export class Belmont extends Sprite {
 	}
 
 	public setx(newx: number) {
-		let oldx = this.pos.x;
-		this.pos.x = ~~newx;
+		let oldx = this.x;
+		this.x = ~~newx;
 		if (newx < oldx) {
 			if ((model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
 				(model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey)) {
@@ -180,13 +180,13 @@ export class Belmont extends Sprite {
 				newx -= newx % TileSize;
 			}
 		}
-		this.pos.x = ~~newx;
+		this.x = ~~newx;
 		this.checkAndHandleRoomExit();
 	}
 
 	public sety(newy: number) {
-		let oldy = this.pos.y;
-		this.pos.y = ~~newy;
+		let oldy = this.y;
+		this.y = ~~newy;
 		if (newy < oldy) {
 			if ((model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
 				(model as Model).currentRoom.isCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy)) {
@@ -201,7 +201,7 @@ export class Belmont extends Sprite {
 				newy -= newy % TileSize;
 			}
 		}
-		this.pos.y = ~~newy;
+		this.y = ~~newy;
 		this.checkAndHandleRoomExit();
 	}
 
@@ -310,7 +310,7 @@ export class Belmont extends Sprite {
 		}
 		if (!this.FloorCollision && (!this.Jumping || !this.jumpState.GoingUp) && this.hitState.CurrentStep != HitStateStep.Flying && this.hitState.CurrentStep != HitStateStep.Falling) {
 			if (!this.FloorCollision)
-				this.sety(this.pos.y + 4);
+				this.sety(this.y + 4);
 			if (this.FloorCollision) {
 				SM.play(AudioId.Land);
 				if (this.Jumping) this.jumpState.Stop();
@@ -325,24 +325,24 @@ export class Belmont extends Sprite {
 	protected doHitFlying(): void {
 		let delta = this.hitState.HitAni.doAnimation(1, <Point>{ x: 0, y: 0 });
 		let originalPos = copyPoint(this.pos);
-		this.setx(this.pos.x + (this.direction == 'right' ? delta.stepValue.x : -delta.stepValue.x));
+		this.setx(this.x + (this.direction == 'right' ? delta.stepValue.x : -delta.stepValue.x));
 		let dir = this.direction;
 		this.direction = this.direction == 'left' ? 'right' : 'left';
 		this.direction = dir;
-		this.sety(this.pos.y + delta.stepValue.y);
+		this.sety(this.y + delta.stepValue.y);
 		if (this.hitState.HitAni.hasNext === false) {
 			this.hitState.CurrentStep = HitStateStep.Falling;
 		}
 	}
 
 	protected doHitFall(): void {
-		this.setx(this.pos.x + (this.direction == 'right' ? -2 : 2));
+		this.setx(this.x + (this.direction == 'right' ? -2 : 2));
 		let dir = this.direction;
 		this.direction = this.direction == 'left' ? 'right' : 'left';
 		this.direction = dir;
 		if (this.FloorCollision) this.handleFloorCollision();
 		else {
-			this.sety(this.pos.y + 4);
+			this.sety(this.y + 4);
 			if (this.FloorCollision) this.handleFloorCollision();
 		}
 	}
@@ -359,7 +359,7 @@ export class Belmont extends Sprite {
 
 	protected doJump(): void {
 		if (!this.jumpState.JumpAni.finished) {
-			this.sety(this.pos.y + this.jumpState.JumpAni.stepValue);
+			this.sety(this.y + this.jumpState.JumpAni.stepValue);
 			this.jumpState.JumpAni.doAnimation(1);
 			if (this.jumpState.JumpAni.finished) {
 				this.jumpState.GoingDownAfterAnimation();
@@ -369,9 +369,9 @@ export class Belmont extends Sprite {
 			this.jumpState.Stop();
 		}
 		if (this.jumpState.JumpDirection == 'right')
-			this.setx(this.pos.x + this.movementSpeed);
+			this.setx(this.x + this.movementSpeed);
 		if (this.jumpState.JumpDirection == 'left')
-			this.setx(this.pos.x - this.movementSpeed);
+			this.setx(this.x - this.movementSpeed);
 	}
 
 	public doWalk(): void {
@@ -523,11 +523,11 @@ export class Belmont extends Sprite {
 		let originalPos = copyPoint(this.pos);
 		switch (dir) {
 			case 'right':
-				this.setx(this.pos.x + speed);
+				this.setx(this.x + speed);
 				this.direction = 'right';
 				break;
 			case 'left':
-				this.setx(this.pos.x - speed);
+				this.setx(this.x - speed);
 				this.direction = 'left';
 				break;
 		}
@@ -544,20 +544,20 @@ export class Belmont extends Sprite {
 	protected checkWallCollision(): boolean {
 		switch (this.direction) {
 			case 'right':
-				return (model as Model).currentRoom.isCollisionTile(this.pos.x + 16, this.pos.y + 25) || (model as Model).currentRoom.isCollisionTile(this.pos.x + 16, this.pos.y + 31);
+				return (model as Model).currentRoom.isCollisionTile(this.x + 16, this.y + 25) || (model as Model).currentRoom.isCollisionTile(this.x + 16, this.y + 31);
 			case 'left':
-				return (model as Model).currentRoom.isCollisionTile(this.pos.x, this.pos.y + 25) || (model as Model).currentRoom.isCollisionTile(this.pos.x, this.pos.y + 31);
+				return (model as Model).currentRoom.isCollisionTile(this.x, this.y + 25) || (model as Model).currentRoom.isCollisionTile(this.x, this.y + 31);
 			default:
 				return false;
 		}
 	}
 
 	protected get CeilingCollision(): boolean {
-		return (model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.pos.y + 8) || (model as Model).currentRoom.isCollisionTile(this.wallhitbox_ex, this.pos.y + 8);
+		return (model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.y + 8) || (model as Model).currentRoom.isCollisionTile(this.wallhitbox_ex, this.y + 8);
 	}
 
 	protected get FloorCollision(): boolean {
-		return (model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.pos.y + 32) || (model as Model).currentRoom.isCollisionTile(this.wallhitbox_ex, this.pos.y + 32);
+		return (model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.y + 32) || (model as Model).currentRoom.isCollisionTile(this.wallhitbox_ex, this.y + 32);
 	}
 
 	protected handleFloorCollision(): void {
@@ -575,13 +575,13 @@ export class Belmont extends Sprite {
 	}
 
 	private nearRoomExit(): NearingRoomExitResult {
-		let exitUp = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 4); // 24
+		let exitUp = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_sx, this.y + 4); // 24
 		if (exitUp.destRoom !== Room.NO_ROOM_EXIT) return exitUp;
-		let exitRight = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_ex + 1, this.pos.y + 25);
+		let exitRight = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_ex + 1, this.y + 25);
 		if (exitRight.destRoom !== Room.NO_ROOM_EXIT) return exitRight;
-		let exitDown = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 36);
+		let exitDown = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_sx, this.y + 36);
 		if (exitDown.destRoom !== Room.NO_ROOM_EXIT) return exitDown;
-		let exitLeft = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_sx - 1, this.pos.y + 25);
+		let exitLeft = (model as Model).currentRoom.nearingRoomExit(this.wallhitbox_sx - 1, this.y + 25);
 		if (exitLeft.destRoom !== Room.NO_ROOM_EXIT) return exitLeft;
 
 		return null;

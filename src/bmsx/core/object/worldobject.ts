@@ -1,5 +1,5 @@
 import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../../ai/behaviourtree";
-import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap } from "../../component/basecomponent";
+import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, ComponentConstructor } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
 import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../../rompack/rompack";
@@ -49,6 +49,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		yield* this.components;
 	}
 
+	public *iterateComponentsByType<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): IterableIterator<T> {
+		const arr = this.components.filter(c => c instanceof constructor) as T[];
+		if (arr) yield* arr;
+	}
+
 	/**
 	 * Retrieves a component of the specified type from the world object.
 	 * Note: 'abstract' classes in TypeScript emit regular constructor functions at runtime.
@@ -59,26 +64,26 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param constructor - The constructor function of the component.
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
-	getComponents<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): T[] {
+	getComponents<T extends Component>(constructor: ComponentConstructor<T>): T[] {
 		const key = (constructor)?.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return arr ? [...arr] : [];
 	}
 
-	hasComponent<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): boolean {
+	hasComponent<T extends Component>(constructor: ComponentConstructor<T>): boolean {
 		const key = (constructor)?.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return !!arr && arr.length > 0;
 	}
 
-	getFirstComponent<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): T | undefined {
+	getFirstComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
 		const key = (constructor)?.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return arr && arr.length > 0 ? arr[0] : undefined;
 	}
 
 	/** Return the unique instance of a component type; throws if multiple are attached. */
-	getUniqueComponent<T extends Component>(constructor: ConcreteOrAbstractConstructor<T>): T | undefined {
+	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
 		const key = (constructor)?.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		if (!arr || arr.length === 0) return undefined;
@@ -96,22 +101,57 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	addComponent<T extends Component>(component: T): void {
 		// Ensure parent linkage is correct even if caller used legacy constructor
 		if (!component.parentid) component.parentid = this.id;
-		// Attach into type bucket array
-		const key = component.constructor?.name;
-		const bucket = (this.componentMap[key] ||= []);
-		// Assign unique id suffix if another instance with same base id exists
-		const baseId = `${component.parentid}_${key}`;
-		let suffix = 0;
-		let finalId = baseId;
-		const used = new Set(this.components.map(c => c.id));
-		while (used.has(finalId)) { finalId = `${baseId}_${++suffix}`; }
-		component.id = finalId;
-		// Insert
-		bucket.push(component);
 		this.components.push(component);
+		const key = component.constructor?.name;
+		let arr = this.componentMap[key];
+		if (!arr) {
+			arr = [];
+			this.componentMap[key] = arr;
+		}
+		arr.push(component);
+
 		// Late-init: bind component event subscriptions and perform registry registration here,
 		// after the component has been fully constructed and added to the container.
 		component.onloadSetup();
+	}
+
+	/**
+	 * Retrieves a component instance by its id or local_id.
+	 */
+	public getComponentById<T extends Component = Component>(id: string): T | undefined {
+		const found = this.components.find(c => c.id === id || c.id_local === id);
+		return found as T | undefined;
+	}
+
+	/**
+	 * Retrieves the Nth instance of a component type attached to this object.
+	 */
+	public getComponentAt<T extends Component>(constructor: ComponentConstructor<T>, index: number): T | undefined {
+		const key = (constructor)?.name;
+		const arr = this.componentMap[key] as T[] | undefined;
+		return arr ? arr[index] : undefined;
+	}
+
+	/**
+	 * Finds the first component of an optional type matching a predicate.
+	 */
+	public findComponent<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T | undefined {
+		const arr = constructor ? this.getComponents(constructor) : this.components as T[];
+		for (let i = 0; i < arr.length; i++) {
+			const c = arr[i];
+			if (predicate(c, i)) return c;
+		}
+		return undefined;
+	}
+
+	/**
+	 * Finds all components of an optional type matching a predicate.
+	 */
+	public findComponents<T extends Component>(predicate: (c: T, index: number) => boolean, constructor?: ComponentConstructor<T>): T[] {
+		const arr = constructor ? this.getComponents(constructor) : this.components as T[];
+		const out: T[] = [];
+		for (let i = 0; i < arr.length; i++) { if (predicate(arr[i], i)) out.push(arr[i]); }
+		return out;
 	}
 
 	/**

@@ -65,12 +65,12 @@ Provided by `src/bmsx/component/basecomponent.ts`.
   - Historical wrapper sequence: preprocessing(tagged) → original() → postprocessing(tagged, { params, returnvalue }).
 
 - `@attach_components(...ComponentClasses)`
-  - Class decorator on GameObject subclasses. Auto‑adds the listed component types when the object is spawned.
+  - Class decorator on WorldObject subclasses. Auto‑adds the listed component types when the object is spawned.
   - Inherits parent components and deduplicates by constructor.
 
 ### Lifecycle and binding
 
-- Component constructor no longer binds events. Binding happens once on add via `GameObject.addComponent` calling `component.onloadSetup()` (late‑init).
+- Component constructor no longer binds events. Binding happens once on add via `WorldObject.addComponent` calling `component.onloadSetup()` (late‑init).
 - Components remove their subscriptions on `dispose()` via `EventEmitter.removeSubscriber`.
 
 ### Performance note
@@ -90,7 +90,7 @@ Provided by `src/bmsx/core/eventemitter.ts`.
 
   - Method decorators that register subscription metadata on the class (stored in `eventSubscriptions`).
   - Binding occurs once per instance at late‑init:
-	- GameObject: `onLoadSetup()`
+	- WorldObject: `onLoadSetup()`
 	- Component: `onloadSetup()` (called by `addComponent` and during hydration)
   - Duplicate registration is prevented by the emitter.
 
@@ -160,7 +160,7 @@ export class PhysicsComponent extends Component {
   }
 }
 
-export class GameObject {
+export class WorldObject {
   @update_tagged_components("run") // Note that you need to match
   run() {
     /* ... */
@@ -168,7 +168,7 @@ export class GameObject {
 }
 
 @attach_components(PhysicsComponent)
-export class Player extends GameObject {
+export class Player extends WorldObject {
   @subscribesToSelfScopedEvent("damaged")
   onDamaged() {
     /* ... */

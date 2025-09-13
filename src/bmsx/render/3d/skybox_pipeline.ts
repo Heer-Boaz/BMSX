@@ -149,8 +149,9 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			if (!cam) return;
 			const tex = $.texmanager.getTexture(skyboxKey) as TextureHandle | undefined;
 			if (!tex) return;
-			// Update state with dynamic data
-			registry.setState('skybox', { width, height, view: cam.skyboxView, proj: cam.projection, tex });
+			// Update state with dynamic data (reuse camera matrices)
+			const mats = cam.getMatrices();
+			registry.setState('skybox', { width, height, view: cam.skyboxView, proj: mats.proj, tex });
 			registry.validatePassResources('skybox', backend);
 		},
 	});

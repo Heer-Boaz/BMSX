@@ -77,7 +77,7 @@ export abstract class SpriteObject extends WorldObject {
 	constructor(opts: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
 		super(opts);
 		// Attach base SpriteComponent (data-driven sprite handled by SpriteRenderSystem)
-		this.addComponent(new SpriteComponent({ parentid: this.id, imgid: 'none' }));
+		this.addComponent(new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: 'base_sprite' }));
 	}
 
 	// queueRenderSubmissions removed — handled by SpriteRenderSystem via SpriteComponent
