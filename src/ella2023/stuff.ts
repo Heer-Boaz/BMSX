@@ -92,7 +92,11 @@ export class TitleScreen extends SpriteObject {
 	private static readonly SELECT_PLAYER_2_Y = 160;
 	private cursorY: number;
 	private selectedPlayers: number;
-	private cursorVisible: boolean;
+	private get cursorVisible() { return this._cursorSprite.enabled; }
+	private set cursorVisible(visible: boolean) {
+		if (this._cursorSprite) this._cursorSprite.enabled = !!visible;
+	}
+
 	private _cursorSprite!: SpriteComponent;
 
 	@build_fsm()
@@ -137,12 +141,12 @@ export class TitleScreen extends SpriteObject {
 								$switch: 'players_2',
 							},
 							entering_state(this: TitleScreen, state: State) {
-						this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
-						this.selectedPlayers = 1;
-						this.cursorVisible = true;
-						state.parent.states.blink.reset();
-						if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1) as any;
-					},
+								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
+								this.selectedPlayers = 1;
+								this.cursorVisible = true;
+								state.parent.states.blink.reset();
+								if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
+							},
 						},
 						players_2: {
 							on: {
@@ -150,29 +154,29 @@ export class TitleScreen extends SpriteObject {
 								$players_1: 'players_1', // For resetting the TitleScreen state.
 							},
 							entering_state(this: TitleScreen, state: State) {
-						this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
-						this.selectedPlayers = 2;
-						this.cursorVisible = true;
-						state.parent.states.blink.reset();
-						if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1) as any;
-					},
+								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
+								this.selectedPlayers = 2;
+								this.cursorVisible = true;
+								state.parent.states.blink.reset();
+								if (this._cursorSprite) this._cursorSprite.offset = new_vec3(80, this.cursorY, 1);
+							},
 						},
 						blink: {
 							is_concurrent: true,
 							ticks2advance_tape: 20,
 							tape_data: [false, true],
 							auto_rewind_tape_after_end: true,
+							automatic_reset_mode: 'state', // So that when we re-enter the state, the tape is reset (default)
 							data: {
 								pause_blink: false,
 							},
 							entering_state(this: TitleScreen) {
-							this.cursorVisible = true;
-						},
-						tape_next(this: TitleScreen, state: State) {
-							if (state.data.pause_blink) return;
-							this.cursorVisible = state.current_tape_value;
-							if (this._cursorSprite) this._cursorSprite.enabled = !!this.cursorVisible;
-						},
+								this.cursorVisible = true;
+							},
+							tape_next(this: TitleScreen, state: State) {
+								if (state.data.pause_blink) return;
+								this.cursorVisible = state.current_tape_value;
+							},
 							states: {
 								_default: {
 									on: {

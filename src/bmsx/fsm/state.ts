@@ -5,7 +5,7 @@ import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
-import { STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX, type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType } from './fsmtypes';
+import { STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX, type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType, type StateEventDefinition, type TickCheckDefinition } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
 
 const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start of the tape, so that the first index of the tape is considered when the `next`-event is triggered
@@ -16,6 +16,10 @@ const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start
  * @template T - The type of the world object or model associated with the state.
  */
 export class State<T extends Stateful = Stateful> implements Identifiable {
+	/** Optional diagnostics toggles for development. */
+	public static diagnostics = {
+		logParentFallback: false,
+	};
 	/**
 	 * The identifier of this specific instance of the state machine.
 	* @see {@link make_id}
@@ -50,17 +54,17 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	/**
 	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link StateMachineController.current_machine}.
 	 */
-	get is_concurrent(): boolean { return this.definition?.is_concurrent; }
+	get is_concurrent(): boolean { return !!this.definition?.is_concurrent; }
 
 	/**
 	 * Identifier of the current state.
 	 */
 	currentid!: Identifier; // Identifier of current state
 
-	/**
-	 * History of previous states.
-	 */
-	past_states!: Array<Identifier>; // History of previous state (as ids)
+	/** Ring buffer for previous states (history). */
+	private _hist!: Identifier[];
+	private _histHead!: number;
+	private _histSize!: number;
 
 	/**
 	 * Indicates whether the execution is paused.
@@ -114,6 +118,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private critical_section_counter: number;
 
 	/**
+	 * Indicates whether we are currently draining the transition queue.
+	 */
+	private is_processing_queue: boolean;
+
+	/**
 	 * Represents the transition queue of the state machine.
 	 * @property {Array<{ state_id: Identifier, args: any[] }>} transition_queue - The array of transition objects.
 	 */
@@ -134,7 +143,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private leaveCriticalSection(): void {
 		--this.critical_section_counter;
 		if (this.critical_section_counter === 0) {
-			this.process_transition_queue();
+			if (!this.is_processing_queue) this.process_transition_queue();
 		}
 		else if (this.critical_section_counter < 0) {
 			throw new Error(`Critical section counter was lower than 0, which is obviously a bug. State: "${this.id}, StateDefId: "${this.def_id}.`);
@@ -142,15 +151,31 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	}
 
 	/**
+	 * Executes a function within a critical section and ensures the section is exited.
+	 */
+	private withCriticalSection<T>(fn: () => T): T {
+		this.enterCriticalSection();
+		try { return fn(); }
+		finally { this.leaveCriticalSection(); }
+	}
+
+	/**
 	 * Processes the transition queue by transitioning to the next state in the queue.
 	 * This method dequeues each state transition from the transition queue and transitions to the corresponding state.
 	 */
-	private process_transition_queue(): void {
-		while (this.transition_queue.length > 0) {
-			const state_transition = this.transition_queue.shift();
-			this.transitionToState(state_transition.state_id, state_transition.transition_type, ...state_transition.args);
-		}
-	}
+private process_transition_queue(): void {
+    if (this.is_processing_queue) return;
+    this.is_processing_queue = true;
+    try {
+        for (let i = 0; i < this.transition_queue.length; i++) {
+            const t = this.transition_queue[i];
+            this.transitionToState(t.state_id, t.transition_type, ...t.args);
+        }
+        this.transition_queue.length = 0;
+    } finally {
+        this.is_processing_queue = false;
+    }
+}
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -194,6 +219,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			this.id = this.make_id();
 			this.transition_queue = [];
 			this.critical_section_counter = 0;
+			this.is_processing_queue = false;
+			// Initialize history ring buffer
+			this._hist = new Array(BST_MAX_HISTORY);
+			this._histHead = 0;
+			this._histSize = 0;
 			// Registry.instance.register(this);
 		}
 	}
@@ -203,19 +233,14 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Performs the setup logic when the component is loaded.
 	 */
 	public onLoadSetup(): void {
-		// Link parent/root references after revive using the existing tree shape.
-		// If no parent is wired, treat this as a root node.
-		// if (!this.parent_ref) this.root_ref = this;
-		// Wire children to this as parent and propagate root
-		// if (this.states) {
-		//     for (const id in this.states) {
-		//         const child = this.states[id];
-		//         if (child) {
-		//             child.parent_ref = this;
-		//             child.root_ref = this.root;
-		//         }
-		//     }
-		// }
+		// Restore parent/root links after revive
+		if (!this.parent_ref) this.root_ref = this.root_ref ?? this;
+		if (this.states) {
+			for (const child of Object.values(this.states)) {
+				child.parent_ref = this;
+				child.root_ref = this.root;
+			}
+		}
 	}
 
 	/**
@@ -233,12 +258,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const startStateDef = this.get_sstate(startStateId)?.definition; // Get the start state definition from the state machine definition
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
-		this.enterCriticalSection();
-		startStateDef?.entering_state?.call(this.target, this.get_sstate(startStateId));
-		this.leaveCriticalSection();
+		this.withCriticalSection(() => {
+			startStateDef?.entering_state?.call(this.target, this.get_sstate(startStateId));
+		});
 
 		// Start the state machine for the current active state
-		this.states[startStateId].start();
+		this.states[startStateId]?.start();
 	}
 
 	/**
@@ -250,24 +275,24 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	tick(): void {
 		if (!this.definition || this.paused) return;
 
-		this.enterCriticalSection();
+		this._transitionsThisTick = 0;
+		this.in_tick = true;
 		try {
+			this.withCriticalSection(() => {
 			if (!Registry.instance.has(this.id)) {
 				Registry.instance.register(this);
 			}
 			// Run states first
 			this.runSubstateMachines();
-
 			// Process input for the current state
 			this.processInput();
-
 			// Run the current state's logic
 			this.runCurrentState();
-
 			// Execute run checks
 			this.doRunChecks();
+			});
 		} finally {
-			this.leaveCriticalSection();
+			this.in_tick = false;
 		}
 	}
 
@@ -295,11 +320,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (!inputHandlers) return;
 
 		const playerIndex = this.target.player_index ?? 1;
+		const p = Input.instance.getPlayerInput(playerIndex);
 
 		for (const inputPattern in inputHandlers) {
 			const handler = inputHandlers[inputPattern];
-			if (Input.instance.getPlayerInput(playerIndex).checkActionTriggered(inputPattern)) {
-				Input.instance.getPlayerInput(playerIndex).consumeAction(inputPattern);
+			if (p.checkActionTriggered(inputPattern)) {
+				p.consumeAction(inputPattern);
 				this.handleStateTransition(handler);
 			}
 		}
@@ -326,7 +352,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	runSubstateMachines(): void {
 		if (!this.states) return;
 
-		this.current.tick();
+		const cur = this.current;
+		if (cur) cur.tick();
 		for (const id in this.states) {
 			if (id === this.currentid) continue;
 			if (this.states[id].is_concurrent) this.states[id].tick();
@@ -351,22 +378,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If a run check condition is met, it might transition to the next state based on the provided logic.
 	 */
 	runChecksForCurrentState(): void {
-		const run_checks = this.definition.run_checks;
-		if (!run_checks) return;
+		const checks = this.definition.run_checks;
+		if (!checks) return;
 
-		for (const run_check of run_checks) {
-			if (run_check.if.call(this.target, this)) {
-				const handled = this.handleStateTransition(run_check.do);
-				if (handled) {
-					break;
-				}
-				if (run_check.to) {
-					this.transitionToNextStateIfProvided(run_check.to);
-				} else if (run_check.switch) {
-					this.transitionToNextStateIfProvided(run_check.switch, true);
-				}
-				break;
-			}
+		for (const rc of checks) {
+			if (!rc.if?.call(this.target, this)) continue;
+			this.handleStateTransition(rc);
+			break; // First passing check wins
 		}
 	}
 
@@ -419,12 +437,14 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public transition_to_path(path: string | string[], ...args: any[]): void {
 		const [currentPart, restParts, currentContext] = this.handle_path(path);
 
+		// Transition here unless the path explicitly continues deeper via a leading machine id
 		if (this.def_id !== currentPart || restParts.length === 0) {
 			if (!currentContext.is_concurrent) { // If the state is not running in parallel, set it as the current state
 				this.transitionToState(currentPart, 'to', ...args);
 			}
 		}
 
+		// Continue traversing the path, if any
 		if (restParts.length > 0) {
 			currentContext.transition_to_path(restParts, ...args);
 		}
@@ -463,26 +483,36 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-	transition_to(state_id: Identifier, ...args: any[]): void {
-		if (state_id.startsWith(`${STATE_THIS_PREFIX}.`)) { // If the state is local, switch to the state in the current state machine
+	transition_to(state_id: Identifier, ...args: any[]): void;
+	transition_to(transition: StateTransition, ...args: any[]): void;
+	transition_to(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
+		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
+		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+
+		if (state_id.startsWith(`${STATE_THIS_PREFIX}.`)) { // If the state is explicitly local, switch in this machine
 			// Remove the `${STATE_THIS_PREFIX}.` prefix and continue to the next state from the substate
 			const restParts = state_id.slice(`${STATE_THIS_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the current state machine
-			this.transition_to_path(restParts, ...args);
+			this.transition_to_path(restParts, ...extraArgs);
 		}
 		else if (state_id.startsWith(`${STATE_ROOT_PREFIX}.`)) { // If the state is in the root, switch to the state in the root state machine
 			// Remove the `${STATE_ROOT_PREFIX}.` prefix and continue to the next state from the root
 			const restParts = state_id.slice(`${STATE_ROOT_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the root state machine
-			this.root.transition_to_path(restParts, ...args);
+			this.root.transition_to_path(restParts, ...extraArgs);
 		}
-		else { // If the state is not local, check if it is a state in the parent state machine or a state in the root state machine hierarchy
-			if (this.parent) { // If there is a parent, switch to the state in the parent state machine
-				this.parent.transition_to_path(state_id, ...args); // Switch to the state in the parent state machine
+		else if (state_id.startsWith(`${STATE_PARENT_PREFIX}.`)) {
+			const restParts = state_id.slice(`${STATE_PARENT_PREFIX}.`.length);
+			if (!this.parent) throw new Error(`Cannot transition via '${STATE_PARENT_PREFIX}' from root state.`);
+			this.parent.transition_to_path(restParts, ...extraArgs);
+		}
+		else {
+			// Default: resolve in parent if available, otherwise local
+			if (this.parent && State.diagnostics?.logParentFallback) {
+				console.debug(`[FSM] ${this.id}: unprefixed transition '${state_id}' resolved via parent '${this.parent.id}'.`);
 			}
-			else { // If there is no parent, this is the root state machine, so we can just switch to the state in the current state machine
-				this.transition_to_path(state_id, ...args); // Switch to the state in the current state machine
-			}
+			if (this.parent) this.parent.transition_to_path(state_id, ...extraArgs);
+			else this.transition_to_path(state_id, ...extraArgs);
 		}
 	}
 
@@ -500,29 +530,38 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-	switch_to_state(state_id: Identifier, ...args: any[]): void {
+	switch_to_state(state_id: Identifier, ...args: any[]): void;
+	switch_to_state(transition: StateTransition, ...args: any[]): void;
+	switch_to_state(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
+		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
+		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+
 		if (state_id.startsWith(`${STATE_THIS_PREFIX}.`)) {
 			// Remove the `${STATE_THIS_PREFIX}.` prefix and continue to the next state from the substate
 			const restParts = state_id.slice(`${STATE_THIS_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the current state machine
-			this.transition_switch_path(restParts, ...args);
+			this.transition_switch_path(restParts, ...extraArgs);
 		}
 		else if (state_id.startsWith(`${STATE_PARENT_PREFIX}.`)) {
 			// Remove the `${STATE_PARENT_PREFIX}.` prefix and continue to the next state from the parent
 			const restParts = state_id.slice(`${STATE_PARENT_PREFIX}.`.length);
 			if (!this.parent) throw new Error(`Cannot switch via '${STATE_PARENT_PREFIX}' from root state.`);
 			// If there are more parts, switch to the state in the parent state machine
-			this.parent.transition_switch_path(restParts, ...args);
+			this.parent.transition_switch_path(restParts, ...extraArgs);
 		}
 		else if (state_id.startsWith(`${STATE_ROOT_PREFIX}.`)) {
 			// Remove the `${STATE_ROOT_PREFIX}.` prefix and continue to the next state from the root
 			const restParts = state_id.slice(`${STATE_ROOT_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the root state machine
-			this.root.transition_switch_path(restParts, ...args);
+			this.root.transition_switch_path(restParts, ...extraArgs);
 		}
 		else {
-			if (this.parent) this.parent.transition_switch_path(state_id, ...args);
-			else this.transition_switch_path(state_id, ...args);
+			// Default: resolve in parent if available, otherwise local
+			if (this.parent && State.diagnostics?.logParentFallback) {
+				console.debug(`[FSM] ${this.id}: unprefixed switch '${state_id}' resolved via parent '${this.parent.id}'.`);
+			}
+			if (this.parent) this.parent.transition_switch_path(state_id, ...extraArgs);
+			else this.transition_switch_path(state_id, ...extraArgs);
 		}
 	}
 
@@ -547,10 +586,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			return this.currentid === stateid;
 		}
 
+		if (!this.states) return false;
 		const state = this.states[stateid];
-		if (!state) {
-			throw new Error(`No state with ID '${stateid}'`);
-		}
+		if (!state) return false;
 
 		// If there are more parts, check the state of the substate with the given path
 		return state.matches_state_path(substateids);
@@ -591,54 +629,53 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param args - Optional arguments to pass to the state's enter and exit actions.
 	 * @throws Error - If the state with the specified ID doesn't exist or if the target state is parallel.
 	 */
+	private _transitionsThisTick = 0;
+	private in_tick = false;
+	private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
+
 	private transitionToState(state_id: Identifier, transition_type: TransitionType, ...args: any[]): void {
+		if (this.in_tick) {
+			if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
+				throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
+			}
+		}
+
 		if (this.critical_section_counter > 0) {
-			this.transition_queue.push({ state_id: state_id, args: args, transition_type: transition_type ?? 'to' });
+			this.transition_queue.push({ state_id, args, transition_type: transition_type ?? 'to' });
 			return;
 		}
 
-		if (transition_type === 'switch') {
-			// The switch transition type is used to switch to a new state, expect if the state is already the current state
-			if (this.currentid === state_id) return;
-		}
+		if (transition_type === 'switch' && this.currentid === state_id) return;
 
 		// If any state guard conditions fail, prevent the transition
 		if (!this.checkStateGuardConditions(state_id)) return;
 
-		// Perform exit actions for the current state
-		let stateDef = this.current_state_definition;
-		this.enterCriticalSection();
-		stateDef?.exiting_state?.call(this.target, this.current, ...args);
-		this.leaveCriticalSection();
-		stateDef && this.pushHistory(this.currentid);
+		this.withCriticalSection(() => {
+			const prevId = this.currentid;
+			const prevDef = this.current_state_definition;
 
-		// Update the current state
-		this.currentid = state_id;
-		if (!this.current) throw new Error(`State '${state_id}' doesn't exist for this state machine '${this.def_id}'!`);
+			// Exit previous state
+			prevDef?.exiting_state?.call(this.target, this.current, ...args);
+			if (prevDef) this.pushHistory(prevId);
 
-		// Perform enter actions for the new current state
-		stateDef = this.current_state_definition;
-		if (!stateDef) return; // There is no definition for the none-state, so we don't trigger the enter event for that state.
-		if (stateDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
+			// Switch current id
+			this.currentid = state_id;
+			const cur = this.current;
+			const curDef = this.current_state_definition;
+			if (!cur || !curDef) return; // No definition for the none-state
+			if (curDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
-		/**
-		 * If the auto_reset propert is set to 'state', reset the state machine of the current state.
-		 * If the auto_reset propert is set to 'tree', reset the state machine of the current state and all its substate machines.
-		 * If the auto_reset propert is set to 'subtree', reset the substate machine of the current state, but not the current state itself.
-		 * If the auto_reset property is set to 'none', do not reset any state machines.
-		 */
-		if (stateDef.automatic_reset_mode) {
-			switch (stateDef.automatic_reset_mode) {
-				case 'state': this.current.reset(false); break; // Reset the state machine of the current state (but not its substate machines)
-				case 'tree': this.current.reset(true); break; // Reset the state machine of the current state and all its substate machines
-				case 'subtree': this.current.resetSubmachine(true); break; // Reset the substate machine of the current state
-				case 'none': break; // Do nothing (i.e., don't reset any state machines)
+			// Automatic reset behavior
+			switch (curDef.automatic_reset_mode) {
+				case 'state': cur.reset(false); break;
+				case 'tree': cur.reset(true); break;
+				case 'subtree': cur.resetSubmachine(true); break;
 			}
-		}
-		this.enterCriticalSection();
-		const next_state = stateDef?.entering_state?.call(this.target, this.current, ...args);
-		this.leaveCriticalSection();
-		this.current.transitionToNextStateIfProvided(next_state);
+
+			// Enter new state and possibly chain to next state
+			const next = curDef.entering_state?.call(this.target, cur, ...args);
+			cur.transitionToNextStateIfProvided(next);
+		});
 	}
 
 	/**
@@ -762,44 +799,52 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 	}
 
-	private handleStateTransition(state_id_or_handler: any, ...args: any[]): boolean {
-		if (typeof state_id_or_handler === 'string') {
-			this.transition_to(state_id_or_handler, ...args);
-		} else {
-			const ifHandler = state_id_or_handler.if;
-			const doHandler = state_id_or_handler.do;
-			const to_state = state_id_or_handler.to;
-			const switch_state = state_id_or_handler.switch;
+	private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition | undefined, ...args: any[]): boolean {
+		if (!action) return false;
 
-			if (ifHandler && !ifHandler.call(this.target, this as State<T>, ...args)) {
-				return false;
-			}
+		// Simple string → always a transition, thus handled.
+		if (typeof action === 'string') {
+			this.transition_to(action, ...args);
+			return true;
+		}
 
-			const next_state = doHandler?.call(this.target, this as State<T>, ...args);
-			const next_state_transition = this.getNextState(next_state);
-			if (next_state_transition && (next_state_transition.force_transition_to_same_state && next_state_transition.transition_type != 'to')) {
-				throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
-			}
+		const cond = action.if;
+		if (cond && !cond.call(this.target, this as State<T>, ...args)) return false;
 
-			if (next_state_transition && (next_state_transition.state_id !== this.currentid || next_state_transition.force_transition_to_same_state)) {
-				if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
-					this.transition_to(next_state_transition.state_id, ...next_state_transition.args, ...args);
-				} else if (next_state_transition.transition_type === 'switch') {
-					this.switch_to_state(next_state_transition.state_id, ...next_state_transition.args, ...args);
+		let handled = false;
+
+		// Run 'do' and interpret optional next state
+		if (action.do) {
+			const next = this.getNextState(action.do.call(this.target, this as State<T>, ...args));
+			if (next) {
+				handled = true;
+				if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
+					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
 				}
-			} else if (to_state) {
-				const to_state_transition = this.getNextState(to_state);
-				if (to_state_transition) {
-					this.transition_to(to_state_transition.state_id, ...to_state_transition.args, ...args);
-				}
-			} else if (switch_state) {
-				const switch_state_transition = this.getNextState(switch_state);
-				if (switch_state_transition) {
-					this.switch_to_state(switch_state_transition.state_id, ...switch_state_transition.args, ...args);
-				}
+				next.transition_type === 'switch'
+					? this.switch_to_state(next.state_id, ...(next.args ?? []), ...args)
+					: this.transition_to(next.state_id, ...(next.args ?? []), ...args);
+			} else {
+				handled = true; // do() ran and consumed the event
 			}
 		}
-		return true;
+
+		// Fallback explicit transitions if do() did not transition
+		if (!handled && action.to) {
+			const t = this.getNextState(action.to);
+			if (t) {
+				this.transition_to(t.state_id, ...(t.args ?? []), ...args);
+				handled = true;
+			}
+		} else if (!handled && action.switch) {
+			const s = this.getNextState(action.switch);
+			if (s) {
+				this.switch_to_state(s.state_id, ...(s.args ?? []), ...args);
+				handled = true;
+			}
+		}
+
+		return handled;
 	}
 
 	/**
@@ -808,9 +853,15 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param toPush - the state ID to add to the history stack
 	 */
 	protected pushHistory(toPush: Identifier): void {
-		this.past_states.push(toPush);
-		if (this.past_states.length > BST_MAX_HISTORY)
-			this.past_states.shift(); // Remove the first element in the history-array
+		const cap = BST_MAX_HISTORY;
+		const tailIndex = (this._histHead + this._histSize) % cap;
+		this._hist[tailIndex] = toPush;
+		if (this._histSize < cap) {
+			this._histSize++;
+		} else {
+			// Buffer full: advance head to overwrite oldest
+			this._histHead = (this._histHead + 1) % cap;
+		}
 	}
 
 	/**
@@ -818,9 +869,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If there is no previous state, nothing happens.
 	 */
 	public pop_and_transition(): void {
-		if (this.past_states.length <= 0) return;
-		let poppedStateId = this.past_states.pop();
-		poppedStateId && this.transition_to(poppedStateId);
+		if (this._histSize <= 0) return;
+		const cap = BST_MAX_HISTORY;
+		const tailIndex = (this._histHead + this._histSize - 1 + cap) % cap;
+		const poppedStateId = this._hist[tailIndex];
+		this._histSize--;
+		if (poppedStateId) this.transition_to(poppedStateId);
 	}
 
 	/**
@@ -876,9 +930,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If there is no tape or the tape head is beyond the end of the tape, returns undefined.
 	 */
 	public get current_tape_value(): any {
-		if (!this.tape || this.tape.length === 0) return undefined;
-		const current_index = Math.max(0, Math.min(this.tapehead_position, this.tape.length - 1));
-		return this.tape[current_index];
+		const t = this.tape;
+		const i = this.tapehead_position;
+		if (!t || t.length === 0) return undefined;
+		if (i < 0 || i >= t.length) return undefined;
+		return t[i];
 	}
 
 	/**
@@ -920,6 +976,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public dispose(): void {
 		// Also deregister all states
+		if (!this.states) return;
 		for (let state in this.states) {
 			this.states[state].dispose();
 		}
@@ -1104,7 +1161,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		// N.B. doesn't trigger the onenter-event!
 		const start = this.definition?.initial; // Definition doesn't need to exist
 		this.currentid = start; // Set the current state to the start state (if it exists)
-		this.past_states = new Array();
+		// Reset history ring buffer
+		this._histHead = 0;
+		this._histSize = 0;
 		this.paused = false;
 		if (!this.definition) return; // If the definition doesn't exist, the state machine is empty and there is nothing to reset
 		this.data = { ...this.definition.data }; // Reset the state machine data by shallow copying the definition's data
