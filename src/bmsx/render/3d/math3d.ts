@@ -529,38 +529,38 @@ export function sphereInFrustum(planes: Plane[], center: [number, number, number
 
 // Packed, allocation-free version: writes 6 planes (24 floats) into `out`
 export function extractFrustumPlanesInto(out: Float32Array, vp: Mat4Float32): Float32Array {
-    // out length should be >= 24
-    const m = vp;
-    // left
-    out[0] = m[3] + m[0]; out[1] = m[7] + m[4]; out[2] = m[11] + m[8]; out[3] = m[15] + m[12];
-    // right
-    out[4] = m[3] - m[0]; out[5] = m[7] - m[4]; out[6] = m[11] - m[8]; out[7] = m[15] - m[12];
-    // bottom
-    out[8] = m[3] + m[1]; out[9] = m[7] + m[5]; out[10] = m[11] + m[9]; out[11] = m[15] + m[13];
-    // top
-    out[12] = m[3] - m[1]; out[13] = m[7] - m[5]; out[14] = m[11] - m[9]; out[15] = m[15] - m[13];
-    // near
-    out[16] = m[3] + m[2]; out[17] = m[7] + m[6]; out[18] = m[11] + m[10]; out[19] = m[15] + m[14];
-    // far
-    out[20] = m[3] - m[2]; out[21] = m[7] - m[6]; out[22] = m[11] - m[10]; out[23] = m[15] - m[14];
+	// out length should be >= 24
+	const m = vp;
+	// left
+	out[0] = m[3] + m[0]; out[1] = m[7] + m[4]; out[2] = m[11] + m[8]; out[3] = m[15] + m[12];
+	// right
+	out[4] = m[3] - m[0]; out[5] = m[7] - m[4]; out[6] = m[11] - m[8]; out[7] = m[15] - m[12];
+	// bottom
+	out[8] = m[3] + m[1]; out[9] = m[7] + m[5]; out[10] = m[11] + m[9]; out[11] = m[15] + m[13];
+	// top
+	out[12] = m[3] - m[1]; out[13] = m[7] - m[5]; out[14] = m[11] - m[9]; out[15] = m[15] - m[13];
+	// near
+	out[16] = m[3] + m[2]; out[17] = m[7] + m[6]; out[18] = m[11] + m[10]; out[19] = m[15] + m[14];
+	// far
+	out[20] = m[3] - m[2]; out[21] = m[7] - m[6]; out[22] = m[11] - m[10]; out[23] = m[15] - m[14];
 
-    for (let i = 0; i < 24; i += 4) {
-        const nx = out[i], ny = out[i + 1], nz = out[i + 2];
-        const inv = 1 / Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-        out[i] *= inv; out[i + 1] *= inv; out[i + 2] *= inv; out[i + 3] *= inv;
-    }
-    return out;
+	for (let i = 0; i < 24; i += 4) {
+		const nx = out[i], ny = out[i + 1], nz = out[i + 2];
+		const inv = 1 / Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+		out[i] *= inv; out[i + 1] *= inv; out[i + 2] *= inv; out[i + 3] *= inv;
+	}
+	return out;
 }
 
 // Packed frustum test against Float32Array planes (24 floats)
 export function sphereInFrustumPacked(planes: Float32Array, center: [number, number, number], radius: number): boolean {
-    const x = center[0], y = center[1], z = center[2];
-    const bias = radius * 0.01;
-    for (let i = 0; i < 24; i += 4) {
-        const d = planes[i] * x + planes[i + 1] * y + planes[i + 2] * z + planes[i + 3];
-        if (d < -(radius + bias)) return false;
-    }
-    return true;
+	const x = center[0], y = center[1], z = center[2];
+	const bias = radius * 0.01;
+	for (let i = 0; i < 24; i += 4) {
+		const d = planes[i] * x + planes[i + 1] * y + planes[i + 2] * z + planes[i + 3];
+		if (d < -(radius + bias)) return false;
+	}
+	return true;
 }
 
 // ====== Quat helpers ======
