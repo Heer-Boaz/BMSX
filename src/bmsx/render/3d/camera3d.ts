@@ -1,6 +1,6 @@
 import { Oriented, vec3 } from '../../rompack/rompack';
 import { excludepropfromsavegame, insavegame, onload, onsave, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
-import { extractFrustumPlanes, M4, Mat4Float32, Plane, Q, quat, sphereInFrustum, V3 } from './math3d';
+import { extractFrustumPlanesInto, M4, Mat4Float32, Q, quat, sphereInFrustumPacked, V3 } from './math3d';
 
 // +-------------------------------------------------------------------------------------------------------------------------------------------------------------+
 // | Projectie                   | Type                    | Dieptevervorming      | Gebruikscase                 | Matrixelementen                              |
@@ -40,7 +40,7 @@ export class Camera implements Oriented {
 	@excludepropfromsavegame
 	private _vp: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
-	private _planes: Plane[] = [];
+	private _planesPacked: Float32Array = new Float32Array(24);
 	@excludepropfromsavegame
 	private _skyboxView: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
@@ -230,14 +230,28 @@ export class Camera implements Oriented {
 		M4.invertRigidInto(this._invView, this._view);
 		M4.invertInto(this._invProj, this._proj);
 		M4.mulInto(this._invVP, this._invProj, this._invView);
-		this._planes = extractFrustumPlanes(this._vp);
+		extractFrustumPlanesInto(this._planesPacked, this._vp);
 		this._dirty = false;
 	}
 
 	get view(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._view; }
 	get projection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._proj; }
 	get viewProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._vp; }
-	get frustumPlanes(): Plane[] { if (this._dirty) this.rebuild(); return this._planes; }
+	// On-demand unpacked planes for debug/compat (allocates)
+	get frustumPlanes(): [number, number, number, number][] {
+		if (this._dirty) this.rebuild();
+		const p = this._planesPacked;
+		return [
+			[p[0], p[1], p[2], p[3]],
+			[p[4], p[5], p[6], p[7]],
+			[p[8], p[9], p[10], p[11]],
+			[p[12], p[13], p[14], p[15]],
+			[p[16], p[17], p[18], p[19]],
+			[p[20], p[21], p[22], p[23]],
+		];
+	}
+
+	get frustumPlanesPacked(): Float32Array { if (this._dirty) this.rebuild(); return this._planesPacked; }
 	get skyboxView(): Mat4Float32 { return M4.skyboxFromViewInto(this._skyboxView, this.view); }
 	get inverseView(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invView; }
 	get inverseProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invProj; }
@@ -251,7 +265,7 @@ export class Camera implements Oriented {
 
 	sphereInFrustum(center: [number, number, number], radius: number): boolean {
 		if (this._dirty) this.rebuild();
-		return sphereInFrustum(this._planes, center, radius);
+		return sphereInFrustumPacked(this._planesPacked, center, radius);
 	}
 
 	// ====== Euler <-> Quat sync (optioneel voor UI/serialisatie) ======

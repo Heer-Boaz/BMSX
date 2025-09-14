@@ -59,7 +59,7 @@ export class TransformComponent extends Component<WorldObject> {
 		);
 		if (this._parentNode) {
 			const pw = this._parentNode.getWorldMatrix();
-			M4.mulInto(this.worldMatrix, pw, this.localMatrix);
+			M4.mulAffineInto(this.worldMatrix, pw, this.localMatrix);
 		} else {
 			M4.copyInto(this.worldMatrix, this.localMatrix);
 		}

@@ -97,10 +97,10 @@ export class bclass extends SpriteObject {
 
 						this.sc.machines.bclass_animation.transition_to('ani1');
 						if (this.sc.matches_state_path('bclass_meuk.meuk1.blupperblop1')) {
-							return this.sc.transition_to('bclass_meuk.meuk1.blupperblop1'); // Ugly, transitioning another state machine
+							return this.sc.transition_to('bclass_meuk.meuk1/blupperblop1'); // Ugly, transitioning another state machine
 						}
 						else {
-							return this.sc.transition_to('bclass_meuk.meuk1.blupperblop2'); // Ugly, transitioning another state machine
+							return this.sc.transition_to('bclass_meuk.meuk1/blupperblop2'); // Ugly, transitioning another state machine
 						}
 				}
 			}

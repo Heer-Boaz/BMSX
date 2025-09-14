@@ -2,6 +2,11 @@ import type { vec3, vec3arr, vec4arr } from '../../rompack/rompack';
 
 export type Mat4Float32 = Float32Array;
 
+// Matrix convention:
+// - Column-major storage (WebGL/OpenGL style)
+// - Right-multiply transforms (out = A * B applies B after A)
+// - Right-handed coordinate system with -Z forward for views
+
 // Reusable scratch matrices to reduce allocations in compound M4 builders
 const _M4TMP_A = new Float32Array(16);
 const _M4TMP_B = new Float32Array(16);
@@ -22,17 +27,53 @@ export const M4 = {
 	},
 
 	// ----- multiply -----
-	// out = a * b   (safe when out===a; not safe when out===b → copy b)
+	// out = a * b   (alias-safe; avoids allocations)
 	mulInto(out: Mat4Float32, a: Mat4Float32, b: Mat4Float32): Mat4Float32 {
-		let bb: Float32Array | undefined;
-		if (out === b) { bb = new Float32Array(16); bb.set(b); b = bb as Mat4Float32; }
+		// Snapshot b to avoid aliasing when out === b
+		const b0 = b[0],  b1 = b[1],  b2 = b[2],  b3 = b[3];
+		const b4 = b[4],  b5 = b[5],  b6 = b[6],  b7 = b[7];
+		const b8 = b[8],  b9 = b[9],  b10 = b[10], b11 = b[11];
+		const b12 = b[12], b13 = b[13], b14 = b[14], b15 = b[15];
 		for (let i = 0; i < 4; ++i) {
 			const ai0 = a[i], ai1 = a[i + 4], ai2 = a[i + 8], ai3 = a[i + 12];
-			out[i] = ai0 * b[0] + ai1 * b[1] + ai2 * b[2] + ai3 * b[3];
-			out[i + 4] = ai0 * b[4] + ai1 * b[5] + ai2 * b[6] + ai3 * b[7];
-			out[i + 8] = ai0 * b[8] + ai1 * b[9] + ai2 * b[10] + ai3 * b[11];
-			out[i + 12] = ai0 * b[12] + ai1 * b[13] + ai2 * b[14] + ai3 * b[15];
+			out[i]      = ai0 * b0  + ai1 * b1  + ai2 * b2  + ai3 * b3;
+			out[i + 4]  = ai0 * b4  + ai1 * b5  + ai2 * b6  + ai3 * b7;
+			out[i + 8]  = ai0 * b8  + ai1 * b9  + ai2 * b10 + ai3 * b11;
+			out[i + 12] = ai0 * b12 + ai1 * b13 + ai2 * b14 + ai3 * b15;
 		}
+		return out;
+	},
+
+	// Specialized affine multiply (assumes last row [0,0,0,1] for both)
+	mulAffineInto(out: Mat4Float32, a: Mat4Float32, b: Mat4Float32): Mat4Float32 {
+		const a00 = a[0], a01 = a[4], a02 = a[8],  a03 = a[12];
+		const a10 = a[1], a11 = a[5], a12 = a[9],  a13 = a[13];
+		const a20 = a[2], a21 = a[6], a22 = a[10], a23 = a[14];
+
+		const b0 = b[0], b1 = b[1], b2 = b[2];
+		const b4 = b[4], b5 = b[5], b6 = b[6];
+		const b8 = b[8], b9 = b[9], b10 = b[10];
+		const b12 = b[12], b13 = b[13], b14 = b[14];
+
+		// 3x3 rotation-scale
+		out[0]  = a00 * b0  + a01 * b1  + a02 * b2;
+		out[4]  = a00 * b4  + a01 * b5  + a02 * b6;
+		out[8]  = a00 * b8  + a01 * b9  + a02 * b10;
+
+		out[1]  = a10 * b0  + a11 * b1  + a12 * b2;
+		out[5]  = a10 * b4  + a11 * b5  + a12 * b6;
+		out[9]  = a10 * b8  + a11 * b9  + a12 * b10;
+
+		out[2]  = a20 * b0  + a21 * b1  + a22 * b2;
+		out[6]  = a20 * b4  + a21 * b5  + a22 * b6;
+		out[10] = a20 * b8  + a21 * b9  + a22 * b10;
+
+		// translation
+		out[12] = a00 * b12 + a01 * b13 + a02 * b14 + a03;
+		out[13] = a10 * b12 + a11 * b13 + a12 * b14 + a13;
+		out[14] = a20 * b12 + a21 * b13 + a22 * b14 + a23;
+
+		out[3] = 0; out[7] = 0; out[11] = 0; out[15] = 1;
 		return out;
 	},
 	copyInto(out: Mat4Float32, src: Mat4Float32): Mat4Float32 { out.set(src); return out; },
@@ -108,7 +149,7 @@ export const M4 = {
 	fromTRSInto(out: Mat4Float32, t?: [number, number, number], q?: vec4arr, s?: [number, number, number]): Mat4Float32 {
 		M4.setIdentity(out);
 		if (t) M4.translateSelf(out, t[0], t[1], t[2]);
-		if (q) { M4.quatToMat4Into(_M4TMP_A, q); M4.mulInto(out, out, _M4TMP_A); }
+		if (q) { M4.quatToMat4Into(_M4TMP_A, q); M4.mulAffineInto(out, out, _M4TMP_A); }
 		if (s) M4.scaleSelf(out, s[0], s[1], s[2]);
 		return out;
 	},
@@ -142,9 +183,11 @@ export const M4 = {
 		return out;
 	},
 
-	panoramaInto(out: Mat4Float32, fovRad: number, aspect: number, near: number, far: number): Mat4Float32 {
-		const hfov = fovRad; const vfov = (Math.abs(aspect) > 1e-6) ? (hfov / aspect) : hfov;
-		const sx = 1 / Math.tan(hfov / 2); const sy = 1 / Math.tan(vfov / 2);
+	panoramaInto(out: Mat4Float32, hfov: number, aspect: number, near: number, far: number): Mat4Float32 {
+		const t = Math.tan(hfov * 0.5);
+		const vfov = (Math.abs(aspect) > 1e-6) ? (2 * Math.atan(t / aspect)) : hfov;
+		const sx = 1 / t;
+		const sy = 1 / Math.tan(vfov * 0.5);
 		const nf = 1 / (near - far);
 		out[0] = sx; out[1] = 0; out[2] = 0; out[3] = 0;
 		out[4] = 0; out[5] = sy; out[6] = 0; out[7] = 0;
@@ -165,7 +208,7 @@ export const M4 = {
 		s[4] = 0; s[5] = 1; s[6] = 0; s[7] = 0;
 		s[8] = 1 / Math.tan(alphaRad); s[9] = 1 / Math.tan(betaRad); s[10] = 1; s[11] = 0;
 		s[12] = 0; s[13] = 0; s[14] = 0; s[15] = 1;
-		return M4.mulInto(out, s, a);
+		return M4.mulAffineInto(out, s as Mat4Float32, a as Mat4Float32);
 	},
 	asymmetricFrustumInto(out: Mat4Float32, l: number, r: number, b: number, t: number, n: number, f: number): Mat4Float32 {
 		const rl = r - l, bt = t - b, fn = f - n;
@@ -199,7 +242,7 @@ export const M4 = {
 		const sz = Math.hypot(m[8], m[9], m[10]);
 		return [sx, sy, sz];
 	},
-	maxScale(m: Mat4Float32): number { const [sx, sy, sz] = this.extractScale(m); return Math.max(sx, sy, sz) || 1; },
+	maxScale(m: Mat4Float32): number { const [sx, sy, sz] = M4.extractScale(m); return Math.max(sx, sy, sz) || 1; },
 
 	// Inverse for general affine transform (upper-left 3x3 invertible)
 	invertAffineInto(out: Mat4Float32, m: Mat4Float32): Mat4Float32 {
@@ -274,14 +317,27 @@ export const M4 = {
 	// LookAt view matrix (right-handed, -Z forward)
 	lookAtInto(out: Mat4Float32, eye: vec3, target: vec3, up: vec3): Mat4Float32 {
 		// f = normalize(target - eye)
-		let fx = target.x - eye.x, fy = target.y - eye.y, fz = target.z - eye.z; { const l = Math.hypot(fx, fy, fz) || 1; fx /= l; fy /= l; fz /= l; }
-		// r = normalize(cross(f, up))
-		let rx = fy * up.z - fz * up.y; let ry = fz * up.x - fx * up.z; let rz = fx * up.y - fy * up.x; { const l = Math.hypot(rx, ry, rz) || 1; rx /= l; ry /= l; rz /= l; }
+		let fx = target.x - eye.x, fy = target.y - eye.y, fz = target.z - eye.z; {
+			const l = Math.hypot(fx, fy, fz) || 1; fx /= l; fy /= l; fz /= l;
+		}
+		// r = normalize(cross(f, up)), with degeneracy fallback
+		let rx = fy * up.z - fz * up.y;
+		let ry = fz * up.x - fx * up.z;
+		let rz = fx * up.y - fy * up.x;
+		let rl = Math.hypot(rx, ry, rz);
+		if (rl < 1e-8) {
+			const alt = Math.abs(fx) < 0.99 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+			rx = fy * alt.z - fz * alt.y;
+			ry = fz * alt.x - fx * alt.z;
+			rz = fx * alt.y - fy * alt.x;
+			rl = Math.hypot(rx, ry, rz) || 1;
+		}
+		rx /= rl; ry /= rl; rz /= rl;
 		// u' = cross(r, f)
 		const ux = ry * fz - rz * fy; const uy = rz * fx - rx * fz; const uz = rx * fy - ry * fx;
 		// back = -f
 		const bx = -fx, by = -fy, bz = -fz;
-		return this.viewFromBasisInto(out, eye, { x: rx, y: ry, z: rz }, { x: ux, y: uy, z: uz }, { x: bx, y: by, z: bz });
+		return M4.viewFromBasisInto(out, eye, { x: rx, y: ry, z: rz }, { x: ux, y: uy, z: uz }, { x: bx, y: by, z: bz });
 	},
 
 	// Fast inverse for rigid transforms (orthonormal rotation + translation)
@@ -312,11 +368,11 @@ export const M4 = {
 	},
 
 	skyboxFromViewInto(out: Mat4Float32, view: Mat4Float32): Mat4Float32 {
-		// transpose rotation and remove translation
-		out[0] = view[0]; out[1] = view[4]; out[2] = view[8]; out[3] = view[3];
-		out[4] = view[1]; out[5] = view[5]; out[6] = view[9]; out[7] = view[7];
-		out[8] = view[2]; out[9] = view[6]; out[10] = view[10]; out[11] = view[11];
-		out[12] = 0; out[13] = 0; out[14] = 0; out[15] = view[15];
+		// Provide inverse rotation (transpose of view's 3x3) without translation for cubemap lookup
+		out[0] = view[0];  out[1] = view[4];  out[2]  = view[8];  out[3]  = 0;
+		out[4] = view[1];  out[5] = view[5];  out[6]  = view[9];  out[7]  = 0;
+		out[8] = view[2];  out[9] = view[6];  out[10] = view[10]; out[11] = 0;
+		out[12] = 0;       out[13] = 0;       out[14] = 0;        out[15] = 1;
 		return out;
 	},
 
@@ -358,6 +414,22 @@ export const M4 = {
 		out[6] = m02; out[7] = m12; out[8] = m22;
 		return out;
 	},
+
+	// Transform helpers
+	transformPoint3(out: Float32Array, m: Mat4Float32, x: number, y: number, z: number): Float32Array {
+		const w = m[3] * x + m[7] * y + m[11] * z + m[15];
+		const iw = w ? 1 / w : 1;
+		out[0] = (m[0] * x + m[4] * y + m[8] * z + m[12]) * iw;
+		out[1] = (m[1] * x + m[5] * y + m[9] * z + m[13]) * iw;
+		out[2] = (m[2] * x + m[6] * y + m[10] * z + m[14]) * iw;
+		return out;
+	},
+	transformDir3(out: Float32Array, m: Mat4Float32, x: number, y: number, z: number): Float32Array {
+		out[0] = m[0] * x + m[4] * y + m[8] * z;
+		out[1] = m[1] * x + m[5] * y + m[9] * z;
+		out[2] = m[2] * x + m[6] * y + m[10] * z;
+		return out;
+	},
 };
 
 // ====== Vec helpers ======
@@ -382,11 +454,16 @@ export const V3 = {
 	cross(a: vec3, b: vec3): vec3 {
 		return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
 	},
-	len(a: vec3): number { return Math.hypot(a.x, a.y, a.z); },
+	len(a: vec3): number { const x = a.x, y = a.y, z = a.z; return Math.sqrt(x * x + y * y + z * z); },
 	norm(a: vec3): vec3 {
 		const L = V3.len(a) || 1; return { x: a.x / L, y: a.y / L, z: a.z / L };
 	},
-	trunc(a: vec3): vec3 { return { x: ~~a.x, y: ~~a.y, z: ~~a.z }; },
+	trunc(a: vec3): vec3 { return { x: Math.trunc(a.x), y: Math.trunc(a.y), z: Math.trunc(a.z) }; },
+	toArrInto(out: Float32Array, v: vec3 | vec3arr): Float32Array {
+		if (Array.isArray(v)) { out[0] = v[0]; out[1] = v[1]; out[2] = v[2]; }
+		else { out[0] = v.x; out[1] = v.y; out[2] = v.z; }
+		return out;
+	},
 	equalsArr(a: vec3arr, b: vec3arr): boolean { return a?.length === b?.length && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]; },
 	rotateAroundAxis(v: vec3, axis: vec3, angle: number): vec3 {
 		// as = genormaliseerde as
@@ -420,7 +497,7 @@ export const V3i = {
 	scaleSelf(out: vec3, s: number): vec3 { out.x *= s; out.y *= s; out.z *= s; return out; },
 	cross(out: vec3, a: vec3, b: vec3): vec3 { out.x = a.y * b.z - a.z * b.y; out.y = a.z * b.x - a.x * b.z; out.z = a.x * b.y - a.y * b.x; return out; },
 	dot(a: vec3, b: vec3): number { return a.x * b.x + a.y * b.y + a.z * b.z; },
-	len(a: vec3): number { return Math.hypot(a.x, a.y, a.z); },
+	len(a: vec3): number { const x = a.x, y = a.y, z = a.z; return Math.sqrt(x * x + y * y + z * z); },
 	normalize(out: vec3, a: vec3): vec3 { const l = V3i.len(a) || 1; out.x = a.x / l; out.y = a.y / l; out.z = a.z / l; return out; },
 };
 
@@ -448,6 +525,42 @@ export function sphereInFrustum(planes: Plane[], center: [number, number, number
 	const bias = radius * 0.01;
 	for (const p of planes) if (p[0] * x + p[1] * y + p[2] * z + p[3] < -(radius + bias)) return false;
 	return true;
+}
+
+// Packed, allocation-free version: writes 6 planes (24 floats) into `out`
+export function extractFrustumPlanesInto(out: Float32Array, vp: Mat4Float32): Float32Array {
+    // out length should be >= 24
+    const m = vp;
+    // left
+    out[0] = m[3] + m[0]; out[1] = m[7] + m[4]; out[2] = m[11] + m[8]; out[3] = m[15] + m[12];
+    // right
+    out[4] = m[3] - m[0]; out[5] = m[7] - m[4]; out[6] = m[11] - m[8]; out[7] = m[15] - m[12];
+    // bottom
+    out[8] = m[3] + m[1]; out[9] = m[7] + m[5]; out[10] = m[11] + m[9]; out[11] = m[15] + m[13];
+    // top
+    out[12] = m[3] - m[1]; out[13] = m[7] - m[5]; out[14] = m[11] - m[9]; out[15] = m[15] - m[13];
+    // near
+    out[16] = m[3] + m[2]; out[17] = m[7] + m[6]; out[18] = m[11] + m[10]; out[19] = m[15] + m[14];
+    // far
+    out[20] = m[3] - m[2]; out[21] = m[7] - m[6]; out[22] = m[11] - m[10]; out[23] = m[15] - m[14];
+
+    for (let i = 0; i < 24; i += 4) {
+        const nx = out[i], ny = out[i + 1], nz = out[i + 2];
+        const inv = 1 / Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        out[i] *= inv; out[i + 1] *= inv; out[i + 2] *= inv; out[i + 3] *= inv;
+    }
+    return out;
+}
+
+// Packed frustum test against Float32Array planes (24 floats)
+export function sphereInFrustumPacked(planes: Float32Array, center: [number, number, number], radius: number): boolean {
+    const x = center[0], y = center[1], z = center[2];
+    const bias = radius * 0.01;
+    for (let i = 0; i < 24; i += 4) {
+        const d = planes[i] * x + planes[i + 1] * y + planes[i + 2] * z + planes[i + 3];
+        if (d < -(radius + bias)) return false;
+    }
+    return true;
 }
 
 // ====== Quat helpers ======
@@ -499,8 +612,10 @@ export const Q = {
 	},
 
 	norm(q: quat): quat {
-		const L = Math.hypot(q.x, q.y, q.z, q.w) || 1;
-		return { x: q.x / L, y: q.y / L, z: q.z / L, w: q.w / L };
+		const s = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+		if (Math.abs(s - 1) < 1e-6) return { x: q.x, y: q.y, z: q.z, w: q.w };
+		const inv = 1 / Math.sqrt(s || 1);
+		return { x: q.x * inv, y: q.y * inv, z: q.z * inv, w: q.w * inv };
 	},
 
 	// roteer vector met quaternion

@@ -159,7 +159,7 @@ export class MeshComponent extends Component {
 			const node: GLTFNode = this.model!.nodes![nodeIndex];
 			const local = node.matrix ? new Float32Array(node.matrix) : this.composeNodeMatrixInto(this._tmpLocal, node);
 			const world = this.worldMatrices[nodeIndex] ?? (this.worldMatrices[nodeIndex] = new Float32Array(16));
-			M4.mulInto(world, parent, local);
+			M4.mulAffineInto(world, parent, local);
 			this.nodeDirty[nodeIndex] = false;
 		}
 		return this.worldMatrices[nodeIndex];
@@ -181,7 +181,7 @@ export class MeshComponent extends Component {
 			const jointWorld = this.worldMatrices[jointIdx];
 			const inv = skin.inverseBindMatrices?.[i] ?? MeshComponent._ID;
 			const buf = new Float32Array(16);
-			M4.mulInto(buf, jointWorld, inv);
+			M4.mulAffineInto(buf, jointWorld, inv);
 			out.push(buf);
 		}
 		return out;
@@ -355,7 +355,7 @@ export class MeshComponent extends Component {
 		for (const inst of this.instances) {
 			const localNow = this.model && inst.nodeIndex !== undefined ? this.worldMatrices[inst.nodeIndex] : MeshComponent._ID;
 			const world = new Float32Array(16);
-			M4.mulInto(world, base, localNow);
+			M4.mulAffineInto(world, base, localNow);
 			const joints = (inst.skinIndex !== undefined) ? this.computeSkinMatrices(inst.skinIndex) : undefined;
 			if (!receiveShadow && (inst.mesh as any).shadow) { (inst.mesh as any).shadow = undefined; }
 			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights });

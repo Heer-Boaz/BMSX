@@ -298,7 +298,18 @@ export function generateDetailedDrawError(
 
 	const matColor = m.material?.color ?? [1, 1, 1, 1];
 	const mvp = new Float32Array(16);
-	M4.mulInto(mvp, activeCamera.viewProjectionMatrix as any, identityMatrix);
+	// Fast-path: if model is identity, copy VP instead of multiplying
+	if (
+		identityMatrix[0] === 1 && identityMatrix[5] === 1 && identityMatrix[10] === 1 && identityMatrix[15] === 1 &&
+		identityMatrix[1] === 0 && identityMatrix[2] === 0 && identityMatrix[3] === 0 &&
+		identityMatrix[4] === 0 && identityMatrix[6] === 0 && identityMatrix[7] === 0 &&
+		identityMatrix[8] === 0 && identityMatrix[9] === 0 && identityMatrix[11] === 0 &&
+		identityMatrix[12] === 0 && identityMatrix[13] === 0 && identityMatrix[14] === 0
+	) {
+		M4.copyInto(mvp, activeCamera.viewProjectionMatrix as any);
+	} else {
+		M4.mulInto(mvp, activeCamera.viewProjectionMatrix as any, identityMatrix);
+	}
 	const normalMat = new Float32Array(9);
 	M4.normal3Into(normalMat, identityMatrix);
 
