@@ -14,14 +14,14 @@ export class EilaModelFSM {
 			states: {
 				_game_start: {
 					tick(this: World) {
-						return 'titlescreen';
+						return '/titlescreen';
 					}
 				},
 				game: {
 					entering_state(this: World, _state: State, { numOfPlayers }: { numOfPlayers: number }) {
 						const es = $.get<YieArGameState>('yiear_state');
 						if (es) es.numOfPlayers = numOfPlayers;
-						return '#this.ffwachten';
+						return 'ffwachten';
 					},
 					states: {
 						_ffwachten: {
@@ -30,7 +30,7 @@ export class EilaModelFSM {
 								$.playAudio(AudioId.start);
 								$.event_emitter.emit('its_curtains', this);
 							},
-							tape_end: () => 'oefenen',
+							tape_end: () => '../oefenen',
 						},
 						oefenen: {
 							entering_state(this: World) {
@@ -46,7 +46,7 @@ export class EilaModelFSM {
 							tick(this: World): string | void {
 								const player = this.getWorldObject<Fighter>('player');
 								if (player?.x < 16) {
-									return 'ffwachten2';
+									return '../ffwachten2';
 								}
 							},
 						},
@@ -55,7 +55,7 @@ export class EilaModelFSM {
 							entering_state(this: World) {
 								this.setSpace('niets');
 							},
-							tape_end: () => 'knokken',
+							tape_end: () => '../knokken',
 						},
 						knokken: {
 							entering_state(this: World) {
@@ -103,7 +103,7 @@ export class EilaModelFSM {
 						this.getFromCurrentSpace('gordijn').sc.dispatch_event('reset', this);
 					},
 					on: {
-						gamestart_selected: 'game',
+						gamestart_selected: '/game',
 					},
 				},
 			}

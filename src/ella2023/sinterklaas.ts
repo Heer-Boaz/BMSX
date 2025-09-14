@@ -80,16 +80,16 @@ export class Sinterklaas extends Fighter {
 						state.current.setTicksNoSideEffect(state.current.definition.ticks2advance_tape - 1);
 					}
 				},
-				$animate_idle: '#this.idle',
-				$animate_humiliated: '#this.humiliated',
-				$animate_walk: '#this.walk',
-				$animate_punch: '#this.punch',
-				$animate_highkick: '#this.highkick',
-				$animate_flyingkick: '#this.flyingkick',
-				$animate_lowkick: '#this.lowkick',
-				$animate_duckkick: '#this.duckkick',
-				$animate_duck: '#this.duck',
-				$animate_jump: '#this.jump',
+				$animate_idle: 'idle',
+				$animate_humiliated: 'humiliated',
+				$animate_walk: 'walk',
+				$animate_punch: 'punch',
+				$animate_highkick: 'highkick',
+				$animate_flyingkick: 'flyingkick',
+				$animate_lowkick: 'lowkick',
+				$animate_duckkick: 'duckkick',
+				$animate_duck: 'duck',
+				$animate_jump: 'jump',
 			},
 			states: {
 				_idle: {
@@ -108,14 +108,14 @@ export class Sinterklaas extends Fighter {
 							entering_state(this: SpriteObject) {
 								this.imgid = BitmapId.sint_walk;
 							},
-							tape_end: () => 'walk2',
+							tape_end: () => '../walk2',
 						},
 						walk2: {
 							ticks2advance_tape: 8,
 							entering_state(this: SpriteObject) {
 								this.imgid = BitmapId.sint_idle;
 							},
-							tape_end: () => 'walk1',
+							tape_end: () => '../walk1',
 						},
 					}
 				},
@@ -190,15 +190,15 @@ export class Sinterklaas extends Fighter {
 						_wait: {
 							ticks2advance_tape: 50,
 							entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
-							tape_next: () => 'animation',
+							tape_next: () => '../animation',
 						},
 						animation: {
 							ticks2advance_tape: 10,
 							tape_data: ['humiliated1', 'humiliated2'],
 							repetitions: 8,
 							auto_rewind_tape_after_end: true,
-							tape_next: (state: State) => `#this.${state.current_tape_value}`,
-							tape_end: () => 'waitEnd',
+							tape_next: (state: State) => `${state.current_tape_value}`,
+							tape_end: () => '../waitEnd',
 							states: {
 								_humiliated1: {
 									entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },

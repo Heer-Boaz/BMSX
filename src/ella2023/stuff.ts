@@ -138,7 +138,7 @@ export class TitleScreen extends SpriteObject {
 					states: {
 						_players_1: {
 							on: {
-								$switch: 'players_2',
+								$switch: '../players_2',
 							},
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
@@ -150,8 +150,8 @@ export class TitleScreen extends SpriteObject {
 						},
 						players_2: {
 							on: {
-								$switch: 'players_1',
-								$players_1: 'players_1', // For resetting the TitleScreen state.
+								$switch: '../players_1',
+								$players_1: '../players_1', // For resetting the TitleScreen state.
 							},
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
@@ -180,7 +180,7 @@ export class TitleScreen extends SpriteObject {
 							states: {
 								_default: {
 									on: {
-										$pause_blink: 'paused',
+										$pause_blink: '../paused',
 									},
 									entering_state(state: State) {
 										state.parent.data.pause_blink = false;
@@ -188,7 +188,7 @@ export class TitleScreen extends SpriteObject {
 								},
 								paused: {
 									on: {
-										$resume_blink: 'default',
+										$resume_blink: '../default',
 									},
 									entering_state(state: State) {
 										state.parent.data.pause_blink = true;
@@ -222,7 +222,7 @@ export class Gordijn extends WorldObject {
 			states: {
 				_idle: {
 					on: {
-						its_curtains: 'its_curtains_for_you',
+						its_curtains: '/its_curtains_for_you',
 						reset: {
 							do(this: Gordijn) {
 								this.width = 0;
@@ -232,7 +232,7 @@ export class Gordijn extends WorldObject {
 				},
 				its_curtains_for_you: {
 					on: {
-						$curtained: 'idle',
+						$curtained: '/idle',
 					},
 					ticks2advance_tape: 2,
 					tape_data: [8],

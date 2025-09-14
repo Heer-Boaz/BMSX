@@ -59,7 +59,7 @@ export class Eila extends Fighter {
 
 			// If no actions are pressed, switch to idle
 			if (priorityActions.length === 0) {
-				return 'idle';
+				return '../idle';
 			}
 
 			for (const action of priorityActions) {
@@ -69,23 +69,23 @@ export class Eila extends Fighter {
 						this.facing = action as typeof this.facing;
 
 						this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
-						return 'walk';
+						return '../walk';
 					case 'jump_left':
 						this.facing = 'left';
 						$.consumeAction(this.player_index, 'jump')
-						return { state_id: 'jump', args: true };
+						return { state_id: '../jump', args: true };
 					case 'jump_right':
 						this.facing = 'right';
 						$.consumeAction(this.player_index, 'jump')
-						return { state_id: 'jump', args: true };
+						return { state_id: '../jump', args: true };
 					case 'duck':
-						return action; // Do not consume the duck action, as it would immediately make the fighter stand up again
+						return `../${action}`; // Do not consume the duck action, as it would immediately make the fighter stand up again
 					case 'punch':
 					case 'highkick':
 					case 'lowkick':
 					case 'jump':
 						$.input.getPlayerInput(this.player_index).consumeAction(action);
-						return action;
+						return `../${action}`;
 				}
 			}
 		}
@@ -164,17 +164,17 @@ export class Eila extends Fighter {
 			on: {
 				$go_idle: {
 					if(this: Fighter, state: State) { return !state.matches_state_path('stoerheidsdans') && !state.matches_state_path('nagenieten') && !state.matches_state_path('humiliated'); },
-					switch: '#this.idle',
+					switch: 'idle',
 				},
-				$go_walk: '#this.walk',
-				$go_punch: '#this.punch',
-				$go_highkick: '#this.highkick',
-				$go_lowkick: '#this.lowkick',
-				$go_duckkick: '#this.duckkick',
-				$go_duck: '#this.duck',
-				$go_jump: '#this.jump',
-				$go_stoerheidsdans: '#this.stoerheidsdans',
-				$go_humiliated: '#this.humiliated',
+				$go_walk: 'walk',
+				$go_punch: 'punch',
+				$go_highkick: 'highkick',
+				$go_lowkick: 'lowkick',
+				$go_duckkick: 'duckkick',
+				$go_duck: 'duck',
+				$go_jump: 'jump',
+				$go_stoerheidsdans: 'stoerheidsdans',
+				$go_humiliated: 'humiliated',
 			},
 			states: {
 				_idle: {
@@ -224,7 +224,7 @@ export class Eila extends Fighter {
 					},
 					tape_end(this: Fighter) {
 						this.facing = (this.facing === 'left' ? 'right' : 'left');
-						return 'nagenieten';
+						return '/nagenieten';
 					},
 				},
 				nagenieten: {
@@ -276,7 +276,7 @@ export class Eila extends Fighter {
 						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
 						this.jumping = true;
 						this.attacked_while_jumping = false;
-						return { state_id: '#this.jump_up', args: directional };
+						return { state_id: 'jump_up', args: directional };
 					},
 					exiting_state(this: Fighter) {
 						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = false;
@@ -308,7 +308,7 @@ export class Eila extends Fighter {
 								}
 							},
 							tape_next(state: State) {
-								return { state_id: 'jump_down', args: state.data.directional };
+								return { state_id: '../jump_down', args: state.data.directional };
 							},
 						},
 						jump_down: {
@@ -328,7 +328,7 @@ export class Eila extends Fighter {
 								}
 							},
 							tape_next(this: Fighter, _state: State) {
-								return '#root.idle';
+								return '/idle';
 							},
 						},
 						flyingkick: {
@@ -338,13 +338,13 @@ export class Eila extends Fighter {
 									on: {
 										$go_flyingkick: {
 											if(this: Fighter) { return !this.attacked_while_jumping; },
-											to: 'flyingkick',
+											to: '../flyingkick',
 										},
 									},
 								},
 								flyingkick: {
 									on: {
-										flyingkick_end: 'normal',
+										flyingkick_end: '../normal',
 									},
 									entering_state(this: Fighter, _state: State) {
 										this.sc.dispatch_event('animate_flyingkick', this);
@@ -406,16 +406,16 @@ export class Eila extends Fighter {
 						state.current.setTicksNoSideEffect(state.current.definition.ticks2advance_tape - 1);
 					}
 				},
-				$animate_idle: '#this.idle',
-				$animate_humiliated: '#this.humiliated',
-				$animate_walk: '#this.walk',
-				$animate_punch: '#this.punch',
-				$animate_highkick: '#this.highkick',
-				$animate_flyingkick: '#this.flyingkick',
-				$animate_lowkick: '#this.lowkick',
-				$animate_duckkick: '#this.duckkick',
-				$animate_duck: '#this.duck',
-				$animate_jump: '#this.jump',
+				$animate_idle: 'idle',
+				$animate_humiliated: 'humiliated',
+				$animate_walk: 'walk',
+				$animate_punch: 'punch',
+				$animate_highkick: 'highkick',
+				$animate_flyingkick: 'flyingkick',
+				$animate_lowkick: 'lowkick',
+				$animate_duckkick: 'duckkick',
+				$animate_duck: 'duck',
+				$animate_jump: 'jump',
 			},
 			states: {
 				_idle: {
@@ -434,14 +434,14 @@ export class Eila extends Fighter {
 							entering_state(this: Eila) {
 								this.imgid = BitmapId.eila_walk;
 							},
-							tape_next: () => 'walk2',
+							tape_next: () => '../walk2',
 						},
 						walk2: {
 							ticks2advance_tape: 8,
 							entering_state(this: Eila) {
 								this.imgid = BitmapId.eila_idle;
 							},
-							tape_next: () => 'walk1',
+							tape_next: () => '../walk1',
 						},
 					}
 				},
