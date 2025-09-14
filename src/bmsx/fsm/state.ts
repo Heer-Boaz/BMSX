@@ -16,10 +16,109 @@ const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start
  * @template T - The type of the world object or model associated with the state.
  */
 export class State<T extends Stateful = Stateful> implements Identifiable {
+	/** Path parsing and diagnostics configuration. */
+	public static pathConfig = {
+		enableLegacyAliases: false,
+		cacheSize: 256,
+	};
+
 	/** Optional diagnostics toggles for development. */
 	public static diagnostics = {
-		logParentFallback: false,
+		logLegacyAliasUse: false,
 	};
+
+	/** Simple path parse cache. */
+	private static _pathCache = new Map<string, { abs: boolean, up: number, segs: readonly string[] }>();
+
+	/** Convert legacy dot-aliases to filesystem syntax when enabled. */
+	private static normalizeLegacy(input: string): string {
+		if (!State.pathConfig.enableLegacyAliases) return input;
+		if (input.startsWith(`${STATE_THIS_PREFIX}.`)) {
+			State.diagnostics.logLegacyAliasUse && console.debug(`[FSM] Using legacy alias '#this.' in '${input}'.`);
+			return `./${input.slice(STATE_THIS_PREFIX.length + 1).replaceAll('.', '/')}`;
+		}
+		if (input.startsWith(`${STATE_PARENT_PREFIX}.`)) {
+			State.diagnostics.logLegacyAliasUse && console.debug(`[FSM] Using legacy alias '#parent.' in '${input}'.`);
+			return `../${input.slice(STATE_PARENT_PREFIX.length + 1).replaceAll('.', '/')}`;
+		}
+		if (input.startsWith(`${STATE_ROOT_PREFIX}.`)) {
+			State.diagnostics.logLegacyAliasUse && console.debug(`[FSM] Using legacy alias '#root.' in '${input}'.`);
+			return `/${input.slice(STATE_ROOT_PREFIX.length + 1).replaceAll('.', '/')}`;
+		}
+		return input;
+	}
+
+	/** Parse filesystem-like path: '/', './', '../', quoting via ["..."] with escapes. */
+	private static parseFsPath(input: string): { abs: boolean, up: number, segs: readonly string[] } {
+		const raw = State.normalizeLegacy(input);
+		const hit = State._pathCache.get(raw);
+		if (hit) return hit;
+
+		const len = raw.length;
+		let i = 0;
+		let abs = false;
+		let up = 0;
+		const segs: string[] = [];
+
+		if (len === 0) return { abs: false, up: 0, segs: [] };
+
+		if (raw[i] === '/') { abs = true; i++; }
+
+		if (!abs) {
+			if (raw.startsWith('./', i)) {
+				i += 2;
+			} else {
+				while (raw.startsWith('../', i)) { up++; i += 3; }
+			}
+		}
+
+		const pushSeg = (s: string) => {
+			if (s.length === 0 || s === '.') return;
+			if (s === '..') {
+				if (segs.length > 0) segs.pop();
+				else up++;
+				return;
+			}
+			segs.push(s);
+		};
+
+		while (i < len) {
+			const c = raw[i];
+			if (c === '/') { i++; continue; }
+			if (c === '[' && i + 1 < len && raw[i + 1] === '"') {
+				i += 2; // skip ["
+				let seg = '';
+				while (i < len) {
+					const ch = raw[i++];
+					if (ch === '\\') {
+						if (i < len) {
+							const esc = raw[i++];
+							if (esc === '"') seg += '"';
+							else if (esc === '/') seg += '/';
+							else seg += esc;
+						}
+						continue;
+					}
+					if (ch === '"' && i < len && raw[i] === ']') { i++; break; }
+					seg += ch;
+				}
+				pushSeg(seg);
+				continue;
+			}
+
+			let start = i;
+			while (i < len && raw[i] !== '/') i++;
+			pushSeg(raw.slice(start, i));
+		}
+
+		if (State._pathCache.size >= State.pathConfig.cacheSize) {
+			const firstKey = State._pathCache.keys().next().value as string | undefined;
+			if (firstKey) State._pathCache.delete(firstKey);
+		}
+		const rec = { abs, up, segs: segs as readonly string[] };
+		State._pathCache.set(raw, rec);
+		return rec;
+	}
 	/**
 	 * The identifier of this specific instance of the state machine.
 	* @see {@link make_id}
@@ -394,39 +493,7 @@ private process_transition_queue(): void {
 	 * @returns An array containing the current part, remaining parts, and current context.
 	 * @throws {Error} If no state with the given ID is found.
 	 */
-	private handle_path(path: string | string[]): [string, string[], State] {
-		let parts: string[];
-		if (typeof path === 'string') {
-			parts = path.split('.');
-		} else {
-			parts = path;
-		}
-
-		let currentPart = parts[0];
-		let restParts = parts.slice(1);
-
-		let currentContext: State;
-		switch (currentPart) {
-			case STATE_THIS_PREFIX:
-				currentContext = this;
-				[currentPart, ...restParts] = restParts;
-				break;
-			case STATE_PARENT_PREFIX:
-				currentContext = this.parent;
-				[currentPart, ...restParts] = restParts;
-				break;
-			case STATE_ROOT_PREFIX:
-				currentContext = this.root;
-				[currentPart, ...restParts] = restParts;
-				break;
-			default:
-				currentContext = this.states?.[currentPart];
-				if (!currentContext) throw new Error(`No state with ID '${currentPart}'`);
-				break;
-		}
-
-		return [currentPart, restParts, currentContext];
-	}
+    // Legacy helper removed; path handling now uses filesystem-style parser.
 
 	/**
 	 * Transition to a new state identified by the given ID. If the ID contains multiple parts separated by '.', it traverses through the states accordingly and switches the state of each part.
@@ -434,21 +501,34 @@ private process_transition_queue(): void {
 	 * @param path - The ID of the state to transition to.
 	 * @throws Error if the state with the given ID does not exist.
 	 */
-	public transition_to_path(path: string | string[], ...args: any[]): void {
-		const [currentPart, restParts, currentContext] = this.handle_path(path);
+    public transition_to_path(path: string | string[], ...args: any[]): void {
+        if (Array.isArray(path)) {
+            let ctx: State = this;
+            for (let idx = 0; idx < path.length; idx++) {
+                const seg = path[idx];
+                if (!ctx.states?.[seg]) throw new Error(`No state with ID '${seg}'`);
+                const child = ctx.states[seg];
+                if (!child.is_concurrent) ctx.transitionToState(seg, 'to', ...args);
+                ctx = child;
+            }
+            return;
+        }
 
-		// Transition here unless the path explicitly continues deeper via a leading machine id
-		if (this.def_id !== currentPart || restParts.length === 0) {
-			if (!currentContext.is_concurrent) { // If the state is not running in parallel, set it as the current state
-				this.transitionToState(currentPart, 'to', ...args);
-			}
-		}
+        const spec = State.parseFsPath(path);
+        let ctx: State = spec.abs ? this.root : this;
+        for (let u = 0; u < spec.up; u++) {
+            if (!ctx.parent) throw new Error(`Path '${path}' attempts to go above root.`);
+            ctx = ctx.parent;
+        }
 
-		// Continue traversing the path, if any
-		if (restParts.length > 0) {
-			currentContext.transition_to_path(restParts, ...args);
-		}
-	}
+        for (let i = 0; i < spec.segs.length; i++) {
+            const seg = spec.segs[i];
+            const child = ctx.states?.[seg];
+            if (!child) throw new Error(`No state with ID '${seg}'`);
+            if (!child.is_concurrent) ctx.transitionToState(seg, 'to', ...args);
+            ctx = child;
+        }
+    }
 
 	/**
 	 * Switches the state of the state machine to the specified ID.
@@ -459,15 +539,36 @@ private process_transition_queue(): void {
 	 * @param path - The ID of the state to switch to.
 	 * @returns void
 	 */
-	public transition_switch_path(path: string | string[], ...args: any[]): void {
-		const [currentPart, restParts, currentContext] = this.handle_path(path);
+    public transition_switch_path(path: string | string[], ...args: any[]): void {
+        if (Array.isArray(path)) {
+            let ctx: State = this;
+            for (let i = 0; i < path.length - 1; i++) {
+                const seg = path[i];
+                const child = ctx.states?.[seg];
+                if (!child) throw new Error(`No state with ID '${seg}'`);
+                ctx = child;
+            }
+            if (path.length > 0) ctx.transitionToState(path[path.length - 1], 'switch', ...args);
+            return;
+        }
 
-		if (restParts.length > 0) {
-			currentContext.transition_switch_path(restParts, ...args);
-		} else if (this.def_id !== currentPart) {
-			this.transitionToState(currentPart, 'switch', ...args);
-		}
-	}
+        const spec = State.parseFsPath(path);
+        let ctx: State = spec.abs ? this.root : this;
+        for (let u = 0; u < spec.up; u++) {
+            if (!ctx.parent) throw new Error(`Path '${path}' attempts to go above root.`);
+            ctx = ctx.parent;
+        }
+
+        for (let i = 0; i < spec.segs.length - 1; i++) {
+            const seg = spec.segs[i];
+            const child = ctx.states?.[seg];
+            if (!child) throw new Error(`No state with ID '${seg}'`);
+            ctx = child;
+        }
+        if (spec.segs.length > 0) {
+            ctx.transitionToState(spec.segs[spec.segs.length - 1], 'switch', ...args);
+        }
+    }
 
 	/**
 	 * Transition to a new state.
@@ -483,38 +584,13 @@ private process_transition_queue(): void {
 	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-	transition_to(state_id: Identifier, ...args: any[]): void;
-	transition_to(transition: StateTransition, ...args: any[]): void;
-	transition_to(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
-		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
-		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
-
-		if (state_id.startsWith(`${STATE_THIS_PREFIX}.`)) { // If the state is explicitly local, switch in this machine
-			// Remove the `${STATE_THIS_PREFIX}.` prefix and continue to the next state from the substate
-			const restParts = state_id.slice(`${STATE_THIS_PREFIX}.`.length);
-			// If there are more parts, switch to the state in the current state machine
-			this.transition_to_path(restParts, ...extraArgs);
-		}
-		else if (state_id.startsWith(`${STATE_ROOT_PREFIX}.`)) { // If the state is in the root, switch to the state in the root state machine
-			// Remove the `${STATE_ROOT_PREFIX}.` prefix and continue to the next state from the root
-			const restParts = state_id.slice(`${STATE_ROOT_PREFIX}.`.length);
-			// If there are more parts, switch to the state in the root state machine
-			this.root.transition_to_path(restParts, ...extraArgs);
-		}
-		else if (state_id.startsWith(`${STATE_PARENT_PREFIX}.`)) {
-			const restParts = state_id.slice(`${STATE_PARENT_PREFIX}.`.length);
-			if (!this.parent) throw new Error(`Cannot transition via '${STATE_PARENT_PREFIX}' from root state.`);
-			this.parent.transition_to_path(restParts, ...extraArgs);
-		}
-		else {
-			// Default: resolve in parent if available, otherwise local
-			if (this.parent && State.diagnostics?.logParentFallback) {
-				console.debug(`[FSM] ${this.id}: unprefixed transition '${state_id}' resolved via parent '${this.parent.id}'.`);
-			}
-			if (this.parent) this.parent.transition_to_path(state_id, ...extraArgs);
-			else this.transition_to_path(state_id, ...extraArgs);
-		}
-	}
+    transition_to(state_id: Identifier, ...args: any[]): void;
+    transition_to(transition: StateTransition, ...args: any[]): void;
+    transition_to(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
+        const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
+        const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+        this.transition_to_path(state_id, ...extraArgs);
+    }
 
 	/**
 	 * Transition to a new state.
@@ -530,69 +606,45 @@ private process_transition_queue(): void {
 	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-	switch_to_state(state_id: Identifier, ...args: any[]): void;
-	switch_to_state(transition: StateTransition, ...args: any[]): void;
-	switch_to_state(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
-		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
-		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+    switch_to_state(state_id: Identifier, ...args: any[]): void;
+    switch_to_state(transition: StateTransition, ...args: any[]): void;
+    switch_to_state(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
+        const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
+        const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+        this.transition_switch_path(state_id, ...extraArgs);
+    }
 
-		if (state_id.startsWith(`${STATE_THIS_PREFIX}.`)) {
-			// Remove the `${STATE_THIS_PREFIX}.` prefix and continue to the next state from the substate
-			const restParts = state_id.slice(`${STATE_THIS_PREFIX}.`.length);
-			// If there are more parts, switch to the state in the current state machine
-			this.transition_switch_path(restParts, ...extraArgs);
-		}
-		else if (state_id.startsWith(`${STATE_PARENT_PREFIX}.`)) {
-			// Remove the `${STATE_PARENT_PREFIX}.` prefix and continue to the next state from the parent
-			const restParts = state_id.slice(`${STATE_PARENT_PREFIX}.`.length);
-			if (!this.parent) throw new Error(`Cannot switch via '${STATE_PARENT_PREFIX}' from root state.`);
-			// If there are more parts, switch to the state in the parent state machine
-			this.parent.transition_switch_path(restParts, ...extraArgs);
-		}
-		else if (state_id.startsWith(`${STATE_ROOT_PREFIX}.`)) {
-			// Remove the `${STATE_ROOT_PREFIX}.` prefix and continue to the next state from the root
-			const restParts = state_id.slice(`${STATE_ROOT_PREFIX}.`.length);
-			// If there are more parts, switch to the state in the root state machine
-			this.root.transition_switch_path(restParts, ...extraArgs);
-		}
-		else {
-			// Default: resolve in parent if available, otherwise local
-			if (this.parent && State.diagnostics?.logParentFallback) {
-				console.debug(`[FSM] ${this.id}: unprefixed switch '${state_id}' resolved via parent '${this.parent.id}'.`);
-			}
-			if (this.parent) this.parent.transition_switch_path(state_id, ...extraArgs);
-			else this.transition_switch_path(state_id, ...extraArgs);
-		}
-	}
+    /**
+     * Checks if the current state matches the given path.
+     * Supports filesystem style ("/", "./", "../") and array of segments.
+     */
+    public matches_state_path(path: string | string[]): boolean {
+        if (Array.isArray(path)) {
+            // Relative match
+            if (path.length === 0) return false;
+            const [head, ...tail] = path;
+            if (tail.length === 0) return this.currentid === head;
+            const next = this.states?.[head];
+            return !!next && next.matches_state_path(tail);
+        }
 
-	/**
-	 * Checks if the current state matches the given path.
-	 *
-	 * @param path - The path to the desired state, represented as a dot-separated string.
-	 * @returns true if the current state matches the path, false otherwise.
-	 * @throws Error if no machine with the specified ID is found.
-	 */
-	public matches_state_path(path: string | string[]): boolean {
-		let parts: string[];
-		if (typeof path === 'string') {
-			parts = path.split('.');
-		} else {
-			parts = path;
-		}
-		const [stateid, ...substateids] = parts;
-
-		// If there are no more parts, check the id of the current state
-		if (substateids.length === 0) {
-			return this.currentid === stateid;
-		}
-
-		if (!this.states) return false;
-		const state = this.states[stateid];
-		if (!state) return false;
-
-		// If there are more parts, check the state of the substate with the given path
-		return state.matches_state_path(substateids);
-	}
+        const spec = State.parseFsPath(path);
+        let ctx: State = spec.abs ? this.root : this;
+        for (let u = 0; u < spec.up; u++) {
+            if (!ctx.parent) return false;
+            ctx = ctx.parent;
+        }
+        if (spec.segs.length === 0) return false;
+        let current: State = ctx;
+        for (let i = 0; i < spec.segs.length - 1; i++) {
+            const seg = spec.segs[i];
+            const child = current.states?.[seg];
+            if (!child) return false;
+            current = child;
+        }
+        const last = spec.segs[spec.segs.length - 1];
+        return current.currentid === last;
+    }
 
 	/**
 	 * Checks the state guards of the current state and the target state.

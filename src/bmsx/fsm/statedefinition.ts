@@ -289,14 +289,14 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			const stateDef = machinedef.states[id] as StateDefinition;
 			const statePath = `${path}.${stateDef.id}`;
 
-			const checkTransitions = (transitions?: { [key: string]: Identifier | StateEventDefinition; }) => {
+			const checkTransitions = (transitions: { [key: string]: Identifier | StateEventDefinition; }, description: string) => {
 				if (!transitions) return;
 				for (const t of Object.values(transitions)) {
 					if (typeof t === 'string') {
-						resolveStateDefPath(stateDef, t, statePath);
+						resolveStateDefPath(stateDef, t, statePath, description);
 					} else {
-						if (typeof t.to === 'string') resolveStateDefPath(stateDef, t.to, statePath);
-						if (typeof t.switch === 'string') resolveStateDefPath(stateDef, t.switch, statePath);
+						if (typeof t.to === 'string') resolveStateDefPath(stateDef, t.to, statePath, description);
+						if (typeof t.switch === 'string') resolveStateDefPath(stateDef, t.switch, statePath, description);
 						if (typeof t.do === 'string') {
 							console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
 						}
@@ -304,14 +304,14 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 				}
 			};
 
-			checkTransitions(stateDef.on);
-			checkTransitions(stateDef.input_event_handlers);
+			checkTransitions(stateDef.on, 'on transition');
+			checkTransitions(stateDef.input_event_handlers, 'input event handler');
 			for (const check of stateDef.run_checks ?? []) {
 				if (typeof check === 'string') {
-					resolveStateDefPath(stateDef, check, statePath);
+					resolveStateDefPath(stateDef, check, statePath, 'run check (string)');
 				} else {
-					if (typeof check.to === 'string') resolveStateDefPath(stateDef, check.to, statePath);
-					if (typeof check.switch === 'string') resolveStateDefPath(stateDef, check.switch, statePath);
+					if (typeof check.to === 'string') resolveStateDefPath(stateDef, check.to, statePath, 'run check (to)');
+					if (typeof check.switch === 'string') resolveStateDefPath(stateDef, check.switch, statePath, 'run check (switch)');
 					if (typeof check.do === 'string') {
 						console.warn(`Handler '${check.do}' referenced in '${statePath}' is missing`);
 					}
@@ -333,36 +333,89 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 	}
 }
 
-function resolveStateDefPath(from: StateDefinition, target: string, origin: string): void {
-	const parts = target.split('.');
-	let ctx: StateDefinition | undefined;
-	let startIndex = 0;
+function resolveStateDefPath(from: StateDefinition, target: string, origin: string, description: string): void {
+    // Accept both new filesystem-style paths and legacy '#this./#parent./#root.' prefixes
+    const normalizeLegacy = (s: string): string => {
+        if (s.startsWith(STATE_THIS_PREFIX + '.')) return `./${s.slice(STATE_THIS_PREFIX.length + 1).replaceAll('.', '/')}`;
+        if (s.startsWith(STATE_PARENT_PREFIX + '.')) return `../${s.slice(STATE_PARENT_PREFIX.length + 1).replaceAll('.', '/')}`;
+        if (s.startsWith(STATE_ROOT_PREFIX + '.')) return `/${s.slice(STATE_ROOT_PREFIX.length + 1).replaceAll('.', '/')}`;
+        return s;
+    };
 
-	switch (parts[0]) {
-		case STATE_THIS_PREFIX:
-			ctx = from;
-			startIndex = 1;
-			break;
-		case STATE_PARENT_PREFIX:
-			ctx = from.parent;
-			if (!ctx) throw new Error(`Invalid state path '${target}' referenced from '${origin}': no parent context`);
-			startIndex = 1;
-			break;
-		case STATE_ROOT_PREFIX:
-			ctx = from.root;
-			if (!ctx) throw new Error(`Invalid state path '${target}' referenced from '${origin}': no root context`);
-			startIndex = 1;
-			break;
-		default:
-			ctx = from.parent ?? from;
-			break;
-	}
+    const raw = normalizeLegacy(target);
 
-	for (let i = startIndex; i < parts.length; i++) {
-		const part = parts[i];
-		if (!ctx.states?.[part]) {
-			throw new Error(`Invalid state path '${target}' referenced from '${origin}': state '${part}' not found`);
-		}
-		ctx = ctx.states[part] as StateDefinition;
-	}
+    // Simple single-pass parser for filesystem-like paths with quoting and escapes
+    const parse = (input: string): { abs: boolean; up: number; segs: string[] } => {
+        const len = input.length;
+        let i = 0;
+        let abs = false;
+        let up = 0;
+        const segs: string[] = [];
+
+        if (len === 0) return { abs: false, up: 0, segs };
+        if (input[i] === '/') { abs = true; i++; }
+
+        if (!abs) {
+            if (input.startsWith('./', i)) {
+                i += 2;
+            } else {
+                while (input.startsWith('../', i)) { up++; i += 3; }
+            }
+        }
+
+        const pushSeg = (s: string) => {
+            if (s.length === 0 || s === '.') return;
+            if (s === '..') {
+                if (segs.length > 0) segs.pop(); else up++;
+                return;
+            }
+            segs.push(s);
+        };
+
+        while (i < len) {
+            const c = input[i];
+            if (c === '/') { i++; continue; }
+            if (c === '[' && i + 1 < len && input[i + 1] === '"') {
+                i += 2; // skip ["
+                let seg = '';
+                while (i < len) {
+                    const ch = input[i++];
+                    if (ch === '\\') {
+                        if (i < len) {
+                            const esc = input[i++];
+                            if (esc === '"') seg += '"'; else if (esc === '/') seg += '/'; else seg += esc;
+                        }
+                        continue;
+                    }
+                    if (ch === '"' && i < len && input[i] === ']') { i++; break; }
+                    seg += ch;
+                }
+                pushSeg(seg);
+                continue;
+            }
+            let start = i;
+            while (i < len && input[i] !== '/') i++;
+            pushSeg(input.slice(start, i));
+        }
+
+        return { abs, up, segs };
+    };
+
+    const spec = parse(raw);
+
+    // Determine starting context
+    let ctx: StateDefinition | undefined = spec.abs ? from.root : from;
+    // Apply upward traversal
+    for (let u = 0; u < spec.up; u++) {
+        if (!ctx.parent) throw new Error(`Invalid state path '${target}' referenced from '${origin}': above root`);
+        ctx = ctx.parent;
+    }
+
+    // Traverse segments
+    for (const seg of spec.segs) {
+        if (!ctx.states?.[seg]) {
+            throw new Error(`[Validate state machines] Machine '${origin}' - Invalid state path '${target}': state '${seg}' not found in transition from state '${ctx.id}' (${description})`);
+        }
+        ctx = ctx.states[seg] as StateDefinition;
+    }
 }
