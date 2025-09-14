@@ -52,7 +52,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private static parseFsPath(input: string): { abs: boolean, up: number, segs: readonly string[] } {
 		const raw = State.normalizeLegacy(input);
 		const hit = State._pathCache.get(raw);
-		if (hit) return hit;
+		if (hit) {
+			State._pathCache.delete(raw);
+			State._pathCache.set(raw, hit);
+			return hit;
+		}
 
 		const len = raw.length;
 		let i = 0;
@@ -88,6 +92,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (c === '[' && i + 1 < len && raw[i + 1] === '"') {
 				i += 2; // skip ["
 				let seg = '';
+				let closed = false;
 				while (i < len) {
 					const ch = raw[i++];
 					if (ch === '\\') {
@@ -99,9 +104,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 						}
 						continue;
 					}
-					if (ch === '"' && i < len && raw[i] === ']') { i++; break; }
+					if (ch === '"') { if (i < len && raw[i] === ']') { i++; closed = true; break; } else { throw new Error(`Unterminated quoted segment in path '${raw}'.`); } }
 					seg += ch;
 				}
+				if (!closed) throw new Error(`Unterminated quoted segment in path '${raw}'.`);
 				pushSeg(seg);
 				continue;
 			}
@@ -189,7 +195,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	/**
 	 * Returns the current state of the FSM
 	 */
-	public get current(): State { return this.states?.[this.currentid]; }
+	public get current(): State | undefined { return this.states?.[this.currentid]; }
 
 	/**
 	 * Gets the state with the given id from the state machine.
@@ -289,13 +295,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param def_id - id of the FSM definition to use for this machine.
 	 * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
 	 */
-	public static create(def_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
-		let result = new State({ def_id, target_id, parent, root });
-		result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their states
-		result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
+    public static create(def_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
+        let result = new State({ def_id, target_id, parent, root });
+        result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their states
+        result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
-		return result;
-	}
+        return result;
+    }
 
 	/**
 	 * Represents the context of a state in a finite state machine.
@@ -451,13 +457,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	runSubstateMachines(): void {
 		if (!this.states) return;
 
-		const cur = this.current;
-		if (cur) cur.tick();
-		if (this.states) {
-			for (const id of Object.keys(this.states)) {
-				if (id === this.currentid) continue;
-				if (this.states[id].is_concurrent) this.states[id].tick();
-			}
+		const states = this.states;
+		const cur = states[this.currentid];
+		cur?.tick();
+		for (const [id, s] of Object.entries(states)) {
+			if (id !== this.currentid && s.is_concurrent) s.tick();
 		}
 	}
 
@@ -517,6 +521,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 
 		const spec = State.parseFsPath(path);
+		if (!spec.abs && spec.up === 0 && spec.segs.length === 0) {
+			throw new Error(`Empty path is invalid.`);
+		}
 		let ctx: State = spec.abs ? this.root : this;
 		for (let u = 0; u < spec.up; u++) {
 			if (!ctx.parent) throw new Error(`Path '${path}' attempts to go above root.`);
@@ -526,7 +533,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		for (let i = 0; i < spec.segs.length; i++) {
 			const seg = spec.segs[i];
 			const child = ctx.states?.[seg];
-			if (!child) throw new Error(`No state with ID '${seg}'`);
+			if (!child) {
+				const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
+				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${keys}`);
+			}
 			if (!child.is_concurrent) ctx.transitionToState(seg, 'to', ...args);
 			ctx = child;
 		}
@@ -547,7 +557,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			for (let i = 0; i < path.length - 1; i++) {
 				const seg = path[i];
 				const child = ctx.states?.[seg];
-				if (!child) throw new Error(`No state with ID '${seg}'`);
+				if (!child) {
+					const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
+					throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${keys}`);
+				}
 				ctx = child;
 			}
 			if (path.length > 0) ctx.transitionToState(path[path.length - 1], 'switch', ...args);
@@ -564,7 +577,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		for (let i = 0; i < spec.segs.length - 1; i++) {
 			const seg = spec.segs[i];
 			const child = ctx.states?.[seg];
-			if (!child) throw new Error(`No state with ID '${seg}'`);
+			if (!child) {
+				const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
+				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${keys}`);
+			}
 			ctx = child;
 		}
 		if (spec.segs.length > 0) {
@@ -657,22 +673,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @returns true if the transition is allowed, false otherwise.
 	 */
 	private checkStateGuardConditions(target_state_id: Identifier): boolean {
-		const currentStateDefinition = this.current_state_definition;
-		const targetStateDefinition = this.definition.states[target_state_id];
+		const curDef = this.current_state_definition;
+		const tgtDef = this.definition?.states?.[target_state_id];
 
-		// Check if the current state has a canExit guard and if it returns false, prevent the transition
-		if (currentStateDefinition.transition_guards?.can_exit && !currentStateDefinition.transition_guards.can_exit.call(this.target, this)) {
+		if (curDef?.transition_guards?.can_exit && !curDef.transition_guards.can_exit.call(this.target, this)) {
 			return false;
 		}
 
-		// Get the target state itself (and not the definition) to check the canEnter guard
-		const target_state = this.states[target_state_id];
-		// Check if the target state has a canEnter guard and if it returns false, prevent the transition
-		if (targetStateDefinition.transition_guards?.can_enter && !targetStateDefinition.transition_guards.can_enter.call(this.target, target_state)) {
+		const tgt = this.states?.[target_state_id];
+		if (tgtDef?.transition_guards?.can_enter && !tgtDef.transition_guards.can_enter.call(this.target, tgt)) {
 			return false;
 		}
 
-		return true; // All guards passed, allow the transition
+		return true;
 	}
 
 	/**
@@ -685,15 +698,24 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private _transitionsThisTick = 0;
 	private in_tick = false;
-	private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
+    private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
 
-	private transitionToState(state_id: Identifier, transition_type: TransitionType, ...args: any[]): void {
-		if (this.in_tick) {
-			if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
-				throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
-			}
-		}
+    private trace(msg: string): void {
+        const diag: any = (State as any).diagnostics;
+        if (diag && diag.traceTransitions) {
+            // eslint-disable-next-line no-console
+            console.debug(`[FSM] ${this.id}: ${msg}`);
+        }
+    }
 
+    private transitionToState(state_id: Identifier, transition_type: TransitionType, ...args: any[]): void {
+        if (this.in_tick) {
+            if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
+                throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
+            }
+        }
+
+        this.trace(`to='${state_id}' type='${transition_type}' from='${this.currentid}'`);
 		if (this.critical_section_counter > 0) {
 			this.transition_queue.push({ state_id, args, transition_type: transition_type ?? 'to' });
 			return;
@@ -753,28 +775,21 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param args - Additional arguments to pass to the event handlers.
 	 */
 	public dispatch_event(eventName: string, emitter_id: Identifier, ...args: any[]): void {
-		// If the state machine is paused, do not process the event
-		if (this.paused) {
+		if (this.paused) return;
+
+		const hasChildren = !!this.states && Object.keys(this.states).length > 0;
+		if (hasChildren) {
+			const cur = this.current;
+			const parallels = this.states ? Object.values(this.states).filter(s => s.is_concurrent) : [];
+			cur?.dispatch_event(eventName, emitter_id, ...args);
+			for (const s of parallels) s.dispatch_event(eventName, emitter_id, ...args);
 			return;
 		}
 
-		// If this state has children, dispatch the event to the child states
-		if (this.states && Object.keys(this.states).length > 0) {
-			// Dispatch the event to the current active state
-			this.current?.dispatch_event(eventName, emitter_id, ...args);
-
-			// Also dispatch the event to all parallel states
-			Object.values(this.states).forEach(state => state.is_concurrent && state.dispatch_event(eventName, emitter_id, ...args));
-		} else {
-			// This is the deepest part of the state machine, dispatch the event here
-			// Bubble up the event to the parent states
-			let current = this as State;
-			do {
-				if (current.handleEvent(eventName, emitter_id, ...args)) {
-					return; // If the event was handled, stop bubbling up the event
-				}
-				current = current.parent;
-			} while (current);
+		let current: State | undefined = this;
+		while (current) {
+			if (current.handleEvent(eventName, emitter_id, ...args)) return;
+			current = current.parent;
 		}
 	}
 
@@ -829,77 +844,66 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @returns A boolean indicating whether the event was handled.
 	 */
 	private handleEvent(eventName: string, emitter_id: Identifier, ...args: any[]): boolean {
-		if (this.paused) {
-			return false;
-		}
-
-		this.enterCriticalSection();
-		try {
-			const state_id_or_handler = this.definition?.on?.[eventName];
-			if (state_id_or_handler) {
-				if (typeof state_id_or_handler !== 'string') {
-					const emitterId = state_id_or_handler.scope;
-					if (emitterId && emitterId !== 'all' && emitterId !== emitter_id) {
-						return false;
-					}
-				}
-				if (this.handleStateTransition(state_id_or_handler, ...args)) {
-					return true;
-				}
+		if (this.paused) return false;
+		return this.withCriticalSection(() => {
+			const spec = this.definition?.on?.[eventName];
+			if (!spec) return false;
+			if (typeof spec !== 'string') {
+				const scope = spec.scope;
+				if (scope && scope !== 'all' && scope !== emitter_id) return false;
 			}
-			return false;
-		} finally {
-			this.leaveCriticalSection();
-		}
+			return this.handleStateTransition(spec, ...args);
+		});
 	}
 
-	private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition | undefined, ...args: any[]): boolean {
-		if (!action) return false;
+    private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition | undefined, ...args: any[]): boolean {
+        if (!action) return false;
 
-		// Simple string → always a transition, thus handled.
-		if (typeof action === 'string') {
-			this.transition_to(action, ...args);
-			return true;
-		}
+        // Simple string → always a transition, thus handled.
+        if (typeof action === 'string') {
+            this.transition_to(action, ...args);
+            return true;
+        }
 
-		const cond = action.if;
-		if (cond && !cond.call(this.target, this as State<T>, ...args)) return false;
+        const cond = action.if;
+        if (cond && !cond.call(this.target, this as State<T>, ...args)) return false;
 
-		let handled = false;
+        let didRunDo = false;
 
-		// Run 'do' and interpret optional next state
-		if (action.do) {
-			const next = this.getNextState(action.do.call(this.target, this as State<T>, ...args));
-			if (next) {
-				handled = true;
-				if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
-					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
-				}
-				next.transition_type === 'switch'
-					? this.switch_to_state(next.state_id, ...(next.args ?? []), ...args)
-					: this.transition_to(next.state_id, ...(next.args ?? []), ...args);
-			} else {
-				handled = true; // do() ran and consumed the event
-			}
-		}
+        // Run 'do' and interpret optional next state
+        if (action.do) {
+            didRunDo = true;
+            const next = this.getNextState(action.do.call(this.target, this as State<T>, ...args));
+            if (next) {
+                if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
+                    throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
+                }
+                next.transition_type === 'switch'
+                    ? this.switch_to_state(next.state_id, ...(next.args ?? []), ...args)
+                    : this.transition_to(next.state_id, ...(next.args ?? []), ...args);
+                return true;
+            }
+        }
 
-		// Fallback explicit transitions if do() did not transition
-		if (!handled && action.to) {
-			const t = this.getNextState(action.to);
-			if (t) {
-				this.transition_to(t.state_id, ...(t.args ?? []), ...args);
-				handled = true;
-			}
-		} else if (!handled && action.switch) {
-			const s = this.getNextState(action.switch);
-			if (s) {
-				this.switch_to_state(s.state_id, ...(s.args ?? []), ...args);
-				handled = true;
-			}
-		}
+        // Fallback explicit transitions even if do() ran but did not transition
+        if (action.to) {
+            const t = this.getNextState(action.to);
+            if (t) {
+                this.transition_to(t.state_id, ...(t.args ?? []), ...args);
+                return true;
+            }
+        }
+        if (action.switch) {
+            const s = this.getNextState(action.switch);
+            if (s) {
+                this.switch_to_state(s.state_id, ...(s.args ?? []), ...args);
+                return true;
+            }
+        }
 
-		return handled;
-	}
+        // If do() ran (even without transition), consider the event handled
+        return didRunDo;
+    }
 
 	/**
 	 * Adds the given state ID to the history stack, which tracks the previous states of the state machine.
@@ -929,6 +933,15 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const poppedStateId = this._hist[tailIndex];
 		this._histSize--;
 		if (poppedStateId) this.transition_to(poppedStateId);
+	}
+
+	/** Returns a snapshot of the history ring buffer from oldest to newest. */
+	public getHistorySnapshot(): Identifier[] {
+		const out: Identifier[] = [];
+		for (let i = 0; i < this._histSize; i++) {
+			out.push(this._hist[(this._histHead + i) % BST_MAX_HISTORY]);
+		}
+		return out;
 	}
 
 	/**
