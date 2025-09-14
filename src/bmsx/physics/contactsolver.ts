@@ -42,7 +42,7 @@ function rotateLocalToWorld(b: PhysicsBody, v: vec3, out: vec3) {
 // Apply angular impulse using full (diagonal local) inertia tensor transformed by orientation
 function applyAngularImpulseFull(b: PhysicsBody, r: vec3, impulse: vec3, scaleSign: number, tmpA: vec3, tmpB: vec3) {
 	if (b.invMass === 0) return;
-    V3i.cross(tmpA, r, impulse); // torque = r x J
+	V3i.cross(tmpA, r, impulse); // torque = r x J
 	// world torque -> local
 	rotateWorldToLocal(b, tmpA, tmpB);
 	// multiply by inverse inertia diag

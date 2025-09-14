@@ -334,88 +334,88 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 }
 
 function resolveStateDefPath(from: StateDefinition, target: string, origin: string, description: string): void {
-    // Accept both new filesystem-style paths and legacy '#this./#parent./#root.' prefixes
-    const normalizeLegacy = (s: string): string => {
-        if (s.startsWith(STATE_THIS_PREFIX + '.')) return `./${s.slice(STATE_THIS_PREFIX.length + 1).replaceAll('.', '/')}`;
-        if (s.startsWith(STATE_PARENT_PREFIX + '.')) return `../${s.slice(STATE_PARENT_PREFIX.length + 1).replaceAll('.', '/')}`;
-        if (s.startsWith(STATE_ROOT_PREFIX + '.')) return `/${s.slice(STATE_ROOT_PREFIX.length + 1).replaceAll('.', '/')}`;
-        return s;
-    };
+	// Accept both new filesystem-style paths and legacy '#this./#parent./#root.' prefixes
+	const normalizeLegacy = (s: string): string => {
+		if (s.startsWith(STATE_THIS_PREFIX + '.')) return `./${s.slice(STATE_THIS_PREFIX.length + 1).replaceAll('.', '/')}`;
+		if (s.startsWith(STATE_PARENT_PREFIX + '.')) return `../${s.slice(STATE_PARENT_PREFIX.length + 1).replaceAll('.', '/')}`;
+		if (s.startsWith(STATE_ROOT_PREFIX + '.')) return `/${s.slice(STATE_ROOT_PREFIX.length + 1).replaceAll('.', '/')}`;
+		return s;
+	};
 
-    const raw = normalizeLegacy(target);
+	const raw = normalizeLegacy(target);
 
-    // Simple single-pass parser for filesystem-like paths with quoting and escapes
-    const parse = (input: string): { abs: boolean; up: number; segs: string[] } => {
-        const len = input.length;
-        let i = 0;
-        let abs = false;
-        let up = 0;
-        const segs: string[] = [];
+	// Simple single-pass parser for filesystem-like paths with quoting and escapes
+	const parse = (input: string): { abs: boolean; up: number; segs: string[] } => {
+		const len = input.length;
+		let i = 0;
+		let abs = false;
+		let up = 0;
+		const segs: string[] = [];
 
-        if (len === 0) return { abs: false, up: 0, segs };
-        if (input[i] === '/') { abs = true; i++; }
+		if (len === 0) return { abs: false, up: 0, segs };
+		if (input[i] === '/') { abs = true; i++; }
 
-        if (!abs) {
-            if (input.startsWith('./', i)) {
-                i += 2;
-            } else {
-                while (input.startsWith('../', i)) { up++; i += 3; }
-            }
-        }
+		if (!abs) {
+			if (input.startsWith('./', i)) {
+				i += 2;
+			} else {
+				while (input.startsWith('../', i)) { up++; i += 3; }
+			}
+		}
 
-        const pushSeg = (s: string) => {
-            if (s.length === 0 || s === '.') return;
-            if (s === '..') {
-                if (segs.length > 0) segs.pop(); else up++;
-                return;
-            }
-            segs.push(s);
-        };
+		const pushSeg = (s: string) => {
+			if (s.length === 0 || s === '.') return;
+			if (s === '..') {
+				if (segs.length > 0) segs.pop(); else up++;
+				return;
+			}
+			segs.push(s);
+		};
 
-        while (i < len) {
-            const c = input[i];
-            if (c === '/') { i++; continue; }
-            if (c === '[' && i + 1 < len && input[i + 1] === '"') {
-                i += 2; // skip ["
-                let seg = '';
-                while (i < len) {
-                    const ch = input[i++];
-                    if (ch === '\\') {
-                        if (i < len) {
-                            const esc = input[i++];
-                            if (esc === '"') seg += '"'; else if (esc === '/') seg += '/'; else seg += esc;
-                        }
-                        continue;
-                    }
-                    if (ch === '"' && i < len && input[i] === ']') { i++; break; }
-                    seg += ch;
-                }
-                pushSeg(seg);
-                continue;
-            }
-            let start = i;
-            while (i < len && input[i] !== '/') i++;
-            pushSeg(input.slice(start, i));
-        }
+		while (i < len) {
+			const c = input[i];
+			if (c === '/') { i++; continue; }
+			if (c === '[' && i + 1 < len && input[i + 1] === '"') {
+				i += 2; // skip ["
+				let seg = '';
+				while (i < len) {
+					const ch = input[i++];
+					if (ch === '\\') {
+						if (i < len) {
+							const esc = input[i++];
+							if (esc === '"') seg += '"'; else if (esc === '/') seg += '/'; else seg += esc;
+						}
+						continue;
+					}
+					if (ch === '"' && i < len && input[i] === ']') { i++; break; }
+					seg += ch;
+				}
+				pushSeg(seg);
+				continue;
+			}
+			let start = i;
+			while (i < len && input[i] !== '/') i++;
+			pushSeg(input.slice(start, i));
+		}
 
-        return { abs, up, segs };
-    };
+		return { abs, up, segs };
+	};
 
-    const spec = parse(raw);
+	const spec = parse(raw);
 
-    // Determine starting context
-    let ctx: StateDefinition | undefined = spec.abs ? from.root : from;
-    // Apply upward traversal
-    for (let u = 0; u < spec.up; u++) {
-        if (!ctx.parent) throw new Error(`Invalid state path '${target}' referenced from '${origin}': above root`);
-        ctx = ctx.parent;
-    }
+	// Determine starting context
+	let ctx: StateDefinition | undefined = spec.abs ? from.root : from;
+	// Apply upward traversal
+	for (let u = 0; u < spec.up; u++) {
+		if (!ctx.parent) throw new Error(`Invalid state path '${target}' referenced from '${origin}': above root`);
+		ctx = ctx.parent;
+	}
 
-    // Traverse segments
-    for (const seg of spec.segs) {
-        if (!ctx.states?.[seg]) {
-            throw new Error(`[Validate state machines] Machine '${origin}' - Invalid state path '${target}': state '${seg}' not found in transition from state '${ctx.id}' (${description})`);
-        }
-        ctx = ctx.states[seg] as StateDefinition;
-    }
+	// Traverse segments
+	for (const seg of spec.segs) {
+		if (!ctx.states?.[seg]) {
+			throw new Error(`[Validate state machines] Machine '${origin}' - Invalid state path '${target}': state '${seg}' not found in transition from state '${ctx.id}' (${description})`);
+		}
+		ctx = ctx.states[seg] as StateDefinition;
+	}
 }

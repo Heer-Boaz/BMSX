@@ -34,39 +34,39 @@ export class Camera implements Oriented {
 
 	private _q: quat = Q.ident();       // <-- bron van waarheid
 	@excludepropfromsavegame
-    private _view: Mat4Float32 = new Float32Array(16);
+	private _view: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
-    private _proj: Mat4Float32 = new Float32Array(16);
+	private _proj: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
-    private _vp: Mat4Float32 = new Float32Array(16);
+	private _vp: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
 	private _planes: Plane[] = [];
 	@excludepropfromsavegame
-    private _skyboxView: Mat4Float32 = new Float32Array(16);
+	private _skyboxView: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
-    private _tmpLookAt: Mat4Float32 = new Float32Array(16);
-    @excludepropfromsavegame
-    private _invView: Mat4Float32 = new Float32Array(16);
-    @excludepropfromsavegame
-    private _invProj: Mat4Float32 = new Float32Array(16);
-    @excludepropfromsavegame
-    private _invVP: Mat4Float32 = new Float32Array(16);
+	private _tmpLookAt: Mat4Float32 = new Float32Array(16);
+	@excludepropfromsavegame
+	private _invView: Mat4Float32 = new Float32Array(16);
+	@excludepropfromsavegame
+	private _invProj: Mat4Float32 = new Float32Array(16);
+	@excludepropfromsavegame
+	private _invVP: Mat4Float32 = new Float32Array(16);
 	@excludepropfromsavegame
 	private _dirty = true;
 
-    constructor(_opts?: RevivableObjectArgs) {
-        // Touch decorator-attached methods to satisfy noUnusedLocals without changing behavior
-        this.__keepForDecorators();
-        // Initialize matrices to identity
-        M4.setIdentity(this._view);
-        M4.setIdentity(this._proj);
-        M4.setIdentity(this._vp);
-        M4.setIdentity(this._skyboxView);
-        M4.setIdentity(this._tmpLookAt);
-        M4.setIdentity(this._invView);
-        M4.setIdentity(this._invProj);
-        M4.setIdentity(this._invVP);
-    }
+	constructor(_opts?: RevivableObjectArgs) {
+		// Touch decorator-attached methods to satisfy noUnusedLocals without changing behavior
+		this.__keepForDecorators();
+		// Initialize matrices to identity
+		M4.setIdentity(this._view);
+		M4.setIdentity(this._proj);
+		M4.setIdentity(this._vp);
+		M4.setIdentity(this._skyboxView);
+		M4.setIdentity(this._tmpLookAt);
+		M4.setIdentity(this._invView);
+		M4.setIdentity(this._invProj);
+		M4.setIdentity(this._invVP);
+	}
 
 	public get rotationQ(): quat {
 		return this._q;
@@ -225,23 +225,23 @@ export class Camera implements Oriented {
 				break;
 		}
 
-        M4.mulInto(this._vp, this._proj, this._view);
-        // Update inverse caches for reprojection
-        M4.invertRigidInto(this._invView, this._view);
-        M4.invertInto(this._invProj, this._proj);
-        M4.mulInto(this._invVP, this._invProj, this._invView);
-        this._planes = extractFrustumPlanes(this._vp);
-        this._dirty = false;
-    }
+		M4.mulInto(this._vp, this._proj, this._view);
+		// Update inverse caches for reprojection
+		M4.invertRigidInto(this._invView, this._view);
+		M4.invertInto(this._invProj, this._proj);
+		M4.mulInto(this._invVP, this._invProj, this._invView);
+		this._planes = extractFrustumPlanes(this._vp);
+		this._dirty = false;
+	}
 
 	get view(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._view; }
 	get projection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._proj; }
 	get viewProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._vp; }
 	get frustumPlanes(): Plane[] { if (this._dirty) this.rebuild(); return this._planes; }
-    get skyboxView(): Mat4Float32 { return M4.skyboxFromViewInto(this._skyboxView, this.view); }
-    get inverseView(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invView; }
-    get inverseProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invProj; }
-    get inverseViewProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invVP; }
+	get skyboxView(): Mat4Float32 { return M4.skyboxFromViewInto(this._skyboxView, this.view); }
+	get inverseView(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invView; }
+	get inverseProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invProj; }
+	get inverseViewProjection(): Mat4Float32 { if (this._dirty) this.rebuild(); return this._invVP; }
 
 	/** Efficient bundle getter to reduce repeated property access in passes. */
 	public getMatrices(): { view: Mat4Float32; proj: Mat4Float32; vp: Mat4Float32; invView: Mat4Float32; invProj: Mat4Float32; invVP: Mat4Float32 } {

@@ -262,19 +262,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Processes the transition queue by transitioning to the next state in the queue.
 	 * This method dequeues each state transition from the transition queue and transitions to the corresponding state.
 	 */
-private process_transition_queue(): void {
-    if (this.is_processing_queue) return;
-    this.is_processing_queue = true;
-    try {
-        for (let i = 0; i < this.transition_queue.length; i++) {
-            const t = this.transition_queue[i];
-            this.transitionToState(t.state_id, t.transition_type, ...t.args);
-        }
-        this.transition_queue.length = 0;
-    } finally {
-        this.is_processing_queue = false;
-    }
-}
+	private process_transition_queue(): void {
+		if (this.is_processing_queue) return;
+		this.is_processing_queue = true;
+		try {
+			for (let i = 0; i < this.transition_queue.length; i++) {
+				const t = this.transition_queue[i];
+				this.transitionToState(t.state_id, t.transition_type, ...t.args);
+			}
+			this.transition_queue.length = 0;
+		} finally {
+			this.is_processing_queue = false;
+		}
+	}
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -378,17 +378,17 @@ private process_transition_queue(): void {
 		this.in_tick = true;
 		try {
 			this.withCriticalSection(() => {
-			if (!Registry.instance.has(this.id)) {
-				Registry.instance.register(this);
-			}
-			// Run states first
-			this.runSubstateMachines();
-			// Process input for the current state
-			this.processInput();
-			// Run the current state's logic
-			this.runCurrentState();
-			// Execute run checks
-			this.doRunChecks();
+				if (!Registry.instance.has(this.id)) {
+					Registry.instance.register(this);
+				}
+				// Run states first
+				this.runSubstateMachines();
+				// Process input for the current state
+				this.processInput();
+				// Run the current state's logic
+				this.runCurrentState();
+				// Execute run checks
+				this.doRunChecks();
 			});
 		} finally {
 			this.in_tick = false;
@@ -453,9 +453,11 @@ private process_transition_queue(): void {
 
 		const cur = this.current;
 		if (cur) cur.tick();
-		for (const id in this.states) {
-			if (id === this.currentid) continue;
-			if (this.states[id].is_concurrent) this.states[id].tick();
+		if (this.states) {
+			for (const id of Object.keys(this.states)) {
+				if (id === this.currentid) continue;
+				if (this.states[id].is_concurrent) this.states[id].tick();
+			}
 		}
 	}
 
@@ -493,7 +495,7 @@ private process_transition_queue(): void {
 	 * @returns An array containing the current part, remaining parts, and current context.
 	 * @throws {Error} If no state with the given ID is found.
 	 */
-    // Legacy helper removed; path handling now uses filesystem-style parser.
+	// Legacy helper removed; path handling now uses filesystem-style parser.
 
 	/**
 	 * Transition to a new state identified by the given ID. If the ID contains multiple parts separated by '.', it traverses through the states accordingly and switches the state of each part.
@@ -501,34 +503,34 @@ private process_transition_queue(): void {
 	 * @param path - The ID of the state to transition to.
 	 * @throws Error if the state with the given ID does not exist.
 	 */
-    public transition_to_path(path: string | string[], ...args: any[]): void {
-        if (Array.isArray(path)) {
-            let ctx: State = this;
-            for (let idx = 0; idx < path.length; idx++) {
-                const seg = path[idx];
-                if (!ctx.states?.[seg]) throw new Error(`No state with ID '${seg}'`);
-                const child = ctx.states[seg];
-                if (!child.is_concurrent) ctx.transitionToState(seg, 'to', ...args);
-                ctx = child;
-            }
-            return;
-        }
+	public transition_to_path(path: string | string[], ...args: any[]): void {
+		if (Array.isArray(path)) {
+			let ctx: State = this;
+			for (let idx = 0; idx < path.length; idx++) {
+				const seg = path[idx];
+				if (!ctx.states?.[seg]) throw new Error(`No state with ID '${seg}'`);
+				const child = ctx.states[seg];
+				if (!child.is_concurrent) ctx.transitionToState(seg, 'to', ...args);
+				ctx = child;
+			}
+			return;
+		}
 
-        const spec = State.parseFsPath(path);
-        let ctx: State = spec.abs ? this.root : this;
-        for (let u = 0; u < spec.up; u++) {
-            if (!ctx.parent) throw new Error(`Path '${path}' attempts to go above root.`);
-            ctx = ctx.parent;
-        }
+		const spec = State.parseFsPath(path);
+		let ctx: State = spec.abs ? this.root : this;
+		for (let u = 0; u < spec.up; u++) {
+			if (!ctx.parent) throw new Error(`Path '${path}' attempts to go above root.`);
+			ctx = ctx.parent;
+		}
 
-        for (let i = 0; i < spec.segs.length; i++) {
-            const seg = spec.segs[i];
-            const child = ctx.states?.[seg];
-            if (!child) throw new Error(`No state with ID '${seg}'`);
-            if (!child.is_concurrent) ctx.transitionToState(seg, 'to', ...args);
-            ctx = child;
-        }
-    }
+		for (let i = 0; i < spec.segs.length; i++) {
+			const seg = spec.segs[i];
+			const child = ctx.states?.[seg];
+			if (!child) throw new Error(`No state with ID '${seg}'`);
+			if (!child.is_concurrent) ctx.transitionToState(seg, 'to', ...args);
+			ctx = child;
+		}
+	}
 
 	/**
 	 * Switches the state of the state machine to the specified ID.
@@ -539,36 +541,36 @@ private process_transition_queue(): void {
 	 * @param path - The ID of the state to switch to.
 	 * @returns void
 	 */
-    public transition_switch_path(path: string | string[], ...args: any[]): void {
-        if (Array.isArray(path)) {
-            let ctx: State = this;
-            for (let i = 0; i < path.length - 1; i++) {
-                const seg = path[i];
-                const child = ctx.states?.[seg];
-                if (!child) throw new Error(`No state with ID '${seg}'`);
-                ctx = child;
-            }
-            if (path.length > 0) ctx.transitionToState(path[path.length - 1], 'switch', ...args);
-            return;
-        }
+	public transition_switch_path(path: string | string[], ...args: any[]): void {
+		if (Array.isArray(path)) {
+			let ctx: State = this;
+			for (let i = 0; i < path.length - 1; i++) {
+				const seg = path[i];
+				const child = ctx.states?.[seg];
+				if (!child) throw new Error(`No state with ID '${seg}'`);
+				ctx = child;
+			}
+			if (path.length > 0) ctx.transitionToState(path[path.length - 1], 'switch', ...args);
+			return;
+		}
 
-        const spec = State.parseFsPath(path);
-        let ctx: State = spec.abs ? this.root : this;
-        for (let u = 0; u < spec.up; u++) {
-            if (!ctx.parent) throw new Error(`Path '${path}' attempts to go above root.`);
-            ctx = ctx.parent;
-        }
+		const spec = State.parseFsPath(path);
+		let ctx: State = spec.abs ? this.root : this;
+		for (let u = 0; u < spec.up; u++) {
+			if (!ctx.parent) throw new Error(`Path '${path}' attempts to go above root.`);
+			ctx = ctx.parent;
+		}
 
-        for (let i = 0; i < spec.segs.length - 1; i++) {
-            const seg = spec.segs[i];
-            const child = ctx.states?.[seg];
-            if (!child) throw new Error(`No state with ID '${seg}'`);
-            ctx = child;
-        }
-        if (spec.segs.length > 0) {
-            ctx.transitionToState(spec.segs[spec.segs.length - 1], 'switch', ...args);
-        }
-    }
+		for (let i = 0; i < spec.segs.length - 1; i++) {
+			const seg = spec.segs[i];
+			const child = ctx.states?.[seg];
+			if (!child) throw new Error(`No state with ID '${seg}'`);
+			ctx = child;
+		}
+		if (spec.segs.length > 0) {
+			ctx.transitionToState(spec.segs[spec.segs.length - 1], 'switch', ...args);
+		}
+	}
 
 	/**
 	 * Transition to a new state.
@@ -584,13 +586,13 @@ private process_transition_queue(): void {
 	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-    transition_to(state_id: Identifier, ...args: any[]): void;
-    transition_to(transition: StateTransition, ...args: any[]): void;
-    transition_to(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
-        const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
-        const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
-        this.transition_to_path(state_id, ...extraArgs);
-    }
+	transition_to(state_id: Identifier, ...args: any[]): void;
+	transition_to(transition: StateTransition, ...args: any[]): void;
+	transition_to(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
+		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
+		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+		this.transition_to_path(state_id, ...extraArgs);
+	}
 
 	/**
 	 * Transition to a new state.
@@ -606,45 +608,45 @@ private process_transition_queue(): void {
 	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-    switch_to_state(state_id: Identifier, ...args: any[]): void;
-    switch_to_state(transition: StateTransition, ...args: any[]): void;
-    switch_to_state(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
-        const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
-        const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
-        this.transition_switch_path(state_id, ...extraArgs);
-    }
+	switch_to_state(state_id: Identifier, ...args: any[]): void;
+	switch_to_state(transition: StateTransition, ...args: any[]): void;
+	switch_to_state(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
+		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
+		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+		this.transition_switch_path(state_id, ...extraArgs);
+	}
 
-    /**
-     * Checks if the current state matches the given path.
-     * Supports filesystem style ("/", "./", "../") and array of segments.
-     */
-    public matches_state_path(path: string | string[]): boolean {
-        if (Array.isArray(path)) {
-            // Relative match
-            if (path.length === 0) return false;
-            const [head, ...tail] = path;
-            if (tail.length === 0) return this.currentid === head;
-            const next = this.states?.[head];
-            return !!next && next.matches_state_path(tail);
-        }
+	/**
+	 * Checks if the current state matches the given path.
+	 * Supports filesystem style ("/", "./", "../") and array of segments.
+	 */
+	public matches_state_path(path: string | string[]): boolean {
+		if (Array.isArray(path)) {
+			// Relative match
+			if (path.length === 0) return false;
+			const [head, ...tail] = path;
+			if (tail.length === 0) return this.currentid === head;
+			const next = this.states?.[head];
+			return !!next && next.matches_state_path(tail);
+		}
 
-        const spec = State.parseFsPath(path);
-        let ctx: State = spec.abs ? this.root : this;
-        for (let u = 0; u < spec.up; u++) {
-            if (!ctx.parent) return false;
-            ctx = ctx.parent;
-        }
-        if (spec.segs.length === 0) return false;
-        let current: State = ctx;
-        for (let i = 0; i < spec.segs.length - 1; i++) {
-            const seg = spec.segs[i];
-            const child = current.states?.[seg];
-            if (!child) return false;
-            current = child;
-        }
-        const last = spec.segs[spec.segs.length - 1];
-        return current.currentid === last;
-    }
+		const spec = State.parseFsPath(path);
+		let ctx: State = spec.abs ? this.root : this;
+		for (let u = 0; u < spec.up; u++) {
+			if (!ctx.parent) return false;
+			ctx = ctx.parent;
+		}
+		if (spec.segs.length === 0) return false;
+		let current: State = ctx;
+		for (let i = 0; i < spec.segs.length - 1; i++) {
+			const seg = spec.segs[i];
+			const child = current.states?.[seg];
+			if (!child) return false;
+			current = child;
+		}
+		const last = spec.segs[spec.segs.length - 1];
+		return current.currentid === last;
+	}
 
 	/**
 	 * Checks the state guards of the current state and the target state.
@@ -953,7 +955,7 @@ private process_transition_queue(): void {
 			state.populateStates(); // Populate the states of the state
 		}
 		// If no current state is set, set the state to the first state that it finds in the set of states
-		if (!this.currentid) this.currentid = Object.keys(this.states)[0];
+		if (!this.currentid) this.currentid = this.states ? Object.keys(this.states)[0] : undefined;
 	}
 
 	/**
@@ -1219,10 +1221,10 @@ private process_transition_queue(): void {
 		this.paused = false;
 		if (!this.definition) return; // If the definition doesn't exist, the state machine is empty and there is nothing to reset
 		this.data = { ...this.definition.data }; // Reset the state machine data by shallow copying the definition's data
-		if (reset_tree) {
+		if (reset_tree && this.states) {
 			// Call the reset function for each state
-			for (let state in this.states) {
-				this.states[state].reset(reset_tree);
+			for (let state of Object.values(this.states)) {
+				state.reset(reset_tree);
 			}
 		}
 	}
