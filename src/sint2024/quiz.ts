@@ -112,18 +112,6 @@ export class quiz extends WorldObject {
 	}
 
 	/**
-	 * Paints the text on the screen.
-	 *
-	 * This method overrides the base class's paint method. It calculates the starting
-	 * Y position based on the character width and iterates over each line of text,
-	 * drawing it on the screen at the specified X and Y coordinates.
-	 *
-	 * @override
-	 */
-	public paint(): void {
-	}
-
-	/**
 	 * Sets the text from an array of lines, wraps the text, and initializes the display properties.
 	 *
 	 * @param lines - An array of strings where each string represents a line of text.
@@ -257,9 +245,9 @@ export class quiz extends WorldObject {
 					input_event_handlers: {
 						'?(a[j!c], b[j!c])': { // Handle both answer options
 							do() { $.consumeActions(1, 'a', 'b') },
-							to: 'vraag'
+							to: '/vraag'
 						},
-						'down[j]': 'end', // Handle quiz end on "down"
+						'down[j]': '/end', // Handle quiz end on "down"
 					}
 				},
 
@@ -296,33 +284,33 @@ export class quiz extends WorldObject {
 						this.currentQuestionIndex = state.current_tape_value;
 					},
 					tape_end(this: quiz) {
-						return 'end';
+						return '/end';
 					},
 					input_event_handlers: {
 						'a[j!c]': { // Handle answer option A
 							do(this: quiz) {
 								$.consumeAction(1, 'a');
 								this.currentAnswerOptionChosen = 'a';
-								return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
+								return { state_id: '/antwoord', args: this.currentAnswerOptionChosen };
 							},
 						},
 						'b[j!c]': { // Handle answer option B
 							do(this: quiz) {
 								$.consumeAction(1, 'b');
 								this.currentAnswerOptionChosen = 'b';
-								return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
+								return { state_id: '/antwoord', args: this.currentAnswerOptionChosen };
 							},
 						},
 						'left[j!c]': { // Handle previous question on "left"
 							do(this: quiz) {
 								$.consumeAction(1, 'left');
-								return { state_id: 'vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
+								return { state_id: '/vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
 							},
 						},
 						'right[j!c]': { // Handle next question on "right"
 							do(this: quiz) {
 								$.consumeAction(1, 'right');
-								return { state_id: 'vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
+								return { state_id: '/vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
 							},
 						},
 					},
@@ -346,9 +334,9 @@ export class quiz extends WorldObject {
 							do(this: quiz) {
 								$.consumeActions(1, 'a', 'b');
 								if (this.currentQuestionIndex < quizItems.length - 1) {
-									return 'vraag';
+									return '/vraag';
 								} else {
-									return 'end';
+									return '/end';
 								}
 							},
 						},

@@ -37,13 +37,13 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 						// Guard transitions so only the icon for the matching gamepad reacts.
 						controller_assigned: {
 							do(this: SelectedPlayerIndexIcon, _src: any, payload: { gamepadIndex?: number }) {
-								if (payload?.gamepadIndex === this.gamepadIndex) return 'assigned'; // this.sc.transition_to('assigned');
+								if (payload?.gamepadIndex === this.gamepadIndex) return '/assigned';
 								return undefined;
 							}
 						},
 						controller_assignment_cancelled: {
 							do(this: SelectedPlayerIndexIcon, _src: any, payload: { gamepadIndex?: number }) {
-								if (payload?.gamepadIndex === this.gamepadIndex) return 'cancelled'; // this.sc.transition_to('cancelled');
+								if (payload?.gamepadIndex === this.gamepadIndex) return '/cancelled';
 								return undefined;
 							}
 						},

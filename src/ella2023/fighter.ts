@@ -61,6 +61,7 @@ export abstract class Fighter extends SpriteObject {
 					tape_data: [-1, 1],
 					repetitions: 10,
 					enable_tape_autotick: true,
+					ticks2advance_tape: 1,
 					entering_state(this: Fighter) {
 						this.sc.pause_all_except('hitanimation');
 					},

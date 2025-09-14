@@ -1,6 +1,5 @@
 import { $, SpriteObject, StateMachineBlueprint, build_fsm, insavegame, type RevivableObjectArgs } from 'bmsx';
 
-
 @insavegame
 export class sint extends SpriteObject {
 	constructor(opts?: RevivableObjectArgs) {
@@ -47,10 +46,10 @@ export class sint extends SpriteObject {
 			states: {
 				_start: {
 					on: {
-						vraag: 'vraag',
-						antwoord: 'antwoord',
-						klaar: 'klaar',
-						weg: 'weg',
+						vraag: '/vraag',
+						antwoord: '/antwoord',
+						klaar: '/klaar',
+						weg: '/weg',
 					},
 					entering_state(this: sint) {
 						this.setimg('quiz');
@@ -58,9 +57,9 @@ export class sint extends SpriteObject {
 				},
 				weg: {
 					on: {
-						vraag: 'vraag',
-						antwoord: 'antwoord',
-						klaar: 'klaar',
+						vraag: '/vraag',
+						antwoord: '/antwoord',
+						klaar: '/klaar',
 					},
 					entering_state(this: sint) {
 						this.visible = false;
@@ -71,9 +70,9 @@ export class sint extends SpriteObject {
 				},
 				vraag: {
 					on: {
-						antwoord: 'antwoord',
-						klaar: 'klaar',
-						weg: 'weg',
+						antwoord: '/antwoord',
+						klaar: '/klaar',
+						weg: '/weg',
 					},
 					entering_state(this: sint) {
 						this.setimg('hmm');
@@ -81,9 +80,9 @@ export class sint extends SpriteObject {
 				},
 				antwoord: {
 					on: {
-						vraag: 'vraag',
-						klaar: 'klaar',
-						weg: 'weg',
+						vraag: '/vraag',
+						klaar: '/klaar',
+						weg: '/weg',
 					},
 					entering_state(this: sint) {
 						this.setimg('goed');
@@ -91,9 +90,9 @@ export class sint extends SpriteObject {
 				},
 				klaar: {
 					on: {
-						antwoord: 'antwoord',
-						vraag: 'vraag',
-						weg: 'weg',
+						antwoord: '/antwoord',
+						vraag: '/vraag',
+						weg: '/weg',
 					},
 					entering_state(this: sint) {
 						this.setimg('klaar');

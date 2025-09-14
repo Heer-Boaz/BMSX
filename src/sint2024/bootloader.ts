@@ -68,7 +68,7 @@ export class SintWorldFSM { // export to prevent potential tree-shaking (not hap
 					entering_state(this: World) {
 					},
 					tick(this: World, _s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-						return 'default';
+						return '/default';
 					}
 				},
 				default: {
