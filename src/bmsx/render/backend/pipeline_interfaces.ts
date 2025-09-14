@@ -40,7 +40,8 @@ export type RenderPassId =
 	| 'sprites'
 	| 'crt'
 	| 'frame_shared'
-	| 'frame_resolve';
+	| 'frame_resolve'
+	| 'axis_gizmo';
 
 export interface BackendCaps { maxColorAttachments: number; }
 
@@ -175,6 +176,7 @@ export interface RenderPassStateRegistry {
 	['crt']: unknown;
 	['frame_shared']: unknown;
 	['frame_resolve']: unknown;
+	['axis_gizmo']: unknown;
 	['debug_solid']: unknown;
 }
 export type RenderPassStateId = keyof RenderPassStateRegistry;

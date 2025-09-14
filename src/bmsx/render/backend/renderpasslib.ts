@@ -9,6 +9,7 @@ import { registerMeshBatchPass_WebGPU } from '../3d/mesh_pipeline.wgpu';
 import { registerParticlesPass_WebGL } from '../3d/particles_pipeline';
 import { registerParticlesPass_WebGPU } from '../3d/particles_pipeline.wgpu';
 import { registerSkyboxPass_WebGL } from '../3d/skybox_pipeline';
+import { registerAxisGizmoPass_WebGL } from '../3d/axis_gizmo_pipeline';
 import { registerSkyboxPass_WebGPU } from '../3d/skybox_pipeline.wgpu';
 import { registerSolidColorPass_WebGPU } from '../debug/solidcolor_pipeline.wgpu';
 import { RenderGraphRuntime } from '../graph/rendergraph';
@@ -128,6 +129,9 @@ export class RenderPassLibrary {
 
 		// Particles (WebGPU)
 		registerParticlesPass_WebGL(this);
+
+		// Axis gizmo (WebGL) — runs before sprites so labels render this frame
+		registerAxisGizmoPass_WebGL(this);
 
 		// Sprites (WebGL)
 		registerSpritesPass_WebGL(this);
