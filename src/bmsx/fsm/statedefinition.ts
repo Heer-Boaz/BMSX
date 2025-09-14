@@ -274,34 +274,34 @@ export class StateDefinition {
  */
 
 export function validateStateMachine(machinedef: StateDefinition, path: string = machinedef.id): void {
-    if (!machinedef.states) return;
+	if (!machinedef.states) return;
 
-    try {
-        // Strict preflight checks for tape/ticks configuration on the current definition
-        const checkTapeConfig = (def: StateDefinition, atPath: string) => {
-            // Only validate when a tape is configured (otherwise ticks/autotick are irrelevant here)
-            if (!def.tape_data) return;
+	try {
+		// Strict preflight checks for tape/ticks configuration on the current definition
+		const checkTapeConfig = (def: StateDefinition, atPath: string) => {
+			// Only validate when a tape is configured (otherwise ticks/autotick are irrelevant here)
+			if (!def.tape_data) return;
 
-            // ticks2advance_tape must be a finite number >= 0
-            if (typeof def.ticks2advance_tape !== 'number' || !isFinite(def.ticks2advance_tape) || Number.isNaN(def.ticks2advance_tape) || def.ticks2advance_tape < 0) {
-                throw new Error(`Invalid ticks2advance_tape for state '${atPath}': expected a number >= 0.`);
-            }
+			// ticks2advance_tape must be a finite number >= 0
+			if (typeof def.ticks2advance_tape !== 'number' || !isFinite(def.ticks2advance_tape) || Number.isNaN(def.ticks2advance_tape) || def.ticks2advance_tape < 0) {
+				throw new Error(`Invalid ticks2advance_tape for state '${atPath}': expected a number >= 0.`);
+			}
 
-            // When enable_tape_autotick is true, ticks2advance_tape must be > 0
-            if (def.enable_tape_autotick && def.ticks2advance_tape <= 0) {
-                throw new Error(`Invalid tape config in state '${atPath}': enable_tape_autotick requires ticks2advance_tape > 0 (got ${def.ticks2advance_tape}).`);
-            }
+			// When enable_tape_autotick is true, ticks2advance_tape must be > 0
+			if (def.enable_tape_autotick && def.ticks2advance_tape <= 0) {
+				throw new Error(`Invalid tape config in state '${atPath}': enable_tape_autotick requires ticks2advance_tape > 0 (got ${def.ticks2advance_tape}).`);
+			}
 
-            // repetitions must be >= 0 if defined
-            if (def.repetitions != null && def.repetitions < 0) {
-                throw new Error(`Invalid repetitions for state '${atPath}': expected a number >= 0.`);
-            }
-        };
+			// repetitions must be >= 0 if defined
+			if (def.repetitions != null && def.repetitions < 0) {
+				throw new Error(`Invalid repetitions for state '${atPath}': expected a number >= 0.`);
+			}
+		};
 
-        // Validate current definition first
-        checkTapeConfig(machinedef, path);
+		// Validate current definition first
+		checkTapeConfig(machinedef, path);
 
-        const stateIds = Object.keys(machinedef.states);
+		const stateIds = Object.keys(machinedef.states);
 
 		if (!machinedef.initial)
 			throw new Error(`No start state defined for state machine '${path}'`);
@@ -309,12 +309,12 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 		if (!stateIds.includes(machinedef.initial))
 			throw new Error(`Invalid start state '${machinedef.initial}', as that state doesn't exist in the machine '${path}'.`);
 
-        for (const id of stateIds) {
-            const stateDef = machinedef.states[id] as StateDefinition;
-            const statePath = `${path}.${stateDef.id}`;
+		for (const id of stateIds) {
+			const stateDef = machinedef.states[id] as StateDefinition;
+			const statePath = `${path}.${stateDef.id}`;
 
-            // Strict preflight for each sub definition
-            checkTapeConfig(stateDef, statePath);
+			// Strict preflight for each sub definition
+			checkTapeConfig(stateDef, statePath);
 
 			const checkTransitions = (transitions: { [key: string]: Identifier | StateEventDefinition; }, description: string) => {
 				if (!transitions) return;

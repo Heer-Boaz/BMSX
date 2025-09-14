@@ -295,13 +295,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param def_id - id of the FSM definition to use for this machine.
 	 * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
 	 */
-    public static create(def_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
-        let result = new State({ def_id, target_id, parent, root });
-        result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their states
-        result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
+	public static create(def_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
+		let result = new State({ def_id, target_id, parent, root });
+		result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their states
+		result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
-        return result;
-    }
+		return result;
+	}
 
 	/**
 	 * Represents the context of a state in a finite state machine.
@@ -698,24 +698,24 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private _transitionsThisTick = 0;
 	private in_tick = false;
-    private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
+	private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
 
-    private trace(msg: string): void {
-        const diag: any = (State as any).diagnostics;
-        if (diag && diag.traceTransitions) {
-            // eslint-disable-next-line no-console
-            console.debug(`[FSM] ${this.id}: ${msg}`);
-        }
-    }
+	private trace(msg: string): void {
+		const diag: any = (State as any).diagnostics;
+		if (diag && diag.traceTransitions) {
+			// eslint-disable-next-line no-console
+			console.debug(`[FSM] ${this.id}: ${msg}`);
+		}
+	}
 
-    private transitionToState(state_id: Identifier, transition_type: TransitionType, ...args: any[]): void {
-        if (this.in_tick) {
-            if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
-                throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
-            }
-        }
+	private transitionToState(state_id: Identifier, transition_type: TransitionType, ...args: any[]): void {
+		if (this.in_tick) {
+			if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
+				throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
+			}
+		}
 
-        this.trace(`to='${state_id}' type='${transition_type}' from='${this.currentid}'`);
+		this.trace(`to='${state_id}' type='${transition_type}' from='${this.currentid}'`);
 		if (this.critical_section_counter > 0) {
 			this.transition_queue.push({ state_id, args, transition_type: transition_type ?? 'to' });
 			return;
@@ -856,54 +856,54 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		});
 	}
 
-    private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition | undefined, ...args: any[]): boolean {
-        if (!action) return false;
+	private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition | undefined, ...args: any[]): boolean {
+		if (!action) return false;
 
-        // Simple string → always a transition, thus handled.
-        if (typeof action === 'string') {
-            this.transition_to(action, ...args);
-            return true;
-        }
+		// Simple string → always a transition, thus handled.
+		if (typeof action === 'string') {
+			this.transition_to(action, ...args);
+			return true;
+		}
 
-        const cond = action.if;
-        if (cond && !cond.call(this.target, this as State<T>, ...args)) return false;
+		const cond = action.if;
+		if (cond && !cond.call(this.target, this as State<T>, ...args)) return false;
 
-        let didRunDo = false;
+		let didRunDo = false;
 
-        // Run 'do' and interpret optional next state
-        if (action.do) {
-            didRunDo = true;
-            const next = this.getNextState(action.do.call(this.target, this as State<T>, ...args));
-            if (next) {
-                if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
-                    throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
-                }
-                next.transition_type === 'switch'
-                    ? this.switch_to_state(next.state_id, ...(next.args ?? []), ...args)
-                    : this.transition_to(next.state_id, ...(next.args ?? []), ...args);
-                return true;
-            }
-        }
+		// Run 'do' and interpret optional next state
+		if (action.do) {
+			didRunDo = true;
+			const next = this.getNextState(action.do.call(this.target, this as State<T>, ...args));
+			if (next) {
+				if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
+					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
+				}
+				next.transition_type === 'switch'
+					? this.switch_to_state(next.state_id, ...(next.args ?? []), ...args)
+					: this.transition_to(next.state_id, ...(next.args ?? []), ...args);
+				return true;
+			}
+		}
 
-        // Fallback explicit transitions even if do() ran but did not transition
-        if (action.to) {
-            const t = this.getNextState(action.to);
-            if (t) {
-                this.transition_to(t.state_id, ...(t.args ?? []), ...args);
-                return true;
-            }
-        }
-        if (action.switch) {
-            const s = this.getNextState(action.switch);
-            if (s) {
-                this.switch_to_state(s.state_id, ...(s.args ?? []), ...args);
-                return true;
-            }
-        }
+		// Fallback explicit transitions even if do() ran but did not transition
+		if (action.to) {
+			const t = this.getNextState(action.to);
+			if (t) {
+				this.transition_to(t.state_id, ...(t.args ?? []), ...args);
+				return true;
+			}
+		}
+		if (action.switch) {
+			const s = this.getNextState(action.switch);
+			if (s) {
+				this.switch_to_state(s.state_id, ...(s.args ?? []), ...args);
+				return true;
+			}
+		}
 
-        // If do() ran (even without transition), consider the event handled
-        return didRunDo;
-    }
+		// If do() ran (even without transition), consider the event handled
+		return didRunDo;
+	}
 
 	/**
 	 * Adds the given state ID to the history stack, which tracks the previous states of the state machine.
