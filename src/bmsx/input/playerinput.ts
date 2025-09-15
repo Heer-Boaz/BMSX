@@ -164,7 +164,7 @@ export class PlayerInput {
 			allPressed: boolean; anyJustPressed: boolean; allJustPressed: boolean;
 			anyWasPressed: boolean; allWasPressed: boolean; anyJustReleased: boolean;
 			allJustReleased: boolean; anyWasReleased: boolean; allWasReleased: boolean;
-			anyConsumed: boolean; leastPressTime: number; recentestTimestamp: number;
+			anyConsumed: boolean; leastPressTime: number | null; recentestTimestamp: number | null;
 			best1DVal: number | null; best1DAbs: number; best2DVal: [number, number] | null; best2DAbs: number;
 		};
 		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState): Agg => {
@@ -179,8 +179,8 @@ export class PlayerInput {
 			let allWasReleased = true;
 			let anyConsumed = false;
 			let anyPressed: boolean = false; // To track if any button is pressed, specifically needed for the anyJustReleased
-			let leastPressTime = Infinity;
-			let recentestTimestamp = -Infinity;
+			let leastPressTime: number | null = null;
+			let recentestTimestamp: number | null = null;
 			let best1DVal: number | null = null; let best1DAbs = -Infinity;
 			let best2DVal: [number, number] | null = null; let best2DAbs = -Infinity;
 
@@ -198,11 +198,11 @@ export class PlayerInput {
 					allWasReleased = allWasReleased && (state?.wasreleased ?? false);
 					anyWasReleased = anyWasReleased || (state?.wasreleased ?? false);
 					anyConsumed = anyConsumed || (state?.consumed ?? false);
-					if (state?.presstime) {
-						leastPressTime = Math.min(leastPressTime, state.presstime);
+					if (state && state.presstime != null) {
+						leastPressTime = (leastPressTime == null) ? state.presstime : Math.min(leastPressTime, state.presstime);
 					}
-					if (state?.timestamp) {
-						recentestTimestamp = Math.max(recentestTimestamp, state.timestamp);
+					if (state && state.timestamp != null) {
+						recentestTimestamp = (recentestTimestamp == null) ? state.timestamp : Math.max(recentestTimestamp, state.timestamp);
 					}
 					if (typeof state?.value === 'number') {
 						const abs = Math.abs(state.value);
@@ -239,8 +239,12 @@ export class PlayerInput {
 				? this.stateManager.getButtonState(button, framewindow)
 				: this.getButtonState(button, 'gamepad')
 		);
-		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
-		const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
+		const minPresstime = [keyboardState.leastPressTime, gamepadState.leastPressTime]
+			.filter((v): v is number => v != null)
+			.reduce((a, b) => Math.min(a, b), Infinity);
+		const maxTimestamp = [keyboardState.recentestTimestamp, gamepadState.recentestTimestamp]
+			.filter((v): v is number => v != null)
+			.reduce((a, b) => Math.max(a, b), -Infinity);
 		// Deterministic analog merge: prefer higher magnitude; on tie, prefer gamepad over keyboard
 		const pick1D = () => {
 			if (gamepadState.best1DAbs > keyboardState.best1DAbs) return gamepadState.best1DVal ?? null;
@@ -285,9 +289,11 @@ export class PlayerInput {
 		const inputMap = this.inputMap;
 
 		const pressedActions: ActionState[] = [];
+		const seen = new Set<string>();
 		// Iterate over all input sources (keyboard and gamepad)
 		for (const source of ['keyboard', 'gamepad'] as const) {
 			for (const action in inputMap[source]) {
+				if (seen.has(action)) continue;
 				if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
 				const actionState = this.getActionState(action);
 				// Check if the just pressed state matches the query, but only if the query explicitly specifies that justPressed should be true
@@ -301,8 +307,9 @@ export class PlayerInput {
 				if (actionState.pressed === (query?.pressed ?? true) &&
 					justPressedMatches &&
 					consumedMatches &&
-					actionState.presstime >= (query?.pressTime ?? 0)) {
+					((actionState.presstime ?? 0) >= (query?.pressTime ?? 0))) {
 					pressedActions.push(actionState);
+					seen.add(action);
 				}
 			}
 		}
@@ -572,14 +579,12 @@ export class PlayerInput {
 	 * Initializes the input system.
 	 */
 	public constructor(public playerIndex: number) {
-		this.playerIndex = playerIndex;
 		this.stateManager = new InputStateManager();
 		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
 		this.reset();
 
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
-			if (!gamepad.id.toLowerCase().includes('gamepad')) return; // Ignore devices that are not gamepads
 
 			if (!this.inputHandlers['gamepad']) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
 
