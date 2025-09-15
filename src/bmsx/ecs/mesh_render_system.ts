@@ -21,8 +21,8 @@ export class MeshRenderSystem extends ECSystem {
 				M4.copyInto(base, tc.getWorldMatrix());
 			} else {
 				M4.setIdentity(base);
-				M4.translateSelf(base, (parent as any).x ?? 0, (parent as any).y ?? 0, (parent as any).z ?? 0);
-				const s = (parent as any).scale as [number, number, number] | undefined;
+				M4.translateSelf(base, parent.x, parent.y, parent.z);
+				const s = tc.scale as [number, number, number] | undefined;
 				if (Array.isArray(s) && s.length >= 3) M4.scaleSelf(base, s[0], s[1], s[2]);
 			}
 			const subs = mc.collectSubmissions(base, true);

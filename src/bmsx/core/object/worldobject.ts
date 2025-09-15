@@ -84,6 +84,14 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		return arr && arr.length > 0 ? arr[0] : undefined;
 	}
 
+	/** Returns the component of a given type that matches the supplied local id. */
+	getComponentByLocalId<T extends Component>(constructor: ComponentConstructor<T>, idLocal: Identifier): T | undefined {
+		for (const c of this.components) {
+			if (c instanceof constructor && c.id_local === idLocal) return c as T;
+		}
+		return undefined;
+	}
+
 	/** Return the unique instance of a component type; throws if multiple are attached. */
 	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
 		const key = (constructor)?.name;
@@ -185,7 +193,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		if (i2 !== -1) this.components.splice(i2, 1);
 		// Unbind and clear parent linkage
 		component.unbind();
-		component.parentid = null as any;
+		component.parentid = null;
 	}
 
 	/**
@@ -637,7 +645,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public getOrCreateCollider(): Collider2DComponent {
 		const existing = this.getFirstComponent(Collider2DComponent);
 		if (existing) return existing;
-		const c = new Collider2DComponent({ parentid: this.id });
+		const c = new Collider2DComponent({ parentid: this.id, id_local: 'primary' });
 		this.addComponent(c);
 		return c;
 	}

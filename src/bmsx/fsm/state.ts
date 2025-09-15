@@ -606,7 +606,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	transition_to(transition: StateTransition, ...args: any[]): void;
 	transition_to(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
 		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
-		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args));
 		this.transition_to_path(state_id, ...extraArgs);
 	}
 
@@ -628,7 +628,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	switch_to_state(transition: StateTransition, ...args: any[]): void;
 	switch_to_state(state_or_transition: Identifier | StateTransition, ...args: any[]): void {
 		const state_id = typeof state_or_transition === 'string' ? state_or_transition : state_or_transition.state_id;
-		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args) as any[]);
+		const extraArgs = typeof state_or_transition === 'string' ? args : ([].concat(state_or_transition.args ?? [], args));
 		this.transition_switch_path(state_id, ...extraArgs);
 	}
 
@@ -701,7 +701,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
 
 	private trace(msg: string): void {
-		const diag: any = (State as any).diagnostics;
+		const diag: any = State.diagnostics;
 		if (diag && diag.traceTransitions) {
 			// eslint-disable-next-line no-console
 			console.debug(`[FSM] ${this.id}: ${msg}`);

@@ -1,6 +1,6 @@
 import { componenttags_postprocessing, type ComponentAttachOptions } from 'bmsx/component/basecomponent';
 import { Component } from 'bmsx/component/basecomponent';
-import type { vec2, vec3 } from 'bmsx/rompack/rompack';
+import type { Identifier, vec2, vec3 } from 'bmsx/rompack/rompack';
 import { insavegame } from 'bmsx/serializer/serializationhooks';
 import type { color, FlipOptions, RenderLayer } from 'bmsx/render/gameview';
 import { new_vec2 } from 'bmsx/utils/utils';
@@ -17,10 +17,14 @@ export class SpriteComponent extends Component {
 	public ambientFactor?: number; // 0..1
 	// Local offset relative to parent
 	public offset: vec3 = { x: 0, y: 0, z: 0 };
+	/** Optional collider binding; when null, sprite will not drive collider sync. */
+	public colliderLocalId?: Identifier | null;
 
-	constructor(opts: ComponentAttachOptions & { imgid?: string }) {
+	constructor(opts: ComponentAttachOptions & { imgid?: string; colliderLocalId?: Identifier | null }) {
 		super(opts);
 		if (opts?.imgid) this.imgid = opts.imgid ?? 'none';
+		if (Object.prototype.hasOwnProperty.call(opts ?? {}, 'colliderLocalId')) {
+			this.colliderLocalId = opts.colliderLocalId ?? null;
+		}
 	}
 }
-

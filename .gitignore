@@ -34,3 +34,4 @@ src/bmsx/bmsx.d.ts
 !src/bmsx/types/globals.d.ts
 src/testrom/res/_ignore/detective_piet/**
 tsconfig.buildinfo
+scripts/tmp

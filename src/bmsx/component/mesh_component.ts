@@ -342,7 +342,7 @@ export class MeshComponent extends Component {
 		const keys = this.model?.gpuTextures; if (!keys) return;
 		for (const inst of this.instances) {
 			const mat = inst.mesh.material; if (!mat) continue;
-			const t = mat.textures ?? {} as any;
+			const t = mat.textures ?? {};
 			mat.gpuTextures.albedo = t.albedo !== undefined ? keys[t.albedo] : undefined;
 			mat.gpuTextures.normal = t.normal !== undefined ? keys[t.normal] : undefined;
 			mat.gpuTextures.metallicRoughness = t.metallicRoughness !== undefined ? keys[t.metallicRoughness] : undefined;
@@ -357,7 +357,7 @@ export class MeshComponent extends Component {
 			const world = new Float32Array(16);
 			M4.mulAffineInto(world, base, localNow);
 			const joints = (inst.skinIndex !== undefined) ? this.computeSkinMatrices(inst.skinIndex) : undefined;
-			if (!receiveShadow && (inst.mesh as any).shadow) { (inst.mesh as any).shadow = undefined; }
+			if (!receiveShadow && inst.mesh.shadow) { inst.mesh.shadow = undefined; }
 			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights });
 		}
 		return out;

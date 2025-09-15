@@ -136,6 +136,7 @@ export const bootrom = {
 		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;
+			delete bootrom.rom;
 		}).catch(err => {
 			showUnhandledRejectionError(err);
 		});

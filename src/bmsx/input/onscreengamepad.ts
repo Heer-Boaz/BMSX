@@ -39,7 +39,7 @@ export class OnscreenGamepad implements InputHandler {
 		if (!this.supportsVibrationEffect) return;
 		const intensity = Math.max(0, Math.min(1, params.intensity ?? 1));
 		const ms = Math.max(0, Math.round((params.duration ?? 0) * intensity));
-		try { (navigator as any).vibrate(ms); } catch { /* noop */ }
+		try { navigator.vibrate(ms); } catch { /* noop */ }
 	}
 
 	/**
@@ -253,7 +253,7 @@ export class OnscreenGamepad implements InputHandler {
 
 		const addPointerListeners = (controlsElement: HTMLElement, action_type: 'dpad' | 'action') => {
 			// Hint browsers: this region is interactive only
-			try { (controlsElement.style as any).touchAction = 'none'; } catch { /* noop */ }
+			try { controlsElement.style.touchAction = 'none'; } catch { console.info('Failed to set touch-action:none on onscreen gamepad controls element. This may affect touch input behavior, but I wouldn\'t worry about it.'); }
 			controlsElement.addEventListener('pointerdown', e => { this.handlePointerDown(e, action_type, controlsElement); return true; }, { ...options, signal });
 			controlsElement.addEventListener('pointermove', e => { this.handlePointerMove(e, action_type, controlsElement); return true; }, { ...options, signal });
 			controlsElement.addEventListener('pointerup', e => { this.handlePointerUp(e, action_type, controlsElement); return true; }, { ...options, signal });

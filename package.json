@@ -37,6 +37,7 @@
 	"canvas": "^3.1.0",
 	"colors": "*",
 	"dagre": "*",
+	"earcut": "^3.0.2",
 	"esbuild": "^0.25.3",
 	"esbuild-plugin-glsl": "^1.4.0",
 	"flatted": "*",
@@ -54,7 +55,6 @@
 	"tsx": "^4.20.5",
 	"typescript": "^5.8.3"
   },
-
   "scripts": {
 	"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom",
 	"build:all": "npm run pack:resources && npm run build:force",
@@ -63,8 +63,8 @@
 	"build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
 	"Watch!": "npx tsc -b -w",
 	"typecheck:scripts": "npx tsc -p tsconfig.scripts.json",
-  "check:indent": "node scripts/fix-ts-indentation-safe.js --check",
-  "fix:indent": "node scripts/fix-ts-indentation-safe.js",
+	"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
+	"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 	"pack:engine": "npm pack ./src/bmsx",
 	"serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
 	"serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist"

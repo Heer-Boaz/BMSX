@@ -17,70 +17,85 @@ import { Component, componenttags_postprocessing, componenttags_preprocessing, C
  */
 @insavegame
 export class Collider2DComponent extends Component<WorldObject> {
-    /** Whether this object should participate in collision tests. */
-    public hittable: boolean = true;
-    /** Collision filtering: object's collision layer (bit). */
-    public layer: number = 1;
-    /** Collision filtering: which layers this collider tests against (bitmask). */
-    public mask: number = 0xFFFFFFFF;
-    /** If true, collider is considered a trigger (no physical response). */
-    public isTrigger: boolean = true;
-    /** If true, the OverlapSystem will emit overlap events for this collider. */
-    public generateOverlapEvents: boolean = false;
-    /**
-     * Scope for overlap event pairing by space.
-     * - 'current': only objects in the same active space
-     * - 'ui': only objects in the UI space
-     * - 'both': objects in current or UI spaces
-     * - 'all': objects in any space
-     */
-    public spaceEvents: 'current' | 'ui' | 'both' | 'all' = 'current';
+	/** Whether this object should participate in collision tests. */
+	public hittable: boolean = true;
+	/** Collision filtering: object's collision layer (bit). */
+	public layer: number = 1;
+	/** Collision filtering: which layers this collider tests against (bitmask). */
+	public mask: number = 0xFFFFFFFF;
+	/** If true, collider is considered a trigger (no physical response). */
+	public isTrigger: boolean = true;
+	/** If true, the OverlapSystem will emit overlap events for this collider. */
+	public generateOverlapEvents: boolean = false;
+	/**
+	 * Scope for overlap event pairing by space.
+	 * - 'current': only objects in the same active space
+	 * - 'ui': only objects in the UI space
+	 * - 'both': objects in current or UI spaces
+	 * - 'all': objects in any space
+	 */
+	public spaceEvents: 'current' | 'ui' | 'both' | 'all' = 'current';
 
-    /** Local-space rectangle bounds (nullable when only polygons are used). */
-    @excludepropfromsavegame
-    private _localArea: Area | null = null;
+	/** Local-space rectangle bounds (nullable when only polygons are used). */
+	@excludepropfromsavegame
+	private _localArea: Area | null = null;
 
-    /** Local-space polygons; each polygon is a flat [x0,y0,x1,y1,...] list. */
-    @excludepropfromsavegame
-    private _localPolys: Polygon[] | null = null;
+	/** Local-space polygons; each polygon is a flat [x0,y0,x1,y1,...] list. */
+	@excludepropfromsavegame
+	private _localPolys: Polygon[] | null = null;
 
-    /** Internal change token for sprite-driven sync (imgid + flip). */
-    @excludepropfromsavegame
-    private _syncToken?: string;
+	/** Local-space circle (x,y,r), optional. */
+	@excludepropfromsavegame
+	private _localCircle: { x: number; y: number; r: number } | null = null;
 
-    /** Optional hint for a sync system to avoid repeated work. */
-    public get syncToken(): string | undefined { return this._syncToken; }
-    public set syncToken(v: string | undefined) { this._syncToken = v; }
+	/** Internal change token for sprite-driven sync (imgid + flip). */
+	@excludepropfromsavegame
+	private _syncToken?: string;
 
-    /** Returns world-space AABB. Falls back to object size if no local area is set. */
-    public get worldArea(): Area {
-        const p = this.parent.pos;
-        if (!this._localArea) {
-            return { start: { x: p.x, y: p.y }, end: { x: p.x + (this.parent.size?.x ?? 0), y: p.y + (this.parent.size?.y ?? 0) } } as Area;
-        }
-        return { start: { x: p.x + this._localArea.start.x, y: p.y + this._localArea.start.y }, end: { x: p.x + this._localArea.end.x, y: p.y + this._localArea.end.y } } as Area;
-    }
+	/** Optional hint for a sync system to avoid repeated work. */
+	public get syncToken(): string | undefined { return this._syncToken; }
+	public set syncToken(v: string | undefined) { this._syncToken = v; }
 
-    /** Returns world-space polygons, offset by parent position; null when none. */
-    public get worldPolygons(): Polygon[] | null {
-        if (!this._localPolys || this._localPolys.length === 0) return null;
-        const px = this.parent.x, py = this.parent.y;
-        return this._localPolys.map(poly => {
-            const res: number[] = [];
-            for (let i = 0; i < poly.length; i += 2) res.push(poly[i] + px, poly[i + 1] + py);
-            return res;
-        });
-    }
+	/** Returns world-space AABB. Falls back to object size if no local area is set. */
+	public get worldArea(): Area {
+		const p = this.parent.pos;
+		if (!this._localArea) {
+			return { start: { x: p.x, y: p.y }, end: { x: p.x + (this.parent.size?.x ?? 0), y: p.y + (this.parent.size?.y ?? 0) } } as Area;
+		}
+		return { start: { x: p.x + this._localArea.start.x, y: p.y + this._localArea.start.y }, end: { x: p.x + this._localArea.end.x, y: p.y + this._localArea.end.y } } as Area;
+	}
 
-    /** Returns local-space area, if any. */
-    public get localArea(): Area | null { return this._localArea; }
-    /** Returns local-space polygons, if any. */
-    public get localPolygons(): Polygon[] | null { return this._localPolys; }
+	/** Returns world-space polygons, offset by parent position; null when none. */
+	public get worldPolygons(): Polygon[] | null {
+		if (!this._localPolys || this._localPolys.length === 0) return null;
+		const px = this.parent.x, py = this.parent.y;
+		return this._localPolys.map(poly => {
+			const res: number[] = [];
+			for (let i = 0; i < poly.length; i += 2) res.push(poly[i] + px, poly[i + 1] + py);
+			return res;
+		});
+	}
 
-    /** Set local rectangle bounds (replaces previous). */
-    public setLocalArea(a: Area | null): void { this._localArea = a; }
-    /** Set local polygons (replaces previous). */
-    public setLocalPolygons(polys: Polygon[] | null): void { this._localPolys = polys; }
+	/** Returns local-space area, if any. */
+	public get localArea(): Area | null { return this._localArea; }
+	/** Returns local-space polygons, if any. */
+	public get localPolygons(): Polygon[] | null { return this._localPolys; }
+	/** Returns local-space circle, if any. */
+	public get localCircle(): { x: number; y: number; r: number } | null { return this._localCircle; }
+
+	/** Set local rectangle bounds (replaces previous). */
+	public setLocalArea(a: Area | null): void { this._localArea = a; }
+	/** Set local polygons (replaces previous). */
+	public setLocalPolygons(polys: Polygon[] | null): void { this._localPolys = polys; }
+	/** Set local circle (replaces previous). */
+	public setLocalCircle(c: { x: number; y: number; r: number } | null): void { this._localCircle = c; }
+
+	/** Returns world-space circle, if any. */
+	public get worldCircle(): { x: number; y: number; r: number } | null {
+		if (!this._localCircle) return null;
+		const p = this.parent.pos;
+		return { x: p.x + this._localCircle.x, y: p.y + this._localCircle.y, r: this._localCircle.r };
+	}
 }
 
 /**

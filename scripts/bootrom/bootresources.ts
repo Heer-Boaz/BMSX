@@ -395,7 +395,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 	return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function getAssetImageBin(romImgAsset: RomImgAsset, options?: { flipY?: boolean }): Promise<ImageBitmap> {
+async function getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean }): Promise<ImageBitmap> {
 	let source: ImageBitmap | Promise<ImageBitmap> | undefined;
 	if (options?.flipY) {
 		source = romImgAsset._imgbinYFlipped; // Use the private _imgbinYFlipped property
@@ -407,7 +407,7 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, options?: { flipY?: bo
 	// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
 	const imgmeta = romImgAsset.imgmeta;
 	if (!source && imgmeta.atlassed) {
-		const atlas = bootrom.rom.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
+		const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
 		if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
 		const coords = imgmeta.texcoords;
 		if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resname}'`);
@@ -423,12 +423,12 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, options?: { flipY?: bo
 		let sh = (maxV - minV) * atlas.height;
 
 		// Ensure that sw === sh
-		if (sw !== sh) {
-			// Ensure that we remain within the atlas bounds and that the texture is square
-			const size = Math.min(sw, sh, atlas.width, atlas.height);
-			sw = size;
-			sh = size;
-		}
+		// if (sw !== sh) {
+		// 	// Ensure that we remain within the atlas bounds and that the texture is square
+		// 	const size = Math.min(sw, sh, atlas.width, atlas.height);
+		// 	sw = size;
+		// 	sh = size;
+		// }
 
 		const canvas = document.createElement('canvas');
 		canvas.width = sw;
@@ -452,6 +452,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		case 'image':
 		case 'atlas':
 			let img: ImageBitmap | undefined = undefined;
+			// Non-atlassed images can be loaded directly from their buffer
 			if (!res.imgmeta?.atlassed) {
 				if (opts && opts.loadImageFromBuffer) {
 					img = await opts.loadImageFromBuffer(rom.slice(res.start, res.end));
@@ -459,6 +460,9 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					img = await getImageFromBuffer(rom.slice(res.start, res.end));
 				}
 			}
+			// Create the RomImgAsset object, with a getter for the imgbin property
+			// that will extract the image from the atlas when required.
+			// Note that the _imgbin property will be populated with the ImageBitmap
 			const imgAsset: RomImgAsset = {
 				...res,
 				_imgbin: img, // The Image Bitmap of the image asset or undefined if not available. Note that this will be populated with an ImageBitmap when `get imgbin()` is called! In other words, it also acts as a cache when required.
@@ -466,10 +470,10 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				// ** THAT'S WHY YOU SHOULD USE THE `atlassed`-PROPERTY TO DETERMINE WHETHER AN IMAGE ASSET IS ATLASSED OR NOT! **
 				// Getter for imgbin property, compatible with RomImgAsset interface
 				get imgbin() {
-					return getAssetImageBin(this);
+					return getAssetImageBin(this, romResult); // This will populate the _imgbin property if required
 				},
 				get imgbinYFlipped() {
-					return getAssetImageBin(this, { flipY: true });
+					return getAssetImageBin(this, romResult, { flipY: true }); // This will populate the _imgbinYFlipped property if required
 				},
 			};
 			romResult.img[res.resid] = imgAsset;

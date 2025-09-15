@@ -74,6 +74,7 @@ export * from './service/collision2d_service';
 export * from './ecs/spritecollider_sync_system';
 export * from './ecs/collision2d_broadphase_system';
 export * from './ecs/overlap2d_system';
+export * from './collision/collision_profiles';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';
 // Text utility (immediate-mode). Preferred usage: TextComponent + TextRenderSystem

@@ -251,11 +251,6 @@ export function typecheckBeforeBuild(bootloader_path: string, gameProjectOverrid
 	}
 }
 
-// split-engine helpers removed
-
-/** Concatenate engine and game JS into a single buffer for packing. */
-// split-engine concatenation removed
-
 /** Type-check the game against a provided directory of engine declaration files. */
 export function typecheckGameWithDts(bootloader_path: string, dtsDir: string, baseProjectOverride?: string): void {
 	let tscBin: string;
@@ -738,9 +733,9 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 			name: megarom_filename,
 			ext: '.js',
 			type: 'code',
-			img: undefined as any, // Add missing fields to match Resource
+			img: undefined, // Add missing fields to match Resource
 			id: 1,
-			collisionType: undefined as collisiontype // Add missing fields to match Resource
+			collisionType: undefined // Add missing fields to match Resource
 		};
 	})());
 
@@ -982,7 +977,9 @@ export function buildImgMeta(res: Resource): ImgMeta {
 	} = undefined;
 	switch (res.collisionType) {
 		case 'concave':
-			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as Polygon[];
+			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img);//, { thicken: 1, closeGaps: true });
+			// Decompose to convex pieces (triangles) at pack time
+			extracted_hitpolygon = BoundingBoxExtractor.decomposeConcaveToConvex(extracted_hitpolygon, res);
 			hitpolygons = {
 				original: extracted_hitpolygon,
 				fliph: null,
@@ -991,7 +988,7 @@ export function buildImgMeta(res: Resource): ImgMeta {
 			};
 			break;
 		case 'convex':
-			extracted_hitpolygon = [BoundingBoxExtractor.extractConvexHull(img) as Polygon];
+			extracted_hitpolygon = [BoundingBoxExtractor.extractConvexHull(img)].filter(p => (p?.length ?? 0) >= 6);
 			hitpolygons = {
 				original: extracted_hitpolygon,
 				fliph: null,
@@ -1056,7 +1053,7 @@ export async function createAtlasses(resources: Resource[]) {
 			const atlasCanvas = createOptimizedAtlas(filteredImages);
 			if (!atlasCanvas) throw new Error(`Failed to create texture atlas for ${atlas.name}.`);
 			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
-			atlas.buffer = (atlasCanvas as any).toBuffer('image/png'); // Convert canvas to PNG buffer
+			atlas.buffer = (atlasCanvas as (HTMLCanvasElement & { toBuffer: (format: string) => Buffer })).toBuffer('image/png'); // Convert canvas to PNG buffer
 			await writeFile(`./rom/_ignore/${generateAtlasName(atlas.atlasid)}.png`, atlas.buffer);
 		}
 	}
@@ -1105,7 +1102,7 @@ export async function finalizeRompack(
 		const hasBuffer = asset.buffer !== undefined && asset.buffer.length > 0;
 		if (hasBuffer) {
 			// Copy the buffer to avoid modifying the original
-	// @ts-ignore
+			// @ts-ignore
 			const resBuf = Buffer.from(asset.buffer);
 			// Update asset offsets
 			asset.start = offset;
@@ -1114,7 +1111,7 @@ export async function finalizeRompack(
 			offset += resBuf.length;
 		}
 		if (asset.texture_buffer && asset.texture_buffer.length > 0) {
-	// @ts-ignore
+			// @ts-ignore
 			const texBuf = Buffer.from(asset.texture_buffer);
 			asset.texture_start = offset;
 			asset.texture_end = offset + texBuf.length;
@@ -1124,7 +1121,7 @@ export async function finalizeRompack(
 		// Per-asset metadata
 		const perMeta = asset.imgmeta ?? asset.audiometa;
 		if (perMeta) {
-	// @ts-ignore
+			// @ts-ignore
 			const metaBuf = Buffer.from(encodeBinary(perMeta));
 			asset.metabuffer_start = offset;
 			asset.metabuffer_end = offset + metaBuf.length;

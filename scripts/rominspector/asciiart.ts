@@ -252,11 +252,14 @@ export function generatePixelPerfectAsciiArt(
 	for (let y = 0; y < imgH; y++) {
 		let line = '';
 		for (let x = 0; x < imgW; x++) {
-			const idx4 = (y * imgW + x) << 2;
+			// changed index calculation from bit-shift to multiplication to avoid 32-bit signed
+			// conversion issues and ensure correctness for all widths (including odd widths).
+			const idx4 = (y * imgW + x) * 4;
 			const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
 			if (a < 64) {
-				// transparent pixel, render as space
-				line += ' ';
+				// transparent pixel: emit a reset tag before the space so trailing-space-sensitive
+				// consumers do not drop the last column (fixes missing right-most pixel on odd widths).
+				line += '{/} ';
 			}
 			else {
 				line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-fg}█{/}`;

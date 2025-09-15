@@ -128,7 +128,7 @@ export function attachHudPanel(panel: HTMLElement, anchor: Anchor = 'top-left'):
 	dock.appendChild(panel);
 }
 
-export function makeHudPanelDraggable(panel: HTMLElement, handle?: HTMLElement): void {
+export function makeHudPanelDraggable(panel: HTMLElement & { __prevOpacity?: string }, handle?: HTMLElement): void {
 	if (!panel.id) panel.id = `hudpanel-${++panelIdCounter}`;
 	panel.draggable = true;
 	if (handle) handle.style.cursor = 'move';
@@ -155,7 +155,7 @@ export function makeHudPanelDraggable(panel: HTMLElement, handle?: HTMLElement):
 			dragState.panelHeight = r.height;
 			dragState.panelWidth = r.width;
 			// Hide the original panel visually (but keep layout slot) so drag continues reliably
-			(panel as any).__prevOpacity = panel.style.opacity;
+			panel.__prevOpacity = panel.style.opacity;
 			panel.style.opacity = '0';
 			// Optional: provide a minimal drag image to avoid default ghost
 			if (e.dataTransfer && typeof document !== 'undefined') {
@@ -169,9 +169,9 @@ export function makeHudPanelDraggable(panel: HTMLElement, handle?: HTMLElement):
 		for (const key of Object.keys(docks)) { docks[key].style.outline = ''; docks[key].style.outlineOffset = ''; clearPlaceholder(docks[key]); }
 		dragState.panelId = null;
 		// Restore panel visibility
-		const prevOp = (panel as any).__prevOpacity as string | undefined;
+		const prevOp = panel.__prevOpacity as string | undefined;
 		panel.style.opacity = prevOp ?? '';
-		try { delete (panel as any).__prevOpacity; } catch { /* noop */ }
+		try { delete panel.__prevOpacity; } catch { /* noop */ }
 	});
 	// Apply saved layout after ID is known
 	applySavedPanelLayout(panel);

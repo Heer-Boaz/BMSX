@@ -17,6 +17,31 @@ class PropertyTreeState {
 	}
 }
 
+function getObjectEntries(obj: unknown): [string, any][] {
+	// Arrays: map indexes to string keys
+	if (Array.isArray(obj)) {
+		return obj.map((v, i) => [String(i), v]);
+	}
+	// Plain objects: prefer Object.entries
+	if (obj && typeof obj === 'object') {
+		try {
+			const ent = Object.entries(obj as Record<string, any>);
+			if (Array.isArray(ent)) return ent;
+		} catch {
+			// fallthrough to safe enumeration
+		}
+		// Fallback: enumerate own enumerable properties (handles array-like / prefixed-size objects)
+		const out: [string, any][] = [];
+		for (const k in obj as Record<string, any>) {
+			if (Object.prototype.hasOwnProperty.call(obj as Record<string, any>, k)) {
+				out.push([k, (obj as Record<string, any>)[k]]);
+			}
+		}
+		return out;
+	}
+	return [];
+}
+
 function buildObjectTreePersistent(
 	obj: any,
 	ignoreProps: string[] | undefined,
@@ -34,10 +59,12 @@ function buildObjectTreePersistent(
 
 	const container = document.createElement('div');
 	container.className = 'object-tree';
-	const entries = Array.isArray(obj)
-		? obj.map((v, i) => [String(i), v])
-		: Object.entries(obj);
-	for (const [key, value] of entries) {
+	// Use robust entries getter
+	const entries = getObjectEntries(obj);
+	for (const pair of entries) {
+		if (pair === undefined || pair === null) continue;
+		const key = pair[0];
+		const value = pair[1];
 		if (ignoreProps && ignoreProps.includes(key)) continue;
 		const isObj = typeof value === 'object' && value !== null;
 		const path = parentPath ? parentPath + '.' + key : key;
@@ -88,10 +115,12 @@ function updateObjectTreeValues(
 	obj: any,
 	parentPath: string = ''
 ) {
-	const entries = Array.isArray(obj)
-		? obj.map((v, i) => [String(i), v])
-		: Object.entries(obj);
-	for (const [key, value] of entries) {
+	// Use same robust entries getter
+	const entries = getObjectEntries(obj);
+	for (const pair of entries) {
+		if (pair === undefined || pair === null) continue;
+		const key = pair[0];
+		const value = pair[1];
 		const path = parentPath ? parentPath + '.' + key : key;
 		if (typeof value === 'object' && value !== null) {
 			// Find <details> for this path
@@ -100,7 +129,8 @@ function updateObjectTreeValues(
 			) as HTMLDetailsElement | undefined;
 			if (details) {
 				// Recurse into child
-				updateObjectTreeValues(details.lastElementChild as HTMLElement, value, path);
+				const child = details.lastElementChild as HTMLElement | null;
+				if (child) updateObjectTreeValues(child, value, path);
 			}
 		} else {
 			// Find .tree-value for this path

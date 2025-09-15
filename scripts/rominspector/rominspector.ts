@@ -7,7 +7,7 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomImgAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../bootrom/bootresources';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from '../bootrom/bootrom';
@@ -98,11 +98,10 @@ async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
 	}
 }
 
-
-async function loadAssets(rompack: Buffer | ArrayBuffer) {
+async function loadAssets(rombin: Buffer | ArrayBuffer) {
 	let assets: RomAsset[] = [];
 	try {
-		const arrayBuffer = rompack instanceof ArrayBuffer ? rompack : rompack.buffer.slice(rompack.byteOffset, rompack.byteOffset + rompack.byteLength);
+		const arrayBuffer = rombin instanceof ArrayBuffer ? rombin : rombin.buffer.slice(rombin.byteOffset, rombin.byteOffset + rombin.byteLength);
 		// Load the ROM pack metadata using the loadResources function
 		console.log('Loading ROM pack metadata...');
 		if (!arrayBuffer || !(arrayBuffer instanceof ArrayBuffer)) {
@@ -123,7 +122,8 @@ async function loadAssets(rompack: Buffer | ArrayBuffer) {
 			console.error('nodeImageLoader must be a function that accepts an ArrayBuffer');
 			process.exit(1);
 		}
-		assets = await loadAssetList(rompack);
+		// @ts-ignore
+		assets = await loadAssetList(rombin);
 
 		console.log('ROM pack metadata and resources loaded successfully.');
 
@@ -136,7 +136,39 @@ async function loadAssets(rompack: Buffer | ArrayBuffer) {
 	return assets;
 }
 
-function getMetadataBuffer(rompack: Buffer | ArrayBuffer, rommeta: RomMeta) {
+function generateOverlayAscii(imgW: number, imgH: number, polys: number[][], modalWidth: number): string {
+	const buf = Buffer.alloc(imgW * imgH * 4, 0);
+	const put = (x: number, y: number) => {
+		if (x < 0 || y < 0 || x >= imgW || y >= imgH) return;
+		const i = ((y | 0) * imgW + (x | 0)) << 2;
+		buf[i] = 255; buf[i + 1] = 255; buf[i + 2] = 0; buf[i + 3] = 255;
+	};
+	const line = (x0: number, y0: number, x1: number, y1: number) => {
+		x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0;
+		const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+		const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1; let err = dx + dy;
+		for (; ;) {
+			put(x0, y0);
+			if (x0 === x1 && y0 === y1) break;
+			const e2 = 2 * err;
+			if (e2 >= dy) { err += dy; x0 += sx; }
+			if (e2 <= dx) { err += dx; y0 += sy; }
+		}
+	};
+	for (const p of polys || []) {
+		const n = p.length;
+		for (let i = 0; i < n; i += 2) {
+			const j = (i + 2 === n) ? 0 : i + 2;
+			line(p[i], p[i + 1], p[j], p[j + 1]);
+		}
+	}
+	if (imgW <= PER_PIXEL_RENDERING_THRESHOLD && imgH <= PER_PIXEL_RENDERING_THRESHOLD) {
+		return generatePixelPerfectAsciiArt(buf, imgW, imgH);
+	}
+	return generateBrailleAsciiArt(buf, imgW, imgH, modalWidth);
+}
+
+function getMetadataBuffer(rombin: Buffer | ArrayBuffer, rommeta: RomMeta) {
 	const metadataOffset = rommeta.start;
 	const metadataLength = rommeta.end - rommeta.start;
 	// Validate metadataOffset and metadataLength
@@ -145,14 +177,14 @@ function getMetadataBuffer(rompack: Buffer | ArrayBuffer, rommeta: RomMeta) {
 		!Number.isFinite(metadataLength) ||
 		metadataOffset < 0 ||
 		metadataLength < 0 ||
-		metadataOffset + metadataLength > rompack.byteLength ||
-		metadataOffset > rompack.byteLength - 16
+		metadataOffset + metadataLength > rombin.byteLength ||
+		metadataOffset > rombin.byteLength - 16
 	) {
 		console.error(`Invalid metadata offset or length: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
 		process.exit(1);
 	}
 
-	const metaBuf = rompack.slice(metadataOffset, metadataOffset + metadataLength);
+	const metaBuf = rombin.slice(metadataOffset, metadataOffset + metadataLength);
 	if (!metaBuf || metaBuf.byteLength === 0) {
 		console.error('No metadata found in ROM file, invalid ROM file.');
 		process.exit(1);
@@ -180,6 +212,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 	}
 
 	const { zipped_rom, romlabel } = await getZippedRomAndRomLabelFromBlob(
+		// @ts-ignore
 		raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
 	);
 	if (!zipped_rom || zipped_rom.byteLength === 0) {
@@ -204,7 +237,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 
 	const zippedView = new Uint8Array(zipped_rom);
 	const isCompressed = isPakoCompressed(zippedView);
-	let rompack = null;
+	let rombin = null;
 	if (isCompressed) {
 		console.log('ROM is compressed, decompressing...');
 		let zipped = zippedView;
@@ -217,16 +250,16 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 			console.error(e?.stack ?? 'No stack trace available');
 			decompressed = null; // fallback to null if decompression fails
 		}
-		rompack = decompressed.buffer ?? raw; // Use decompressed data if available, otherwise fallback to raw
-		console.log(`Decompressed ROM size: ${formatByteSize(rompack.byteLength)}`);
+		rombin = decompressed.buffer ?? raw; // Use decompressed data if available, otherwise fallback to raw
+		console.log(`Decompressed ROM size: ${formatByteSize(rombin.byteLength)}`);
 	} else {
 		console.log('ROM is uncompressed, using as-is.');
-		rompack = raw;
+		rombin = raw;
 	}
-	if (!rompack) {
+	if (!rombin) {
 		throw new Error('ROM pack is empty or invalid after decompression.');
 	}
-	return rompack;
+	return rombin;
 }
 
 async function main() {
@@ -237,24 +270,25 @@ async function main() {
 	}
 
 	// Load the ROM pack from the specified file
-	let rompack: Buffer | ArrayBuffer;
+	let rombin: Buffer | ArrayBuffer;
 	try {
-		rompack = await loadRompackFromFile(romfile);
+		rombin = await loadRompackFromFile(romfile);
 	} catch (e: any) {
 		console.error(`Failed to load ROM file "${romfile}": ${e.message}`);
 		console.error(e?.stack ?? 'No stack trace available');
 		process.exit(1);
 	}
 
-	const rommeta = parseMetaFromBuffer(rompack);
+	// @ts-ignore
+	const rommeta = parseMetaFromBuffer(rombin);
 	if (!rommeta || !rommeta.start || !rommeta.end) {
 		console.error('Invalid ROM metadata, unable to parse ROM file.');
 		process.exit(1);
 	}
 	console.log(`ROM metadata: start=${rommeta.start} (${formatByteSize(rommeta.start)}), end=${rommeta.end} (${formatByteSize(rommeta.end)}, length=${rommeta.end - rommeta.start} (${formatByteSize(rommeta.end - rommeta.start)}))`);
 
-	const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rompack, rommeta);
-	assetList = await loadAssets(rompack);
+	const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rombin, rommeta);
+	assetList = await loadAssets(rombin);
 
 	const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
 	const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
@@ -313,7 +347,7 @@ async function main() {
 			return sum + size;
 		}, 0);
 		const codeSize = assetList.reduce((sum, a) => a.type === 'code' ? sum + (a.end - a.start) : sum, 0);
-		const totalSize = rompack.byteLength;
+		const totalSize = rombin.byteLength;
 
 		const barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
 
@@ -404,7 +438,7 @@ async function main() {
 		},
 		mouse: true,
 		scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'yellow' } },
-	});
+	}) as contrib.Widgets.TableElement & { rows: blessed.Widgets.ListElement  & { selected: number }};
 
 	updateTable();
 
@@ -413,8 +447,8 @@ async function main() {
 	table.focus();
 	screen.render();
 
-	// Add custom key handlers for pageup/pagedown/home/end
-	const tableRowsList = (table as any).rows;
+	// Add custom key handlers for pageup / pagedown / home / end
+	const tableRowsList = table.rows;
 	tableRowsList.key(['pageup'], function () {
 		const page = this.height - 1;
 		this.select(Math.max(0, this.selected - page));
@@ -463,7 +497,7 @@ async function main() {
 	}
 
 	// Use table.rows for selection events (works for both mouse and keyboard)
-	(table as any).rows.on('select', async (item, idx) => {
+	table.rows.on('select', async (item, idx) => {
 		await showAssetModal(idx);
 	});
 
@@ -507,7 +541,8 @@ async function main() {
 					if (atlasAsset) {
 						const atlasBuf = atlasAsset.buffer instanceof Uint8Array
 							? Buffer.from(atlasAsset.buffer)
-							: Buffer.from(rompack.slice(atlasAsset.start, atlasAsset.end));
+							// @ts-ignore
+							: Buffer.from(rombin.slice(atlasAsset.start, atlasAsset.end));
 
 						try {
 							asciiArt = generateAsciiArtFromImageInAtlas(atlasBuf, imgmeta, getModalWidth());
@@ -518,11 +553,19 @@ async function main() {
 						asciiArt = '[Atlas asset not found]';
 					}
 					if (imgmeta.width) metadataLines.push(`Size: ${imgmeta.width}x${imgmeta.height} `);
+					if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
+						asciiArt += `\n{yellow-fg}HitPolygons (convex pieces) overlay:{/yellow-fg}\n`;
+						asciiArt += generateOverlayAscii(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original, getModalWidth());
+					}
 					for (const [key, value] of Object.entries(imgmeta)) {
 						metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 					}
 				} else {
-					asciiArt = generateAsciiArtFromImage(selected.buffer, imgmeta, getModalWidth())
+					asciiArt = generateAsciiArtFromImageBuffer(selected.buffer, imgmeta, getModalWidth());
+					if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
+						asciiArt += `\n{yellow-fg}HitPolygons (convex pieces) overlay:{/yellow-fg}\n`;
+						asciiArt += generateOverlayAscii(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original, getModalWidth());
+					}
 				}
 				break;
 			case 'atlas': {
@@ -531,8 +574,9 @@ async function main() {
 				}
 				const bufferData = selected.buffer instanceof Uint8Array
 					? Buffer.from(selected.buffer)
-					: Buffer.from(rompack.slice(selected.start, selected.end));
-				asciiArt = generateAsciiArtFromImage(bufferData, imgmeta, getModalWidth())
+					// @ts-ignore
+					: Buffer.from(rombin.slice(selected.start, selected.end));
+				asciiArt = generateAsciiArtFromImageBuffer(bufferData, imgmeta, getModalWidth())
 			}
 				break;
 			case 'audio':
@@ -552,10 +596,13 @@ async function main() {
 				// ------ ASCII-preview toevoegen ------
 				try {
 					asciiArt = '[No audio buffer available]';
+					// @ts-ignore
 					if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer?.byteLength === 0) {
 						// Load the audio buffer from the ROM pack
-						(selected.buffer as ArrayBuffer) = await loadAudio(rompack.slice(selected.start, selected.end));
+						// @ts-ignore
+						(selected.buffer as ArrayBuffer) = await loadAudio(rombin.slice(selected.start, selected.end));
 					}
+					// @ts-ignore
 					const info = parseWav(selected.buffer as Uint8Array);
 					if (!info || !info.dataOff || !info.dataLen || !info.bits || !info.channels) {
 						asciiArt = '[Invalid WAV data]';
@@ -574,7 +621,8 @@ async function main() {
 				break;
 			case 'data':
 				if (!selected.buffer || typeof selected.buffer !== 'object') {
-					selected.buffer = await loadDataFromBuffer(rompack.slice(selected.start, selected.end));
+					// @ts-ignore
+					selected.buffer = await loadDataFromBuffer(rombin.slice(selected.start, selected.end));
 				}
 				metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
 				asciiArt = JSON.stringify(selected.buffer, null, 2);
@@ -582,9 +630,10 @@ async function main() {
 			case 'model':
 				if (!selected.buffer || typeof (selected.buffer as any).meshes === 'undefined') {
 					const texBuf = (selected as any).texture_start != null && (selected as any).texture_end != null
-						? rompack.slice((selected as any).texture_start, (selected as any).texture_end)
+						? rombin.slice((selected as any).texture_start, (selected as any).texture_end)
 						: undefined;
-					selected.buffer = await loadGLTFModelFromBuffer(String(selected.resid), rompack.slice(selected.start, selected.end), texBuf) as any;
+					// @ts-ignore
+					selected.buffer = await loadGLTFModelFromBuffer(String(selected.resid), rombin.slice(selected.start, selected.end), texBuf);
 				}
 				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
 				metadataLines.push(`Model content: ${JSON.stringify(selected.buffer, null)}`);
@@ -616,7 +665,7 @@ async function main() {
 						for (let i = 0; i < modelData.imageBuffers.length; i++) {
 							const imgBuf = Buffer.from(modelData.imageBuffers[i]);
 							asciiArt += `\nImage ${i + 1} (${formatByteSize(imgBuf.byteLength)}):\n`;
-							asciiArt += generateAsciiArtFromImage(imgBuf, { atlassed: false } as any, getModalWidth());
+							asciiArt += generateAsciiArtFromImageBuffer(imgBuf, { atlassed: false }, getModalWidth());
 						}
 					}
 					let materialIndex = 0;
@@ -627,7 +676,7 @@ async function main() {
 							if (modelData.imageBuffers[textureIndex]) {
 								const imgBuf = Buffer.from(modelData.imageBuffers[textureIndex]);
 								asciiArt += `Texture ${textureIndex} (${formatByteSize(imgBuf.byteLength)}):\n`;
-								asciiArt += generateAsciiArtFromImage(imgBuf, { atlassed: false } as any, getModalWidth());
+								asciiArt += generateAsciiArtFromImageBuffer(imgBuf, { atlassed: false }, getModalWidth());
 							}
 							else {
 								asciiArt += `{red-fg}Index ${textureIndex} (for baseColorTexture) not found in model images{/red-fg}!\n`;
@@ -645,7 +694,8 @@ async function main() {
 			case 'code': {
 				let code = '';
 				// Load the code buffer from the ROM pack
-				code = await loadSourceFromBuffer(rompack.slice(selected.start, selected.end));
+				// @ts-ignore
+				code = await loadSourceFromBuffer(rombin.slice(selected.start, selected.end));
 				const sourceMapUrlIndex = code.indexOf('sourceMappingURL=');
 				metadataLines.push(`Characters in code: ${formatNumber(code.length - (sourceMapUrlIndex !== -1 ? code.length - sourceMapUrlIndex : 0))}`);
 				metadataLines.push(`Sourcemap: ${sourceMapUrlIndex !== -1 ? 'Yes' : 'No'}`);
@@ -669,7 +719,7 @@ async function main() {
 		const metabufferSize = selected.metabuffer_end - selected.metabuffer_start;
 		if (bufferSize || metabufferSize) {
 			const barLength = getBarLength(modal?.width as number);
-			const total = rompack.byteLength;
+			const total = rombin.byteLength;
 			const regions = [];
 			const bufferRegionColor = '{light-red-fg}';
 			const metabufferRegionColor = '{light-blue-fg}';
@@ -789,7 +839,7 @@ async function main() {
 			} else if (currentTab === 2) {
 				// Asset buffer dump
 				const assetBuf = asset.start || asset.end
-					? new Uint8Array(rompack.slice(asset.start, asset.end))
+					? new Uint8Array(rombin.slice(asset.start, asset.end))
 					: null;
 				if (!assetBuf || assetBuf.byteLength === 0) {
 					content += `Buffer: [No buffer data available]\n`;
@@ -800,7 +850,7 @@ async function main() {
 				// Metabuffer dump (indien aanwezig)
 				if (typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number' && asset.metabuffer_end > asset.metabuffer_start) {
 					const metaBuf = asset.metabuffer_start || asset.metabuffer_end
-						? new Uint8Array(rompack.slice(asset.metabuffer_start, asset.metabuffer_end))
+						? new Uint8Array(rombin.slice(asset.metabuffer_start, asset.metabuffer_end))
 						: null;
 					if (!metaBuf || metaBuf.byteLength === 0) {
 						content += `Metabuffer: [No metabuffer data available]\n`;
@@ -818,7 +868,7 @@ async function main() {
 		contentBox.focus();
 		let ignoreFirstKeypress = true;
 
-		let currentIdx = (table as any).rows.selected;
+		let currentIdx = table.rows.selected;
 		// Navigatie en tab-wissel
 		contentBox.key(['left', 'right', '1', '2', '3', 'pageup', 'pagedown', 'home', 'end', 'S-down', 'S-up', 'escape', 'enter'], (ch, key) => {
 			if (!modal) return
@@ -832,7 +882,7 @@ async function main() {
 					if (shift) {
 						if (currentIdx <= 0) break; // Prevent going out of bounds
 						currentIdx--;
-						(table as any).rows.select(currentIdx); // update table selection
+						table.rows.select(currentIdx); // update table selection
 						selected = filteredAssetList[currentIdx];
 						showAssetModal(currentIdx, currentTab);
 					}
@@ -841,7 +891,7 @@ async function main() {
 					if (shift) {
 						if (currentIdx >= assetList.length - 1) break; // Prevent going out of bounds
 						currentIdx++;
-						(table as any).rows.select(currentIdx); // update table selection
+						table.rows.select(currentIdx); // update table selection
 						selected = filteredAssetList[currentIdx];
 						showAssetModal(currentIdx, currentTab);
 					}
@@ -973,52 +1023,75 @@ async function main() {
 main();
 
 function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer | null, width: number, height: number } {
-	try {
-		const imageToExtractPNG = PNG.sync.read(imgToExtract);
-		if (!imageToExtractPNG || !imageToExtractPNG.data) return { subimage: null, width: 0, height: 0 };
+	const atlas = PNG.sync.read(imgToExtract);
+	if (!atlas || !atlas.data) throw new Error('Invalid atlas PNG data');
 
-		let imgW = imageToExtractPNG.width, imgH = imageToExtractPNG.height;
-		let offsetX = 0, offsetY = 0;
+	// Default to full atlas
+	let imgW = atlas.width, imgH = atlas.height;
+	let offsetX = 0, offsetY = 0;
 
-		if (imgmeta.atlassed && imgmeta.texcoords) {
-			// imgmeta.texcoords has 12 floats: 6 vertices in clip space (x,y).
-			const coords = imgmeta.texcoords as number[];
-			const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
-			const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
-
-			const minX = Math.min(...xs), maxX = Math.max(...xs);
-			const minY = Math.min(...ys), maxY = Math.max(...ys);
-
-			// Then compute your region for ASCII art:
-			offsetX = Math.floor(minX * imageToExtractPNG.width);
-			offsetY = Math.floor(minY * imageToExtractPNG.height);
-			imgW = Math.floor((maxX - minX) * imageToExtractPNG.width);
-			imgH = Math.floor((maxY - minY) * imageToExtractPNG.height);
+	if (imgmeta.atlassed) {
+		if (!imgmeta.texcoords || !(Array.isArray(imgmeta.texcoords))) {
+			throw new Error('Atlassed image missing texcoords');
 		}
+		// texcoords are pairs [x0,y0,x1,y1,...] in clip space (0..1)
+		const coords = Array.from(imgmeta.texcoords as number[]);
+		const xs: number[] = [];
+		const ys: number[] = [];
+		for (let i = 0; i + 1 < coords.length; i += 2) {
+			xs.push(coords[i]);
+			ys.push(coords[i + 1]);
+		}
+		if (xs.length === 0 || ys.length === 0) throw new Error('Invalid texcoords');
 
-		if (imgW <= 0 || imgH <= 0) return { subimage: null, width: 0, height: 0 };
+		const minU = Math.max(0, Math.min(...xs));
+		const maxU = Math.min(1, Math.max(...xs));
+		const minV = Math.max(0, Math.min(...ys));
+		const maxV = Math.min(1, Math.max(...ys));
 
-		// Extract the subimage from the atlas
-		const subimageData = new Uint8Array(imgW * imgH * 4); // RGBA
-		for (let y = 0; y < imgH; y++) {
-			for (let x = 0; x < imgW; x++) {
-				const srcIndex = ((offsetY + y) * imageToExtractPNG.width + (offsetX + x)) * 4;
-				const destIndex = (y * imgW + x) * 4;
-				subimageData.set(imageToExtractPNG.data.subarray(srcIndex, srcIndex + 4), destIndex);
+		// Convert to pixel coordinates and clamp inside atlas bounds
+		offsetX = Math.floor(minU * atlas.width);
+		offsetY = Math.floor(minV * atlas.height);
+		imgW = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
+		imgH = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
+	}
+
+	if (imgW <= 0 || imgH <= 0) throw new Error('Invalid subimage dimensions');
+
+	// Extract the subimage from the atlas safely (RGBA)
+	const subimageData = new Uint8Array(imgW * imgH * 4); // RGBA
+	const atlasW = atlas.width;
+	const atlasData = atlas.data as Uint8Array;
+
+	for (let y = 0; y < imgH; y++) {
+		const srcRow = ((offsetY + y) * atlasW) << 2; // *4
+		const destRow = (y * imgW) << 2;
+		// Copy a full row using indexed assignments to avoid OOB set
+		for (let x = 0; x < imgW; x++) {
+			const srcIdx = srcRow + ((offsetX + x) << 2);
+			const dstIdx = destRow + (x << 2);
+			// Guard: if atlas data shorter than expected, fill transparent
+			if (srcIdx + 3 < atlasData.length) {
+				subimageData[dstIdx] = atlasData[srcIdx];
+				subimageData[dstIdx + 1] = atlasData[srcIdx + 1];
+				subimageData[dstIdx + 2] = atlasData[srcIdx + 2];
+				subimageData[dstIdx + 3] = atlasData[srcIdx + 3];
+			} else {
+				subimageData[dstIdx] = 0;
+				subimageData[dstIdx + 1] = 0;
+				subimageData[dstIdx + 2] = 0;
+				subimageData[dstIdx + 3] = 0;
 			}
 		}
-
-		return { subimage: Buffer.from(subimageData), width: imgW, height: imgH };
-	} catch (e) {
-		console.error('Error extracting subimage:', e);
-		return { subimage: null, width: 0, height: 0 };
 	}
+
+	return { subimage: Buffer.from(subimageData), width: imgW, height: imgH };
 }
 
 function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
-	const { subimage, width, height } = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
-	if (!subimage) return '[Unable to extract subimage]';
 	try {
+		const { subimage, width, height } = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
+		if (!subimage) return '[Unable to extract subimage]';
 		let sizeString = `Size: ${width}x${height}\n`;
 		// If the image is too large, we will not render it pixel-perfect
 		if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
@@ -1031,7 +1104,7 @@ function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, mo
 	}
 }
 
-function generateAsciiArtFromImage(img: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
+function generateAsciiArtFromImageBuffer(img: Buffer, imgmeta: Partial<ImgMeta>, modalWidth: number): string {
 	try {
 		let sizeString = '';
 		const imagePNG = PNG.sync.read(img);

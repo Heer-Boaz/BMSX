@@ -209,6 +209,7 @@ export class TitleScreen extends SpriteObject {
 		this._cursorSprite = new SpriteComponent({ parentid: this.id, imgid: BitmapId.menu_arrow });
 		this.addComponent(this._cursorSprite);
 		this._cursorSprite.layer = 'ui';
+		this._cursorSprite.colliderLocalId = null;
 	}
 }
 

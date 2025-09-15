@@ -255,7 +255,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 
 		// Enforce uniqueness if the component class declares it
 		const ctor = this.constructor as ConstructorWithTagsProperty & { unique?: boolean };
-		const existing = parent.getComponents?.(this.constructor as any) ?? [];
+		const existing = parent.getComponents(this.constructor as ComponentConstructor<Component<T>>) ?? [];
 		if (ctor.unique && existing.length > 0) {
 			throw new Error(`Component '${this.name}' is marked unique and is already attached to '${parent.id}'.`);
 		}

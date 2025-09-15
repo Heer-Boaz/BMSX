@@ -180,6 +180,7 @@ export abstract class Fighter extends SpriteObject {
 		if (!this._hitSprite) {
 			this._hitSprite = new SpriteComponent({ parentid: this.id });
 			this.addComponent(this._hitSprite);
+			this._hitSprite.colliderLocalId = null;
 		}
 		let imgid: string = BitmapId.poef;
 		switch (hitMarker.type) {
@@ -190,7 +191,7 @@ export abstract class Fighter extends SpriteObject {
 		// Convert world-space hit position to local offset relative to this object
 		const dx = hitMarker.pos.x - this.x;
 		const dy = hitMarker.pos.y - this.y;
-		this._hitSprite.offset = { x: dx, y: dy, z: 100 } as any;
+		this._hitSprite.offset = { x: dx, y: dy, z: 100 };
 		this._hitSprite.enabled = true;
 	}
 

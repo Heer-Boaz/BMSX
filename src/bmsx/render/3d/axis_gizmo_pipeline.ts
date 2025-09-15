@@ -122,7 +122,7 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 
 			// Inverse rotation (transpose of view's 3x3) to express camera axes in world frame
 			const invRot = new Float32Array(16);
-			M4.skyboxFromViewInto(invRot as any, view as any);
+			M4.skyboxFromViewInto(invRot, view);
 			// Flip third column so Z axis represents camera Forward (+Z_cam)
 			invRot[8] = -invRot[8]; invRot[9] = -invRot[9]; invRot[10] = -invRot[10];
 			gl.uniformMatrix4fv(uViewLoc, false, invRot);
@@ -164,7 +164,7 @@ export function registerAxisGizmoPass_WebGL(registry: RenderPassLibrary): void {
 				// clamp d to [-1, 1] then map linearly to [0.5, 1.0]:
 				// scale = 0.75 + 0.25 * d  -> d=-1 => 0.5, d=1 => 1.0
 				const cd = clamp(d, -1, 1);
-				return 0.75 + 0.25 * cd;
+				return 0.70 + 0.30 * cd;
 			};
 			placeLabel(view[0], view[1], 'X', { r: 1, g: 0, b: 0, a: 1 }, scaleFor(fwd.x));
 			placeLabel(view[4], view[5], 'Y', { r: 0, g: 1, b: 0, a: 1 }, scaleFor(fwd.y));

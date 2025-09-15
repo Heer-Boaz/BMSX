@@ -16,6 +16,7 @@ import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
+import { CustomVisualComponent } from 'bmsx/component/customvisual_component';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
@@ -172,7 +173,7 @@ export class PhysicsOverlayRenderer extends Component {
 
 @componenttags_preprocessing('render')
 @excludeclassfromsavegame
-export class HitBoxVisualizer extends Component {
+export class HitBoxVisualizer extends CustomVisualComponent {
 	static unique = true;
 	static toggle(obj: WorldObject) {
 		if (HitBoxVisualizer.attachedToObject(obj)) {
@@ -198,21 +199,21 @@ export class HitBoxVisualizer extends Component {
 	}
 
 	constructor(opts: ComponentAttachOptions) {
-		super(opts);
-	}
-
-	override preprocessingUpdate(): void {
-		const parent = this.parent as SpriteObject;
-		// Draw polygons if available on the WorldObject
-		if (parent.hasHitPolygon) {
-			for (const poly of parent.hitpolygon) {
-				// Offset polygon by parent position and z
-				$.view.renderer.submit.poly({ points: poly, z: parent.z + 1, color: { ...Msx1Colors[2], a: 0.5 }, thickness: 1, layer: 'ui' });
+		super({
+			...opts, producer: () => {
+				const parent = this.parent as SpriteObject;
+				// Draw polygons if available on the WorldObject
+				if (parent.hasHitPolygon) {
+					for (const poly of parent.hitpolygon) {
+						// Offset polygon by parent position and z
+						$.view.renderer.submit.poly({ points: poly, z: parent.z + 1, color: { ...Msx1Colors[2], a: 0.5 }, thickness: 1, layer: 'ui' });
+					}
+				}
+				if (parent.hitbox) {
+					$.view.renderer.submit.rect({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'rect' });
+				}
 			}
-		}
-		if (parent.hitbox) {
-			$.view.renderer.submit.rect({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 }, layer: 'ui', kind: 'rect' });
-		}
+		});
 	}
 }
 
@@ -400,13 +401,13 @@ function toggleFullscreenOnElement(el: HTMLElement) {
 }
 
 function createDialogDiv(previousDialog?: HTMLElement): HTMLDivElement {
-	const dialogDiv = document.createElement('div');
+	const dialogDiv = document.createElement('div') as HTMLDivElement & { previous?: HTMLElement };
 	dialogDiv.className = 'modal-dialog';
 	dialogDiv.id = DEBUG_ELEMENT_ID;
 
 	if (previousDialog) {
 		previousDialog.style.display = 'none';
-		(dialogDiv as any).previous = previousDialog;
+		dialogDiv.previous = previousDialog;
 	}
 
 	return dialogDiv;
@@ -502,7 +503,7 @@ function createBackSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement)
 	return backSpan;
 }
 
-function createCloseSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement): HTMLSpanElement {
+function createCloseSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement & { previous?: HTMLElement }): HTMLSpanElement {
 	const closeSpan = document.createElement('span');
 	closeSpan.className = 'modal-dialog-button';
 	closeSpan.innerHTML = '&times;';
@@ -513,7 +514,7 @@ function createCloseSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement
 		let previous = previousDialog;
 		while (previous) {
 			document.body.removeChild(previous);
-			previous = (previous as any).previous;
+			previous = previous.previous;
 		}
 		$.paused = prevPausedState;
 	};

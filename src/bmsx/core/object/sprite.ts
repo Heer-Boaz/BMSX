@@ -76,9 +76,10 @@ export abstract class SpriteObject extends WorldObject {
 	constructor(opts: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
 		super(opts);
 		// Attach base SpriteComponent (data-driven sprite handled by SpriteRenderSystem)
-		this.addComponent(new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: 'base_sprite' }));
+		const baseSprite = new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: 'base_sprite', colliderLocalId: 'primary' });
+		this.addComponent(baseSprite);
 		// Attach Collider by default; sprite-driven sync will populate shapes
-		this.addComponent(new Collider2DComponent({ parentid: this.id }));
+		this.addComponent(new Collider2DComponent({ parentid: this.id, id_local: 'primary' }));
 	}
 
 	// queueRenderSubmissions removed — handled by SpriteRenderSystem via SpriteComponent

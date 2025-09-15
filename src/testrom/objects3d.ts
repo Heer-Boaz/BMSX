@@ -186,7 +186,7 @@ export class BuildingMesh extends WorldObject {
 	constructor(public halfExtents: vec3arr = [0.5, 0.5, 0.5]) {
 		super({ id: `building_${BuildingMesh._counter++}` });
 		this.scale = [halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2];
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: (ModelId as any).building ?? ModelId.cube }));
+		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.building ?? ModelId.cube }));
 	}
 }
 

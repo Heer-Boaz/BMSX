@@ -28,7 +28,7 @@ export class TextRenderSystem extends ECSystem {
 				const cw = tcx.charWidth ?? 8;
 				x += calculateCenteredBlockX(arr, cw, tcx.centerBlockWidth);
 			}
-			renderGlyphs(x, y, lines as any, z, tcx.font, tcx.color, tcx.backgroundColor, tcx.layer);
+			renderGlyphs(x, y, lines, z, tcx.font, tcx.color, tcx.backgroundColor, tcx.layer);
 		}
 	}
 }

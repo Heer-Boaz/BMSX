@@ -15,10 +15,10 @@ export var ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
 
 export class HandlerRegistry {
 	private static _instance: HandlerRegistry;
-	private map = new Map<string, AnyHandler>();
-	register(id: string, fn: AnyHandler) { this.map.set(id, fn); }
-	get(id: string): AnyHandler | undefined { return this.map.get(id); }
-	replaceBulk(entries: Record<string, AnyHandler>) { for (const k in entries) this.map.set(k, entries[k]); }
+	private map = new Map<string, GenericHandler>();
+	register(id: string, fn: GenericHandler) { this.map.set(id, fn); }
+	get(id: string): GenericHandler | undefined { return this.map.get(id); }
+	replaceBulk(entries: Record<string, GenericHandler>) { for (const k in entries) this.map.set(k, entries[k]); }
 	static get instance(): HandlerRegistry {
 		if (!this._instance) {
 			this._instance = new HandlerRegistry();
@@ -38,7 +38,7 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 		for (const machine of linkedMachines) {
 			for (const key of keys) {
 				const id = `${machine}.handlers.${className}.${key}`;
-				const fn: AnyHandler = function (this: any, ...args) {
+				const fn: GenericHandler = function (this: any, ...args) {
 					let impl = this[memberName] ?? Object.getPrototypeOf(this)?.[memberName];
 					if (typeof impl !== 'function') {
 						throw new Error(`Registered FSM handler "${id}" is not callable (member: ${memberName})`);
@@ -384,7 +384,7 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 
 function makeId(parts: string[]) { return parts.join('.'); }
 
-type AnyHandler = (this: any, ...args: any[]) => any;
+type GenericHandler = (this: any, ...args: any[]) => any;
 function annotateHandler(fn: Function, id: string): void {
 	try {
 		Object.defineProperty(fn, '_handlerId', { value: id, configurable: true, writable: true });
@@ -408,7 +408,7 @@ type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends S
 function hoistEventIf(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.if;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateEventDefinition['if'] = function (this: any, state: any, ...args: any[]): boolean {
 			const h = registry.get(id);
@@ -427,7 +427,7 @@ function hoistEventIf(ownerDef: StateEventDefinition, id: string, registry: Hand
 function hoistEventDo(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.do;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateEventDefinition['do'] = function (this: any, state: any, ...args: any[]) {
 			const h = registry.get(id);
@@ -446,7 +446,7 @@ function hoistEventDo(ownerDef: StateEventDefinition, id: string, registry: Hand
 function hoistGuardCanEnter(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.can_enter;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateGuard['can_enter'] = function (this: any, state: any): boolean {
 			const h = registry.get(id);
@@ -464,7 +464,7 @@ function hoistGuardCanEnter(ownerDef: StateGuard, id: string, registry: HandlerR
 function hoistGuardCanExit(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.can_exit;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateGuard['can_exit'] = function (this: any, state: any): boolean {
 			const h = registry.get(id);
@@ -483,7 +483,7 @@ function hoistGuardCanExit(ownerDef: StateGuard, id: string, registry: HandlerRe
 function hoistStateTick(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.tick;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateDefinition['tick'] = function (this: any, state: any, ...args: any[]) {
 			const h = registry.get(id);
@@ -501,7 +501,7 @@ function hoistStateTick(ownerDef: StateDefinition, id: string, registry: Handler
 function hoistStateTapeEnd(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.tape_end;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateDefinition['tape_end'] = function (this: any, state: any, ...args: any[]) {
 			const h = registry.get(id);
@@ -519,7 +519,7 @@ function hoistStateTapeEnd(ownerDef: StateDefinition, id: string, registry: Hand
 function hoistStateTapeNext(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.tape_next;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateDefinition['tape_next'] = function (this: any, state: any, tape_rewound: boolean, ...args: any[]) {
 			const h = registry.get(id);
@@ -537,7 +537,7 @@ function hoistStateTapeNext(ownerDef: StateDefinition, id: string, registry: Han
 function hoistStateEntering(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.entering_state;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateDefinition['entering_state'] = function (this: any, state: any, ...args: any[]) {
 			const h = registry.get(id);
@@ -555,7 +555,7 @@ function hoistStateEntering(ownerDef: StateDefinition, id: string, registry: Han
 function hoistStateExiting(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.exiting_state;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateDefinition['exiting_state'] = function (this: any, state: any, ...args: any[]) {
 			const h = registry.get(id);
@@ -573,7 +573,7 @@ function hoistStateExiting(ownerDef: StateDefinition, id: string, registry: Hand
 function hoistStateProcessInput(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
 	const current = ownerDef.process_input;
 	if (typeof current !== 'function') return;
-	registry.register(id, current as AnyHandler);
+	registry.register(id, current as GenericHandler);
 	if (useProxyThunks) {
 		const proxy: StateDefinition['process_input'] = function (this: any, state: any, ...args: any[]) {
 			const h = registry.get(id);

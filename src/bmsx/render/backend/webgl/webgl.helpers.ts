@@ -306,9 +306,9 @@ export function generateDetailedDrawError(
 		identityMatrix[8] === 0 && identityMatrix[9] === 0 && identityMatrix[11] === 0 &&
 		identityMatrix[12] === 0 && identityMatrix[13] === 0 && identityMatrix[14] === 0
 	) {
-		M4.copyInto(mvp, activeCamera.viewProjectionMatrix as any);
+		M4.copyInto(mvp, activeCamera.viewProjectionMatrix);
 	} else {
-		M4.mulInto(mvp, activeCamera.viewProjectionMatrix as any, identityMatrix);
+		M4.mulInto(mvp, activeCamera.viewProjectionMatrix, identityMatrix);
 	}
 	const normalMat = new Float32Array(9);
 	M4.normal3Into(normalMat, identityMatrix);

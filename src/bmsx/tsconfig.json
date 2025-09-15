@@ -10,7 +10,7 @@
 	  "bmsx/*": ["./*"]
 	}
   },
-  "include": ["**/*.ts", "**/*.d.ts"],
+  "include": ["**/*.ts", "**/*.d.ts", "../../scripts/rompacker/convex_decomp_2d.ts"],
   "exclude": ["node_modules"]
 }
 

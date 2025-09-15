@@ -51,7 +51,7 @@ export function registerBuiltinECS(): void {
 	];
 	for (const d of descs) {
 		if (!R.get(d.id)) {
-			R.register(d as any);
+			R.register(d);
 		}
 	}
 }

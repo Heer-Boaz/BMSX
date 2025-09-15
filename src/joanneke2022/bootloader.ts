@@ -673,7 +673,7 @@ function onWheelOverlapStay(this: draaischijf, _event: string, _emitter: any, pa
 	if (!payload?.otherId) return;
 	// Only act while in the active grinding state
 	if (this.sc?.current_state?.def_id !== 'slijpen') return;
-	const other = $.world.getWorldObject(payload.otherId) as any;
+	const other = $.world.getWorldObject<onvolmaaktheid>(payload.otherId);
 	if (!other) return;
 	if (other?.is_onvolmaaktheid && other?.polijst_nudge) other.polijst_nudge();
 }

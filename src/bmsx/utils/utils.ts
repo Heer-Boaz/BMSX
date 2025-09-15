@@ -104,7 +104,7 @@ export function randomIntSecure(min: number, max: number): number {
 	if (range <= 0) return min; // empty range fallback
 
 	// If crypto isn't available, fall back to Math.random
-	const cryptoObj = (typeof crypto !== 'undefined' && (crypto as any).getRandomValues) ? crypto as Crypto : null;
+	const cryptoObj = (typeof crypto !== 'undefined' && crypto.getRandomValues) ? crypto as Crypto : null;
 	if (!cryptoObj) return randomInt(min, max);
 
 	// Use 32-bit unsigned randoms and rejection sampling
