@@ -5,26 +5,41 @@ import { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './inputtyp
 /**
  * Represents an on-screen gamepad for handling input in a game.
  * Implements the IInputHandler interface to manage gamepad button states,
- * including touch events for both directional and action buttons.
- * It is used to simulate gamepad input on touch devices, and is intended to be used in conjunction with the {@link Input} class.
+ * using pointer events for both directional and action buttons.
+ * It is used to simulate gamepad input on touch/pointer devices, and is intended to be used in conjunction with the {@link Input} class.
  *
  * @class OnscreenGamepad
  * @implements {InputHandler}
  */
 export class OnscreenGamepad implements InputHandler {
+	/** Controller to manage and remove all listeners in one go. */
+	private controller: AbortController | null = null;
+
+	/** Active-press counters per logical button (e.g., 'up', 'a'). */
+	private activeCounts: Record<string, number> = {};
+	/** Map pointerId -> set of logical buttons currently engaged by that pointer. */
+	private pointer2Buttons = new Map<number, Set<string>>();
+	/** Map pointerId -> set of element ids currently engaged by that pointer (for UI). */
+	private pointer2Elements = new Map<number, Set<string>>();
+	/** Per-element active pointer count to drive dataset/class state. */
+	private elementActiveCount = new Map<string, number>();
 	/**
 	 * The index of the gamepad used for input.
 	 * @remarks
 	 * This value is set to 7 by default.
 	 */
-	public readonly gamepadIndex = 7;
+	public static readonly VIRTUAL_PAD_INDEX = 0x7ffffffe;
+	public readonly gamepadIndex = OnscreenGamepad.VIRTUAL_PAD_INDEX;
 
 	public get supportsVibrationEffect(): boolean {
-		return true; // IOS and Android devices support vibration effects
+		return typeof navigator !== 'undefined' && 'vibrate' in navigator;
 	}
 
 	public applyVibrationEffect(params: VibrationParams): void {
-		try { if ('vibrate' in navigator) { navigator.vibrate(Math.max(0, Math.round(params.duration * params.intensity))); } } catch { /* noop */ }
+		if (!this.supportsVibrationEffect) return;
+		const intensity = Math.max(0, Math.min(1, params.intensity ?? 1));
+		const ms = Math.max(0, Math.round((params.duration ?? 0) * intensity));
+		try { (navigator as any).vibrate(ms); } catch { /* noop */ }
 	}
 
 	/**
@@ -43,10 +58,8 @@ export class OnscreenGamepad implements InputHandler {
 			if (!elementId) throw new Error(`Error while attempting to hide your buttons - no HTML elementID found matching button '${b}'.`);
 			const element = document.getElementById(elementId);
 			const textElement = document.getElementById(`${elementId}_text`);
-			if (!element) throw new Error(`Error while attempting to hide your buttons - no HTML element found matching button '${b}' and elementID '${elementId}'.`);
-			if (!textElement) throw new Error(`Error while attempting to hide your buttons - no HTML *text* element found matching button '${b}' and elementID '${elementId}'.`);
-			element.classList.add('hidden');
-			textElement.classList.add('hidden');
+			element?.classList.add('hidden');
+			textElement?.classList.add('hidden');
 		});
 	}
 
@@ -60,69 +73,50 @@ export class OnscreenGamepad implements InputHandler {
 		return getPressedState(stateMap, btn);
 	}
 
-	/**
-	 * Polls the input to update the button states and press times.
-	 * This method should be called once per frame to ensure that gamepad input is up-to-date.
-	 * It uses the `touched` attribute (in the dataset) of the on-screen buttons to determine if they are currently being pressed.
-	 */
-	public pollInput(): void {
-		// Initialize new states with current values instead of resetting
+    /**
+     * Polls the input to update the button states and press times.
+     * Should be called once per frame to keep on-screen gamepad input in sync.
+     * Uses internal pointer-press counters, not DOM queries, for performance.
+     */
+    public pollInput(): void {
 		const defaultState = makeButtonState();
-
-		const newGamepadButtonStates: KeyOrButtonId2ButtonState = {};
-
-		Input.BUTTON_IDS.forEach(button => {
-			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? { ...defaultState };
-		});
-
-		for (let i = 0; i < OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES.length; i++) {
-			const d = document.getElementById(OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES[i]);
-			const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[d.id];
-			if (buttonData) {
-				buttonData.buttons.forEach(button => {
-					if (d.dataset.touched === 'true') {
-						const oldPressTime = this.gamepadButtonStates[button]?.presstime ?? 0;
-						// Update the state only if the button is currently pressed
-						newGamepadButtonStates[button].pressed = true;
-						newGamepadButtonStates[button].presstime = oldPressTime + 1;
-						newGamepadButtonStates[button].consumed ??= false;
-						newGamepadButtonStates[button].timestamp ??= performance.now();
-						newGamepadButtonStates[button].justpressed = oldPressTime === 0;
-						newGamepadButtonStates[button].justreleased = false;
-					} else {
-						// Set to false only if no other element is pressing this button
-						if (!this.isOtherElementPressingButton(button)) {
-							const wasPressed = this.gamepadButtonStates[button]?.pressed ? true : false;
-							// Edge: just released in this frame if it was pressed before
-							newGamepadButtonStates[button].justreleased = wasPressed;
-							newGamepadButtonStates[button].justpressed = false;
-							newGamepadButtonStates[button].pressed = false;
-							newGamepadButtonStates[button].presstime = 0;
-							// Clear consumption on release so next press can trigger actions again
-							newGamepadButtonStates[button].consumed = false;
-							newGamepadButtonStates[button].timestamp = performance.now(); // Update the timestamp to the current time
-						}
-					}
-				});
+		const now = performance.now();
+		const newStates: KeyOrButtonId2ButtonState = {};
+		for (const button of Input.BUTTON_IDS) {
+			const prev = this.gamepadButtonStates[button] ?? { ...defaultState };
+			const count = this.activeCounts[button] ?? 0;
+			const isDown = count > 0;
+			if (isDown) {
+				const just = !prev.pressed;
+				newStates[button] = {
+					...prev,
+					pressed: true,
+					justpressed: just,
+					justreleased: false,
+					presstime: (prev.presstime ?? 0) + 1,
+					consumed: prev.consumed ?? false,
+					timestamp: just ? now : (prev.timestamp ?? now),
+					pressId: just ? ((prev.pressId ?? 0) + 1) : (prev.pressId ?? null),
+					value: 1,
+				};
+			} else {
+				const was = !!prev.pressed;
+				newStates[button] = {
+					...prev,
+					pressed: false,
+					justpressed: false,
+					justreleased: was,
+					presstime: 0,
+					consumed: false,
+					timestamp: now,
+					value: 0,
+				};
 			}
 		}
-
-		// Update the button states with the new states
-		this.gamepadButtonStates = newGamepadButtonStates;
+		this.gamepadButtonStates = newStates;
 	}
 
-	/**
-	 * Checks if any other on-screen gamepad element is currently pressing the specified button.
-	 *
-	 * @param button - The identifier of the button to check for.
-	 * @returns True if any element is pressing the button; otherwise, false.
-	 */
-	private isOtherElementPressingButton(button: string): boolean {
-		return OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES.some(dpadId => {
-			const element = document.getElementById(dpadId);
-			return element && element.dataset.touched === 'true' && OnscreenGamepad.ALL_BUTTON_MAP[element.id].buttons.includes(button);
-		});
-	}
+		// Note: legacy DOM-scan helper removed; counters drive state now.
 
 	/**
 	 * Consumes the given button press for the specified player index.
@@ -237,13 +231,12 @@ export class OnscreenGamepad implements InputHandler {
 		...OnscreenGamepad.ACTION_BUTTON_MAP,
 	};
 
-	/**
-	 * A list of element IDs representing the directional pad (D-Pad) buttons.
-	 */
-	private static readonly DPAD_BUTTON_ELEMENT_IDS = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu'];
-	private static readonly ACTION_BUTTON_ELEMENT_IDS = ['btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop', 'ls_knop', 'rs_knop', 'lt_knop', 'rt_knop', 'select_knop', 'start_knop', 'home_knop'];
+    /**
+     * A list of element IDs representing the directional pad (D-Pad) buttons.
+     */
+    private static readonly DPAD_BUTTON_ELEMENT_IDS = Object.keys(OnscreenGamepad.DPAD_BUTTON_MAP);
 
-	private static readonly ONSCREEN_BUTTON_ELEMENT_NAMES = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
+    private static readonly ONSCREEN_BUTTON_ELEMENT_NAMES = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
 
 	/**
 	 * Initializes the input system.
@@ -253,21 +246,152 @@ export class OnscreenGamepad implements InputHandler {
 	public init(): void {
 		// Reset gamepad button states
 		this.reset();
-		const addTouchListeners = (controlsElement: HTMLElement, action_type: 'dpad' | 'action') => {
-			controlsElement.addEventListener('touchmove', e => { this.handleTouchMove(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchstart', e => { this.handleTouchStart(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchend', e => { this.handleTouchEnd(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchcancel', e => { this.handleTouchEnd(e, action_type); return true; }, options);
+		// Abort previous listeners, then create a new controller
+		this.controller?.abort();
+		this.controller = new AbortController();
+		const signal = this.controller.signal;
+
+		const addPointerListeners = (controlsElement: HTMLElement, action_type: 'dpad' | 'action') => {
+			// Hint browsers: this region is interactive only
+			try { (controlsElement.style as any).touchAction = 'none'; } catch { /* noop */ }
+			controlsElement.addEventListener('pointerdown', e => { this.handlePointerDown(e, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('pointermove', e => { this.handlePointerMove(e, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('pointerup', e => { this.handlePointerUp(e, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('pointercancel', e => { this.handlePointerUp(e, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('lostpointercapture', e => { this.handlePointerUp(e, action_type, controlsElement); return true; }, { ...options, signal });
 		};
 
-		addTouchListeners(document.getElementById('d-pad-controls')!, 'dpad');
-		addTouchListeners(document.getElementById('button-controls')!, 'action');
-		// Prevent default touch events for all other elements in the DOM
-		document.addEventListener('touchstart', e => { e.preventDefault(); return true; }, options);
+		addPointerListeners(document.getElementById('d-pad-controls')!, 'dpad');
+		addPointerListeners(document.getElementById('button-controls')!, 'action');
+        // No global touchstart preventDefault; rely on CSS touch-action and pointer capture.
 
-		window.addEventListener('blur', e => this.blur(e), false); // Blur event will pause the game and prevent any input from being registered and reset the key states
-		window.addEventListener('focus', e => this.focus(e), false); // Focus event will allow input to be registered again
-		window.addEventListener('mouseout', () => this.reset(), options); // Reset input states when mouse leaves the window
+		window.addEventListener('blur', e => this.blur(e), { signal }); // Blur event will pause the game and prevent any input from being registered and reset the key states
+		window.addEventListener('focus', e => this.focus(e), { signal }); // Focus event will allow input to be registered again
+		window.addEventListener('mouseout', () => this.reset(), { ...options, signal }); // Reset input states when mouse leaves the window
+	}
+
+	/** Convert a DOM id to base control id (strip _text suffix). */
+	private baseId(id: string): string { return id?.endsWith('_text') ? id.slice(0, -5) : id; }
+
+	/** Update UI class + dataset for element id based on active count. */
+	private setElementActive(id: string, active: boolean): void {
+		const el = document.getElementById(id);
+		if (!el) return;
+		el.dataset.touched = active ? 'true' : 'false';
+		if (active) { el.classList.add('druk'); el.classList.remove('los'); }
+		else { el.classList.remove('druk'); el.classList.add('los'); }
+		// Mirror for button label if action button
+		if (OnscreenGamepad.ACTION_BUTTON_MAP[id]) {
+			const text = document.getElementById(`${id}_text`);
+			if (text) {
+				if (active) { text.classList.add('druk'); text.classList.remove('los'); }
+				else { text.classList.remove('druk'); text.classList.add('los'); }
+			}
+		}
+	}
+
+	/** Apply dpad ring classes based on active dpad elements. */
+	private updateDpadOmheining(): void {
+		const ring = document.getElementById('d-pad-omheining') as HTMLElement | null;
+		if (!ring) return;
+		ring.classList.remove(...OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
+		for (const id of OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS) {
+			if ((this.elementActiveCount.get(id) ?? 0) > 0) ring.classList.add(id);
+		}
+	}
+
+	/** Translate pointer position to active elements and logical buttons. */
+	private hitTest(clientX: number, clientY: number, control_type: 'dpad' | 'action'): { elements: string[]; buttons: string[] } {
+		const els = (document.elementsFromPoint(clientX, clientY) as HTMLElement[]) ?? [];
+		for (const el of els) {
+			const id = this.baseId(el.id);
+			if (!id) continue;
+			if (control_type === 'action' && OnscreenGamepad.ACTION_BUTTON_MAP[id]) {
+				return { elements: [id], buttons: OnscreenGamepad.ACTION_BUTTON_MAP[id].buttons };
+			}
+			if (control_type === 'dpad' && OnscreenGamepad.DPAD_BUTTON_MAP[id]) {
+				const neighbors: Record<string, string[]> = {
+					'd-pad-lu': ['d-pad-u', 'd-pad-l'],
+					'd-pad-u': ['d-pad-lu', 'd-pad-ru'],
+					'd-pad-ru': ['d-pad-u', 'd-pad-r'],
+					'd-pad-r': ['d-pad-ru', 'd-pad-rd'],
+					'd-pad-ld': ['d-pad-d', 'd-pad-l'],
+					'd-pad-d': ['d-pad-ld', 'd-pad-rd'],
+					'd-pad-rd': ['d-pad-d', 'd-pad-r'],
+					'd-pad-l': ['d-pad-lu', 'd-pad-ld'],
+				};
+				const elids = [id, ...(neighbors[id] ?? [])];
+				return { elements: elids, buttons: OnscreenGamepad.DPAD_BUTTON_MAP[id].buttons };
+			}
+		}
+		return { elements: [], buttons: [] };
+	}
+
+	private updateForPointer(pointerId: number, _control_type: 'dpad' | 'action', newElements: string[], newButtons: string[], captureEl: HTMLElement): void {
+		// Previous sets
+		const prevButtons = this.pointer2Buttons.get(pointerId) ?? new Set<string>();
+		const prevElements = this.pointer2Elements.get(pointerId) ?? new Set<string>();
+
+		// Diff buttons
+		const newBtnSet = new Set(newButtons);
+		for (const b of prevButtons) {
+			if (!newBtnSet.has(b)) this.activeCounts[b] = Math.max(0, (this.activeCounts[b] ?? 0) - 1);
+		}
+		for (const b of newBtnSet) {
+			if (!prevButtons.has(b)) this.activeCounts[b] = (this.activeCounts[b] ?? 0) + 1;
+		}
+
+		// Diff elements and update UI per-element reference counts
+		const newElSet = new Set(newElements);
+		for (const id of prevElements) {
+			if (!newElSet.has(id)) {
+				const n = (this.elementActiveCount.get(id) ?? 0) - 1;
+				this.elementActiveCount.set(id, Math.max(0, n));
+				if (n <= 1) this.setElementActive(id, false);
+			}
+		}
+		for (const id of newElSet) {
+			if (!prevElements.has(id)) {
+				const n = (this.elementActiveCount.get(id) ?? 0) + 1;
+				this.elementActiveCount.set(id, n);
+				if (n === 1) this.setElementActive(id, true);
+			}
+		}
+		this.updateDpadOmheining();
+
+		// Persist new sets
+		this.pointer2Buttons.set(pointerId, newBtnSet);
+		this.pointer2Elements.set(pointerId, newElSet);
+
+		// Capture pointer during interaction
+		try { captureEl.setPointerCapture(pointerId); } catch { /* noop */ }
+	}
+
+	private handlePointerDown(e: PointerEvent, control_type: 'dpad' | 'action', host: HTMLElement): void {
+		const hit = this.hitTest(e.clientX, e.clientY, control_type);
+		this.updateForPointer(e.pointerId, control_type, hit.elements, hit.buttons, host);
+	}
+
+	private handlePointerMove(e: PointerEvent, control_type: 'dpad' | 'action', host: HTMLElement): void {
+		if (e.pressure === 0 && e.buttons === 0) return; // ignore hover
+		const hit = this.hitTest(e.clientX, e.clientY, control_type);
+		this.updateForPointer(e.pointerId, control_type, hit.elements, hit.buttons, host);
+	}
+
+	private handlePointerUp(e: PointerEvent, _control_type: 'dpad' | 'action', host: HTMLElement): void {
+		// Clear all state for this pointer
+		const prevButtons = this.pointer2Buttons.get(e.pointerId) ?? new Set<string>();
+		for (const b of prevButtons) this.activeCounts[b] = Math.max(0, (this.activeCounts[b] ?? 0) - 1);
+		const prevElements = this.pointer2Elements.get(e.pointerId) ?? new Set<string>();
+		for (const id of prevElements) {
+			const n = (this.elementActiveCount.get(id) ?? 0) - 1;
+			this.elementActiveCount.set(id, Math.max(0, n));
+			if (n <= 1) this.setElementActive(id, false);
+		}
+		this.updateDpadOmheining();
+		this.pointer2Buttons.delete(e.pointerId);
+		this.pointer2Elements.delete(e.pointerId);
+		try { host.releasePointerCapture(e.pointerId); } catch { /* noop */ }
 	}
 
 	/**
@@ -280,6 +404,12 @@ export class OnscreenGamepad implements InputHandler {
 			Input.BUTTON_IDS.forEach(buttonId => {
 				this.gamepadButtonStates[buttonId] = makeButtonState();
 			});
+			// Clear runtime counters and UI state
+			this.activeCounts = {};
+			this.pointer2Buttons.clear();
+			this.pointer2Elements.clear();
+			this.elementActiveCount.clear();
+			this.resetUI();
 		}
 		else {
 			resetObject(this.gamepadButtonStates, except);
@@ -306,14 +436,6 @@ export class OnscreenGamepad implements InputHandler {
 				}
 			}
 
-			// Also reset the state of the button
-			const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[element_id];
-			if (buttonData) {
-				buttonData.buttons.forEach(button => {
-					const st = this.gamepadButtonStates[button] ?? (this.gamepadButtonStates[button] = makeButtonState());
-					st.pressed = false;
-				});
-			}
 		};
 
 		if (elementsToFilterById) {
@@ -324,157 +446,7 @@ export class OnscreenGamepad implements InputHandler {
 		}
 	}
 
-	/**
-	 * Handles the touch move event for a specific control type on the on-screen gamepad.
-	 * This function is used to handle touch move events for the on-screen gamepad controls.
-	 * It is called when the user moves their finger across the screen while touching the on-screen gamepad.
-	 * The function checks which elements are being touched and updates the UI accordingly.
-	 * If an element is touched, it adds the 'druk' class to it and removes the 'los' class.
-	 * If an element is not touched, it adds the 'los' class to it and removes the 'druk' class.
-	 * It considers the control-type to determine which elements to filter from the reset.
-	 * @param e - The touch event.
-	 * @param control_type - The type of control ('dpad' or 'action').
-	 */
-	handleTouchMove(e: TouchEvent, control_type: 'dpad' | 'action'): void {
-		if (e.touches.length === 0) {
-			return;
-		}
-
-		switch (control_type) {
-			case 'action':
-				const target = e.target as HTMLElement;
-				let foundTarget = false;
-				for (let i = 0; i < e.touches.length; i++) {
-					let pos = e.touches[i];
-					const elementsUnderTouch = document.elementsFromPoint(pos.clientX, pos.clientY) as HTMLElement[];
-					if (elementsUnderTouch && elementsUnderTouch.length > 0) {
-						if (elementsUnderTouch.includes(target)) {
-							foundTarget = true;
-						}
-					}
-				}
-
-				if (!foundTarget) {
-					this.handleTouchEnd(e, control_type);
-				}
-				break;
-			case 'dpad':
-				this.handleTouchStart(e, control_type);
-				break;
-		}
-	}
-
-	/**
-	 * Handles touch events by resetting the UI and checking which elements were touched.
-	 * If an element is touched, it adds the 'druk' class to it and removes the 'los' class.
-	 * It also filters the touched buttons from the reset.
-	 * @param e The touch event to handle.
-	 */
-	handleTouchStart(e: TouchEvent, control_type: 'dpad' | 'action'): void {
-		const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
-		switch (control_type) {
-			case 'action':
-				this.resetUI(OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
-				break;
-			case 'dpad':
-				this.resetUI(OnscreenGamepad.ACTION_BUTTON_ELEMENT_IDS);
-				// Remove all classes from dpad_omheining
-				dpad_omheining.classList.remove(...OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
-				break;
-		}
-
-		if (e.touches.length === 0) {
-			return;
-		}
-
-		const filterFromReset: string[] = [];
-		const elementsToFilter: string[] = [];
-		const dpadMappings = {
-			'd-pad-lu': ['d-pad-u', 'd-pad-l'],
-			'd-pad-u': ['d-pad-lu', 'd-pad-ru'],
-			'd-pad-ru': ['d-pad-u', 'd-pad-r'],
-			'd-pad-r': ['d-pad-ru', 'd-pad-rd'],
-			'd-pad-ld': ['d-pad-d', 'd-pad-l'],
-			'd-pad-d': ['d-pad-ld', 'd-pad-rd'],
-			'd-pad-rd': ['d-pad-d', 'd-pad-r'],
-			'd-pad-l': ['d-pad-lu', 'd-pad-ld'],
-		};
-		for (let i = 0; i < e.touches.length; i++) {
-			let pos = e.touches[i];
-			const elementsUnderTouch = document.elementsFromPoint(pos.clientX, pos.clientY) as HTMLElement[];
-			if (elementsUnderTouch) {
-				for (let j = 0; j < elementsUnderTouch.length; j++) {
-					const elementUnderTouch = elementsUnderTouch[j];
-					let buttonsTouched: string[];
-					switch (control_type) {
-						case 'action':
-							buttonsTouched = OnscreenGamepad.ACTION_BUTTON_MAP[elementUnderTouch.id]?.buttons;
-							break;
-						case 'dpad':
-							buttonsTouched = OnscreenGamepad.DPAD_BUTTON_MAP[elementUnderTouch.id]?.buttons;
-							break;
-					}
-					if (buttonsTouched?.length > 0) {
-						elementUnderTouch.dataset.touched = 'true';
-						elementsToFilter.push(elementUnderTouch.id);
-
-						buttonsTouched.forEach(b => filterFromReset.push(b));
-						if (dpadMappings[elementUnderTouch.id as keyof typeof dpadMappings]) {
-							elementsToFilter.push(...dpadMappings[elementUnderTouch.id as keyof typeof dpadMappings]);
-							dpad_omheining.classList.add(elementUnderTouch.id);
-						}
-					}
-				}
-			}
-		}
-
-		for (let i = 0; i < elementsToFilter.length; i++) {
-			const elementToFilter = elementsToFilter[i];
-			const element = document.getElementById(elementToFilter) as HTMLElement;
-			element.classList.add('druk');
-			element.classList.remove('los');
-			if (control_type === 'action') {
-				const textElement = document.getElementById(`${elementToFilter}_text`);
-				textElement.classList.add('druk');
-				textElement.classList.remove('los');
-			}
-		}
-
-		switch (control_type) {
-			case 'action':
-				elementsToFilter.push(...OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
-				break;
-			case 'dpad':
-				elementsToFilter.push(...OnscreenGamepad.ACTION_BUTTON_ELEMENT_IDS);
-				break;
-		}
-
-		this.resetUI(elementsToFilter);
-	}
-
-	/**
-	 * Handles the touch end event for the specified control type.
-	 * This function is used to handle touch end events for the on-screen gamepad controls.
-	 * It is called when the user lifts their finger off the screen after touching the on-screen gamepad.
-	 * The function checks which controls where touched before the user lifted their finger
-	 * and resets the UI for those controls and leaves the rest as they are.
-	 *
-	 * @param _e - The touch event object.
-	 * @param control_type - The type of control ('dpad' or 'action').
-	 */
-	handleTouchEnd(_e: TouchEvent, control_type: 'dpad' | 'action'): void {
-		switch (control_type) {
-			case 'action':
-				this.resetUI(OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
-				break;
-			case 'dpad':
-				const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
-				// Remove all classes from dpad_omheining
-				dpad_omheining.classList.remove(...OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
-				this.resetUI(OnscreenGamepad.ACTION_BUTTON_ELEMENT_IDS);
-				break;
-		}
-	}
+    // Legacy touch handlers removed; pointer handlers are used instead.
 
 	/**
 	 * Handles the blur event for the input element.
@@ -497,22 +469,9 @@ export class OnscreenGamepad implements InputHandler {
 	 * Disposes of the input handler, cleaning up resources and event listeners.
 	 */
 	public dispose(): void {
-		// Remove all touch event listeners
-		const dpadControls = document.getElementById('d-pad-controls');
-		const buttonControls = document.getElementById('button-controls');
-		if (dpadControls) {
-			dpadControls.removeEventListener('touchmove', e => { this.handleTouchMove(e, 'dpad'); return true; }, options);
-			dpadControls.removeEventListener('touchstart', e => { this.handleTouchStart(e, 'dpad'); return true; }, options);
-			dpadControls.removeEventListener('touchend', e => { this.handleTouchEnd(e, 'dpad'); return true; }, options);
-			dpadControls.removeEventListener('touchcancel', e => { this.handleTouchEnd(e, 'dpad'); return true; }, options);
-		}
-		if (buttonControls) {
-			buttonControls.removeEventListener('touchmove', e => { this.handleTouchMove(e, 'action'); return true; }, options);
-			buttonControls.removeEventListener('touchstart', e => { this.handleTouchStart(e, 'action'); return true; }, options);
-			buttonControls.removeEventListener('touchend', e => { this.handleTouchEnd(e, 'action'); return true; }, options);
-			buttonControls.removeEventListener('touchcancel', e => { this.handleTouchEnd(e, 'action'); return true; }, options);
-		}
-
+		// Abort all listeners attached via this controller and reset state
+		this.controller?.abort();
+		this.controller = null;
 		// Reset the gamepad button states
 		this.reset();
 	}

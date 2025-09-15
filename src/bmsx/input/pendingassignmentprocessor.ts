@@ -92,7 +92,6 @@ export class PendingAssignmentProcessor {
 	constructor(public inputHandler: InputHandler, public proposedPlayerIndex: number | null) {
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
-			if (!gamepad.id.toLowerCase().includes('gamepad')) return;
 
 			if (!this.inputHandler) return; // No gamepad was not assigned to this object, so ignore the event (should not happen).
 			const gamepadIndex = e.gamepad.index;

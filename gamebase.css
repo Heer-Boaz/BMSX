@@ -596,6 +596,8 @@ html {
 	z-index: -1;
 	/* Required for touch controls to show up even when opacity < 1.0 */
 	background-color: #000000;
+	/* Prevent default browser gestures on the game surface; pointer handlers manage input */
+	touch-action: none;
 }
 
 #hidor {

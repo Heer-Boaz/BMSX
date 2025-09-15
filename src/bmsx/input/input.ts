@@ -615,9 +615,9 @@ export class Input implements RegisterablePersistent {
 		 * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
 		 * @param e The gamepad event.
 		 */
-		window.addEventListener("gamepadconnected", (e: GamepadEvent) => {
-			const gamepad = e.gamepad;
-			if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) return;
+			window.addEventListener("gamepadconnected", (e: GamepadEvent) => {
+				const gamepad = e.gamepad;
+				if (!gamepad) return;
 			console.info(`Gamepad ${gamepad.index} connected.`);
 			this.addPendingGamepadAssignment(gamepad)
 		});
@@ -634,19 +634,17 @@ export class Input implements RegisterablePersistent {
 				return false;
 			}
 		}, false);
-		document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
+			// Gesture suppression is CSS-driven; avoid global touchforcechange handlers.
 
 		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
 
 		// Mobile/browser UX: pointer capture and touch-action tuning on the interactive surface
-		const gamescreenEl = document.getElementById('gamescreen');
-		if (gamescreenEl instanceof HTMLElement) {
-			gamescreenEl.style.touchAction = 'manipulation';
-			gamescreenEl.addEventListener('pointerdown', (e: PointerEvent) => { try { gamescreenEl.setPointerCapture(e.pointerId); } catch { /* noop */ } }, options);
-			// Prevent iOS scroll/zoom gestures on the game surface
-			gamescreenEl.addEventListener('touchstart', (e: TouchEvent) => e.preventDefault(), options);
-			gamescreenEl.addEventListener('touchmove', (e: TouchEvent) => e.preventDefault(), options);
-		}
+			const gamescreenEl = document.getElementById('gamescreen');
+			if (gamescreenEl instanceof HTMLElement) {
+				// Pointer capture aids consistent drag behavior across devices
+				gamescreenEl.addEventListener('pointerdown', (e: PointerEvent) => { try { gamescreenEl.setPointerCapture(e.pointerId); } catch { /* noop */ } }, options);
+				// Gesture suppression handled via CSS: #gamescreen { touch-action: none }
+			}
 
 		// Visibility lifecycle: reset edges, cancel rumble, clear transient buffers
 		const handleVisibilityLost = () => {
@@ -879,12 +877,12 @@ export class Input implements RegisterablePersistent {
 		return Input.instance.getPlayerInput(1).getButtonState('F5', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('y', 'gamepad').pressed;
 	}
 
-	/**
-	* Handles debug events such as mouse events and touch events.
-	*
-	* @param e The event object representing the debug event.
-	*/
-	private handleDebugEvents(e: MouseEvent | TouchEvent | KeyboardEvent): void {
+		/**
+		* Handles debug events such as mouse/pointer events and keyboard events.
+		*
+		* @param e The event object representing the debug event.
+		*/
+		private handleDebugEvents(e: MouseEvent | KeyboardEvent): void {
 		if (e instanceof KeyboardEvent) {
 			Input.preventDefaultEventAction(e, e.code);
 			switch (e.code) {
@@ -923,22 +921,6 @@ export class Input implements RegisterablePersistent {
 					handleDebugClick(e);
 					break;
 			}
-		} else if (e instanceof TouchEvent) {
-			e.preventDefault();
-			switch (e.type) {
-				case "touchstart":
-					// handleDebugTouchStart(e);
-					break;
-				case "touchmove":
-					// handleDebugTouchMove(e);
-					break;
-				case "touchend":
-					// handleDebugTouchEnd(e);
-					break;
-				case "touchcancel":
-					// handleDebugTouchCancel(e);
-					break;
 			}
-		}
 	}
 }
