@@ -338,11 +338,11 @@ export class Game {
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
 		new World(worldConfig);
-		// Register built-in ECS systems; allow plugins to register extensions on boot
+		// Register built-in ECS systems; allow modules to register extensions on boot
 		registerBuiltinECS();
-		// Initialize world (spaces, FSM/BT libraries, plugins onBoot)
+		// Initialize world (spaces, FSM/BT libraries, modules onBoot)
 		$.world.init_on_boot();
-		// Compose pipeline spec from profile/custom and plugin extensions
+		// Compose pipeline spec from profile/custom and module extensions
 		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
 			? ecsPipeline
 			: gameplaySpec();
@@ -569,8 +569,8 @@ export class Game {
 			// Wiring phase (revive): bind all registered entities; no FSM start on revived instances
 			// for (const ent of this.registry.getRegisteredEntities()) { ent.bind(); }
 
-			// Plugin load hooks
-			for (const p of (this.world as { _plugins?: any[] })._plugins ?? []) p.onLoad?.(this.world);
+			// Module load hooks
+			for (const p of this.world.modules ?? []) p.onLoad?.(this.world);
 
 			// Do not override revived flags or controller state; onspawn('revive') and @onload hooks handled wiring.
 

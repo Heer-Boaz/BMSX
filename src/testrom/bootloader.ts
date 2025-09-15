@@ -1,11 +1,5 @@
-import {
-	BFont,
-	BGamepadButton, BootArgs,
-	GamepadInputMapping,KeyboardButton, KeyboardInputMapping,
-	$,
-	WorldConfiguration,
-} from 'bmsx';
-import { createTestromPlugin } from './modelplugin';
+import { BFont, BGamepadButton, BootArgs, GamepadInputMapping,KeyboardButton, KeyboardInputMapping, $, WorldConfiguration, } from 'bmsx';
+import { createTestromModule } from './worldmodule';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
 import './test_gamemodel';
@@ -17,7 +11,7 @@ import './test_gamemodel';
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
-	const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromPlugin()] };
+	const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
 
 	return $.init({ ...args, worldConfig: worldConfiguration }).then(() => {
 		$.view.default_font = new BFont(BitmapId);

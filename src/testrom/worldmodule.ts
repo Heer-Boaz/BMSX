@@ -118,7 +118,7 @@ class RailDemoDriver extends WorldObject {
 	}
 }
 
-export function createTestromPlugin() {
+export function createTestromModule() {
 	return {
 		onBoot(world: World) {
 			// Scene scaffold (ported from previous do_one_time_game_init)
@@ -289,5 +289,5 @@ export function createTestromPlugin() {
 			}));
 
 		} // end onBoot
-	}; // end returned plugin object
-} // end createTestromPlugin
+	}; // end returned module object
+} // end createTestromModule

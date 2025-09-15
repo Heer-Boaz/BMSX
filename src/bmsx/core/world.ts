@@ -25,17 +25,17 @@ const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 export type id2objectType = Record<Identifier, WorldObject>;
 export const id2obj = Symbol('id2object');
 
-// Services and plugin types
+// Services and module types
 export interface TileCollisionService {
 	collidesWithTile(o: WorldObject, dir: Direction): boolean;
 	isCollisionTile(x: number, y: number): boolean;
 }
-export type ModelPlugin = { onBoot: (world: World) => void; onTick?: (world: World, dt: number) => void; onLoad?: (world: World) => void; dispose?: () => void };
+export type ModelModule = { onBoot: (world: World) => void; onTick?: (world: World, dt: number) => void; onLoad?: (world: World) => void; dispose?: () => void };
 
 export type WorldConfiguration = {
 	viewportSize?: vec2;
 	collisionService?: TileCollisionService;
-	modules?: Array<ModelPlugin>;
+	modules?: Array<ModelModule>;
 	fsmId?: string;
 };
 
@@ -111,7 +111,8 @@ export class World implements Stateful, RegisterablePersistent {
 	// Model configuration (size, services, modules)
 	private _size: vec2 = { x: 256, y: 192 };
 	private _collision?: TileCollisionService;
-	private _modules: Array<ModelPlugin> = [];
+	private _modules: Array<ModelModule> = [];
+	public get modules(): Array<ModelModule> { return this._modules; }
 	private _fsmId: string = 'world';
 
 	public get gamewidth(): number { return this._size.x; }
@@ -294,13 +295,13 @@ export class World implements Stateful, RegisterablePersistent {
 
 	public init_on_boot(): void {
 		// Order is important: build FSM & BT libraries before modules spawn objects that construct state machines.
-		// Previous order invoked registerPluginHooks (spawning objects) before setupStateMachineLib, causing
+		// Previous order invoked registerModuleHooks (spawning objects) before setupStateMachineLib, causing
 		// StateDefinitions to be undefined during WorldObject construction (e.g. accessing 'Cube3D').
 		this
 			.initializeWorldSpaces()
 			.setupStateMachineLib()      // ensures StateDefinitions populated
-			.setupBTLib()                // behavior trees available prior to plugin object creation
-			.registerPluginHooks()       // modules may now safely spawn objects relying on FSM/BT definitions
+			.setupBTLib()                // behavior trees available prior to module object creation
+			.registerModuleHooks()       // modules may now safely spawn objects relying on FSM/BT definitions
 			.startWorldStateMachine();
 	}
 
@@ -378,7 +379,7 @@ export class World implements Stateful, RegisterablePersistent {
 		return this; // Return the current instance of the World for chaining
 	}
 
-	public registerPluginHooks(): this {
+	public registerModuleHooks(): this {
 		// modules boot hooks (explicit lifecycle; no property chaining)
 		for (const p of this._modules) p.onBoot(this);
 
@@ -414,7 +415,7 @@ export class World implements Stateful, RegisterablePersistent {
 		// Phase 2: PostPhysics + PreRender
 		this.systems.updateFrom(this, TickGroup.PostPhysics);
 
-		// Plugin tick hooks
+		// Module tick hooks
 		for (const p of this._modules) p.onTick?.(this, deltaTime);
 
 		// Cleanup disposed objects
