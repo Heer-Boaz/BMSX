@@ -15,7 +15,7 @@ export class ZakFoe extends Foe {
 	constructor(dir: Direction, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super();
 		this.imgid = BitmapId.ZakFoe1;
-		this.hitarea = ZakFoe.ZakFoeHitArea;
+		this.getOrCreateCollider().setLocalArea(ZakFoe.ZakFoeHitArea);
 		this.size = new_vec2(16, 16);
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.direction = dir;

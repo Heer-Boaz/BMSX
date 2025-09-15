@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, type RevivableObjectArgs, type vec2 } from 'bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2 } from 'bmsx';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
@@ -15,7 +15,7 @@ export type HitMarkerInfo = {
 function getDamage(attackType: AttackType): number {
 	switch (attackType) {
 		default:
-			return 1000;
+			return 10;
 	}
 }
 
@@ -97,7 +97,7 @@ export abstract class Fighter extends SpriteObject {
 
 	constructor(opts: RevivableObjectArgs & { id: Identifier; fsm_id?: Identifier; facing?: 'left' | 'right'; playerIndex?: number }) {
 		super(opts);
-		this._hitarea = new_area(0, 0, 0, 0); // Populate the hitarea with a default value. It is updated in the imgid setter.
+		this.getOrCreateCollider().setLocalArea(new_area(0, 0, 0, 0)); // Default; updated via sprite metadata when set
 		this.facing = opts.facing ?? 'right';
 		this.currentHitMarker = null;
 		this.player_index = opts.playerIndex ?? 1;
@@ -141,7 +141,7 @@ export abstract class Fighter extends SpriteObject {
 				if (opponent.isJumping) { return null; }
 				break;
 		}
-		const centroid = this.getCollisionCentroid(opponent);
+		const centroid = Collision2DSystem.getCollisionCentroid(this, opponent);
 		if (!centroid) return null;
 		return { x: centroid[0], y: centroid[1] };
 	}

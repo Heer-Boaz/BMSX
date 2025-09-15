@@ -27,8 +27,8 @@ export class Pietula extends Foe {
 		super();
 		this.canHurtPlayer = false;
 		this.imgid = BitmapId.Pietula1;
-		this.hitarea = newArea(8, 0, 32, 40);
-		this.size = new_vec2(this.hitarea.end.x, this.hitarea.end.y);
+		this.getOrCreateCollider().setLocalArea(newArea(8, 0, 32, 40));
+		const a = this.getOrCreateCollider().localArea!; this.size = new_vec2(a.end.x, a.end.y);
 		this.health = 30;
 		this.maxHealth = this.health;
 		this.loops = 0;

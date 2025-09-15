@@ -1,4 +1,5 @@
-import { base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, GameView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { $, base_model_spaces, World, BFont, BGamepadButton, BootArgs, build_fsm, copy_vector, Game, WorldObject, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, GameView, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, CollisionSystem, type Direction } from "bmsx";
+import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from 'bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -291,7 +292,7 @@ class uitlegStuff extends SpriteObject {
 	constructor() {
 		super();
 		this.imgid = BitmapId.diamond_front;
-		this.hitarea = new_area(0, 0, this.sx, this.sy);
+		this.getOrCreateCollider().setLocalArea(new_area(0, 0, this.sx, this.sy));
 		this.pos = trunc_vec3(new_vec3((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2, 0));
 	}
 
@@ -449,15 +450,15 @@ class diamant extends SpriteObject {
 		switch (this._getoonde_zijde) {
 			case zijde.Voor:
 				this.imgid = BitmapId.diamond_front;
-				this.hitarea = new_area(0, 0, this.sx, this.sy); // ? TODO: Dit nog nodig?
+					this.getOrCreateCollider().setLocalArea(new_area(0, 0, this.sx, this.sy)); // ? TODO: Dit nog nodig?
 				break;
 			case zijde.Zij:
 				this.imgid = BitmapId.diamond_front;
-				this.hitarea = new_area(0, 0, this.sx, this.sy);
+					this.getOrCreateCollider().setLocalArea(new_area(0, 0, this.sx, this.sy));
 				break;
 			case zijde.Boven:
 				this.imgid = BitmapId.diamond_top;
-				this.hitarea = new_area(0, 0, this.sx, this.sy);
+					this.getOrCreateCollider().setLocalArea(new_area(0, 0, this.sx, this.sy));
 				break;
 		}
 
@@ -603,8 +604,10 @@ class draaischijf extends SpriteObject {
 		this.imgid = BitmapId.none; // Wordt goed gezet bij ingang start state
 		this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
 		this.size = { x: 64, y: 64, z: undefined };
-		this.hitarea = new_area(24, 24, 64 - 24, 64 - 24);
+		this.getOrCreateCollider().setLocalArea(new_area(24, 24, 64 - 24, 64 - 24));
 		this.z = 20;
+		// Receive overlap events to polish imperfections while grinding
+		this.getOrCreateCollider().generateOverlapEvents = true;
 	}
 
 	public static handle_input_idle_state(this: draaischijf): void {
@@ -654,16 +657,7 @@ class draaischijf extends SpriteObject {
 			this.sc.to('slijpen_afkoel');
 		}
 		else {
-			// Slijpen!!
-			_model.filter_and_foreach(
-				o => o.is_onvolmaaktheid,
-				o => {
-					let onvolmaaktje = o as onvolmaaktheid;
-					if (onvolmaaktje.collides(this)) {
-						onvolmaaktje.polijst_nudge();
-					}
-				}
-			);
+			// Grinding logic now handled by overlap events (see onOverlapStay)
 		}
 	}
 
@@ -671,6 +665,17 @@ class draaischijf extends SpriteObject {
 		super.onspawn(spawningPos);
 		this.sc.to('idle');
 	}
+}
+
+// Event-driven polish: when the grinding wheel overlaps an imperfection while in 'slijpen' state, nudge its polish state.
+@subscribesToSelfScopedEvent('overlapStay')
+function onWheelOverlapStay(this: draaischijf, _event: string, _emitter: any, payload?: { otherId?: string }) {
+	if (!payload?.otherId) return;
+	// Only act while in the active grinding state
+	if (this.sc?.current_state?.def_id !== 'slijpen') return;
+	const other = $.world.getWorldObject(payload.otherId) as any;
+	if (!other) return;
+	if (other?.is_onvolmaaktheid && other?.polijst_nudge) other.polijst_nudge();
 }
 
 export enum onvolmaaktheid_soort {
@@ -772,7 +777,7 @@ class burn extends onvolmaaktheid {
 	constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
 		super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
 		this.imgid = BitmapId.none;
-		this.hitarea = new_area(0, 0, this.sx, this.sy);
+		this.getOrCreateCollider().setLocalArea(new_area(0, 0, this.sx, this.sy));
 		// this.size = new_vec2(40, 31);
 	}
 }
@@ -847,7 +852,7 @@ class barst extends onvolmaaktheid {
 		super(onvolmaaktheid_soort.Barst, _zijde, _plek);
 		let defaultErnst = this.max_ernst();
 		__ernst && (this.ernst = defaultErnst);
-		this.hitarea = new_area(0, 0, 40, 31);
+		this.getOrCreateCollider().setLocalArea(new_area(0, 0, 40, 31));
 		this.size = new_vec3(40, 31, null);
 	}
 }

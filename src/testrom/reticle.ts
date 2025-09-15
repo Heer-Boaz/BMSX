@@ -3,7 +3,7 @@ import { BitmapId } from './resourceids';
 
 export class Reticle extends SpriteObject {
 	ox = 0; oy = 0; private smooth = 0.18; private maxRadius = 0.4;
-	constructor() { super({ id: 'reticle' }); this.imgid = BitmapId.b; this._hitarea = new_area(0, 0, 14, 14); this.visible = true; }
+	constructor() { super({ id: 'reticle' }); this.imgid = BitmapId.b; this.getOrCreateCollider().setLocalArea(new_area(0, 0, 14, 14)); this.visible = true; }
 	updateFromInput() {
 		const input = $.input.getPlayerInput(1);
 		let dx = 0, dy = 0;

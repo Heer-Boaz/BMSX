@@ -36,7 +36,7 @@ export class WeaponItem extends Sprite {
 	constructor(type: WeaponType) {
 		super();
 		this.ItsType = type;
-		this.hitarea = Item.ItemHitArea;
+		this.getOrCreateCollider().setLocalArea(Item.ItemHitArea);
 		this.size = area2size(Item.ItemHitArea);
 		this.imgid = WeaponItem.Type2Image(type);
 	}

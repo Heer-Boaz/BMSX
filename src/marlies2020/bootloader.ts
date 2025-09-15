@@ -1,4 +1,4 @@
-import { World, BootArgs, build_fsm, Game, WorldObject, getOppositeDirection, GameView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2 } from 'bmsx';
+import { World, BootArgs, build_fsm, Game, WorldObject, getOppositeDirection, GameView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, set_vec2, Space, SpriteObject, TextWriter, vec2, CollisionSystem } from 'bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';
@@ -240,7 +240,7 @@ class ingredient extends SpriteObject implements Ingredient {
 	constructor() {
 		super();
 		this.z = 850;
-		this.hitarea = new_area(-8, 0, 24, 16);
+		this.getOrCreateCollider().setLocalArea(new_area(-8, 0, 24, 16));
 	}
 
 	ingredientType: string = 'niet_bepaald!';
@@ -305,7 +305,7 @@ class bord extends SpriteObject implements Bord {
 		super();
 		this.imgid = BitmapId.Bord;
 		this.z = 800;
-		this.hitarea = new_area(0, -16, 16, 20);
+		this.getOrCreateCollider().setLocalArea(new_area(0, -16, 16, 20));
 		this.gevuld = false;
 	}
 	gevuld: boolean;
@@ -368,7 +368,7 @@ class vuur extends SpriteObject {
 	constructor(dir: Direction) {
 		super();
 		this.direction = dir;
-		this.hitarea = new_area(4, 4, 12, 12);
+		this.getOrCreateCollider().setLocalArea(new_area(4, 4, 12, 12));
 		this.z = dir != 'up' ? 1100 : 900;
 	}
 
@@ -400,10 +400,10 @@ class corona extends SpriteObject {
 								ik.imgid = s.current;
 								ik.setRandomMove();
 							},
-							run(s: sstate, ik: corona) {
-								if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.detect_object_collision(v))) {
-									ik.state.to('sterf');
-								}
+								run(s: sstate, ik: corona) {
+									if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => CollisionSystem.detectAABBAreas(ik.hitbox, v.hitbox))) {
+										ik.state.to('sterf');
+									}
 								switch (ik.direction) {
 									case 'up': ik.sety(ik.y - 1); break;
 									case 'right': ik.setx(ik.x + 1); break;
@@ -471,7 +471,7 @@ class corona extends SpriteObject {
 
 		this.imgid = BitmapId.Corona1;
 		this.size = { x: 32, y: 32 };
-		this.hitarea = new_area(4, 4, 28, 28);
+		this.getOrCreateCollider().setLocalArea(new_area(4, 4, 28, 28));
 		this.z = 1200;
 
 		this.onLeavingScreen = this.onLeavingScreenHandler;
@@ -706,7 +706,7 @@ class speler extends SpriteObject {
 		this.direction = 'down';
 		this.z = 1000;
 		this.column = startcolumn;
-		this.hitarea = new_area(0, 8, 16, 16);
+		this.getOrCreateCollider().setLocalArea(new_area(0, 8, 16, 16));
 	}
 
 	override onspawn(spawningPos?: vec2): void {
@@ -742,14 +742,14 @@ class speler extends SpriteObject {
 
 	doeCoronaTest(): void {
 		if (this.state.getCurrentId() == 'urgh') return;
-		if (_model.objects.filter(o => (<any>o)?.isEng).some(c => this.detect_object_collision(c))) {
+		if (_model.objects.filter(o => (<any>o)?.isEng).some(c => CollisionSystem.detectAABBAreas(this.hitbox, c.hitbox))) {
 			this.state.to('urgh');
 		}
 	}
 
 	checkNaastIngredientOfPitaOfBord(): void {
 		if (this.state.getCurrentId() == 'urgh') return;
-		_model.objects.filter(o => (<any>o)?.ingredientType && this.detect_object_collision(o)).forEach(o => {
+		_model.objects.filter(o => (<any>o)?.ingredientType && CollisionSystem.detectAABBAreas(this.hitbox, o.hitbox)).forEach(o => {
 			let i = o;
 			switch (i.ingredientType) {
 				case 'pita':
@@ -762,7 +762,7 @@ class speler extends SpriteObject {
 			}
 		});
 
-		_model.objects.filter(o => (<any>o)?.isBord && this.detect_object_collision(o)).forEach(b => {
+		_model.objects.filter(o => (<any>o)?.isBord && CollisionSystem.detectAABBAreas(this.hitbox, o.hitbox)).forEach(b => {
 			_model.checkOfIetsMetBordMogelijk(<Bord>b);
 		});
 

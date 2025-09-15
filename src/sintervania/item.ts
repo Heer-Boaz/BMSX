@@ -30,7 +30,7 @@ export class Item extends Sprite {
 	constructor(type: ItemType, pos: Point) {
 		super();
 		this.ItsType = type;
-		this.hitarea = Item.ItemHitArea;
+		this.getOrCreateCollider().setLocalArea(Item.ItemHitArea);
 		this.size = area2size(Item.ItemHitArea);
 		this.imgid = Item.Type2Image(type);
 	}

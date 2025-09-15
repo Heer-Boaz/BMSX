@@ -22,7 +22,7 @@ export class Candle extends Foe {
 		this.animation = new Animation<BitmapId>(Candle.AnimationFrames, Candle.framesPerDrawing);
 		this.animation.repeat = true;
 		this.imgid = this.animation.stepValue;
-		this.hitarea = Candle.CandleHitArea;
+		this.getOrCreateCollider().setLocalArea(Candle.CandleHitArea);
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.maxHealth = 1;
 		this.health = 1;

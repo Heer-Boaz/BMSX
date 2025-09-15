@@ -154,11 +154,11 @@ export class Belmont extends Sprite {
 	}
 
 	public get hitarea(): Area {
-		return this._hitarea;
+		return this.getOrCreateCollider().localArea as Area;
 	}
 
 	public set hitarea(value: Area) {
-		this._hitarea = value;
+		this.getOrCreateCollider().setLocalArea(value);
 	}
 
 	public get Vulnerable(): boolean {
@@ -208,7 +208,7 @@ export class Belmont extends Sprite {
 	constructor() {
 		super();
 		this.imgid = BitmapId.Belmont_r1;
-		this._hitarea = newArea(0, 2, 15, 31)
+		this.getOrCreateCollider().setLocalArea(newArea(0, 2, 15, 31))
 		this.flippedH = false;
 		this.CarryingShield = false;
 		this.direction = 'right';

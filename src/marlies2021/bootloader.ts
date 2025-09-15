@@ -157,7 +157,7 @@ class fles extends SpriteObject {
 		this.onLeaveScreen = (ik: fles, _) => ik.banish();
 		let me = this;
 
-		this.hitarea = new_area(4, 4, 12, 12);
+		this.getOrCreateCollider().setLocalArea(new_area(4, 4, 12, 12));
 		this.size = new_vec2(16, 16);
 		this.hittable = true;
 	}
@@ -227,7 +227,7 @@ class monster extends SpriteObject {
 		super();
 		this.imgid = BitmapId.monster;
 		this.z = 1100;
-		this.hitarea = new_area(0, 80, 0, 50);
+		this.getOrCreateCollider().setLocalArea(new_area(0, 80, 0, 50));
 		this.size = new_vec2(80, 50);
 		this.hittable = true;
 		let me = this;
@@ -480,7 +480,7 @@ class speler extends SpriteObject {
 		this.direction = 'right';
 		this.z = 1000;
 		this.floatbit = false;
-		this.hitarea = new_area(0, 0, 16, 16);
+		this.getOrCreateCollider().setLocalArea(new_area(0, 0, 16, 16));
 		this.size = new_vec2(16, 16);
 	}
 

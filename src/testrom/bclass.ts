@@ -134,7 +134,7 @@ export class bclass extends SpriteObject {
 	constructor(_opts?: RevivableObjectArgs) {
 		super({ id: 'The B' });
 		this.imgid = BitmapId.b2;
-		this._hitarea = new_area(0, 0, 14, 18);
+		this.getOrCreateCollider().setLocalArea(new_area(0, 0, 14, 18));
 		this.visible = false;
 	}
 

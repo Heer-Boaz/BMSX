@@ -1,4 +1,5 @@
-import { BStopwatch } from 'bmsx';
+import { BStopwatch, CollisionSystem } from 'bmsx';
+import { subscribesToSelfScopedEvent } from 'bmsx/core/eventemitter';
 import { Animation, AniData } from "bmsx/animation";
 import { BitmapId } from "./resourceids";
 import { ItemType } from "./item";
@@ -32,8 +33,10 @@ export class Hag extends Foe {
 		this.imgid = this.animation.stepValue;
 		this.timer.restart();
 		this.size = Hag.HagSize;
-		this.hitarea = Hag.HagHitArea;
+		this.getOrCreateCollider().setLocalArea(Hag.HagHitArea);
 		this.itemSpawnedAfterKill = itemSpawned;
+		// Request overlap events for this object
+		this.getOrCreateCollider().generateOverlapEvents = true;
 		this.health = 1;
 		this.direction = dir;
 		this.flippedH = this.direction == 'left';
@@ -41,7 +44,7 @@ export class Hag extends Foe {
 	}
 
 	public run(): void {
-		if (this.collides(belmont)) belmont.takeDamage(this.damageToPlayer);
+		// Overlap-based damage handled via event (see handler below)
 
 		let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
 		this.imgid = stepValue;
@@ -53,5 +56,11 @@ export class Hag extends Foe {
 
 	public dispose(): void {
 		BStopwatch.removeWatch(this.timer);
+	}
+
+	@subscribesToSelfScopedEvent('overlapBegin')
+	public onOverlapBegin(_event: string, _self: any, payload?: { otherId?: string }) {
+		if (!payload?.otherId) return;
+		if (payload.otherId === belmont.id) belmont.takeDamage(this.damageToPlayer);
 	}
 }

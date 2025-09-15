@@ -43,7 +43,7 @@ export class Chandelier extends Foe {
 		this.animation.repeat = true;
 		this.timer = BStopwatch.createWatch();
 		// this.imgid = BitmapId.Chandelier_1;
-		this.hitarea = Chandelier.ChandelierHitArea;
+		this.getOrCreateCollider().setLocalArea(Chandelier.ChandelierHitArea);
 		this.size = new_vec2(50, 64);
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.health = 0;

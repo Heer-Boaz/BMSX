@@ -13,7 +13,7 @@ export class GardenCandle extends Candle {
 		super(itemSpawned);
 		this.animation = new Animation<BitmapId>(GardenCandle.AnimationFrames, Candle.framesPerDrawing, true);
 		this.imgid = this.animation.stepValue;
-		this.hitarea = GardenCandle.CandleHitArea;
+		this.getOrCreateCollider().setLocalArea(GardenCandle.CandleHitArea);
 		this.itemSpawnedAfterKill = itemSpawned;
 	}
 }
