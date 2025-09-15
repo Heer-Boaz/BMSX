@@ -73,12 +73,12 @@ export class OnscreenGamepad implements InputHandler {
 		return getPressedState(stateMap, btn);
 	}
 
-    /**
-     * Polls the input to update the button states and press times.
-     * Should be called once per frame to keep on-screen gamepad input in sync.
-     * Uses internal pointer-press counters, not DOM queries, for performance.
-     */
-    public pollInput(): void {
+	/**
+	 * Polls the input to update the button states and press times.
+	 * Should be called once per frame to keep on-screen gamepad input in sync.
+	 * Uses internal pointer-press counters, not DOM queries, for performance.
+	 */
+	public pollInput(): void {
 		const defaultState = makeButtonState();
 		const now = performance.now();
 		const newStates: KeyOrButtonId2ButtonState = {};
@@ -231,12 +231,12 @@ export class OnscreenGamepad implements InputHandler {
 		...OnscreenGamepad.ACTION_BUTTON_MAP,
 	};
 
-    /**
-     * A list of element IDs representing the directional pad (D-Pad) buttons.
-     */
-    private static readonly DPAD_BUTTON_ELEMENT_IDS = Object.keys(OnscreenGamepad.DPAD_BUTTON_MAP);
+	/**
+	 * A list of element IDs representing the directional pad (D-Pad) buttons.
+	 */
+	private static readonly DPAD_BUTTON_ELEMENT_IDS = Object.keys(OnscreenGamepad.DPAD_BUTTON_MAP);
 
-    private static readonly ONSCREEN_BUTTON_ELEMENT_NAMES = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
+	private static readonly ONSCREEN_BUTTON_ELEMENT_NAMES = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
 
 	/**
 	 * Initializes the input system.
@@ -263,7 +263,7 @@ export class OnscreenGamepad implements InputHandler {
 
 		addPointerListeners(document.getElementById('d-pad-controls')!, 'dpad');
 		addPointerListeners(document.getElementById('button-controls')!, 'action');
-        // No global touchstart preventDefault; rely on CSS touch-action and pointer capture.
+		// No global touchstart preventDefault; rely on CSS touch-action and pointer capture.
 
 		window.addEventListener('blur', e => this.blur(e), { signal }); // Blur event will pause the game and prevent any input from being registered and reset the key states
 		window.addEventListener('focus', e => this.focus(e), { signal }); // Focus event will allow input to be registered again
@@ -446,7 +446,7 @@ export class OnscreenGamepad implements InputHandler {
 		}
 	}
 
-    // Legacy touch handlers removed; pointer handlers are used instead.
+	// Legacy touch handlers removed; pointer handlers are used instead.
 
 	/**
 	 * Handles the blur event for the input element.

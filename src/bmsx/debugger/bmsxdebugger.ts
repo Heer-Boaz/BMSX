@@ -4,6 +4,7 @@ import { CameraObject } from '../core/object/cameraobject';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
+import { Collision2DSystem } from '../service/collision2d_service';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/object/sprite';
 import { div_vec2, new_vec2 } from '../utils/utils';
@@ -773,10 +774,7 @@ function getWorldObjectAtCursor(e: MouseEvent): { objUnderCursor: WorldObject | 
 	const objsUnderCursor: WorldObject[] = $.world.activeObjects.filter(o =>
 		o.id !== 'debug_highlighter' &&
 		o.hittable &&
-		(
-			(o.hasHitPolygon && o.collides(pointArea)) ||
-			(!o.hasHitPolygon && o.overlaps_point && o.overlaps_point(p))
-		)
+		Collision2DSystem.collides(o, pointArea)
 	);
 
 	if (objsUnderCursor && objsUnderCursor.length > 0) {

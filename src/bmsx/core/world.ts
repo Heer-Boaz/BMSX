@@ -7,7 +7,7 @@ import { State } from '../fsm/state';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
 import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, vec2 } from '../rompack/rompack';
-import { Direction, vec3 } from "../rompack/rompack";
+import { Direction, vec3, type Area, type vec2arr } from "../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { CameraObject } from './object/cameraobject';
 import { WorldObject } from './object/worldobject';
@@ -17,6 +17,7 @@ import type { Component, ComponentConstructor } from "../component/basecomponent
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
 import { makeIndexProxy, shallowCopy } from '../utils/utils';
+import { Collision2DSystem } from '../service/collision2d_service';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 
@@ -450,6 +451,12 @@ export class World implements Stateful, RegisterablePersistent {
 			}
 		}
 	}
+
+	/** Collision queries: simple forwards to CollisionSystem with on-demand index rebuild. */
+	public rebuildCollisionIndex(cellSize = 64): void { Collision2DSystem.rebuildIndex(this, cellSize); }
+	public queryAABB(area: Area): WorldObject[] { Collision2DSystem.rebuildIndex(this); return Collision2DSystem.queryAABB(this, area); }
+	public raycast(origin: vec2arr, dir: vec2arr, maxDist: number) { Collision2DSystem.rebuildIndex(this); return Collision2DSystem.raycastWorld(this, origin, dir, maxDist); }
+	public sweepAABB(area: Area, delta: vec2arr): WorldObject[] { Collision2DSystem.rebuildIndex(this); return Collision2DSystem.sweepAABB(this, area, delta); }
 
 	/**
 	 * Clears the current space in the world instance by calling the `clear` method on the current space.

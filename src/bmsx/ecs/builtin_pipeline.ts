@@ -19,6 +19,9 @@ import { PreRenderSubmitSystem } from './prerender_submit_system';
 import { SpriteRenderSystem } from './sprite_render_system';
 import { MeshRenderSystem } from './mesh_render_system';
 import { TextRenderSystem } from './text_render_system';
+import { SpriteColliderSyncSystem } from './spritecollider_sync_system';
+import { Collision2DBroadphaseRebuildSystem } from './collision2d_broadphase_system';
+import { Overlap2DSystem } from './overlap2d_system';
 // No explicit PreRender submission systems; GameView.drawbase() visits objects
 
 /** Register built-in ECS systems with sensible defaults. */
@@ -33,9 +36,12 @@ export function registerBuiltinECS(): void {
 		{ id: 'physicsSyncBefore', group: TickGroup.Simulation, defaultPriority: 34, create: (p: number) => new PhysicsSyncBeforeStepSystem(p) },
 		{ id: 'physicsPost', group: TickGroup.PostPhysics, defaultPriority: 35, create: (p: number) => new PhysicsPostSystem(p) },
 		{ id: 'tileCollision', group: TickGroup.PostPhysics, defaultPriority: 10, create: (p: number) => new TileCollisionSystem(p) },
+		{ id: 'spriteColliderSync', group: TickGroup.PostPhysics, defaultPriority: 15, create: (p: number) => new SpriteColliderSyncSystem(p) },
 		{ id: 'boundary', group: TickGroup.PostPhysics, defaultPriority: 20, create: (p: number) => new BoundarySystem(p) },
 		{ id: 'physicsCollisionEvents', group: TickGroup.PostPhysics, defaultPriority: 28, create: (p: number) => new PhysicsCollisionEventSystem(p) },
 		{ id: 'physicsSyncAfterWorld', group: TickGroup.PostPhysics, defaultPriority: 30, create: (p: number) => new PhysicsSyncAfterWorldCollisionSystem(p) },
+		{ id: 'collisionBroadphase', group: TickGroup.PostPhysics, defaultPriority: 40, create: (p: number) => new Collision2DBroadphaseRebuildSystem(p) },
+		{ id: 'overlapEvents', group: TickGroup.PostPhysics, defaultPriority: 42, create: (p: number) => new Overlap2DSystem(p) },
 		{ id: 'transform', group: TickGroup.PostPhysics, defaultPriority: 50, create: (p: number) => new TransformSystem(p) },
 		// PreRender: typed renderers first, then custom producers
 		{ id: 'textRender', group: TickGroup.PreRender, defaultPriority: 7, create: (p: number) => new TextRenderSystem(p) },

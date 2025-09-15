@@ -21,7 +21,7 @@ export interface FSMControllerOptions {
 	fsm_id: string;
 	/** The ID of the object being controlled. */
 	id: string;
-	
+
 }
 
 @insavegame
@@ -199,13 +199,13 @@ export class StateMachineController {
 	tick(): void {
 		if (!this.tickEnabled) return;
 		// Runs the current state of the current state machine
-		this.current_machine.tick();
+		this.current_machine?.tick();
 
 		// Run all state machines that have 'parallel' set to true
 		for (let id in this.statemachines) {
 			// Skip the current machine, as it has already been run
 			if (id === this.current_machine_id) continue;
-			if (this.statemachines[id].is_concurrent) this.statemachines[id].tick();
+			if (this.statemachines[id].is_concurrent) this.statemachines[id]?.tick();
 		}
 	}
 

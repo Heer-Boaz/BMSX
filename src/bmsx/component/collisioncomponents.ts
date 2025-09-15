@@ -2,10 +2,105 @@ import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitte
 import { $ } from '../core/game';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { mod, new_vec2, set_inplace_vec2 } from '../utils/utils';
-import { vec2 } from '../rompack/rompack';
-import { insavegame } from 'bmsx/serializer/serializationhooks';
+import { vec2, type Area, type Polygon } from '../rompack/rompack';
+import { excludepropfromsavegame, insavegame } from 'bmsx/serializer/serializationhooks';
 import { TileSize } from "../systems/msx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams, type ComponentAttachOptions } from "./basecomponent";
+
+
+/**
+ * ColliderComponent holds collision shapes for a WorldObject.
+ * Shapes are stored in local space; world-space accessors apply parent position at read-time.
+ *
+ * - Preferred usage: derive local shapes from sprite metadata.
+ * - Custom usage: call setters to provide authored shapes.
+ */
+@insavegame
+export class Collider2DComponent extends Component<WorldObject> {
+    /** Whether this object should participate in collision tests. */
+    public hittable: boolean = true;
+    /** Collision filtering: object's collision layer (bit). */
+    public layer: number = 1;
+    /** Collision filtering: which layers this collider tests against (bitmask). */
+    public mask: number = 0xFFFFFFFF;
+    /** If true, collider is considered a trigger (no physical response). */
+    public isTrigger: boolean = true;
+    /** If true, the OverlapSystem will emit overlap events for this collider. */
+    public generateOverlapEvents: boolean = false;
+    /**
+     * Scope for overlap event pairing by space.
+     * - 'current': only objects in the same active space
+     * - 'ui': only objects in the UI space
+     * - 'both': objects in current or UI spaces
+     * - 'all': objects in any space
+     */
+    public spaceEvents: 'current' | 'ui' | 'both' | 'all' = 'current';
+
+    /** Local-space rectangle bounds (nullable when only polygons are used). */
+    @excludepropfromsavegame
+    private _localArea: Area | null = null;
+
+    /** Local-space polygons; each polygon is a flat [x0,y0,x1,y1,...] list. */
+    @excludepropfromsavegame
+    private _localPolys: Polygon[] | null = null;
+
+    /** Internal change token for sprite-driven sync (imgid + flip). */
+    @excludepropfromsavegame
+    private _syncToken?: string;
+
+    /** Optional hint for a sync system to avoid repeated work. */
+    public get syncToken(): string | undefined { return this._syncToken; }
+    public set syncToken(v: string | undefined) { this._syncToken = v; }
+
+    /** Returns world-space AABB. Falls back to object size if no local area is set. */
+    public get worldArea(): Area {
+        const p = this.parent.pos;
+        if (!this._localArea) {
+            return { start: { x: p.x, y: p.y }, end: { x: p.x + (this.parent.size?.x ?? 0), y: p.y + (this.parent.size?.y ?? 0) } } as Area;
+        }
+        return { start: { x: p.x + this._localArea.start.x, y: p.y + this._localArea.start.y }, end: { x: p.x + this._localArea.end.x, y: p.y + this._localArea.end.y } } as Area;
+    }
+
+    /** Returns world-space polygons, offset by parent position; null when none. */
+    public get worldPolygons(): Polygon[] | null {
+        if (!this._localPolys || this._localPolys.length === 0) return null;
+        const px = this.parent.x, py = this.parent.y;
+        return this._localPolys.map(poly => {
+            const res: number[] = [];
+            for (let i = 0; i < poly.length; i += 2) res.push(poly[i] + px, poly[i + 1] + py);
+            return res;
+        });
+    }
+
+    /** Returns local-space area, if any. */
+    public get localArea(): Area | null { return this._localArea; }
+    /** Returns local-space polygons, if any. */
+    public get localPolygons(): Polygon[] | null { return this._localPolys; }
+
+    /** Set local rectangle bounds (replaces previous). */
+    public setLocalArea(a: Area | null): void { this._localArea = a; }
+    /** Set local polygons (replaces previous). */
+    public setLocalPolygons(polys: Polygon[] | null): void { this._localPolys = polys; }
+}
+
+/**
+ * Shared function used for using as event handler for `IWorldObject`/`Sprite.OnLeavingScreen`
+ * This function is used as an event handler for the `onLeavingScreen` event of a `WorldObject`.
+ * It prohibits the `WorldObject` from leaving the screen in the direction specified by setting its position to its old position.
+ * @param ik The `WorldObject` that is leaving the screen.
+ * @param d The direction in which the `WorldObject` is leaving the screen.
+ * @param old_x_or_y The old x or y position of the `WorldObject`.
+ */
+export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leaveScreen']): void {
+	switch (d) {
+		case 'left': case 'right':
+			ik.x = old_x_or_y;
+			break;
+		case 'up': case 'down':
+			ik.y = old_x_or_y;
+			break;
+	}
+}
 
 /**
  * Represents a component responsible for updating the position of a world object along a specific axis.
@@ -196,24 +291,5 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
 	@subscribesToParentScopedEvent('leavingScreen')
 	public onLeavingScreen(_event_name: string, emitter: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leavingScreen']) {
 		leavingScreenHandler_prohibit(emitter, { d, old_x_or_y });
-	}
-}
-
-/**
- * Shared function used for using as event handler for `IWorldObject`/`Sprite.OnLeavingScreen`
- * This function is used as an event handler for the `onLeavingScreen` event of a `WorldObject`.
- * It prohibits the `WorldObject` from leaving the screen in the direction specified by setting its position to its old position.
- * @param ik The `WorldObject` that is leaving the screen.
- * @param d The direction in which the `WorldObject` is leaving the screen.
- * @param old_x_or_y The old x or y position of the `WorldObject`.
- */
-export function leavingScreenHandler_prohibit(ik: WorldObject, { d, old_x_or_y }: WorldObjectEventPayloads['leaveScreen']): void {
-	switch (d) {
-		case 'left': case 'right':
-			ik.x = old_x_or_y;
-			break;
-		case 'up': case 'down':
-			ik.y = old_x_or_y;
-			break;
 	}
 }

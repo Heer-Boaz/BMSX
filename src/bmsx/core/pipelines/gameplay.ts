@@ -13,9 +13,12 @@ export function gameplaySpec(): NodeSpec[] {
 		// PostPhysics ordering
 		{ ref: 'physicsPost' },
 		{ ref: 'tileCollision' },
+		{ ref: 'spriteColliderSync', after: ['tileCollision'] },
 		{ ref: 'boundary', after: ['tileCollision'] },
 		{ ref: 'physicsCollisionEvents' },
 		{ ref: 'physicsSyncAfterWorld', after: ['boundary', 'tileCollision'] },
+		{ ref: 'collisionBroadphase', after: ['physicsSyncAfterWorld'] },
+		{ ref: 'overlapEvents', after: ['collisionBroadphase'] },
 		{ ref: 'transform' },
 		// Submit renderables (PreRender group)
 		{ ref: 'textRender' },

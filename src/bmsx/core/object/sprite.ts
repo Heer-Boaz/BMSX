@@ -3,8 +3,8 @@ import { Area, BoundingBoxPrecalc, type HitPolygonsPrecalc, type Polygon } from 
 import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { $rompack } from '../game';
 import { WorldObject } from "./worldobject";
-import { set_inplace_area } from '../../utils/utils';
 import { SpriteComponent } from '../../component/sprite_component';
+import { Collider2DComponent } from '../../component/collisioncomponents';
 
 @insavegame
 /**
@@ -32,21 +32,20 @@ export abstract class SpriteObject extends WorldObject {
 	public set colorize(c: color) { if (this.spriteComp) this.spriteComp.colorize = c; }
 
 	private updateHitareas() {
-		if (!this._hitarea) return; // Only update the hitarea if it exists
 		const id = this.imgid;
 		const imgmeta = $rompack['img'][id]?.['imgmeta'];
-		if (!imgmeta) return; // No image metadata available (e.g. for image 'none'), cannot update hitarea
-		const boundingbox = imgmeta['boundingbox']; // Get the bounding box of the image
-		if (boundingbox) { // Only update the hitarea if the bounding box exists
-			set_inplace_area(this._hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)
+		if (!imgmeta) return; // No image metadata available (e.g. for image 'none'), cannot update collider
+		const col = this.getOrCreateCollider();
+		const boundingbox = imgmeta['boundingbox'];
+		if (boundingbox) {
+			col.setLocalArea(SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox));
 		}
-
 		const polygonsMeta = imgmeta['hitpolygons'];
 		if (polygonsMeta) {
-			this.hitpolygon = SpriteObject.selectConcavePolygon(this.flip_h, this.flip_v, polygonsMeta);
+			col.setLocalPolygons(SpriteObject.selectConcavePolygon(this.flip_h, this.flip_v, polygonsMeta));
 		}
 		else {
-			this.hitpolygon = null; // No polygons available, set to null
+			col.setLocalPolygons(null);
 		}
 	}
 
@@ -78,6 +77,8 @@ export abstract class SpriteObject extends WorldObject {
 		super(opts);
 		// Attach base SpriteComponent (data-driven sprite handled by SpriteRenderSystem)
 		this.addComponent(new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: 'base_sprite' }));
+		// Attach Collider by default; sprite-driven sync will populate shapes
+		this.addComponent(new Collider2DComponent({ parentid: this.id }));
 	}
 
 	// queueRenderSubmissions removed — handled by SpriteRenderSystem via SpriteComponent
