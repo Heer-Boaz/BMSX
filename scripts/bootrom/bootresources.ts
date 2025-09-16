@@ -1,7 +1,6 @@
 import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
-import { bootrom } from './bootrom';
 
 export async function loadImage(url: string): Promise<ImageBitmap> {
 	return new Promise((resolve, reject) => {
