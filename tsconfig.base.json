@@ -7,10 +7,19 @@
 		"target": "es2024",
 		"module": "esnext",
 		"moduleResolution": "bundler",
-		"lib": ["DOM", "DOM.Iterable", "DOM.AsyncIterable", "ES2015.Iterable", "ES2024"],
+		"lib": [
+			"DOM",
+			"DOM.Iterable",
+			"DOM.AsyncIterable",
+			"ES2015.Iterable",
+			"ES2024"
+		],
 		"typeRoots": ["node_modules/@types", "node_modules"],
 		"types": ["node", "@webgpu/types"],
 		"pretty": true,
+		// Skip type-checking of declaration files. This helps avoid type errors
+		// originating from differing lib declarations (e.g., SharedArrayBuffer vs ArrayBuffer)
+		"skipLibCheck": true,
 		"preserveConstEnums": false,
 		"checkJs": false,
 		"assumeChangesOnlyAffectDirectDependencies": true,
@@ -46,6 +55,5 @@
 			"bmsx": ["src/bmsx/index.ts"],
 			"bmsx/*": ["src/bmsx/*"]
 		}
-	},
+	}
 }
-

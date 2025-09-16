@@ -7,6 +7,9 @@ import { Collider2DComponent } from 'bmsx/component/collisioncomponents';
 
 type Shape2D = { kind: 'poly', polys: Polygon[] } | { kind: 'circle', c: { x: number; y: number; r: number } };
 
+const EPS = 1e-8;
+const EPS_PARALLEL = 1e-12;
+
 /** CollisionManager hosts geometry tests and a per-World broad-phase. */
 class Collision2DService extends Service {
 	// --- Broad-phase spatial index (per World) ---
@@ -135,53 +138,108 @@ class Collision2DService extends Service {
 
 	private contactCircleCircle(a: { x: number; y: number; r: number }, b: { x: number; y: number; r: number }) {
 		const dx = a.x - b.x, dy = a.y - b.y; const dist = Math.hypot(dx, dy); const rr = a.r + b.r; if (dist >= rr) return undefined;
-		const depth = rr - dist; const nx = dist > 1e-8 ? dx / dist : 1, ny = dist > 1e-8 ? dy / dist : 0; const point = { x: b.x + nx * (b.r), y: b.y + ny * (b.r) };
+		const depth = rr - dist; const nx = dist > EPS ? dx / dist : 1, ny = dist > EPS ? dy / dist : 0; const point = { x: b.x + nx * (b.r), y: b.y + ny * (b.r) };
 		return { normal: { x: nx, y: ny }, depth, point };
 	}
 
 	private contactCirclePoly(c: { x: number; y: number; r: number }, poly: { polys: Polygon[] }) {
-		let bestAxis: { x: number; y: number } | null = null; let bestOverlap = Infinity;
-		const testAxis = (ax: number, ay: number) => {
-			const p = poly.polys[0]; const n = p.length;
+		let bestAxis: { x: number; y: number } | null = null;
+		let bestOverlap = Infinity;
+		const testAxis = (p: Polygon, ax: number, ay: number) => {
 			let pmin = Infinity, pmax = -Infinity;
-			for (let i = 0; i < n; i += 2) { const proj = p[i] * ax + p[i + 1] * ay; if (proj < pmin) pmin = proj; if (proj > pmax) pmax = proj; }
-			const cproj = c.x * ax + c.y * ay; const cmin = cproj - c.r, cmax = cproj + c.r;
+			for (let i = 0; i < p.length; i += 2) {
+				const proj = p[i] * ax + p[i + 1] * ay;
+				if (proj < pmin) pmin = proj;
+				if (proj > pmax) pmax = proj;
+			}
+			const cproj = c.x * ax + c.y * ay;
+			const cmin = cproj - c.r;
+			const cmax = cproj + c.r;
 			const sep = Math.max(pmin - cmax, cmin - pmax);
 			if (sep > 0) return false;
-			const overlap = -sep; if (overlap < bestOverlap) { bestOverlap = overlap; bestAxis = { x: ax, y: ay }; }
+			const overlap = -sep;
+			if (overlap < bestOverlap) {
+				bestOverlap = overlap;
+				bestAxis = { x: ax, y: ay };
+			}
 			return true;
 		};
 		for (const p of poly.polys) {
 			const n = p.length;
-			for (let i = 0; i < n; i += 2) { const j = (i + 2 === n) ? 0 : i + 2; const nx = -(p[j + 1] - p[i + 1]); const ny = (p[j] - p[i]); const l = Math.hypot(nx, ny) || 1; if (!testAxis(nx / l, ny / l)) return undefined; }
-			let vx = p[0], vy = p[1]; let bd = (vx - c.x) ** 2 + (vy - c.y) ** 2;
-			for (let k = 2; k < n; k += 2) { const dx = p[k] - c.x, dy = p[k + 1] - c.y; const d = dx * dx + dy * dy; if (d < bd) { bd = d; vx = p[k]; vy = p[k + 1]; } }
-			const ax = vx - c.x, ay = vy - c.y; const l = Math.hypot(ax, ay) || 1; if (!testAxis(ax / l, ay / l)) return undefined;
+			for (let i = 0; i < n; i += 2) {
+				const j = (i + 2 === n) ? 0 : i + 2;
+				const nx = -(p[j + 1] - p[i + 1]);
+				const ny = p[j] - p[i];
+				const edgeLen = Math.hypot(nx, ny);
+				if (edgeLen <= EPS) continue;
+				if (!testAxis(p, nx / edgeLen, ny / edgeLen)) return undefined;
+			}
+			let vx = p[0], vy = p[1];
+			let bd = (vx - c.x) ** 2 + (vy - c.y) ** 2;
+			for (let k = 2; k < n; k += 2) {
+				const dx = p[k] - c.x;
+				const dy = p[k + 1] - c.y;
+				const d = dx * dx + dy * dy;
+				if (d < bd) { bd = d; vx = p[k]; vy = p[k + 1]; }
+			}
+			const ax = vx - c.x;
+			const ay = vy - c.y;
+			const axisLen = Math.hypot(ax, ay);
+			if (axisLen > EPS && !testAxis(p, ax / axisLen, ay / axisLen)) return undefined;
 		}
-		if (!bestAxis) return undefined; return { normal: bestAxis, depth: bestOverlap };
+		if (!bestAxis) return undefined;
+		return { normal: bestAxis, depth: bestOverlap };
 	}
 
 	private contactPolyPoly(a: Shape2D, b: Shape2D) {
 		if (a.kind !== 'poly' || b.kind !== 'poly') return undefined;
-		let bestAxis: { x: number; y: number } | null = null; let bestOverlap = Infinity;
-		const testAxesFrom = (ps: Polygon[]) => {
-			for (const p of ps) {
+		const contactPair = (pa: Polygon, pb: Polygon) => {
+			let bestAxis: { x: number; y: number } | null = null;
+			let bestOverlap = Infinity;
+			const testAxesFrom = (p: Polygon) => {
 				const n = p.length;
 				for (let i = 0; i < n; i += 2) {
-					const j = (i + 2 === n) ? 0 : i + 2; const nx = -(p[j + 1] - p[i + 1]); const ny = (p[j] - p[i]); const l = Math.hypot(nx, ny) || 1; const ax = nx / l, ay = ny / l;
-					let minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity;
-					for (const pa of a.polys) for (let k = 0; k < pa.length; k += 2) { const proj = pa[k] * ax + pa[k + 1] * ay; if (proj < minA) minA = proj; if (proj > maxA) maxA = proj; }
-					for (const pb of b.polys) for (let k = 0; k < pb.length; k += 2) { const proj = pb[k] * ax + pb[k + 1] * ay; if (proj < minB) minB = proj; if (proj > maxB) maxB = proj; }
+					const j = (i + 2 === n) ? 0 : i + 2;
+					const nx = -(p[j + 1] - p[i + 1]);
+					const ny = p[j] - p[i];
+					const edgeLen = Math.hypot(nx, ny);
+					if (edgeLen <= EPS) continue;
+					const ax = nx / edgeLen;
+					const ay = ny / edgeLen;
+					let minA = Infinity, maxA = -Infinity;
+					for (let k = 0; k < pa.length; k += 2) {
+						const proj = pa[k] * ax + pa[k + 1] * ay;
+						if (proj < minA) minA = proj;
+						if (proj > maxA) maxA = proj;
+					}
+					let minB = Infinity, maxB = -Infinity;
+					for (let k = 0; k < pb.length; k += 2) {
+						const proj = pb[k] * ax + pb[k + 1] * ay;
+						if (proj < minB) minB = proj;
+						if (proj > maxB) maxB = proj;
+					}
 					const sep = Math.max(minA - maxB, minB - maxA);
 					if (sep > 0) return false;
-					const overlap = -sep; if (overlap < bestOverlap) { bestOverlap = overlap; bestAxis = { x: ax, y: ay }; }
+					const overlap = -sep;
+					if (overlap < bestOverlap) {
+						bestOverlap = overlap;
+						bestAxis = { x: ax, y: ay };
+					}
 				}
-			}
-			return true;
+				return true;
+			};
+			if (!testAxesFrom(pa)) return undefined;
+			if (!testAxesFrom(pb)) return undefined;
+			return bestAxis ? { normal: bestAxis, depth: bestOverlap } : undefined;
 		};
-		if (!testAxesFrom(a.polys)) return undefined;
-		if (!testAxesFrom(b.polys)) return undefined;
-		if (!bestAxis) return undefined; return { normal: bestAxis, depth: bestOverlap };
+		let best: { normal: { x: number; y: number }; depth: number } | undefined;
+		for (const pa of a.polys) {
+			for (const pb of b.polys) {
+				const c = contactPair(pa, pb);
+				if (c && (!best || c.depth < best.depth)) best = c;
+			}
+		}
+		return best;
 	}
 
 	// Casts
@@ -191,7 +249,8 @@ class Collision2DService extends Service {
 		const cand = this.queryAABB(world, cover);
 		const hits: { obj: WorldObject; t: number }[] = [];
 		const rx = p1[0] - p0[0], ry = p1[1] - p0[1];
-		const len = Math.hypot(rx, ry) || 1;
+		const len = Math.hypot(rx, ry);
+		if (len <= EPS) return [];
 		for (const o of cand) {
 			const s = this.getShape(o);
 			let bestT = Infinity;
@@ -203,14 +262,14 @@ class Collision2DService extends Service {
 						const ax = poly[i], ay = poly[i + 1];
 						const bx = poly[j], by = poly[j + 1];
 						const t = raySegmentIntersect(p0[0], p0[1], rx, ry, ax, ay, bx, by);
-						if (t !== null && t >= 0 && t <= len && t < bestT) bestT = t;
+						if (t !== null && t >= 0 && t <= 1 && t < bestT) bestT = t;
 					}
 				}
 			} else if (s.kind === 'circle') {
 				const t = rayCircleIntersect(p0[0], p0[1], rx, ry, s.c.x, s.c.y, s.c.r);
-				if (t !== null && t >= 0 && t <= len && t < bestT) bestT = t;
+				if (t !== null && t >= 0 && t <= 1 && t < bestT) bestT = t;
 			}
-			if (bestT !== Infinity) hits.push({ obj: o, t: bestT });
+			if (bestT !== Infinity) hits.push({ obj: o, t: bestT * len });
 		}
 		hits.sort((a, b) => a.t - b.t); return hits;
 	}
@@ -218,33 +277,41 @@ class Collision2DService extends Service {
 	circleCastWorld(world: World, origin: vec2arr, radius: number, dir: vec2arr, maxDist: number) {
 		const end: vec2arr = [origin[0] + dir[0] * maxDist, origin[1] + dir[1] * maxDist];
 		const minx = Math.min(origin[0], end[0]) - radius, miny = Math.min(origin[1], end[1]) - radius; const maxx = Math.max(origin[0], end[0]) + radius, maxy = Math.max(origin[1], end[1]) + radius;
-		const cover = new_area(minx, miny, maxx, maxy); const cand = this.queryAABB(world, cover); const hits: { obj: WorldObject; t: number }[] = [];
-		const rx = end[0] - origin[0], ry = end[1] - origin[1]; const len = Math.hypot(rx, ry) || 1;
-		// Exact: cast circle vs shapes by casting ray against Minkowski-summed shapes (circle-center path)
+		const cover = new_area(minx, miny, maxx, maxy);
+		const cand = this.queryAABB(world, cover);
+		const hits: { obj: WorldObject; t: number }[] = [];
+		const rx = end[0] - origin[0], ry = end[1] - origin[1];
+		const segLen = Math.hypot(rx, ry);
+		if (segLen <= EPS) return [];
 		for (const o of cand) {
 			const s = this.getShape(o);
 			let bestT = Infinity;
 			if (s.kind === 'poly') {
-				// Inflate each edge by radius: equivalent to ray vs segment at distance r → use ray vs segment then subtract r along normal approx (use supporting offset via normals). Simplification: test ray vs edges offset by circle radius along edge normals.
 				for (const poly of s.polys) {
 					const n = poly.length;
 					for (let i = 0; i < n; i += 2) {
 						const j = (i + 2 === n) ? 0 : i + 2;
-						// Offset endpoints outward by normal*radius
-						const ex = poly[j] - poly[i]; const ey = poly[j + 1] - poly[i + 1];
-						const l = Math.hypot(ex, ey) || 1; const nx = -(ey / l), ny = (ex / l);
+						const ex = poly[j] - poly[i];
+						const ey = poly[j + 1] - poly[i + 1];
+						const edgeLen = Math.hypot(ex, ey);
+						if (edgeLen <= EPS) continue;
+						const nx = -(ey / edgeLen);
+						const ny = ex / edgeLen;
 						const ax = poly[i] + nx * radius, ay = poly[i + 1] + ny * radius;
 						const bx = poly[j] + nx * radius, by = poly[j + 1] + ny * radius;
 						const t = raySegmentIntersect(origin[0], origin[1], rx, ry, ax, ay, bx, by);
-						if (t !== null && t >= 0 && t <= len && t < bestT) bestT = t;
+						if (t !== null && t >= 0 && t <= 1 && t < bestT) bestT = t;
+					}
+					for (let k = 0; k < n; k += 2) {
+						const t = rayCircleIntersect(origin[0], origin[1], rx, ry, poly[k], poly[k + 1], radius);
+						if (t !== null && t >= 0 && t <= 1 && t < bestT) bestT = t;
 					}
 				}
-			} else if (s.kind === 'circle') {
-				// Circle cast vs circle → ray vs circle of radius (r + s.r)
+			} else {
 				const t = rayCircleIntersect(origin[0], origin[1], rx, ry, s.c.x, s.c.y, s.c.r + radius);
-				if (t !== null && t >= 0 && t <= len && t < bestT) bestT = t;
+				if (t !== null && t >= 0 && t <= 1 && t < bestT) bestT = t;
 			}
-			if (bestT !== Infinity) hits.push({ obj: o, t: bestT });
+			if (bestT !== Infinity) hits.push({ obj: o, t: bestT * segLen });
 		}
 		hits.sort((a, b) => a.t - b.t); return hits;
 	}
@@ -326,7 +393,7 @@ class Collision2DService extends Service {
 			for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
 				const xi = poly[i], yi = poly[i + 1];
 				const xj = poly[j], yj = poly[j + 1];
-				if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+			if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || EPS_PARALLEL) + xi)) inside = !inside;
 			}
 			return inside;
 		}
@@ -340,14 +407,14 @@ class Collision2DService extends Service {
 			const a1 = by - ay, b1 = ax - bx, c1 = a1 * ax + b1 * ay;
 			const a2 = dy - cy, b2 = cx - dx, c2 = a2 * cx + b2 * cy;
 			const det = a1 * b2 - a2 * b1;
-			if (Math.abs(det) < 1e-12) return null;
+			if (Math.abs(det) < EPS_PARALLEL) return null;
 			const x = (b2 * c1 - b1 * c2) / det;
 			const y = (a1 * c2 - a2 * c1) / det;
 			if (
-				Math.min(ax, bx) - 1e-8 <= x && x <= Math.max(ax, bx) + 1e-8 &&
-				Math.min(ay, by) - 1e-8 <= y && y <= Math.max(ay, by) + 1e-8 &&
-				Math.min(cx, dx) - 1e-8 <= x && x <= Math.max(cx, dx) + 1e-8 &&
-				Math.min(cy, dy) - 1e-8 <= y && y <= Math.max(cy, dy) + 1e-8
+				Math.min(ax, bx) - EPS <= x && x <= Math.max(ax, bx) + EPS &&
+				Math.min(ay, by) - EPS <= y && y <= Math.max(ay, by) + EPS &&
+				Math.min(cx, dx) - EPS <= x && x <= Math.max(cx, dx) + EPS &&
+				Math.min(cy, dy) - EPS <= y && y <= Math.max(cy, dy) + EPS
 			) return [x, y] as vec2arr;
 			return null;
 		}
@@ -356,7 +423,7 @@ class Collision2DService extends Service {
 			for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
 				const xi = poly[i], yi = poly[i + 1];
 				const xj = poly[j], yj = poly[j + 1];
-				if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+			if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || EPS_PARALLEL) + xi)) inside = !inside;
 			}
 			return inside;
 		}
@@ -385,12 +452,12 @@ function raySegmentIntersect(px: number, py: number, rx: number, ry: number, ax:
 	// Solve p + t r = a + u (b-a)
 	const sx = bx - ax, sy = by - ay;
 	const det = (-rx * sy + ry * sx);
-	if (Math.abs(det) < 1e-12) return null; // Parallel
+	if (Math.abs(det) < EPS_PARALLEL) return null; // Parallel
 	const inv = 1 / det;
 	const dx = px - ax, dy = py - ay;
 	const t = (-sy * dx + sx * dy) * inv;
 	const u = (-ry * dx + rx * dy) * inv;
-	if (u < -1e-8 || u > 1 + 1e-8) return null;
+	if (u < -EPS || u > 1 + EPS) return null;
 	return t;
 }
 
@@ -481,7 +548,10 @@ class Collision2DBroadphaseIndex {
 
 	/** Raycast using an AABB cover for candidates, returns sorted hits by t along the ray (0..maxDist). */
 	raycast(origin: vec2arr, dir: vec2arr, maxDist: number): { obj: WorldObject; t: number }[] {
-		const end: vec2arr = [origin[0] + dir[0] * maxDist, origin[1] + dir[1] * maxDist];
+		const mag = Math.hypot(dir[0], dir[1]);
+		if (mag <= EPS) return [];
+		const ndir: vec2arr = [dir[0] / mag, dir[1] / mag];
+		const end: vec2arr = [origin[0] + ndir[0] * maxDist, origin[1] + ndir[1] * maxDist];
 		const minx = Math.min(origin[0], end[0]);
 		const miny = Math.min(origin[1], end[1]);
 		const maxx = Math.max(origin[0], end[0]);
@@ -490,7 +560,7 @@ class Collision2DBroadphaseIndex {
 		const candidates = this.queryAABB(cover);
 		const hits: { obj: WorldObject; t: number }[] = [];
 		for (const o of candidates) {
-			const t = this.rayAABB(origin, dir, o.hitbox);
+			const t = this.rayAABB(origin, ndir, o.hitbox);
 			if (t !== null && t >= 0 && t <= maxDist) hits.push({ obj: o, t });
 		}
 		hits.sort((a, b) => a.t - b.t);
@@ -521,6 +591,7 @@ class Collision2DBroadphaseIndex {
 		if ((tmin > tymax) || (tymin > tmax)) return null;
 		tmin = Math.max(tmin, tymin);
 		tmax = Math.min(tmax, tymax);
-		return tmin >= 0 ? tmin : (tmax >= 0 ? tmax : null);
+		const hit = tmin >= 0 ? tmin : tmax;
+		return hit >= 0 ? hit : null;
 	}
 }

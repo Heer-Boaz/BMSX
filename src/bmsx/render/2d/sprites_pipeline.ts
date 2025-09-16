@@ -1,6 +1,5 @@
 // Sprites pipeline (formerly glview.2d) inlined from legacy module.
 // Provides batched 2D sprite + primitive rendering using shared buffers.
-import { $, makePipelineBuildDesc, shaderModule, WebGLBackend } from '../..';
 import { new_vec2, new_vec3 } from '../../utils/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
@@ -34,6 +33,9 @@ import {
 } from '../backend/webgl/webgl.constants';
 import { color, ImgRenderSubmission, RectRenderSubmission, GameView, type RenderLayer } from '../gameview';
 import { bvec } from './vertexutils2d';
+import { $ } from 'bmsx/core/game';
+import type { WebGLBackend } from '../backend/webgl/webgl_backend';
+import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 
 export let spriteShaderProgram: WebGLProgram;
 let vertexLocation: number;

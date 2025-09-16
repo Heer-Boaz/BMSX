@@ -29,6 +29,7 @@ export class Overlap2DSystem extends ECSystem {
 		if (eventColliders.length === 0) { this.prevPairs.clear(); return; }
 
 		for (const [o, col] of eventColliders) {
+			const oSpace = world.getSpaceOfObject(o.id)?.id ?? null;
 			const candidates = Collision2DSystem.queryAABB(world, col.worldArea);
 			for (const other of candidates) {
 				if (other === o) continue;
@@ -39,9 +40,9 @@ export class Overlap2DSystem extends ECSystem {
 				const bHitsA = (otherCol.mask & col.layer) !== 0;
 				if (!aHitsB || !bHitsA) continue;
 				// Filter by space scope
-				const oSpace = world.getSpaceOfObject(o.id)?.id;
-				const otherSpace = world.getSpaceOfObject(other.id)?.id;
-				if (!this.spaceMatch(col.spaceEvents, oSpace ?? null, otherSpace ?? null, world)) continue;
+				const otherSpace = world.getSpaceOfObject(other.id)?.id ?? null;
+				if (!this.spaceMatch(col.spaceEvents, oSpace, otherSpace, world)) continue;
+				if (otherCol.generateOverlapEvents && other.id < o.id) continue;
 				// Final narrow-phase test
 				if (!Collision2DSystem.collides(o, other)) continue;
 				const key = makePairKey(o.id, other.id);
@@ -60,11 +61,16 @@ export class Overlap2DSystem extends ECSystem {
 		const emitPair = (eventName: OverlapEvent, a: WorldObject, b: WorldObject) => {
 			const ac = a.getFirstComponent(Collider2DComponent);
 			const bc = b.getFirstComponent(Collider2DComponent);
-			const c = Collision2DSystem.getContact2D(a, b);
-			const contact = c as Contact2D | undefined;
-			if (ac?.generateOverlapEvents) EventEmitter.instance.emit(eventName, a, { otherId: b.id, contact });
-			if (bc?.generateOverlapEvents) {
-				// Flip normal for the other participant if present
+			const emitA = ac?.generateOverlapEvents ?? false;
+			const emitB = bc?.generateOverlapEvents ?? false;
+			if (!emitA && !emitB) return;
+			let contact: Contact2D | undefined;
+			if (eventName !== 'overlapEnd') {
+				const c = Collision2DSystem.getContact2D(a, b) as Contact2D | undefined;
+				contact = c;
+			}
+			if (emitA) EventEmitter.instance.emit(eventName, a, { otherId: b.id, contact });
+			if (emitB) {
 				const flipped: Contact2D | undefined = contact?.normal ? { ...contact, normal: { x: -contact.normal.x, y: -contact.normal.y } } : contact;
 				EventEmitter.instance.emit(eventName, b, { otherId: a.id, contact: flipped });
 			}
