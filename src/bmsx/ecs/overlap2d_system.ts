@@ -2,7 +2,7 @@ import { ECSystem, TickGroup } from './ecsystem';
 import type { World } from 'bmsx/core/world';
 import { EventEmitter } from 'bmsx/core/eventemitter';
 import { Collider2DComponent } from 'bmsx/component/collisioncomponents';
-import type { WorldObject } from 'bmsx/core/object/worldobject';
+import { $ } from 'bmsx/core/game';
 import { Collision2DSystem } from '../service/collision2d_service';
 
 type OverlapEvent = 'overlapBegin' | 'overlapStay' | 'overlapEnd';
@@ -17,35 +17,41 @@ export class Overlap2DSystem extends ECSystem {
 	constructor(priority: number = 42) { super(TickGroup.PostPhysics, priority); }
 	update(world: World): void {
 		const newPairs: Set<PairKey> = new Set();
+		const colliderLookup = new Map<string, Collider2DComponent>();
 
 		// Collect colliders that want events across active objects (current + UI overlay)
-		const eventColliders: Array<[WorldObject, Collider2DComponent]> = [];
+		const eventColliders: Collider2DComponent[] = [];
 		for (const o of world.activeObjects) {
-			const c = o.getFirstComponent(Collider2DComponent);
-			if (!c?.enabled) continue;
-			if (!c.generateOverlapEvents) continue;
-			eventColliders.push([o, c]);
+			for (const c of o.getComponents(Collider2DComponent)) {
+				if (!c.enabled) continue;
+				colliderLookup.set(c.id, c);
+				if (!c.generateOverlapEvents) continue;
+				eventColliders.push(c);
+			}
 		}
 		if (eventColliders.length === 0) { this.prevPairs.clear(); return; }
 
-		for (const [o, col] of eventColliders) {
-			const oSpace = world.getSpaceOfObject(o.id)?.id ?? null;
+		for (const col of eventColliders) {
+			const owner = col.parent;
+			if (!owner) continue;
+			const oSpace = world.getSpaceOfObject(owner.id)?.id ?? null;
 			const candidates = Collision2DSystem.queryAABB(world, col.worldArea);
-			for (const other of candidates) {
-				if (other === o) continue;
-				const otherCol = other.getFirstComponent(Collider2DComponent);
-				if (!otherCol || !otherCol.enabled) continue;
+			for (const otherCol of candidates) {
+				if (otherCol === col) continue;
+				const otherOwner = otherCol.parent;
+				if (!otherOwner) continue;
+				colliderLookup.set(otherCol.id, otherCol);
 				// Filter by layer/mask
 				const aHitsB = (col.mask & otherCol.layer) !== 0;
 				const bHitsA = (otherCol.mask & col.layer) !== 0;
 				if (!aHitsB || !bHitsA) continue;
 				// Filter by space scope
-				const otherSpace = world.getSpaceOfObject(other.id)?.id ?? null;
+				const otherSpace = world.getSpaceOfObject(otherOwner.id)?.id ?? null;
 				if (!this.spaceMatch(col.spaceEvents, oSpace, otherSpace, world)) continue;
-				if (otherCol.generateOverlapEvents && other.id < o.id) continue;
+				if (otherCol.generateOverlapEvents && otherCol.id < col.id) continue;
 				// Final narrow-phase test
-				if (!Collision2DSystem.collides(o, other)) continue;
-				const key = makePairKey(o.id, other.id);
+				if (!Collision2DSystem.collides(col, otherCol)) continue;
+				const key = makePairKey(col.id, otherCol.id);
 				newPairs.add(key);
 			}
 		}
@@ -58,38 +64,39 @@ export class Overlap2DSystem extends ECSystem {
 		for (const k of this.prevPairs) { if (!newPairs.has(k)) ends.push(k); }
 
 		// Emit events with basic contact info
-		const emitPair = (eventName: OverlapEvent, a: WorldObject, b: WorldObject) => {
-			const ac = a.getFirstComponent(Collider2DComponent);
-			const bc = b.getFirstComponent(Collider2DComponent);
-			const emitA = ac?.generateOverlapEvents ?? false;
-			const emitB = bc?.generateOverlapEvents ?? false;
+		const emitPair = (eventName: OverlapEvent, colA: Collider2DComponent, colB: Collider2DComponent) => {
+			const ownerA = colA.parent;
+			const ownerB = colB.parent;
+			if (!ownerA || !ownerB) return;
+			const emitA = colA.generateOverlapEvents;
+			const emitB = colB.generateOverlapEvents;
 			if (!emitA && !emitB) return;
 			let contact: Contact2D | undefined;
 			if (eventName !== 'overlapEnd') {
-				const c = Collision2DSystem.getContact2D(a, b) as Contact2D | undefined;
+				const c = Collision2DSystem.getContact2D(colA, colB) as Contact2D | undefined;
 				contact = c;
 			}
-			if (emitA) EventEmitter.instance.emit(eventName, a, { otherId: b.id, contact });
+			if (emitA) EventEmitter.instance.emit(eventName, ownerA, { otherId: ownerB.id, otherColliderId: colB.id, colliderId: colA.id, contact });
 			if (emitB) {
 				const flipped: Contact2D | undefined = contact?.normal ? { ...contact, normal: { x: -contact.normal.x, y: -contact.normal.y } } : contact;
-				EventEmitter.instance.emit(eventName, b, { otherId: a.id, contact: flipped });
+				EventEmitter.instance.emit(eventName, ownerB, { otherId: ownerA.id, otherColliderId: colA.id, colliderId: colB.id, contact: flipped });
 			}
 		};
-		const id2obj = (id: string): WorldObject | null => world.getWorldObject(id);
+		const id2col = (id: string): Collider2DComponent | undefined => colliderLookup.get(id) ?? $.registry.get<Collider2DComponent>(id);
 
 		for (const k of begins) {
 			const [aId, bId] = k.split('|');
-			const a = id2obj(aId); const b = id2obj(bId);
+			const a = id2col(aId); const b = id2col(bId);
 			if (a && b) emitPair('overlapBegin', a, b);
 		}
 		for (const k of stays) {
 			const [aId, bId] = k.split('|');
-			const a = id2obj(aId); const b = id2obj(bId);
+			const a = id2col(aId); const b = id2col(bId);
 			if (a && b) emitPair('overlapStay', a, b);
 		}
 		for (const k of ends) {
 			const [aId, bId] = k.split('|');
-			const a = id2obj(aId); const b = id2obj(bId);
+			const a = id2col(aId); const b = id2col(bId);
 			if (a && b) emitPair('overlapEnd', a, b);
 		}
 
@@ -104,7 +111,7 @@ export class Overlap2DSystem extends ECSystem {
 			case 'current': return (bSpace === aSpace) && (bSpace === current);
 			case 'ui': return (bSpace === uiId);
 			case 'both': return (bSpace === aSpace && (bSpace === current)) || (bSpace === uiId);
+			default: console.error(`Unknown spaceEvents scope: ${scope}`); return false;
 		}
-		return true;
 	}
 }

@@ -7,6 +7,11 @@ import { Collider2DComponent } from 'bmsx/component/collisioncomponents';
 
 type Shape2D = { kind: 'poly', polys: Polygon[] } | { kind: 'circle', c: { x: number; y: number; r: number } };
 
+type ColliderTarget = WorldObject | Collider2DComponent;
+type ColliderHandle = { owner: WorldObject; collider: Collider2DComponent };
+type RaycastHit2D = { collider: Collider2DComponent; colliderId: string; obj: WorldObject; distance: number; point: vec2arr };
+type SweepHit2D = { collider: Collider2DComponent; colliderId: string; obj: WorldObject; distance: number; point: vec2arr };
+
 const EPS = 1e-8;
 const EPS_PARALLEL = 1e-12;
 
@@ -30,18 +35,36 @@ class Collision2DService extends Service {
 	rebuildIndex(world: World, cellSize = 64): void {
 		const idx = this.ensureIndex(world, cellSize);
 		idx.clear();
-		for (const o of world.activeObjects) { idx.addOrUpdate(o); }
+		for (const o of world.activeObjects) {
+			for (const col of o.getComponents(Collider2DComponent)) {
+				if (!col.enabled) continue;
+				idx.addOrUpdate(col);
+			}
+		}
 	}
 
-	queryAABB(world: World, area: Area): WorldObject[] {
+	queryAABB(world: World, area: Area): Collider2DComponent[] {
 		return this.ensureIndex(world).queryAABB(area);
 	}
 
-	raycastWorld(world: World, origin: vec2arr, dir: vec2arr, maxDist: number): { obj: WorldObject; t: number }[] {
-		return this.ensureIndex(world).raycast(origin, dir, maxDist);
+	raycastWorld(world: World, origin: vec2arr, dir: vec2arr, maxDist: number): RaycastHit2D[] {
+		const mag = Math.hypot(dir[0], dir[1]);
+		if (mag <= EPS) return [];
+		const ndir: vec2arr = [dir[0] / mag, dir[1] / mag];
+		const hits = this.ensureIndex(world).raycast(origin, dir, maxDist);
+		return hits.map(hit => {
+			const distance = hit.t;
+			return {
+				collider: hit.collider,
+				colliderId: hit.collider.id,
+				obj: hit.obj,
+				distance,
+				point: [origin[0] + ndir[0] * distance, origin[1] + ndir[1] * distance] as vec2arr,
+			};
+		});
 	}
 
-	sweepAABB(world: World, area: Area, delta: vec2arr): WorldObject[] {
+	sweepAABB(world: World, area: Area, delta: vec2arr): Collider2DComponent[] {
 		return this.ensureIndex(world).sweepAABB(area, delta);
 	}
 
@@ -55,44 +78,65 @@ class Collision2DService extends Service {
 		return [area.start.x, area.start.y, area.end.x, area.start.y, area.end.x, area.end.y, area.start.x, area.end.y] as number[];
 	}
 
-	/** WorldObject vs WorldObject/Area collision. Polygons if present; fallback to AABB. */
-	collides(self: WorldObject, other: WorldObject | Area): boolean {
-		if (!self.hittable) return false;
-		if ((other as WorldObject)?.id) {
-			const o = other as WorldObject;
-			if (!o.hittable) return false;
-			if (!this.detectAABBAreas(self.hitbox, o.hitbox)) return false;
-			const aShape = this.getShape(self);
-			const bShape = this.getShape(o);
-			return this.shapeIntersects(aShape, bShape);
-		} else {
-			const a = other as Area;
-			if (!this.detectAABBAreas(self.hitbox, a)) return false;
-			const aShape = this.getShape(self);
-			const bShape: Shape2D = { kind: 'poly', polys: [this.areaToPoly(a)] };
+	private isArea(v: unknown): v is Area { return !!v && typeof v === 'object' && 'start' in (v as Record<string, unknown>) && 'end' in (v as Record<string, unknown>); }
+
+	private resolveCollider(target: ColliderTarget): ColliderHandle | null {
+		if (target instanceof Collider2DComponent) {
+			const owner = target.parent;
+			if (!owner) return null;
+			return { owner, collider: target };
+		}
+		const col = target.getFirstComponent(Collider2DComponent);
+		if (!col) return null;
+		return { owner: target, collider: col };
+	}
+
+	/** Collider vs Collider/Area collision. Polygons if present; fallback to AABB. */
+	collides(self: ColliderTarget, other: ColliderTarget | Area): boolean {
+		const aHandle = this.resolveCollider(self);
+		if (!aHandle) return false;
+		const { collider: a } = aHandle;
+		if (!a.hittable) return false;
+		if (!a.enabled) return false;
+		if (this.isArea(other)) {
+			if (!this.detectAABBAreas(a.worldArea, other)) return false;
+			const aShape = this.getShape(a);
+			const bShape: Shape2D = { kind: 'poly', polys: [this.areaToPoly(other)] };
 			return this.shapeIntersects(aShape, bShape);
 		}
+		const bHandle = this.resolveCollider(other);
+		if (!bHandle) return false;
+		const { collider: b } = bHandle;
+		if (!b.hittable || !b.enabled) return false;
+		if (!this.detectAABBAreas(a.worldArea, b.worldArea)) return false;
+		const aShape = this.getShape(a);
+		const bShape = this.getShape(b);
+		return this.shapeIntersects(aShape, bShape);
 	}
 
 	/** Returns centroid of polygon intersection if any; null otherwise. */
-	getCollisionCentroid(a: WorldObject, b: WorldObject): vec2arr | null {
-		if (!a.hittable || !b.hittable) return null;
-		if (!this.detectAABBAreas(a.hitbox, b.hitbox)) return null;
-		const p1 = a.hasHitPolygon ? (a.hitpolygon as Polygon[]) : [this.areaToPoly(a.hitbox)];
-		const p2 = b.hasHitPolygon ? (b.hitpolygon as Polygon[]) : [this.areaToPoly(b.hitbox)];
+	getCollisionCentroid(a: ColliderTarget, b: ColliderTarget): vec2arr | null {
+		const ah = this.resolveCollider(a);
+		const bh = this.resolveCollider(b);
+		if (!ah || !bh) return null;
+		const { collider: ac } = ah;
+		const { collider: bc } = bh;
+		if (!ac.hittable || !bc.hittable) return null;
+		if (!this.detectAABBAreas(ac.worldArea, bc.worldArea)) return null;
+		const p1 = (ac.worldPolygons ?? [this.areaToPoly(ac.worldArea)]) as Polygon[];
+		const p2 = (bc.worldPolygons ?? [this.areaToPoly(bc.worldArea)]) as Polygon[];
 		const points = this.polygonsIntersectionPoints(p1, p2);
 		if (!points || points.length === 0) return null;
 		return this.getCentroidFromList(points);
 	}
 
 	// ---- Shapes and contact helpers ----
-	private getShape(obj: WorldObject): Shape2D {
-		const col = obj.getFirstComponent(Collider2DComponent);
-		const wc = col?.worldCircle ?? null;
+	private getShape(col: Collider2DComponent): Shape2D {
+		const wc = col.worldCircle;
 		if (wc) return { kind: 'circle', c: wc };
-		const polys = col?.worldPolygons ?? null;
+		const polys = col.worldPolygons;
 		if (polys && polys.length > 0) return { kind: 'poly', polys };
-		return { kind: 'poly', polys: [this.areaToPoly(obj.hitbox)] };
+		return { kind: 'poly', polys: [this.areaToPoly(col.worldArea)] };
 	}
 
 	private shapeIntersects(a: Shape2D, b: Shape2D): boolean {
@@ -243,16 +287,19 @@ class Collision2DService extends Service {
 	}
 
 	// Casts
-	segmentCastWorld(world: World, p0: vec2arr, p1: vec2arr) {
+	segmentCastWorld(world: World, p0: vec2arr, p1: vec2arr): SweepHit2D[] {
 		const minx = Math.min(p0[0], p1[0]), miny = Math.min(p0[1], p1[1]); const maxx = Math.max(p0[0], p1[0]), maxy = Math.max(p0[1], p1[1]);
 		const cover = new_area(minx, miny, maxx, maxy);
 		const cand = this.queryAABB(world, cover);
-		const hits: { obj: WorldObject; t: number }[] = [];
+		const hits: SweepHit2D[] = [];
 		const rx = p1[0] - p0[0], ry = p1[1] - p0[1];
 		const len = Math.hypot(rx, ry);
 		if (len <= EPS) return [];
-		for (const o of cand) {
-			const s = this.getShape(o);
+		const ndir: vec2arr = [rx / len, ry / len];
+		for (const col of cand) {
+			const owner = col.parent;
+			if (!owner) continue;
+			const s = this.getShape(col);
 			let bestT = Infinity;
 			if (s.kind === 'poly') {
 				for (const poly of s.polys) {
@@ -269,22 +316,34 @@ class Collision2DService extends Service {
 				const t = rayCircleIntersect(p0[0], p0[1], rx, ry, s.c.x, s.c.y, s.c.r);
 				if (t !== null && t >= 0 && t <= 1 && t < bestT) bestT = t;
 			}
-			if (bestT !== Infinity) hits.push({ obj: o, t: bestT * len });
+			if (bestT !== Infinity) {
+				const distance = bestT * len;
+				hits.push({
+					collider: col,
+					colliderId: col.id,
+					obj: owner,
+					distance,
+					point: [p0[0] + ndir[0] * distance, p0[1] + ndir[1] * distance] as vec2arr,
+				});
+			}
 		}
-		hits.sort((a, b) => a.t - b.t); return hits;
+		hits.sort((a, b) => a.distance - b.distance); return hits;
 	}
 
-	circleCastWorld(world: World, origin: vec2arr, radius: number, dir: vec2arr, maxDist: number) {
+	circleCastWorld(world: World, origin: vec2arr, radius: number, dir: vec2arr, maxDist: number): SweepHit2D[] {
 		const end: vec2arr = [origin[0] + dir[0] * maxDist, origin[1] + dir[1] * maxDist];
 		const minx = Math.min(origin[0], end[0]) - radius, miny = Math.min(origin[1], end[1]) - radius; const maxx = Math.max(origin[0], end[0]) + radius, maxy = Math.max(origin[1], end[1]) + radius;
 		const cover = new_area(minx, miny, maxx, maxy);
 		const cand = this.queryAABB(world, cover);
-		const hits: { obj: WorldObject; t: number }[] = [];
+		const hits: SweepHit2D[] = [];
 		const rx = end[0] - origin[0], ry = end[1] - origin[1];
 		const segLen = Math.hypot(rx, ry);
 		if (segLen <= EPS) return [];
-		for (const o of cand) {
-			const s = this.getShape(o);
+		const ndir: vec2arr = [rx / segLen, ry / segLen];
+		for (const col of cand) {
+			const owner = col.parent;
+			if (!owner) continue;
+			const s = this.getShape(col);
 			let bestT = Infinity;
 			if (s.kind === 'poly') {
 				for (const poly of s.polys) {
@@ -311,16 +370,30 @@ class Collision2DService extends Service {
 				const t = rayCircleIntersect(origin[0], origin[1], rx, ry, s.c.x, s.c.y, s.c.r + radius);
 				if (t !== null && t >= 0 && t <= 1 && t < bestT) bestT = t;
 			}
-			if (bestT !== Infinity) hits.push({ obj: o, t: bestT * segLen });
+			if (bestT !== Infinity) {
+				const distance = bestT * segLen;
+				hits.push({
+					collider: col,
+					colliderId: col.id,
+					obj: owner,
+					distance,
+					point: [origin[0] + ndir[0] * distance, origin[1] + ndir[1] * distance] as vec2arr,
+				});
+			}
 		}
-		hits.sort((a, b) => a.t - b.t); return hits;
+		hits.sort((a, b) => a.distance - b.distance); return hits;
 	}
 	/** Compute contact info (normal, depth, point) using SAT/GJK approximations where possible. */
-	getContact2D(a: WorldObject, b: WorldObject): { normal?: { x: number; y: number }, depth?: number, point?: { x: number; y: number } } | undefined {
+	getContact2D(a: ColliderTarget, b: ColliderTarget): { normal?: { x: number; y: number }, depth?: number, point?: { x: number; y: number } } | undefined {
+		const ah = this.resolveCollider(a);
+		const bh = this.resolveCollider(b);
+		if (!ah || !bh) return undefined;
+		const { collider: ac } = ah;
+		const { collider: bc } = bh;
 		// Early reject by AABB
-		if (!this.detectAABBAreas(a.hitbox, b.hitbox)) return undefined;
-		const as = this.getShape(a);
-		const bs = this.getShape(b);
+		if (!this.detectAABBAreas(ac.worldArea, bc.worldArea)) return undefined;
+		const as = this.getShape(ac);
+		const bs = this.getShape(bc);
 		// Circle-circle
 		if (as.kind === 'circle' && bs.kind === 'circle') return this.contactCircleCircle(as.c, bs.c);
 		// Circle-poly
@@ -393,7 +466,7 @@ class Collision2DService extends Service {
 			for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
 				const xi = poly[i], yi = poly[i + 1];
 				const xj = poly[j], yj = poly[j + 1];
-			if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || EPS_PARALLEL) + xi)) inside = !inside;
+				if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || EPS_PARALLEL) + xi)) inside = !inside;
 			}
 			return inside;
 		}
@@ -423,7 +496,7 @@ class Collision2DService extends Service {
 			for (let i = 0, j = poly.length - 2; i < poly.length; j = i, i += 2) {
 				const xi = poly[i], yi = poly[i + 1];
 				const xj = poly[j], yj = poly[j + 1];
-			if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || EPS_PARALLEL) + xi)) inside = !inside;
+				if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || EPS_PARALLEL) + xi)) inside = !inside;
 			}
 			return inside;
 		}
@@ -478,17 +551,15 @@ function rayCircleIntersect(px: number, py: number, rx: number, ry: number, cx: 
 
 export const Collision2DSystem = new Collision2DService();
 
-/** Simple uniform grid broad-phase. */
+/** Simple uniform grid broad-phase keyed by Collider2DComponent. */
 class Collision2DBroadphaseIndex {
 	private cellSize: number;
-	// key -> set of objects
-	private cells = new Map<string, Set<WorldObject>>();
-	// object -> keys it occupies
-	private objKeys = new WeakMap<WorldObject, string[]>();
+	private cells = new Map<string, Set<Collider2DComponent>>();
+	private colliderKeys = new WeakMap<Collider2DComponent, string[]>();
 
 	constructor(cellSize = 64) { this.cellSize = cellSize; }
 
-	clear(): void { this.cells.clear(); this.objKeys = new WeakMap(); }
+	clear(): void { this.cells.clear(); this.colliderKeys = new WeakMap(); }
 
 	private key(cx: number, cy: number): string { return cx + ',' + cy; }
 	private cellCoordsForArea(a: Area): { cx0: number; cy0: number; cx1: number; cy1: number } {
@@ -498,48 +569,47 @@ class Collision2DBroadphaseIndex {
 		return { cx0, cy0, cx1, cy1 };
 	}
 
-	addOrUpdate(o: WorldObject): void {
-		// Remove from previous keys
-		const prev = this.objKeys.get(o);
+	addOrUpdate(col: Collider2DComponent): void {
+		const prev = this.colliderKeys.get(col);
 		if (prev) {
 			for (const k of prev) {
 				const s = this.cells.get(k);
-				if (s) { s.delete(o); if (s.size === 0) this.cells.delete(k); }
+				if (s) { s.delete(col); if (s.size === 0) this.cells.delete(k); }
 			}
 		}
-		// Insert at new keys
-		const hb = o.hitbox;
-		const { cx0, cy0, cx1, cy1 } = this.cellCoordsForArea(hb);
+		const area = col.worldArea;
+		const { cx0, cy0, cx1, cy1 } = this.cellCoordsForArea(area);
 		const keys: string[] = [];
 		for (let cy = cy0; cy <= cy1; cy++) {
 			for (let cx = cx0; cx <= cx1; cx++) {
 				const k = this.key(cx, cy);
 				let s = this.cells.get(k);
 				if (!s) { s = new Set(); this.cells.set(k, s); }
-				s.add(o); keys.push(k);
+				s.add(col); keys.push(k);
 			}
 		}
-		this.objKeys.set(o, keys);
+		this.colliderKeys.set(col, keys);
 	}
 
-	remove(o: WorldObject): void {
-		const prev = this.objKeys.get(o); if (!prev) return;
+	remove(col: Collider2DComponent): void {
+		const prev = this.colliderKeys.get(col); if (!prev) return;
 		for (const k of prev) {
-			const s = this.cells.get(k); if (s) { s.delete(o); if (s.size === 0) this.cells.delete(k); }
+			const s = this.cells.get(k);
+			if (s) { s.delete(col); if (s.size === 0) this.cells.delete(k); }
 		}
-		this.objKeys.delete(o);
+		this.colliderKeys.delete(col);
 	}
 
-	queryAABB(a: Area): WorldObject[] {
+	queryAABB(a: Area): Collider2DComponent[] {
 		const { cx0, cy0, cx1, cy1 } = this.cellCoordsForArea(a);
-		const out: WorldObject[] = [];
-		const seen = new Set<WorldObject>();
+		const out: Collider2DComponent[] = [];
+		const seen = new Set<Collider2DComponent>();
 		for (let cy = cy0; cy <= cy1; cy++) {
 			for (let cx = cx0; cx <= cx1; cx++) {
 				const s = this.cells.get(this.key(cx, cy));
 				if (!s) continue;
-				for (const o of s) {
-					if (!seen.has(o) && Collision2DSystem.detectAABBAreas(o.hitbox, a)) { seen.add(o); out.push(o); }
+				for (const col of s) {
+					if (!seen.has(col) && Collision2DSystem.detectAABBAreas(col.worldArea, a)) { seen.add(col); out.push(col); }
 				}
 			}
 		}
@@ -547,7 +617,7 @@ class Collision2DBroadphaseIndex {
 	}
 
 	/** Raycast using an AABB cover for candidates, returns sorted hits by t along the ray (0..maxDist). */
-	raycast(origin: vec2arr, dir: vec2arr, maxDist: number): { obj: WorldObject; t: number }[] {
+	raycast(origin: vec2arr, dir: vec2arr, maxDist: number): { collider: Collider2DComponent; obj: WorldObject; t: number }[] {
 		const mag = Math.hypot(dir[0], dir[1]);
 		if (mag <= EPS) return [];
 		const ndir: vec2arr = [dir[0] / mag, dir[1] / mag];
@@ -558,17 +628,19 @@ class Collision2DBroadphaseIndex {
 		const maxy = Math.max(origin[1], end[1]);
 		const cover = new_area(minx, miny, maxx, maxy);
 		const candidates = this.queryAABB(cover);
-		const hits: { obj: WorldObject; t: number }[] = [];
-		for (const o of candidates) {
-			const t = this.rayAABB(origin, ndir, o.hitbox);
-			if (t !== null && t >= 0 && t <= maxDist) hits.push({ obj: o, t });
+		const hits: { collider: Collider2DComponent; obj: WorldObject; t: number }[] = [];
+		for (const col of candidates) {
+			const owner = col.parent;
+			if (!owner) continue;
+			const t = this.rayAABB(origin, ndir, col.worldArea);
+			if (t !== null && t >= 0 && t <= maxDist) hits.push({ collider: col, obj: owner, t });
 		}
 		hits.sort((a, b) => a.t - b.t);
 		return hits;
 	}
 
 	/** Sweeps a moving AABB by delta and returns possible overlaps based on expanded cover. */
-	sweepAABB(a: Area, delta: vec2arr): WorldObject[] {
+	sweepAABB(a: Area, delta: vec2arr): Collider2DComponent[] {
 		const dx = delta[0], dy = delta[1];
 		const minx = Math.min(a.start.x, a.start.x + dx);
 		const miny = Math.min(a.start.y, a.start.y + dy);

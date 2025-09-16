@@ -454,9 +454,37 @@ export class World implements Stateful, RegisterablePersistent {
 
 	/** Collision queries: simple forwards to CollisionSystem with on-demand index rebuild. */
 	public rebuildCollisionIndex(cellSize = 64): void { Collision2DSystem.rebuildIndex(this, cellSize); }
-	public queryAABB(area: Area): WorldObject[] { Collision2DSystem.rebuildIndex(this); return Collision2DSystem.queryAABB(this, area); }
-	public raycast(origin: vec2arr, dir: vec2arr, maxDist: number) { Collision2DSystem.rebuildIndex(this); return Collision2DSystem.raycastWorld(this, origin, dir, maxDist); }
-	public sweepAABB(area: Area, delta: vec2arr): WorldObject[] { Collision2DSystem.rebuildIndex(this); return Collision2DSystem.sweepAABB(this, area, delta); }
+	public queryAABB(area: Area): WorldObject[] {
+		Collision2DSystem.rebuildIndex(this);
+		const colliders = Collision2DSystem.queryAABB(this, area);
+		const seen = new Set<WorldObject>();
+		const out: WorldObject[] = [];
+		for (const col of colliders) {
+			const owner = col.parent;
+			if (!owner || seen.has(owner)) continue;
+			seen.add(owner);
+			out.push(owner);
+		}
+		return out;
+	}
+	public raycast(origin: vec2arr, dir: vec2arr, maxDist: number) {
+		Collision2DSystem.rebuildIndex(this);
+		const hits = Collision2DSystem.raycastWorld(this, origin, dir, maxDist);
+		return hits.length > 0 ? hits[0] : null;
+	}
+	public sweepAABB(area: Area, delta: vec2arr): WorldObject[] {
+		Collision2DSystem.rebuildIndex(this);
+		const colliders = Collision2DSystem.sweepAABB(this, area, delta);
+		const seen = new Set<WorldObject>();
+		const out: WorldObject[] = [];
+		for (const col of colliders) {
+			const owner = col.parent;
+			if (!owner || seen.has(owner)) continue;
+			seen.add(owner);
+			out.push(owner);
+		}
+		return out;
+	}
 
 	/**
 	 * Clears the current space in the world instance by calling the `clear` method on the current space.

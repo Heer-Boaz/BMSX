@@ -11,10 +11,8 @@ import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../../utils/util
 import { StateDefinitions } from '../../fsm/fsmlibrary';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
-import type { RenderSubmitQueue } from 'bmsx/render/gameview';
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
-import { Collision2DSystem } from '../../service/collision2d_service';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
