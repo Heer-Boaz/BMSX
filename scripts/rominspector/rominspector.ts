@@ -7,7 +7,7 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomImgAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../bootrom/bootresources';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from '../bootrom/bootrom';
@@ -235,7 +235,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 		return false;
 	}
 
-	const zippedView = new Uint8Array(zipped_rom);
+	const zippedView = new Uint8Array(zipped_rom) as Uint8Array<ArrayBufferLike>;
 	const isCompressed = isPakoCompressed(zippedView);
 	let rombin = null;
 	if (isCompressed) {
@@ -259,7 +259,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 	if (!rombin) {
 		throw new Error('ROM pack is empty or invalid after decompression.');
 	}
-	return rombin;
+	return rombin as Buffer;
 }
 
 async function main() {
@@ -449,7 +449,7 @@ async function main() {
 
 	// Add custom key handlers for pageup / pagedown / home / end
 	const tableRowsList = table.rows;
-	tableRowsList.key(['pageup'], function () {
+	tableRowsList.key(['pageup'], function() {
 		const page = this.height - 1;
 		this.select(Math.max(0, this.selected - page));
 		this.screen.render();
@@ -497,7 +497,7 @@ async function main() {
 	}
 
 	// Use table.rows for selection events (works for both mouse and keyboard)
-	table.rows.on('select', async (item, idx) => {
+	table.rows.on('select', async (_item, idx) => {
 		await showAssetModal(idx);
 	});
 
@@ -561,7 +561,7 @@ async function main() {
 						metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 					}
 				} else {
-					asciiArt = generateAsciiArtFromImageBuffer(selected.buffer, imgmeta, getModalWidth());
+					asciiArt = generateAsciiArtFromImageBuffer(selected.buffer, getModalWidth());
 					if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
 						asciiArt += `\n{yellow-fg}HitPolygons (convex pieces) overlay:{/yellow-fg}\n`;
 						asciiArt += generateOverlayAscii(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original, getModalWidth());
@@ -576,7 +576,7 @@ async function main() {
 					? Buffer.from(selected.buffer)
 					// @ts-ignore
 					: Buffer.from(rombin.slice(selected.start, selected.end));
-				asciiArt = generateAsciiArtFromImageBuffer(bufferData, imgmeta, getModalWidth())
+				asciiArt = generateAsciiArtFromImageBuffer(bufferData, getModalWidth());
 			}
 				break;
 			case 'audio':
@@ -665,7 +665,7 @@ async function main() {
 						for (let i = 0; i < modelData.imageBuffers.length; i++) {
 							const imgBuf = Buffer.from(modelData.imageBuffers[i]);
 							asciiArt += `\nImage ${i + 1} (${formatByteSize(imgBuf.byteLength)}):\n`;
-							asciiArt += generateAsciiArtFromImageBuffer(imgBuf, { atlassed: false }, getModalWidth());
+							asciiArt += generateAsciiArtFromImageBuffer(imgBuf, getModalWidth());
 						}
 					}
 					let materialIndex = 0;
@@ -676,7 +676,7 @@ async function main() {
 							if (modelData.imageBuffers[textureIndex]) {
 								const imgBuf = Buffer.from(modelData.imageBuffers[textureIndex]);
 								asciiArt += `Texture ${textureIndex} (${formatByteSize(imgBuf.byteLength)}):\n`;
-								asciiArt += generateAsciiArtFromImageBuffer(imgBuf, { atlassed: false }, getModalWidth());
+								asciiArt += generateAsciiArtFromImageBuffer(imgBuf, getModalWidth());
 							}
 							else {
 								asciiArt += `{red-fg}Index ${textureIndex} (for baseColorTexture) not found in model images{/red-fg}!\n`;
@@ -866,7 +866,6 @@ async function main() {
 
 		renderModalContent();
 		contentBox.focus();
-		let ignoreFirstKeypress = true;
 
 		let currentIdx = table.rows.selected;
 		// Navigatie en tab-wissel
@@ -874,8 +873,8 @@ async function main() {
 			if (!modal) return
 			const keyname = key.name || ch;
 			const shift = key.shift || keyname.startsWith('S-');
-			const ctrl = key.ctrl || keyname.startsWith('C-');
-			const alt = key.meta || keyname.startsWith('A-');
+			// const ctrl = key.ctrl || keyname.startsWith('C-');
+			// const alt = key.meta || keyname.startsWith('A-');
 
 			switch (keyname) {
 				case 'up':
@@ -1104,7 +1103,7 @@ function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, mo
 	}
 }
 
-function generateAsciiArtFromImageBuffer(img: Buffer, imgmeta: Partial<ImgMeta>, modalWidth: number): string {
+function generateAsciiArtFromImageBuffer(img: Buffer, modalWidth: number): string {
 	try {
 		let sizeString = '';
 		const imagePNG = PNG.sync.read(img);
