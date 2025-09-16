@@ -1,3 +1,22 @@
+type BufferRegion = { start: number; end: number; colorTag: string; label: string };
+
+const LEFT_BLOCKS = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+const SLIVER_THRESHOLD = 1 / 16;
+const quantizeCoverage = (value: number) => Math.min(8, Math.max(0, Math.floor(value * 8 + 1e-7)));
+
+const HEX_TABLE = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+const FG_CACHE = new Map<number, string>();
+const MAX_FG_CACHE_SIZE = 4096;
+
+const SRGB_TO_LINEAR = (() => {
+	const table = new Float32Array(256);
+	for (let i = 0; i < 256; i++) {
+		const s = i / 255;
+		table[i] = s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	}
+	return table;
+})();
+
 /**
  * Renders a buffer bar with fractional rendering at the boundaries and full blocks in the interior.
  * Overlapping regions are handled by priority, where the first region in the array takes precedence.
@@ -12,7 +31,7 @@ export function renderBufferBar(
 	totalSize: number,
 	barLength: number
 ): string {
-	const blocks = ['?', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+	const quantize = quantizeCoverage;
 	const cellSize = totalSize / barLength;
 	const defaultCellChar = '·';
 	const cellChars = new Array(barLength).fill(defaultCellChar);
@@ -24,26 +43,33 @@ export function renderBufferBar(
 	// Note that this is actually not strictly necessary for the rendering,
 	// but it simplifies the rendering logic and avoids unnecessary complexity.
 	{
-		const mergedRegions: Array<{ start: number, end: number, colorTag: string, label: string }> = [];
+		const mergedRegions: BufferRegion[] = [];
 		for (const region of regions) {
-			if (mergedRegions.length > 0 && mergedRegions[mergedRegions.length - 1].colorTag === region.colorTag) {
-				// Merge with the last region if it has the same colorTag
-				mergedRegions[mergedRegions.length - 1].end = Math.max(mergedRegions[mergedRegions.length - 1].end, region.end);
+			const last = mergedRegions[mergedRegions.length - 1];
+			if (last && last.colorTag === region.colorTag && region.start <= last.end) {
+				last.end = Math.max(last.end, region.end);
 			} else {
-				// Otherwise, add a new region
 				mergedRegions.push({ start: region.start, end: region.end, colorTag: region.colorTag, label: region.label });
 			}
 		}
 		regions = mergedRegions;
 	}
 
-	// Sort regions by end
-	regions = regions.sort((a, b) => b.end - a.end);
-
 	const toBackground = (colorTag: string) => {
 		// Convert color tag to background color by replacing -fg with -bg
 		return colorTag.replace('-fg}', '-bg}');
-	}
+	};
+	const glyphForCoverage = (coverage: number) => {
+		const idx = quantize(coverage);
+		return idx === 0 ? '' : LEFT_BLOCKS[idx - 1];
+	};
+	const findHigherOverlap = (cellStart: number, cellEnd: number, current: BufferRegion) => {
+		for (const region of regions) {
+			if (region === current) break;
+			if (region.start < cellEnd && region.end > cellStart) return region;
+		}
+		return null;
+	};
 
 	for (const region of regions) {
 		const startFloat = region.start / cellSize;
@@ -55,146 +81,69 @@ export function renderBufferBar(
 		const startCell = Math.max(0, Math.min(barLength - 1, regionStartCell));
 		const endCell = Math.max(0, Math.min(barLength - 1, regionEndCell));
 
-		// fill full interior
 		for (let i = startCell + 1; i < endCell; i++) {
 			if (cellChars[i] === defaultCellChar) {
 				cellChars[i] = '█';
 				cellColors[i] = region.colorTag;
 			}
 		}
-		// left boundary
+
+		const startCellStart = startCell * cellSize;
+		const startCellEnd = startCellStart + cellSize;
+
 		if (cellChars[startCell] === defaultCellChar) {
 			if (startCell === endCell) {
-				// Region fits entirely within one cell
-				const regionStart = region.start;
-				const regionEnd = region.end;
-				const cellStart = startCell * cellSize;
-				const cellEnd = (startCell + 1) * cellSize;
-				const overlapStart = Math.max(cellStart, regionStart);
-				const overlapEnd = Math.min(cellEnd, regionEnd);
-				const overlap = Math.max(0, overlapEnd - overlapStart);
-				const coverage = overlap / cellSize;
-				const idx = Math.round(coverage * 8);
-				if (idx <= 1) {
-					// Fill the one character by computing the whether the region is more left, middle, or right
-					const leftFrac = (regionStart - cellStart) / cellSize;
-					const rightFrac = (cellEnd - regionEnd) / cellSize;
-
-					// Find the highest-priority overlapping region's colorTag for fg
-					let overlappingRegion = null;
-					for (const r of regions) {
-						// Only check other regions, not the current one
-						if (r === region) continue;
-						// Check if this region overlaps with the current cell
-						if (r.start < cellEnd && r.end > cellStart) {
-							overlappingRegion = r;
-							break;
+				const overlapWidth = Math.max(0, Math.min(startCellEnd, region.end) - Math.max(startCellStart, region.start));
+				const coverage = overlapWidth / cellSize;
+				if (coverage >= SLIVER_THRESHOLD) {
+					const glyph = glyphForCoverage(coverage);
+					if (glyph) {
+						cellChars[startCell] = glyph;
+						const higher = findHigherOverlap(startCellStart, startCellEnd, region);
+						if (higher && higher.start < region.end) {
+							cellColors[startCell] = toBackground(region.colorTag) + higher.colorTag;
+						} else {
+							cellColors[startCell] = region.colorTag;
 						}
 					}
-					cellColors[startCell] = region.colorTag;
-
-					// Determine whether to use left, right, or middle character
-					if (leftFrac < rightFrac && leftFrac < 0.5) {
-						if (overlappingRegion) {
-							// If there is an overlapping region, we do not draw the sliver as it is too hard to handle in combination with the overlapping region.
-							continue;
-						}
-						cellChars[startCell] = '▏'; // left
-					} else if (leftFrac > rightFrac && rightFrac < 0.5) {
-						if (overlappingRegion) {
-							// Invert colors if there is an overlapping region
-							cellColors[startCell] = toBackground(overlappingRegion.colorTag) + region.colorTag;
-						}
-						cellChars[startCell] = '▕'; // right
-					} else {
-						// Should not happen
-						cellChars[startCell] = '?';
-					}
-
 				}
-				else if (idx >= 8) {
-					cellChars[startCell] = blocks[idx];
-					cellColors[startCell] = region.colorTag;
-				}
-				else {
-					cellChars[startCell] = blocks[idx];
-					let overlappingRegion = null;
-					// Find the highest-priority overlapping region's colorTag for fg
-					for (const r of regions) {
-						// Only check other regions, not the current one
-						if (r === region) continue;
-						// Check if this region overlaps with the current cell
-						if (r.start < cellEnd && r.end > cellStart) {
-							overlappingRegion = r;
-							break;
-						}
-					}
-					// Invert colors **only** if the overlapping region starts before the current region ends (not the cell!)
-					if (overlappingRegion && overlappingRegion.start < region.end) {
-						cellColors[startCell] = toBackground(region.colorTag) + overlappingRegion.colorTag;
-					}
-					else {
-						// No overlapping region, use the region's colorTag
-						cellColors[startCell] = region.colorTag;
-					}
-				}
-			}/* ── left boundary (multi-cell branch) ─────────────────────────────── */
-			else {                                    // we are inside:  if (startCell !== endCell)
-				const coverage = 1 - leftFrac;
-				const idx = Math.round(coverage * 8);
-
-				/* ← NEW: handle ultra-thin sliver */
-				let needsInvert = false;
-				if (idx <= 1) {
-					cellChars[startCell] = '▕';       // thin right-hand bar
-				} else if (idx <= 3) {
-					cellChars[startCell] = '▐';       // slightly less thin right-hand bar
-				} else {
-					cellChars[startCell] = blocks[idx];
-					needsInvert = true; // We need to invert because we do not have the same amount of ASCII-characters to represent right-aligned blocks as there are ASCII-characters to represent left-aligned blocks.
-				}
-
-				/* same-cell overlap, but restrict search to HIGHER-priority regions */
-				const cellStart = startCell * cellSize;
-				const cellEnd = cellStart + cellSize;
-				const higher = regions
-					.slice(0, regions.indexOf(region))          // only earlier (higher-priority) regions
-					.find(r => r.start < cellEnd && r.end > cellStart);
-				const other = regions
-					// .slice(regions.indexOf(region) + 1)          // only later (lower-priority) regions
-					.find(r => r !== region && r.start < cellEnd && r.end > cellStart);
-
-				if (needsInvert) {
-					const fg = higher ? higher.colorTag : region.colorTag;
-					cellColors[startCell] = toBackground(region.colorTag) + fg;   // bg = region, fg = higher/black
-				} else {
-					const bg = other ? toBackground(other.colorTag) : '{black-bg}';
-					cellColors[startCell] = region.colorTag + bg;
-				}
-			}
-		}
-		/* ── right boundary ────────────────────────────────────────────────── */
-		if (endCell !== startCell && cellChars[endCell] === defaultCellChar) {
-			const idx = Math.round(rightFrac * 8);
-
-			/* The region occupies the **left** side of this cell, so the glyph
-			   already points the correct way.  No inversion is needed. */
-			if (idx === 0) {
-				cellChars[endCell] = '▏'; // 1/8 left block
 			} else {
-				cellChars[endCell] = blocks[idx];
+				const coverage = Math.max(0, 1 - leftFrac);
+				if (coverage >= SLIVER_THRESHOLD) {
+					const glyph = glyphForCoverage(coverage);
+					if (glyph) {
+						cellChars[startCell] = glyph;
+						const higher = findHigherOverlap(startCellStart, startCellEnd, region);
+						if (higher) {
+							cellColors[startCell] = toBackground(region.colorTag) + higher.colorTag;
+						} else {
+							cellColors[startCell] = region.colorTag;
+						}
+					}
+				}
 			}
+		}
 
-			/* Plain colouring: foreground = region colour, background untouched. */
-			cellColors[endCell] = region.colorTag;
+		if (endCell !== startCell && cellChars[endCell] === defaultCellChar) {
+			const endCellStart = endCell * cellSize;
+			const endCellEnd = endCellStart + cellSize;
+			const coverage = Math.max(0, rightFrac);
+			if (coverage >= SLIVER_THRESHOLD) {
+				const glyph = glyphForCoverage(coverage);
+				if (glyph) {
+					cellChars[endCell] = glyph;
+					const higher = findHigherOverlap(endCellStart, endCellEnd, region);
+					if (higher && higher.start < region.end) {
+						cellColors[endCell] = toBackground(region.colorTag) + higher.colorTag;
+					} else {
+						cellColors[endCell] = region.colorTag;
+					}
+				}
+			}
 		}
 	}
 
-	let bar = '';
-
-	for (let i = 0; i < barLength; i++) {
-		bar += cellColors[i] + cellChars[i] + '{/}';
-	}
+	const bar = cellChars.map((ch, i) => cellColors[i] + ch + '{/}').join('');
 
 	// --- Generate legend from summaryRegions ---
 	// Collect unique colorTag/label pairs, preserving order of first appearance
@@ -208,7 +157,7 @@ export function renderBufferBar(
 	const sortedLegend = Array.from(legendMap.keys()).sort((a, b) => {
 		const aIndex = regions.findIndex(r => r.label === a);
 		const bIndex = regions.findIndex(r => r.label === b);
-		return bIndex - aIndex;
+		return aIndex - bIndex;
 	});
 
 	// Compose legend string
@@ -248,26 +197,39 @@ export function generatePixelPerfectAsciiArt(
 	imgW: number,
 	imgH: number,
 ): string {
-	let asciiArt = '';
+	const lines: string[] = [];
 	for (let y = 0; y < imgH; y++) {
-		let line = '';
-		for (let x = 0; x < imgW; x++) {
-			// changed index calculation from bit-shift to multiplication to avoid 32-bit signed
-			// conversion issues and ensure correctness for all widths (including odd widths).
-			const idx4 = (y * imgW + x) * 4;
-			const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-			if (a < 64) {
-				// transparent pixel: emit a reset tag before the space so trailing-space-sensitive
-				// consumers do not drop the last column (fixes missing right-most pixel on odd widths).
-				line += '{/} ';
+		const segments: string[] = [];
+		let runTag = '{/}';
+		let runLen = 0;
+		const flush = () => {
+			if (!runLen) return;
+			if (runTag === '{/}') {
+				segments.push(runTag + ' '.repeat(runLen));
+			} else {
+				segments.push(runTag + '█'.repeat(runLen) + '{/}');
 			}
-			else {
-				line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-fg}█{/}`;
+			runLen = 0;
+		};
+		for (let x = 0; x < imgW; x++) {
+			const idx4 = (y * imgW + x) * 4;
+			const r = imgBuf[idx4];
+			const g = imgBuf[idx4 + 1];
+			const b = imgBuf[idx4 + 2];
+			const a = imgBuf[idx4 + 3];
+			const tag = a < 64 ? '{/}' : fgTagFromRGB(r, g, b);
+			if (tag === runTag) {
+				++runLen;
+			} else {
+				flush();
+				runTag = tag;
+				runLen = 1;
 			}
 		}
-		asciiArt += line + '\n';
+		flush();
+		lines.push(segments.join(''));
 	}
-	return asciiArt;
+	return lines.join('\n') + '\n';
 }
 
 /**
@@ -319,12 +281,12 @@ export function generateBrailleAsciiArt(
 	}
 
 	const useEdge = opts.useEdgeDetection ?? true;
-	const useDith = opts.useDithering ?? true;
+	const useDith = opts.useDithering ?? false;
 	const BG_DIST = opts.strictBgDist ?? 32 * 32;
 	const DELTA = opts.deltaLum ?? 30; // luminantie 0-255
 
 	const BRAILLE_BASE = 0x2800;
-	const brailleMap = [[0, 1, 2, 5], [3, 4, 6, 7]];
+	const brailleMap = [[0, 1, 2, 6], [3, 4, 5, 7]];
 	const outW = Math.min(maxArtWidth - 8, Math.floor(scaledW / 2));
 	const outH = Math.max(Math.ceil(scaledH / 4), Math.floor(outW * (scaledH / scaledW) / 2)) + 1;
 
@@ -334,9 +296,11 @@ export function generateBrailleAsciiArt(
 		let p = 0;
 		for (let y = 0; y < scaledH; ++y) {
 			for (let x = 0; x < scaledW; ++x, ++p) {
-				const i4 = (p * 4);
-				const r = scaledBuf[i4], g = scaledBuf[i4 + 1], b = scaledBuf[i4 + 2];
-				linY[p] = 255 * (0.2126 * srgb2lin(r) + 0.7152 * srgb2lin(g) + 0.0722 * srgb2lin(b));
+				const i4 = p * 4;
+				const r = scaledBuf[i4];
+				const g = scaledBuf[i4 + 1];
+				const b = scaledBuf[i4 + 2];
+				linY[p] = 255 * (0.2126 * SRGB_TO_LINEAR[r] + 0.7152 * SRGB_TO_LINEAR[g] + 0.0722 * SRGB_TO_LINEAR[b]);
 			}
 		}
 	}
@@ -344,7 +308,7 @@ export function generateBrailleAsciiArt(
 	/* ---------- global dominant kleur ---------- */
 	const hist = new Map<number, number>();
 	for (let p = 0; p < scaledW * scaledH; ++p) {
-		const i4 = (((p / scaledW | 0)) * scaledW) + (p % scaledW) << 2;
+		const i4 = p << 2;
 		if (!scaledBuf[i4 + 3]) continue;                       // transparant
 		const key = rgbToKey(scaledBuf[i4], scaledBuf[i4 + 1], scaledBuf[i4 + 2]);
 		hist.set(key, (hist.get(key) ?? 0) + 1);
@@ -358,6 +322,16 @@ export function generateBrailleAsciiArt(
 	/* ---------- dither buffer ---------- */
 	const err = useDith ? new Float32Array(scaledW * scaledH) : null;
 
+	/* ---------- edge strength cache ---------- */
+	const edges = useEdge ? new Float32Array(scaledW * scaledH) : null;
+	if (edges) {
+		for (let y = 0; y < scaledH; ++y) {
+			for (let x = 0; x < scaledW; ++x) {
+				edges[y * scaledW + x] = sobelAt(linY, scaledW, scaledH, x, y);
+			}
+		}
+	}
+
 	/* ---------- render loop ---------- */
 	let asciiArt = '';
 
@@ -365,7 +339,17 @@ export function generateBrailleAsciiArt(
 		let line = '';
 		for (let cx = 0; cx < outW; ++cx) {
 
-			const fgVotes = new Map<number, number>();     // stemt alleen als dot gezet
+			let k1 = 0, c1 = 0;
+			let k2 = 0, c2 = 0;
+			let k3 = 0, c3 = 0;
+			const vote = (key: number) => {
+				if (key === k1) { ++c1; return; }
+				if (key === k2) { ++c2; return; }
+				if (key === k3) { ++c3; return; }
+				if (c1 <= c2 && c1 <= c3) { k1 = key; c1 = 1; return; }
+				if (c2 <= c1 && c2 <= c3) { k2 = key; c2 = 1; return; }
+				k3 = key; c3 = 1;
+			};
 			let cellBgR = 0, cellBgG = 0, cellBgB = 0, cellBgCnt = 0;
 			let bitmask = 0;
 
@@ -383,16 +367,15 @@ export function generateBrailleAsciiArt(
 					if (ditherThisPixel && err) yLin = clamp(yLin + err[p], 0, 255);
 
 					/* edge-aware Δ-drempel (trekt Δ iets naar beneden op randen) */
-					let deltaThr = DELTA;
-					if (useEdge) deltaThr = Math.max(10, DELTA - 0.2 * sobelAt(linY, scaledW, scaledH, px, py));
+				let deltaThr = DELTA;
+				if (useEdge && edges) deltaThr = Math.max(10, DELTA - 0.2 * edges[p]);
 
 					const lumDiff = Math.abs(yLin - bgLum);
 					const dotSet = !nearBg && lumDiff >= deltaThr;
 
 					if (dotSet) {
 						bitmask |= 1 << brailleMap[dx][dy];
-						const key = rgbToKey(r, g, b);
-						fgVotes.set(key, (fgVotes.get(key) ?? 0) + 1);
+						vote(rgbToKey(r, g, b));
 					}
 
 					if (nearBg) { cellBgR += r; cellBgG += g; cellBgB += b; ++cellBgCnt; }
@@ -405,9 +388,11 @@ export function generateBrailleAsciiArt(
 			}
 
 			/* dominante FG-kleur o.b.v. gezette dots */
-			let domKey = 0x808080, domCnt = 0;
-			// @ts-ignore
-			for (const [k, c] of fgVotes) if (c > domCnt) { domCnt = c; domKey = k; }
+			let domKey = 0x808080;
+			let domCnt = 0;
+			if (c1 > domCnt) { domCnt = c1; domKey = k1; }
+			if (c2 > domCnt) { domCnt = c2; domKey = k2; }
+			if (c3 > domCnt) { domCnt = c3; domKey = k3; }
 
 			const fgTag = `{${keyToHex(domKey)}-fg}`;
 			const bgTag = cellBgCnt
@@ -464,8 +449,7 @@ function downscaleImageNN(
  * @returns The linear color space value (0-1).
  */
 function srgb2lin(v: number) {
-	const s = v / 255;
-	return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	return SRGB_TO_LINEAR[v];
 }
 
 /**
@@ -475,7 +459,7 @@ function srgb2lin(v: number) {
  * @param v - The numeric value to convert (expected range: 0-255).
  * @returns A two-digit hexadecimal string representing the value.
  */
-function hex(v: number) { return Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0'); }
+function hex(v: number) { return HEX_TABLE[Math.round(clamp(v, 0, 255))]; }
 
 /**
  * Clamps a value between a lower and upper bound.
@@ -501,6 +485,17 @@ function clamp(x: number, l: number, h: number) { return x < l ? l : x > h ? h :
  */
 function rgbToKey(r: number, g: number, b: number) { return (r << 16) | (g << 8) | b; }
 
+function fgTagFromRGB(r: number, g: number, b: number) {
+	const key = rgbToKey(r, g, b);
+	let cached = FG_CACHE.get(key);
+	if (!cached) {
+		cached = `{#${HEX_TABLE[r]}${HEX_TABLE[g]}${HEX_TABLE[b]}-fg}`;
+		if (FG_CACHE.size > MAX_FG_CACHE_SIZE) FG_CACHE.clear();
+		FG_CACHE.set(key, cached);
+	}
+	return cached;
+}
+
 /**
  * Converts a 24-bit integer color key into a hexadecimal color string.
  * The resulting string is in the format `#RRGGBB`, where `RR`, `GG`, and `BB`
@@ -512,7 +507,7 @@ function rgbToKey(r: number, g: number, b: number) { return (r << 16) | (g << 8)
  *   - Bits 0-7 represent the blue component.
  * @returns A string representing the color in hexadecimal format.
  */
-function keyToHex(k: number) { return `#${(k >>> 16 & 0xff).toString(16).padStart(2, '0')}${(k >>> 8 & 0xff).toString(16).padStart(2, '0')}${(k & 0xff).toString(16).padStart(2, '0')}`; }
+function keyToHex(k: number) { return `#${HEX_TABLE[(k >>> 16) & 0xff]}${HEX_TABLE[(k >>> 8) & 0xff]}${HEX_TABLE[k & 0xff]}`; }
 
 /**
  * Calculates the squared Euclidean distance between two RGB colors.
@@ -547,12 +542,12 @@ function colorDistSq(r1: number, g1: number, b1: number, r2: number, g2: number,
 function sobelAt(buf: Float32Array, w: number, h: number, x: number, y: number): number {
 	const xm1 = Math.max(0, x - 1), xp1 = Math.min(w - 1, x + 1);
 	const ym1 = Math.max(0, y - 1), yp1 = Math.min(h - 1, y + 1);
-	const i = y * w + x;
-	const gx = buf[ym1 * w + xp1] + 2 * buf[i + 1] + buf[yp1 * w + xp1]
-		- buf[ym1 * w + xm1] - 2 * buf[i - 1] - buf[yp1 * w + xm1];
+	const row = y * w;
+	const gx = buf[ym1 * w + xp1] + 2 * buf[row + xp1] + buf[yp1 * w + xp1]
+		- buf[ym1 * w + xm1] - 2 * buf[row + xm1] - buf[yp1 * w + xm1];
 	const gy = buf[yp1 * w + xm1] + 2 * buf[yp1 * w + x] + buf[yp1 * w + xp1]
 		- buf[ym1 * w + xm1] - 2 * buf[ym1 * w + x] - buf[ym1 * w + xp1];
-	return Math.sqrt(gx * gx + gy * gy);
+	return Math.hypot(gx, gy);
 }
 
 /**
@@ -699,7 +694,7 @@ export function asciiWaveBraille(
 	// we scale the output to ensure visibility of the lowest peaks.
 	// The autoZoomFloor is a fraction of the maximum value, e.g., 0.25 means
 	// that we want to ensure that the lowest peaks are at least 25% of the maximum.
-	const zoom = gMax < autoZoomFloor ? autoZoomFloor / gMax : 1;
+	const zoom = gMax > 0 && gMax < autoZoomFloor ? autoZoomFloor / gMax : 1;
 
 	// Compute rows based on zoom and baseRows
 	// The computation ensures that the number of rows is at least 1
@@ -708,27 +703,33 @@ export function asciiWaveBraille(
 	const scale = ((rows * 4 - 1) / 2) * zoom / (gMax || 1);
 
 	/* ---------- 3. braille-grid ---------- */
-	const grid: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
+	const cellCols = Math.max(1, Math.ceil(cols / 2));
+	const grid: number[][] = Array.from({ length: rows }, () => Array(cellCols).fill(0));
+	const cellPeaks: Array<[number, number]> = Array.from({ length: cellCols }, () => [1, -1] as [number, number]);
 
 	for (let x = 0; x < cols; ++x) {
 		const [mn, mx] = peaks[x];
+		const cellX = x >> 1;
+		if (mn < cellPeaks[cellX][0]) cellPeaks[cellX][0] = mn;
+		if (mx > cellPeaks[cellX][1]) cellPeaks[cellX][1] = mx;
 		const yMin = Math.round(rows * 4 / 2 - mx * scale);
 		const yMax = Math.round(rows * 4 / 2 - mn * scale);
 
 		for (let y = Math.max(0, yMin); y <= Math.min(rows * 4 - 1, yMax); ++y) {
 			const cellY = y >> 2;
 			const subY = y & 3;
-			grid[cellY][x] |= 1 << DOT[x & 1][subY];
+			const subX = x & 1;
+			grid[cellY][cellX] |= 1 << DOT[subX][subY];
 		}
 	}
 
 	/* ---------- 4. naar string ---------- */
 	const art = grid
-		.map((row, rowIdx) => row
+		.map((row, _rowIdx) => row
 			.map((code, colIdx) => {
 				if (!code) return ' ';
 				// Color logic: red for negative, green for positive, yellow for near zero
-				const [mn, mx] = peaks[colIdx];
+				const [mn, mx] = cellPeaks[colIdx];
 				let colorTag = '';
 				if (mn < -0.2 || mx > 0.2) colorTag = '{light-red-fg}';
 				else if (mn < -0.1 || mx > 0.1) colorTag = '{light-yellow-fg}';
@@ -738,5 +739,5 @@ export function asciiWaveBraille(
 			.join(''))
 		.join('\n');
 	// Remove trailing empty lines
-	return art.replace(/^\s*$/gm, '').trim();
+	return art.replace(/(?:[^\S\r\n]*\n)+$/, '').trimEnd();
 }
