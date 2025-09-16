@@ -206,15 +206,20 @@ export interface GLTFMaterial {
 	baseColorTexture?: number;
 	normalTexture?: number;
 	metallicRoughnessTexture?: number;
+	alphaMode?: 'OPAQUE' | 'MASK' | 'BLEND';
+	alphaCutoff?: number;
+	doubleSided?: boolean;
 }
+
+export type GLTFIndexArray = Uint8Array | Uint16Array | Uint32Array;
 
 export interface GLTFMesh {
 	positions: Float32Array;
 	texcoords?: Float32Array;
 	normals?: Float32Array | null;
 	tangents?: Float32Array | null;
-	indices?: Uint16Array | Uint32Array;
-	indexComponentType?: number;
+	indices?: GLTFIndexArray;
+	indexComponentType?: 5121 | 5123 | 5125;
 	materialIndex?: number;
 	morphPositions?: Float32Array[];
 	morphNormals?: Float32Array[];

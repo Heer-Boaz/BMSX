@@ -626,12 +626,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.unbind();
 	}
 
-	/**
-	 * Method that is called when the world object should be painted as part of the game loop.
-	 */
-	public queueRenderSubmissions?(_queue: RenderSubmitQueue): void {
-	}
-
 	/** Ensure a GenericRendererComponent exists on this object and return it. */
 	public getOrCreateCustomRenderer(): CustomVisualComponent {
 		const existing = this.getFirstComponent(CustomVisualComponent);
@@ -866,27 +860,6 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 			};
 		});
 	}
-
-	/**
-	 * Calls the `oncollide` event handler with the given `WorldObject` instance as the source of the collision.
-	 * @param src The `WorldObject` instance that collided with this instance.
-	 */
-	public collide(src: WorldObject): void {
-		this.oncollide?.(src);
-	}
-
-	/**
-	 * Checks if this WorldObject collides with another WorldObject or Area or polygon.
-	 * Supports polygon-polygon, polygon-box, and box-polygon collision.
-	 * Falls back to bounding box logic if polygons are not present.
-	 * @param o The WorldObject or Area to check collision with.
-	 * @returns True if a collision occurs, false otherwise.
-	 */
-	public collides(o: WorldObject | Area): boolean { return Collision2DSystem.collides(this, o); }
-
-
-
-
 
 	/**
 	 * Detects whether this object overlaps the given 2D point.

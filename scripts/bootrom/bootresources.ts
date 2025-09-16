@@ -324,9 +324,18 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 	}));
 	const textures: number[] | undefined = obj.textures;
 	const materials = obj.materials as GLTFMaterial[];
-	const texBytes = new Uint8Array(textureBuf);
+	const texBytes = textureBuf ? new Uint8Array(textureBuf) : undefined;
 	let imageBuffers: ArrayBuffer[] | undefined = undefined;
-	if (textureBuf && Array.isArray(obj.imageOffsets)) {
+	if (Array.isArray(obj.imageBuffers) && obj.imageBuffers.length) {
+		imageBuffers = obj.imageBuffers.map((buf: any) => {
+			if (buf instanceof ArrayBuffer) return buf;
+			if (ArrayBuffer.isView(buf)) {
+				const view = buf as ArrayBufferView;
+				return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+			}
+			return undefined;
+		});
+	} else if (texBytes && Array.isArray(obj.imageOffsets)) {
 		imageBuffers = obj.imageOffsets.map((off: any) => {
 			if (off && typeof off.start === 'number' && typeof off.end === 'number') {
 				return texBytes.slice(off.start, off.end).buffer;
@@ -422,12 +431,12 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, opti
 		let sh = (maxV - minV) * atlas.height;
 
 		// Ensure that sw === sh
-		// if (sw !== sh) {
-		// 	// Ensure that we remain within the atlas bounds and that the texture is square
-		// 	const size = Math.min(sw, sh, atlas.width, atlas.height);
-		// 	sw = size;
-		// 	sh = size;
-		// }
+		if (sw !== sh) {
+			// Ensure that we remain within the atlas bounds and that the texture is square
+			const size = Math.min(sw, sh, atlas.width, atlas.height);
+			sw = size;
+			sh = size;
+		}
 
 		const canvas = document.createElement('canvas');
 		canvas.width = sw;

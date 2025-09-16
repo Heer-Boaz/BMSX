@@ -63,7 +63,8 @@ export class Mesh {
   /** Signature for batching by GPU state (exclude per-instance color). */
   public get materialSignature(): string {
 	const surf = this.material?.surface ?? 'opaque';
-	return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${surf}`;
+	const doubleSided = this.material?.doubleSided ? 1 : 0;
+	return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${surf}|ds${doubleSided}`;
   }
 
   /**
@@ -121,4 +122,3 @@ export class Mesh {
 	}
   }
 }
-

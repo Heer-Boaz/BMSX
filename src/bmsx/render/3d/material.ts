@@ -27,13 +27,15 @@ export class Material {
 	// transparent: depth test on, depth write off, blending enabled
 	public surface: 'opaque' | 'masked' | 'transparent';
 	public alphaCutoff: number;
-	constructor(opts?: { textures?: MaterialTextures; color?: color_arr; metallicFactor?: number; roughnessFactor?: number }) {
+	public doubleSided: boolean;
+	constructor(opts?: { textures?: MaterialTextures; color?: color_arr; metallicFactor?: number; roughnessFactor?: number; doubleSided?: boolean }) {
 		this.textures = opts?.textures ?? {};
 		this.color = opts?.color ?? [1, 1, 1, 1];
 		this.metallicFactor = opts?.metallicFactor ?? 1.0;
 		this.roughnessFactor = opts?.roughnessFactor ?? 1.0;
 		this.surface = 'masked'; // TODO: OPTIMIZE THIS!!
 		this.alphaCutoff = 0.5;
+		this.doubleSided = opts?.doubleSided ?? false;
 	}
 
 }

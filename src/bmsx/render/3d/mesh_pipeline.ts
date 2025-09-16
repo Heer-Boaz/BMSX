@@ -87,6 +87,8 @@ const stateCache = {
 	useMR: -1,
 };
 
+let lastCullDoubleSided = false;
+
 // Debug counters: per-frame usage of morph textures
 let _morphUsage = { pos: 0, norm: 0 };
 export function getMorphTextureUsage(): { pos: number; norm: number } { return { pos: _morphUsage.pos, norm: _morphUsage.norm }; }
@@ -619,10 +621,22 @@ function setupRenderingState(gl: WebGL2RenderingContext, _state?: any): void {
 	// Ensure back-face culling enabled for solid geometry (skybox pass disables it)
 	(getRenderContext().backend as WebGLBackend).setCullEnabled(true);
 	gl.cullFace(gl.BACK);
+	lastCullDoubleSided = false;
 	// Ambient is applied via FrameUniforms (u_ambient_frame)
 	// Camera + view/proj are now provided via the FrameUniforms UBO;
 	setUseInstancing(gl, false);
 	// Fog removed — no fog uniforms to upload
+}
+function applyCullState(gl: WebGL2RenderingContext, doubleSided: boolean): void {
+	if (lastCullDoubleSided === doubleSided) return;
+	const backend = getRenderContext().backend as WebGLBackend;
+	if (doubleSided) {
+		backend.setCullEnabled(false);
+	} else {
+		backend.setCullEnabled(true);
+		gl.cullFace(gl.BACK);
+	}
+	lastCullDoubleSided = doubleSided;
 }
 function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers): void {
 	// Albedo: prefer mesh texture; otherwise use 1x1 white (no shared atlas fallback)
@@ -725,6 +739,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 		const indexed = !!buffers.index;
 		const indexType = buffers.indexType!;
 		const indexCount = buffers.indexCount ?? m.indices?.length ?? 0;
+		applyCullState(gl, !!m.material?.doubleSided);
 		setMeshMaterial(gl, m);
 		checkWebGLError('mesh.instanced: after setMeshMaterial');
 		setMeshTextures(gl, m, buffers);
@@ -778,6 +793,7 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 		checkWebGLError('mesh.instanced: after bindVertexArray');
 	}
 	setUseInstancing(gl, false);
+	applyCullState(gl, false);
 	checkWebGLError('mesh.instanced: after setUseInstancing');
 }
 // Uniform change caching for materials
@@ -788,12 +804,19 @@ let lastRoughness = 1.0;
 function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 	const mat = m.material;
 	const sig = m.materialSignature;
-	const color = new Float32Array(mat?.color ?? [1, 1, 1, 1]);
+	const color = mat?.color;
+	const r = color ? color[0] : 1;
+	const g = color ? color[1] : 1;
+	const b = color ? color[2] : 1;
+	const a = color ? color[3] : 1;
 	const metallic = mat?.metallicFactor ?? 0.0;
 	const roughness = mat?.roughnessFactor ?? 1.0;
-	if (color[0] !== lastMaterialColor[0] || color[1] !== lastMaterialColor[1] || color[2] !== lastMaterialColor[2] || color[3] !== lastMaterialColor[3] || lastMaterialSig !== sig) {
-		gl.uniform4fv(materialColorLocation3D, color);
-		lastMaterialColor.set(color);
+	if (r !== lastMaterialColor[0] || g !== lastMaterialColor[1] || b !== lastMaterialColor[2] || a !== lastMaterialColor[3] || lastMaterialSig !== sig) {
+		gl.uniform4f(materialColorLocation3D, r, g, b, a);
+		lastMaterialColor[0] = r;
+		lastMaterialColor[1] = g;
+		lastMaterialColor[2] = b;
+		lastMaterialColor[3] = a;
 	}
 	if (lastMetallic !== metallic || lastMaterialSig !== sig) { gl.uniform1f(metallicFactorLocation3D, metallic); lastMetallic = metallic; }
 	if (lastRoughness !== roughness || lastMaterialSig !== sig) { gl.uniform1f(roughnessFactorLocation3D, roughness); lastRoughness = roughness; }
@@ -824,6 +847,7 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: MeshRenderSubmi
 			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0;
 			uploadMorphWeights(gl, w);
 		} else uploadMorphWeights(gl, null);
+		applyCullState(gl, !!m.material?.doubleSided);
 		setMeshMaterial(gl, m);
 		setMeshTextures(gl, m, buffers);
 		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
@@ -841,6 +865,7 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: MeshRenderSubmi
 		__b2.bindVertexArray(null);
 	}
 	normal9Pool.reset();
+	applyCullState(gl, false);
 }
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: any): void {
 	// Swap to make submissions visible (no legacy fallbacks)

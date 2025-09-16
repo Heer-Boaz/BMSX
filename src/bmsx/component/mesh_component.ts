@@ -7,7 +7,7 @@ import { Material } from 'bmsx/render/3d/material';
 import { insavegame, excludepropfromsavegame, onsave, onload } from 'bmsx/serializer/serializationhooks';
 import type { MeshRenderSubmission } from 'bmsx/render/gameview';
 
-type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; skinIndex?: number; morphWeights?: number[] };
+type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; skinIndex?: number; morphWeights?: number[]; worldMatrix?: Float32Array };
 
 // Runtime snapshot types for save/load
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>" (or detached)
@@ -30,11 +30,18 @@ export class MeshComponent extends Component {
 	// Animation + per-node caches
 	public animationTime: number = 0;
 	public activeClipIndex: number | null = null;
+	public animationLoop: boolean = true;
 	@excludepropfromsavegame private worldMatrices: Float32Array[] = [];
 	@excludepropfromsavegame private nodeDirty: boolean[] = [];
 	@excludepropfromsavegame private renderMeshes: RenderMesh[] = [];
 	@excludepropfromsavegame private _tmpLocal: Float32Array = new Float32Array(16);
+	@excludepropfromsavegame private skinMatrices: (Float32Array[] | undefined)[] = [];
+	@excludepropfromsavegame private skinDirty: boolean[] = [];
+	@excludepropfromsavegame private _skinTmpMatrix: Float32Array = new Float32Array(16);
+	@excludepropfromsavegame private _skinMeshInverse: Float32Array = new Float32Array(16);
 	private static readonly _ID: Float32Array = (() => { const m = new Float32Array(16); M4.setIdentity(m); return m; })();
+	private static readonly _quatScratchA: Float32Array = new Float32Array(4);
+	private static readonly _quatScratchB: Float32Array = new Float32Array(4);
 
 	// Runtime snapshot used solely during (de)serialization
 	private _runtime?: MeshRuntime;
@@ -71,6 +78,16 @@ export class MeshComponent extends Component {
 		this.fetchAndBindModelTextures();
 	}
 
+	private resetSkinCaches(): void {
+		const count = this.model?.skins?.length ?? 0;
+		this.skinMatrices = new Array(count);
+		this.skinDirty = new Array(count).fill(true);
+	}
+
+	private markAllSkinsDirty(): void {
+		for (let i = 0; i < this.skinDirty.length; i++) this.skinDirty[i] = true;
+	}
+
 	private buildInstances(): void {
 		this.instances.length = 0;
 		this.renderMeshes.length = 0;
@@ -80,19 +97,19 @@ export class MeshComponent extends Component {
 
 		// Convert GLTFMesh to engine RenderMesh (build once per GLTF mesh)
 		const createRenderMesh = (g: GLTFMesh, mdl: GLTFModel, index: number): RenderMesh => {
-			const m = new RenderMesh({
-				positions: g.positions.slice(),
-				texcoords: g.texcoords?.slice() ?? new Float32Array(),
-				normals: g.normals?.slice() ?? null,
-				tangents: g.tangents?.slice() ?? null,
-				indices: g.indices?.slice() ?? undefined,
+			const renderMesh = new RenderMesh({
+				positions: g.positions,
+				texcoords: g.texcoords ?? new Float32Array(),
+				normals: g.normals ?? null,
+				tangents: g.tangents ?? null,
+				indices: g.indices,
 				atlasId: g.materialIndex !== undefined ? 255 : 0,
-				morphPositions: g.morphPositions?.map(t => t.slice()),
-				morphNormals: g.morphNormals?.map(t => t.slice()),
-				morphTangents: g.morphTangents?.map(t => t.slice()),
-				morphWeights: g.weights ? [...g.weights] : [],
-				jointIndices: g.jointIndices?.slice(),
-				jointWeights: g.jointWeights?.slice(),
+				morphPositions: g.morphPositions,
+				morphNormals: g.morphNormals,
+				morphTangents: g.morphTangents,
+				morphWeights: g.weights ? [...g.weights] : (g.morphPositions ? new Array(g.morphPositions.length).fill(0) : []),
+				jointIndices: g.jointIndices,
+				jointWeights: g.jointWeights,
 				meshname: `${mdl.name}_${index}`,
 			});
 			const mat = mdl.materials?.[g.materialIndex ?? 0];
@@ -104,7 +121,9 @@ export class MeshComponent extends Component {
 				if (normal !== undefined) normal = mdl.textures[normal] ?? normal;
 				if (metallicRoughness !== undefined) metallicRoughness = mdl.textures[metallicRoughness] ?? metallicRoughness;
 			}
-			m.material = new Material({
+			const alphaMode = mat?.alphaMode ?? 'OPAQUE';
+			const surface: Material['surface'] = alphaMode === 'MASK' ? 'masked' : alphaMode === 'BLEND' ? 'transparent' : 'opaque';
+			const material = new Material({
 				color: mat?.baseColorFactor ? [...mat.baseColorFactor] : [1, 1, 1, 1],
 				textures: {
 					albedo: albedo !== undefined ? albedo : undefined,
@@ -113,8 +132,12 @@ export class MeshComponent extends Component {
 				},
 				metallicFactor: mat?.metallicFactor ?? 1.0,
 				roughnessFactor: mat?.roughnessFactor ?? 1.0,
+				doubleSided: mat?.doubleSided ?? false,
 			});
-			return m;
+			material.surface = surface;
+			material.alphaCutoff = alphaMode === 'MASK' ? (mat?.alphaCutoff ?? 0.5) : 0.5;
+			renderMesh.material = material;
+			return renderMesh;
 		};
 
 		// Build renderMeshes for all GLTF meshes once
@@ -125,6 +148,7 @@ export class MeshComponent extends Component {
 		// Initialize per-node caches
 		this.worldMatrices = nodes.map(() => { const m = new Float32Array(16); M4.setIdentity(m); return m; });
 		this.nodeDirty = nodes.map(() => true);
+		this.resetSkinCaches();
 
 		// Traverse active scene roots to build instances similar to MeshObject
 		if (model.scenes && model.scenes.length > 0) {
@@ -134,7 +158,7 @@ export class MeshComponent extends Component {
 			// Fallback: no nodes/scenes, one instance per mesh at identity
 			for (let i = 0; i < this.renderMeshes.length; i++) {
 				const mesh = this.renderMeshes[i];
-				this.instances.push({ mesh, nodeIndex: i, meshIndex: i, morphWeights: mesh.morphWeights.slice() });
+				this.instances.push({ mesh, meshIndex: i, morphWeights: mesh.morphWeights.slice() });
 			}
 		}
 	}
@@ -172,19 +196,30 @@ export class MeshComponent extends Component {
 		return M4.fromTRSInto(out, [t[0], t[1], t[2]], q, [s[0], s[1], s[2]]);
 	}
 
-	private computeSkinMatrices(skinIndex: number): Float32Array[] | undefined {
+	private computeSkinMatrices(skinIndex: number, meshNodeIndex: number, meshNodeWorld: Float32Array): Float32Array[] | undefined {
 		const skin = this.model?.skins?.[skinIndex];
 		if (!skin || skin.joints.length === 0) return undefined;
-		const out: Float32Array[] = [];
-		for (let i = 0; i < skin.joints.length; i++) {
-			const jointIdx = skin.joints[i];
-			const jointWorld = this.worldMatrices[jointIdx];
-			const inv = skin.inverseBindMatrices?.[i] ?? MeshComponent._ID;
-			const buf = new Float32Array(16);
-			M4.mulAffineInto(buf, jointWorld, inv);
-			out.push(buf);
+		let cache = this.skinMatrices[skinIndex];
+		if (!cache || cache.length !== skin.joints.length) {
+			cache = new Array(skin.joints.length);
+			for (let i = 0; i < skin.joints.length; i++) cache[i] = new Float32Array(16);
+			this.skinMatrices[skinIndex] = cache;
 		}
-		return out;
+		if (this.skinDirty[skinIndex]) {
+			this.skinDirty[skinIndex] = false;
+			const meshWorld = this.worldMatrices[meshNodeIndex] ?? meshNodeWorld;
+			const meshInv = this._skinMeshInverse;
+			M4.invertAffineInto(meshInv, meshWorld);
+			for (let i = 0; i < skin.joints.length; i++) {
+				const jointIdx = skin.joints[i];
+				const jointWorld = this.worldMatrices[jointIdx] ?? MeshComponent._ID;
+				const inv = skin.inverseBindMatrices?.[i] ?? MeshComponent._ID;
+				const tmp = this._skinTmpMatrix;
+				M4.mulAffineInto(tmp, jointWorld, inv);
+				M4.mulAffineInto(cache[i], meshInv, tmp);
+			}
+		}
+		return cache;
 	}
 
 	public stepAnimation(dtSec: number): void {
@@ -199,7 +234,8 @@ export class MeshComponent extends Component {
 				if (!sampler || !sampler.input || !sampler.output) continue;
 				const stride = sampler.output.length / sampler.input.length;
 				const comp = sampler.interpolation === 'CUBICSPLINE' ? stride / 3 : stride;
-				const value = this.sampleAnimation(sampler, this.animationTime, comp);
+				const path = channel.target.path ?? '';
+				const value = this.sampleAnimation(sampler, this.animationTime, comp, path);
 				if (channel.target.node !== undefined && this.model?.nodes) {
 					const node: GLTFNode = this.model.nodes[channel.target.node];
 					switch (channel.target.path) {
@@ -237,6 +273,7 @@ export class MeshComponent extends Component {
 		}
 		if (nodesChanged && this.model?.nodes) {
 			for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
+			this.markAllSkinsDirty();
 			if (this.model.scenes && this.model.scenes.length > 0) {
 				const scene = this.model.scenes[this.model.scene ?? 0];
 				if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);
@@ -244,11 +281,20 @@ export class MeshComponent extends Component {
 		}
 	}
 
-	private sampleAnimation(s: GLTFAnimationSampler, time: number, stride: number): Float32Array {
+	private sampleAnimation(s: GLTFAnimationSampler, time: number, stride: number, path: string): Float32Array {
 		const input = s.input;
 		const output = s.output;
 		const last = input.length - 1;
-		const t = last >= 0 ? (true ? (time % input[last]) : Math.min(time, input[last])) : 0;
+		const duration = last >= 0 ? input[last] : 0;
+		const loop = this._runtime?.anim?.loop ?? this.animationLoop;
+		let t = 0;
+		if (last >= 0) {
+			if (loop) {
+				t = duration > 0 ? (time % duration) : 0;
+			} else {
+				t = duration > 0 ? Math.min(time, duration) : 0;
+			}
+		}
 		let i = 0;
 		while (i < last && t >= input[i + 1]) i++;
 		const j = Math.min(i + 1, last);
@@ -283,17 +329,64 @@ export class MeshComponent extends Component {
 			case 'LINEAR':
 			default: {
 				const alpha = dt > 0 ? (t - t0) / dt : 0;
-				const start = i * stride;
-				const end = j * stride;
-				for (let k = 0; k < stride; k++) {
-					const v0 = output[start + k];
-					const v1 = output[end + k];
-					res[k] = v0 + (v1 - v0) * alpha;
+				if (path === 'rotation') {
+					const q0 = this.readQuatAt(s, i, stride, MeshComponent._quatScratchA);
+					const q1 = this.readQuatAt(s, j, stride, MeshComponent._quatScratchB);
+					MeshComponent.slerpQuat(q0, q1, alpha, res);
+				} else {
+					const start = i * stride;
+					const end = j * stride;
+					for (let k = 0; k < stride; k++) {
+						const v0 = output[start + k];
+						const v1 = output[end + k];
+						res[k] = v0 + (v1 - v0) * alpha;
+					}
 				}
 				break;
 			}
 		}
+		if (path === 'rotation') MeshComponent.normalizeQuat(res);
 		return res;
+	}
+
+	private readQuatAt(s: GLTFAnimationSampler, index: number, stride: number, target: Float32Array): Float32Array {
+		const start = index * stride;
+		for (let k = 0; k < stride; k++) target[k] = s.output[start + k];
+		return target;
+	}
+
+	private static slerpQuat(a: Float32Array, b: Float32Array, t: number, out: Float32Array): Float32Array {
+		let ax = a[0], ay = a[1], az = a[2], aw = a[3];
+		let bx = b[0], by = b[1], bz = b[2], bw = b[3];
+		let cos = ax * bx + ay * by + az * bz + aw * bw;
+		if (cos < 0) { cos = -cos; bx = -bx; by = -by; bz = -bz; bw = -bw; }
+		if (cos > 0.9995) {
+			out[0] = ax + t * (bx - ax);
+			out[1] = ay + t * (by - ay);
+			out[2] = az + t * (bz - az);
+			out[3] = aw + t * (bw - aw);
+		} else {
+			const theta = Math.acos(cos);
+			const sinTheta = Math.sin(theta);
+			const s0 = Math.sin((1 - t) * theta) / sinTheta;
+			const s1 = Math.sin(t * theta) / sinTheta;
+			out[0] = ax * s0 + bx * s1;
+			out[1] = ay * s0 + by * s1;
+			out[2] = az * s0 + bz * s1;
+			out[3] = aw * s0 + bw * s1;
+		}
+		MeshComponent.normalizeQuat(out);
+		return out;
+	}
+
+	private static normalizeQuat(q: Float32Array): void {
+		const len = Math.hypot(q[0], q[1], q[2], q[3]);
+		if (len > 0) {
+			const inv = 1 / len;
+			q[0] *= inv; q[1] *= inv; q[2] *= inv; q[3] *= inv;
+		} else {
+			q[0] = 0; q[1] = 0; q[2] = 0; q[3] = 1;
+		}
 	}
 
 	/** Apply lightweight material overrides for all instances of a GLTF mesh index and persist the override. */
@@ -353,10 +446,12 @@ export class MeshComponent extends Component {
 	public collectSubmissions(base: Float32Array, receiveShadow: boolean = true): MeshRenderSubmission[] {
 		const out: MeshRenderSubmission[] = [];
 		for (const inst of this.instances) {
-			const localNow = this.model && inst.nodeIndex !== undefined ? this.worldMatrices[inst.nodeIndex] : MeshComponent._ID;
-			const world = new Float32Array(16);
-			M4.mulAffineInto(world, base, localNow);
-			const joints = (inst.skinIndex !== undefined) ? this.computeSkinMatrices(inst.skinIndex) : undefined;
+			const nodeWorld = (this.model && inst.nodeIndex !== undefined) ? (this.worldMatrices[inst.nodeIndex] ?? MeshComponent._ID) : MeshComponent._ID;
+			const world = inst.worldMatrix ?? (inst.worldMatrix = new Float32Array(16));
+			M4.mulAffineInto(world, base, nodeWorld);
+			const joints = (inst.skinIndex !== undefined && inst.nodeIndex !== undefined)
+				? this.computeSkinMatrices(inst.skinIndex, inst.nodeIndex, nodeWorld)
+				: undefined;
 			if (!receiveShadow && inst.mesh.shadow) { inst.mesh.shadow = undefined; }
 			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights });
 		}
@@ -420,7 +515,9 @@ export class MeshComponent extends Component {
 			if (Object.keys(map).length) runtime.nodes = map;
 		}
 
-		if (this.animationTime !== undefined) runtime.anim = { time: this.animationTime ?? 0 };
+		if (this.animationTime !== undefined) {
+			runtime.anim = { time: this.animationTime ?? 0, loop: this.animationLoop };
+		}
 		return { _runtime: runtime };
 	}
 
@@ -452,6 +549,10 @@ export class MeshComponent extends Component {
 
 		this.model = model;
 		this.buildInstances();
+		if (rt?.anim) {
+			if (rt.anim.time !== undefined) this.animationTime = rt.anim.time;
+			if (rt.anim.loop !== undefined) this.animationLoop = !!rt.anim.loop;
+		}
 
 		if (rt?.nodes && this.model?.nodes) {
 			const { toIndex } = MeshComponent.buildNodeKeyMap(this.model);
@@ -475,6 +576,7 @@ export class MeshComponent extends Component {
 			}
 			if (anyDirty) {
 				for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
+				this.markAllSkinsDirty();
 				if (this.model.scenes && this.model.scenes.length > 0) {
 				const scene = this.model.scenes[this.model.scene ?? 0];
 				if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);

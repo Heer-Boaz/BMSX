@@ -891,9 +891,17 @@ export async function generateRomAssets(resources: Resource[]) {
 				romAssets.push({ resid, resname, type, buffer });
 				break;
 			case 'model': {
-				const text = res.buffer.toString('utf8');
-				const dir = parse(res.filepath).dir;
-				const parsed = await loadGLTFModel(text, dir, resname);
+				const pathInfo = parse(res.filepath);
+				const dir = pathInfo.dir;
+				const ext = (pathInfo.ext || '').toLowerCase();
+				let gltfSource: string | ArrayBuffer;
+				if (ext === '.glb') {
+					const bufView = res.buffer;
+					gltfSource = bufView.buffer.slice(bufView.byteOffset, bufView.byteOffset + bufView.byteLength) as ArrayBuffer;
+				} else {
+					gltfSource = res.buffer.toString('utf8');
+				}
+				const parsed = await loadGLTFModel(gltfSource, dir, resname);
 
 				let texOffset = 0;
 				const imageOffsets: { start: number; end: number }[] = [];
