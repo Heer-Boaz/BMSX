@@ -6,7 +6,8 @@ import type { WorldObject } from 'bmsx/core/object/worldobject';
 import { onload } from 'bmsx/serializer/serializationhooks';
 import { $ } from 'bmsx/core/game';
 
-export type RenderProducer = (ctx: { parent: WorldObject; rc: CustomVisualComponent }) => void;
+export type RenderProducerContext = { parent: WorldObject; rc: CustomVisualComponent };
+export type RenderProducer = (ctx: RenderProducerContext) => void;
 
 /**
  * GenericRendererComponent: a flexible, non-unique renderer buffer you can attach
@@ -36,8 +37,6 @@ export class CustomVisualComponent extends Component {
 	public submitPoly = (desc: PolyRenderSubmission): void => { $.view.renderer.submit.poly(desc); };
 	public submitMesh = (desc: MeshRenderSubmission): void => { $.view.renderer.submit.mesh(desc); };
 	public submitParticle = (desc: ParticleRenderSubmission): void => { $.view.renderer.submit.particle(desc); };
-
-	/** Convenience: write text using the current renderer and default font (with simple layout options). */
 	public submitGlyphs = (opts: GlyphRenderSubmission): void => { $.view.renderer.submit.glyphs(opts); };
 
 	/** Enqueue a pre-typed submission (least overhead). */

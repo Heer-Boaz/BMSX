@@ -35,7 +35,10 @@ export type FlipOptions = {
 	flip_v: boolean;
 }
 
-export type RenderLayer = 'world' | 'ui';
+/**
+ * NOTE: ONLY 'world' AND 'ui' ARE CURRENTLY SUPPORTED
+ */
+export type RenderLayer = 'background' | 'world' | 'ui' | 'overlay';
 
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';
