@@ -733,9 +733,9 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 			name: megarom_filename,
 			ext: '.js',
 			type: 'code',
-			img: undefined, // Add missing fields to match Resource
+			img: undefined as any, // Add missing fields to match Resource
 			id: 1,
-			collisionType: undefined // Add missing fields to match Resource
+			collisionType: undefined as collisiontype // Add missing fields to match Resource
 		};
 	})());
 
