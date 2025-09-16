@@ -111,15 +111,14 @@ void main() {
 	vec4 world = model * vec4(scaledPosition, 1.0); // Transform position to world space
 	// Prefer UBO view/proj (backend binds per frame); fallback path remains available via u_viewProjection
 	mat4 viewProjBlock = u_proj * u_view;
-	gl_Position = viewProjBlock * model * vec4(scaledPosition, 1.0);
+	gl_Position = viewProjBlock * world;
 	v_worldPos = world.xyz; // Pass the world position to the fragment shader
 	v_texcoord = a_texcoord; // Pass the texture coordinates to the fragment shader
 	mat3 upper = mat3(model);
-	mat3 nMat  = u_useInstancing ? transpose(inverse(upper)) : u_normalMatrix;
-	// mat3 nMat = u_useInstancing ? mat3(model) : u_normalMatrix;
-	v_normal = nMat * skinnedNormal; // Pass the normal vector to the fragment shader
-	v_tangent = nMat * skinnedTangent;
-	v_bitangent = nMat * skinnedBitangent;
+	mat3 nMat  = u_useInstancing ? upper : u_normalMatrix; // uniform-scale instances take the direct upper 3x3
+	v_normal = normalize(nMat * skinnedNormal); // Pass the normal vector to the fragment shader
+	v_tangent = normalize(nMat * skinnedTangent);
+	v_bitangent = normalize(nMat * skinnedBitangent);
 	// Instance color when instancing; otherwise uniform material color
 	v_color = u_useInstancing ? a_iColor : u_materialColor;
 }

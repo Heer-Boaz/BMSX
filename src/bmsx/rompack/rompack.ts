@@ -204,11 +204,22 @@ export interface GLTFMaterial {
 	metallicFactor?: number;
 	roughnessFactor?: number;
 	baseColorTexture?: number;
+	baseColorTexCoord?: number;
 	normalTexture?: number;
+	normalTexCoord?: number;
+	normalScale?: number;
 	metallicRoughnessTexture?: number;
+	metallicRoughnessTexCoord?: number;
+	occlusionTexture?: number;
+	occlusionTexCoord?: number;
+	occlusionStrength?: number;
+	emissiveTexture?: number;
+	emissiveTexCoord?: number;
+	emissiveFactor?: color_arr;
 	alphaMode?: 'OPAQUE' | 'MASK' | 'BLEND';
 	alphaCutoff?: number;
 	doubleSided?: boolean;
+	unlit?: boolean;
 }
 
 export type GLTFIndexArray = Uint8Array | Uint16Array | Uint32Array;
@@ -216,6 +227,7 @@ export type GLTFIndexArray = Uint8Array | Uint16Array | Uint32Array;
 export interface GLTFMesh {
 	positions: Float32Array;
 	texcoords?: Float32Array;
+	texcoords1?: Float32Array;
 	normals?: Float32Array | null;
 	tangents?: Float32Array | null;
 	indices?: GLTFIndexArray;
@@ -227,6 +239,7 @@ export interface GLTFMesh {
 	weights?: number[];
 	jointIndices?: Uint16Array;
 	jointWeights?: Float32Array;
+	colors?: Float32Array;
 }
 
 export interface GLTFAnimationSampler {

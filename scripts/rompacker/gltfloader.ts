@@ -70,14 +70,21 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 		return new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
 	}
 
-	const buffers: Uint8Array[] = await Promise.all((json.buffers || []).map(async (b: any, index: number) => {
-		if (b.uri) return getExternal(b.uri);
-		if (glbBin) {
-			const byteLength = b.byteLength ?? glbBin.byteLength;
-			return glbBin.subarray(0, byteLength);
+	const buffers: Uint8Array[] = [];
+	if (glbBin) {
+		const bufList = json.buffers || [];
+		if (bufList.length !== 1 || bufList[0]?.uri) {
+			throw new Error('GLB must define exactly one buffer without URI');
 		}
-		throw new Error(`buffer[${index}] missing uri and no GLB BIN chunk`);
-	}));
+		buffers[0] = glbBin;
+	} else {
+		const bufList = json.buffers || [];
+		for (let i = 0; i < bufList.length; i++) {
+			const b = bufList[i];
+			if (!b?.uri) throw new Error(`buffer[${i}] missing uri and no GLB BIN chunk`);
+			buffers[i] = await getExternal(b.uri);
+		}
+	}
 
 	const bufferViews = json.bufferViews || [];
 	const accessors = json.accessors || [];
@@ -267,6 +274,11 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 		if (!acc) throw new Error(`Missing accessor ${index}`);
 		const info = getAccessorInfo(index);
 		const length = info.count * info.comp;
+		if (info.buffer && info.componentType === 5126 && !info.normalized && !acc.sparse && info.stride === info.componentSize * info.comp) {
+			const view = new Float32Array(info.buffer.buffer, info.buffer.byteOffset + info.offset, length);
+			accessorFloatCache[index] = view;
+			return view;
+		}
 		const out = new Float32Array(length);
 		if (info.buffer) {
 			const dv = new DataView(info.buffer.buffer, info.buffer.byteOffset, info.buffer.byteLength);
@@ -332,6 +344,9 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 	function getAccessorIndices(index: number): GLTFIndexArray {
 		const acc = accessors[index];
 		if (!acc || acc.type !== 'SCALAR') throw new Error('indices accessor must be SCALAR');
+		if (acc.componentType !== 5121 && acc.componentType !== 5123 && acc.componentType !== 5125) {
+			throw new Error('indices must use an unsigned component type');
+		}
 		const raw = getAccessorRaw(index);
 		if (raw instanceof Uint8Array || raw instanceof Uint16Array || raw instanceof Uint32Array) return raw;
 		throw new Error('indices must be unsigned integer type');
@@ -340,21 +355,39 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 	const textures = json.textures || [];
 	const textureSources: number[] = textures.map((t: any) => t.source ?? -1);
 
-	const materials = (json.materials || []).map((m: any) => ({
-		baseColorFactor: m.pbrMetallicRoughness?.baseColorFactor,
-		metallicFactor: m.pbrMetallicRoughness?.metallicFactor,
-		roughnessFactor: m.pbrMetallicRoughness?.roughnessFactor,
-		baseColorTexture: m.pbrMetallicRoughness?.baseColorTexture?.index,
-		normalTexture: m.normalTexture?.index,
-		metallicRoughnessTexture: m.pbrMetallicRoughness?.metallicRoughnessTexture?.index,
-		alphaMode: m.alphaMode ?? 'OPAQUE',
-		alphaCutoff: m.alphaCutoff ?? 0.5,
-		doubleSided: !!m.doubleSided,
-	}));
+	const materials = (json.materials || []).map((m: any) => {
+		const pbr = m.pbrMetallicRoughness ?? {};
+		const emissive = Array.isArray(m.emissiveFactor) ? [...m.emissiveFactor] : undefined;
+		if (emissive && emissive.length < 4) emissive.push(1);
+		return {
+			baseColorFactor: pbr.baseColorFactor,
+			metallicFactor: pbr.metallicFactor,
+			roughnessFactor: pbr.roughnessFactor,
+			baseColorTexture: pbr.baseColorTexture?.index,
+			baseColorTexCoord: pbr.baseColorTexture?.texCoord,
+			normalTexture: m.normalTexture?.index,
+			normalTexCoord: m.normalTexture?.texCoord,
+			normalScale: m.normalTexture?.scale,
+			metallicRoughnessTexture: pbr.metallicRoughnessTexture?.index,
+			metallicRoughnessTexCoord: pbr.metallicRoughnessTexture?.texCoord,
+			occlusionTexture: m.occlusionTexture?.index,
+			occlusionTexCoord: m.occlusionTexture?.texCoord,
+			occlusionStrength: m.occlusionTexture?.strength,
+			emissiveTexture: m.emissiveTexture?.index,
+			emissiveTexCoord: m.emissiveTexture?.texCoord,
+			emissiveFactor: emissive,
+			alphaMode: m.alphaMode ?? 'OPAQUE',
+			alphaCutoff: m.alphaCutoff ?? 0.5,
+			doubleSided: !!m.doubleSided,
+			unlit: !!(m.extensions && m.extensions.KHR_materials_unlit),
+		};
+	});
 
 	const meshes: GLTFMesh[] = [];
 	for (const mesh of json.meshes || []) {
 		for (const prim of mesh.primitives || []) {
+			const mode = prim.mode ?? 4;
+			if (mode !== 4) throw new Error(`Unsupported primitive mode ${mode}`);
 			const attributes = prim.attributes ?? {};
 			if (attributes.POSITION === undefined) throw new Error('GLTF primitive missing POSITION attribute');
 			const targets = prim.targets || [];
@@ -367,42 +400,62 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 				morphTangents.push(target.TANGENT !== undefined ? getAccessorFloat(target.TANGENT) : new Float32Array());
 			}
 
-			let jointIndices: Uint16Array | undefined;
-			if (attributes.JOINTS_0 !== undefined) {
-				const raw = getAccessorRaw(attributes.JOINTS_0);
-				if (raw instanceof Uint16Array) {
-					jointIndices = raw;
-				} else if (raw instanceof Uint8Array) {
-					jointIndices = new Uint16Array(raw.length);
-					for (let i = 0; i < raw.length; i++) jointIndices[i] = raw[i];
-				} else {
-					throw new Error('JOINTS_0 accessor has unsupported componentType');
-				}
-			}
+		let jointIndices: Uint16Array | undefined;
+		let jointWeights: Float32Array | undefined;
+		const jointAttrPairs: Array<[number | undefined, number | undefined]> = [
+			[attributes.JOINTS_0, attributes.WEIGHTS_0],
+			[attributes.JOINTS_1, attributes.WEIGHTS_1],
+		];
+		const jointBlocks: Uint16Array[] = [];
+		const weightBlocks: Float32Array[] = [];
+		for (const [jAttr, wAttr] of jointAttrPairs) {
+			if (jAttr === undefined || wAttr === undefined) continue;
+			const rawJ = getAccessorRaw(jAttr);
+			let blockJ: Uint16Array;
+			if (rawJ instanceof Uint16Array) blockJ = rawJ;
+			else if (rawJ instanceof Uint8Array) {
+				blockJ = Uint16Array.from(rawJ);
+			} else throw new Error('JOINTS accessor has unsupported componentType');
 
-			let jointWeights: Float32Array | undefined;
-			if (attributes.WEIGHTS_0 !== undefined) {
-				jointWeights = getAccessorFloat(attributes.WEIGHTS_0);
-				const weightAccessor = accessors[attributes.WEIGHTS_0];
-				const comp = getNumComponents(weightAccessor.type);
-				const vertexCount = jointWeights.length / comp;
-				for (let v = 0; v < vertexCount; v++) {
-					let sum = 0;
-					const base = v * comp;
-					for (let c = 0; c < comp; c++) sum += jointWeights[base + c];
-					if (sum > 0.00001) {
-						const inv = 1 / sum;
-						for (let c = 0; c < comp; c++) jointWeights[base + c] *= inv;
-					} else {
-						jointWeights[base] = 1;
-						for (let c = 1; c < comp; c++) jointWeights[base + c] = 0;
+			const blockW = getAccessorFloat(wAttr);
+			jointBlocks.push(blockJ);
+			weightBlocks.push(blockW);
+		}
+		if (jointBlocks.length) {
+			const vertCount = jointBlocks[0].length / 4;
+			jointIndices = new Uint16Array(vertCount * 4);
+			jointWeights = new Float32Array(vertCount * 4);
+			for (let v = 0; v < vertCount; v++) {
+				const pairs: { i: number; w: number }[] = [];
+				for (let b = 0; b < jointBlocks.length; b++) {
+					const jb = jointBlocks[b];
+					const wb = weightBlocks[b];
+					for (let k = 0; k < 4; k++) {
+						pairs.push({ i: jb[v * 4 + k], w: wb[v * 4 + k] });
 					}
 				}
+				pairs.sort((a, b) => b.w - a.w);
+				let sum = 0;
+				for (let k = 0; k < 4; k++) sum += pairs[k]?.w ?? 0;
+				if (sum > 0.00001) {
+					const inv = 1 / sum;
+					for (let k = 0; k < 4; k++) {
+						const pair = pairs[k];
+						jointIndices[v * 4 + k] = pair?.i ?? 0;
+						jointWeights[v * 4 + k] = (pair?.w ?? 0) * inv;
+					}
+				} else {
+					jointIndices.fill(0, v * 4, v * 4 + 4);
+					jointWeights[v * 4] = 1;
+					for (let k = 1; k < 4; k++) jointWeights[v * 4 + k] = 0;
+				}
 			}
+		}
 
 			const meshEntry: GLTFMesh = {
 				positions: getAccessorFloat(attributes.POSITION),
 				texcoords: attributes.TEXCOORD_0 !== undefined ? getAccessorFloat(attributes.TEXCOORD_0) : undefined,
+				texcoords1: attributes.TEXCOORD_1 !== undefined ? getAccessorFloat(attributes.TEXCOORD_1) : undefined,
 				normals: attributes.NORMAL !== undefined ? getAccessorFloat(attributes.NORMAL) : null,
 				tangents: attributes.TANGENT !== undefined ? getAccessorFloat(attributes.TANGENT) : null,
 				indices: prim.indices !== undefined ? getAccessorIndices(prim.indices) : undefined,
@@ -414,6 +467,7 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 				weights: mesh.weights ? Array.from(mesh.weights) : (morphPositions.length ? new Array(morphPositions.length).fill(0) : undefined),
 				jointIndices,
 				jointWeights,
+				colors: attributes.COLOR_0 !== undefined ? getAccessorFloat(attributes.COLOR_0) : undefined,
 			};
 			meshes.push(meshEntry);
 		}
@@ -492,6 +546,7 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 	};
 
 	model.imageBuffers = imageBuffers.map(buf => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)) as ArrayBuffer[];
+	(model as any)._buffers = buffers;
 
 	validateGLTFModel(model);
 	return model;
@@ -556,6 +611,9 @@ function validateGLTFModel(model: GLTFModel): void {
 		if (mesh.jointIndices && mesh.jointWeights) {
 			if (mesh.jointIndices.length !== mesh.jointWeights.length) {
 				throw new Error('Mesh joint indices/weights length mismatch');
+			}
+			if (mesh.jointIndices.length !== vertexCount * 4 || mesh.jointWeights.length !== vertexCount * 4) {
+				throw new Error('Skin arrays must be 4-per-vertex');
 			}
 		}
 		if (mesh.materialIndex !== undefined && model.materials && mesh.materialIndex >= model.materials.length) {

@@ -4,16 +4,12 @@ import { $ } from '../../core/game';
 import { taskGate } from '../../core/taskgate';
 import skyboxFS from '../3d/shaders/skybox.frag.glsl';
 import skyboxVS from '../3d/shaders/skybox.vert.glsl';
-import { TextureHandle } from '../backend/pipeline_interfaces';
+import type { RenderContext, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary, SkyboxPipelineState } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../gameview';
-
-function getRenderContext() {
-	return $.view;
-}
 
 let vaoSkybox: WebGLVertexArrayObject | null = null;
 let skyboxProgram: WebGLProgram;
@@ -26,16 +22,25 @@ let skyboxTintLocation: WebGLUniformLocation;
 let skyboxExposureLocation: WebGLUniformLocation;
 
 export let skyboxKey: TextureKey | undefined; export let skyboxFaceIds: SkyboxImageIds | undefined; const skyboxGroup = taskGate.group('texture:skybox:main');
-let lastBoundSkyboxTexture: WebGLTexture | null = null;
-export function resetSkyboxGroup() { skyboxGroup.bump(); }
-export let skyboxBuffer: WebGLBuffer; export let skyboxTexture: WebGLTexture | null = null;
-export function init(gl: WebGL2RenderingContext) { vaoSkybox = gl.createVertexArray()!; createSkyboxProgram(gl); setupSkyboxLocations(gl); createSkyboxBuffer(gl); gl.bindVertexArray(vaoSkybox); gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer); gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(skyboxPositionLocation); }
-export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
+let lastBoundSkyboxTexture: TextureHandle | null = null;
+export let skyboxBuffer: WebGLBuffer; export let skyboxTexture: TextureHandle | null = null;
+export function init(backend: WebGLBackend): void {
+	const gl = backend.gl as WebGL2RenderingContext;
+	vaoSkybox = gl.createVertexArray()!;
+	createSkyboxProgram(backend);
+	setupSkyboxLocations(gl);
+	createSkyboxBuffer(gl);
+	gl.bindVertexArray(vaoSkybox);
+	gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
+	gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
+	gl.enableVertexAttribArray(skyboxPositionLocation);
+}
+export function createSkyboxProgram(backend: WebGLBackend): void {
+	const gl = backend.gl as WebGL2RenderingContext;
 	// Prefer program that PipelineManager bound before bootstrap
 	const current = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
 	if (current) { skyboxProgram = current; return; }
-	const b = getRenderContext().backend as WebGLBackend;
-	const program = b.buildProgram(skyboxVS, skyboxFS, 'skybox');
+	const program = backend.buildProgram(skyboxVS, skyboxFS, 'skybox');
 	if (!program) throw Error('Failed to build skybox shader program');
 	skyboxProgram = program;
 }
@@ -84,27 +89,62 @@ export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
 	gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, p, gl.STATIC_DRAW);
 }
-export function setSkyboxImages(ids: SkyboxImageIds) { const loaders = [GameView.imgassets[ids.posX].imgbin, GameView.imgassets[ids.negX].imgbin, GameView.imgassets[ids.posY].imgbin, GameView.imgassets[ids.negY].imgbin, GameView.imgassets[ids.posZ].imgbin, GameView.imgassets[ids.negZ].imgbin] as const; skyboxKey = $.texmanager.acquireCubemap({ name: "skybox/main", faceLoaders: loaders, faceIdsForKey: [ids.posX, ids.negX, ids.posY, ids.negY, ids.posZ, ids.negZ] as const, assetBarrier: new AssetBarrier<WebGLTexture>(skyboxGroup), desc: {}, fallbackColor: [255, 0, 0, 255], streamed: true }); skyboxFaceIds = ids; lastBoundSkyboxTexture = null; }
-export interface SkyboxPassState { view: Float32Array; proj: Float32Array; tex: WebGLTexture; width?: number; height?: number; }
-export function drawSkyboxWithState(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, state: SkyboxPassState): void {
-	// FBO binding handled by render graph
-	const backend = getRenderContext().backend as WebGLBackend;
+export function setSkyboxImages(ids: SkyboxImageIds) {
+	// Extract all face ids to avoid unsafe casts
+	const { posX, negX, posY, negY, posZ, negZ } = ids;
+
+	// If an id is missing, use null for that face loader so the texture system can use the fallback
+	const loaders = [
+		posX != null ? GameView.imgassets[posX]?.imgbin ?? null : null,
+		negX != null ? GameView.imgassets[negX]?.imgbin ?? null : null,
+		posY != null ? GameView.imgassets[posY]?.imgbin ?? null : null,
+		negY != null ? GameView.imgassets[negY]?.imgbin ?? null : null,
+		posZ != null ? GameView.imgassets[posZ]?.imgbin ?? null : null,
+		negZ != null ? GameView.imgassets[negZ]?.imgbin ?? null : null,
+	] as const;
+
+	// Keep face id tuple in parallel; missing ids are represented as null
+	const faceIdsForKey = [
+		posX ?? null,
+		negX ?? null,
+		posY ?? null,
+		negY ?? null,
+		posZ ?? null,
+		negZ ?? null,
+	] as const;
+
+	skyboxKey = $.texmanager.acquireCubemap({
+		name: "skybox/main",
+		faceLoaders: loaders,
+		faceIdsForKey,
+		assetBarrier: new AssetBarrier<WebGLTexture>(skyboxGroup),
+		desc: {},
+		fallbackColor: [0, 0, 0, 255],
+		streamed: true
+	});
+	skyboxFaceIds = ids;
+	lastBoundSkyboxTexture = null;
+}
+interface SkyboxRuntime {
+	backend: WebGLBackend;
+	gl: WebGL2RenderingContext;
+	context: RenderContext;
+}
+
+export function drawSkybox(runtime: SkyboxRuntime, framebuffer: WebGLFramebuffer, state: SkyboxPipelineState): void {
+	const { backend, gl, context } = runtime;
 	if (state.width && state.height) backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
-	// Render skybox as background: no culling (render inside faces), no depth writes, no depth test
 	backend.setCullEnabled(false);
 	backend.setDepthMask(false);
 	backend.setDepthTestEnabled(false);
-	// Program is bound by the backend pipeline
 	backend.bindVertexArray(vaoSkybox);
 	gl.uniformMatrix4fv(skyboxViewLocation, false, state.view);
 	gl.uniformMatrix4fv(skyboxProjectionLocation, false, state.proj);
-	// Apply current tint/exposure
 	gl.uniform3f(skyboxTintLocation, _skyTint[0], _skyTint[1], _skyTint[2]);
 	gl.uniform1f(skyboxExposureLocation, _skyExposure);
 	if (lastBoundSkyboxTexture !== state.tex) {
-		const v = getRenderContext();
-		v.activeTexUnit = TEXTURE_UNIT_SKYBOX;
-		v.bindCubemapTex(state.tex);
+		context.activeTexUnit = TEXTURE_UNIT_SKYBOX;
+		context.bindCubemapTex(state.tex);
 		lastBoundSkyboxTexture = state.tex;
 	}
 	const passStub = { fbo: framebuffer, desc: { label: 'skybox' } };
@@ -133,17 +173,17 @@ export function registerSkyboxPass_WebGL(registry: RenderPassLibrary) {
 			samplers: [{ name: 's_skybox' }],
 		},
 		bootstrap: (backend) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
-			init(gl);
+			init(backend as WebGLBackend);
 		},
 		writesDepth: false,
 		shouldExecute: () => !!$.world.activeCamera3D && !!skyboxKey,
 		exec: (backend, fbo, s) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
-			drawSkyboxWithState(gl, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
+			const webglBackend = backend as WebGLBackend;
+			const runtime: SkyboxRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
+			drawSkybox(runtime, fbo as WebGLFramebuffer, s as SkyboxPipelineState);
 		},
 		prepare: (backend, _state) => {
-			const gv = getRenderContext();
+			const gv = $.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = $.world.activeCamera3D;
 			if (!cam) return;

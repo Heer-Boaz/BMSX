@@ -157,7 +157,8 @@ vec3 applyNoise(vec3 color, vec2 uv, vec2 srcPxRes){
 	float lum      = dot(color, LUMA);
 	float n        = mix(pixNoise, lineNoise, 0.35);
 	float k        = smoothstep(BLACK_CUTOFF, BLACK_SOFT, lum);
-	return color * n * (u_noiseIntensity * mix(0.2, 1.0, 1.0 - lum)) * k;
+	float amp      = u_noiseIntensity * mix(0.2, 1.0, 1.0 - lum);
+	return color * (n * amp * k);
 }
 
 void main(){

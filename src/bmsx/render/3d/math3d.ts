@@ -432,6 +432,58 @@ export const M4 = {
 	},
 };
 
+export function float32ToFloat16(val: number): number {
+	const floatView = new Float32Array(1);
+	const int32View = new Int32Array(floatView.buffer);
+	floatView[0] = val;
+	const x = int32View[0];
+	const sign = (x >> 16) & 0x8000;
+	const mant = x & 0x007fffff;
+	let exp = (x >> 23) & 0xff;
+	if (exp === 0xff) {
+		if (mant !== 0) return sign | 0x7e00; // NaN
+		return sign | 0x7c00; // Inf
+	}
+	exp = exp - 127 + 15;
+	if (exp <= 0) {
+		if (exp < -10) return sign; // underflow
+		const m = (mant | 0x00800000) >> (1 - exp);
+		return sign | (m + 0x00000fff + ((m >> 13) & 1)) >> 13;
+	} else if (exp >= 0x1f) {
+		return sign | 0x7c00; // overflow -> Inf
+	}
+	const half = sign | (exp << 10) | ((mant + 0x00000fff + ((mant >> 13) & 1)) >> 13);
+	return half;
+}
+
+export function isMatrixMirrored(mat: Float32Array): boolean {
+	const m00 = mat[0], m01 = mat[1], m02 = mat[2];
+	const m10 = mat[4], m11 = mat[5], m12 = mat[6];
+	const m20 = mat[8], m21 = mat[9], m22 = mat[10];
+	const det = m00 * (m11 * m22 - m12 * m21)
+		- m01 * (m10 * m22 - m12 * m20)
+		+ m02 * (m10 * m21 - m11 * m20);
+	return det < 0;
+}
+
+export function transformBoundingSphereCenter(out: Float32Array, matrix: Float32Array, center: vec3arr): Float32Array {
+	out[0] = matrix[12] + center[0] * matrix[0] + center[1] * matrix[4] + center[2] * matrix[8];
+	out[1] = matrix[13] + center[0] * matrix[1] + center[1] * matrix[5] + center[2] * matrix[9];
+	out[2] = matrix[14] + center[0] * matrix[2] + center[1] * matrix[6] + center[2] * matrix[10];
+	return out;
+}
+
+export function transformedBoundingSphereRadius(matrix: Float32Array, radius: number): number {
+	return radius * M4.maxScale(matrix);
+}
+
+export function translationDistanceSquared(matrix: Float32Array, point: { x: number; y: number; z: number }): number {
+	const dx = matrix[12] - point.x;
+	const dy = matrix[13] - point.y;
+	const dz = matrix[14] - point.z;
+	return dx * dx + dy * dy + dz * dz;
+}
+
 // ====== Vec helpers ======
 // Quaternion helpers consolidated into lower section (Q)
 export const V3 = {

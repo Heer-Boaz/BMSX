@@ -100,6 +100,8 @@ export class MeshComponent extends Component {
 			const renderMesh = new RenderMesh({
 				positions: g.positions,
 				texcoords: g.texcoords ?? new Float32Array(),
+				texcoords1: g.texcoords1 ?? new Float32Array(),
+				colors: g.colors ?? new Float32Array(),
 				normals: g.normals ?? null,
 				tangents: g.tangents ?? null,
 				indices: g.indices,
@@ -113,26 +115,40 @@ export class MeshComponent extends Component {
 				meshname: `${mdl.name}_${index}`,
 			});
 			const mat = mdl.materials?.[g.materialIndex ?? 0];
-			let albedo = mat?.baseColorTexture;
-			let normal = mat?.normalTexture;
-			let metallicRoughness = mat?.metallicRoughnessTexture;
-			if (mdl.textures) {
-				if (albedo !== undefined) albedo = mdl.textures[albedo] ?? albedo;
-				if (normal !== undefined) normal = mdl.textures[normal] ?? normal;
-				if (metallicRoughness !== undefined) metallicRoughness = mdl.textures[metallicRoughness] ?? metallicRoughness;
-			}
+			const resolveTexture = (idx?: number): number | undefined => {
+				if (idx === undefined) return undefined;
+				return mdl.textures ? mdl.textures[idx] ?? idx : idx;
+			};
+			const textureUVs = {
+				albedo: mat?.baseColorTexCoord,
+				normal: mat?.normalTexCoord,
+				metallicRoughness: mat?.metallicRoughnessTexCoord,
+				occlusion: mat?.occlusionTexCoord,
+				emissive: mat?.emissiveTexCoord,
+			};
+			const textures = {
+				albedo: resolveTexture(mat?.baseColorTexture),
+				normal: resolveTexture(mat?.normalTexture),
+				metallicRoughness: resolveTexture(mat?.metallicRoughnessTexture),
+				occlusion: resolveTexture(mat?.occlusionTexture),
+				emissive: resolveTexture(mat?.emissiveTexture),
+			};
 			const alphaMode = mat?.alphaMode ?? 'OPAQUE';
 			const surface: Material['surface'] = alphaMode === 'MASK' ? 'masked' : alphaMode === 'BLEND' ? 'transparent' : 'opaque';
+			const emissiveFactor: color_arr = mat?.emissiveFactor
+				? ([...mat.emissiveFactor] as color_arr)
+				: [0, 0, 0, 1];
 			const material = new Material({
-				color: mat?.baseColorFactor ? [...mat.baseColorFactor] : [1, 1, 1, 1],
-				textures: {
-					albedo: albedo !== undefined ? albedo : undefined,
-					normal: normal !== undefined ? normal : undefined,
-					metallicRoughness: metallicRoughness !== undefined ? metallicRoughness : undefined,
-				},
+				textures,
+				textureUVs,
+				color: mat?.baseColorFactor ? [...mat.baseColorFactor] as color_arr : [1, 1, 1, 1],
 				metallicFactor: mat?.metallicFactor ?? 1.0,
 				roughnessFactor: mat?.roughnessFactor ?? 1.0,
 				doubleSided: mat?.doubleSided ?? false,
+				occlusionStrength: mat?.occlusionStrength ?? 1.0,
+				normalScale: mat?.normalScale ?? 1.0,
+				emissiveFactor,
+				unlit: !!mat?.unlit,
 			});
 			material.surface = surface;
 			material.alphaCutoff = alphaMode === 'MASK' ? (mat?.alphaCutoff ?? 0.5) : 0.5;
@@ -233,9 +249,9 @@ export class MeshComponent extends Component {
 				const sampler = (anim as GLTFAnimation).samplers[channel.sampler];
 				if (!sampler || !sampler.input || !sampler.output) continue;
 				const stride = sampler.output.length / sampler.input.length;
-				const comp = sampler.interpolation === 'CUBICSPLINE' ? stride / 3 : stride;
+				const componentCount = sampler.interpolation === 'CUBICSPLINE' ? stride / 3 : stride;
 				const path = channel.target.path ?? '';
-				const value = this.sampleAnimation(sampler, this.animationTime, comp, path);
+				const value = this.sampleAnimation(sampler, this.animationTime, componentCount, path);
 				if (channel.target.node !== undefined && this.model?.nodes) {
 					const node: GLTFNode = this.model.nodes[channel.target.node];
 					switch (channel.target.path) {
@@ -281,7 +297,7 @@ export class MeshComponent extends Component {
 		}
 	}
 
-	private sampleAnimation(s: GLTFAnimationSampler, time: number, stride: number, path: string): Float32Array {
+	private sampleAnimation(s: GLTFAnimationSampler, time: number, componentCount: number, path: string): Float32Array {
 		const input = s.input;
 		const output = s.output;
 		const last = input.length - 1;
@@ -301,26 +317,26 @@ export class MeshComponent extends Component {
 		const t0 = input[i];
 		const t1 = input[j];
 		const dt = t1 - t0;
-		const res = new Float32Array(stride);
+		const res = new Float32Array(componentCount);
 		switch (s.interpolation) {
 			case 'STEP': {
-				const start = i * stride;
-				for (let k = 0; k < stride; k++) res[k] = output[start + k];
+				const start = i * componentCount;
+				for (let k = 0; k < componentCount; k++) res[k] = output[start + k];
 				break;
 			}
 			case 'CUBICSPLINE': {
-				const start = i * stride * 3;
-				const end = j * stride * 3;
+				const start = i * componentCount * 3;
+				const end = j * componentCount * 3;
 				const u = dt === 0 ? 0 : (t - t0) / dt;
 				const u2 = u * u; const u3 = u2 * u;
 				const s0 = 2.0 * u3 - 3.0 * u2 + 1.0;
 				const s1 = u3 - 2.0 * u2 + u;
 				const s2 = -2.0 * u3 + 3.0 * u2;
 				const s3 = u3 - u2;
-				for (let k = 0; k < stride; k++) {
-					const p0 = output[start + stride + k];
-					const m0 = output[start + stride * 2 + k];
-					const p1 = output[end + stride + k];
+				for (let k = 0; k < componentCount; k++) {
+					const p0 = output[start + componentCount + k];
+					const m0 = output[start + componentCount * 2 + k];
+					const p1 = output[end + componentCount + k];
 					const m1 = output[end + k];
 					res[k] = s0 * p0 + s1 * m0 * dt + s2 * p1 + s3 * m1 * dt;
 				}
@@ -330,13 +346,13 @@ export class MeshComponent extends Component {
 			default: {
 				const alpha = dt > 0 ? (t - t0) / dt : 0;
 				if (path === 'rotation') {
-					const q0 = this.readQuatAt(s, i, stride, MeshComponent._quatScratchA);
-					const q1 = this.readQuatAt(s, j, stride, MeshComponent._quatScratchB);
+					const q0 = this.readQuatAt(s, i, componentCount, MeshComponent._quatScratchA);
+					const q1 = this.readQuatAt(s, j, componentCount, MeshComponent._quatScratchB);
 					MeshComponent.slerpQuat(q0, q1, alpha, res);
 				} else {
-					const start = i * stride;
-					const end = j * stride;
-					for (let k = 0; k < stride; k++) {
+					const start = i * componentCount;
+					const end = j * componentCount;
+					for (let k = 0; k < componentCount; k++) {
 						const v0 = output[start + k];
 						const v1 = output[end + k];
 						res[k] = v0 + (v1 - v0) * alpha;
@@ -349,9 +365,9 @@ export class MeshComponent extends Component {
 		return res;
 	}
 
-	private readQuatAt(s: GLTFAnimationSampler, index: number, stride: number, target: Float32Array): Float32Array {
-		const start = index * stride;
-		for (let k = 0; k < stride; k++) target[k] = s.output[start + k];
+	private readQuatAt(s: GLTFAnimationSampler, index: number, componentCount: number, target: Float32Array): Float32Array {
+		const start = index * componentCount;
+		for (let k = 0; k < componentCount; k++) target[k] = s.output[start + k];
 		return target;
 	}
 
@@ -439,6 +455,8 @@ export class MeshComponent extends Component {
 			mat.gpuTextures.albedo = t.albedo !== undefined ? keys[t.albedo] : undefined;
 			mat.gpuTextures.normal = t.normal !== undefined ? keys[t.normal] : undefined;
 			mat.gpuTextures.metallicRoughness = t.metallicRoughness !== undefined ? keys[t.metallicRoughness] : undefined;
+			mat.gpuTextures.occlusion = t.occlusion !== undefined ? keys[t.occlusion] : undefined;
+			mat.gpuTextures.emissive = t.emissive !== undefined ? keys[t.emissive] : undefined;
 		}
 	}
 
@@ -452,8 +470,7 @@ export class MeshComponent extends Component {
 			const joints = (inst.skinIndex !== undefined && inst.nodeIndex !== undefined)
 				? this.computeSkinMatrices(inst.skinIndex, inst.nodeIndex, nodeWorld)
 				: undefined;
-			if (!receiveShadow && inst.mesh.shadow) { inst.mesh.shadow = undefined; }
-			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights });
+			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights, receiveShadow });
 		}
 		return out;
 	}

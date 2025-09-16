@@ -11,12 +11,14 @@ import meshVS from '../3d/shaders/3d.vert.glsl';
 import { FeatureQueue } from '../../utils/feature_queue';
 import * as GLR from '../backend/webgl/gl_resources';
 import { MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
+import type { RenderContext } from '../backend/pipeline_interfaces';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl/webgl.constants';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { MeshRenderSubmission } from '../gameview';
 import type { DirectionalLight, PointLight } from './light';
-import { M4 } from './math3d';
+import { M4, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
+import { arraysEqual } from '../../utils/utils';
 
 const BYTES_PER_FLOAT = 4;
 const COLUMN_BYTES = 4 * BYTES_PER_FLOAT; // 4 floats per kolom = 16 bytes
@@ -27,10 +29,31 @@ const INSTANCE_STRIDE_BYTES = INSTANCE_COLOR_OFFSET_BYTES + 4; // 68 bytes
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / 4;
 const INSTANCE_STRIDE_NORMAL9 = 9;
 const MAT4_FLOATS = 16;
-// unified in webgl.constants
-function getRenderContext() {
-	return $.view;
+
+type TextureContext = RenderContext & { textures: { [k: string]: unknown | null } };
+
+function assertTextureContext(ctx: RenderContext): asserts ctx is TextureContext {
+	if (typeof (ctx as { textures?: unknown }).textures === 'undefined') throw new Error('Render context does not expose texture bindings');
 }
+
+interface MeshPassRuntime {
+	backend: WebGLBackend;
+	gl: WebGL2RenderingContext;
+	context: TextureContext;
+}
+
+interface MeshInstanceGroup {
+	mesh: Mesh;
+	instances: { matrix: Float32Array; color: [number, number, number, number] }[];
+}
+
+interface MeshDrawLists {
+	instanced: Map<string, MeshInstanceGroup>;
+	opaqueSingles: MeshRenderSubmission[];
+	transparentSingles: MeshRenderSubmission[];
+}
+
+let activeBackend: WebGLBackend | null = null;
 
 // Legacy direct submission array removed. Use submitMesh() with feature queue.
 const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
@@ -179,34 +202,27 @@ const lastJointMatrixArray = new Float32Array(MAX_JOINTS * MAT4_FLOATS);
 const zeroMorphWeights = new Float32Array(MAX_MORPH_TARGETS);
 let lastMorphEnabled = false;
 const lastMorphWeightArray = new Float32Array(MAX_MORPH_TARGETS);
+const morphIndexScratch = new Int32Array(MAX_MORPH_TARGETS);
+const zeroMorphIndices = new Int32Array(MAX_MORPH_TARGETS);
 
 let lastUseInstancing = -1;
 
-function arraysEqual(a: Float32Array, b: Float32Array): boolean { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
-// Float32 to Float16 bit-level conversion (IEEE 754 half-precision pack)
-function float32ToFloat16(val: number): number {
-	const floatView = new Float32Array(1);
-	const int32View = new Int32Array(floatView.buffer);
-	floatView[0] = val;
-	const x = int32View[0];
-	const sign = (x >> 16) & 0x8000;
-	const mant = x & 0x007fffff;
-	let exp = (x >> 23) & 0xff;
-	if (exp === 0xff) { // NaN or Inf
-		if (mant !== 0) return sign | 0x7e00; // NaN
-		return sign | 0x7c00; // Inf
+const sphereCenterScratch = new Float32Array(3);
+const cameraPosScratch = new Float32Array(3);
+
+function assignPosition(out: Float32Array, pos: Float32Array | { x: number; y: number; z: number }): Float32Array {
+	if (ArrayBuffer.isView(pos)) {
+		const src = pos as Float32Array;
+		out[0] = src[0];
+		out[1] = src[1];
+		out[2] = src[2];
+	} else {
+		const src = pos as { x: number; y: number; z: number };
+		out[0] = src.x;
+		out[1] = src.y;
+		out[2] = src.z;
 	}
-	exp = exp - 127 + 15;
-	if (exp <= 0) {
-		if (exp < -10) return sign; // underflow
-		// subnormal
-		const m = (mant | 0x00800000) >> (1 - exp);
-		return sign | (m + 0x00000fff + ((m >> 13) & 1)) >> 13;
-	} else if (exp >= 0x1f) {
-		return sign | 0x7c00; // overflow -> Inf
-	}
-	const half = sign | (exp << 10) | ((mant + 0x00000fff + ((mant >> 13) & 1)) >> 13);
-	return half;
+	return out;
 }
 function setUseInstancing(gl: WebGL2RenderingContext, enabled: boolean): void { const val = enabled ? 1 : 0; if (lastUseInstancing !== val) { gl.uniform1i(useInstancingLocation3D, val); lastUseInstancing = val; } }
 function uploadJointPalette(gl: WebGL2RenderingContext, joints: Float32Array[] | undefined, hasSkinning: boolean): void {
@@ -232,20 +248,10 @@ function isTransparent(m: Mesh): boolean { return m.material?.surface === 'trans
 // function isMasked(m: Mesh): boolean { return m.material?.surface === 'masked'; }
 function isOpaque(m: Mesh): boolean { const s = m.material?.surface; return s === undefined || s === 'opaque' || s === 'masked'; }
 function getMeshColor(m: Mesh): [number, number, number, number] { const c = m.material?.color; return [c?.[0] ?? 1, c?.[1] ?? 1, c?.[2] ?? 1, c?.[3] ?? 1]; }
-function isMatrixMirrored(mat: Float32Array): boolean {
-	// Column-major 4x4; take upper-left 3x3
-	const m00 = mat[0], m01 = mat[1], m02 = mat[2];
-	const m10 = mat[4], m11 = mat[5], m12 = mat[6];
-	const m20 = mat[8], m21 = mat[9], m22 = mat[10];
-	const det = m00 * (m11 * m22 - m12 * m21)
-		- m01 * (m10 * m22 - m12 * m20)
-		+ m02 * (m10 * m21 - m11 * m20);
-	return det < 0;
-}
-function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
+function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
+	const { backend, gl } = runtime;
 	let buffers = meshBufferCache.get(m); if (buffers) return buffers;
 	buffers = { vertex: GLR.glCreateBuffer(gl) };
-	const backend = getRenderContext().backend as WebGLBackend;
 	gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex); gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.STATIC_DRAW); backend.accountUpload('vertex', m.positions.byteLength);
 	if (m.hasTexcoords) { buffers.texcoord = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoord); gl.bufferData(gl.ARRAY_BUFFER, m.texcoords, gl.STATIC_DRAW); backend.accountUpload('vertex', m.texcoords!.byteLength); }
 	if (m.hasNormals) { buffers.normal = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal); gl.bufferData(gl.ARRAY_BUFFER, m.normals!, gl.STATIC_DRAW); backend.accountUpload('vertex', m.normals!.byteLength); }
@@ -349,12 +355,11 @@ function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
 }
 // Ambient lighting is supplied via FrameUniforms (u_ambient_frame) — no direct uniform updates here.
 export function uploadDirectionalLights(): void {
-	ensureLightBuffersInitialized();
+	if (!activeBackend) { lightsDirty = true; return; }
+	ensureLightBuffersInitialized(activeBackend);
 	const lights = Array.from(directionalLights.values());
 	const count = Math.min(lights.length, MAX_DIR_LIGHTS);
-	// Guard for non-WebGL backends or uninitialized buffers during WebGPU migration
-	const backendAny = getRenderContext().backend;
-	if (!dirLightData || !backendAny.updateUniformBuffer || !dirLightBuffer) { lightsDirty = true; return; }
+	if (!dirLightData || !dirLightBuffer) { lightsDirty = true; return; }
 	dirLightData.fill(0);
 	dirLightCount[0] = count;
 	for (let i = 0; i < count; i++) {
@@ -367,15 +372,15 @@ export function uploadDirectionalLights(): void {
 		base = DIR_LIGHT_INTENSITY_OFFSET + i * 4;
 		dirLightData[base] = lights[i].intensity;
 	}
-	(backendAny as WebGLBackend).updateUniformBuffer(dirLightBuffer, dirLightData);
+	activeBackend.updateUniformBuffer(dirLightBuffer, dirLightData);
 	lightsDirty = true;
 }
 export function uploadPointLights(): void {
-	ensureLightBuffersInitialized();
+	if (!activeBackend) { lightsDirty = true; return; }
+	ensureLightBuffersInitialized(activeBackend);
 	const lights = Array.from(pointLights.values());
 	const count = Math.min(lights.length, MAX_POINT_LIGHTS);
-	const backendAny = getRenderContext().backend;
-	if (!pointLightData || !backendAny.updateUniformBuffer || !pointLightBuffer) { lightsDirty = true; return; }
+	if (!pointLightData || !pointLightBuffer) { lightsDirty = true; return; }
 	pointLightData.fill(0);
 	pointLightCount[0] = count;
 	for (let i = 0; i < count; i++) {
@@ -389,7 +394,7 @@ export function uploadPointLights(): void {
 		pointLightData[base] = lights[i].range!;
 		pointLightData[base + 1] = lights[i].intensity;
 	}
-	(backendAny as WebGLBackend).updateUniformBuffer(pointLightBuffer, pointLightData);
+	activeBackend.updateUniformBuffer(pointLightBuffer, pointLightData);
 	lightsDirty = true;
 }
 export function addDirectionalLight(id: Identifier, light: DirectionalLight): void { directionalLights.set(id, { type: 'directional', color: light.color, intensity: light.intensity, orientation: light.orientation }); uploadDirectionalLights(); }
@@ -399,7 +404,13 @@ export function removePointLight(id: string): void { if (pointLights.delete(id))
 export function getPointLight(id: string): PointLight | undefined { return pointLights.get(id); }
 export function getDirectionalLights(): ReadonlyArray<DirectionalLight> { return Array.from(directionalLights.values()); }
 export function getPointLightsAll(): ReadonlyArray<PointLight> { return Array.from(pointLights.values()); }
-export function clearLights(): void { ensureLightBuffersInitialized(); directionalLights.clear(); pointLights.clear(); uploadDirectionalLights(); uploadPointLights(); }
+export function clearLights(): void {
+	if (activeBackend) ensureLightBuffersInitialized(activeBackend);
+	directionalLights.clear();
+	pointLights.clear();
+	uploadDirectionalLights();
+	uploadPointLights();
+}
 export function consumeLightsDirty(): boolean { const d = lightsDirty; lightsDirty = false; return d; }
 export function peekLightsDirty(): boolean { return lightsDirty; }
 export const DIR_LIGHT_UNIFORM_BINDING = DIR_LIGHT_BINDING; export const POINT_LIGHT_UNIFORM_BINDING = POINT_LIGHT_BINDING;
@@ -429,7 +440,7 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
 	gl.uniform2f(morphNormTexSizeLocation3D, 1.0, 1.0);
 	gl.uniform1i(morphNormCountLocation3D, 0);
 	// Morph indices default
-	gl.uniform1iv(morphIndicesLocation3D, new Int32Array(8));
+	gl.uniform1iv(morphIndicesLocation3D, zeroMorphIndices);
 	gl.uniform1i(morphNormTexLocation3D, TEXTURE_UNIT_MORPH_NORM);
 	gl.uniform2f(morphNormTexSizeLocation3D, 1.0, 1.0);
 	gl.uniform1i(morphNormCountLocation3D, 0);
@@ -444,21 +455,22 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
 	lastMorphWeightArray.set(zeroMorphWeights);
 	lastMorphEnabled = false;
 }
-export function setupBuffers3D(gl: WebGL2RenderingContext): void {
+export function setupBuffers3D(backend: WebGLBackend): void {
+	const gl = backend.gl as WebGL2RenderingContext;
 	instanceMatrixBuffer3D = GLR.glCreateBuffer(gl);
 	gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
 	gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
 
 	// No morph attribute buffers are allocated; morph deltas are provided via textures
 	// Ensure light UBOs exist even before any pass execution
-	ensureLightBuffersInitialized();
+	ensureLightBuffersInitialized(backend);
 	gl.bindBuffer(gl.ARRAY_BUFFER, instanceMatrixBuffer3D);
 	gl.bufferData(gl.ARRAY_BUFFER, MAX_INSTANCES * INSTANCE_STRIDE_BYTES, gl.DYNAMIC_DRAW);
 }
 
-function ensureLightBuffersInitialized(): void {
+
+function ensureLightBuffersInitialized(backend: WebGLBackend): void {
 	// Allocate UBOs using actual std140 block sizes from the linked program
-	const backend = getRenderContext().backend as WebGLBackend;
 	const gl = backend.gl;
 	if (!gameShaderProgram3D) return;
 	if (!dirLightBuffer || !dirLightData) {
@@ -483,14 +495,6 @@ function ensureLightBuffersInitialized(): void {
 	}
 }
 
-export function createGameShaderPrograms3D(gl: WebGL2RenderingContext): void {
-	const b = getRenderContext().backend as WebGLBackend;
-	const program = b.buildProgram(meshVS, meshFS, 'meshbatch');
-	if (!program) throw Error('Failed to build 3D mesh shader program');
-	gameShaderProgram3D = program;
-	gl.validateProgram(program);
-	if (!gl.getProgramParameter(program, gl.VALIDATE_STATUS)) throw Error(`Invalid 3D GLSL program: ${gl.getProgramInfoLog(program)}`);
-}
 export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 	// If program not explicitly created yet, pick up the program bound by the PipelineManager
 	if (!gameShaderProgram3D) {
@@ -547,79 +551,93 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
 	];
 	instanceColorLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_iColor');
 }
-function buildVAOForMesh(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers, instanced: boolean, _morph: boolean): WebGLVertexArrayObject {
-	const b = getRenderContext().backend as WebGLBackend;
-	const vao = b.createVertexArray() as WebGLVertexArrayObject;
-	b.bindVertexArray(vao);
-	if (buffers.vertex && vertexPositionLocation3D >= 0) { b.bindArrayBuffer(buffers.vertex); b.vertexAttribPointer(vertexPositionLocation3D, 3, gl.FLOAT, false, 0, 0); b.enableVertexAttrib(vertexPositionLocation3D); }
-	if (buffers.texcoord && texcoordLocation3D >= 0) { b.bindArrayBuffer(buffers.texcoord); b.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0); b.enableVertexAttrib(texcoordLocation3D); }
-	else if (texcoordLocation3D >= 0) { b.disableVertexAttrib(texcoordLocation3D); }
-	if (buffers.normal && normalLocation3D >= 0) { b.bindArrayBuffer(buffers.normal); b.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0); b.enableVertexAttrib(normalLocation3D); }
-	else if (normalLocation3D >= 0) { b.disableVertexAttrib(normalLocation3D); }
-	if (buffers.tangent && tangentLocation3D >= 0) { b.bindArrayBuffer(buffers.tangent); const hasVec4 = m.tangents && m.tangents.length === m.vertexCount * 4; const size = hasVec4 ? 4 : 3; b.vertexAttribPointer(tangentLocation3D, size, gl.FLOAT, false, 0, 0); b.enableVertexAttrib(tangentLocation3D); }
-	else if (tangentLocation3D >= 0) { b.disableVertexAttrib(tangentLocation3D); }
+function buildVAOForMesh(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers, instanced: boolean, _morph: boolean): WebGLVertexArrayObject {
+	const { backend, gl } = runtime;
+	const vao = backend.createVertexArray() as WebGLVertexArrayObject;
+	backend.bindVertexArray(vao);
+	if (buffers.vertex && vertexPositionLocation3D >= 0) { backend.bindArrayBuffer(buffers.vertex); backend.vertexAttribPointer(vertexPositionLocation3D, 3, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib(vertexPositionLocation3D); }
+	if (buffers.texcoord && texcoordLocation3D >= 0) { backend.bindArrayBuffer(buffers.texcoord); backend.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib(texcoordLocation3D); }
+	else if (texcoordLocation3D >= 0) { backend.disableVertexAttrib(texcoordLocation3D); }
+	if (buffers.normal && normalLocation3D >= 0) { backend.bindArrayBuffer(buffers.normal); backend.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib(normalLocation3D); }
+	else if (normalLocation3D >= 0) { backend.disableVertexAttrib(normalLocation3D); }
+	if (buffers.tangent && tangentLocation3D >= 0) { backend.bindArrayBuffer(buffers.tangent); const hasVec4 = m.tangents && m.tangents.length === m.vertexCount * 4; const size = hasVec4 ? 4 : 3; backend.vertexAttribPointer(tangentLocation3D, size, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib(tangentLocation3D); }
+	else if (tangentLocation3D >= 0) { backend.disableVertexAttrib(tangentLocation3D); }
 	if (m.hasSkinning && buffers.joint && buffers.weight) {
-		if (jointLocation3D >= 0) { b.bindArrayBuffer(buffers.joint); b.vertexAttribIPointer(jointLocation3D, 4, gl.UNSIGNED_SHORT, 0, 0); b.enableVertexAttrib(jointLocation3D); }
-		if (weightLocation3D >= 0) { b.bindArrayBuffer(buffers.weight); b.vertexAttribPointer(weightLocation3D, 4, gl.FLOAT, false, 0, 0); b.enableVertexAttrib(weightLocation3D); }
+		if (jointLocation3D >= 0) { backend.bindArrayBuffer(buffers.joint); backend.vertexAttribIPointer(jointLocation3D, 4, gl.UNSIGNED_SHORT, 0, 0); backend.enableVertexAttrib(jointLocation3D); }
+		if (weightLocation3D >= 0) { backend.bindArrayBuffer(buffers.weight); backend.vertexAttribPointer(weightLocation3D, 4, gl.FLOAT, false, 0, 0); backend.enableVertexAttrib(weightLocation3D); }
 	} else {
-		if (jointLocation3D >= 0) { b.disableVertexAttrib(jointLocation3D); b.vertexAttribI4ui(jointLocation3D, 0, 0, 0, 0); }
-		if (weightLocation3D >= 0) { b.disableVertexAttrib(weightLocation3D); }
+		if (jointLocation3D >= 0) { backend.disableVertexAttrib(jointLocation3D); backend.vertexAttribI4ui(jointLocation3D, 0, 0, 0, 0); }
+		if (weightLocation3D >= 0) { backend.disableVertexAttrib(weightLocation3D); }
 	}
 	// No morph normal attributes are used (texture-based morphing)
-	if (buffers.index) { b.bindElementArrayBuffer(buffers.index); }
+	if (buffers.index) { backend.bindElementArrayBuffer(buffers.index); }
 	if (instanced) {
-		const locs = instanceMatrixLocations3D; b.bindArrayBuffer(instanceMatrixBuffer3D);
-		for (let i = 0; i < 4; i++) { const loc = locs[i]; if (loc >= 0) { b.enableVertexAttrib(loc); b.vertexAttribPointer(loc, 4, gl.FLOAT, false, INSTANCE_STRIDE_BYTES, i * COLUMN_BYTES); b.vertexAttribDivisor(loc, 1); } }
+		const locs = instanceMatrixLocations3D; backend.bindArrayBuffer(instanceMatrixBuffer3D);
+		for (let i = 0; i < 4; i++) { const loc = locs[i]; if (loc >= 0) { backend.enableVertexAttrib(loc); backend.vertexAttribPointer(loc, 4, gl.FLOAT, false, INSTANCE_STRIDE_BYTES, i * COLUMN_BYTES); backend.vertexAttribDivisor(loc, 1); } }
 		if (instanceColorLocation3D >= 0) {
-			b.enableVertexAttrib(instanceColorLocation3D);
-			b.vertexAttribPointer(instanceColorLocation3D, 4, gl.UNSIGNED_BYTE, true, INSTANCE_STRIDE_BYTES, INSTANCE_COLOR_OFFSET_BYTES);
-			b.vertexAttribDivisor(instanceColorLocation3D, 1);
+			backend.enableVertexAttrib(instanceColorLocation3D);
+			backend.vertexAttribPointer(instanceColorLocation3D, 4, gl.UNSIGNED_BYTE, true, INSTANCE_STRIDE_BYTES, INSTANCE_COLOR_OFFSET_BYTES);
+			backend.vertexAttribDivisor(instanceColorLocation3D, 1);
 		}
 	}
-	b.bindVertexArray(null);
+	backend.bindVertexArray(null);
 	return vao;
 }
-function cullAndSortMeshes(list: Iterable<MeshRenderSubmission>): { instancedGroups: Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>; singles: MeshRenderSubmission[] } {
-	// Gather into a transient array for filtering + sorting
-	const temp: MeshRenderSubmission[] = [];
-	for (const it of list) temp.push(it);
-	if (temp.length === 0) return { instancedGroups: new Map(), singles: [] };
-	const activeCamera = $.world.activeCamera3D; activeCamera.viewProjection;
-	const filtered = temp.filter(({ mesh: m, matrix }) => {
-		if (m.boundingRadius === 0) return true;
-		const cx = matrix[12] + m.boundingCenter[0] * matrix[0] + m.boundingCenter[1] * matrix[4] + m.boundingCenter[2] * matrix[8];
-		const cy = matrix[13] + m.boundingCenter[0] * matrix[1] + m.boundingCenter[1] * matrix[5] + m.boundingCenter[2] * matrix[9];
-		const cz = matrix[14] + m.boundingCenter[0] * matrix[2] + m.boundingCenter[1] * matrix[6] + m.boundingCenter[2] * matrix[10];
-		const radius = m.boundingRadius * M4.maxScale(matrix);
-		return activeCamera.sphereInFrustum([cx, cy, cz] as vec3arr, radius);
+function buildDrawLists(submissions: MeshRenderSubmission[], state: MeshBatchPipelineState): MeshDrawLists {
+	const instanced = new Map<string, MeshInstanceGroup>();
+	const opaqueSingles: MeshRenderSubmission[] = [];
+	const transparentSingles: MeshRenderSubmission[] = [];
+	const frustum = state.cameraFrustum;
+	const cameraPos = assignPosition(cameraPosScratch, state.camPos);
+	const cameraPoint = { x: cameraPos[0], y: cameraPos[1], z: cameraPos[2] };
+	const visible = frustum && frustum.length > 0
+		? submissions.filter(({ mesh: meshEntry, matrix }) => {
+			if (meshEntry.boundingRadius === 0) return true;
+			transformBoundingSphereCenter(sphereCenterScratch, matrix, meshEntry.boundingCenter as vec3arr);
+			const radius = transformedBoundingSphereRadius(matrix, meshEntry.boundingRadius);
+			return sphereInFrustumPacked(frustum, sphereCenterScratch as unknown as vec3arr, radius);
+		})
+		: submissions.slice();
+	visible.sort((a, b) => {
+		const sa = a.mesh.materialSignature;
+		const sb = b.mesh.materialSignature;
+		if (sa !== sb) return sa < sb ? -1 : 1;
+		return translationDistanceSquared(a.matrix, cameraPoint) - translationDistanceSquared(b.matrix, cameraPoint);
 	});
-	const camPos = activeCamera.position;
-	const dist = (mat: Float32Array) => { const dx = mat[12] - camPos.x; const dy = mat[13] - camPos.y; const dz = mat[14] - camPos.z; return dx * dx + dy * dy + dz * dz; };
-	filtered.sort((a, b) => { const sa = a.mesh.materialSignature; const sb = b.mesh.materialSignature; if (sa !== sb) return sa < sb ? -1 : 1; return dist(a.matrix) - dist(b.matrix); });
-	const instancedGroups = new Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>();
-	const singles: MeshRenderSubmission[] = [];
-	for (const entry of filtered) {
-		const m = entry.mesh;
-		if (!m.hasSkinning && !m.hasMorphTargets && isOpaque(m)) {
-			const key = `G:${m.name}|${m.materialSignature}`;
-			let group = instancedGroups.get(key);
-			if (!group) { group = { mesh: m, instances: [] }; instancedGroups.set(key, group); }
-			group.instances.push({ matrix: entry.matrix, color: getMeshColor(m) });
-		} else singles.push(entry);
+	for (const entry of visible) {
+		const mesh = entry.mesh;
+		const receivesShadow = entry.receiveShadow !== false;
+		if (!mesh.hasSkinning && !mesh.hasMorphTargets && isOpaque(mesh) && receivesShadow) {
+			const key = `G:${mesh.name}|${mesh.materialSignature}`;
+			let group = instanced.get(key);
+			if (!group) { group = { mesh, instances: [] }; instanced.set(key, group); }
+			group.instances.push({ matrix: entry.matrix, color: getMeshColor(mesh) });
+		} else if (isTransparent(mesh)) {
+			transparentSingles.push(entry);
+		} else {
+			opaqueSingles.push(entry);
+		}
 	}
-	return { instancedGroups, singles };
+	if (transparentSingles.length > 1) {
+		transparentSingles.sort((a, b) => translationDistanceSquared(b.matrix, cameraPoint) - translationDistanceSquared(a.matrix, cameraPoint));
+	}
+	return { instanced, opaqueSingles, transparentSingles };
 }
-function setupViewport(_gl: WebGL2RenderingContext, canvasWidth: number, canvasHeight: number): void { (getRenderContext().backend as WebGLBackend).setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight }); }
-function setupRenderingState(gl: WebGL2RenderingContext, _state?: any): void {
+function setupViewport(runtime: MeshPassRuntime, canvasWidth: number, canvasHeight: number): void {
+	runtime.backend.setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
+}
+function setupRenderingState(runtime: MeshPassRuntime, state: MeshBatchPipelineState): void {
+	const { backend, gl } = runtime;
 	// Ensure the correct program is bound before setting uniforms
 	if (gameShaderProgram3D) gl.useProgram(gameShaderProgram3D);
+	gl.uniformMatrix4fv(viewProjectionLocation3D, false, state.viewProj);
 	// Reset common fixed-function state for mesh pass
 	gl.enable(gl.DEPTH_TEST);
-	(getRenderContext().backend as WebGLBackend).setDepthTestEnabled(true);
-	(getRenderContext().backend as WebGLBackend).setDepthFunc(gl.LESS);
+	backend.setDepthTestEnabled(true);
+	backend.setDepthFunc(gl.LESS);
 	gl.depthMask(true);
 	// Ensure back-face culling enabled for solid geometry (skybox pass disables it)
-	(getRenderContext().backend as WebGLBackend).setCullEnabled(true);
+	backend.setCullEnabled(true);
 	gl.cullFace(gl.BACK);
 	lastCullDoubleSided = false;
 	// Ambient is applied via FrameUniforms (u_ambient_frame)
@@ -627,9 +645,9 @@ function setupRenderingState(gl: WebGL2RenderingContext, _state?: any): void {
 	setUseInstancing(gl, false);
 	// Fog removed — no fog uniforms to upload
 }
-function applyCullState(gl: WebGL2RenderingContext, doubleSided: boolean): void {
+function applyCullState(runtime: MeshPassRuntime, doubleSided: boolean): void {
+	const { backend, gl } = runtime;
 	if (lastCullDoubleSided === doubleSided) return;
-	const backend = getRenderContext().backend as WebGLBackend;
 	if (doubleSided) {
 		backend.setCullEnabled(false);
 	} else {
@@ -638,34 +656,33 @@ function applyCullState(gl: WebGL2RenderingContext, doubleSided: boolean): void 
 	}
 	lastCullDoubleSided = doubleSided;
 }
-function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffers): void {
+function setMeshTextures(runtime: MeshPassRuntime, m: Mesh, buffers: MeshBuffers, receiveShadow: boolean): void {
+	const { context, gl } = runtime;
 	// Albedo: prefer mesh texture; otherwise use 1x1 white (no shared atlas fallback)
-	const vctx = getRenderContext();
 	let tex = m.gpuTextureAlbedo
 		? $.texmanager.getTexture(m.gpuTextureAlbedo)
-		: (vctx.textures['_default_albedo'] as WebGLTexture | null);
-	const v = getRenderContext();
+		: (context.textures['_default_albedo'] as WebGLTexture | null);
 	if (tex !== stateCache.albedo) {
-		v.activeTexUnit = TEXTURE_UNIT_ALBEDO;
-		v.bind2DTex(tex);
+		context.activeTexUnit = TEXTURE_UNIT_ALBEDO;
+		context.bind2DTex(tex);
 		gl.uniform1i(albedoTextureLocation3D, TEXTURE_UNIT_ALBEDO);
 		stateCache.albedo = tex;
 	}
 	stateCache.useAlbedo = tex !== null ? 1 : 0;
 
-	tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (vctx.textures['_default_normal'] as WebGLTexture | null);
+	tex = m.gpuTextureNormal ? $.texmanager.getTexture(m.gpuTextureNormal) : (context.textures['_default_normal'] as WebGLTexture | null);
 	if (tex !== stateCache.normal) {
-		v.activeTexUnit = TEXTURE_UNIT_NORMAL;
-		v.bind2DTex(tex);
+		context.activeTexUnit = TEXTURE_UNIT_NORMAL;
+		context.bind2DTex(tex);
 		gl.uniform1i(normalTextureLocation3D, TEXTURE_UNIT_NORMAL);
 		stateCache.normal = tex;
 	}
 	stateCache.useNormal = tex !== null ? 1 : 0;
 
-	tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (vctx.textures['_default_mr'] as WebGLTexture | null);
+	tex = m.gpuTextureMetallicRoughness ? $.texmanager.getTexture(m.gpuTextureMetallicRoughness) : (context.textures['_default_mr'] as WebGLTexture | null);
 	if (tex !== stateCache.mr) {
-		v.activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
-		v.bind2DTex(tex);
+		context.activeTexUnit = TEXTURE_UNIT_METALLIC_ROUGHNESS;
+		context.bind2DTex(tex);
 		gl.uniform1i(metallicRoughnessTextureLocation3D, TEXTURE_UNIT_METALLIC_ROUGHNESS);
 		stateCache.mr = tex;
 	}
@@ -673,27 +690,25 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
 
 	// Morph position texture bind (optional)
 	if (buffers.morphPosTex && buffers.morphPosTexSize) {
-		const v = getRenderContext();
-		v.activeTexUnit = TEXTURE_UNIT_MORPH_POS;
-		v.bind2DTex(buffers.morphPosTex);
+		context.activeTexUnit = TEXTURE_UNIT_MORPH_POS;
+		context.bind2DTex(buffers.morphPosTex);
 		gl.uniform1i(morphPosTexLocation3D, TEXTURE_UNIT_MORPH_POS);
 		gl.uniform2f(morphTexSizeLocation3D, buffers.morphPosTexSize.w, buffers.morphPosTexSize.h);
 		gl.uniform1i(morphCountLocation3D, buffers.morphCount ?? 0);
 		// Indices: sequential [0..count-1]
 		const cnt = buffers.morphCount ?? 0;
-		const idx = new Int32Array(8);
-		for (let i = 0; i < Math.min(cnt, 8); i++) idx[i] = i;
-		gl.uniform1iv(morphIndicesLocation3D, idx);
+		const count = Math.min(cnt, MAX_MORPH_TARGETS);
+		for (let i = 0; i < MAX_MORPH_TARGETS; i++) morphIndexScratch[i] = i < count ? i : 0;
+		gl.uniform1iv(morphIndicesLocation3D, morphIndexScratch);
 		_morphUsage.pos++;
 	} else {
 		gl.uniform1i(morphCountLocation3D, 0);
-		gl.uniform1iv(morphIndicesLocation3D, new Int32Array(8));
+		gl.uniform1iv(morphIndicesLocation3D, zeroMorphIndices);
 	}
 	// Morph normal texture bind (optional)
 	if (buffers.morphNormTex && buffers.morphNormTexSize) {
-		const v = getRenderContext();
-		v.activeTexUnit = TEXTURE_UNIT_MORPH_NORM;
-		v.bind2DTex(buffers.morphNormTex);
+		context.activeTexUnit = TEXTURE_UNIT_MORPH_NORM;
+		context.bind2DTex(buffers.morphNormTex);
 		gl.uniform1i(morphNormTexLocation3D, TEXTURE_UNIT_MORPH_NORM);
 		gl.uniform2f(morphNormTexSizeLocation3D, buffers.morphNormTexSize.w, buffers.morphNormTexSize.h);
 		gl.uniform1i(morphNormCountLocation3D, buffers.morphNormCount ?? 0);
@@ -702,10 +717,9 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
 		gl.uniform1i(morphNormCountLocation3D, 0);
 	}
 
-	if (m.shadow) {
-		const v = getRenderContext();
-		v.activeTexUnit = TEXTURE_UNIT_SHADOW_MAP;
-		v.bind2DTex(m.shadow.map.texture);
+	if (receiveShadow && m.shadow) {
+		context.activeTexUnit = TEXTURE_UNIT_SHADOW_MAP;
+		context.bind2DTex(m.shadow.map.texture);
 		gl.uniform1i(shadowMapLocation3D, TEXTURE_UNIT_SHADOW_MAP);
 		gl.uniformMatrix4fv(lightMatrixLocation3D, false, m.shadow.matrix);
 		gl.uniform1f(shadowStrengthLocation3D, m.shadow.strength);
@@ -714,7 +728,8 @@ function setMeshTextures(gl: WebGL2RenderingContext, m: Mesh, buffers: MeshBuffe
 		gl.uniform1i(useShadowMapLocation3D, 0);
 	}
 }
-function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>): void {
+function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<string, MeshInstanceGroup>): void {
+	const { backend, gl } = runtime;
 	if (instancedGroups.size === 0) return;
 	checkWebGLError('mesh.instanced: before setUseInstancing');
 	setUseInstancing(gl, true);
@@ -722,31 +737,31 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 	uploadJointPalette(gl, undefined, false);
 	checkWebGLError('mesh.instanced: after uploadJointPalette');
 	for (const { mesh: m, instances } of instancedGroups.values()) {
-		const buffers = getMeshBuffers(gl, m);
+		const buffers = getMeshBuffers(runtime, m);
 		const hasMorph = m.hasMorphTargets && (m.morphWeights?.some(w => w !== 0));
 		const sig = getVAOSignature(m, true, hasMorph);
 		checkWebGLError('mesh.instanced: before getVAOSignature');
 		let vao: WebGLVertexArrayObject;
 		if (hasMorph) {
-			if (buffers.vaoInstancedSig !== sig) { if (buffers.vaoInstanced) gl.deleteVertexArray(buffers.vaoInstanced); buffers.vaoInstanced = buildVAOForMesh(gl, m, buffers, true, true); buffers.vaoInstancedSig = sig; }
+			if (buffers.vaoInstancedSig !== sig) { if (buffers.vaoInstanced) gl.deleteVertexArray(buffers.vaoInstanced); buffers.vaoInstanced = buildVAOForMesh(runtime, m, buffers, true, true); buffers.vaoInstancedSig = sig; }
 			vao = buffers.vaoInstanced!;
 			checkWebGLError('mesh.instanced: after getVAOSignature');
 		} else {
-			if (buffers.vaoInstancedNoMorphSig !== sig) { if (buffers.vaoInstancedNoMorph) gl.deleteVertexArray(buffers.vaoInstancedNoMorph); buffers.vaoInstancedNoMorph = buildVAOForMesh(gl, m, buffers, true, false); buffers.vaoInstancedNoMorphSig = sig; }
+			if (buffers.vaoInstancedNoMorphSig !== sig) { if (buffers.vaoInstancedNoMorph) gl.deleteVertexArray(buffers.vaoInstancedNoMorph); buffers.vaoInstancedNoMorph = buildVAOForMesh(runtime, m, buffers, true, false); buffers.vaoInstancedNoMorphSig = sig; }
 			vao = buffers.vaoInstancedNoMorph!;
 			checkWebGLError('mesh.instanced: after getVAOSignature');
 		}
 		const indexed = !!buffers.index;
 		const indexType = buffers.indexType!;
 		const indexCount = buffers.indexCount ?? m.indices?.length ?? 0;
-		applyCullState(gl, !!m.material?.doubleSided);
+		applyCullState(runtime, !!m.material?.doubleSided);
 		setMeshMaterial(gl, m);
 		checkWebGLError('mesh.instanced: after setMeshMaterial');
-		setMeshTextures(gl, m, buffers);
+		setMeshTextures(runtime, m, buffers, true);
 		checkWebGLError('mesh.instanced: after setMeshTextures');
 		if (hasMorph) { const w = new Float32Array(MAX_MORPH_TARGETS); const src = m.morphWeights ?? []; for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, src.length); i++) w[i] = src[i] ?? 0; uploadMorphWeights(gl, w); } else uploadMorphWeights(gl, null);
 		checkWebGLError('mesh.instanced: after uploadMorphWeights');
-		const __b = getRenderContext().backend as WebGLBackend; __b.bindVertexArray(vao);
+		backend.bindVertexArray(vao);
 		checkWebGLError('mesh.instanced: after bindVertexArray');
 		// Partition by transform reflection to maintain correct front-face under culling
 		const cw: typeof instances = []; // mirrored → CW
@@ -777,23 +792,22 @@ function renderInstancedMeshes(gl: WebGL2RenderingContext, instancedGroups: Map<
 				const bytes = batchCount * INSTANCE_STRIDE_BYTES;
 				const u8slice = instanceScratchU8.subarray(0, bytes);
 				gl.bufferSubData(gl.ARRAY_BUFFER, 0, u8slice);
-				(getRenderContext().backend as WebGLBackend).accountUpload('vertex', u8slice.byteLength);
+				backend.accountUpload('vertex', u8slice.byteLength);
 				checkWebGLError('mesh.instanced: after bufferSubData');
-				const _b = getRenderContext().backend as WebGLBackend;
 				const _pass: PassEncoder = { fbo: null, desc: { label: 'meshbatch' } };
-				if (indexed) _b.drawIndexedInstanced(_pass, indexCount, batchCount, 0, 0, 0, indexType);
-				else _b.drawInstanced(_pass, m.vertexCount, batchCount, 0, 0);
+				if (indexed) backend.drawIndexedInstanced(_pass, indexCount, batchCount, 0, 0, 0, indexType);
+				else backend.drawInstanced(_pass, m.vertexCount, batchCount, 0, 0);
 			}
 		};
 		// Draw mirrored (CW) then normal (CCW); restore CCW at end for safety
 		drawBatches(cw, gl.CW);
 		drawBatches(ccw, gl.CCW);
 		gl.frontFace(gl.CCW);
-		__b.bindVertexArray(null);
+		backend.bindVertexArray(null);
 		checkWebGLError('mesh.instanced: after bindVertexArray');
 	}
 	setUseInstancing(gl, false);
-	applyCullState(gl, false);
+	applyCullState(runtime, false);
 	checkWebGLError('mesh.instanced: after setUseInstancing');
 }
 // Uniform change caching for materials
@@ -826,19 +840,20 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 	gl.uniform1f(alphaCutoffLocation3D, mat?.alphaCutoff ?? 0.5);
 	lastMaterialSig = sig;
 }
-function renderSingleMeshes(gl: WebGL2RenderingContext, singles: MeshRenderSubmission[], framebuffer: WebGLFramebuffer): void {
+function renderSingleMeshes(runtime: MeshPassRuntime, singles: MeshRenderSubmission[], framebuffer: WebGLFramebuffer): void {
+	const { backend, gl } = runtime;
 	setUseInstancing(gl, false);
-	for (const { mesh: m, matrix, jointMatrices, morphWeights } of singles) {
-		const buffers = getMeshBuffers(gl, m);
+	for (const { mesh: m, matrix, jointMatrices, morphWeights, receiveShadow } of singles) {
+		const buffers = getMeshBuffers(runtime, m);
 		const srcWeights = morphWeights ?? m.morphWeights ?? [];
 		const hasMorph = m.hasMorphTargets && srcWeights.some(w => w !== 0);
 		const sig = getVAOSignature(m, false, hasMorph);
 		let vao: WebGLVertexArrayObject;
 		if (hasMorph) {
-			if (buffers.vaoSig !== sig) { if (buffers.vao) gl.deleteVertexArray(buffers.vao); buffers.vao = buildVAOForMesh(gl, m, buffers, false, true); buffers.vaoSig = sig; }
+			if (buffers.vaoSig !== sig) { if (buffers.vao) gl.deleteVertexArray(buffers.vao); buffers.vao = buildVAOForMesh(runtime, m, buffers, false, true); buffers.vaoSig = sig; }
 			vao = buffers.vao!;
 		} else {
-			if (buffers.vaoNoMorphSig !== sig) { if (buffers.vaoNoMorph) gl.deleteVertexArray(buffers.vaoNoMorph); buffers.vaoNoMorph = buildVAOForMesh(gl, m, buffers, false, false); buffers.vaoNoMorphSig = sig; }
+			if (buffers.vaoNoMorphSig !== sig) { if (buffers.vaoNoMorph) gl.deleteVertexArray(buffers.vaoNoMorph); buffers.vaoNoMorph = buildVAOForMesh(runtime, m, buffers, false, false); buffers.vaoNoMorphSig = sig; }
 			vao = buffers.vaoNoMorph!;
 		}
 		uploadJointPalette(gl, jointMatrices, m.hasSkinning);
@@ -847,67 +862,50 @@ function renderSingleMeshes(gl: WebGL2RenderingContext, singles: MeshRenderSubmi
 			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0;
 			uploadMorphWeights(gl, w);
 		} else uploadMorphWeights(gl, null);
-		applyCullState(gl, !!m.material?.doubleSided);
+		applyCullState(runtime, !!m.material?.doubleSided);
 		setMeshMaterial(gl, m);
-		setMeshTextures(gl, m, buffers);
+		const allowShadow = receiveShadow !== false;
+		setMeshTextures(runtime, m, buffers, allowShadow);
 		gl.uniformMatrix4fv(modelLocation3D, false, matrix);
 		const normal9 = normal9Pool.ensure(); M4.normal3Into(normal9, matrix); gl.uniformMatrix3fv(normalMatrixLocation3D, false, normal9);
-		const __b2 = getRenderContext().backend as WebGLBackend; __b2.bindVertexArray(vao);
-		const _b2 = getRenderContext().backend as WebGLBackend; const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } };
-		// EBO is captured in VAO; avoid redundant bind per draw
+		backend.bindVertexArray(vao);
+		const _p2 = { fbo: framebuffer, desc: { label: 'meshbatch' } };
 		checkWebGLError('mesh.single: before draw');
-		// Handle mirrored transforms by flipping front face for this draw
 		const mirrored = isMatrixMirrored(matrix);
 		if (mirrored) gl.frontFace(gl.CW);
-		if (buffers.index) _b2.drawIndexed(_p2, buffers.indexCount ?? m.indices!.length, 0, buffers.indexType); else _b2.draw(_p2, 0, m.vertexCount);
+		if (buffers.index) backend.drawIndexed(_p2, buffers.indexCount ?? m.indices!.length, 0, buffers.indexType);
+		else backend.draw(_p2, 0, m.vertexCount);
 		if (mirrored) gl.frontFace(gl.CCW);
 		checkWebGLError('mesh.single: after draw');
-		__b2.bindVertexArray(null);
+		backend.bindVertexArray(null);
 	}
 	normal9Pool.reset();
-	applyCullState(gl, false);
+	applyCullState(runtime, false);
 }
-export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: any): void {
-	// Swap to make submissions visible (no legacy fallbacks)
+
+export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, framebuffer: WebGLFramebuffer, state: MeshBatchPipelineState): void {
+	assertTextureContext(context);
+	const gl = backend.gl as WebGL2RenderingContext;
+	const runtime: MeshPassRuntime = { backend, gl, context };
 	meshQueue.swap();
 	if (meshQueue.sizeFront() === 0) return;
 	_morphUsage.pos = 0; _morphUsage.norm = 0;
-	// Single dynamic buffer; no ring state
-	// Adapt to FeatureQueue API without exposing storage
-	const collected: MeshRenderSubmission[] = [];
-	meshQueue.forEachFront((it) => { collected.push(it); });
-	const { instancedGroups, singles } = cullAndSortMeshes(collected);
-	setupViewport(gl, canvasWidth, canvasHeight);
-	setupRenderingState(gl, state);
-	// Split singles by surface type
-	const opaqueSingles: MeshRenderSubmission[] = [];
-	const transparentSingles: MeshRenderSubmission[] = [];
-	for (const s of singles) { (isTransparent(s.mesh) ? transparentSingles : opaqueSingles).push(s); }
-	// Filter instanced groups to only opaque/masked
-	const opaqueInstanced = new Map<string, { mesh: Mesh; instances: { matrix: Float32Array; color: [number, number, number, number] }[] }>();
-	for (const [k, g] of instancedGroups) { if (isOpaque(g.mesh)) opaqueInstanced.set(k, g); }
-	// Opaque phase: blending off, depth write on
+	const submissions: MeshRenderSubmission[] = [];
+	meshQueue.forEachFront((it) => { submissions.push(it); });
+	const drawLists = buildDrawLists(submissions, state);
+	setupViewport(runtime, state.width, state.height);
+	setupRenderingState(runtime, state);
 	gl.disable(gl.BLEND);
 	gl.depthMask(true);
-	renderInstancedMeshes(gl, opaqueInstanced);
-	renderSingleMeshes(gl, opaqueSingles, framebuffer);
-	// Transparent phase: blending on, depth write off; sort far-to-near
-	if (transparentSingles.length) {
+	renderInstancedMeshes(runtime, drawLists.instanced);
+	renderSingleMeshes(runtime, drawLists.opaqueSingles, framebuffer);
+	if (drawLists.transparentSingles.length) {
 		gl.enable(gl.BLEND);
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		gl.depthMask(false);
-		const cam = $.world.activeCamera3D; const camPos = cam?.position;
-		if (camPos) {
-			transparentSingles.sort((a, b) => {
-				const da = (a.matrix[12] - camPos.x) ** 2 + (a.matrix[13] - camPos.y) ** 2 + (a.matrix[14] - camPos.z) ** 2;
-				const db = (b.matrix[12] - camPos.x) ** 2 + (b.matrix[13] - camPos.y) ** 2 + (b.matrix[14] - camPos.z) ** 2;
-				return db - da; // far-to-near
-			});
-		}
-		renderSingleMeshes(gl, transparentSingles, framebuffer);
+		renderSingleMeshes(runtime, drawLists.transparentSingles, framebuffer);
 		gl.depthMask(true);
 	}
-	// FeatureQueue back buffer cleared on swap; nothing else to do
 }
 
 export function submitMesh(o: MeshRenderSubmission): void { meshQueue.submit({ ...o }); }
@@ -941,9 +939,11 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 			return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
 		})(),
 		bootstrap: (backend) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			const webglBackend = backend as WebGLBackend;
+			activeBackend = webglBackend;
+			const gl = webglBackend.gl as WebGL2RenderingContext;
 			setupVertexShaderLocations3D(gl);
-			setupBuffers3D(gl);
+			setupBuffers3D(webglBackend);
 			// Set a sane default; dynamic values will be updated during prepare/exec
 			setDefaultUniformValues(gl, 1.0);
 			// Default textures are managed by TextureManager and GameView.initializeDefaultTextures
@@ -951,13 +951,14 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 		writesDepth: true,
 		shouldExecute: () => !!(getQueuedMeshCount()),
 		exec: (backend, fbo, s) => {
-			const gl = (backend as WebGLBackend).gl as WebGL2RenderingContext;
+			const webglBackend = backend as WebGLBackend;
+			activeBackend = webglBackend;
 			const state = s as MeshBatchPipelineState;
-			renderMeshBatch(gl, fbo as WebGLFramebuffer, state.width, state.height, state);
+			renderMeshBatch(webglBackend, $.view, fbo as WebGLFramebuffer, state);
 		},
 		prepare: (backend, _state) => {
-			const gv = getRenderContext();
-			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
+			const ctx = $.view as RenderContext;
+			const width = ctx.offscreenCanvasSize.x; const height = ctx.offscreenCanvasSize.y;
 			const cam = $.world.activeCamera3D;
 			if (!cam) {
 				console.warn('[Draw Meshes] No active 3D camera found, skipping mesh draw');
@@ -965,11 +966,13 @@ export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 			}
 			const frameShared = registry.getState('frame_shared');
 			const mats = cam.getMatrices();
+			const frustum = cam.frustumPlanesPacked.slice();
 			const meshState: MeshBatchPipelineState = {
 				width,
 				height,
 				camPos: cam.position,
 				viewProj: mats.vp,
+				cameraFrustum: frustum,
 				lighting: frameShared ? frameShared.lighting : undefined,
 			};
 			registry.setState('meshbatch', meshState);

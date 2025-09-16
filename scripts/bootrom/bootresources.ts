@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 
@@ -41,31 +41,41 @@ export function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer
 	return getSubBufferAsPerMeta(buffer, buffer_meta);
 }
 
-export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promise<{ zipped_rom: ArrayBuffer, romlabel: string }> {
-	const u8 = new Uint8Array(blob_buffer);
+function splitPng(blob: ArrayBuffer): { png?: ArrayBuffer; rest: ArrayBuffer } {
+	const u8 = new Uint8Array(blob);
+	const IEND = 0x49454E44;
 	if (
-		u8[0] === 0x89 && u8[1] === 0x50 && u8[2] === 0x4E && u8[3] === 0x47 &&
-		u8[4] === 0x0D && u8[5] === 0x0A && u8[6] === 0x1A && u8[7] === 0x0A
+		u8[0] !== 0x89 || u8[1] !== 0x50 || u8[2] !== 0x4E || u8[3] !== 0x47 ||
+		u8[4] !== 0x0D || u8[5] !== 0x0A || u8[6] !== 0x1A || u8[7] !== 0x0A
 	) {
-		const IEND = [0x49, 0x45, 0x4E, 0x44];
-		let idx = 8;
-		while (idx < u8.length - 12) {
-			if (
-				u8[idx + 4] === IEND[0] &&
-				u8[idx + 5] === IEND[1] &&
-				u8[idx + 6] === IEND[2] &&
-				u8[idx + 7] === IEND[3]
-			) {
-				const chunkLen = (u8[idx] << 24) | (u8[idx + 1] << 16) | (u8[idx + 2] << 8) | u8[idx + 3];
-				idx += 8 + chunkLen + 4;
-				return {
-					zipped_rom: blob_buffer.slice(idx),
-					romlabel: getImageURL(blob_buffer.slice(0, idx))
-				};
-			}
-			idx++;
+		return { rest: blob };
+	}
+	let p = 8;
+	while (p + 8 <= u8.length) {
+		const len = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		p += 4;
+		const type = (u8[p] << 24) | (u8[p + 1] << 16) | (u8[p + 2] << 8) | u8[p + 3];
+		p += 4;
+		const end = p + len + 4;
+		if (type === IEND) {
+			const png = u8.slice(0, end).buffer;
+			const rest = u8.slice(end).buffer;
+			return { png, rest };
 		}
-		throw new Error('Could not find end of PNG header!');
+		p = end;
+	}
+	throw new Error('PNG IEND chunk not found');
+}
+
+export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promise<{ zipped_rom: ArrayBuffer, romlabel: string }> {
+	try {
+		const { png, rest } = splitPng(blob_buffer);
+		if (png !== undefined) {
+			const label = getImageURL(png);
+			return { zipped_rom: rest, romlabel: label };
+		}
+	} catch (e) {
+		console.warn('[bootresources] PNG split failed:', e);
 	}
 	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
@@ -300,6 +310,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 	const meshes = (obj.meshes || []).map((m: any) => ({
 		positions: toF32(m.positions)!,
 		texcoords: toF32(m.texcoords),
+		texcoords1: toF32(m.texcoords1),
 		normals: m.normals ? toF32(m.normals) : null,
 		tangents: m.tangents ? toF32(m.tangents) : null,
 		indices: toIndices(m.indices, m.indexComponentType),
@@ -320,6 +331,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 		weights: m.weights ? Array.from(m.weights) : undefined,
 		jointIndices: m.jointIndices ? new Uint16Array(m.jointIndices) : undefined,
 		jointWeights: m.jointWeights ? toF32(m.jointWeights) : undefined,
+		colors: toF32(m.colors),
 
 	}));
 	const textures: number[] | undefined = obj.textures;
@@ -396,8 +408,16 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 			if (m.baseColorTexture !== undefined) m.baseColorTexture = textureIndexToTextureObject(m.baseColorTexture);
 			if (m.normalTexture !== undefined) m.normalTexture = textureIndexToTextureObject(m.normalTexture);
 			if (m.metallicRoughnessTexture !== undefined) m.metallicRoughnessTexture = textureIndexToTextureObject(m.metallicRoughnessTexture);
-			// if (m.occlusionTexture !== undefined) m.occlusionTexture = textureIndexToTextureObject(m.occlusionTexture);
-			// if (m.emissiveTexture !== undefined) m.emissiveTexture = textureIndexToTextureObject(m.emissiveTexture);
+			if (m.occlusionTexture !== undefined) m.occlusionTexture = textureIndexToTextureObject(m.occlusionTexture);
+			if (m.emissiveTexture !== undefined) m.emissiveTexture = textureIndexToTextureObject(m.emissiveTexture);
+			if (m.emissiveFactor) {
+				const f = m.emissiveFactor;
+				const arr = ArrayBuffer.isView(f) ? Array.from(f) : Array.isArray(f) ? f : undefined;
+				if (arr) {
+					if (arr.length === 3) arr.push(1);
+					m.emissiveFactor = arr as color_arr;
+				}
+			}
 		}
 	}
 	return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
@@ -425,24 +445,21 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, opti
 		const minU = Math.min(...xs), maxU = Math.max(...xs);
 		const minV = Math.min(...ys), maxV = Math.max(...ys);
 
-		const sx = minU * atlas.width;
-		const sy = minV * atlas.height;
-		let sw = (maxU - minU) * atlas.width;
-		let sh = (maxV - minV) * atlas.height;
-
-		// Ensure that sw === sh
-		if (sw !== sh) {
-			// Ensure that we remain within the atlas bounds and that the texture is square
-			const size = Math.min(sw, sh, atlas.width, atlas.height);
-			sw = size;
-			sh = size;
-		}
+		// const sx = minU * atlas.width;
+		// const sy = minV * atlas.height;
+		// let imgWidth = (maxU - minU) * atlas.width;
+		// let imgHeight = (maxV - minV) * atlas.height;
+		// Convert to pixel coordinates and clamp inside atlas bounds
+		const offsetX = Math.floor(minU * atlas.width);
+		const offsetY = Math.floor(minV * atlas.height);
+		const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
+		const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
 
 		const canvas = document.createElement('canvas');
-		canvas.width = sw;
-		canvas.height = sh;
+		canvas.width = imgWidth;
+		canvas.height = imgHeight;
 		const ctx = canvas.getContext('2d')!;
-		ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
+		ctx.drawImage(atlas, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
 		// Convert canvas to ImageBitmap asynchronously
 		source = createImageBitmap(canvas, {
 			imageOrientation: options?.flipY ? 'flipY' : 'none',

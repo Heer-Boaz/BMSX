@@ -4,16 +4,12 @@ import type { vec3arr } from '../../rompack/rompack';
 import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';
 import { FeatureQueue } from '../../utils/feature_queue';
-import { PassEncoder } from '../backend/pipeline_interfaces';
+import type { PassEncoder, RenderContext, TextureHandle } from '../backend/pipeline_interfaces';
 import { ParticlePipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { color } from '../gameview';
 import { M4 } from './math3d';
-
-function getRenderContext() {
-	return $.view;
-}
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
@@ -25,30 +21,30 @@ export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
 	particleAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 }
 
-export interface DrawParticleOptions { position: vec3arr; size: number; color: color; texture?: WebGLTexture; ambientMode?: 0 | 1; ambientFactor?: number; }
+export interface DrawParticleOptions { position: vec3arr; size: number; color: color; texture?: TextureHandle; ambientMode?: 0 | 1; ambientFactor?: number; }
 const MAX_PARTICLES = 1000;
 const INSTANCE_FLOATS = 8; // vec4(position+size) + vec4(color)
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
-let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let textureLocation: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; let defaultTexture: WebGLTexture; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
+let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let textureLocation: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; let defaultTexture: TextureHandle; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
 const particleQueue = new FeatureQueue<DrawParticleOptions>(1024);
 let framePage = 0;
-export function init(_fbo: unknown): void {
-	const backend = (getRenderContext().backend as WebGLBackend);
+export function init(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	vao = backend.createVertexArray() as WebGLVertexArrayObject;
 	const quad = new Float32Array([-0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5]);
 	quadBuffer = backend.createVertexBuffer(quad, 'static') as WebGLBuffer;
 	instanceBuffers = [0, 1, 2].map(() => backend.createVertexBuffer(new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS), 'dynamic') as WebGLBuffer);
 	const whitePixel = new Uint8Array([255, 255, 255, 255]);
-	defaultTexture = gl.createTexture()!;
-	getRenderContext().bind2DTex(defaultTexture);
+	const tex = gl.createTexture()!;
+	gl.bindTexture(gl.TEXTURE_2D, tex);
 	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, whitePixel);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-	getRenderContext().bind2DTex(null);
+	gl.bindTexture(gl.TEXTURE_2D, null);
+	defaultTexture = tex;
 }
 
 export function setupParticleUniforms(backend: WebGLBackend): void {
@@ -67,8 +63,7 @@ export function setupParticleUniforms(backend: WebGLBackend): void {
 	ambientFactorLocation = gl.getUniformLocation(particleProgram, 'u_particleAmbientFactor')!;
 }
 
-export function setupParticleLocations(): void {
-	const backend = (getRenderContext().backend as WebGLBackend);
+export function setupParticleLocations(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	backend.bindVertexArray(vao);
 	// Static quad buffer at attrib 0
@@ -79,21 +74,19 @@ export function setupParticleLocations(): void {
 	backend.bindVertexArray(null);
 	backend.bindArrayBuffer(null);
 }
-export interface ParticlePassState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array }
-export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number, state?: ParticlePassState): void {
-	const gl = (getRenderContext().backend as WebGLBackend).gl;
-	// No legacy ingestion; swap feature queue
+interface ParticleRuntime {
+	backend: WebGLBackend;
+	gl: WebGL2RenderingContext;
+	context: RenderContext;
+}
+
+export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
+	const { backend, gl, context } = runtime;
 	particleQueue.swap();
 	if (particleQueue.sizeFront() === 0) return;
-	if (state) {
-		camRight.set(state.camRight);
-		camUp.set(state.camUp);
-	} else {
-		const activeCamera = $.world.activeCamera3D;
-		M4.viewRightUpInto(activeCamera.view, camRight, camUp);
-	}
-	// Batch by texture + ambient config
-	const batches = new Map<WebGLTexture, Map<string, DrawParticleOptions[]>>();
+	camRight.set(state.camRight);
+	camUp.set(state.camUp);
+	const batches = new Map<TextureHandle, Map<string, DrawParticleOptions[]>>();
 	particleQueue.forEachFront((p) => {
 		if (!p) return;
 		const tex = p.texture ?? defaultTexture;
@@ -104,23 +97,19 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
 		const key = mode + ':' + factor.toFixed(2);
 		let arr = byAmbient.get(key);
 		if (!arr) { arr = []; byAmbient.set(key, arr); }
-		arr.push({ ...p, ambientMode: mode as 0 | 1, ambientFactor: factor });
+		arr.push({ ...p, ambientMode: mode as 0 | 1, ambientFactor: factor, texture: tex });
 	});
-	// FBO binding handled by RenderGraph beginRenderPass
-	(getRenderContext().backend as WebGLBackend).setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
+	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
-	// Program is bound by backend pipeline
-	gl.uniformMatrix4fv(viewProjLocation, false, state ? state.viewProj : $.world.activeCamera3D.viewProjection);
+	gl.uniformMatrix4fv(viewProjLocation, false, state.viewProj);
 	gl.uniform3fv(cameraRightLocation, camRight);
 	gl.uniform3fv(cameraUpLocation, camUp);
 	gl.uniform1i(textureLocation, TEXTURE_UNIT_PARTICLE);
 	gl.uniform1i(ambientModeLocation, 0);
 	gl.uniform1f(ambientFactorLocation, 1.0);
-	const backend = (getRenderContext().backend as WebGLBackend);
 	backend.bindVertexArray(vao);
-	// Rotate to next instance buffer for this frame and (re)bind instance attrib pointers once
 	framePage = (framePage + 1) % 3;
 	const instBuf = instanceBuffers[framePage];
 	backend.bindArrayBuffer(instBuf);
@@ -132,7 +121,6 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
 	for (const [tex, byAmbient] of batches) {
 		for (const [ambKey, arr] of byAmbient) {
 			const batchCount = Math.min(arr.length, MAX_PARTICLES);
-			// Set ambient uniforms per sub-batch
 			const [modeStr, factorStr] = ambKey.split(':');
 			gl.uniform1i(ambientModeLocation, parseInt(modeStr, 10) | 0);
 			gl.uniform1f(ambientFactorLocation, parseFloat(factorStr));
@@ -148,21 +136,18 @@ export function renderParticleBatch(framebuffer: WebGLFramebuffer, canvasWidth: 
 				instanceData[base + 6] = p.color.b;
 				instanceData[base + 7] = p.color.a;
 			}
-			const backend2 = (getRenderContext().backend as WebGLBackend);
-			backend2.bindArrayBuffer(instBuf);
-			backend2.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
-			const v = getRenderContext();
-			v.activeTexUnit = TEXTURE_UNIT_PARTICLE;
-			v.bind2DTex(tex);
+			backend.bindArrayBuffer(instBuf);
+			backend.updateVertexBuffer(instBuf, instanceData.subarray(0, batchCount * INSTANCE_FLOATS), 0);
+			context.activeTexUnit = TEXTURE_UNIT_PARTICLE;
+			context.bind2DTex(tex);
 			const passStub: PassEncoder = { fbo: framebuffer, desc: { label: 'particles' } };
-			backend2.drawInstanced(passStub, 6, batchCount, 0, 0);
+			backend.drawInstanced(passStub, 6, batchCount, 0, 0);
 		}
 	}
 	backend.bindVertexArray(null);
 	gl.depthMask(true);
-	// Ring cursor keeps its head; no additional action
 }
-export function setDefaultParticleTexture(tex: WebGLTexture): void { defaultTexture = tex; }
+export function setDefaultParticleTexture(tex: TextureHandle): void { defaultTexture = tex; }
 // New submission helper (prefer over touching particlesToDraw)
 export function submitParticle(p: DrawParticleOptions): void {
 	particleQueue.submit({ ...p });
@@ -179,24 +164,26 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		fsCode: particleFS,
 		bindingLayout: { uniforms: ['FrameUniforms'] },
 		bootstrap: (backend) => {
-			init(null);
-			setupParticleLocations();
-			setupParticleUniforms(backend as WebGLBackend);
+			const webglBackend = backend as WebGLBackend;
+			init(webglBackend);
+			setupParticleLocations(webglBackend);
+			setupParticleUniforms(webglBackend);
 		},
 		writesDepth: true,
 		shouldExecute: () => !!getQueuedParticleCount(),
-		exec: (_backend, fbo, s) => {
-			const state = s as ParticlePipelineState;
-			renderParticleBatch(fbo as WebGLFramebuffer, state.width, state.height, state);
+		exec: (backend, fbo, s) => {
+			const webglBackend = backend as WebGLBackend;
+			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
+			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState);
 		},
 		prepare: (_backend, _state) => {
-			const gv = getRenderContext();
+			const gv = $.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = $.world.activeCamera3D;
 			if (!cam) return;
 
 			M4.viewRightUpInto(cam.view, camRight, camUp);
-			registry.setState('particles', { width, height, viewProj: cam.viewProjection, camRight, camUp });
+			registry.setState('particles', { width, height, viewProj: cam.viewProjection, camRight: camRight.slice() as Float32Array, camUp: camUp.slice() as Float32Array });
 		},
 	});
 }

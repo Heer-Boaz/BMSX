@@ -10,6 +10,8 @@ import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 export class Mesh {
   public positions: Float32Array;
   public texcoords: Float32Array;
+  public texcoords1: Float32Array;
+  public colors: Float32Array;
   /** Optional normal vectors per vertex */
   public normals: Float32Array | null;
   /** Optional tangent vectors per vertex (xyz + w sign) */
@@ -30,10 +32,12 @@ export class Mesh {
   public boundingCenter: vec3arr = [0, 0, 0];
   public boundingRadius: number = 0;
 
-  constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array, meshname: string }) {
+  constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; texcoords1?: Float32Array; colors?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array, meshname: string }) {
 	this.name = opts?.meshname;
 	this.positions = opts?.positions ?? new Float32Array();
 	this.texcoords = opts?.texcoords ?? new Float32Array();
+	this.texcoords1 = opts?.texcoords1 ?? new Float32Array();
+	this.colors = opts?.colors ?? new Float32Array();
 	this.normals = opts?.normals ?? null;
 	this.tangents = opts?.tangents ?? null;
 	this.indices = opts?.indices;

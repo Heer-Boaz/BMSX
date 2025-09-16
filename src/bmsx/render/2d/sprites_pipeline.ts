@@ -6,7 +6,7 @@ import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
 import { FeatureQueue } from '../../utils/feature_queue';
 import * as GLR from '../backend/webgl/gl_resources';
-import { GPUBackend } from '../backend/pipeline_interfaces';
+import type { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary, SpritesPipelineState } from '../backend/renderpasslib';
 import {
 	ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
@@ -67,8 +67,10 @@ let spriteShaderScaleLocation: WebGLUniformLocation;
 type SpriteSubmission = { options: ImgRenderSubmission; imgmeta: ImgMeta };
 const spriteQueue = new FeatureQueue<SpriteSubmission>(256);
 
-function getRenderContext() {
-	return $.view;
+interface SpriteRuntime {
+	backend: WebGLBackend;
+	gl: WebGL2RenderingContext;
+	context: RenderContext;
 }
 
 export function setupSpriteShaderLocations(backend: GPUBackend): void {
@@ -111,8 +113,8 @@ export function setupDefaultUniformValues(backend: WebGLBackend, defaultScale: n
 	gl.uniform1f(spriteAmbientFactorLocation, 1.0);
 }
 
-export function setupBuffers(): void {
-	const gl = (getRenderContext().backend as WebGLBackend).gl;
+export function setupBuffers(backend: WebGLBackend): void {
+	const gl = backend.gl;
 	if (!spriteShaderData.vertexcoords) spriteShaderData.vertexcoords = GLR.buildQuadTexCoords();
 	const cvertexBuffer = GLR.glCreateBuffer(gl, spriteShaderData.vertexcoords);
 	const ctexcoordBuffer = GLR.glCreateBuffer(gl, spriteShaderData.texcoords);
@@ -152,26 +154,25 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 
 // Note: 'fbo' is provided by the render graph and used only to satisfy the
 // PassEncoder shape for backend.draw(). WebGL draw ignores it; WebGPU may use it.
-export function renderSpriteBatch(
-	fbo: unknown,
-	canvasWidth: number,
-	canvasHeight: number,
-): void {
-	const gl = (getRenderContext().backend as WebGLBackend).gl;
-	// Use feature queue
+export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: SpritesPipelineState): void {
+	const { backend, gl, context } = runtime;
 	spriteQueue.swap();
 	if (spriteQueue.sizeFront() === 0) return;
-	// FBO binding handled by RenderGraph beginRenderPass
-	const backend = getRenderContext().backend as WebGLBackend;
-	backend.setViewport({ x: 0, y: 0, w: canvasWidth, h: canvasHeight });
-	// Sprites require alpha blending and no depth writes
+	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
 	backend.bindVertexArray(spriteVAO as WebGLVertexArrayObject);
-
-	// Sort by layer (world/ui), then z, then ambient state (to reduce uniform flips without breaking painter order)
-	const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100; // quantize to 0.01 steps
+	setupDefaultUniformValues(backend, 1.0, [state.baseWidth, state.baseHeight]);
+	if (state.atlasTex) {
+		context.activeTexUnit = TEXTURE_UNIT_ATLAS;
+		context.bind2DTex(state.atlasTex);
+	}
+	if (state.atlasDynamicTex) {
+		context.activeTexUnit = TEXTURE_UNIT_ATLAS_DYNAMIC;
+		context.bind2DTex(state.atlasDynamicTex);
+	}
+	const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
 	spriteQueue.sortFront((a, b) => {
 		const la = a.options.layer === 'ui' ? 1 : 0;
 		const lb = b.options.layer === 'ui' ? 1 : 0;
@@ -181,30 +182,32 @@ export function renderSpriteBatch(
 		const ae = (a.options.ambientAffected ? 1 : 0);
 		const be = (b.options.ambientAffected ? 1 : 0);
 		if (ae !== be) return ae - be;
-		const af = q(a.options.ambientFactor ?? 1.0);
-		const bf = q(b.options.ambientFactor ?? 1.0);
+		const af = q(a.options.ambientFactor ?? state.ambientFactorDefault);
+		const bf = q(b.options.ambientFactor ?? state.ambientFactorDefault);
 		if (af !== bf) return af - bf;
 		return 0;
 	});
-	const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = spriteShaderData; let i = 0;
+	const vertexcoords = spriteShaderData.vertexcoords;
+	if (!vertexcoords) return;
+	const { texcoords, zcoords, color_override, atlas_id } = spriteShaderData;
+	let i = 0;
 	let currentAmbientEnabled: number | null = null;
 	let currentAmbientFactor = 1.0;
 	const flush = () => {
 		if (i <= 0) return;
-		updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
+		updateBuffers(runtime, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
 		gl.uniform1i(spriteAmbientEnabledLocation, currentAmbientEnabled ?? 0);
 		gl.uniform1f(spriteAmbientFactorLocation, currentAmbientFactor);
 		const passStub = { fbo, desc: { label: 'sprites' } } as Parameters<GPUBackend['draw']>[0];
 		backend.draw(passStub, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
 		i = 0;
 	};
+	const ambientDefaultEnabled = state.ambientEnabledDefault ? 1 : 0;
 	spriteQueue.forEachFront(({ options, imgmeta }) => {
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
-		// Dynamic ambient per-sprite (optional)
-		const gv = getRenderContext();
 		const layerIsUI = options.layer === 'ui';
-		const ambE = layerIsUI ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : (gv.spriteAmbientEnabledDefault ? 1 : 0));
-		const ambF = q(options.ambientFactor != null ? options.ambientFactor : (gv.spriteAmbientFactorDefault ?? 1.0));
+		const ambE = layerIsUI ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : ambientDefaultEnabled);
+		const ambF = q(options.ambientFactor != null ? options.ambientFactor : state.ambientFactorDefault);
 		if (currentAmbientEnabled === null) { currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
 		else if (ambE !== currentAmbientEnabled || Math.abs(ambF - currentAmbientFactor) > 1e-3) { flush(); currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
 		const { width, height } = imgmeta;
@@ -220,7 +223,6 @@ export function renderSpriteBatch(
 	if (i > 0) { flush(); }
 	backend.bindVertexArray(null);
 	gl.depthMask(true);
-	// FeatureQueue back buffer already cleared on swap
 }
 
 export function drawImg(options: ImgRenderSubmission): void {
@@ -249,7 +251,7 @@ export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta)
 }
 
 export function updateBuffers(
-	gl: WebGL2RenderingContext,
+	runtime: SpriteRuntime,
 	vertexcoords: Float32Array,
 	texcoords: Float32Array,
 	zcoords: Float32Array,
@@ -258,7 +260,7 @@ export function updateBuffers(
 	index: number,
 ): void {
 	// Orphan + upload pattern to avoid driver stalls on mobile GPUs.
-	const backend = (getRenderContext().backend as WebGLBackend);
+	const { backend, gl } = runtime;
 	gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
 	gl.bufferData(gl.ARRAY_BUFFER, vertexcoords.byteLength, gl.DYNAMIC_DRAW);
 	gl.bufferSubData(gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
@@ -337,19 +339,20 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			return { vsCode: build.vsCode, fsCode: build.fsCode, bindingLayout: build.bindingLayout };
 		})(),
 		bootstrap: (backend) => {
-			// Manager has bound the program; set up attributes, buffers and VAO
-			setupSpriteShaderLocations(backend);
-			setupBuffers();
-			setupSpriteLocations(backend as WebGLBackend);
+			const webglBackend = backend as WebGLBackend;
+			setupSpriteShaderLocations(webglBackend);
+			setupBuffers(webglBackend);
+			setupSpriteLocations(webglBackend);
 		},
 		writesDepth: true,
 		shouldExecute: () => !!getQueuedSpriteCount(),
-		exec: (_backend, fbo, s) => {
-			const state = s as SpritesPipelineState;
-			renderSpriteBatch(fbo, state.width, state.height);
+		exec: (backend, fbo, s) => {
+			const webglBackend = backend as WebGLBackend;
+			const runtime: SpriteRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
+			renderSpriteBatch(runtime, fbo, s as SpritesPipelineState);
 		},
 		prepare: (backend, _state) => {
-			const gv = getRenderContext();
+			const gv = $.view;
 			const width = gv.offscreenCanvasSize.x;
 			const height = gv.offscreenCanvasSize.y;
 			const baseWidth = gv.viewportSize.x;
@@ -362,15 +365,10 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 				// Provide atlas textures for direct binding in render step when needed
 				atlasTex: gv.textures?._atlas ?? null,
 				atlasDynamicTex: gv.textures?._atlas_dynamic ?? null,
+				ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
+				ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
 			};
-			const be = backend as WebGLBackend;
 			registry.setState('sprites', spriteState);
-			// Update per-frame defaults that depend on logical viewport size
-			setupDefaultUniformValues(be, 1.0, [baseWidth, baseHeight]);
-			// Ensure atlases are bound to expected texture units once per frame
-			// TODO: BAD WEBGL-SPECIFIC STUFF!!!!!!
-			if (spriteState.atlasTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS); be.bindTexture2D(spriteState.atlasTex as WebGLTexture); }
-			if (spriteState.atlasDynamicTex) { be.setActiveTexture(TEXTURE_UNIT_ATLAS_DYNAMIC); be.bindTexture2D(spriteState.atlasDynamicTex as WebGLTexture); }
 			// Validate binding layout vs resources
 			registry.validatePassResources('sprites', backend);
 		},

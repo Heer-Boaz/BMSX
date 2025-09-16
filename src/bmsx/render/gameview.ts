@@ -74,6 +74,7 @@ export type MeshRenderSubmission = {
 	matrix: Float32Array;
 	jointMatrices?: Float32Array[];
 	morphWeights?: number[];
+	receiveShadow?: boolean;
 }
 
 export type ParticleRenderSubmission = {

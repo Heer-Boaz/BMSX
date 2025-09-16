@@ -59,40 +59,21 @@ in vec4 v_color;
 
 out vec4 outputColor;
 
-const vec3 msx1_palette[16] = vec3[](vec3(0.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, 0.0f), vec3(0.24f, 0.67f, 0.24f), vec3(0.33f, 0.76f, 0.33f), vec3(0.33f, 0.33f, 0.76f), vec3(0.43f, 0.43f, 0.86f), vec3(0.24f, 0.67f, 0.67f), vec3(0.47f, 0.76f, 0.76f), vec3(0.76f, 0.33f, 0.33f), vec3(0.76f, 0.43f, 0.43f), vec3(0.67f, 0.67f, 0.24f), vec3(0.76f, 0.76f, 0.33f), vec3(0.24f, 0.47f, 0.24f), vec3(0.67f, 0.33f, 0.67f), vec3(0.76f, 0.76f, 0.76f), vec3(1.0f, 1.0f, 1.0f));
 const float[16] pattern = float[16](0.0f, 8.0f, 2.0f, 10.0f, 12.0f, 4.0f, 14.0f, 6.0f, 3.0f, 11.0f, 1.0f, 9.0f, 15.0f, 7.0f, 13.0f, 5.0f);
 
-vec3 quantize(vec3 color, int mode) {
-	switch (mode) {
-		case 0:
-			return color; // No quantization
-		case 1: // MSX1: 16 colors
-			float minDist = 1e10f;
-			vec3 bestColor;
-			for (int i = 0; i < 16; i++) {
-				float dist = length(color - msx1_palette[i]);
-				if (dist < minDist) {
-					minDist = dist;
-					bestColor = msx1_palette[i];
-				}
-			}
-			return bestColor;
-		case 2: // MSX2: 256 colors
-			vec3 levels = vec3(7.0f, 7.0f, 3.0f);
-			return floor(color * levels + 0.5f) / levels;
-		case 3: // Playstation (PSX): 15-bit color
-			vec3 psxLevels = vec3(31.0f, 31.0f, 31.0f);
-			return floor(color * psxLevels + 0.5f) / psxLevels;
-		default:
-			return color; // Default case, no quantization
-	}
+int bayerIndex(ivec2 p){
+	ivec2 wrapped = p & ivec2(3);
+	return wrapped.x + (wrapped.y << 2);
 }
 
-float bayer(vec2 pos) {
-	int x = int(mod(pos.x, 4.0f));
-	int y = int(mod(pos.y, 4.0f));
-	int index = x + y * 4;
-	return (pattern[index] / 16.0f - 0.5f) * u_ditherIntensity;
+float bayer4x4(ivec2 p){
+	return (pattern[bayerIndex(p)] + 0.5f) / 16.0f;
+}
+
+vec3 quantize_psx_ordered(vec3 sRGB, ivec2 pix, float guard0_1){
+	vec3 levels = vec3(31.0f);
+	float threshold = bayer4x4(pix) * clamp(guard0_1, 0.0f, 1.0f);
+	return floor(sRGB * levels + threshold) / levels;
 }
 
 // Convert between sRGB and linear (approximate, gamma 2.2)
@@ -104,24 +85,21 @@ void main() {
 	float alpha = texColor.a * v_color.a;
 	// Alpha coverage dither for masked surfaces (screen-space threshold)
 	if (u_surface == 1) {
-		int xi = int(mod(gl_FragCoord.x, 4.0f));
-		int yi = int(mod(gl_FragCoord.y, 4.0f));
-		int idx = xi + yi * 4;
+		ivec2 p = ivec2(gl_FragCoord.xy) & ivec2(3);
+		int idx = p.x + (p.y << 2);
 		float aThresh = (pattern[idx] + 0.5f) / 16.0f;
 		if (alpha < aThresh) discard;
 	}
 
 	vec3 normal = normalize(v_normal);
 	vec3 n = texture(u_normalTexture, v_texcoord).xyz * 2.0f - 1.0f;
-	mat3 tbn = mat3(normalize(v_tangent), normalize(v_bitangent), normal);
+	mat3 tbn = mat3(v_tangent, v_bitangent, normal);
 	normal = normalize(tbn * n);
 
 	vec3 baseColor = srgb_to_linear(texColor.rgb) * v_color.rgb;
-	float metallic = u_metallicFactor;
-	float roughness = clamp(u_roughnessFactor, 0.04f, 1.0f);
 	vec3 mr = texture(u_metallicRoughnessTexture, v_texcoord).rgb;
-	roughness = clamp(roughness * mr.g, 0.04f, 1.0f);
-	metallic *= mr.b;
+	float roughness = clamp(u_roughnessFactor * mr.g, 0.04f, 1.0f);
+	float metallic = u_metallicFactor * mr.b;
 
 	vec3 viewDir = normalize(u_cameraPos_frame.xyz - v_worldPos);
 	vec3 F0 = mix(vec3(0.04f), baseColor, metallic);
@@ -155,26 +133,28 @@ void main() {
 	}
 
 	vec4 lightPos = u_lightMatrix * vec4(v_worldPos, 1.0f);
-	vec3 proj = lightPos.xyz / lightPos.w;
-	vec2 uv = proj.xy * 0.5f + 0.5f;
-	float inside = step(0.0f, proj.x) * step(0.0f, proj.y) * step(-1.0f, proj.x) * step(-1.0f, proj.y)
-				 * step(0.0f, proj.z) * step(proj.z, 1.0f);
+	vec3 ndc = lightPos.xyz / lightPos.w;
+	vec2 uv = ndc.xy * 0.5f + 0.5f;
+	float dep = ndc.z * 0.5f + 0.5f;
+	float inLight = step(0.0f, uv.x) * step(uv.x, 1.0f) *
+						 step(0.0f, uv.y) * step(uv.y, 1.0f) *
+						 step(0.0f, dep)  * step(dep, 1.0f);
+	float bias = 0.0015f;
 	float smEn = u_useShadowMap ? 1.0f : 0.0f;
 	float closest = texture(u_shadowMap, uv).r;
-	float shadow = (proj.z - 0.005f > closest) ? u_shadowStrength : 1.0f;
-	shadow = mix(1.0f, clamp(shadow, 0.0f, 1.0f), inside * smEn);
-	lighting = clamp(lighting, 0.0f, 1.0f);
+	float shadow = (dep - bias > closest) ? u_shadowStrength : 1.0f;
+	shadow = mix(1.0f, clamp(shadow, 0.0f, 1.0f), inLight * smEn);
 
-	// Start from lit color (linear)
-	vec3 colLinear = lighting * shadow;
+	vec3 colLinear = max(lighting * shadow, vec3(0.0f));
 
-	// Fog removed: keep lit color in linear
-	colLinear = clamp(colLinear, 0.0f, 1.0f);
-
-	// Dither in screen-space before quantization, operate in sRGB
-	vec3 col = linear_to_srgb(colLinear);
-	float jitter = fract(u_timeDelta.x * 60.0f);
-	col = clamp(col + bayer(gl_FragCoord.xy + vec2(jitter * 4.0f)), 0.0f, 1.0f);
-	col = quantize(col, 3);
-	outputColor = vec4(col, alpha);
+	// Ordered PSX-style quantization with black guard
+	vec3 colS = linear_to_srgb(colLinear);
+	float stepSz = 1.0f / 31.0f;
+	float lumS = dot(colS, vec3(0.299f, 0.587f, 0.114f));
+	float guard = smoothstep(stepSz, 3.0f * stepSz, lumS) * clamp(u_ditherIntensity, 0.0f, 1.0f);
+	int jitter = int(fract(u_timeDelta.x * 60.0f) * 4.0f);
+	ivec2 pix = ivec2(gl_FragCoord.xy) + ivec2(jitter);
+	vec3 qS = quantize_psx_ordered(colS, pix, guard);
+	vec3 qL = srgb_to_linear(clamp(qS, 0.0f, 1.0f));
+	outputColor = vec4(qL, alpha);
 }

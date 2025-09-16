@@ -30,9 +30,25 @@ export type FogUniforms = {
 	fogYMax: number;
 };
 export interface SkyboxPipelineState { width: number; height: number; view: Float32Array; proj: Float32Array; tex: TextureHandle; }
-export interface MeshBatchPipelineState { width: number; height: number; camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; lighting?: unknown; }
+export interface MeshBatchPipelineState {
+	width: number;
+	height: number;
+	camPos: Float32Array | { x: number; y: number; z: number };
+	viewProj: Float32Array;
+	cameraFrustum: Float32Array;
+	lighting?: unknown;
+}
 export interface ParticlePipelineState { width: number; height: number; viewProj: Float32Array; camRight: Float32Array; camUp: Float32Array; }
-export interface SpritesPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; atlasTex?: TextureHandle | null; atlasDynamicTex?: TextureHandle | null; }
+export interface SpritesPipelineState {
+	width: number;
+	height: number;
+	baseWidth: number;
+	baseHeight: number;
+	atlasTex?: TextureHandle | null;
+	atlasDynamicTex?: TextureHandle | null;
+	ambientEnabledDefault: boolean;
+	ambientFactorDefault: number;
+}
 export interface CRTPipelineState { width: number; height: number; baseWidth: number; baseHeight: number; colorTex: TextureHandle | null; options?: unknown; }
 export interface FrameSharedState { view: { camPos: Float32Array | { x: number; y: number; z: number }; viewProj: Float32Array; skyboxView: Float32Array; proj: Float32Array }; lighting: unknown; fog: FogUniforms }
 

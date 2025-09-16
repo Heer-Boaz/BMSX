@@ -20,6 +20,36 @@ async function bufferToImageBitmap(buffer: ArrayBuffer): Promise<ImageBitmap> {
 	return await createImageBitmap(blob);
 }
 
+// Added: create a solid ImageBitmap of given size and color.
+// color_arr components may be 0..1 floats or 0..255 ints; handle both.
+async function createSolidImageBitmap(size: number, color: color_arr): Promise<ImageBitmap> {
+	const [r, g, b, a] = color;
+	const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
+	const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
+	const cssColor = `rgba(${toUint8(r)}, ${toUint8(g)}, ${toUint8(b)}, ${alpha})`;
+
+	// Prefer OffscreenCanvas when available (works in workers and main thread)
+	if (typeof OffscreenCanvas !== 'undefined') {
+		const oc = new OffscreenCanvas(Math.max(1, size), Math.max(1, size));
+		const ctx = oc.getContext('2d');
+		if (ctx) {
+			ctx.fillStyle = cssColor;
+			ctx.fillRect(0, 0, size, size);
+			return createImageBitmap(oc);
+		}
+	}
+
+	// Fallback to HTMLCanvasElement
+	const canvas = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
+	if (!canvas) throw new Error('No canvas available to create solid ImageBitmap');
+	canvas.width = Math.max(1, size);
+	canvas.height = Math.max(1, size);
+	const ctx = canvas.getContext('2d')!;
+	ctx.fillStyle = cssColor;
+	ctx.fillRect(0, 0, size, size);
+	return createImageBitmap(canvas);
+}
+
 interface ImageCacheEntry {
 	bitmap?: ImageBitmap;
 	promise?: Promise<ImageBitmap>;
@@ -61,7 +91,8 @@ export class TextureManager implements RegisterablePersistent {
 	private makeModelBufferKey(identifier: ModelTextureIdentifier): TextureKey {
 		return `buf:${identifier.modelName}:${identifier.modelImageIndex}`;
 	}
-	private makeCubemapKey(name: string, faceIds: readonly string[], desc: TextureParams): TextureKey {
+	// allow nullable face ids and nullable face loaders
+	private makeCubemapKey(name: string, faceIds: readonly (string | null)[], desc: TextureParams): TextureKey {
 		const descKey = JSON.stringify(desc);
 		return `cubemap:${name}|faces:${faceIds.join(',')}|${descKey}`;
 	}
@@ -203,8 +234,9 @@ export class TextureManager implements RegisterablePersistent {
 		streamed?: boolean;
 		delayMs?: number;
 		assetBarrier?: AssetBarrier<TextureHandle>,
-		faceLoaders: readonly [Promise<ImageBitmap>, Promise<ImageBitmap>, Promise<ImageBitmap>, Promise<ImageBitmap>, Promise<ImageBitmap>, Promise<ImageBitmap>],
-		faceIdsForKey: readonly [string, string, string, string, string, string],
+		// loaders and face ids may be null intentionally (some faces left unset)
+		faceLoaders: readonly (Promise<ImageBitmap> | null)[],
+		faceIdsForKey: readonly (string | null)[],
 		desc: TextureParams,
 		fallbackColor: color_arr,
 	}): TextureKey {
@@ -223,20 +255,51 @@ export class TextureManager implements RegisterablePersistent {
 		if (!streamed) {
 			this.launchCubemapReplacement(key, async () => {
 				if (delayMs) await new Promise(r => setTimeout(r, delayMs));
-				const faces = await Promise.all(faceLoaders) as
+
+				// Find first provided loader (if any) to pick face size
+				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
+				let targetSize = 1;
+				if (firstProvidedIndex >= 0) {
+					// await the first provided to know size (it's safe to await promises multiple times)
+					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<ImageBitmap>);
+					targetSize = Math.max(1, firstImg.width, firstImg.height);
+				}
+
+				// Build array of promises for all faces, substituting missing faces with solid bitmaps of targetSize
+				const promises: Promise<ImageBitmap>[] = faceLoaders.map(p => p != null ? (p as Promise<ImageBitmap>) : createSolidImageBitmap(targetSize, fallbackColor));
+
+				const faces = await Promise.all(promises) as
 					[ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
 				return this.backend!.createCubemapFromImages(faces, desc);
 			}, assetBarrier, `cubemap:${name}`);
 		} else {
 			this.launchCubemapReplacement(key, async () => {
 				if (delayMs) await new Promise(r => setTimeout(r, delayMs));
-				const first = await faceLoaders[0];
-				const size = first.width;
+
+				// Determine size from first available loader (or use 1)
+				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
+				let size = 1;
+				if (firstProvidedIndex >= 0) {
+					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<ImageBitmap>);
+					size = Math.max(1, firstImg.width, firstImg.height);
+				}
+
 				const cubemap = this.backend!.createCubemapEmpty(size, desc);
-				this.backend!.uploadCubemapFace(cubemap, 0, first);
-				await Promise.all(faceLoaders.slice(1).map((p, idx) =>
-					p.then(img => this.backend!.uploadCubemapFace(cubemap, idx + 1, img))
-				));
+
+				// Upload every face: use provided loader or synthesized solid image
+				const uploadPromises: Promise<void>[] = faceLoaders.map((p, idx) => {
+					if (p != null) {
+						return (p as Promise<ImageBitmap>).then(img => {
+							this.backend!.uploadCubemapFace(cubemap, idx, img);
+						});
+					} else {
+						return createSolidImageBitmap(size, fallbackColor).then(img => {
+							this.backend!.uploadCubemapFace(cubemap, idx, img);
+						});
+					}
+				});
+
+				await Promise.all(uploadPromises);
 				return cubemap;
 			}, assetBarrier, `cubemap:${name}:streamed`);
 		}

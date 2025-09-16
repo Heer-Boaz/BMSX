@@ -198,6 +198,14 @@ export function multiply_vec(toMult: vec2 | vec3, factor: number): vec2 | vec3 {
 	if ('z' in toMult) { return V3.scale(toMult as vec3, factor); }
 	else { const { x, y } = toMult as vec2; return { x: x * factor, y: y * factor }; }
 }
+
+export function arraysEqual(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
+}
 /**
  * Multiplies a vec2 by a factor.
  * @param toMult The vec2 to multiply.

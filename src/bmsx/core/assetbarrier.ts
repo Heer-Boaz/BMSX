@@ -12,7 +12,6 @@ interface Entry<T> {
 	category: GateCategory;
 	tag?: string;
 
-	// new
 	disposer?: Disposer<T>;
 	isFallback?: boolean;
 }

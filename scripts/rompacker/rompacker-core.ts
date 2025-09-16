@@ -920,6 +920,7 @@ export async function generateRomAssets(resources: Resource[]) {
 					meshes: parsed.meshes.map((m: GLTFMesh) => ({
 						positions: m.positions,
 						texcoords: m.texcoords,
+						excoords1: m.texcoords1,
 						normals: m.normals,
 						tangents: m.tangents,
 						indices: m.indices,
@@ -931,6 +932,7 @@ export async function generateRomAssets(resources: Resource[]) {
 						weights: m.weights,
 						jointIndices: m.jointIndices,
 						jointWeights: m.jointWeights,
+						colors: m.colors,
 					})),
 					materials: parsed.materials,
 					animations: parsed.animations,
