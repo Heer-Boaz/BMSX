@@ -50,6 +50,16 @@ events:
                   audioId: hit2
                   modulationPreset: modulationparams.hitsfx
                   priority: 2
+    animationStart:
+        channel: sfx
+        rules:
+            - when:
+                  equals:
+                      clipId: humiliated
+              do:
+                  audioId: stuk
+                  modulationPreset: modulationparams.attacksfx
+                  priority: 2
     # --- Demonstration events showcasing new matcher features ---
     demo.in_operator:
         channel: sfx
@@ -152,6 +162,7 @@ events:
                       audioId: trainen # then return to explore theme
                       fadeMs: 200
     music.victory_alt:
+        channel: music
         rules:
             - do:
                   musicTransition:

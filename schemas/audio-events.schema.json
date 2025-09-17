@@ -21,7 +21,7 @@
 			"description": "Top-level audio event entry.",
 			"properties": {
 				"name": { "type": "string" },
-        "channel": { "type": "string", "enum": ["sfx", "music", "ui"] },
+		"channel": { "type": "string", "enum": ["sfx", "music", "ui"] },
 				"policy": {
 					"type": "string",
 					"enum": ["replace", "ignore", "queue", "stop", "pause"]
@@ -67,12 +67,12 @@
 		},
 		"audioEventRule": {
 			"type": "object",
-      "properties": {
-        "when": { "$ref": "#/definitions/audioCaseMatcher" },
-        "do": { "$ref": "#/definitions/audioActionSpec" }
-      },
-      "required": ["do"],
-      "additionalProperties": false
+	  "properties": {
+		"when": { "$ref": "#/definitions/audioCaseMatcher" },
+		"do": { "$ref": "#/definitions/audioActionSpec" }
+	  },
+	  "required": ["do"],
+	  "additionalProperties": false
 		},
 		"audioCaseMatcher": {
 			"type": "object",

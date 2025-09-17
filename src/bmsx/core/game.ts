@@ -9,8 +9,7 @@ import { PhysicsWorld } from '../physics/physicsworld';
 import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TextureManager } from "../render/texturemanager";
-import { renderGlyphs } from "../render/glyphs";
-import { color, GameView, renderGate } from "../render/gameview";
+import { GameView, renderGate } from "../render/gameview";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
@@ -18,7 +17,6 @@ import { Service } from "./service";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World, WorldConfiguration } from "./world";
 import { EventEmitter, EventPayload } from "./eventemitter";
-import { BFont } from './font';
 import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
@@ -36,7 +34,7 @@ global = globalThis || window; // Ensure global is defined
 
 // Register global variables
 // Note that $ is defined at the bottom of the code file
-export var $rompack: RomPack;
+export var $rompack!: RomPack;
 export var $debug: boolean;
 
 export interface GameInitArgs {
@@ -78,7 +76,7 @@ export class Game {
 	/**
 	 * The update interval for the bmsx module.
 	 */
-	public updateInterval: number;
+	public updateInterval!: number;
 	/**
 	 * The timestamp of the last update.
 	 */
@@ -107,12 +105,12 @@ export class Game {
 	/**
 	 * Indicates whether the game is currently running.
 	 */
-	public running: boolean;
+	public running!: boolean;
 
 	/**
 	 * Indicates whether the game is currently paused (by the debugger).
 	 */
-	private _paused: boolean;
+	private _paused!: boolean;
 
 	public get paused(): boolean { return this._paused; }
 	public set paused(value: boolean) {
@@ -137,7 +135,7 @@ export class Game {
 	 * Indicates whether the game was updated.
 	 * This property is used to track if any changes were made to the game before rendering a new frame.
 	 */
-	wasupdated: boolean;
+	wasupdated!: boolean;
 
 	/**
 	 * Indicates whether the game should run a single frame and then pause for debugging purposes.
@@ -156,20 +154,20 @@ export class Game {
 		if (this._paused) this._pausedOneShotRenderPending = true;
 	}
 
-	public get rompack(): RomPack { return $rompack; }
+	public get rompack(): RomPack { return $rompack!; }
 
-	public get world(): World { return this.registry.get<World>('world'); }
+	public get world(): World { return this.registry.get<World>('world')!; }
 
 	public get view(): GameView { return this.registry.get<GameView>('view'); }
 
-	public get aem(): AudioEventManager { return AudioEventManager.instance; }
+	public get aem(): AudioEventManager { return AudioEventManager.instance!; }
 
-	public get event_emitter(): EventEmitter { return EventEmitter.instance; }
+	public get event_emitter(): EventEmitter { return EventEmitter.instance!; }
 
-	public get input(): Input { return Input.instance; }
-	public get texmanager(): TextureManager { return TextureManager.instance; }
-	public get registry(): Registry { return Registry.instance; }
-	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm'); }
+	public get input(): Input { return Input.instance!; }
+	public get texmanager(): TextureManager { return TextureManager.instance!; }
+	public get registry(): Registry { return Registry.instance!; }
+	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm')!; }
 
 	public emit(event_name: string, emitter: Identifiable, payload?: EventPayload) {
 		this.event_emitter.emit(event_name, emitter, payload);
@@ -201,33 +199,13 @@ export class Game {
 
 	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
 
-	public renderGlyphs(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: color, backgroundColor?: color): void {
-		renderGlyphs(x, y, textToWrite, z, font, color, backgroundColor);
-	}
-
 	public playAudio(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
 		// Route through AudioEventManager so policies and per-channel handling stay consistent
 		this.aem.playDirect(id, options);
 	}
 
-	public stopEffect(): void {
-		this.sndmaster.stopEffect();
-	}
-
 	public stopMusic(): void {
 		this.sndmaster.stopMusic();
-	}
-
-	public stopUI(): void {
-		this.sndmaster.stopUI();
-	}
-
-	public set volume(volume: number) {
-		this.sndmaster.volume = volume;
-	}
-
-	public get volume(): number {
-		return this.sndmaster.volume;
 	}
 
 	public setInputMap(playerIndex: number, map: InputMap): void {
@@ -268,7 +246,7 @@ export class Game {
 	}
 
 	public get viewportSize(): vec2 {
-		return this.view.viewportSize;
+		return this.view.viewportSize!;
 	}
 
 	private rewindBuffer: RewindBuffer;
@@ -383,7 +361,7 @@ export class Game {
 			Input.instance.enableDebugMode(); // Do this after the world is initialized to prevent race conditions
 		}
 		this.initialized = true; // Mark the game as initialized
-		return this; // Allow chaining
+		return this!; // Allow chaining
 	}
 
 	private onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -396,7 +374,7 @@ export class Game {
 	 * @returns The current turn counter value.
 	 */
 	public get turnCounter(): number {
-		return this._turnCounter;
+		return this._turnCounter!;
 	}
 
 	/**
@@ -591,8 +569,8 @@ export class Game {
 	}
 
 	// --- Rewind API ---
-	public canRewind() { return this.rewindBuffer.canRewind(); }
-	public canForward() { return this.rewindBuffer.canForward(); }
+	public canRewind() { return this.rewindBuffer.canRewind()!; }
+	public canForward() { return this.rewindBuffer.canForward()!; }
 
 	private loadRewindFrame(frame: RewindFrame): void {
 		this.load(frame.state, true);
@@ -627,7 +605,7 @@ export class Game {
 	}
 
 	public getRewindFrames(): RewindFrame[] {
-		return this.rewindBuffer.getFrames();
+		return this.rewindBuffer.getFrames()!;
 	}
 
 	public resetRewind() {
@@ -642,4 +620,4 @@ export class Game {
 	}
 }
 
-export var $: Game = new Game();
+export var $: Game = new Game()!;

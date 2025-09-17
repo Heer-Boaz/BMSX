@@ -7,21 +7,28 @@ import { BitmapId, ModelId } from './resourceids';
 export class Cube3D extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'cube', ...opts });
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube }));
+		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube, id_local: 'mesh' }));
+		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
+		meshComponent.playClip('clip_0', { loop: true });
 	}
 }
 
 @insavegame
-@attach_components(TransformComponent)
+// @attach_components(TransformComponent)
 export class SmallCube3D extends WorldObject {
-	public scale: vec3arr = [0.5, 0.5, 0.5];
+	public scale: vec3arr = [.5, .5, .5];
 	constructor(opts?: RevivableObjectArgs & { overrideTextureIndex?: number }) {
 		super({ id: `smallCube${opts?.overrideTextureIndex ?? ''}`, ...opts });
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube }));
+		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.cube, id_local: 'mesh' }));
 		if (opts?.overrideTextureIndex !== undefined) {
 			const rc = this.getFirstComponent(MeshComponent);
 			rc?.setMaterialOverride(0, { albedo: opts.overrideTextureIndex });
 		}
+		this.addComponent(new TransformComponent({ parentid: this.id, id_local: 'transform' }));
+		const transform = this.getUniqueComponent(TransformComponent);
+		transform.scale = this.scale;
+		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
+		meshComponent.playClip('clip_0', { loop: true });
 	}
 }
 
@@ -30,7 +37,9 @@ export class SmallCube3D extends WorldObject {
 export class AnimatedMorphSphere extends WorldObject {
 	constructor(opts?: RevivableObjectArgs) {
 		super({ id: 'animatedSphere', ...opts });
-		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.animatedmorphsphere }));
+		this.addComponent(new MeshComponent({ parentid: this.id, modelId: ModelId.animatedmorphsphere, id_local: 'mesh' }));
+		const meshComponent = this.getComponentByLocalId(MeshComponent, 'mesh');
+		meshComponent.playClip('Globe', { loop: true });
 	}
 }
 

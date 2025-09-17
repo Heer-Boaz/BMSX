@@ -103,7 +103,7 @@ export class Space  {
 		world.objToSpaceMap.set(o.id, this.id); // Register the object in the obj→space map
 		world.onObjectSpawned(this, o);
 		// Ensure we pass a full vec3 to onspawn (z defaults to 0)
-		const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z ?? 0 } : undefined;
+		const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined;
 		// BeginPlay: call onspawn once with an explicit reason; transfer/move paths pass skip=true.
 		const skip = typeof options === 'boolean' ? options : options?.skipOnSpawn ?? false;
 		const reason = (typeof options === 'object' && options !== null && !(options instanceof Boolean)) ? options.reason : undefined;
@@ -135,7 +135,7 @@ export class Space  {
 	 * so pooled workflows can reuse it without reallocations.
 	 */
 	public despawn(o: WorldObject, skip_ondespawn_event: boolean = false): void {
-		
+
 
 		this.disposeWorldObject(o, skip_ondespawn_event);
 	}

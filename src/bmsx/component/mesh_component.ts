@@ -13,9 +13,54 @@ type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; 
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>" (or detached)
 type RuntimeNodeTRS = { t?: vec3arr; r?: vec4arr; s?: vec3arr };
 type RuntimeNodeState = { trs?: RuntimeNodeTRS; weights?: number[]; visible?: boolean };
-type RuntimeAnim = { time?: number; speed?: number; activeClip?: asset_id; loop?: boolean };
+type MeshAnimationNotify = { time: number; event: string; payload?: Record<string, unknown>; scope?: 'self' | 'global'; once?: boolean; };
+type RuntimeClipState = {
+	clipId: string;
+	time?: number;
+	speed?: number;
+	loop?: boolean;
+	weight?: number;
+	targetWeight?: number;
+	blendDuration?: number;
+	blendElapsed?: number;
+	applyRootMotion?: boolean;
+	lastRootTranslation?: [number, number, number];
+	notifyCursor?: number;
+	notifies?: MeshAnimationNotify[];
+};
+type RuntimeAnim = {
+	current?: RuntimeClipState;
+	previous?: RuntimeClipState;
+	rootMotionNode?: number;
+	autoResetPose?: boolean;
+};
+type LegacyRuntimeAnim = { time?: number; speed?: number; activeClip?: asset_id; loop?: boolean };
 type PersistedMatTex = Partial<{ albedo: number; normal: number; metallicRoughness: number; color: color_arr; metallicFactor: number; roughnessFactor: number }>;
-type MeshRuntime = { version: 1; model_id?: asset_id; nodes?: Record<NodeKey, RuntimeNodeState>; anim?: RuntimeAnim };
+type MeshRuntime = { version: 1; model_id?: asset_id; nodes?: Record<NodeKey, RuntimeNodeState>; anim?: RuntimeAnim | LegacyRuntimeAnim };
+type MeshClipState = {
+	name: string;
+	clip: GLTFAnimation;
+	time: number;
+	speed: number;
+	loop: boolean;
+	weight: number;
+	targetWeight: number;
+	blendDuration: number;
+	blendElapsed: number;
+	applyRootMotion: boolean;
+	lastRootTranslation: Float32Array;
+	notifies?: MeshAnimationNotify[];
+	notifyCursor: number;
+};
+
+export type MeshClipPlayOptions = {
+	loop?: boolean;
+	speed?: number;
+	fadeSeconds?: number;
+	resetTime?: boolean;
+	applyRootMotion?: boolean;
+	startTime?: number;
+};
 
 @insavegame
 export class MeshComponent extends Component {
@@ -28,13 +73,11 @@ export class MeshComponent extends Component {
 	private instances: MeshInstance[] = [];
 
 	// Animation + per-node caches
-	public animationTime: number = 0;
-	public activeClipIndex: number | null = null;
-	public animationLoop: boolean = true;
 	@excludepropfromsavegame private worldMatrices: Float32Array[] = [];
 	@excludepropfromsavegame private nodeDirty: boolean[] = [];
 	@excludepropfromsavegame private renderMeshes: RenderMesh[] = [];
 	@excludepropfromsavegame private _tmpLocal: Float32Array = new Float32Array(16);
+	@excludepropfromsavegame private _tmpRotation: Float32Array = new Float32Array(16);
 	@excludepropfromsavegame private skinMatrices: (Float32Array[] | undefined)[] = [];
 	@excludepropfromsavegame private skinDirty: boolean[] = [];
 	@excludepropfromsavegame private _skinTmpMatrix: Float32Array = new Float32Array(16);
@@ -42,6 +85,25 @@ export class MeshComponent extends Component {
 	private static readonly _ID: Float32Array = (() => { const m = new Float32Array(16); M4.setIdentity(m); return m; })();
 	private static readonly _quatScratchA: Float32Array = new Float32Array(4);
 	private static readonly _quatScratchB: Float32Array = new Float32Array(4);
+	@excludepropfromsavegame private baseTranslation: Float32Array[] = [];
+	@excludepropfromsavegame private baseRotation: Float32Array[] = [];
+	@excludepropfromsavegame private baseScale: Float32Array[] = [];
+	@excludepropfromsavegame private baseWeights: (Float32Array | undefined)[] = [];
+	@excludepropfromsavegame private poseTranslation: Float32Array[] = [];
+	@excludepropfromsavegame private poseRotation: Float32Array[] = [];
+	@excludepropfromsavegame private poseScale: Float32Array[] = [];
+	@excludepropfromsavegame private poseWeights: (Float32Array | undefined)[] = [];
+	@excludepropfromsavegame private poseVisibility: (boolean | undefined)[] = [];
+	@excludepropfromsavegame private _sampleVec3: Float32Array = new Float32Array(3);
+	@excludepropfromsavegame private _sampleQuat: Float32Array = new Float32Array(4);
+	@excludepropfromsavegame private _sampleWeights?: Float32Array;
+	@excludepropfromsavegame private _currentClip?: MeshClipState;
+	@excludepropfromsavegame private _previousClip?: MeshClipState;
+	@excludepropfromsavegame private _clipNotifies: Map<string, MeshAnimationNotify[]> = new Map();
+	@excludepropfromsavegame private _clipDurationCache: Map<string, number> = new Map();
+	@excludepropfromsavegame private _rootMotionDelta: Float32Array = new Float32Array(3);
+	@excludepropfromsavegame private _rootMotionNode: number = 0;
+	@excludepropfromsavegame private _autoResetPose: boolean = true;
 
 	// Runtime snapshot used solely during (de)serialization
 	private _runtime?: MeshRuntime;
@@ -82,6 +144,38 @@ export class MeshComponent extends Component {
 		const count = this.model?.skins?.length ?? 0;
 		this.skinMatrices = new Array(count);
 		this.skinDirty = new Array(count).fill(true);
+	}
+
+	private initializePoseFromModel(): void {
+		const nodes = this.model?.nodes ?? [];
+		this.baseTranslation = new Array(nodes.length);
+		this.baseRotation = new Array(nodes.length);
+		this.baseScale = new Array(nodes.length);
+		this.baseWeights = new Array(nodes.length);
+		this.poseTranslation = new Array(nodes.length);
+		this.poseRotation = new Array(nodes.length);
+		this.poseScale = new Array(nodes.length);
+		this.poseWeights = new Array(nodes.length);
+		this.poseVisibility = new Array(nodes.length);
+		for (let i = 0; i < nodes.length; i++) {
+			const node = nodes[i];
+			const { t, r, s } = MeshComponent.decomposeNode(node);
+			this.baseTranslation[i] = t;
+			this.baseRotation[i] = r;
+			this.baseScale[i] = s;
+			this.poseTranslation[i] = new Float32Array(t);
+			this.poseRotation[i] = new Float32Array(r);
+			this.poseScale[i] = new Float32Array(s);
+			if (node.weights) {
+				const base = Float32Array.from(node.weights);
+				this.baseWeights[i] = base;
+				this.poseWeights[i] = new Float32Array(base);
+			} else {
+				this.baseWeights[i] = undefined;
+				this.poseWeights[i] = undefined;
+			}
+			this.poseVisibility[i] = node.visible;
+		}
 	}
 
 	private markAllSkinsDirty(): void {
@@ -165,6 +259,7 @@ export class MeshComponent extends Component {
 		this.worldMatrices = nodes.map(() => { const m = new Float32Array(16); M4.setIdentity(m); return m; });
 		this.nodeDirty = nodes.map(() => true);
 		this.resetSkinCaches();
+		this.initializePoseFromModel();
 
 		// Traverse active scene roots to build instances similar to MeshObject
 		if (model.scenes && model.scenes.length > 0) {
@@ -196,8 +291,7 @@ export class MeshComponent extends Component {
 
 	private getWorldMatrixFrom(nodeIndex: number, parent: Float32Array): Float32Array {
 		if (this.nodeDirty[nodeIndex]) {
-			const node: GLTFNode = this.model!.nodes![nodeIndex];
-			const local = node.matrix ? new Float32Array(node.matrix) : this.composeNodeMatrixInto(this._tmpLocal, node);
+			const local = this.composePoseMatrixInto(this._tmpLocal, nodeIndex);
 			const world = this.worldMatrices[nodeIndex] ?? (this.worldMatrices[nodeIndex] = new Float32Array(16));
 			M4.mulAffineInto(world, parent, local);
 			this.nodeDirty[nodeIndex] = false;
@@ -205,11 +299,475 @@ export class MeshComponent extends Component {
 		return this.worldMatrices[nodeIndex];
 	}
 
-	private composeNodeMatrixInto(out: Float32Array, node: GLTFNode): Float32Array {
-		const t = node.translation ?? [0, 0, 0];
-		const q = node.rotation ?? undefined;
-		const s = node.scale ?? [1, 1, 1];
-		return M4.fromTRSInto(out, [t[0], t[1], t[2]], q, [s[0], s[1], s[2]]);
+	private composePoseMatrixInto(out: Float32Array, nodeIndex: number): Float32Array {
+		const t = this.poseTranslation[nodeIndex] ?? this.baseTranslation[nodeIndex];
+		const r = this.poseRotation[nodeIndex] ?? this.baseRotation[nodeIndex];
+		const s = this.poseScale[nodeIndex] ?? this.baseScale[nodeIndex];
+		M4.setIdentity(out);
+		if (t) M4.translateSelf(out, t[0], t[1], t[2]);
+		if (r) {
+			MeshComponent.normalizeQuat(r);
+			M4.quatToMat4Into(this._tmpRotation, r as unknown as vec4arr);
+			M4.mulAffineInto(out, out, this._tmpRotation);
+		}
+		if (s) M4.scaleSelf(out, s[0], s[1], s[2]);
+		return out;
+	}
+
+	private resetPoseToBase(): void {
+		for (let i = 0; i < this.poseTranslation.length; i++) {
+			const baseT = this.baseTranslation[i];
+			if (baseT) this.poseTranslation[i].set(baseT);
+			const baseR = this.baseRotation[i];
+			if (baseR) this.poseRotation[i].set(baseR);
+			const baseS = this.baseScale[i];
+			if (baseS) this.poseScale[i].set(baseS);
+			const baseW = this.baseWeights[i];
+			if (baseW) {
+				let poseW = this.poseWeights[i];
+				if (!poseW || poseW.length !== baseW.length) {
+					poseW = new Float32Array(baseW.length);
+					this.poseWeights[i] = poseW;
+				}
+				poseW.set(baseW);
+			} else {
+				this.poseWeights[i] = undefined;
+			}
+		}
+	}
+
+	private lerpVec3(target: Float32Array, sample: Float32Array, weight: number): void {
+		const w = Math.max(0, Math.min(1, weight));
+		target[0] += (sample[0] - target[0]) * w;
+		target[1] += (sample[1] - target[1]) * w;
+		target[2] += (sample[2] - target[2]) * w;
+	}
+
+	private lerpWeights(nodeIndex: number, sample: Float32Array, weight: number): void {
+		let target = this.poseWeights[nodeIndex];
+		if (!target || target.length !== sample.length) {
+			target = new Float32Array(sample.length);
+			this.poseWeights[nodeIndex] = target;
+		}
+		const w = Math.max(0, Math.min(1, weight));
+		for (let i = 0; i < sample.length; i++) {
+			target[i] += (sample[i] - target[i]) * w;
+		}
+	}
+
+	private advanceClips(dtSec: number): void {
+		if (this._currentClip) {
+			this.updateClipState(this._currentClip, dtSec);
+			if (this._currentClip.weight <= 0 && this._currentClip.targetWeight === 0) {
+				this.dispatchMeshAnimationEvent('meshAnimationEnd', { clipId: this._currentClip.name }, undefined);
+				this._currentClip = undefined;
+			}
+		}
+		if (this._previousClip) {
+			this.updateClipState(this._previousClip, dtSec, true);
+			if (this._previousClip.weight <= 0) this._previousClip = undefined;
+		}
+	}
+
+	private updateClipState(state: MeshClipState, dtSec: number, fadingOut: boolean = false): void {
+		const duration = this.getClipDuration(state);
+		const prevTime = state.time;
+		state.time += dtSec * state.speed;
+		if (state.loop && duration > 0) {
+			state.time = state.time % duration;
+		} else {
+			state.time = Math.min(state.time, duration);
+		}
+		this.processClipNotifies(state, prevTime, state.time, duration);
+		if (state.blendDuration > 0) {
+			state.blendElapsed = Math.min(state.blendElapsed + dtSec, state.blendDuration);
+			const alpha = state.blendDuration > 0 ? state.blendElapsed / state.blendDuration : 1;
+			const startWeight = fadingOut ? state.weight : state.weight;
+			state.weight = fadingOut
+				? startWeight + (state.targetWeight - startWeight) * alpha
+				: startWeight + (state.targetWeight - startWeight) * alpha;
+			if (state.blendElapsed >= state.blendDuration) {
+				state.weight = state.targetWeight;
+			}
+		} else {
+			state.weight = state.targetWeight;
+		}
+		state.weight = Math.max(0, Math.min(1, state.weight));
+		if (!state.loop && !fadingOut && state.time >= duration - 1e-4) {
+			state.targetWeight = 0;
+			state.blendDuration = Math.max(state.blendDuration, 0.1);
+			state.blendElapsed = Math.min(state.blendElapsed, state.blendDuration);
+		}
+	}
+
+	private processClipNotifies(state: MeshClipState, prevTime: number, currentTime: number, duration: number): void {
+		const notifies = state.notifies;
+		if (!notifies || notifies.length === 0) return;
+		const wrapped = state.loop && duration > 0 && currentTime < prevTime;
+		if (wrapped) {
+			this.dispatchMeshAnimationEvent('meshAnimationLoop', { clipId: state.name }, undefined);
+			this.dispatchClipNotifiesInRange(state, prevTime, duration);
+			state.notifyCursor = 0;
+			this.dispatchClipNotifiesInRange(state, 0, currentTime);
+		} else {
+			this.dispatchClipNotifiesInRange(state, prevTime, currentTime);
+		}
+	}
+
+	private dispatchClipNotifiesInRange(state: MeshClipState, start: number, end: number): void {
+		const notifies = state.notifies;
+		if (!notifies) return;
+		let cursor = state.notifyCursor;
+		while (cursor < notifies.length) {
+			const notify = notifies[cursor];
+			if (notify.time > end) break;
+			if (notify.time >= start) {
+				this.dispatchMeshAnimationEvent('meshAnimationEvent', { clipId: state.name, event: notify.event, payload: notify.payload }, notify.scope);
+				if (notify.event) this.dispatchMeshAnimationEvent(`meshAnimationEvent:${notify.event}`, { clipId: state.name, event: notify.event, payload: notify.payload }, notify.scope);
+				if (notify.once) {
+					notifies.splice(cursor, 1);
+					continue;
+				}
+			}
+			cursor++;
+		}
+		state.notifyCursor = cursor;
+	}
+
+	private applyClipState(state: MeshClipState): void {
+		const weight = Math.max(0, Math.min(1, state.weight));
+		if (weight <= 0) return;
+		const clip = state.clip;
+		const animations = clip.channels;
+		for (let c = 0; c < animations.length; c++) {
+			const channel = animations[c];
+			const sampler = clip.samplers[channel.sampler];
+			if (!sampler) continue;
+			const nodeIndex = channel.target.node;
+			if (nodeIndex === undefined) continue;
+			switch (channel.target.path) {
+				case 'translation': {
+					const sample = this.sampleVec3(sampler, state.time, state.loop);
+					if (state.applyRootMotion && nodeIndex === this._rootMotionNode) {
+						const deltaX = sample[0] - state.lastRootTranslation[0];
+						const deltaY = sample[1] - state.lastRootTranslation[1];
+						const deltaZ = sample[2] - state.lastRootTranslation[2];
+						state.lastRootTranslation[0] = sample[0];
+						state.lastRootTranslation[1] = sample[1];
+						state.lastRootTranslation[2] = sample[2];
+						this._rootMotionDelta[0] += deltaX * weight;
+						this._rootMotionDelta[1] += deltaY * weight;
+						this._rootMotionDelta[2] += deltaZ * weight;
+					}
+					this.lerpVec3(this.poseTranslation[nodeIndex], sample, weight);
+					this.nodeDirty[nodeIndex] = true;
+					break;
+				}
+				case 'rotation': {
+					const sample = this.sampleQuat(sampler, state.time, state.loop);
+					MeshComponent.slerpQuat(this.poseRotation[nodeIndex], sample, weight, this.poseRotation[nodeIndex]);
+					this.nodeDirty[nodeIndex] = true;
+					break;
+				}
+				case 'scale': {
+					const sample = this.sampleVec3(sampler, state.time, state.loop);
+					this.lerpVec3(this.poseScale[nodeIndex], sample, weight);
+					this.nodeDirty[nodeIndex] = true;
+					break;
+				}
+				case 'weights': {
+					const sample = this.sampleWeights(sampler, state.time, state.loop);
+					this.lerpWeights(nodeIndex, sample, weight);
+					break;
+				}
+			}
+		}
+	}
+
+	private sampleVec3(sampler: GLTFAnimationSampler, time: number, loop: boolean): Float32Array {
+		return this.sampleAnimationInto(sampler, time, 3, 'translation', this._sampleVec3, loop);
+	}
+
+	private sampleQuat(sampler: GLTFAnimationSampler, time: number, loop: boolean): Float32Array {
+		return this.sampleAnimationInto(sampler, time, 4, 'rotation', this._sampleQuat, loop);
+	}
+
+	private sampleWeights(sampler: GLTFAnimationSampler, time: number, loop: boolean): Float32Array {
+		const componentCount = sampler.output.length / sampler.input.length;
+		if (!this._sampleWeights || this._sampleWeights.length !== componentCount) {
+			this._sampleWeights = new Float32Array(componentCount);
+		}
+		return this.sampleAnimationInto(sampler, time, componentCount, 'weights', this._sampleWeights, loop);
+	}
+
+	private getClipDuration(state: MeshClipState): number {
+		const name = state.name;
+		if (this._clipDurationCache.has(name)) return this._clipDurationCache.get(name)!;
+		const clip = state.clip;
+		let duration = 0;
+		for (const sampler of clip.samplers) {
+			const input = sampler?.input;
+			if (input && input.length > 0) {
+				const last = input[input.length - 1];
+				if (last > duration) duration = last;
+			}
+		}
+		this._clipDurationCache.set(name, duration);
+		return duration;
+	}
+
+	private dispatchMeshAnimationEvent(event: string, payload: Record<string, unknown>, scope?: 'self' | 'global'): void {
+		const parent = this.parent;
+		if (!parent) return;
+		$.emit(event, parent, payload);
+		const sc = parent.sc;
+		if (sc) {
+			const name = scope === 'self' ? `$${event}` : event;
+			sc.dispatch_event(name, parent, payload);
+		}
+	}
+
+	private applyRootMotionDelta(): void {
+		const delta = this._rootMotionDelta;
+		if (Math.abs(delta[0]) + Math.abs(delta[1]) + Math.abs(delta[2]) <= 1e-4) return;
+		const parent = this.parent;
+		if (parent) {
+			parent.x += delta[0];
+			parent.y += delta[1];
+			parent.z += delta[2];
+		}
+		delta[0] = 0; delta[1] = 0; delta[2] = 0;
+	}
+
+	public playClip(name: string, options: MeshClipPlayOptions = {}): void {
+		const clip = this.getClipByName(name);
+		if (!clip) {
+			console.warn(`[MeshComponent] Clip '${name}' not found on model '${this.modelId}'.`);
+			return;
+		}
+		const key = this.resolveClipKey(clip);
+		const fade = Math.max(0, options.fadeSeconds ?? 0);
+		const loop = options.loop ?? true;
+		const speed = options.speed ?? 1;
+		const startTime = options.startTime ?? 0;
+		const applyRootMotion = options.applyRootMotion ?? false;
+		const state: MeshClipState = {
+			name: key,
+			clip,
+			time: startTime,
+			speed,
+			loop,
+			weight: fade > 0 ? 0 : 1,
+			targetWeight: 1,
+			blendDuration: fade,
+			blendElapsed: fade > 0 ? 0 : fade,
+			applyRootMotion,
+			lastRootTranslation: new Float32Array(3),
+			notifies: this.cloneNotifies(key),
+			notifyCursor: 0,
+		};
+		if (state.notifies && state.notifies.length) state.notifies.sort((a, b) => a.time - b.time);
+		const rootSample = this.sampleRootTranslation(state, startTime);
+		state.lastRootTranslation.set(rootSample);
+		if (this._currentClip) {
+			if (this._currentClip.name === state.name && options.resetTime === false) {
+				this._currentClip.loop = loop;
+				this._currentClip.speed = speed;
+				this._currentClip.targetWeight = 1;
+				this._currentClip.applyRootMotion = applyRootMotion;
+				if (options.startTime !== undefined) {
+					this._currentClip.time = startTime;
+					this._currentClip.lastRootTranslation.set(rootSample);
+				}
+				return;
+			}
+			this._previousClip = {
+				...this._currentClip,
+				lastRootTranslation: new Float32Array(this._currentClip.lastRootTranslation),
+				notifies: this._currentClip.notifies ? this._currentClip.notifies.map(n => ({ ...n })) : undefined,
+				blendDuration: fade,
+				blendElapsed: 0,
+				targetWeight: 0,
+			};
+		}
+		this._currentClip = state;
+		if (fade <= 0) {
+			state.weight = 1;
+			state.blendElapsed = fade;
+			this._previousClip = undefined;
+		}
+		this.dispatchMeshAnimationEvent('meshAnimationStart', { clipId: state.name }, undefined);
+	}
+
+	public stopClip(name?: string): void {
+		if (!this._currentClip) return;
+		if (!name || this._currentClip.name === name) {
+			this._currentClip.targetWeight = 0;
+			this._currentClip.blendDuration = Math.max(this._currentClip.blendDuration, 0.1);
+			this._currentClip.blendElapsed = 0;
+			return;
+		}
+		if (this._previousClip && this._previousClip.name === name) {
+			this._previousClip.targetWeight = 0;
+			this._previousClip.blendDuration = Math.max(this._previousClip.blendDuration, 0.1);
+			this._previousClip.blendElapsed = 0;
+		}
+	}
+
+	public setClipNotifies(name: string, notifies: MeshAnimationNotify[]): void {
+		this._clipNotifies.set(name, [...notifies]);
+	}
+
+	public setRootMotionNode(index: number): void {
+		this._rootMotionNode = Math.max(0, Math.min(index, (this.model?.nodes?.length ?? 1) - 1));
+	}
+
+	private getClipByName(name: string): GLTFAnimation | undefined {
+		const anims = this.model?.animations;
+		if (!anims || anims.length === 0) return undefined;
+		let clip = anims.find(anim => anim?.name === name);
+		if (clip) return clip;
+		const numeric = Number(name);
+		if (!Number.isNaN(numeric) && anims[numeric]) return anims[numeric];
+		for (let i = 0; i < anims.length; i++) {
+			const candidate = anims[i];
+			const key = this.resolveClipKey(candidate);
+			if (key === name) return candidate;
+		}
+		return undefined;
+	}
+
+	private resolveClipKey(clip: GLTFAnimation): string {
+		if (clip.name && clip.name.length > 0) return clip.name;
+		const anims = this.model?.animations ?? [];
+		const idx = anims.indexOf(clip);
+		return idx >= 0 ? `clip_${idx}` : 'clip';
+	}
+
+	private cloneNotifies(name: string): MeshAnimationNotify[] | undefined {
+		const list = this._clipNotifies.get(name);
+		return list ? list.map(n => ({ ...n })) : undefined;
+	}
+
+	private clipStateToRuntime(state: MeshClipState): RuntimeClipState {
+		return {
+			clipId: state.name,
+			time: state.time,
+			speed: state.speed,
+			loop: state.loop,
+			weight: state.weight,
+			targetWeight: state.targetWeight,
+			blendDuration: state.blendDuration,
+			blendElapsed: state.blendElapsed,
+			applyRootMotion: state.applyRootMotion,
+			lastRootTranslation: [state.lastRootTranslation[0], state.lastRootTranslation[1], state.lastRootTranslation[2]],
+			notifyCursor: state.notifyCursor,
+			notifies: state.notifies ? state.notifies.map(n => ({ ...n })) : undefined,
+		};
+	}
+
+	private createClipStateFromSnapshot(snapshot: RuntimeClipState | undefined): MeshClipState | undefined {
+		if (!snapshot?.clipId) return undefined;
+		const clip = this.getClipByName(snapshot.clipId);
+		if (!clip) return undefined;
+		const name = this.resolveClipKey(clip);
+		const blendDuration = snapshot.blendDuration ?? 0;
+		const state: MeshClipState = {
+			name,
+			clip,
+			time: snapshot.time ?? 0,
+			speed: snapshot.speed ?? 1,
+			loop: snapshot.loop ?? true,
+			weight: snapshot.weight ?? 0,
+			targetWeight: snapshot.targetWeight ?? (snapshot.weight ?? 0),
+			blendDuration,
+			blendElapsed: Math.min(snapshot.blendElapsed ?? blendDuration, blendDuration),
+			applyRootMotion: snapshot.applyRootMotion ?? false,
+			lastRootTranslation: new Float32Array(3),
+			notifies: undefined,
+			notifyCursor: snapshot.notifyCursor ?? 0,
+		};
+		if (snapshot.notifies) {
+			state.notifies = snapshot.notifies.map(n => ({ ...n }));
+		} else {
+			state.notifies = this.cloneNotifies(name) ?? undefined;
+		}
+		if (state.notifies && state.notifies.length) state.notifies.sort((a, b) => a.time - b.time);
+		const storedTranslation = snapshot.lastRootTranslation;
+		if (storedTranslation && storedTranslation.length === 3) {
+			state.lastRootTranslation[0] = storedTranslation[0];
+			state.lastRootTranslation[1] = storedTranslation[1];
+			state.lastRootTranslation[2] = storedTranslation[2];
+		} else {
+			state.lastRootTranslation.set(this.sampleRootTranslation(state, state.time));
+		}
+		if (state.notifies) {
+			state.notifyCursor = Math.min(state.notifyCursor, state.notifies.length);
+		} else {
+			state.notifyCursor = 0;
+		}
+		state.weight = Math.max(0, Math.min(1, state.weight));
+		state.targetWeight = Math.max(0, Math.min(1, state.targetWeight));
+		return state;
+	}
+
+	private restoreAnimationRuntime(anim: RuntimeAnim | LegacyRuntimeAnim | undefined): void {
+		if (!anim) return;
+		if ('current' in anim || 'previous' in anim || 'rootMotionNode' in anim || 'autoResetPose' in anim) {
+			const runtime = anim as RuntimeAnim;
+			if (runtime.autoResetPose !== undefined) this._autoResetPose = runtime.autoResetPose;
+			if (runtime.rootMotionNode !== undefined) this._rootMotionNode = runtime.rootMotionNode;
+			this._currentClip = this.createClipStateFromSnapshot(runtime.current);
+			this._previousClip = this.createClipStateFromSnapshot(runtime.previous);
+			this._rootMotionDelta[0] = 0; this._rootMotionDelta[1] = 0; this._rootMotionDelta[2] = 0;
+			this.resetPoseToBase();
+			if (this._previousClip) this.applyClipState(this._previousClip);
+			if (this._currentClip) this.applyClipState(this._currentClip);
+			for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
+			this.markAllSkinsDirty();
+			return;
+		}
+		const legacy = anim as LegacyRuntimeAnim;
+		if (!legacy.activeClip) return;
+		const snapshot: RuntimeClipState = {
+			clipId: legacy.activeClip,
+			time: legacy.time,
+			speed: legacy.speed,
+			loop: legacy.loop,
+			weight: 1,
+			targetWeight: 1,
+			blendDuration: 0,
+			blendElapsed: 0,
+		};
+		this._currentClip = this.createClipStateFromSnapshot(snapshot);
+		this._previousClip = undefined;
+		if (!this._currentClip) return;
+		const duration = this.getClipDuration(this._currentClip);
+		this._currentClip.time = Math.min(Math.max(0, this._currentClip.time), duration);
+		this._currentClip.weight = 1;
+		this._currentClip.targetWeight = 1;
+		this._currentClip.blendDuration = 0;
+		this._currentClip.blendElapsed = 0;
+		this._currentClip.notifyCursor = 0;
+		this._currentClip.lastRootTranslation.set(this.sampleRootTranslation(this._currentClip, this._currentClip.time));
+		this._rootMotionDelta[0] = 0; this._rootMotionDelta[1] = 0; this._rootMotionDelta[2] = 0;
+		this.resetPoseToBase();
+		this.applyClipState(this._currentClip);
+		for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
+		this.markAllSkinsDirty();
+	}
+
+	private sampleRootTranslation(state: MeshClipState, time: number): Float32Array {
+		const clip = state.clip;
+		for (const channel of clip.channels) {
+			if (channel.target.node === this._rootMotionNode && channel.target.path === 'translation') {
+				const sample = this.sampleVec3(clip.samplers[channel.sampler], time, state.loop);
+				const out = new Float32Array(3);
+				out.set(sample);
+				return out;
+			}
+		}
+		return new Float32Array(3);
 	}
 
 	private computeSkinMatrices(skinIndex: number, meshNodeIndex: number, meshNodeWorld: Float32Array): Float32Array[] | undefined {
@@ -239,77 +797,36 @@ export class MeshComponent extends Component {
 	}
 
 	public stepAnimation(dtSec: number): void {
-		const anims = this.model?.animations;
-		if (!anims || anims.length === 0) return;
-		this.animationTime += dtSec;
-		let nodesChanged = false;
-		const plays = (this.activeClipIndex != null) ? [anims[this.activeClipIndex]] : anims;
-		for (const anim of plays) {
-			for (const channel of (anim as GLTFAnimation).channels) {
-				const sampler = (anim as GLTFAnimation).samplers[channel.sampler];
-				if (!sampler || !sampler.input || !sampler.output) continue;
-				const stride = sampler.output.length / sampler.input.length;
-				const componentCount = sampler.interpolation === 'CUBICSPLINE' ? stride / 3 : stride;
-				const path = channel.target.path ?? '';
-				const value = this.sampleAnimation(sampler, this.animationTime, componentCount, path);
-				if (channel.target.node !== undefined && this.model?.nodes) {
-					const node: GLTFNode = this.model.nodes[channel.target.node];
-					switch (channel.target.path) {
-						case 'rotation': {
-							const q = { x: value[0], y: value[1], z: value[2], w: value[3] };
-							node.rotation = [q.x, q.y, q.z, q.w];
-							node.matrix = undefined;
-							this.nodeDirty[channel.target.node] = true;
-							nodesChanged = true;
-							break;
-						}
-						case 'translation':
-							node.translation = [value[0], value[1], value[2]];
-							node.matrix = undefined;
-							this.nodeDirty[channel.target.node] = true;
-							nodesChanged = true;
-							break;
-						case 'scale':
-							node.scale = [value[0], value[1], value[2]];
-							node.matrix = undefined;
-							this.nodeDirty[channel.target.node] = true;
-							nodesChanged = true;
-							break;
-						case 'weights':
-							if (node.mesh !== undefined) {
-								const weights = Array.from(value);
-								node.weights = weights;
-								for (const inst of this.instances) if (inst.nodeIndex === channel.target.node) inst.morphWeights = weights;
-								nodesChanged = true;
-							}
-							break;
-					}
-				}
+		if (!this.model?.animations || this.model.animations.length === 0) return;
+		this.advanceClips(dtSec);
+		if (!this._currentClip && !this._previousClip) {
+			if (this._autoResetPose) {
+				this.resetPoseToBase();
+				for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
 			}
+			return;
 		}
-		if (nodesChanged && this.model?.nodes) {
-			for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
-			this.markAllSkinsDirty();
-			if (this.model.scenes && this.model.scenes.length > 0) {
-				const scene = this.model.scenes[this.model.scene ?? 0];
-				if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);
-			}
+		this.resetPoseToBase();
+		if (this._previousClip) this.applyClipState(this._previousClip);
+		if (this._currentClip) this.applyClipState(this._currentClip);
+		for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
+		this.markAllSkinsDirty();
+		this.applyRootMotionDelta();
+		if (this.model?.scenes && this.model.scenes.length > 0) {
+			const scene = this.model.scenes[this.model.scene ?? 0];
+			if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);
 		}
 	}
 
-	private sampleAnimation(s: GLTFAnimationSampler, time: number, componentCount: number, path: string): Float32Array {
+	private sampleAnimationInto(s: GLTFAnimationSampler, time: number, componentCount: number, path: string, out: Float32Array, loop: boolean): Float32Array {
 		const input = s.input;
 		const output = s.output;
 		const last = input.length - 1;
 		const duration = last >= 0 ? input[last] : 0;
-		const loop = this._runtime?.anim?.loop ?? this.animationLoop;
 		let t = 0;
 		if (last >= 0) {
-			if (loop) {
-				t = duration > 0 ? (time % duration) : 0;
-			} else {
-				t = duration > 0 ? Math.min(time, duration) : 0;
-			}
+			if (loop && duration > 0) t = time % duration;
+			else t = duration > 0 ? Math.min(time, duration) : 0;
 		}
 		let i = 0;
 		while (i < last && t >= input[i + 1]) i++;
@@ -317,11 +834,10 @@ export class MeshComponent extends Component {
 		const t0 = input[i];
 		const t1 = input[j];
 		const dt = t1 - t0;
-		const res = new Float32Array(componentCount);
 		switch (s.interpolation) {
 			case 'STEP': {
 				const start = i * componentCount;
-				for (let k = 0; k < componentCount; k++) res[k] = output[start + k];
+				for (let k = 0; k < componentCount; k++) out[k] = output[start + k];
 				break;
 			}
 			case 'CUBICSPLINE': {
@@ -338,7 +854,7 @@ export class MeshComponent extends Component {
 					const m0 = output[start + componentCount * 2 + k];
 					const p1 = output[end + componentCount + k];
 					const m1 = output[end + k];
-					res[k] = s0 * p0 + s1 * m0 * dt + s2 * p1 + s3 * m1 * dt;
+					out[k] = s0 * p0 + s1 * m0 * dt + s2 * p1 + s3 * m1 * dt;
 				}
 				break;
 			}
@@ -348,21 +864,21 @@ export class MeshComponent extends Component {
 				if (path === 'rotation') {
 					const q0 = this.readQuatAt(s, i, componentCount, MeshComponent._quatScratchA);
 					const q1 = this.readQuatAt(s, j, componentCount, MeshComponent._quatScratchB);
-					MeshComponent.slerpQuat(q0, q1, alpha, res);
+					MeshComponent.slerpQuat(q0, q1, alpha, out);
 				} else {
 					const start = i * componentCount;
 					const end = j * componentCount;
 					for (let k = 0; k < componentCount; k++) {
 						const v0 = output[start + k];
 						const v1 = output[end + k];
-						res[k] = v0 + (v1 - v0) * alpha;
+						out[k] = v0 + (v1 - v0) * alpha;
 					}
 				}
 				break;
 			}
 		}
-		if (path === 'rotation') MeshComponent.normalizeQuat(res);
-		return res;
+		if (path === 'rotation') MeshComponent.normalizeQuat(out);
+		return out;
 	}
 
 	private readQuatAt(s: GLTFAnimationSampler, index: number, componentCount: number, target: Float32Array): Float32Array {
@@ -403,6 +919,71 @@ export class MeshComponent extends Component {
 		} else {
 			q[0] = 0; q[1] = 0; q[2] = 0; q[3] = 1;
 		}
+	}
+
+	private static rotationMatrixToQuaternion(m: Float32Array): Float32Array {
+		const out = new Float32Array(4);
+		const trace = m[0] + m[4] + m[8];
+		if (trace > 0) {
+			const s = Math.sqrt(trace + 1.0) * 2;
+			out[3] = 0.25 * s;
+			out[0] = (m[7] - m[5]) / s;
+			out[1] = (m[2] - m[6]) / s;
+			out[2] = (m[3] - m[1]) / s;
+		} else if (m[0] > m[4] && m[0] > m[8]) {
+			const s = Math.sqrt(1.0 + m[0] - m[4] - m[8]) * 2;
+			out[3] = (m[7] - m[5]) / s;
+			out[0] = 0.25 * s;
+			out[1] = (m[1] + m[3]) / s;
+			out[2] = (m[2] + m[6]) / s;
+		} else if (m[4] > m[8]) {
+			const s = Math.sqrt(1.0 + m[4] - m[0] - m[8]) * 2;
+			out[3] = (m[2] - m[6]) / s;
+			out[0] = (m[1] + m[3]) / s;
+			out[1] = 0.25 * s;
+			out[2] = (m[5] + m[7]) / s;
+		} else {
+			const s = Math.sqrt(1.0 + m[8] - m[0] - m[4]) * 2;
+			out[3] = (m[3] - m[1]) / s;
+			out[0] = (m[2] + m[6]) / s;
+			out[1] = (m[5] + m[7]) / s;
+			out[2] = 0.25 * s;
+		}
+		MeshComponent.normalizeQuat(out);
+		return out;
+	}
+
+	private static decomposeMatrix(matrix: Float32Array | number[]): { t: Float32Array; r: Float32Array; s: Float32Array } {
+		const m = matrix instanceof Float32Array ? matrix : Float32Array.from(matrix);
+		const t = new Float32Array([m[12], m[13], m[14]]);
+		let sx = Math.hypot(m[0], m[1], m[2]);
+		let sy = Math.hypot(m[4], m[5], m[6]);
+		let sz = Math.hypot(m[8], m[9], m[10]);
+		if (sx === 0) sx = 1;
+		if (sy === 0) sy = 1;
+		if (sz === 0) sz = 1;
+		// Detect negative scale using determinant
+		const det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) + m[8] * (m[1] * m[6] - m[5] * m[2]);
+		if (det < 0) sz = -sz;
+		const invSx = 1 / sx;
+		const invSy = 1 / sy;
+		const invSz = 1 / sz;
+		const rot = new Float32Array(9);
+		rot[0] = m[0] * invSx; rot[1] = m[1] * invSx; rot[2] = m[2] * invSx;
+		rot[3] = m[4] * invSy; rot[4] = m[5] * invSy; rot[5] = m[6] * invSy;
+		rot[6] = m[8] * invSz; rot[7] = m[9] * invSz; rot[8] = m[10] * invSz;
+		const r = MeshComponent.rotationMatrixToQuaternion(rot);
+		const s = new Float32Array([sx, sy, sz]);
+		return { t, r, s };
+	}
+
+	private static decomposeNode(node: GLTFNode): { t: Float32Array; r: Float32Array; s: Float32Array } {
+		if (node.matrix) return MeshComponent.decomposeMatrix(node.matrix);
+		const t = new Float32Array(node.translation ?? [0, 0, 0]);
+		const r = new Float32Array(node.rotation ?? [0, 0, 0, 1]);
+		MeshComponent.normalizeQuat(r);
+		const s = new Float32Array(node.scale ?? [1, 1, 1]);
+		return { t, r, s };
 	}
 
 	/** Apply lightweight material overrides for all instances of a GLTF mesh index and persist the override. */
@@ -470,6 +1051,17 @@ export class MeshComponent extends Component {
 			const joints = (inst.skinIndex !== undefined && inst.nodeIndex !== undefined)
 				? this.computeSkinMatrices(inst.skinIndex, inst.nodeIndex, nodeWorld)
 				: undefined;
+			if (inst.nodeIndex !== undefined) {
+				const weights = this.poseWeights[inst.nodeIndex];
+				if (weights) {
+					let target = inst.morphWeights;
+					if (!target || target.length !== weights.length) {
+						target = new Array(weights.length).fill(0);
+					}
+					for (let i = 0; i < weights.length; i++) target[i] = weights[i];
+					inst.morphWeights = target;
+				}
+			}
 			out.push({ mesh: inst.mesh, matrix: world, jointMatrices: joints, morphWeights: inst.morphWeights, receiveShadow });
 		}
 		return out;
@@ -532,8 +1124,16 @@ export class MeshComponent extends Component {
 			if (Object.keys(map).length) runtime.nodes = map;
 		}
 
-		if (this.animationTime !== undefined) {
-			runtime.anim = { time: this.animationTime ?? 0, loop: this.animationLoop };
+		const animState: RuntimeAnim = {
+			rootMotionNode: this._rootMotionNode,
+			autoResetPose: this._autoResetPose,
+		};
+		if (this._currentClip) animState.current = this.clipStateToRuntime(this._currentClip);
+		if (this._previousClip) animState.previous = this.clipStateToRuntime(this._previousClip);
+		const hasActiveAnim = !!(animState.current || animState.previous);
+		const nonDefaultConfig = animState.rootMotionNode !== 0 || animState.autoResetPose !== true;
+		if (hasActiveAnim || nonDefaultConfig) {
+			runtime.anim = animState;
 		}
 		return { _runtime: runtime };
 	}
@@ -565,15 +1165,8 @@ export class MeshComponent extends Component {
 		if (!model) return;
 
 		this.model = model;
-		this.buildInstances();
-		if (rt?.anim) {
-			if (rt.anim.time !== undefined) this.animationTime = rt.anim.time;
-			if (rt.anim.loop !== undefined) this.animationLoop = !!rt.anim.loop;
-		}
-
 		if (rt?.nodes && this.model?.nodes) {
 			const { toIndex } = MeshComponent.buildNodeKeyMap(this.model);
-			let anyDirty = false;
 			for (const [k, ns] of Object.entries(rt.nodes)) {
 				const idx = toIndex(k);
 				if (idx === undefined) continue;
@@ -583,22 +1176,18 @@ export class MeshComponent extends Component {
 					if (ns.trs.r) node.rotation = [...ns.trs.r] as vec4arr;
 					if (ns.trs.s) node.scale = [...ns.trs.s] as vec3arr;
 					node.matrix = undefined;
-					anyDirty = true;
 				}
-				if (ns.weights) {
-					node.weights = [...(ns.weights)];
-					for (const inst of this.instances) if (inst.nodeIndex === idx) inst.morphWeights = node.weights;
-				}
+				if (ns.weights) node.weights = [...ns.weights];
 				if (ns.visible !== undefined) node.visible = !!ns.visible;
 			}
-			if (anyDirty) {
-				for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
-				this.markAllSkinsDirty();
-				if (this.model.scenes && this.model.scenes.length > 0) {
-				const scene = this.model.scenes[this.model.scene ?? 0];
-				if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);
-				}
-			}
+		}
+
+		this.buildInstances();
+		this.restoreAnimationRuntime(rt?.anim);
+		if (!rt?.anim) {
+			this._currentClip = undefined;
+			this._previousClip = undefined;
+			this._rootMotionDelta[0] = 0; this._rootMotionDelta[1] = 0; this._rootMotionDelta[2] = 0;
 		}
 
 		this.applyMaterialOverrides();

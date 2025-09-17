@@ -137,8 +137,9 @@ export function createTestromModule() {
 			const cam2 = new CameraObject({ id: 'cam2' });
 			cam2.camera.setAspect(world.gamewidth / world.gameheight);
 
-			world.spawn(cam1, V3.of(-60, 48, 120));
-			cam1.camera.screenLook(1.7687161091476518, -1.418966871448069, -2.6349415504373304);
+			world.spawn(cam1, V3.of(0, 0, 0));
+			// world.spawn(cam1, V3.of(-60, 48, 120));
+			// cam1.camera.screenLook(1.7687161091476518, -1.418966871448069, -2.6349415504373304);
 			world.spawn(cam2, V3.of(5, 12, 27));
 			world.activeCameraId = cam1.id;
 
