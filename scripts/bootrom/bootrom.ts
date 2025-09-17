@@ -1,5 +1,4 @@
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
-import { BinaryCompressor } from '../../src/bmsx/serializer/bincompressor';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
 
@@ -212,8 +211,10 @@ export const bootrom = {
 						romlabel_bloburl = ziprom_and_label.romlabel;
 						replaceBMSXImgWithRomLabel();
 					}
-					const compressed = new Uint8Array(ziprom_and_label.zipped_rom);
-					return BinaryCompressor.decompressBinary(compressed).buffer;
+					// const compressed = new Uint8Array(ziprom_and_label.zipped_rom);
+					// return BinaryCompressor.decompressBinary(compressed).buffer;
+					// @ts-ignore
+					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
 				.then(rom => loadResources(rom))
 				.then((loadResult: any) => {

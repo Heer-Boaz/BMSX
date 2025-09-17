@@ -1,5 +1,5 @@
 import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, color_arr } from '../../src/bmsx/rompack/rompack';
-import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
+import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 
 export async function loadImage(url: string): Promise<ImageBitmap> {
@@ -281,33 +281,6 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
 	const obj = decodeBinary(new Uint8Array(buffer), { zeroCopyBin: true });
 
-	function ensureAlignedView(u8: Uint8Array, alignment: number): Uint8Array {
-		if ((u8.byteLength % alignment) !== 0) {
-			throw new Error(`loadModelFromBuffer: byteLength ${u8.byteLength} not divisible by ${alignment}`);
-		}
-		if ((u8.byteOffset % alignment) === 0) return u8;
-		const copy = u8.slice();
-		if ((copy.byteOffset % alignment) !== 0) {
-			throw new Error('loadModelFromBuffer: unable to align view');
-		}
-		return copy;
-	}
-
-	function typedArrayFromBytes<T extends ArrayBufferView>(u8: Uint8Array, ctor: { new(buffer: ArrayBufferLike, byteOffset: number, length?: number): T; BYTES_PER_ELEMENT: number }): T {
-		const alignment = ctor.BYTES_PER_ELEMENT;
-		const aligned = ensureAlignedView(u8, alignment);
-		return new ctor(aligned.buffer, aligned.byteOffset, aligned.byteLength / alignment);
-	}
-
-	function toF32(v: any): Float32Array | undefined {
-		if (v === undefined || v === null) return undefined;
-		if (ArrayBuffer.isView(v)) {
-			const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-			return typedArrayFromBytes(u8, Float32Array);
-		}
-		if (Array.isArray(v)) return new Float32Array(v);
-		return undefined;
-	}
 	function toIndices(v: any, componentType?: number): Uint8Array | Uint16Array | Uint32Array | undefined {
 		if (v === undefined || v === null) return undefined;
 		if (ArrayBuffer.isView(v)) {
@@ -603,14 +576,5 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 
 		default:
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
-	}
-}
-
-export function decodeuint8arr(to_decode: Uint8Array): string {
-	const decoder = new TextDecoder('utf-8', { fatal: true });
-	try {
-		return decoder.decode(to_decode);
-	} catch (err) {
-		throw err;
 	}
 }

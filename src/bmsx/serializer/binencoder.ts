@@ -85,6 +85,39 @@ export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
 	return writer.finish();
 }
 
+export function decodeuint8arr(to_decode: Uint8Array): string {
+	const decoder = new TextDecoder('utf-8', { fatal: true });
+	return decoder.decode(to_decode);
+}
+
+export function typedArrayFromBytes<T extends ArrayBufferView>(u8: Uint8Array, ctor: { new(buffer: ArrayBufferLike, byteOffset: number, length?: number): T; BYTES_PER_ELEMENT: number; }): T {
+	function ensureAlignedView(u8: Uint8Array, alignment: number): Uint8Array {
+		if ((u8.byteLength % alignment) !== 0) {
+			throw new Error(`loadModelFromBuffer: byteLength ${u8.byteLength} not divisible by ${alignment}`);
+		}
+		if ((u8.byteOffset % alignment) === 0) return u8;
+		const copy = u8.slice();
+		if ((copy.byteOffset % alignment) !== 0) {
+			throw new Error('loadModelFromBuffer: unable to align view');
+		}
+		return copy;
+	}
+
+	const alignment = ctor.BYTES_PER_ELEMENT;
+	const aligned = ensureAlignedView(u8, alignment);
+	return new ctor(aligned.buffer, aligned.byteOffset, aligned.byteLength / alignment);
+}
+
+export function toF32(v: any): Float32Array | undefined {
+	if (v === undefined || v === null) return undefined;
+	if (ArrayBuffer.isView(v)) {
+		const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+		return typedArrayFromBytes(u8, Float32Array);
+	}
+	if (Array.isArray(v)) return new Float32Array(v);
+	return undefined;
+}
+
 class BinWriter {
 	private static readonly CACHE_MAX = 8192;
 	private static readonly textEncoder = new TextEncoder();
@@ -365,50 +398,50 @@ export function decodeBinary(buf: Uint8Array, opts: DecodeOptions = {}) {
 		try {
 			const tag = readUint8();
 			switch (tag) {
-			case Tag.Null: return null;
-			case Tag.True: return true;
-			case Tag.False: return false;
-			case Tag.F64: { need(8); const v = dv.getFloat64(offset, true); offset += 8; return v; }
-			case Tag.Str: return readString();
-			case Tag.Arr: {
-				const len = readVarUint();
-				if (len > maxContainerEntries) throw new Error(`decodeBinary: array too large (${len}/${maxContainerEntries})`);
-				const arr = new Array(len);
-				for (let i = 0; i < len; i++) arr[i] = read();
-				return arr;
-			}
-			case Tag.Ref: { const ref = readVarUint(); return { r: ref }; }
-			case Tag.Obj: {
-				const len = readVarUint();
-				if (len > maxContainerEntries) throw new Error(`decodeBinary: object too large (${len}/${maxContainerEntries})`);
-				const obj: Record<string, any> = {};
-				for (let i = 0; i < len; i++) {
-					const propId = readVarUint();
-					if (propId >= propNames.length) throw new Error(`decodeBinary: bad prop id ${propId}/${propNames.length}`);
-					obj[propNames[propId]] = read();
+				case Tag.Null: return null;
+				case Tag.True: return true;
+				case Tag.False: return false;
+				case Tag.F64: { need(8); const v = dv.getFloat64(offset, true); offset += 8; return v; }
+				case Tag.Str: return readString();
+				case Tag.Arr: {
+					const len = readVarUint();
+					if (len > maxContainerEntries) throw new Error(`decodeBinary: array too large (${len}/${maxContainerEntries})`);
+					const arr = new Array(len);
+					for (let i = 0; i < len; i++) arr[i] = read();
+					return arr;
 				}
-				return obj;
+				case Tag.Ref: { const ref = readVarUint(); return { r: ref }; }
+				case Tag.Obj: {
+					const len = readVarUint();
+					if (len > maxContainerEntries) throw new Error(`decodeBinary: object too large (${len}/${maxContainerEntries})`);
+					const obj: Record<string, any> = {};
+					for (let i = 0; i < len; i++) {
+						const propId = readVarUint();
+						if (propId >= propNames.length) throw new Error(`decodeBinary: bad prop id ${propId}/${propNames.length}`);
+						obj[propNames[propId]] = read();
+					}
+					return obj;
+				}
+				case Tag.Bin: {
+					const len = readVarUint();
+					need(len);
+					const start = offset;
+					offset += len;
+					const view = buf.subarray(start, offset);
+					return zeroCopyBin ? view : view.slice();
+				}
+				case Tag.Int: return readVarIntSigned();
+				case Tag.F32: { need(4); const v = dv.getFloat32(offset, true); offset += 4; return v; }
+				case Tag.Set: {
+					const len = readVarUint();
+					if (len > maxContainerEntries) throw new Error(`decodeBinary: set too large (${len}/${maxContainerEntries})`);
+					const set = new Set<any>();
+					for (let i = 0; i < len; i++) set.add(read());
+					return set;
+				}
+				default:
+					throw new Error(`Unknown tag in decodeBinary: ${tag}`);
 			}
-			case Tag.Bin: {
-				const len = readVarUint();
-				need(len);
-				const start = offset;
-				offset += len;
-				const view = buf.subarray(start, offset);
-				return zeroCopyBin ? view : view.slice();
-			}
-			case Tag.Int: return readVarIntSigned();
-			case Tag.F32: { need(4); const v = dv.getFloat32(offset, true); offset += 4; return v; }
-			case Tag.Set: {
-				const len = readVarUint();
-				if (len > maxContainerEntries) throw new Error(`decodeBinary: set too large (${len}/${maxContainerEntries})`);
-				const set = new Set<any>();
-				for (let i = 0; i < len; i++) set.add(read());
-				return set;
-			}
-			default:
-				throw new Error(`Unknown tag in decodeBinary: ${tag}`);
-		}
 		} finally {
 			depth--;
 		}
