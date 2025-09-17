@@ -13,7 +13,7 @@ type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; 
 type NodeKey = string; // "s<scene>/<i0>/<i1>/.../<ik>" (or detached)
 type RuntimeNodeTRS = { t?: vec3arr; r?: vec4arr; s?: vec3arr };
 type RuntimeNodeState = { trs?: RuntimeNodeTRS; weights?: number[]; visible?: boolean };
-type RuntimeAnim = { time?: number; speed?: number; activeClip?: string | number; loop?: boolean };
+type RuntimeAnim = { time?: number; speed?: number; activeClip?: asset_id; loop?: boolean };
 type PersistedMatTex = Partial<{ albedo: number; normal: number; metallicRoughness: number; color: color_arr; metallicFactor: number; roughnessFactor: number }>;
 type MeshRuntime = { version: 1; model_id?: asset_id; nodes?: Record<NodeKey, RuntimeNodeState>; anim?: RuntimeAnim };
 

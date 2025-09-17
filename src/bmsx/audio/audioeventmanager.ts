@@ -10,7 +10,7 @@ import type {
 	Identifier,
 	RegisterablePersistent,
 } from '../rompack/rompack';
-import type { ModulationParams, RandomModulationParams } from './soundmaster';
+import type { ActiveVoiceInfo, ModulationParams, RandomModulationParams, SoundMasterPlayRequest } from './soundmaster';
 
 export interface AudioEventPayload {
 	actorId?: Identifier;
@@ -83,7 +83,7 @@ export interface MusicTransitionSpec {
 		 * - 'immediate': switch now
 		 * - 'loop': switch at next loop boundary of current track (uses audiometa.loop)
 		 * - { delayMs }: switch after delay
-		 * - { stinger, returnTo?: AudioId, returnToPrevious?: boolean }: play stinger immediately, then switch to either a specific id (returnTo) or the previously playing music (returnToPrevious). If both are provided, returnTo takes precedence.
+	 * - { stinger, returnTo?: AudioId, returnToPrevious?: boolean }: play stinger immediately, then switch to either a specific id (returnTo) or the previously playing music (returnToPrevious). Specify at most one of these follow-up targets.
 		 */
 		sync?: AudioSyncMode;
 		fadeMs?: number;
@@ -115,14 +115,17 @@ export interface AudioHandleContext {
 	name: string;
 	payload: AudioEventPayload;
 	emitter: Identifier;
-	play: (audioId: asset_id, ctx?: Partial<AudioHandleContext>) => void;
+	play: (audioId: asset_id, ctx?: Partial<AudioHandleContext>, opts?: { priority?: number }) => void;
 }
 
 export type AudioHandler = (ctx: AudioHandleContext) => boolean;
 
-export type AudioEventQueueItem = { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number, cooldownMs?: number, enqueuedAt?: number };
+export type AudioEventQueueItem = { name: string; audioId: asset_id; modulationPreset?: asset_id; modulationParams?: RandomModulationParams | ModulationParams; priority?: number; cooldownMs?: number; enqueuedAt?: number; payloadActorId?: Identifier };
 export type AudioEventQueue = AudioEventQueueItem[];
-export type AudioEventQueuePartialForDeserialization = Partial<AudioEventQueueItem>[]
+export type AudioEventQueuePartialForDeserialization = Partial<AudioEventQueueItem>[];
+
+type CompiledAudioEventRule = AudioEventRule & { __predicate: (payload: AudioEventPayload) => boolean };
+type CompiledAudioEventEntry = Omit<AudioEventMapEntry, 'rules'> & { rules: CompiledAudioEventRule[] };
 
 // Example usage
 // $.emit('combat.hit', this, { result: 'hit', material: 'barrier', weaponClass: 'heavy', actorId, targetId });
@@ -177,13 +180,19 @@ export class AudioEventManager implements RegisterablePersistent {
 		Registry.instance.register(this);
 	}
 
-	private merged: Map<string, AudioEventMapEntry> = new Map();
+	public setRandomGenerator(rand: () => number): void {
+		this.rand = rand || Math.random;
+	}
+
+	private merged: Map<string, CompiledAudioEventEntry> = new Map();
 	private lastPlayedAt = new Map<string, number>();
 	private lastRandomPickByRule = new Map<string, number>();
 	private anyListener?: EventHandler;
 	private endUnsubByType: Partial<Record<AudioType, () => void>> = {};
 	private queuesByType: Record<AudioType, AudioEventQueue> = { sfx: [], music: [], ui: [] };
 	private resumeOnNextEndByType: Record<AudioType, boolean> = { sfx: false, music: false, ui: false };
+	private rand: () => number = Math.random;
+	private weightedScratch: number[] = [];
 
 	init(maps: id2audioevent[], handlers?: AudioHandler[]): void {
 		this.handlers = handlers ?? [];
@@ -200,8 +209,8 @@ export class AudioEventManager implements RegisterablePersistent {
 		// Wiring subscription is performed via bind(bus) to centralize lifecycle
 
 		// subscribe to voice end events for sfx and ui to manage queue/pause
-		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx' as AudioType, () => this.onChannelEnded('sfx'));
-		this.endUnsubByType['ui'] = $.sndmaster.addEndedListener('ui' as AudioType, () => this.onChannelEnded('ui'));
+		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx', _info => this.onChannelEnded('sfx'));
+		this.endUnsubByType['ui'] = $.sndmaster.addEndedListener('ui', _info => this.onChannelEnded('ui'));
 
 		// Expose instance for serializer helpers
 		(globalThis as { AudioEventManagerInstance?: AudioEventManager }).AudioEventManagerInstance = this;
@@ -226,33 +235,36 @@ export class AudioEventManager implements RegisterablePersistent {
 	}
 
 	// Direct play entrypoint so game code can route through AEM (policies/awareness)
-	public playDirect(id: asset_id, options?: RandomModulationParams | ModulationParams): void {
-		const meta = $.rompack.audio[id]?.audiometa;
-		const type = (meta?.audiotype ?? 'sfx') as AudioType;
-		// For direct plays, rely on SoundMaster per-type pooling and keep music isolated.
-		switch (type) {
-			case 'music':
-				$.sndmaster.play(id, options);
-				break;
-			case 'ui':
-			case 'sfx':
-			default:
-				$.sndmaster.play(id, options);
-				break;
+	public playDirect(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
+		const request = this.toPlayRequest(options);
+		void $.sndmaster.play(id, request);
+	}
+
+	private toPlayRequest(options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): SoundMasterPlayRequest {
+		if (!options) return {};
+		if (typeof options === 'string') {
+			return { modulationPreset: options };
 		}
+		if (typeof options === 'object') {
+			const maybe = options as SoundMasterPlayRequest;
+			if ('params' in maybe || 'modulationPreset' in maybe || 'priority' in maybe) {
+				return maybe;
+			}
+		}
+		return { params: options as (RandomModulationParams | ModulationParams) };
 	}
 
 	public getQueues(): { sfx: AudioEventQueue; ui: AudioEventQueue } {
 		return {
-			sfx: this.queuesByType.sfx.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority })),
-			ui: this.queuesByType.ui.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority })),
+			sfx: this.queuesByType.sfx.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority, cooldownMs: q.cooldownMs, payloadActorId: q.payloadActorId })),
+			ui: this.queuesByType.ui.map(q => ({ name: q.name, audioId: q.audioId, modulationPreset: q.modulationPreset, modulationParams: q.modulationParams, priority: q.priority, cooldownMs: q.cooldownMs, payloadActorId: q.payloadActorId })),
 		};
 	}
 
 	public restoreQueues(qs: { sfx: AudioEventQueuePartialForDeserialization; ui: AudioEventQueuePartialForDeserialization }): void {
-		const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-		this.queuesByType.sfx = (qs.sfx || []).map(it => ({ name: it.name ?? 'restored.sfx', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, enqueuedAt: now }));
-		this.queuesByType.ui = (qs.ui || []).map(it => ({ name: it.name ?? 'restored.ui', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, enqueuedAt: now }));
+		const now = this.nowMs();
+		this.queuesByType.sfx = (qs.sfx || []).map(it => ({ name: it.name ?? 'restored.sfx', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, cooldownMs: it.cooldownMs, payloadActorId: it.payloadActorId, enqueuedAt: now }));
+		this.queuesByType.ui = (qs.ui || []).map(it => ({ name: it.name ?? 'restored.ui', audioId: it.audioId, modulationPreset: it.modulationPreset, modulationParams: it.modulationParams, priority: it.priority, cooldownMs: it.cooldownMs, payloadActorId: it.payloadActorId, enqueuedAt: now }));
 	}
 
 	addHandler(handler: AudioHandler): void {
@@ -264,7 +276,7 @@ export class AudioEventManager implements RegisterablePersistent {
 	}
 
 	dispose(): void {
-		if (this.anyListener) $.event_emitter.offAny(this.anyListener, true);
+		if (this.anyListener) EventEmitter.instance.offAny(this.anyListener, true);
 		this.handlers = [];
 		this.anyListener = undefined;
 		if (this.endUnsubByType['sfx']) this.endUnsubByType['sfx']();
@@ -294,7 +306,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		// First, check for music transitions in matching rules
 		for (let i = 0; i < entry.rules.length; i++) {
 			const r = entry.rules[i];
-			if (!this.matches(r.when, payload)) continue;
+			if (!this.ruleMatches(r, payload)) continue;
 			const d = r.do;
 			if (d && typeof d === 'object' && 'musicTransition' in d && d.musicTransition) {
 				const mt = d.musicTransition;
@@ -303,13 +315,14 @@ export class AudioEventManager implements RegisterablePersistent {
 					sync: mt.sync,
 					fadeMs: mt.fadeMs,
 					startAtLoopStart: mt.startAtLoopStart,
+					startFresh: mt.startFresh,
 				});
 				return true;
 			}
 		}
 
 		const action = this.pickAction(name, entry.rules, payload);
-		if (!action) return true;
+		if (!action) return false;
 
 		// voice policy / priority handling per channel
 		const channel = entry.channel ?? 'sfx';
@@ -322,6 +335,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		switch (policy) {
 			case 'stop':
 				$.sndmaster.stop(channel, 'all');
+				this.queuesByType[channel] = [];
 				return true;
 		}
 
@@ -330,16 +344,19 @@ export class AudioEventManager implements RegisterablePersistent {
 				case 'ignore':
 					return true;
 				case 'replace': {
-					const infos = $.sndmaster.getActiveVoiceInfosByType(channel);
+					const infos: ActiveVoiceInfo[] = $.sndmaster.getActiveVoiceInfosByType(channel);
 					let minIdx = 0; let minPr = infos[0]?.priority ?? pr; let oldestStart = infos[0]?.startedAt ?? 0;
 					for (let i = 1; i < infos.length; i++) {
 						const inf = infos[i];
-						if (inf.priority < minPr || (inf.priority === minPr && inf.startedAt < oldestStart)) { minPr = inf.priority; minIdx = i; oldestStart = inf.startedAt; }
+						if (inf.priority < minPr || (inf.priority === minPr && inf.startedAt < oldestStart)) {
+							minPr = inf.priority;
+							minIdx = i;
+							oldestStart = inf.startedAt;
+						}
 					}
 					if (pr < minPr) return true; // lower priority: drop
-					if (minIdx === 0) $.sndmaster.stop(channel, 'oldest');
-					else if (minIdx === infos.length - 1) $.sndmaster.stop(channel, 'newest');
-					else $.sndmaster.stop(channel, 'byid', infos[minIdx].id);
+					const victim = infos[minIdx];
+					if (victim) $.sndmaster.stop(channel, 'byvoice', victim.voiceId);
 					break;
 				}
 				case 'pause': {
@@ -349,29 +366,30 @@ export class AudioEventManager implements RegisterablePersistent {
 					break;
 				}
 				case 'queue': {
-					this.enqueue(channel, { name, audioId: action.audioId, modulationPreset: action.modulationPreset, priority: pr, cooldownMs: action.cooldownMs });
+					this.enqueue(channel, { name, audioId: action.audioId, modulationPreset: action.modulationPreset, priority: pr, cooldownMs: action.cooldownMs, payloadActorId: payload.actorId });
 					return true;
 				}
 			}
 		}
 
-		// set cooldown stamp only when actually playing now (not when queuing)
-		if (action.cooldownMs) {
-			const key = `${name}:${action.audioId}`;
-			const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-			const last = this.lastPlayedAt.get(key) || 0;
-			if ((now - last) < action.cooldownMs) return true;
-			this.lastPlayedAt.set(key, now);
+			// set cooldown stamp only when actually playing now (not when queuing)
+			if (action.cooldownMs) {
+				const actorKey = payload.actorId ?? 'global';
+				const key = `${name}:${actorKey}:${action.audioId}`;
+				const now = this.nowMs();
+				const last = this.lastPlayedAt.get(key) || 0;
+				if ((now - last) < action.cooldownMs) return true;
+				this.lastPlayedAt.set(key, now);
 		}
 
-		this.play(action.audioId, { payload: { modulationPreset: action.modulationPreset } });
+		this.play(action.audioId, { payload: { modulationPreset: action.modulationPreset } }, { priority: pr });
 
 		return true;
 	}
 
 	private enqueue(type: AudioType, item: AudioEventQueueItem): void {
 		const q = this.queuesByType[type];
-		q.push({ ...item, enqueuedAt: (typeof performance !== 'undefined' ? performance.now() : Date.now()) });
+		q.push({ ...item, enqueuedAt: this.nowMs() });
 	}
 
 	private onChannelEnded(type: AudioType): void {
@@ -380,7 +398,8 @@ export class AudioEventManager implements RegisterablePersistent {
 			this.resumeOnNextEndByType[type] = false;
 			const snaps = $.sndmaster.drainPausedSnapshots(type);
 			for (const s of snaps) {
-				$.sndmaster.play(s.id, { ...s.params, offset: s.offset });
+				const resumeParams: ModulationParams = { ...s.params, offset: s.offset };
+				void $.sndmaster.play(s.id, { params: resumeParams, priority: s.priority });
 			}
 			return; // Give priority to resuming before dequeuing
 		}
@@ -388,95 +407,64 @@ export class AudioEventManager implements RegisterablePersistent {
 		// Dequeue next if capacity available
 		const q = this.queuesByType[type];
 		if (q.length === 0) return;
-		const entry = this.merged.get(q[0].name);
-		const maxVoices = entry?.maxVoices ?? 1;
-		const active = $.sndmaster.activeCountByType(type);
-		if (active >= maxVoices) return;
-		const item = q.shift();
-		if (!item) return;
-		// Cooldown re-check and stamp
-		const key = `${item.name}:${item.audioId}`;
-		const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-		const last = this.lastPlayedAt.get(key) || 0;
-		const cooldownMs = item.cooldownMs ?? 0;
-		if (cooldownMs > 0 && (now - last) < cooldownMs) return; // drop silently
-		if (cooldownMs > 0) this.lastPlayedAt.set(key, now);
-
-		if (item.modulationParams) {
-			this.play(item.audioId, { payload: { modulationParams: item.modulationParams } });
-		} else {
-			this.play(item.audioId, { payload: { modulationPreset: item.modulationPreset } });
+		const now = this.nowMs();
+		while (q.length > 0) {
+			const peek = q[0];
+			if (!peek) break;
+			const entry = this.merged.get(peek.name);
+			const maxVoicesForItem = entry?.maxVoices ?? 1;
+			if ($.sndmaster.activeCountByType(type) >= maxVoicesForItem) return;
+			const item = q.shift();
+			if (!item) break;
+			const actorKey = item.payloadActorId ?? 'global';
+			const key = `${item.name}:${actorKey}:${item.audioId}`;
+			const last = this.lastPlayedAt.get(key) || 0;
+			const cooldownMs = item.cooldownMs ?? 0;
+			if (cooldownMs > 0 && (now - last) < cooldownMs) {
+				continue;
+			}
+			if (cooldownMs > 0) this.lastPlayedAt.set(key, now);
+			const req: SoundMasterPlayRequest = item.modulationParams
+				? { params: item.modulationParams, priority: item.priority }
+				: { modulationPreset: item.modulationPreset, priority: item.priority };
+			void $.sndmaster.play(item.audioId, req);
 		}
 	}
 
-	private play(audioId: asset_id, ctx?: Partial<AudioHandleContext>): void {
-		const presetKey = ctx?.payload?.modulationPreset as string | number | undefined;
+	private play(audioId: asset_id, ctx?: Partial<AudioHandleContext>, opts?: { priority?: number }): void {
+		const presetKey = ctx?.payload?.modulationPreset;
 		const params = ctx?.payload?.modulationParams as (RandomModulationParams | ModulationParams | undefined);
+		const request: SoundMasterPlayRequest = {};
+		if (opts?.priority !== undefined) request.priority = opts.priority;
 		if (params) {
-			$.playAudio(audioId, params);
+			request.params = params;
 		} else if (presetKey !== undefined) {
-			$.playAudio(audioId, $.rompack.data[presetKey]);
-		} else {
-			$.playAudio(audioId);
+			request.modulationPreset = presetKey;
 		}
+		void $.sndmaster.play(audioId, request);
 	}
 
-	private pickAction(eventName: string, rules: AudioEventRule[], payload: AudioEventPayload): AudioAction | undefined {
+	private nowMs(): number {
+		const audioTime = $.sndmaster.getCurrentTimeSec();
+		if (!Number.isNaN(audioTime)) return audioTime * 1000;
+		return (typeof performance !== 'undefined' ? performance.now() : Date.now());
+	}
+
+	private pickAction(eventName: string, rules: CompiledAudioEventRule[], payload: AudioEventPayload): AudioAction | undefined {
 		for (let i = 0; i < rules.length; i++) {
 			const r = rules[i];
-			if (!this.matches(r.when, payload)) continue;
-			const resolved = this.resolveActionSpec(eventName, i, r.do);
+			if (!this.ruleMatches(r, payload)) continue;
+			const resolved = this.resolveActionSpec(eventName, i, r.do, payload);
 			if (resolved) return resolved;
 		}
 		return undefined;
 	}
 
-	private matches(m: AudioEventRule['when'], p: AudioEventPayload): boolean {
-		if (!m) return true;
-		const rec = p as Record<string, unknown>;
-
-		// Evaluate leaf constraints for this node
-		let leafOk = true;
-		if (m.equals) {
-			for (const k in m.equals) {
-				if (rec[k] !== m.equals[k]) { leafOk = false; break; }
-			}
+	private ruleMatches(rule: CompiledAudioEventRule, payload: AudioEventPayload): boolean {
+		if (!rule.__predicate) {
+			rule.__predicate = this.compileMatcher(rule.when);
 		}
-		if (!leafOk) return false;
-
-		const anyOf = m.anyOf || m['in'];
-		if (anyOf) {
-			for (const k in anyOf) {
-				const list = anyOf[k];
-				if (!Array.isArray(list) || !list.includes(rec[k])) { leafOk = false; break; }
-			}
-		}
-		if (!leafOk) return false;
-
-		if (m.hasTag && m.hasTag.length > 0) {
-			const tagsVal = rec['tags'];
-			if (!Array.isArray(tagsVal)) return false;
-			const tags = tagsVal as string[];
-			for (const t of m.hasTag) if (!tags.includes(t)) return false;
-		}
-
-		// Logical combinators
-		if (m.and && m.and.length > 0) {
-			for (const sub of m.and) if (!this.matches(sub, p)) return false;
-		}
-
-		if (m.not) {
-			if (this.matches(m.not, p)) return false;
-		}
-
-		if (m.or && m.or.length > 0) {
-			// If any OR child matches, accept; otherwise rely on leafOk
-			let any = false;
-			for (const sub of m.or) { if (this.matches(sub, p)) { any = true; break; } }
-			if (!any) return false;
-		}
-
-		return true;
+		return rule.__predicate(payload);
 	}
 
 	private isOneOfSpec(spec: AudioActionSpec): spec is AudioActionOneOfSpec {
@@ -484,7 +472,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		return typeof maybe === 'object' && maybe !== null && 'oneOf' in (maybe as Record<string, unknown>) && Array.isArray((maybe as AudioActionOneOfSpec).oneOf);
 	}
 
-	private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec): AudioAction | undefined {
+	private resolveActionSpec(eventName: string, ruleIndex: number, spec: AudioActionSpec, payload: AudioEventPayload): AudioAction | undefined {
 		if (!this.isOneOfSpec(spec)) {
 			return spec as AudioAction;
 		}
@@ -509,7 +497,8 @@ export class AudioEventManager implements RegisterablePersistent {
 		const hasWeights = weights.some(w => w !== 1);
 		const pickMode = spec.pick ?? (hasWeights ? 'weighted' : 'uniform');
 
-		const ruleKey = `${eventName}#${ruleIndex}`;
+		const actorKey = payload.actorId ?? 'global';
+		const ruleKey = `${eventName}#${ruleIndex}#${actorKey}`;
 		const lastIdx = this.lastRandomPickByRule.get(ruleKey);
 
 		let idx = 0;
@@ -528,12 +517,74 @@ export class AudioEventManager implements RegisterablePersistent {
 		return actions[idx];
 	}
 
+	private compileRules(rules?: AudioEventRule[]): CompiledAudioEventRule[] {
+		if (!rules || rules.length === 0) return [];
+		return rules.map(rule => ({ ...rule, __predicate: this.compileMatcher(rule.when) }));
+	}
+
+	private compileMatcher(m?: AudioCaseMatcher): (payload: AudioEventPayload) => boolean {
+		if (!m) return () => true;
+		const equalsEntries = m.equals ? Object.entries(m.equals) : undefined;
+		const anyOfEntries: Array<[string, unknown[]]> = [];
+		if (m.anyOf) {
+			for (const key of Object.keys(m.anyOf)) {
+				anyOfEntries.push([key, m.anyOf[key]]);
+			}
+		}
+		if (m.in) {
+			for (const key of Object.keys(m.in)) {
+				anyOfEntries.push([key, m.in[key]]);
+			}
+		}
+		const requiredTags = m.hasTag ? [...m.hasTag] : undefined;
+		const andPredicates = m.and ? m.and.map(sub => this.compileMatcher(sub)) : undefined;
+		const orPredicates = m.or ? m.or.map(sub => this.compileMatcher(sub)) : undefined;
+		const notPredicate = m.not ? this.compileMatcher(m.not) : undefined;
+
+		return (payload: AudioEventPayload) => {
+			const rec = payload as Record<string, unknown>;
+			if (equalsEntries) {
+				for (const [key, value] of equalsEntries) {
+					if (rec[key] !== value) return false;
+				}
+			}
+			if (anyOfEntries.length > 0) {
+				for (const [key, list] of anyOfEntries) {
+					if (!Array.isArray(list)) return false;
+					const val = rec[key];
+					if (Array.isArray(val)) {
+						if (!val.some(item => list.includes(item))) return false;
+					} else if (!list.includes(val)) {
+						return false;
+					}
+				}
+			}
+			if (requiredTags && requiredTags.length > 0) {
+				const tagsVal = rec['tags'];
+				if (!Array.isArray(tagsVal)) return false;
+				for (const tag of requiredTags) if (!tagsVal.includes(tag)) return false;
+			}
+			if (andPredicates) {
+				for (const predicate of andPredicates) if (!predicate(payload)) return false;
+			}
+			if (notPredicate && notPredicate(payload)) return false;
+			if (orPredicates && orPredicates.length > 0) {
+				let any = false;
+				for (const predicate of orPredicates) {
+					if (predicate(payload)) { any = true; break; }
+				}
+				if (!any) return false;
+			}
+			return true;
+		};
+	}
+
 	private pickUniformIndex(n: number, avoidIndex?: number): number {
 		if (n <= 1) return 0;
-		let idx = Math.floor(Math.random() * n);
+		let idx = Math.floor(this.rand() * n);
 		if (avoidIndex != null && n > 1 && idx === avoidIndex) {
 			// pick a different index
-			idx = (idx + 1 + Math.floor(Math.random() * (n - 1))) % n;
+			idx = (idx + 1 + Math.floor(this.rand() * (n - 1))) % n;
 		}
 		return idx;
 	}
@@ -543,7 +594,8 @@ export class AudioEventManager implements RegisterablePersistent {
 		if (n <= 1) return 0;
 		// If avoiding immediate repeat, temporarily zero out the avoided index
 		let total = 0;
-		const ws = new Array(n);
+		const ws = this.weightedScratch;
+		if (ws.length < n) ws.length = n;
 		for (let i = 0; i < n; i++) {
 			const w = Math.max(0, weights[i] ?? 0);
 			const wAdj = (avoidIndex != null && i === avoidIndex && n > 1) ? 0 : w;
@@ -553,7 +605,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		if (total <= 0) {
 			return this.pickUniformIndex(n, avoidIndex);
 		}
-		let r = Math.random() * total;
+		let r = this.rand() * total;
 		for (let i = 0; i < n; i++) {
 			r -= ws[i];
 			if (r <= 0) return i;
@@ -561,20 +613,21 @@ export class AudioEventManager implements RegisterablePersistent {
 		return n - 1;
 	}
 
-	private mergeMaps(maps: id2audioevent[]): Map<string, AudioEventMapEntry> {
-		const out = new Map<string, AudioEventMapEntry>();
+	private mergeMaps(maps: id2audioevent[]): Map<string, CompiledAudioEventEntry> {
+		const out = new Map<string, CompiledAudioEventEntry>();
 
 		// Helper to add or merge a single event entry by name
 		const addOrMerge = (eventName: string, entry: AudioEventMapEntry) => {
 			if (!eventName) return; // guard against malformed input
 			const cur = out.get(eventName);
+			const { rules: entryRules, ...rest } = entry;
+			const compiledRules = this.compileRules(entryRules);
+			const restEntry = rest as Omit<AudioEventMapEntry, 'rules'>;
 			if (!cur) {
-				// Ensure rules is a fresh array
-				out.set(eventName, { ...entry, name: eventName, rules: entry.rules ? entry.rules.slice() : [] });
+				out.set(eventName, { ...restEntry, name: eventName, rules: compiledRules });
 			} else {
-				// ROM overlay rules prepend; entry props override cur
-				const mergedRules = (entry.rules ? entry.rules : []).concat(cur.rules || []);
-				out.set(eventName, { ...cur, ...entry, name: eventName, rules: mergedRules });
+				// ROM overlay rules prepend; entry props override cur (except rules)
+				out.set(eventName, { ...cur, ...restEntry, name: eventName, rules: compiledRules.concat(cur.rules) });
 			}
 		};
 

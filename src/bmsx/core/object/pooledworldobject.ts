@@ -24,7 +24,7 @@ export abstract class PooledWorldObject extends WorldObject {
 
 	/** Zorgt dat het object niet nog in de model space hangt voordat we hem opnieuw gebruiken. */
 	protected prepareForReuse(): void {
-		// Fast-path: directly find the current space and exile once without disposing
+		// Fast-path: directly find the space in which the object currently resides and exile once without disposing
 		const sid = $.world.objToSpaceMap.get(this.id);
 		if (!sid) return; // not attached to any space
 		const sp = $.world.getSpaceOfObject(sid);

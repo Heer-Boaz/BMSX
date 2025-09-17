@@ -485,7 +485,7 @@ async function main() {
 	async function updateTable(filter: string = undefined) {
 		filteredAssetList = getFilteredAssets(assetList, filter);
 		const tableRows = filteredAssetList.map(asset => [
-			asset.resname ? String(asset.resname) : '',
+			asset.resid ? String(asset.resid) : '',
 			asset.resid ? String(asset.resid) : '',
 			asset.type ? String(asset.type) : '',
 			(() => {
@@ -526,7 +526,7 @@ async function main() {
 			top: 'center', left: 'center',
 			width: '80%', height: '80%',
 			border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
-			label: `Asset - Name: ${selected.resname} | ID: ${selected.resid} | Type: ${selected.type}`,
+			label: `Asset - Name: ${selected.resid} | ID: ${selected.resid} | Type: ${selected.type}`,
 			tags: true, scrollable: false, alwaysScroll: false, keys: true, mouse: true, draggable: true,
 			vi: true, input: true, // Enable vi-style keybindings
 			// scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
@@ -544,7 +544,7 @@ async function main() {
 			case 'image':
 				if (imgmeta.atlassed && imgmeta.texcoords) {
 					const atlasName = generateAtlasName(imgmeta.atlasid ?? 0);
-					const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'atlas');
+					const atlasAsset = assetList.find(a => a.resid === atlasName && a.type === 'atlas');
 					if (atlasAsset) {
 						const atlasBuf = atlasAsset.buffer instanceof Uint8Array
 							? Buffer.from(atlasAsset.buffer)

@@ -1,0 +1,224 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://bmsx.dev/schemas/audio-events.schema.json",
+	"title": "BMSX Audio Event Map",
+	"description": "Schema describing audio event maps consumed by the BMSX engine.",
+	"type": "object",
+	"properties": {
+		"events": {
+			"type": "object",
+			"additionalProperties": { "$ref": "#/definitions/audioEventEntry" }
+		}
+	},
+	"additionalProperties": { "$ref": "#/definitions/audioEventEntry" },
+	"definitions": {
+		"assetId": {
+			"description": "Asset identifier (string).",
+			"type": "string"
+		},
+		"audioEventEntry": {
+			"type": "object",
+			"description": "Top-level audio event entry.",
+			"properties": {
+				"name": { "type": "string" },
+        "channel": { "type": "string", "enum": ["sfx", "music", "ui"] },
+				"policy": {
+					"type": "string",
+					"enum": ["replace", "ignore", "queue", "stop", "pause"]
+				},
+				"maxVoices": { "type": "integer", "minimum": 1 },
+					"rules": {
+						"type": "array",
+						"items": { "$ref": "#/definitions/audioEventRule" }
+					}
+			},
+			"required": ["rules"],
+			"additionalProperties": false,
+			"allOf": [
+				{
+					"if": {
+						"properties": {
+							"rules": {
+								"type": "array",
+						"contains": {
+							"type": "object",
+							"required": ["do"],
+							"properties": {
+								"do": {
+									"type": "object",
+									"required": ["musicTransition"],
+									"properties": {
+										"musicTransition": { "type": "object" }
+									}
+								}
+							}
+						}
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"channel": { "const": "music" }
+						},
+						"required": ["channel"]
+					}
+				}
+			]
+		},
+		"audioEventRule": {
+			"type": "object",
+      "properties": {
+        "when": { "$ref": "#/definitions/audioCaseMatcher" },
+        "do": { "$ref": "#/definitions/audioActionSpec" }
+      },
+      "required": ["do"],
+      "additionalProperties": false
+		},
+		"audioCaseMatcher": {
+			"type": "object",
+			"properties": {
+				"equals": { "type": "object", "additionalProperties": true },
+				"anyOf": {
+					"type": "object",
+					"additionalProperties": {
+						"$ref": "#/definitions/stringArray"
+					}
+				},
+				"in": {
+					"type": "object",
+					"additionalProperties": {
+						"$ref": "#/definitions/stringArray"
+					}
+				},
+				"hasTag": { "$ref": "#/definitions/stringArray" },
+				"and": {
+					"type": "array",
+					"items": { "$ref": "#/definitions/audioCaseMatcher" }
+				},
+				"or": {
+					"type": "array",
+					"items": { "$ref": "#/definitions/audioCaseMatcher" }
+				},
+				"not": { "$ref": "#/definitions/audioCaseMatcher" }
+			},
+			"additionalProperties": true
+		},
+		"audioActionSpec": {
+			"oneOf": [
+				{ "$ref": "#/definitions/audioAction" },
+				{ "$ref": "#/definitions/audioActionOneOfSpec" },
+				{ "$ref": "#/definitions/musicTransitionSpec" }
+			]
+		},
+		"audioAction": {
+			"type": "object",
+			"properties": {
+				"audioId": { "$ref": "#/definitions/assetId" },
+				"modulationPreset": { "type": "string" },
+				"priority": { "type": "number", "minimum": 0 },
+				"cooldownMs": { "type": "number", "minimum": 0 }
+			},
+			"required": ["audioId"],
+			"additionalProperties": false
+		},
+		"audioActionOneOfSpec": {
+			"type": "object",
+			"properties": {
+				"oneOf": {
+					"type": "array",
+					"items": {
+						"anyOf": [
+							{ "$ref": "#/definitions/assetId" },
+							{
+								"type": "object",
+								"properties": {
+									"audioId": {
+										"$ref": "#/definitions/assetId"
+									},
+									"modulationPreset": { "type": "string" },
+									"priority": {
+										"type": "number",
+										"minimum": 0
+									},
+									"cooldownMs": {
+										"type": "number",
+										"minimum": 0
+									},
+									"weight": { "type": "number", "minimum": 0 }
+								},
+								"required": ["audioId"],
+								"additionalProperties": false
+							}
+						]
+					}
+				},
+				"pick": { "type": "string", "enum": ["uniform", "weighted"] },
+				"avoidRepeat": { "type": "boolean" }
+			},
+			"required": ["oneOf"],
+			"additionalProperties": false
+		},
+		"musicTransitionSpec": {
+			"type": "object",
+			"properties": {
+				"musicTransition": {
+					"type": "object",
+					"properties": {
+						"audioId": { "$ref": "#/definitions/assetId" },
+						"sync": { "$ref": "#/definitions/musicTransitionSync" },
+						"fadeMs": { "type": "number", "minimum": 0 },
+						"startAtLoopStart": { "type": "boolean" },
+						"startFresh": { "type": "boolean" }
+					},
+					"additionalProperties": false,
+					"anyOf": [
+						{ "required": ["audioId"] },
+						{
+							"required": ["sync"],
+							"properties": {
+								"sync": { "$ref": "#/definitions/stingerSync" }
+							}
+						}
+					]
+				}
+			},
+			"required": ["musicTransition"],
+			"additionalProperties": false
+		},
+		"musicTransitionSync": {
+			"oneOf": [
+				{ "type": "string", "enum": ["immediate", "loop"] },
+				{
+					"type": "object",
+					"properties": {
+						"delayMs": { "type": "number", "minimum": 0 }
+					},
+					"required": ["delayMs"],
+					"additionalProperties": false
+				},
+				{ "$ref": "#/definitions/stingerSync" }
+			]
+		},
+		"stingerSync": {
+			"type": "object",
+			"properties": {
+				"stinger": { "$ref": "#/definitions/assetId" },
+				"returnTo": { "$ref": "#/definitions/assetId" },
+				"returnToPrevious": { "type": "boolean" }
+			},
+			"required": ["stinger"],
+			"additionalProperties": false,
+			"allOf": [
+				{
+					"not": {
+						"required": ["returnTo", "returnToPrevious"]
+					}
+				}
+			]
+		},
+		"stringArray": {
+			"type": "array",
+			"items": { "type": "string" }
+		}
+	}
+}

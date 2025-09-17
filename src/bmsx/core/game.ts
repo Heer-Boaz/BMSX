@@ -1,6 +1,6 @@
 ﻿import { AudioEventManager } from '../audio/audioeventmanager';
 import { PSG } from "../audio/psg";
-import { RandomModulationParams, SoundMaster } from "../audio/soundmaster";
+import { ModulationParams, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
 import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
@@ -205,7 +205,7 @@ export class Game {
 		renderGlyphs(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
-	public playAudio(id: asset_id, options: RandomModulationParams = {}): void {
+	public playAudio(id: asset_id, options?: RandomModulationParams | ModulationParams | string | SoundMasterPlayRequest): void {
 		// Route through AudioEventManager so policies and per-channel handling stay consistent
 		this.aem.playDirect(id, options);
 	}

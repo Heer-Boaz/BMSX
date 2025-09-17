@@ -1,4 +1,4 @@
-import { $, Component, WorldObjectEventPayloads, Identifier, RandomModulationParams, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions } from 'bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions, type RandomModulationParams } from 'bmsx';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
@@ -509,6 +509,8 @@ export class Eila extends Fighter {
 					ticks2advance_tape: 300,
 					entering_state(this: Eila) {
 						$.playAudio(AudioId.stuk, $.rompack.data['modulationparams'].attacksfx as RandomModulationParams);
+						// $.playAudio(AudioId.stuk, 'modulationparams.attacksfx');
+
 						this.imgid = BitmapId.eila_humiliated;
 					},
 					tape_next(this: Eila) {

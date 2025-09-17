@@ -430,7 +430,7 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, opti
 		const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
 		if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
 		const coords = imgmeta.texcoords;
-		if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resname}'`);
+		if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
 
 		const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
 		const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
@@ -460,7 +460,7 @@ async function getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, opti
 		});
 	}
 
-	if (!source) throw new Error(`Image asset '${romImgAsset.resname}' has no image data`);
+	if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
 	return source;
 }
 
@@ -494,7 +494,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				},
 			};
 			romResult.img[res.resid] = imgAsset;
-			romResult.img[res.resname] = imgAsset;
+			romResult.img[res.resid] = imgAsset;
 			break;
 		case 'audio':
 			try {
@@ -502,7 +502,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					romResult.audio[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
 				} else {
 					romResult.audio[res.resid] = res;
-					romResult.audio[res.resname] = res;
+					romResult.audio[res.resid] = res;
 				}
 			} catch (err: any) {
 				throw new Error(`Failed to load 'audio' from rom: ${err.message}.`);
@@ -527,10 +527,10 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				if (opts && opts.loadModelFromBuffer) {
 					model = await opts.loadModelFromBuffer(rom.slice(res.start, res.end));
 				} else {
-					model = await loadModelFromBuffer(res.resname, rom.slice(res.start, res.end), texBuf);
+					model = await loadModelFromBuffer(res.resid, rom.slice(res.start, res.end), texBuf);
 				}
 				romResult.model[res.resid] = model;
-				romResult.model[res.resname] = model;
+				romResult.model[res.resid] = model;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'model' from rom: ${err.message}.`);
 			}
@@ -540,11 +540,11 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				if (opts && opts.loadDataFromBuffer) {
 					const data = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
 					romResult.data[res.resid] = data;
-					romResult.data[res.resname] = data;
+					romResult.data[res.resid] = data;
 				} else {
 					const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
 					romResult.data[res.resid] = data;
-					romResult.data[res.resname] = data;
+					romResult.data[res.resid] = data;
 				}
 			} catch (err: any) {
 				throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
@@ -555,7 +555,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				const u8 = new Uint8Array(rom.slice(res.start, res.end));
 				const blueprint = decodeBinary(u8);
 				romResult.fsm[res.resid] = blueprint;
-				romResult.fsm[res.resname] = blueprint;
+				romResult.fsm[res.resid] = blueprint;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'fsm' from rom: ${err.message}.`);
 			}
@@ -566,8 +566,8 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				const u8 = new Uint8Array(rom.slice(res.start, res.end));
 				const audioevents = decodeBinary(u8);
 				romResult.audioevents[res.resid] = audioevents;
-				romResult.audioevents[res.resname] = audioevents;
-				console.info(`Loaded audio event map '${res.resname}' with ${Object.keys(audioevents).length} entries.`);
+				romResult.audioevents[res.resid] = audioevents;
+				console.info(`Loaded audio event map '${res.resid}' with ${Object.keys(audioevents).length} entries.`);
 			} catch (err: any) {
 				throw new Error(`Failed to load 'aem' from rom: ${err.message}.`);
 			}

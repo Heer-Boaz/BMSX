@@ -2,11 +2,30 @@ import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, id2res, RegisterablePersistent } from "../rompack/rompack";
 
+export type VoiceId = number;
+type ModulationInput = RandomModulationParams | ModulationParams | undefined;
+
+export interface SoundMasterPlayRequest {
+	params?: RandomModulationParams | ModulationParams;
+	modulationPreset?: asset_id;
+	priority?: number;
+}
+
+export interface ActiveVoiceInfo {
+	voiceId: VoiceId;
+	id: asset_id;
+	priority: number;
+	params: ModulationParams;
+	startedAt: number;
+	startOffset: number;
+	meta: AudioMeta;
+}
+
 export interface AudioMetadataWithID extends AudioMeta {
 	id: asset_id; // The ID of the audio asset.
 }
 
-export type AudioStopSelector = 'all' | 'oldest' | 'newest' | 'byid'
+export type AudioStopSelector = 'all' | 'oldest' | 'newest' | 'byid' | 'byvoice';
 export type ModulationRange = [number, number];
 
 export interface FilterModulationParams {
@@ -120,6 +139,7 @@ export class SoundMaster implements RegisterablePersistent {
 
 	private tracks: id2res;
 	private buffers: Record<string, AudioBuffer>;
+	private bufferPromises: Record<string, Promise<AudioBuffer> | undefined>;
 	private sndContext: AudioContext;
 	private currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode | null>;
 	private currentPlayParamsByType: Record<AudioType, ModulationParams | null>;
@@ -131,14 +151,15 @@ export class SoundMaster implements RegisterablePersistent {
 	private nodeStartOffset: Record<AudioType, number>;
 
 	// Multi-voice pooling per type (music stays effectively single by default)
-	private voicesByType: Record<AudioType, { node: AudioBufferSourceNode; id: asset_id; priority: number; params: ModulationParams; startedAt: number; startOffset: number; meta: AudioMeta; }[]>;
-	private defaultMaxVoicesByType: Record<AudioType, number>;
+	private nextVoiceId: VoiceId;
+	private modulationPresetCache: Map<asset_id, RandomModulationParams | ModulationParams | undefined>;
+	private voicesByType: Record<AudioType, (ActiveVoiceInfo & { node: AudioBufferSourceNode })[]>;
 
 	// Per-type paused snapshots for pause policy
 	private pausedByType: Record<AudioType, { id: asset_id; offset: number; params: ModulationParams; priority: number; }[]>;
 
 	// Ended listeners per type
-	private endedListenersByType: Record<AudioType, Set<() => void>>;
+	private endedListenersByType: Record<AudioType, Set<(info: ActiveVoiceInfo) => void>>;
 	private musicTransitionTimer: ReturnType<typeof setTimeout> | null = null;
 	private pendingStingerReturnTo: asset_id | null = null;
 
@@ -146,6 +167,7 @@ export class SoundMaster implements RegisterablePersistent {
 		this.bind();
 		this.tracks = {};
 		this.buffers = {};
+		this.bufferPromises = {};
 		this.sndContext = null; // Passed externally via the init method
 		this.currentAudioNodeByType = { sfx: null, music: null, ui: null };
 		this.currentPlayParamsByType = { sfx: null, music: null, ui: null };
@@ -154,14 +176,16 @@ export class SoundMaster implements RegisterablePersistent {
 		this.gainNode = null; // Passed externally via the init method
 		this.nodeStartTime = { sfx: 0, music: 0, ui: 0 };
 		this.nodeStartOffset = { sfx: 0, music: 0, ui: 0 };
+		this.nextVoiceId = 1;
+		this.modulationPresetCache = new Map();
 		this.voicesByType = { sfx: [], music: [], ui: [] };
 		// Allow multiple concurrent SFX/UI voices by default; keep music single-voice
-		this.defaultMaxVoicesByType = { sfx: 1, music: 1, ui: 1 };
 		this.pausedByType = { sfx: [], music: [], ui: [] };
 		this.endedListenersByType = { sfx: new Set(), music: new Set(), ui: new Set() };
 	}
 
 	public async init(audioResources: id2res, sndcontext: AudioContext, startingVolume: number, gainnode?: GainNode) {
+		this.modulationPresetCache.clear();
 		this.sndContext = sndcontext;
 		this.currentAudioByType = { sfx: null, music: null, ui: null };
 		this.currentAudioNodeByType = { sfx: null, music: null, ui: null };
@@ -190,12 +214,12 @@ export class SoundMaster implements RegisterablePersistent {
 		Registry.instance.deregister(this, true);
 	}
 
-	private predecodeTracks() {
+	private predecodeTracks(): void {
 		this.buffers = {};
-		Object.keys(this.tracks).forEach(id => {
-			this.decode($.rompack['rom'].slice(this.tracks[id]['start'], this.tracks[id]['end']))
-				.then(decoded => this.buffers[id] = decoded);
-		});
+		this.bufferPromises = {};
+		for (const id of Object.keys(this.tracks)) {
+			void this.bufferFor(id as asset_id);
+		}
 	}
 
 	private async decode(audioData: ArrayBuffer): Promise<AudioBuffer> {
@@ -208,39 +232,95 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 	}
 
+	private async bufferFor(id: asset_id): Promise<AudioBuffer> {
+		const cached = this.buffers[id];
+		if (cached) return cached;
+		const inflight = this.bufferPromises[id];
+		if (inflight) return inflight;
+		const resource = this.tracks[id];
+		if (!resource) {
+			throw new Error(`SoundMaster: missing track resource for ${String(id)}`);
+		}
+		const slice = $.rompack['rom'].slice(resource['start'], resource['end']);
+		const promise = this.decode(slice)
+			.then(buffer => {
+				this.buffers[id] = buffer;
+				this.bufferPromises[id] = undefined;
+				return buffer;
+			})
+			.catch(err => {
+				this.bufferPromises[id] = undefined;
+				throw err;
+			});
+		this.bufferPromises[id] = promise;
+		return promise;
+	}
+
 	private async createNode(id: asset_id): Promise<AudioBufferSourceNode> {
 		const node = this.sndContext.createBufferSource();
-		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			Promise.resolve(node.buffer = this.buffers[id]).then(() => resolve(node))
-				.catch(e => reject(e));
-		});
+		node.buffer = await this.bufferFor(id);
+		return node;
 	}
 
 	private nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
+		node.onended = null;
 		// Remove from pool
 		const pool = this.voicesByType[type];
 		const idx = pool.findIndex(v => v.node === node);
-		if (idx >= 0) {
-			pool.splice(idx, 1);
-		}
-		// If this node was considered the current one, update to latest remaining
+		const endedVoice = idx >= 0 ? pool.splice(idx, 1)[0] : undefined;
+		this.finalizeVoiceEnd(type, node, endedVoice);
+		this.releaseNode(node);
+	}
+
+	private finalizeVoiceEnd(type: AudioType, node: AudioBufferSourceNode, endedVoice?: (ActiveVoiceInfo & { node: AudioBufferSourceNode })) {
+		const pool = this.voicesByType[type];
 		if (this.currentAudioNodeByType[type] === node) {
-			const latest = pool.length > 0 ? pool[pool.length - 1] : null;
+			const latest = pool.length > 0 ? pool[pool.length - 1] : undefined;
 			this.currentAudioByType[type] = latest ? { ...latest.meta, id: latest.id } : null;
 			this.currentAudioNodeByType[type] = latest ? latest.node : null;
 			this.currentPlayParamsByType[type] = latest ? latest.params : null;
 			this.nodeStartTime[type] = latest ? latest.startedAt : 0;
 			this.nodeStartOffset[type] = latest ? latest.startOffset : 0;
 		}
-		this.releaseNode(node);
-		// Notify listeners
-		const listeners = this.endedListenersByType[type];
-		listeners.forEach(fn => {
-			try { fn(); } catch (e) { console.warn(e); }
-		});
+		if (endedVoice) {
+			const listeners = this.endedListenersByType[type];
+			if (listeners.size > 0) {
+				const payload: ActiveVoiceInfo = {
+					voiceId: endedVoice.voiceId,
+					id: endedVoice.id,
+					priority: endedVoice.priority,
+					params: endedVoice.params,
+					startedAt: endedVoice.startedAt,
+					startOffset: endedVoice.startOffset,
+					meta: endedVoice.meta,
+				};
+				listeners.forEach(fn => {
+					try { fn(payload); } catch (e) { console.warn(e); }
+				});
+			}
+		}
 	}
 
-	private resolvePlayParams(options: RandomModulationParams | ModulationParams): ModulationParams {
+	private isPlayRequest(options: unknown): options is SoundMasterPlayRequest {
+		if (!options || typeof options !== 'object') return false;
+		const obj = options as Record<string, unknown>;
+		return ('params' in obj) || ('priority' in obj) || ('modulationPreset' in obj);
+	}
+
+	private normalizePlayRequest(options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): SoundMasterPlayRequest {
+		if (!options) return {};
+		if (this.isPlayRequest(options)) {
+			const req = options as SoundMasterPlayRequest;
+			return {
+				params: req.params,
+				modulationPreset: req.modulationPreset,
+				priority: req.priority,
+			};
+		}
+		return { params: options as (RandomModulationParams | ModulationParams) };
+	}
+
+	private resolvePlayParams(options: ModulationInput): ModulationParams {
 		if (!options) return {};
 		const anyOptions = options as RandomModulationParams | ModulationParams;
 
@@ -258,7 +338,29 @@ export class SoundMaster implements RegisterablePersistent {
 		};
 	}
 
-	private playNodeWithParams(_track: AudioMeta, node: AudioBufferSourceNode, params: ModulationParams): void {
+	private resolveModulationPreset(key: asset_id | undefined): RandomModulationParams | ModulationParams | undefined {
+		if (key === undefined || key === null) return undefined;
+		if (this.modulationPresetCache.has(key)) return this.modulationPresetCache.get(key);
+		let resolved: unknown = $.rompack.data[key as keyof typeof $.rompack.data];
+		if (resolved === undefined && typeof key === 'string') {
+			const segments = key.split('.');
+			let cursor: unknown = $.rompack.data;
+			for (const segment of segments) {
+				if (cursor && typeof cursor === 'object' && segment in (cursor as Record<string, unknown>)) {
+					cursor = (cursor as Record<string, unknown>)[segment];
+				} else {
+					cursor = undefined;
+					break;
+				}
+			}
+			resolved = cursor;
+		}
+		const typed = (resolved && typeof resolved === 'object') ? resolved as (RandomModulationParams | ModulationParams) : undefined;
+		this.modulationPresetCache.set(key, typed);
+		return typed;
+	}
+
+	private playNodeWithParams(_track: AudioMeta, node: AudioBufferSourceNode, params: ModulationParams): number {
 		try {
 			let destination: AudioNode = this.gainNode;
 			const extras: { gain?: GainNode; filter?: BiquadFilterNode } = {};
@@ -311,8 +413,10 @@ export class SoundMaster implements RegisterablePersistent {
 			this.nodeStartOffset[_track['audiotype']] = startOffset;
 			node.start(0, startOffset);
 			node.onended = () => this.nodeEndedHandler(node, _track['audiotype']);
+			return startOffset;
 		} catch (error) {
 			console.error(error);
+			return params.offset ?? 0;
 		}
 	}
 
@@ -323,37 +427,45 @@ export class SoundMaster implements RegisterablePersistent {
 		return base * (1 + pitch);
 	}
 
-	public play(id: asset_id, options?: ModulationParams | RandomModulationParams): void {
-		const params = this.resolvePlayParams(options);
+	public play(id: asset_id, options?: SoundMasterPlayRequest | ModulationParams | RandomModulationParams): Promise<VoiceId | null> {
+		const request = this.normalizePlayRequest(options);
+		let sourceParams = request.params;
+		if (!sourceParams && request.modulationPreset !== undefined) {
+			sourceParams = this.resolveModulationPreset(request.modulationPreset);
+			if (!sourceParams) {
+				console.warn(`SoundMaster: Missing modulation preset '${String(request.modulationPreset)}' for ${String(id)}`);
+			}
+		}
+		const params = this.resolvePlayParams(sourceParams);
 		const track = this.tracks[id]?.['audiometa'];
 		if (!track) {
 			console.error(`SoundMaster: Attempted to play unknown track with id = "${String(id)}". Skipping.`);
-			return;
+			return Promise.resolve(null);
 		}
 		const audiotype = track['audiotype'];
-		const playCallback = (node: AudioBufferSourceNode) => {
+		const playCallback = (node: AudioBufferSourceNode): VoiceId => {
 			// Enforce capacity (music single-voice; sfx/ui configurable)
 			const pool = this.voicesByType[audiotype];
-			const maxVoices = this.defaultMaxVoicesByType[audiotype];
-			if (pool.length >= maxVoices) {
-				// Stop oldest to make space (replacement specifics handled by caller policies)
-				const oldest = pool[0]?.node;
-				if (oldest) this.releaseNode(oldest);
-				if (pool.length > 0) pool.shift();
-			}
 
 			this.currentAudioNodeByType[audiotype] = node;
 			this.currentAudioByType[audiotype] = { ...track, id: id };
 			this.currentPlayParamsByType[audiotype] = params;
 			const startTime = this.sndContext.currentTime;
-			const startOffset = (params.offset ?? 0);
+			const voiceId = this.nextVoiceId++;
+			const voiceRecord = { voiceId, node, id, priority: request.priority ?? track.priority ?? 0, params, startedAt: startTime, startOffset: 0, meta: track };
 			// Add to pool before starting to avoid race where stop() can't see the node yet
-			this.voicesByType[audiotype].push({ node, id, priority: track.priority ?? 0, params, startedAt: startTime, startOffset, meta: track });
-			this.playNodeWithParams(track, node, params);
+			pool.push(voiceRecord);
+			const resolvedStartOffset = this.playNodeWithParams(track, node, params);
+			voiceRecord.startOffset = resolvedStartOffset;
+			return voiceId;
 		};
-		this.createNode(id)
+		return this.createNode(id)
 			.then(playCallback)
-			.catch(e => console.error(e.message));
+			.catch((e: unknown): VoiceId | null => {
+				const message = e instanceof Error ? e.message : String(e);
+				console.error(message);
+				return null;
+			});
 	}
 
 	private releaseNode(node: AudioBufferSourceNode) {
@@ -362,6 +474,7 @@ export class SoundMaster implements RegisterablePersistent {
 			return;
 		}
 		const extra = this.nodeExtras.get(node);
+		node.onended = null;
 		try {
 			node.stop();
 		} catch { /* ignored */ }
@@ -376,10 +489,10 @@ export class SoundMaster implements RegisterablePersistent {
 		return typeof value === 'string' && AudioTypes.includes(value as AudioType);
 	}
 
-	public stop(idOrType?: asset_id | AudioType, which?: AudioStopSelector, id?: asset_id): void {
+	public stop(idOrType?: asset_id | AudioType, which?: AudioStopSelector, idOrVoice?: asset_id | VoiceId): void {
 		// If explicit channel provided
 		if (this.isAudioType(idOrType)) {
-			this.stopByTypeInternal(idOrType, which ?? 'all', id);
+			this.stopByTypeInternal(idOrType, which ?? 'all', idOrVoice);
 			return;
 		}
 		// Otherwise, treat as asset id and infer channel
@@ -392,46 +505,56 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 	}
 
-	private stopByTypeInternal(type: AudioType, which: AudioStopSelector, id?: asset_id): void {
+	private stopByTypeInternal(type: AudioType, which: AudioStopSelector, idOrVoice?: asset_id | VoiceId): void {
 		const pool = this.voicesByType[type];
-		const toStopSet = new Set<AudioBufferSourceNode>();
+		const toStop: Array<{ node: AudioBufferSourceNode; record?: (ActiveVoiceInfo & { node: AudioBufferSourceNode }) }> = [];
 		switch (which) {
 			case 'all':
-				for (const v of pool) toStopSet.add(v.node);
+				for (const record of pool) {
+					toStop.push({ node: record.node, record });
+				}
 				pool.length = 0;
-				// Also ensure we stop the current node if not tracked (race safety)
-				if (this.currentAudioNodeByType[type]) toStopSet.add(this.currentAudioNodeByType[type]);
 				break;
-			case 'oldest':
-				if (pool.length > 0) {
-					toStopSet.add(pool[0].node);
-					pool.shift();
+			case 'oldest': {
+					const record = pool.shift();
+					if (record) toStop.push({ node: record.node, record });
+					break;
 				}
-				break;
-			case 'newest':
-				if (pool.length > 0) {
-					toStopSet.add(pool[pool.length - 1].node);
-					pool.pop();
+			case 'newest': {
+					const record = pool.pop();
+					if (record) toStop.push({ node: record.node, record });
+					break;
 				}
-				break;
 			case 'byid': {
-				if (id === undefined) return;
-				for (let i = pool.length - 1; i >= 0; i--) {
-					if (pool[i].id === id) {
-						toStopSet.add(pool[i].node);
-						pool.splice(i, 1);
+					if (idOrVoice === undefined) return;
+					for (let i = pool.length - 1; i >= 0; i--) {
+						if (pool[i].id === idOrVoice) {
+							const record = pool.splice(i, 1)[0];
+							if (record) toStop.push({ node: record.node, record });
+						}
 					}
+					break;
 				}
-				break;
-			}
+			case 'byvoice': {
+					if (idOrVoice === undefined) return;
+					for (let i = pool.length - 1; i >= 0; i--) {
+						if (pool[i].voiceId === idOrVoice) {
+							const record = pool.splice(i, 1)[0];
+							if (record) toStop.push({ node: record.node, record });
+							break;
+						}
+					}
+					break;
+				}
 		}
-		for (const node of toStopSet) this.releaseNode(node);
-		const latest = pool.length > 0 ? pool[pool.length - 1] : null;
-		this.currentAudioNodeByType[type] = latest ? latest.node : null;
-		this.currentAudioByType[type] = latest ? { ...latest.meta, id: latest.id } : null;
-		this.currentPlayParamsByType[type] = latest ? latest.params : null;
-		this.nodeStartTime[type] = latest ? latest.startedAt : 0;
-		this.nodeStartOffset[type] = latest ? latest.startOffset : 0;
+		const currentNode = this.currentAudioNodeByType[type];
+		if (currentNode && !toStop.some(item => item.node === currentNode) && !pool.some(record => record.node === currentNode)) {
+			toStop.push({ node: currentNode });
+		}
+		for (const item of toStop) {
+			this.finalizeVoiceEnd(type, item.node, item.record);
+			this.releaseNode(item.node);
+		}
 	}
 
 	public stopEffect(): void {
@@ -484,8 +607,8 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	public set volume(_v: number) {
-		let v = parseFloat(_v.toFixed(1));
-		this.gainNode.gain.value = this.gainNode.gain.defaultValue * v;
+		const v = parseFloat(_v.toFixed(1));
+		this.gainNode.gain.value = v;
 	}
 
 	public currentTimeByType(type: AudioType): number | null {
@@ -518,8 +641,21 @@ export class SoundMaster implements RegisterablePersistent {
 		return this.voicesByType[type].length;
 	}
 
-	public getActiveVoiceInfosByType(type: AudioType): { id: asset_id; priority: number; params: ModulationParams; startedAt: number; startOffset: number; meta: AudioMeta; }[] {
-		return this.voicesByType[type].map(v => ({ id: v.id, priority: v.priority, params: v.params, startedAt: v.startedAt, startOffset: v.startOffset, meta: v.meta }));
+	public getActiveVoiceInfosByType(type: AudioType): ActiveVoiceInfo[] {
+		return this.voicesByType[type].map(v => ({
+			voiceId: v.voiceId,
+			id: v.id,
+			priority: v.priority,
+			params: v.params,
+			startedAt: v.startedAt,
+			startOffset: v.startOffset,
+			meta: v.meta,
+		}));
+	}
+
+	public getCurrentTimeSec(): number {
+		if (this.sndContext) return this.sndContext.currentTime;
+		return Date.now() / 1000;
 	}
 
 	public snapshotVoices(type: AudioType): { id: asset_id; offset: number; params: ModulationParams; priority: number; }[] {
@@ -538,7 +674,7 @@ export class SoundMaster implements RegisterablePersistent {
 		return arr;
 	}
 
-	public addEndedListener(type: AudioType, listener: () => void): () => void {
+	public addEndedListener(type: AudioType, listener: (info: ActiveVoiceInfo) => void): () => void {
 		this.endedListenersByType[type].add(listener);
 		return () => this.endedListenersByType[type].delete(listener);
 	}
@@ -563,6 +699,7 @@ export class SoundMaster implements RegisterablePersistent {
 
 		// Stinger path: object with 'stinger' property
 		if (typeof sync === 'object' && 'stinger' in sync) {
+			const stingerType = (this.tracks[sync.stinger]?.['audiometa']?.['audiotype'] as AudioType | undefined) ?? 'music';
 			// Select return target: explicit id or previous music
 			if (sync.returnToPrevious) {
 				const prevId = this.currentTrackByType('music');
@@ -571,25 +708,31 @@ export class SoundMaster implements RegisterablePersistent {
 				// Stop music and play stinger; after end, resume prev at saved offset
 				const resumeId = this.pendingStingerReturnTo;
 				this.stop('music', 'all');
-				this.play(sync.stinger);
-				const unsub = this.addEndedListener('music', () => {
-					unsub();
-					const target = resumeId;
-					this.pendingStingerReturnTo = null;
-					if (target != null) this.startMusicWithFade(target, fadeMs, startAtLoopStart, prevOffset);
-				});
+				this.play(sync.stinger).then(voiceId => {
+					if (voiceId == null) return;
+					const unsub = this.addEndedListener(stingerType, info => {
+						if (info.voiceId !== voiceId) return;
+						unsub();
+						const target = resumeId;
+						this.pendingStingerReturnTo = null;
+						if (target != null) this.startMusicWithFade(target, fadeMs, startAtLoopStart, prevOffset);
+					});
+				}).catch(() => { /* play already logged error */ });
 				return;
 			} else {
 				const ret = sync.returnTo ?? opts.to;
 				this.pendingStingerReturnTo = ret;
 				this.stop('music', 'all');
-				this.play(sync.stinger);
-				const unsub = this.addEndedListener('music', () => {
-					unsub();
-					const target = this.pendingStingerReturnTo;
-					this.pendingStingerReturnTo = null;
-					if (target != null) this.startMusicWithFade(target, fadeMs, startAtLoopStart);
-				});
+				this.play(sync.stinger).then(voiceId => {
+					if (voiceId == null) return;
+					const unsub = this.addEndedListener(stingerType, info => {
+						if (info.voiceId !== voiceId) return;
+						unsub();
+						const target = this.pendingStingerReturnTo;
+						this.pendingStingerReturnTo = null;
+						if (target != null) this.startMusicWithFade(target, fadeMs, startAtLoopStart);
+					});
+				}).catch(() => { /* play already logged error */ });
 				return;
 			}
 		}
@@ -648,14 +791,21 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 
 		this.createNode(target).then(node => {
-			const playParams: ModulationParams = { offset: startOffset, volumeDelta: -80 };
 			const meta = this.tracks[target]?.['audiometa'];
+			if (!meta) {
+				console.error(`SoundMaster: Attempted to start missing music track ${String(target)}`);
+				return;
+			}
+			const playParams: ModulationParams = { offset: startOffset, volumeDelta: -80 };
 			this.currentAudioNodeByType['music'] = node;
 			this.currentAudioByType['music'] = meta ? { ...meta, id: target } : null;
 			this.currentPlayParamsByType['music'] = playParams;
 			const startTime = this.sndContext.currentTime;
-			this.playNodeWithParams(meta, node, playParams);
-			this.voicesByType['music'].push({ node, id: target, priority: meta?.priority ?? 0, params: playParams, startedAt: startTime, startOffset, meta });
+			const voiceId = this.nextVoiceId++;
+			const voiceRecord = { voiceId, node, id: target, priority: meta?.priority ?? 0, params: playParams, startedAt: startTime, startOffset: 0, meta };
+			this.voicesByType['music'].push(voiceRecord);
+			const resolvedStartOffset = this.playNodeWithParams(meta, node, playParams);
+			voiceRecord.startOffset = resolvedStartOffset;
 
 			// Fade in new
 			const extras = this.nodeExtras.get(node);
@@ -667,8 +817,19 @@ export class SoundMaster implements RegisterablePersistent {
 			}
 
 			if (currentNode) {
+				const pool = this.voicesByType['music'];
+				let record: (ActiveVoiceInfo & { node: AudioBufferSourceNode }) | undefined;
+				for (let i = pool.length - 1; i >= 0; i--) {
+					if (pool[i].node === currentNode) {
+						record = pool.splice(i, 1)[0];
+						break;
+					}
+				}
 				setTimeout(() => {
-					try { this.releaseNode(currentNode); } catch { /* ignore */ }
+					try {
+						this.finalizeVoiceEnd('music', currentNode, record);
+						this.releaseNode(currentNode);
+					} catch { /* ignore */ }
 				}, fadeMs);
 			}
 		}).catch(e => console.error(e));

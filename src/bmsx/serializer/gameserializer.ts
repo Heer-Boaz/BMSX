@@ -17,7 +17,7 @@ import { $ } from '../core/game';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
-import { Bindable } from "bmsx/rompack/rompack";
+import { Bindable, Identifier } from "bmsx/rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
 
 // Decorators onload/onsave are defined locally in this file
@@ -486,8 +486,8 @@ export class Reviver {
 	}
 }
 
-type VoiceState = { id: string | number; offset: number; params: ModulationParams; priority: number };
-type VoiceQueueItem = { id: string | number; params: ModulationParams; priority: number };
+type VoiceState = { id: string; offset: number; params: ModulationParams; priority: number };
+type VoiceQueueItem = { id: string; params: ModulationParams; priority: number; cooldownMs?: number; actorId?: Identifier };
 type SoundMasterState = {
 	sfxVoices: VoiceState[];
 	uiVoices: VoiceState[];
@@ -560,11 +560,15 @@ export class Savegame {
 			id: q.audioId,
 			params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
 			priority: q.priority ?? 0,
+			cooldownMs: q.cooldownMs,
+			actorId: q.payloadActorId,
 		}));
 		SMState.uiQueue = qs.ui.map(q => ({
 			id: q.audioId,
 			params: (q.modulationParams ?? (q.modulationPreset !== undefined ? ($.rompack.data[q.modulationPreset] as ModulationParams) : {} as ModulationParams)),
 			priority: q.priority ?? 0,
+			cooldownMs: q.cooldownMs,
+			actorId: q.payloadActorId,
 		}));
 
 		return { SMState };
@@ -579,17 +583,20 @@ export class Savegame {
 		const SMState = this.SMState;
 		if (!SMState) return;
 		for (const v of (SMState.musicVoices || [])) {
-			$.sndmaster.play(v.id, { ...v.params, offset: v.offset });
+			const params: ModulationParams = { ...v.params, offset: v.offset };
+			void $.sndmaster.play(v.id, { params, priority: v.priority });
 		}
 		for (const v of (SMState.sfxVoices || [])) {
-			$.sndmaster.play(v.id, { ...v.params, offset: v.offset });
+			const params: ModulationParams = { ...v.params, offset: v.offset };
+			void $.sndmaster.play(v.id, { params, priority: v.priority });
 		}
 		for (const v of (SMState.uiVoices || [])) {
-			$.sndmaster.play(v.id, { ...v.params, offset: v.offset });
+			const params: ModulationParams = { ...v.params, offset: v.offset };
+			void $.sndmaster.play(v.id, { params, priority: v.priority });
 		}
 		const aem = $.aem;
-		const sfx = (SMState.sfxQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
-		const ui = (SMState.uiQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority }));
+		const sfx = (SMState.sfxQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority, cooldownMs: q.cooldownMs, payloadActorId: q.actorId }));
+		const ui = (SMState.uiQueue || []).map(q => ({ audioId: q.id, modulationParams: q.params, priority: q.priority, cooldownMs: q.cooldownMs, payloadActorId: q.actorId }));
 		aem.restoreQueues({ sfx, ui });
 	}
 }

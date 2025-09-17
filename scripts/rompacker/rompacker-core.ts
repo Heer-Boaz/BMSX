@@ -829,22 +829,21 @@ export async function generateRomAssets(resources: Resource[]) {
 
 	for (const res of resources) {
 		const type = res.type;
-		let resname = res.name;
-		const resid = res.id;
+		let resid = res.name;
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
 		switch (type) {
 			case 'romlabel':
 				romlabel_buffer = res.buffer;
-				romAssets.push({ resid, resname, type, imgmeta: undefined, buffer: romlabel_buffer });
+				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer });
 				break;
 			case 'image': {
 				const imgmeta = buildImgMeta(res);
 				let baseAsset: RomAsset;
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-					baseAsset = { resid, resname, type, imgmeta, buffer: undefined, };
+					baseAsset = { resid, type, imgmeta, buffer: undefined, };
 				} else {
-					baseAsset = { resid, resname, type, imgmeta, buffer };
+					baseAsset = { resid, type, imgmeta, buffer };
 				}
 				romAssets.push({ ...baseAsset, });
 			}
@@ -852,11 +851,11 @@ export async function generateRomAssets(resources: Resource[]) {
 			case 'audio':
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				romAssets.push({ resid, resname, type, audiometa, buffer });
+				romAssets.push({ resid, type, audiometa, buffer });
 				break;
 			case 'code':
-				resname = resname.replace('.min', '');
-				romAssets.push({ resid, resname, type, buffer });
+				resid = resid.replace('.min', '');
+				romAssets.push({ resid, type, buffer });
 				break;
 			case 'data':
 			case 'fsm':
@@ -886,9 +885,9 @@ export async function generateRomAssets(resources: Resource[]) {
 						// If the data is a binary file, we can use it as is
 						break;
 					default:
-						throw new Error(`Unknown data type "${res.datatype}" for resource "${resname}"`);
+						throw new Error(`Unknown data type "${res.datatype}" for resource "${resid}"`);
 				}
-				romAssets.push({ resid, resname, type, buffer });
+				romAssets.push({ resid, type, buffer });
 				break;
 			case 'model': {
 				const pathInfo = parse(res.filepath);
@@ -901,7 +900,7 @@ export async function generateRomAssets(resources: Resource[]) {
 				} else {
 					gltfSource = res.buffer.toString('utf8');
 				}
-				const parsed = await loadGLTFModel(gltfSource, dir, resname);
+				const parsed = await loadGLTFModel(gltfSource, dir, resid);
 
 				let texOffset = 0;
 				const imageOffsets: { start: number; end: number }[] = [];
@@ -948,13 +947,13 @@ export async function generateRomAssets(resources: Resource[]) {
 				buffer = Buffer.from(encodedObj);
 				// @ts-ignore
 				const texture_buffer = Buffer.concat(texBuffers);
-				romAssets.push({ resid, resname, type, buffer, texture_buffer });
+				romAssets.push({ resid, type, buffer, texture_buffer });
 			}
 				break;
 			case 'atlas': {
 				// Atlas resources are handled similarly to images but with a twist
 				const imgmeta = buildImgMetaForAtlas(res);
-				const baseAsset = { resid, resname, type, imgmeta, buffer };
+				const baseAsset = { resid, type, imgmeta, buffer };
 				romAssets.push({ ...baseAsset, });
 			}
 				break;
