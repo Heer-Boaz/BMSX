@@ -279,12 +279,31 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 }
 
 export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
-	const obj = decodeBinary(new Uint8Array(buffer));
+	const obj = decodeBinary(new Uint8Array(buffer), { zeroCopyBin: true });
+
+	function ensureAlignedView(u8: Uint8Array, alignment: number): Uint8Array {
+		if ((u8.byteLength % alignment) !== 0) {
+			throw new Error(`loadModelFromBuffer: byteLength ${u8.byteLength} not divisible by ${alignment}`);
+		}
+		if ((u8.byteOffset % alignment) === 0) return u8;
+		const copy = u8.slice();
+		if ((copy.byteOffset % alignment) !== 0) {
+			throw new Error('loadModelFromBuffer: unable to align view');
+		}
+		return copy;
+	}
+
+	function typedArrayFromBytes<T extends ArrayBufferView>(u8: Uint8Array, ctor: { new(buffer: ArrayBufferLike, byteOffset: number, length?: number): T; BYTES_PER_ELEMENT: number }): T {
+		const alignment = ctor.BYTES_PER_ELEMENT;
+		const aligned = ensureAlignedView(u8, alignment);
+		return new ctor(aligned.buffer, aligned.byteOffset, aligned.byteLength / alignment);
+	}
+
 	function toF32(v: any): Float32Array | undefined {
 		if (v === undefined || v === null) return undefined;
 		if (ArrayBuffer.isView(v)) {
 			const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-			return new Float32Array(u8.buffer, u8.byteOffset, Math.floor(u8.byteLength / 4));
+			return typedArrayFromBytes(u8, Float32Array);
 		}
 		if (Array.isArray(v)) return new Float32Array(v);
 		return undefined;
@@ -293,11 +312,11 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 		if (v === undefined || v === null) return undefined;
 		if (ArrayBuffer.isView(v)) {
 			const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-			if (componentType === 5125) return new Uint32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
-			if (componentType === 5123) return new Uint16Array(u8.buffer, u8.byteOffset, u8.byteLength / 2);
+			if (componentType === 5125) return typedArrayFromBytes(u8, Uint32Array);
+			if (componentType === 5123) return typedArrayFromBytes(u8, Uint16Array);
 			if (componentType === 5121) return new Uint8Array(u8.buffer, u8.byteOffset, u8.byteLength);  // Add this
-			if (u8.byteLength % 4 === 0) return new Uint32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
-			return new Uint16Array(u8.buffer, u8.byteOffset, u8.byteLength / 2);
+			if (u8.byteLength % 4 === 0) return typedArrayFromBytes(u8, Uint32Array);
+			return typedArrayFromBytes(u8, Uint16Array);
 		}
 		if (Array.isArray(v)) {
 			if (componentType === 5125) return new Uint32Array(v);
@@ -329,7 +348,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 		morphNormals: m.morphNormals ? m.morphNormals.map((mt: any) => toF32(mt)) : undefined,
 		morphTangents: m.morphTangents ? m.morphTangents.map((mt: any) => toF32(mt)) : undefined,
 		weights: m.weights ? Array.from(m.weights) : undefined,
-		jointIndices: m.jointIndices ? new Uint16Array(m.jointIndices) : undefined,
+		jointIndices: m.jointIndices ? toIndices(m.jointIndices, 5123) as Uint16Array : undefined,
 		jointWeights: m.jointWeights ? toF32(m.jointWeights) : undefined,
 		colors: toF32(m.colors),
 
