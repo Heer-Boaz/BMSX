@@ -1,4 +1,5 @@
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
+import { BinaryCompressor } from '../../src/bmsx/serializer/bincompressor';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
 
@@ -29,10 +30,6 @@ declare global {
 	var bootrom: Object;
 }
 
-/**
- * Pako is a high-speed zlib port to JavaScript, which is used to compress and decompress data.
- */
-declare const pako: any;
 /**
  * Function that initializes the boot ROM and starts the game.
  * @param {RomPack} rom - The boot ROM pack.
@@ -215,7 +212,8 @@ export const bootrom = {
 						romlabel_bloburl = ziprom_and_label.romlabel;
 						replaceBMSXImgWithRomLabel();
 					}
-					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
+					const compressed = new Uint8Array(ziprom_and_label.zipped_rom);
+					return BinaryCompressor.decompressBinary(compressed).buffer;
 				})
 				.then(rom => loadResources(rom))
 				.then((loadResult: any) => {

@@ -663,12 +663,12 @@ export function asciiWaveBraille(
 
 	/* ---------- 1. peaks met zwevende cursor + oversampling ---------- */
 	const S = pcm.length / BPS / channels;      // total #samples
-	const step = S / cols;                      // fractie-stap
+	const step = S / (cols * 2);                      // fractie-stap
 	const over = Math.ceil(step);               // oversample-margin
 	const peaks: [number, number][] = [];
 
 	let pos = 0;
-	for (let c = 0; c < cols; ++c) {
+	for (let c = 0; c < cols * 2; ++c) {
 		const s0 = pos | 0;
 		pos += step;
 		const s1 = Math.min(S, (pos | 0) + over); // extra “hold” samples
@@ -703,11 +703,11 @@ export function asciiWaveBraille(
 	const scale = ((rows * 4 - 1) / 2) * zoom / (gMax || 1);
 
 	/* ---------- 3. braille-grid ---------- */
-	const cellCols = Math.max(1, Math.ceil(cols / 2));
+	const cellCols = Math.max(1, Math.ceil(cols));
 	const grid: number[][] = Array.from({ length: rows }, () => Array(cellCols).fill(0));
 	const cellPeaks: Array<[number, number]> = Array.from({ length: cellCols }, () => [1, -1] as [number, number]);
 
-	for (let x = 0; x < cols; ++x) {
+	for (let x = 0; x < cols * 2; ++x) {
 		const [mn, mx] = peaks[x];
 		const cellX = x >> 1;
 		if (mn < cellPeaks[cellX][0]) cellPeaks[cellX][0] = mn;

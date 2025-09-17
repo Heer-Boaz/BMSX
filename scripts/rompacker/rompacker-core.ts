@@ -488,7 +488,7 @@ export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: str
 }
 
 /**
- * Compresses the given content using the zip algorithm and returns the compressed content as a Uint8Array.
+ * Compresses the given content using the zip algorithm and returns the compressed  content as a Uint8Array.
  *
  * @param content - The content to be compressed.
  * @returns The compressed content as a Uint8Array.

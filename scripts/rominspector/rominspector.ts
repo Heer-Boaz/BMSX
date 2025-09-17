@@ -200,8 +200,13 @@ function getMetadataBuffer(rombin: Buffer | ArrayBuffer, rommeta: RomMeta) {
 async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 	let raw: Buffer
 	let error: any;
+	let rawSize = 0;
+	let deflatedSize = 0;
 	try {
+		console.log(`Reading ROM file from "${romfile}"...`);
 		raw = await fs.readFile(romfile);
+		rawSize = raw.byteLength;
+		console.log(`Read ${formatByteSize(rawSize)} from ROM file.`);
 	}
 	catch (e: any) {
 		error = e;
@@ -251,7 +256,9 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 			decompressed = null; // fallback to null if decompression fails
 		}
 		rombin = decompressed.buffer ?? raw; // Use decompressed data if available, otherwise fallback to raw
-		console.log(`Decompressed ROM size: ${formatByteSize(rombin.byteLength)}`);
+		deflatedSize = rombin.byteLength;
+		console.log(`Decompressed ROM size: ${formatByteSize(deflatedSize)}`);
+		console.log(`Compressed size vs uncompressed size (lower is better): ${((rawSize / deflatedSize) * 100).toFixed(2)}%`);
 	} else {
 		console.log('ROM is uncompressed, using as-is.');
 		rombin = raw;
