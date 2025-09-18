@@ -483,7 +483,7 @@ export class World implements Stateful, RegisterablePersistent {
 			seen.add(owner);
 			out.push(owner);
 		}
-		return out;
+		return out!;
 	}
 
 	/**
@@ -688,14 +688,14 @@ export class World implements Stateful, RegisterablePersistent {
 		const scope = opts.scope ?? 'current';
 		if (scope === 'current') {
 			const base = this.activeSpace.objects;
-			for (let i = 0; i < base.length; i++) yield base[i];
+			for (let i = 0; i < base.length; i++) yield base[i]!;
 			const overlay = this._spaceMap.get('ui')?.objects ?? [];
-			for (let i = 0; i < overlay.length; i++) yield overlay[i];
+			for (let i = 0; i < overlay.length; i++) yield overlay[i]!;
 			return;
 		}
 		for (const sp of this.spaces) {
 			const arr = sp.objects;
-			for (let i = 0; i < arr.length; i++) yield arr[i];
+			for (let i = 0; i < arr.length; i++) yield arr[i]!;
 		}
 	}
 
@@ -706,7 +706,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * base class here (ctor) will correctly return true for derived instances.
 	 */
 	public *objectsOfType<T extends WorldObject>(ctor: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<T> {
-		for (const o of this.objects(opts)) { if (o instanceof ctor) yield o as T; }
+		for (const o of this.objects(opts)) { if (o instanceof ctor) yield o! as T; }
 	}
 
 	/** Iterate objects that have a given component; yields [object, component] for each instance.
@@ -715,7 +715,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * base class here (ctor) will correctly return true for derived instances.
 	 */
 	public *objectsWithComponents<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
-		for (const o of this.objects(opts)) { for (const c of o.iterateComponentsByType(component)) yield [o, c]; }
+		for (const o of this.objects(opts)) { for (const c of o.iterateComponentsByType(component)) yield [o!, c!]; }
 	}
 
 	/**

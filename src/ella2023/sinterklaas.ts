@@ -3,7 +3,7 @@ import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';
 import { EilaEventService } from './worldmodule';
-import { AudioId, BitmapId } from "./resourceids";
+import { BitmapId } from "./resourceids";
 
 function theOtherFighter(f: Fighter) {
 	return $.get<EilaEventService>('eila_events').theOtherFighter(f);
@@ -122,7 +122,6 @@ export class Sinterklaas extends Fighter {
 				highkick: {
 					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
 					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						$.playAudio(AudioId.kick);
 						this.imgid = BitmapId.sint_highkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
@@ -133,7 +132,6 @@ export class Sinterklaas extends Fighter {
 				lowkick: {
 					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
 					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						$.playAudio(AudioId.kick);
 						this.imgid = BitmapId.sint_lowkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
@@ -144,7 +142,6 @@ export class Sinterklaas extends Fighter {
 				punch: {
 					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
 					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						$.playAudio(AudioId.punch);
 						this.imgid = BitmapId.sint_punch;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
@@ -155,7 +152,6 @@ export class Sinterklaas extends Fighter {
 				duckkick: {
 					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
 					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						$.playAudio(AudioId.kick);
 						this.imgid = BitmapId.sint_flyingkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
@@ -166,7 +162,6 @@ export class Sinterklaas extends Fighter {
 				flyingkick: {
 					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
 					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						$.playAudio(AudioId.kick);
 						this.imgid = BitmapId.sint_flyingkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
 					},
@@ -183,7 +178,6 @@ export class Sinterklaas extends Fighter {
 				humiliated: {
 					ticks2advance_tape: 50,
 					entering_state(this: SpriteObject) {
-						$.playAudio(AudioId.stuk);
 						this.imgid = BitmapId.sint_humiliated_1;
 					},
 					states: {
@@ -196,7 +190,7 @@ export class Sinterklaas extends Fighter {
 							ticks2advance_tape: 10,
 							tape_data: ['humiliated1', 'humiliated2'],
 							repetitions: 8,
-							auto_rewind_tape_after_end: true,
+							tape_playback_mode: 'loop',
 							tape_next: (state: State) => `${state.current_tape_value}`,
 							tape_end: () => '../waitEnd',
 							states: {

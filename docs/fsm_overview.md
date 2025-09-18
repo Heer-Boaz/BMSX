@@ -59,7 +59,7 @@ UI flow, combat ability gating, cutscenes, dialogue trees, and more.
   - `emit` and `dispatch_event` to notify other systems or controller machines.
   - `set_ticks_to_last_frame` for clip shortening.
   - Conditional execution (`when`/`then`/`else`) with argument, value, and
-    `state_matches` predicates.
+	`state_matches` predicates.
   - Sequencing (arrays of actions).
   You can keep things simple or drop down to TypeScript handlers whenever you
   need specialised behaviour.
@@ -75,7 +75,7 @@ FSMs double as a light-weight animation graph system:
 
 - Each animation state can set sprites, trigger audio/FX events, and control
   combat flags through declarative actions.
-- Tapes provide frame stepping (`ticks2advance_tape`, `auto_rewind_tape_after_end`).
+- Tapes provide frame stepping (`ticks2advance_tape`, `tape_playback_mode`, `tape_playback_easing`).
 - Concurrency lets you run gameplay logic and animation machines in parallel.
 - Events such as `animationEnd` can fan out to other systems (e.g. AI or combat).
 

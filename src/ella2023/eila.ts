@@ -202,7 +202,7 @@ export class Eila extends Fighter {
 					ticks2advance_tape: 1,
 					tape_data: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
 					repetitions: 2,
-					auto_rewind_tape_after_end: false,
+					tape_playback_mode: 'once',
 					on: {
 						$animationEnd: {
 							do(state: State) {

@@ -8,8 +8,7 @@ export function gameplaySpec(): NodeSpec[] {
 		{ ref: 'meshAnim', after: ['behaviorTrees'] },
 		{ ref: 'objectFSM', after: ['meshAnim'] },
 		{ ref: 'abilityRuntime', after: ['objectFSM'] },
-		{ ref: 'taskRuntime', after: ['abilityRuntime'] },
-		{ ref: 'physicsSyncBefore', after: ['taskRuntime'] },
+		{ ref: 'physicsSyncBefore', after: ['abilityRuntime'] },
 		// PostPhysics ordering
 		{ ref: 'physicsPost' },
 		{ ref: 'tileCollision' },

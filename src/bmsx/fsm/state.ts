@@ -3,6 +3,7 @@ import { $ } from '../core/game';
 import { Input } from '../input/input';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { getEasing } from '../util/easing';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
 import { STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX, type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType, type StateEventDefinition, type TickCheckDefinition } from './fsmtypes';
@@ -1077,6 +1078,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * The position of the tape head.
 	 */
 	protected _tapehead!: number;
+	private _tapeTickThreshold: number = Number.POSITIVE_INFINITY;
+	private _tapePlaybackDirection: 1 | -1 = 1;
 
 	/**
 	 * Gets the current position of the tapehead.
@@ -1098,49 +1101,61 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this.enterCriticalSection();
 		try {
 			this._ticks = 0; // Always reset tapehead ticks after moving tapehead
-			this._tapehead = v; // Move the tape to new position
+			const tape = this.tape;
+			const mode = this.definition?.tape_playback_mode ?? 'once';
 
-
-			// Check if the tapehead is going out of bounds (or there is no tape at all)
-			if (!this.tape) {
+			if (!tape || tape.length === 0) {
 				this._tapehead = TAPE_START_INDEX;
-
-				// Trigger the event for moving the tape, after having set the tapehead to the correct position
+				this._tapePlaybackDirection = 1;
 				this.tapemove();
-
-				// Trigger the event for reaching the end of the tape
 				this.tapeend();
+				this.updateTapeTickThreshold();
+				return;
 			}
 
-			// Check if the tape now is at the end
-			else if (this.is_tape_exhausted) {
-				// Check whether we automagically rewind the tape
-				if (this.definition.auto_rewind_tape_after_end) {
-					// If so, rewind and move to the first element of the tapehead
-					// But why? (Yes... Why?) Because we then can loop an animation,
-					// including the first and last element of the tape, without having
-					// to resort to any workarounds like duplicating the first entry
-					// of the tape or similar.
-					this._tapehead = 0; // Set the tapehead to the beginning of the tape, but not to TAPE_START_INDEX, as that is before the start of the tape and we are now properly triggering the tapemove event for the first element of the tape
+			if (mode !== 'pingpong') this._tapePlaybackDirection = 1;
 
+			const lastIndex = tape.length - 1;
 
-					// Trigger the event for moving the tape, after having set the tapehead to the correct position
+			if (v < 0) {
+				if (mode === 'pingpong') {
+					this._tapehead = 0;
+					this._tapePlaybackDirection = 1;
+					this.tapeend();
+				} else {
+					this._tapehead = 0;
+					this.tapemove();
+					this.tapeend();
+				}
+				this.updateTapeTickThreshold();
+				return;
+			}
+
+			if (v > lastIndex) {
+				if (mode === 'loop') {
+					this._tapehead = 0;
+					this._tapePlaybackDirection = 1;
 					this.tapemove(true);
+				} else if (mode === 'pingpong') {
+					this._tapehead = lastIndex;
+					if (lastIndex > 0) this._tapePlaybackDirection = -1;
+					this.tapeend();
+					this.updateTapeTickThreshold();
+					return;
+				} else {
+					this._tapehead = lastIndex;
+					this.tapeend();
+					this.updateTapeTickThreshold();
+					return;
 				}
-				else {
-					// Set the tapehead to the end of the tape (or 0 if there is no tape)
-					this._tapehead = this.tape.length > 0 ? this.tape.length - 1 : TAPE_START_INDEX;
-
-					// We do not trigger the tapemove event here, as the tapehead is not actually moving and we dont want to trigger the tapemove event twice in a row for the same tapehead position
-				}
-
-				// Trigger the event for reaching the end of the tape
 				this.tapeend();
+				this.updateTapeTickThreshold();
+				return;
 			}
-			else {
-				// Trigger the event for moving the tape. This is executed when no tapehead correction was required
-				this.tapemove();
-			}
+
+			this._tapehead = v; // Move the tape to new position
+			this.tapemove();
+			this.updateTapeTickThreshold();
 		} finally {
 			this.leaveCriticalSection();
 		}
@@ -1150,6 +1165,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	// @param v - the new position of the tapehead
 	public setHeadNoSideEffect(v: number) {
 		this._tapehead = v;
+		this.updateTapeTickThreshold();
 	}
 
 	/**
@@ -1179,12 +1195,78 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public set ticks(v: number) {
 		this._ticks = v;
-		if (v >= this.definition.ticks2advance_tape) { ++this.tapehead_position; }
+		const def = this.definition;
+		if (!def) return;
+		const base = def.ticks2advance_tape;
+		if (base <= 0) {
+			this.advanceTapehead();
+			return;
+		}
+		if (v >= this._tapeTickThreshold) {
+			this.advanceTapehead();
+		}
+	}
+
+	private advanceTapehead(): void {
+		const tape = this.tape;
+		const mode = this.definition?.tape_playback_mode ?? 'once';
+		if (!tape || tape.length === 0) {
+			this.tapehead_position = this._tapehead + 1;
+			return;
+		}
+
+		const direction = mode === 'pingpong' ? this._tapePlaybackDirection : 1;
+		const nextIndex = this._tapehead + direction;
+		this.tapehead_position = nextIndex;
+	}
+
+	private computeTapeProgress(index: number): number {
+		const tape = this.tape;
+		if (!tape || tape.length === 0) return 0;
+		const len = tape.length;
+		const clamped = Math.max(-1, Math.min(len, index));
+		if (clamped <= -1) return 0;
+		if (clamped >= len) return 1;
+		return (clamped + 1) / len;
+	}
+
+	private updateTapeTickThreshold(): void {
+		const def = this.definition;
+		if (!def) {
+			this._tapeTickThreshold = Number.POSITIVE_INFINITY;
+			return;
+		}
+		const base = def.ticks2advance_tape;
+		if (base <= 0) {
+			this._tapeTickThreshold = base;
+			return;
+		}
+		const tape = this.tape;
+		if (!tape || tape.length === 0) {
+			this._tapeTickThreshold = base;
+			return;
+		}
+		const easingName = def.tape_playback_easing;
+		if (!easingName) {
+			this._tapeTickThreshold = base;
+			return;
+		}
+		const easing = getEasing(easingName);
+		const before = this.computeTapeProgress(this._tapehead);
+		const after = this.computeTapeProgress(this._tapehead + this._tapePlaybackDirection);
+		if (after === before) {
+			this._tapeTickThreshold = Number.POSITIVE_INFINITY;
+			return;
+		}
+		const delta = Math.abs(easing(after) - easing(before));
+		const totalSegments = tape.length;
+		const scaled = base * (delta > 0 ? delta * totalSegments : 1);
+		this._tapeTickThreshold = Math.max(scaled, Number.EPSILON);
 	}
 
 	/**
 	 * Calls the next state's function.
-	 * @param tape_rewound Indicates whether the tape has been rewound. Only occurs when the tape is automatically rewound after reaching the end of the tape via @see {@link StateDefinition.auto_rewind_tape_after_end}.
+	 * @param tape_rewound Indicates whether the tape has been rewound as part of loop playback.
 	 */
 	protected tapemove(tape_rewound: boolean = false) {
 		this.enterCriticalSection();
@@ -1224,6 +1306,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public rewind_tape() {
 		this.setHeadNoSideEffect(TAPE_START_INDEX); // Reset the tapehead to the beginning of the tape
 		this.setTicksNoSideEffect(0); // Reset the ticks
+		this._tapePlaybackDirection = 1;
+		this.updateTapeTickThreshold();
 	}
 
 	/**

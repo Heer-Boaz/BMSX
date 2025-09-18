@@ -3,12 +3,6 @@ import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
 
-/**
- * Determines whether the tape should automatically rewind to the beginning
- * after reaching the end.
- */
-const AUTO_REWIND_TAPE_AFTER_END = false;
-
 function looksLikeStatePath(value: string): boolean {
 	if (!value) return false;
 	return value.startsWith('./') || value.startsWith('../') || value.startsWith('/') || value.startsWith('root:/') || value.startsWith('parent:/') || value.includes('/');
@@ -48,10 +42,24 @@ export class StateDefinition {
 	public ticks2advance_tape: number; // Number of runs before tapehead moves to next statedata
 
 	/**
-	 * Specifies whether the tapehead should automatically rewind to index `0` when it reaches the end of the tape.
+	 * Determines how the tape progresses when it reaches either end.
+	 *
+	 * - `once`: tapehead stops at the final entry.
+	 * - `loop`: tapehead rewinds to the start after the last entry.
+	 * - `pingpong`: tapehead inverts direction at the ends.
+	 */
+	public tape_playback_mode: 'once' | 'loop' | 'pingpong';
+
+	/**
+	 * Name of the easing curve used to distribute time across tape entries.
+	 * When set, the easing curve adjusts the effective ticks-per-entry while
+	 * preserving the total duration defined by {@link ticks2advance_tape}.
+	 */
+	public tape_playback_easing?: string;
+
+	/**
+	 * Specifies whether the tapehead should automatically advance based on ticks.
 	 * If ticks2advance_tape is 0, the default is false. Otherwise, auto_tick is true (unless it was already defined)
-	 * - If set to `true`, the tapehead will be set to index `0` when it would wo out of bounds.
-	 * - If set to `false`, the tapehead will remain at the end of the tape.
 	 */
 	public enable_tape_autotick: boolean; // Automagically increase the ticks during run
 
@@ -67,13 +75,6 @@ export class StateDefinition {
 	 * @type {'state' | 'tree' | 'subtree' | 'none'}
 	 */
 	public automatic_reset_mode: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its states) (defaults to 'state')
-
-	/**
-	 * Indicates whether the tapehead should automatically rewind to index 0 when it would wo out of bounds.
-	 * If set to true, the tapehead will be set to index 0 when it reaches the end of the tape.
-	 * If set to false, the tapehead will remain at the end of the tape.
-	 */
-	public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would wo out of bound. Otherwise, will remain at end
 
 	/**
 	 * Number of times the tape should be repeated.
@@ -106,9 +107,9 @@ export class StateDefinition {
 		this.id = id;
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 		this.ticks2advance_tape ??= 0; // Unless already defined, ticks2move is 0
+		this.tape_playback_mode ??= 'once';
 		this.repetitions = (this.tape_data ? (this.repetitions ?? 1) : 0);
 		this.enable_tape_autotick = this.enable_tape_autotick ?? (this.ticks2advance_tape !== 0 ? true : false); // If ticks2advance_tape is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
-		this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape_data ? AUTO_REWIND_TAPE_AFTER_END : false); // If there is a tape, auto_rewind_tape_after_end is AUTO_REWIND_TAPE_AFTER_END. Otherwise, it is false (unless it was already defined)
 		this.automatic_reset_mode = this.automatic_reset_mode ?? 'state'; // Unless already defined, auto_reset is true
 		this.data ??= {}; // Unless already defined, data is an empty object
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine

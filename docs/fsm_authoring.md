@@ -183,6 +183,6 @@ private handle_path(path: string | string[]): [string, string[], State] {
 - Event scope: `$event` = self; anders global. Events worden geharvest en genormaliseerd.
 - Transities: `to` (tree) vs `switch` (laagste niveau).
 - Parallelle states: alle niet‑current parallelle states runnen ook per tick.
-- Tape: `ticks2move`, `repetitions`, `auto_rewind_tape_after_end`, `auto_tick`.
+- Tape: `ticks2advance_tape`, `repetitions`, `tape_playback_mode`, `tape_playback_easing`, `auto_tick`.
 - Auto‑reset: `'state' | 'tree' | 'subtree' | 'none'`.
 - Hoisting: handlers uit definities/decorators → registry (proxy‑thunks voor hot‑swap).

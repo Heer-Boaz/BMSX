@@ -443,7 +443,7 @@ export class MeshAnimationSystem extends ECSystem {
 	update(world: World): void {
 		const dtSec = $.deltaTime / 1000;
 		for (const [, c] of world.objectsWithComponents(MeshComponent, { scope: 'current' })) {
-			if (!c?.enabled) continue;
+			if (!c.enabled) continue;
 			c.stepAnimation(dtSec);
 		}
 	}

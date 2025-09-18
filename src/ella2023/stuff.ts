@@ -165,7 +165,7 @@ export class TitleScreen extends SpriteObject {
 							is_concurrent: true,
 							ticks2advance_tape: 20,
 							tape_data: [false, true],
-							auto_rewind_tape_after_end: true,
+							tape_playback_mode: 'loop',
 							automatic_reset_mode: 'state', // So that when we re-enter the state, the tape is reset (default)
 							data: {
 								pause_blink: false,

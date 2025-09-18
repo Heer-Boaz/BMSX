@@ -518,7 +518,7 @@ class draaischijf extends SpriteObject {
 				}),
 				slijpen_opstart: new StateDefinition('slijpen_opstart', {
 					ticks2move: 5,
-					auto_rewind_tape_after_end: false,
+					tape_playback_mode: 'once',
 					tape: [
 						BitmapId.slijpschijf2,
 						BitmapId.slijpschijf1,
@@ -568,7 +568,7 @@ class draaischijf extends SpriteObject {
 				}),
 				slijpen_afkoel: new StateDefinition('slijpen_afkoel', {
 					ticks2move: 5,
-					auto_rewind_tape_after_end: false,
+					tape_playback_mode: 'once',
 					tape: [
 						BitmapId.slijpschijf2,
 						BitmapId.slijpschijf1,
@@ -727,7 +727,7 @@ class burn extends onvolmaaktheid {
 			states: {
 				wees_een_burn: {
 					ticks2move: 20,
-					auto_rewind_tape_after_end: false,
+					tape_playback_mode: 'once',
 					tape: [
 						BitmapId.burn1,
 						BitmapId.burn2,
