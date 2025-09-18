@@ -125,6 +125,16 @@ export interface StateActionCondition {
 		index: number;
 		equals: any;
 	};
+	value_equals?: {
+		left: any;
+		equals: any;
+	};
+	value_not_equals?: {
+		left: any;
+		equals: any;
+	};
+	state_matches?: string | { path: string; machine?: string };
+	state_not_matches?: string | { path: string; machine?: string };
 	not?: StateActionCondition;
 	and?: StateActionCondition[];
 	or?: StateActionCondition[];
@@ -138,12 +148,21 @@ export interface StateActionConditionalSpec {
 
 export type StateActionSequence = StateActionSpec[];
 
+export interface StateActionDispatchEventSpec {
+	dispatch_event: {
+		event: string;
+		emitter?: any;
+		args?: any[] | any;
+	};
+}
+
 export type StateActionSpec =
 	| StateActionSetTicksSpec
 	| { emit: StateActionEmitSpec }
 	| StateActionSetPropertySpec
 	| StateActionConditionalSpec
-	| StateActionSequence;
+	| StateActionSequence
+	| StateActionDispatchEventSpec;
 
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**

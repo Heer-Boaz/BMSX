@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { EventBagName, listed_sdef_event, StateActionCondition, StateActionConditionalSpec, StateActionEmitSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
+import type { EventBagName, listed_sdef_event, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 
@@ -536,6 +536,22 @@ function evaluateCondition(condition: StateActionCondition | undefined, ctx: Bui
 		const expected = resolveTemplateValue(condition.arg_equals.equals, ctx);
 		if (actual !== expected) return false;
 	}
+	if (condition.value_equals) {
+		const left = resolveTemplateValue(condition.value_equals.left, ctx);
+		const right = resolveTemplateValue(condition.value_equals.equals, ctx);
+		if (!deepEqual(left, right)) return false;
+	}
+	if (condition.value_not_equals) {
+		const left = resolveTemplateValue(condition.value_not_equals.left, ctx);
+		const right = resolveTemplateValue(condition.value_not_equals.equals, ctx);
+		if (deepEqual(left, right)) return false;
+	}
+	if (condition.state_matches) {
+		if (!stateMatchesCondition(condition.state_matches, ctx)) return false;
+	}
+	if (condition.state_not_matches) {
+		if (stateMatchesCondition(condition.state_not_matches, ctx)) return false;
+	}
 	if (condition.and) {
 		for (const sub of condition.and) {
 			if (!evaluateCondition(sub, ctx)) return false;
@@ -553,6 +569,27 @@ function evaluateCondition(condition: StateActionCondition | undefined, ctx: Bui
 	}
 	if (condition.not && evaluateCondition(condition.not, ctx)) return false;
 	return true;
+}
+
+function stateMatchesCondition(spec: string | { path: string; machine?: string }, ctx: BuiltinExecutionContext): boolean {
+	const controller = ctx.self?.sc;
+	if (!controller?.matches_state_path) return false;
+	let path: string;
+	if (typeof spec === 'string') {
+		path = spec;
+	}
+	else {
+		path = spec.path;
+		if (spec.machine && !path.startsWith(spec.machine)) {
+			path = `${spec.machine}.${path}`;
+		}
+	}
+	try {
+		return controller.matches_state_path(path);
+	}
+	catch {
+		return false;
+	}
 }
 
 const MissingHandlerWarnings = new Set<string>();
@@ -603,6 +640,20 @@ function createEmitHandler(spec: StateActionEmitSpec, slot: string): GenericHand
 		const emitter = emitterMode === 'state' ? (state?.target ?? state) : this;
 		const payload = normalized.payload ? resolveTemplateValue(normalized.payload, ctx) : undefined;
 		$.emit(normalized.event, emitter ?? this, payload);
+	};
+}
+
+function createDispatchEventHandler(spec: StateActionDispatchEventSpec['dispatch_event'], slot: string): GenericHandler {
+	return function (this: any, state?: State, ...invokeArgs: any[]) {
+		if (!spec?.event) return;
+		const controller = this?.sc;
+		if (!controller?.dispatch_event) return;
+		const ctx = buildContext(this, state, invokeArgs, slot);
+		const emitterResolved = spec.emitter !== undefined ? resolveTemplateValue(spec.emitter, ctx) : this;
+		const argsResolvedRaw = spec.args === undefined ? [] : (Array.isArray(spec.args) ? spec.args : [spec.args]);
+		const argsResolved = argsResolvedRaw.map(arg => resolveTemplateValue(arg, ctx));
+		const emitter = emitterResolved ?? this;
+		controller.dispatch_event(spec.event, emitter, ...argsResolved);
 	};
 }
 
@@ -666,6 +717,9 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('set_ticks_to_last_frame' in spec && (spec as StateActionSetTicksSpec).set_ticks_to_last_frame) {
 		return createSetTicksToLastFrameHandler();
+	}
+	if ('dispatch_event' in spec) {
+		return createDispatchEventHandler((spec as StateActionDispatchEventSpec).dispatch_event, slot);
 	}
 	return undefined;
 }

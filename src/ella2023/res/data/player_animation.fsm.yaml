@@ -6,6 +6,53 @@ on:
     $i_hit_face:
         do:
             set_ticks_to_last_frame: true
+    $animationEnd:
+        do:
+            - when:
+                  value_equals:
+                      left: '@args[0].animation_name'
+                      equals: highkick
+              then:
+                  dispatch_event:
+                      event: go_idle
+                      emitter: '@self'
+            - when:
+                  value_equals:
+                      left: '@args[0].animation_name'
+                      equals: punch
+              then:
+                  dispatch_event:
+                      event: go_idle
+                      emitter: '@self'
+            - when:
+                  value_equals:
+                      left: '@args[0].animation_name'
+                      equals: lowkick
+              then:
+                  dispatch_event:
+                      event: go_idle
+                      emitter: '@self'
+            - when:
+                  value_equals:
+                      left: '@args[0].animation_name'
+                      equals: flyingkick
+              then:
+                  dispatch_event:
+                      event: flyingkick_end
+                      emitter: '@self.id'
+            - when:
+                  and:
+                      - value_equals:
+                            left: '@args[0].animation_name'
+                            equals: duckkick
+                      - not:
+                            state_matches:
+                                machine: player_animation
+                                path: stoerheidsdans
+              then:
+                  dispatch_event:
+                      event: go_duck
+                      emitter: '@self'
     $animate_idle: idle
     $animate_humiliated: humiliated
     $animate_walk: walk
@@ -24,7 +71,10 @@ states:
                   value: eila_idle
     walk:
         automatic_reset_mode: subtree
-        entering_state: player_animation.handlers.Eila.enterWalkAnimation
+        entering_state:
+            - set_property:
+                  target: attacking
+                  value: false
         states:
             _walk1:
                 ticks2advance_tape: 8

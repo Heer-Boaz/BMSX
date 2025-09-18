@@ -1,4 +1,4 @@
-import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions } from 'bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions } from 'bmsx';
 import { fsmHandler } from 'bmsx/fsm/fsmdecorators';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
@@ -363,37 +363,6 @@ export class Eila extends Fighter {
 					},
 				},
 			}
-		}
-	}
-
-	@fsmHandler()
-	public enterWalkAnimation(_state: State): void {
-		if (!this.sc.matches_state_path(`${Eila.ANIMATION_FSM_ID}.walk`)) {
-			this.sc.dispatch_event('animate_walk', this);
-		}
-		this.attacking = false;
-	}
-
-	@subscribesToSelfScopedEvent('animationEnd')
-	public handleAnimationEndEvent(event_name: string, _emitter: Eila, { animation_name }: { animation_name: string }): void {
-		switch (event_name) {
-			case 'animationEnd':
-				switch (animation_name) {
-					case 'highkick':
-					case 'punch':
-					case 'lowkick':
-						this.sc.dispatch_event('go_idle', this);
-						break;
-					case 'flyingkick':
-						this.sc.dispatch_event('flyingkick_end', this.id);
-						break;
-					case 'duckkick':
-						if (!this.sc.matches_state_path('stoerheidsdans')) {
-							this.sc.dispatch_event('go_duck', this);
-						}
-						break;
-				}
-				break;
 		}
 	}
 
