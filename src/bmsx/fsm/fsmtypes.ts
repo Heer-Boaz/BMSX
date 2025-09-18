@@ -117,12 +117,12 @@ export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**
 	 * The condition that must be met for the transition to occur.
 	 */
-	if?: StateEventCondition<T>,
+	if?: StateEventCondition<T> | string,
 
 	/**
 	 * The action that is executed when the transition occurs.
 	 */
-	do?: StateEventHandler<T>,
+	do?: StateEventHandler<T> | string,
 
 	/**
 	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
@@ -140,14 +140,14 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
 	 */
-	can_enter?: (this: T, state: State) => boolean;
+	can_enter?: ((this: T, state: State) => boolean) | string;
 
 	/**
 	 * Checks if the state can be exited.
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
 	 */
-	can_exit?: (this: T, state: State) => boolean;
+	can_exit?: ((this: T, state: State) => boolean) | string;
 }
 
 /**

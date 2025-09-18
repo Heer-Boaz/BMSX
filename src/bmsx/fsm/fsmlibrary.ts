@@ -28,16 +28,20 @@ export class HandlerRegistry {
 }
 
 // assign-fsm-augment.ts (unchanged logic, now gets keys from decorator)
+const HANDLERS_REGISTERED = Symbol('fsm:handlersRegistered');
+
 export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set<string>) {
 	const reg = HandlerRegistry.instance;
 	const className = ctor.name;
 	const entries = getDeclaredFsmHandlers(ctor);
 	if (!entries.length || !linkedMachines?.size) return;
+	const registered: Set<string> = (ctor as any)[HANDLERS_REGISTERED] ?? new Set<string>();
 
 	for (const { name: memberName, keys } of entries) {
 		for (const machine of linkedMachines) {
 			for (const key of keys) {
 				const id = `${machine}.handlers.${className}.${key}`;
+				if (registered.has(id)) continue;
 				const fn: GenericHandler = function (this: any, ...args) {
 					let impl = this[memberName] ?? Object.getPrototypeOf(this)?.[memberName];
 					if (typeof impl !== 'function') {
@@ -46,9 +50,11 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 					return impl.apply(this, args);
 				};
 				reg.register(id, fn);
+				registered.add(id);
 			}
 		}
 	}
+	(ctor as any)[HANDLERS_REGISTERED] = registered;
 }
 
 // ---------- Diff-based, tree-aware migration ----------
@@ -394,6 +400,77 @@ function annotateHandler(fn: Function, id: string): void {
 	}
 }
 
+type HandlerInvokeOptions = {
+	defaultValue?: any;
+	coerceBoolean?: boolean;
+	debugRef?: string;
+};
+
+const MissingHandlerWarnings = new Set<string>();
+
+function warnMissingHandler(refId: string, debugRef?: string): void {
+	const key = `${refId}::${debugRef ?? ''}`;
+	if (MissingHandlerWarnings.has(key)) return;
+	MissingHandlerWarnings.add(key);
+	console.warn(`[FSM] Handler '${refId}' referenced by '${debugRef ?? 'unknown slot'}' is not registered.`);
+}
+
+function createDelegatedHandler(targetId: string, registry: HandlerRegistry, opts: HandlerInvokeOptions): GenericHandler {
+	return function (this: any, ...args: any[]) {
+		const handler = registry.get(targetId);
+		if (!handler) {
+			warnMissingHandler(targetId, opts.debugRef);
+			return opts.coerceBoolean ? !!opts.defaultValue : opts.defaultValue;
+		}
+		const result = handler.apply(this, args);
+		return opts.coerceBoolean ? !!result : result;
+	};
+}
+
+function createProxyForRegistryId(id: string, registry: HandlerRegistry, opts: HandlerInvokeOptions): GenericHandler {
+	return function (this: any, ...args: any[]) {
+		const handler = registry.get(id);
+		if (!handler) return opts.coerceBoolean ? !!opts.defaultValue : opts.defaultValue;
+		const result = handler.apply(this, args);
+		return opts.coerceBoolean ? !!result : result;
+	};
+}
+
+function hoistSlot(
+	owner: Record<string, any>,
+	slot: string,
+	id: string,
+	registry: HandlerRegistry,
+	useProxyThunks: boolean,
+	options: HandlerInvokeOptions = {}
+): void {
+	const current = owner[slot];
+	if (typeof current === 'function') {
+		registry.register(id, current as GenericHandler);
+		if (useProxyThunks) {
+			const proxy = createProxyForRegistryId(id, registry, options);
+			annotateHandler(proxy as Function, id);
+			owner[slot] = proxy;
+		} else {
+			annotateHandler(current as Function, id);
+			owner[slot] = current;
+		}
+		return;
+	}
+	if (typeof current === 'string') {
+		const delegated = createDelegatedHandler(current, registry, { ...options, debugRef: id });
+		registry.register(id, delegated);
+		annotateHandler(delegated as Function, id);
+		if (useProxyThunks) {
+			const proxy = createProxyForRegistryId(id, registry, options);
+			annotateHandler(proxy as Function, id);
+			owner[slot] = proxy;
+		} else {
+			owner[slot] = delegated;
+		}
+	}
+}
+
 // @ts-ignore
 type EventSlots = { [K in keyof StateEventDefinition]-?: StateEventDefinition[K] extends Function | undefined ? K : never }[keyof StateEventDefinition];
 // @ts-ignore
@@ -406,186 +483,45 @@ type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends S
 
 // Event definition handlers
 function hoistEventIf(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.if;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateEventDefinition['if'] = function (this: any, state: any, ...args: any[]): boolean {
-			const h = registry.get(id);
-			if (!h) return false;
-			const out = h.apply(this, [state, ...args]);
-			return !!out;
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.if = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.if = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'if', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
 }
 
 function hoistEventDo(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.do;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateEventDefinition['do'] = function (this: any, state: any, ...args: any[]) {
-			const h = registry.get(id);
-			if (!h) return undefined;
-			return h.apply(this, [state, ...args]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.do = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.do = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'do', id, registry, useProxyThunks);
 }
 
 // Guard handlers
 function hoistGuardCanEnter(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.can_enter;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateGuard['can_enter'] = function (this: any, state: any): boolean {
-			const h = registry.get(id);
-			if (!h) return false;
-			return !!h.apply(this, [state]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.can_enter = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.can_enter = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'can_enter', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
 }
 
 function hoistGuardCanExit(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.can_exit;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateGuard['can_exit'] = function (this: any, state: any): boolean {
-			const h = registry.get(id);
-			if (!h) return false;
-			return !!h.apply(this, [state]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.can_exit = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.can_exit = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'can_exit', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
 }
 
 // StateDefinition handlers
 function hoistStateTick(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.tick;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateDefinition['tick'] = function (this: any, state: any, ...args: any[]) {
-			const h = registry.get(id);
-			if (!h) return undefined;
-			return h.apply(this, [state, ...args]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.tick = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.tick = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'tick', id, registry, useProxyThunks);
 }
 
 function hoistStateTapeEnd(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.tape_end;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateDefinition['tape_end'] = function (this: any, state: any, ...args: any[]) {
-			const h = registry.get(id);
-			if (!h) return undefined;
-			return h.apply(this, [state, ...args]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.tape_end = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.tape_end = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'tape_end', id, registry, useProxyThunks);
 }
 
 function hoistStateTapeNext(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.tape_next;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateDefinition['tape_next'] = function (this: any, state: any, tape_rewound: boolean, ...args: any[]) {
-			const h = registry.get(id);
-			if (!h) return undefined;
-			return h.apply(this, [state, tape_rewound, ...args]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.tape_next = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.tape_next = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'tape_next', id, registry, useProxyThunks);
 }
 
 function hoistStateEntering(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.entering_state;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateDefinition['entering_state'] = function (this: any, state: any, ...args: any[]) {
-			const h = registry.get(id);
-			if (!h) return undefined;
-			return h.apply(this, [state, ...args]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.entering_state = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.entering_state = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'entering_state', id, registry, useProxyThunks);
 }
 
 function hoistStateExiting(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.exiting_state;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateDefinition['exiting_state'] = function (this: any, state: any, ...args: any[]) {
-			const h = registry.get(id);
-			if (!h) return undefined;
-			return h.apply(this, [state, ...args]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.exiting_state = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.exiting_state = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'exiting_state', id, registry, useProxyThunks);
 }
 
 function hoistStateProcessInput(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	const current = ownerDef.process_input;
-	if (typeof current !== 'function') return;
-	registry.register(id, current as GenericHandler);
-	if (useProxyThunks) {
-		const proxy: StateDefinition['process_input'] = function (this: any, state: any, ...args: any[]) {
-			const h = registry.get(id);
-			if (!h) return undefined;
-			return h.apply(this, [state, ...args]);
-		};
-		annotateHandler(proxy as Function, id);
-		ownerDef.process_input = proxy;
-	} else {
-		annotateHandler(current as Function, id);
-		ownerDef.process_input = current;
-	}
+	hoistSlot(ownerDef as unknown as Record<string, any>, 'process_input', id, registry, useProxyThunks);
 }
 
 function normalizeEventNameForId(name: string) {
@@ -606,10 +542,10 @@ function hoistEventDef(
 	const eventName = normalizeEventNameForId(rawEventName);
 	const base = [machineName, ...statePath, bagName, eventName];
 
-	if (typeof eventDefinition.if === 'function') {
+	if (typeof eventDefinition.if !== 'undefined') {
 		hoistEventIf(eventDefinition, makeId([...base, 'if']), registry, useProxyThunks);
 	}
-	if (typeof eventDefinition.do === 'function') {
+	if (typeof eventDefinition.do !== 'undefined') {
 		hoistEventDo(eventDefinition, makeId([...base, 'do']), registry, useProxyThunks);
 	}
 }
@@ -622,12 +558,12 @@ function walkAndHoist(
 	useProxyThunks = true
 ) {
 	// direct slots — aligned with StateDefinition handler properties
-	if (typeof sdef.tick === 'function') hoistStateTick(sdef, makeId([machineName, ...path, 'tick']), registry, useProxyThunks);
-	if (typeof sdef.tape_end === 'function') hoistStateTapeEnd(sdef, makeId([machineName, ...path, 'tape_end']), registry, useProxyThunks);
-	if (typeof sdef.tape_next === 'function') hoistStateTapeNext(sdef, makeId([machineName, ...path, 'tape_next']), registry, useProxyThunks);
-	if (typeof sdef.entering_state === 'function') hoistStateEntering(sdef, makeId([machineName, ...path, 'entering_state']), registry, useProxyThunks);
-	if (typeof sdef.exiting_state === 'function') hoistStateExiting(sdef, makeId([machineName, ...path, 'exiting_state']), registry, useProxyThunks);
-	if (typeof sdef.process_input === 'function') hoistStateProcessInput(sdef, makeId([machineName, ...path, 'process_input']), registry, useProxyThunks);
+	if (typeof sdef.tick !== 'undefined') hoistStateTick(sdef, makeId([machineName, ...path, 'tick']), registry, useProxyThunks);
+	if (typeof sdef.tape_end !== 'undefined') hoistStateTapeEnd(sdef, makeId([machineName, ...path, 'tape_end']), registry, useProxyThunks);
+	if (typeof sdef.tape_next !== 'undefined') hoistStateTapeNext(sdef, makeId([machineName, ...path, 'tape_next']), registry, useProxyThunks);
+	if (typeof sdef.entering_state !== 'undefined') hoistStateEntering(sdef, makeId([machineName, ...path, 'entering_state']), registry, useProxyThunks);
+	if (typeof sdef.exiting_state !== 'undefined') hoistStateExiting(sdef, makeId([machineName, ...path, 'exiting_state']), registry, useProxyThunks);
+	if (typeof sdef.process_input !== 'undefined') hoistStateProcessInput(sdef, makeId([machineName, ...path, 'process_input']), registry, useProxyThunks);
 
 	// on / input_event_handlers
 	for (const bagName of ['on', 'input_event_handlers'] as EventBagName[]) {
@@ -647,10 +583,10 @@ function walkAndHoist(
 		rc.forEach((chk, i) => {
 			if (!chk || typeof chk !== 'object') return;
 			const base = [machineName, ...path, `run_checks[${i}]`];
-			if (typeof chk.if === 'function') {
+			if (typeof chk.if !== 'undefined') {
 				hoistEventIf(chk, makeId([...base, 'if']), registry, useProxyThunks);
 			}
-			if (typeof chk.do === 'function') {
+			if (typeof chk.do !== 'undefined') {
 				hoistEventDo(chk, makeId([...base, 'do']), registry, useProxyThunks);
 			}
 		});
@@ -659,10 +595,10 @@ function walkAndHoist(
 	// guards
 	const g = sdef.transition_guards;
 	if (g && typeof g === 'object') {
-		if (typeof g.can_enter === 'function') {
+		if (typeof g.can_enter !== 'undefined') {
 			hoistGuardCanEnter(g, makeId([machineName, ...path, 'guards', 'can_enter']), registry, useProxyThunks);
 		}
-		if (typeof g.can_exit === 'function') {
+		if (typeof g.can_exit !== 'undefined') {
 			hoistGuardCanExit(g, makeId([machineName, ...path, 'guards', 'can_exit']), registry, useProxyThunks);
 		}
 	}

@@ -165,12 +165,12 @@ export class StateDefinition {
 		}
 	}
 
-	public tick?: StateEventHandler;
-	public tape_end?: StateEventHandler;
-	public tape_next?: StateNextHandler;
-	public entering_state?: StateEventHandler;
-	public exiting_state?: StateExitHandler;
-	public process_input?: StateEventHandler;
+	public tick?: StateEventHandler | string;
+	public tape_end?: StateEventHandler | string;
+	public tape_next?: StateNextHandler | string;
+	public entering_state?: StateEventHandler | string;
+	public exiting_state?: StateExitHandler | string;
+	public process_input?: StateEventHandler | string;
 
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
@@ -324,11 +324,11 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 					} else {
 						if (typeof t.to === 'string') resolveStateDefPath(stateDef, t.to, statePath, description);
 						if (typeof t.switch === 'string') resolveStateDefPath(stateDef, t.switch, statePath, description);
-						if (typeof t.do === 'string') {
-							console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
-						}
+					if (typeof t.do === 'string' && !t.do.includes('.handlers.')) {
+						console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
 					}
 				}
+			}
 			};
 
 			checkTransitions(stateDef.on, 'on transition');
@@ -339,7 +339,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 				} else {
 					if (typeof check.to === 'string') resolveStateDefPath(stateDef, check.to, statePath, 'run check (to)');
 					if (typeof check.switch === 'string') resolveStateDefPath(stateDef, check.switch, statePath, 'run check (switch)');
-					if (typeof check.do === 'string') {
+					if (typeof check.do === 'string' && !check.do.includes('.handlers.')) {
 						console.warn(`Handler '${check.do}' referenced in '${statePath}' is missing`);
 					}
 				}
@@ -348,7 +348,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			const handlers = [stateDef.tick, stateDef.entering_state, stateDef.exiting_state, stateDef.tape_next, stateDef.tape_end, stateDef.process_input];
 			const handlerNames = ['run', 'enter', 'exit', 'next', 'end', 'process_input'];
 			handlers.forEach((h, idx) => {
-				if (typeof h === 'string') {
+				if (typeof h === 'string' && !h.includes('.handlers.')) {
 					console.warn(`Handler '${h}' referenced in '${statePath}' for '${handlerNames[idx]}' is missing`);
 				}
 			});

@@ -505,17 +505,25 @@ export function zip(content: Buffer): Uint8Array {
  * @returns An object containing the name, extension, and type of the resource file.
  */
 export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb' | undefined, datatype?: 'json' | 'yaml' | 'bin' | undefined } {
-	let name = parse(filepath).name.replace(' ', '').toLowerCase();
-	const ext = parse(filepath).ext.toLowerCase();
+	const parsed = parse(filepath);
+	const rawName = parsed.name;
+	const normalizedName = rawName.replace(/\s+/g, '').toLowerCase();
+	let name = normalizedName;
+	const ext = parsed.ext.toLowerCase();
 	let type: resourcetype;
 	let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
 	let datatype: 'json' | 'yaml' | 'bin' | undefined = undefined;
 
-	function getDataSubtype(): asset_type {
-		if (name.includes('.fsm')) return 'fsm';
-		if (name.includes('.aem')) return 'aem';
+	const getDataSubtype = (currentName: string): asset_type => {
+		if (currentName.includes('.fsm')) return 'fsm';
+		if (currentName.includes('.aem')) return 'aem';
 		return 'data';
-	}
+	};
+
+	const removeExtension = (currentName: string): string => {
+		// Remove any `.` and the following characters from the name, which must be done after extracting the extension and determining the subtype
+		return currentName.replace(/\..*$/, '');
+	};
 
 	switch (ext) {
 		case '.wav':
@@ -541,7 +549,10 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 			break;
 		case '.json':
 			datatype = 'json';
-			type = getDataSubtype();
+			type = getDataSubtype(name);
+			name = removeExtension(name);
+			// Warn about JSON files, because YAML is preferred for better readability
+			console.log(`JSON data file detected: "${name}${ext}" (name="${name}", ext="${ext}", type="${type}"), consider using YAML (.yaml or .yml) for better readability.`);
 			break;
 		case '.obj':
 		case '.gltf':
@@ -551,7 +562,8 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.yaml':
 		case '.yml':
 			datatype = 'yaml';
-			type = getDataSubtype();
+			type = getDataSubtype(name);
+			name = removeExtension(name);
 			break;
 	}
 	return { name, ext, type, collisionType, datatype };
@@ -598,20 +610,20 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					if (imgMeta.targetAtlas !== undefined) targetAtlasIdSet.add(imgMeta.targetAtlas);
 				}
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas });
+				result.push({ filepath, name, ext, type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas });
 				++imgid;
 				break;
 			case 'audio':
 				const parsedMeta = parseAudioMeta(name);
 				name = parsedMeta.sanitizedName; // Remove metadata from the name
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: sndid });
+				result.push({ filepath, name, ext, type, id: sndid });
 				++sndid;
 				break;
 			case 'romlabel':
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
+				result.push({ filepath, name, ext, type, id: undefined });
 				break;
 			case 'rommanifest':
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
+				result.push({ filepath, name, ext, type, id: undefined });
 				break;
 			case 'code':
 				// For code files, we use the romname as the name
@@ -619,18 +631,18 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			case 'data':
 			case 'aem': // AEM files are added to the data asset list
 				// For data files, we use the name as is
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid, datatype: meta.datatype });
+				result.push({ filepath, name, ext, type, id: dataid, datatype: meta.datatype });
 				++dataid;
 				break;
 			case 'model':
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: modelid });
+				result.push({ filepath, name, ext, type, id: modelid, datatype: meta.datatype });
 				++modelid;
 				break;
 			case 'atlas':
 				// Atlas files are not real files, but we add them to the resource list in the next step
 				break;
 			case 'fsm':
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: fsmid });
+				result.push({ filepath, name, ext, type, id: fsmid, datatype: meta.datatype });
 				++fsmid;
 				break;
 		}

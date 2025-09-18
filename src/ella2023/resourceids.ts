@@ -118,3 +118,8 @@ export enum DataId {
 	none = 'none',
 	modulationparams = 'modulationparams',  
 }
+
+export enum FsmId {
+	none = 'none',
+	player_animation = 'player_animation',  
+}

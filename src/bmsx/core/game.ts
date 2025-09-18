@@ -305,7 +305,7 @@ export class Game {
 		} catch (error) {
 			console.error("Failed to initialize PSG:", error);
 		}
-		AudioEventManager.instance.init([rompack.audioevents], null);
+		AudioEventManager.instance.init(rompack.audioevents, null);
 
 		// Prevent the user from accidentally closing the game window if not in debug mode
 		if (!this.debug) {

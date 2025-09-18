@@ -194,9 +194,9 @@ export class AudioEventManager implements RegisterablePersistent {
 	private rand: () => number = Math.random;
 	private weightedScratch: number[] = [];
 
-	init(maps: id2audioevent[], handlers?: AudioHandler[]): void {
+	init(map: id2audioevent, handlers?: AudioHandler[]): void {
 		this.handlers = handlers ?? [];
-		this.merged = this.mergeMaps(maps);
+		this.merged = this.mergeEvents(map);
 		this.anyListener = (event_name, emitter, payload) => {
 			switch (emitter.id) {
 				case 'view':
@@ -211,9 +211,6 @@ export class AudioEventManager implements RegisterablePersistent {
 		// subscribe to voice end events for sfx and ui to manage queue/pause
 		this.endUnsubByType['sfx'] = $.sndmaster.addEndedListener('sfx', _info => this.onChannelEnded('sfx'));
 		this.endUnsubByType['ui'] = $.sndmaster.addEndedListener('ui', _info => this.onChannelEnded('ui'));
-
-		// Expose instance for serializer helpers
-		(globalThis as { AudioEventManagerInstance?: AudioEventManager }).AudioEventManagerInstance = this;
 
 		// Debug: list registered audio events and handlers
 		// try {
@@ -372,14 +369,14 @@ export class AudioEventManager implements RegisterablePersistent {
 			}
 		}
 
-			// set cooldown stamp only when actually playing now (not when queuing)
-			if (action.cooldownMs) {
-				const actorKey = payload.actorId ?? 'global';
-				const key = `${name}:${actorKey}:${action.audioId}`;
-				const now = this.nowMs();
-				const last = this.lastPlayedAt.get(key) || 0;
-				if ((now - last) < action.cooldownMs) return true;
-				this.lastPlayedAt.set(key, now);
+		// set cooldown stamp only when actually playing now (not when queuing)
+		if (action.cooldownMs) {
+			const actorKey = payload.actorId ?? 'global';
+			const key = `${name}:${actorKey}:${action.audioId}`;
+			const now = this.nowMs();
+			const last = this.lastPlayedAt.get(key) || 0;
+			if ((now - last) < action.cooldownMs) return true;
+			this.lastPlayedAt.set(key, now);
 		}
 
 		this.play(action.audioId, { payload: { modulationPreset: action.modulationPreset } }, { priority: pr });
@@ -613,7 +610,7 @@ export class AudioEventManager implements RegisterablePersistent {
 		return n - 1;
 	}
 
-	private mergeMaps(maps: id2audioevent[]): Map<string, CompiledAudioEventEntry> {
+	private mergeEvents(map: id2audioevent): Map<string, CompiledAudioEventEntry> {
 		const out = new Map<string, CompiledAudioEventEntry>();
 
 		// Helper to add or merge a single event entry by name
@@ -631,39 +628,37 @@ export class AudioEventManager implements RegisterablePersistent {
 			}
 		};
 
-		for (const map of maps) {
-			for (const assetId in map) {
-				const v: any = map[assetId];
-				if (!v || typeof v !== 'object') continue;
+		for (const assetId in map) {
+			const v: any = map[assetId];
+			if (!v || typeof v !== 'object') continue;
 
-				// Case 1: Container with explicit `events` map
-				const evtMap = v.events;
-				if (evtMap && typeof evtMap === 'object') {
-					for (const evName in evtMap) {
-						const ev = evtMap[evName] as AudioEventMapEntry;
-						if (ev && typeof ev === 'object') addOrMerge(evName, ev);
-					}
-					continue;
+			// Case 1: Container with explicit `events` map
+			const evtMap = v.events;
+			if (evtMap && typeof evtMap === 'object') {
+				for (const evName in evtMap) {
+					const ev = evtMap[evName] as AudioEventMapEntry;
+					if (ev && typeof ev === 'object') addOrMerge(evName, ev);
 				}
+				continue;
+			}
 
-				// Case 2: Events declared directly at top-level (e.g., keys like "combat.hit")
-				let foundDirect = false;
-				for (const key in v) {
-					// Skip known meta or entry fields
-					if (key === '$type' || key === 'events' || key === 'name' || key === 'channel' || key === 'maxVoices' || key === 'policy' || key === 'rules') continue;
-					const ev = v[key];
-					if (ev && typeof ev === 'object' && ('rules' in ev)) {
-						foundDirect = true;
-						addOrMerge(key, ev as AudioEventMapEntry);
-					}
+			// Case 2: Events declared directly at top-level (e.g., keys like "combat.hit")
+			let foundDirect = false;
+			for (const key in v) {
+				// Skip known meta or entry fields
+				if (key === '$type' || key === 'events' || key === 'name' || key === 'channel' || key === 'maxVoices' || key === 'policy' || key === 'rules') continue;
+				const ev = v[key];
+				if (ev && typeof ev === 'object' && ('rules' in ev)) {
+					foundDirect = true;
+					addOrMerge(key, ev as AudioEventMapEntry);
 				}
-				if (foundDirect) continue;
+			}
+			if (foundDirect) continue;
 
-				// Case 3: Single entry object (fallback). Use its name if available.
-				if (v.rules && Array.isArray(v.rules)) {
-					const evName = typeof v.name === 'string' && v.name.length > 0 ? v.name : '';
-					if (evName) addOrMerge(evName, v as AudioEventMapEntry);
-				}
+			// Case 3: Single entry object (fallback). Use its name if available.
+			if (v.rules && Array.isArray(v.rules)) {
+				const evName = typeof v.name === 'string' && v.name.length > 0 ? v.name : '';
+				if (evName) addOrMerge(evName, v as AudioEventMapEntry);
 			}
 		}
 		return out;

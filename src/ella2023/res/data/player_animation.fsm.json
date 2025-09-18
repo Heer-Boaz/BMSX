@@ -1,0 +1,78 @@
+{
+  "is_concurrent": true,
+  "on": {
+    "$i_was_hit": {
+      "do": "player_animation.handlers.Eila.onAnimationWasHit"
+    },
+    "$i_hit_face": {
+      "do": "player_animation.handlers.Eila.onAnimationHitFace"
+    },
+    "$animate_idle": "idle",
+    "$animate_humiliated": "humiliated",
+    "$animate_walk": "walk",
+    "$animate_punch": "punch",
+    "$animate_highkick": "highkick",
+    "$animate_flyingkick": "flyingkick",
+    "$animate_lowkick": "lowkick",
+    "$animate_duckkick": "duckkick",
+    "$animate_duck": "duck",
+    "$animate_jump": "jump"
+  },
+  "states": {
+    "_idle": {
+      "entering_state": "player_animation.handlers.Eila.enterIdleAnimation"
+    },
+    "walk": {
+      "automatic_reset_mode": "subtree",
+      "entering_state": "player_animation.handlers.Eila.enterWalkAnimation",
+      "states": {
+        "_walk1": {
+          "ticks2advance_tape": 8,
+          "entering_state": "player_animation.handlers.Eila.enterWalkFrame1Animation",
+          "tape_next": "player_animation.handlers.Eila.walkFrame1Next"
+        },
+        "walk2": {
+          "ticks2advance_tape": 8,
+          "entering_state": "player_animation.handlers.Eila.enterWalkFrame2Animation",
+          "tape_next": "player_animation.handlers.Eila.walkFrame2Next"
+        }
+      }
+    },
+    "highkick": {
+      "ticks2advance_tape": 15,
+      "entering_state": "player_animation.handlers.Eila.enterHighkickAnimation",
+      "tape_next": "player_animation.handlers.Eila.highkickNext"
+    },
+    "lowkick": {
+      "ticks2advance_tape": 15,
+      "entering_state": "player_animation.handlers.Eila.enterLowkickAnimation",
+      "tape_next": "player_animation.handlers.Eila.lowkickNext"
+    },
+    "punch": {
+      "ticks2advance_tape": 15,
+      "entering_state": "player_animation.handlers.Eila.enterPunchAnimation",
+      "tape_next": "player_animation.handlers.Eila.punchNext"
+    },
+    "duckkick": {
+      "ticks2advance_tape": 15,
+      "entering_state": "player_animation.handlers.Eila.enterDuckkickAnimation",
+      "tape_next": "player_animation.handlers.Eila.duckkickNext"
+    },
+    "flyingkick": {
+      "ticks2advance_tape": 15,
+      "entering_state": "player_animation.handlers.Eila.enterFlyingkickAnimation",
+      "tape_next": "player_animation.handlers.Eila.flyingkickNext"
+    },
+    "duck": {
+      "entering_state": "player_animation.handlers.Eila.enterDuckAnimation"
+    },
+    "jump": {
+      "entering_state": "player_animation.handlers.Eila.enterJumpAnimation"
+    },
+    "humiliated": {
+      "ticks2advance_tape": 300,
+      "entering_state": "player_animation.handlers.Eila.enterHumiliatedAnimation",
+      "tape_next": "player_animation.handlers.Eila.humiliatedNext"
+    }
+  }
+}

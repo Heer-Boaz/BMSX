@@ -494,14 +494,12 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				},
 			};
 			romResult.img[res.resid] = imgAsset;
-			romResult.img[res.resid] = imgAsset;
 			break;
 		case 'audio':
 			try {
 				if (opts && opts.loadAudioFromBuffer) {
 					romResult.audio[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
 				} else {
-					romResult.audio[res.resid] = res;
 					romResult.audio[res.resid] = res;
 				}
 			} catch (err: any) {
@@ -530,7 +528,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					model = await loadModelFromBuffer(res.resid, rom.slice(res.start, res.end), texBuf);
 				}
 				romResult.model[res.resid] = model;
-				romResult.model[res.resid] = model;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'model' from rom: ${err.message}.`);
 			}
@@ -540,10 +537,8 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				if (opts && opts.loadDataFromBuffer) {
 					const data = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
 					romResult.data[res.resid] = data;
-					romResult.data[res.resid] = data;
 				} else {
 					const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
-					romResult.data[res.resid] = data;
 					romResult.data[res.resid] = data;
 				}
 			} catch (err: any) {
@@ -555,7 +550,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				const u8 = new Uint8Array(rom.slice(res.start, res.end));
 				const blueprint = decodeBinary(u8);
 				romResult.fsm[res.resid] = blueprint;
-				romResult.fsm[res.resid] = blueprint;
 			} catch (err: any) {
 				throw new Error(`Failed to load 'fsm' from rom: ${err.message}.`);
 			}
@@ -565,7 +559,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			try {
 				const u8 = new Uint8Array(rom.slice(res.start, res.end));
 				const audioevents = decodeBinary(u8);
-				romResult.audioevents[res.resid] = audioevents;
 				romResult.audioevents[res.resid] = audioevents;
 				console.info(`Loaded audio event map '${res.resid}' with ${Object.keys(audioevents).length} entries.`);
 			} catch (err: any) {

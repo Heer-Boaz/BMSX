@@ -8,7 +8,7 @@ import { $ } from '../game';
 import type { Space } from '../space';
 import { ObjectTracker } from "../../utils/objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from '../../utils/utils';
-import { StateDefinitions } from '../../fsm/fsmlibrary';
+import { StateDefinitions, registerHandlersForLinkedMachines } from '../../fsm/fsmlibrary';
 import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
@@ -827,6 +827,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 		// Check if the constructor has the 'linkedFSMs' property
 		if (constructor.linkedFSMs) {
+			registerHandlersForLinkedMachines(constructor, constructor.linkedFSMs);
 			// Iterate over the FSM names and create the state machines
 			constructor.linkedFSMs.forEach(fsm => {
 				this.sc.add_statemachine(fsm, this.id);

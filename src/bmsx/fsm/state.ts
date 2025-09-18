@@ -364,7 +364,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
 		this.withCriticalSection(() => {
-			startStateDef?.entering_state?.call(this.target, this.get_sstate(startStateId));
+			const enterStart = startStateDef?.entering_state;
+			if (typeof enterStart === 'function') {
+				enterStart.call(this.target, this.get_sstate(startStateId));
+			}
 		});
 
 		// Start the state machine for the current active state
@@ -411,7 +414,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		// That is because the `runSubstateMachines` function is called before the `processInput` function, which means that the input processing is run in the states first.
 		this.processInputForCurrentState();
 
-		const next_state = this.definition.process_input?.call(this.target, this);
+		const processInput = this.definition.process_input;
+		const next_state = typeof processInput === 'function' ? processInput.call(this.target, this) : undefined;
 		this.transitionToNextStateIfProvided(next_state);
 	}
 
@@ -443,7 +447,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If the `run` function does not return a next state and `auto_tick` is enabled in the state definition, it increments the `ticks` counter.
 	 */
 	private runCurrentState(): void {
-		const next_state = this.definition.tick?.call(this.target, this);
+		const tickHandler = this.definition.tick;
+		const next_state = typeof tickHandler === 'function' ? tickHandler.call(this.target, this) : undefined;
 		if (next_state) {
 			this.transitionToNextStateIfProvided(next_state);
 		} else if (this.definition.enable_tape_autotick) {
@@ -487,7 +492,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (!checks) return;
 
 		for (const rc of checks) {
-			if (!rc.if?.call(this.target, this)) continue;
+			const condition = rc.if;
+			if (typeof condition === 'function' && !condition.call(this.target, this)) continue;
+			if (typeof condition === 'string') continue;
 			this.handleStateTransition(rc);
 			break; // First passing check wins
 		}
@@ -676,12 +683,14 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const curDef = this.current_state_definition;
 		const tgtDef = this.definition?.states?.[target_state_id];
 
-		if (curDef?.transition_guards?.can_exit && !curDef.transition_guards.can_exit.call(this.target, this)) {
+		const exitGuard = curDef?.transition_guards?.can_exit;
+		if (typeof exitGuard === 'function' && !exitGuard.call(this.target, this)) {
 			return false;
 		}
 
 		const tgt = this.states?.[target_state_id];
-		if (tgtDef?.transition_guards?.can_enter && !tgtDef.transition_guards.can_enter.call(this.target, tgt)) {
+		const enterGuard = tgtDef?.transition_guards?.can_enter;
+		if (typeof enterGuard === 'function' && !enterGuard.call(this.target, tgt)) {
 			return false;
 		}
 
@@ -731,7 +740,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			const prevDef = this.current_state_definition;
 
 			// Exit previous state
-			prevDef?.exiting_state?.call(this.target, this.current, ...args);
+			const exitHandler = prevDef?.exiting_state;
+			if (typeof exitHandler === 'function') {
+				exitHandler.call(this.target, this.current, ...args);
+			}
 			if (prevDef) this.pushHistory(prevId);
 
 			// Switch current id
@@ -749,7 +761,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			}
 
 			// Enter new state and possibly chain to next state
-			const next = curDef.entering_state?.call(this.target, cur, ...args);
+			const enterHandler = curDef.entering_state;
+			const next = typeof enterHandler === 'function' ? enterHandler.call(this.target, cur, ...args) : undefined;
 			cur.transitionToNextStateIfProvided(next);
 		});
 	}
@@ -866,14 +879,15 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 
 		const cond = action.if;
-		if (cond && !cond.call(this.target, this as State<T>, ...args)) return false;
+		if (typeof cond === 'function' && !cond.call(this.target, this as State<T>, ...args)) return false;
 
 		let didRunDo = false;
 
 		// Run 'do' and interpret optional next state
-		if (action.do) {
+		const doHandler = action.do;
+		if (typeof doHandler === 'function') {
 			didRunDo = true;
-			const next = this.getNextState(action.do.call(this.target, this as State<T>, ...args));
+			const next = this.getNextState(doHandler.call(this.target, this as State<T>, ...args));
 			if (next) {
 				if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
 					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
@@ -1175,7 +1189,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	protected tapemove(tape_rewound: boolean = false) {
 		this.enterCriticalSection();
 		try {
-			const next_state = this.definition.tape_next?.call(this.target, this, tape_rewound);
+			const tapeNext = this.definition.tape_next;
+			const next_state = typeof tapeNext === 'function' ? tapeNext.call(this.target, this, tape_rewound) : undefined;
 			this.transitionToNextStateIfProvided(next_state);
 		} finally {
 			this.leaveCriticalSection();
@@ -1188,7 +1203,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	protected tapeend() {
 		this.enterCriticalSection();
 		try {
-			const next_state = this.definition.tape_end?.call(this.target, this, undefined);
+			const tapeEnd = this.definition.tape_end;
+			const next_state = typeof tapeEnd === 'function' ? tapeEnd.call(this.target, this, undefined) : undefined;
 			this.transitionToNextStateIfProvided(next_state);
 		} finally {
 			this.leaveCriticalSection();
