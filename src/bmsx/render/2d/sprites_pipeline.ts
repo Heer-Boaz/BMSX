@@ -204,6 +204,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	};
 	const ambientDefaultEnabled = state.ambientEnabledDefault ? 1 : 0;
 	spriteQueue.forEachFront(({ options, imgmeta }) => {
+		if (!imgmeta) { console.error(`[Sprite Pipeline] Image metadata missing for imgid '${options.imgid}'`); return; }
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
 		const layerIsUI = options.layer === 'ui';
 		const ambE = layerIsUI ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : ambientDefaultEnabled);
@@ -226,7 +227,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 }
 
 export function drawImg(options: ImgRenderSubmission): void {
-	const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
+	const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) { console.error(`[Sprite Pipeline] "drawImg": Image metadata missing for imgid '${imgid}'`); return; }
 	// Deep-copy nested objects to freeze values at submission time
 	spriteQueue.submit({
 		options: {
