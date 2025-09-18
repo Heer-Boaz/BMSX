@@ -1,5 +1,4 @@
 import { AbilityRuntimeSystem } from '../gas/abilityruntime';
-import { TaskRuntimeSystem } from '../gas/tasks';
 import {
 	BehaviorTreeSystem,
 	BoundarySystem,
@@ -32,7 +31,6 @@ export function registerBuiltinECS(): void {
 		{ id: 'meshAnim', group: TickGroup.Simulation, defaultPriority: 25, create: (p: number) => new MeshAnimationSystem(p) },
 		{ id: 'objectFSM', group: TickGroup.Simulation, defaultPriority: 30, create: (p: number) => new StateMachineSystem(p) },
 		{ id: 'abilityRuntime', group: TickGroup.Simulation, defaultPriority: 32, create: (p: number) => new AbilityRuntimeSystem(p) },
-		{ id: 'taskRuntime', group: TickGroup.Simulation, defaultPriority: 33, create: (p: number) => new TaskRuntimeSystem(p) },
 		{ id: 'physicsSyncBefore', group: TickGroup.Simulation, defaultPriority: 34, create: (p: number) => new PhysicsSyncBeforeStepSystem(p) },
 		{ id: 'physicsPost', group: TickGroup.PostPhysics, defaultPriority: 35, create: (p: number) => new PhysicsPostSystem(p) },
 		{ id: 'tileCollision', group: TickGroup.PostPhysics, defaultPriority: 10, create: (p: number) => new TileCollisionSystem(p) },

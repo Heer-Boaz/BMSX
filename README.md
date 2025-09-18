@@ -1043,6 +1043,10 @@ Registry.instance.clear();
 
 The BMSX engine includes a simple state machine system that allows you to define game logic in a structured way. The `State` class provides a base for creating states, while the `StateMachine` class manages transitions and state execution.
 
+➡️ **New to the FSM system?** Read the high-level overview in
+[docs/fsm_overview.md](docs/fsm_overview.md) for architecture notes, authoring
+styles, and examples of using FSMs for gameplay and animation.
+
 ## Key Features
 - **State Definition**: States can be defined with properties like `on_enter`, `on_exit`, and `on_input` to handle transitions and input processing.
 - **Transition Management**: States can transition to other states based on conditions, allowing for complex game logic.

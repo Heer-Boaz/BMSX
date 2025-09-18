@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { EventBagName, listed_sdef_event, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
+import type { EventBagName, listed_sdef_event, StateActionBlendProfileSpec, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionMontageSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 
@@ -529,6 +529,11 @@ function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecut
 	setPathValue(ctx.self, segments, resolvedValue);
 }
 
+function resolveTarget(targetSpec: any, ctx: BuiltinExecutionContext): any {
+	if (targetSpec === undefined || targetSpec === null) return ctx.self;
+	return resolveTemplateValue(targetSpec, ctx);
+}
+
 function evaluateCondition(condition: StateActionCondition | undefined, ctx: BuiltinExecutionContext): boolean {
 	if (!condition) return true;
 	if (condition.arg_equals) {
@@ -657,6 +662,62 @@ function createDispatchEventHandler(spec: StateActionDispatchEventSpec['dispatch
 	};
 }
 
+function createBlendProfileHandler(spec: StateActionBlendProfileSpec['blend_profile'], slot: string): GenericHandler {
+	return function (this: any, state?: State, ...invokeArgs: any[]): void {
+		if (!spec) return;
+		const ctx = buildContext(this, state, invokeArgs, slot);
+		const target = resolveTarget(spec.target, ctx);
+		if (!target) return;
+		const profile = resolveTemplateValue(spec.profile, ctx);
+		const fadeRaw = spec.fade !== undefined ? resolveTemplateValue(spec.fade, ctx) : undefined;
+		const fade = typeof fadeRaw === 'number' ? fadeRaw : (fadeRaw != null ? Number(fadeRaw) : undefined);
+		const methodName = spec.method ?? 'applyBlendProfile';
+		const method = target?.[methodName as keyof typeof target];
+		if (typeof method === 'function') {
+			(method as Function).call(target, profile, fade);
+			return;
+		}
+		if (spec.property) {
+			const segments = parsePathSegments(spec.property);
+			setPathValue(target, segments, profile);
+			return;
+		}
+		const eventName = spec.event ?? 'animation.blend_profile';
+		$.emit(eventName, target, { profile, fade, slot });
+	};
+}
+
+function createPlayMontageHandler(spec: StateActionMontageSpec['play_montage'], slot: string): GenericHandler {
+	return function (this: any, state?: State, ...invokeArgs: any[]): void {
+		if (!spec) return;
+		const ctx = buildContext(this, state, invokeArgs, slot);
+		const target = resolveTarget(spec.target, ctx);
+		if (!target) return;
+		const montage = resolveTemplateValue(spec.montage, ctx);
+		const rate = spec.rate !== undefined ? resolveTemplateValue(spec.rate, ctx) : undefined;
+		const blendIn = spec.blend_in !== undefined ? resolveTemplateValue(spec.blend_in, ctx) : undefined;
+		const blendOut = spec.blend_out !== undefined ? resolveTemplateValue(spec.blend_out, ctx) : undefined;
+		const startSection = spec.start_section !== undefined ? resolveTemplateValue(spec.start_section, ctx) : undefined;
+		const options = { rate, blendIn, blendOut, startSection, slot };
+		const methodName = spec.method ?? 'playMontage';
+		const method = target?.[methodName as keyof typeof target];
+		if (typeof method === 'function') {
+			try {
+				if ((method as Function).length >= 2) {
+					(method as Function).call(target, montage, options);
+				} else {
+					(method as Function).call(target, montage);
+				}
+			} catch (err) {
+				console.warn(`[FSM] playMontage handler '${methodName}' on`, target, 'threw', err);
+			}
+			return;
+		}
+		const eventName = spec.event ?? 'animation.play_montage';
+		$.emit(eventName, target ?? this, { montage, ...options });
+	};
+}
+
 function createSetTicksToLastFrameHandler(): GenericHandler {
 	return function (_state: State) {
 		if (!_state) return;
@@ -720,6 +781,12 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('dispatch_event' in spec) {
 		return createDispatchEventHandler((spec as StateActionDispatchEventSpec).dispatch_event, slot);
+	}
+	if ('blend_profile' in spec) {
+		return createBlendProfileHandler((spec as StateActionBlendProfileSpec).blend_profile, slot);
+	}
+	if ('play_montage' in spec) {
+		return createPlayMontageHandler((spec as StateActionMontageSpec).play_montage, slot);
 	}
 	return undefined;
 }

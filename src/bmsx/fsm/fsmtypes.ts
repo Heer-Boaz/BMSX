@@ -156,13 +156,39 @@ export interface StateActionDispatchEventSpec {
 	};
 }
 
+export interface StateActionBlendProfileSpec {
+	blend_profile: {
+		target?: any;
+		profile: any;
+		fade?: any;
+		method?: string;
+		property?: string;
+		event?: string;
+	};
+}
+
+export interface StateActionMontageSpec {
+	play_montage: {
+		target?: any;
+		montage: any;
+		rate?: any;
+		blend_in?: any;
+		blend_out?: any;
+		start_section?: any;
+		method?: string;
+		event?: string;
+	};
+}
+
 export type StateActionSpec =
 	| StateActionSetTicksSpec
 	| { emit: StateActionEmitSpec }
 	| StateActionSetPropertySpec
 	| StateActionConditionalSpec
 	| StateActionSequence
-	| StateActionDispatchEventSpec;
+	| StateActionDispatchEventSpec
+	| StateActionBlendProfileSpec
+	| StateActionMontageSpec;
 
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**

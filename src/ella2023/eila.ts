@@ -1,5 +1,4 @@
 import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions } from 'bmsx';
-import { fsmHandler } from 'bmsx/fsm/fsmdecorators';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
