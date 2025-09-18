@@ -6,13 +6,16 @@ import { WorldObject } from "./worldobject";
 import { SpriteComponent } from '../../component/sprite_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
 
+const BASE_SPRITE_ID = 'base_sprite';
+const PRIMARY_COLLIDER_ID = 'primary';
+
 @insavegame
 /**
  * An abstract class representing a world object that can be rendered as a sprite.
  * Extends the WorldObject class.
  */
 export abstract class SpriteObject extends WorldObject {
-	private get spriteComp(): SpriteComponent | undefined { return this.getFirstComponent(SpriteComponent); }
+	private get spriteComp(): SpriteComponent | undefined { return this.getComponentByLocalId(SpriteComponent, BASE_SPRITE_ID); }
 	public get flip_h(): boolean { return !!this.spriteComp?.flip.flip_h; }
 	public set flip_h(fh: boolean) { if (this.spriteComp) this.spriteComp.flip = { ...this.spriteComp.flip, flip_h: !!fh }; this.updateHitareas(); }
 	public get flip_v(): boolean { return !!this.spriteComp?.flip.flip_v; }
@@ -76,10 +79,10 @@ export abstract class SpriteObject extends WorldObject {
 	constructor(opts: RevivableObjectArgs & { id?: string, fsm_id?: string }) {
 		super(opts);
 		// Attach base SpriteComponent (data-driven sprite handled by SpriteRenderSystem)
-		const baseSprite = new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: 'base_sprite', colliderLocalId: 'primary' });
+		const baseSprite = new SpriteComponent({ parentid: this.id, imgid: 'none', id_local: BASE_SPRITE_ID, colliderLocalId: PRIMARY_COLLIDER_ID });
 		this.addComponent(baseSprite);
 		// Attach Collider by default; sprite-driven sync will populate shapes
-		this.addComponent(new Collider2DComponent({ parentid: this.id, id_local: 'primary' }));
+		this.addComponent(new Collider2DComponent({ parentid: this.id, id_local: PRIMARY_COLLIDER_ID }));
 	}
 
 	// queueRenderSubmissions removed — handled by SpriteRenderSystem via SpriteComponent

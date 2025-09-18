@@ -50,6 +50,12 @@ events:
                   audioId: hit2
                   modulationPreset: modulationparams.hitsfx
                   priority: 2
+    humiliated_animation_start:
+        channel: sfx
+        rules:
+            - do:
+                  audioId: stuk
+                  priority: 10
     animationStart:
         channel: sfx
         rules:
@@ -169,7 +175,7 @@ events:
                       sync:
                           stinger: vernederdans # play stinger immediately
                           returnTo: trainen # then return to explore theme
-                    #   audioId: trainen
+                      #   audioId: trainen
                       fadeMs: 200
 
     music.gameover:

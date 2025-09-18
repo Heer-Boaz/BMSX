@@ -1,10 +1,9 @@
-import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions, type RandomModulationParams } from 'bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions } from 'bmsx';
 import { fsmHandler } from 'bmsx/fsm/fsmdecorators';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
 import { EilaEventService } from './worldmodule';
-import { AudioId, BitmapId } from './resourceids';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
 
@@ -368,126 +367,11 @@ export class Eila extends Fighter {
 	}
 
 	@fsmHandler()
-	public onAnimationWasHit(state: State): void {
-		state.current.setTicksNoSideEffect(state.current.definition.ticks2advance_tape - 1);
-	}
-
-	@fsmHandler()
-	public onAnimationHitFace(state: State): void {
-		this.onAnimationWasHit(state);
-	}
-
-	@fsmHandler()
-	public enterIdleAnimation(_state: State): void {
-		this.imgid = BitmapId.eila_idle;
-	}
-
-	@fsmHandler()
 	public enterWalkAnimation(_state: State): void {
 		if (!this.sc.matches_state_path(`${Eila.ANIMATION_FSM_ID}.walk`)) {
 			this.sc.dispatch_event('animate_walk', this);
 		}
 		this.attacking = false;
-	}
-
-	@fsmHandler()
-	public enterWalkFrame1Animation(_state: State): void {
-		this.imgid = BitmapId.eila_walk;
-	}
-
-	@fsmHandler()
-	public walkFrame1Next(_state: State): string {
-		return '../walk2';
-	}
-
-	@fsmHandler()
-	public enterWalkFrame2Animation(_state: State): void {
-		this.imgid = BitmapId.eila_idle;
-	}
-
-	@fsmHandler()
-	public walkFrame2Next(_state: State): string {
-		return '../walk1';
-	}
-
-	@fsmHandler()
-	public enterHighkickAnimation(state: State, hit: boolean): void {
-		this.imgid = BitmapId.eila_highkick;
-		$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
-		if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-	}
-
-	@fsmHandler()
-	public highkickNext(_state: State): void {
-		$.emit('animationEnd', this, { animation_name: 'highkick' });
-	}
-
-	@fsmHandler()
-	public enterLowkickAnimation(state: State, hit: boolean): void {
-		$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
-		this.imgid = BitmapId.eila_lowkick;
-		if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-	}
-
-	@fsmHandler()
-	public lowkickNext(_state: State): void {
-		$.emit('animationEnd', this, { animation_name: 'lowkick' });
-	}
-
-	@fsmHandler()
-	public enterPunchAnimation(state: State, hit: boolean): void {
-		$.emit('combat.attack', this, { weaponClass: 'light', actorId: this.id });
-		this.imgid = BitmapId.eila_punch;
-		if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-	}
-
-	@fsmHandler()
-	public punchNext(_state: State): void {
-		$.emit('animationEnd', this, { animation_name: 'punch' });
-	}
-
-	@fsmHandler()
-	public enterDuckkickAnimation(_state: State): void {
-		$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
-		this.imgid = BitmapId.eila_duckkick;
-	}
-
-	@fsmHandler()
-	public duckkickNext(_state: State): void {
-		$.emit('animationEnd', this, { animation_name: 'duckkick' });
-	}
-
-	@fsmHandler()
-	public enterFlyingkickAnimation(state: State, hit: boolean): void {
-		$.emit('combat.attack', this, { weaponClass: 'heavy', actorId: this.id });
-		this.imgid = BitmapId.eila_flyingkick;
-		if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-	}
-
-	@fsmHandler()
-	public flyingkickNext(_state: State): void {
-		$.emit('animationEnd', this, { animation_name: 'flyingkick' });
-	}
-
-	@fsmHandler()
-	public enterDuckAnimation(_state: State): void {
-		this.imgid = BitmapId.eila_duck;
-	}
-
-	@fsmHandler()
-	public enterJumpAnimation(_state: State): void {
-		this.imgid = BitmapId.eila_jump;
-	}
-
-	@fsmHandler()
-	public enterHumiliatedAnimation(_state: State): void {
-		$.playAudio(AudioId.stuk, $.rompack.data['modulationparams'].attacksfx as RandomModulationParams);
-		this.imgid = BitmapId.eila_humiliated;
-	}
-
-	@fsmHandler()
-	public humiliatedNext(_state: State): void {
-		$.emit('humiliated_animation_end', this, { character: 'eila' });
 	}
 
 	@subscribesToSelfScopedEvent('animationEnd')

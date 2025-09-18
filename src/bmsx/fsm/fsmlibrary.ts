@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { EventBagName, listed_sdef_event, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
+import type { EventBagName, listed_sdef_event, StateActionCondition, StateActionConditionalSpec, StateActionEmitSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 
@@ -406,6 +406,155 @@ type HandlerInvokeOptions = {
 	debugRef?: string;
 };
 
+type BuiltinExecutionContext = {
+	self: any;
+	state: State | undefined;
+	args: any[];
+	slot: string;
+};
+
+function buildContext(self: any, state: State | undefined, args: any[], slot: string): BuiltinExecutionContext {
+	return { self, state, args, slot };
+}
+
+function parsePathSegments(path: string): (string | number)[] {
+	const segments: (string | number)[] = [];
+	if (!path) return segments;
+	const parts = path.split('.');
+	for (const part of parts) {
+		if (!part) continue;
+		const regex = /([^\[\]]+)|(\[(\d+)\])/g;
+		let match: RegExpExecArray | null;
+		while ((match = regex.exec(part)) !== null) {
+			if (match[1]) {
+				segments.push(match[1]);
+			}
+			else if (match[3]) {
+				segments.push(Number(match[3]));
+			}
+		}
+	}
+	return segments;
+}
+
+function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
+	if (!binding) return undefined;
+	const segments = parsePathSegments(binding);
+	if (!segments.length) return undefined;
+	const first = segments.shift()!;
+	let current: any;
+	switch (first) {
+		case 'self':
+			current = ctx.self;
+			break;
+		case 'state':
+			current = ctx.state;
+			break;
+		case 'args':
+			current = ctx.args;
+			break;
+		default:
+			current = ctx.self;
+			segments.unshift(first);
+			break;
+	}
+	for (const token of segments) {
+		if (current == null) return undefined;
+		current = current[token as any];
+	}
+	return current;
+}
+
+function resolveTemplateValue(value: any, ctx: BuiltinExecutionContext): any {
+	if (typeof value === 'string') {
+		if (value.startsWith('@')) {
+			return resolveBinding(value.slice(1), ctx);
+		}
+		return value;
+	}
+	if (Array.isArray(value)) {
+		return value.map(item => resolveTemplateValue(item, ctx));
+	}
+	if (value && typeof value === 'object') {
+		const result: Record<string, any> = {};
+		for (const [key, item] of Object.entries(value)) {
+			result[key] = resolveTemplateValue(item, ctx);
+		}
+		return result;
+	}
+	return value;
+}
+
+function setPathValue(target: any, segments: (string | number)[], value: any): void {
+	if (!target || !segments.length) return;
+	let obj = target;
+	for (let i = 0; i < segments.length - 1; i++) {
+		const token = segments[i];
+		if (obj[token as any] == null) {
+			obj[token as any] = typeof segments[i + 1] === 'number' ? [] : {};
+		}
+		obj = obj[token as any];
+		if (obj == null) return;
+	}
+	const last = segments[segments.length - 1];
+	obj[last as any] = value;
+}
+
+function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecutionContext): void {
+	if (!targetSpec) return;
+	const resolvedValue = resolveTemplateValue(valueSpec, ctx);
+	if (targetSpec.startsWith('@')) {
+		const segments = parsePathSegments(targetSpec.slice(1));
+		if (!segments.length) return;
+		const rootToken = segments.shift()!;
+		let base: any;
+		switch (rootToken) {
+			case 'self':
+				base = ctx.self;
+				break;
+			case 'state':
+				base = ctx.state;
+				break;
+			case 'args':
+				base = ctx.args;
+				break;
+			default:
+				return;
+		}
+		if (base == null) return;
+		setPathValue(base, segments, resolvedValue);
+		return;
+	}
+	const segments = parsePathSegments(targetSpec);
+	setPathValue(ctx.self, segments, resolvedValue);
+}
+
+function evaluateCondition(condition: StateActionCondition | undefined, ctx: BuiltinExecutionContext): boolean {
+	if (!condition) return true;
+	if (condition.arg_equals) {
+		const actual = ctx.args?.[condition.arg_equals.index];
+		const expected = resolveTemplateValue(condition.arg_equals.equals, ctx);
+		if (actual !== expected) return false;
+	}
+	if (condition.and) {
+		for (const sub of condition.and) {
+			if (!evaluateCondition(sub, ctx)) return false;
+		}
+	}
+	if (condition.or && condition.or.length > 0) {
+		let matched = false;
+		for (const sub of condition.or) {
+			if (evaluateCondition(sub, ctx)) {
+				matched = true;
+				break;
+			}
+		}
+		if (!matched) return false;
+	}
+	if (condition.not && evaluateCondition(condition.not, ctx)) return false;
+	return true;
+}
+
 const MissingHandlerWarnings = new Set<string>();
 
 function warnMissingHandler(refId: string, debugRef?: string): void {
@@ -436,6 +585,91 @@ function createProxyForRegistryId(id: string, registry: HandlerRegistry, opts: H
 	};
 }
 
+function createBuiltinHandlerFromString(slot: string, value: string): GenericHandler | undefined {
+	if (slot === 'tape_next' || slot === 'tape_end') {
+		const path = value.trim();
+		if (!path) return undefined;
+		return function () { return path; };
+	}
+	return undefined;
+}
+
+function createEmitHandler(spec: StateActionEmitSpec, slot: string): GenericHandler {
+	const normalized = typeof spec === 'string' ? { event: spec } : spec;
+	if (!normalized?.event) throw new Error('FSM builtin emit action requires an event name.');
+	const emitterMode = normalized.emitter ?? 'self';
+	return function (this: any, state?: State, ...invokeArgs: any[]) {
+		const ctx = buildContext(this, state, invokeArgs, slot);
+		const emitter = emitterMode === 'state' ? (state?.target ?? state) : this;
+		const payload = normalized.payload ? resolveTemplateValue(normalized.payload, ctx) : undefined;
+		$.emit(normalized.event, emitter ?? this, payload);
+	};
+}
+
+function createSetTicksToLastFrameHandler(): GenericHandler {
+	return function (_state: State) {
+		if (!_state) return;
+		const current = _state.current;
+		const def = current?.definition;
+		if (!current || !def) return;
+		const ticks = Math.max(0, (def.ticks2advance_tape ?? 0) - 1);
+		current.setTicksNoSideEffect(ticks);
+	};
+}
+
+function createBuiltinHandlerFromSpec(slot: string, spec: StateActionSpec | undefined): GenericHandler | undefined {
+	const compiled = compileAction(slot, spec);
+	if (!compiled) return undefined;
+	return function (this: any, state?: State, ...args: any[]) {
+		return compiled.call(this, state, ...args);
+	};
+}
+
+function compileAction(slot: string, spec: StateActionSpec | undefined): GenericHandler | undefined {
+	if (spec == null) return undefined;
+	if (Array.isArray(spec)) {
+		const handlers = spec
+			.map(item => compileAction(slot, item))
+			.filter((fn): fn is GenericHandler => typeof fn === 'function');
+		if (handlers.length === 0) return undefined;
+		return function (this: any, state?: State, ...args: any[]) {
+			let result: any;
+			for (const handler of handlers) {
+				result = handler.call(this, state, ...args);
+			}
+			return result;
+		};
+	}
+	if (typeof spec !== 'object') return undefined;
+	if ('when' in spec && (spec as StateActionConditionalSpec).when) {
+		const conditional = spec as StateActionConditionalSpec;
+		const thenHandler = compileAction(slot, conditional.then);
+		const elseHandler = compileAction(slot, conditional.else);
+		if (!thenHandler && !elseHandler) return undefined;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			if (evaluateCondition(conditional.when, ctx)) {
+				return thenHandler?.call(this, state, ...args);
+			}
+			return elseHandler?.call(this, state, ...args);
+		};
+	}
+	if ('set_property' in spec) {
+		const { target, value } = (spec as StateActionSetPropertySpec).set_property;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			applySetProperty(target, value, ctx);
+		};
+	}
+	if ('emit' in spec) {
+		return createEmitHandler((spec as { emit: StateActionEmitSpec }).emit, slot);
+	}
+	if ('set_ticks_to_last_frame' in spec && (spec as StateActionSetTicksSpec).set_ticks_to_last_frame) {
+		return createSetTicksToLastFrameHandler();
+	}
+	return undefined;
+}
+
 function hoistSlot(
 	owner: Record<string, any>,
 	slot: string,
@@ -458,6 +692,19 @@ function hoistSlot(
 		return;
 	}
 	if (typeof current === 'string') {
+		const builtin = createBuiltinHandlerFromString(slot, current);
+		if (builtin) {
+			registry.register(id, builtin);
+			if (useProxyThunks) {
+				const proxy = createProxyForRegistryId(id, registry, options);
+				annotateHandler(proxy as Function, id);
+				owner[slot] = proxy;
+			} else {
+				annotateHandler(builtin as Function, id);
+				owner[slot] = builtin;
+			}
+			return;
+		}
 		const delegated = createDelegatedHandler(current, registry, { ...options, debugRef: id });
 		registry.register(id, delegated);
 		annotateHandler(delegated as Function, id);
@@ -467,6 +714,21 @@ function hoistSlot(
 			owner[slot] = proxy;
 		} else {
 			owner[slot] = delegated;
+		}
+		return;
+	}
+	if (typeof current === 'object' && current) {
+		const builtin = createBuiltinHandlerFromSpec(slot, current as StateActionSpec);
+		if (builtin) {
+			registry.register(id, builtin);
+			if (useProxyThunks) {
+				const proxy = createProxyForRegistryId(id, registry, options);
+				annotateHandler(proxy as Function, id);
+				owner[slot] = proxy;
+			} else {
+				annotateHandler(builtin as Function, id);
+				owner[slot] = builtin;
+			}
 		}
 	}
 }

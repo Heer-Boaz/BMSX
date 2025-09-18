@@ -1,13 +1,18 @@
 import { EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
-import { type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
+import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
 
 /**
  * Determines whether the tape should automatically rewind to the beginning
  * after reaching the end.
  */
 const AUTO_REWIND_TAPE_AFTER_END = false;
+
+function looksLikeStatePath(value: string): boolean {
+	if (!value) return false;
+	return value.startsWith('./') || value.startsWith('../') || value.startsWith('/') || value.startsWith('root:/') || value.startsWith('parent:/') || value.includes('/');
+}
 
 /**
  * Represents the definition of a state in a behavior finite state machine (BFSM).
@@ -165,12 +170,12 @@ export class StateDefinition {
 		}
 	}
 
-	public tick?: StateEventHandler | string;
-	public tape_end?: StateEventHandler | string;
-	public tape_next?: StateNextHandler | string;
-	public entering_state?: StateEventHandler | string;
-	public exiting_state?: StateExitHandler | string;
-	public process_input?: StateEventHandler | string;
+	public tick?: StateEventHandler | string | StateActionSpec;
+	public tape_end?: StateEventHandler | string | StateActionSpec;
+	public tape_next?: StateNextHandler | string | StateActionSpec;
+	public entering_state?: StateEventHandler | string | StateActionSpec;
+	public exiting_state?: StateExitHandler | string | StateActionSpec;
+	public process_input?: StateEventHandler | string | StateActionSpec;
 
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
@@ -324,7 +329,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 					} else {
 						if (typeof t.to === 'string') resolveStateDefPath(stateDef, t.to, statePath, description);
 						if (typeof t.switch === 'string') resolveStateDefPath(stateDef, t.switch, statePath, description);
-					if (typeof t.do === 'string' && !t.do.includes('.handlers.')) {
+						if (typeof t.do === 'string' && !t.do.includes('.handlers.') && !looksLikeStatePath(t.do)) {
 						console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
 					}
 				}
@@ -339,7 +344,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 				} else {
 					if (typeof check.to === 'string') resolveStateDefPath(stateDef, check.to, statePath, 'run check (to)');
 					if (typeof check.switch === 'string') resolveStateDefPath(stateDef, check.switch, statePath, 'run check (switch)');
-					if (typeof check.do === 'string' && !check.do.includes('.handlers.')) {
+					if (typeof check.do === 'string' && !check.do.includes('.handlers.') && !looksLikeStatePath(check.do)) {
 						console.warn(`Handler '${check.do}' referenced in '${statePath}' is missing`);
 					}
 				}
@@ -348,7 +353,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			const handlers = [stateDef.tick, stateDef.entering_state, stateDef.exiting_state, stateDef.tape_next, stateDef.tape_end, stateDef.process_input];
 			const handlerNames = ['run', 'enter', 'exit', 'next', 'end', 'process_input'];
 			handlers.forEach((h, idx) => {
-				if (typeof h === 'string' && !h.includes('.handlers.')) {
+				if (typeof h === 'string' && !h.includes('.handlers.') && !looksLikeStatePath(h)) {
 					console.warn(`Handler '${h}' referenced in '${statePath}' for '${handlerNames[idx]}' is missing`);
 				}
 			});

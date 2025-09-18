@@ -1,9 +1,11 @@
 is_concurrent: true
 on:
     $i_was_hit:
-        do: player_animation.handlers.Eila.onAnimationWasHit
+        do:
+            set_ticks_to_last_frame: true
     $i_hit_face:
-        do: player_animation.handlers.Eila.onAnimationHitFace
+        do:
+            set_ticks_to_last_frame: true
     $animate_idle: idle
     $animate_humiliated: humiliated
     $animate_walk: walk
@@ -16,44 +18,154 @@ on:
     $animate_jump: jump
 states:
     _idle:
-        entering_state: player_animation.handlers.Eila.enterIdleAnimation
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_idle
     walk:
         automatic_reset_mode: subtree
         entering_state: player_animation.handlers.Eila.enterWalkAnimation
         states:
             _walk1:
                 ticks2advance_tape: 8
-                entering_state: player_animation.handlers.Eila.enterWalkFrame1Animation
-                tape_next: player_animation.handlers.Eila.walkFrame1Next
+                entering_state:
+                    - set_property:
+                          target: imgid
+                          value: eila_walk
+                tape_next: ../walk2
             walk2:
                 ticks2advance_tape: 8
-                entering_state: player_animation.handlers.Eila.enterWalkFrame2Animation
-                tape_next: player_animation.handlers.Eila.walkFrame2Next
+                entering_state:
+                    - set_property:
+                          target: imgid
+                          value: eila_idle
+                tape_next: ../walk1
     highkick:
         ticks2advance_tape: 15
-        entering_state: player_animation.handlers.Eila.enterHighkickAnimation
-        tape_next: player_animation.handlers.Eila.highkickNext
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_highkick
+            - emit:
+                  event: combat.attack
+                  payload:
+                      weaponClass: heavy
+                      actorId: '@self.id'
+            - when:
+                  arg_equals:
+                      index: 0
+                      equals: true
+              then:
+                  set_ticks_to_last_frame: true
+        tape_next:
+            emit:
+                event: animationEnd
+                payload:
+                    animation_name: highkick
     lowkick:
         ticks2advance_tape: 15
-        entering_state: player_animation.handlers.Eila.enterLowkickAnimation
-        tape_next: player_animation.handlers.Eila.lowkickNext
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_lowkick
+            - emit:
+                  event: combat.attack
+                  payload:
+                      weaponClass: heavy
+                      actorId: '@self.id'
+            - when:
+                  arg_equals:
+                      index: 0
+                      equals: true
+              then:
+                  set_ticks_to_last_frame: true
+        tape_next:
+            emit:
+                event: animationEnd
+                payload:
+                    animation_name: lowkick
     punch:
         ticks2advance_tape: 15
-        entering_state: player_animation.handlers.Eila.enterPunchAnimation
-        tape_next: player_animation.handlers.Eila.punchNext
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_punch
+            - emit:
+                  event: combat.attack
+                  payload:
+                      weaponClass: light
+                      actorId: '@self.id'
+            - when:
+                  arg_equals:
+                      index: 0
+                      equals: true
+              then:
+                  set_ticks_to_last_frame: true
+        tape_next:
+            emit:
+                event: animationEnd
+                payload:
+                    animation_name: punch
     duckkick:
         ticks2advance_tape: 15
-        entering_state: player_animation.handlers.Eila.enterDuckkickAnimation
-        tape_next: player_animation.handlers.Eila.duckkickNext
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_duckkick
+            - emit:
+                  event: combat.attack
+                  payload:
+                      weaponClass: heavy
+                      actorId: '@self.id'
+        tape_next:
+            emit:
+                event: animationEnd
+                payload:
+                    animation_name: duckkick
     flyingkick:
         ticks2advance_tape: 15
-        entering_state: player_animation.handlers.Eila.enterFlyingkickAnimation
-        tape_next: player_animation.handlers.Eila.flyingkickNext
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_flyingkick
+            - emit:
+                  event: combat.attack
+                  payload:
+                      weaponClass: heavy
+                      actorId: '@self.id'
+            - when:
+                  arg_equals:
+                      index: 0
+                      equals: true
+              then:
+                  set_ticks_to_last_frame: true
+        tape_next:
+            emit:
+                event: animationEnd
+                payload:
+                    animation_name: flyingkick
     duck:
-        entering_state: player_animation.handlers.Eila.enterDuckAnimation
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_duck
     jump:
-        entering_state: player_animation.handlers.Eila.enterJumpAnimation
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_jump
     humiliated:
         ticks2advance_tape: 300
-        entering_state: player_animation.handlers.Eila.enterHumiliatedAnimation
-        tape_next: player_animation.handlers.Eila.humiliatedNext
+        entering_state:
+            - set_property:
+                  target: imgid
+                  value: eila_humiliated
+            - emit:
+                  event: humiliated_animation_start
+                  payload:
+                      character: eila
+        tape_next:
+            emit:
+                event: humiliated_animation_end
+                payload:
+                    character: eila

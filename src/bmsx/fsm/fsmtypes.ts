@@ -103,6 +103,48 @@ export type StateTransitionWithType = StateTransition & { transition_type: Trans
  * Represents the definition of a state event in a state machine.
  * @template T - The type of the stateful object that the event is associated with.
  */
+export type StateActionEmitSpec = string | {
+	event: string;
+	payload?: Record<string, any>;
+	emitter?: 'self' | 'state';
+};
+
+export type StateActionSetTicksSpec = {
+	set_ticks_to_last_frame: true;
+};
+
+export interface StateActionSetPropertySpec {
+	set_property: {
+		target: string;
+		value: any;
+	};
+}
+
+export interface StateActionCondition {
+	arg_equals?: {
+		index: number;
+		equals: any;
+	};
+	not?: StateActionCondition;
+	and?: StateActionCondition[];
+	or?: StateActionCondition[];
+}
+
+export interface StateActionConditionalSpec {
+	when: StateActionCondition;
+	then: StateActionSpec | StateActionSpec[];
+	else?: StateActionSpec | StateActionSpec[];
+}
+
+export type StateActionSequence = StateActionSpec[];
+
+export type StateActionSpec =
+	| StateActionSetTicksSpec
+	| { emit: StateActionEmitSpec }
+	| StateActionSetPropertySpec
+	| StateActionConditionalSpec
+	| StateActionSequence;
+
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**
 	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
@@ -122,7 +164,7 @@ export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**
 	 * The action that is executed when the transition occurs.
 	 */
-	do?: StateEventHandler<T> | string,
+	do?: StateEventHandler<T> | string | StateActionSpec,
 
 	/**
 	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
