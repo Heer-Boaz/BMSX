@@ -219,7 +219,7 @@ export class StateMachineController {
 	 * @param args Optional arguments to pass to the new state.
 	 */
 	transition_to(newstate: Identifier, ...args: any[]): void {
-		const dotIndex = newstate.indexOf('.');
+		const dotIndex = newstate.indexOf(':/');
 		let machineid = dotIndex !== -1 ? newstate.slice(0, dotIndex) : newstate;
 		let stateids = dotIndex !== -1 ? newstate.slice(dotIndex + 1) : undefined;
 
@@ -242,13 +242,13 @@ export class StateMachineController {
 	 * If no state ID is specified, it assumes that the state ID is the same as the machine ID.
 	 * Throws an error if no machine with the specified ID is found.
 	 *
-	 * @param path - The path to the state machine and state ID, separated by a dot (e.g., 'machineID.stateID').
+	 * @param path - The path to the state machine and state ID, separated by a ':/' (e.g., 'machineID:/stateID').
 	 * @param args - Additional arguments to pass to the state switch function.
 	 */
 	switch_to(path: string, ...args: any[]): void {
 		let parts: string[];
 		if (typeof path === 'string') {
-			parts = path.split('.');
+			parts = path.split(':/');
 		} else {
 			parts = path;
 		}
@@ -325,8 +325,7 @@ export class StateMachineController {
 	 * @throws Error if the machine with the specified ID does not exist.
 	 */
 	matches_state_path(id: string): boolean {
-		// const [_targetid, machineid, ...stateids] = id.split(/[:.]/);
-		const [machineid, ...stateids] = id.split('.');
+		const [machineid, ...stateids] = id.split(':/');
 
 		// If there are no more parts, check the state of the current machine
 		if (stateids.length === 0) {

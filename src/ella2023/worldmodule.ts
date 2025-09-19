@@ -46,7 +46,7 @@ export class EilaEventService extends Service {
 		const otherFighter = this.theOtherFighter(emitter);
 		if (otherFighter) {
 			otherFighter.hideHitMarker();
-			otherFighter.sc.transition_to('hitanimation.geen_au');
+			otherFighter.sc.transition_to('hitanimation:/geen_au');
 		}
 
 		if (emitter.hp <= 0) {

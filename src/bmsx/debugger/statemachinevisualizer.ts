@@ -69,7 +69,8 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 			stateCell.classList.add('state');
 			stateRow.appendChild(stateCell);
 			table.appendChild(stateRow);
-			const newpath = `${path}.${stateId}`;
+			// The path to this state is the machineName:/stateId + '/' + substateId + '/' ...
+			const newpath = `${path}/${stateId}`;
 			stateCell.onclick = () => {
 				bfsmController.transition_to(newpath);
 			};
@@ -102,7 +103,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 		}
 		let subTableCell = document.createElement('td');
 		machineRow.appendChild(subTableCell);
-		visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.is_concurrent, machineName);
+		visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.is_concurrent, machineName + ':');
 	}
 
 	return [container, machineElements, stateElements];
@@ -126,7 +127,8 @@ export function highlightCurrentState(stateElements: Map<string, HTMLElement>, m
 			machineElement?.classList.add('parallel-machine');
 		}
 		for (let state_id in machine.states) {
-			const newpath = `${path}.${state_id}`;
+			// The path to this state is the machineName:/stateId + '/' + substateId + '/' ...
+			const newpath = `${path}/${state_id}`;
 			let stateElement = stateElements.get(newpath);
 			if (stateElement) {
 				stateElement.classList.remove('active-machine-or-state');
@@ -142,6 +144,6 @@ export function highlightCurrentState(stateElements: Map<string, HTMLElement>, m
 	}
 	for (let machineName in bfsmController.machines) {
 		let machine = bfsmController.machines[machineName];
-		updateMachineClasses(machine, machineName, true, machineName);
+		updateMachineClasses(machine, machineName, true, machineName + ':');
 	}
 }

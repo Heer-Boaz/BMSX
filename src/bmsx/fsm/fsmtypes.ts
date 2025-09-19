@@ -1,4 +1,4 @@
-import type { EventScope, EventSubscriber } from "../core/eventemitter";
+import type { EventPayload, EventScope, EventSubscriber } from "../core/eventemitter";
 import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
@@ -60,11 +60,11 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
  * @param args - Additional arguments for the event handler.
  * @returns A string denoting the next state to transition to (or undefined if no transition should occur).
  */
-export interface StateEventHandler<T extends Stateful = any> { (state: State<T>, ...args: any[]): StateTransition | Identifier | void; }
-export interface StateExitHandler<T extends Stateful = any> { (state: State<T>, ...args: any[]): void; }
-export interface StateNextHandler<T extends Stateful = any> extends StateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): StateTransition | Identifier | void; }
-export interface StateEventCondition<T extends Stateful & EventSubscriber = any> {
-	(state: State<T>, ...args: any[]): boolean;
+export interface StateEventHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): StateTransition | Identifier | void; }
+export interface StateExitHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P): void; }
+export interface StateNextHandler<T extends Stateful = any, P extends EventPayload = EventPayload> { (state: State<T>, payload?: P & { tape_rewound: boolean }): StateTransition | Identifier | void; }
+export interface StateEventCondition<T extends Stateful & EventSubscriber = any, P extends EventPayload = EventPayload> {
+	(state: State<T>, payload?: P): boolean;
 }
 
 export type listed_sdef_event = { name: string, scope: EventScope };
@@ -81,7 +81,7 @@ export type StateTransition = {
 	/**
 	 * The arguments for the state transition.
 	 */
-	args?: any;
+	payload?: EventPayload;
 
 	/**
 	 * The transition type: 'to' or 'switch', where 'to' is the default.
@@ -121,10 +121,6 @@ export interface StateActionSetPropertySpec {
 }
 
 export interface StateActionCondition {
-	arg_equals?: {
-		index: number;
-		equals: any;
-	};
 	value_equals?: {
 		left: any;
 		equals: any;
@@ -176,6 +172,16 @@ export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	switch?: StateTransition | Identifier,
 
 	/**
+	 * The state ID to transition to (as revert-type). If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 */
+	revert?: StateTransition | Identifier,
+
+	/**
+	 * The state ID to transition to (as force_leaf-type). If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 */
+	force_leaf?: StateTransition | Identifier,
+
+	/**
 	 * The condition that must be met for the transition to occur.
 	 */
 	if?: StateEventCondition<T> | string,
@@ -220,11 +226,13 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
 export type TickCheckDefinition<T extends Stateful & EventSubscriber = any> = Omit<StateEventDefinition<T>, 'scope'>;
 
 /**
- * Represents the type of a state transition (either 'to' or 'switch').
+ * Represents the type of a state transition (either 'to', 'switch', 'revert', or 'force_leaf').
  * - 'to': The default transition type, which transitions the whole state machine tree to the new state.
  * - 'switch': A transition type that switches only the lowest level state to the new state.
+ * - 'revert': A transition type that reverts the state machine to the previous state.
+ * - 'force_leaf': A transition type that doesn't re-enter any of the parents, but does force the leaf state to be re-entered, but only if any of the parent states are not already active.
  */
-export type TransitionType = 'to' | 'switch';
+export type TransitionType = 'to' | 'switch' | 'revert' | 'force_leaf';
 
 /**
  * Represents a tape used in the BFSM.

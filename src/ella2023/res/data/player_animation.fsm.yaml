@@ -10,7 +10,7 @@ on:
         do:
             - when:
                   value_equals:
-                      left: '@args[0].animation_name'
+                      left: '@payload.animation_name'
                       equals: highkick
               then:
                   dispatch_event:
@@ -18,7 +18,7 @@ on:
                       emitter: '@self'
             - when:
                   value_equals:
-                      left: '@args[0].animation_name'
+                      left: '@payload.animation_name'
                       equals: punch
               then:
                   dispatch_event:
@@ -26,7 +26,7 @@ on:
                       emitter: '@self'
             - when:
                   value_equals:
-                      left: '@args[0].animation_name'
+                      left: '@payload.animation_name'
                       equals: lowkick
               then:
                   dispatch_event:
@@ -34,7 +34,7 @@ on:
                       emitter: '@self'
             - when:
                   value_equals:
-                      left: '@args[0].animation_name'
+                      left: '@payload.animation_name'
                       equals: flyingkick
               then:
                   dispatch_event:
@@ -43,19 +43,21 @@ on:
             - when:
                   and:
                       - value_equals:
-                            left: '@args[0].animation_name'
+                            left: '@payload.animation_name'
                             equals: duckkick
                       - not:
-                            state_matches:
-                                machine: player_animation
-                                path: stoerheidsdans
+                            - value_equals:
+                                  left: '@self.performingStoerheidsdans'
+                                  equals: true
               then:
                   dispatch_event:
                       event: go_duck
                       emitter: '@self'
-    $animate_idle: idle
+    $animate_idle:
+        switch: idle
     $animate_humiliated: humiliated
-    $animate_walk: walk
+    $animate_walk:
+        force_leaf: walk/walk1
     $animate_punch: punch
     $animate_highkick: highkick
     $animate_flyingkick: flyingkick
@@ -68,71 +70,37 @@ states:
         entering_state:
             - set_property:
                   target: imgid
-                  value: eila_idle
-            - set_property:
-                  target: attacking
-                  value: false
-            - set_property:
-                  target: currentAttackType
-                  value: null
+                  value: '@self.animSprites.idle'
     walk:
         automatic_reset_mode: subtree
-        entering_state:
-            - set_property:
-                  target: attacking
-                  value: false
-            - when:
-                  state_not_matches:
-                      machine: player_animation
-                      path: walk
-              then:
-                  dispatch_event:
-                      event: animate_walk
-                      emitter: '@self'
+        # on:
+        #     $animate_walk: no-op
         states:
             _walk1:
                 ticks2advance_tape: 8
                 entering_state:
                     - set_property:
                           target: imgid
-                          value: eila_walk
+                          value: '@self.animSprites.walk'
                 tape_next: ../walk2
             walk2:
                 ticks2advance_tape: 8
                 entering_state:
                     - set_property:
                           target: imgid
-                          value: eila_idle
+                          value: '@self.animSprites.walk_alt'
                 tape_next: ../walk1
     highkick:
         ticks2advance_tape: 15
         entering_state:
-            - blend_profile:
-                  profile: attack_upper
-                  fade: 0.1
             - set_property:
                   target: imgid
-                  value: eila_highkick
-            - set_property:
-                  target: attacking
-                  value: true
-            - set_property:
-                  target: currentAttackType
-                  value: highkick
-            - play_montage:
-                  montage: eila_highkick
-                  rate: 1
+                  value: '@self.animSprites.highkick'
             - emit:
                   event: combat.attack
                   payload:
+                      animation_name: highkick
                       weaponClass: heavy
-                      actorId: '@self.id'
-            - when:
-                  arg_equals:
-                      index: 0
-                      equals: true
-              then:
-                  set_ticks_to_last_frame: true
         tape_next:
             emit:
                 event: animationEnd
@@ -141,32 +109,14 @@ states:
     lowkick:
         ticks2advance_tape: 15
         entering_state:
-            - blend_profile:
-                  profile: attack_lower
-                  fade: 0.1
             - set_property:
                   target: imgid
-                  value: eila_lowkick
-            - set_property:
-                  target: attacking
-                  value: true
-            - set_property:
-                  target: currentAttackType
-                  value: lowkick
-            - play_montage:
-                  montage: eila_lowkick
-                  rate: 1
+                  value: '@self.animSprites.lowkick'
             - emit:
                   event: combat.attack
                   payload:
+                      animation_name: lowkick
                       weaponClass: heavy
-                      actorId: '@self.id'
-            - when:
-                  arg_equals:
-                      index: 0
-                      equals: true
-              then:
-                  set_ticks_to_last_frame: true
         tape_next:
             emit:
                 event: animationEnd
@@ -175,32 +125,14 @@ states:
     punch:
         ticks2advance_tape: 15
         entering_state:
-            - blend_profile:
-                  profile: attack_upper
-                  fade: 0.1
             - set_property:
                   target: imgid
-                  value: eila_punch
-            - set_property:
-                  target: attacking
-                  value: true
-            - set_property:
-                  target: currentAttackType
-                  value: punch
-            - play_montage:
-                  montage: eila_punch
-                  rate: 1.1
+                  value: '@self.animSprites.punch'
             - emit:
                   event: combat.attack
                   payload:
+                      animation_name: punch
                       weaponClass: light
-                      actorId: '@self.id'
-            - when:
-                  arg_equals:
-                      index: 0
-                      equals: true
-              then:
-                  set_ticks_to_last_frame: true
         tape_next:
             emit:
                 event: animationEnd
@@ -209,25 +141,14 @@ states:
     duckkick:
         ticks2advance_tape: 15
         entering_state:
-            - blend_profile:
-                  profile: attack_lower
-                  fade: 0.05
             - set_property:
                   target: imgid
-                  value: eila_duckkick
-            - set_property:
-                  target: attacking
-                  value: true
-            - set_property:
-                  target: currentAttackType
-                  value: duckkick
-            - play_montage:
-                  montage: eila_duckkick
+                  value: '@self.animSprites.duckkick'
             - emit:
                   event: combat.attack
                   payload:
-                      weaponClass: heavy
-                      actorId: '@self.id'
+                      animation_name: duckkick
+                      weaponClass: light
         tape_next:
             emit:
                 event: animationEnd
@@ -236,31 +157,14 @@ states:
     flyingkick:
         ticks2advance_tape: 15
         entering_state:
-            - blend_profile:
-                  profile: attack_air
-                  fade: 0.1
             - set_property:
                   target: imgid
-                  value: eila_flyingkick
-            - set_property:
-                  target: attacking
-                  value: true
-            - set_property:
-                  target: currentAttackType
-                  value: flyingkick
-            - play_montage:
-                  montage: eila_flyingkick
+                  value: '@self.animSprites.flyingkick'
             - emit:
                   event: combat.attack
                   payload:
+                      animation_name: flyingkick
                       weaponClass: heavy
-                      actorId: '@self.id'
-            - when:
-                  arg_equals:
-                      index: 0
-                      equals: true
-              then:
-                  set_ticks_to_last_frame: true
         tape_next:
             emit:
                 event: animationEnd
@@ -270,24 +174,24 @@ states:
         entering_state:
             - set_property:
                   target: imgid
-                  value: eila_duck
+                  value: '@self.animSprites.duck'
     jump:
         entering_state:
             - set_property:
                   target: imgid
-                  value: eila_jump
+                  value: '@self.animSprites.jump'
     humiliated:
         ticks2advance_tape: 300
         entering_state:
             - set_property:
                   target: imgid
-                  value: eila_humiliated
+                  value: '@self.animSprites.humiliated'
             - emit:
                   event: humiliated_animation_start
                   payload:
-                      character: eila
+                      character: '@self.humiliatedCharacterId'
         tape_next:
             emit:
                 event: humiliated_animation_end
                 payload:
-                    character: eila
+                    character: '@self.humiliatedCharacterId'

@@ -1,4 +1,4 @@
-import type { EventScope } from "../core/eventemitter";
+import type { EventPayload, EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
@@ -6,6 +6,7 @@ import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators
 import type { EventBagName, listed_sdef_event, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
+import type { StateMachineController } from './fsmcontroller';
 
 /**
  * Represents the machine definitions.
@@ -407,14 +408,24 @@ type HandlerInvokeOptions = {
 };
 
 type BuiltinExecutionContext = {
-	self: any;
+	self: Stateful;
 	state: State | undefined;
-	args: any[];
+	payload?: EventPayload;
 	slot: string;
 };
 
-function buildContext(self: any, state: State | undefined, args: any[], slot: string): BuiltinExecutionContext {
-	return { self, state, args, slot };
+function buildContext(self: any, state: State | undefined, rawArgs: any[] | undefined, slot: string): BuiltinExecutionContext {
+	const args = Array.isArray(rawArgs) ? rawArgs : rawArgs != null ? [rawArgs] : [];
+	let payload: EventPayload | undefined;
+	for (let i = args.length - 1; i >= 0; i--) {
+		const candidate = args[i];
+		if (candidate != null && typeof candidate === 'object' && !Array.isArray(candidate)) {
+			payload = candidate;
+			break;
+		}
+	}
+	if (payload === undefined && args.length > 0) payload = args[0];
+	return { self, state, payload, slot };
 }
 
 function parsePathSegments(path: string): (string | number)[] {
@@ -450,8 +461,8 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 		case 'state':
 			current = ctx.state;
 			break;
-		case 'args':
-			current = ctx.args;
+		case 'payload':
+			current = ctx.payload;
 			break;
 		default:
 			current = ctx.self;
@@ -515,8 +526,8 @@ function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecut
 			case 'state':
 				base = ctx.state;
 				break;
-			case 'args':
-				base = ctx.args;
+			case 'payload':
+				base = ctx.payload;
 				break;
 			default:
 				return;
@@ -531,11 +542,6 @@ function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecut
 
 function evaluateCondition(condition: StateActionCondition | undefined, ctx: BuiltinExecutionContext): boolean {
 	if (!condition) return true;
-	if (condition.arg_equals) {
-		const actual = ctx.args?.[condition.arg_equals.index];
-		const expected = resolveTemplateValue(condition.arg_equals.equals, ctx);
-		if (actual !== expected) return false;
-	}
 	if (condition.value_equals) {
 		const left = resolveTemplateValue(condition.value_equals.left, ctx);
 		const right = resolveTemplateValue(condition.value_equals.equals, ctx);
@@ -572,7 +578,7 @@ function evaluateCondition(condition: StateActionCondition | undefined, ctx: Bui
 }
 
 function stateMatchesCondition(spec: string | { path: string; machine?: string }, ctx: BuiltinExecutionContext): boolean {
-	const controller = ctx.self?.sc;
+	const controller = ctx.self?.sc as StateMachineController;
 	if (!controller?.matches_state_path) return false;
 	let path: string;
 	if (typeof spec === 'string') {
@@ -581,7 +587,7 @@ function stateMatchesCondition(spec: string | { path: string; machine?: string }
 	else {
 		path = spec.path;
 		if (spec.machine && !path.startsWith(spec.machine)) {
-			path = `${spec.machine}.${path}`;
+			path = `${spec.machine}:/${path}`;
 		}
 	}
 	try {

@@ -3,7 +3,8 @@ import { Registry } from "./registry";
 import { $ } from './game';
 
 export type EventPayload = Record<string, any>;
-export type EventHandler = (event_name: string, emitter: Identifiable, payload?: EventPayload) => any;
+// Generic event handler that allows more specific payload shapes, e.g. EventHandler<EventPayload & { bladiebla: boolean }>
+export type EventHandler<P extends EventPayload = EventPayload> = (event_name: string, emitter: Identifiable, payload?: P) => any;
 
 type Listener = { listener: EventHandler, subscriber: any, persistent: boolean };
 export type ListenerSet = Set<Listener>;
@@ -65,7 +66,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Listeners that receive all events emitted on the bus (wildcard).
 	 * Signature: (name, payload?, emitter?)
 	 */
-	private anyListeners: Array<{ handler: EventHandler, persistent: boolean }> = [];
+	private anyListeners: Array<{ handler: EventHandler<any>, persistent: boolean }> = [];
 
 	/**
 	 * The singleton instance of the EventEmitter class.
@@ -90,7 +91,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Subscribes a listener that is called for every emitted event.
 	 * The payload is the first argument passed by the emitter (if any).
 	 */
-	public onAny(handler: EventHandler, persistent: boolean = false): void {
+	public onAny(handler: EventHandler<any>, persistent: boolean = false): void {
 		EventEmitter.instance.anyListeners.push({ handler, persistent });
 	}
 
@@ -99,7 +100,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param handler - The event handler to remove.
 	 * @param forcePersistentRemoval - If true, also removes persistent listeners.
 	 */
-	public offAny(handler: EventHandler, forcePersistentRemoval: boolean = false): void {
+	public offAny(handler: EventHandler<any>, forcePersistentRemoval: boolean = false): void {
 		EventEmitter.instance.anyListeners = EventEmitter.instance.anyListeners.filter(x => (x.handler !== handler || (forcePersistentRemoval && x.persistent)));
 	}
 
@@ -207,7 +208,7 @@ export class EventEmitter implements RegisterablePersistent {
 		Object.defineProperty(carrier, EventEmitter._INIT_DONE, { value: true, enumerable: false, configurable: false });
 	}
 
-	private checkIfListenerExists(event_name: string, listener: EventHandler, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
+	private checkIfListenerExists(event_name: string, listener: EventHandler<any>, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
 		const self = EventEmitter.instance;
 		if (filtered_on_emitter_id) {
 			const emitterListeners = self.emitterScopeListeners[event_name]?.[filtered_on_emitter_id];
@@ -239,7 +240,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param filtered_on_emitter_id Optional emitter id filter (self/parent/custom). If omitted the listener is global.
 	 * @param persistent If true the listener survives EventEmitter.clear() just like registry persistent objects.
 	 */
-	on(event_name: string, listener: EventHandler, subscriber: any, filtered_on_emitter_id?: Identifier, persistent: boolean = false): void {
+	on(event_name: string, listener: EventHandler<any>, subscriber: any, filtered_on_emitter_id?: Identifier, persistent: boolean = false): void {
 		const self = EventEmitter.instance;
 		if (filtered_on_emitter_id) {
 			if (!self.emitterScopeListeners[event_name]) {
@@ -272,7 +273,8 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param emitter - The emitter object.
 	 * @param args - Additional arguments to pass to the listeners.
 	 */
-	emit(event_name: string, emitter: Identifiable, payload?: EventPayload): void {
+	// Allow callers to provide a more specific payload type when emitting.
+	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
 		const self = EventEmitter.instance;
 		let anyoneSubscribed = false;
 		self.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
@@ -305,7 +307,7 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param emitter - Optional. The emitter id for scoped listeners. If omitted, the listener is removed from global scope.
 	 * @param forcePersistent - If true, also removes persistent listeners.
 	 */
-	off(event_name: string, listener: EventHandler, emitter?: EventScope, forcePersistent: boolean = false): void {
+	off(event_name: string, listener: EventHandler<any>, emitter?: EventScope, forcePersistent: boolean = false): void {
 		const self = EventEmitter.instance;
 		if (emitter === undefined) {
 			// Global-scope removal
@@ -466,7 +468,7 @@ export namespace EventEmitter {
 }
 
 export interface EventSubscriberWithIndexedHandlers {
-	[key: string]: EventHandler | EventSubscriberConstructor;
+	[key: string]: EventHandler<any> | EventSubscriberConstructor;
 	constructor: EventSubscriberConstructor;
 }
 

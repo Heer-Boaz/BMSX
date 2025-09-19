@@ -1,4 +1,4 @@
-import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SpriteObject, State, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent, vec3, type RevivableObjectArgs } from 'bmsx';
+import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, vec3, type RevivableObjectArgs } from 'bmsx';
 import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';
@@ -11,10 +11,25 @@ function theOtherFighter(f: Fighter) {
 export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'mijter_throw';
 
 @insavegame
-@assign_fsm('sint_animation')
+@assign_fsm('player_animation')
 @assign_bt('sinterklaasBT')
 @attach_components(JumpingWhileLeavingScreenComponent, BTVisualizer)
 export class Sinterklaas extends Fighter {
+	public readonly animSprites = {
+		idle: BitmapId.sint_idle,
+		walk: BitmapId.sint_walk,
+		walk_alt: BitmapId.sint_idle,
+		highkick: BitmapId.sint_highkick,
+		lowkick: BitmapId.sint_lowkick,
+		punch: BitmapId.sint_punch,
+		duckkick: BitmapId.sint_flyingkick,
+		flyingkick: BitmapId.sint_flyingkick,
+		duck: BitmapId.sint_duckorjump,
+		jump: BitmapId.sint_duckorjump,
+		humiliated: BitmapId.sint_humiliated_1,
+	};
+	public readonly humiliatedCharacterId = 'sinterklaas';
+
 	constructor(opts?: RevivableObjectArgs & { aied: boolean }) {
 		super({ id: 'sinterklaas', fsm_id: undefined, facing: 'right', playerIndex: 2 });
 		this.hp = SINTERKLAAS_START_HP;
@@ -36,184 +51,9 @@ export class Sinterklaas extends Fighter {
 
 	@build_fsm()
 	public static bouw_sinterklaas(): StateMachineBlueprint {
-		return Eila.bouw('sint_animation');
+		return Eila.bouw('player_animation');
 	}
 
-	@subscribesToSelfScopedEvent('animationEnd')
-	public handleAnimationEndEvent(event_name: string, _emitter: Sinterklaas, { animation_name }: { animation_name: string }): void {
-		switch (event_name) {
-			case 'animationEnd':
-				switch (animation_name) {
-					case 'highkick':
-					case 'punch':
-					case 'lowkick':
-						this.sc.dispatch_event('go_idle', this);
-						break;
-					case 'flyingkick':
-						this.sc.dispatch_event('flyingkick_end', this.id);
-						break;
-					case 'duckkick':
-						if (!this.sc.matches_state_path('stoerheidsdans')) {
-							this.sc.dispatch_event('go_duck', this);
-						}
-						break;
-				}
-				break;
-		}
-	}
-
-	@build_fsm('sint_animation')
-	public static buildAnimationFsm(): StateMachineBlueprint {
-		return {
-			is_concurrent: true,
-			on: {
-				$i_was_hit: {
-					do(state: State) {
-						// This is needed to quickly end the animation of the attack action.
-						// Must be done after the state machine is resumed, otherwise the event will not be handled.
-						// It will allow the player to recuperate first, before the next attack can be done by the opponent.
-						state.current.setTicksNoSideEffect(state.current.definition.ticks2advance_tape - 1);
-					}
-				},
-				$i_hit_face: {
-					do(state: State) {
-						state.current.setTicksNoSideEffect(state.current.definition.ticks2advance_tape - 1);
-					}
-				},
-				$animate_idle: 'idle',
-				$animate_humiliated: 'humiliated',
-				$animate_walk: 'walk',
-				$animate_punch: 'punch',
-				$animate_highkick: 'highkick',
-				$animate_flyingkick: 'flyingkick',
-				$animate_lowkick: 'lowkick',
-				$animate_duckkick: 'duckkick',
-				$animate_duck: 'duck',
-				$animate_jump: 'jump',
-			},
-			states: {
-				_idle: {
-					entering_state(this: SpriteObject) {
-						this.imgid = BitmapId.sint_idle;
-					},
-				},
-				walk: {
-					automatic_reset_mode: 'subtree', // Reset the submachine when the parent state is entered again, but do not reset the ticks2move counter of this state (the parent state)
-					entering_state(this: SpriteObject) {
-						this.imgid = BitmapId.sint_walk;
-					},
-					states: {
-						_walk1: {
-							ticks2advance_tape: 8,
-							entering_state(this: SpriteObject) {
-								this.imgid = BitmapId.sint_walk;
-							},
-							tape_end: () => '../walk2',
-						},
-						walk2: {
-							ticks2advance_tape: 8,
-							entering_state(this: SpriteObject) {
-								this.imgid = BitmapId.sint_idle;
-							},
-							tape_end: () => '../walk1',
-						},
-					}
-				},
-				highkick: {
-					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
-					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						this.imgid = BitmapId.sint_highkick;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-					},
-					tape_next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, { animation_name: 'highkick' });
-					}
-				},
-				lowkick: {
-					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
-					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						this.imgid = BitmapId.sint_lowkick;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-					},
-					tape_next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, { animation_name: 'lowkick' });
-					}
-				},
-				punch: {
-					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
-					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						this.imgid = BitmapId.sint_punch;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-					},
-					tape_next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, { animation_name: 'punch' });
-					}
-				},
-				duckkick: {
-					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
-					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						this.imgid = BitmapId.sint_flyingkick;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-					},
-					tape_next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, { animation_name: 'duckkick' });
-					}
-				},
-				flyingkick: {
-					ticks2advance_tape: Sinterklaas.ATTACK_DURATION,
-					entering_state(this: SpriteObject, state: State, hit: boolean) {
-						this.imgid = BitmapId.sint_flyingkick;
-						if (hit) state.setTicksNoSideEffect(state.definition.ticks2advance_tape - 1);
-					},
-					tape_next(this: Fighter, _state: State) {
-						$.emit('animationEnd', this, { animation_name: 'flyingkick' });
-					}
-				},
-				duck: {
-					entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_duckorjump; },
-				},
-				jump: {
-					entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_duckorjump; },
-				},
-				humiliated: {
-					ticks2advance_tape: 50,
-					entering_state(this: SpriteObject) {
-						this.imgid = BitmapId.sint_humiliated_1;
-					},
-					states: {
-						_wait: {
-							ticks2advance_tape: 50,
-							entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
-							tape_next: () => '../animation',
-						},
-						animation: {
-							ticks2advance_tape: 10,
-							tape_data: ['humiliated1', 'humiliated2'],
-							repetitions: 8,
-							tape_playback_mode: 'loop',
-							tape_next: (state: State) => `${state.current_tape_value}`,
-							tape_end: () => '../waitEnd',
-							states: {
-								_humiliated1: {
-									entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
-								},
-								humiliated2: {
-									entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_2; },
-								},
-							},
-						},
-						waitEnd: {
-							ticks2advance_tape: 100,
-							entering_state(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
-							tape_next(this: SpriteObject) {
-								$.emit('humiliated_animation_end', this, { character: 'sinterklaas' });
-							}
-						},
-					},
-				},
-			}
-		};
-	}
 
 	@build_bt('sinterklaasBT')
 	public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {

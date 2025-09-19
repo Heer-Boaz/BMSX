@@ -22,6 +22,7 @@ events:
                   cooldownMs: 40
     combat.hit:
         channel: sfx
+        maxVoices: 1
         policy: replace
         rules:
             - when:
@@ -38,7 +39,7 @@ events:
                       - {
                             audioId: hit2,
                             modulationPreset: modulationparams.hitsfx,
-                            weight: 1,
+                            weight: 1,S
                         }
                   pick: weighted
                   avoidRepeat: true
@@ -52,23 +53,15 @@ events:
                   priority: 2
     humiliated_animation_start:
         channel: sfx
+        maxVoices: 1
         rules:
             - do:
                   audioId: stuk
                   priority: 10
-    animationStart:
-        channel: sfx
-        rules:
-            - when:
-                  equals:
-                      clipId: humiliated
-              do:
-                  audioId: stuk
-                  modulationPreset: modulationparams.attacksfx
-                  priority: 2
     # --- Demonstration events showcasing new matcher features ---
     demo.in_operator:
         channel: sfx
+        maxVoices: 1
         rules:
             - when:
                   # IN-alias: anyOf / in both supported
@@ -131,6 +124,7 @@ events:
     # --- Music examples using musicTransition ---
     music.enter_explore:
         channel: music
+        maxVoices: 1
         rules:
             - do:
                   musicTransition:
@@ -140,6 +134,7 @@ events:
 
     music.enter_combat:
         channel: music
+        maxVoices: 1
         rules:
             - do:
                   musicTransition:
@@ -150,6 +145,7 @@ events:
 
     music.leave_combat:
         channel: music
+        maxVoices: 1
         rules:
             - do:
                   musicTransition:
@@ -159,6 +155,7 @@ events:
 
     music.victory:
         channel: music
+        maxVoices: 1
         rules:
             - do:
                   musicTransition:
@@ -169,6 +166,7 @@ events:
                       fadeMs: 200
     music.victory_alt:
         channel: music
+        maxVoices: 1
         rules:
             - do:
                   musicTransition:
@@ -180,6 +178,7 @@ events:
 
     music.gameover:
         channel: music
+        maxVoices: 1
         rules:
             - do:
                   musicTransition:
@@ -189,6 +188,7 @@ events:
 
     music.cutscene_intro:
         channel: music
+        maxVoices: 1
         rules:
             - do:
                   musicTransition:

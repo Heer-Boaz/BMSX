@@ -89,18 +89,18 @@ export class bclass extends SpriteObject {
 						$.event_emitter.emit('testEvent', this);
 
 						this.sc.machines.bclass_animation.transition_to('ani2');
-						this.sc.transition_to('bclass.bla'); // Ugly, transitioning another state machine
+						this.sc.transition_to('bclass:/bla'); // Ugly, transitioning another state machine
 					case 'blap':
 						if (consumed) break;
 						$.input.getPlayerInput(1).consumeAction(action);
 						$.event_emitter.emit('testEventOnce', this);
 
 						this.sc.machines.bclass_animation.transition_to('ani1');
-						if (this.sc.matches_state_path('bclass_meuk.meuk1.blupperblop1')) {
-							return this.sc.transition_to('bclass_meuk.meuk1/blupperblop1'); // Ugly, transitioning another state machine
+						if (this.sc.matches_state_path('bclass_meuk:/meuk1.blupperblop1')) {
+							return this.sc.transition_to('bclass_meuk:/meuk1/blupperblop1'); // Ugly, transitioning another state machine
 						}
 						else {
-							return this.sc.transition_to('bclass_meuk.meuk1/blupperblop2'); // Ugly, transitioning another state machine
+							return this.sc.transition_to('bclass_meuk:/meuk1/blupperblop2'); // Ugly, transitioning another state machine
 						}
 				}
 			}

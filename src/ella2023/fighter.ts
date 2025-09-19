@@ -69,7 +69,7 @@ export abstract class Fighter extends SpriteObject {
 						this.x_nonotify += state.current_tape_value;
 					},
 					tape_end(this: Fighter) {
-						this.sc.transition_to('hitanimation.geen_au');
+						this.sc.transition_to('hitanimation:/geen_au');
 					},
 					exiting_state(this: Fighter) {
 						this.sc.resume_all_statemachines();
@@ -94,6 +94,8 @@ export abstract class Fighter extends SpriteObject {
 	 * The player index of the fighter.
 	 */
 	public player_index: number;
+
+	public performingStoerheidsdans!: boolean;
 
 	constructor(opts: RevivableObjectArgs & { id: Identifier; fsm_id?: Identifier; facing?: 'left' | 'right'; playerIndex?: number }) {
 		super(opts);
@@ -152,8 +154,8 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public handleBeingHit(attackType: AttackType, opponent: Fighter) {
-		this.sc.transition_to('hitanimation.wel_au');
-		opponent.sc.transition_to('hitanimation.doet_au');
+		this.sc.transition_to('hitanimation:/wel_au');
+		opponent.sc.transition_to('hitanimation:/doet_au');
 		this.hp -= getDamage(attackType);
 		const weaponClass = (attackType === 'punch') ? 'light' : 'heavy';
 		$.emit('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
@@ -163,6 +165,7 @@ export abstract class Fighter extends SpriteObject {
 
 	override onspawn(spawningPos?: vec3): void {
 		super.onspawn(spawningPos);
+		this.performingStoerheidsdans = false;
 		this.resetVerticalPosition();
 	}
 

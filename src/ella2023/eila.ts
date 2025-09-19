@@ -1,10 +1,13 @@
-import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions } from 'bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, State, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, id2partial_sdef, insavegame, subscribesToParentScopedEvent, type StateTransition, type RevivableObjectArgs, type ComponentAttachOptions, type EventPayload } from 'bmsx';
+import { BitmapId } from './resourceids';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { Action } from './inputmapping';
 import { EilaEventService } from './worldmodule';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
+
+type StoerheidsdansStateData = { expectedAnimation: string | null };
 
 @insavegame
 export class JumpingWhileLeavingScreenComponent extends Component {
@@ -33,6 +36,20 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 @attach_components(ScreenBoundaryComponent, JumpingWhileLeavingScreenComponent)
 export class Eila extends Fighter {
 	public static readonly ANIMATION_FSM_ID = 'player_animation';
+	public readonly animSprites = {
+		idle: BitmapId.eila_idle,
+		walk: BitmapId.eila_walk,
+		walk_alt: BitmapId.eila_idle,
+		highkick: BitmapId.eila_highkick,
+		lowkick: BitmapId.eila_lowkick,
+		punch: BitmapId.eila_punch,
+		duckkick: BitmapId.eila_duckkick,
+		flyingkick: BitmapId.eila_flyingkick,
+		duck: BitmapId.eila_duck,
+		jump: BitmapId.eila_jump,
+		humiliated: BitmapId.eila_humiliated,
+	};
+	public readonly humiliatedCharacterId = 'eila';
 
 	@build_fsm()
 	public static bouw_eila(): StateMachineBlueprint {
@@ -73,11 +90,11 @@ export class Eila extends Fighter {
 					case 'jump_left':
 						this.facing = 'left';
 						$.consumeAction(this.player_index, 'jump')
-						return { state_id: '../jump', args: true };
+						return { state_id: '../jump', payload: { directional: true } };
 					case 'jump_right':
 						this.facing = 'right';
 						$.consumeAction(this.player_index, 'jump')
-						return { state_id: '../jump', args: true };
+						return { state_id: '../jump', payload: { directional: true } };
 					case 'duck':
 						return `../${action}`; // Do not consume the duck action, as it would immediately make the fighter stand up again
 					case 'punch':
@@ -115,7 +132,7 @@ export class Eila extends Fighter {
 			},
 			duckkick: {
 				entering_state: function (this: Fighter) {
-					attack.call(this, 'duckkick', true);
+					attack.call(this, 'duckkick');
 				},
 				exiting_state(this: Fighter) {
 					attackExit.apply(this);
@@ -203,26 +220,39 @@ export class Eila extends Fighter {
 					tape_data: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
 					repetitions: 2,
 					tape_playback_mode: 'once',
+					data: { expectedAnimation: null as string | null },
 					on: {
 						$animationEnd: {
-							do(state: State) {
+							do(state: State, payload?: EventPayload & { animation_name?: string }) {
+								const data = state.data as StoerheidsdansStateData;
+								if (!data.expectedAnimation) return;
+								if (payload?.animation_name !== data.expectedAnimation) return;
+								data.expectedAnimation = null;
 								++state.ticks;
 							},
 						},
 					},
 					entering_state(this: Fighter, state: State) {
+						this.performingStoerheidsdans = true;
+						const data = state.data as StoerheidsdansStateData;
+						data.expectedAnimation = null;
 						this.fighting = false;
 						// Used to reset the animation to idle when the fighter is about to start the 'stoerheidsdans' (e.g. when the fighter was just jumping and the animation needs to be reset to make sure the stoerheidsdans actually starts).
 						this.sc.dispatch_event('animate_idle', this);
 						this.resetVerticalPosition();
 						++state.ticks; // Perform the first attack immediately so that the 'animationEnd' event is fired after the first attack to make sure the next attack is performed via the 'animationEnd' event handler.
 					},
-					tape_next(this: Fighter, state: State, tape_rewound: boolean) {
-						if (tape_rewound) return;
+					tape_next(this: Fighter, state: State, payload: EventPayload & { tape_rewound: boolean }) {
+						if (payload.tape_rewound) return;
+						const data = state.data as StoerheidsdansStateData;
+						const nextAnimation = state.current_tape_value;
+						data.expectedAnimation = typeof nextAnimation === 'string' ? nextAnimation : null;
 						this.facing = (this.facing === 'left' ? 'right' : 'left');
 						this.sc.dispatch_event(`animate_${state.current_tape_value}`, this);
 					},
-					tape_end(this: Fighter) {
+					tape_end(this: Fighter, state: State) {
+						const data = state.data as StoerheidsdansStateData;
+						data.expectedAnimation = null;
 						this.facing = (this.facing === 'left' ? 'right' : 'left');
 						return '/nagenieten';
 					},
@@ -252,9 +282,9 @@ export class Eila extends Fighter {
 				walk: {
 					process_input: default_input_processor,
 					entering_state(this: Fighter) {
-						if (!this.sc.matches_state_path(statemachine + '.walk')) {
-							this.sc.dispatch_event('animate_walk', this);
-						}
+						// if (!this.sc.matches_state_path(statemachine + ':/walk')) {
+						this.sc.dispatch_event('animate_walk', this);
+						// }
 						this.attacking = false;
 					},
 				},
@@ -271,12 +301,12 @@ export class Eila extends Fighter {
 				},
 				jump: {
 					automatic_reset_mode: 'tree',
-					entering_state(this: Fighter, _state: State, directional: boolean = false): StateTransition {
+					entering_state(this: Fighter, _state: State, payload?: EventPayload & { directional?: boolean }): StateTransition {
 						this.sc.dispatch_event('animate_jump', this);
 						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
 						this.jumping = true;
 						this.attacked_while_jumping = false;
-						return { state_id: 'jump_up', args: directional };
+						return { state_id: 'jump_up', payload: { directional: payload?.directional } };
 					},
 					exiting_state(this: Fighter) {
 						this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = false;
@@ -294,8 +324,8 @@ export class Eila extends Fighter {
 					states: {
 						_jump_up: {
 							ticks2advance_tape: Fighter.JUMP_DURATION / 2,
-							entering_state(this: Fighter, state: State, directional: boolean = false) {
-								state.data.directional = directional;
+							entering_state(this: Fighter, state: State, payload?: EventPayload & { directional?: boolean }) {
+								state.data.directional = payload?.directional ?? false;
 							},
 							tick(this: Fighter, state: State) {
 								this.y -= Fighter.JUMP_SPEED;
@@ -308,13 +338,13 @@ export class Eila extends Fighter {
 								}
 							},
 							tape_next(state: State) {
-								return { state_id: '../jump_down', args: state.data.directional };
+								return { state_id: '../jump_down', payload: { directional: state.data.directional } };
 							},
 						},
 						jump_down: {
 							ticks2advance_tape: Fighter.JUMP_DURATION / 2,
-							entering_state(this: Fighter, state: State, directional: boolean = false) {
-								state.data.directional = directional;
+							entering_state(this: Fighter, state: State, payload?: EventPayload & { directional?: boolean }) {
+								state.data.directional = payload?.directional ?? false;
 							},
 							tick(this: Fighter, state: State) {
 								this.y += Fighter.JUMP_SPEED;

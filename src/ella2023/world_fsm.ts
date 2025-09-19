@@ -1,4 +1,4 @@
-import { $, World, build_fsm, new_vec3, State, StateMachineBlueprint } from 'bmsx';
+import { $, World, build_fsm, new_vec3, State, StateMachineBlueprint, type EventPayload } from 'bmsx';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
@@ -18,9 +18,9 @@ export class EilaModelFSM {
 					}
 				},
 				game: {
-					entering_state(this: World, _state: State, { numOfPlayers }: { numOfPlayers: number }) {
+					entering_state(this: World, _state: State, payload?: EventPayload & { numOfPlayers?: number }) {
 						const es = $.get<YieArGameState>('yiear_state');
-						if (es) es.numOfPlayers = numOfPlayers;
+						if (es) es.numOfPlayers = payload?.numOfPlayers ?? 1;
 						return 'ffwachten';
 					},
 					states: {
