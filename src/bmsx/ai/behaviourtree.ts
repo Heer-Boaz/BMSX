@@ -4,22 +4,26 @@ import { WorldObject } from '../core/object/worldobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 
+/** Node specification used to compose a behaviour tree. */
+export type BehaviorTreeNodeSpec =
+	| { type: 'selector' | 'Selector'; children: BehaviorTreeNodeSpec[]; priority?: number }
+	| { type: 'sequence' | 'Sequence'; children: BehaviorTreeNodeSpec[]; priority?: number }
+	| { type: 'parallel' | 'Parallel'; children: BehaviorTreeNodeSpec[]; successPolicy: 'ONE' | 'ALL'; priority?: number }
+	| { type: 'decorator' | 'Decorator'; child: BehaviorTreeNodeSpec; decorator: NodeDecorator; priority?: number }
+	| { type: 'condition' | 'Condition'; condition: NodeCondition; modifier?: NodeConditionModifier; parameters?: any[]; priority?: number }
+	| { type: 'compositecondition' | 'CompositeCondition'; conditions: NodeCondition[]; modifier: NodeCompositeConditionModifier; parameters?: any[]; priority?: number }
+	| { type: 'randomselector' | 'RandomSelector'; children: BehaviorTreeNodeSpec[]; currentchild_propname: string; priority?: number }
+	| { type: 'limit' | 'Limit'; child: BehaviorTreeNodeSpec; limit: number; count_propname: string; priority?: number }
+	| { type: 'priorityselector' | 'PrioritySelector'; children: BehaviorTreeNodeSpec[]; priority?: number }
+	| { type: 'wait' | 'Wait'; wait_time: number; wait_propname: string; priority?: number }
+	| { type: 'action' | 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
+	| { type: 'compositeaction' | 'CompositeAction'; actions: BehaviorTreeNodeSpec[]; parameters?: any[]; priority?: number };
+
 /**
- * Represents the definition of a behavior tree.
+ * Represents the definition of a behavior tree. A tree can either be declared directly as a node spec
+ * (legacy style) or wrapped inside an object with a `root` property.
  */
-export type BehaviorTreeDefinition =
-	| { type: 'Selector'; children: BehaviorTreeDefinition[]; priority?: number }
-	| { type: 'Sequence'; children: BehaviorTreeDefinition[]; priority?: number }
-	| { type: 'Parallel'; children: BehaviorTreeDefinition[]; successPolicy: 'ONE' | 'ALL'; priority?: number }
-	| { type: 'Decorator'; child: BehaviorTreeDefinition; decorator: NodeDecorator; priority?: number }
-	| { type: 'Condition'; condition: NodeCondition; modifier?: NodeConditionModifier; parameters?: any[]; priority?: number }
-	| { type: 'CompositeCondition'; conditions: NodeCondition[]; modifier: NodeCompositeConditionModifier; parameters?: any[]; priority?: number }
-	| { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string; priority?: number }
-	| { type: 'Limit'; child: BehaviorTreeDefinition; limit: number, count_propname: string, priority?: number }
-	| { type: 'PrioritySelector'; children: BehaviorTreeDefinition[]; priority?: number }
-	| { type: 'Wait'; wait_time: number, wait_propname: string; priority?: number }
-	| { type: 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
-	| { type: 'CompositeAction'; actions: BehaviorTreeDefinition[]; parameters?: any[]; priority?: number };
+export type BehaviorTreeDefinition = BehaviorTreeNodeSpec | { root: BehaviorTreeNodeSpec };
 
 /**
  * Represents the definitions of behavior trees that are stored in the library to be constructed later.
@@ -79,32 +83,47 @@ let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTree
  * @param id - The identifier of the behavior tree.
  * @returns The root node of the built behavior tree, which can consist of multiple nodes (sub trees).
  */
-function buildBehaviorTree(config: BehaviorTreeDefinition, id: BehaviorTreeID): BTNode {
-	switch (config.type) {
+function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID): BTNode {
+	const typeValue = config.type;
+	switch (typeValue) {
+		case 'selector':
 		case 'Selector':
-			return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
+			return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
+		case 'sequence':
 		case 'Sequence':
-			return new SequenceNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
+			return new SequenceNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
+		case 'parallel':
 		case 'Parallel':
-			return new ParallelNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.successPolicy, config.priority);
+			return new ParallelNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.successPolicy, config.priority);
+		case 'decorator':
 		case 'Decorator':
-			return new DecoratorNode(id, buildBehaviorTree(config.child, id), config.decorator, config.priority);
+			return new DecoratorNode(id, buildBehaviorTreeNode(config.child, id), config.decorator, config.priority);
+		case 'condition':
 		case 'Condition':
-			return new ConditionNode(id, config.condition, config.modifier, config.priority, config.parameters);
+			return new ConditionNode(id, config.condition, config.modifier ?? null, config.priority, config.parameters);
+		case 'compositecondition':
 		case 'CompositeCondition':
 			return new CompositeConditionNode(id, config.conditions, config.modifier, config.priority, config.parameters);
+		case 'randomselector':
 		case 'RandomSelector':
-			return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.currentchild_propname, config.priority);
+			return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.currentchild_propname, config.priority);
+		case 'limit':
 		case 'Limit':
-			return new LimitNode(id, config.limit, config.count_propname, buildBehaviorTree(config.child, id), config.priority);
+			return new LimitNode(id, config.limit, config.count_propname, buildBehaviorTreeNode(config.child, id), config.priority);
+		case 'priorityselector':
 		case 'PrioritySelector':
-			return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
+			return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
+		case 'wait':
 		case 'Wait':
 			return new WaitNode(id, config.wait_time, config.wait_propname, config.priority);
+		case 'action':
 		case 'Action':
 			return new ActionNode(id, config.action, config.priority, config.parameters);
+		case 'compositeaction':
 		case 'CompositeAction':
-			return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTree(actionConfig, id) as ActionNode), config.priority, config.parameters);
+			return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTreeNode(actionConfig, id) as ActionNode), config.priority, config.parameters);
+		default:
+			throw new Error(`Unsupported behavior tree node type '${typeValue}'`);
 	}
 }
 
@@ -185,8 +204,9 @@ export function build_bt(bt_id?: BehaviorTreeID) {
  */
 export function constructBehaviorTree(bt_id: BehaviorTreeID): BTNode | null {
 	const btdef = BehaviorTreeDefinitions[bt_id];
-	if (btdef) return buildBehaviorTree(btdef, bt_id);
-	return null;
+	if (!btdef) return null;
+	const root = (btdef as { root?: BehaviorTreeNodeSpec }).root ?? (btdef as BehaviorTreeNodeSpec);
+	return buildBehaviorTreeNode(root, bt_id);
 }
 
 /**

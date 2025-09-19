@@ -102,10 +102,15 @@ states:
                       animation_name: highkick
                       weaponClass: heavy
         tape_next:
-            emit:
+            - emit:
                 event: animationEnd
                 payload:
                     animation_name: highkick
+            - emit:
+                event: fighter.attack.animation.highkick.finished
+                scope: self
+                payload:
+                    attackType: highkick
     lowkick:
         ticks2advance_tape: 15
         entering_state:
@@ -118,10 +123,15 @@ states:
                       animation_name: lowkick
                       weaponClass: heavy
         tape_next:
-            emit:
+            - emit:
                 event: animationEnd
                 payload:
                     animation_name: lowkick
+            - emit:
+                event: fighter.attack.animation.lowkick.finished
+                scope: self
+                payload:
+                    attackType: lowkick
     punch:
         ticks2advance_tape: 15
         entering_state:
@@ -134,10 +144,15 @@ states:
                       animation_name: punch
                       weaponClass: light
         tape_next:
-            emit:
+            - emit:
                 event: animationEnd
                 payload:
                     animation_name: punch
+            - emit:
+                event: fighter.attack.animation.punch.finished
+                scope: self
+                payload:
+                    attackType: punch
     duckkick:
         ticks2advance_tape: 15
         entering_state:
@@ -150,10 +165,15 @@ states:
                       animation_name: duckkick
                       weaponClass: light
         tape_next:
-            emit:
+            - emit:
                 event: animationEnd
                 payload:
                     animation_name: duckkick
+            - emit:
+                event: fighter.attack.animation.duckkick.finished
+                scope: self
+                payload:
+                    attackType: duckkick
     flyingkick:
         ticks2advance_tape: 15
         entering_state:
@@ -166,10 +186,15 @@ states:
                       animation_name: flyingkick
                       weaponClass: heavy
         tape_next:
-            emit:
+            - emit:
                 event: animationEnd
                 payload:
                     animation_name: flyingkick
+            - emit:
+                event: fighter.attack.animation.flyingkick.finished
+                scope: self
+                payload:
+                    attackType: flyingkick
     duck:
         entering_state:
             - set_property:

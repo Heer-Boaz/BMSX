@@ -146,7 +146,6 @@ export function insavegame(typeId: string): {
  * - When used as a decorator factory, returns a decorator function.
  * - Otherwise returns undefined.
  */
-
 export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext) {
 	function register(ctor: any, typeId?: string) {
 		let key = typeId ?? (ctor?.name);

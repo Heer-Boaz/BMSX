@@ -100,6 +100,54 @@
 			}
 		},
 		{
+			"label": "Forcefully typecheck & build the game DEBUG-MODE",
+			"detail": "Runs rompacker.js to create the DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"tsx",
+				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
+				"-romname",
+				"${input:romtobuild}",
+				"-bootloaderpath",
+				"src/${input:romtobuild}",
+				"-respath",
+				"./src/${input:romtobuild}/res",
+				"-title",
+				"${input:romtobuild}",
+				"--debug",
+				"--nodeploy",
+				"--force",
+				"--usepkgtsconfig",
+			],
+			"problemMatcher": [
+				"$node-sass",
+				"$tsc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			},
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"output romtobuild"
+			],
+			"icon": {
+				"id": "verified-filled",
+				"color": "terminal.ansiMagenta"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER"
+			}
+		},
+		{
 			"label": "build the game NON-DEBUG",
 			"detail": "Runs rompacker.js to create the NON-DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
 			"type": "shell",

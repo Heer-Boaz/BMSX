@@ -120,6 +120,36 @@ export interface StateActionSetPropertySpec {
 	};
 }
 
+export interface StateActionAdjustPropertySpec {
+	adjust_property: {
+		target: string;
+		add?: any;
+		sub?: any;
+		mul?: any;
+		div?: any;
+		set?: any;
+	};
+}
+
+export interface StateActionAddTagSpec { add_tag: any; }
+
+export interface StateActionRemoveTagSpec { remove_tag: any; }
+
+export interface StateActionActivateAbilitySpec {
+	activate_ability: string | { id: string };
+}
+
+export interface StateActionCallSpec {
+	call: {
+		target: any;
+		args?: any[] | any;
+	};
+}
+
+export interface StateActionConsumeActionSpec {
+	consume_action: string | string[];
+}
+
 export interface StateActionCondition {
 	value_equals?: {
 		left: any;
@@ -156,9 +186,15 @@ export type StateActionSpec =
 	| StateActionSetTicksSpec
 	| { emit: StateActionEmitSpec }
 	| StateActionSetPropertySpec
+	| StateActionAdjustPropertySpec
 	| StateActionConditionalSpec
 	| StateActionSequence
-	| StateActionDispatchEventSpec;
+	| StateActionDispatchEventSpec
+	| StateActionAddTagSpec
+	| StateActionRemoveTagSpec
+	| StateActionActivateAbilitySpec
+	| StateActionCallSpec
+	| StateActionConsumeActionSpec;
 
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**

@@ -2,8 +2,10 @@ import type { EventPayload, EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
+import { AbilitySystemComponent } from '../gas/abilitysystem';
+import { Input } from '../input/input';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { EventBagName, listed_sdef_event, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
+import type { EventBagName, listed_sdef_event, StateActionActivateAbilitySpec, StateActionAddTagSpec, StateActionAdjustPropertySpec, StateActionCallSpec, StateActionCondition, StateActionConditionalSpec, StateActionConsumeActionSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionRemoveTagSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 import type { StateMachineController } from './fsmcontroller';
@@ -463,7 +465,22 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 			break;
 		case 'payload':
 			current = ctx.payload;
+			if (typeof current !== 'object') throw new Error(`[FSMLibrary] Payload is not an object, cannot get property ${segments.join('.')}.`);
 			break;
+		case 'component': {
+			const owner = ctx.self as { componentMap?: Record<string, any[]> } | undefined;
+			if (!owner) return undefined;
+			const compKey = segments.shift();
+			if (typeof compKey !== 'string') return undefined;
+			const list = owner.componentMap?.[compKey];
+			if (!list || list.length === 0) return undefined;
+			let index = 0;
+			if (typeof segments[0] === 'number') {
+				index = segments.shift() as number;
+			}
+			current = list[index];
+			break;
+		}
 		default:
 			current = ctx.self;
 			segments.unshift(first);
@@ -511,14 +528,39 @@ function setPathValue(target: any, segments: (string | number)[], value: any): v
 	obj[last as any] = value;
 }
 
-function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecutionContext): void {
-	if (!targetSpec) return;
-	const resolvedValue = resolveTemplateValue(valueSpec, ctx);
+function getPathValue(target: any, segments: (string | number)[]): any {
+	if (!segments.length) return target;
+	let current = target;
+	for (const token of segments) {
+		if (current == null) return undefined;
+		current = current[token as any];
+	}
+	return current;
+}
+
+function resolveComponentFromSegments(self: any, segments: (string | number)[]): { component: any; rest: (string | number)[] } | null {
+	if (!self) return null;
+	const compKey = segments.shift();
+	if (typeof compKey !== 'string') return null;
+	const list = self.componentMap?.[compKey];
+	if (!list || list.length === 0) return null;
+	let index = 0;
+	if (typeof segments[0] === 'number') {
+		index = segments.shift() as number;
+	}
+	const component = list[index];
+	if (!component) return null;
+	return { component, rest: segments };
+}
+
+function resolveTargetReference(targetSpec: string, ctx: BuiltinExecutionContext): { base: any; path: (string | number)[] } | null {
+	if (!targetSpec) return null;
+	let segments: (string | number)[];
+	let base: any;
 	if (targetSpec.startsWith('@')) {
-		const segments = parsePathSegments(targetSpec.slice(1));
-		if (!segments.length) return;
+		segments = parsePathSegments(targetSpec.slice(1));
+		if (!segments.length) return null;
 		const rootToken = segments.shift()!;
-		let base: any;
 		switch (rootToken) {
 			case 'self':
 				base = ctx.self;
@@ -528,16 +570,121 @@ function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecut
 				break;
 			case 'payload':
 				base = ctx.payload;
+				if (typeof base !== 'object') throw new Error(`[FSMLibrary]Payload is not an object, cannot set property on it.`);
 				break;
+			case 'component': {
+				const resolved = resolveComponentFromSegments(ctx.self, segments);
+				if (!resolved) return null;
+				base = resolved.component;
+				segments = resolved.rest;
+				break;
+			}
 			default:
-				return;
+				return null;
 		}
-		if (base == null) return;
-		setPathValue(base, segments, resolvedValue);
+	}
+	else {
+		segments = parsePathSegments(targetSpec);
+		base = ctx.self;
+	}
+	if (base == null) return null;
+	return { base, path: segments };
+}
+
+function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecutionContext): void {
+	if (!targetSpec) return;
+	const resolvedValue = resolveTemplateValue(valueSpec, ctx);
+	const target = resolveTargetReference(targetSpec, ctx);
+	if (!target) return;
+	if (!target.path.length) {
 		return;
 	}
-	const segments = parsePathSegments(targetSpec);
-	setPathValue(ctx.self, segments, resolvedValue);
+	setPathValue(target.base, target.path, resolvedValue);
+}
+
+function resolveNumberOperand(spec: any, ctx: BuiltinExecutionContext): number {
+	const resolved = resolveTemplateValue(spec, ctx);
+	return toNumber(resolved);
+}
+
+function toNumber(value: any): number {
+	if (typeof value === 'number') return value;
+	if (typeof value === 'boolean') return value ? 1 : 0;
+	if (typeof value === 'string' && value.trim().length > 0) {
+		const parsed = Number(value);
+		if (!Number.isNaN(parsed)) return parsed;
+	}
+	return 0;
+}
+
+function applyAdjustProperty(targetSpec: string, adjust: { add?: any; sub?: any; mul?: any; div?: any; set?: any }, ctx: BuiltinExecutionContext): void {
+	if (!targetSpec) return;
+	const target = resolveTargetReference(targetSpec, ctx);
+	if (!target) return;
+	if (!target.path.length) return;
+	const currentValue = getPathValue(target.base, target.path);
+	let result = typeof currentValue === 'number' ? currentValue : 0;
+	if (adjust.set !== undefined) {
+		result = resolveNumberOperand(adjust.set, ctx);
+	}
+	if (adjust.add !== undefined) {
+		result += resolveNumberOperand(adjust.add, ctx);
+	}
+	if (adjust.sub !== undefined) {
+		result -= resolveNumberOperand(adjust.sub, ctx);
+	}
+	if (adjust.mul !== undefined) {
+		result *= resolveNumberOperand(adjust.mul, ctx);
+	}
+	if (adjust.div !== undefined) {
+		const divisor = resolveNumberOperand(adjust.div, ctx);
+		if (divisor !== 0) result /= divisor;
+	}
+	setPathValue(target.base, target.path, result);
+}
+
+function ensureArray<T>(value: T | T[] | undefined): T[] {
+	if (value === undefined) return [];
+	return Array.isArray(value) ? value : [value];
+}
+
+function consumeInputActions(target: any, actions: string[]): void {
+	if (!actions.length) return;
+	const index = target?.player_index ?? 1;
+	const playerInput = Input.instance.getPlayerInput(index);
+	if (!playerInput) return;
+	for (const action of actions) {
+		if (typeof action === 'string' && action.length > 0) playerInput.consumeAction(action);
+	}
+}
+
+function getAbilitySystemFromTarget(target: any): AbilitySystemComponent | undefined {
+	if (!target) return undefined;
+	const asc = target.abilitySystem instanceof AbilitySystemComponent ? target.abilitySystem : undefined;
+	if (asc) return asc;
+	if (typeof target.getUniqueComponent === 'function') {
+		try {
+			const maybeAsc = target.getUniqueComponent(AbilitySystemComponent as any);
+			if (maybeAsc instanceof AbilitySystemComponent) return maybeAsc;
+		}
+		catch { /* ignore */ }
+	}
+	return undefined;
+}
+
+function applyGameplayTagOperation(target: any, tags: any, op: 'add' | 'remove'): void {
+	const asc = getAbilitySystemFromTarget(target);
+	const list = ensureArray(tags).filter(tag => typeof tag === 'string' && tag.length > 0) as string[];
+	if (list.length === 0) return;
+	for (const tag of list) {
+		if (op === 'add') {
+			if (typeof target?.addGameplayTag === 'function') target.addGameplayTag(tag);
+			else asc?.addTag(tag);
+		} else {
+			if (typeof target?.removeGameplayTag === 'function') target.removeGameplayTag(tag);
+			else asc?.removeTag(tag);
+		}
+	}
 }
 
 function evaluateCondition(condition: StateActionCondition | undefined, ctx: BuiltinExecutionContext): boolean {
@@ -718,6 +865,14 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 			applySetProperty(target, value, ctx);
 		};
 	}
+	if ('adjust_property' in spec) {
+		const adjust = (spec as StateActionAdjustPropertySpec).adjust_property;
+		const { target, add, sub, mul, div, set } = adjust;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			applyAdjustProperty(target, { add, sub, mul, div, set }, ctx);
+		};
+	}
 	if ('emit' in spec) {
 		return createEmitHandler((spec as { emit: StateActionEmitSpec }).emit, slot);
 	}
@@ -726,6 +881,55 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('dispatch_event' in spec) {
 		return createDispatchEventHandler((spec as StateActionDispatchEventSpec).dispatch_event, slot);
+	}
+	if ('add_tag' in spec) {
+		const tagsSpec = (spec as StateActionAddTagSpec).add_tag;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			applyGameplayTagOperation(ctx.self, resolveTemplateValue(tagsSpec, ctx), 'add');
+		};
+	}
+	if ('remove_tag' in spec) {
+		const tagsSpec = (spec as StateActionRemoveTagSpec).remove_tag;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			applyGameplayTagOperation(ctx.self, resolveTemplateValue(tagsSpec, ctx), 'remove');
+		};
+	}
+	if ('activate_ability' in spec) {
+		const config = (spec as StateActionActivateAbilitySpec).activate_ability;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			const asc = getAbilitySystemFromTarget(ctx.self);
+			if (!asc) return;
+			const resolved = resolveTemplateValue(config, ctx);
+			if (!resolved) return;
+			const id = typeof resolved === 'string' ? resolved : resolved.id;
+			if (!id) return;
+			asc.tryActivate(id);
+		};
+	}
+	if ('call' in spec) {
+		const { target, args: callArgs } = (spec as StateActionCallSpec).call ?? {};
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			const fn = typeof target === 'string' && target.startsWith('@')
+				? resolveBinding(target.slice(1), ctx)
+				: resolveTemplateValue(target, ctx);
+			if (typeof fn !== 'function') return;
+			const resolvedArgsRaw = callArgs === undefined ? [] : (Array.isArray(callArgs) ? callArgs : [callArgs]);
+			const resolvedArgs = resolvedArgsRaw.map(arg => resolveTemplateValue(arg, ctx));
+			fn.apply(ctx.self ?? this, resolvedArgs);
+		};
+	}
+	if ('consume_action' in spec) {
+		const actionsSpec = (spec as StateActionConsumeActionSpec).consume_action;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			const resolved = resolveTemplateValue(actionsSpec, ctx);
+			const actions = ensureArray(resolved) as string[];
+			consumeInputActions(ctx.self, actions);
+		};
 	}
 	return undefined;
 }
