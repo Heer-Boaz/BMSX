@@ -21,13 +21,19 @@ export class StateDefinition {
 	 */
 	public id: Identifier;
 
+	public def_id: Identifier; // Full id including parent path (e.g. 'rootid:/parentid/thisid')
+
 	/**
 	 * Optional data associated with the bfsm.
 	 */
 	public data?: { [key: string]: any; };
 
 	/**
-	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link StateMachineController.current_machine}.
+	 * Indicates whether this state (or nested state machine) runs in parallel with
+	 * the focused branch. Applies at every hierarchy level: a concurrent child
+	 * ticks every frame without supplanting {@link State.currentid}, while
+	 * non-concurrent children inherit focus and their own trees behave the same
+	 * way recursively.
 	 */
 	public is_concurrent?: boolean;
 
@@ -89,7 +95,6 @@ export class StateDefinition {
 	 */
 	public parent!: StateDefinition; // The parent state machine definition
 
-	// The parent state machine definition
 	@excludepropfromsavegame
 	/**
 	 * The root state machine definition.
@@ -98,12 +103,30 @@ export class StateDefinition {
 
 	public event_list: { name: string; scope: EventScope; }[];
 
+	private get is_root(): boolean { return this.root === this; }
+
+	/**
+	 * Generates a unique identifier for the current instance.
+	 * The identifier is created by concatenating the parent machine's id (or the `target_id` for root machines) and the `def_id`.
+	 * @returns The generated identifier.
+	 */
+	private make_id(): Identifier {
+	if (this.is_root) return this.id;
+		const parent = this.parent;
+		if (!parent) {
+			throw new Error(`StateDefinition '${this.id}' is missing a parent while computing def_id.`);
+		}
+		const parentId = parent.def_id ?? parent.id;
+		const separator = parent.is_root ? ':/' : '/';
+		return `${parentId}${separator}${this.id}`;
+	}
+
 	/**
 	 * Constructs a new instance of the `bfsm` class.
 	 * @param id - The ID of the `bfsm` instance.
 	 * @param partialdef - An optional partial definition to assign to the `bfsm` instance.
 	 */
-	public constructor(id: Identifier, partialdef?: Partial<StateDefinition>, root: StateDefinition = null) {
+	public constructor(id: Identifier, partialdef?: Partial<StateDefinition>, root: StateDefinition = null, parent: StateDefinition = null) {
 		this.id = id;
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 		this.ticks2advance_tape ??= 0; // Unless already defined, ticks2move is 0
@@ -113,7 +136,9 @@ export class StateDefinition {
 		this.automatic_reset_mode = this.automatic_reset_mode ?? 'state'; // Unless already defined, auto_reset is true
 		this.data ??= {}; // Unless already defined, data is an empty object
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine
+		this.parent = parent; // The parent state machine is either the provided parent or null (for root machines)
 		this.is_concurrent ??= false; // Unless already defined, parallel is false
+		this.def_id = this.make_id(); // Alias for def_id
 
 		if (this.tape_data) {
 			this.repeat_tape(this.tape_data, this.repetitions);
@@ -149,25 +174,16 @@ export class StateDefinition {
 		this.states ??= {};
 		const substate_ids = Object.keys(states);
 		for (let state_id of substate_ids) {
-			const sub_sdef = this.#create_state(states[state_id], state_id, root);
-			validateStateMachine(sub_sdef as StateDefinition);
+			const sub_sdef = this.#create_state(states[state_id], state_id, root, this);
 			this.replace_partialsdef_with_sdef(sub_sdef, root);
+			validateStateMachine(sub_sdef);
 		}
+		// At runtime the first registered child becomes active when no explicit
+		// `initial` is provided; see the comment above {@link initial}. We mirror that
+		// construction order here so the narrative in authoring tools matches engine
+		// behaviour.
 		if (substate_ids.length > 0 && !this.initial) { // Only look for a start state if we have at least one state in our definition
 			this.initial = substate_ids[0]; // If no default state was defined, we default to the first state found in the list of states
-
-			// If the start state is not defined, we don't need to change the key of the start state
-		}
-		else {
-			// If the start state is defined, we need to change the key of the start state to exclude the start state prefix
-			const start_state = this.states[this.initial]; // Get the start state
-			for (const state_id of substate_ids) {
-				if (StateDefinition.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
-					delete this.states[state_id]; // Delete the start state from the list of states (with the old key)
-					this.states[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
-					break; // Stop iterating over the states
-				}
-			}
 		}
 	}
 
@@ -213,6 +229,12 @@ export class StateDefinition {
 
 	/**
 	 * The identifier of the state that the state machine should start in.
+	 *
+	 * If omitted the runtime adopts the first child inserted during construction,
+	 * keeping behaviour consistent with the controller-level default. States that
+	 * carry a prefix from {@link START_STATE_PREFIXES} mark themselves as the
+	 * explicit initial state without renaming, so authoring tools can preserve the
+	 * original label.
 	 */
 	public initial?: Identifier;
 
@@ -228,9 +250,9 @@ export class StateDefinition {
 	 * @returns The new state definition.
 	 * @throws An error if the state definition is missing.
 	 */
-	#create_state(partial: Partial<StateDefinition>, state_id: Identifier, root: StateDefinition): StateDefinition {
+	#create_state(partial: Partial<StateDefinition>, state_id: Identifier, root: StateDefinition, parent: StateDefinition): StateDefinition {
 		if (!partial) throw new Error(`'sdef' with id '${state_id}' is missing definition while attempting to add it to this 'sdef'!`);
-		return new StateDefinition(state_id, partial, root);
+		return new StateDefinition(state_id, partial, root, parent);
 	}
 
 	/**
@@ -243,14 +265,6 @@ export class StateDefinition {
 	}
 
 	/**
-	 * Sets the start state of the state machine to the given state.
-	 * @param state The state to set as the start state.
-	 */
-	#set_start_state(state: StateDefinition): void {
-		this.initial = state.id;
-	}
-
-	/**
 	 * Appends a state to the list of states defined for this state machine.
 	 * @param sub_sdef The state to append.
 	 * @throws An error if the state is missing an id or if a state with the same id already exists for this state machine.
@@ -258,13 +272,12 @@ export class StateDefinition {
 	public replace_partialsdef_with_sdef(sub_sdef: StateDefinition, root: StateDefinition): void {
 		if (!sub_sdef.id) throw new Error(`'sub_sdef' is missing an id, while attempting to add it to this 'sdef'!`);
 		// if (this.states[state.id]) throw new Error(`'sdef' with id='${state.id}' already exists for this 'sdef'!`);
-		let initial_state = this.initial;
-		if (this.#is_start_state(sub_sdef)) { // If the state is a start state, set it as the start state
-			sub_sdef.id = sub_sdef.id.substring(1); // Remove the start state prefix from the id
-			if (initial_state && initial_state !== sub_sdef.id) { // If there is already a start state defined, and it is a start state
+		const initial_state = this.initial;
+		if (this.#is_start_state(sub_sdef)) {
+			if (initial_state && initial_state !== sub_sdef.id) {
 				throw `State machine '${this.id}' already has a start state defined ('${initial_state}'). Thus, you chose to define multiple start states ('${initial_state}' and '${sub_sdef.id}'). Please define only one start state!`;
 			}
-			this.#set_start_state(sub_sdef); // Set the start state for the state machine
+			this.initial = sub_sdef.id;
 		}
 		this.states[sub_sdef.id] = sub_sdef;
 		sub_sdef.parent = this;
@@ -331,10 +344,10 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 						if (typeof t.to === 'string') resolveStateDefPath(stateDef, t.to, statePath, description);
 						if (typeof t.switch === 'string') resolveStateDefPath(stateDef, t.switch, statePath, description);
 						if (typeof t.do === 'string' && !t.do.includes('.handlers.') && !looksLikeStatePath(t.do)) {
-						console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
+							console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
+						}
 					}
 				}
-			}
 			};
 
 			checkTransitions(stateDef.on, 'on transition');
@@ -362,7 +375,9 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			validateStateMachine(stateDef, statePath);
 		}
 	} catch (e) {
+		console.error(`[Validate state machines] ${e}`);
 		console.error(`${e.stack || e.message || e}`);
+		throw new Error(`State machine validation failed!`);
 	}
 }
 

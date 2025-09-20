@@ -1,0 +1,293 @@
+on:
+    $go_idle:
+        if:
+            and:
+                - state_not_matches: './stoerheidsdans'
+                - state_not_matches: './nagenieten'
+                - state_not_matches: './humiliated'
+        switch: './_grounded/_idle'
+    $go_walk: './_grounded/walk'
+    $go_punch: './_grounded/attack/punch'
+    $go_highkick: './_grounded/attack/highkick'
+    $go_lowkick: './_grounded/attack/lowkick'
+    $go_duckkick: './_grounded/attack/duckkick'
+    $go_duck: './_grounded/duck'
+    $go_jump:
+        to:
+            state_id: './airborne/_jump'
+            payload: '@payload'
+    $go_flyingkick:
+        if:
+            and:
+                - state_matches: './airborne/_jump'
+                - value_equals:
+                      left: '@self.attacked_while_jumping'
+                      equals: false
+        to: './airborne/_jump/flyingkick/active'
+    $go_stoerheidsdans: './stoerheidsdans'
+    $go_humiliated: './humiliated'
+states:
+    _grounded:
+        entering_state:
+            - add_tag: state._grounded
+            - remove_tag: state.airborne
+        states:
+            _idle:
+                input_event_handlers:
+                    'duck[p]': '../duck'
+                    'punch[wp{6}]': '../attack/punch'
+                    'highkick[wp{6}]': '../attack/highkick'
+                    'lowkick[wp{6}]': '../attack/lowkick'
+                    'jump_right[j]':
+                        do:
+                            - dispatch_event:
+                                event: go_jump
+                                emitter: '@self'
+                                payload:
+                                    direction: right
+                    'jump_left[j]':
+                        do:
+                            - dispatch_event:
+                                event: go_jump
+                                emitter: '@self'
+                                payload:
+                                    direction: left
+                    'jump[j]':
+                        do:
+                            - dispatch_event:
+                                event: go_jump
+                                emitter: '@self'
+                                payload: {}
+                    'right[p]': '../walk'
+                    'left[p]': '../walk'
+                entering_state:
+                    - call:
+                          target: '@self.onIdleEntered'
+                    - emit:
+                          event: animate_idle
+                          emitter: '@self'
+            walk:
+                entering_state:
+                    - call:
+                          target: '@self.onWalkEntered'
+                    - emit:
+                          event: animate_walk
+                          emitter: '@self'
+                input_event_handlers:
+                    'duck[p]': '../duck'
+                    'punch[wp{6}]': '../attack/punch'
+                    'highkick[wp{6}]': '../attack/highkick'
+                    'lowkick[wp{6}]': '../attack/lowkick'
+                    'jump_right[j]':
+                        do:
+                            - dispatch_event:
+                                event: go_jump
+                                emitter: '@self'
+                                payload:
+                                    direction: right
+                    'jump_left[j]':
+                        do:
+                            - dispatch_event:
+                                event: go_jump
+                                emitter: '@self'
+                                payload:
+                                    direction: left
+                    'jump[j]':
+                        do:
+                            - dispatch_event:
+                                event: go_jump
+                                emitter: '@self'
+                                payload: {}
+                    'left[p]':
+                        do:
+                            call:
+                                target: '@self.walkStep'
+                                args: ['left']
+                    'right[p]':
+                        do:
+                            call:
+                                target: '@self.walkStep'
+                                args: ['right']
+                    '&(left[!p], right[!p])': '../_idle'
+            duck:
+                entering_state:
+                    - add_tag: state.ducking
+                    - call:
+                          target: '@self.onDuckEntered'
+                    - emit:
+                          event: animate_duck
+                          emitter: '@self'
+                exiting_state:
+                    - remove_tag: state.ducking
+                    - call:
+                          target: '@self.onDuckExited'
+                input_event_handlers:
+                    'duck[!p]': '../_idle'
+                    'lowkick[wp{6}]': '../attack/duckkick'
+                    'left[p]':
+                        do:
+                            - set_property:
+                                  target: facing
+                                  value: left
+                    'right[p]':
+                        do:
+                            - set_property:
+                                  target: facing
+                                  value: right
+            attack:
+                states:
+                    punch:
+                        entering_state:
+                            - activate_ability: fighter.attack.punch
+                            - call:
+                                  target: '@self.startAttack'
+                                  args: ['punch']
+                            - emit:
+                                  event: animate_punch
+                                  emitter: '@self'
+                        exiting_state:
+                            - call:
+                                  target: '@self.finishAttack'
+                                  args: ['punch']
+                    highkick:
+                        entering_state:
+                            - activate_ability: fighter.attack.highkick
+                            - call:
+                                  target: '@self.startAttack'
+                                  args: ['highkick']
+                            - emit:
+                                  event: animate_highkick
+                                  emitter: '@self'
+                        exiting_state:
+                            - call:
+                                  target: '@self.finishAttack'
+                                  args: ['highkick']
+                    lowkick:
+                        entering_state:
+                            - activate_ability: fighter.attack.lowkick
+                            - call:
+                                  target: '@self.startAttack'
+                                  args: ['lowkick']
+                            - emit:
+                                  event: animate_lowkick
+                                  emitter: '@self'
+                        exiting_state:
+                            - call:
+                                  target: '@self.finishAttack'
+                                  args: ['lowkick']
+                    duckkick:
+                        entering_state:
+                            - activate_ability: fighter.attack.duckkick
+                            - call:
+                                  target: '@self.startAttack'
+                                  args: ['duckkick']
+                            - emit:
+                                  event: animate_duckkick
+                                  emitter: '@self'
+                        exiting_state:
+                            - call:
+                                  target: '@self.finishAttack'
+                                  args: ['duckkick']
+    airborne:
+        states:
+            _jump:
+                automatic_reset_mode: tree
+                entering_state:
+                    - call:
+                          target: '@self.startJump'
+                          args: ['@state', '@payload']
+                    - emit:
+                          event: animate_jump
+                          emitter: '@self'
+                exiting_state:
+                    - call:
+                          target: '@self.finishJump'
+                input_event_handlers:
+                    'highkick[wp{6}]':
+                        do:
+                            - dispatch_event:
+                                  event: go_flyingkick
+                                  emitter: '@self'
+                    'lowkick[wp{6}]':
+                        do:
+                            - dispatch_event:
+                                  event: go_flyingkick
+                                  emitter: '@self'
+                states:
+                    _ascending:
+                        ticks2advance_tape: 30
+                        tick:
+                            call:
+                                target: '@self.jumpAscendingTick'
+                                args: ['@state']
+                        tape_next: '../descending'
+                    descending:
+                        ticks2advance_tape: 30
+                        tick:
+                            call:
+                                target: '@self.jumpDescendingTick'
+                                args: ['@state']
+                        tape_next: '/_grounded/_idle'
+                    flyingkick:
+                        is_concurrent: true
+                        states:
+                            _ready: {}
+                            active:
+                                entering_state:
+                                    - activate_ability: fighter.attack.flyingkick
+                                    - call:
+                                          target: '@self.onFlyingKickEntered'
+                                    - emit:
+                                          event: animate_flyingkick
+                                          emitter: '@self'
+                                exiting_state:
+                                    - call:
+                                          target: '@self.onFlyingKickExited'
+                                    - emit:
+                                          event: animate_jump
+                                          emitter: '@self'
+                                on:
+                                    flyingkick_end: '../_ready'
+    stoerheidsdans:
+        enable_tape_autotick: false
+        ticks2advance_tape: 1
+        tape_data: [highkick, lowkick, duckkick, punch, punch]
+        repetitions: 2
+        tape_playback_mode: once
+        data:
+            expectedAnimation: null
+        entering_state:
+            - call:
+                  target: '@self.enterStoerheidsdans'
+                  args: ['@state']
+        on:
+            $animationEnd:
+                do:
+                    call:
+                        target: '@self.handleStoerAnimationEnd'
+                        args: ['@state', '@payload']
+        tape_next:
+            do:
+                call:
+                    target: '@self.handleStoerTapeNext'
+                    args: ['@state', '@payload']
+        tape_end:
+            do:
+                call:
+                    target: '@self.completeStoerheidsdans'
+                    args: ['@state']
+            to: '/_nagenieten'
+    nagenieten:
+        entering_state:
+            - call:
+                  target: '@self.startNagenieten'
+    humiliated:
+        entering_state:
+            - call:
+                  target: '@self.enterHumiliated'
+            - emit:
+                  event: animate_humiliated
+                  emitter: '@self'
+        exiting_state:
+            - call:
+                  target: '@self.exitHumiliated'

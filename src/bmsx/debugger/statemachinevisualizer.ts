@@ -65,7 +65,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 			let state = machine.states?.[stateId];
 			let stateRow = document.createElement('tr');
 			let stateCell = document.createElement('td');
-			stateCell.textContent = state?.def_id ?? 'undefined';
+			stateCell.textContent = state?.localdef_id ?? 'undefined';
 			stateCell.classList.add('state');
 			stateRow.appendChild(stateCell);
 			table.appendChild(stateRow);
@@ -83,7 +83,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 			if (state.states) {
 				let subTableCell = document.createElement('td');
 				stateRow.appendChild(subTableCell);
-				visualizeMachine(state, state.def_id, subTableCell, isActive && machine.currentid === stateId, newpath);
+				visualizeMachine(state, state.localdef_id, subTableCell, isActive && machine.currentid === stateId, newpath);
 			}
 		}
 	}
@@ -139,7 +139,7 @@ export function highlightCurrentState(stateElements: Map<string, HTMLElement>, m
 				stateElement?.classList.add('parallel-machine');
 			}
 			let state = machine.states?.[state_id];
-			updateMachineClasses(state, state.def_id, isActive && (machine.currentid === state_id || machine.states[state_id].is_concurrent), newpath);
+			updateMachineClasses(state, state.localdef_id, isActive && (machine.currentid === state_id || machine.states[state_id].is_concurrent), newpath);
 		}
 	}
 	for (let machineName in bfsmController.machines) {

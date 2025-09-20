@@ -1,11 +1,11 @@
 import type { Identifier } from '../rompack/rompack';
-import type { ConstructorWithFSMProperty, FSMName, StateMachineBlueprint } from "./fsmtypes";
+import type { ConstructorWithFSMProperty, FsmHandlerDecl, FSMName, StateMachineBlueprint } from "./fsmtypes";
 import { normalizeDecoratedClassName } from '../utils/decorators';
 
 /**
  * A record that maps string keys to functions that build machine states.
  */
-export var StateDefinitionBuilders: Record<string, () => StateMachineBlueprint>;
+export const StateDefinitionBuilders: Record<string, () => StateMachineBlueprint> = {};
 
 /**
  * Decorator function that assigns FSMs to a class constructor.
@@ -53,7 +53,6 @@ export function build_fsm(fsm_name?: Identifier) {
 		// For static methods: addInitializer runs at class evaluation with `this` bound to the constructor.
 		// For instance methods (not typical here), we still register using the instance's constructor when created.
 		const register = (ctor: any) => {
-			StateDefinitionBuilders ??= {};
 			const raw = fsm_name ?? ctor?.name;
 			// If no explicit fsm_name was supplied, normalize inferred class name for public key.
 			const key = fsm_name ? raw : normalizeDecoratedClassName(raw);
@@ -69,11 +68,6 @@ export function build_fsm(fsm_name?: Identifier) {
 }
 
 const HANDLER_META = Symbol('fsm:handlerMeta');
-
-export type FsmHandlerDecl = {
-	name: string;       // method/field name on the instance
-	keys: string[];     // resolved keys this member answers to
-};
 
 type FsmHandlerOpts =
 	| string

@@ -63,7 +63,14 @@ export class StateMachineController {
 	}
 
 	/**
-	 * The identifier of the current machine.
+	 * The identifier of the machine that receives `tick()` and implicit transitions.
+	 *
+	 * The first machine that is registered becomes current by default; subsequent
+	 * calls to {@link add_statemachine} leave the selection unchanged so decorators
+	 * can deterministically control the primary machine. When {@link transition_to}
+	 * targets a non-concurrent machine the controller automatically pivots the
+	 * current machine pointer, mirroring how designers "focus" a top-level state
+	 * machine in tools like Unreal or Unity.
 	 */
 	current_machine_id: Identifier;
 
@@ -305,7 +312,10 @@ export class StateMachineController {
 	 */
 	add_statemachine(id: Identifier, target_id: Identifier): void {
 		this.statemachines[id] = State.create(id, target_id);
-		// If this is the first id that was added, set it as the current machine
+		// Preserve the very first machine as the controller focus. This ensures that
+		// auto-created machines (from the WorldObject constructor or decorators)
+		// define the initial update order, while later dynamic additions only join
+		// the set.
 		if (!this.current_machine_id) this.current_machine_id = id;
 	}
 

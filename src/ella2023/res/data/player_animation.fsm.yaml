@@ -54,10 +54,10 @@ on:
                       event: go_duck
                       emitter: '@self'
     $animate_idle:
-        switch: idle
+        switch: _idle
     $animate_humiliated: humiliated
     $animate_walk:
-        force_leaf: walk/walk1
+        force_leaf: walk/_walk1
     $animate_punch: punch
     $animate_highkick: highkick
     $animate_flyingkick: flyingkick
@@ -89,7 +89,7 @@ states:
                     - set_property:
                           target: imgid
                           value: '@self.animSprites.walk_alt'
-                tape_next: ../walk1
+                tape_next: ../_walk1
     highkick:
         ticks2advance_tape: 15
         entering_state:

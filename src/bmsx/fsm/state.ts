@@ -173,7 +173,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	get is_concurrent(): boolean { return !!this.definition.is_concurrent; }
 
 	/**
-	 * Identifier of the current state.
+	 * Identifier of the active child state.
+	 *
+	 * The first child registered via {@link populateStates} becomes current when a
+	 * definition does not specify `initial`, mirroring how the controller keeps the
+	 * first machine focused. When a state transitions into a non-concurrent child,
+	 * the child in turn drives its own subtree; concurrent children are ticked in
+	 * addition to this `currentid` and therefore do not steal focus.
 	 */
 	currentid!: Identifier; // Identifier of current state
 
@@ -475,6 +481,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const states = this.states;
 		const cur = states[this.currentid];
 		cur?.tick();
+		// Parallel states run alongside the focused branch without stealing
+		// `currentid`, providing the same behaviour as controller-level concurrent
+		// machines.
 		for (const [id, s] of Object.entries(states)) {
 			if (id !== this.currentid && s.is_concurrent) s.tick();
 		}

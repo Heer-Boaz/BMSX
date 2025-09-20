@@ -21,7 +21,7 @@ export class EilaModelFSM {
 					entering_state(this: World, _state: State, payload?: EventPayload & { numOfPlayers?: number }) {
 						const es = $.get<YieArGameState>('yiear_state');
 						if (es) es.numOfPlayers = payload?.numOfPlayers ?? 1;
-						return 'ffwachten';
+						return '_ffwachten';
 					},
 					states: {
 						_ffwachten: {

@@ -6,7 +6,7 @@ export class testrom_world_fsm extends World {
 	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
-				'_game_start': {
+				_game_start: {
 					entering_state(this: testrom_world_fsm) {
 					},
 					tick(this: testrom_world_fsm) {

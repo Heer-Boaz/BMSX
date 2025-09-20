@@ -51,7 +51,6 @@ export class GameOver extends SpriteObject {
 export class Hoera extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
-
 		return {
 			states: {
 				_default: {
@@ -150,8 +149,8 @@ export class TitleScreen extends SpriteObject {
 						},
 						players_2: {
 							on: {
-								$switch: '../players_1',
-								$players_1: '../players_1', // For resetting the TitleScreen state.
+								$switch: '../_players_1',
+								$players_1: '../_players_1', // For resetting the TitleScreen state.
 							},
 							entering_state(this: TitleScreen, state: State) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
@@ -188,7 +187,7 @@ export class TitleScreen extends SpriteObject {
 								},
 								paused: {
 									on: {
-										$resume_blink: '../default',
+										$resume_blink: '../_default',
 									},
 									entering_state(state: State) {
 										state.parent.data.pause_blink = true;
@@ -233,7 +232,7 @@ export class Gordijn extends WorldObject {
 				},
 				its_curtains_for_you: {
 					on: {
-						$curtained: '/idle',
+						$curtained: '/_idle',
 					},
 					ticks2advance_tape: 2,
 					tape_data: [8],

@@ -3,9 +3,8 @@ import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { AbilitySystemComponent } from '../gas/abilitysystem';
-import { Input } from '../input/input';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { EventBagName, listed_sdef_event, StateActionActivateAbilitySpec, StateActionAddTagSpec, StateActionAdjustPropertySpec, StateActionCallSpec, StateActionCondition, StateActionConditionalSpec, StateActionConsumeActionSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionRemoveTagSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
+import type { EventBagName, listed_sdef_event, StateActionActivateAbilitySpec, StateActionAddTagSpec, StateActionAdjustPropertySpec, StateActionCallSpec, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionRemoveTagSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 import type { StateMachineController } from './fsmcontroller';
@@ -13,8 +12,36 @@ import type { StateMachineController } from './fsmcontroller';
 /**
  * Represents the machine definitions.
  */
-export var StateDefinitions: Record<string, StateDefinition>;
-export var ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
+export const StateDefinitions: Record<string, StateDefinition> = {};
+export const ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
+
+function clearDefinitionsForMachine(machineId: Identifier): void {
+	const prefix = `${machineId}:/`;
+	for (const key of Object.keys(StateDefinitions)) {
+		if (key === machineId || key.startsWith(prefix)) {
+			delete StateDefinitions[key];
+		}
+	}
+}
+
+function registerDefinitionTree(def: StateDefinition): void {
+	const defKey = def.def_id ?? def.id;
+	if (!defKey) {
+		throw new Error(`StateDefinition '${def.id ?? '<anonymous>'}' is missing a def_id and id.`);
+	}
+	if (!def.def_id) {
+		def.def_id = defKey as Identifier;
+	}
+	StateDefinitions[defKey] = def;
+	if (def.root === def && def.id && def.id !== defKey) {
+		StateDefinitions[def.id] = def;
+	}
+	if (!def.states) return;
+	for (const stateId of Object.keys(def.states)) {
+		const child = def.states[stateId] as StateDefinition | undefined;
+		if (child) registerDefinitionTree(child);
+	}
+}
 
 export class HandlerRegistry {
 	private static _instance: HandlerRegistry;
@@ -95,7 +122,7 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 	for (const def_id of newChildren) {
 		if (!node.states) node.states = {};
 		if (!node.states[def_id]) {
-			const child = new State({ def_id, target_id: node.target_id, parent: node, root: node.root });
+			const child = new State({ localdef_id: def_id, target_id: node.target_id, parent: node, root: node.root });
 			node.states[def_id] = child;
 			// Build deeper children from definition
 			reconcileStateTree(child, undefined, newDef.states![def_id] as StateDefinition);
@@ -196,7 +223,11 @@ function safeStartStateId(def: StateDefinition): Identifier {
  * If the `sdef` object is created successfully, it sets the machine definition in the `MachineDefinitions` object.
  */
 export function setupFSMlibrary(): void {
-	StateDefinitions = {};
+	// Combine built-in FSMs from decorators with ones from ROM pack
+	for (const [key, bp] of Object.entries($.rompack.fsm)) {
+		StateDefinitionBuilders[key] = () => bp;
+	}
+
 	for (const machine_name in StateDefinitionBuilders) {
 		const raw = StateDefinitionBuilders[machine_name]();
 		if (!raw) continue;
@@ -206,25 +237,27 @@ export function setupFSMlibrary(): void {
 		walkAndHoist(machine_name, built, HandlerRegistry.instance, [], /*useProxyThunks=*/true);
 
 		validateStateMachine(built);
-		StateDefinitions[machine_name] = built;
+		clearDefinitionsForMachine(machine_name);
+		registerDefinitionTree(built);
+
 		addEventsToDef(built);
 	}
 
-	for (const [key, bp] of Object.entries($.rompack.fsm)) {
-		const machineName = key; // je hebt zowel id als naam keys
-		const def = createMachine(machineName as Identifier, bp);
-		walkAndHoist(machineName, def, HandlerRegistry.instance, [], true);
-		validateStateMachine(def);
-		// Hot-swap: vervang als bestond, anders voeg toe
-		// const existed = !!StateDefinitions[machineName];
-		StateDefinitions[machineName] = def;
-		// if (existed) {
-		// for (const st of ActiveStateMachines.get(machineName) ?? []) {
-		// optioneel: migrate(st, def);
-		// }
-		// }
-		addEventsToDef(def); // jouw helper
-	}
+	// for (const [key, bp] of Object.entries($.rompack.fsm)) {
+	// 	const machineName = key; // je hebt zowel id als naam keys
+	// 	const def = createMachine(machineName as Identifier, bp);
+	// 	walkAndHoist(machineName, def, HandlerRegistry.instance, [], true);
+	// 	validateStateMachine(def);
+	// 	// Hot-swap: vervang als bestond, anders voeg toe
+	// 	// const existed = !!StateDefinitions[machineName];
+	// 	StateDefinitions[machineName] = def;
+	// 	// if (existed) {
+	// 	// for (const st of ActiveStateMachines.get(machineName) ?? []) {
+	// 	// optioneel: migrate(st, def);
+	// 	// }
+	// 	// }
+	// 	addEventsToDef(def);
+	// }
 }
 
 /**
@@ -465,7 +498,9 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 			break;
 		case 'payload':
 			current = ctx.payload;
-			if (typeof current !== 'object') throw new Error(`[FSMLibrary] Payload is not an object, cannot get property ${segments.join('.')}.`);
+			if (segments.length > 0 && (current === null || typeof current !== 'object')) {
+				throw new Error(`[FSMLibrary] Payload is not an object, cannot get property ${segments.join('.')}.`);
+			}
 			break;
 		case 'component': {
 			const owner = ctx.self as { componentMap?: Record<string, any[]> } | undefined;
@@ -648,16 +683,6 @@ function ensureArray<T>(value: T | T[] | undefined): T[] {
 	return Array.isArray(value) ? value : [value];
 }
 
-function consumeInputActions(target: any, actions: string[]): void {
-	if (!actions.length) return;
-	const index = target?.player_index ?? 1;
-	const playerInput = Input.instance.getPlayerInput(index);
-	if (!playerInput) return;
-	for (const action of actions) {
-		if (typeof action === 'string' && action.length > 0) playerInput.consumeAction(action);
-	}
-}
-
 function getAbilitySystemFromTarget(target: any): AbilitySystemComponent | undefined {
 	if (!target) return undefined;
 	const asc = target.abilitySystem instanceof AbilitySystemComponent ? target.abilitySystem : undefined;
@@ -803,7 +828,7 @@ function createDispatchEventHandler(spec: StateActionDispatchEventSpec['dispatch
 		if (!controller?.dispatch_event) return;
 		const ctx = buildContext(this, state, invokeArgs, slot);
 		const emitterResolved = spec.emitter !== undefined ? resolveTemplateValue(spec.emitter, ctx) : this;
-		const argsResolvedRaw = spec.args === undefined ? [] : (Array.isArray(spec.args) ? spec.args : [spec.args]);
+		const argsResolvedRaw = spec.payload === undefined ? [] : (Array.isArray(spec.payload) ? spec.payload : [spec.payload]);
 		const argsResolved = argsResolvedRaw.map(arg => resolveTemplateValue(arg, ctx));
 		const emitter = emitterResolved ?? this;
 		controller.dispatch_event(spec.event, emitter, ...argsResolved);
@@ -920,15 +945,6 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 			const resolvedArgsRaw = callArgs === undefined ? [] : (Array.isArray(callArgs) ? callArgs : [callArgs]);
 			const resolvedArgs = resolvedArgsRaw.map(arg => resolveTemplateValue(arg, ctx));
 			fn.apply(ctx.self ?? this, resolvedArgs);
-		};
-	}
-	if ('consume_action' in spec) {
-		const actionsSpec = (spec as StateActionConsumeActionSpec).consume_action;
-		return function (this: any, state?: State, ...args: any[]) {
-			const ctx = buildContext(this, state, args, slot);
-			const resolved = resolveTemplateValue(actionsSpec, ctx);
-			const actions = ensureArray(resolved) as string[];
-			consumeInputActions(ctx.self, actions);
 		};
 	}
 	return undefined;
@@ -1057,7 +1073,7 @@ function normalizeEventNameForId(name: string) {
 function hoistEventDef(
 	machineName: string,
 	statePath: string[],
-	bagName: keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>,
+	bagName: EventBagName,
 	rawEventName: string,
 	eventDefinition: StateEventDefinition,
 	registry: HandlerRegistry,
@@ -1093,12 +1109,20 @@ function walkAndHoist(
 
 	// on / input_event_handlers
 	for (const bagName of ['on', 'input_event_handlers'] as EventBagName[]) {
-		const bag = (sdef as StateDefinition)[bagName];
+		const bag = sdef[bagName];
 		if (!bag) continue;
 		for (const rawEventName of Object.keys(bag)) {
 			const evDef = bag[rawEventName];
 			if (typeof evDef === 'object') {
 				hoistEventDef(machineName, path, bagName, rawEventName, evDef, registry, useProxyThunks);
+			}
+			else if (typeof evDef === 'string') {
+				// string definitions are just direct event names, no handlers to hoist
+				continue;
+			}
+			else {
+				// unsupported event definition
+				throw new Error(`Unsupported event definition for ${rawEventName}: ${JSON.stringify(evDef)}`);
 			}
 		}
 	}

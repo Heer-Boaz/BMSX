@@ -765,7 +765,30 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (opts?.fsm_id && !StateDefinitions[opts.fsm_id]) throw new Error(`[StateMachineController] Invalid FSM ID: '${opts.fsm_id}'`);
 		// Create the state context that will be used to manage the state of the world object
-		this.sc = new StateMachineController(opts?.fsm_id ?? (this.constructor.name), this.id);
+		//
+		// The controller can optionally be seeded with an initial machine:
+		//   1. When the caller passes an explicit `fsm_id`, we always instantiate that
+		//      machine (validation of the id happened just above).
+		//   2. Otherwise we fall back to the class name **only** when a definition exists
+		//      for it, or when the class has no linked FSM decorators. This preserves
+		//      the historic convenience of auto-creating a "master" machine for simple
+		//      objects while avoiding a phantom machine for objects that already declare
+		//      their own FSMs via `@assign_fsm`.
+		// When neither condition is met we start with an empty controller; linked FSMs
+		// are added later in `initializeLinkedFSMs()` so the first registered machine is
+		// always one the class asked for.
+		const ctor = this.constructor as ConstructorWithFSMProperty;
+		const hasLinkedMachines = (ctor.linkedFSMs?.size ?? 0) > 0;
+		const explicitMachineId = opts?.fsm_id;
+		const inferredMachineId = this.constructor.name;
+		let initialMachineId: string | undefined = explicitMachineId;
+		if (!initialMachineId) {
+			const hasDefinitionForDefault = !!StateDefinitions[inferredMachineId];
+			if (hasDefinitionForDefault || !hasLinkedMachines) {
+				initialMachineId = inferredMachineId;
+			}
+		}
+		this.sc = new StateMachineController(initialMachineId, this.id);
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {

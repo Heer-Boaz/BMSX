@@ -1,4 +1,4 @@
-import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapGlyphs, type State, type RevivableObjectArgs, CustomVisualComponent } from 'bmsx';
+import { $, WorldObject, StateMachineBlueprint, build_fsm, calculateCenteredBlockX, insavegame, wrapGlyphs, type State, type RevivableObjectArgs, CustomVisualComponent, type EventPayload } from 'bmsx';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
 // import quizItemsData from './vragen.json';
@@ -254,14 +254,14 @@ export class quiz extends WorldObject {
 				vraag: {
 					tape_data: Array.from({ length: quizItems.length }, (_, i) => i),
 					automatic_reset_mode: 'none',
-					entering_state(this: quiz, state: State, args: string) {
-						if (args === 'prev') {
+					entering_state(this: quiz, state: State, payload: EventPayload & { args?: 'prev' | 'next' } = {}) {
+						if (payload.args === 'prev') {
 							state.setHeadNoSideEffect(state.tapehead_position - 2);
 							if (state.tapehead_position < 0) {
 								state.rewind_tape();
 							}
 						}
-						else if (args === 'next') {
+						else if (payload.args === 'next') {
 							// Do nothing
 						}
 						++state.ticks;
@@ -304,7 +304,7 @@ export class quiz extends WorldObject {
 						'left[j!c]': { // Handle previous question on "left"
 							do(this: quiz) {
 								$.consumeAction(1, 'left');
-								return { state_id: '/vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
+								return { state_id: '/vraag', payload: { bla: 'prev' }, force_transition_to_same_state: true, transition_type: 'to' };
 							},
 						},
 						'right[j!c]': { // Handle next question on "right"
@@ -317,10 +317,10 @@ export class quiz extends WorldObject {
 				},
 
 				antwoord: {
-					entering_state(this: quiz, _state: State, gekozen_antwoord: string) {
+					entering_state(this: quiz, _state: State, payload?: { gekozen_antwoord?: string } & EventPayload) {
 						this.switchSintToAnswer();
 						const currentQ = quizItems[this.currentQuestionIndex];
-						if (gekozen_antwoord === 'a') {
+						if (payload.gekozen_antwoord === 'a') {
 							this.setTextFromLines([currentQ.reactionA]);
 						} else {
 							this.setTextFromLines([currentQ.reactionB]);

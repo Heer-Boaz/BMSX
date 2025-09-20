@@ -1,4 +1,5 @@
 import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2 } from 'bmsx';
+import { AbilitySystemComponent } from 'bmsx/gas/abilitysystem';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
@@ -20,7 +21,7 @@ function getDamage(attackType: AttackType): number {
 }
 
 @insavegame
-@attach_components(ProhibitLeavingScreenComponent)
+@attach_components(ProhibitLeavingScreenComponent, AbilitySystemComponent)
 @assign_fsm('hitanimation')
 export abstract class Fighter extends SpriteObject {
 	public static readonly ATTACK_DURATION = 15;
@@ -104,6 +105,22 @@ export abstract class Fighter extends SpriteObject {
 		this.currentHitMarker = null;
 		this.player_index = opts.playerIndex ?? 1;
 		// No producers; base sprite handled by SpriteComponent via SpriteRenderSystem
+	}
+
+	public addGameplayTag(tag: string): void {
+		this.getAbilitySystem()?.addTag(tag);
+	}
+
+	public removeGameplayTag(tag: string): void {
+		this.getAbilitySystem()?.removeTag(tag);
+	}
+
+	public hasGameplayTag(tag: string): boolean {
+		return this.getAbilitySystem()?.hasGameplayTag(tag) ?? false;
+	}
+
+	public getAbilitySystem(): AbilitySystemComponent | null {
+		return this.getUniqueComponent(AbilitySystemComponent) ?? null;
 	}
 
 	public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {

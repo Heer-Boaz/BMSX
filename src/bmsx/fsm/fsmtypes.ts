@@ -178,7 +178,7 @@ export interface StateActionDispatchEventSpec {
 	dispatch_event: {
 		event: string;
 		emitter?: any;
-		args?: any[] | any;
+		payload?: EventPayload;
 	};
 }
 
@@ -307,4 +307,8 @@ export type ConstructorWithFSMProperty = Function & {
 	linkedFSMs?: Set<FSMName>;
 };
 
-export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>;
+export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>;export type FsmHandlerDecl = {
+	name: string; // method/field name on the instance
+	keys: string[]; // resolved keys this member answers to
+};
+

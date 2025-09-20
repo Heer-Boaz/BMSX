@@ -1,9 +1,10 @@
-import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, vec3, type RevivableObjectArgs } from 'bmsx';
-import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
+import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, insavegame, vec3, type RevivableObjectArgs } from 'bmsx';
+import { JumpingWhileLeavingScreenComponent } from './eila';
 import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';
 import { EilaEventService } from './worldmodule';
 import { BitmapId } from "./resourceids";
+import { registerFighterAbilities } from './abilities';
 
 function theOtherFighter(f: Fighter) {
 	return $.get<EilaEventService>('eila_events').theOtherFighter(f);
@@ -11,7 +12,7 @@ function theOtherFighter(f: Fighter) {
 export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'mijter_throw';
 
 @insavegame
-@assign_fsm('player_animation')
+@assign_fsm('fighter_control', 'player_animation')
 @assign_bt('sinterklaasBT')
 @attach_components(JumpingWhileLeavingScreenComponent, BTVisualizer)
 export class Sinterklaas extends Fighter {
@@ -40,6 +41,7 @@ export class Sinterklaas extends Fighter {
 
 	override onspawn(spawningPos?: vec3): void {
 		super.onspawn(spawningPos);
+		registerFighterAbilities(this);
 		// Note: this is a hack to make sure the sinterklaasBT is initialized before the sinterklaasBT can be stopped.
 		if (!this.isAIed) { // Only the player can control Sinterklaas
 			this.btreecontexts['sinterklaasBT'].running = false;
@@ -47,11 +49,8 @@ export class Sinterklaas extends Fighter {
 		else {
 			this.btreecontexts['sinterklaasBT'].running = true;
 		}
-	}
-
-	@build_fsm()
-	public static bouw_sinterklaas(): StateMachineBlueprint {
-		return Eila.bouw('player_animation');
+		this.sc.transition_to('fighter_control:/grounded/idle');
+		this.sc.transition_to('player_animation:/idle');
 	}
 
 
