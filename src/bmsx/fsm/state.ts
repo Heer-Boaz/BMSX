@@ -129,7 +129,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		return rec;
 	}
 	/**
-	 * The identifier of this specific instance of the state machine.
+	 * The unique identifier of this specific instance of the state machine.
 	* @see {@link make_id}
 	 */
 	id: Identifier;
@@ -148,21 +148,29 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public get parent(): State | undefined { return this.parent_ref; }
 	/** Root state of this state (machine). */
 	public get root(): State { return this.root_ref ?? this; }
+	public get is_root(): boolean { return this.root === this; }
 
 	/**
-	 * The unique identifier for the bfsm.
+	 * id of the state machine definition, which is the id of the state machine as defined in the StateDefinitions for root machines, or the id of the state for substate machines
+	 * Note that the localdef_id is not necessarily unique, as multiple state machines can have substates with the same id.
+	 * Also note that the localdef_id is not necessarily unique, as multiple instances of the same state machine definition can exist in the world.
+	 * For the unique instance id, use the `id` property.
+	 * For the unique definition id, used the `definition.def_id` property.
+	 * @see {@link StateDefinitions}
 	 */
-	def_id: Identifier;
+	localdef_id!: Identifier;
+
+	def_id!: Identifier; // The unique definition id of this state in the StateDefinitions-library
 
 	/**
-	 * Represents the states of the Bfsm.
+	 * Represents the substates of the FSM.
 	 */
 	states: id2sstate;
 
 	/**
 	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link StateMachineController.current_machine}.
 	 */
-	get is_concurrent(): boolean { return !!this.definition?.is_concurrent; }
+	get is_concurrent(): boolean { return !!this.definition.is_concurrent; }
 
 	/**
 	 * Identifier of the current state.
@@ -201,18 +209,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public get current(): State | undefined { return this.states?.[this.currentid]; }
 
 	/**
-	 * Gets the state with the given id from the state machine.
-	 * Used for referencing states from within the state instance, instead
-	 * of referencing states from the state machine definition.
-	 * @param id - id of the state, according to its definition
-	 */
-	public get_sstate(id: Identifier) { return this.states?.[id]; }
-
-	/**
 	 * Gets the definition of the current state machine.
 	 * @returns The definition of the current state machine.
 	 */
-	public get definition(): StateDefinition { return (this.parent ? this.parent.definition.states[this.def_id] : StateDefinitions[this.def_id]) as StateDefinition; }
+	public get definition(): StateDefinition { return StateDefinitions[this.def_id]; }
 
 	/**
 	 * Gets the id of the start state of the FSM.
@@ -254,7 +254,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (!this.is_processing_queue) this.process_transition_queue();
 		}
 		else if (this.critical_section_counter < 0) {
-			throw new Error(`Critical section counter was lower than 0, which is obviously a bug. State: "${this.id}, StateDefId: "${this.def_id}.`);
+			throw new Error(`Critical section counter was lower than 0, which is obviously a bug. State: "${this.id}, StateDefId: "${this.localdef_id}.`);
 		}
 	}
 
@@ -295,11 +295,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 	/**
 	 * Factory for creating new FSMs.
-	 * @param def_id - id of the FSM definition to use for this machine.
+	 * @param localdef_id - id of the FSM definition to use for this machine.
 	 * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
 	 */
-	public static create(def_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
-		let result = new State({ def_id, target_id, parent, root });
+	public static create(localdef_id: Identifier, target_id: Identifier, parent?: State, root?: State): State {
+		let result = new State({ localdef_id, target_id, parent, root });
 		result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their states
 		result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
@@ -312,18 +312,21 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param def_id - id of the state machine definition to use for this machine.
 	 * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
 	 */
-	constructor(opts: RevivableObjectArgs & { def_id: Identifier, target_id: Identifier, parent?: State, root?: State }) {
-		this.def_id = opts.def_id ?? DEFAULT_BST_ID;
+	constructor(opts: RevivableObjectArgs & { localdef_id: Identifier, target_id: Identifier, parent?: State, root?: State }) {
+		this.localdef_id = opts.localdef_id ?? DEFAULT_BST_ID;
 		this.target_id = opts.target_id;
 		this.parent_ref = opts.parent;
 		// If no explicit root provided, inherit from parent or become own root
 		this.root_ref = opts.root ?? opts.parent?.root ?? this;
+		this.def_id = this.parent ? this.parent.definition.states[this.localdef_id].def_id : StateDefinitions[this.localdef_id]?.def_id; // Resolve definition id from parent or root
+		// Note that the definition can be empty, as not all objects have a defined machine.
+
 		this.paused ??= false;
 		// Note: do not initailize the states here, as this will be done in the populateStates function. Also, do not initialize the currentid here, as this will be done in the reset function
 		// Note: do not initialize the history here, as this will be done in the reset function
 		// Note: do not set the states to an empty object, as this state might not have any states defined. Instead, leave it as undefined, so that it can be checked if the state has states defined
 		// When parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-		if (opts.def_id && opts.target_id) {
+		if (opts.localdef_id && opts.target_id) {
 			this.id = this.make_id();
 			this.transition_queue = [];
 			this.critical_section_counter = 0;
@@ -342,13 +345,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public onLoadSetup(): void {
 		// Restore parent/root links after revive
-		if (!this.parent_ref) this.root_ref = this.root_ref ?? this;
-		if (this.states) {
-			for (const child of Object.values(this.states)) {
-				child.parent_ref = this;
-				child.root_ref = this.root;
-			}
-		}
+		// if (!this.parent_ref) this.root_ref = this.root_ref ?? this;
+		// if (this.states) {
+		// 	for (const child of Object.values(this.states)) {
+		// 		child.parent_ref = this;
+		// 		child.root_ref = this.root;
+		// 	}
+		// }
 	}
 
 	/**
@@ -363,18 +366,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			throw new Error(`No start state defined for state machine '${this.id}', while the state machine has states defined.'`); // If there are states defined, but no start state, throw an error as we can't start the state machine
 		}
 
-		const startStateDef = this.get_sstate(startStateId)?.definition; // Get the start state definition from the state machine definition
+		const startStateDef = this.states[startStateId].definition; // Get the start state definition from the state machine definition
+		if (!startStateDef) throw new Error(`[State] start(): Start state '${startStateId}' not found in state machine '${this.id}'.`); // If the start state is not found in the states, throw an error
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
 		this.withCriticalSection(() => {
-			const enterStart = startStateDef?.entering_state;
+			const enterStart = startStateDef.entering_state;
 			if (typeof enterStart === 'function') {
-				enterStart.call(this.target, this.get_sstate(startStateId));
+				enterStart.call(this.target, this.states[startStateId]);
 			}
 		});
 
-		// Start the state machine for the current active state
-		this.states[startStateId]?.start();
+		// Start the state machine for the current active state recursively
+		this.states[startStateId].start();
 	}
 
 	/**
@@ -436,8 +440,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		for (const inputPattern in inputHandlers) {
 			const handler = inputHandlers[inputPattern];
+			console.debug(`Checking input pattern: ${inputPattern}`);
 			if (p.checkActionTriggered(inputPattern)) {
+				console.debug(`Input pattern matched: ${inputPattern}`);
 				p.consumeAction(inputPattern);
+				console.debug(`Executing handler for input pattern: ${inputPattern}`);
 				this.handleStateTransition(handler);
 			}
 		}
@@ -1051,7 +1058,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		this.states = {}; // Initialize the states object to an empty object
 		for (let sdef_id in sdef.states) {
-			let state = new State({ def_id: sdef_id, target_id: this.target_id, parent: this, root: this.root });
+			let state = new State({ localdef_id: sdef_id, target_id: this.target_id, parent: this, root: this.root });
 			this.add(state);
 			state.populateStates(); // Populate the states of the state
 		}
@@ -1067,9 +1074,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private add(...states: State[]): void {
 		for (let state of states) {
-			if (!state.def_id) throw new Error(`State is missing an id, while attempting to add it to this sstate '${this.def_id}'!`);
-			if (this.states[state.def_id]) throw new Error(`State ${state.def_id} already exists for sstate '${this.def_id}'!`);
-			this.states[state.def_id] = state;
+			if (!state.localdef_id) throw new Error(`State is missing an id, while attempting to add it to this sstate '${this.localdef_id}'!`);
+			if (this.states[state.localdef_id]) throw new Error(`State ${state.localdef_id} already exists for sstate '${this.localdef_id}'!`);
+			this.states[state.localdef_id] = state;
 		}
 	}
 
@@ -1120,8 +1127,18 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @returns The generated identifier.
 	 */
 	private make_id(): Identifier {
-		const parentPart = this.parent_ref?.id ?? this.target_id;
-		const id = `${parentPart}.${this.def_id}`;
+		let parentPart: Identifier;
+		let thisPart: Identifier;
+		if (this.is_root) {
+			parentPart = this.target_id + '.';
+			thisPart = this.localdef_id;
+		}
+		else {
+			if (this.parent_ref.is_root) parentPart = this.parent_ref.id + ':/';
+			else parentPart = this.parent_ref.id + '/';
+			thisPart = this.localdef_id;
+		}
+		const id = parentPart + thisPart;
 		return id;
 	}
 
