@@ -4,6 +4,7 @@ import { AbilitySystemComponent } from 'bmsx/gas/abilitysystem';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
+import { registerFighterForAbilityInput, unregisterFighterFromAbilityInput } from './abilityinputservice';
 
 export type AttackType = string;
 
@@ -241,6 +242,17 @@ export abstract class Fighter extends SpriteObject {
 		super.onspawn(spawningPos);
 		this.performingStoerheidsdans = false;
 		this.resetVerticalPosition();
+		registerFighterForAbilityInput(this);
+	}
+
+	public override ondespawn(): void {
+		unregisterFighterFromAbilityInput(this);
+		super.ondespawn();
+	}
+
+	public override dispose(): void {
+		unregisterFighterFromAbilityInput(this);
+		super.dispose();
 	}
 
 	public resetVerticalPosition(): void {

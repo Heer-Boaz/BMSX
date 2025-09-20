@@ -29,18 +29,6 @@ states:
             _idle:
                 input_event_handlers:
                     'duck[p]': '../duck'
-                    'punch[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.punch
-                            - consume_action: punch
-                    'highkick[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.highkick
-                            - consume_action: highkick
-                    'lowkick[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.lowkick
-                            - consume_action: lowkick
                     'jump_right[j]':
                         do:
                             - set_property:
@@ -87,18 +75,6 @@ states:
                           emitter: '@self'
                 input_event_handlers:
                     'duck[p]': '../duck'
-                    'punch[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.punch
-                            - consume_action: punch
-                    'highkick[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.highkick
-                            - consume_action: highkick
-                    'lowkick[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.lowkick
-                            - consume_action: lowkick
                     'jump_right[j]':
                         do:
                             - set_property:
@@ -153,10 +129,6 @@ states:
                           target: '@self.onDuckExited'
                 input_event_handlers:
                     'duck[!p]': '../_idle'
-                    'lowkick[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.duckkick
-                            - consume_action: lowkick
                     'left[p]':
                         do:
                             - set_property:
@@ -187,15 +159,6 @@ states:
                 exiting_state:
                     - call:
                           target: '@self.finishJump'
-                input_event_handlers:
-                    'highkick[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.flyingkick
-                            - consume_action: highkick
-                    'lowkick[wp{6}]':
-                        do:
-                            - activate_ability: fighter.attack.flyingkick
-                            - consume_action: lowkick
                 states:
                     _ascending:
                         ticks2advance_tape: 30

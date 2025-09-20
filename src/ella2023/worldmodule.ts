@@ -2,6 +2,7 @@ import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, type 
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
+import { FighterAbilityInputService, FighterAbilityInputSystem } from './abilityinputservice';
 
 export const EILA_MODULE = {
 	onBoot(world: World) {
@@ -17,8 +18,20 @@ export const EILA_MODULE = {
 		new YieArGameState();
 		// Register event service for handlers
 		new EilaEventService().activate();
+		if (!abilityInputService) {
+			abilityInputService = new FighterAbilityInputService();
+			abilityInputService.activate();
+		}
+		if (!abilityInputSystem) {
+			abilityInputSystem = new FighterAbilityInputSystem();
+			abilityInputSystem.__ecsId = 'ella.fighterAbilityInput';
+			world.systems.register(abilityInputSystem);
+		}
 	},
 };
+
+let abilityInputService: FighterAbilityInputService | null = null;
+let abilityInputSystem: FighterAbilityInputSystem | null = null;
 
 @insavegame
 export class EilaEventService extends Service {

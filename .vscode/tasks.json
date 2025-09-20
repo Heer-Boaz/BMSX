@@ -21,7 +21,7 @@
 				"--debug",
 				"--nodeploy",
 				"--skiptypecheck",
-				"--usepkgtsconfig",
+				"--usepkgtsconfig"
 			],
 			"problemMatcher": [
 				"$node-sass",
@@ -70,7 +70,7 @@
 				"--nodeploy",
 				"--force",
 				"--skiptypecheck",
-				"--usepkgtsconfig",
+				"--usepkgtsconfig"
 			],
 			"problemMatcher": [
 				"$node-sass",
@@ -118,7 +118,7 @@
 				"--debug",
 				"--nodeploy",
 				"--force",
-				"--usepkgtsconfig",
+				"--usepkgtsconfig"
 			],
 			"problemMatcher": [
 				"$node-sass",
@@ -209,7 +209,7 @@
 				"-title",
 				"${input:romtobuild}",
 				"--nodeploy",
-				"--force",
+				"--force"
 			],
 			"problemMatcher": [
 				"$node-sass",
@@ -298,6 +298,13 @@
 			},
 			"problemMatcher": []
 		},
+		{
+			"type": "npm",
+			"script": "fix:indent",
+			"problemMatcher": [],
+			"label": "npm: fix:indent",
+			"detail": "node scripts/fix-ts-indentation-safe.js"
+		}
 	],
 	"inputs": [
 		{
