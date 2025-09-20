@@ -11,7 +11,8 @@
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
-				"--disable-features=IsolateOrigins,site-per-process,web-security"
+				"--disable-features=IsolateOrigins,site-per-process,web-security",
+				"--remote-debugging-port=9222"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -57,6 +58,8 @@
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"-inprivate"
+				,
+				"--remote-debugging-port=9222"
 			],
 			"sourceMaps": true,
 			"showAsyncStacks": true,
@@ -69,10 +72,11 @@
 			}
 		},
 		{
-			"type": "vscode-edge-devtools.debug",
+			"type": "msedge",
 			"name": "Open Edge DevTools",
 			"request": "attach",
 			"url": "${workspaceFolder}/dist/game_debug.html",
+			"port": 9222,
 			"presentation": {
 				"hidden": true
 			}
@@ -97,7 +101,10 @@
 			"type": "msedge",
 			"name": "http://127.0.0.1:3000/scripts/ascii_shader.html",
 			"request": "launch",
-			"url": "http://127.0.0.1:3000/scripts/ascii_shader.html"
+			"url": "http://127.0.0.1:3000/scripts/ascii_shader.html",
+			"runtimeArgs": [
+				"--remote-debugging-port=9222"
+			]
 		},
 		{
 			"type": "msedge",
@@ -109,7 +116,8 @@
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
-				"--disable-features=IsolateOrigins,site-per-process,web-security"
+				"--disable-features=IsolateOrigins,site-per-process,web-security",
+				"--remote-debugging-port=9222"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,

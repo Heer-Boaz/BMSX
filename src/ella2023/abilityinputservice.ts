@@ -143,10 +143,7 @@ export function ensureAbilityInputPipelineRegistered(): void {
 		pipelineDescriptorRegistered = true;
 	}
 	if (!pipelineExtensionRegistered) {
-		registerEcsPipelineExtension((): NodeSpec[] => [{
-			ref: ELLA_ABILITY_INPUT_SYSTEM_ID,
-			when: () => $.has(ELLA_ABILITY_INPUT_SERVICE_ID as Identifier),
-		}]);
+		registerEcsPipelineExtension((): NodeSpec[] => [{ ref: ELLA_ABILITY_INPUT_SYSTEM_ID }]);
 		pipelineExtensionRegistered = true;
 	}
 }
