@@ -1,5 +1,7 @@
 import { $, Service } from 'bmsx';
 import { ECSystem, TickGroup } from 'bmsx/ecs/ecsystem';
+import { registerEcsPipelineExtension } from 'bmsx/ecs/extensions';
+import { DefaultECSPipelineRegistry as ECSReg, type NodeSpec } from 'bmsx/ecs/pipeline';
 import type { World } from 'bmsx/core/world';
 import type { Identifier } from 'bmsx';
 import type { Fighter, AttackType } from './fighter';
@@ -7,6 +9,7 @@ import type { Action } from './inputmapping';
 import type { PlayerInput } from 'bmsx/input/playerinput';
 
 export const ELLA_ABILITY_INPUT_SERVICE_ID = 'ella_ability_input';
+const ELLA_ABILITY_INPUT_SYSTEM_ID = 'ella.fighterAbilityInput';
 
 const DEFAULT_ATTACK_ACTIONS: AttackAction[] = ['punch', 'highkick', 'lowkick'];
 
@@ -104,8 +107,8 @@ export class FighterAbilityInputService extends Service {
 }
 
 export class FighterAbilityInputSystem extends ECSystem {
-	constructor() {
-		super(TickGroup.Simulation, 16);
+	constructor(priority: number = 24) {
+		super(TickGroup.Simulation, priority);
 	}
 
 	update(_world: World): void {
@@ -122,4 +125,28 @@ export function registerFighterForAbilityInput(fighter: Fighter, actions?: Attac
 export function unregisterFighterFromAbilityInput(fighter: Fighter): void {
 	const service = $.get<FighterAbilityInputService>(ELLA_ABILITY_INPUT_SERVICE_ID) ?? null;
 	service?.unregisterFighter(fighter.id);
+}
+
+let pipelineDescriptorRegistered = false;
+let pipelineExtensionRegistered = false;
+
+export function ensureAbilityInputPipelineRegistered(): void {
+	if (!pipelineDescriptorRegistered) {
+		if (!ECSReg.get(ELLA_ABILITY_INPUT_SYSTEM_ID)) {
+			ECSReg.register({
+				id: ELLA_ABILITY_INPUT_SYSTEM_ID,
+				group: TickGroup.Simulation,
+				defaultPriority: 24,
+				create: (priority: number) => new FighterAbilityInputSystem(priority),
+			});
+		}
+		pipelineDescriptorRegistered = true;
+	}
+	if (!pipelineExtensionRegistered) {
+		registerEcsPipelineExtension((): NodeSpec[] => [{
+			ref: ELLA_ABILITY_INPUT_SYSTEM_ID,
+			when: () => $.has(ELLA_ABILITY_INPUT_SERVICE_ID as Identifier),
+		}]);
+		pipelineExtensionRegistered = true;
+	}
 }
