@@ -1,25 +1,51 @@
 on:
-    $go_idle:
+    go_idle:
         if:
             and:
                 - state_not_matches: './stoerheidsdans'
                 - state_not_matches: './nagenieten'
                 - state_not_matches: './humiliated'
         switch: './_grounded/_idle'
-    $go_walk: './_grounded/walk'
-    $go_attack:
+    go_walk: './_grounded/walk'
+    go_attack:
         do:
-            - call:
-                  target: '@self.handleAbilityAttackTransition'
-                  args:
-                      - '@payload.attackType'
-    $go_duck: './_grounded/duck'
-    $go_jump:
+            - when:
+                  value_equals:
+                      left: '@payload.attackType'
+                      equals: punch
+              then:
+                  switch: './_grounded/attack/punch'
+            - when:
+                  value_equals:
+                      left: '@payload.attackType'
+                      equals: highkick
+              then:
+                  switch: './_grounded/attack/highkick'
+            - when:
+                  value_equals:
+                      left: '@payload.attackType'
+                      equals: lowkick
+              then:
+                  switch: './_grounded/attack/lowkick'
+            - when:
+                  value_equals:
+                      left: '@payload.attackType'
+                      equals: duckkick
+              then:
+                  switch: './_grounded/attack/duckkick'
+            - when:
+                  value_equals:
+                      left: '@payload.attackType'
+                      equals: flyingkick
+              then:
+                  switch: './airborne/_jump/flyingkick/active'
+    go_duck: './_grounded/duck'
+    go_jump:
         to:
             state_id: './airborne/_jump'
             payload: '@payload'
-    $go_stoerheidsdans: './stoerheidsdans'
-    $go_humiliated: './humiliated'
+    go_stoerheidsdans: './stoerheidsdans'
+    go_humiliated: './humiliated'
 states:
     _grounded:
         entering_state:
@@ -117,14 +143,18 @@ states:
                     '&(left[!p], right[!p])': '../_idle'
             duck:
                 entering_state:
-                    - add_tag: state.ducking
+                    - call:
+                          target: '@self.setDuckingState'
+                          args: [true]
                     - call:
                           target: '@self.onDuckEntered'
                     - emit:
                           event: animate_duck
                           emitter: '@self'
                 exiting_state:
-                    - remove_tag: state.ducking
+                    - call:
+                          target: '@self.setDuckingState'
+                          args: [false]
                     - call:
                           target: '@self.onDuckExited'
                 input_event_handlers:
@@ -141,10 +171,42 @@ states:
                                   value: right
             attack:
                 states:
-                    punch: {}
-                    highkick: {}
-                    lowkick: {}
-                    duckkick: {}
+                    punch:
+                        entering_state:
+                            - call:
+                                  target: '@self.performAttack'
+                                  args: ['punch']
+                        exiting_state:
+                            - call:
+                                  target: '@self.completeAttack'
+                                  args: ['punch']
+                    highkick:
+                        entering_state:
+                            - call:
+                                  target: '@self.performAttack'
+                                  args: ['highkick']
+                        exiting_state:
+                            - call:
+                                  target: '@self.completeAttack'
+                                  args: ['highkick']
+                    lowkick:
+                        entering_state:
+                            - call:
+                                  target: '@self.performAttack'
+                                  args: ['lowkick']
+                        exiting_state:
+                            - call:
+                                  target: '@self.completeAttack'
+                                  args: ['lowkick']
+                    duckkick:
+                        entering_state:
+                            - call:
+                                  target: '@self.performAttack'
+                                  args: ['duckkick']
+                        exiting_state:
+                            - call:
+                                  target: '@self.completeAttack'
+                                  args: ['duckkick']
     airborne:
         states:
             _jump:
@@ -159,6 +221,8 @@ states:
                 exiting_state:
                     - call:
                           target: '@self.finishJump'
+                input_event_handlers:
+                    # Airborne attacks are handled via FighterAbilityInputService
                 states:
                     _ascending:
                         ticks2advance_tape: 30
@@ -179,6 +243,17 @@ states:
                         states:
                             _ready: {}
                             active:
+                                entering_state:
+                                    - call:
+                                          target: '@self.performAttack'
+                                          args: ['flyingkick']
+                                exiting_state:
+                                    - call:
+                                          target: '@self.completeAttack'
+                                          args: ['flyingkick']
+                                    - dispatch_event:
+                                          event: animate_jump
+                                          emitter: '@self'
                                 on:
                                     flyingkick_end: '../_ready'
     stoerheidsdans:
@@ -194,7 +269,7 @@ states:
                   target: '@self.enterStoerheidsdans'
                   args: ['@state']
         on:
-            $animationEnd:
+            animationEnd:
                 do:
                     call:
                         target: '@self.handleStoerAnimationEnd'

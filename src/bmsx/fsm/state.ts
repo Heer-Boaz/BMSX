@@ -446,11 +446,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		for (const inputPattern in inputHandlers) {
 			const handler = inputHandlers[inputPattern];
-			console.debug(`Checking input pattern: ${inputPattern}`);
+			// console.debug(`Checking input pattern: ${inputPattern}`);
 			if (p.checkActionTriggered(inputPattern)) {
-				console.debug(`Input pattern matched: ${inputPattern}`);
+				// console.debug(`Input pattern matched: ${inputPattern}`);
 				p.consumeAction(inputPattern);
-				console.debug(`Executing handler for input pattern: ${inputPattern}`);
+				console.debug(`Executing handler for input pattern: ${inputPattern}, handler: ${handler}`);
 				this.handleStateTransition(handler);
 			}
 		}

@@ -3,6 +3,7 @@ import { BitmapId } from './resourceids';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
 import { registerFighterAbilities } from './abilities';
+import { EilaEventService } from './worldmodule';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'duckkick';
 
@@ -56,15 +57,13 @@ export class Eila extends Fighter {
 	}
 
 	public onIdleEntered(): void {
-		this.attacking = false;
+		this.setAttackingState(false);
 		this.attacked_while_jumping = false;
-		this.addGameplayTag('state.grounded');
-		this.removeGameplayTag('state.attacking');
+		this.setJumpingState(false);
 	}
 
 	public onWalkEntered(): void {
-		this.attacking = false;
-		this.removeGameplayTag('state.attacking');
+		this.setAttackingState(false);
 	}
 
 	public walkStep(direction: 'left' | 'right'): void {
@@ -73,12 +72,12 @@ export class Eila extends Fighter {
 	}
 
 	public onDuckEntered(): void {
-		this.ducking = true;
-		this.removeGameplayTag('state.attacking');
+		this.setDuckingState(true);
+		this.setAttackingState(false);
 	}
 
 	public onDuckExited(): void {
-		this.ducking = false;
+		this.setDuckingState(false);
 	}
 
 	public startJump(state: State, payload?: EventPayload & { direction?: 'left' | 'right' | null; directional?: boolean | string }): void {
@@ -97,19 +96,15 @@ export class Eila extends Fighter {
 		}
 		data.direction = direction;
 		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
-		this.jumping = true;
+		this.setJumpingState(true);
 		this.attacked_while_jumping = false;
-		this.removeGameplayTag('state.grounded');
-		this.addGameplayTag('state.airborne');
 	}
 
 	public finishJump(): void {
 		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = false;
-		this.jumping = false;
+		this.setJumpingState(false);
 		this.resetVerticalPosition();
 		this.attacked_while_jumping = false;
-		this.removeGameplayTag('state.airborne');
-		this.addGameplayTag('state.grounded');
 	}
 
 	public jumpAscendingTick(state: State): void {
@@ -143,7 +138,7 @@ export class Eila extends Fighter {
 
 	public enterStoerheidsdans(state: State): void {
 		this.performingStoerheidsdans = true;
-		this.fighting = false;
+		this.setFightingState(false);
 		this.resetVerticalPosition();
 		$.event_emitter.emit('animate_idle', this);
 		const data = state.data as StoerheidsdansStateData;
@@ -156,6 +151,7 @@ export class Eila extends Fighter {
 		const data = state.data as StoerheidsdansStateData;
 		if (data.expectedAnimation !== payload.animation_name) return;
 		data.expectedAnimation = null;
+		this.completeAttack(payload.animation_name as EilaAttackType);
 		state.ticks += 1;
 	}
 
@@ -166,8 +162,9 @@ export class Eila extends Fighter {
 		data.expectedAnimation = typeof nextAnimation === 'string' ? nextAnimation : null;
 		this.facing = this.facing === 'left' ? 'right' : 'left';
 		if (typeof nextAnimation === 'string') {
-			if (!this.tryActivateAttackAbility(nextAnimation as EilaAttackType)) {
-				this.sc.dispatch_event(`animate_${nextAnimation}`, this);
+			const attack = nextAnimation as EilaAttackType;
+			if (!this.tryActivateAttackAbility(attack)) {
+				this.performAttack(attack);
 			}
 		}
 	}
@@ -181,21 +178,28 @@ export class Eila extends Fighter {
 	}
 
 	public startNagenieten(): void {
-		this.fighting = false;
+		this.setFightingState(false);
 		$.event_emitter.emit('animate_idle', this);
-	}
+}
 
 	public enterHumiliated(): void {
 		this.hittable = false;
-		this.fighting = false;
+		this.setFightingState(false);
 		this.resetVerticalPosition();
-		this.removeGameplayTag('state.attacking');
-		this.removeGameplayTag('state.grounded');
-	}
+		this.setAttackingState(false);
+		this.setJumpingState(false);
+		this.setDuckingState(false);
+}
 
 	public exitHumiliated(): void {
 		this.hittable = true;
-		this.fighting = true;
-		this.addGameplayTag('state.grounded');
+		this.setFightingState(true);
+		this.setJumpingState(false);
+		this.setDuckingState(false);
+		this.setAttackingState(false);
+}
+
+	protected override getAttackOpponent(): Fighter | null {
+		return $.get<EilaEventService>('eila_events')?.theOtherFighter(this) ?? null;
 	}
 }

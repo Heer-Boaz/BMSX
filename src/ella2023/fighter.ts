@@ -30,10 +30,10 @@ export abstract class Fighter extends SpriteObject {
 	public static readonly JUMP_SPEED = 2;
 	public static readonly JUMP_DURATION = 60;
 	public static readonly SPEED = 2;
-	public fighting: boolean = true;
-	public attacking: boolean = false;
-	public jumping: boolean = false;
-	public ducking: boolean = false;
+	private _fighting: boolean = true;
+	private _attacking: boolean = false;
+	private _jumping: boolean = false;
+	private _ducking: boolean = false;
 	public attacked_while_jumping: boolean = false;
 	public _aied: boolean = false;
 	public previousAttackType: AttackType = null;
@@ -43,6 +43,51 @@ export abstract class Fighter extends SpriteObject {
 	public get isDucking(): boolean { return this.ducking; }
 	public get isFighting(): boolean { return this.fighting; }
 	public get isAIed(): boolean { return this._aied; }
+	public get fighting(): boolean { return this._fighting; }
+	public get attacking(): boolean { return this._attacking; }
+	public get jumping(): boolean { return this._jumping; }
+	public get ducking(): boolean { return this._ducking; }
+
+	protected setFightingState(active: boolean, force: boolean = false): void {
+		if (!force && this._fighting === active) return;
+		this._fighting = active;
+		if (active) this.removeGameplayTag('state.combat_disabled');
+		else this.addGameplayTag('state.combat_disabled');
+	}
+
+	protected setAttackingState(active: boolean, force: boolean = false): void {
+		if (!force && this._attacking === active) return;
+		this._attacking = active;
+		if (active) this.addGameplayTag('state.attacking');
+		else this.removeGameplayTag('state.attacking');
+	}
+
+	protected setJumpingState(active: boolean, force: boolean = false): void {
+		if (!force && this._jumping === active) return;
+		this._jumping = active;
+		if (active) {
+			this.addGameplayTag('state.airborne');
+			this.removeGameplayTag('state.grounded');
+		}
+		else {
+			this.removeGameplayTag('state.airborne');
+			this.addGameplayTag('state.grounded');
+		}
+	}
+
+	protected setDuckingState(active: boolean, force: boolean = false): void {
+		if (!force && this._ducking === active) return;
+		this._ducking = active;
+		if (active) this.addGameplayTag('state.ducking');
+		else this.removeGameplayTag('state.ducking');
+	}
+
+	public syncStateTags(): void {
+		this.setFightingState(this._fighting, true);
+		this.setAttackingState(this._attacking, true);
+		this.setJumpingState(this._jumping, true);
+		this.setDuckingState(this._ducking, true);
+	}
 
 	@build_fsm('hitanimation')
 	static bouw_hitanimation_fsm(): StateMachineBlueprint {
@@ -126,18 +171,27 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public tryActivateAttackAbility(attackType: AttackType): boolean {
+		const abilityId = this.getAttackAbilityId(attackType);
 		const asc = this.getAbilitySystem();
 		if (!asc) return false;
-		return asc.tryActivate(`fighter.attack.${attackType}` as AbilityId);
+		return asc.tryActivate(abilityId);
+	}
+
+	public canActivateAttackAbility(attackType: AttackType): boolean {
+		const abilityId = this.getAttackAbilityId(attackType);
+		const asc = this.getAbilitySystem();
+		if (!asc) return false;
+		return asc.canActivateReason(abilityId) === null;
+	}
+
+	public getAttackAbilityId(attackType: AttackType): AbilityId {
+		return `fighter.attack.${attackType}` as AbilityId;
 	}
 
 	public startAttack(attackType: AttackType): void {
-		this.attacking = true;
+		this.setAttackingState(true);
 		this.currentAttackType = attackType;
-		this.addGameplayTag('state.attacking');
-		if (attackType === 'duckkick') {
-			this.ducking = true;
-		}
+		if (attackType === 'duckkick') this.setDuckingState(true);
 		if (attackType === 'flyingkick') {
 			this.attacked_while_jumping = true;
 		}
@@ -146,42 +200,14 @@ export abstract class Fighter extends SpriteObject {
 	public finishAttack(attackType: AttackType): void {
 		this.previousAttackType = attackType;
 		this.currentAttackType = null;
-		this.attacking = false;
-		this.removeGameplayTag('state.attacking');
-		if (attackType === 'duckkick') {
-			this.ducking = false;
-		}
+		this.setAttackingState(false);
+		if (attackType === 'duckkick') this.setDuckingState(false);
 		if (attackType === 'flyingkick') {
 			this.attacked_while_jumping = false;
 		}
 	}
 
-	public handleAbilityAttackTransition(attackType: AttackType | null | undefined): void {
-		if (!attackType) return;
-		let target: string | null = null;
-		switch (attackType) {
-			case 'punch':
-				target = 'fighter_control:/_grounded/attack/punch';
-				break;
-			case 'highkick':
-				target = 'fighter_control:/_grounded/attack/highkick';
-				break;
-			case 'lowkick':
-				target = 'fighter_control:/_grounded/attack/lowkick';
-				break;
-			case 'duckkick':
-				target = 'fighter_control:/_grounded/attack/duckkick';
-				break;
-			case 'flyingkick':
-				target = 'fighter_control:/airborne/_jump/flyingkick/active';
-				break;
-		}
-		if (target) {
-			this.sc.transition_to(target);
-		}
-	}
-
-	public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
+	public doAttackFlow(attackType: AttackType, opponent: Fighter | null): boolean {
 		if (!opponent) {
 			$.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
 			return false;
@@ -199,6 +225,21 @@ export abstract class Fighter extends SpriteObject {
 			$.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
 		}
 		return hit;
+	}
+
+	public performAttack(attackType: AttackType): void {
+		this.startAttack(attackType);
+		this.sc.dispatch_event(`animate_${attackType}`, this);
+		const opponent = this.getAttackOpponent();
+		this.doAttackFlow(attackType, opponent);
+	}
+
+	public completeAttack(attackType: AttackType): void {
+		this.finishAttack(attackType);
+	}
+
+	protected getAttackOpponent(): Fighter | null {
+		return null;
 	}
 
 	public attackHitsOpponent(attackType: AttackType, opponent: Fighter): vec2 | null {
@@ -242,6 +283,7 @@ export abstract class Fighter extends SpriteObject {
 		super.onspawn(spawningPos);
 		this.performingStoerheidsdans = false;
 		this.resetVerticalPosition();
+		this.syncStateTags();
 		registerFighterForAbilityInput(this);
 	}
 

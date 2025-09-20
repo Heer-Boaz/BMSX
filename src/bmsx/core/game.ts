@@ -329,7 +329,6 @@ export class Game {
 		const diag = ECSReg.build($.world, finalSpec);
 		if (this.debug) dumpEcsPipeline(diag);
 
-
 		// Wiring phase (fresh boot): bind all registered entities (services, world, objects, components)
 		for (const ent of this.registry.getRegisteredEntities()) {
 			const maybe = ent as { bind?: (bus: EventEmitter) => void };
@@ -361,6 +360,7 @@ export class Game {
 			Input.instance.enableDebugMode(); // Do this after the world is initialized to prevent race conditions
 		}
 		this.initialized = true; // Mark the game as initialized
+		SoundMaster.instance.volume = 0;
 		return this!; // Allow chaining
 	}
 

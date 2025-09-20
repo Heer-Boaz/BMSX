@@ -30,7 +30,7 @@ export class FighterAbilityInputService extends Service {
 
 	public registerFighter(fighter: Fighter, actions?: AttackAction[]): void {
 		if (!fighter || fighter.isAIed) return;
-		const actionList = actions ?? DEFAULT_ATTACK_ACTIONS;
+		const actionList = actions ? [...actions] : [...DEFAULT_ATTACK_ACTIONS];
 		this.bindings.set(fighter.id, { fighter, playerIndex: fighter.player_index, actions: actionList });
 	}
 
@@ -46,6 +46,8 @@ export class FighterAbilityInputService extends Service {
 				this.bindings.delete(id);
 				continue;
 			}
+			fighter.syncStateTags();
+			if (!fighter.isFighting || fighter.attacking) continue;
 
 			const playerInput = this.tryGetPlayerInput(binding.playerIndex);
 			if (!playerInput) continue;
@@ -72,6 +74,7 @@ export class FighterAbilityInputService extends Service {
 	private handleAttackAction(fighter: Fighter, action: AttackAction): boolean {
 		const attempts = this.resolveAttemptOrder(fighter, action);
 		for (const attempt of attempts) {
+			if (!fighter.canActivateAttackAbility(attempt)) continue;
 			if (fighter.tryActivateAttackAbility(attempt)) {
 				return true;
 			}

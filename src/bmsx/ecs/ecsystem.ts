@@ -28,7 +28,7 @@ export abstract class ECSystem {
 	 */
 	readonly group: TickGroup;
 	readonly priority: number;
-	public __ecsId: string;
+	public __ecsId: string; // Optional identifier for debugging/stats (defaults to class name)
 	constructor(group: TickGroup, priority: number = 0) { this.group = group; this.priority = priority; }
 	abstract update(model: World): void;
 }
@@ -81,17 +81,6 @@ export class ECSystemManager {
 				const id = anyS.__ecsId ?? s.constructor.name;
 				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
 			}
-		}
-	}
-
-	update(model: World): void {
-		for (const s of this._systems) {
-			const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-			s.update(model);
-			const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-			const anyS = s;
-			const id = anyS.__ecsId ?? s.constructor.name;
-			this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
 		}
 	}
 }
