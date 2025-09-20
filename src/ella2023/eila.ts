@@ -81,25 +81,6 @@ export class Eila extends Fighter {
 		this.ducking = false;
 	}
 
-	public startAttack(attackType: EilaAttackType): void {
-		this.attacking = true;
-		this.currentAttackType = attackType;
-		this.addGameplayTag('state.attacking');
-		if (attackType === 'duckkick') {
-			this.ducking = true;
-		}
-	}
-
-	public finishAttack(attackType: EilaAttackType): void {
-		this.previousAttackType = attackType;
-		this.currentAttackType = null;
-		this.attacking = false;
-		this.removeGameplayTag('state.attacking');
-		if (attackType === 'duckkick') {
-			this.ducking = false;
-		}
-	}
-
 	public startJump(state: State, payload?: EventPayload & { direction?: 'left' | 'right' | null; directional?: boolean | string }): void {
 		const data = state.data as JumpStateData;
 		let direction: 'left' | 'right' | null = null;
@@ -185,7 +166,9 @@ export class Eila extends Fighter {
 		data.expectedAnimation = typeof nextAnimation === 'string' ? nextAnimation : null;
 		this.facing = this.facing === 'left' ? 'right' : 'left';
 		if (typeof nextAnimation === 'string') {
-			$.event_emitter.emit(`animate_${nextAnimation}`, this);
+			if (!this.tryActivateAttackAbility(nextAnimation as EilaAttackType)) {
+				this.sc.dispatch_event(`animate_${nextAnimation}`, this);
+			}
 		}
 	}
 

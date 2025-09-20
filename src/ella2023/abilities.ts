@@ -6,6 +6,10 @@ import type { AttackType } from './fighter';
 
 const ATTACK_FINISH_EVENT = (attackType: AttackType) => `fighter.attack.animation.${attackType}.finished`;
 
+function abilityIdForAttack(attackType: AttackType): AbilityId {
+	return `fighter.attack.${attackType}` as AbilityId;
+}
+
 abstract class BaseFighterAbility implements Ability {
 	public abstract readonly id: AbilityId;
 	protected constructor(protected readonly fighter: Fighter) { }
@@ -29,10 +33,22 @@ class FighterAttackAbility extends BaseFighterAbility {
 	}
 
 	public *activate(ctx: AbilityContext): AbilityCoroutine {
-		const opponent = $.get<EilaEventService>('eila_events')?.theOtherFighter(this.fighter) ?? null;
-		this.fighter.doAttackFlow(this.attackType, opponent);
+		const fighter = this.fighter;
+		const attackType = this.attackType as AttackType;
+		fighter.startAttack(attackType);
+		if (!fighter.performingStoerheidsdans) {
+			fighter.sc.dispatch_event('go_attack', fighter, { attackType });
+		}
+		fighter.sc.dispatch_event(`animate_${this.attackType}`, fighter);
+		const opponent = $.get<EilaEventService>('eila_events')?.theOtherFighter(fighter) ?? null;
+		fighter.doAttackFlow(this.attackType, opponent);
 		ctx.emit?.('fighter.attack.started', { id: this.id, attackType: this.attackType });
 		yield { type: 'waitEvent', name: ATTACK_FINISH_EVENT(this.attackType), scope: 'self' };
+		fighter.finishAttack(attackType);
+		if (!fighter.performingStoerheidsdans && attackType !== 'flyingkick') {
+			fighter.sc.dispatch_event('go_idle', fighter);
+		}
+		ctx.emit?.('fighter.attack.completed', { id: this.id, attackType });
 	}
 }
 
@@ -52,6 +68,8 @@ class FighterFlyingKickAbility extends FighterAttackAbility {
 		this.fighter.attacked_while_jumping = true;
 		ctx.emit?.('fighter.attack.jumping', { id: this.id });
 		yield* super.activate(ctx);
+		this.fighter.sc.dispatch_event('animate_jump', this.fighter);
+		this.fighter.sc.dispatch_event('flyingkick_end', this.fighter);
 	}
 }
 
@@ -89,11 +107,11 @@ export function registerFighterAbilities(fighter: Fighter): void {
 		asc.revokeAbility(id);
 	}
 
-	asc.grantAbility(ABILITY_SPECS['fighter.attack.punch'], () => new FighterAttackAbility(fighter, 'punch', 'fighter.attack.punch'));
-	asc.grantAbility(ABILITY_SPECS['fighter.attack.highkick'], () => new FighterAttackAbility(fighter, 'highkick', 'fighter.attack.highkick'));
-	asc.grantAbility(ABILITY_SPECS['fighter.attack.lowkick'], () => new FighterAttackAbility(fighter, 'lowkick', 'fighter.attack.lowkick'));
-	asc.grantAbility(ABILITY_SPECS['fighter.attack.duckkick'], () => new FighterAttackAbility(fighter, 'duckkick', 'fighter.attack.duckkick'));
-	asc.grantAbility(ABILITY_SPECS['fighter.attack.flyingkick'], () => new FighterFlyingKickAbility(fighter, 'fighter.attack.flyingkick'));
+	asc.grantAbility(ABILITY_SPECS['fighter.attack.punch'], () => new FighterAttackAbility(fighter, 'punch', abilityIdForAttack('punch')));
+	asc.grantAbility(ABILITY_SPECS['fighter.attack.highkick'], () => new FighterAttackAbility(fighter, 'highkick', abilityIdForAttack('highkick')));
+	asc.grantAbility(ABILITY_SPECS['fighter.attack.lowkick'], () => new FighterAttackAbility(fighter, 'lowkick', abilityIdForAttack('lowkick')));
+	asc.grantAbility(ABILITY_SPECS['fighter.attack.duckkick'], () => new FighterAttackAbility(fighter, 'duckkick', abilityIdForAttack('duckkick')));
+	asc.grantAbility(ABILITY_SPECS['fighter.attack.flyingkick'], () => new FighterFlyingKickAbility(fighter, abilityIdForAttack('flyingkick')));
 
 	fighter.addGameplayTag('state.grounded');
 	fighter.removeGameplayTag('state.airborne');

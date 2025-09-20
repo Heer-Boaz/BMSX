@@ -49,8 +49,6 @@ export class Sinterklaas extends Fighter {
 		else {
 			this.btreecontexts['sinterklaasBT'].running = true;
 		}
-		this.sc.transition_to('fighter_control:/grounded/idle');
-		this.sc.transition_to('player_animation:/idle');
 	}
 
 
@@ -141,20 +139,17 @@ export class Sinterklaas extends Fighter {
 
 		function punch(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
-			this.sc.dispatch_event('go_punch', this);
-			return 'SUCCESS';
+			return this.tryActivateAttackAbility('punch') ? 'SUCCESS' : 'FAILED';
 		}
 
 		function highkick(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
-			this.sc.dispatch_event('go_highkick', this);
-			return 'SUCCESS';
+			return this.tryActivateAttackAbility('highkick') ? 'SUCCESS' : 'FAILED';
 		}
 
 		function duckkick(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
-			this.sc.dispatch_event('go_duckkick', this);
-			return 'SUCCESS';
+			return this.tryActivateAttackAbility('duckkick') ? 'SUCCESS' : 'FAILED';
 		}
 
 		// @ts-ignore
@@ -177,8 +172,7 @@ export class Sinterklaas extends Fighter {
 
 		function jumpkick(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
-			this.sc.dispatch_event('go_flyingkick', this, this.facing);
-			return 'SUCCESS';
+			return this.tryActivateAttackAbility('flyingkick') ? 'SUCCESS' : 'FAILED';
 		}
 
 		function idle(this: Fighter): BTStatus {

@@ -1,4 +1,5 @@
 import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2 } from 'bmsx';
+import type { AbilityId } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/gas/abilitysystem';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
@@ -121,6 +122,62 @@ export abstract class Fighter extends SpriteObject {
 
 	public getAbilitySystem(): AbilitySystemComponent | null {
 		return this.getUniqueComponent(AbilitySystemComponent) ?? null;
+	}
+
+	public tryActivateAttackAbility(attackType: AttackType): boolean {
+		const asc = this.getAbilitySystem();
+		if (!asc) return false;
+		return asc.tryActivate(`fighter.attack.${attackType}` as AbilityId);
+	}
+
+	public startAttack(attackType: AttackType): void {
+		this.attacking = true;
+		this.currentAttackType = attackType;
+		this.addGameplayTag('state.attacking');
+		if (attackType === 'duckkick') {
+			this.ducking = true;
+		}
+		if (attackType === 'flyingkick') {
+			this.attacked_while_jumping = true;
+		}
+	}
+
+	public finishAttack(attackType: AttackType): void {
+		this.previousAttackType = attackType;
+		this.currentAttackType = null;
+		this.attacking = false;
+		this.removeGameplayTag('state.attacking');
+		if (attackType === 'duckkick') {
+			this.ducking = false;
+		}
+		if (attackType === 'flyingkick') {
+			this.attacked_while_jumping = false;
+		}
+	}
+
+	public handleAbilityAttackTransition(attackType: AttackType | null | undefined): void {
+		if (!attackType) return;
+		let target: string | null = null;
+		switch (attackType) {
+			case 'punch':
+				target = 'fighter_control:/_grounded/attack/punch';
+				break;
+			case 'highkick':
+				target = 'fighter_control:/_grounded/attack/highkick';
+				break;
+			case 'lowkick':
+				target = 'fighter_control:/_grounded/attack/lowkick';
+				break;
+			case 'duckkick':
+				target = 'fighter_control:/_grounded/attack/duckkick';
+				break;
+			case 'flyingkick':
+				target = 'fighter_control:/airborne/_jump/flyingkick/active';
+				break;
+		}
+		if (target) {
+			this.sc.transition_to(target);
+		}
 	}
 
 	public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
