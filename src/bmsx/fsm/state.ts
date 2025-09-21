@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { Input } from '../input/input';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
-import { getEasing } from '../util/easing';
+import { getEasing } from '../utils/easing';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
 import { STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX, type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType, type StateEventDefinition, type TickCheckDefinition } from './fsmtypes';

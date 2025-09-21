@@ -1,12 +1,12 @@
 is_concurrent: true
 on:
-    i_was_hit:
+    $i_was_hit:
         do:
             set_ticks_to_last_frame: true
-    i_hit_face:
+    $i_hit_face:
         do:
             set_ticks_to_last_frame: true
-    animationEnd:
+    $animationEnd:
         do:
             - when:
                   value_equals:
@@ -53,18 +53,18 @@ on:
                   dispatch_event:
                       event: go_duck
                       emitter: '@self'
-    animate_idle:
+    $animate_idle:
         switch: _idle
-    animate_humiliated: humiliated
-    animate_walk:
+    $animate_humiliated: humiliated
+    $animate_walk:
         force_leaf: walk/_walk1
-    animate_punch: punch
-    animate_highkick: highkick
-    animate_flyingkick: flyingkick
-    animate_lowkick: lowkick
-    animate_duckkick: duckkick
-    animate_duck: duck
-    animate_jump: jump
+    $animate_punch: punch
+    $animate_highkick: highkick
+    $animate_flyingkick: flyingkick
+    $animate_lowkick: lowkick
+    $animate_duckkick: duckkick
+    $animate_duck: duck
+    $animate_jump: jump
 states:
     _idle:
         entering_state:
