@@ -161,19 +161,19 @@ export class Sinterklaas extends Fighter {
 
 		// @ts-ignore
 		function duck(this: Fighter): BTStatus {
-			this.sc.dispatch_event('go_duck', this);
+			this.sc.dispatch_event('mode.control.duck', this);
 			return 'SUCCESS';
 		}
 
 		function jump(this: Fighter): BTStatus {
 			if (this.isJumping) return 'RUNNING';
-			this.sc.dispatch_event('go_jump', this, this.facing);
+			this.sc.dispatch_event('mode.control.jump', this, this.facing);
 			return 'SUCCESS';
 		}
 
 		function straightJump(this: Fighter): BTStatus {
 			if (this.isJumping) return 'RUNNING';
-			this.sc.dispatch_event('go_jump', this, undefined);
+			this.sc.dispatch_event('mode.control.jump', this, undefined);
 			return 'SUCCESS';
 		}
 
@@ -185,13 +185,13 @@ export class Sinterklaas extends Fighter {
 
 		function idle(this: Fighter): BTStatus {
 			// Logic for idle behavior
-			this.sc.dispatch_event('go_idle', this);
+			this.sc.dispatch_event('mode.locomotion.idle', this);
 			return 'SUCCESS';
 		}
 
 		function walk(this: Fighter, blackboard: Blackboard): BTStatus {
 			// Logic for walk behavior
-			this.sc.dispatch_event('go_walk', this, this.facing);
+			this.sc.dispatch_event('mode.locomotion.walk', this, this.facing);
 			this.x += this.facing === 'left' ? -Fighter.SPEED : Fighter.SPEED;
 			blackboard.set('walking', true);
 			return 'SUCCESS';

@@ -51,42 +51,21 @@ export abstract class Fighter extends SpriteObject {
 	protected setFightingState(active: boolean, force: boolean = false): void {
 		if (!force && this._fighting === active) return;
 		this._fighting = active;
-		if (active) this.removeGameplayTag('state.combat_disabled');
-		else this.addGameplayTag('state.combat_disabled');
 	}
 
 	protected setAttackingState(active: boolean, force: boolean = false): void {
 		if (!force && this._attacking === active) return;
 		this._attacking = active;
-		if (active) this.addGameplayTag('state.attacking');
-		else this.removeGameplayTag('state.attacking');
 	}
 
 	protected setJumpingState(active: boolean, force: boolean = false): void {
 		if (!force && this._jumping === active) return;
 		this._jumping = active;
-		if (active) {
-			this.addGameplayTag('state.airborne');
-			this.removeGameplayTag('state.grounded');
-		}
-		else {
-			this.removeGameplayTag('state.airborne');
-			this.addGameplayTag('state.grounded');
-		}
 	}
 
 	protected setDuckingState(active: boolean, force: boolean = false): void {
 		if (!force && this._ducking === active) return;
 		this._ducking = active;
-		if (active) this.addGameplayTag('state.ducking');
-		else this.removeGameplayTag('state.ducking');
-	}
-
-	public syncStateTags(): void {
-		this.setFightingState(this._fighting, true);
-		this.setAttackingState(this._attacking, true);
-		this.setJumpingState(this._jumping, true);
-		this.setDuckingState(this._ducking, true);
 	}
 
 	@build_fsm('hitanimation')
@@ -121,8 +100,8 @@ export abstract class Fighter extends SpriteObject {
 					},
 					exiting_state(this: Fighter) {
 						this.sc.resume_all_statemachines();
-						$.emit('i_was_hit', this); // Allow the player to recuperate from the hit quickly.
-						$.emit('hit_animation_end', this); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
+						$.emitGameplay('i_was_hit', this); // Allow the player to recuperate from the hit quickly.
+						$.emitGameplay('hit_animation_end', this); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
 					},
 				},
 			}
@@ -174,7 +153,8 @@ export abstract class Fighter extends SpriteObject {
 		const abilityId = this.getAttackAbilityId(attackType);
 		const asc = this.getAbilitySystem();
 		if (!asc) return false;
-		return asc.tryActivate(abilityId);
+		const result = asc.requestAbility(abilityId, { source: 'fighter.attack' });
+		return result.ok;
 	}
 
 	public canActivateAttackAbility(attackType: AttackType): boolean {
@@ -274,7 +254,7 @@ export abstract class Fighter extends SpriteObject {
 		opponent.sc.transition_to('hitanimation:/doet_au');
 		this.hp -= getDamage(attackType);
 		const weaponClass = (attackType === 'punch') ? 'light' : 'heavy';
-		$.emit('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
+		$.emitGameplay('combat.hit', this, { result: 'hit', weaponClass, actorId: opponent.id, targetId: this.id });
 	}
 
 	// queueRenderSubmissions removed; rendering handled by GenericRendererComponent producer
@@ -283,7 +263,6 @@ export abstract class Fighter extends SpriteObject {
 		super.onspawn(spawningPos);
 		this.performingStoerheidsdans = false;
 		this.resetVerticalPosition();
-		this.syncStateTags();
 		registerFighterForAbilityInput(this);
 	}
 

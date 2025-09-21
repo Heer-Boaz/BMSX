@@ -161,9 +161,10 @@ export class StateMachineController {
 							break;
 					}
 					const key = `${event.name}-${scope || 'global'}`;
+					const lane = event.lane ?? 'any';
 					if (!this._subscribedCache.has(key)) {
 						// EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
-						EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, scope, true);
+						EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, { emitter: scope, persistent: true, lane });
 						this._subscribedCache.add(key);
 					}
 				});

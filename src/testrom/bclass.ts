@@ -86,14 +86,14 @@ export class bclass extends SpriteObject {
 						if (consumed) break;
 						$.input.getPlayerInput(1).consumeAction(action);
 						this.testmeuk();
-						$.event_emitter.emit('testEvent', this);
+						$.emitPresentation('testEvent', this);
 
 						this.sc.machines.bclass_animation.transition_to('ani2');
 						this.sc.transition_to('bclass:/bla'); // Ugly, transitioning another state machine
 					case 'blap':
 						if (consumed) break;
 						$.input.getPlayerInput(1).consumeAction(action);
-						$.event_emitter.emit('testEventOnce', this);
+						$.emitPresentation('testEventOnce', this);
 
 						this.sc.machines.bclass_animation.transition_to('ani1');
 						if (this.sc.matches_state_path('bclass_meuk:/meuk1.blupperblop1')) {

@@ -9,7 +9,7 @@ import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 
 @excludeclassfromsavegame
 export class MeshRenderSystem extends ECSystem {
-	constructor(priority = 9) { super(TickGroup.PreRender, priority); }
+	constructor(priority = 9) { super(TickGroup.Presentation, priority); }
 	update(world: World): void {
 		const cam = $.world.activeCamera3D;
 		const base = new Float32Array(16);

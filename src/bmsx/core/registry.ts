@@ -1,14 +1,8 @@
 import { ConcreteOrAbstractConstructor, Identifier, Registerable } from '../rompack/rompack';
 
 export class Registry {
-	private static _instance: Registry;
+	public static readonly instance: Registry = new Registry();
 	private _registry: Record<Identifier, Registerable>;
-	public static get instance(): Registry {
-		if (!Registry._instance) {
-			Registry._instance = new Registry();
-		}
-		return Registry._instance;
-	}
 
 	constructor() {
 		this._registry = {};

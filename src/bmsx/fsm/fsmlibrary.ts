@@ -1,4 +1,4 @@
-import type { EventPayload, EventScope } from "../core/eventemitter";
+import type { EventLane, EventPayload, EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
@@ -44,17 +44,11 @@ function registerDefinitionTree(def: StateDefinition): void {
 }
 
 export class HandlerRegistry {
-	private static _instance: HandlerRegistry;
+	public static readonly instance: HandlerRegistry = new HandlerRegistry();
 	private map = new Map<string, GenericHandler>();
 	register(id: string, fn: GenericHandler) { this.map.set(id, fn); }
 	get(id: string): GenericHandler | undefined { return this.map.get(id); }
 	replaceBulk(entries: Record<string, GenericHandler>) { for (const k in entries) this.map.set(k, entries[k]); }
-	static get instance(): HandlerRegistry {
-		if (!this._instance) {
-			this._instance = new HandlerRegistry();
-		}
-		return this._instance;
-	}
 }
 
 // assign-fsm-augment.ts (unchanged logic, now gets keys from decorator)
@@ -289,7 +283,7 @@ function addEventsToDef(machine: StateMachineBlueprint): void {
 				console.warn(`Duplicate event found in machine ${machine.id}: ${event_entry.name} with scope ${event_entry.scope}`);
 				debugger;
 			}
-			machine.event_list.push({ name: event_entry.name, scope: event_entry.scope }); // Add the event to the event list of the machine definition
+			machine.event_list.push({ name: event_entry.name, scope: event_entry.scope, lane: event_entry.lane ?? 'any' }); // Add the event to the event list of the machine definition
 		});
 	}
 }
@@ -317,12 +311,10 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	 * @param definition - The definition of the state event.
 	 */
 	function add(name: string, definition: string | StateEventDefinition): void {
-		if (typeof definition === 'string') {
-			addAndReplace(removeScopeFromEventName(name), parseEventScope(name));
-		}
-		else {
-			addAndReplace(removeScopeFromEventName(name), definition.scope ?? parseEventScope(name));
-		}
+		const baseName = removeScopeFromEventName(name);
+		const scope = typeof definition === 'string' ? parseEventScope(name) : (definition.scope ?? parseEventScope(name));
+		const lane = inferLaneForEvent(baseName, definition);
+		addAndReplace(baseName, scope, lane);
 	}
 
 	/**
@@ -337,14 +329,29 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 	 * - If a global-scoped event (`scope: 'all'`) is already added, it prevents adding a specific-scoped event with the same name.
 	 * - If the event is not already added, it is added to the `events` set and marked in `addedEvents`.
 	 */
-	function addAndReplace(name: string, scope: string): void {
+	function inferLaneForEvent(name: string, definition: string | StateEventDefinition): EventLane | 'any' {
+		if (typeof definition !== 'string') {
+			const lane = (definition as StateEventDefinition & { lane?: EventLane | 'any' }).lane;
+			if (lane) return lane;
+		}
+		const lowered = name.toLowerCase();
+		if (lowered.startsWith('mode.') || lowered.startsWith('state.') || lowered.startsWith('combat.') || lowered.startsWith('ability.') || lowered.startsWith('input.') || lowered.startsWith('hit') || lowered.startsWith('ai.')) {
+			return 'gameplay';
+		}
+		if (lowered.startsWith('animate') || lowered.startsWith('fx.') || lowered.startsWith('sfx.') || lowered.startsWith('ui.') || lowered.startsWith('camera.') || lowered.startsWith('music.') || lowered.startsWith('screen') || lowered.startsWith('presentation.')) {
+			return 'presentation';
+		}
+		return 'any';
+	}
+
+	function addAndReplace(name: string, scope: string, lane: EventLane | 'any'): void {
 		const key = `${name}-${scope}`; // Create a unique key for the event based on its name and scope
 
 		if (addedEvents.has(key)) return; // If the event is already added, don't add it again
 		if (addedEvents.has(`${name}-all`)) return; // If the event is already in the set, and the scope is global, don't replace it with a specific scoped event
 
 		// If the event is not in the set, add it
-		events.add({ name: name, scope: scope });
+		events.add({ name: name, scope: scope, lane });
 
 		// Mark the event as added in the map to prevent duplicates
 		addedEvents.set(key, true);
@@ -817,7 +824,8 @@ function createEmitHandler(spec: StateActionEmitSpec, slot: string): GenericHand
 		const ctx = buildContext(this, state, invokeArgs, slot);
 		const emitter = emitterMode === 'state' ? (state?.target ?? state) : this;
 		const payload = normalized.payload ? resolveTemplateValue(normalized.payload, ctx) : undefined;
-		$.emit(normalized.event, emitter ?? this, payload);
+		const lane = normalized.lane ?? 'presentation';
+		$.emit(normalized.event, emitter ?? this, payload, { lane });
 	};
 }
 
@@ -931,7 +939,13 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 			if (!resolved) return;
 			const id = typeof resolved === 'string' ? resolved : resolved.id;
 			if (!id) return;
-			asc.tryActivate(id);
+			const result = asc.requestAbility(id);
+			if (!result.ok) {
+				if ($.debug) {
+					const reason = 'reason' in result ? result.reason : 'unknown';
+					console.debug('[FSM] activate_ability', id, 'rejected:', reason);
+				}
+			}
 		};
 	}
 	if ('call' in spec) {

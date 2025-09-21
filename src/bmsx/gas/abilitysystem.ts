@@ -4,14 +4,21 @@ import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame, insavegame } from 'bmsx/serializer/serializationhooks';
+import { TickGroup } from '../ecs/ecsystem';
 import type {
-	Ability, AbilityContext, AbilityCoroutine, AbilityId, AbilitySpec,
+	Ability,
+	AbilityContext,
+	AbilityCoroutine,
+	AbilityId,
+	AbilityRequestResult,
+	AbilitySpec,
 	AbilityYield,
 	ActiveEffect,
 	AttributeSet,
 	GameplayEffect,
 	TagId
 } from './gastypes';
+import { GameplayIntentQueue } from './intent';
 
 type NowFn = () => number;
 
@@ -26,10 +33,19 @@ export class AbilitySystemComponent extends Component {
 	readonly ownerId: string;
 
 	public static readonly registry = new Set<AbilitySystemComponent>();
+	public static readonly registryByOwner = new Map<Identifier, AbilitySystemComponent>();
 
 	public readonly attrs: AttributeSet = {};
 	// Explicit tags set by gameplay (not derived from effects)
 	public readonly tags: Set<TagId> = new Set();
+
+	private assertExplicitTagMutationAllowed(op: 'add' | 'remove', tag: TagId): void {
+		const phase = this.model?.currentPhase ?? null;
+		if (phase !== null && phase !== TickGroup.ModeResolution) {
+			const phaseName = TickGroup[phase] ?? `${phase}`;
+			throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only ModeGraph (Phase 4) may mutate gameplay tags.`);
+		}
+	}
 
 	// Reference counts for effect-granted tags
 	@excludepropfromsavegame
@@ -51,17 +67,40 @@ export class AbilitySystemComponent extends Component {
 
 	private _runnerCounter = 0;
 
+	public requestAbility(id: AbilityId, opts: { source?: string; payload?: Record<string, unknown> } = {}): AbilityRequestResult {
+		const reason = this.canActivateReason(id);
+		if (reason) {
+			this.notifyAbilityFailed(id, reason);
+			return { ok: false as const, reason };
+		}
+		const res = GameplayIntentQueue.instance.enqueue({ kind: 'ability', ownerId: this.ownerId, abilityId: id, source: opts.source, payload: opts.payload });
+		if (!res.ok) {
+			this.notifyAbilityFailed(id, 'queue_backpressure');
+			return { ok: false as const, reason: 'queue_backpressure' };
+		}
+		return res.status === 'queued'
+			? { ok: true as const }
+			: { ok: true as const, note: 'duplicate_intent' };
+	}
+
 	constructor(opts: ComponentAttachOptions & { now?: NowFn }) {
 		super(opts);
 		this.ownerId = opts.parentid;
 		this.now = opts.now ?? (() => performance.now());
 		AbilitySystemComponent.registry.add(this);
+		AbilitySystemComponent.registryByOwner.set(this.ownerId, this);
 	}
 
 	get model(): World { return $.world; }
 
-	public addTag(tag: TagId): void { this.tags.add(tag); }
-	public removeTag(tag: TagId): void { this.tags.delete(tag); }
+	public addTag(tag: TagId): void {
+		this.assertExplicitTagMutationAllowed('add', tag);
+		this.tags.add(tag);
+	}
+	public removeTag(tag: TagId): void {
+		this.assertExplicitTagMutationAllowed('remove', tag);
+		this.tags.delete(tag);
+	}
 	public hasGameplayTag(tag: TagId): boolean { return this.tags.has(tag) || ((this.grantedTagRefs.get(tag) ?? 0) > 0); }
 
 	public grantAbility(spec: AbilitySpec, factory: () => Ability): void {
@@ -126,7 +165,7 @@ export class AbilitySystemComponent extends Component {
 		if (reason) {
 			// Optional UX/debug hook
 			const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
-			EventEmitter.instance.emit('AbilityFailed', owner ?? { id: this.ownerId }, { id, reason });
+			$.emitPresentation('AbilityFailed', owner ?? { id: this.ownerId }, { id, reason });
 			return false;
 		}
 
@@ -147,7 +186,12 @@ export class AbilitySystemComponent extends Component {
 		const ctx: AbilityContext = {
 			ownerId: this.ownerId,
 			model: this.model,
-			asc: { ownerId: this.ownerId, hasTag: (t: TagId) => this.hasGameplayTag(t), tryActivate: (aid: AbilityId) => this.tryActivate(aid) },
+			asc: {
+				ownerId: this.ownerId,
+				hasTag: (t: TagId) => this.hasGameplayTag(t),
+				tryActivate: (aid: AbilityId) => this.tryActivate(aid),
+				requestAbility: (aid: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(aid, opts ?? {}),
+			},
 			emit: (name: string, payload?: any) => {
 				const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
 				EventEmitter.instance.emit(name, owner ?? { id: this.ownerId }, payload);
@@ -288,6 +332,7 @@ export class AbilitySystemComponent extends Component {
 		// Clear cooldowns
 		this._cooldownUntil.clear();
 		AbilitySystemComponent.registry.delete(this);
+		AbilitySystemComponent.registryByOwner.delete(this.ownerId);
 		super.dispose();
 	}
 
@@ -298,6 +343,7 @@ export class AbilitySystemComponent extends Component {
 		this.grantedTagRefs.clear();
 		this._cooldownUntil.clear();
 		AbilitySystemComponent.registry.delete(this);
+		AbilitySystemComponent.registryByOwner.delete(this.ownerId);
 		super.detach();
 	}
 
@@ -308,6 +354,11 @@ export class AbilitySystemComponent extends Component {
 		const n = (this.grantedTagRefs.get(tag) ?? 0) - 1;
 		if (n > 0) this.grantedTagRefs.set(tag, n);
 		else this.grantedTagRefs.delete(tag);
+	}
+
+	private notifyAbilityFailed(id: AbilityId, reason: string): void {
+		const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
+		$.emitPresentation('AbilityFailed', owner ?? { id: this.ownerId }, { id, reason });
 	}
 
 	private findActiveByAbility(id: AbilityId): string | undefined {

@@ -1,15 +1,24 @@
 import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
 import { $ } from './game';
+import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 
 export type EventPayload = Record<string, any>;
 // Generic event handler that allows more specific payload shapes, e.g. EventHandler<EventPayload & { bladiebla: boolean }>
 export type EventHandler<P extends EventPayload = EventPayload> = (event_name: string, emitter: Identifiable, payload?: P) => any;
 
-type Listener = { listener: EventHandler, subscriber: any, persistent: boolean };
+type Listener = { listener: EventHandler, subscriber: any, persistent: boolean, lane: EventLane | 'any' };
 export type ListenerSet = Set<Listener>;
 type EventListenerMap = Record<string, ListenerSet>;
 type EmitterScopeListenerMap = Record<string, EventListenerMap>;
+
+export interface EventSubscriptionOptions {
+	emitter?: Identifier;
+	persistent?: boolean;
+	lane?: EventLane | 'any';
+}
+
+export type EventLane = 'gameplay' | 'presentation';
 
 /**
  * Represents an object that can subscribe to events.
@@ -24,6 +33,11 @@ type EventSubscriberType = EventSubscriber | (EventSubscriber & Parentable) | (E
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
 export class EventEmitter implements RegisterablePersistent {
+	/**
+	 * The singleton instance of the EventEmitter class.
+	 */
+	public static readonly instance: EventEmitter = new EventEmitter();
+
 	// Toggle to enable verbose event logs
 	get registrypersistent(): true {
 		return true;
@@ -61,24 +75,13 @@ export class EventEmitter implements RegisterablePersistent {
 	 * Map of event listeners registered on the global scope.
 	 */
 	public globalScopeListeners: EventListenerMap = {};
+	private readonly eventLaneRegistry = new Map<string, EventLane>();
 
 	/**
 	 * Listeners that receive all events emitted on the bus (wildcard).
 	 * Signature: (name, payload?, emitter?)
 	 */
 	private anyListeners: Array<{ handler: EventHandler<any>, persistent: boolean }> = [];
-
-	/**
-	 * The singleton instance of the EventEmitter class.
-	 */
-	private static _instance: EventEmitter;
-
-	public static get instance(): EventEmitter {
-		if (!EventEmitter._instance) {
-			EventEmitter._instance = new EventEmitter();
-		}
-		return EventEmitter._instance;
-	}
 
 	/**
 	 * Constructs a new instance of the EventEmitter class.
@@ -240,8 +243,19 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param filtered_on_emitter_id Optional emitter id filter (self/parent/custom). If omitted the listener is global.
 	 * @param persistent If true the listener survives EventEmitter.clear() just like registry persistent objects.
 	 */
-	on(event_name: string, listener: EventHandler<any>, subscriber: any, filtered_on_emitter_id?: Identifier, persistent: boolean = false): void {
+	on(event_name: string, listener: EventHandler<any>, subscriber: any, emitterOrOptions?: Identifier | EventSubscriptionOptions, persistentLegacy: boolean = false): void {
 		const self = EventEmitter.instance;
+		let filtered_on_emitter_id: Identifier | undefined;
+		let persistent = persistentLegacy ?? false;
+		let lane: EventLane | 'any' = 'any';
+		if (emitterOrOptions && typeof emitterOrOptions === 'object' && !Array.isArray(emitterOrOptions)) {
+			const options = emitterOrOptions as EventSubscriptionOptions;
+			filtered_on_emitter_id = options.emitter;
+			if (typeof options.persistent === 'boolean') persistent = options.persistent;
+			if (options.lane) lane = options.lane;
+		} else if (emitterOrOptions !== undefined) {
+			filtered_on_emitter_id = emitterOrOptions as Identifier;
+		}
 		if (filtered_on_emitter_id) {
 			if (!self.emitterScopeListeners[event_name]) {
 				self.emitterScopeListeners[event_name] = {};
@@ -253,7 +267,7 @@ export class EventEmitter implements RegisterablePersistent {
 				if ($.debug) console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
 				return; // Prevent adding the same listener multiple times
 			}
-			self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber, persistent });
+			self.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber, persistent, lane });
 		} else {
 			if (!self.globalScopeListeners[event_name]) {
 				self.globalScopeListeners[event_name] = new Set();
@@ -262,7 +276,7 @@ export class EventEmitter implements RegisterablePersistent {
 				if ($.debug) console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
 				return; // Prevent adding the same listener multiple times
 			}
-			self.globalScopeListeners[event_name].add({ listener, subscriber, persistent });
+			self.globalScopeListeners[event_name].add({ listener, subscriber, persistent, lane });
 		}
 	}
 
@@ -274,23 +288,53 @@ export class EventEmitter implements RegisterablePersistent {
 	 * @param args - Additional arguments to pass to the listeners.
 	 */
 	// Allow callers to provide a more specific payload type when emitting.
-	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
+	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable | null, payload?: P, opts?: { lane?: EventLane }): void {
+		const lane: EventLane = opts?.lane ?? 'gameplay';
+		if (lane === 'gameplay') {
+			if (!emitter || (emitter as Identifiable).id == null) {
+				throw new Error(`Gameplay events require an Identifiable emitter. Event "${event_name}" missing emitter id.`);
+			}
+		}
 		const self = EventEmitter.instance;
+		const previousLane = self.eventLaneRegistry.get(event_name);
+		if (previousLane && previousLane !== lane) {
+			throw new Error(`Event '${event_name}' emitted with lane '${lane}' but was previously seen on lane '${previousLane}'.`);
+		}
+		self.eventLaneRegistry.set(event_name, lane);
+
+		if (lane === 'gameplay') {
+			GameplayEventRecorder.instance.record(event_name, (emitter as Identifiable).id, payload);
+		}
+
 		let anyoneSubscribed = false;
-		self.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
-			anyoneSubscribed = true;
-			listener.call(subscriber, event_name, emitter, payload);
-		});
-		self.globalScopeListeners[event_name]?.forEach(({ listener, subscriber }) => {
-			anyoneSubscribed = true;
-			listener.call(subscriber, event_name, emitter, payload);
-		});
+		const deliver = (set?: ListenerSet) => {
+			if (!set) return;
+			for (const item of set) {
+				if (item.lane !== 'any' && item.lane !== lane) {
+					if (lane === 'presentation' && item.lane === 'gameplay') {
+						throw new Error(`Presentation event '${event_name}' delivered to gameplay-scoped listener.`);
+					}
+					if (lane === 'gameplay' && item.lane === 'presentation') {
+						throw new Error(`Gameplay event '${event_name}' delivered to presentation-scoped listener.`);
+					}
+					continue;
+				}
+				anyoneSubscribed = true;
+				item.listener.call(item.subscriber, event_name, emitter as Identifiable, payload);
+			}
+		};
+		const emitterId = emitter?.id;
+		if (emitterId != null) {
+			deliver(self.emitterScopeListeners[event_name]?.[emitterId]);
+		}
+		deliver(self.globalScopeListeners[event_name]);
 
 		// Wildcard listeners
-		for (const item of self.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
+		for (const item of self.anyListeners) if (item.handler(event_name, emitter as Identifiable, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
 
 		if (!anyoneSubscribed && $.debug) {
-			console.warn(`No listeners for event "${event_name}" and emitter "${emitter.id}", payload: "${payload ? JSON.stringify(payload) : 'no payload'}"`);
+			const emitterId = emitter ? (emitter as Identifiable).id : 'none';
+			console.warn(`No listeners for event "${event_name}" [${lane}] and emitter "${emitterId}", payload: "${payload ? JSON.stringify(payload) : 'no payload'}"`);
 			if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
 		}
 	}

@@ -34,7 +34,7 @@ class FighterAttackAbility extends BaseFighterAbility {
 		const fighter = this.fighter;
 		const attackType = this.attackType as AttackType;
 		if (!fighter.performingStoerheidsdans) {
-			fighter.sc.dispatch_event('go_attack', fighter, { attackType });
+			fighter.sc.dispatch_event('mode.action.attack', fighter, { attackType });
 		} else {
 			fighter.performAttack(attackType);
 		}
@@ -44,7 +44,7 @@ class FighterAttackAbility extends BaseFighterAbility {
 			fighter.completeAttack(attackType);
 		}
 		else if (attackType !== 'flyingkick') {
-			fighter.sc.dispatch_event('go_idle', fighter);
+			fighter.sc.dispatch_event('mode.action.complete', fighter, { attackType });
 		}
 		ctx.emit?.('fighter.attack.completed', { id: this.id, attackType });
 	}
@@ -110,5 +110,4 @@ export function registerFighterAbilities(fighter: Fighter): void {
 	asc.grantAbility(ABILITY_SPECS['fighter.attack.duckkick'], () => new FighterAttackAbility(fighter, 'duckkick', abilityIdForAttack('duckkick')));
 	asc.grantAbility(ABILITY_SPECS['fighter.attack.flyingkick'], () => new FighterFlyingKickAbility(fighter, abilityIdForAttack('flyingkick')));
 
-	fighter.syncStateTags();
 }

@@ -1,4 +1,4 @@
-import type { EventPayload, EventScope, EventSubscriber } from "../core/eventemitter";
+import type { EventLane, EventPayload, EventScope, EventSubscriber } from "../core/eventemitter";
 import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
@@ -67,7 +67,7 @@ export interface StateEventCondition<T extends Stateful & EventSubscriber = any,
 	(state: State<T>, payload?: P): boolean;
 }
 
-export type listed_sdef_event = { name: string, scope: EventScope };
+export type listed_sdef_event = { name: string, scope: EventScope, lane?: EventLane | 'any' };
 
 /**
  * Represents a state transition.
@@ -107,6 +107,7 @@ export type StateActionEmitSpec = string | {
 	event: string;
 	payload?: Record<string, any>;
 	emitter?: 'self' | 'state';
+	lane?: 'gameplay' | 'presentation';
 };
 
 export type StateActionSetTicksSpec = {
@@ -231,6 +232,11 @@ export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
 	 */
 	scope?: EventScope,
+
+	/**
+	 * Optional event lane. Defaults inferred at build time.
+	 */
+	lane?: EventLane | 'any',
 };
 
 /**
@@ -311,4 +317,3 @@ export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handl
 	name: string; // method/field name on the instance
 	keys: string[]; // resolved keys this member answers to
 };
-

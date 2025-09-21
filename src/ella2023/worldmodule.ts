@@ -62,9 +62,9 @@ export class EilaEventService extends Service {
 			$.stopMusic();
 
 			// Handle that fighter is down
-			emitter.sc.dispatch_event('go_humiliated', emitter);
+			emitter.sc.dispatch_event('mode.impact.humiliated', emitter);
 			if (otherFighter) {
-				otherFighter.sc.dispatch_event('go_stoerheidsdans', otherFighter);
+				otherFighter.sc.dispatch_event('mode.control.stoerheidsdans', otherFighter);
 			}
 		}
 	}
@@ -80,8 +80,8 @@ export class EilaEventService extends Service {
 		const hp_sinterklaas = sinterklaas?.hp ?? 0;
 
 		if (hp_player > 0 && hp_sinterklaas > 0) {
-			sinterklaas?.sc.dispatch_event('go_idle', sinterklaas);
-			player?.sc.dispatch_event('go_idle', player);
+			sinterklaas?.sc.dispatch_event('mode.locomotion.idle', sinterklaas);
+			player?.sc.dispatch_event('mode.locomotion.idle', player);
 			return;
 		}
 

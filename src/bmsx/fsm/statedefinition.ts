@@ -1,4 +1,4 @@
-import { EventScope } from '../core/eventemitter';
+import { EventLane, EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
@@ -101,7 +101,7 @@ export class StateDefinition {
 	 */
 	public root!: StateDefinition; // The root state machine definition
 
-	public event_list: { name: string; scope: EventScope; }[];
+ 	public event_list: { name: string; scope: EventScope; lane: EventLane | 'any' }[];
 
 	private get is_root(): boolean { return this.root === this; }
 

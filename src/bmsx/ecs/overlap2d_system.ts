@@ -14,7 +14,7 @@ function makePairKey(a: string, b: string): PairKey { return a < b ? `${a}|${b}`
 /** Emits overlapBegin/overlapStay/overlapEnd events for ColliderComponents. */
 export class Overlap2DSystem extends ECSystem {
 	private prevPairs: Set<PairKey> = new Set();
-	constructor(priority: number = 42) { super(TickGroup.PostPhysics, priority); }
+	constructor(priority: number = 42) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		const newPairs: Set<PairKey> = new Set();
 		const colliderLookup = new Map<string, Collider2DComponent>();

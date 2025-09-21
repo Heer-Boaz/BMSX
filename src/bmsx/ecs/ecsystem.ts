@@ -15,10 +15,20 @@ import { Service } from '../core/service';
 import { Registry } from '../core/registry';
 
 export enum TickGroup {
-	PrePhysics = 10,
-	Simulation = 20,
-	PostPhysics = 30,
-	PreRender = 40,
+	Input = 5,
+	IntentResolution = 10,
+	AbilityUpdate = 20,
+	ModeResolution = 30,
+	Physics = 40,
+	Animation = 50,
+	Presentation = 60,
+	EventFlush = 70,
+
+	// Legacy aliases (maintain compatibility for existing registrations)
+	PrePhysics = Input,
+	Simulation = AbilityUpdate,
+	PostPhysics = Physics,
+	PreRender = Presentation,
 }
 
 @excludeclassfromsavegame
@@ -83,11 +93,24 @@ export class ECSystemManager {
 			}
 		}
 	}
+
+	/** Runs systems that belong to the exact TickGroup (single phase). */
+	updatePhase(model: World, group: TickGroup): void {
+		for (const s of this._systems) {
+			if (s.group === group) {
+				const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+				s.update(model);
+				const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+				const id = s.__ecsId ?? s.constructor.name;
+				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
+			}
+		}
+	}
 }
 
 /** Pre-update: call preprocessingUpdate for components tagged with given tag. */
 export class PreTagSystem extends ECSystem {
-	constructor(private tag: string, priority: number) { super(TickGroup.PrePhysics, priority); }
+	constructor(private tag: string, priority: number) { super(TickGroup.Input, priority); }
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'current'}) ) {
 			for (let c of o.iterateComponents()) {
@@ -99,7 +122,7 @@ export class PreTagSystem extends ECSystem {
 
 /** Post-update: call postprocessingUpdate for components tagged with given tag. */
 export class PostTagSystem extends ECSystem {
-	constructor(private tag: string, priority: number) { super(TickGroup.PostPhysics, priority); }
+	constructor(private tag: string, priority: number) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'current' })) {
 			for (let c of o.iterateComponents()) {
@@ -131,7 +154,7 @@ function hasMarkDirty(o: unknown): o is { markDirty: () => void } {
 
 /** Updates all BehaviorTrees attached to objects. */
 export class BehaviorTreeSystem extends ECSystem {
-	constructor(priority: number) { super(TickGroup.Simulation, priority); }
+	constructor(priority: number) { super(TickGroup.Input, priority); }
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'current'})) {
 			if (o.active === false) continue;
@@ -147,7 +170,7 @@ export class BehaviorTreeSystem extends ECSystem {
 
 /** Ticks each object's primary state machine controller. */
 export class StateMachineSystem extends ECSystem {
-	constructor(priority: number) { super(TickGroup.Simulation, priority); }
+	constructor(priority: number) { super(TickGroup.ModeResolution, priority); }
 	update(world: World): void {
 		// Tick all world objects' state machines (gated)
 		for (let o of world.objects({ scope: 'current' })) {
@@ -174,7 +197,7 @@ export class StateMachineSystem extends ECSystem {
  * instances at the start of the frame.
  */
 export class PrePositionSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		const objs = world.objectsWithComponents(PositionUpdateAxisComponent, { scope: 'current' });
 		// Preprocess all PositionUpdateAxisComponents
@@ -188,7 +211,7 @@ export class PrePositionSystem extends ECSystem {
  */
 export class BoundarySystem extends ECSystem {
 	private prev = new WeakMap<WorldObject, { x: number; y: number }>();
-	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		const width = world.gamewidth;
 		const height = world.gameheight;
@@ -244,7 +267,7 @@ export class BoundarySystem extends ECSystem {
  * TileCollisionSystem resolves tile collisions using the component logic.
  */
 export class TileCollisionSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let [o, c] of world.objectsWithComponents(TileCollisionComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
@@ -288,7 +311,7 @@ export class TileCollisionSystem extends ECSystem {
  * PhysicsPreSystem: builds bodies on demand and syncs WorldObject -> PhysicsBody when writeBack=false.
  */
 export class PhysicsPreSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.PrePhysics, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
@@ -325,7 +348,7 @@ export class PhysicsPreSystem extends ECSystem {
  * after abilities so GO -> body sync includes ability impulses before the physics step.
  */
 export class PhysicsSyncBeforeStepSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
@@ -345,9 +368,18 @@ export class PhysicsSyncBeforeStepSystem extends ECSystem {
 	}
 }
 
+export class PhysicsWorldStepSystem extends ECSystem {
+	constructor(priority: number = 20) { super(TickGroup.Physics, priority); }
+	update(world: World): void {
+		const dtMs = $.deltaTime as number;
+		if (!dtMs || !isFinite(dtMs)) return;
+		world.stepPhysics(dtMs);
+	}
+}
+
 /** PhysicsPostSystem: sync PhysicsBody -> WorldObject when writeBack=true. */
 export class PhysicsPostSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c.enabled) continue;
@@ -367,7 +399,7 @@ export class PhysicsPostSystem extends ECSystem {
 
 // New: sync GO -> body after tile/boundary corrections (honor syncAxis)
 export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
-	constructor(p = 0) { super(TickGroup.PostPhysics, p); }
+	constructor(p = 0) { super(TickGroup.Physics, p); }
 	update(world: World) {
 		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'current' })) {
 			if (!c?.enabled || !c.body) continue;
@@ -385,7 +417,7 @@ export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 
 /** PhysicsCollisionEventSystem: translate PhysicsWorld collision events to engine events. */
 export class PhysicsCollisionEventSystem extends ECSystem {
-	constructor(p = 28) { super(TickGroup.PostPhysics, p); }
+	constructor(p = 28) { super(TickGroup.Physics, p); }
 	update(world: World): void {
 		const events: CollisionEvent[] = world.drainPhysicsEvents() ?? [];
 		if (!events || events.length === 0) return;
@@ -406,7 +438,7 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 
 /** TransformSystem: update TransformComponent from WorldObject state (position/orientation/scale). */
 export class TransformSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let [o, c] of world.objectsWithComponents(TransformComponent, { scope: 'current' })) {
 			if (!c || !c.enabled) continue;
@@ -428,7 +460,7 @@ export class TransformSystem extends ECSystem {
 
 /** MeshAnimationSystem: steps GLTF-based mesh animations without calling WorldObject.run(). */
 export class MeshAnimationSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.Simulation, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Animation, priority); }
 	update(world: World): void {
 		const dtSec = $.deltaTime / 1000;
 		for (const [, c] of world.objectsWithComponents(MeshComponent, { scope: 'current' })) {

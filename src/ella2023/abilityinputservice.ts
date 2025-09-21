@@ -46,7 +46,6 @@ export class FighterAbilityInputService extends Service {
 				this.bindings.delete(id);
 				continue;
 			}
-			fighter.syncStateTags();
 			if (!fighter.isFighting || fighter.attacking) continue;
 
 			const playerInput = this.tryGetPlayerInput(binding.playerIndex);
@@ -111,7 +110,7 @@ export class FighterAbilityInputService extends Service {
 
 export class FighterAbilityInputSystem extends ECSystem {
 	constructor(priority: number = 24) {
-		super(TickGroup.Simulation, priority);
+		super(TickGroup.Input, priority);
 	}
 
 	update(_world: World): void {
@@ -138,7 +137,7 @@ export function ensureAbilityInputPipelineRegistered(): void {
 		if (!ECSReg.get(ELLA_ABILITY_INPUT_SYSTEM_ID)) {
 			ECSReg.register({
 				id: ELLA_ABILITY_INPUT_SYSTEM_ID,
-				group: TickGroup.Simulation,
+				group: TickGroup.Input,
 				defaultPriority: 24,
 				create: (priority: number) => new FighterAbilityInputSystem(priority),
 			});

@@ -28,7 +28,7 @@ export class EilaModelFSM {
 							ticks2advance_tape: 150,
 							entering_state(this: World) {
 								$.playAudio(AudioId.start);
-								$.event_emitter.emit('its_curtains', this);
+								$.emitPresentation('its_curtains', this);
 							},
 							tape_end: () => '../oefenen',
 						},

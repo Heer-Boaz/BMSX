@@ -330,16 +330,11 @@ export class Input implements RegisterablePersistent {
 	 * @returns The singleton instance of the Input class.
 	 */
 	public static initialize(startingGamepadIndex?: number): Input {
-		if (!Input._instance) {
-			Input._instance = new Input(startingGamepadIndex);
-		}
+		Input._instance = new Input(startingGamepadIndex);
 		return Input._instance;
 	}
 
 	public static get instance(): Input {
-		if (!Input._instance) {
-			Input._instance = new Input();
-		}
 		return Input._instance;
 	}
 

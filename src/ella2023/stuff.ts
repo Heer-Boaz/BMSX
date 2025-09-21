@@ -132,7 +132,7 @@ export class TitleScreen extends SpriteObject {
 						// If a priority action is pressed, start the game.
 						this.cursorVisible = true;
 						this.sc.dispatch_event('pause_blink', this);
-						$.emit('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
+						$.emitPresentation('gamestart_selected', this, { numOfPlayers: this.selectedPlayers });
 					},
 					states: {
 						_players_1: {
@@ -244,7 +244,7 @@ export class Gordijn extends WorldObject {
 						this.width += state.current_tape_value;
 					},
 					tape_end(this: Gordijn) {
-						$.emit('curtained', this);
+						$.emitPresentation('curtained', this);
 					},
 				},
 			}

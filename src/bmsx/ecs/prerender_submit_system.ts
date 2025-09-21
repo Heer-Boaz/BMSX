@@ -7,7 +7,7 @@ import { CustomVisualComponent } from "bmsx/component/customvisual_component";
 
 @excludeclassfromsavegame
 export class PreRenderSubmitSystem extends ECSystem {
-	constructor(priority = 10) { super(TickGroup.PreRender, priority); }
+	constructor(priority = 10) { super(TickGroup.Presentation, priority); }
 
 	private submitSpace(space: Space): void {
 		if (space.depthSortDirty) space.sort_by_depth();

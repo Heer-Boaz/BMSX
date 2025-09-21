@@ -128,14 +128,7 @@ export class SoundMaster implements RegisterablePersistent {
 	/**
 	 * The singleton instance of the SoundMaster class.
 	 */
-	private static _instance: SoundMaster;
-
-	public static get instance(): SoundMaster {
-		if (!SoundMaster._instance) {
-			SoundMaster._instance = new SoundMaster();
-		}
-		return SoundMaster._instance;
-	}
+	public static readonly instance: SoundMaster = new SoundMaster();
 
 	private tracks: id2res;
 	private buffers: Record<string, AudioBuffer>;

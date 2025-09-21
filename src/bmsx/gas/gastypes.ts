@@ -70,8 +70,11 @@ export interface AbilityContext {
 export interface AbilitySystemRef {
   ownerId: ObjectId;
   hasTag(tag: TagId): boolean;
+  requestAbility(id: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }): AbilityRequestResult;
   tryActivate(id: AbilityId): boolean;
 }
+
+export type AbilityRequestResult = { ok: true; note?: string } | { ok: false; reason: string };
 
 export interface Ability {
 	readonly id: AbilityId;

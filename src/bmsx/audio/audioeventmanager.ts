@@ -154,6 +154,11 @@ type CompiledAudioEventEntry = Omit<AudioEventMapEntry, 'rules'> & { rules: Comp
 // }
 
 export class AudioEventManager implements RegisterablePersistent {
+	/**
+	* The singleton instance of the AudioManager class.
+	*/
+	public static readonly instance: AudioEventManager = new AudioEventManager();
+
 	public get registrypersistent(): true {
 		return true;
 	}
@@ -163,18 +168,6 @@ export class AudioEventManager implements RegisterablePersistent {
 	}
 
 	private handlers: AudioHandler[] = [];
-
-	/**
-	* The singleton instance of the AudioManager class.
-	*/
-	private static _instance: AudioEventManager;
-
-	public static get instance(): AudioEventManager {
-		if (!AudioEventManager._instance) {
-			AudioEventManager._instance = new AudioEventManager();
-		}
-		return AudioEventManager._instance;
-	}
 
 	constructor() {
 		Registry.instance.register(this);

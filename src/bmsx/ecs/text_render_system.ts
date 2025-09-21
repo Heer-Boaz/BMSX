@@ -9,7 +9,7 @@ import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 
 @excludeclassfromsavegame
 export class TextRenderSystem extends ECSystem {
-	constructor(priority = 7) { super(TickGroup.PreRender, priority); }
+	constructor(priority = 7) { super(TickGroup.Presentation, priority); }
 	update(world: World): void {
 		for (const [o, tcx] of world.objectsWithComponents(TextComponent, { scope: 'current' })) {
 			if (!tcx.enabled) continue;

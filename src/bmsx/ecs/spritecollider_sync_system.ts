@@ -11,7 +11,7 @@ import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc } from 'bmsx/rompack/
  * Runs in PostPhysics by default to avoid interfering with physics builds in the same frame.
  */
 export class SpriteColliderSyncSystem extends ECSystem {
-	constructor(priority: number = 0) { super(TickGroup.PostPhysics, priority); }
+	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 
 	update(world: World): void {
 		for (const [o, sprite] of world.objectsWithComponents(SpriteComponent, { scope: 'current' })) {

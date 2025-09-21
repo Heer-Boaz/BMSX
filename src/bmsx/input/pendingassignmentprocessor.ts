@@ -29,11 +29,11 @@ export class PendingAssignmentProcessor {
 	}
 
 	private notifyUIProposed(gamepadIndex: number, proposedPlayerIndex: number | null): void {
-		$.emit('controller_assignment_proposed', Input.instance, { gamepadIndex, proposedPlayerIndex });
+		$.emitPresentation('controller_assignment_proposed', Input.instance, { gamepadIndex, proposedPlayerIndex });
 	}
 
 	private notifyUIAssignmentStart(gamepadIndex: number, proposedPlayerIndex: number | null): void {
-		$.emit('controller_assignment_start', Input.instance, { gamepadIndex, proposedPlayerIndex });
+		$.emitPresentation('controller_assignment_start', Input.instance, { gamepadIndex, proposedPlayerIndex });
 	}
 
 	private lastNotified: { proposed: number | null; positionIndex: number } | null = null;
@@ -140,13 +140,13 @@ export class PendingAssignmentProcessor {
 				gamepadInput.reset();
 				inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
 				// Broadcast for UI and other listeners
-				$.emit('controller_assigned', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
+				$.emitPresentation('controller_assigned', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
 			}
 			else if (this.checkNonConsumedPressed('b', gamepadInput)) {
 				// Cancel assignment process for this gamepad and remove the joystick icon
 				gamepadInput.consumeButton('b');
 				this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
-				$.emit('controller_assignment_cancelled', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
+				$.emitPresentation('controller_assignment_cancelled', Input.instance, { proposedPlayerIndex: this.proposedPlayerIndex, gamepadIndex: gamepadInput.gamepadIndex });
 			}
 			else {
 				// Handle joystick icon movement to change the proposed player index

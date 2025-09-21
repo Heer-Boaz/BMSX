@@ -13,11 +13,14 @@ import { CameraObject } from './object/cameraobject';
 import { WorldObject } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';
 import { Registry } from "./registry";
+import { $ } from './game';
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
 import { makeIndexProxy, shallowCopy } from '../utils/utils';
 import { Collision2DSystem } from '../service/collision2d_service';
+import { GameplayIntentQueue } from '../gas/intent';
+import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
 
@@ -62,6 +65,10 @@ export class World implements Stateful, RegisterablePersistent {
 	 * The controller for the state machine.
 	 */
 	public sc: StateMachineController;
+
+	@excludepropfromsavegame
+	private _currentPhase: TickGroup | null = null;
+	public get currentPhase(): TickGroup | null { return this._currentPhase; }
 
 	/** ECS systems runner */
 	@excludepropfromsavegame
@@ -392,39 +399,71 @@ export class World implements Stateful, RegisterablePersistent {
 	 * @returns {void} Nothing.
 	 */
 	public run(deltaTime: number): void {
-		// Reset ECS per-frame stats at frame start
 		this.systems.beginFrame();
-		this.sc.tick(); // world-level state machine first
+		GameplayIntentQueue.instance.beginFrame($.turnCounter ?? 0);
+		GameplayEventRecorder.instance.beginFrame($.turnCounter ?? 0);
 
-		// Phase 1: PrePhysics + Simulation (BT, Anim, Object FSM, AbilityRuntime)
-		this.systems.updateUntil(this, TickGroup.Simulation);
+		try {
+			// Phase 1: Input → intents (no gameplay writes)
+			this._currentPhase = TickGroup.Input;
+			this.systems.updatePhase(this, TickGroup.Input);
 
-		// Physics step & event collection (dispatch moved to an ECS system)
-		const phys = Registry.instance.get<PhysicsWorld>('physics_world');
-		if (phys) {
-			const collisionEvents: CollisionEvent[] = [];
-			phys.step(deltaTime, (evt) => collisionEvents.push(evt));
-			World._physDiagFrames = World._physDiagFrames ?? 0;
-			if (World._physDiagFrames < 5) {
-				const firstDyn = phys.getBodies().find(b => b.invMass && !b.isTrigger);
-				if (firstDyn) console.log('[PhysStep]', 'dt=', deltaTime, 'pos=', firstDyn.position, 'vel=', firstDyn.velocity, 'grav=', 'getGravity' in phys ? phys.getGravity() : 'n/a');
-				World._physDiagFrames++;
-			}
-			if (collisionEvents.length) this._physicsEventQueue.push(...collisionEvents);
+			// Phase 2: AbilitySystem gating from intents
+			this._currentPhase = TickGroup.IntentResolution;
+			this.systems.updatePhase(this, TickGroup.IntentResolution);
+
+			// Phase 3: Ability instances / montages
+			this._currentPhase = TickGroup.AbilityUpdate;
+			this.systems.updatePhase(this, TickGroup.AbilityUpdate);
+
+			// Phase 4: ModeGraph resolution (FSMs own tag writes)
+			this._currentPhase = TickGroup.ModeResolution;
+			this.sc.tick();
+			this.systems.updatePhase(this, TickGroup.ModeResolution);
+
+			// Phase 5: Physics/collision resolution
+			this._currentPhase = TickGroup.Physics;
+			this.systems.updatePhase(this, TickGroup.Physics);
+
+			// Phase 6: Animation controllers
+			this._currentPhase = TickGroup.Animation;
+			this.systems.updatePhase(this, TickGroup.Animation);
+
+			// Phase 7: Presentation (render prep, audio/FX/UI)
+			this._currentPhase = TickGroup.Presentation;
+			this.systems.updatePhase(this, TickGroup.Presentation);
+
+			// Phase 8: Event flush / debugging hooks
+			this._currentPhase = TickGroup.EventFlush;
+			this.systems.updatePhase(this, TickGroup.EventFlush);
+		} finally {
+			this._currentPhase = null;
 		}
 
-		// Phase 2: PostPhysics + PreRender
-		this.systems.updateFrom(this, TickGroup.PostPhysics);
-
-		// Module tick hooks
 		for (const p of this._modules) p.onTick?.(this, deltaTime);
 
-		// Cleanup disposed objects
+		GameplayIntentQueue.instance.clear();
+		GameplayEventRecorder.instance.endFrame();
+
 		const objects = this.activeObjects;
 		for (let i = objects.length - 1; i >= 0; --i) {
 			const o = objects[i];
 			if (o.disposeFlag) this.despawnFromAllSpaces(o);
 		}
+	}
+
+	public stepPhysics(deltaTime: number): void {
+		const phys = Registry.instance.get<PhysicsWorld>('physics_world');
+		if (!phys) return;
+		const collisionEvents: CollisionEvent[] = [];
+		phys.step(deltaTime, evt => collisionEvents.push(evt));
+		World._physDiagFrames = World._physDiagFrames ?? 0;
+		if (World._physDiagFrames < 5) {
+			const firstDyn = phys.getBodies().find(b => b.invMass && !b.isTrigger);
+			if (firstDyn) console.log('[PhysStep]', 'dt=', deltaTime, 'pos=', firstDyn.position, 'vel=', firstDyn.velocity, 'grav=', 'getGravity' in phys ? phys.getGravity() : 'n/a');
+			World._physDiagFrames++;
+		}
+		if (collisionEvents.length) this._physicsEventQueue.push(...collisionEvents);
 	}
 
 	/**

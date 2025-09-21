@@ -17,8 +17,7 @@ export class GameplayTags implements RegisterablePersistent {
 	get registrypersistent(): true { return true; }
 	public get id(): 'tags' { return 'tags'; }
 
-	private static _instance: GameplayTags;
-	public static get instance(): GameplayTags { return this._instance ?? (this._instance = new GameplayTags()); }
+	public static readonly instance: GameplayTags = new GameplayTags();
 
 	private worldTags = new Set<TagId>();
 	private scopedTags = new Map<Identifier, Set<TagId>>();

@@ -140,7 +140,7 @@ export class Eila extends Fighter {
 		this.performingStoerheidsdans = true;
 		this.setFightingState(false);
 		this.resetVerticalPosition();
-		$.event_emitter.emit('animate_idle', this);
+		$.emitPresentation('animate_idle', this);
 		const data = state.data as StoerheidsdansStateData;
 		data.expectedAnimation = null;
 		state.ticks += 1;
@@ -179,7 +179,7 @@ export class Eila extends Fighter {
 
 	public startNagenieten(): void {
 		this.setFightingState(false);
-		$.event_emitter.emit('animate_idle', this);
+		$.emitPresentation('animate_idle', this);
 }
 
 	public enterHumiliated(): void {

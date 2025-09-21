@@ -8,7 +8,7 @@ import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 
 @excludeclassfromsavegame
 export class SpriteRenderSystem extends ECSystem {
-	constructor(priority = 8) { super(TickGroup.PreRender, priority); }
+	constructor(priority = 8) { super(TickGroup.Presentation, priority); }
 	update(world: World): void {
 		for (const [o, sc] of world.objectsWithComponents(SpriteComponent, { scope: 'current' })) {
 			if (!sc.enabled) continue;
