@@ -24,6 +24,18 @@ const enum Tokens {
  */
 interface Token { kind: Tokens; value: string; }
 
+function tokenToString(t: Tokens): string {
+	switch (t) {
+		case Tokens.Sym: return 'Symbol';
+		case Tokens.Ident: return 'Identifier';
+		case Tokens.FuncWin: return 'FuncWin';
+		case Tokens.Func: return 'Func';
+		case Tokens.ModTok: return 'ModTok';
+		case Tokens.Cmp: return 'Cmp';
+		default: return 'Unknown';
+	}
+}
+
 /**
  * Tokenizes the input source string into a list of tokens.
  *
@@ -36,7 +48,7 @@ interface Token { kind: Tokens; value: string; }
  */
 function lex(src: string): Token[] {
 	// Regular expression to match various tokens in the input string
-	const R = /\s*(\|\||&&|!|\(|\)|\[|]|,|\?jp|&jp|\?wp\{\d+}|&wp\{\d+}|\?jr|&jr|\?wr\{\d+}|&wr\{\d+}|[&?]|(?:t|wp|wr|pr)\{[^}]*}|[a-zA-Z_][a-zA-Z0-9_]*|[<>!=]=?)/gy;
+	const R = /\s*(\|\||&&|\||!|\(|\)|\[|]|,|\?jp|&jp|\?wp\{\d+}|&wp\{\d+}|\?jr|&jr|\?wr\{\d+}|&wr\{\d+}|[&?]|(?:t|wp|wr|pr)\{[^}]*}|[a-zA-Z_][a-zA-Z0-9_]*|[<>!=]=?)/gy;
 	const out: Token[] = []; // Array to hold the parsed tokens
 	let m: RegExpExecArray | null; // Regular expression to match tokens in the input string
 	while ((m = R.exec(src)) !== null) {
@@ -44,7 +56,7 @@ function lex(src: string): Token[] {
 		// If the token value is undefined, skip to the next iteration
 		if (v === undefined) continue;
 		// Classify the token based on its value and add it to the output array
-		if (v === '||' || v === '&&' || v === '!' || v === '(' || v === ')' || v === '[' || v === ']' || v === ',') {
+		if (v === '||' || v === '&&' || v === '|' || v === '!' || v === '(' || v === ')' || v === '[' || v === ']' || v === ',') {
 			// These are symbols used in logical expressions and function calls
 			out.push({ kind: Tokens.Sym, value: v });
 		} else if (/^[?&]wp\{\d+}$/.test(v) || /^[?&]wr\{\d+}$/.test(v)) {
@@ -166,7 +178,7 @@ class InputActionParser {
 	static parse(src: string): Node {
 		const parser = new InputActionParser(lex(src));
 		const ast = parser.expr();
-		if (parser.current()) throw new Error(`Unexpected token '${parser.current()!.value}'`);
+		if (parser.current()) throw new Error(`[Action Parser] Unexpected token '${parser.current()!.value}' in input expression "${src}"`);
 		enforceRootModifiers(ast);
 		return ast;
 	}
@@ -195,7 +207,7 @@ class InputActionParser {
 	 */
 	private take(kind: Tokens, v?: string) {
 		const c = this.current();
-		if (!c || c.kind !== kind || (v && c.value !== v)) throw new Error(`Unexpected token ${c?.value ?? '<eos>'}`);
+		if (!c || c.kind !== kind || (v && c.value !== v)) throw new Error(`[Action Parser] Unexpected token ${c?.value ?? '<eos>'} (expected ${tokenToString(kind)}${v ? ` '${v}'` : ''})`);
 		return this.eat();
 	}
 
@@ -209,7 +221,7 @@ class InputActionParser {
 	 */
 	private expr(): Node {
 		let n = this.term(); // Start parsing a term node
-		while (this.current()?.value === '||') {
+		while (this.isOrOperator(this.current()?.value)) {
 			this.eat();
 			const r = this.term(); // Parse the right-hand side of the OR operation
 			const l = n; // Store the left-hand side of the OR operation
@@ -217,6 +229,10 @@ class InputActionParser {
 			n = { op: 'OR', left: l, right: r, eval: g => l.eval(g) || r.eval(g) };
 		}
 		return n; // Return the constructed expression node
+	}
+
+	private isOrOperator(value: string | undefined): boolean {
+		return value === '||' || value === '|';
 	}
 
 	/**
@@ -251,22 +267,26 @@ class InputActionParser {
 	 */
 	private factor(): Node {
 		const c = this.current(); // Get the current token without advancing the cursor
-		if (!c) throw new Error('Unexpected end of input');
+		if (!c) throw new Error('[Action Parser] Unexpected end of input while parsing factor');
 		if (c.value === '!') { // Handle negation
 			this.eat();
 			const o = this.factor(); // Parse the operand of the negation
 			// Create a new OpNode for the NOT operation
 			return { op: 'NOT', left: o, eval: g => !o.eval(g) };
 		}
-		if (c.value === '(') { // Handle grouped expressions
-			this.eat();
-			// Parse the expression inside the parentheses
-			const e = this.expr();
-			// Ensure the closing parenthesis is present
-			this.take(Tokens.Sym, ')');
-			// Return the parsed expression node
-			return e;
+	if (c.value === '(') { // Handle grouped expressions
+		this.eat();
+		// Parse the expression inside the parentheses
+		const e = this.expr();
+		// Ensure the closing parenthesis is present
+		this.take(Tokens.Sym, ')');
+		if (this.current()?.value === '[') {
+			const mods = this.parseModifierList();
+			this.applyModifiersInPlace(e, mods);
 		}
+		// Return the parsed expression node
+		return e;
+	}
 		// Check if the current token is a function or action
 		if (c.kind === Tokens.Func || c.kind === Tokens.FuncWin) return this.func();
 		// If it's not a function, it must be an action
@@ -324,22 +344,29 @@ class InputActionParser {
 	private action(): Node {
 		// Ensure the current token is an identifier
 		const name = this.take(Tokens.Ident).value;
-		const mods: string[] = []; // Array to hold the action modifiers
-		if (this.current()?.value === '[') { // Check if there are modifiers
-			this.eat(); // Consume the opening square bracket
-			while (this.current() && this.current()!.value !== ']') { // Parse modifiers until the closing bracket
-				const t = this.eat(); // Get the current token
-				if (t.value === ',') continue; // Allow comma as a separator, but not required
-				if (t.value === '!') mods.push('!' + this.take(this.current()!.kind).value); // Handle negation
-				else mods.push(t.value); // Add the modifier token to the list
-			}
-			this.take(Tokens.Sym, ']'); // Ensure the closing square bracket is present
-		}
+	const mods = this.current()?.value === '[' ? this.parseModifierList() : [];
 
-		const node = { name, mods, _edgeForJP: false, _edgeForJR: false, _edgeForWP: false, _edgeForWR: false };
-		this.annotateActNode(node);
-		// Return an ActNode representing the parsed action
-		return { ...node, eval: compileAction(name, mods) };
+	const node = { name, mods, _edgeForJP: false, _edgeForJR: false, _edgeForWP: false, _edgeForWR: false };
+	this.annotateActNode(node);
+	// Return an ActNode representing the parsed action
+	return { ...node, eval: compileAction(name, mods) };
+}
+
+	private parseModifierList(): string[] {
+		const mods: string[] = [];
+		this.take(Tokens.Sym, '[');
+		while (this.current() && this.current()!.value !== ']') {
+			const t = this.eat();
+			if (t.value === ',') continue;
+			if (t.value === '!') {
+				const next = this.take(this.current()?.kind ?? Tokens.Ident);
+				mods.push(`!${next.value}`);
+				continue;
+			}
+			mods.push(t.value);
+		}
+		this.take(Tokens.Sym, ']');
+		return mods;
 	}
 
 	private annotateActNode(n: Partial<ActNode>) {
@@ -360,6 +387,25 @@ class InputActionParser {
 		}
 		n._edgeForJP = n._edgeForWP = pressPos;
 		n._edgeForJR = n._edgeForWR = releasePos;
+	}
+
+	private applyModifiersInPlace(node: Node, mods: string[]): void {
+		if (!mods.length) return;
+		if ((node as ActNode).name !== undefined) {
+			const act = node as ActNode;
+			act.mods.push(...mods);
+			this.annotateActNode(act);
+			act.eval = compileAction(act.name, act.mods);
+			return;
+		}
+		if ((node as OpNode).op) {
+			const op = node as OpNode;
+			if (op.left) this.applyModifiersInPlace(op.left, mods);
+			if (op.right) this.applyModifiersInPlace(op.right, mods);
+			return;
+		}
+		const fn = node as FunNode;
+		for (const arg of fn.args) this.applyModifiersInPlace(arg, mods);
 	}
 }
 
@@ -388,7 +434,7 @@ function enforceRootModifiers(n: Node) {
 		const a = node as ActNode; // Cast the node to ActNode to access its properties
 		if (!inFun && a.mods.length === 0) // If this is a root-level action with no modifiers
 			// throw an error indicating the missing modifier
-			throw new Error(`Root‑level action '${a.name}' must specify a modifier like '[p]'`);
+			throw new Error(`[Action Parser] Root-level action '${a.name}' must specify a modifier like '[p]', but none found in compiled AST.`);
 	};
 	// Start walking the AST from the root node
 	walk(n, false);
@@ -555,7 +601,7 @@ function makeModPred(tok: string): ModFn {
 	else if (/^pr\{\d+}/.test(raw)) { // Check if the token is a priority modifier
 		fn = _ => true; // priority placeholder
 	}
-	else throw new Error(`Unknown modifier '${raw}'`); // Throw an error for unknown modifiers
+	else throw new Error(`[Action Parser] Unknown modifier '${raw}' while creating modifier predicate.`); // Throw an error for unknown modifiers
 
 	// Return a function that evaluates the modifier condition,
 	return neg // if the modifier is negated
@@ -775,7 +821,7 @@ function compileFunction(base: string, args: Node[], win?: number): EvalFn {
 	// Check if the base function is a valid helper
 	const helper = FUN[base];
 	// If not, throw an error with a list of valid function names
-	if (!helper) throw new Error(`Unknown function helper '${base}', expected one of: ${Object.keys(FUN).join(', ')}`);
+	if (!helper) throw new Error(`[Action Parser] Unknown function helper '${base}', expected one of: ${Object.keys(FUN).join(', ')} and variants with {n} window (now: "${win ?? 0}").`);
 	// Return the evaluation function for the helper
 	return helper(args, win);
 }
