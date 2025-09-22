@@ -341,15 +341,18 @@ export class WebGLBackend implements GPUBackend {
 
 	createUniformBuffer(byteSize: number, usage: 'static' | 'dynamic'): WebGLBuffer {
 		const gl = this.gl;
-		const buf = gl.createBuffer(); if (!buf) throw new Error('Failed to create uniform buffer');
+		const buf = gl.createBuffer();
+		if (!buf) throw new Error('Failed to create uniform buffer');
 		gl.bindBuffer(gl.UNIFORM_BUFFER, buf);
 		gl.bufferData(gl.UNIFORM_BUFFER, byteSize, usage === 'static' ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
 		gl.bindBuffer(gl.UNIFORM_BUFFER, null);
 		return buf;
 	}
+
 	updateUniformBuffer(buf: WebGLBuffer, data: ArrayBufferView, dstByteOffset = 0): void {
 		const gl = this.gl; gl.bindBuffer(gl.UNIFORM_BUFFER, buf); gl.bufferSubData(gl.UNIFORM_BUFFER, dstByteOffset, data); gl.bindBuffer(gl.UNIFORM_BUFFER, null); this.frameStats.bytesUploaded += data.byteLength; this.frameStats.uniformBytes += data.byteLength;
 	}
+
 	bindUniformBufferBase(bindingIndex: number, buf: WebGLBuffer): void { this.gl.bindBufferBase(this.gl.UNIFORM_BUFFER, bindingIndex, buf); }
 
 	// --- Render state helpers ---
@@ -523,6 +526,4 @@ export class WebGLBackend implements GPUBackend {
 		this.gl.blendFunc(src, dst);
 		this.cachedBlendFunc = { src, dst };
 	}
-
-	// Legacy per-pass hooks removed; each pipeline module owns setup and execution.
 }

@@ -4,7 +4,7 @@ import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { EventBagName, listed_sdef_event, StateActionActivateAbilitySpec, StateActionAddTagSpec, StateActionAdjustPropertySpec, StateActionCallSpec, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionRemoveTagSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
+import type { EventBagName, listed_sdef_event, StateActionActivateAbilitySpec, StateActionAddTagSpec, StateActionAdjustPropertySpec, StateActionAdjustSpec, StateActionCondition, StateActionConditionalSpec, StateActionConsumeActionSpec, StateActionDispatchEventSpec, StateActionDispatchSpec, StateActionEmitSpec, StateActionInvokeSpec, StateActionRemoveTagSpec, StateActionSetPropertySpec, StateActionSetSpec, StateActionSetTicksSpec, StateActionSpec, StateActionTagsSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 import type { StateMachineController } from './fsmcontroller';
@@ -505,8 +505,8 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 			break;
 		case 'payload':
 			current = ctx.payload;
-			if (segments.length > 0 && (current === null || typeof current !== 'object')) {
-				throw new Error(`[FSMLibrary] Payload is not an object, cannot get property ${segments.join('.')}.`);
+			if (segments.length > 0 && (current === null || typeof current !== 'object' || Array.isArray(current))) {
+				throw new Error(`[FSMLibrary] Payload is not an object, but a ${typeof current}, cannot get property ${segments.join('.')}.`);
 			}
 			break;
 		case 'component': {
@@ -816,16 +816,40 @@ function createBuiltinHandlerFromString(slot: string, value: string): GenericHan
 	return undefined;
 }
 
+function resolveEmitter(emitterSpec: any, ctx: BuiltinExecutionContext, fallback: any): any {
+	if (emitterSpec === undefined || emitterSpec === 'self') return fallback;
+	if (emitterSpec === 'state') return ctx.state?.target ?? ctx.state;
+	return resolveTemplateValue(emitterSpec, ctx);
+}
+
+function buildEventName(source: any, ctx: BuiltinExecutionContext): string {
+	if (source == null) return '';
+	if (Array.isArray(source)) {
+		return ensureArray(source)
+			.map(part => toStringSafe(resolveTemplateValue(part, ctx)))
+			.join('');
+	}
+	return toStringSafe(resolveTemplateValue(source, ctx));
+}
+
+function toStringSafe(value: any): string {
+	if (value == null) return '';
+	return typeof value === 'string' ? value : String(value);
+}
+
 function createEmitHandler(spec: StateActionEmitSpec, slot: string): GenericHandler {
-	const normalized = typeof spec === 'string' ? { event: spec } : spec;
-	if (!normalized?.event) throw new Error('FSM builtin emit action requires an event name.');
-	const emitterMode = normalized.emitter ?? 'self';
+	const normalized = typeof spec === 'string' ? { event: spec } : (spec ?? {});
+	const emitterSpec = normalized.emitter;
+	const laneDefault = normalized.lane ?? 'presentation';
+	const eventSpec = normalized.event ?? (normalized as any).event_concat;
 	return function (this: any, state?: State, ...invokeArgs: any[]) {
 		const ctx = buildContext(this, state, invokeArgs, slot);
-		const emitter = emitterMode === 'state' ? (state?.target ?? state) : this;
-		const payload = normalized.payload ? resolveTemplateValue(normalized.payload, ctx) : undefined;
-		const lane = normalized.lane ?? 'presentation';
-		$.emit(normalized.event, emitter ?? this, payload, { lane });
+		const emitter = resolveEmitter(emitterSpec, ctx, this) ?? this;
+		const payload = normalized.payload !== undefined ? resolveTemplateValue(normalized.payload, ctx) : undefined;
+		const lane = laneDefault as EventLane;
+		const eventName = buildEventName(eventSpec, ctx);
+		if (!eventName) return;
+		$.emit(eventName, emitter, payload, { lane });
 	};
 }
 
@@ -891,6 +915,38 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 			return elseHandler?.call(this, state, ...args);
 		};
 	}
+	if ('set' in spec) {
+		const setSpec = (spec as StateActionSetSpec).set;
+		if (!setSpec || !setSpec.target) return undefined;
+		const { target, value } = setSpec;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			applySetProperty(target, value, ctx);
+		};
+	}
+	if ('adjust' in spec) {
+		const adjustSpec = (spec as StateActionAdjustSpec).adjust;
+		if (!adjustSpec || !adjustSpec.target) return undefined;
+		const { target } = adjustSpec;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			applyAdjustProperty(target, { add: adjustSpec.add, sub: adjustSpec.sub, mul: adjustSpec.mul, div: adjustSpec.div, set: adjustSpec.set }, ctx);
+		};
+	}
+	if ('tags' in spec) {
+		const tagsSpec = (spec as StateActionTagsSpec).tags ?? {};
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			if (tagsSpec.add !== undefined) {
+				const addResolved = resolveTemplateValue(tagsSpec.add, ctx);
+				applyGameplayTagOperation(ctx.self, addResolved, 'add');
+			}
+			if (tagsSpec.remove !== undefined) {
+				const removeResolved = resolveTemplateValue(tagsSpec.remove, ctx);
+				applyGameplayTagOperation(ctx.self, removeResolved, 'remove');
+			}
+		};
+	}
 	if ('set_property' in spec) {
 		const { target, value } = (spec as StateActionSetPropertySpec).set_property;
 		return function (this: any, state?: State, ...args: any[]) {
@@ -914,6 +970,27 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('dispatch_event' in spec) {
 		return createDispatchEventHandler((spec as StateActionDispatchEventSpec).dispatch_event, slot);
+	}
+	if ('dispatch' in spec) {
+		const config = (spec as StateActionDispatchSpec).dispatch;
+		return function (this: any, state?: State, ...args: any[]) {
+			const controller = this?.sc;
+			if (!controller?.dispatch_event) return;
+			const ctx = buildContext(this, state, args, slot);
+			const eventName = toStringSafe(resolveTemplateValue(config.event, ctx));
+			if (!eventName) return;
+			const emitter = resolveEmitter(config.emitter, ctx, this) ?? this;
+			const payloadResolved = config.payload !== undefined ? resolveTemplateValue(config.payload, ctx) : undefined;
+			if (payloadResolved === undefined) {
+				controller.dispatch_event(eventName, emitter);
+				return;
+			}
+			if (Array.isArray(payloadResolved)) {
+				controller.dispatch_event(eventName, emitter, ...payloadResolved);
+				return;
+			}
+			controller.dispatch_event(eventName, emitter, payloadResolved);
+		};
 	}
 	if ('add_tag' in spec) {
 		const tagsSpec = (spec as StateActionAddTagSpec).add_tag;
@@ -939,7 +1016,12 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 			if (!resolved) return;
 			const id = typeof resolved === 'string' ? resolved : resolved.id;
 			if (!id) return;
-			const result = asc.requestAbility(id);
+			const opts: { source?: string; payload?: Record<string, unknown> } = {};
+			if (typeof resolved === 'object' && resolved) {
+				if ('payload' in resolved) opts.payload = resolved.payload as Record<string, unknown> | undefined;
+				if ('source' in resolved && typeof resolved.source === 'string') opts.source = resolved.source;
+			}
+			const result = asc.requestAbility(id, opts);
 			if (!result.ok) {
 				if ($.debug) {
 					const reason = 'reason' in result ? result.reason : 'unknown';
@@ -948,17 +1030,31 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 			}
 		};
 	}
-	if ('call' in spec) {
-		const { target, args: callArgs } = (spec as StateActionCallSpec).call ?? {};
+	if ('invoke' in spec) {
+		const { fn, payload } = (spec as StateActionInvokeSpec).invoke ?? {};
 		return function (this: any, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
-			const fn = typeof target === 'string' && target.startsWith('@')
-				? resolveBinding(target.slice(1), ctx)
-				: resolveTemplateValue(target, ctx);
-			if (typeof fn !== 'function') return;
-			const resolvedArgsRaw = callArgs === undefined ? [] : (Array.isArray(callArgs) ? callArgs : [callArgs]);
-			const resolvedArgs = resolvedArgsRaw.map(arg => resolveTemplateValue(arg, ctx));
-			fn.apply(ctx.self ?? this, resolvedArgs);
+			const resolvedFn = typeof fn === 'string' && fn.startsWith('@')
+				? resolveBinding(fn.slice(1), ctx)
+				: resolveTemplateValue(fn, ctx);
+			if (typeof resolvedFn !== 'function') return;
+			let payloadValue = payload !== undefined ? resolveTemplateValue(payload, ctx) : undefined;
+			if (payloadValue === undefined) payloadValue = { state, payload: ctx.payload };
+			resolvedFn.call(ctx.self ?? this, payloadValue);
+		};
+	}
+	if ('consume_action' in spec) {
+		const consume = (spec as StateActionConsumeActionSpec).consume_action;
+		return function (this: any, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			const actions = ensureArray(consume).map(item => resolveTemplateValue(item, ctx)).filter(v => typeof v === 'string' && v.length > 0) as string[];
+			if (actions.length === 0) return;
+			try {
+				const playerIndex = typeof ctx.self?.player_index === 'number' ? ctx.self.player_index : 1;
+				const player = $.input?.getPlayerInput?.(playerIndex);
+				if (!player) return;
+				for (const action of actions) player.consumeAction(action);
+			} catch { /* ignore */ }
 		};
 	}
 	return undefined;

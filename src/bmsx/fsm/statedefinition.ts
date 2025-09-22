@@ -70,6 +70,11 @@ export class StateDefinition {
 	public enable_tape_autotick: boolean; // Automagically increase the ticks during run
 
 	/**
+	 * Controls how input handlers are evaluated for this state. Defaults to 'all'.
+	 */
+	public input_eval?: 'first' | 'all';
+
+	/**
 	 * Specifies the behavior for automatic state resetting.
 	 *
 	 * @remarks

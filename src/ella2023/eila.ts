@@ -84,7 +84,7 @@ export class Eila extends Fighter {
 		this.setDuckingState(false);
 	}
 
-	public startJump(state: State, payload?: EventPayload & { direction?: 'left' | 'right' | null; directional?: boolean | string }): void {
+	public startJump({ state, payload }: { state: State; payload?: EventPayload & { direction?: 'left' | 'right' | null; directional?: boolean | string } }): void {
 		const data = state.data as JumpStateData;
 		let direction: 'left' | 'right' | null = null;
 		if (payload) {
@@ -150,7 +150,7 @@ export class Eila extends Fighter {
 		state.ticks += 1;
 	}
 
-	public handleStoerAnimationEnd(state: State, payload?: EventPayload & { animation_name?: string }): void {
+	public handleStoerAnimationEnd({ state, payload }: { state: State; payload?: EventPayload & { animation_name?: string } }): void {
 		if (!payload?.animation_name) return;
 		const data = state.data as StoerheidsdansStateData;
 		if (data.expectedAnimation !== payload.animation_name) return;
@@ -159,7 +159,7 @@ export class Eila extends Fighter {
 		state.ticks += 1;
 	}
 
-	public handleStoerTapeNext(state: State, payload: EventPayload & { tape_rewound: boolean }): void {
+	public handleStoerTapeNext({ state, payload }: { state: State; payload: EventPayload & { tape_rewound: boolean } }): void {
 		if (payload.tape_rewound) return;
 		const nextAnimation = state.current_tape_value;
 		const data = state.data as StoerheidsdansStateData;
@@ -167,7 +167,7 @@ export class Eila extends Fighter {
 		this.facing = this.facing === 'left' ? 'right' : 'left';
 		if (typeof nextAnimation === 'string') {
 			const attack = nextAnimation as EilaAttackType;
-			if (!this.tryActivateAttackAbility(attack)) {
+			if (!this.requestAbility(this.getAttackAbilityId(attack), { attackType: attack })) {
 				this.performAttack(attack);
 			}
 		}

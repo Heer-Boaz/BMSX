@@ -114,7 +114,16 @@ export interface PassEncoder { fbo: unknown; desc: RenderPassDesc; }
 export type AnyBackend = WebGLBackend | WebGPUBackend | GPUBackend;
 
 export interface GPUBackend {
-	get type(): 'webgl2' | 'webgpu';
+	// Discriminator for runtime backend flavor
+	type: 'webgl2' | 'webgpu';
+
+	// Optional WebGL-like texture binding helpers (implemented by WebGL backend).
+	// These allow higher-level code (GameView / render graph) to perform texture
+	// binds without casting to a concrete backend type.
+	setActiveTexture?(unit: number): void;
+	bindTexture2D?(tex: TextureHandle | null): void;
+	bindTextureCube?(tex: TextureHandle | null): void;
+
 	createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle;
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
 	createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): TextureHandle;

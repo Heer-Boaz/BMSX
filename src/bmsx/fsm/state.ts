@@ -443,17 +443,25 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		const playerIndex = this.target.player_index ?? 1;
 		const p = Input.instance.getPlayerInput(playerIndex);
+		const evalMode = this.resolveInputEvaluationMode();
 
 		for (const inputPattern in inputHandlers) {
 			const handler = inputHandlers[inputPattern];
-			// console.debug(`Checking input pattern: ${inputPattern}`);
-			if (p.checkActionTriggered(inputPattern)) {
-				// console.debug(`Input pattern matched: ${inputPattern}`);
-				p.consumeAction(inputPattern);
-				console.debug(`Executing handler for input pattern: ${inputPattern}, handler: ${handler}`);
-				this.handleStateTransition(handler);
-			}
+			if (!handler) continue;
+			if (!p.checkActionTriggered(inputPattern)) continue;
+			this.handleStateTransition(handler);
+			if (evalMode === 'first') break;
 		}
+	}
+
+	private resolveInputEvaluationMode(): 'first' | 'all' {
+		let node: State<any> | undefined = this;
+		while (node) {
+			const mode = node.definition.input_eval;
+			if (mode === 'first' || mode === 'all') return mode;
+			node = node.parent;
+		}
+		return 'all';
 	}
 
 	/**

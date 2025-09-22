@@ -4,7 +4,6 @@ import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
-import { registerFighterForAbilityInput, unregisterFighterFromAbilityInput } from './abilityinputservice';
 
 export type AttackType = string;
 
@@ -148,11 +147,18 @@ export abstract class Fighter extends SpriteObject {
 		return this.getUniqueComponent(AbilitySystemComponent) ?? null;
 	}
 
+	public requestAbility(abilityId: AbilityId, payload?: Record<string, unknown>): boolean {
+		const asc = this.getAbilitySystem();
+		if (!asc) return false;
+		const res = asc.requestAbility(abilityId, { source: 'input.fsm', payload });
+		return res.ok;
+	}
+
 	public tryActivateAttackAbility(attackType: AttackType): boolean {
 		const abilityId = this.getAttackAbilityId(attackType);
 		const asc = this.getAbilitySystem();
 		if (!asc) return false;
-		const result = asc.requestAbility(abilityId, { source: 'fighter.attack' });
+		const result = asc.requestAbility(abilityId, { source: 'fighter.attack', payload: { attackType } });
 		return result.ok;
 	}
 
@@ -296,16 +302,13 @@ export abstract class Fighter extends SpriteObject {
 		super.onspawn(spawningPos);
 		this.performingStoerheidsdans = false;
 		this.resetVerticalPosition();
-		registerFighterForAbilityInput(this);
 	}
 
 	public override ondespawn(): void {
-		unregisterFighterFromAbilityInput(this);
 		super.ondespawn();
 	}
 
 	public override dispose(): void {
-		unregisterFighterFromAbilityInput(this);
 		super.dispose();
 	}
 

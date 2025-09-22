@@ -2,7 +2,7 @@ import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, type 
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
-import { FighterAbilityInputService, ensureAbilityInputPipelineRegistered } from './abilityinputservice';
+import { ensureFighterLocomotionSystemRegistered } from './locomotionsystem';
 
 export const EILA_MODULE = {
 	onBoot(world: World) {
@@ -14,19 +14,13 @@ export const EILA_MODULE = {
 		// Input maps
 		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as InputMap);
 		$.input.getPlayerInput(2).setInputMap({ keyboard: null, gamepad: gamepadInputMapping } as InputMap);
-		ensureAbilityInputPipelineRegistered();
+		ensureFighterLocomotionSystemRegistered();
 		// Register persistent Eila game state service
 		new YieArGameState();
 		// Register event service for handlers
 		new EilaEventService().activate();
-		if (!abilityInputService) {
-			abilityInputService = new FighterAbilityInputService();
-			abilityInputService.activate();
-		}
 	},
 };
-
-let abilityInputService: FighterAbilityInputService | null = null;
 
 @insavegame
 export class EilaEventService extends Service {

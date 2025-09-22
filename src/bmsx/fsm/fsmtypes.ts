@@ -104,10 +104,11 @@ export type StateTransitionWithType = StateTransition & { transition_type: Trans
  * @template T - The type of the stateful object that the event is associated with.
  */
 export type StateActionEmitSpec = string | {
-	event: string;
-	payload?: Record<string, any>;
-	emitter?: 'self' | 'state';
-	lane?: 'gameplay' | 'presentation';
+	event?: any;
+	event_concat?: any;
+	payload?: any;
+	emitter?: any;
+	lane?: EventLane | 'presentation' | 'gameplay';
 };
 
 export type StateActionSetTicksSpec = {
@@ -132,19 +133,52 @@ export interface StateActionAdjustPropertySpec {
 	};
 }
 
+export interface StateActionSetSpec {
+	set: {
+		target: string;
+		value: any;
+	};
+}
+
+export interface StateActionAdjustSpec {
+	adjust: {
+		target: string;
+		add?: any;
+		sub?: any;
+		mul?: any;
+		div?: any;
+		set?: any;
+	};
+}
+
+export interface StateActionTagsSpec {
+	tags: {
+		add?: any;
+		remove?: any;
+	};
+}
+
+export interface StateActionDispatchSpec {
+	dispatch: {
+		event: any;
+		emitter?: any;
+		payload?: any;
+	};
+}
+
+export interface StateActionInvokeSpec {
+	invoke: {
+		fn: any;
+		payload?: any;
+	};
+}
+
 export interface StateActionAddTagSpec { add_tag: any; }
 
 export interface StateActionRemoveTagSpec { remove_tag: any; }
 
 export interface StateActionActivateAbilitySpec {
-	activate_ability: string | { id: string };
-}
-
-export interface StateActionCallSpec {
-	call: {
-		target: any;
-		args?: any[] | any;
-	};
+	activate_ability: string | { id: string; payload?: Record<string, unknown>; source?: string };
 }
 
 export interface StateActionConsumeActionSpec {
@@ -188,13 +222,17 @@ export type StateActionSpec =
 	| { emit: StateActionEmitSpec }
 	| StateActionSetPropertySpec
 	| StateActionAdjustPropertySpec
+	| StateActionSetSpec
+	| StateActionAdjustSpec
+	| StateActionTagsSpec
 	| StateActionConditionalSpec
 	| StateActionSequence
 	| StateActionDispatchEventSpec
+	| StateActionDispatchSpec
 	| StateActionAddTagSpec
 	| StateActionRemoveTagSpec
 	| StateActionActivateAbilitySpec
-	| StateActionCallSpec
+	| StateActionInvokeSpec
 	| StateActionConsumeActionSpec;
 
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {

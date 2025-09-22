@@ -7,15 +7,13 @@ import { GateGroup, taskGate } from '../core/taskgate';
 import { multiply_vec, multiply_vec2, shallowCopy } from '../utils/utils';
 import { Input } from '../input/input';
 import type { Area, Polygon, id2imgres, vec2, vec3arr } from '../rompack/rompack';
-import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
+import { type RegisterablePersistent } from '../rompack/rompack';
 import * as SpritesPipeline from './2d/sprites_pipeline';
-import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
 import * as MeshPipeline from './3d/mesh_pipeline';
 import * as ParticlesPipeline from './3d/particles_pipeline';
 import * as SkyboxPipeline from './3d/skybox_pipeline';
 import type { GPUBackend, RenderContext, TextureHandle } from './backend/pipeline_interfaces';
 import { RenderPassLibrary } from './backend/renderpasslib';
-import type { WebGLBackend } from './backend/webgl/webgl_backend';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
@@ -629,16 +627,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
 		renderGate.end(token);
 	}
-
-	public drawParticle(options: ParticleRenderSubmission): void { ParticlesPipeline.submitParticle({ position: options.position, size: options.size, color: options.color, texture: options.texture }); }
-
-	public getPointLight(id: Identifier): PointLight | undefined { return MeshPipeline.getPointLight(id); }
-	public setPointLight(id: Identifier, light: PointLight): void { MeshPipeline.addPointLight(id, light); }
-	public removePointLight(id: Identifier): void { MeshPipeline.removePointLight(id); }
-	public addDirectionalLight(id: Identifier, light: DirectionalLight): void { MeshPipeline.addDirectionalLight(id, light); }
-	public removeDirectionalLight(id: Identifier): void { MeshPipeline.removeDirectionalLight(id); }
-	public clearLights(): void { MeshPipeline.clearLights(); }
-	public setAmbientLight(_light: AmbientLight): void { /* pulled later by mesh pass */ }
 	public setSkybox(images: SkyboxImageIds): void { SkyboxPipeline.setSkyboxImages(images); }
 	public get skyboxFaceIds(): SkyboxImageIds | undefined { return SkyboxPipeline.skyboxFaceIds; }
 	public get dynamicAtlas(): number | null { return this._dynamicAtlasIndex; }
@@ -662,13 +650,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
 
 		this._activeTexUnit = u;
-		if (u != null) (this.backend as WebGLBackend).setActiveTexture?.(u);
+		if (u != null) this.backend.setActiveTexture?.(u);
 	}
 
 	bind2DTex(tex: TextureHandle | null): void {
 		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
 		if (this._activeTexture2D === tex) return;
-		(this.backend as WebGLBackend).bindTexture2D?.(tex);
+		this.backend.bindTexture2D?.(tex);
 		this._activeTexture2D = tex;
 	}
 
@@ -676,7 +664,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
 
 		if (this._activeCubemap === tex) return;
-		(this.backend as WebGLBackend).bindTextureCube?.(tex);
+		this.backend.bindTextureCube?.(tex);
 		this._activeCubemap = tex;
 	}
 }

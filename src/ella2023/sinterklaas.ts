@@ -144,19 +144,19 @@ export class Sinterklaas extends Fighter {
 		function punch(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
 			if (!this.canActivateAttackAbility('punch')) return 'FAILED';
-			return this.tryActivateAttackAbility('punch') ? 'SUCCESS' : 'FAILED';
+			return this.requestAbility(this.getAttackAbilityId('punch'), { attackType: 'punch' }) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function highkick(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
 			if (!this.canActivateAttackAbility('highkick')) return 'FAILED';
-			return this.tryActivateAttackAbility('highkick') ? 'SUCCESS' : 'FAILED';
+			return this.requestAbility(this.getAttackAbilityId('highkick'), { attackType: 'highkick' }) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function duckkick(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
 			if (!this.canActivateAttackAbility('duckkick')) return 'FAILED';
-			return this.tryActivateAttackAbility('duckkick') ? 'SUCCESS' : 'FAILED';
+			return this.requestAbility(this.getAttackAbilityId('duckkick'), { attackType: 'duckkick' }) ? 'SUCCESS' : 'FAILED';
 		}
 
 		// @ts-ignore
@@ -180,7 +180,7 @@ export class Sinterklaas extends Fighter {
 		function jumpkick(this: Fighter): BTStatus {
 			if (isAttacking.apply(this)) return 'RUNNING';
 			if (!this.canActivateAttackAbility('flyingkick')) return 'FAILED';
-			return this.tryActivateAttackAbility('flyingkick') ? 'SUCCESS' : 'FAILED';
+			return this.requestAbility(this.getAttackAbilityId('flyingkick'), { attackType: 'flyingkick' }) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function idle(this: Fighter): BTStatus {
@@ -190,9 +190,7 @@ export class Sinterklaas extends Fighter {
 		}
 
 		function walk(this: Fighter, blackboard: Blackboard): BTStatus {
-			// Logic for walk behavior
 			this.sc.dispatch_event('mode.locomotion.walk', this, this.facing);
-			this.x += this.facing === 'left' ? -Fighter.SPEED : Fighter.SPEED;
 			blackboard.set('walking', true);
 			return 'SUCCESS';
 		}
