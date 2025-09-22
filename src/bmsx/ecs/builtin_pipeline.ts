@@ -1,4 +1,4 @@
-import { AbilityIntentResolutionSystem, AbilityRuntimeSystem } from '../gas/abilityruntime';
+import { AbilityRuntimeSystem } from '../gas/abilityruntime';
 import {
 	BehaviorTreeSystem,
 	BoundarySystem,
@@ -28,7 +28,6 @@ import { Overlap2DSystem } from './overlap2d_system';
 export function registerBuiltinECS(): void {
 	const descs = [
 		{ id: 'behaviorTrees', group: TickGroup.Input, defaultPriority: 20, create: (p: number) => new BehaviorTreeSystem(p) },
-		{ id: 'abilityIntent', group: TickGroup.IntentResolution, defaultPriority: 18, create: (p: number) => new AbilityIntentResolutionSystem(p) },
 		{ id: 'abilityRuntime', group: TickGroup.AbilityUpdate, defaultPriority: 32, create: (p: number) => new AbilityRuntimeSystem(p) },
 		{ id: 'objectFSM', group: TickGroup.ModeResolution, defaultPriority: 30, create: (p: number) => new StateMachineSystem(p) },
 		{ id: 'prePosition', group: TickGroup.Physics, defaultPriority: 10, create: (p: number) => new PrePositionSystem(p) },

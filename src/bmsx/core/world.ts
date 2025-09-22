@@ -19,7 +19,7 @@ import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id
 import { EventEmitter } from './eventemitter';
 import { makeIndexProxy, shallowCopy } from '../utils/utils';
 import { Collision2DSystem } from '../service/collision2d_service';
-import { GameplayIntentQueue } from '../gas/intent';
+import { GameplayCommandBuffer } from '../gameplay/gameplay_command_buffer';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
@@ -400,40 +400,39 @@ export class World implements Stateful, RegisterablePersistent {
 	 */
 	public run(deltaTime: number): void {
 		this.systems.beginFrame();
-		GameplayIntentQueue.instance.beginFrame($.turnCounter ?? 0);
+		GameplayCommandBuffer.instance.beginFrame($.turnCounter ?? 0);
 		GameplayEventRecorder.instance.beginFrame($.turnCounter ?? 0);
 
 		try {
-			// Phase 1: Input → intents (no gameplay writes)
+			// Phase 1: Input → command submission (no gameplay writes)
 			this._currentPhase = TickGroup.Input;
 			this.systems.updatePhase(this, TickGroup.Input);
 
-			// Phase 2: AbilitySystem gating from intents
-			this._currentPhase = TickGroup.IntentResolution;
-			this.systems.updatePhase(this, TickGroup.IntentResolution);
+			const commandSnapshot = GameplayCommandBuffer.instance.snapshot();
+			if (commandSnapshot.length > 0) GameplayEventRecorder.instance.recordCommands(commandSnapshot);
 
-			// Phase 3: Ability instances / montages
+			// Phase 2: Ability instances / montages
 			this._currentPhase = TickGroup.AbilityUpdate;
 			this.systems.updatePhase(this, TickGroup.AbilityUpdate);
 
-			// Phase 4: ModeGraph resolution (FSMs own tag writes)
+			// Phase 3: ModeGraph resolution (FSMs own tag writes)
 			this._currentPhase = TickGroup.ModeResolution;
 			this.sc.tick();
 			this.systems.updatePhase(this, TickGroup.ModeResolution);
 
-			// Phase 5: Physics/collision resolution
+			// Phase 4: Physics/collision resolution
 			this._currentPhase = TickGroup.Physics;
 			this.systems.updatePhase(this, TickGroup.Physics);
 
-			// Phase 6: Animation controllers
+			// Phase 5: Animation controllers
 			this._currentPhase = TickGroup.Animation;
 			this.systems.updatePhase(this, TickGroup.Animation);
 
-			// Phase 7: Presentation (render prep, audio/FX/UI)
+			// Phase 6: Presentation (render prep, audio/FX/UI)
 			this._currentPhase = TickGroup.Presentation;
 			this.systems.updatePhase(this, TickGroup.Presentation);
 
-			// Phase 8: Event flush / debugging hooks
+			// Phase 7: Event flush / debugging hooks
 			this._currentPhase = TickGroup.EventFlush;
 			this.systems.updatePhase(this, TickGroup.EventFlush);
 		} finally {
@@ -442,7 +441,6 @@ export class World implements Stateful, RegisterablePersistent {
 
 		for (const p of this._modules) p.onTick?.(this, deltaTime);
 
-		GameplayIntentQueue.instance.clear();
 		GameplayEventRecorder.instance.endFrame();
 
 		const objects = this.activeObjects;

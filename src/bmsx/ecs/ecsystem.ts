@@ -16,7 +16,6 @@ import { Registry } from '../core/registry';
 
 export enum TickGroup {
 	Input = 5,
-	IntentResolution = 10,
 	AbilityUpdate = 20,
 	ModeResolution = 30,
 	Physics = 40,

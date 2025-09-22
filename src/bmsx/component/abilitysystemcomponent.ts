@@ -18,7 +18,7 @@ import type {
 	GameplayEffect,
 	TagId
 } from '../gas/gastypes';
-import { GameplayIntentQueue } from '../gas/intent';
+import { GameplayCommandBuffer } from '../gameplay/gameplay_command_buffer';
 
 type NowFn = () => number;
 
@@ -73,14 +73,8 @@ export class AbilitySystemComponent extends Component {
 			this.notifyAbilityFailed(id, reason);
 			return { ok: false as const, reason };
 		}
-		const res = GameplayIntentQueue.instance.enqueue({ kind: 'ability', ownerId: this.ownerId, abilityId: id, source: opts.source, payload: opts.payload });
-		if (!res.ok) {
-			this.notifyAbilityFailed(id, 'queue_backpressure');
-			return { ok: false as const, reason: 'queue_backpressure' };
-		}
-		return res.status === 'queued'
-			? { ok: true as const }
-			: { ok: true as const, note: 'duplicate_intent' };
+		GameplayCommandBuffer.instance.push({ kind: 'ActivateAbility', ownerId: this.ownerId, abilityId: id, payload: opts.payload, source: opts.source });
+		return { ok: true as const };
 	}
 
 	constructor(opts: ComponentAttachOptions & { now?: NowFn }) {
