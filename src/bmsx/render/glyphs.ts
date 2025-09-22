@@ -1,6 +1,5 @@
 import { BFont } from '../core/font';
 import { $ } from '../core/game';
-import { GameOptions as GO } from '../core/gameoptions';
 import type { vec2 } from "../rompack/rompack";
 import type { color, RectRenderSubmission, RenderLayer } from './gameview';
 
@@ -28,7 +27,7 @@ export function renderGlyphs(x: number, y: number, textToWrite: string | string[
 			pos.x += stepX;
 		}
 		pos.x = startPos.x; pos.y += stepY; stepY = 0;
-		return pos.y >= GO.BufferHeight;
+		return pos.y >= $.view.canvasSize.y;
 	};
 
 	if (Array.isArray(textToWrite)) { for (const t of textToWrite) if (drawLine(t)) return; }

@@ -64,6 +64,7 @@ export interface AbilityContext {
   model: World;
   asc: AbilitySystemRef;
   emit?: (name: string, payload?: any) => void;
+  intent?: { id: AbilityId; payload?: Record<string, unknown> };
 }
 
 // Minimal surface so we avoid a circular type import
@@ -71,7 +72,7 @@ export interface AbilitySystemRef {
   ownerId: ObjectId;
   hasTag(tag: TagId): boolean;
   requestAbility(id: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }): AbilityRequestResult;
-  tryActivate(id: AbilityId): boolean;
+  tryActivate(id: AbilityId, payload?: Record<string, unknown>): boolean;
 }
 
 export type AbilityRequestResult = { ok: true; note?: string } | { ok: false; reason: string };

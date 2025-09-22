@@ -2,7 +2,7 @@ import type { EventLane, EventPayload, EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
-import { AbilitySystemComponent } from '../gas/abilitysystem';
+import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import type { EventBagName, listed_sdef_event, StateActionActivateAbilitySpec, StateActionAddTagSpec, StateActionAdjustPropertySpec, StateActionCallSpec, StateActionCondition, StateActionConditionalSpec, StateActionDispatchEventSpec, StateActionEmitSpec, StateActionRemoveTagSpec, StateActionSetPropertySpec, StateActionSetTicksSpec, StateActionSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
 import { State } from './state';

@@ -307,9 +307,9 @@ export class Game {
 		gview.pipelineRegistry = pipelineRegistry; // Register the pipeline registry with the view before initializing
 		gview.init(); // Init the view. Placed here to ensure that the world object is available to the view and that the Input module is initialized
 		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
-		await SoundMaster.instance.init(rompack['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
+		await SoundMaster.instance.init(rompack['audio'], sndcontext, GameOptions.volumePercentage, gainnode);
 		try {
-			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);
+			await PSG.init(sndcontext, GameOptions.volumePercentage, gainnode);
 		} catch (error) {
 			console.error("Failed to initialize PSG:", error);
 		}

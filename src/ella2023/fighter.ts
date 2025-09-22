@@ -1,6 +1,6 @@
 import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2 } from 'bmsx';
 import type { AbilityId } from 'bmsx/gas/gastypes';
-import { AbilitySystemComponent } from 'bmsx/gas/abilitysystem';
+import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
@@ -38,15 +38,11 @@ export abstract class Fighter extends SpriteObject {
 	public _aied: boolean = false;
 	public previousAttackType: AttackType = null;
 	public currentAttackType: AttackType = null;
-	public get isAttacking(): boolean { return this.attacking; }
-	public get isJumping(): boolean { return this.jumping; }
-	public get isDucking(): boolean { return this.ducking; }
-	public get isFighting(): boolean { return this.fighting; }
+	public get isAttacking(): boolean { return this._attacking; }
+	public get isJumping(): boolean { return this._jumping; }
+	public get isDucking(): boolean { return this._ducking; }
+	public get isFighting(): boolean { return this._fighting; }
 	public get isAIed(): boolean { return this._aied; }
-	public get fighting(): boolean { return this._fighting; }
-	public get attacking(): boolean { return this._attacking; }
-	public get jumping(): boolean { return this._jumping; }
-	public get ducking(): boolean { return this._ducking; }
 
 	protected setFightingState(active: boolean, force: boolean = false): void {
 		if (!force && this._fighting === active) return;
@@ -123,6 +119,9 @@ export abstract class Fighter extends SpriteObject {
 	public player_index: number;
 
 	public performingStoerheidsdans!: boolean;
+	private _desiredWalkDir: -1 | 0 | 1 = 0;
+	public get desiredWalkDir(): -1 | 0 | 1 { return this._desiredWalkDir; }
+	public set desiredWalkDir(v: -1 | 0 | 1) { this._desiredWalkDir = v; }
 
 	constructor(opts: RevivableObjectArgs & { id: Identifier; fsm_id?: Identifier; facing?: 'left' | 'right'; playerIndex?: number }) {
 		super(opts);
@@ -164,6 +163,39 @@ export abstract class Fighter extends SpriteObject {
 		return asc.canActivateReason(abilityId) === null;
 	}
 
+	private resolveDirectionInput(directionOrPayload?: { direction?: 'left' | 'right' | null } | 'left' | 'right' | null): 'left' | 'right' | null {
+		if (!directionOrPayload) return null;
+		if (typeof directionOrPayload === 'string') {
+			return directionOrPayload === 'left' || directionOrPayload === 'right' ? directionOrPayload : null;
+		}
+		const dir = directionOrPayload.direction;
+		return dir === 'left' || dir === 'right' ? dir : null;
+	}
+
+	public setDesiredWalkDirection(direction: 'left' | 'right' | null): void {
+		if (direction === 'left') {
+			this.facing = 'left';
+			this._desiredWalkDir = -1;
+			return;
+		}
+		if (direction === 'right') {
+			this.facing = 'right';
+			this._desiredWalkDir = 1;
+			return;
+		}
+		this._desiredWalkDir = 0;
+	}
+
+	public beginWalk(directionOrPayload?: { direction?: 'left' | 'right' | null } | 'left' | 'right' | null): void {
+		const resolved = this.resolveDirectionInput(directionOrPayload) ?? (this.facing ?? 'right');
+		this.setDesiredWalkDirection(resolved);
+		this.setAttackingState(false);
+	}
+
+	public endWalk(): void {
+		this.setDesiredWalkDirection(null);
+	}
+
 	public getAttackAbilityId(attackType: AttackType): AbilityId {
 		return `fighter.attack.${attackType}` as AbilityId;
 	}
@@ -175,6 +207,10 @@ export abstract class Fighter extends SpriteObject {
 		if (attackType === 'flyingkick') {
 			this.attacked_while_jumping = true;
 		}
+		this.setDesiredWalkDirection(null);
+		const opponent = this.getAttackOpponent();
+		this.sc.dispatch_event(`animate_${attackType}`, this);
+		this.doAttackFlow(attackType, opponent);
 	}
 
 	public finishAttack(attackType: AttackType): void {
@@ -209,9 +245,6 @@ export abstract class Fighter extends SpriteObject {
 
 	public performAttack(attackType: AttackType): void {
 		this.startAttack(attackType);
-		this.sc.dispatch_event(`animate_${attackType}`, this);
-		const opponent = this.getAttackOpponent();
-		this.doAttackFlow(attackType, opponent);
 	}
 
 	public completeAttack(attackType: AttackType): void {

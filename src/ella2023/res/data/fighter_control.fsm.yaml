@@ -12,7 +12,9 @@ on:
                 - state_not_matches: './stoerheidsdans'
                 - state_not_matches: './nagenieten'
                 - state_not_matches: './humiliated'
-        switch: './_grounded/walk'
+        to:
+            state_id: './_grounded/walk'
+            payload: '@payload'
     mode.action.attack:
         do:
             - when:
@@ -132,9 +134,15 @@ states:
                 entering_state:
                     - call:
                           target: '@self.onWalkEntered'
+                    - call:
+                          target: '@self.beginWalk'
+                          args: ['@payload']
                     - emit:
                           event: animate_walk
                           emitter: '@self'
+                exiting_state:
+                    - call:
+                          target: '@self.endWalk'
                 input_event_handlers:
                     'duck[p]':
                         do:
@@ -172,19 +180,29 @@ states:
                             - consume_action: jump
                     'left[p]':
                         do:
-                            call:
-                                target: '@self.walkStep'
-                                args: ['left']
+                            - dispatch_event:
+                                  event: mode.locomotion.walk
+                                  emitter: '@self'
+                                  payload:
+                                      direction: left
                     'right[p]':
                         do:
-                            call:
-                                target: '@self.walkStep'
-                                args: ['right']
+                            - dispatch_event:
+                                  event: mode.locomotion.walk
+                                  emitter: '@self'
+                                  payload:
+                                      direction: right
                     '&(left[!p], right[!p])':
                         do:
                             - dispatch_event:
                                   event: mode.locomotion.idle
                                   emitter: '@self'
+                on:
+                    mode.locomotion.walk:
+                        do:
+                            call:
+                                target: '@self.beginWalk'
+                                args: ['@payload']
             duck:
                 entering_state:
                     - call:

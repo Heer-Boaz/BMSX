@@ -1,4 +1,4 @@
-import { Component, type ComponentAttachOptions } from '../component/basecomponent';
+import { Component, type ComponentAttachOptions } from './basecomponent';
 import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
@@ -17,8 +17,8 @@ import type {
 	AttributeSet,
 	GameplayEffect,
 	TagId
-} from './gastypes';
-import { GameplayIntentQueue } from './intent';
+} from '../gas/gastypes';
+import { GameplayIntentQueue } from '../gas/intent';
 
 type NowFn = () => number;
 
@@ -156,7 +156,7 @@ export class AbilitySystemComponent extends Component {
 		}
 	}
 
-	public tryActivate(id: AbilityId): boolean {
+	public tryActivate(id: AbilityId, payload?: Record<string, unknown>): boolean {
 		const spec = this._abilities.get(id);
 		const factory = this._abilityFactory.get(id);
 		if (!spec || !factory) return false;
@@ -189,13 +189,14 @@ export class AbilitySystemComponent extends Component {
 			asc: {
 				ownerId: this.ownerId,
 				hasTag: (t: TagId) => this.hasGameplayTag(t),
-				tryActivate: (aid: AbilityId) => this.tryActivate(aid),
+				tryActivate: (aid: AbilityId, pl?: Record<string, unknown>) => this.tryActivate(aid, pl),
 				requestAbility: (aid: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(aid, opts ?? {}),
 			},
 			emit: (name: string, payload?: any) => {
 				const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
 				EventEmitter.instance.emit(name, owner ?? { id: this.ownerId }, payload);
-			}
+			},
+			intent: { id, payload }
 		};
 		const ability = factory();
 		if (!ability.canActivate(ctx)) return false;

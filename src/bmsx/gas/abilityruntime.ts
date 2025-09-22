@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { ECSystem, TickGroup } from '../ecs/ecsystem';
-import { AbilitySystemComponent } from './abilitysystem';
+import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import { GameplayIntentQueue } from './intent';
 
 export class AbilityIntentResolutionSystem extends ECSystem {
@@ -13,7 +13,7 @@ export class AbilityIntentResolutionSystem extends ECSystem {
 			if (!intent) break;
 			const asc = AbilitySystemComponent.registryByOwner.get(intent.ownerId);
 			if (!asc) continue;
-			asc.tryActivate(intent.abilityId);
+			asc.tryActivate(intent.abilityId, intent.payload);
 		}
 	}
 }

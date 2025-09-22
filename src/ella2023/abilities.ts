@@ -26,7 +26,7 @@ class FighterAttackAbility extends BaseFighterAbility {
 
 	public override canActivate(ctx: AbilityContext): boolean {
 		if (!super.canActivate(ctx)) return false;
-		if (this.fighter.attacking) return false;
+		if (this.fighter.isAttacking) return false;
 		return true;
 	}
 

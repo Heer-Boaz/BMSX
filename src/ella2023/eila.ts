@@ -19,7 +19,16 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 
 	@subscribesToParentScopedEvent('leavingScreen')
 	public onLeavingScreen(_event_name: string, emitter: Eila, { d }: WorldObjectEventPayloads['leavingScreen']): void {
-		emitter.facing = d === 'left' ? 'right' : 'left';
+		if (emitter.isJumping) {
+			switch (d) {
+				case 'left':
+					emitter.setDesiredWalkDirection('right');
+					break;
+				case 'right':
+					emitter.setDesiredWalkDirection('left');
+					break;
+			}
+		}
 	}
 }
 
@@ -66,11 +75,6 @@ export class Eila extends Fighter {
 		this.setAttackingState(false);
 	}
 
-	public walkStep(direction: 'left' | 'right'): void {
-		this.facing = direction;
-		this.x += direction === 'right' ? Fighter.SPEED : -Fighter.SPEED;
-	}
-
 	public onDuckEntered(): void {
 		this.setDuckingState(true);
 		this.setAttackingState(false);
@@ -95,6 +99,7 @@ export class Eila extends Fighter {
 			}
 		}
 		data.direction = direction;
+		this.setDesiredWalkDirection(direction);
 		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
 		this.setJumpingState(true);
 		this.attacked_while_jumping = false;
@@ -105,22 +110,21 @@ export class Eila extends Fighter {
 		this.setJumpingState(false);
 		this.resetVerticalPosition();
 		this.attacked_while_jumping = false;
+		this.setDesiredWalkDirection(null);
 	}
 
 	public jumpAscendingTick(state: State): void {
 		const data = state.data as JumpStateData;
 		this.y -= Fighter.JUMP_SPEED;
-		if (data.direction) {
-			this.x += data.direction === 'right' ? Fighter.SPEED : -Fighter.SPEED;
-		}
+		const dir = this.desiredWalkDir !== 0 ? this.desiredWalkDir : (data.direction === 'right' ? 1 : data.direction === 'left' ? -1 : 0);
+		if (dir !== 0) this.x += dir * Fighter.SPEED;
 	}
 
 	public jumpDescendingTick(state: State): void {
 		const data = state.data as JumpStateData;
 		this.y += Fighter.JUMP_SPEED;
-		if (data.direction) {
-			this.x += data.direction === 'right' ? Fighter.SPEED : -Fighter.SPEED;
-		}
+		const dir = this.desiredWalkDir !== 0 ? this.desiredWalkDir : (data.direction === 'right' ? 1 : data.direction === 'left' ? -1 : 0);
+		if (dir !== 0) this.x += dir * Fighter.SPEED;
 	}
 
 	public canStartFlyingKick(): boolean {
@@ -180,7 +184,7 @@ export class Eila extends Fighter {
 	public startNagenieten(): void {
 		this.setFightingState(false);
 		$.emitPresentation('animate_idle', this);
-}
+	}
 
 	public enterHumiliated(): void {
 		this.hittable = false;
@@ -189,7 +193,7 @@ export class Eila extends Fighter {
 		this.setAttackingState(false);
 		this.setJumpingState(false);
 		this.setDuckingState(false);
-}
+	}
 
 	public exitHumiliated(): void {
 		this.hittable = true;
@@ -197,7 +201,7 @@ export class Eila extends Fighter {
 		this.setJumpingState(false);
 		this.setDuckingState(false);
 		this.setAttackingState(false);
-}
+	}
 
 	protected override getAttackOpponent(): Fighter | null {
 		return $.get<EilaEventService>('eila_events')?.theOtherFighter(this) ?? null;

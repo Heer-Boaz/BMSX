@@ -65,19 +65,19 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @returns The component of the specified type if found, otherwise undefined.
 	 */
 	getComponents<T extends Component>(constructor: ComponentConstructor<T>): T[] {
-		const key = (constructor)?.name;
+		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return arr ? [...arr] : [];
 	}
 
 	hasComponent<T extends Component>(constructor: ComponentConstructor<T>): boolean {
-		const key = (constructor)?.name;
+		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return !!arr && arr.length > 0;
 	}
 
 	getFirstComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
-		const key = (constructor)?.name;
+		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		return arr && arr.length > 0 ? arr[0] : undefined;
 	}
@@ -92,7 +92,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 	/** Return the unique instance of a component type; throws if multiple are attached. */
 	getUniqueComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
-		const key = (constructor)?.name;
+		const key = constructor.name;
 		const arr = this.componentMap[key] as T[] | undefined;
 		if (!arr || arr.length === 0) return undefined;
 		if (arr.length > 1) throw new Error(`Multiple '${key}' components attached to '${this.id}' but a unique instance was requested.`);

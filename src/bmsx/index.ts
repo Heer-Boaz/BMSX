@@ -40,7 +40,7 @@ export * from './fsm/fsmlibrary';
 export * from './fsm/fsmtypes';
 export * from './fsm/state';
 export * from './fsm/statedefinition';
-export * from './gas/abilitysystem';
+export * from './component/abilitysystemcomponent';
 export * from './gas/intent';
 export * from './input/actionparser';
 export * from './input/gamepad';

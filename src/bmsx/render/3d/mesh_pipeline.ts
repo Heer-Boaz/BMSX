@@ -1,6 +1,5 @@
 // Mesh pipeline (formerly glview.3d) inlined from legacy module.
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
-import { makePipelineBuildDesc, PassEncoder, shaderModule } from '../..';
 import { $ } from '../../core/game';
 import type { Mesh } from './mesh';
 import { Float32ArrayPool } from 'bmsx/utils/pool';
@@ -11,7 +10,7 @@ import meshVS from '../3d/shaders/3d.vert.glsl';
 import { FeatureQueue } from '../../utils/feature_queue';
 import * as GLR from '../backend/webgl/gl_resources';
 import { MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
-import type { RenderContext } from '../backend/pipeline_interfaces';
+import type { PassEncoder, RenderContext } from '../backend/pipeline_interfaces';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, TEXTURE_UNIT_ALBEDO, TEXTURE_UNIT_METALLIC_ROUGHNESS, TEXTURE_UNIT_MORPH_NORM, TEXTURE_UNIT_MORPH_POS, TEXTURE_UNIT_NORMAL, TEXTURE_UNIT_SHADOW_MAP } from '../backend/webgl/webgl.constants';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
@@ -19,6 +18,7 @@ import { MeshRenderSubmission } from '../gameview';
 import type { DirectionalLight, PointLight } from './light';
 import { M4, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
 import { arraysEqual } from '../../utils/utils';
+import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 
 const BYTES_PER_FLOAT = 4;
 const COLUMN_BYTES = 4 * BYTES_PER_FLOAT; // 4 floats per kolom = 16 bytes
