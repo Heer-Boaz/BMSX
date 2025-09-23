@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { subscribesToGlobalEvent } from '../core/eventemitter';
+import { subscribesToGlobalEvent, type EventPayload } from '../core/eventemitter';
 import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
 import { SpriteObject } from '../core/object/sprite';
@@ -36,13 +36,13 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 					on: {
 						// Guard transitions so only the icon for the matching gamepad reacts.
 						controller_assigned: {
-							do(this: SelectedPlayerIndexIcon, _src: any, payload: { gamepadIndex?: number }) {
+							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
 								if (payload?.gamepadIndex === this.gamepadIndex) return '/assigned';
 								return undefined;
 							}
 						},
 						controller_assignment_cancelled: {
-							do(this: SelectedPlayerIndexIcon, _src: any, payload: { gamepadIndex?: number }) {
+							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
 								if (payload?.gamepadIndex === this.gamepadIndex) return '/cancelled';
 								return undefined;
 							}

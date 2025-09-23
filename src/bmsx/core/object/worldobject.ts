@@ -13,6 +13,7 @@ import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
+import { V3 } from 'bmsx/render/3d/math3d';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -234,7 +235,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * The z-coordinate is used for layering objects in the game world.
 	 * see {@link setPosZ} for setting the z-coordinate, as it handles the z-coordinate bounds.
 	 */
-	public set pos(pos: vec3) { this._pos = pos; }
+	// public set pos(pos: vec3) {
+	// 	this._pos = pos;
+	// }
 
 	/**
 	 * Gets the x-coordinate of the world object.
@@ -360,6 +363,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public set z_nonotify(z: number) {
 		this.pos.z = z;
 		// Mark depth-sort dirty for the object's space to ensure correct draw order. This is still required.
+		$.world.markDepthDirtyForObjectId(this.id);
+	}
+
+	public set pos_nonotify(pos: vec3) {
+		V3.assign(this._pos, pos);
 		$.world.markDepthDirtyForObjectId(this.id);
 	}
 
@@ -691,11 +699,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public onleaveSpace?: (from: Identifier) => void;
 	public onenterSpace?: (to: Identifier) => void;
 
-	private _direction: Direction;
-	public oldDirection: Direction;
+	protected _facing: Direction;
+	public prevFacing: Direction;
 
 	private _orientation: vec3;
-	public oldOrientation: vec3;
+	public prevOrientation: vec3;
 
 	/**
 	 * Gets the orientation of the world object.
@@ -714,7 +722,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param value - The new orientation to set.
 	 */
 	public set orientation(value: vec3) {
-		this.oldOrientation = this._orientation;
+		this.prevOrientation = this._orientation;
 		this._orientation = value;
 	}
 
@@ -723,8 +731,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 *
 	 * @returns The direction of the world object.
 	 */
-	public get direction(): Direction {
-		return this._direction;
+	public get facing(): Partial<Direction> {
+		return this._facing;
 	}
 
 	/**
@@ -732,9 +740,9 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 *
 	 * @param value - The new direction to set.
 	 */
-	public set direction(value: Direction) {
-		this.oldDirection = this._direction;
-		this._direction = value;
+	public set facing(value: Partial<Direction>) {
+		this.prevFacing = this._facing;
+		this._facing = value;
 	}
 
 	/**

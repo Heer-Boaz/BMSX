@@ -19,7 +19,7 @@ import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id
 import { EventEmitter } from './eventemitter';
 import { makeIndexProxy, shallowCopy } from '../utils/utils';
 import { Collision2DSystem } from '../service/collision2d_service';
-import { GameplayCommandBuffer } from '../gameplay/gameplay_command_buffer';
+import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space

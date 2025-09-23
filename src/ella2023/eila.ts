@@ -1,4 +1,4 @@
-import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, assign_fsm, attach_components, insavegame, subscribesToParentScopedEvent, State, type ComponentAttachOptions, type EventPayload, type RevivableObjectArgs } from 'bmsx';
+import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, assign_fsm, attach_components, insavegame, subscribesToParentScopedEvent, State, type ComponentAttachOptions, type EventPayload, type RevivableObjectArgs, type Direction, GameplayCommandBuffer, V3 } from 'bmsx';
 import { BitmapId } from './resourceids';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
@@ -8,7 +8,7 @@ import { EilaEventService } from './worldmodule';
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'duckkick';
 
 type StoerheidsdansStateData = { expectedAnimation: string | null };
-type JumpStateData = { direction: 'left' | 'right' | null };
+type JumpStateData = { direction: Direction };
 
 @insavegame
 export class JumpingWhileLeavingScreenComponent extends Component {
@@ -22,10 +22,10 @@ export class JumpingWhileLeavingScreenComponent extends Component {
 		if (emitter.isJumping) {
 			switch (d) {
 				case 'left':
-					emitter.setDesiredWalkDirection('right');
+					emitter.updateJumpDirection('right');
 					break;
 				case 'right':
-					emitter.setDesiredWalkDirection('left');
+					emitter.updateJumpDirection('left');
 					break;
 			}
 		}
@@ -84,9 +84,9 @@ export class Eila extends Fighter {
 		this.setDuckingState(false);
 	}
 
-	public startJump({ state, payload }: { state: State; payload?: EventPayload & { direction?: 'left' | 'right' | null; directional?: boolean | string } }): void {
+	public startJump({ state, payload }: { state: State; payload?: EventPayload & { direction?: Direction | null; directional?: boolean | string } }): void {
 		const data = state.data as JumpStateData;
-		let direction: 'left' | 'right' | null = null;
+		let direction: Direction;
 		if (payload) {
 			if (payload.direction === 'left' || payload.direction === 'right') {
 				direction = payload.direction;
@@ -99,7 +99,6 @@ export class Eila extends Fighter {
 			}
 		}
 		data.direction = direction;
-		this.setDesiredWalkDirection(direction);
 		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
 		this.setJumpingState(true);
 		this.attacked_while_jumping = false;
@@ -110,21 +109,18 @@ export class Eila extends Fighter {
 		this.setJumpingState(false);
 		this.resetVerticalPosition();
 		this.attacked_while_jumping = false;
-		this.setDesiredWalkDirection(null);
 	}
 
 	public jumpAscendingTick(state: State): void {
 		const data = state.data as JumpStateData;
-		this.y -= Fighter.JUMP_SPEED;
-		const dir = this.desiredWalkDir !== 0 ? this.desiredWalkDir : (data.direction === 'right' ? 1 : data.direction === 'left' ? -1 : 0);
-		if (dir !== 0) this.x += dir * Fighter.SPEED;
+		const dx = this.resolveJumpHorizontal(data);
+		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: V3.of(dx, -Fighter.JUMP_SPEED, 0), space: 'world' });
 	}
 
 	public jumpDescendingTick(state: State): void {
 		const data = state.data as JumpStateData;
-		this.y += Fighter.JUMP_SPEED;
-		const dir = this.desiredWalkDir !== 0 ? this.desiredWalkDir : (data.direction === 'right' ? 1 : data.direction === 'left' ? -1 : 0);
-		if (dir !== 0) this.x += dir * Fighter.SPEED;
+		const dx = this.resolveJumpHorizontal(data);
+		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: V3.of(dx, Fighter.JUMP_SPEED, 0), space: 'world' });
 	}
 
 	public canStartFlyingKick(): boolean {
@@ -138,6 +134,24 @@ export class Eila extends Fighter {
 
 	public onFlyingKickExited(): void {
 		this.finishAttack('flyingkick');
+	}
+
+	public updateJumpDirection(direction: 'left' | 'right'): void {
+		const controller = this.sc;
+		if (!controller?.get_statemachine) return;
+		const machine = controller.get_statemachine('fighter_control');
+		const airborne = machine?.states?.['airborne'];
+		const jump = airborne?.states?.['_jump'];
+		if (!jump) return;
+		const data = jump.data as JumpStateData;
+		data.direction = direction;
+	}
+
+	private resolveJumpHorizontal(data: JumpStateData): number {
+		const dir = data.direction ?? this.facing ?? 'right';
+		if (dir === 'left') return -this.walkSpeed;
+		if (dir === 'right') return this.walkSpeed;
+		return 0;
 	}
 
 	public enterStoerheidsdans(state: State): void {

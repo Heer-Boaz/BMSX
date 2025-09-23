@@ -1,5 +1,5 @@
 import type { Identifier } from '../../rompack/rompack';
-import type { GameplayCommand } from '../../gameplay/gameplay_command_buffer';
+import type { GameplayCommandWithMeta } from '../../ecs/gameplay_command_buffer';
 
 export type RecordedGameplayEvent = {
 	event: string;
@@ -13,7 +13,7 @@ export class GameplayEventRecorder {
 
 	private _frame: number = 0;
 	private readonly _current: RecordedGameplayEvent[] = [];
-	private readonly _commands: GameplayCommand[] = [];
+	private readonly _commands: GameplayCommandWithMeta[] = [];
 
 	private constructor() { }
 
@@ -27,7 +27,7 @@ export class GameplayEventRecorder {
 		this._current.push({ event, emitterId, frame: this._frame, payload });
 	}
 
-	public recordCommands(commands: ReadonlyArray<GameplayCommand>): void {
+	public recordCommands(commands: ReadonlyArray<GameplayCommandWithMeta>): void {
 		for (let i = 0; i < commands.length; i++) {
 			const command = commands[i]!;
 			this._commands.push({ ...command });
@@ -38,7 +38,7 @@ export class GameplayEventRecorder {
 		return this._current;
 	}
 
-	public get currentCommands(): ReadonlyArray<GameplayCommand> {
+	public get currentCommands(): ReadonlyArray<GameplayCommandWithMeta> {
 		return this._commands;
 	}
 

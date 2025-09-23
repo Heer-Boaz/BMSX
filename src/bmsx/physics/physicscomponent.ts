@@ -16,7 +16,7 @@ export interface PhysicsComponentOptions extends Omit<PhysicsBodyDesc, 'position
 
 @excludeclassfromsavegame
 export class PhysicsComponent extends Component {
-	static unique = true;
+	static override get unique() { return true; }
 	body: PhysicsBody | null = null;
 	syncAxis = { x: true, y: true, z: true };
 	writeBack = true; // if true: body -> WorldObject each frame (default true)
@@ -99,7 +99,7 @@ export class PhysicsComponent extends Component {
 			wo.rotationQ.z = this.body.rotationQ.z;
 			wo.rotationQ.w = this.body.rotationQ.w;
 		}
-	// if (PhysicsComponent._debugFrames < 5) {
+		// if (PhysicsComponent._debugFrames < 5) {
 		// 	if (beforeX !== wo.x_nonotify || beforeY !== wo.y_nonotify || beforeZ !== wo.z_nonotify) {
 		// 		// console.log(`[PhysSync]`, this.parentid, `body`, this.body.position, `goBefore: [${beforeX}, ${beforeY}, ${beforeZ}] goAfter: [${wo.x_nonotify}, ${wo.y_nonotify}, ${wo.z_nonotify}]`);
 		// 	}

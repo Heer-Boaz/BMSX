@@ -1,4 +1,4 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2 } from 'bmsx';
+import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction } from 'bmsx';
 import type { AbilityId } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
@@ -104,9 +104,7 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	protected currentHitMarker: HitMarkerInfo;
-	private _facing: 'left' | 'right';
-	public get facing(): 'left' | 'right' { return this._facing; }
-	public set facing(v: 'left' | 'right') {
+	public override set facing(v: Direction) {
 		this._facing = v;
 		// Drive sprite horizontal flip from facing. Default art faces left; mirror when facing right.
 		this.flip_h = (v !== 'left');
@@ -118,9 +116,7 @@ export abstract class Fighter extends SpriteObject {
 	public player_index: number;
 
 	public performingStoerheidsdans!: boolean;
-	private _desiredWalkDir: -1 | 0 | 1 = 0;
-	public get desiredWalkDir(): -1 | 0 | 1 { return this._desiredWalkDir; }
-	public set desiredWalkDir(v: -1 | 0 | 1) { this._desiredWalkDir = v; }
+	public readonly walkSpeed: number = Fighter.SPEED;
 
 	constructor(opts: RevivableObjectArgs & { id: Identifier; fsm_id?: Identifier; facing?: 'left' | 'right'; playerIndex?: number }) {
 		super(opts);
@@ -169,39 +165,6 @@ export abstract class Fighter extends SpriteObject {
 		return asc.canActivateReason(abilityId) === null;
 	}
 
-	private resolveDirectionInput(directionOrPayload?: { direction?: 'left' | 'right' | null } | 'left' | 'right' | null): 'left' | 'right' | null {
-		if (!directionOrPayload) return null;
-		if (typeof directionOrPayload === 'string') {
-			return directionOrPayload === 'left' || directionOrPayload === 'right' ? directionOrPayload : null;
-		}
-		const dir = directionOrPayload.direction;
-		return dir === 'left' || dir === 'right' ? dir : null;
-	}
-
-	public setDesiredWalkDirection(direction: 'left' | 'right' | null): void {
-		if (direction === 'left') {
-			this.facing = 'left';
-			this._desiredWalkDir = -1;
-			return;
-		}
-		if (direction === 'right') {
-			this.facing = 'right';
-			this._desiredWalkDir = 1;
-			return;
-		}
-		this._desiredWalkDir = 0;
-	}
-
-	public beginWalk(directionOrPayload?: { direction?: 'left' | 'right' | null } | 'left' | 'right' | null): void {
-		const resolved = this.resolveDirectionInput(directionOrPayload) ?? (this.facing ?? 'right');
-		this.setDesiredWalkDirection(resolved);
-		this.setAttackingState(false);
-	}
-
-	public endWalk(): void {
-		this.setDesiredWalkDirection(null);
-	}
-
 	public getAttackAbilityId(attackType: AttackType): AbilityId {
 		return `fighter.attack.${attackType}` as AbilityId;
 	}
@@ -213,7 +176,6 @@ export abstract class Fighter extends SpriteObject {
 		if (attackType === 'flyingkick') {
 			this.attacked_while_jumping = true;
 		}
-		this.setDesiredWalkDirection(null);
 		const opponent = this.getAttackOpponent();
 		this.sc.dispatch_event(`animate_${attackType}`, this);
 		this.doAttackFlow(attackType, opponent);

@@ -16,7 +16,7 @@ import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
 import { World, WorldConfiguration } from "./world";
-import { EventEmitter, EventPayload, EventLane } from "./eventemitter";
+import { EventEmitter, EventPayload } from "./eventemitter";
 import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
@@ -169,16 +169,16 @@ export class Game {
 	public get registry(): Registry { return Registry.instance!; }
 	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm')!; }
 
-	public emit(event_name: string, emitter: Identifiable | null, payload?: EventPayload, opts?: { lane?: EventLane }) {
-		this.event_emitter.emit(event_name, emitter, payload, opts);
+	public emit(event_name: string, emitter: Identifiable | null, payload?: EventPayload) {
+		this.event_emitter.emit(event_name, emitter, { ...payload, lane: 'any' });
 	}
 
 	public emitGameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void {
-		this.event_emitter.emit(event_name, emitter, payload, { lane: 'gameplay' });
+		this.event_emitter.emit(event_name, emitter, { ...payload, lane: 'gameplay' });
 	}
 
 	public emitPresentation(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void {
-		this.event_emitter.emit(event_name, emitter, payload, { lane: 'presentation' });
+		this.event_emitter.emit(event_name, emitter, { ...payload, lane: 'presentation' });
 	}
 
 	public get<T extends Registerable>(id: Identifier): T {

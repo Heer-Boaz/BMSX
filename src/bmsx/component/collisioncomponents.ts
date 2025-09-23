@@ -147,7 +147,7 @@ export abstract class PositionUpdateAxisComponent extends Component<WorldObject>
  */
 @insavegame
 export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
-	static unique = true;
+	static override get unique(): boolean { return true; }
 	/**
 	 * Overrides the postprocessingUpdate method to check for boundary collisions on the X and Y axes.
 	 * @override
@@ -230,7 +230,7 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
  */
 @insavegame
 export class TileCollisionComponent extends PositionUpdateAxisComponent {
-	static unique = true;
+	static override get unique() { return true; }
 	/**
 	 * Performs post-processing update for collision components.
 	 * Overrides the base class's update method and checks for tile collisions on the x and y axes.

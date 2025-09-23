@@ -1,12 +1,9 @@
+import type { GameplayCommand } from 'bmsx';
 import type { EventLane, EventPayload, EventScope, EventSubscriber } from "../core/eventemitter";
 import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';
-
-export const STATE_THIS_PREFIX = '#this';
-export const STATE_PARENT_PREFIX = '#parent';
-export const STATE_ROOT_PREFIX = '#root';
 
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
@@ -104,72 +101,72 @@ export type StateTransitionWithType = StateTransition & { transition_type: Trans
  * @template T - The type of the stateful object that the event is associated with.
  */
 export type StateActionEmitSpec = string | {
-	event?: any;
-	event_concat?: any;
-	payload?: any;
-	emitter?: any;
-	lane?: EventLane | 'presentation' | 'gameplay';
+	event?: string;
+	payload?: EventPayload;
+	emitter?: Identifier;
+	lane?: EventLane;
 };
 
 export type StateActionSetTicksSpec = {
 	set_ticks_to_last_frame: true;
 };
 
-export interface StateActionSetPropertySpec {
-	set_property: {
-		target: string;
-		value: any;
-	};
+interface StateActionSetValueOptions {
+	target: string;
+	value: any;
 }
 
-export interface StateActionAdjustPropertySpec {
-	adjust_property: {
-		target: string;
-		add?: any;
-		sub?: any;
-		mul?: any;
-		div?: any;
-		set?: any;
-	};
+export interface StateActionSetPropertySpec {
+	set_property: StateActionSetValueOptions;
 }
 
 export interface StateActionSetSpec {
-	set: {
-		target: string;
-		value: any;
-	};
+	set: StateActionSetValueOptions;
+}
+
+interface ApplyAdjustPropertyOptions {
+	target: string;
+	add?: any;
+	sub?: any;
+	mul?: any;
+	div?: any;
+	set?: any;
+}
+
+export interface StateActionAdjustPropertySpec {
+	adjust_property: ApplyAdjustPropertyOptions;
 }
 
 export interface StateActionAdjustSpec {
-	adjust: {
-		target: string;
-		add?: any;
-		sub?: any;
-		mul?: any;
-		div?: any;
-		set?: any;
-	};
+	adjust: ApplyAdjustPropertyOptions;
+}
+
+export interface StateActionSubmitCommandSpec {
+	command: GameplayCommand;
 }
 
 export interface StateActionTagsSpec {
 	tags: {
 		add?: any;
 		remove?: any;
+		toggle?: any;
 	};
 }
 
+export type StateActionTagOps = keyof StateActionTagsSpec['tags'];
+
 export interface StateActionDispatchSpec {
 	dispatch: {
-		event: any;
-		emitter?: any;
-		payload?: any;
+		event: string;
+		emitter?: Identifier;
+		payload?: EventPayload;
 	};
 }
 
 export interface StateActionInvokeSpec {
 	invoke: {
 		fn: any;
-		payload?: any;
+		payload?: EventPayload;
 	};
 }
 
@@ -212,9 +209,20 @@ export type StateActionSequence = StateActionSpec[];
 export interface StateActionDispatchEventSpec {
 	dispatch_event: {
 		event: string;
-		emitter?: any;
+		emitter?: string;
 		payload?: EventPayload;
 	};
+}
+
+export interface StateActionTransitionSpec {
+	to?: StateTransition | Identifier;
+	switch?: StateTransition | Identifier;
+	force_leaf?: StateTransition | Identifier;
+	revert?: boolean | StateTransition | Identifier;
+}
+
+export interface StateActionTransitionCompositeSpec extends StateActionTransitionSpec {
+	do?: StateActionSpec | StateActionSpec[];
 }
 
 export type StateActionSpec =
@@ -233,7 +241,10 @@ export type StateActionSpec =
 	| StateActionRemoveTagSpec
 	| StateActionActivateAbilitySpec
 	| StateActionInvokeSpec
-	| StateActionConsumeActionSpec;
+	| StateActionConsumeActionSpec
+	| StateActionSubmitCommandSpec
+	| StateActionTransitionSpec
+	| StateActionTransitionCompositeSpec;
 
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**
@@ -259,7 +270,7 @@ export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**
 	 * The condition that must be met for the transition to occur.
 	 */
-	if?: StateEventCondition<T> | string,
+	if?: StateEventCondition<T> | StateActionCondition | string,
 
 	/**
 	 * The action that is executed when the transition occurs.
@@ -287,14 +298,14 @@ export interface StateGuard<T extends Stateful & EventSubscriber = any> {
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
 	 */
-	can_enter?: ((this: T, state: State) => boolean) | string;
+	can_enter?: ((this: T, state: State) => boolean) | StateActionCondition | string;
 
 	/**
 	 * Checks if the state can be exited.
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
 	 */
-	can_exit?: ((this: T, state: State) => boolean) | string;
+	can_exit?: ((this: T, state: State) => boolean) | StateActionCondition | string;
 }
 
 /**
@@ -351,7 +362,7 @@ export type ConstructorWithFSMProperty = Function & {
 	linkedFSMs?: Set<FSMName>;
 };
 
-export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>;export type FsmHandlerDecl = {
+export type EventBagName = keyof Pick<StateDefinition, 'on' | 'input_event_handlers'>; export type FsmHandlerDecl = {
 	name: string; // method/field name on the instance
 	keys: string[]; // resolved keys this member answers to
 };

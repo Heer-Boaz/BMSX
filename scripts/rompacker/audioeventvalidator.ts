@@ -85,8 +85,7 @@ export function validateAudioEventReferences(resources: Resource[]): void {
 		const rules = ev.rules;
 		if (!Array.isArray(rules)) return false;
 		return rules.some(rule => {
-			if (!rule || typeof rule !== 'object') return false;
-			const action = (rule as any).do;
+			const action = rule.do;
 			return action && typeof action === 'object' && 'musicTransition' in action;
 		});
 	}

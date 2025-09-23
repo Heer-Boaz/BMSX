@@ -3,7 +3,7 @@ import { Registry } from "./registry";
 import { $ } from './game';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 
-export type EventPayload = Record<string, any>;
+export type EventPayload = Record<string, any> & { lane?: EventLane };
 // Generic event handler that allows more specific payload shapes, e.g. EventHandler<EventPayload & { bladiebla: boolean }>
 export type EventHandler<P extends EventPayload = EventPayload> = (event_name: string, emitter: Identifiable, payload?: P) => any;
 
@@ -15,10 +15,10 @@ type EmitterScopeListenerMap = Record<string, EventListenerMap>;
 export interface EventSubscriptionOptions {
 	emitter?: Identifier;
 	persistent?: boolean;
-	lane?: EventLane | 'any';
+	lane?: EventLane;
 }
 
-export type EventLane = 'gameplay' | 'presentation';
+export type EventLane = 'any' | 'gameplay' | 'presentation';
 
 /**
  * Represents an object that can subscribe to events.
@@ -280,18 +280,10 @@ export class EventEmitter implements RegisterablePersistent {
 		}
 	}
 
-	/**
-	 * Emits an event to its listeners.
-	 *
-	 * @param event_name - The name of the event.
-	 * @param emitter - The emitter object.
-	 * @param args - Additional arguments to pass to the listeners.
-	 */
-	// Allow callers to provide a more specific payload type when emitting.
-	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable | null, payload?: P, opts?: { lane?: EventLane }): void {
-		const lane: EventLane = opts?.lane ?? 'gameplay';
+	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
+		const lane: EventLane = payload?.lane ?? 'gameplay';
 		if (lane === 'gameplay') {
-			if (!emitter || (emitter as Identifiable).id == null) {
+			if (!emitter == null) {
 				throw new Error(`Gameplay events require an Identifiable emitter. Event "${event_name}" missing emitter id.`);
 			}
 		}
@@ -303,37 +295,26 @@ export class EventEmitter implements RegisterablePersistent {
 		self.eventLaneRegistry.set(event_name, lane);
 
 		if (lane === 'gameplay') {
-			GameplayEventRecorder.instance.record(event_name, (emitter as Identifiable).id, payload);
+			GameplayEventRecorder.instance.record(event_name, emitter.id, payload);
 		}
 
 		let anyoneSubscribed = false;
 		const deliver = (set?: ListenerSet) => {
 			if (!set) return;
 			for (const item of set) {
-				if (item.lane !== 'any' && item.lane !== lane) {
-					if (lane === 'presentation' && item.lane === 'gameplay') {
-						throw new Error(`Presentation event '${event_name}' delivered to gameplay-scoped listener.`);
-					}
-					if (lane === 'gameplay' && item.lane === 'presentation') {
-						throw new Error(`Gameplay event '${event_name}' delivered to presentation-scoped listener.`);
-					}
-					continue;
-				}
+				if (item.lane !== 'any' && item.lane !== lane) throw new Error(`Event '${event_name}' delivered to listener with mismatched lane '${item.lane}' (event lane: '${lane}').`);
 				anyoneSubscribed = true;
-				item.listener.call(item.subscriber, event_name, emitter as Identifiable, payload);
+				item.listener.call(item.subscriber, event_name, emitter, payload);
 			}
 		};
-		const emitterId = emitter?.id;
-		if (emitterId != null) {
-			deliver(self.emitterScopeListeners[event_name]?.[emitterId]);
-		}
+		deliver(self.emitterScopeListeners[event_name]?.[emitter.id]);
 		deliver(self.globalScopeListeners[event_name]);
 
 		// Wildcard listeners
-		for (const item of self.anyListeners) if (item.handler(event_name, emitter as Identifiable, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
+		for (const item of self.anyListeners) if (item.handler(event_name, emitter, payload)) anyoneSubscribed = true; // Call the handler and check if it returns true, which indicates that the event was handled
 
 		if (!anyoneSubscribed && $.debug) {
-			const emitterId = emitter ? (emitter as Identifiable).id : 'none';
+			const emitterId = emitter ? emitter.id : 'none';
 			console.warn(`No listeners for event "${event_name}" [${lane}] and emitter "${emitterId}", payload: "${payload ? JSON.stringify(payload) : 'no payload'}"`);
 			if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
 		}

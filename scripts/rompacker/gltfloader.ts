@@ -323,14 +323,14 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 				const dv = new DataView(info.buffer.buffer as ArrayBuffer, info.buffer.byteOffset, info.buffer.byteLength);
 				if (tight) {
 					const src = createTypedArrayView(info.componentType, info.buffer.buffer as ArrayBuffer, info.buffer.byteOffset + info.offset, length) as any;
-					(out as any).set(src);
+					out.set(src);
 				} else {
 					let dst = 0;
 					for (let v = 0; v < info.count; v++) {
 						const base = info.offset + v * info.stride;
 						for (let c = 0; c < info.comp; c++, dst++) {
 							const offset = base + c * elemSize;
-							(out as any)[dst] = readScalar(dv, offset, info.componentType, false);
+							out[dst] = readScalar(dv, offset, info.componentType, false);
 						}
 					}
 				}
@@ -546,7 +546,6 @@ export async function loadGLTFModel(data: string | ArrayBuffer, dir: string, res
 	};
 
 	model.imageBuffers = imageBuffers.map(buf => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)) as ArrayBuffer[];
-	(model as any)._buffers = buffers;
 
 	validateGLTFModel(model);
 	return model;

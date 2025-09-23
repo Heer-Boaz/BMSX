@@ -2,7 +2,6 @@ import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, type 
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
-import { ensureFighterLocomotionSystemRegistered } from './locomotionsystem';
 
 export const EILA_MODULE = {
 	onBoot(world: World) {
@@ -14,7 +13,6 @@ export const EILA_MODULE = {
 		// Input maps
 		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as InputMap);
 		$.input.getPlayerInput(2).setInputMap({ keyboard: null, gamepad: gamepadInputMapping } as InputMap);
-		ensureFighterLocomotionSystemRegistered();
 		// Register persistent Eila game state service
 		new YieArGameState();
 		// Register event service for handlers
@@ -39,8 +37,8 @@ export class EilaEventService extends Service {
 	}
 
 	public theOtherFighter(fighter: Fighter): Fighter | null {
-		if (fighter.id === 'player') return $.world.getWorldObject('sinterklaas');
-		return $.world.getWorldObject('player');
+		if (fighter.id === 'player') return $.world.getWorldObject<Fighter>('sinterklaas');
+		return $.world.getWorldObject<Fighter>('player');
 	}
 
 	@subscribesToGlobalEvent('hit_animation_end', true)

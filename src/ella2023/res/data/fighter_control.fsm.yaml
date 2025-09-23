@@ -1,14 +1,14 @@
 input_eval: first
 
 on:
-    mode.locomotion.idle:
+    $mode.locomotion.idle:
         if:
             and:
                 - state_not_matches: './stoerheidsdans'
                 - state_not_matches: './nagenieten'
                 - state_not_matches: './humiliated'
         switch: './_grounded/_idle'
-    mode.locomotion.walk:
+    $mode.locomotion.walk:
         if:
             and:
                 - state_not_matches: './stoerheidsdans'
@@ -17,7 +17,7 @@ on:
         to:
             state_id: './_grounded/walk'
             payload: '@payload'
-    mode.action.attack:
+    $mode.action.attack:
         do:
             - when:
                   value_equals:
@@ -25,17 +25,17 @@ on:
                       equals: flyingkick
               then:
                   switch: './airborne/_jump/flyingkick/active'
-            - else:
+              else:
                   to:
                       state_id: './_grounded/attack'
                       payload: '@payload'
-    mode.control.duck: './_grounded/duck'
-    mode.control.jump:
+    $mode.control.duck: './_grounded/duck'
+    $mode.control.jump:
         to:
             state_id: './airborne/_jump'
             payload: '@payload'
-    mode.control.stoerheidsdans: './stoerheidsdans'
-    mode.impact.humiliated: './humiliated'
+    $mode.control.stoerheidsdans: './stoerheidsdans'
+    $mode.impact.humiliated: './humiliated'
 
 states:
     _grounded:
@@ -46,7 +46,6 @@ states:
         states:
             _idle:
                 entering_state:
-                    - set: { target: desiredWalkDir, value: 0 }
                     - invoke: { fn: '@self.onIdleEntered' }
                     - emit: animate_idle
                     - tags: { remove: [state.attacking] }
@@ -56,96 +55,164 @@ states:
                     'jump_right[j]':
                         do:
                             - set: { target: facing, value: right }
-                            - dispatch: { event: mode.control.jump, payload: { direction: right } }
+                            - dispatch:
+                                  {
+                                      event: mode.control.jump,
+                                      payload: { direction: right },
+                                  }
                             - consume_action: [jump]
                     'jump_left[j]':
                         do:
                             - set: { target: facing, value: left }
-                            - dispatch: { event: mode.control.jump, payload: { direction: left } }
+                            - dispatch:
+                                  {
+                                      event: mode.control.jump,
+                                      payload: { direction: left },
+                                  }
                             - consume_action: [jump]
                     'jump[j]':
                         do:
-                            - dispatch: { event: mode.control.jump, payload: {} }
+                            - dispatch:
+                                  { event: mode.control.jump, payload: {} }
                             - consume_action: [jump]
                     'right[p]':
                         do:
                             - set: { target: facing, value: right }
-                            - set: { target: desiredWalkDir, value: 1 }
-                            - dispatch: { event: mode.locomotion.walk, payload: { direction: right } }
+                            - dispatch:
+                                  {
+                                      event: mode.locomotion.walk,
+                                      payload: { direction: right },
+                                  }
+                            - command:
+                                  kind: moveby2d
+                                  target_id: '@self.id'
+                                  space: world
+                                  delta: { x: '@self.SPEED' }
                     'left[p]':
                         do:
                             - set: { target: facing, value: left }
-                            - set: { target: desiredWalkDir, value: -1 }
-                            - dispatch: { event: mode.locomotion.walk, payload: { direction: left } }
+                            - dispatch:
+                                  {
+                                      event: mode.locomotion.walk,
+                                      payload: { direction: left },
+                                  }
+                            - command:
+                                  kind: moveby2d
+                                  target_id: '@self.id'
+                                  space: world
+                                  delta: { x: -'@self.SPEED' }
                     'punch[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.punch, payload: { attackType: punch } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.punch,
+                                      payload: { attackType: punch },
+                                  }
                             - consume_action: [punch]
                     'highkick[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.highkick, payload: { attackType: highkick } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.highkick,
+                                      payload: { attackType: highkick },
+                                  }
                             - consume_action: [highkick]
                     'lowkick[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.lowkick, payload: { attackType: lowkick } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.lowkick,
+                                      payload: { attackType: lowkick },
+                                  }
                             - consume_action: [lowkick]
             walk:
+                data:
+                    speedX: 0
                 entering_state:
-                    - invoke: { fn: '@self.onWalkEntered' }
-                    - invoke: { fn: '@self.beginWalk', payload: '@payload' }
-                    - emit: animate_walk
                     - tags: { remove: [state.attacking] }
-                exiting_state:
-                    - invoke: { fn: '@self.endWalk' }
+                    - emit: animate_walk
                 input_event_handlers:
                     'duck[p]':
                         dispatch: { event: mode.control.duck }
                     'jump_right[j]':
                         do:
                             - set: { target: facing, value: right }
-                            - dispatch: { event: mode.control.jump, payload: { direction: right } }
+                            - dispatch:
+                                  {
+                                      event: mode.control.jump,
+                                      payload: { direction: right },
+                                  }
                             - consume_action: [jump]
                     'jump_left[j]':
                         do:
                             - set: { target: facing, value: left }
-                            - dispatch: { event: mode.control.jump, payload: { direction: left } }
+                            - dispatch:
+                                  {
+                                      event: mode.control.jump,
+                                      payload: { direction: left },
+                                  }
                             - consume_action: [jump]
                     'jump[j]':
                         do:
-                            - dispatch: { event: mode.control.jump, payload: {} }
+                            - dispatch:
+                                  { event: mode.control.jump, payload: {} }
                             - consume_action: [jump]
                     'left[p]':
                         do:
                             - set: { target: facing, value: left }
-                            - set: { target: desiredWalkDir, value: -1 }
+                            - emit: animate_walk
+                            - command:
+                                  kind: moveby2d
+                                  target_id: '@self.id'
+                                  space: world
+                                  delta: { x: -'@self.SPEED' }
                     'right[p]':
                         do:
                             - set: { target: facing, value: right }
-                            - set: { target: desiredWalkDir, value: 1 }
+                            - emit: animate_walk
+                            - command:
+                                  kind: moveby2d
+                                  target_id: '@self.id'
+                                  space: world
+                                  delta: { x: '@self.SPEED' }
                     '&(left[!p], right[!p])':
                         dispatch: { event: mode.locomotion.idle }
                     'punch[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.punch, payload: { attackType: punch } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.punch,
+                                      payload: { attackType: punch },
+                                  }
                             - consume_action: [punch]
                     'highkick[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.highkick, payload: { attackType: highkick } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.highkick,
+                                      payload: { attackType: highkick },
+                                  }
                             - consume_action: [highkick]
                     'lowkick[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.lowkick, payload: { attackType: lowkick } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.lowkick,
+                                      payload: { attackType: lowkick },
+                                  }
                             - consume_action: [lowkick]
                 on:
                     mode.locomotion.walk:
                         do:
-                            - invoke: { fn: '@self.beginWalk', payload: '@payload' }
+                            - invoke:
+                                  {
+                                      fn: '@self.configureWalkState',
+                                      payload:
+                                          {
+                                              state: '@state',
+                                              payload: '@payload',
+                                          },
+                                  }
             duck:
                 entering_state:
                     - invoke: { fn: '@self.setDuckingState', payload: true }
@@ -165,21 +232,35 @@ states:
                         set: { target: facing, value: right }
                     'lowkick[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.duckkick, payload: { attackType: duckkick } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.duckkick,
+                                      payload: { attackType: duckkick },
+                                  }
                             - consume_action: [lowkick]
             attack:
                 data:
                     currentAttack: null
                 entering_state:
-                    - set: { target: '@state.data.currentAttack', value: '@payload.attackType' }
-                    - set: { target: desiredWalkDir, value: 0 }
-                    - invoke: { fn: '@self.startAttack', payload: '@payload.attackType' }
+                    - set:
+                          {
+                              target: '@state.data.currentAttack',
+                              value: '@payload.attackType',
+                          }
+                    - invoke:
+                          {
+                              fn: '@self.startAttack',
+                              payload: '@payload.attackType',
+                          }
                     - tags: { add: [state.attacking] }
                 on:
                     mode.action.complete: '/_grounded/_idle'
                 exiting_state:
-                    - invoke: { fn: '@self.finishAttack', payload: '@state.data.currentAttack' }
+                    - invoke:
+                          {
+                              fn: '@self.finishAttack',
+                              payload: '@state.data.currentAttack',
+                          }
                     - tags: { remove: [state.attacking] }
                     - set: { target: '@state.data.currentAttack', value: null }
     airborne:
@@ -188,28 +269,42 @@ states:
                 automatic_reset_mode: tree
                 entering_state:
                     - tags: { add: [state.airborne], remove: [state.grounded] }
-                    - invoke: { fn: '@self.startJump', payload: { state: '@state', payload: '@payload' } }
+                    - invoke:
+                          {
+                              fn: '@self.startJump',
+                              payload: { state: '@state', payload: '@payload' },
+                          }
                     - emit: animate_jump
                 exiting_state:
                     - tags: { remove: [state.airborne], add: [state.grounded] }
                     - invoke: { fn: '@self.finishJump' }
-                    - set: { target: desiredWalkDir, value: 0 }
                 input_event_handlers:
                     '(highkick|lowkick)[wp{6}]':
                         do:
-                            - set: { target: desiredWalkDir, value: 0 }
-                            - activate_ability: { id: fighter.attack.flyingkick, payload: { attackType: flyingkick } }
+                            - activate_ability:
+                                  {
+                                      id: fighter.attack.flyingkick,
+                                      payload: { attackType: flyingkick },
+                                  }
                             - consume_action: [highkick, lowkick]
                 states:
                     _ascending:
                         ticks2advance_tape: 30
                         tick:
-                            invoke: { fn: '@self.jumpAscendingTick', payload: '@state' }
+                            invoke:
+                                {
+                                    fn: '@self.jumpAscendingTick',
+                                    payload: '@state',
+                                }
                         tape_next: '../descending'
                     descending:
                         ticks2advance_tape: 30
                         tick:
-                            invoke: { fn: '@self.jumpDescendingTick', payload: '@state' }
+                            invoke:
+                                {
+                                    fn: '@self.jumpDescendingTick',
+                                    payload: '@state',
+                                }
                         tape_next: '/_grounded/_idle'
                     flyingkick:
                         is_concurrent: true
@@ -217,10 +312,18 @@ states:
                             _ready: {}
                             active:
                                 entering_state:
-                                    - invoke: { fn: '@self.performAttack', payload: 'flyingkick' }
+                                    - invoke:
+                                          {
+                                              fn: '@self.performAttack',
+                                              payload: 'flyingkick',
+                                          }
                                     - tags: { add: [state.attacking] }
                                 exiting_state:
-                                    - invoke: { fn: '@self.completeAttack', payload: 'flyingkick' }
+                                    - invoke:
+                                          {
+                                              fn: '@self.completeAttack',
+                                              payload: 'flyingkick',
+                                          }
                                     - tags: { remove: [state.attacking] }
                                     - emit: animate_jump
                                 on:
@@ -240,13 +343,22 @@ states:
         on:
             animationEnd:
                 do:
-                    - invoke: { fn: '@self.handleStoerAnimationEnd', payload: { state: '@state', payload: '@payload' } }
+                    - invoke:
+                          {
+                              fn: '@self.handleStoerAnimationEnd',
+                              payload: { state: '@state', payload: '@payload' },
+                          }
         tape_next:
             do:
-                - invoke: { fn: '@self.handleStoerTapeNext', payload: { state: '@state', payload: '@payload' } }
+                - invoke:
+                      {
+                          fn: '@self.handleStoerTapeNext',
+                          payload: { state: '@state', payload: '@payload' },
+                      }
         tape_end:
             do:
-                - invoke: { fn: '@self.completeStoerheidsdans', payload: '@state' }
+                - invoke:
+                      { fn: '@self.completeStoerheidsdans', payload: '@state' }
             to: '/_nagenieten'
     nagenieten:
         entering_state:
@@ -257,7 +369,11 @@ states:
             - invoke: { fn: '@self.setFightingState', payload: true }
     humiliated:
         entering_state:
-            - tags: { add: [state.combat_disabled, state.grounded], remove: [state.attacking, state.airborne] }
+            - tags:
+                  {
+                      add: [state.combat_disabled, state.grounded],
+                      remove: [state.attacking, state.airborne],
+                  }
             - invoke: { fn: '@self.enterHumiliated' }
             - emit: animate_humiliated
         exiting_state:

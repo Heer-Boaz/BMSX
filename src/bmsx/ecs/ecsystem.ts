@@ -15,19 +15,13 @@ import { Service } from '../core/service';
 import { Registry } from '../core/registry';
 
 export enum TickGroup {
-	Input = 5,
+	Input = 10,
 	AbilityUpdate = 20,
 	ModeResolution = 30,
 	Physics = 40,
 	Animation = 50,
 	Presentation = 60,
 	EventFlush = 70,
-
-	// Legacy aliases (maintain compatibility for existing registrations)
-	PrePhysics = Input,
-	Simulation = AbilityUpdate,
-	PostPhysics = Physics,
-	PreRender = Presentation,
 }
 
 @excludeclassfromsavegame

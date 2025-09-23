@@ -6,7 +6,7 @@ import { insavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/se
 import { getEasing } from '../utils/easing';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
-import { STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX, type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType, type StateEventDefinition, type TickCheckDefinition } from './fsmtypes';
+import { type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType, type StateEventDefinition, type TickCheckDefinition } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
 import { EventPayload } from '../core/eventemitter';
 
@@ -33,35 +33,15 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	/** Simple path parse cache. */
 	private static _pathCache = new Map<string, { abs: boolean, up: number, segs: readonly string[] }>();
 
-	/** Convert legacy dot-aliases to filesystem syntax when enabled. */
-	private static normalizeLegacy(input: string): string {
-		if (!State.pathConfig.enableLegacyAliases) return input;
-		if (input.startsWith(`${STATE_THIS_PREFIX}.`)) {
-			State.diagnostics.logLegacyAliasUse && console.debug(`[FSM] Using legacy alias '#this.' in '${input}'.`);
-			return `./${input.slice(STATE_THIS_PREFIX.length + 1).replaceAll('.', '/')}`;
-		}
-		if (input.startsWith(`${STATE_PARENT_PREFIX}.`)) {
-			State.diagnostics.logLegacyAliasUse && console.debug(`[FSM] Using legacy alias '#parent.' in '${input}'.`);
-			return `../${input.slice(STATE_PARENT_PREFIX.length + 1).replaceAll('.', '/')}`;
-		}
-		if (input.startsWith(`${STATE_ROOT_PREFIX}.`)) {
-			State.diagnostics.logLegacyAliasUse && console.debug(`[FSM] Using legacy alias '#root.' in '${input}'.`);
-			return `/${input.slice(STATE_ROOT_PREFIX.length + 1).replaceAll('.', '/')}`;
-		}
-		return input;
-	}
-
 	/** Parse filesystem-like path: '/', './', '../', quoting via ["..."] with escapes. */
-	private static parseFsPath(input: string): { abs: boolean, up: number, segs: readonly string[] } {
-		const raw = State.normalizeLegacy(input);
-		const hit = State._pathCache.get(raw);
+	public static parseFsPath(input: string): { abs: boolean, up: number, segs: readonly string[] } {
+		const hit = State._pathCache.get(input);
 		if (hit) {
-			State._pathCache.delete(raw);
-			State._pathCache.set(raw, hit);
+			State._pathCache.set(input, hit);
 			return hit;
 		}
 
-		const len = raw.length;
+		const len = input.length;
 		let i = 0;
 		let abs = false;
 		let up = 0;
@@ -69,13 +49,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		if (len === 0) return { abs: false, up: 0, segs: [] };
 
-		if (raw[i] === '/') { abs = true; i++; }
+		if (input[i] === '/') { abs = true; i++; }
 
 		if (!abs) {
-			if (raw.startsWith('./', i)) {
+			if (input.startsWith('./', i)) {
 				i += 2;
 			} else {
-				while (raw.startsWith('../', i)) { up++; i += 3; }
+				while (input.startsWith('../', i)) { up++; i += 3; }
 			}
 		}
 
@@ -90,34 +70,34 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		};
 
 		while (i < len) {
-			const c = raw[i];
+			const c = input[i];
 			if (c === '/') { i++; continue; }
-			if (c === '[' && i + 1 < len && raw[i + 1] === '"') {
+			if (c === '[' && i + 1 < len && input[i + 1] === '"') {
 				i += 2; // skip ["
 				let seg = '';
 				let closed = false;
 				while (i < len) {
-					const ch = raw[i++];
+					const ch = input[i++];
 					if (ch === '\\') {
 						if (i < len) {
-							const esc = raw[i++];
+							const esc = input[i++];
 							if (esc === '"') seg += '"';
 							else if (esc === '/') seg += '/';
 							else seg += esc;
 						}
 						continue;
 					}
-					if (ch === '"') { if (i < len && raw[i] === ']') { i++; closed = true; break; } else { throw new Error(`Unterminated quoted segment in path '${raw}'.`); } }
+					if (ch === '"') { if (i < len && input[i] === ']') { i++; closed = true; break; } else { throw new Error(`Unterminated quoted segment in path '${input}'.`); } }
 					seg += ch;
 				}
-				if (!closed) throw new Error(`Unterminated quoted segment in path '${raw}'.`);
+				if (!closed) throw new Error(`Unterminated quoted segment in path '${input}'.`);
 				pushSeg(seg);
 				continue;
 			}
 
 			let start = i;
-			while (i < len && raw[i] !== '/') i++;
-			pushSeg(raw.slice(start, i));
+			while (i < len && input[i] !== '/') i++;
+			pushSeg(input.slice(start, i));
 		}
 
 		if (State._pathCache.size >= State.pathConfig.cacheSize) {
@@ -125,9 +105,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (firstKey) State._pathCache.delete(firstKey);
 		}
 		const rec = { abs, up, segs: segs as readonly string[] };
-		State._pathCache.set(raw, rec);
+		State._pathCache.set(input, rec);
 		return rec;
 	}
+
 	/**
 	 * The unique identifier of this specific instance of the state machine.
 	* @see {@link make_id}
@@ -700,6 +681,17 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	force_leaf_transition(state_or_transition: Identifier | StateTransition, payload?: EventPayload): void {
 		const { state_id, payload: extractedPayload } = this.extractStateIdAndPayload(state_or_transition, payload);
 		this.transition_force_leaf(state_id, extractedPayload);
+	}
+
+	public get path(): string {
+		if (this.is_root) return '/';
+		const segments: string[] = [];
+		let node: State | undefined = this;
+		while (node && !node.is_root) {
+			segments.push(node.currentid);
+			node = node.parent;
+		}
+		return '/' + segments.reverse().join('/');
 	}
 
 	/**

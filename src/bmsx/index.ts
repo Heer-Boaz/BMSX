@@ -41,7 +41,7 @@ export * from './fsm/fsmtypes';
 export * from './fsm/state';
 export * from './fsm/statedefinition';
 export * from './component/abilitysystemcomponent';
-export * from './gameplay/gameplay_command_buffer';
+export * from './ecs/gameplay_command_buffer';
 export * from './input/actionparser';
 export * from './input/gamepad';
 export * from './input/input';

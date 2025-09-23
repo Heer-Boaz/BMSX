@@ -2,7 +2,6 @@ import { Registry } from '../core/registry';
 import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
 import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { DefaultECSPipelineRegistry as ECSReg } from '../ecs/pipeline';
-import { TickGroup } from '../ecs/ecsystem';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 import { $ } from 'bmsx/core/game';
 
@@ -64,16 +63,6 @@ function ensureHudElement(): HTMLElement {
 	return el;
 }
 
-function groupName(g: TickGroup): string {
-	switch (g) {
-		case TickGroup.PrePhysics: return 'PrePhysics';
-		case TickGroup.Simulation: return 'Simulation';
-		case TickGroup.PostPhysics: return 'PostPhysics';
-		case TickGroup.PreRender: return 'PreRender';
-		default: return String(g);
-	}
-}
-
 @excludeclassfromsavegame
 export class ECSHUDOverlay {
 	public get id(): string { return 'ecs-hud-overlay'; }
@@ -117,7 +106,7 @@ export class ECSHUDOverlay {
 			// EMA per group
 			const prev = this.emaGroup[g] ?? total;
 			const ema = this.useEMA ? (this.emaGroup[g] = this.emaAlpha * total + (1 - this.emaAlpha) * prev) : total;
-			groupsLine.push(`${groupName(g as unknown as TickGroup)}:${total.toFixed(2)}ms avg=${ema.toFixed(2)}ms`);
+			groupsLine.push(`${String(g)}:${total.toFixed(2)}ms avg=${ema.toFixed(2)}ms`);
 		}
 		if (groupsLine.length) lines.push('Groups: ' + groupsLine.join('  |  '));
 		// Per-system breakdown in current order
@@ -127,7 +116,7 @@ export class ECSHUDOverlay {
 				const key = s.id || s.name;
 				const prev = this.emaPerSystem[key] ?? s.ms;
 				const ema = this.useEMA ? (this.emaPerSystem[key] = this.emaAlpha * s.ms + (1 - this.emaAlpha) * prev) : s.ms;
-				lines.push(`  [${groupName(s.group)}] ${key.padEnd(24)} ${s.ms.toFixed(3)} ms avg=${ema.toFixed(3)}`);
+				lines.push(`  [${String(s.group)}] ${key.padEnd(24)} ${s.ms.toFixed(3)} ms avg=${ema.toFixed(3)}`);
 			}
 		}
 		lines.push('');
@@ -144,7 +133,7 @@ export class ECSHUDOverlay {
 		if (diag.cyclesDetected) {
 			lines.push('');
 			lines.push('Warning: cycle(s) detected; priority order used.');
-			for (const g of diag.cycleGroups ?? []) lines.push(`  group=${groupName(g.group)}: [${g.refs.join(', ')}]`);
+			for (const g of diag.cycleGroups ?? []) lines.push(`  group=${String(g.group)}: [${g.refs.join(', ')}]`);
 		}
 		contentEl.textContent = lines.join('\n');
 	}

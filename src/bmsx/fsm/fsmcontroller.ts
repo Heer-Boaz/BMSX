@@ -1,4 +1,4 @@
-import { EventEmitter } from 'bmsx/core/eventemitter';
+import { EventEmitter, type EventLane, type EventPayload } from 'bmsx/core/eventemitter';
 import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload, excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
 import { ActiveStateMachines } from './fsmlibrary';
@@ -300,9 +300,9 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that emitted the event.
 	 * @param args - Additional arguments to pass to the event handler.
 	 */
-	private auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
+	private auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, payload?: EventPayload, lane?: EventLane): void {
 		if (this.eventhandling_enabled === false) return;
-		this.sc.dispatch_event(event_name, emitter, ...args);
+		this.sc.dispatch_event(event_name, emitter, payload, lane);
 	}
 
 	/**

@@ -3,11 +3,45 @@ import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
-import type { EventBagName, listed_sdef_event, StateActionActivateAbilitySpec, StateActionAddTagSpec, StateActionAdjustPropertySpec, StateActionAdjustSpec, StateActionCondition, StateActionConditionalSpec, StateActionConsumeActionSpec, StateActionDispatchEventSpec, StateActionDispatchSpec, StateActionEmitSpec, StateActionInvokeSpec, StateActionRemoveTagSpec, StateActionSetPropertySpec, StateActionSetSpec, StateActionSetTicksSpec, StateActionSpec, StateActionTagsSpec, StateEventDefinition, StateEventHandler, StateExitHandler, Stateful, StateGuard, StateMachineBlueprint, StateNextHandler } from "./fsmtypes";
+import type {
+	EventBagName,
+	listed_sdef_event,
+	StateActionActivateAbilitySpec,
+	StateActionAddTagSpec,
+	StateActionAdjustPropertySpec,
+	StateActionAdjustSpec,
+	StateActionCondition,
+	StateActionConditionalSpec,
+	StateActionConsumeActionSpec,
+	StateActionDispatchEventSpec,
+	StateActionDispatchSpec,
+	StateActionEmitSpec,
+	StateActionInvokeSpec,
+	StateActionRemoveTagSpec,
+	StateActionSetPropertySpec,
+	StateActionSetSpec,
+	StateActionSetTicksSpec,
+	StateActionSpec,
+	StateActionSubmitCommandSpec,
+	StateActionTagOps,
+	StateActionTagsSpec,
+	StateActionTransitionCompositeSpec,
+	StateTransition,
+	StateEventDefinition,
+	StateEventHandler,
+	StateExitHandler,
+	Stateful,
+	StateGuard,
+	StateMachineBlueprint,
+	StateNextHandler,
+	TransitionType
+} from "./fsmtypes";
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 import type { StateMachineController } from './fsmcontroller';
+import type { WorldObject } from 'bmsx/core/object/worldobject';
 
 /**
  * Represents the machine definitions.
@@ -59,7 +93,7 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 	const className = ctor.name;
 	const entries = getDeclaredFsmHandlers(ctor);
 	if (!entries.length || !linkedMachines?.size) return;
-	const registered: Set<string> = (ctor as any)[HANDLERS_REGISTERED] ?? new Set<string>();
+	const registered: Set<string> = ctor[HANDLERS_REGISTERED] ?? new Set<string>();
 
 	for (const { name: memberName, keys } of entries) {
 		for (const machine of linkedMachines) {
@@ -78,7 +112,7 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 			}
 		}
 	}
-	(ctor as any)[HANDLERS_REGISTERED] = registered;
+	ctor[HANDLERS_REGISTERED] = registered;
 }
 
 // ---------- Diff-based, tree-aware migration ----------
@@ -456,7 +490,7 @@ type BuiltinExecutionContext = {
 	slot: string;
 };
 
-function buildContext(self: any, state: State | undefined, rawArgs: any[] | undefined, slot: string): BuiltinExecutionContext {
+function buildContext(self: Stateful, state: State | undefined, rawArgs: any[] | undefined, slot: string): BuiltinExecutionContext {
 	const args = Array.isArray(rawArgs) ? rawArgs : rawArgs != null ? [rawArgs] : [];
 	let payload: EventPayload | undefined;
 	for (let i = args.length - 1; i >= 0; i--) {
@@ -530,15 +564,38 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 	}
 	for (const token of segments) {
 		if (current == null) return undefined;
-		current = current[token as any];
+		let next = current[token];
+		if (next === undefined && typeof token === 'string') {
+			let ctor = typeof current === 'function' ? current : current.constructor;
+			while (ctor && ctor !== Object && ctor !== Function) {
+				if (Object.prototype.hasOwnProperty.call(ctor, token)) {
+					next = ctor[token];
+					break;
+				}
+				ctor = Object.getPrototypeOf(ctor);
+			}
+		}
+		current = next;
 	}
 	return current;
 }
 
 function resolveTemplateValue(value: any, ctx: BuiltinExecutionContext): any {
 	if (typeof value === 'string') {
-		if (value.startsWith('@')) {
-			return resolveBinding(value.slice(1), ctx);
+		const trimmed = value.trim();
+		const signedMatch = trimmed.match(/^([+-])['"]?@([^'"\s]+)['"]?$/);
+		if (signedMatch) {
+			const [, signChar, path] = signedMatch;
+			const resolved = resolveBinding(path, ctx);
+			const numeric = toNumber(resolved);
+			return signChar === '-' ? -numeric : numeric;
+		}
+		const quotedBindingMatch = trimmed.match(/^["']@([^"']+)["']$/);
+		if (quotedBindingMatch) {
+			return resolveBinding(quotedBindingMatch[1], ctx);
+		}
+		if (trimmed.startsWith('@')) {
+			return resolveBinding(trimmed.slice(1), ctx);
 		}
 		return value;
 	}
@@ -555,19 +612,62 @@ function resolveTemplateValue(value: any, ctx: BuiltinExecutionContext): any {
 	return value;
 }
 
-function setPathValue(target: any, segments: (string | number)[], value: any): void {
+function setPathValue(target: any, segments: (string | number)[], modifier: string | undefined, value: any): void {
 	if (!target || !segments.length) return;
 	let obj = target;
 	for (let i = 0; i < segments.length - 1; i++) {
 		const token = segments[i];
-		if (obj[token as any] == null) {
-			obj[token as any] = typeof segments[i + 1] === 'number' ? [] : {};
+		if (obj[token] == null) {
+			obj[token] = typeof segments[i + 1] === 'number' ? [] : {};
 		}
-		obj = obj[token as any];
+		obj = obj[token];
 		if (obj == null) return;
 	}
 	const last = segments[segments.length - 1];
-	obj[last as any] = value;
+	if (modifier) {
+		switch (modifier) {
+			case '-':
+				obj[last] = (obj[last] || 0) - value;
+				break;
+			case '+':
+				obj[last] = (obj[last] || 0) + value;
+				break;
+			case '!':
+				obj[last] = !value;
+				break;
+			case '!!':
+				obj[last] = !!value;
+				break;
+			case '~':
+				if (typeof obj[last] === 'number' && typeof value === 'number') {
+					obj[last] = obj[last] & ~value;
+				} else if (Array.isArray(obj[last])) {
+					const idx = obj[last].indexOf(value);
+					if (idx >= 0) obj[last].splice(idx, 1);
+				}
+				break;
+			case '~~':
+				if (typeof obj[last] === 'number' && typeof value === 'number') {
+					obj[last] = obj[last] ^ value;
+				} else if (Array.isArray(obj[last])) {
+					const idx = obj[last].indexOf(value);
+					if (idx >= 0) {
+						obj[last].splice(idx, 1);
+					} else {
+						obj[last].push(value);
+					}
+				}
+				break;
+			case '=':
+				// No-op, just set the value
+				obj[last] = value;
+				break;
+			default:
+				throw new Error(`[FSMLibrary] Unsupported modifier '${modifier}' in path.`);
+		}
+	} else {
+		obj[last] = value;
+	}
 }
 
 function getPathValue(target: any, segments: (string | number)[]): any {
@@ -575,7 +675,7 @@ function getPathValue(target: any, segments: (string | number)[]): any {
 	let current = target;
 	for (const token of segments) {
 		if (current == null) return undefined;
-		current = current[token as any];
+		current = current[token];
 	}
 	return current;
 }
@@ -595,12 +695,25 @@ function resolveComponentFromSegments(self: any, segments: (string | number)[]):
 	return { component, rest: segments };
 }
 
-function resolveTargetReference(targetSpec: string, ctx: BuiltinExecutionContext): { base: any; path: (string | number)[] } | null {
+function resolveTargetReference(targetSpec: string, ctx: BuiltinExecutionContext): { base: any; path: (string | number)[]; modifier?: string } | null {
 	if (!targetSpec) return null;
+
+	// Extract leading modifiers like '-', '!', '~~', etc.
+	// We accept one or more of the characters -, !, ~ as a modifier prefix.
+	// If present, strip it and keep it in the returned result so callers can react.
+	let spec = targetSpec.trim();
+	let modifier: string | undefined;
+	const modMatch = spec.match(/^([\-!~]+)(.*)$/);
+	if (modMatch) {
+		modifier = modMatch[1];
+		spec = modMatch[2].trim();
+		if (!spec) return null;
+	}
+
 	let segments: (string | number)[];
 	let base: any;
-	if (targetSpec.startsWith('@')) {
-		segments = parsePathSegments(targetSpec.slice(1));
+	if (spec.startsWith('@')) {
+		segments = parsePathSegments(spec.slice(1));
 		if (!segments.length) return null;
 		const rootToken = segments.shift()!;
 		switch (rootToken) {
@@ -612,7 +725,7 @@ function resolveTargetReference(targetSpec: string, ctx: BuiltinExecutionContext
 				break;
 			case 'payload':
 				base = ctx.payload;
-				if (typeof base !== 'object') throw new Error(`[FSMLibrary]Payload is not an object, cannot set property on it.`);
+				if (typeof base !== 'object') throw new Error(`[FSMLibrary] Payload is not an object, cannot set property on it.`);
 				break;
 			case 'component': {
 				const resolved = resolveComponentFromSegments(ctx.self, segments);
@@ -622,29 +735,41 @@ function resolveTargetReference(targetSpec: string, ctx: BuiltinExecutionContext
 				break;
 			}
 			default:
-				return null;
+				return null; // Not a referenced path
 		}
 	}
 	else {
-		segments = parsePathSegments(targetSpec);
+		segments = parsePathSegments(spec);
 		base = ctx.self;
 	}
-	if (base == null) return null;
-	return { base, path: segments };
+	if (base == null) throw new Error(`[FSMLibrary] Cannot resolve target reference for path '${targetSpec}'.`);
+	return { base, path: segments, modifier };
 }
 
 function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecutionContext): void {
 	if (!targetSpec) return;
 	const resolvedValue = resolveTemplateValue(valueSpec, ctx);
 	const target = resolveTargetReference(targetSpec, ctx);
-	if (!target) return;
-	if (!target.path.length) {
-		return;
-	}
-	setPathValue(target.base, target.path, resolvedValue);
+	if (!target) throw new Error(`[FSMLibrary] Cannot resolve target reference for path '${targetSpec}'.`);
+	if (!target.path.length) throw new Error(`[FSMLibrary] Target reference for path '${targetSpec}' has no property path.`);
+	setPathValue(target.base, target.path, target.modifier, resolvedValue);
 }
 
 function resolveNumberOperand(spec: any, ctx: BuiltinExecutionContext): number {
+	if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
+		if (Object.prototype.hasOwnProperty.call(spec, 'mul')) {
+			const factors = ensureArray((spec as { mul: any }).mul);
+			if (factors.length === 0) return 0;
+			let result = 1;
+			for (const factor of factors) {
+				result *= resolveNumberOperand(factor, ctx);
+			}
+			return result;
+		}
+		if (Object.prototype.hasOwnProperty.call(spec, 'neg')) {
+			return -resolveNumberOperand((spec as { neg: any }).neg, ctx);
+		}
+	}
 	const resolved = resolveTemplateValue(spec, ctx);
 	return toNumber(resolved);
 }
@@ -658,6 +783,28 @@ function toNumber(value: any): number {
 	}
 	return 0;
 }
+
+// function resolveCommandTarget(targetSpec: any, ctx: BuiltinExecutionContext, fallback: any): { id: Identifier; entity?: any } | null {
+// 	if (targetSpec === undefined || targetSpec === null) {
+// 		const entity = ctx.self ?? fallback;
+// 		const id = typeof entity?.id === 'string' ? entity.id as Identifier : undefined;
+// 		return id ? { id, entity } : null;
+// 	}
+// 	const resolved = resolveTemplateValue(targetSpec, ctx);
+// 	if (typeof resolved === 'string') {
+// 		return { id: resolved as Identifier };
+// 	}
+// 	if (typeof resolved === 'number') {
+// 		return { id: String(resolved) as Identifier };
+// 	}
+// 	if (resolved && typeof resolved === 'object') {
+// 		const idValue = (resolved as { id?: unknown }).id;
+// 		if (typeof idValue === 'string') {
+// 			return { id: idValue as Identifier, entity: resolved };
+// 		}
+// 	}
+// 	return null;
+// }
 
 function applyAdjustProperty(targetSpec: string, adjust: { add?: any; sub?: any; mul?: any; div?: any; set?: any }, ctx: BuiltinExecutionContext): void {
 	if (!targetSpec) return;
@@ -682,7 +829,7 @@ function applyAdjustProperty(targetSpec: string, adjust: { add?: any; sub?: any;
 		const divisor = resolveNumberOperand(adjust.div, ctx);
 		if (divisor !== 0) result /= divisor;
 	}
-	setPathValue(target.base, target.path, result);
+	setPathValue(target.base, target.path, target.modifier, result);
 }
 
 function ensureArray<T>(value: T | T[] | undefined): T[] {
@@ -690,32 +837,49 @@ function ensureArray<T>(value: T | T[] | undefined): T[] {
 	return Array.isArray(value) ? value : [value];
 }
 
-function getAbilitySystemFromTarget(target: any): AbilitySystemComponent | undefined {
-	if (!target) return undefined;
-	const asc = target.abilitySystem instanceof AbilitySystemComponent ? target.abilitySystem : undefined;
-	if (asc) return asc;
-	if (typeof target.getUniqueComponent === 'function') {
-		try {
-			const maybeAsc = target.getUniqueComponent(AbilitySystemComponent as any);
-			if (maybeAsc instanceof AbilitySystemComponent) return maybeAsc;
-		}
-		catch { /* ignore */ }
-	}
-	return undefined;
-}
+function applyGameplayTagOperation(target: WorldObject, tags: string | string[], op: StateActionTagOps): void {
+	const asc = target.getUniqueComponent(AbilitySystemComponent);
+	if (!asc) throw new Error(`[FSMLibrary] Target entity ${target.id} does not have an AbilitySystemComponent, cannot ${op} gameplay tags ${tags}.`);
 
-function applyGameplayTagOperation(target: any, tags: any, op: 'add' | 'remove'): void {
-	const asc = getAbilitySystemFromTarget(target);
-	const list = ensureArray(tags).filter(tag => typeof tag === 'string' && tag.length > 0) as string[];
-	if (list.length === 0) return;
-	for (const tag of list) {
-		if (op === 'add') {
-			if (typeof target?.addGameplayTag === 'function') target.addGameplayTag(tag);
-			else asc?.addTag(tag);
-		} else {
-			if (typeof target?.removeGameplayTag === 'function') target.removeGameplayTag(tag);
-			else asc?.removeTag(tag);
-		}
+	switch (op) {
+		case 'add':
+			if (typeof tags === 'string') {
+				asc.addTag(tags);
+			}
+			else {
+				tags.forEach(tag => asc.addTag(tag));
+			}
+			break;
+		case 'remove':
+			if (typeof tags === 'string') {
+				asc.removeTag(tags);
+			}
+			else {
+				tags.forEach(tag => asc.removeTag(tag));
+			}
+			break;
+		case 'toggle':
+			if (typeof tags === 'string') {
+				if (asc.hasTag(tags)) {
+					asc.removeTag(tags);
+				}
+				else {
+					asc.addTag(tags);
+				}
+			}
+			else {
+				tags.forEach(tag => {
+					if (asc.hasTag(tag)) {
+						asc.removeTag(tag);
+					}
+					else {
+						asc.addTag(tag);
+					}
+				});
+			}
+			break;
+		default:
+			throw new Error(`[FSMLibrary] Unknown gameplay tag operation: ${op}`);
 	}
 }
 
@@ -769,12 +933,7 @@ function stateMatchesCondition(spec: string | { path: string; machine?: string }
 			path = `${spec.machine}:/${path}`;
 		}
 	}
-	try {
-		return controller.matches_state_path(path);
-	}
-	catch {
-		return false;
-	}
+	return controller.matches_state_path(path);
 }
 
 const MissingHandlerWarnings = new Set<string>();
@@ -787,7 +946,7 @@ function warnMissingHandler(refId: string, debugRef?: string): void {
 }
 
 function createDelegatedHandler(targetId: string, registry: HandlerRegistry, opts: HandlerInvokeOptions): GenericHandler {
-	return function (this: any, ...args: any[]) {
+	return function (this: Stateful, ...args: any[]) {
 		const handler = registry.get(targetId);
 		if (!handler) {
 			warnMissingHandler(targetId, opts.debugRef);
@@ -799,7 +958,7 @@ function createDelegatedHandler(targetId: string, registry: HandlerRegistry, opt
 }
 
 function createProxyForRegistryId(id: string, registry: HandlerRegistry, opts: HandlerInvokeOptions): GenericHandler {
-	return function (this: any, ...args: any[]) {
+	return function (this: Stateful, ...args: any[]) {
 		const handler = registry.get(id);
 		if (!handler) return opts.coerceBoolean ? !!opts.defaultValue : opts.defaultValue;
 		const result = handler.apply(this, args);
@@ -826,38 +985,46 @@ function buildEventName(source: any, ctx: BuiltinExecutionContext): string {
 	if (source == null) return '';
 	if (Array.isArray(source)) {
 		return ensureArray(source)
-			.map(part => toStringSafe(resolveTemplateValue(part, ctx)))
+			.map(part => String(resolveTemplateValue(part, ctx)))
 			.join('');
 	}
-	return toStringSafe(resolveTemplateValue(source, ctx));
-}
-
-function toStringSafe(value: any): string {
-	if (value == null) return '';
-	return typeof value === 'string' ? value : String(value);
+	return String(resolveTemplateValue(source, ctx));
 }
 
 function createEmitHandler(spec: StateActionEmitSpec, slot: string): GenericHandler {
 	const normalized = typeof spec === 'string' ? { event: spec } : (spec ?? {});
 	const emitterSpec = normalized.emitter;
 	const laneDefault = normalized.lane ?? 'presentation';
-	const eventSpec = normalized.event ?? (normalized as any).event_concat;
-	return function (this: any, state?: State, ...invokeArgs: any[]) {
+	const eventSpec = normalized.event;
+	return function (this: Stateful, state?: State, ...invokeArgs: any[]) {
 		const ctx = buildContext(this, state, invokeArgs, slot);
 		const emitter = resolveEmitter(emitterSpec, ctx, this) ?? this;
 		const payload = normalized.payload !== undefined ? resolveTemplateValue(normalized.payload, ctx) : undefined;
 		const lane = laneDefault as EventLane;
 		const eventName = buildEventName(eventSpec, ctx);
-		if (!eventName) return;
-		$.emit(eventName, emitter, payload, { lane });
+		if (!eventName) throw new Error(`[FSMLibrary] Cannot emit event with empty name in slot '${slot}'.`);
+		switch (lane) {
+			case 'any':
+				$.emit(eventName, emitter, payload);
+			case 'gameplay':
+				$.emitGameplay(eventName, emitter, payload);
+				break;
+			case 'presentation':
+				$.emitPresentation(eventName, emitter, payload);
+				break;
+			default:
+				throw new Error(`[FSMLibrary] Cannot emit event with invalid lane '${lane}' in slot '${slot}'.`);
+		}
+		if (typeof eventName !== 'string' || !eventName.trim()) {
+			throw new Error(`[FSMLibrary] Cannot emit event with empty name in slot '${slot}'.`);
+		}
 	};
 }
 
 function createDispatchEventHandler(spec: StateActionDispatchEventSpec['dispatch_event'], slot: string): GenericHandler {
-	return function (this: any, state?: State, ...invokeArgs: any[]) {
-		if (!spec?.event) return;
-		const controller = this?.sc;
-		if (!controller?.dispatch_event) return;
+	return function (this: Stateful, state?: State, ...invokeArgs: any[]) {
+		if (!spec?.event) throw new Error(`[FSMLibrary] Cannot dispatch event with empty name in slot '${slot}'.`);
+		const controller = this.sc;
 		const ctx = buildContext(this, state, invokeArgs, slot);
 		const emitterResolved = spec.emitter !== undefined ? resolveTemplateValue(spec.emitter, ctx) : this;
 		const argsResolvedRaw = spec.payload === undefined ? [] : (Array.isArray(spec.payload) ? spec.payload : [spec.payload]);
@@ -868,32 +1035,159 @@ function createDispatchEventHandler(spec: StateActionDispatchEventSpec['dispatch
 }
 
 function createSetTicksToLastFrameHandler(): GenericHandler {
-	return function (_state: State) {
-		if (!_state) return;
-		const current = _state.current;
-		const def = current?.definition;
-		if (!current || !def) return;
+	return function (state: State) {
+		if (!state) throw new Error(`[FSMLibrary] Cannot set ticks to last frame on undefined state.`);
+		const current = state.current;
+		if (!current) throw new Error(`[FSMLibrary] Cannot set ticks to last frame on state '${state.path}' with no current state.`);
+		const def = current.definition;
+		if (!def) throw new Error(`[FSMLibrary] Cannot set ticks to last frame on state '${state.path}' with invalid current state.`);
 		const ticks = Math.max(0, (def.ticks2advance_tape ?? 0) - 1);
 		current.setTicksNoSideEffect(ticks);
 	};
 }
 
-function createBuiltinHandlerFromSpec(slot: string, spec: StateActionSpec | undefined): GenericHandler | undefined {
+const CONDITION_COMPATIBLE_SLOTS = new Set(['if', 'can_enter', 'can_exit']);
+const CONDITION_SPEC_KEYS = new Set([
+	'value_equals',
+	'value_not_equals',
+	'state_matches',
+	'state_not_matches',
+	'and',
+	'or',
+	'not'
+]);
+const TRANSITION_SPEC_KEYS = ['to', 'switch', 'force_leaf', 'revert'] as const;
+const TRANSITION_TYPE_VALUES = new Set<TransitionType>(['to', 'switch', 'force_leaf', 'revert']);
+type TransitionSpecKey = typeof TRANSITION_SPEC_KEYS[number];
+
+type TransitionLikeSpec = Partial<Record<TransitionSpecKey, unknown>> & { do?: StateActionSpec | StateActionSpec[] };
+
+function hasOwn(obj: object, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function hasDoContainer(spec: unknown): spec is { do: StateActionSpec | StateActionSpec[] } {
+	return !!spec && typeof spec === 'object' && !Array.isArray(spec) && hasOwn(spec as object, 'do');
+}
+
+function isConditionSlot(slot: string): boolean {
+	return CONDITION_COMPATIBLE_SLOTS.has(slot);
+}
+
+function looksLikeConditionSpec(spec: unknown): spec is StateActionCondition {
+	if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return false;
+	return Object.keys(spec).some(key => CONDITION_SPEC_KEYS.has(key));
+}
+
+function looksLikeTransitionSpec(spec: unknown): spec is TransitionLikeSpec {
+	if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return false;
+	return TRANSITION_SPEC_KEYS.some(key => hasOwn(spec as object, key));
+}
+
+function resolveTransitionInstruction(key: TransitionSpecKey, value: unknown, ctx: BuiltinExecutionContext, slot: string): any {
+	if (value === undefined || value === null) return undefined;
+	if (key === 'revert') {
+		const resolved = resolveTemplateValue(value, ctx);
+		return resolved ? { transition_type: 'revert' as TransitionType } : undefined;
+	}
+
+	let stateSpec: unknown = value;
+	let payloadSpec: unknown;
+	let forceSameSpec: unknown;
+	let transitionType: TransitionType = key;
+
+	if (typeof value === 'object' && !Array.isArray(value)) {
+		const obj = value as Record<string, unknown>;
+		if ('state_id' in obj) {
+			stateSpec = obj.state_id;
+		}
+		else if ('state' in obj) {
+			stateSpec = obj.state;
+		}
+		else if ('target' in obj) {
+			stateSpec = obj.target;
+		}
+		payloadSpec = obj.payload;
+		forceSameSpec = obj.force_transition_to_same_state;
+		if (typeof obj.transition_type === 'string' && TRANSITION_TYPE_VALUES.has(obj.transition_type as TransitionType)) {
+			transitionType = obj.transition_type as TransitionType;
+		}
+	}
+
+	const resolvedState = resolveTemplateValue(stateSpec, ctx);
+	if (resolvedState === undefined || resolvedState === null) {
+		throw new Error(`[FSMLibrary] Transition '${key}' in slot '${slot}' resolved to null or undefined.`);
+	}
+	if (Array.isArray(resolvedState)) {
+		throw new Error(`[FSMLibrary] Transition '${key}' in slot '${slot}' resolved to an array, expected a string.`);
+	}
+	if (typeof resolvedState !== 'string' && typeof resolvedState !== 'number') {
+		throw new Error(`[FSMLibrary] Transition '${key}' in slot '${slot}' must resolve to a string.`);
+	}
+	const state_id = typeof resolvedState === 'string' ? resolvedState : String(resolvedState);
+	const resolvedPayload = payloadSpec !== undefined ? resolveTemplateValue(payloadSpec, ctx) : undefined;
+	const resolvedForceSame = forceSameSpec !== undefined ? !!resolveTemplateValue(forceSameSpec, ctx) : false;
+	const instruction: Record<string, unknown> = { state_id, transition_type: transitionType };
+	if (resolvedPayload !== undefined) instruction.payload = resolvedPayload;
+	if (resolvedForceSame) instruction.force_transition_to_same_state = true;
+	return instruction;
+}
+
+function normalizeTransitionResult(result: unknown): StateTransition | Identifier | undefined {
+	if (!result) return undefined;
+	if (typeof result === 'string') return result;
+	if (typeof result === 'object') return result as StateTransition;
+	throw new Error(`[FSMLibrary] Transition action returned invalid result of type '${typeof result}'.`);
+}
+
+function compileTransitionAction(slot: string, spec: StateActionTransitionCompositeSpec): GenericHandler {
+	const doSpec = hasDoContainer(spec) ? spec.do : undefined;
+	const doHandler = doSpec !== undefined ? compileAction(slot, doSpec) : undefined;
+	return function (this: Stateful, state?: State, ...args: any[]): any {
+		if (doHandler) {
+			const doResult = doHandler.call(this, state, ...args);
+			const normalized = normalizeTransitionResult(doResult);
+			if (normalized !== undefined) return normalized;
+		}
+		const ctx = buildContext(this, state, args, slot);
+		for (const key of TRANSITION_SPEC_KEYS) {
+			if (!hasOwn(spec, key)) continue;
+			const instruction = resolveTransitionInstruction(key, (spec as Record<TransitionSpecKey, unknown>)[key], ctx, slot);
+			if (instruction !== undefined) return instruction;
+		}
+		throw new Error(`[FSMLibrary] Transition action in slot '${slot}' has no valid transition instruction.`);
+	};
+}
+
+function createBuiltinHandlerFromSpec(slot: string, spec: StateActionSpec | StateActionCondition | undefined): GenericHandler | undefined {
 	const compiled = compileAction(slot, spec);
-	if (!compiled) return undefined;
-	return function (this: any, state?: State, ...args: any[]) {
+	if (!compiled) throw new Error(`[FSMLibrary] Action spec in slot '${slot}' could not be compiled.`);
+	return function (this: Stateful, state?: State, ...args: any[]) {
 		return compiled.call(this, state, ...args);
 	};
 }
 
-function compileAction(slot: string, spec: StateActionSpec | undefined): GenericHandler | undefined {
-	if (spec == null) return undefined;
+function compileAction(slot: string, spec: StateActionSpec | StateActionCondition | undefined): GenericHandler | undefined {
+	if (spec == null) throw new Error(`[FSMLibrary] Action spec is null or undefined in slot '${slot}'.`);
+	if (isConditionSlot(slot) && looksLikeConditionSpec(spec)) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			return evaluateCondition(spec, ctx);
+		};
+	}
+	if (hasDoContainer(spec) && !looksLikeTransitionSpec(spec)) {
+		const doSpec = (spec as { do: StateActionSpec | StateActionSpec[] }).do;
+		return compileAction(slot, doSpec as StateActionSpec | StateActionSpec[]);
+	}
+	if (looksLikeTransitionSpec(spec)) {
+		return compileTransitionAction(slot, spec as StateActionTransitionCompositeSpec);
+	}
 	if (Array.isArray(spec)) {
 		const handlers = spec
 			.map(item => compileAction(slot, item))
 			.filter((fn): fn is GenericHandler => typeof fn === 'function');
-		if (handlers.length === 0) return undefined;
-		return function (this: any, state?: State, ...args: any[]) {
+		if (handlers.length === 0) throw new Error(`[FSMLibrary] Action spec array in slot '${slot}' contains no valid actions.`);
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			let result: any;
 			for (const handler of handlers) {
 				result = handler.call(this, state, ...args);
@@ -901,42 +1195,42 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 			return result;
 		};
 	}
-	if (typeof spec !== 'object') return undefined;
+	if (typeof spec !== 'object') throw new Error(`[FSMLibrary] Action spec in slot '${slot}' is not an object or array.`);
 	if ('when' in spec && (spec as StateActionConditionalSpec).when) {
 		const conditional = spec as StateActionConditionalSpec;
-		const thenHandler = compileAction(slot, conditional.then);
-		const elseHandler = compileAction(slot, conditional.else);
-		if (!thenHandler && !elseHandler) return undefined;
-		return function (this: any, state?: State, ...args: any[]) {
+		const thenHandler = conditional.then ? compileAction(slot, conditional.then) : undefined;
+		const elseHandler = conditional.else ? compileAction(slot, conditional.else) : undefined;
+		if (!thenHandler && !elseHandler) throw new Error(`[FSMLibrary] Action spec in slot '${slot}' is not valid.`);
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			if (evaluateCondition(conditional.when, ctx)) {
-				return thenHandler?.call(this, state, ...args);
+				return thenHandler.call(this, state, ...args);
 			}
 			return elseHandler?.call(this, state, ...args);
 		};
 	}
 	if ('set' in spec) {
 		const setSpec = (spec as StateActionSetSpec).set;
-		if (!setSpec || !setSpec.target) return undefined;
+		if (!setSpec || !setSpec.target) throw new Error(`[FSMLibrary] Action spec in slot '${slot}' is not valid.`);
 		const { target, value } = setSpec;
-		return function (this: any, state?: State, ...args: any[]) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			applySetProperty(target, value, ctx);
 		};
 	}
 	if ('adjust' in spec) {
 		const adjustSpec = (spec as StateActionAdjustSpec).adjust;
-		if (!adjustSpec || !adjustSpec.target) return undefined;
+		if (!adjustSpec || !adjustSpec.target) throw new Error(`[FSMLibrary] Action spec in slot '${slot}' is not valid.`);
 		const { target } = adjustSpec;
-		return function (this: any, state?: State, ...args: any[]) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			applyAdjustProperty(target, { add: adjustSpec.add, sub: adjustSpec.sub, mul: adjustSpec.mul, div: adjustSpec.div, set: adjustSpec.set }, ctx);
 		};
 	}
 	if ('tags' in spec) {
 		const tagsSpec = (spec as StateActionTagsSpec).tags ?? {};
-		return function (this: any, state?: State, ...args: any[]) {
-			const ctx = buildContext(this, state, args, slot);
+		return function (this: Stateful, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot) as BuiltinExecutionContext & { self: WorldObject };
 			if (tagsSpec.add !== undefined) {
 				const addResolved = resolveTemplateValue(tagsSpec.add, ctx);
 				applyGameplayTagOperation(ctx.self, addResolved, 'add');
@@ -945,11 +1239,15 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 				const removeResolved = resolveTemplateValue(tagsSpec.remove, ctx);
 				applyGameplayTagOperation(ctx.self, removeResolved, 'remove');
 			}
+			if (tagsSpec.toggle !== undefined) {
+				const toggleResolved = resolveTemplateValue(tagsSpec.toggle, ctx);
+				applyGameplayTagOperation(ctx.self, toggleResolved, 'toggle');
+			}
 		};
 	}
 	if ('set_property' in spec) {
 		const { target, value } = (spec as StateActionSetPropertySpec).set_property;
-		return function (this: any, state?: State, ...args: any[]) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			applySetProperty(target, value, ctx);
 		};
@@ -957,7 +1255,7 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	if ('adjust_property' in spec) {
 		const adjust = (spec as StateActionAdjustPropertySpec).adjust_property;
 		const { target, add, sub, mul, div, set } = adjust;
-		return function (this: any, state?: State, ...args: any[]) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			applyAdjustProperty(target, { add, sub, mul, div, set }, ctx);
 		};
@@ -973,12 +1271,12 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('dispatch' in spec) {
 		const config = (spec as StateActionDispatchSpec).dispatch;
-		return function (this: any, state?: State, ...args: any[]) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const controller = this?.sc;
 			if (!controller?.dispatch_event) return;
 			const ctx = buildContext(this, state, args, slot);
-			const eventName = toStringSafe(resolveTemplateValue(config.event, ctx));
-			if (!eventName) return;
+			const eventName = String(resolveTemplateValue(config.event, ctx));
+			if (!eventName) throw new Error(`[FSMLibrary] Cannot dispatch event with empty name in slot '${slot}'.`);
 			const emitter = resolveEmitter(config.emitter, ctx, this) ?? this;
 			const payloadResolved = config.payload !== undefined ? resolveTemplateValue(config.payload, ctx) : undefined;
 			if (payloadResolved === undefined) {
@@ -994,28 +1292,28 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('add_tag' in spec) {
 		const tagsSpec = (spec as StateActionAddTagSpec).add_tag;
-		return function (this: any, state?: State, ...args: any[]) {
-			const ctx = buildContext(this, state, args, slot);
+		return function (this: WorldObject, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot) as BuiltinExecutionContext & { self: WorldObject };
 			applyGameplayTagOperation(ctx.self, resolveTemplateValue(tagsSpec, ctx), 'add');
 		};
 	}
 	if ('remove_tag' in spec) {
 		const tagsSpec = (spec as StateActionRemoveTagSpec).remove_tag;
-		return function (this: any, state?: State, ...args: any[]) {
-			const ctx = buildContext(this, state, args, slot);
+		return function (this: WorldObject, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot) as BuiltinExecutionContext & { self: WorldObject };
 			applyGameplayTagOperation(ctx.self, resolveTemplateValue(tagsSpec, ctx), 'remove');
 		};
 	}
 	if ('activate_ability' in spec) {
 		const config = (spec as StateActionActivateAbilitySpec).activate_ability;
-		return function (this: any, state?: State, ...args: any[]) {
-			const ctx = buildContext(this, state, args, slot);
-			const asc = getAbilitySystemFromTarget(ctx.self);
-			if (!asc) return;
+		return function (this: WorldObject, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot) as BuiltinExecutionContext & { self: WorldObject };
+			const asc = ctx.self.getUniqueComponent(AbilitySystemComponent);
+			if (!asc) throw new Error(`[FSMLibrary] Entity ${ctx.self.id} does not have an AbilitySystemComponent, cannot activate ability.`);
 			const resolved = resolveTemplateValue(config, ctx);
-			if (!resolved) return;
+			if (!resolved) throw new Error(`[FSMLibrary] Ability spec in slot '${slot}' did not resolve to a valid ability identifier or object.`);
 			const id = typeof resolved === 'string' ? resolved : resolved.id;
-			if (!id) return;
+			if (!id) throw new Error(`[FSMLibrary] Ability spec in slot '${slot}' did not resolve to a valid ability identifier.`);
 			const opts: { source?: string; payload?: Record<string, unknown> } = {};
 			if (typeof resolved === 'object' && resolved) {
 				if ('payload' in resolved) opts.payload = resolved.payload as Record<string, unknown> | undefined;
@@ -1032,12 +1330,12 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('invoke' in spec) {
 		const { fn, payload } = (spec as StateActionInvokeSpec).invoke ?? {};
-		return function (this: any, state?: State, ...args: any[]) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			const resolvedFn = typeof fn === 'string' && fn.startsWith('@')
 				? resolveBinding(fn.slice(1), ctx)
 				: resolveTemplateValue(fn, ctx);
-			if (typeof resolvedFn !== 'function') return;
+			if (typeof resolvedFn !== 'function') throw new Error(`[FSMLibrary] Cannot invoke non-function in slot '${slot}'.`);
 			let payloadValue = payload !== undefined ? resolveTemplateValue(payload, ctx) : undefined;
 			if (payloadValue === undefined) payloadValue = { state, payload: ctx.payload };
 			resolvedFn.call(ctx.self ?? this, payloadValue);
@@ -1045,19 +1343,26 @@ function compileAction(slot: string, spec: StateActionSpec | undefined): Generic
 	}
 	if ('consume_action' in spec) {
 		const consume = (spec as StateActionConsumeActionSpec).consume_action;
-		return function (this: any, state?: State, ...args: any[]) {
+		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			const actions = ensureArray(consume).map(item => resolveTemplateValue(item, ctx)).filter(v => typeof v === 'string' && v.length > 0) as string[];
-			if (actions.length === 0) return;
-			try {
-				const playerIndex = typeof ctx.self?.player_index === 'number' ? ctx.self.player_index : 1;
-				const player = $.input?.getPlayerInput?.(playerIndex);
-				if (!player) return;
-				for (const action of actions) player.consumeAction(action);
-			} catch { /* ignore */ }
+			if (actions.length === 0) throw new Error(`[FSMLibrary] consume_action spec in slot '${slot}' did not resolve to any valid action names.`);
+			const player = $.input.getPlayerInput(ctx.self.player_index);
+			if (!player) throw new Error(`[FSMLibrary] Cannot find player input for player index ${ctx.self.player_index}.`);
+			for (const action of actions) player.consumeAction(action);
 		};
 	}
-	return undefined;
+	if ('command' in spec) {
+		const commandSpec = (spec as StateActionSubmitCommandSpec).command;
+		if (!commandSpec) throw new Error(`[FSMLibrary] Command spec in slot '${slot}' is not valid.`);
+		return function (this: Stateful, state?: State, ...args: any[]) {
+			const ctx = buildContext(this, state, args, slot);
+			const command = resolveTemplateValue(commandSpec, ctx);
+			if (!command || typeof command !== 'object' || Array.isArray(command)) throw new Error(`[FSMLibrary] Command spec in slot '${slot}' did not resolve to a valid command object.`);
+			GameplayCommandBuffer.instance.push(command as GameplayCommand);
+		};
+	}
+	throw new Error(`[FSMLibrary] Action spec in slot '${slot}' is not valid. No recognized action keys found in spec "${JSON.stringify(spec)}".`);
 }
 
 function hoistSlot(
@@ -1223,16 +1528,19 @@ function walkAndHoist(
 		if (!bag) continue;
 		for (const rawEventName of Object.keys(bag)) {
 			const evDef = bag[rawEventName];
-			if (typeof evDef === 'object') {
-				hoistEventDef(machineName, path, bagName, rawEventName, evDef, registry, useProxyThunks);
-			}
-			else if (typeof evDef === 'string') {
-				// string definitions are just direct event names, no handlers to hoist
-				continue;
-			}
-			else {
-				// unsupported event definition
-				throw new Error(`Unsupported event definition for ${rawEventName}: ${JSON.stringify(evDef)}`);
+			switch (typeof evDef) {
+				case 'object':
+					hoistEventDef(machineName, path, bagName, rawEventName, evDef, registry, useProxyThunks);
+					break;
+				case 'string':
+					// string definitions are just direct event names, no handlers to hoist
+					break;
+				case 'undefined':
+					// skip
+					break;
+				default:
+					// unsupported event definition
+					throw new Error(`Unsupported event definition for ${rawEventName}: ${JSON.stringify(evDef)}`);
 			}
 		}
 	}

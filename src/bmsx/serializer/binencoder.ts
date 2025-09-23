@@ -300,7 +300,7 @@ class BinWriter {
 				const serKeys: string[] = [];
 				for (let i = 0; i < rawKeys.length; i++) {
 					const k = rawKeys[i];
-					const member = (val as any)[k];
+					const member = val[k];
 					if (typeof member === 'function' || member === undefined) continue;
 					if (member instanceof Map) throw new Error('encodeBinary: Map unsupported (add Tag.Map or pre-normalize)');
 					if (member instanceof Date || member instanceof RegExp) throw new Error('encodeBinary: type unsupported');
@@ -313,7 +313,7 @@ class BinWriter {
 					const id = propNameToId.get(k);
 					if (id === undefined) throw new Error(`Unknown property name '${k}' in prop table`);
 					this.varuint(id);
-					this.writeWithPropTable((val as any)[k], propNameToId);
+					this.writeWithPropTable(val[k], propNameToId);
 				}
 				return;
 			default:

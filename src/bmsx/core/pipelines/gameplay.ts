@@ -11,7 +11,8 @@ export function gameplaySpec(): NodeSpec[] {
 		{ ref: 'objectFSM' },
 		// Phase 4: Physics and collision resolution
 		{ ref: 'prePosition' },
-		{ ref: 'physicsSyncBefore' },
+		{ ref: 'gameplayMovement', before: ['physicsSyncBefore'], after: ['prePosition'] },
+		{ ref: 'physicsSyncBefore', after: ['gameplayMovement'] },
 		{ ref: 'physicsStep' },
 		{ ref: 'physicsPost' },
 		{ ref: 'tileCollision' },

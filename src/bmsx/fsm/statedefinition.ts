@@ -1,7 +1,8 @@
 import { EventLane, EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
-import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
+import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef } from './fsmtypes';
+import { State } from './state';
 
 function looksLikeStatePath(value: string): boolean {
 	if (!value) return false;
@@ -387,74 +388,64 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 }
 
 function resolveStateDefPath(from: StateDefinition, target: string, origin: string, description: string): void {
-	// Accept both new filesystem-style paths and legacy '#this./#parent./#root.' prefixes
-	const normalizeLegacy = (s: string): string => {
-		if (s.startsWith(STATE_THIS_PREFIX + '.')) return `./${s.slice(STATE_THIS_PREFIX.length + 1).replaceAll('.', '/')}`;
-		if (s.startsWith(STATE_PARENT_PREFIX + '.')) return `../${s.slice(STATE_PARENT_PREFIX.length + 1).replaceAll('.', '/')}`;
-		if (s.startsWith(STATE_ROOT_PREFIX + '.')) return `/${s.slice(STATE_ROOT_PREFIX.length + 1).replaceAll('.', '/')}`;
-		return s;
-	};
+	// // Simple single-pass parser for filesystem-like paths with quoting and escapes
+	// const parse = (input: string): { abs: boolean; up: number; segs: string[] } => {
+	// 	const len = input.length;
+	// 	let i = 0;
+	// 	let abs = false;
+	// 	let up = 0;
+	// 	const segs: string[] = [];
 
-	const raw = normalizeLegacy(target);
+	// 	if (len === 0) return { abs: false, up: 0, segs };
+	// 	if (input[i] === '/') { abs = true; i++; }
 
-	// Simple single-pass parser for filesystem-like paths with quoting and escapes
-	const parse = (input: string): { abs: boolean; up: number; segs: string[] } => {
-		const len = input.length;
-		let i = 0;
-		let abs = false;
-		let up = 0;
-		const segs: string[] = [];
+	// 	if (!abs) {
+	// 		if (input.startsWith('./', i)) {
+	// 			i += 2;
+	// 		} else {
+	// 			while (input.startsWith('../', i)) { up++; i += 3; }
+	// 		}
+	// 	}
 
-		if (len === 0) return { abs: false, up: 0, segs };
-		if (input[i] === '/') { abs = true; i++; }
+	// 	const pushSeg = (s: string) => {
+	// 		if (s.length === 0 || s === '.') return;
+	// 		if (s === '..') {
+	// 			if (segs.length > 0) segs.pop(); else up++;
+	// 			return;
+	// 		}
+	// 		segs.push(s);
+	// 	};
 
-		if (!abs) {
-			if (input.startsWith('./', i)) {
-				i += 2;
-			} else {
-				while (input.startsWith('../', i)) { up++; i += 3; }
-			}
-		}
+	// 	while (i < len) {
+	// 		const c = input[i];
+	// 		if (c === '/') { i++; continue; }
+	// 		if (c === '[' && i + 1 < len && input[i + 1] === '"') {
+	// 			i += 2; // skip ["
+	// 			let seg = '';
+	// 			while (i < len) {
+	// 				const ch = input[i++];
+	// 				if (ch === '\\') {
+	// 					if (i < len) {
+	// 						const esc = input[i++];
+	// 						if (esc === '"') seg += '"'; else if (esc === '/') seg += '/'; else seg += esc;
+	// 					}
+	// 					continue;
+	// 				}
+	// 				if (ch === '"' && i < len && input[i] === ']') { i++; break; }
+	// 				seg += ch;
+	// 			}
+	// 			pushSeg(seg);
+	// 			continue;
+	// 		}
+	// 		let start = i;
+	// 		while (i < len && input[i] !== '/') i++;
+	// 		pushSeg(input.slice(start, i));
+	// 	}
 
-		const pushSeg = (s: string) => {
-			if (s.length === 0 || s === '.') return;
-			if (s === '..') {
-				if (segs.length > 0) segs.pop(); else up++;
-				return;
-			}
-			segs.push(s);
-		};
+	// 	return { abs, up, segs };
+	// };
 
-		while (i < len) {
-			const c = input[i];
-			if (c === '/') { i++; continue; }
-			if (c === '[' && i + 1 < len && input[i + 1] === '"') {
-				i += 2; // skip ["
-				let seg = '';
-				while (i < len) {
-					const ch = input[i++];
-					if (ch === '\\') {
-						if (i < len) {
-							const esc = input[i++];
-							if (esc === '"') seg += '"'; else if (esc === '/') seg += '/'; else seg += esc;
-						}
-						continue;
-					}
-					if (ch === '"' && i < len && input[i] === ']') { i++; break; }
-					seg += ch;
-				}
-				pushSeg(seg);
-				continue;
-			}
-			let start = i;
-			while (i < len && input[i] !== '/') i++;
-			pushSeg(input.slice(start, i));
-		}
-
-		return { abs, up, segs };
-	};
-
-	const spec = parse(raw);
+	const spec = State.parseFsPath(target);
 
 	// Determine starting context
 	let ctx: StateDefinition | undefined = spec.abs ? from.root : from;

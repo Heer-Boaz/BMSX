@@ -163,6 +163,8 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * The identifier of the parent component.
 	 */
 	public parentid: Identifier;
+	static get unique(): boolean { return false; } // If true, only one instance of this component type can be attached to a parent
+
 	/**
 	 * The component id is the parent id plus the component name.
 	 */

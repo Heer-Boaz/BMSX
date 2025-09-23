@@ -4,7 +4,7 @@ import { ECSystem, ECSystemManager, TickGroup } from "./ecsystem";
 export interface SystemDescriptor {
 	id: string;
 	group: TickGroup;
-	defaultPriority: number;
+	defaultPriority?: number;
 	tags?: string[];
 	create: (priority: number) => ECSystem;
 }

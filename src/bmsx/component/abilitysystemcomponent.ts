@@ -18,7 +18,7 @@ import type {
 	GameplayEffect,
 	TagId
 } from '../gas/gastypes';
-import { GameplayCommandBuffer } from '../gameplay/gameplay_command_buffer';
+import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 
 type NowFn = () => number;
 
@@ -29,7 +29,7 @@ type WaitState =
 
 @insavegame
 export class AbilitySystemComponent extends Component {
-	static unique = true;
+	static override get unique(): boolean { return true; }
 	readonly ownerId: string;
 
 	public static readonly registry = new Set<AbilitySystemComponent>();
@@ -73,7 +73,7 @@ export class AbilitySystemComponent extends Component {
 			this.notifyAbilityFailed(id, reason);
 			return { ok: false as const, reason };
 		}
-		GameplayCommandBuffer.instance.push({ kind: 'ActivateAbility', ownerId: this.ownerId, abilityId: id, payload: opts.payload, source: opts.source });
+		GameplayCommandBuffer.instance.push({ kind: 'ActivateAbility', owner: this.ownerId, abilityId: id, payload: opts.payload, source: opts.source });
 		return { ok: true as const };
 	}
 
