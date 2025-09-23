@@ -147,4 +147,9 @@ export class ECSHUDOverlay {
 }
 
 const overlay = new ECSHUDOverlay();
-export function toggleECSHUD(): void { if (overlay?.enabled) overlay.disable(); else overlay?.enable(); }
+overlay.bind();
+
+export function toggleECSHUD(): void {
+	if (overlay.enabled) overlay.disable();
+	else overlay.enable();
+}

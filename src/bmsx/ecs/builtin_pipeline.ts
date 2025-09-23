@@ -23,6 +23,7 @@ import { TextRenderSystem } from './text_render_system';
 import { SpriteColliderSyncSystem } from './spritecollider_sync_system';
 import { Collision2DBroadphaseRebuildSystem } from './collision2d_broadphase_system';
 import { Overlap2DSystem } from './overlap2d_system';
+import { FsmEventDispatchSystem } from './fsm_event_dispatch_system';
 // No explicit PreRender submission systems; GameView.drawbase() visits objects
 
 /** Register built-in ECS systems with sensible defaults. */
@@ -30,6 +31,7 @@ export function registerBuiltinECS(): void {
 	R.registerMany([
 		{ id: 'behaviorTrees', group: TickGroup.Input, create: (p: number) => new BehaviorTreeSystem(p) },
 		{ id: 'abilityRuntime', group: TickGroup.AbilityUpdate, create: (p: number) => new AbilityRuntimeSystem(p) },
+		{ id: 'fsmEventDispatch', group: TickGroup.ModeResolution, defaultPriority: 5, create: (p: number) => new FsmEventDispatchSystem(p ?? 5) },
 		{ id: 'objectFSM', group: TickGroup.ModeResolution, create: (p: number) => new StateMachineSystem(p) },
 		{ id: 'prePosition', group: TickGroup.Physics, create: (p: number) => new PrePositionSystem(p) },
 		{ id: 'gameplayMovement', group: TickGroup.Physics, create: (p: number) => new GameplayMovementSystem(p) },

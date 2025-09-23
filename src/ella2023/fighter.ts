@@ -63,6 +63,20 @@ export abstract class Fighter extends SpriteObject {
 		this._ducking = active;
 	}
 
+	public configureWalkState({ state, payload }: { state: State; payload?: { direction?: Direction } | Direction }): void {
+		if (!state) return;
+		const resolved = (typeof payload === 'string') ? payload : payload?.direction;
+		const direction: Direction | null = (resolved === 'left' || resolved === 'right') ? resolved : null;
+		const data = (state.data ??= {} as Record<string, unknown>);
+		if (direction) {
+			(data as { direction?: Direction }).direction = direction;
+			(data as { speedX?: number }).speedX = direction === 'right' ? this.walkSpeed : -this.walkSpeed;
+		} else if ((data as { direction?: Direction }).direction === undefined) {
+			(data as { direction?: Direction }).direction = this.facing ?? 'right';
+			(data as { speedX?: number }).speedX = (this.facing === 'left' ? -1 : 1) * this.walkSpeed;
+		}
+	}
+
 	@build_fsm('hitanimation')
 	static bouw_hitanimation_fsm(): StateMachineBlueprint {
 		return {

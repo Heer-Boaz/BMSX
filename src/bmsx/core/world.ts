@@ -7,6 +7,7 @@ import { State } from '../fsm/state';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
 import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, vec2 } from '../rompack/rompack';
+import type { NodeSpec, SystemDescriptor, ECSPipelineRegistry } from '../ecs/pipeline';
 import { Direction, vec3, type Area, type vec2arr } from "../rompack/rompack";
 import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
 import { CameraObject } from './object/cameraobject';
@@ -34,7 +35,18 @@ export interface TileCollisionService {
 	collidesWithTile(o: WorldObject, dir: Direction): boolean;
 	isCollisionTile(x: number, y: number): boolean;
 }
-export type ModelModule = { onBoot: (world: World) => void; onTick?: (world: World, dt: number) => void; onLoad?: (world: World) => void; dispose?: () => void };
+export type ModelModuleEcsConfig = {
+	systems?: SystemDescriptor[];
+	nodes?: NodeSpec[] | ((ctx: { world: World; profile?: string; registry: ECSPipelineRegistry }) => NodeSpec[] | void);
+};
+
+export type ModelModule = {
+	onBoot: (world: World) => void;
+	onTick?: (world: World, dt: number) => void;
+	onLoad?: (world: World) => void;
+	dispose?: () => void;
+	ecs?: ModelModuleEcsConfig;
+};
 
 export type WorldConfiguration = {
 	viewportSize?: vec2;

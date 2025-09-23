@@ -315,11 +315,6 @@ export class Game {
 		}
 		AudioEventManager.instance.init(rompack.audioevents, null);
 
-		// Prevent the user from accidentally closing the game window if not in debug mode
-		if (!this.debug) {
-			window.addEventListener('beforeunload', this.onBeforeUnload, true);
-		}
-
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
@@ -338,15 +333,10 @@ export class Game {
 		if (this.debug) dumpEcsPipeline(diag);
 
 		// Wiring phase (fresh boot): bind all registered entities (services, world, objects, components)
-		for (const ent of this.registry.getRegisteredEntities()) {
-			const maybe = ent as { bind?: (bus: EventEmitter) => void };
-			if (typeof maybe.bind === 'function') maybe.bind(this.event_emitter);
-		}
+		// this.registry.getRegisteredEntities().forEach(e => e?.bind());
 
 		// Activation: services begin play here (objects already activated in onspawn)
-		for (const ent of this.registry.getRegisteredEntities()) {
-			if (ent instanceof Service) { ent.activate(); }
-		}
+		this.registry.getRegisteredEntitiesByType(Service).forEach(service => service.activate());
 
 		// Register / create physics world (MVP). Exposed via registry for components/game objects.
 		new PhysicsWorld().bind();
@@ -366,6 +356,10 @@ export class Game {
 			// window['eventEmitter'] = this.event_emitter;
 
 			Input.instance.enableDebugMode(); // Do this after the world is initialized to prevent race conditions
+		}
+		else {
+			// Prevent the user from accidentally closing the game window if not in debug mode
+			window.addEventListener('beforeunload', this.onBeforeUnload, true);
 		}
 		this.initialized = true; // Mark the game as initialized
 		SoundMaster.instance.volume = 0;

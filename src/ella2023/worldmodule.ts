@@ -1,9 +1,19 @@
-import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, type RevivableObjectArgs } from 'bmsx';
+import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, TickGroup, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
+import { FighterInputIntentSystem } from './systems/fighter_input_intent_system';
 
 export const EILA_MODULE = {
+	ecs: {
+		systems: [{
+			id: 'ella.fighterInputIntent',
+			group: TickGroup.Input,
+			defaultPriority: 10,
+			create: (priority: number) => new FighterInputIntentSystem(priority),
+		}],
+		nodes: [{ ref: 'ella.fighterInputIntent', after: ['behaviorTrees'] }],
+	},
 	onBoot(world: World) {
 		// Spaces
 		world.addSpace('gameover');

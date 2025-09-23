@@ -8,6 +8,7 @@ export function gameplaySpec(): NodeSpec[] {
 		// Phase 2: Ability runtime coroutines (drains gameplay command buffer)
 		{ ref: 'abilityRuntime' },
 		// Phase 3: Mode graph / gameplay FSMs mutate state and tags
+		{ ref: 'fsmEventDispatch', before: ['objectFSM'] },
 		{ ref: 'objectFSM' },
 		// Phase 4: Physics and collision resolution
 		{ ref: 'prePosition' },

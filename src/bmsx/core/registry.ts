@@ -73,11 +73,11 @@ export class Registry {
 		return Object.keys(this._registry);
 	}
 
-	public getRegisteredEntityIdsByType(wanted: string): Identifier[] {
-		return this.getRegisteredEntities().filter(e => e.constructor.name === wanted).map(e => e.id);
+	public getRegisteredEntityIdsByType<T extends Registerable = Registerable>(wanted: ConcreteOrAbstractConstructor<T>): Identifier[] {
+		return this.getRegisteredEntitiesByType(wanted).map(e => e.id);
 	}
 
-	public getRegisteredEntitiesByType(wanted: string): Registerable[] {
-		return this.getRegisteredEntities().filter(e => e.constructor.name === wanted);
+	public getRegisteredEntitiesByType<T extends Registerable = Registerable>(wanted: ConcreteOrAbstractConstructor<T>): T[] {
+		return this.getRegisteredEntities().filter(e => e instanceof wanted) as T[];
 	}
 }

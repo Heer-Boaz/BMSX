@@ -23,7 +23,15 @@ export type ActivateAbilityCommand = {
 	source?: string;
 };
 
-export type GameplayCommand = MoveTo2DCommand | MoveBy2DCommand | ActivateAbilityCommand;
+export type DispatchEventCommand = {
+	kind: 'dispatchEvent';
+	target_id: Identifier;
+	event: string;
+	emitter_id?: Identifier;
+	payload?: unknown;
+};
+
+export type GameplayCommand = MoveTo2DCommand | MoveBy2DCommand | ActivateAbilityCommand | DispatchEventCommand;
 
 export type GameplayCommandWithMeta = GameplayCommand & { frame: number; seq: number };
 

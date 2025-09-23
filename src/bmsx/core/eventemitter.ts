@@ -202,7 +202,9 @@ export class EventEmitter implements RegisterablePersistent {
 			}
 			// Idempotent: avoid duplicate registrations for this instance+key
 			if (!regKeys.has(key)) {
-				self.on(subscription.eventName, handler, subscriber, emitterFilter, !!subscription.persistent);
+				const options: EventSubscriptionOptions = { persistent: !!subscription.persistent };
+				if (emitterFilter !== undefined) options.emitter = emitterFilter;
+				self.on(subscription.eventName, handler, subscriber, options);
 				regKeys.add(key);
 			}
 		});
