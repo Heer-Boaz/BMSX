@@ -245,7 +245,7 @@ class InputActionParser {
 	 */
 	private term(): Node {
 		let n = this.factor(); // Start parsing a factor node
-		while (this.current()?.value === '&&') {
+		while (this.isAndOperator(this.current()?.value)) {
 			this.eat();
 			const r = this.factor(); // Parse the right-hand side of the AND operation
 			const l = n; // Store the left-hand side of the AND operation
@@ -253,6 +253,10 @@ class InputActionParser {
 			n = { op: 'AND', left: l, right: r, eval: g => l.eval(g) && r.eval(g) };
 		}
 		return n; // Return the constructed term node
+	}
+
+	private isAndOperator(value: string | undefined): boolean {
+		return value === '&&';
 	}
 
 	/**
@@ -498,6 +502,7 @@ function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[])
  * This object defines the behavior of static modifiers used in action definitions,
  * such as `p` (pressed), `j` (just-pressed), `jr` (just-released),
  * `&j` (all-just-pressed), `&jr` (all-just-released), and `c` (consumed).
+ * Added: `h` (hold) which is equivalent to a press time comparator `t{>1}`.
  * Each modifier is associated with a function that evaluates the modifier condition
  * for a given action state.
  *
@@ -507,6 +512,7 @@ function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[])
  * @property jr - Evaluates to true if the action was just released.
  * @property &jr - Evaluates to true if all actions are just released.
  * @property c - Evaluates to true if the action is consumed.
+ * @property h - Evaluates to true if the action has been held (press time > 1).
  */
 const STATIC: Record<string, ModFn> = {
 	'p': (get, n, win) => get(n, win).pressed,
@@ -515,6 +521,8 @@ const STATIC: Record<string, ModFn> = {
 	'jr': (get, n, win) => get(n, win).justreleased,
 	'&jr': (get, n, win) => get(n, win).alljustreleased,
 	'c': (get, n, win) => get(n, win).consumed,
+	// 'h' (hold) == held for more than 1ms (equivalent to t{>=1})
+	'h': (get, n, win) => (get(n, win).presstime ?? 0) >= 1,
 };
 
 /**
@@ -580,23 +588,31 @@ function makeModPred(tok: string): ModFn {
 		fn = (get, n, _) => get(n, ms).wasreleased; // Return a function that checks if the action was released within the window
 	}
 	else if (R_T.test(raw)) { // Check if the token is a time-based comparison modifier
-		const cmp = raw.match(R_T)![1]; // Extract the comparator from the token
-		const m = cmp.match(NUM_RE); // Match the comparator against the numeric regular expression
-		if (!m) throw new Error(`Invalid t{…} comparator '${cmp}'`); // Throw an error for invalid comparators
-		const op = m[1]; // Extract the operator from the match
-		const val = +m[2]; // Extract the numeric value from the match
-		// Return a function that evaluates the time-based comparison
-		fn = (get, n, win) => {
-			const pt = get(n, win).presstime ?? 0;
-			switch (op) {
-				case '<': return pt < val;
-				case '>': return pt > val;
-				case '<=': return pt <= val;
-				case '>=': return pt >= val;
-				case '==': return pt === val;
-				case '!=': default: return pt !== val;
+			// Accept either a full comparator expression (e.g. ">=10") OR a shorthand number (e.g. "10" == ">=10").
+			const cmpRaw = raw.match(R_T)![1].trim(); // content inside t{...}
+			let op: string; let val: number;
+			const m = cmpRaw.match(NUM_RE);
+			if (m) { // standard comparator form
+				op = m[1];
+				val = +m[2];
+			} else {
+				// Shorthand: just a number => treat as ">= number"
+				const numOnly = cmpRaw.match(/^\d+(?:\.\d+)?$/);
+				if (!numOnly) throw new Error(`Invalid t{…} comparator '${cmpRaw}'`);
+				op = '>='; val = +cmpRaw;
 			}
-		};
+			// Return a function that evaluates the time-based comparison
+			fn = (get, n, win) => {
+				const pt = get(n, win).presstime ?? 0;
+				switch (op) {
+					case '<': return pt < val;
+					case '>': return pt > val;
+					case '<=': return pt <= val;
+					case '>=': return pt >= val;
+					case '==': return pt === val;
+					case '!=': default: return pt !== val;
+				}
+			};
 	}
 	else if (/^pr\{\d+}/.test(raw)) { // Check if the token is a priority modifier
 		fn = _ => true; // priority placeholder
