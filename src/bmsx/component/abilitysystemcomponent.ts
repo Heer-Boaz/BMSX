@@ -345,6 +345,7 @@ export class AbilitySystemComponent extends Component {
 	private incTagRef(tag: TagId) {
 		this.grantedTagRefs.set(tag, (this.grantedTagRefs.get(tag) ?? 0) + 1);
 	}
+
 	private decTagRef(tag: TagId) {
 		const n = (this.grantedTagRefs.get(tag) ?? 0) - 1;
 		if (n > 0) this.grantedTagRefs.set(tag, n);

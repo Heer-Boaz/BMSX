@@ -2,17 +2,17 @@ import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, TickG
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
-import { FighterInputIntentSystem } from './systems/fighter_input_intent_system';
+import { PlayerInputToAbilitySystem } from './systems/player_input_to_ability_system';
 
 export const EILA_MODULE = {
 	ecs: {
 		systems: [{
-			id: 'ella.fighterInputIntent',
+			id: 'ella.playerInputAbility',
 			group: TickGroup.Input,
 			defaultPriority: 10,
-			create: (priority: number) => new FighterInputIntentSystem(priority),
+			create: (priority: number) => new PlayerInputToAbilitySystem(priority),
 		}],
-		nodes: [{ ref: 'ella.fighterInputIntent', after: ['behaviorTrees'] }],
+		nodes: [{ ref: 'ella.playerInputAbility', after: ['behaviorTrees'] }],
 	},
 	onBoot(world: World) {
 		// Spaces

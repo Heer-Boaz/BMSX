@@ -14,6 +14,18 @@ export type HitMarkerInfo = {
 	pos: vec2, // Offset from the fighter's position
 };
 
+const CORE_ABILITY_IDS = {
+	walk: 'fighter.locomotion.walk',
+	walk_stop: 'fighter.locomotion.walk_stop',
+	duck_hold: 'fighter.control.duck_hold',
+	duck_release: 'fighter.control.duck_release',
+	jump: 'fighter.control.jump',
+} as const;
+
+export type FighterCoreAbilityName = keyof typeof CORE_ABILITY_IDS;
+
+export const FIGHTER_CORE_ABILITY_IDS: { [K in FighterCoreAbilityName]: AbilityId } = CORE_ABILITY_IDS as { [K in FighterCoreAbilityName]: AbilityId };
+
 function getDamage(attackType: AttackType): number {
 	switch (attackType) {
 		default:
@@ -155,6 +167,10 @@ export abstract class Fighter extends SpriteObject {
 
 	public getAbilitySystem(): AbilitySystemComponent | null {
 		return this.getUniqueComponent(AbilitySystemComponent) ?? null;
+	}
+
+	public getAbilityId(name: FighterCoreAbilityName): AbilityId {
+		return FIGHTER_CORE_ABILITY_IDS[name];
 	}
 
 	public requestAbility(abilityId: AbilityId, payload?: Record<string, unknown>): boolean {

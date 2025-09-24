@@ -109,6 +109,7 @@ states:
             - emit:
                 event: fighter.attack.animation.highkick.finished
                 scope: self
+                lane: gameplay
                 payload:
                     attackType: highkick
     lowkick:
@@ -130,6 +131,7 @@ states:
             - emit:
                 event: fighter.attack.animation.lowkick.finished
                 scope: self
+                lane: gameplay
                 payload:
                     attackType: lowkick
     punch:
@@ -151,6 +153,7 @@ states:
             - emit:
                 event: fighter.attack.animation.punch.finished
                 scope: self
+                lane: gameplay
                 payload:
                     attackType: punch
     duckkick:
@@ -172,6 +175,7 @@ states:
             - emit:
                 event: fighter.attack.animation.duckkick.finished
                 scope: self
+                lane: gameplay
                 payload:
                     attackType: duckkick
     flyingkick:
@@ -193,6 +197,7 @@ states:
             - emit:
                 event: fighter.attack.animation.flyingkick.finished
                 scope: self
+                lane: gameplay
                 payload:
                     attackType: flyingkick
     duck:

@@ -161,20 +161,18 @@ export class Sinterklaas extends Fighter {
 
 		// @ts-ignore
 		function duck(this: Fighter): BTStatus {
-			this.sc.dispatch_event('mode.control.duck', this);
-			return 'SUCCESS';
+			return this.requestAbility(this.getAbilityId('duck_hold')) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function jump(this: Fighter): BTStatus {
 			if (this.isJumping) return 'RUNNING';
-			this.sc.dispatch_event('mode.control.jump', this, this.facing);
-			return 'SUCCESS';
+			const dir = this.facing === 'left' || this.facing === 'right' ? this.facing : undefined;
+			return this.requestAbility(this.getAbilityId('jump'), dir ? { direction: dir } : undefined) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function straightJump(this: Fighter): BTStatus {
 			if (this.isJumping) return 'RUNNING';
-			this.sc.dispatch_event('mode.control.jump', this, undefined);
-			return 'SUCCESS';
+			return this.requestAbility(this.getAbilityId('jump')) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function jumpkick(this: Fighter): BTStatus {
@@ -184,15 +182,14 @@ export class Sinterklaas extends Fighter {
 		}
 
 		function idle(this: Fighter): BTStatus {
-			// Logic for idle behavior
-			this.sc.dispatch_event('mode.locomotion.idle', this);
-			return 'SUCCESS';
+			return this.requestAbility(this.getAbilityId('walk_stop')) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function walk(this: Fighter, blackboard: Blackboard): BTStatus {
-			this.sc.dispatch_event('mode.locomotion.walk', this, this.facing);
-			blackboard.set('walking', true);
-			return 'SUCCESS';
+			const dir = this.facing === 'left' || this.facing === 'right' ? this.facing : 'right';
+			const ok = this.requestAbility(this.getAbilityId('walk'), { dir });
+			if (ok) blackboard.set('walking', true);
+			return ok ? 'SUCCESS' : 'FAILED';
 		}
 
 		function isAttacking(this: Fighter): boolean {
