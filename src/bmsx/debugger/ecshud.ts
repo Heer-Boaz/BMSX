@@ -125,9 +125,9 @@ export class ECSHUDOverlay {
 		if (world) {
 			const spaces = world.spaces?.length ?? 0;
 			const activeSpace = world.activeSpaceId ?? 'n/a';
-			const objCount = Array.isArray(world.activeObjects) ? world.activeObjects.length : 0;
-			const cams = Array.isArray(world.camerasInActiveSpace) ? world.camerasInActiveSpace.length : 0;
-			const lights = Array.isArray(world.getActiveLights?.()) ? world.getActiveLights().length : 0;
+			const objCount = world.countFilteredObjects(() => true);
+			const cams = world.activeCameras.length;
+			const lights = world.activeLights.length;
 			lines.push(`World: spaces=${spaces} active='${activeSpace}' objs=${objCount} cams=${cams} lights=${lights}`);
 		}
 		if (diag.cyclesDetected) {

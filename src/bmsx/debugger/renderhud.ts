@@ -162,7 +162,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 			// Lights summary (build separately)
 			const dCount = MeshPipeline.getDirectionalLightCount?.() ?? 0;
 			const pCount = MeshPipeline.getPointLightCount?.() ?? 0;
-			const amb = $.world?.ambientLight?.light;
+			const amb = $.world.activeAmbientLight?.light;
 			const ambColor = amb?.color ?? [0, 0, 0];
 			const ambI = amb?.intensity ?? 0;
 			const r = Math.max(0, Math.min(255, Math.round((ambColor[0]) * 255)));

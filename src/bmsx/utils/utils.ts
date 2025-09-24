@@ -749,3 +749,13 @@ export function computeBarArea2d(
 		return [startX, bar[1]];
 	}
 }
+
+// Utility: filter an iterable with a predicate, returns an iterable (lazy generator)
+export function filterIterable<T>(iterable: Iterable<T>, predicate: (item: T) => boolean): Iterable<T> {
+	function* gen() {
+		for (const item of iterable) {
+			if (predicate(item)) yield item;
+		}
+	}
+	return { [Symbol.iterator]: gen };
+}

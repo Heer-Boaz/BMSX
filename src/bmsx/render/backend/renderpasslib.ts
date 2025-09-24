@@ -103,7 +103,7 @@ export class RenderPassLibrary {
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
 				});
 				// Ambient now resides in the Frame UBO
-				const amb = $.world.ambientLight?.light;
+				const amb = $.world.activeAmbientLight?.light;
 				updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
 			},
 		});
@@ -309,7 +309,7 @@ export class RenderPassLibrary {
 				const cam = $.world.activeCamera3D; if (!cam) return;
 				const mats = cam.getMatrices();
 				const viewState = { camPos: cam.position, viewProj: mats.vp, skyboxView: cam.skyboxView, proj: mats.proj };
-				const lighting = lightingSystem.update($.world.ambientLight?.light as AmbientLight);
+				const lighting = lightingSystem.update($.world.activeAmbientLight?.light as AmbientLight);
 				// Build fog state alongside frame-shared so consumers can rely on it
 				const gv = $.view;
 				const fog: FogUniforms = {

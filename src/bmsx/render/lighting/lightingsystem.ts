@@ -23,9 +23,9 @@ export class LightingSystem {
 
 	update(_ambient: AmbientLight | null): LightingFrameState {
 		// Renderer-pulled: rebuild light lists from model indexes each frame
-		const active = $.world.getActiveLights({ scope: 'all' });
+		const active = $.world.activeLights;
 		MeshPipeline.clearLights();
-		let ambient: AmbientLight | null = $.world.ambientLight?.light as AmbientLight || null;
+		let ambient: AmbientLight | null = $.world.activeAmbientLight?.light as AmbientLight || null;
 		for (const lo of active) {
 			if (lo instanceof DirectionalLightObject) MeshPipeline.addDirectionalLight(lo.id, lo.light as DirectionalLight);
 			else if (lo instanceof PointLightObject) MeshPipeline.addPointLight(lo.id, lo.light as PointLight);
@@ -175,9 +175,11 @@ export function buildLightingDescriptorPooled(frame: LightingFrameState): Lighti
 		ambientColor[0] = ambientColor[1] = ambientColor[2] = 0;
 	}
 
+	const ambientIntensity = frame.ambient ? frame.ambient.intensity : 0;
+
 	return {
 		ambientColor,
-		ambientIntensity: frame.ambient ? frame.ambient.intensity : 0,
+		ambientIntensity,
 		dirDirections,
 		dirColors,
 		dirIntensity,

@@ -158,26 +158,14 @@ export abstract class Fighter extends SpriteObject {
 	public override activate(): void {
 		super.activate();
 		const inputAbility = this.getUniqueComponent(InputAbilityComponent);
-		if (inputAbility && !inputAbility.program && !inputAbility.programId) {
-			inputAbility.playerIndex = this.player_index ?? 1;
-			inputAbility.program = FIGHTER_INPUT_PROGRAM;
-		}
-	}
+		if (!inputAbility) throw new Error(`Fighter ${this.id} has no InputAbilityComponent and that's bad! Probably a bug in the @attach_components decorator or the order in which activate() is called relative to component attachment.`);
 
-	public addGameplayTag(tag: string): void {
-		this.getAbilitySystem()?.addTag(tag);
-	}
+		inputAbility.playerIndex = this.player_index ?? 1;
+		inputAbility.program = FIGHTER_INPUT_PROGRAM;
 
-	public removeGameplayTag(tag: string): void {
-		this.getAbilitySystem()?.removeTag(tag);
-	}
-
-	public hasGameplayTag(tag: string): boolean {
-		return this.getAbilitySystem()?.hasGameplayTag(tag) ?? false;
-	}
-
-	public getAbilitySystem(): AbilitySystemComponent | null {
-		return this.getUniqueComponent(AbilitySystemComponent) ?? null;
+		// const controller = this.sc;
+		// Seed the locomotion state so gameplay tags like 'state.grounded' are available immediately.
+		// controller.dispatch_event('mode.locomotion.idle', this);
 	}
 
 	public getAbilityId(name: FighterCoreAbilityName): AbilityId {
@@ -185,24 +173,21 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public requestAbility(abilityId: AbilityId, payload?: Record<string, unknown>): boolean {
-		const asc = this.getAbilitySystem();
-		if (!asc) return false;
+		const asc = this.getUniqueComponent(AbilitySystemComponent);
 		const res = asc.requestAbility(abilityId, { source: 'input.fsm', payload });
 		return res.ok;
 	}
 
 	public tryActivateAttackAbility(attackType: AttackType): boolean {
 		const abilityId = this.getAttackAbilityId(attackType);
-		const asc = this.getAbilitySystem();
-		if (!asc) return false;
+		const asc = this.getUniqueComponent(AbilitySystemComponent);
 		const result = asc.requestAbility(abilityId, { source: 'fighter.attack', payload: { attackType } });
 		return result.ok;
 	}
 
 	public canActivateAttackAbility(attackType: AttackType): boolean {
 		const abilityId = this.getAttackAbilityId(attackType);
-		const asc = this.getAbilitySystem();
-		if (!asc) return false;
+		const asc = this.getUniqueComponent(AbilitySystemComponent);
 		return asc.canActivateReason(abilityId) === null;
 	}
 

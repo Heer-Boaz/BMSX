@@ -5,7 +5,7 @@ import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDe
 import { toggleRenderHUD } from '../debugger/renderhud';
 import { toggleECSHUD } from '../debugger/ecshud';
 import { toggleInputHUD } from '../debugger/inputhud';
-import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
+import type { Identifier, Identifiable, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from './ui_toast';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
@@ -136,12 +136,14 @@ export const options: EventListenerOptions & { passive: boolean, once: boolean }
  * processing input events, and maintaining an input buffer. It provides methods to update
  * the state based on current time, retrieve button states, and consume button presses.
  */
+
 export class InputStateManager {
 	/**
 	 * Represents the input buffer used for processing input data.
 	 * @type {InputBuffer}
 	 */
 	private inputBuffer: InputEvent[];
+	private readonly buttonStates = new Map<ButtonId, ButtonState>();
 
 	public get bufferWindowDuration(): number {
 		return this.toMs(this.bufferframeDuration);
@@ -159,113 +161,105 @@ export class InputStateManager {
 		this.inputBuffer = [];
 	}
 
+	/** Prepare per-button edge flags for a new frame. */
+	beginFrame(currentTime: number): void {
+		for (const state of this.buttonStates.values()) {
+			state.justpressed = false;
+			state.justreleased = false;
+			state.consumed = false;
+			if (state.pressed) {
+				const pressedAt = state.pressedAtMs ?? state.timestamp ?? currentTime;
+				state.presstime = Math.max(0, currentTime - pressedAt);
+			} else {
+				state.presstime = null;
+			}
+		}
+	}
+
 	/**
 	 * Updates the input state based on the current time.
-	 *
-	 * This method processes input events, updates the press time for
-	 * each button based on whether it is pressed, and cleans up old
-	 * events from the input buffer.
-	 *
-	 * @param currentTime - The current time in milliseconds used to
-	 *                      calculate the press time and manage input
-	 *                      events.
+	 * Cleans up old events from the input buffer used for windowed queries.
 	 */
 	update(currentTime: number): void {
-		// Clean up old events from the buffers if needed
 		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferWindowDuration);
 	}
 
 	/**
-	 * Adds an input event to the input buffer.
+	 * Adds an input event to the input buffer and updates the immediate button state cache.
 	 *
 	 * @param event - The input event to be added.
 	 */
 	addInputEvent(event: InputEvent): void {
 		this.inputBuffer.push(event);
+		let state = this.buttonStates.get(event.identifier);
+		if (!state) {
+			state = makeButtonState();
+			this.buttonStates.set(event.identifier, state);
+		}
+		if (event.eventType === 'press') {
+			state.pressed = true;
+			state.justpressed = true;
+			state.justreleased = false;
+			state.pressedAtMs = event.timestamp;
+			state.presstime = 0;
+			state.timestamp = event.timestamp;
+			state.releasedAtMs = state.releasedAtMs ?? null;
+			state.pressId = event.pressId ?? state.pressId ?? null;
+			state.value = state.value ?? 1;
+			state.consumed = event.consumed ?? false;
+		} else {
+			state.pressed = false;
+			state.justpressed = false;
+			state.justreleased = true;
+			state.presstime = null;
+			state.timestamp = event.timestamp;
+			state.releasedAtMs = event.timestamp;
+			state.pressId = event.pressId ?? state.pressId ?? null;
+			state.value = 0;
+			state.consumed = event.consumed ?? state.consumed ?? false;
+		}
 	}
 
 	/**
 	 * Retrieves the current state of a button based on its identifier.
 	 *
 	 * @param identifier - The unique identifier for the button, which can be a string or a number.
-	 * @returns The current state of the button, including properties such as:
-	 *  - `pressed`: Indicates if the button is currently pressed.
-	 *  - `justpressed`: Indicates if the button was just pressed in the current frame.
-	 *  - `consumed`: Indicates if the button's press has been consumed.
-	 *  - `presstime`: The duration for which the button has been pressed, or null if not applicable.
-	 *  - `timestamp`: The time at which the button state was last updated, or null if not applicable.
+	 * @param framewindow - Optional number of frames for windowed evaluation.
+	 * @returns The current button state including edge flags and windowed history.
 	 */
 	getButtonState(identifier: ButtonId, framewindow?: number): ButtonState {
-		const window = framewindow !== undefined
+		const window = framewindow != null
 			? this.toMs(framewindow)
 			: this.bufferWindowDuration;
 		const currentTime = performance.now();
+		const baseState = this.buttonStates.get(identifier);
 
-		// Get the input events from the input buffer so that we can determine the state of the button
+		const pressed = baseState?.pressed ?? false;
+		const justpressed = baseState?.justpressed ?? false;
+		const justreleased = baseState?.justreleased ?? false;
+		let presstime = baseState?.presstime ?? (pressed && baseState?.pressedAtMs != null ? Math.max(0, currentTime - baseState.pressedAtMs) : null);
+		let consumed = baseState?.consumed ?? false;
+		const pressedAtMs = baseState?.pressedAtMs ?? null;
+		const releasedAtMs = baseState?.releasedAtMs ?? null;
+		const timestamp = baseState?.timestamp ?? null;
+		const pressId = baseState?.pressId ?? null;
+		const value = baseState?.value ?? (pressed ? 1 : 0);
+		const value2d = baseState?.value2d ?? null;
+
 		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (currentTime - event.timestamp <= window));
-		if (inputEvents.length === 0) {
-			return makeButtonState();
-		}
-		const lastEvent = inputEvents[inputEvents.length - 1];
-		const pressed = lastEvent.eventType === 'press'; // isPressed is true if the last event was a press event, otherwise it is false (i.e. the button was released)
-		const released = lastEvent.eventType === 'release'; // isReleased is true if the last event was a release event, otherwise it is false (i.e. the button was pressed)
-		// Just pressed is true if the last event was of type `press` and it happened in the current frame
-		const isInCurrentFrame = currentTime - lastEvent.timestamp <= this.toMs(1); // Check if the last event happened in the current frame
-		const justpressed = pressed && isInCurrentFrame;
-		// Just released is true if the last event was of type `release` and it happened in the current frame
-		const justreleased = released && isInCurrentFrame;
-
-		// True if any 'press' event in window has not been followed by a 'release' in window, or if a press-release pair both occurred in window
-		let waspressed = false;
+		let waspressed = pressed;
+		let wasreleased = justreleased;
 		for (let i = 0; i < inputEvents.length; ++i) {
-			if (inputEvents[i].eventType === 'press') {
-				// Look for a release after this press
-				let released = false;
-				for (let j = i + 1; j < inputEvents.length; ++j) {
-					if (inputEvents[j].eventType === 'release') {
-						released = true;
-						break;
-					}
-				}
-				// If not released, or if both press and release are in window, count as waspressed
-				if (!released || (released && (currentTime - inputEvents[i].timestamp <= window))) {
-					waspressed = true;
-					break;
-				}
+			const event = inputEvents[i];
+			if (event.eventType === 'press') {
+				waspressed = true;
 			}
-		}
-		let wasreleased = false;
-		for (let i = 0; i < inputEvents.length; ++i) {
-			if (inputEvents[i].eventType === 'release') {
-				// Look for a press after this release
-				let pressed = false;
-				for (let j = i + 1; j < inputEvents.length; ++j) {
-					if (inputEvents[j].eventType === 'press') {
-						pressed = true;
-						break;
-					}
-				}
-				// If not pressed, or if both press and release are in window, count as wasreleased
-				if (!pressed || (pressed && (currentTime - inputEvents[i].timestamp <= window))) {
-					wasreleased = true;
-					break;
-				}
+			if (event.eventType === 'release') {
+				wasreleased = true;
 			}
+			if (event.consumed) consumed = true;
 		}
 
-		const presstime = pressed ? currentTime - lastEvent.timestamp : null;
-		const timestamp = pressed ? lastEvent.timestamp : null;
-
-		// If any event in the input buffer for this button was consumed, we consider the button as consumed
-		// This means that the button press has been processed and should not trigger any further actions
-		// This is useful for preventing multiple actions from being triggered by a single button press
-		// For example, if a button is pressed and then released, we can mark it as consumed to prevent further actions
-		// from being triggered by the same button press.
-		const consumed = inputEvents.some(event => event.consumed);
-
-		// const consumed = lastEvent.consumed;
-
-		// Return the button state based on the last event
 		return makeButtonState({
 			pressed,
 			justpressed,
@@ -274,7 +268,12 @@ export class InputStateManager {
 			wasreleased,
 			consumed,
 			presstime,
-			timestamp
+			timestamp,
+			pressedAtMs,
+			releasedAtMs,
+			pressId,
+			value,
+			value2d,
 		});
 	}
 
@@ -285,10 +284,30 @@ export class InputStateManager {
 	 * If the button state exists, it will be marked as consumed.
 	 */
 	consumeBufferedEvent(identifier: ButtonId, pressId?: number | null): void {
-		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (pressId == null || event.pressId === pressId));
-		if (inputEvents.length > 0) {
-			inputEvents.forEach(event => { event.consumed = true; });
+		for (const event of this.inputBuffer) {
+			if (event.identifier === identifier && (pressId == null || event.pressId === pressId)) {
+				event.consumed = true;
+			}
 		}
+		const state = this.buttonStates.get(identifier);
+		if (state) state.consumed = true;
+	}
+
+	/** Clears transient edge flags and buffered events without discarding held state. */
+	resetEdgeState(): void {
+		for (const state of this.buttonStates.values()) {
+			state.justpressed = false;
+			state.justreleased = false;
+			state.consumed = false;
+			if (!state.pressed) {
+				state.presstime = null;
+				state.pressedAtMs = null;
+				state.pressId = null;
+				state.value = 0;
+				state.value2d = null;
+			}
+		}
+		this.inputBuffer = [];
 	}
 }
 
@@ -360,6 +379,13 @@ export class Input implements RegisterablePersistent {
 
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
+
+	private readonly handleSpaceChanged = (_event: string, _emitter: Identifiable, _payload?: unknown): void => {
+		for (const player of this.playerInputs) {
+			if (!player) continue;
+			player.clearEdgeState();
+		}
+	};
 
 	/**
 	 * Gets the onscreen gamepad.
@@ -607,6 +633,7 @@ export class Input implements RegisterablePersistent {
 	public bind(): void {
 		// Register the input system
 		Registry.instance.register(this);
+		EventEmitter.instance.on('spaceChanged', this.handleSpaceChanged, this, { persistent: true });
 
 		/**
 		 * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
@@ -681,7 +708,8 @@ export class Input implements RegisterablePersistent {
 			}
 		}
 		this.playerInputs.forEach(player => {
-			player.pollInput();
+			if (!player) return;
+			player.pollInput(now);
 			player.update(now);
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {

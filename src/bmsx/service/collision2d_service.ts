@@ -35,7 +35,7 @@ class Collision2DService extends Service {
 	rebuildIndex(world: World, cellSize = 64): void {
 		const idx = this.ensureIndex(world, cellSize);
 		idx.clear();
-		for (const o of world.activeObjects) {
+		for (const o of world.objects({ scope: 'active' })) {
 			for (const col of o.getComponents(Collider2DComponent)) {
 				if (!col.enabled) continue;
 				idx.addOrUpdate(col);

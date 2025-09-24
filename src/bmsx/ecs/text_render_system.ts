@@ -11,7 +11,7 @@ import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
 export class TextRenderSystem extends ECSystem {
 	constructor(priority = 7) { super(TickGroup.Presentation, priority); }
 	update(world: World): void {
-		for (const [o, tcx] of world.objectsWithComponents(TextComponent, { scope: 'current' })) {
+		for (const [o, tcx] of world.objectsWithComponents(TextComponent, { scope: 'active' })) {
 			if (!tcx.enabled) continue;
 			const parent = o as WorldObject;
 			const t = parent.getUniqueComponent(TransformComponent);

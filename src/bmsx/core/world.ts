@@ -18,7 +18,7 @@ import { $ } from './game';
 import type { Component, ComponentConstructor } from "../component/basecomponent";
 import { Space, id2spaceType, initial_world_spaces, obj_id2space_id_type, obj_id_to_space_id_symbol, id_to_space_symbol } from './space';
 import { EventEmitter } from './eventemitter';
-import { makeIndexProxy, shallowCopy } from '../utils/utils';
+import { filterIterable, makeIndexProxy, shallowCopy } from '../utils/utils';
 import { Collision2DSystem } from '../service/collision2d_service';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
@@ -54,6 +54,8 @@ export type WorldConfiguration = {
 	modules?: Array<ModelModule>;
 	fsmId?: string;
 };
+
+export type WorldScope = 'active' | 'all';
 
 @insavegame
 /**
@@ -105,17 +107,33 @@ export class World implements Stateful, RegisterablePersistent {
 	 * Gets all game objects in the current space.
 	 * @returns {WorldObject[]} An array of all game objects in the current space.
 	 */
-	public get activeObjects(): WorldObject[] {
-		const base = this.activeSpace.objects;
-		const overlay = this._spaceMap.get('ui')?.objects ?? [];
-		if (overlay.length === 0) return base;
-		// Merge without copying base array reference to avoid aliasing mutations
-		const out = new Array<WorldObject>(base.length + overlay.length);
-		let i = 0;
-		for (let j = 0; j < base.length; j++) out[i++] = base[j];
-		for (let j = 0; j < overlay.length; j++) out[i++] = overlay[j];
-		return out;
-	}
+	// public get activeObjects(): WorldObject[] {
+	// 	const base = this.activeSpace.objects;
+	// 	const overlay = this._spaceMap.get('ui')?.objects ?? [];
+	// 	if (overlay.length === 0) return base;
+	// 	// Merge without copying base array reference to avoid aliasing mutations
+	// 	const out = new Array<WorldObject>(base.length + overlay.length);
+	// 	let i = 0;
+	// 	for (let j = 0; j < base.length; j++) out[i++] = base[j];
+	// 	for (let j = 0; j < overlay.length; j++) out[i++] = overlay[j];
+	// 	return out;
+	// }
+
+	// public *iterateActiveObjects(reverse = false): Iterable<WorldObject> {
+	// 	if (reverse) {
+	// 		for (let index = this.activeSpace.objects.length - 1; index >= 0; index--) {
+	// 			yield this.activeSpace.objects[index];
+	// 		}
+	// 		if (this._spaceMap.has('ui')) {
+	// 			for (let j = this._spaceMap.get('ui').objects.length - 1; j >= 0; j--) {
+	// 				yield this._spaceMap.get('ui').objects[j];
+	// 			}
+	// 		}
+	// 	} else {
+	// 		this.activeSpace.objects.forEach(yield);
+	// 		this._spaceMap.has('ui') && (this._spaceMap.get('ui').objects).forEach(yield);
+	// 	}
+	// }
 
 	public get allObjectsFromSpaces(): WorldObject[] {
 		const out: WorldObject[] = [];
@@ -166,38 +184,24 @@ export class World implements Stateful, RegisterablePersistent {
 	// Batch depth marker: when non-null, collect touched space ids and mark once at end
 	@excludepropfromsavegame public depthDirtyBatch: Set<Identifier> | null = null;
 
-	public get camerasInActiveSpace(): CameraObject[] {
-		return this.getActiveCameras({ scope: 'current' });
-	}
-
-	public getActiveCameras(opts: { scope?: 'current' | 'all' } = {}): CameraObject[] {
-		const scope = opts.scope ?? 'all';
+	public get activeCameras(): CameraObject[] {
 		const out: CameraObject[] = [];
-		if (scope === 'current') {
-			const set = this._camerasBySpace.get(this._activeSpaceId);
-			if (!set) return out;
-			for (const c of set) out.push(c);
-			return out;
-		}
-		for (const [, set] of this._camerasBySpace) for (const c of set) out.push(c);
+		const set = this._camerasBySpace.get(this._activeSpaceId);
+		if (!set) return out;
+		for (const c of set) out.push(c);
 		return out;
 	}
 
-	public getActiveLights(opts: { scope?: 'current' | 'all' } = {}): LightObject[] {
-		const scope = opts.scope ?? 'all';
+	public get activeLights(): LightObject[] {
 		const out: LightObject[] = [];
-		if (scope === 'current') {
-			const set = this._lightsBySpace.get(this._activeSpaceId);
-			if (!set) return out;
-			for (const l of set) if (l.active) out.push(l);
-			return out;
-		}
-		for (const [, set] of this._lightsBySpace) for (const l of set) if (l.active) out.push(l);
+		const set = this._lightsBySpace.get(this._activeSpaceId);
+		if (!set) return out;
+		for (const l of set) if (l.active) out.push(l);
 		return out;
 	}
 
-	public get ambientLight(): AmbientLightObject | null {
-		return this.getActiveLights().find(light => light.type === 'ambient') as AmbientLightObject | null;
+	public get activeAmbientLight(): AmbientLightObject | null {
+		return this.activeLights.find(light => light.type === 'ambient') as AmbientLightObject | null;
 	}
 
 	/**
@@ -455,9 +459,7 @@ export class World implements Stateful, RegisterablePersistent {
 
 		GameplayEventRecorder.instance.endFrame();
 
-		const objects = this.activeObjects;
-		for (let i = objects.length - 1; i >= 0; --i) {
-			const o = objects[i];
+		for (const o of this.objects({ scope: 'active', reverse: true })) {
 			if (o.disposeFlag) this.despawnFromAllSpaces(o);
 		}
 	}
@@ -476,32 +478,6 @@ export class World implements Stateful, RegisterablePersistent {
 		if (collisionEvents.length) this._physicsEventQueue.push(...collisionEvents);
 	}
 
-	/**
-	 * Filters the game objects in the world instance using the provided predicate function and returns a new array containing the filtered objects.
-	 * @param {function} predicate - The function used to filter the game objects. It should take a world object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
-	 * @returns {WorldObject[]} An array containing the filtered game objects.
-	 */
-	public filter(predicate: (value: WorldObject, index: number, array: WorldObject[], thisArg?: any) => unknown): WorldObject[] {
-		return this.activeObjects.filter(predicate);
-	}
-
-	// https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
-	/**
-	 * Filters the game objects in the world instance using the provided predicate function and calls the provided callback function on each filtered object.
-	 * @param {function} predicate - The function used to filter the game objects. It should take a world object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
-	 * @param {function} callbackfn - The function called on each filtered world object. It should take a world object as its first argument, and can optionally take the index of the object in the filtered list, the filtered list itself, and the world instance as additional arguments.
-	 * @returns {void} Nothing.
-	 */
-	public filter_and_foreach(predicate: (value: WorldObject, index: number, array: WorldObject[], thisArg?: any) => unknown, callbackfn: (value: WorldObject, index: number, array: WorldObject[], thisArg?: any) => void): void {
-		for (let i = 0; i < this.activeObjects.length; i++) {
-			const obj = this.activeObjects[i];
-			if (predicate(obj, i, this.activeObjects, this)) {
-				callbackfn(obj, i, this.activeObjects, this);
-			}
-		}
-	}
-
-	/** Collision queries: simple forwards to CollisionSystem with on-demand index rebuild. */
 	public rebuildCollisionIndex(cellSize = 64): void { Collision2DSystem.rebuildIndex(this, cellSize); }
 	public queryAABB(area: Area): WorldObject[] {
 		Collision2DSystem.rebuildIndex(this);
@@ -516,11 +492,13 @@ export class World implements Stateful, RegisterablePersistent {
 		}
 		return out;
 	}
+
 	public raycast(origin: vec2arr, dir: vec2arr, maxDist: number) {
 		Collision2DSystem.rebuildIndex(this);
 		const hits = Collision2DSystem.raycastWorld(this, origin, dir, maxDist);
 		return hits.length > 0 ? hits[0] : null;
 	}
+
 	public sweepAABB(area: Area, delta: vec2arr): WorldObject[] {
 		Collision2DSystem.rebuildIndex(this);
 		const colliders = Collision2DSystem.sweepAABB(this, area, delta);
@@ -710,19 +688,19 @@ export class World implements Stateful, RegisterablePersistent {
 	/**
 	 * Iterate game objects with explicit scope.
 	 */
-	public forEachWorldObject(fn: (o: WorldObject) => void, opts: { scope?: 'current' | 'all' } = {}): void {
-		const scope = opts.scope ?? 'current';
-		if (scope === 'current') { for (const o of this.activeSpace.objects) fn(o); return; }
+	public forEachWorldObject(fn: (o: WorldObject) => void, opts: { scope?: WorldScope } = {}): void {
+		const scope = opts.scope ?? 'active';
+		if (scope === 'active') { for (const o of this.activeSpace.objects) fn(o); return; }
 		for (const sp of this.spaces) for (const o of sp.objects) fn(o);
 	}
 
 	/** Iterate only objects of a specific class. */
-	public forEachWorldObjectOfType<T extends WorldObject>(ctor: new (...args: any[]) => T, fn: (o: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+	public forEachWorldObjectOfType<T extends WorldObject>(ctor: new (...args: any[]) => T, fn: (o: T) => void, opts: { scope?: WorldScope } = {}): void {
 		this.forEachWorldObject((o) => { if (o instanceof ctor) fn(o as T); }, opts);
 	}
 
 	/** Iterate objects that have instances of a given component; passes each component instance. */
-	public forEachWorldObjectWithComponents<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: 'current' | 'all' } = {}): void {
+	public forEachWorldObjectWithComponents<T extends Component>(component: ComponentConstructor<T>, fn: (o: WorldObject, c: T) => void, opts: { scope?: WorldScope } = {}): void {
 		this.forEachWorldObject((o) => {
 			const list = (o).getComponents?.(component) as T[] | undefined;
 			if (list && list.length) for (const c of list) fn(o, c);
@@ -733,19 +711,39 @@ export class World implements Stateful, RegisterablePersistent {
 	 * Generator method: the leading `*` indicates this is a generator function.
 	 * It returns an IterableIterator<WorldObject> and yields objects lazily via `yield`.
 	 */
-	public *objects(opts: { scope?: 'current' | 'all' } = {}): IterableIterator<WorldObject> {
-		const scope = opts.scope ?? 'current';
-		if (scope === 'current') {
-			const base = this.activeSpace.objects;
-			for (let i = 0; i < base.length; i++) yield base[i]!;
-			const overlay = this._spaceMap.get('ui')?.objects ?? [];
-			for (let i = 0; i < overlay.length; i++) yield overlay[i]!;
-			return;
+	public *objects(opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<WorldObject> {
+		const { scope = 'active', reverse = false } = opts;
+		if (scope === 'active') {
+			if (reverse) {
+				const base = this.activeSpace.objects;
+				for (let i = base.length - 1; i >= 0; i--) yield base[i]!;
+				const overlay = this._spaceMap.get('ui')?.objects ?? [];
+				for (let i = overlay.length - 1; i >= 0; i--) yield overlay[i]!;
+			}
+			else {
+				const base = this.activeSpace.objects;
+				for (let i = 0; i < base.length; i++) yield base[i]!;
+				const overlay = this._spaceMap.get('ui')?.objects ?? [];
+				for (let i = 0; i < overlay.length; i++) yield overlay[i]!;
+			}
 		}
-		for (const sp of this.spaces) {
-			const arr = sp.objects;
-			for (let i = 0; i < arr.length; i++) yield arr[i]!;
+		else {
+			for (const sp of this.spaces) {
+				const arr = sp.objects;
+				if (reverse) for (let i = arr.length - 1; i >= 0; i--) yield arr[i]!;
+				else for (let i = 0; i < arr.length; i++) yield arr[i]!;
+			}
 		}
+	}
+
+	public *filterObjects(predicate: (o: WorldObject) => boolean, opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<WorldObject> {
+		yield* filterIterable(this.objects(opts), o => predicate(o));
+	}
+
+	public countFilteredObjects(predicate: (o: WorldObject) => boolean, opts: { scope?: WorldScope } = {}): number {
+		let count = 0;
+		for (const _ of filterIterable(this.objects(opts), o => predicate(o))) { count++; }
+		return count;
 	}
 
 	/** Iterate only objects of a specific class as an iterable.
@@ -754,7 +752,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * instanceof checks the prototype chain against ctor.prototype, so using an abstract
 	 * base class here (ctor) will correctly return true for derived instances.
 	 */
-	public *objectsOfType<T extends WorldObject>(ctor: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<T> {
+	public *objectsOfType<T extends WorldObject>(ctor: ConcreteOrAbstractConstructor<T>, opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<T> {
 		for (const o of this.objects(opts)) { if (o instanceof ctor) yield o! as T; }
 	}
 
@@ -763,7 +761,7 @@ export class World implements Stateful, RegisterablePersistent {
 	 * instanceof checks the prototype chain against ctor.prototype, so using an abstract
 	 * base class here (ctor) will correctly return true for derived instances.
 	 */
-	public *objectsWithComponents<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: 'current' | 'all' } = {}): IterableIterator<[WorldObject, T]> {
+	public *objectsWithComponents<T extends Component>(component: ConcreteOrAbstractConstructor<T>, opts: { scope?: WorldScope, reverse?: boolean } = {}): IterableIterator<[WorldObject, T]> {
 		for (const o of this.objects(opts)) { for (const c of o.iterateComponentsByType(component)) yield [o!, c!]; }
 	}
 

@@ -18,7 +18,7 @@ export type ActivateAbilityCommand = {
 	kind: 'ActivateAbility';
 	owner: Identifier;
 	target_id?: Identifier;
-	abilityId: AbilityId;
+	ability_id: AbilityId;
 	payload?: Record<string, unknown>;
 	source?: string;
 };

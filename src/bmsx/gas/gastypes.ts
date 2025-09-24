@@ -1,11 +1,11 @@
-import type { World } from '../core/world';
-import type { EventScope } from '../core/eventemitter';
+import type { EventPayload, EventScope } from '../core/eventemitter';
+import type { Identifier } from 'bmsx/rompack/rompack';
+import { GameplayCommandBuffer } from 'bmsx/ecs/gameplay_command_buffer';
 
 export type TagId = string;
 export type AttributeId = string;
 export type AbilityId = string;
 export type EffectId = string;
-export type ObjectId = string;
 
 export interface Attribute {
   base: number;
@@ -60,8 +60,7 @@ export type AbilityYield =
 export type AbilityCoroutine = Generator<AbilityYield, void, void>;
 
 export interface AbilityContext {
-  ownerId: ObjectId;
-  model: World;
+  parentid: Identifier;
   asc: AbilitySystemRef;
   emit?: (name: string, payload?: any) => void;
   intent?: { id: AbilityId; payload?: Record<string, unknown> };
@@ -69,7 +68,7 @@ export interface AbilityContext {
 
 // Minimal surface so we avoid a circular type import
 export interface AbilitySystemRef {
-  ownerId: ObjectId;
+  parentid: Identifier;
   hasTag(tag: TagId): boolean;
   requestAbility(id: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }): AbilityRequestResult;
   tryActivate(id: AbilityId, payload?: Record<string, unknown>): boolean;
@@ -77,8 +76,32 @@ export interface AbilitySystemRef {
 
 export type AbilityRequestResult = { ok: true; note?: string } | { ok: false; reason: string };
 
-export interface Ability {
+export abstract class Ability {
 	readonly id: AbilityId;
-	canActivate(ctx: AbilityContext): boolean;
-	activate(ctx: AbilityContext): AbilityCoroutine;
+	readonly unique: 'ignore' | 'restart' | 'stack' | undefined;
+
+	constructor(id: AbilityId, unique?: 'ignore' | 'restart' | 'stack') {
+		this.id = id;
+		this.unique = unique;
+	}
+
+	protected dispatchModeEvent(ctx: AbilityContext, event: string, payload?: EventPayload, target?: Identifier): void {
+		GameplayCommandBuffer.instance.push({
+			kind: 'dispatchEvent',
+			event,
+			target_id: target ?? ctx.parentid,
+			emitter_id: ctx.parentid,
+			payload,
+		});
+	}
+
+	canActivate(_ctx: AbilityContext): boolean {
+		return true;
+	}
+
+	protected finish(): AbilityYield {
+		return { type: 'finish' };
+	}
+
+	abstract activate(ctx: AbilityContext): AbilityCoroutine;
 }

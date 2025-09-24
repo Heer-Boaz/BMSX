@@ -2,6 +2,7 @@ import { GameplayCommandBuffer } from 'bmsx/ecs/gameplay_command_buffer';
 import { Ability, AbilityContext, AbilityCoroutine, AbilityId, AbilitySpec } from 'bmsx/gas/gastypes';
 import { Fighter, FIGHTER_CORE_ABILITY_IDS } from './fighter';
 import type { AttackType, FighterCoreAbilityName } from './fighter';
+import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 
 const ATTACK_FINISH_EVENT = (attackType: AttackType) => `fighter.attack.animation.${attackType}.finished`;
 
@@ -11,30 +12,8 @@ function abilityIdForAttack(attackType: AttackType): AbilityId {
 
 type DirectionPayload = { dir?: 'left' | 'right' };
 
-abstract class BaseFighterAbility implements Ability {
-	public abstract readonly id: AbilityId;
-	protected constructor(protected readonly fighter: Fighter) { }
-	public canActivate(_ctx: AbilityContext): boolean {
-		return this.fighter?.isFighting ?? false;
-	}
-	protected dispatchModeEvent(event: string, payload?: unknown): void {
-		GameplayCommandBuffer.instance.push({
-			kind: 'dispatchEvent',
-			target_id: this.fighter.id,
-			emitter_id: this.fighter.id,
-			event,
-			payload,
-		});
-	}
-	public abstract activate(ctx: AbilityContext): AbilityCoroutine;
-}
-
-class FighterWalkAbility extends BaseFighterAbility {
-	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.walk;
-
-	public constructor(fighter: Fighter) {
-		super(fighter);
-	}
+class FighterWalkAbility extends Ability {
+	public constructor(private readonly fighter: Fighter) { super(FIGHTER_CORE_ABILITY_IDS.walk, 'ignore'); }
 
 	public override *activate(ctx: AbilityContext): AbilityCoroutine {
 		const intentPayload = (ctx.intent?.payload ?? {}) as DirectionPayload;
@@ -44,7 +23,7 @@ class FighterWalkAbility extends BaseFighterAbility {
 			: (this.fighter.facing === 'left' || this.fighter.facing === 'right') ? this.fighter.facing : 'right';
 
 		this.fighter.facing = direction;
-		this.dispatchModeEvent('mode.locomotion.walk', { direction });
+		this.dispatchModeEvent(ctx, 'mode.locomotion.walk', { direction });
 
 		let firstTick = true;
 		while (true) {
@@ -74,62 +53,49 @@ class FighterWalkAbility extends BaseFighterAbility {
 	}
 }
 
-class FighterWalkStopAbility extends BaseFighterAbility {
-	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.walk_stop;
+class FighterWalkStopAbility extends Ability {
+	public constructor() { super(FIGHTER_CORE_ABILITY_IDS.walk_stop, 'ignore'); }
 
-	public constructor(fighter: Fighter) {
-		super(fighter);
-	}
-
-	public override *activate(_ctx: AbilityContext): AbilityCoroutine {
-		this.dispatchModeEvent('mode.locomotion.idle');
+	public override *activate(ctx: AbilityContext): AbilityCoroutine {
+		this.dispatchModeEvent(ctx, 'mode.locomotion.idle');
 	}
 }
 
-class FighterDuckHoldAbility extends BaseFighterAbility {
-	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.duck_hold;
+class FighterDuckHoldAbility extends Ability {
+	public constructor() { super(FIGHTER_CORE_ABILITY_IDS.duck_hold); }
 
-	public constructor(fighter: Fighter) {
-		super(fighter);
-	}
-
-	public override *activate(_ctx: AbilityContext): AbilityCoroutine {
-		this.dispatchModeEvent('mode.control.duck');
+	public override *activate(ctx: AbilityContext): AbilityCoroutine {
+		this.dispatchModeEvent(ctx, 'mode.control.duck');
 	}
 }
 
-class FighterDuckReleaseAbility extends BaseFighterAbility {
-	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.duck_release;
+class FighterDuckReleaseAbility extends Ability {
+	public constructor() { super(FIGHTER_CORE_ABILITY_IDS.duck_release); }
 
-	public constructor(fighter: Fighter) {
-		super(fighter);
-	}
-
-	public override *activate(_ctx: AbilityContext): AbilityCoroutine {
-		this.dispatchModeEvent('mode.locomotion.idle');
+	public override *activate(ctx: AbilityContext): AbilityCoroutine {
+		this.dispatchModeEvent(ctx, 'mode.locomotion.idle');
 	}
 }
 
-class FighterJumpAbility extends BaseFighterAbility {
-	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.jump;
-
-	public constructor(fighter: Fighter) {
-		super(fighter);
-	}
+class FighterJumpAbility extends Ability {
+	public constructor(private readonly fighter: Fighter) { super(FIGHTER_CORE_ABILITY_IDS.jump); }
 
 	public override *activate(ctx: AbilityContext): AbilityCoroutine {
 		const payload = (ctx.intent?.payload ?? {}) as { direction?: 'left' | 'right' };
 		const direction = payload.direction;
 		if (direction === 'left' || direction === 'right') this.fighter.facing = direction;
-		this.dispatchModeEvent('mode.control.jump', direction ? { direction } : undefined);
+		this.dispatchModeEvent(ctx, 'mode.control.jump', direction ? { direction } : undefined);
 	}
 }
 
-class FighterAttackAbility extends BaseFighterAbility {
-	public readonly id: AbilityId;
-	public constructor(fighter: Fighter, private readonly attackType: AttackType, id: AbilityId) {
-		super(fighter);
-		this.id = id;
+class FighterAttackAbility extends Ability {
+	protected readonly fighter: Fighter;
+	protected readonly attackType: AttackType;
+
+	public constructor(fighter: Fighter, attackType: AttackType, id: AbilityId) {
+		super(id);
+		this.fighter = fighter;
+		this.attackType = attackType;
 	}
 
 	public override canActivate(ctx: AbilityContext): boolean {
@@ -138,20 +104,20 @@ class FighterAttackAbility extends BaseFighterAbility {
 		return true;
 	}
 
-	public *activate(ctx: AbilityContext): AbilityCoroutine {
+	public override *activate(ctx: AbilityContext): AbilityCoroutine {
 		const fighter = this.fighter;
-		const attackType = this.attackType as AttackType;
+		const attackType = this.attackType;
 		if (!fighter.performingStoerheidsdans) {
-			this.dispatchModeEvent('mode.action.attack', { attackType });
+			this.dispatchModeEvent(ctx, 'mode.action.attack', { attackType });
 		} else {
 			fighter.performAttack(attackType);
 		}
-		ctx.emit?.('fighter.attack.started', { id: this.id, attackType: this.attackType });
-		yield { type: 'waitEvent', name: ATTACK_FINISH_EVENT(this.attackType), scope: 'self' };
+		ctx.emit?.('fighter.attack.started', { id: this.id, attackType });
+		yield { type: 'waitEvent', name: ATTACK_FINISH_EVENT(attackType), scope: 'self' };
 		if (fighter.performingStoerheidsdans) {
 			fighter.completeAttack(attackType);
 		} else if (attackType !== 'flyingkick') {
-			this.dispatchModeEvent('mode.action.complete', { attackType });
+			this.dispatchModeEvent(ctx, 'mode.action.complete', { attackType });
 		}
 		ctx.emit?.('fighter.attack.completed', { id: this.id, attackType });
 	}
@@ -173,7 +139,7 @@ class FighterFlyingKickAbility extends FighterAttackAbility {
 		this.fighter.attacked_while_jumping = true;
 		ctx.emit?.('fighter.attack.jumping', { id: this.id });
 		yield* super.activate(ctx);
-		this.dispatchModeEvent('flyingkick_end');
+		this.dispatchModeEvent(ctx, 'flyingkick_end');
 	}
 }
 
@@ -194,7 +160,7 @@ const CORE_ABILITIES: AbilityEntry[] = [
 			id: FIGHTER_CORE_ABILITY_IDS.walk_stop,
 			unique: 'ignore',
 		},
-		factory: fighter => new FighterWalkStopAbility(fighter),
+		factory: _fighter => new FighterWalkStopAbility(),
 	},
 	{
 		spec: {
@@ -202,14 +168,14 @@ const CORE_ABILITIES: AbilityEntry[] = [
 			requiredTags: ['state.grounded'],
 			blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
 		},
-		factory: fighter => new FighterDuckHoldAbility(fighter),
+		factory: _fighter => new FighterDuckHoldAbility(),
 	},
 	{
 		spec: {
 			id: FIGHTER_CORE_ABILITY_IDS.duck_release,
 			requiredTags: ['state.ducking'],
 		},
-		factory: fighter => new FighterDuckReleaseAbility(fighter),
+		factory: _fighter => new FighterDuckReleaseAbility(),
 	},
 	{
 		spec: {
@@ -269,8 +235,7 @@ function abilityIdsToRevoke(entries: readonly AbilityEntry[]): AbilityId[] {
 }
 
 export function registerFighterAbilities(fighter: Fighter): void {
-	const asc = fighter.getAbilitySystem();
-	if (!asc) return;
+	const asc = fighter.getUniqueComponent(AbilitySystemComponent);
 
 	for (const id of abilityIdsToRevoke(ALL_ABILITIES)) {
 		asc.revokeAbility(id);

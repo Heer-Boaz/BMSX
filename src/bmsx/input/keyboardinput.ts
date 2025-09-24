@@ -133,7 +133,7 @@ export class KeyboardInput implements InputHandler {
 					justreleased: jr,
 					waspressed: st.waspressed || wasDown,
 					wasreleased: st.wasreleased || jr,
-					consumed: st.consumed || false,
+					consumed: false,
 					timestamp: now,
 					releasedAtMs: jr ? now : st.releasedAtMs ?? null,
 					pressId: jr ? st.pressId ?? null : st.pressId ?? null,

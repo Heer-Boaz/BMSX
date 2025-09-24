@@ -1,5 +1,4 @@
 import { Component, type ComponentAttachOptions } from './basecomponent';
-import type { World } from '../core/world';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
@@ -30,7 +29,6 @@ type WaitState =
 @insavegame
 export class AbilitySystemComponent extends Component {
 	static override get unique(): boolean { return true; }
-	readonly ownerId: string;
 
 	public static readonly registry = new Set<AbilitySystemComponent>();
 	public static readonly registryByOwner = new Map<Identifier, AbilitySystemComponent>();
@@ -40,7 +38,7 @@ export class AbilitySystemComponent extends Component {
 	public readonly tags: Set<TagId> = new Set();
 
 	private assertExplicitTagMutationAllowed(op: 'add' | 'remove', tag: TagId): void {
-		const phase = this.model?.currentPhase ?? null;
+		const phase = $.world.currentPhase;
 		if (phase !== null && phase !== TickGroup.ModeResolution) {
 			const phaseName = TickGroup[phase] ?? `${phase}`;
 			throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only ModeGraph (Phase 4) may mutate gameplay tags.`);
@@ -73,19 +71,16 @@ export class AbilitySystemComponent extends Component {
 			this.notifyAbilityFailed(id, reason);
 			return { ok: false as const, reason };
 		}
-		GameplayCommandBuffer.instance.push({ kind: 'ActivateAbility', owner: this.ownerId, abilityId: id, payload: opts.payload, source: opts.source });
+		GameplayCommandBuffer.instance.push({ kind: 'ActivateAbility', owner: this.parentid, ability_id: id, payload: opts.payload, source: opts.source });
 		return { ok: true as const };
 	}
 
 	constructor(opts: ComponentAttachOptions & { now?: NowFn }) {
 		super(opts);
-		this.ownerId = opts.parentid;
 		this.now = opts.now ?? (() => performance.now());
 		AbilitySystemComponent.registry.add(this);
-		AbilitySystemComponent.registryByOwner.set(this.ownerId, this);
+		AbilitySystemComponent.registryByOwner.set(this.parentid, this);
 	}
-
-	get model(): World { return $.world; }
 
 	public addTag(tag: TagId): void {
 		this.assertExplicitTagMutationAllowed('add', tag);
@@ -158,8 +153,8 @@ export class AbilitySystemComponent extends Component {
 		const reason = this.canActivateReason(id);
 		if (reason) {
 			// Optional UX/debug hook
-			const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
-			$.emitPresentation('AbilityFailed', owner ?? { id: this.ownerId }, { id, reason });
+			const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
+			$.emitGameplay('AbilityFailed', owner ?? { id: this.parentid }, { id, reason });
 			return false;
 		}
 
@@ -178,17 +173,16 @@ export class AbilitySystemComponent extends Component {
 		}
 
 		const ctx: AbilityContext = {
-			ownerId: this.ownerId,
-			model: this.model,
+			parentid: this.parentid,
 			asc: {
-				ownerId: this.ownerId,
+				parentid: this.parentid,
 				hasTag: (t: TagId) => this.hasGameplayTag(t),
 				tryActivate: (aid: AbilityId, pl?: Record<string, unknown>) => this.tryActivate(aid, pl),
 				requestAbility: (aid: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(aid, opts ?? {}),
 			},
 			emit: (name: string, payload?: any) => {
-				const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
-				EventEmitter.instance.emit(name, owner ?? { id: this.ownerId }, payload);
+				const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
+				EventEmitter.instance.emit(name, owner ?? { id: this.parentid }, payload);
 			},
 			intent: { id, payload }
 		};
@@ -199,8 +193,8 @@ export class AbilitySystemComponent extends Component {
 		const now = this.now();
 		if (spec.cooldownMs) {
 			this._cooldownUntil.set(id, now + spec.cooldownMs);
-			const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
-			EventEmitter.instance.emit('AbilityCooldownStart', owner ?? { id: this.ownerId }, { id, until: now + spec.cooldownMs });
+			const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
+			EventEmitter.instance.emit('AbilityCooldownStart', owner ?? { id: this.parentid }, { id, until: now + spec.cooldownMs });
 		}
 		const key = `${id}#${this._runnerCounter++}`;
 		this._active.set(key, { id, co: ability.activate(ctx) });
@@ -232,8 +226,8 @@ export class AbilitySystemComponent extends Component {
 		for (const [aid, until] of [...this._cooldownUntil]) {
 			if (now >= until) {
 				this._cooldownUntil.delete(aid);
-				const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
-				EventEmitter.instance.emit('AbilityCooldownEnd', owner ?? { id: this.ownerId }, { id: aid });
+				const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
+				EventEmitter.instance.emit('AbilityCooldownEnd', owner ?? { id: this.parentid }, { id: aid });
 			}
 		}
 		for (const [key, run] of [...this._active]) {
@@ -293,7 +287,7 @@ export class AbilitySystemComponent extends Component {
 						EventEmitter.instance.on(name, listener, token, undefined, false);
 						unsub = () => EventEmitter.instance.removeSubscriber(token);
 					} else {
-						const filter: Identifier = (scope === 'self') ? (this.ownerId as Identifier) : (scope as Identifier);
+						const filter: Identifier = (scope === 'self') ? (this.parentid as Identifier) : (scope as Identifier);
 						const listener = (evName: string) => { if (evName === name) handler(evName); };
 						EventEmitter.instance.on(name, listener, token, filter, false);
 						unsub = () => EventEmitter.instance.removeSubscriber(token);
@@ -307,13 +301,13 @@ export class AbilitySystemComponent extends Component {
 
 	public canActivateReason(id: AbilityId): string | null {
 		const spec = this._abilities.get(id);
-		if (!spec) return 'unknown_ability';
+		if (!spec) return `unknown ability: '${id}'`;
 		const now = this.now();
 		const cdUntil = this._cooldownUntil.get(id);
-		if (cdUntil !== undefined && now < cdUntil) return 'cooldown';
-		if (spec.requiredTags && !spec.requiredTags.every(t => this.hasGameplayTag(t))) return 'missing_required_tags';
-		if (spec.blockedTags && spec.blockedTags.some(t => this.hasGameplayTag(t))) return 'blocked_by_tag';
-		if (spec.cost && !this.canPay(spec)) return 'insufficient_resource';
+		if (cdUntil !== undefined && now < cdUntil) return `on cooldown: ${cdUntil - now}`;
+		if (spec.requiredTags && !spec.requiredTags.every(t => this.hasGameplayTag(t))) return `missing required tags: ${spec.requiredTags.filter(t => !this.hasGameplayTag(t)).join(',')}`;
+		if (spec.blockedTags && spec.blockedTags.some(t => this.hasGameplayTag(t))) return `blocked by tag: ${spec.blockedTags.filter(t => this.hasGameplayTag(t)).join(',')}`;
+		if (spec.cost && !this.canPay(spec)) return `insufficient resource: ${spec.cost.map(c => `${c.amount} ${c.attr}`).join(',')}`;
 		return null;
 	}
 
@@ -327,7 +321,7 @@ export class AbilitySystemComponent extends Component {
 		// Clear cooldowns
 		this._cooldownUntil.clear();
 		AbilitySystemComponent.registry.delete(this);
-		AbilitySystemComponent.registryByOwner.delete(this.ownerId);
+		AbilitySystemComponent.registryByOwner.delete(this.parentid);
 		super.dispose();
 	}
 
@@ -338,7 +332,7 @@ export class AbilitySystemComponent extends Component {
 		this.grantedTagRefs.clear();
 		this._cooldownUntil.clear();
 		AbilitySystemComponent.registry.delete(this);
-		AbilitySystemComponent.registryByOwner.delete(this.ownerId);
+		AbilitySystemComponent.registryByOwner.delete(this.parentid);
 		super.detach();
 	}
 
@@ -353,8 +347,8 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	private notifyAbilityFailed(id: AbilityId, reason: string): void {
-		const owner = $.getWorldObject(this.ownerId) as { id: Identifier } | null;
-		$.emitPresentation('AbilityFailed', owner ?? { id: this.ownerId }, { id, reason });
+		const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
+		$.emitGameplay('AbilityFailed', owner ?? { id: this.parentid }, { id, reason });
 	}
 
 	private findActiveByAbility(id: AbilityId): string | undefined {

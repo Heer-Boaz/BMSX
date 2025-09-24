@@ -447,7 +447,8 @@ export class PlayerInput {
 	/**
 	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
 	 */
-	pollInput(): void {
+	pollInput(currentTime: number): void {
+		this.stateManager.beginFrame(currentTime);
 		for (const source of INPUT_SOURCES) {
 			const handler: InputHandler = this.inputHandlers[source];
 			if (!handler) continue;
@@ -638,11 +639,20 @@ export class PlayerInput {
 		return this.inputHandlers['gamepad'] !== null;
 	}
 
+	/** Clears cached transition state so edge detectors don't fire spuriously. */
+	public clearEdgeState(): void {
+		this.stateManager.resetEdgeState();
+		for (const source of INPUT_SOURCES) {
+			this.previousStates[source] = {};
+		}
+	}
+
 	/**
 	 * Resets the state of all input keys and gamepad buttons.
 	 * @param except An optional array of keys or buttons to exclude from the reset.
 	 */
 	public reset(except?: string[]): void {
+		this.clearEdgeState();
 		for (const source of INPUT_SOURCES) {
 			this.inputHandlers[source]?.reset(except);
 		}

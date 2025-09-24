@@ -1,4 +1,4 @@
-import type { AbilityId } from '../gas/gastypes';
+import type { AbilityId, AbilityRequestResult } from '../gas/gastypes';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
 
@@ -7,9 +7,10 @@ export interface EvalContext {
 	playerIndex: number;
 	hasTag: (tag: string) => boolean;
 	matchesMode: (path: string) => boolean;
-	pushActivate: (id: AbilityId, payload?: Record<string, unknown>, source?: string) => void;
+	requestAbility: (id: AbilityId, opts?: { payload?: Record<string, unknown>; source?: string }) => AbilityRequestResult;
 	consume: (actions: string[]) => void;
 	pushEvent?: (event: string, payload?: Record<string, unknown>) => void;
+	onAbilityRequestFailed?: (id: AbilityId, reason: string) => void;
 }
 
 export type PatternPredicate = (input: PlayerInput) => boolean;
@@ -147,7 +148,7 @@ function compileEffectList(spec: Effect | Effect[] | undefined): EffectExecutor 
 	for (let i = 0; i < entries.length; i++) {
 		executors.push(compileEffect(entries[i]!));
 	}
-	if (executors.length === 0) return undefined;
+	if (executors.length === 0) throw new Error(`Empty effect list in ${JSON.stringify(spec)}`);
 	if (executors.length === 1) return executors[0];
 	return (ctx: EvalContext) => {
 		for (let i = 0; i < executors.length; i++) {
@@ -159,22 +160,26 @@ function compileEffectList(spec: Effect | Effect[] | undefined): EffectExecutor 
 function compileEffect(effect: Effect): EffectExecutor {
 	if (isAbilityRequest(effect)) {
 		const spec = effect['ability.request'];
+		if (!spec) throw new Error(`Missing ability request in effect ${JSON.stringify(effect)}`);
 		if (typeof spec === 'string') {
-			return (ctx: EvalContext) => ctx.pushActivate(spec);
+			return (ctx: EvalContext) => { ctx.requestAbility(spec); };
 		}
-		return (ctx: EvalContext) => ctx.pushActivate(spec.id, spec.payload, spec.source);
+		return (ctx: EvalContext) => { ctx.requestAbility(spec.id, { payload: spec.payload, source: spec.source }); };
 	}
 	if (isInputConsume(effect)) {
 		const actions = Array.isArray(effect['input.consume']) ? effect['input.consume'] : [effect['input.consume']];
+		if (actions.length === 0) throw new Error(`Empty actions in input.consume effect ${JSON.stringify(effect)}`);
 		return (ctx: EvalContext) => ctx.consume(actions);
 	}
 	if (isGameplayEmit(effect)) {
 		const { event, payload } = effect['emit.gameplay'];
+		if (!event) throw new Error(`Missing event name in emit.gameplay effect ${JSON.stringify(effect)}`);
 		return (ctx: EvalContext) => { if (ctx.pushEvent) ctx.pushEvent(event, payload); };
 	}
 	if (isNestedCommands(effect)) {
 		const nested = compileEffectList(effect.commands);
-		return nested ?? (() => undefined);
+		if (!nested) throw new Error(`Empty commands in nested effect ${JSON.stringify(effect)}`);
+		return nested;
 	}
 	return () => undefined;
 }

@@ -590,7 +590,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 	addContent(headerRow, 'th', 'Type');
 	addContent(headerRow, 'th', 'ID');
 
-	$.world.activeObjects.forEach(o => {
+	for (const o of $.world.objects({ scope: 'all' })) {
 		let row = addContent(table, 'tr', null);
 		row.classList.add('selectableoption');
 		addContent(row, 'td', `${o.constructor?.name}`);
@@ -605,7 +605,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 		row.onmouseleave = (_) => {
 			highlight_object(null);
 		};
-	});
+	};
 
 	document.body.insertBefore(dialogDiv, null);
 }
@@ -693,34 +693,34 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	row.onclick = (_) => handleOpenModelMenu(null, dialogDiv);
 
 	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `List all objects in current scene`);
-	row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
+row.classList.add('selectableoption', 'centered-text');
+addContent(row, 'td', `List all objects in current scene`);
+row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
 
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `List all statemachine definitions`);
-	row.onclick = (_) => openObjectDetailMenu(StateDefinitions, 'Statemachine definitions', dialogDiv);
+row = addContent(table, 'tr', null);
+row.classList.add('selectableoption', 'centered-text');
+addContent(row, 'td', `List all statemachine definitions`);
+row.onclick = (_) => openObjectDetailMenu(StateDefinitions, 'Statemachine definitions', dialogDiv);
 
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `List all behavior tree definitions`);
-	row.onclick = (_) => openObjectDetailMenu(BehaviorTreeDefinitions, 'BT definitions', dialogDiv);
+row = addContent(table, 'tr', null);
+row.classList.add('selectableoption', 'centered-text');
+addContent(row, 'td', `List all behavior tree definitions`);
+row.onclick = (_) => openObjectDetailMenu(BehaviorTreeDefinitions, 'BT definitions', dialogDiv);
 
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `See the Event Emitter`);
-	row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
+row = addContent(table, 'tr', null);
+row.classList.add('selectableoption', 'centered-text');
+addContent(row, 'td', `See the Event Emitter`);
+row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
 
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `See the Event Emitter???`);
-	row.onclick = (_) => handleOpenEventEmitterMenu(dialogDiv);
+row = addContent(table, 'tr', null);
+row.classList.add('selectableoption', 'centered-text');
+addContent(row, 'td', `See the Event Emitter???`);
+row.onclick = (_) => handleOpenEventEmitterMenu(dialogDiv);
 
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `See da Registry`);
-	row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dialogDiv);
+row = addContent(table, 'tr', null);
+row.classList.add('selectableoption', 'centered-text');
+addContent(row, 'td', `See da Registry`);
+row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dialogDiv);
 
 	document.body.insertBefore(dialogDiv, null);
 }
@@ -772,10 +772,12 @@ function getWorldObjectAtCursor(e: MouseEvent): { objUnderCursor: WorldObject | 
 
 	const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
 
-	const objsUnderCursor: WorldObject[] = $.world.activeObjects.filter(o =>
-		o.id !== 'debug_highlighter' &&
-		o.hittable &&
-		Collision2DSystem.collides(o, pointArea)
+	// Use a lazy iterable filter helper to filter the world.objects iterable directly
+	const objsUnderCursor: WorldObject[] = Array.from($.world.filterObjects(
+		o =>
+			o.id !== 'debug_highlighter' &&
+			o.hittable &&
+			Collision2DSystem.collides(o, pointArea), { scope: 'active' }), (o: WorldObject) => o
 	);
 
 	if (objsUnderCursor && objsUnderCursor.length > 0) {

@@ -5,6 +5,7 @@ import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 import { $ } from 'bmsx/core/game';
 import { Input } from '../input/input';
 import type { InputMap, ButtonState, ActionState, BGamepadButton, KeyboardButton } from '../input/inputtypes';
+import { OnscreenGamepad } from 'bmsx';
 
 const HUD_ID = 'bmsx-input-hud';
 
@@ -67,11 +68,18 @@ function flag(cond: boolean, char: string): string {
 	return cond ? char : '.';
 }
 
+function flagsToString(state: ActionState | ButtonState): string {
+	const justpressed = state.justpressed;
+	const hold = state.pressed && state.presstime >= 1;
+	const justpressedOrHoldFlag = justpressed ? 'j' : (hold ? 'h' : '.');
+	return `${flag(state.pressed, 'p')}${justpressedOrHoldFlag}${flag(state.justreleased, 'r')}${flag(state.consumed, 'c')}`;
+}
+
 function formatButtonState(label: string, state: ButtonState | null): string | null {
 	if (!state) return null;
 	const interesting = state.pressed || state.justpressed || state.justreleased || state.consumed;
 	if (!interesting) return null;
-	const flags = `${flag(state.pressed, 'P')}${flag(state.justpressed, '^')}${flag(state.justreleased, 'v')}${flag(state.consumed, 'C')}`;
+	const flags = flagsToString(state);
 	let suffix = '';
 	if (state.value !== null && state.value !== undefined) suffix = ` val=${state.value.toFixed(2)}`;
 	else if (state.value2d) suffix = ` val2d=(${state.value2d[0].toFixed(2)},${state.value2d[1].toFixed(2)})`;
@@ -79,11 +87,11 @@ function formatButtonState(label: string, state: ButtonState | null): string | n
 }
 
 function formatActionState(state: ActionState): string {
-	const flags = `${flag(state.pressed, 'P')}${flag(state.justpressed, '^')}${flag(state.justreleased, 'v')}${flag(state.consumed, 'C')}`;
+	const flags = flagsToString(state);
 	const hold = (state.pressed && state.presstime !== null)
-		? ` ${Math.round(state.presstime).toString().padStart(3, ' ')}ms`
-		: '';
-	return `${state.action.padEnd(18)} ${flags}${hold}`;
+		? ` ${Math.round(state.presstime).toString().padStart(4, ' ')}frames`
+		: ''.padStart(12, ' ');
+	return `${state.action.padEnd(20)} ${flags}${hold}`;
 }
 
 function extractMappings(map: InputMap | undefined): {
@@ -146,7 +154,8 @@ export class InputHUDOverlay {
 			const inputMap = (playerInput as unknown as { inputMap?: InputMap }).inputMap;
 			const hasKeyboard = !!playerInput.inputHandlers['keyboard'];
 			const hasGamepad = !!playerInput.inputHandlers['gamepad'];
-			const header = `Player ${i}  keyboard:${hasKeyboard ? '✓' : '–'}  gamepad:${hasGamepad ? '✓' : '–'}`;
+			const hasOnscreenGamepad = playerInput.inputHandlers['gamepad']?.gamepadIndex === OnscreenGamepad.VIRTUAL_PAD_INDEX;
+			const header = `Player ${i}  k:${hasKeyboard ? '✓' : '–'}  g:${hasGamepad ? '✓' : '–'}  o:${hasOnscreenGamepad ? '✓' : '–'}`;
 			const lines: string[] = [header];
 			const { actions, keyboardKeys, gamepadButtons } = extractMappings(inputMap);
 			if (!hasKeyboard && !hasGamepad && actions.length === 0) continue;
@@ -157,7 +166,7 @@ export class InputHUDOverlay {
 				const txt = formatButtonState(key, state);
 				if (txt) keyboardStates.push(txt);
 			}
-			if (keyboardStates.length) lines.push('  Keys: ' + keyboardStates.join('  '));
+			if (keyboardStates.length) lines.push('  Keys: ' + keyboardStates.join('\n'));
 
 			const gamepadStates: string[] = [];
 			for (const button of gamepadButtons) {
@@ -165,7 +174,7 @@ export class InputHUDOverlay {
 				const txt = formatButtonState(button, state);
 				if (txt) gamepadStates.push(txt);
 			}
-			if (gamepadStates.length) lines.push('  Buttons: ' + gamepadStates.join('  '));
+			if (gamepadStates.length) lines.push('  Buttons: ' + gamepadStates.join('\n'));
 
 			if (actions.length) {
 				lines.push('  Actions:');
@@ -181,7 +190,7 @@ export class InputHUDOverlay {
 		}
 
 		contentEl.textContent = blocks.join('\n\n');
-		(hud as HTMLElement).style.display = 'block';
+		hud.style.display = 'block';
 	}
 
 	enable(): void { this.enabled = true; ensureHudElement().style.display = 'block'; this.updateNow(); }

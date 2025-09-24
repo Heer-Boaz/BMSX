@@ -341,7 +341,7 @@ export class GamepadInput implements InputHandler {
 					justreleased: jr,
 					waspressed: prev.waspressed || wasDown,
 					wasreleased: prev.wasreleased || jr,
-					consumed: prev.consumed || false,
+					consumed: false,
 					timestamp: now,
 					releasedAtMs: jr ? now : prev.releasedAtMs ?? null,
 					pressId: jr ? prev.pressId ?? null : prev.pressId ?? null,

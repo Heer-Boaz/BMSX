@@ -21,7 +21,7 @@ export class Overlap2DSystem extends ECSystem {
 
 		// Collect colliders that want events across active objects (current + UI overlay)
 		const eventColliders: Collider2DComponent[] = [];
-		for (const o of world.activeObjects) {
+		for (const o of world.objects({ scope: 'active' })) {
 			for (const c of o.getComponents(Collider2DComponent)) {
 				if (!c.enabled) continue;
 				colliderLookup.set(c.id, c);

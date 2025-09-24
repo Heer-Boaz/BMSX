@@ -10,9 +10,9 @@ export class AbilityRuntimeSystem extends ECSystem {
 		for (let i = 0; i < commands.length; i++) {
 			const command = commands[i]!;
 			const asc = AbilitySystemComponent.registryByOwner.get(command.owner);
-			if (asc) asc.tryActivate(command.abilityId, command.payload);
+			if (asc) asc.tryActivate(command.ability_id, command.payload);
 		}
-		const dtMs = $.deltaTime as number;
+		const dtMs = $.deltaTime;
 		for (const asc of AbilitySystemComponent.registry) asc.step(dtMs);
 	}
 }

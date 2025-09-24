@@ -507,21 +507,23 @@ function evalAndCollect(node: Node, gs: GetterFn, win?: number, out?: ActNode[])
  * for a given action state.
  *
  * @property p - Evaluates to true if the action is currently pressed.
+ * @property r - Evaluates to true if the action is currently not pressed (released).
  * @property j - Evaluates to true if the action was just pressed.
  * @property &j - Evaluates to true if all actions are just pressed.
  * @property jr - Evaluates to true if the action was just released.
  * @property &jr - Evaluates to true if all actions are just released.
  * @property c - Evaluates to true if the action is consumed.
- * @property h - Evaluates to true if the action has been held (press time > 1).
+ * @property h - Evaluates to true if the action has been held (presstime >= 1 frame).
  */
 const STATIC: Record<string, ModFn> = {
 	'p': (get, n, win) => get(n, win).pressed,
+	'r': (get, n, win) => !get(n, win).pressed,
 	'j': (get, n, win) => get(n, win).justpressed,
 	'&j': (get, n, win) => get(n, win).alljustpressed,
 	'jr': (get, n, win) => get(n, win).justreleased,
 	'&jr': (get, n, win) => get(n, win).alljustreleased,
 	'c': (get, n, win) => get(n, win).consumed,
-	// 'h' (hold) == held for more than 1ms (equivalent to t{>=1})
+	// 'h' (hold) == held for more than 1 frame (equivalent to t{>=1})
 	'h': (get, n, win) => (get(n, win).presstime ?? 0) >= 1,
 };
 
