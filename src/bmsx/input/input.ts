@@ -4,6 +4,7 @@ import { Registry } from '../core/registry';
 import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
 import { toggleRenderHUD } from '../debugger/renderhud';
 import { toggleECSHUD } from '../debugger/ecshud';
+import { toggleInputHUD } from '../debugger/inputhud';
 import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from './ui_toast';
@@ -480,12 +481,13 @@ export class Input implements RegisterablePersistent {
 				case 'Esc':
 				case 'F12':
 					break;
-				case 'F1':
-					// preventActionAndPropagation(e);
-					e.preventDefault();
-					toggleRenderHUD();
-					toggleECSHUD();
-					break;
+			case 'F1':
+				// preventActionAndPropagation(e);
+				e.preventDefault();
+				toggleRenderHUD();
+				toggleECSHUD();
+				toggleInputHUD();
+				break;
 				case 'F6':
 					e.preventDefault();
 					handleOpenDebugMenu(e);
