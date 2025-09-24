@@ -1,9 +1,10 @@
-import { $, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction } from 'bmsx';
+import { $, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction } from 'bmsx';
 import type { AbilityId } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
+import { FIGHTER_INPUT_PROGRAM } from './input/fighter_input_program';
 
 export type AttackType = string;
 
@@ -34,7 +35,7 @@ function getDamage(attackType: AttackType): number {
 }
 
 @insavegame
-@attach_components(ProhibitLeavingScreenComponent, AbilitySystemComponent)
+@attach_components(ProhibitLeavingScreenComponent, AbilitySystemComponent, InputAbilityComponent)
 @assign_fsm('hitanimation')
 export abstract class Fighter extends SpriteObject {
 	public static readonly ATTACK_DURATION = 15;
@@ -136,6 +137,7 @@ export abstract class Fighter extends SpriteObject {
 		this.flip_h = (v !== 'left');
 	}
 	public hp: number;
+
 	/**
 	 * The player index of the fighter.
 	 */
@@ -151,6 +153,15 @@ export abstract class Fighter extends SpriteObject {
 		this.currentHitMarker = null;
 		this.player_index = opts.playerIndex ?? 1;
 		// No producers; base sprite handled by SpriteComponent via SpriteRenderSystem
+	}
+
+	public override activate(): void {
+		super.activate();
+		const inputAbility = this.getUniqueComponent(InputAbilityComponent);
+		if (inputAbility && !inputAbility.program && !inputAbility.programId) {
+			inputAbility.playerIndex = this.player_index ?? 1;
+			inputAbility.program = FIGHTER_INPUT_PROGRAM;
+		}
 	}
 
 	public addGameplayTag(tag: string): void {

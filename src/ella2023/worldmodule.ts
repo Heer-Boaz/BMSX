@@ -1,18 +1,17 @@
-import { $, World, InputMap, insavegame, Service, subscribesToGlobalEvent, TickGroup, type RevivableObjectArgs } from 'bmsx';
+import { $, World, InputMap, InputAbilitySystem, insavegame, Service, subscribesToGlobalEvent, TickGroup, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
-import { PlayerInputToAbilitySystem } from './systems/player_input_to_ability_system';
 
 export const EILA_MODULE = {
 	ecs: {
 		systems: [{
-			id: 'ella.playerInputAbility',
+			id: 'ella.inputAbility',
 			group: TickGroup.Input,
 			defaultPriority: 10,
-			create: (priority: number) => new PlayerInputToAbilitySystem(priority),
+			create: (priority: number) => new InputAbilitySystem(priority),
 		}],
-		nodes: [{ ref: 'ella.playerInputAbility', after: ['behaviorTrees'] }],
+		nodes: [{ ref: 'ella.inputAbility', after: ['behaviorTrees'] }],
 	},
 	onBoot(world: World) {
 		// Spaces

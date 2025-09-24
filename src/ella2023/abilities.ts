@@ -32,6 +32,10 @@ abstract class BaseFighterAbility implements Ability {
 class FighterWalkAbility extends BaseFighterAbility {
 	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.walk;
 
+	public constructor(fighter: Fighter) {
+		super(fighter);
+	}
+
 	public override *activate(ctx: AbilityContext): AbilityCoroutine {
 		const intentPayload = (ctx.intent?.payload ?? {}) as DirectionPayload;
 		const requestedDirection = intentPayload.dir;
@@ -73,6 +77,10 @@ class FighterWalkAbility extends BaseFighterAbility {
 class FighterWalkStopAbility extends BaseFighterAbility {
 	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.walk_stop;
 
+	public constructor(fighter: Fighter) {
+		super(fighter);
+	}
+
 	public override *activate(_ctx: AbilityContext): AbilityCoroutine {
 		this.dispatchModeEvent('mode.locomotion.idle');
 	}
@@ -80,6 +88,10 @@ class FighterWalkStopAbility extends BaseFighterAbility {
 
 class FighterDuckHoldAbility extends BaseFighterAbility {
 	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.duck_hold;
+
+	public constructor(fighter: Fighter) {
+		super(fighter);
+	}
 
 	public override *activate(_ctx: AbilityContext): AbilityCoroutine {
 		this.dispatchModeEvent('mode.control.duck');
@@ -89,6 +101,10 @@ class FighterDuckHoldAbility extends BaseFighterAbility {
 class FighterDuckReleaseAbility extends BaseFighterAbility {
 	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.duck_release;
 
+	public constructor(fighter: Fighter) {
+		super(fighter);
+	}
+
 	public override *activate(_ctx: AbilityContext): AbilityCoroutine {
 		this.dispatchModeEvent('mode.locomotion.idle');
 	}
@@ -96,6 +112,10 @@ class FighterDuckReleaseAbility extends BaseFighterAbility {
 
 class FighterJumpAbility extends BaseFighterAbility {
 	public readonly id: AbilityId = FIGHTER_CORE_ABILITY_IDS.jump;
+
+	public constructor(fighter: Fighter) {
+		super(fighter);
+	}
 
 	public override *activate(ctx: AbilityContext): AbilityCoroutine {
 		const payload = (ctx.intent?.payload ?? {}) as { direction?: 'left' | 'right' };
