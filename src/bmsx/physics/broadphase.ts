@@ -1,4 +1,4 @@
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { computeAABB } from './collisionshape';
 import { PhysicsBody } from './physicsbody';
 

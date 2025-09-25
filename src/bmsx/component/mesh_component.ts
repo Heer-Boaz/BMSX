@@ -1,11 +1,11 @@
-import { Component, type ComponentAttachOptions } from 'bmsx/component/basecomponent';
-import { $ } from 'bmsx/core/game';
-import { M4 } from 'bmsx/render/3d/math3d';
-import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler, GLTFNode, color_arr, vec3arr, vec4arr } from 'bmsx/rompack/rompack';
-import { Mesh as RenderMesh } from 'bmsx/render/3d/mesh';
-import { Material } from 'bmsx/render/3d/material';
-import { insavegame, excludepropfromsavegame, onsave, onload } from 'bmsx/serializer/serializationhooks';
-import type { MeshRenderSubmission } from 'bmsx/render/gameview';
+import { Component, type ComponentAttachOptions } from '../component/basecomponent';
+import { $ } from '../core/game';
+import { M4 } from '../render/3d/math3d';
+import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler, GLTFNode, color_arr, vec3arr, vec4arr } from '../rompack/rompack';
+import { Mesh as RenderMesh } from '../render/3d/mesh';
+import { Material } from '../render/3d/material';
+import { insavegame, excludepropfromsavegame, onsave, onload } from '../serializer/serializationhooks';
+import type { MeshRenderSubmission } from '../render/gameview';
 
 type MeshInstance = { mesh: RenderMesh; nodeIndex?: number; meshIndex?: number; skinIndex?: number; morphWeights?: number[]; worldMatrix?: Float32Array };
 

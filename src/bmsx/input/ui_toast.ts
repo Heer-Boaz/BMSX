@@ -1,10 +1,10 @@
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
 import { $, } from '../core/game';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import { BFont } from '../core/font';
-import { id_to_space_symbol } from 'bmsx/core/space';
-import type { RenderProducerContext } from 'bmsx/component/customvisual_component';
+import { id_to_space_symbol } from '../core/space';
+import type { RenderProducerContext } from '../component/customvisual_component';
 
 const TOAST_DURATION = 1800;
 

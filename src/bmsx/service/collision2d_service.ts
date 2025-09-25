@@ -1,9 +1,9 @@
-import type { Area, Polygon, vec2arr } from 'bmsx/rompack/rompack';
-import type { WorldObject } from 'bmsx/core/object/worldobject';
-import type { World } from 'bmsx/core/world';
-import { new_area } from 'bmsx/utils/utils';
-import { Service } from 'bmsx/core/service';
-import { Collider2DComponent } from 'bmsx/component/collisioncomponents';
+import type { Area, Polygon, vec2arr } from '../rompack/rompack';
+import type { WorldObject } from '../core/object/worldobject';
+import type { World } from '../core/world';
+import { new_area } from '../utils/utils';
+import { Service } from '../core/service';
+import { Collider2DComponent } from '../component/collisioncomponents';
 
 type Shape2D = { kind: 'poly', polys: Polygon[] } | { kind: 'circle', c: { x: number; y: number; r: number } };
 

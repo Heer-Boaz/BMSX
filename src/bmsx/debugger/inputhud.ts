@@ -1,8 +1,8 @@
 import { Registry } from '../core/registry';
 import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
-import { $ } from 'bmsx/core/game';
+import { $ } from '../core/game';
 import { Input } from '../input/input';
 import type { InputMap, ButtonState, ActionState, BGamepadButton, KeyboardButton } from '../input/inputtypes';
 import { OnscreenGamepad } from 'bmsx';

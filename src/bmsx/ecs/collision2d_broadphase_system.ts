@@ -1,5 +1,5 @@
 import { ECSystem, TickGroup } from './ecsystem';
-import type { World } from 'bmsx/core/world';
+import type { World } from '../core/world';
 import { Collision2DSystem } from '../service/collision2d_service';
 
 /** Rebuilds the broad-phase collision index once per frame. */

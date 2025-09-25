@@ -7,7 +7,7 @@ import type { WorldObject } from '../core/object/worldobject';
 import { InputAbilityComponent } from './inputabilitycomponent';
 import { compileProgram, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from './input_ability_compiler';
 import { isInputAbilityProgram, type InputAbilityProgram } from './input_ability_dsl';
-import { filterIterable } from 'bmsx/utils/utils';
+import { filterIterable } from '../utils/utils';
 
 export class InputAbilitySystem extends ECSystem {
 	private readonly compiledById = new Map<string, CompiledProgram>();

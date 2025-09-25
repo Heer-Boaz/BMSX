@@ -4,7 +4,7 @@ import { $ } from '../core/game';
 import { SpriteComponent } from '../component/sprite_component';
 import type { WorldObject } from '../core/object/worldobject';
 import { TransformComponent } from '../component/transformcomponent';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 
 @excludeclassfromsavegame
 export class SpriteRenderSystem extends ECSystem {

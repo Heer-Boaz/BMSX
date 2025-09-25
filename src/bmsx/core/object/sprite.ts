@@ -1,6 +1,6 @@
 import { color } from "../../render/gameview";
 import { Area, BoundingBoxPrecalc, type HitPolygonsPrecalc, type Polygon } from "../../rompack/rompack";
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { $rompack } from '../game';
 import { WorldObject } from "./worldobject";
 import { SpriteComponent } from '../../component/sprite_component';

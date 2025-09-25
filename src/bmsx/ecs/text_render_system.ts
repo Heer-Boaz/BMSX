@@ -4,8 +4,8 @@ import { TextComponent } from '../component/text_component';
 import { TransformComponent } from '../component/transformcomponent';
 import type { WorldObject } from '../core/object/worldobject';
 import { renderGlyphs } from '../render/glyphs';
-import { wrapGlyphs, calculateCenteredBlockX } from 'bmsx/render/glyphs';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { wrapGlyphs, calculateCenteredBlockX } from '../render/glyphs';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 
 @excludeclassfromsavegame
 export class TextRenderSystem extends ECSystem {

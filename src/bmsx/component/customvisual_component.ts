@@ -1,10 +1,10 @@
 import { Component, type ComponentAttachOptions } from './basecomponent';
-import { insavegame, excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
-import type { RenderSubmitQueue, ImgRenderSubmission, RectRenderSubmission, PolyRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, GlyphRenderSubmission } from 'bmsx/render/gameview';
-import type { RenderSubmission } from 'bmsx/render/gameview';
-import type { WorldObject } from 'bmsx/core/object/worldobject';
-import { onload } from 'bmsx/serializer/serializationhooks';
-import { $ } from 'bmsx/core/game';
+import { insavegame, excludepropfromsavegame } from '../serializer/serializationhooks';
+import type { RenderSubmitQueue, ImgRenderSubmission, RectRenderSubmission, PolyRenderSubmission, MeshRenderSubmission, ParticleRenderSubmission, GlyphRenderSubmission } from '../render/gameview';
+import type { RenderSubmission } from '../render/gameview';
+import type { WorldObject } from '../core/object/worldobject';
+import { onload } from '../serializer/serializationhooks';
+import { $ } from '../core/game';
 
 export type RenderProducerContext = { parent: WorldObject; rc: CustomVisualComponent };
 export type RenderProducer = (ctx: RenderProducerContext) => void;

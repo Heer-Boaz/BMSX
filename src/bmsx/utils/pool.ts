@@ -15,7 +15,7 @@
  * - Returned handle is the item itself; pool tracks actives separately.
  */
 
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 
 export interface PoolOptions<T> {
 	/** Preallocate this many instances eagerly (warm pool). */

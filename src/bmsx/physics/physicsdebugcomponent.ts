@@ -1,7 +1,7 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { new_vec3 } from '../utils/utils';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { PhysicsBody } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
 

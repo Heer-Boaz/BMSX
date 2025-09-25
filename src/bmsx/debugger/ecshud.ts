@@ -1,9 +1,9 @@
 import { Registry } from '../core/registry';
 import { EventEmitter, subscribesToGlobalEvent } from '../core/eventemitter';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { DefaultECSPipelineRegistry as ECSReg } from '../ecs/pipeline';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
-import { $ } from 'bmsx/core/game';
+import { $ } from '../core/game';
 
 const HUD_ID = 'bmsx-ecs-hud';
 

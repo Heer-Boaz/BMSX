@@ -1,7 +1,7 @@
 import { Camera } from '../../render/3d/camera3d';
 import { quat, V3 } from '../../render/3d/math3d';
 import type { Oriented, vec3 } from '../../rompack/rompack';
-import { insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { WorldObject } from './worldobject';
 
 @insavegame

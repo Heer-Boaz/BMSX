@@ -3,7 +3,7 @@ import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComp
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
 import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon } from "../../rompack/rompack";
-import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { $ } from '../game';
 import type { Space } from '../space';
 import { ObjectTracker } from "../../utils/objecttracker";
@@ -13,7 +13,7 @@ import { EventEmitter } from "../eventemitter";
 import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
-import { V3 } from 'bmsx/render/3d/math3d';
+import { V3 } from '../../render/3d/math3d';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;

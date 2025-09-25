@@ -2,7 +2,7 @@ import { Component, type ComponentAttachOptions } from './basecomponent';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
-import { excludepropfromsavegame, insavegame } from 'bmsx/serializer/serializationhooks';
+import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TickGroup } from '../ecs/ecsystem';
 import type {
 	Ability,

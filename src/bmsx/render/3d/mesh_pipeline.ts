@@ -2,7 +2,7 @@
 // Handles 3D mesh rendering, instancing, morph targets, skinning, fog, and lighting UBO management.
 import { $ } from '../../core/game';
 import type { Mesh } from './mesh';
-import { Float32ArrayPool } from 'bmsx/utils/pool';
+import { Float32ArrayPool } from '../../utils/pool';
 import type { vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import meshFS from '../3d/shaders/3d.frag.glsl';

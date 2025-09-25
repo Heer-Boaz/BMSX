@@ -41,7 +41,7 @@ import type {
 import { State } from './state';
 import { StateDefinition, validateStateMachine } from './statedefinition';
 import type { StateMachineController } from './fsmcontroller';
-import type { WorldObject } from 'bmsx/core/object/worldobject';
+import type { WorldObject } from '../core/object/worldobject';
 
 /**
  * Represents the machine definitions.

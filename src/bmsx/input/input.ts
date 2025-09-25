@@ -14,7 +14,7 @@ import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from './controller_assignment_ui';
 import { PlayerInput } from './playerinput';
-import { id_to_space_symbol } from 'bmsx/core/space';
+import { id_to_space_symbol } from '../core/space';
 
 // @ts-ignore
 function svgToPng(svgElement, filename) {

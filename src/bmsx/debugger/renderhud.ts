@@ -4,8 +4,8 @@ import * as SpritesPipeline from '../render/2d/sprites_pipeline';
 import * as MeshPipeline from '../render/3d/mesh_pipeline';
 import * as ParticlesPipeline from '../render/3d/particles_pipeline';
 import { RegisterablePersistent } from '../rompack/rompack';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
-import { $ } from 'bmsx/core/game';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
+import { $ } from '../core/game';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 
 // TODO: FIND A WAY TO NOT INITIALIZE ALL THIS STUFF WHEN THE GAME ROM IS NOT A DEBUG-ROM!

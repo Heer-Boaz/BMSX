@@ -2,7 +2,7 @@ import { ECSystem, TickGroup } from "./ecsystem";
 import type { World } from "../core/world";
 import { id_to_space_symbol, type Space } from "../core/space";
 import { $ } from "../core/game";
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { CustomVisualComponent } from "bmsx/component/customvisual_component";
 
 @excludeclassfromsavegame

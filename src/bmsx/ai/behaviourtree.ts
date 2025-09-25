@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import { normalizeDecoratedClassName } from '../utils/decorators';
 import { WorldObject } from '../core/object/worldobject';
 import type { Identifiable, Identifier } from '../rompack/rompack';
-import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 /** Node specification used to compose a behaviour tree. */
 export type BehaviorTreeNodeSpec =

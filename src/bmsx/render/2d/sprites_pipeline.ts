@@ -33,7 +33,7 @@ import {
 } from '../backend/webgl/webgl.constants';
 import { color, ImgRenderSubmission, RectRenderSubmission, GameView, type RenderLayer } from '../gameview';
 import { bvec } from './vertexutils2d';
-import { $ } from 'bmsx/core/game';
+import { $ } from '../../core/game';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 

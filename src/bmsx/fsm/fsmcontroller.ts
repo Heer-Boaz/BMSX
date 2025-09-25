@@ -1,6 +1,6 @@
-import { EventEmitter, type EventLane, type EventPayload } from 'bmsx/core/eventemitter';
+import { EventEmitter, type EventLane, type EventPayload } from '../core/eventemitter';
 import { Identifiable, Identifier } from '../rompack/rompack';
-import { insavegame, onload, excludepropfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { insavegame, onload, excludepropfromsavegame } from '../serializer/serializationhooks';
 import { ActiveStateMachines } from './fsmlibrary';
 import { type Stateful, type id2sstate } from './fsmtypes';
 import { State } from './state';

@@ -4,7 +4,7 @@ import { DEFAULT_VERTEX_COLOR } from '../backend/webgl/webgl.constants';
 import type { TextureKey } from '../../render/texturemanager';
 import type { color } from '../../render/gameview';
 import type { vec3arr } from '../../rompack/rompack';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../../serializer/serializationhooks';
 
 @excludeclassfromsavegame
 export class Mesh {

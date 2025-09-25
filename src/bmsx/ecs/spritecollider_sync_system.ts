@@ -1,10 +1,10 @@
-import { ECSystem, TickGroup } from 'bmsx/ecs/ecsystem';
-import type { World } from 'bmsx/core/world';
-import type { WorldObject } from 'bmsx/core/object/worldobject';
-import { SpriteComponent } from 'bmsx/component/sprite_component';
-import { Collider2DComponent } from 'bmsx/component/collisioncomponents';
-import { $rompack } from 'bmsx/core/game';
-import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc } from 'bmsx/rompack/rompack';
+import { ECSystem, TickGroup } from '../ecs/ecsystem';
+import type { World } from '../core/world';
+import type { WorldObject } from '../core/object/worldobject';
+import { SpriteComponent } from '../component/sprite_component';
+import { Collider2DComponent } from '../component/collisioncomponents';
+import { $rompack } from '../core/game';
+import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc } from '../rompack/rompack';
 
 /**
  * Synchronizes ColliderComponent shapes from SpriteComponent metadata (imgid + flip).

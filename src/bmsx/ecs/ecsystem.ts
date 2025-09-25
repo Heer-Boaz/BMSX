@@ -8,7 +8,7 @@ import { MeshComponent } from "../component/mesh_component";
 import { mod } from "../utils/utils";
 import { PhysicsComponent } from "../physics/physicscomponent";
 import { CollisionEvent, PhysicsWorld } from "../physics/physicsworld";
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { TileSize } from "../systems/msx";
 import { Identifiable } from "bmsx/rompack/rompack";
 import { Service } from '../core/service';

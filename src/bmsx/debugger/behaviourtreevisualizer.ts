@@ -4,7 +4,7 @@ import { Component, componenttags_postprocessing, type ComponentAttachOptions } 
 import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
 import type { Identifier } from '../rompack/rompack';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { FloatingDialog } from './bmsxdebugger';
 
 @componenttags_postprocessing('render')

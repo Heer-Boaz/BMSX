@@ -4,7 +4,7 @@ import { type WorldObject, type WorldObjectConstructorBaseOrAbstract } from '../
 import { Registry } from '../core/registry';
 import type { Disposable, Identifiable, Identifier, Registerable } from '../rompack/rompack';
 import { ConcreteOrAbstractConstructor } from '../rompack/rompack';
-import { insavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 /**
  * Represents a constructor that includes the autoAddComponents property.

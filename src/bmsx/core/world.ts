@@ -9,7 +9,7 @@ import { Camera } from '../render/3d/camera3d';
 import type { ConcreteOrAbstractConstructor, Identifier, RegisterablePersistent, vec2 } from '../rompack/rompack';
 import type { NodeSpec, SystemDescriptor, ECSPipelineRegistry } from '../ecs/pipeline';
 import { Direction, vec3, type Area, type vec2arr } from "../rompack/rompack";
-import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { excludepropfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { CameraObject } from './object/cameraobject';
 import { WorldObject } from './object/worldobject';
 import { AmbientLightObject, LightObject } from './object/lightobject';

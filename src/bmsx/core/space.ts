@@ -1,5 +1,5 @@
 import { type Identifier, vec3 } from '../rompack/rompack';
-import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
 import { id2obj, id2objectType } from './world';

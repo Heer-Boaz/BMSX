@@ -1,6 +1,6 @@
 import type { EventPayload, EventScope } from '../core/eventemitter';
-import type { Identifier } from 'bmsx/rompack/rompack';
-import { GameplayCommandBuffer } from 'bmsx/ecs/gameplay_command_buffer';
+import type { Identifier } from '../rompack/rompack';
+import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 
 export type TagId = string;
 export type AttributeId = string;

@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { WorldObject } from '../core/object/worldobject';
 import { new_vec3 } from '../utils/utils';
 import type { Oriented } from '../rompack/rompack';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
 import { PhysicsWorld } from './physicsworld';
 

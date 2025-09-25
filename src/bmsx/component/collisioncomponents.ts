@@ -3,7 +3,7 @@ import { $ } from '../core/game';
 import { WorldObject, WorldObjectEventPayloads } from "../core/object/worldobject";
 import { mod, new_vec2, set_inplace_vec2 } from '../utils/utils';
 import { vec2, type Area, type Polygon } from '../rompack/rompack';
-import { excludepropfromsavegame, insavegame } from 'bmsx/serializer/serializationhooks';
+import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TileSize } from "../systems/msx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams, type ComponentAttachOptions } from "./basecomponent";
 

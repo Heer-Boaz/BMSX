@@ -1,4 +1,4 @@
-import { normalizeDecoratedClassName } from 'bmsx/utils/decorators';
+import { normalizeDecoratedClassName } from '../utils/decorators';
 import { Serializer, Reviver, type ConstructorWithSaveGame } from './gameserializer';
 
 /**

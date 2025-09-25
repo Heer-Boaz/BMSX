@@ -1,8 +1,8 @@
 import { ECSystem, TickGroup } from './ecsystem';
-import type { World } from 'bmsx/core/world';
-import { EventEmitter } from 'bmsx/core/eventemitter';
-import { Collider2DComponent } from 'bmsx/component/collisioncomponents';
-import { $ } from 'bmsx/core/game';
+import type { World } from '../core/world';
+import { EventEmitter } from '../core/eventemitter';
+import { Collider2DComponent } from '../component/collisioncomponents';
+import { $ } from '../core/game';
 import { Collision2DSystem } from '../service/collision2d_service';
 
 type OverlapEvent = 'overlapBegin' | 'overlapStay' | 'overlapEnd';

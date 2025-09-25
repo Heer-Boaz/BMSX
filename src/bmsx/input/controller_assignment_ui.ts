@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import { subscribesToGlobalEvent, type EventPayload } from '../core/eventemitter';
-import { excludeclassfromsavegame, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { WorldObject } from '../core/object/worldobject';
 import { SpriteObject } from '../core/object/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';
@@ -9,7 +9,7 @@ import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import type { Identifier } from '../rompack/rompack';
 import { Input } from './input';
-import { id_to_space_symbol } from 'bmsx/core/space';
+import { id_to_space_symbol } from '../core/space';
 
 // Branded types (compile-time only)
 export type PlayerIndex = number & { readonly __brand: 'PlayerIndex' };

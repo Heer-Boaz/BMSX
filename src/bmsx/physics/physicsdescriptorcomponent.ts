@@ -1,7 +1,7 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
 import { new_vec3 } from '../utils/utils';
-import { insavegame, onload } from 'bmsx/serializer/serializationhooks';
+import { insavegame, onload } from '../serializer/serializationhooks';
 import type { PhysicsBodyDesc } from './physicsbody';
 import { PhysicsComponent, PhysicsComponentOptions } from './physicscomponent';
 

@@ -1,12 +1,12 @@
 import { $ } from '../core/game';
 import { new_vec3 } from '../utils/utils';
 import type { RegisterablePersistent, vec3 } from '../rompack/rompack';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { BroadphasePair, BroadphaseSAP } from './broadphase';
 import { ContactSolver } from './contactsolver';
 import { Contact, Narrowphase } from './narrowphase';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
-import { Registry } from 'bmsx/core/registry';
+import { Registry } from '../core/registry';
 
 export interface PhysicsWorldOptions {
 	gravity?: vec3; // Default assumes Y+ is UP. Negative Y gravity pulls objects down.

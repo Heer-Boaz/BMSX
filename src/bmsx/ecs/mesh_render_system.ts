@@ -5,7 +5,7 @@ import type { WorldObject } from '../core/object/worldobject';
 import { TransformComponent } from '../component/transformcomponent';
 import { MeshComponent } from '../component/mesh_component';
 import { M4 } from '../render/3d/math3d';
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 
 @excludeclassfromsavegame
 export class MeshRenderSystem extends ECSystem {

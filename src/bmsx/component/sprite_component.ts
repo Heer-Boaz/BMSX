@@ -1,9 +1,9 @@
-import { componenttags_postprocessing, type ComponentAttachOptions } from 'bmsx/component/basecomponent';
-import { Component } from 'bmsx/component/basecomponent';
-import type { Identifier, vec2, vec3 } from 'bmsx/rompack/rompack';
-import { insavegame } from 'bmsx/serializer/serializationhooks';
-import type { color, FlipOptions, RenderLayer } from 'bmsx/render/gameview';
-import { new_vec2 } from 'bmsx/utils/utils';
+import { componenttags_postprocessing, type ComponentAttachOptions } from '../component/basecomponent';
+import { Component } from '../component/basecomponent';
+import type { Identifier, vec2, vec3 } from '../rompack/rompack';
+import { insavegame } from '../serializer/serializationhooks';
+import type { color, FlipOptions, RenderLayer } from '../render/gameview';
+import { new_vec2 } from '../utils/utils';
 
 @insavegame
 @componenttags_postprocessing('render')

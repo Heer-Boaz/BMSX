@@ -6,7 +6,7 @@
 // - Optional pooling for item reuse via Pool<T>.
 // - Excluded from savegame serialization.
 
-import { excludeclassfromsavegame } from 'bmsx/serializer/serializationhooks';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import type { Pool } from './pool';
 
 @excludeclassfromsavegame

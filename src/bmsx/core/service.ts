@@ -4,7 +4,7 @@ import { Stateful } from '../fsm/fsmtypes';
 import { StateMachineController } from '../fsm/fsmcontroller';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { Registry } from './registry';
-import { onload, type RevivableObjectArgs } from 'bmsx/serializer/serializationhooks';
+import { onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 
 /**
  * Base class for non-world-bound, persistent services (UE-style Subsystems).

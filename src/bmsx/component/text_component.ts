@@ -1,8 +1,8 @@
-import { Component, type ComponentAttachOptions } from 'bmsx/component/basecomponent';
-import type { vec3 } from 'bmsx/rompack/rompack';
-import { insavegame } from 'bmsx/serializer/serializationhooks';
-import type { color, RenderLayer } from 'bmsx/render/gameview';
-import type { BFont } from 'bmsx/core/font';
+import { Component, type ComponentAttachOptions } from '../component/basecomponent';
+import type { vec3 } from '../rompack/rompack';
+import { insavegame } from '../serializer/serializationhooks';
+import type { color, RenderLayer } from '../render/gameview';
+import type { BFont } from '../core/font';
 
 @insavegame
 export class TextComponent extends Component {
