@@ -67,8 +67,11 @@
 	"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 	"pack:engine": "npm pack ./src/bmsx",
 	"serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
-	"serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist"
+	"serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist",
+	"validate:engine": "npx tsc --build ./src/bmsx",
+	"validate": "npm run validate:engine && (test -f tsconfig.scripts.json && npm run typecheck:scripts || true)"
   },
+
   "repository": {
 	"type": "git",
 	"url": "git+https://github.com/Heer-Boaz/BMSX.git"

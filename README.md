@@ -42,6 +42,47 @@ Pipelines with only wrapper logic (no shaders) omit `vsCode/fsCode` and just imp
 
 BMSX is a lightweight TypeScript game engine and toolchain used to build small retro-style browser games. Instead of loading assets directly from the web, each game is packaged into a single `.rom` file that contains the engine, game code and resources.
 
+## Setup (quick)
+
+* Required Node version: Node.js 22.x or later (the project was validated with Node 22+). Using an older Node may produce "Unsupported engine" warnings during installs.
+
+* Recommended: install Node with nvm (Node Version Manager) so you can switch versions per-project. Example (no sudo):
+
+```bash
+# install nvm (if you don't already have it), then install Node 22 and set it as default
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+nvm install 22
+nvm alias default 22
+```
+
+> Important: do NOT run `npm` with `sudo` in this project. Running `sudo npm install` can leave files owned by root and cause permission problems and mixed-node environments. Instead, after you have the correct Node via nvm, run:
+
+```bash
+# from the project root, without sudo
+npm install -D
+```
+
+* If you ran installs with `sudo` and see permission issues, fix the repository-local install by removing `node_modules` and reinstalling (avoid using `sudo`):
+
+```bash
+rm -rf node_modules package-lock.json
+npm install -D
+```
+
+* Build the engine type declarations (optional, recommended to catch type errors):
+
+```bash
+# preferred: use the package.json script added to this repo
+npm run validate:engine
+
+# or run directly with npx
+npx tsc --build ./src/bmsx
+```
+
+These steps should prevent the "Unsupported engine" warnings and keep the environment consistent.
+
 ---
 
 # Table of Contents
