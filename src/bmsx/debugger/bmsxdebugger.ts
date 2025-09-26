@@ -28,6 +28,24 @@ let prevPausedState: boolean; // Remember the paused-state before a dialog was o
 let currentHighlighterComponent: ObjectHighlighterComponent | null;
 let stateMachineVisualisers: Record<Identifier, StateMachineVisualizer> = {};
 
+export interface DebugPointerEvent {
+	button: number;
+	buttons: number;
+	ctrlKey: boolean;
+	shiftKey: boolean;
+	altKey: boolean;
+	metaKey: boolean;
+	clientX: number;
+	clientY: number;
+	offsetX: number;
+	offsetY: number;
+	movementX: number;
+	movementY: number;
+	preventDefault(): void;
+	stopPropagation(): void;
+	stopImmediatePropagation(): void;
+}
+
 // Physics overlay renderer: attaches once, renders PhysicsDebugComponent buffers every frame
 @excludeclassfromsavegame
 @componenttags_postprocessing('render')
@@ -766,7 +784,7 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 	}
 }
 
-export function handleDebugClick(e: MouseEvent): void {
+export function handleDebugClick(e: DebugPointerEvent): void {
 	if (!e.shiftKey && e.ctrlKey && !draggedObj) { // Only open when main or middle button is clicked and shift is not pressed and ctrl is pressed and no object is being dragged
 		const { objUnderCursor } = getWorldObjectAtCursor(e);
 		if (objUnderCursor) {
@@ -775,7 +793,7 @@ export function handleDebugClick(e: MouseEvent): void {
 	}
 }
 
-function getWorldObjectAtCursor(e: MouseEvent): { objUnderCursor: WorldObject | null; offsetToCursor: vec2 | null; } {
+function getWorldObjectAtCursor(e: DebugPointerEvent): { objUnderCursor: WorldObject | null; offsetToCursor: vec2 | null; } {
 	const x = e.offsetX;
 	const y = e.offsetY;
 	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
@@ -802,7 +820,7 @@ function getWorldObjectAtCursor(e: MouseEvent): { objUnderCursor: WorldObject | 
 	return { objUnderCursor: null, offsetToCursor: null };
 }
 
-export function handleDebugMouseDown(e: MouseEvent): void {
+export function handleDebugMouseDown(e: DebugPointerEvent): void {
 	if (e.button === 1) {
 		const { objUnderCursor } = getWorldObjectAtCursor(e);
 		if (objUnderCursor) {
@@ -832,7 +850,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 	}
 }
 
-export function handleDebugMouseMove(e: MouseEvent): void {
+export function handleDebugMouseMove(e: DebugPointerEvent): void {
 	const { objUnderCursor } = getWorldObjectAtCursor(e);
 
 	// We can't use the player input because they are not updated when the game is paused
@@ -877,11 +895,11 @@ function highlight_object(o: WorldObject | null) {
 	currentHighlighterComponent.attach(o.id); // Also automatically detaches it
 }
 
-export function handleDebugMouseUp(_e: MouseEvent): void {
+export function handleDebugMouseUp(_e: DebugPointerEvent): void {
 	draggedObj = null;
 }
 
-export function handleDebugMouseOut(_e: MouseEvent): void {
+export function handleDebugMouseOut(_e: DebugPointerEvent): void {
 	highlight_object(null);
 	draggedObj = null;
 }
@@ -897,7 +915,7 @@ export function removeStateMachineVisualizer(objId: Identifier): void {
 	}
 }
 
-export function handleContextMenu(e: MouseEvent): void {
+export function handleContextMenu(e: DebugPointerEvent): void {
 	e.preventDefault();
 	const { objUnderCursor } = getWorldObjectAtCursor(e);
 	// Add state visualiser to the UI

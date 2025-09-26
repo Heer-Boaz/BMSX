@@ -2,13 +2,14 @@
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
 import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
+import type { DebugPointerEvent } from '../debugger/bmsxdebugger';
 import { toggleRenderHUD } from '../debugger/renderhud';
 import { toggleECSHUD } from '../debugger/ecshud';
 import { toggleInputHUD } from '../debugger/inputhud';
 import type { Identifier, Identifiable, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import { controllerUnassignedToast } from './ui_toast';
-import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
+import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerBinding, PointerInputMapping } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
@@ -16,47 +17,6 @@ import { ControllerAssignmentUI } from './controller_assignment_ui';
 import { PlayerInput } from './playerinput';
 import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
-
-// @ts-ignore
-function svgToPng(svgElement, filename) {
-	svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-	var svgData = new XMLSerializer().serializeToString(svgElement);
-
-	var canvas = document.createElement('canvas');
-	canvas.width = 100;
-	canvas.height = 100;
-	var ctx = canvas.getContext('2d');
-
-	var img = document.createElement('img');
-
-	var svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-	var svgUrl = URL.createObjectURL(svgBlob);
-
-	img.onload = function () {
-		ctx.drawImage(img, 0, 0);
-		URL.revokeObjectURL(svgUrl);
-
-		var imgsrc = canvas.toDataURL('image/png');
-
-		// Create a link element
-		var link = document.createElement('a');
-
-		// Set the href of the link to the data URL and the download attribute to the desired file name
-		link.href = imgsrc;
-		link.download = filename;
-
-		// Append the link to the body
-		document.body.appendChild(link);
-
-		// Programmatically click the link to start the download
-		link.click();
-
-		// Remove the link from the body
-		document.body.removeChild(link);
-	};
-
-	img.src = svgUrl;
-}
 
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.
@@ -398,6 +358,9 @@ export class Input implements RegisterablePersistent {
 	private uiControllerSpawned = false;
 
 	private debugHotkeysEnabled = false;
+	private debugPointerSurface: HTMLElement | null = null;
+	private debugPointerInside = false;
+	private debugPointerLastOffset: { x: number; y: number } | null = null;
 
 	private readonly handleSpaceChanged = (_event: string, _emitter: Identifiable, _payload?: unknown): void => {
 		for (const player of this.playerInputs) {
@@ -491,6 +454,29 @@ export class Input implements RegisterablePersistent {
 	} as const;
 
 	public static readonly POINTER_BUTTONS = ['pointer_primary', 'pointer_secondary', 'pointer_aux', 'pointer_back', 'pointer_forward'] as const;
+
+	public static readonly DEFAULT_POINTER_INPUT_MAPPING: PointerInputMapping = {
+		pointer_primary: ['pointer_primary'],
+		pointer_secondary: ['pointer_secondary'],
+		pointer_aux: ['pointer_aux'],
+		pointer_back: ['pointer_back'],
+		pointer_forward: ['pointer_forward'],
+		pointer_delta: ['pointer_delta'],
+		pointer_position: ['pointer_position'],
+		pointer_wheel: ['pointer_wheel'],
+	};
+
+	public static clonePointerMapping(source: PointerInputMapping = Input.DEFAULT_POINTER_INPUT_MAPPING): PointerInputMapping {
+		const clone: PointerInputMapping = {};
+		for (const [action, bindings] of Object.entries(source) as [string, PointerBinding[]][]) {
+			clone[action] = bindings.map(binding =>
+				typeof binding === 'string'
+					? binding
+					: { ...binding }
+			);
+		}
+		return clone;
+	}
 
 	private static readonly DEBUG_CAPTURE_KEYS = new Set(['F1', 'F6', 'F7', 'F11']);
 
@@ -598,12 +584,14 @@ export class Input implements RegisterablePersistent {
 	 */
 	public enableDebugMode(): void {
 		const gamescreen = document.getElementById('gamescreen');
-		gamescreen.addEventListener('click', this.handleDebugPointerEvents, options);
-		gamescreen.addEventListener('mousedown', this.handleDebugPointerEvents, options);
-		gamescreen.addEventListener('mousemove', this.handleDebugPointerEvents, options);
-		gamescreen.addEventListener('mouseup', this.handleDebugPointerEvents, options);
-		gamescreen.addEventListener('mouseout', this.handleDebugPointerEvents, options);
-		gamescreen.addEventListener('contextmenu', e => this.handleDebugPointerEvents(e), options);
+		if (!(gamescreen instanceof HTMLElement)) {
+			throw new Error('[Input] Unable to enable debug mode: #gamescreen element not found.');
+		}
+		this.debugPointerSurface = gamescreen;
+		this.debugPointerInside = false;
+		this.debugPointerLastOffset = null;
+		gamescreen.removeEventListener('contextmenu', this.suppressDebugContextMenu, options);
+		gamescreen.addEventListener('contextmenu', this.suppressDebugContextMenu, options);
 		this.debugHotkeysEnabled = true;
 	}
 
@@ -622,6 +610,12 @@ export class Input implements RegisterablePersistent {
 		// Remove the input instance
 		Input._instance = undefined;
 		this.debugHotkeysEnabled = false;
+		if (this.debugPointerSurface) {
+			this.debugPointerSurface.removeEventListener('contextmenu', this.suppressDebugContextMenu, options);
+		}
+		this.debugPointerSurface = null;
+		this.debugPointerInside = false;
+		this.debugPointerLastOffset = null;
 	}
 
 	public bind(): void {
@@ -747,6 +741,7 @@ export class Input implements RegisterablePersistent {
 	private processDebugHotkeys(player: PlayerInput): void {
 		if (!this.debugHotkeysEnabled) return;
 		if (player.playerIndex !== Input.DEFAULT_KEYBOARD_PLAYER_INDEX) return;
+		this.processDebugPointerGestures(player);
 		const keyboardHandler = player.inputHandlers['keyboard'];
 		if (!keyboardHandler) return;
 
@@ -824,6 +819,106 @@ export class Input implements RegisterablePersistent {
 				}
 				keyboardHandler.consumeButton('F11');
 			}
+		}
+	}
+
+	private suppressDebugContextMenu = (event: MouseEvent): void => {
+		if (!this.debugHotkeysEnabled) return;
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+	};
+
+	private processDebugPointerGestures(player: PlayerInput): void {
+		const pointerHandler = player.inputHandlers['pointer'];
+		if (!pointerHandler) return;
+		const surface = this.debugPointerSurface;
+		if (!surface) return;
+
+		const pointerPrimary = player.getButtonState('pointer_primary', 'pointer');
+		const pointerSecondary = player.getButtonState('pointer_secondary', 'pointer');
+		const pointerAux = player.getButtonState('pointer_aux', 'pointer');
+		const pointerDelta = player.getButtonState('pointer_delta', 'pointer');
+		const pointerPosition = pointerHandler.getButtonState('pointer_position');
+
+		const rect = surface.getBoundingClientRect();
+		const pos2d = pointerPosition?.value2d ?? null;
+		let offsetX: number | null = null;
+		let offsetY: number | null = null;
+		if (pos2d) {
+			offsetX = pos2d[0] - rect.left;
+			offsetY = pos2d[1] - rect.top;
+			this.debugPointerLastOffset = { x: offsetX, y: offsetY };
+		} else if (this.debugPointerLastOffset) {
+			offsetX = this.debugPointerLastOffset.x;
+			offsetY = this.debugPointerLastOffset.y;
+		}
+
+		const ctrlKey = (player.getButtonState('ControlLeft', 'keyboard')?.pressed ?? false)
+			|| (player.getButtonState('ControlRight', 'keyboard')?.pressed ?? false);
+		const shiftKey = (player.getButtonState('ShiftLeft', 'keyboard')?.pressed ?? false)
+			|| (player.getButtonState('ShiftRight', 'keyboard')?.pressed ?? false);
+		const altKey = (player.getButtonState('AltLeft', 'keyboard')?.pressed ?? false)
+			|| (player.getButtonState('AltRight', 'keyboard')?.pressed ?? false);
+		const buttonsMask = (pointerPrimary?.pressed ? 1 : 0)
+			| (pointerSecondary?.pressed ? 2 : 0)
+			| (pointerAux?.pressed ? 4 : 0);
+		const clientX = pos2d?.[0] ?? (offsetX !== null ? rect.left + offsetX : rect.left);
+		const clientY = pos2d?.[1] ?? (offsetY !== null ? rect.top + offsetY : rect.top);
+		const movement = pointerDelta?.value2d ?? null;
+
+		const createEvent = (button: number): DebugPointerEvent => ({
+			button,
+			buttons: buttonsMask,
+			ctrlKey,
+			shiftKey,
+			altKey,
+			metaKey: false,
+			clientX,
+			clientY,
+			offsetX: offsetX ?? 0,
+			offsetY: offsetY ?? 0,
+			movementX: movement?.[0] ?? 0,
+			movementY: movement?.[1] ?? 0,
+			preventDefault() { /* noop */ },
+			stopPropagation() { /* noop */ },
+			stopImmediatePropagation() { /* noop */ },
+		});
+
+		const inside = !!(pos2d && pos2d[0] >= rect.left && pos2d[0] <= rect.right && pos2d[1] >= rect.top && pos2d[1] <= rect.bottom);
+		const allowMotion = inside || buttonsMask !== 0;
+
+		if (!inside && this.debugPointerInside) {
+			handleDebugMouseOut(createEvent(0));
+		}
+		this.debugPointerInside = inside;
+
+		if (pointerPrimary?.justpressed && inside) {
+			handleDebugMouseDown(createEvent(0));
+		}
+		if (pointerAux?.justpressed && inside) {
+			handleDebugMouseDown(createEvent(1));
+		}
+		if (pointerSecondary?.justpressed && inside) {
+			handleDebugMouseDown(createEvent(2));
+			handleDebugContextMenu(createEvent(2));
+		}
+
+		if (movement && allowMotion) {
+			handleDebugMouseMove(createEvent(0));
+		}
+
+		if (pointerPrimary?.justreleased) {
+			handleDebugMouseUp(createEvent(0));
+			if (inside && pointerPrimary.waspressed) {
+				handleDebugClick(createEvent(0));
+			}
+		}
+		if (pointerAux?.justreleased) {
+			handleDebugMouseUp(createEvent(1));
+		}
+		if (pointerSecondary?.justreleased) {
+			handleDebugMouseUp(createEvent(2));
 		}
 	}
 
@@ -988,26 +1083,4 @@ export class Input implements RegisterablePersistent {
 		*
 		* @param e The event object representing the debug event.
 		*/
-	private handleDebugPointerEvents(e: MouseEvent): void {
-		switch (e.type) {
-			case "mousedown":
-				handleDebugMouseDown(e);
-				break;
-			case "mousemove":
-				handleDebugMouseMove(e);
-				break;
-			case "mouseup":
-				handleDebugMouseUp(e);
-				break;
-			case "mouseout":
-				handleDebugMouseOut(e);
-				break;
-			case "contextmenu":
-				handleDebugContextMenu(e);
-				break;
-			case "click":
-				handleDebugClick(e);
-				break;
-		}
-	}
 }

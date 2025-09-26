@@ -557,8 +557,8 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 			break;
 		case 'payload':
 			current = ctx.payload;
-			if (segments.length > 0 && (current === null || typeof current !== 'object' || Array.isArray(current))) {
-				throw new Error(`[FSMLibrary] Payload is not an object, but a ${typeof current}, cannot get property ${segments.join('.')}.`);
+			if (segments.length > 0 && (current === null || typeof current !== 'object' || Array.isArray(current)) && current !== undefined) {
+				throw new Error(`[FSMLibrary] Payload is not "object", but "${typeof current}", cannot get property ${segments.join('.')}.`);
 			}
 			break;
 		case 'component': {

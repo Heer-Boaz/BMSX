@@ -435,6 +435,8 @@ export class Game {
 	private run = (currentTime: number): void => {
 		if (!this.running) return;
 
+		Input.instance.pollInput();
+
 		this.deltaTime = Math.min(currentTime - this.lastUpdate, MAX_FRAME_DELTA);
 		this.lastUpdate = currentTime;
 
@@ -458,7 +460,6 @@ export class Game {
 		let steps = 0;
 		while (this.accumulatedTime >= this.updateInterval && steps < MAX_SUBSTEPS) {
 			if (!this.paused) {
-				Input.instance.pollInput();
 				if (runGate.ready) {
 					this.update(this.updateInterval);
 				}

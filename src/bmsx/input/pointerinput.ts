@@ -23,6 +23,8 @@ export class PointerInput implements InputHandler {
 	private wheelDelta = 0;
 	private delta = { x: 0, y: 0 };
 	private nextPressId = 1;
+	private transitionsPrev = new Set<string>();
+	private transitionsCurrent = new Set<string>();
 
 	public get supportsVibrationEffect(): boolean {
 		return false;
@@ -179,19 +181,21 @@ export class PointerInput implements InputHandler {
 				timestamp: now,
 				value: 1,
 			});
+			if (newlyPressed) this.transitionsCurrent.add(key);
 		} else {
-		const justReleased = prev.pressed;
-		this.buttonStates[key] = makeButtonState({
-			pressed: false,
-			justpressed: false,
-			justreleased: justReleased,
-			waspressed: prev.waspressed || justReleased,
-			wasreleased: prev.wasreleased || justReleased,
+			const justReleased = prev.pressed;
+			this.buttonStates[key] = makeButtonState({
+				pressed: false,
+				justpressed: false,
+				justreleased: justReleased,
+				waspressed: prev.waspressed || justReleased,
+				wasreleased: prev.wasreleased || justReleased,
 				pressId: prev.pressId ?? null,
 				releasedAtMs: justReleased ? now : prev.releasedAtMs ?? null,
 				timestamp: now,
 				value: 0,
 			});
+			if (justReleased) this.transitionsCurrent.add(key);
 		}
 	}
 
@@ -207,6 +211,16 @@ export class PointerInput implements InputHandler {
 	}
 
 	public pollInput(): void {
+		if (this.transitionsPrev.size) {
+			for (const key of this.transitionsPrev) {
+				const state = this.buttonStates[key];
+				if (!state) continue;
+				state.justpressed = false;
+				state.justreleased = false;
+			}
+			this.transitionsPrev.clear();
+		}
+
 		// Decay wheel delta to report per-frame impulses
 		if (this.wheelDelta !== 0) {
 			const state = makeButtonState({
@@ -240,6 +254,9 @@ export class PointerInput implements InputHandler {
 		} else if (this.buttonStates[POINTER_DELTA_ID]) {
 			this.buttonStates[POINTER_DELTA_ID] = makeButtonState();
 		}
+
+		this.transitionsPrev = this.transitionsCurrent;
+		this.transitionsCurrent = new Set();
 	}
 
 	public getButtonState(btn: string): ButtonState {
@@ -262,6 +279,8 @@ export class PointerInput implements InputHandler {
 		this.position = null;
 		this.delta = { x: 0, y: 0 };
 		this.wheelDelta = 0;
+		this.transitionsPrev.clear();
+		this.transitionsCurrent.clear();
 	}
 
 	public dispose(): void {

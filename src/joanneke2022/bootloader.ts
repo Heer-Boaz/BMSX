@@ -165,6 +165,7 @@ class gamemodel extends World {
 		$.input.getPlayerInput(1).setInputMap({
 			keyboard: keyboardInputMapping,
 			gamepad: gamepadInputMapping,
+			pointer: Input.clonePointerMapping(),
 		} as InputMap);
 
 		this.addSpace('hoera!' satisfies model_spaces);

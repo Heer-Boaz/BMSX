@@ -90,11 +90,11 @@ export class CameraController extends WorldObject {
 		if (pitchUp_pressed) this.delta.pitch += rotateSpeed;
 		if (pitchDown_pressed) this.delta.pitch -= rotateSpeed;
 
-		const pointerPrimary = input.getButtonState('pointer_primary', 'pointer');
-		this.mouseControlsEnabled = pointerPrimary.pressed ;
+		const pointerPrimary = input.getActionState('pointer_primary');
+		this.mouseControlsEnabled = pointerPrimary?.pressed ?? false;
 
-		const pointerDelta = input.getButtonState('pointer_delta', 'pointer');
-		if (this.mouseControlsEnabled) {
+		const pointerDelta = input.getActionState('pointer_delta');
+		if (this.mouseControlsEnabled && pointerDelta?.value2d) {
 			const [dx, dy] = pointerDelta.value2d;
 			const sens = 0.004;
 			this.delta.yaw += -dx * sens;

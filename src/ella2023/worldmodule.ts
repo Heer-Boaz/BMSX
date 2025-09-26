@@ -1,4 +1,4 @@
-import { $, World, InputMap, InputAbilitySystem, insavegame, Service, subscribesToGlobalEvent, TickGroup, type RevivableObjectArgs } from 'bmsx';
+import { $, World, InputAbilitySystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs } from 'bmsx';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
@@ -20,7 +20,8 @@ export const EILA_MODULE = {
 		world.addSpace('titlescreen');
 		world.addSpace('niets');
 		// Input maps
-		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping } as InputMap);
+		const pointerInputMapping: PointerInputMapping = Input.clonePointerMapping();
+		$.input.getPlayerInput(1).setInputMap({ keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: pointerInputMapping } as InputMap);
 		$.input.getPlayerInput(2).setInputMap({ keyboard: null, gamepad: gamepadInputMapping } as InputMap);
 		// Register persistent Eila game state service
 		new YieArGameState();

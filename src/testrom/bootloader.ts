@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BootArgs, BrowserGameViewHost, GamepadInputMapping,KeyboardButton, KeyboardInputMapping, $, WorldConfiguration, } from 'bmsx';
+import { BFont, BGamepadButton, BootArgs, BrowserGameViewHost, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration } from 'bmsx';
 import { createTestromModule } from './worldmodule';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
@@ -17,7 +17,7 @@ _global['h406A'] = (args: BootArgs): Promise<any> => {
 	return $.init({ ...args, worldConfig: worldConfiguration, viewHost }).then(() => {
 		$.view.default_font = new BFont(BitmapId);
 		// Set input maps now that input is initialized
-		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
+		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
 		$.start();
 	});
 };
