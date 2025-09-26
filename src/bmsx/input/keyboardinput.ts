@@ -38,8 +38,24 @@ export class KeyboardInput implements InputHandler {
 		this.gamepadButtonStates = {};
 		this.reset();
 
-		window.addEventListener('keydown', e => { this.keydown(e.code); }, options);
-		window.addEventListener('keyup', e => { this.keyup(e.code); }, options);
+		window.addEventListener('keydown', e => {
+			const input = Input.instance;
+			if (input?.shouldCaptureKey(e.code)) {
+				e.preventDefault();
+				e.stopPropagation();
+				e.stopImmediatePropagation();
+			}
+			this.keydown(e.code);
+		}, options);
+		window.addEventListener('keyup', e => {
+			const input = Input.instance;
+			if (input?.shouldCaptureKey(e.code)) {
+				e.preventDefault();
+				e.stopPropagation();
+				e.stopImmediatePropagation();
+			}
+			this.keyup(e.code);
+		}, options);
 	}
 
 	/**

@@ -98,10 +98,12 @@ function extractMappings(map: InputMap | undefined): {
 	actions: string[];
 	keyboardKeys: string[];
 	gamepadButtons: string[];
+	pointerButtons: string[];
 } {
 	const actions = new Set<string>();
 	const keyboard = new Set<string>();
 	const gamepad = new Set<string>();
+const pointer = new Set<string>();
 	if (map) {
 		for (const action of Object.keys(map.keyboard ?? {})) {
 			actions.add(action);
@@ -111,11 +113,16 @@ function extractMappings(map: InputMap | undefined): {
 			actions.add(action);
 			for (const binding of map.gamepad[action] ?? []) gamepad.add(typeof binding === 'string' ? binding : binding.id);
 		}
+		for (const action of Object.keys(map.pointer ?? {})) {
+			actions.add(action);
+			for (const binding of map.pointer?.[action] ?? []) pointer.add(typeof binding === 'string' ? binding : binding.id);
+		}
 	}
 	return {
 		actions: Array.from(actions).sort((a, b) => a.localeCompare(b)),
 		keyboardKeys: Array.from(keyboard).sort((a, b) => a.localeCompare(b)),
 		gamepadButtons: Array.from(gamepad).sort((a, b) => a.localeCompare(b)),
+		pointerButtons: Array.from(pointer).sort((a, b) => a.localeCompare(b)),
 	};
 }
 
@@ -154,12 +161,14 @@ export class InputHUDOverlay {
 			const inputMap = (playerInput as unknown as { inputMap?: InputMap }).inputMap;
 			const keyboardHandler = playerInput.inputHandlers['keyboard'];
 			const gamepadHandler = playerInput.inputHandlers['gamepad'];
+			const pointerHandler = playerInput.inputHandlers['pointer'];
 			const hasKeyboard = keyboardHandler != null;
 			const hasGamepad = gamepadHandler != null;
+			const hasPointer = pointerHandler != null;
 			const hasOnscreenGamepad = hasGamepad && gamepadHandler.gamepadIndex === OnscreenGamepad.VIRTUAL_PAD_INDEX;
-			const header = `Player ${i}  k:${hasKeyboard ? '✓' : '–'}  g:${hasGamepad ? '✓' : '–'}  o:${hasOnscreenGamepad ? '✓' : '–'}`;
+			const header = `Player ${i}  k:${hasKeyboard ? '✓' : '–'}  g:${hasGamepad ? '✓' : '–'}  p:${hasPointer ? '✓' : '–'}  o:${hasOnscreenGamepad ? '✓' : '–'}`;
 			const lines: string[] = [header];
-			const { actions, keyboardKeys, gamepadButtons } = extractMappings(inputMap);
+			const { actions, keyboardKeys, gamepadButtons, pointerButtons } = extractMappings(inputMap);
 			if (!hasKeyboard && !hasGamepad && actions.length === 0) continue;
 
 			const keyboardStates: string[] = [];
@@ -177,6 +186,23 @@ export class InputHUDOverlay {
 				if (txt) gamepadStates.push(txt);
 			}
 			if (gamepadStates.length) lines.push('  Buttons: ' + gamepadStates.join('\n'));
+
+			const pointerStates: string[] = [];
+			for (const button of pointerButtons) {
+				const state = playerInput.getButtonState(button, 'pointer');
+				const txt = formatButtonState(button, state);
+				if (txt) pointerStates.push(txt);
+			}
+			const pointerPositionState = playerInput.getButtonState('pointer_position', 'pointer');
+			const pointerPosTxt = formatButtonState('pointer_position', pointerPositionState);
+			if (pointerPosTxt) pointerStates.push(pointerPosTxt);
+			const pointerDeltaState = playerInput.getButtonState('pointer_delta', 'pointer');
+			const pointerDeltaTxt = formatButtonState('pointer_delta', pointerDeltaState);
+			if (pointerDeltaTxt) pointerStates.push(pointerDeltaTxt);
+			const pointerWheelState = playerInput.getButtonState('pointer_wheel', 'pointer');
+			const pointerWheelTxt = formatButtonState('pointer_wheel', pointerWheelState);
+			if (pointerWheelTxt) pointerStates.push(pointerWheelTxt);
+			if (pointerStates.length) lines.push('  Pointer: ' + pointerStates.join('\n'));
 
 			if (actions.length) {
 				lines.push('  Actions:');

@@ -318,7 +318,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		// Backend resources are configured externally via setBackend()
 		this.handleResize();
 		this.rebuildGraph();
-		registerAtmosphereHotkeys(); // TODO: REMOVE
 		renderGate.endCategory('init'); // End the init scope without a token, assuming the category is unique for init.
 	}
 
@@ -731,45 +730,6 @@ export interface AtmosphereParams {
 	fogYMax: number;
 	progressFactor: number;
 	enableAutoAnimation: boolean;
-}
-
-export function registerAtmosphereHotkeys(): void {
-	const view = $.view;
-	if (!view) {
-		throw new Error('[GameView] No active view available while registering atmosphere hotkeys.');
-	}
-	const handler = (event: unknown) => {
-		if (!(event instanceof KeyboardEvent)) {
-			return;
-		}
-		const e = event;
-		const activeView = $.view;
-		if (!activeView) {
-			throw new Error('[GameView] No active view available while processing atmosphere hotkeys.');
-		}
-		const atmosphere = activeView.atmosphere;
-		if (!atmosphere) {
-			throw new Error('[GameView] Active view is missing atmosphere settings.');
-		}
-		if (e.key === 'f') {
-			atmosphere.fogD50 = (atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
-			console.info(`Fog ${atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${atmosphere.fogD50})`);
-		}
-		else if (e.key === 'g') {
-			const isNeutral = atmosphere.fogColorLow[0] === 1.0 && atmosphere.fogColorHigh[0] === 1.0
-				&& atmosphere.fogColorLow[1] === 1.0 && atmosphere.fogColorHigh[1] === 1.0
-				&& atmosphere.fogColorLow[2] === 1.0 && atmosphere.fogColorHigh[2] === 1.0;
-			if (isNeutral) {
-				atmosphere.fogColorLow = [0.90, 0.95, 1.00];
-				atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
-			} else {
-				atmosphere.fogColorLow = [1.0, 1.0, 1.0];
-				atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
-			}
-			console.info('Fog color gradient toggled');
-		}
-	};
-	view.host.addWindowEventListener('keydown', handler);
 }
 
 export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);

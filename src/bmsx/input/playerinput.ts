@@ -1,11 +1,11 @@
 import { ActionDefinitionEvaluator } from './actionparser';
 import { Input, InputStateManager, makeActionState, makeButtonState } from './input';
-import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, VibrationParams } from './inputtypes';
+import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping, VibrationParams } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { ContextStack, MappingContext } from './context';
 
-export const INPUT_SOURCES = ['keyboard', 'gamepad'] as const;
+export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
 
 /**
@@ -21,12 +21,14 @@ export class PlayerInput {
 	public inputHandlers: { [source in InputSource]: InputHandler | null } = {
 		keyboard: null,
 		gamepad: null,
+		pointer: null,
 	};
 
 	/** Holds per-button pressed state flags from the previous frame for each handler. */
 	private previousStates: { [source in InputSource]: Record<string, boolean> } = {
 		keyboard: {},
 		gamepad: {},
+		pointer: {},
 	};
 
 	/** Manages buffered input events and button state aggregation. */
@@ -99,15 +101,15 @@ export class PlayerInput {
 	public setInputMap(inputMap: InputMap): void {
 		this.inputMap = inputMap;
 		// Mirror into a base context for layered merging semantics
-		const base = new MappingContext('base', 0, true, inputMap.keyboard ?? {}, inputMap.gamepad ?? {});
+		const base = new MappingContext('base', 0, true, inputMap.keyboard ?? {}, inputMap.gamepad ?? {}, inputMap.pointer ?? {});
 		// Reset stack to base
 		this.contexts = new ContextStack();
 		this.contexts.push(base);
 	}
 
 	/** Add a higher-priority mapping context */
-	public pushContext(id: string, keyboard: KeyboardInputMapping | undefined, gamepad: GamepadInputMapping | undefined, priority = 100, enabled = true): void {
-		this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}));
+	public pushContext(id: string, keyboard: KeyboardInputMapping | undefined, gamepad: GamepadInputMapping | undefined, pointer: PointerInputMapping | undefined, priority = 100, enabled = true): void {
+		this.contexts.push(new MappingContext(id, priority, enabled, keyboard ?? {}, gamepad ?? {}, pointer ?? {}));
 	}
 	public popContext(id?: string): void { this.contexts.pop(id); }
 	public enableContext(id: string, enabled: boolean): void { this.contexts.enable(id, enabled); }
@@ -145,6 +147,10 @@ export class PlayerInput {
 			: null;
 		const gamepadButtons: ButtonId[] | null = (gamepadButtonsRaw && gamepadButtonsRaw.length > 0)
 			? gamepadButtonsRaw.map(b => (typeof b === 'string' ? b : b.id))
+			: null;
+		const pointerBindingsRaw = this.contexts.getBindings(action, 'pointer') as PointerBinding[];
+		const pointerButtons: ButtonId[] | null = (pointerBindingsRaw && pointerBindingsRaw.length > 0)
+			? pointerBindingsRaw.map(b => (typeof b === 'string' ? b : b.id))
 			: null;
 
 		/**
@@ -239,38 +245,58 @@ export class PlayerInput {
 				? this.stateManager.getButtonState(button, framewindow)
 				: this.getButtonState(button, 'gamepad')
 		);
-		const minPresstime = [keyboardState.leastPressTime, gamepadState.leastPressTime]
-			.filter((v): v is number => v != null)
-			.reduce((a, b) => Math.min(a, b), Infinity);
-		const maxTimestamp = [keyboardState.recentestTimestamp, gamepadState.recentestTimestamp]
-			.filter((v): v is number => v != null)
-			.reduce((a, b) => Math.max(a, b), -Infinity);
-		// Deterministic analog merge: prefer higher magnitude; on tie, prefer gamepad over keyboard
-		const pick1D = () => {
-			if (gamepadState.best1DAbs > keyboardState.best1DAbs) return gamepadState.best1DVal ?? null;
-			if (gamepadState.best1DAbs < keyboardState.best1DAbs) return keyboardState.best1DVal ?? null;
-			return gamepadState.best1DVal ?? keyboardState.best1DVal ?? null;
-		};
-		const pick2D = () => {
-			if (gamepadState.best2DAbs > keyboardState.best2DAbs) return gamepadState.best2DVal ?? null;
-			if (gamepadState.best2DAbs < keyboardState.best2DAbs) return keyboardState.best2DVal ?? null;
-			return gamepadState.best2DVal ?? keyboardState.best2DVal ?? null;
-		};
-		const merged1D = pick1D();
-		const merged2D = pick2D();
+		const pointerState = getStates(
+			pointerButtons,
+			(button: ButtonId) => this.getButtonState(button, 'pointer')
+		);
+		const deviceStates = [keyboardState, gamepadState, pointerState];
+		const pressed = deviceStates.some(state => state.allPressed);
+		const justpressed = deviceStates.some(state => state.anyJustPressed);
+		const alljustpressed = deviceStates.some(state => state.allJustPressed);
+		const justreleased = deviceStates.some(state => state.anyJustReleased);
+		const alljustreleased = deviceStates.some(state => state.allJustReleased);
+		const waspressed = deviceStates.some(state => state.anyWasPressed);
+		const wasreleased = deviceStates.some(state => state.anyWasReleased);
+		const allwaspressed = deviceStates.some(state => state.allWasPressed);
+		const consumed = deviceStates.some(state => state.anyConsumed);
+		const minPresstimeRaw = deviceStates
+			.map(state => state.leastPressTime)
+			.filter((value): value is number => value != null)
+			.reduce((min, value) => Math.min(min, value), Infinity);
+		const maxTimestamp = deviceStates
+			.map(state => state.recentestTimestamp)
+			.filter((value): value is number => value != null)
+			.reduce((max, value) => Math.max(max, value), -Infinity);
+		let merged1D: number | null = null;
+		let best1DAbs = -Infinity;
+		for (const state of deviceStates) {
+			if (state.best1DAbs > best1DAbs) {
+				best1DAbs = state.best1DAbs;
+				merged1D = state.best1DVal ?? null;
+			}
+		}
+		let merged2D: [number, number] | null = null;
+		let best2DAbs = -Infinity;
+		for (const state of deviceStates) {
+			if (state.best2DAbs > best2DAbs) {
+				best2DAbs = state.best2DAbs;
+				merged2D = state.best2DVal ?? null;
+			}
+		}
+		const minPresstime = minPresstimeRaw === Infinity ? null : minPresstimeRaw;
 
 		return {
-			action: action,
-			pressed: keyboardState.allPressed || gamepadState.allPressed,
-			justpressed: keyboardState.anyJustPressed || gamepadState.anyJustPressed,
-			alljustpressed: keyboardState.allJustPressed || gamepadState.allJustPressed,
-			justreleased: keyboardState.anyJustReleased || gamepadState.anyJustReleased,
-			alljustreleased: keyboardState.allJustReleased || gamepadState.allJustReleased,
-			waspressed: keyboardState.anyWasPressed || gamepadState.anyWasPressed,
-			wasreleased: keyboardState.anyWasReleased || gamepadState.anyWasReleased,
-			allwaspressed: keyboardState.allWasPressed || gamepadState.allWasPressed,
-			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
-			presstime: minPresstime === Infinity ? null : minPresstime,
+			action,
+			pressed,
+			justpressed,
+			alljustpressed,
+			justreleased,
+			alljustreleased,
+			waspressed,
+			wasreleased,
+			allwaspressed,
+			consumed,
+			presstime: minPresstime,
 			timestamp: maxTimestamp === -Infinity ? null : maxTimestamp,
 			value: typeof merged1D === 'number' ? merged1D : null,
 			value2d: merged2D,
@@ -290,9 +316,15 @@ export class PlayerInput {
 
 		const pressedActions: ActionState[] = [];
 		const seen = new Set<string>();
-		// Iterate over all input sources (keyboard and gamepad)
-		for (const source of ['keyboard', 'gamepad'] as const) {
-			for (const action in inputMap[source]) {
+		// Iterate over all input sources (keyboard, gamepad, pointer)
+		for (const source of INPUT_SOURCES) {
+			const bindings = source === 'keyboard'
+				? inputMap.keyboard
+				: source === 'gamepad'
+					? inputMap.gamepad
+					: inputMap.pointer;
+			if (!bindings) continue;
+			for (const action in bindings) {
 				if (seen.has(action)) continue;
 				if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
 				const actionState = this.getActionState(action);
@@ -342,7 +374,7 @@ export class PlayerInput {
 
 		for (const source of INPUT_SOURCES) {
 			const handler = this.inputHandlers[source];
-			if (!handler || !inputMap[source]) continue;
+			if (!handler) continue;
 			if (source === 'keyboard') {
 				const keysOrButtons: KeyboardBinding[] = inputMap.keyboard?.[action] ?? [];
 				for (const binding of keysOrButtons) {
@@ -353,8 +385,18 @@ export class PlayerInput {
 					}
 					this.stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
 				}
-			} else {
+			} else if (source === 'gamepad') {
 				const keysOrButtons: GamepadBinding[] = inputMap.gamepad?.[action] ?? [];
+				for (const binding of keysOrButtons) {
+					const key = typeof binding === 'string' ? binding : binding.id;
+					const buttonState = handler.getButtonState(key);
+					if (buttonState.pressed && !buttonState.consumed) {
+						handler.consumeButton(key);
+					}
+					this.stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
+				}
+			} else if (source === 'pointer') {
+				const keysOrButtons: PointerBinding[] = inputMap.pointer?.[action] ?? [];
 				for (const binding of keysOrButtons) {
 					const key = typeof binding === 'string' ? binding : binding.id;
 					const buttonState = handler.getButtonState(key);
@@ -384,6 +426,7 @@ export class PlayerInput {
 	public getButtonState(button: ButtonId, source: InputSource): ButtonState {
 		if (source === 'keyboard' && !this.isKeyboardConnected()) return null;
 		if (source === 'gamepad' && !this.isGamepadConnected()) return null;
+		if (source === 'pointer' && !this.isPointerConnected()) return null;
 		return this.inputHandlers[source].getButtonState(button);
 	}
 
@@ -512,6 +555,34 @@ export class PlayerInput {
 					this.previousStates[source][key] = state.pressed;
 				}
 			}
+			else if (source === 'pointer') {
+				for (const button of Input.POINTER_BUTTONS) {
+					const state = handler.getButtonState(button);
+					const prev = this.previousStates[source][button] ?? false;
+
+					if (state.justpressed) {
+						this.stateManager.addInputEvent({
+							eventType: 'press',
+							identifier: button,
+							timestamp: state.timestamp,
+							consumed: false,
+							pressId: state.pressId ?? null,
+						});
+					}
+
+					if (!state.pressed && prev) {
+						this.stateManager.addInputEvent({
+							eventType: 'release',
+							identifier: button,
+							timestamp: state.timestamp,
+							consumed: false,
+							pressId: state.pressId ?? null,
+						});
+					}
+
+					this.previousStates[source][button] = state.pressed;
+				}
+			}
 		}
 
 		// If rebinding, capture first just-pressed binding on the selected source
@@ -637,6 +708,10 @@ export class PlayerInput {
 	 */
 	private isGamepadConnected(): boolean {
 		return this.inputHandlers['gamepad'] !== null;
+	}
+
+	private isPointerConnected(): boolean {
+		return this.inputHandlers['pointer'] !== null;
 	}
 
 	/** Clears cached transition state so edge detectors don't fire spuriously. */

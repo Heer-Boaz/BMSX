@@ -14,6 +14,7 @@ import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from './controller_assignment_ui';
 import { PlayerInput } from './playerinput';
+import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
 
 // @ts-ignore
@@ -97,7 +98,23 @@ export function getPressedState(
 	stateMap: KeyOrButtonId2ButtonState,
 	keyOrButtonId: ButtonId
 ): ButtonState {
-	return { pressed: stateMap[keyOrButtonId]?.pressed ?? false, justpressed: stateMap[keyOrButtonId]?.justpressed ?? false, justreleased: stateMap[keyOrButtonId]?.justreleased ?? false, wasreleased: stateMap[keyOrButtonId]?.wasreleased ?? false, consumed: stateMap[keyOrButtonId]?.consumed ?? false, presstime: stateMap[keyOrButtonId]?.presstime ?? null, timestamp: stateMap[keyOrButtonId]?.timestamp ?? null, waspressed: stateMap[keyOrButtonId]?.waspressed ?? false };
+	const state = stateMap[keyOrButtonId];
+	if (!state) return makeButtonState();
+	return {
+		pressed: state.pressed ?? false,
+		justpressed: state.justpressed ?? false,
+		justreleased: state.justreleased ?? false,
+		waspressed: state.waspressed ?? false,
+		wasreleased: state.wasreleased ?? false,
+		consumed: state.consumed ?? false,
+		presstime: state.presstime ?? null,
+		timestamp: state.timestamp ?? null,
+		pressedAtMs: state.pressedAtMs ?? null,
+		releasedAtMs: state.releasedAtMs ?? null,
+		pressId: state.pressId ?? null,
+		value: state.value ?? null,
+		value2d: state.value2d ?? null,
+	};
 }
 
 export function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
@@ -380,6 +397,8 @@ export class Input implements RegisterablePersistent {
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
 
+	private debugHotkeysEnabled = false;
+
 	private readonly handleSpaceChanged = (_event: string, _emitter: Identifiable, _payload?: unknown): void => {
 		for (const player of this.playerInputs) {
 			if (!player) continue;
@@ -471,6 +490,10 @@ export class Input implements RegisterablePersistent {
 		'KeyT': 'touch'
 	} as const;
 
+	public static readonly POINTER_BUTTONS = ['pointer_primary', 'pointer_secondary', 'pointer_aux', 'pointer_back', 'pointer_forward'] as const;
+
+	private static readonly DEBUG_CAPTURE_KEYS = new Set(['F1', 'F6', 'F7', 'F11']);
+
 	/**
 	* The mapping of indices to their corresponding gamepad button names.
 	*/
@@ -500,40 +523,6 @@ export class Input implements RegisterablePersistent {
 	 * @param e The UI event to prevent the default action of.
 	 * @param key The key pressed that triggered the event.
 	 */
-	static preventDefaultEventAction(e: UIEvent, key: string) {
-		if ($.running || !$.paused) {
-			switch (key) {
-				case 'Escape':
-				case 'Esc':
-				case 'F12':
-					break;
-			case 'F1':
-				// preventActionAndPropagation(e);
-				e.preventDefault();
-				toggleRenderHUD();
-				toggleECSHUD();
-				toggleInputHUD();
-				break;
-				case 'F6':
-					e.preventDefault();
-					handleOpenDebugMenu(e);
-					break;
-				case 'F7':
-					e.preventDefault();
-					handleOpenObjectMenu(e);
-					break;
-				case 'F11':
-					e.preventDefault();
-					if ($.view.isFullscreen)
-						$.view.ToWindowed();
-					else $.view.toFullscreen();
-					break;
-				default:
-					// e.preventDefault();
-					break;
-			}
-		}
-	}
 
 	/**
 	 * Gets the unique identifier of the input, which is a static id.
@@ -599,19 +588,23 @@ export class Input implements RegisterablePersistent {
 		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
 	}
 
+	public shouldCaptureKey(code: string): boolean {
+		return this.debugHotkeysEnabled && Input.DEBUG_CAPTURE_KEYS.has(code);
+	}
+
 	/**
 	 * Enables the debug mode for the game screen.
 	 * Attaches event listeners to the game screen element to handle debug events.
 	 */
 	public enableDebugMode(): void {
 		const gamescreen = document.getElementById('gamescreen');
-		gamescreen.addEventListener('click', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mousedown', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mousemove', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mouseup', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
-		gamescreen.addEventListener('contextmenu', e => this.handleDebugEvents(e), options);
-		window.addEventListener('keydown', e => this.handleDebugEvents(e), options);
+		gamescreen.addEventListener('click', this.handleDebugPointerEvents, options);
+		gamescreen.addEventListener('mousedown', this.handleDebugPointerEvents, options);
+		gamescreen.addEventListener('mousemove', this.handleDebugPointerEvents, options);
+		gamescreen.addEventListener('mouseup', this.handleDebugPointerEvents, options);
+		gamescreen.addEventListener('mouseout', this.handleDebugPointerEvents, options);
+		gamescreen.addEventListener('contextmenu', e => this.handleDebugPointerEvents(e), options);
+		this.debugHotkeysEnabled = true;
 	}
 
 	/**
@@ -628,6 +621,7 @@ export class Input implements RegisterablePersistent {
 		this.unbind();
 		// Remove the input instance
 		Input._instance = undefined;
+		this.debugHotkeysEnabled = false;
 	}
 
 	public bind(): void {
@@ -660,15 +654,18 @@ export class Input implements RegisterablePersistent {
 		}, false);
 			// Gesture suppression is CSS-driven; avoid global touchforcechange handlers.
 
-		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
+		const gamescreenEl = document.getElementById('gamescreen');
+		if (!(gamescreenEl instanceof HTMLElement)) {
+			throw new Error('[Input] Game screen element #gamescreen not found while initializing inputs.');
+		}
 
-		// Mobile/browser UX: pointer capture and touch-action tuning on the interactive surface
-			const gamescreenEl = document.getElementById('gamescreen');
-			if (gamescreenEl instanceof HTMLElement) {
-				// Pointer capture aids consistent drag behavior across devices
-				gamescreenEl.addEventListener('pointerdown', (e: PointerEvent) => { try { gamescreenEl.setPointerCapture(e.pointerId); } catch { /* noop */ } }, options);
-				// Gesture suppression handled via CSS: #gamescreen { touch-action: none }
-			}
+		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
+		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['pointer'] = new PointerInput(gamescreenEl);
+
+		// Mobile/browser UX: pointer capture aids consistent drag behavior across devices
+		gamescreenEl.addEventListener('pointerdown', (e: PointerEvent) => {
+			try { gamescreenEl.setPointerCapture(e.pointerId); } catch { /* noop */ }
+		}, options);
 
 		// Visibility lifecycle: reset edges, cancel rumble, clear transient buffers
 		const handleVisibilityLost = () => {
@@ -711,6 +708,7 @@ export class Input implements RegisterablePersistent {
 			if (!player) return;
 			player.pollInput(now);
 			player.update(now);
+			this.processDebugHotkeys(player);
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');
@@ -744,6 +742,89 @@ export class Input implements RegisterablePersistent {
 			}
 		}
 		return null;
+	}
+
+	private processDebugHotkeys(player: PlayerInput): void {
+		if (!this.debugHotkeysEnabled) return;
+		if (player.playerIndex !== Input.DEFAULT_KEYBOARD_PLAYER_INDEX) return;
+		const keyboardHandler = player.inputHandlers['keyboard'];
+		if (!keyboardHandler) return;
+
+		const togglePause = player.getButtonState('Space', 'keyboard');
+		if (togglePause?.justpressed) {
+			if (!$.paused) {
+				$.paused = true;
+				$.debug_runSingleFrameAndPause = false;
+			} else {
+				$.paused = false;
+				$.debug_runSingleFrameAndPause = player.getButtonState('ShiftLeft', 'keyboard')?.pressed ?? false;
+			}
+			keyboardHandler.consumeButton('Space');
+		}
+
+		const fogToggle = player.getButtonState('KeyF', 'keyboard');
+		if (fogToggle?.justpressed) {
+			const atmosphere = $.view?.atmosphere;
+			if (!atmosphere) {
+				throw new Error('[Input] GameView atmosphere settings unavailable while toggling fog.');
+			}
+			atmosphere.fogD50 = (atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
+			console.info(`Fog ${atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${atmosphere.fogD50})`);
+			keyboardHandler.consumeButton('KeyF');
+		}
+
+		const fogColorToggle = player.getButtonState('KeyG', 'keyboard');
+		if (fogColorToggle?.justpressed) {
+			const atmosphere = $.view?.atmosphere;
+			if (!atmosphere) {
+				throw new Error('[Input] GameView atmosphere settings unavailable while toggling fog color.');
+			}
+			const isNeutral = atmosphere.fogColorLow[0] === 1.0 && atmosphere.fogColorHigh[0] === 1.0
+				&& atmosphere.fogColorLow[1] === 1.0 && atmosphere.fogColorHigh[1] === 1.0
+				&& atmosphere.fogColorLow[2] === 1.0 && atmosphere.fogColorHigh[2] === 1.0;
+			if (isNeutral) {
+				atmosphere.fogColorLow = [0.90, 0.95, 1.00];
+				atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
+			} else {
+				atmosphere.fogColorLow = [1.0, 1.0, 1.0];
+				atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
+			}
+			console.info('Fog color gradient toggled');
+			keyboardHandler.consumeButton('KeyG');
+		}
+
+		const allowGlobalHotkeys = $.running || !$.paused;
+		if (allowGlobalHotkeys) {
+			const hudToggle = player.getButtonState('F1', 'keyboard');
+			if (hudToggle?.justpressed) {
+				toggleRenderHUD();
+				toggleECSHUD();
+				toggleInputHUD();
+				keyboardHandler.consumeButton('F1');
+			}
+
+			const debugMenu = player.getButtonState('F6', 'keyboard');
+			if (debugMenu?.justpressed) {
+				handleOpenDebugMenu(null);
+				keyboardHandler.consumeButton('F6');
+			}
+
+			const objectMenu = player.getButtonState('F7', 'keyboard');
+			if (objectMenu?.justpressed) {
+				handleOpenObjectMenu(null);
+				keyboardHandler.consumeButton('F7');
+			}
+
+			const fullscreenToggle = player.getButtonState('F11', 'keyboard');
+			if (fullscreenToggle?.justpressed) {
+				if ($.view.isFullscreen) {
+					$.view.ToWindowed();
+				} else {
+					$.view.toFullscreen();
+				}
+				keyboardHandler.consumeButton('F11');
+			}
+		}
 	}
 
 	/**
@@ -907,45 +988,26 @@ export class Input implements RegisterablePersistent {
 		*
 		* @param e The event object representing the debug event.
 		*/
-		private handleDebugEvents(e: MouseEvent | KeyboardEvent): void {
-		if (e instanceof KeyboardEvent) {
-			Input.preventDefaultEventAction(e, e.code);
-			switch (e.code) {
-				case 'Space':
-					if (this.getPlayerInput(1).getButtonState(e.code, 'keyboard').consumed) break;
-					else this.getPlayerInput(1).getButtonState(e.code, 'keyboard');
-					if (!$.paused) {
-						$.paused = true;
-						$.debug_runSingleFrameAndPause = false;
-					}
-					else {
-						$.paused = false;
-						$.debug_runSingleFrameAndPause = this.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed;
-					}
-					break;
-			}
+	private handleDebugPointerEvents(e: MouseEvent): void {
+		switch (e.type) {
+			case "mousedown":
+				handleDebugMouseDown(e);
+				break;
+			case "mousemove":
+				handleDebugMouseMove(e);
+				break;
+			case "mouseup":
+				handleDebugMouseUp(e);
+				break;
+			case "mouseout":
+				handleDebugMouseOut(e);
+				break;
+			case "contextmenu":
+				handleDebugContextMenu(e);
+				break;
+			case "click":
+				handleDebugClick(e);
+				break;
 		}
-		else if (e instanceof MouseEvent) {
-			switch (e.type) {
-				case "mousedown":
-					handleDebugMouseDown(e);
-					break;
-				case "mousemove":
-					handleDebugMouseMove(e);
-					break;
-				case "mouseup":
-					handleDebugMouseUp(e);
-					break;
-				case "mouseout":
-					handleDebugMouseOut(e);
-					break;
-				case "contextmenu":
-					handleDebugContextMenu(e);
-					break;
-				case "click":
-					handleDebugClick(e);
-					break;
-			}
-			}
 	}
 }

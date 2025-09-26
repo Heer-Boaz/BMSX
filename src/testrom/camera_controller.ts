@@ -21,63 +21,6 @@ export class CameraController extends WorldObject {
 	private mouseControlsEnabled = false;
 	private delta = { yaw: 0, pitch: 0, roll: 0 };
 
-	private onLockChange = () => {
-		const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
-		if (!canvas) return;
-
-		const locked = document.pointerLockElement === canvas;
-		this.mouseControlsEnabled = locked;
-	}
-
-	private onLockError = () => {
-		this.mouseControlsEnabled = false;
-		console.warn('Pointer lock error');
-	}
-
-	private onMouseMove = (e: MouseEvent) => {
-		if (!this.mouseControlsEnabled) return;
-
-		// Gebruik ALLEEN raw deltas; geen fallback naar clientX/Y bij lock
-		const dx = e.movementX || 0;
-		const dy = e.movementY || 0;
-
-		const sens = 0.004;
-		this.delta.yaw += -dx * sens;
-		this.delta.pitch += -dy * sens;
-	}
-
-	private onMouseDown = (e: MouseEvent) => {
-		if (e.button === 0) {
-			e.preventDefault();
-			this.mouseControlsEnabled = true;
-			// this.toggleMouseControls();
-		}
-	}
-
-	private onMouseUp = (e: MouseEvent) => {
-		if (e.button === 0) {
-			e.preventDefault();
-			this.mouseControlsEnabled = false;
-			// this.toggleMouseControls();
-			// document.exitPointerLock();
-		}
-	}
-
-	private onBlur = () => {
-		this.mouseControlsEnabled = false;
-		document.exitPointerLock();
-	}
-
-	private onLoseFocus = () => {
-		this.mouseControlsEnabled = false;
-		document.exitPointerLock();
-	}
-
-	private onFocus = () => {
-		this.mouseControlsEnabled = false;
-		document.exitPointerLock();
-	}
-
 	constructor(opts: RevivableObjectArgs & { cams: CameraObject[] }) {
 		super({ ...opts, id: 'camctrl' });
 		this.cameras = opts.cams;
@@ -86,57 +29,7 @@ export class CameraController extends WorldObject {
 
 	@onload
 	private setupMouseControls(): void {
-		const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
 		this.mouseControlsEnabled = false;
-
-		canvas.addEventListener('mousedown', this.onMouseDown);
-		canvas.addEventListener('mouseup', this.onMouseUp);
-		canvas.addEventListener('mousemove', this.onMouseMove);
-		document.addEventListener('pointerlockchange', this.onLockChange);
-		document.addEventListener('pointerlockerror', this.onLockError);
-		document.addEventListener('blur', this.onBlur);
-		document.addEventListener('focusout', this.onLoseFocus);
-		document.addEventListener('focus', this.onFocus);
-
-	}
-
-	// @ts-ignore
-	private toggleMouseControls(): void {
-		const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
-		if (!canvas) return;
-
-		if (!this.mouseControlsEnabled) {
-			// Raw (unaccelerated) mouse als de browser het toelaat
-			const anyCanvas = canvas as HTMLCanvasElement;
-			if (anyCanvas.requestPointerLock) {
-				try {
-					anyCanvas.requestPointerLock({ unadjustedMovement: true });
-				} catch {
-					canvas.requestPointerLock();
-				}
-			} else {
-				canvas.requestPointerLock();
-			}
-		} else {
-			document.exitPointerLock();
-		}
-	}
-
-	override dispose(): void {
-		super.dispose();
-		// Clear mouse control canvas events
-		const canvas = document.querySelector('#gamescreen') as HTMLCanvasElement | null;
-		if (!canvas) return;
-
-		canvas.removeEventListener('mousedown', this.onMouseDown);
-		canvas.removeEventListener('mouseup', this.onMouseUp);
-		canvas.removeEventListener('mousemove', this.onMouseMove);
-
-		document.removeEventListener('pointerlockchange', this.onLockChange);
-		document.removeEventListener('pointerlockerror', this.onLockError);
-		document.removeEventListener('blur', this.onBlur);
-		document.removeEventListener('focusout', this.onLoseFocus);
-		document.removeEventListener('focus', this.onFocus);
 	}
 
 	stuff(): void {
@@ -168,19 +61,19 @@ export class CameraController extends WorldObject {
 		// console.log(`Camera rotation updated: yaw=${cam.yaw}, pitch=${cam.pitch}, roll=${cam.roll}`);
 
 		// Keyboard camera controls (when mouse is not locked)
-		let moveForward_pressed = input.getActionState('moveforward' satisfies Action).pressed;
-		let moveBackward_pressed = input.getActionState('movebackward' satisfies Action).pressed;
-		let panLeft_pressed = input.getActionState('panleft' satisfies Action).pressed;
-		let panRight_pressed = input.getActionState('panright' satisfies Action).pressed;
-		let panUp_pressed = input.getActionState('panup' satisfies Action).pressed;
-		let panDown_pressed = input.getActionState('pandown' satisfies Action).pressed;
-		let turnLeft_pressed: boolean = input.getActionState('turnleft' satisfies Action).pressed;
-		let turnRight_pressed: boolean = input.getActionState('turnright' satisfies Action).pressed;
-		let rotateLeft_pressed = input.getActionState('rotateleft' satisfies Action).pressed;
-		let rotateRight_pressed = input.getActionState('rotateright' satisfies Action).pressed;
-		let pitchUp_pressed = input.getActionState('pitchup' satisfies Action).pressed;
-		let pitchDown_pressed = input.getActionState('pitchdown' satisfies Action).pressed;
-		let toggleProjection_pressed = input.getActionState('toggleprojection' satisfies Action).justpressed;
+		const moveForward_pressed = input.getActionState('moveforward' satisfies Action).pressed;
+		const moveBackward_pressed = input.getActionState('movebackward' satisfies Action).pressed;
+		const panLeft_pressed = input.getActionState('panleft' satisfies Action).pressed;
+		const panRight_pressed = input.getActionState('panright' satisfies Action).pressed;
+		const panUp_pressed = input.getActionState('panup' satisfies Action).pressed;
+		const panDown_pressed = input.getActionState('pandown' satisfies Action).pressed;
+		const turnLeft_pressed = input.getActionState('turnleft' satisfies Action).pressed;
+		const turnRight_pressed = input.getActionState('turnright' satisfies Action).pressed;
+		const rotateLeft_pressed = input.getActionState('rotateleft' satisfies Action).pressed;
+		const rotateRight_pressed = input.getActionState('rotateright' satisfies Action).pressed;
+		const pitchUp_pressed = input.getActionState('pitchup' satisfies Action).pressed;
+		const pitchDown_pressed = input.getActionState('pitchdown' satisfies Action).pressed;
+		const toggleProjection_pressed = input.getActionState('toggleprojection' satisfies Action).justpressed;
 
 		// Movement (works in both modes)
 		if (moveForward_pressed) cam.moveForward(move);    // Forward movement
@@ -197,6 +90,17 @@ export class CameraController extends WorldObject {
 		if (pitchUp_pressed) this.delta.pitch += rotateSpeed;
 		if (pitchDown_pressed) this.delta.pitch -= rotateSpeed;
 
+		const pointerPrimary = input.getButtonState('pointer_primary', 'pointer');
+		this.mouseControlsEnabled = pointerPrimary.pressed ;
+
+		const pointerDelta = input.getButtonState('pointer_delta', 'pointer');
+		if (this.mouseControlsEnabled) {
+			const [dx, dy] = pointerDelta.value2d;
+			const sens = 0.004;
+			this.delta.yaw += -dx * sens;
+			this.delta.pitch += -dy * sens;
+		}
+
 		const projectTypes: CameraProjectionType[] = ['perspective', 'orthographic', 'fisheye', 'panorama', 'oblique', 'asymmetricFrustum', 'isometric', 'infinitePerspective', 'viewFromBasis'];
 
 		if (toggleProjection_pressed) {
@@ -208,7 +112,6 @@ export class CameraController extends WorldObject {
 
 		// Process mouse movements
 		// Pas de camera aan met de delta
-		// @ts-ignore
 		switch (screenBasedOrFlight) {
 			// @ts-ignore
 			case 'flight':

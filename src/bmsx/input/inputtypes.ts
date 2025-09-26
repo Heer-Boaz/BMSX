@@ -49,13 +49,14 @@ export type ActionStateQuery = {
  * or a custom Key value.
  */
 export type KeyboardButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4';
-export type ButtonId = string;/**
+export type ButtonId = string;
+/**
  * Represents the state of an button-press-index in the Index2State type. Used for tracking the state of a button.
  */
 export type KeyOrButtonId2ButtonState = { [index: ButtonId]: ButtonState; };
 /**
  * Represents a mapping of keyboard inputs to actions.
- */ 5;
+ */
 export type KeyboardBinding = string | { id: string; scale?: number; invert?: boolean };
 export type KeyboardInputMapping = {
 	[action: string]: KeyboardBinding[];
@@ -68,6 +69,10 @@ export type GamepadBinding = BGamepadButton | { id: BGamepadButton; scale?: numb
 export type GamepadInputMapping = {
 	[action: string]: GamepadBinding[];
 };
+export type PointerBinding = string | { id: string; scale?: number; invert?: boolean };
+export type PointerInputMapping = {
+	[action: string]: PointerBinding[];
+};
 /**
  * Represents the input mapping for a game.
  */
@@ -75,6 +80,7 @@ export type GamepadInputMapping = {
 export interface InputMap {
 	keyboard: KeyboardInputMapping;
 	gamepad: GamepadInputMapping;
+	pointer?: PointerInputMapping;
 }
 /**
  * Represents a keyboard button.

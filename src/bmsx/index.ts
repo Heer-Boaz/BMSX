@@ -51,6 +51,7 @@ export * from './input/keyboardinput';
 export * from './input/onscreengamepad';
 export * from './input/pendingassignmentprocessor';
 export * from './input/playerinput';
+export * from './input/pointerinput';
 export * from './inputability/inputabilitycomponent';
 export * from './inputability/input_ability_system';
 export * from './inputability/input_ability_dsl';
