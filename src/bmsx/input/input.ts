@@ -14,10 +14,11 @@ import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from './controller_assignment_ui';
-import { PlayerInput } from './playerinput';
+import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
-import { Platform } from '../platform/platform_services';
+import type { DeviceKind, InputDevice, InputEvt } from '../core/platform';
+import { Platform } from '../core/platform';
 
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.
@@ -25,13 +26,6 @@ import { Platform } from '../platform/platform_services';
  * @param e The event object.
  * @returns Returns false.
  */
-function preventActionAndPropagation(e: Event): boolean {
-	e.preventDefault();
-	e.stopPropagation();
-	e.stopImmediatePropagation();
-	return false;
-}
-
 /**
  * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
  * If no `except` array is provided, all keys will be deleted.
@@ -106,6 +100,13 @@ export const options: EventListenerOptions & { passive: boolean, once: boolean }
 	passive: false,
 	once: false,
 }
+
+type DeviceBinding = {
+	handler: InputHandler;
+	source: InputSource;
+	assignedPlayer: number | null;
+	device: InputDevice | null;
+};
 
 /**
  * Manages the input state for a player, including button states and input events.
@@ -328,13 +329,23 @@ export class Input implements RegisterablePersistent {
 	 * @returns The singleton instance of the Input class.
 	 */
 	public static initialize(startingGamepadIndex?: number): Input {
+		if (Input._instance) {
+			if (typeof startingGamepadIndex === 'number') {
+				Input._instance.setStartupGamepadIndex(startingGamepadIndex);
+			}
+			return Input._instance;
+		}
 		Input._instance = new Input(startingGamepadIndex);
 		return Input._instance;
 	}
 
 	public static get instance(): Input {
+		if (!Input._instance) {
+			throw new Error('[Input] Input system has not been initialised. Call Input.initialize() first.');
+		}
 		return Input._instance;
 	}
+
 
 	/**
 	 * An array of player inputs for each player.
@@ -342,6 +353,9 @@ export class Input implements RegisterablePersistent {
 	 * @see PlayerInput
 	 */
 	private playerInputs: PlayerInput[] = [];
+
+	private readonly deviceBindings = new Map<string, DeviceBinding>();
+	private startupGamepadIndex: number | null = null;
 
 	/**
 	 * Represents an array of pending gamepad assignments.
@@ -353,7 +367,8 @@ export class Input implements RegisterablePersistent {
 	 * Represents the onscreen gamepad.
 	 * @see OnscreenGamepad
 	 */
-	private onscreenGamepad: OnscreenGamepad;
+	private onscreenGamepad: OnscreenGamepad | null = null;
+	private onscreenGamepadFactory: (() => OnscreenGamepad) | null = null;
 
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
@@ -375,6 +390,7 @@ export class Input implements RegisterablePersistent {
 	 * @returns The onscreen gamepad.
 	 */
 	public getOnscreenGamepad(): OnscreenGamepad {
+		if (!this.onscreenGamepad) throw new Error('[Input] Onscreen gamepad has not been initialised.');
 		return this.onscreenGamepad;
 	}
 
@@ -522,39 +538,8 @@ export class Input implements RegisterablePersistent {
 	 * @param debug Whether to enable debug mode. Default is true.
 	 */
 	constructor(startingGamepadIndex?: number) {
+		this.startupGamepadIndex = typeof startingGamepadIndex === 'number' ? startingGamepadIndex : null;
 		this.bind();
-
-		const initAlreadyConnectedGamepads = () => {
-			// Handle gamepad input initialization
-			// Initialize gamepad states for already connected gamepads
-			// *Must happen after the starting gamepad index is set, if any, to ensure that any related HID device is initialized first based on the gamepad whose input started the game*
-			const gamepads = navigator.getGamepads();
-			for (let i = 0; i < gamepads.length; i++) {
-				const gamepad = gamepads[i];
-				if (!gamepad) continue;
-				// Skip the gamepad if it is the starting gamepad index (already initialized) or if it does not have 'gamepad' in its id
-				if (typeof startingGamepadIndex === 'number' && gamepad.index === startingGamepadIndex) continue;
-
-				this.addPendingGamepadAssignment(gamepad);
-			}
-		}
-
-		if (typeof startingGamepadIndex === 'number') {
-			const gp = navigator.getGamepads?.()[startingGamepadIndex];
-			if (gp) {
-				const gamepadInput = new GamepadInput(gp);
-				this.assignGamepadToPlayer(gamepadInput, 1);
-				// Call init to ensure user interaction for permission before initializing all other connected gamepads
-				gamepadInput.init().then(initAlreadyConnectedGamepads);
-			}
-		}
-		else {
-			// If no starting gamepad index is provided, initialize all connected gamepads
-			initAlreadyConnectedGamepads();
-		}
-
-		// Spawn UI controller in the persistent UI space when the space is ready.
-		// Defer spawning ControllerAssignmentUI until spaces are guaranteed to exist; see pollInput()
 	}
 
 	/**
@@ -562,16 +547,29 @@ export class Input implements RegisterablePersistent {
 	 * @returns {boolean} True if the onscreen gamepad is enabled, false otherwise.
 	 */
 	public get isOnscreenGamepadEnabled(): boolean {
-		const controls = document.getElementById('d-pad-controls');
-		return !controls!.hidden;
+		return this.onscreenGamepad !== null;
 	}
 
 	/**
 	 * Enables the onscreen gamepad and assigns it as the gamepad input for player 1.
 	 */
+	public setOnscreenGamepadFactory(factory: () => OnscreenGamepad): void {
+		this.onscreenGamepadFactory = factory;
+	}
+
+	public setStartupGamepadIndex(index: number | null): void {
+		this.startupGamepadIndex = index;
+	}
+
 	public enableOnscreenGamepad(): void {
-		this.onscreenGamepad ??= new OnscreenGamepad();
-		this.onscreenGamepad.init();
+		if (!this.onscreenGamepadFactory) {
+			throw new Error('[Input] Onscreen gamepad factory not provided. Set via setOnscreenGamepadFactory before enabling.');
+		}
+		if (!this.onscreenGamepad) {
+			const instance = this.onscreenGamepadFactory();
+			instance.init();
+			this.onscreenGamepad = instance;
+		}
 		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
 	}
 
@@ -591,8 +589,6 @@ export class Input implements RegisterablePersistent {
 		this.debugPointerSurface = gamescreen;
 		this.debugPointerInside = false;
 		this.debugPointerLastOffset = null;
-		gamescreen.removeEventListener('contextmenu', this.suppressDebugContextMenu, options);
-		gamescreen.addEventListener('contextmenu', this.suppressDebugContextMenu, options);
 		this.debugHotkeysEnabled = true;
 	}
 
@@ -611,85 +607,153 @@ export class Input implements RegisterablePersistent {
 		// Remove the input instance
 		Input._instance = undefined;
 		this.debugHotkeysEnabled = false;
-		if (this.debugPointerSurface) {
-			this.debugPointerSurface.removeEventListener('contextmenu', this.suppressDebugContextMenu, options);
-		}
 		this.debugPointerSurface = null;
 		this.debugPointerInside = false;
 		this.debugPointerLastOffset = null;
 	}
 
 	public bind(): void {
-		// Register the input system
 		Registry.instance.register(this);
 		EventEmitter.instance.on('spaceChanged', this.handleSpaceChanged, this, { persistent: true });
 
-		const inputSvc = Platform.instance.input;
+		const player = this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
+		const keyboard = new KeyboardInput('keyboard:0');
+		const pointer = new PointerInput('pointer:0');
+		player.inputHandlers['keyboard'] = keyboard;
+		player.inputHandlers['pointer'] = pointer;
+		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
+		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
+		Platform.instance.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
+	}
 
-		const globalWindow: EventTarget | null = typeof window !== 'undefined' ? window : null;
-		const globalDocument: Document | null = typeof document !== 'undefined' ? document : null;
-
-		/**
-		 * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
-		 * @param e The gamepad event.
-		 */
-		if (globalWindow) {
-			inputSvc.addEventListener(globalWindow, 'gamepadconnected', (evt: Event) => {
-				const gamepad = (evt as GamepadEvent).gamepad;
-				if (!gamepad) return;
-			console.info(`Gamepad ${gamepad.index} connected.`);
-			this.addPendingGamepadAssignment(gamepad)
-		});
+	public handleInputEvent(evt: InputEvt): void {
+		if (evt.type === 'connect') {
+			this.onDeviceConnected(evt.device);
+			return;
 		}
-
-		if (globalDocument) {
-			inputSvc.addEventListener(globalDocument, 'webkitmouseforcewillbegin', (e: Event) => preventActionAndPropagation(e), options);
-			inputSvc.addEventListener(globalDocument, 'webkitmouseforcedown', (e: Event) => preventActionAndPropagation(e), options);
-			inputSvc.addEventListener(globalDocument, 'contextmenu', (e: Event) => {
-				const target = e.target as HTMLElement | null;
-				if (target === globalDocument.getElementById('gamescreen')) {
-					return true; // Allow context menu on gamescreen
-				}
-				return false;
-			}, false);
+		if (evt.type === 'disconnect') {
+			this.onDeviceDisconnected(evt.deviceId);
+			return;
 		}
-		if (globalWindow) {
-			inputSvc.addEventListener(globalWindow, 'webkitmouseforcewillbegin', (e: Event) => preventActionAndPropagation(e), options);
-			inputSvc.addEventListener(globalWindow, 'webkitmouseforcedown', (e: Event) => preventActionAndPropagation(e), options);
+		const binding = this.deviceBindings.get(evt.deviceId);
+		if (!binding) return;
+		if (evt.type === 'button') {
+			this.routeButtonEvent(binding, evt);
+			return;
 		}
-			// Gesture suppression is CSS-driven; avoid global touchforcechange handlers.
-
-		const gamescreenEl = globalDocument ? globalDocument.getElementById('gamescreen') : null;
-		if (!(gamescreenEl instanceof HTMLElement)) {
-			throw new Error('[Input] Game screen element #gamescreen not found while initializing inputs.');
+		if (evt.type === 'axis1') {
+			this.routeAxis1(binding, evt);
+			return;
 		}
+		if (evt.type === 'axis2') {
+			this.routeAxis2(binding, evt);
+		}
+	}
 
-		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
-		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['pointer'] = new PointerInput(gamescreenEl);
+	private routeButtonEvent(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'button' }>): void {
+		if (binding.source === 'keyboard') {
+			const handler = binding.handler as KeyboardInput;
+			if (evt.down) handler.keydown(evt.code); else handler.keyup(evt.code);
+		} else if (binding.source === 'pointer') {
+			const handler = binding.handler as PointerInput;
+			handler.ingestButton(evt.code, makeButtonState({
+				pressed: evt.down,
+				justpressed: evt.down,
+				justreleased: !evt.down,
+				timestamp: evt.timestamp,
+				pressId: evt.pressId ?? null,
+				value: evt.value,
+			}));
+		} else if (binding.source === 'gamepad') {
+			const handler = binding.handler as GamepadInput;
+			handler.ingestButton(evt.code, evt.down, evt.value, evt.timestamp, evt.pressId);
+		}
+		if (binding.assignedPlayer !== null) {
+			this.enqueueButtonEvent(binding.assignedPlayer, evt.code, evt.down ? 'press' : 'release', evt.timestamp, evt.pressId ?? null);
+		}
+	}
 
-		// Mobile/browser UX: pointer capture aids consistent drag behavior across devices
-		inputSvc.addEventListener(gamescreenEl, 'pointerdown', (e: Event) => {
-			const evt = e as PointerEvent;
-			try { gamescreenEl.setPointerCapture(evt.pointerId); } catch { /* noop */ }
-		}, options);
+	private routeAxis1(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'axis1' }>): void {
+		if (binding.source === 'pointer') {
+			const handler = binding.handler as PointerInput;
+			handler.ingestAxis1(evt.code, evt.x, evt.timestamp);
+		}
+	}
 
-		// Visibility lifecycle: reset edges, cancel rumble, clear transient buffers
-		const handleVisibilityLost = () => {
-			for (let i = 1; i <= Input.PLAYERS_MAX; i++) {
-				const p = this.playerInputs[i - 1];
-				if (!p) continue;
-				p.reset();
-				const hk = p.inputHandlers['keyboard']; if (hk) { try { hk.applyVibrationEffect({ effect: 'dual-rumble', duration: 0, intensity: 0 }); } catch { /* noop */ } }
-				const hg = p.inputHandlers['gamepad']; if (hg) { try { hg.applyVibrationEffect({ effect: 'dual-rumble', duration: 0, intensity: 0 }); } catch { /* noop */ } }
+	private routeAxis2(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'axis2' }>): void {
+		if (binding.source === 'pointer') {
+			const handler = binding.handler as PointerInput;
+			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
+			return;
+		}
+		if (binding.source === 'gamepad') {
+			const handler = binding.handler as GamepadInput;
+			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
+		}
+	}
+
+	private enqueueButtonEvent(playerIndex: number, code: string, type: 'press' | 'release', timestamp: number, pressId: number | null): void {
+		const player = this.getPlayerInput(playerIndex);
+		player.stateManager.addInputEvent({ eventType: type, identifier: code, timestamp, consumed: false, pressId });
+	}
+
+	private onDeviceConnected(device: InputDevice): void {
+		if (device.kind === 'gamepad') {
+			const handler = new GamepadInput(device.id, device.description, device);
+			handler.setDevice(device);
+			const binding: DeviceBinding = { handler, source: 'gamepad', assignedPlayer: null, device };
+			this.deviceBindings.set(device.id, binding);
+			const autoAssign = this.startupGamepadIndex !== null && device.id === `gamepad:${this.startupGamepadIndex}`;
+			if (autoAssign) {
+				this.startupGamepadIndex = null;
+				this.assignGamepadToPlayer(handler, Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
+				void handler.init();
+			} else {
+				this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(handler, null));
 			}
-			try { if ('vibrate' in navigator) { navigator.vibrate(0); } } catch { /* noop */ }
-		};
-		if (globalDocument) {
-			inputSvc.addEventListener(globalDocument, 'visibilitychange', () => { if (globalDocument.hidden) handleVisibilityLost(); }, options);
+			return;
 		}
-		if (globalWindow) {
-			inputSvc.addEventListener(globalWindow, 'pagehide', handleVisibilityLost, options);
+		if (!this.deviceBindings.has(device.id)) {
+			const source = this.inferSourceFromKind(device.kind);
+			if (source === 'keyboard') {
+				const handler = new KeyboardInput(device.id);
+				this.deviceBindings.set(device.id, { handler, source: 'keyboard', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device });
+			} else if (source === 'pointer') {
+				const handler = new PointerInput(device.id);
+				this.deviceBindings.set(device.id, { handler, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device });
+			}
 		}
+	}
+
+	private inferSourceFromKind(kind: DeviceKind): InputSource {
+		if (kind === 'keyboard') return 'keyboard';
+		if (kind === 'pointer' || kind === 'touch') return 'pointer';
+		return 'gamepad';
+	}
+
+	private onDeviceDisconnected(deviceId: string): void {
+		const binding = this.deviceBindings.get(deviceId);
+		if (!binding) return;
+		if (binding.source === 'gamepad') {
+			const handler = binding.handler as GamepadInput;
+			if (binding.assignedPlayer !== null) {
+				const player = this.getPlayerInput(binding.assignedPlayer);
+				player.clearGamepad(handler);
+				controllerUnassignedToast();
+			} else {
+				this.removePendingGamepadAssignment(handler.gamepadIndex);
+			}
+			handler.dispose();
+		}
+		binding.handler.reset();
+		this.deviceBindings.delete(deviceId);
+	}
+
+	private getBindingForHandler(handler: InputHandler): DeviceBinding | undefined {
+		for (const value of this.deviceBindings.values()) {
+			if (value.handler === handler) return value;
+		}
+		return undefined;
 	}
 
 	public unbind(): void {
@@ -716,9 +780,9 @@ export class Input implements RegisterablePersistent {
 		}
 		this.playerInputs.forEach(player => {
 			if (!player) return;
+			this.processDebugHotkeys(player);
 			player.pollInput(now);
 			player.update(now);
-			this.processDebugHotkeys(player);
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');
@@ -838,12 +902,6 @@ export class Input implements RegisterablePersistent {
 		}
 	}
 
-	private suppressDebugContextMenu = (event: MouseEvent): void => {
-		if (!this.debugHotkeysEnabled) return;
-		event.preventDefault();
-		event.stopPropagation();
-		event.stopImmediatePropagation();
-	};
 
 	private processDebugPointerGestures(player: PlayerInput): void {
 		const pointerHandler = player.inputHandlers['pointer'];
@@ -953,11 +1011,6 @@ export class Input implements RegisterablePersistent {
 	 *
 	 * @param gamepad - The gamepad waiting to be assigned.
 	 */
-	private addPendingGamepadAssignment(gamepad: Gamepad): void {
-		const gamepadInput = new GamepadInput(gamepad);
-		this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
-	}
-
 	/**
 	 * Remove a pending gamepad assignment.
 	 *
@@ -977,7 +1030,12 @@ export class Input implements RegisterablePersistent {
 	 * @param playerIndex The index of the player.
 	 */
 	public assignGamepadToPlayer(gamepad: InputHandler, playerIndex: number): void {
-		this.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
+		const player = this.getPlayerInput(playerIndex);
+		player.assignGamepadToPlayer(gamepad);
+		const binding = this.getBindingForHandler(gamepad);
+		if (binding) {
+			binding.assignedPlayer = playerIndex;
+		}
 		EventEmitter.instance.emit('playerjoin', this, { playerIndex: playerIndex });
 	}
 
@@ -1094,9 +1152,9 @@ export class Input implements RegisterablePersistent {
 		return Input.instance.getPlayerInput(1).getButtonState('F5', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('y', 'gamepad').pressed;
 	}
 
-		/**
-		* Handles debug events such as mouse/pointer events and keyboard events.
-		*
-		* @param e The event object representing the debug event.
-		*/
+	/**
+	* Handles debug events such as mouse/pointer events and keyboard events.
+	*
+	* @param e The event object representing the debug event.
+	*/
 }
