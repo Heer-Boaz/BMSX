@@ -304,6 +304,14 @@
 			"problemMatcher": [],
 			"label": "npm: fix:indent",
 			"detail": "node scripts/fix-ts-indentation-safe.js"
+		},
+		{
+			"type": "npm",
+			"script": "build:game",
+			"group": "build",
+			"problemMatcher": [],
+			"label": "npm: build:game",
+			"detail": "npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom"
 		}
 	],
 	"inputs": [

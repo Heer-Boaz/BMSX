@@ -56,20 +56,21 @@
 	"typescript": "^5.8.3"
   },
   "scripts": {
-	"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy -romname testrom",
-	"build:all": "npm run pack:resources && npm run build:force",
-	"build:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --force -romname testrom",
-	"pack:resources": "npx tsx scripts/rompacker/rompacker.ts --buildreslist -respath ./src/testrom/res",
-	"build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
-	"Watch!": "npx tsc -b -w",
-	"typecheck:scripts": "npx tsc -p tsconfig.scripts.json",
-	"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
-	"fix:indent": "node scripts/fix-ts-indentation-safe.js",
+	"validate:engine:scripts": "npm run validate:engine && (test -f tsconfig.scripts.json && npm run validate:scripts || true)",
+	"validate:scripts": "npx tsc -p tsconfig.scripts.json",
+	"validate:engine": "npx tsc --build ./src/bmsx",
+	"pack:game": "npx tsx scripts/rompacker/rompacker.ts --buildreslist -respath ./src/testrom/res",
+	"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug -romname ",
+	"build:game:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug --force -romname ",
+	"build:game:production": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig -romname ",
+	"build:game:production:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --force -romname ",
 	"pack:engine": "npm pack ./src/bmsx",
 	"serve:dist": "node scripts/serve-dist.mjs --dir dist --host 0.0.0.0 --port 8080",
 	"serve:dist:wsl": "bash scripts/serve-dist-wsl.sh --port 8080 --dir dist",
-	"validate:engine": "npx tsc --build ./src/bmsx",
-	"validate": "npm run validate:engine && (test -f tsconfig.scripts.json && npm run typecheck:scripts || true)"
+	"fix:indent": "node scripts/fix-ts-indentation-safe.js",
+	"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
+	"build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
+	"Watch!": "npx tsc -b -w"
   },
 
   "repository": {

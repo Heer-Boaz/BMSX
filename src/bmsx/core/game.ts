@@ -28,9 +28,9 @@ import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { gameplaySpec } from "./pipelines/gameplay";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
-import { dumpEcsPipeline } from "../ecs/debug";
 // No direct space helpers needed here; Spaces are revived as part of the world.
-import { Platform, PlatformServices } from '../platform/platform_services';
+import { Platform, PlatformServices } from '../core/platform';
+import { EngineInputBridge } from '../engine/input_bus_wire';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -106,7 +106,8 @@ export class Game {
 	/**
 	 * The ID of the animation frame request.
 	 */
-	animationFrameRequestid!: number;
+	private frameLoopHandle: { stop(): void } | null = null;
+	private inputBridge: EngineInputBridge | null = null;
 	/**
 	 * Indicates whether the game is currently running.
 	 */
@@ -149,6 +150,7 @@ export class Game {
 
 	// When paused, this flag requests a single safe render frame via the main loop
 	private _pausedOneShotRenderPending: boolean = false;
+	private removeWillExit: (() => void) | null = null;
 
 	/**
 	 * Request one single render while the game is paused. The render is executed
@@ -305,6 +307,9 @@ export class Game {
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
+		if (this.inputBridge !== null) this.inputBridge.detach();
+		this.inputBridge = new EngineInputBridge();
+		this.inputBridge.attach();
 		if (this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
@@ -344,10 +349,9 @@ export class Game {
 		const extensions = collectEcsPipelineExtensions({ world: $.world, profile: (Array.isArray(ecsPipeline) ? 'custom' : (ecsPipeline ?? 'gameplay')), registry: ECSReg });
 		const finalSpec = baseSpec.concat(extensions);
 		const diag = ECSReg.build($.world, finalSpec);
-		if (this.debug) dumpEcsPipeline(diag);
-
-		// Wiring phase (fresh boot): bind all registered entities (services, world, objects, components)
-		// this.registry.getRegisteredEntities().forEach(e => e?.bind());
+		if (diag.cyclesDetected) {
+			throw new Error(`[ECS] Cannot initialize ECS pipeline with cycles! Final order: ${diag.finalOrder.join(' -> ')}; Detected cycles: ${diag.cycleGroups.join(', ')}`);
+		}
 
 		// Activation: services begin play here (objects already activated in onspawn)
 		this.registry.getRegisteredEntitiesByType(Service).forEach(service => service.activate());
@@ -356,24 +360,11 @@ export class Game {
 		new PhysicsWorld().bind();
 
 		if (this.debug) {
-			// @ts-ignore
-			// window[] = world;
-			// // @ts-ignore
-			// window['view'] = view;
-			// // @ts-ignore
-			// window['$rom'] = global.$rom;
-			// // @ts-ignore
-			// window['$'] = global.$;
-			// // @ts-ignore
-			// window['registry'] = global.registry;
-			// // @ts-ignore
-			// window['eventEmitter'] = this.event_emitter;
-
 			Input.instance.enableDebugMode(); // Do this after the world is initialized to prevent race conditions
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode
-			Platform.instance.events.addBeforeUnload(this.onBeforeUnload);
+			this.removeWillExit = Platform.instance.lifecycle.onWillExit(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
 		SoundMaster.instance.volume = 0;
@@ -402,11 +393,11 @@ export class Game {
 			throw new Error('Game not initialized. Call init() before starting the game!');
 		}
 		const platform = Platform.instance;
-		const now = platform.timing.now();
+		const now = platform.clock.now();
 		this.lastUpdate = now;
 		this.last_gametick_time = now;
 		this._turnCounter = 0;
-		this.animationFrameRequestid = platform.timing.requestAnimationFrame(this.run);
+		this.frameLoopHandle = platform.frames.start(this.run);
 		this.running = true;
 	}
 
@@ -446,23 +437,17 @@ export class Game {
 	private run = (currentTime: number): void => {
 		if (!this.running) return;
 
-		const platform = Platform.instance;
 		Input.instance.pollInput();
 
 		this.deltaTime = Math.min(currentTime - this.lastUpdate, MAX_FRAME_DELTA);
 		this.lastUpdate = currentTime;
 
 		if (this._paused) {
-			this.accumulatedTime = 0; // No backlog
-
+			this.accumulatedTime = 0;
 			if (this._pausedOneShotRenderPending) {
 				this._pausedOneShotRenderPending = false;
-				// drawgame takes the renderGate token itself; call it from the main loop
 				this.view.drawgame();
-				platform.events.dispatchFrameEvent();
 			}
-
-			this.animationFrameRequestid = platform.timing.requestAnimationFrame(this.run);
 			return;
 		}
 
@@ -474,9 +459,8 @@ export class Game {
 			if (!this.paused) {
 				if (runGate.ready) {
 					this.update(this.updateInterval);
-				}
-				else {
-					this.accumulatedTime = 0; // Reset accumulated time to avoid infinite loop
+				} else {
+					this.accumulatedTime = 0;
 					break;
 				}
 			}
@@ -486,10 +470,7 @@ export class Game {
 
 		if (this.wasupdated) {
 			this.view.drawgame();
-			platform.events.dispatchFrameEvent();
 		}
-
-		this.animationFrameRequestid = platform.timing.requestAnimationFrame(this.run);
 	}
 
 	/**
@@ -497,15 +478,26 @@ export class Game {
 	 * @returns void
 	 */
 	public stop(): void {
-		const platform = Platform.instance;
 		this.running = false;
-		platform.timing.cancelAnimationFrame(this.animationFrameRequestid);
-		platform.timing.requestAnimationFrame(() => {
+		if (this.frameLoopHandle) {
+			this.frameLoopHandle.stop();
+			this.frameLoopHandle = null;
+		}
+		if (this.inputBridge) {
+			this.inputBridge.detach();
+			this.inputBridge = null;
+		}
+		const platform = Platform.instance;
+		const handle = platform.frames.start(() => {
+			handle.stop();
 			this.view.handleResize.call(this.view);
 			this.sndmaster.stopEffect();
 			this.sndmaster.stopMusic();
 		});
-		platform.events.removeBeforeUnload(this.onBeforeUnload);
+		if (this.removeWillExit) {
+			this.removeWillExit();
+			this.removeWillExit = null;
+		}
 	}
 
 	/** Serialize the full game state: world + selected services. */
@@ -595,7 +587,6 @@ export class Game {
 
 	private loadRewindFrame(frame: RewindFrame): void {
 		this.load(frame.state, true);
-		Platform.instance.events.dispatchFrameEvent();
 	}
 
 	public rewindFrame(): boolean {

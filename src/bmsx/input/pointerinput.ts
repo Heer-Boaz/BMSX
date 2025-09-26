@@ -1,268 +1,130 @@
-import { getPressedState, makeButtonState, options, resetObject } from './input';
+import { getPressedState, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
-import { Platform } from '../platform/platform_services';
 
-const POINTER_BUTTON_MAP: Record<number, string> = {
-	0: 'pointer_primary',
-	1: 'pointer_aux',
-	2: 'pointer_secondary',
-	3: 'pointer_back',
-	4: 'pointer_forward',
-};
+const POINTER_DEFAULT_CODES = [
+	'pointer_primary',
+	'pointer_secondary',
+	'pointer_aux',
+	'pointer_back',
+	'pointer_forward',
+	'pointer_position',
+	'pointer_delta',
+	'pointer_wheel',
+] as const;
 
-const POINTER_VECTOR_ID = 'pointer_position';
-const POINTER_DELTA_ID = 'pointer_delta';
-const POINTER_WHEEL_ID = 'pointer_wheel';
+function cloneState(state: ButtonState): ButtonState {
+	return {
+		pressed: state.pressed,
+		justpressed: state.justpressed,
+		justreleased: state.justreleased,
+		waspressed: state.waspressed,
+		wasreleased: state.wasreleased,
+		consumed: state.consumed,
+		presstime: state.presstime,
+		timestamp: state.timestamp,
+		pressedAtMs: state.pressedAtMs,
+		releasedAtMs: state.releasedAtMs,
+		pressId: state.pressId,
+		value: state.value,
+		value2d: state.value2d ? [state.value2d[0], state.value2d[1]] : null,
+	};
+}
 
 export class PointerInput implements InputHandler {
-	public readonly gamepadIndex: null = null;
+	public static readonly VIRTUAL_POINTER_INDEX = 0x7fffffff;
+	public readonly gamepadIndex: number = PointerInput.VIRTUAL_POINTER_INDEX;
 
 	private buttonStates: KeyOrButtonId2ButtonState = {};
-	private pointerActive = false;
-	private pointerId: number | null = null;
-	private position: { x: number; y: number } | null = null;
-	private wheelDelta = 0;
-	private delta = { x: 0, y: 0 };
 	private nextPressId = 1;
-	private transitionsPrev = new Set<string>();
-	private transitionsCurrent = new Set<string>();
+	private lastPosition = { x: 0, y: 0 };
+	private lastPositionValid = false;
+	private lastDeltaTimestamp = 0;
+
+	constructor(public readonly deviceId: string = 'pointer:0') {
+		this.reset();
+	}
 
 	public get supportsVibrationEffect(): boolean {
 		return false;
 	}
 
-	public applyVibrationEffect(_params: VibrationParams): void {
-		// Pointer devices do not support vibration
-	}
-
-	public constructor(private readonly element: HTMLElement) {
-		this.reset();
-		this.bindEventListeners();
-	}
-
-	private bindEventListeners(): void {
-		const input = Platform.instance.input;
-		const target = this.element;
-		input.addEventListener(target, 'pointerdown', this.handlePointerDown, options);
-		input.addEventListener(target, 'pointermove', this.handlePointerMove, options);
-		input.addEventListener(target, 'pointerup', this.handlePointerUp, options);
-		input.addEventListener(target, 'pointercancel', this.handlePointerUp, options);
-		input.addEventListener(target, 'pointerleave', this.handlePointerLeave, options);
-		input.addEventListener(target, 'wheel', this.handleWheel, { ...options, passive: false });
-
-		// Fallbacks for environments without pointer events
-		input.addEventListener(target, 'mousedown', this.handleMouseDown, options);
-		input.addEventListener(target, 'mousemove', this.handleMouseMove, options);
-		input.addEventListener(target, 'mouseup', this.handleMouseUp, options);
-		input.addEventListener(target, 'mouseleave', this.handleMouseLeave, options);
-
-		input.addEventListener(target, 'touchstart', this.handleTouchStart, options);
-		input.addEventListener(target, 'touchmove', this.handleTouchMove, options);
-		input.addEventListener(target, 'touchend', this.handleTouchEnd, options);
-		input.addEventListener(target, 'touchcancel', this.handleTouchEnd, options);
-	}
-
-	private handlePointerDown = (event: PointerEvent): void => {
-		if (event.pointerType === 'mouse' && event.button > 4) return;
-		this.updateButtonState(event.button, true);
-		if (event.pointerType !== 'mouse') this.pointerId = event.pointerId;
-		this.pointerActive = true;
-		this.updatePosition(event.clientX, event.clientY);
-	};
-
-	private handlePointerMove = (event: PointerEvent): void => {
-		if (this.pointerId !== null && event.pointerId !== this.pointerId) return;
-		const dx = typeof event.movementX === 'number'
-			? event.movementX
-			: (this.position ? event.clientX - this.position.x : 0);
-		const dy = typeof event.movementY === 'number'
-			? event.movementY
-			: (this.position ? event.clientY - this.position.y : 0);
-		this.accumulateDelta(dx, dy);
-		this.updatePosition(event.clientX, event.clientY);
-	};
-
-	private handlePointerUp = (event: PointerEvent): void => {
-		if (this.pointerId !== null && event.pointerId !== this.pointerId) return;
-		this.updateButtonState(event.button, false);
-		if (event.type === 'pointerup') {
-			this.pointerActive = false;
-			this.pointerId = null;
-		}
-	};
-
-	private handlePointerLeave = (_event: PointerEvent): void => {
-		this.pointerActive = false;
-		this.pointerId = null;
-		this.position = null;
-	};
-
-	private handleWheel = (event: WheelEvent): void => {
-		this.wheelDelta += event.deltaY;
-		// Prevent page scroll when captured by the game surface
-		event.preventDefault();
-	};
-
-	private handleMouseDown = (event: MouseEvent): void => {
-		// Only run fallback if pointer events are not supported
-		if (typeof window !== 'undefined' && window.PointerEvent) return;
-		if (event.button > 4) return;
-		this.updateButtonState(event.button, true);
-		this.pointerActive = true;
-		this.updatePosition(event.clientX, event.clientY);
-	};
-
-	private handleMouseMove = (event: MouseEvent): void => {
-		if (typeof window !== 'undefined' && window.PointerEvent) return;
-		if (!this.pointerActive) return;
-		const dx = this.position ? event.clientX - this.position.x : 0;
-		const dy = this.position ? event.clientY - this.position.y : 0;
-		this.accumulateDelta(dx, dy);
-		this.updatePosition(event.clientX, event.clientY);
-	};
-
-	private handleMouseUp = (event: MouseEvent): void => {
-		if (typeof window !== 'undefined' && window.PointerEvent) return;
-		this.updateButtonState(event.button, false);
-		if (event.type === 'mouseup') {
-			this.pointerActive = false;
-		}
-	};
-
-	private handleMouseLeave = (_event: MouseEvent): void => {
-		if (typeof window !== 'undefined' && window.PointerEvent) return;
-		this.pointerActive = false;
-		this.position = null;
-	};
-
-	private handleTouchStart = (event: TouchEvent): void => {
-		if (typeof window !== 'undefined' && window.PointerEvent) return;
-		const touch = event.changedTouches[0];
-		if (!touch) return;
-		this.updateButtonState(0, true);
-		this.pointerActive = true;
-		this.pointerId = touch.identifier;
-		this.updatePosition(touch.clientX, touch.clientY);
-	};
-
-	private handleTouchMove = (event: TouchEvent): void => {
-		if (typeof window !== 'undefined' && window.PointerEvent) return;
-		if (!this.pointerActive || this.pointerId === null) return;
-		const touch = Array.from(event.changedTouches).find(t => t.identifier === this.pointerId);
-		if (!touch) return;
-		const dx = this.position ? touch.clientX - this.position.x : 0;
-		const dy = this.position ? touch.clientY - this.position.y : 0;
-		this.accumulateDelta(dx, dy);
-		this.updatePosition(touch.clientX, touch.clientY);
-	};
-
-	private handleTouchEnd = (event: TouchEvent): void => {
-		if (window.PointerEvent) return;
-		if (!this.pointerActive || this.pointerId === null) return;
-		const touch = Array.from(event.changedTouches).find(t => t.identifier === this.pointerId);
-		if (!touch) return;
-		this.updateButtonState(0, false);
-		this.pointerActive = false;
-		this.pointerId = null;
-	};
-
-	private updateButtonState(buttonIndex: number, pressed: boolean): void {
-		const key = POINTER_BUTTON_MAP[buttonIndex] ?? `pointer_button_${buttonIndex}`;
-		const prev = this.buttonStates[key] ?? makeButtonState();
-		const now = performance.now();
-		if (pressed) {
-			const newlyPressed = !prev.pressed;
-			const pressId = newlyPressed ? this.nextPressId++ : prev.pressId ?? this.nextPressId++;
-			this.buttonStates[key] = makeButtonState({
-				pressed: true,
-				justpressed: newlyPressed,
-				waspressed: true,
-				justreleased: false,
-				pressId,
-				pressedAtMs: newlyPressed ? now : prev.pressedAtMs ?? now,
-				timestamp: now,
-				value: 1,
-			});
-			if (newlyPressed) this.transitionsCurrent.add(key);
-		} else {
-			const justReleased = prev.pressed;
-			this.buttonStates[key] = makeButtonState({
-				pressed: false,
-				justpressed: false,
-				justreleased: justReleased,
-				waspressed: prev.waspressed || justReleased,
-				wasreleased: prev.wasreleased || justReleased,
-				pressId: prev.pressId ?? null,
-				releasedAtMs: justReleased ? now : prev.releasedAtMs ?? null,
-				timestamp: now,
-				value: 0,
-			});
-			if (justReleased) this.transitionsCurrent.add(key);
-		}
-	}
-
-	private updatePosition(x: number, y: number): void {
-		this.position = { x, y };
-	}
-
-	private accumulateDelta(dx: number, dy: number): void {
-		if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
-		if (dx === 0 && dy === 0) return;
-		this.delta.x += dx;
-		this.delta.y += dy;
-	}
+	public applyVibrationEffect(_params: VibrationParams): void { }
 
 	public pollInput(): void {
-		if (this.transitionsPrev.size) {
-			for (const key of this.transitionsPrev) {
-				const state = this.buttonStates[key];
-				if (!state) continue;
+		const now = performance.now();
+		for (const key of Object.keys(this.buttonStates)) {
+			const state = this.buttonStates[key];
+			if (!state) continue;
+			if (state.pressed) {
+				const pressedAt = state.pressedAtMs ?? state.timestamp ?? now;
+				state.presstime = Math.max(0, now - pressedAt);
 				state.justpressed = false;
+			} else {
+				state.presstime = null;
 				state.justreleased = false;
 			}
-			this.transitionsPrev.clear();
+		if (key === 'pointer_delta') {
+			const ts = state.timestamp ?? 0;
+			if (ts === this.lastDeltaTimestamp) {
+				state.value2d = [0, 0];
+				state.value = 0;
+				state.pressed = false;
+				state.justpressed = false;
+				state.justreleased = false;
+			} else {
+				this.lastDeltaTimestamp = ts;
+			}
+		} else if (key === 'pointer_wheel') {
+			state.value = 0;
 		}
-
-		// Decay wheel delta to report per-frame impulses
-		if (this.wheelDelta !== 0) {
-			const state = makeButtonState({
-				pressed: false,
-				justpressed: false,
-				justreleased: false,
-				value: this.wheelDelta,
-			});
-			this.buttonStates[POINTER_WHEEL_ID] = state;
-			this.wheelDelta = 0;
-		} else if (this.buttonStates[POINTER_WHEEL_ID]) {
-			this.buttonStates[POINTER_WHEEL_ID] = makeButtonState();
+			state.waspressed = state.waspressed || state.pressed;
+			state.wasreleased = state.wasreleased || (!state.pressed);
+			state.consumed = false;
 		}
-
-		if (this.position) {
-			const state = makeButtonState({
-				pressed: this.pointerActive,
-				value2d: [this.position.x, this.position.y],
-			});
-			this.buttonStates[POINTER_VECTOR_ID] = state;
-		} else if (this.buttonStates[POINTER_VECTOR_ID]) {
-			this.buttonStates[POINTER_VECTOR_ID] = makeButtonState();
-		}
-
-		if (this.delta.x !== 0 || this.delta.y !== 0) {
-			this.buttonStates[POINTER_DELTA_ID] = makeButtonState({
-				value2d: [this.delta.x, this.delta.y],
-			});
-			this.delta.x = 0;
-			this.delta.y = 0;
-		} else if (this.buttonStates[POINTER_DELTA_ID]) {
-			this.buttonStates[POINTER_DELTA_ID] = makeButtonState();
-		}
-
-		this.transitionsPrev = this.transitionsCurrent;
-		this.transitionsCurrent = new Set();
 	}
 
 	public getButtonState(btn: string): ButtonState {
 		return getPressedState(this.buttonStates, btn);
+	}
+
+	public ingestButton(code: string, state: ButtonState): void {
+		const target = cloneState(state);
+		if (target.pressed) {
+			if (!target.pressId) target.pressId = this.nextPressId++;
+			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? performance.now();
+		}
+		this.buttonStates[code] = target;
+	}
+
+	public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
+		const current = this.buttonStates[code] ?? makeButtonState();
+		const dx = this.lastPositionValid ? (x - this.lastPosition.x) : 0;
+		const dy = this.lastPositionValid ? (y - this.lastPosition.y) : 0;
+		this.lastPosition = { x, y };
+		this.lastPositionValid = true;
+		current.value2d = [x, y];
+		current.timestamp = timestamp;
+		this.buttonStates[code] = current;
+
+		const delta = this.buttonStates['pointer_delta'] ?? makeButtonState();
+		const moved = dx !== 0 || dy !== 0;
+		const wasPressed = delta.pressed === true;
+		delta.value2d = [dx, dy];
+		delta.value = Math.hypot(dx, dy);
+		delta.timestamp = timestamp;
+		delta.justreleased = !moved && wasPressed;
+		delta.pressed = moved;
+		delta.justpressed = moved && !wasPressed;
+		delta.waspressed = moved || wasPressed;
+		delta.consumed = false;
+		this.buttonStates['pointer_delta'] = delta;
+	}
+
+	public ingestAxis1(code: string, x: number, timestamp: number): void {
+		const current = this.buttonStates[code] ?? makeButtonState();
+		current.value = x;
+		current.timestamp = timestamp;
+		this.buttonStates[code] = current;
 	}
 
 	public consumeButton(button: string): void {
@@ -273,16 +135,15 @@ export class PointerInput implements InputHandler {
 	public reset(except?: string[]): void {
 		if (!except) {
 			this.buttonStates = {};
-		} else {
-			resetObject(this.buttonStates, except);
+			for (const code of POINTER_DEFAULT_CODES) {
+				this.buttonStates[code] = makeButtonState();
+			}
+			this.lastPosition = { x: 0, y: 0 };
+			this.lastPositionValid = false;
+			this.lastDeltaTimestamp = 0;
+			return;
 		}
-		this.pointerActive = false;
-		this.pointerId = null;
-		this.position = null;
-		this.delta = { x: 0, y: 0 };
-		this.wheelDelta = 0;
-		this.transitionsPrev.clear();
-		this.transitionsCurrent.clear();
+		resetObject(this.buttonStates, except);
 	}
 
 	public dispose(): void {

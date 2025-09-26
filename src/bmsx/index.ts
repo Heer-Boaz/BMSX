@@ -77,7 +77,6 @@ export * from './ecs/pipeline';
 export * from './ecs/builtin_pipeline';
 export * from './ecs/extensions';
 export * from './ecs/prerender_submit_system';
-export * from './ecs/debug';
 export * from './service/collision2d_service';
 export * from './ecs/spritecollider_sync_system';
 export * from './ecs/collision2d_broadphase_system';
@@ -102,8 +101,23 @@ export * from './render/backend/renderpasslib';
 export * from './render/backend/webgl/webgl_backend';
 export * from './render/platform/gameview_host';
 export * from './render/platform/browser_gameview_host';
-export * from './platform/platform_services';
-export * from './platform/browser_platform';
+export {
+  Platform,
+  PlatformServices,
+  MonoTime,
+  Clock,
+  FrameLoop,
+  DeviceKind,
+  InputEvt,
+  InputDevice,
+  InputHub,
+  Lifecycle,
+  StorageService,
+  HIDService,
+  VibrationParams as PlatformVibrationParams,
+} from './core/platform';
+export * from './host/browser/platform_browser';
+export * from './host/browser/bootstrap';
 export * from './rompack/rompack';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';

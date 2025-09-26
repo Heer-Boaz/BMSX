@@ -29,20 +29,21 @@ class Toast extends WorldObject {
 		this.createdAt = performance.now();
 	}
 
-	private yeOldePaint({ rc }: RenderProducerContext): void {
+	private yeOldePaint({ parent, rc }: RenderProducerContext): void {
+		const toast = parent as Toast;
 		const now = performance.now();
-		const t = now - this.createdAt;
+		const t = now - toast.createdAt;
 		// TODO: PRETTY UGLY TO NOT USE A (SIMPLE) STATE MACHINE FOR THIS
-		if (t >= this.ms) { this.markForDisposal(); return null; } // time's up
+		if (t >= toast.ms) { toast.markForDisposal(); return null; } // time's up
 		const vp = $.view.viewportSize;
 		const centerX = vp.x / 2;
 		const topY = 12;
-		const alpha = t < 200 ? t / 200 : (t > this.ms - 300 ? (this.ms - t) / 300 : 1);
+		const alpha = t < 200 ? t / 200 : (t > toast.ms - 300 ? (toast.ms - t) / 300 : 1);
 		const padX = 8, padY = 4;
-		const font = this.font ?? $.view.default_font;
-		const textWidth = font.textWidth(this.text) + 2 * padX;
-		const rect = { area: { start: { x: centerX - textWidth / 2 - padX, y: topY - padY, z: this.z }, end: { x: centerX + textWidth / 2 + padX, y: topY + 10 + padY, z: this.z } }, color: { r: 0, g: 0, b: 0, a: 0.85 * alpha } };
-		rc.submitGlyphs({ x: centerX - textWidth / 2, y: topY, glyphs: this.text, z: this.z, color: { r: 255, g: 255, b: 255, a: Math.max(0, Math.min(1, alpha)) } });
+		const font = toast.font ?? $.view.default_font;
+		const textWidth = font.textWidth(toast.text) + 2 * padX;
+		const rect = { area: { start: { x: centerX - textWidth / 2 - padX, y: topY - padY, z: toast.z }, end: { x: centerX + textWidth / 2 + padX, y: topY + 10 + padY, z: toast.z } }, color: { r: 0, g: 0, b: 0, a: 0.85 * alpha } };
+		rc.submitGlyphs({ x: centerX - textWidth / 2, y: topY, glyphs: toast.text, z: toast.z, color: { r: 255, g: 255, b: 255, a: Math.max(0, Math.min(1, alpha)) } });
 		rc.submitRect({ ...rect, layer: 'ui', kind: 'fill' });
 	}
 }

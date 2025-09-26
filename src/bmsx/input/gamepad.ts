@@ -1,427 +1,147 @@
-import { getPressedState, Input, makeButtonState, resetObject } from './input';
+import { getPressedState, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
-// In je InputManager.ts (pseudo)
-import { DualSenseHID } from "./dualsensehid";
+import type { InputDevice } from '../core/platform';
+import { DualSenseHID } from './dualsensehid';
 
-const SONY_VID = 0x054C;
-const DUALSHOCK4_PID_2013 = 0x05C4;
-const DUALSHOCK4_PID_2016 = 0x09CC;
-
-/**
- * Represents a handler for gamepad input.
- * Implements the IInputHandler interface to manage and poll the state of a gamepad.
- *
- * @class GamepadInput
- * @implements {InputHandler}
- */
 export class GamepadInput implements InputHandler {
-	/**
-	 * Gets the index of the gamepad.
-	 * @returns The index of the gamepad, or `null` if no gamepad is connected.
-	 */
-	public get gamepadIndex(): number | null {
-		return this.assignedIndex;
+  private readonly buttonStates: KeyOrButtonId2ButtonState = {};
+  private readonly hidPad = new DualSenseHID();
+  private nextPressId = 1;
+  private lastPollTime = 0;
+
+  private device: InputDevice | null;
+
+  constructor(public readonly deviceId: string, public readonly description: string, device: InputDevice | null) {
+	this.device = device;
+	this.reset();
+  }
+
+  public get gamepadIndex(): number {
+	const index = parseInt(this.deviceId.split(':')[1] ?? '-1', 10);
+	return Number.isFinite(index) ? index : -1;
+  }
+
+  public get supportsVibrationEffect(): boolean {
+	if (this.device && this.device.supportsVibration) return true;
+	return this.hidPad.isConnected;
+  }
+
+  public setDevice(device: InputDevice | null): void {
+	this.device = device;
+  }
+
+  public pollInput(): void {
+	const now = performance.now();
+	if (this.lastPollTime === 0) this.lastPollTime = now;
+	this.lastPollTime = now;
+
+	const keys = Object.keys(this.buttonStates);
+	for (let i = 0; i < keys.length; i++) {
+	  const key = keys[i];
+	  const state = this.buttonStates[key];
+	  if (!state) continue;
+	  if (state.pressed) {
+		const pressedAt = state.pressedAtMs ?? state.timestamp ?? now;
+		state.presstime = Math.max(0, now - pressedAt);
+		state.justpressed = false;
+	  } else {
+		state.presstime = null;
+		state.justreleased = false;
+	  }
+	  state.consumed = false;
 	}
+  }
 
-	private _gamepad: Gamepad | null;
-	private assignedIndex: number | null = null;
+  public getButtonState(btn: string): ButtonState {
+	return getPressedState(this.buttonStates, btn);
+  }
 
-	/** HID device used for rumble of this specific gamepad */
-	private hidPad: DualSenseHID = new DualSenseHID();
-
-	/** Cached flag that indicates whether this gamepad is a DualShock 4 */
-	private isDs4Gamepad: boolean | null = null;
-	/**
-	 * Gets the current gamepad instance.
-	 * @returns The current Gamepad object.
-	 */
-	public get gamepad(): Gamepad { return this._gamepad; }
-
-	/**
-	 * The state of each gamepad button for each player.
-	 */
-	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
-
-	/** Monotonic press id generator for this device */
-	private nextPressId = 1;
-
-	/** Cached timestamp from last poll to early-out when input hasn’t changed */
-	private lastSampleTimestamp: number | null = null;
-
-	/** Digitalized axis state with hysteresis to prevent flapping */
-	private axisDigitalState: Record<'left' | 'right' | 'up' | 'down', boolean> = { left: false, right: false, up: false, down: false };
-
-	/** Hysteresis thresholds for axis digitalization */
-	private static readonly AXIS_ON = 0.5;
-	private static readonly AXIS_OFF = 0.4;
-
-	/** Radial deadzone for sticks */
-	private static readonly RADIAL_DEADZONE = 0.2;
-
-	public get supportsVibrationEffect(): boolean {
-		return true; // Gamepad supports vibration feedback
+  public ingestButton(code: string, down: boolean, value: number, timestamp: number, pressId: number | null): void {
+	const state = this.buttonStates[code] ?? makeButtonState();
+	if (down) {
+	  const existingPressId = pressId ?? state.pressId ?? this.nextPressId++;
+	  state.pressed = true;
+	  state.justpressed = true;
+	  state.justreleased = false;
+	  state.waspressed = true;
+	  state.timestamp = timestamp;
+	  state.pressedAtMs = timestamp;
+	  state.value = value;
+	  state.pressId = existingPressId;
+	} else {
+	  const wasPressed = state.pressed === true;
+	  state.justreleased = wasPressed;
+	  state.pressed = false;
+	  state.justpressed = false;
+	  state.timestamp = timestamp;
+	  state.releasedAtMs = timestamp;
+	  state.value = 0;
+	  state.waspressed = state.waspressed || wasPressed;
+	  state.wasreleased = state.wasreleased || wasPressed;
+	  if (pressId !== null) state.pressId = pressId;
 	}
+	this.buttonStates[code] = state;
+  }
 
-	private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
-		const vendorReg = /(vendor|vid|idvendor)[^0-9a-f]*([0-9a-f]{4})/i;
-		const productReg = /(product|pid|idproduct)[^0-9a-f]*([0-9a-f]{4})/i;
+  public ingestAxis2(code: string, x: number, y: number, timestamp: number): void {
+	const state = this.buttonStates[code] ?? makeButtonState();
+	state.value2d = [x, y];
+	state.value = Math.hypot(x, y);
+	state.timestamp = timestamp;
+	this.buttonStates[code] = state;
+  }
 
-		const vendorMatch = vendorReg.exec(id);
-		const productMatch = productReg.exec(id);
-		let vendorStr: string | null = vendorMatch ? vendorMatch[2] : null;
-		let productStr: string | null = productMatch ? productMatch[2] : null;
+  public consumeButton(button: string): void {
+	const state = this.buttonStates[button];
+	if (state) state.consumed = true;
+  }
 
-		if (!vendorStr || !productStr) {
-			const alt = /([0-9a-f]{4})\W+([0-9a-f]{4})/i.exec(id);
-			if (alt) {
-				vendorStr ??= alt[1];
-				productStr ??= alt[2];
-			}
-		}
-
-		if (!vendorStr || !productStr) return null;
-		const vendorId = parseInt(vendorStr, 16);
-		const productId = parseInt(productStr, 16);
-		if (Number.isNaN(vendorId) || Number.isNaN(productId)) return null;
-		return { vendorId, productId };
+  public reset(except?: string[]): void {
+	if (!except) {
+	  const keys = Object.keys(this.buttonStates);
+	  for (let i = 0; i < keys.length; i++) delete this.buttonStates[keys[i]];
+	  this.lastPollTime = 0;
+	  return;
 	}
+	resetObject(this.buttonStates, except);
+  }
 
-	private updateDs4Flag(gamepad: Gamepad | null): void {
-		if (!gamepad) {
-			this.isDs4Gamepad = null;
-			return;
-		}
-		const ids = this.parseGamepadId(gamepad.id);
-		this.isDs4Gamepad = ids &&
-			ids.vendorId === SONY_VID &&
-			(ids.productId === DUALSHOCK4_PID_2013 || ids.productId === DUALSHOCK4_PID_2016);
+  public applyVibrationEffect(params: VibrationParams): void {
+	if (this.device && this.device.supportsVibration) {
+	  this.device.setVibration({ effect: 'dual-rumble', duration: params.duration, intensity: params.intensity });
+	  return;
 	}
-
-	/** Determine if the connected gamepad represents a DualShock 4 */
-	private isDualShock4(): boolean {
-		return this.isDs4Gamepad === true;
+	if (!this.hidPad.isConnected) {
+	  try {
+		const nav = navigator as Navigator & { vibrate?: (pattern: number | number[]) => boolean };
+		if (typeof nav.vibrate === 'function') {
+		  nav.vibrate(Math.max(0, Math.round(params.duration * params.intensity)));
+		}
+	  } catch {
+		// Ignore fallback errors
+	  }
+	  return;
 	}
-
-	/**
-	 * Applies a vibration effect to the gamepad.
-	 * @param effect The type of vibration effect to apply.
-	 * @param duration The duration of the vibration effect in milliseconds.
-	 * @param intensity The intensity of the vibration effect, ranging from 0.0 to 1.0.
-	 */
-	private lastRumbleAt: number = 0;
-	public applyVibrationEffect(params: VibrationParams): void {
-		const now = performance.now();
-		// Coalesce rumble updates to <= 60Hz
-		if (now - this.lastRumbleAt < 16) return;
-		this.lastRumbleAt = now;
-
-		const activeGamepad = this._gamepad;
-		if (!activeGamepad && !this.hidPad.isConnected) {
-			// Fallback: navigator.vibrate (Android); noop on iOS (ignored)
-			try {
-				if ('vibrate' in navigator) {
-					navigator.vibrate(Math.max(0, Math.round(params.duration * params.intensity)));
-				}
-			} catch {
-				// Ignored deliberately; vibration is best-effort.
-			}
-			return;
-		}
-
-		const strongMagnitude = params.intensity > 0.5 ? Math.round(params.intensity * 255) : 0;
-		const weakMagnitude = params.intensity <= 0.5 ? Math.round(params.intensity * 255) : 0;
-
-		const isDs4 = this.isDualShock4();
-
-		if (activeGamepad && activeGamepad.vibrationActuator && !isDs4) {
-			try {
-				activeGamepad.vibrationActuator.playEffect(params.effect, {
-					duration: params.duration,
-					weakMagnitude,
-					strongMagnitude
-				});
-			} catch (e) {
-				// Silent dropout on disconnect
-				this.handleDisconnect();
-				console.warn(`Error applying gamepad vibration effect: ${e}, disconnecting controller and HID device.`);
-			}
-			return;
-		}
-
-		try {
-			this.hidPad.sendRumble({ strong: strongMagnitude, weak: weakMagnitude, duration: params.duration });
-		} catch (e) {
-			// Silent dropout on disconnect
-			this.handleDisconnect();
-			console.warn(`Error applying gamepad vibration effect: ${e}, disconnecting controller and HID device.`);
-		}
+	const strongMagnitude = params.intensity > 0.5 ? Math.round(params.intensity * 255) : 0;
+	const weakMagnitude = params.intensity <= 0.5 ? Math.round(params.intensity * 255) : 0;
+	try {
+	  this.hidPad.sendRumble({ strong: strongMagnitude, weak: weakMagnitude, duration: params.duration });
+	} catch (err) {
+	  console.warn(`Error applying HID rumble: ${err}`);
+	  this.hidPad.disconnect();
 	}
+  }
 
-	/**
-	 * Initializes the HID pad for rumble effects.
-	 * If the gamepad has a native vibration actuator, it skips HID initialization.
-	 * Otherwise, it attempts to initialize the HID pad with the current gamepad.
-	 * *NOTE: REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
-	 */
-	public async init(): Promise<void> {
-		if (this._gamepad && this._gamepad.vibrationActuator && !this.isDualShock4()) {
-			// Native actuator is available and reliable; skip HID init
-			return;
-		}
-		try {
-			await this.hidPad.init(this._gamepad ?? undefined);
-			this.updateDs4Flag(this._gamepad);
-		} catch (e) {
-			console.warn(`Error initializing HID device for rumble: ${e}`);
-		}
+  public async init(): Promise<void> {
+	try {
+	  await this.hidPad.initForDevice(this.gamepadIndex, this.description);
+	} catch (err) {
+	  console.warn(`Error initialising HID device for rumble: ${err}`);
 	}
+  }
 
-	/**
-	 * Creates an instance of the class and initializes the gamepad.
-	 *
-	 * @param gamepad - The Gamepad object to be associated with this instance.
-	 *
-	 * This constructor also resets the gamepad button states upon initialization.
-	 */
-	constructor(gamepad: Gamepad) {
-		this._gamepad = gamepad;
-		this.assignedIndex = gamepad.index;
-		this.updateDs4Flag(gamepad);
-
-		// Note that init should be called later to ensure user interaction for permission
-
-		// Reset gamepad button states
-		this.reset();
-	}
-
-	/**
-	 * Polls the input from the assigned gamepad for this player.
-	 * If no gamepad is assigned, or if the browser does not support the gamepads API,
-	 * or if the gamepad index is out of range of the connected gamepads array,
-	 * this method does nothing.
-	 * This function should be called once per frame to ensure that gamepad input is up-to-date.
-	 */
-	public pollInput(): void {
-		if (this.gamepadIndex === null || !this.gamepad) return; // No gamepad was assigned to this GamepadInput-object
-		const nav = navigator as Navigator & { webkitGetGamepads?: () => (Gamepad[] | null) };
-		const gamepads: Gamepad[] = (nav.getGamepads && nav.getGamepads()) || (nav.webkitGetGamepads && nav.webkitGetGamepads()) || []; // Fallback to empty array
-		if (!gamepads) return; // Browser does not support gamepads API
-		if (gamepads.length < this.gamepadIndex) return; // Gamepad index is out of range of connected gamepads array (this can happen if multiple gamepads are connected and one is disconnected)
-		const newGamepad = gamepads[this.gamepadIndex];
-		if (this._gamepad !== newGamepad) {
-			this._gamepad = newGamepad;
-			this.assignedIndex = newGamepad.index;
-			this.updateDs4Flag(newGamepad);
-		} else {
-			this._gamepad = newGamepad;
-		}
-		// Early-out if timestamp unchanged, but still tick hold durations to allow long-press thresholds
-		const ts = this._gamepad?.timestamp ?? null;
-		const unchanged = ts != null && this.lastSampleTimestamp === ts;
-		this.lastSampleTimestamp = ts;
-		if (unchanged) {
-			// Increment presstime for any pressed buttons; clear edge flags
-			for (const button of Input.BUTTON_IDS) {
-				const st = this.gamepadButtonStates[button];
-				if (!st) continue;
-				if (st.pressed) {
-					st.presstime = (st.presstime ?? 0) + 1;
-					st.justpressed = false;
-					st.justreleased = false;
-				}
-			}
-			return;
-		}
-
-		// Initialize the individual gamepad button states if they are not already initialized
-		Input.BUTTON_IDS.forEach(button => this.gamepadButtonStates[button] || (this.gamepadButtonStates[button] = makeButtonState()));
-
-		// Check whether any axes have been triggered
-		this.pollGamepadAxes(this.gamepad);
-
-		// Check button states
-		this.pollGamepadButtons(this.gamepad);
-	}
-
-	/**
-	 * Polls the state of the axes on the given gamepad and updates the corresponding button states.
-	 * @param gamepad The gamepad to poll.
-	 */
-	private pollGamepadAxes(gamepad: Gamepad): void {
-		const now = performance.now();
-		const axes = gamepad.axes;
-		const x = axes.length > 0 ? axes[0] : 0;
-		const y = axes.length > 1 ? axes[1] : 0;
-
-		// Radial deadzone and normalization
-		const mag = Math.hypot(x, y);
-		const dz = GamepadInput.RADIAL_DEADZONE;
-		let nx = 0, ny = 0, nmag = 0;
-		if (mag > dz) {
-			const k = (mag - dz) / (1 - dz);
-			if (mag > 0) { nx = (x / mag) * k; ny = (y / mag) * k; }
-			nmag = Math.min(1, Math.max(0, k));
-		}
-
-		// Update analog values on LS
-		const lsState = this.gamepadButtonStates['ls'] ?? makeButtonState();
-		lsState.value2d = [nx, ny];
-		lsState.value = nmag;
-		lsState.timestamp = now;
-		this.gamepadButtonStates['ls'] = lsState;
-
-		// Digitalize with hysteresis
-		const on = GamepadInput.AXIS_ON, off = GamepadInput.AXIS_OFF;
-		const leftNow = nx < 0 ? -nx >= (this.axisDigitalState.left ? off : on) : false;
-		const rightNow = nx > 0 ? nx >= (this.axisDigitalState.right ? off : on) : false;
-		const upNow = ny < 0 ? -ny >= (this.axisDigitalState.up ? off : on) : false;
-		const downNow = ny > 0 ? ny >= (this.axisDigitalState.down ? off : on) : false;
-
-		this.axisDigitalState.left = leftNow;
-		this.axisDigitalState.right = rightNow;
-		this.axisDigitalState.up = upNow;
-		this.axisDigitalState.down = downNow;
-
-		// Only set pressed flags here; edges handled in pollGamepadButtons
-		const leftState = this.gamepadButtonStates['left'];
-		const rightState = this.gamepadButtonStates['right'];
-		const upState = this.gamepadButtonStates['up'];
-		const downState = this.gamepadButtonStates['down'];
-		if (!leftState || !rightState || !upState || !downState) {
-			throw new Error('[GamepadInput] Axis digital states not initialised.');
-		}
-		leftState.pressed = leftNow || leftState.pressed;
-		rightState.pressed = rightNow || rightState.pressed;
-		upState.pressed = upNow || upState.pressed;
-		downState.pressed = downNow || downState.pressed;
-
-		// Right stick analog capture (axes 2,3)
-		const rx = axes.length > 2 ? axes[2] : 0;
-		const ry = axes.length > 3 ? axes[3] : 0;
-		const rmag = Math.hypot(rx, ry);
-		let rnx = 0, rny = 0, rnmag = 0;
-		if (rmag > dz) {
-			const rk = (rmag - dz) / (1 - dz);
-			if (rmag > 0) { rnx = (rx / rmag) * rk; rny = (ry / rmag) * rk; }
-			rnmag = Math.min(1, Math.max(0, rk));
-		}
-		const rsState = this.gamepadButtonStates['rs'] ?? makeButtonState();
-		rsState.value2d = [rnx, rny];
-		rsState.value = rnmag;
-		rsState.timestamp = now;
-		this.gamepadButtonStates['rs'] = rsState;
-	}
-
-	/**
-	 * Polls the state of all buttons on the given gamepad and updates the corresponding button states.
-	 * @param gamepad The gamepad to poll.
-	 */
-	private pollGamepadButtons(gamepad: Gamepad): void {
-		const buttons = gamepad.buttons;
-		if (!Array.isArray(buttons)) {
-			throw new Error('[GamepadInput] Gamepad buttons not available.');
-		}
-		const now = performance.now();
-		for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
-			const gamepadButton = buttons[btnIndex];
-			const pressed = gamepadButton.pressed;
-			const buttonValue = Math.max(0, Math.min(1, gamepadButton.value));
-			// Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
-			const buttonId = Input.INDEX2BUTTON[btnIndex as keyof typeof Input.INDEX2BUTTON];
-			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
-			const axisPress = (buttonId === 'left' && this.axisDigitalState.left)
-				|| (buttonId === 'right' && this.axisDigitalState.right)
-				|| (buttonId === 'up' && this.axisDigitalState.up)
-				|| (buttonId === 'down' && this.axisDigitalState.down);
-			const isDown = pressed || axisPress;
-			const wasDown = !!prev.pressed;
-			if (isDown) {
-				if (!wasDown) {
-					const pid = this.nextPressId++;
-					this.gamepadButtonStates[buttonId] = makeButtonState({
-						pressed: true,
-						justpressed: true,
-						waspressed: true,
-						presstime: 0,
-						timestamp: now,
-						pressedAtMs: now,
-						pressId: pid,
-						value: buttonValue,
-					});
-				} else {
-					const st = prev;
-					st.pressed = true;
-					st.justpressed = false;
-					st.justreleased = false;
-					st.waspressed = true;
-					st.presstime = (st.presstime ?? 0) + 1;
-					st.value = buttonValue;
-					this.gamepadButtonStates[buttonId] = st;
-				}
-			} else {
-				const jr = wasDown;
-				this.gamepadButtonStates[buttonId] = makeButtonState({
-					pressed: false,
-					justpressed: false,
-					justreleased: jr,
-					waspressed: prev.waspressed || wasDown,
-					wasreleased: prev.wasreleased || jr,
-					consumed: false,
-					timestamp: now,
-					releasedAtMs: jr ? now : prev.releasedAtMs ?? null,
-					pressId: jr ? prev.pressId ?? null : prev.pressId ?? null,
-					value: 0,
-				});
-			}
-		}
-	}
-
-	/**
-	 * Returns the pressed state of a gamepad button, and optionally checks if it was clicked.
-	 * @param btn - The index of the button to check the state of.
-	 * @returns The pressed state of the button.
-	 */
-	public getButtonState(btn: string): ButtonState {
-		const stateMap = this.gamepadButtonStates;
-		return getPressedState(stateMap, btn);
-	}
-
-	/**
-	 * Consumes the given button press for the specified player index.
-	 * @param button The button to consume.
-	 */
-	public consumeButton(button: string) {
-		if (!this.gamepadButtonStates[button]) {
-			throw new Error(`[GamepadInput] Attempted to consume button '${button}' before it was initialised.`);
-		}
-		this.gamepadButtonStates[button].consumed = true;
-	}
-
-	/**
-	 * Resets the state of all gamepad buttons.
-	 * @param except An optional array of buttons to exclude from the reset.
-	 */
-	public reset(except?: string[]): void {
-		if (!except) {
-			Object.values(this.gamepadButtonStates).forEach(state => Object.assign(state, makeButtonState()));
-			this.axisDigitalState = { left: false, right: false, up: false, down: false };
-		} else {
-			resetObject(this.gamepadButtonStates, except);
-		}
-	}
-
-	/** Clean up event listeners and close HID device */
-	public dispose(): void {
-		this.handleDisconnect();
-	}
-
-	private handleDisconnect(): void {
-		if (this._gamepad) {
-			this._gamepad = null;
-			this.updateDs4Flag(null);
-		}
-		this.lastSampleTimestamp = null;
-		this.reset();
-		void this.hidPad.close();
-	}
+  public dispose(): void {
+	this.reset();
+	this.hidPad.disconnect();
+  }
 }

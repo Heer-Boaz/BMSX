@@ -7,7 +7,7 @@ import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
-import type { Identifier } from '../rompack/rompack';
+import type { Identifier, Registerable } from '../rompack/rompack';
 import { Input } from './input';
 import { id_to_space_symbol } from '../core/space';
 
@@ -146,24 +146,24 @@ export class ControllerAssignmentUI extends WorldObject {
 	}
 
 	@subscribesToGlobalEvent('controller_assignment_start', true)
-	public startUIAssignmentProcess(gamepadIndex: number, proposedPlayerIndex: number | null): void {
-		const icon = this.ensureIcon(gamepadIndex);
-		icon.playerIndex = proposedPlayerIndex;
-		icon.x = this.calcIconPositionX(gamepadIndex);
+	public startUIAssignmentProcess(_event_name: string, _emitter: Registerable, payload: EventPayload & { gamepadIndex: number, proposedPlayerIndex: number | null }): void {
+		const icon = this.ensureIcon(payload.gamepadIndex);
+		icon.playerIndex = payload.proposedPlayerIndex;
+		icon.x = this.calcIconPositionX(payload.gamepadIndex);
 		icon.y = ControllerAssignmentUI.start.y;
 	}
 
 	// Event: emitted from PendingAssignmentProcessor
 	@subscribesToGlobalEvent('controller_assignment_proposed', true)
-	onProposed(_source: any, payload: { gamepadIndex: number; proposedPlayerIndex: number | null }) {
-		if (!this.icons.has(payload.gamepadIndex)) this.startUIAssignmentProcess(payload.gamepadIndex, payload.proposedPlayerIndex);
+	onProposed(event_name: string, emitter: Registerable, payload: { gamepadIndex: number; proposedPlayerIndex: number | null }) {
+		if (!this.icons.has(payload.gamepadIndex)) this.startUIAssignmentProcess(event_name, emitter, payload);
 		// Update sprite immediately for this device
 		const icon = this.icons.get(payload.gamepadIndex);
 		if (icon) icon.playerIndex = payload.proposedPlayerIndex;
 	}
 
 	@subscribesToGlobalEvent('controller_assigned', true)
-	onAssigned(_source: any, payload: { gamepadIndex?: number }) {
+	onAssigned(_event_name: string, _emitter: Registerable, payload: EventPayload & { gamepadIndex?: number }) {
 		// Icons listen to FSM events declared in their blueprint; no manual dispatch required.
 		// Remove only the icon for the given gamepad; it will self-dispose via FSM.
 		const { gamepadIndex } = payload;
@@ -174,7 +174,7 @@ export class ControllerAssignmentUI extends WorldObject {
 	}
 
 	@subscribesToGlobalEvent('controller_assignment_cancelled', true)
-	onCancelled(_source: any, payload: { gamepadIndex?: number }) {
+	onCancelled(_event_name: string, _emitter: Registerable, payload: EventPayload & { gamepadIndex?: number }) {
 		// Icons listen to FSM events declared in their blueprint; no manual dispatch required.
 		const { gamepadIndex } = payload;
 		if (gamepadIndex == null) {

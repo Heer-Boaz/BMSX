@@ -1,6 +1,5 @@
-import { getPressedState, Input, makeButtonState, options, resetObject } from './input';
+import { getPressedState, Input, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
-import { Platform } from '../platform/platform_services';
 
 /**
  * Represents a keyboard input handler that implements the IInputHandler interface.
@@ -34,31 +33,10 @@ export class KeyboardInput implements InputHandler {
 
 	private nextPressId = 1;
 
-	constructor() {
+	constructor(public readonly deviceId: string = 'keyboard:0') {
 		this.keyStates = {};
 		this.gamepadButtonStates = {};
 		this.reset();
-
-		const inputSvc = Platform.instance.input;
-		const target: EventTarget = (typeof window !== 'undefined' ? window : (globalThis as unknown as EventTarget));
-		inputSvc.addEventListener(target, 'keydown', (e: any) => {
-			const input = Input.instance;
-			if (input?.shouldCaptureKey(e.code)) {
-				e.preventDefault();
-				e.stopPropagation();
-				e.stopImmediatePropagation();
-			}
-			this.keydown(e.code);
-		}, options);
-		inputSvc.addEventListener(target, 'keyup', (e: any) => {
-			const input = Input.instance;
-			if (input?.shouldCaptureKey(e.code)) {
-				e.preventDefault();
-				e.stopPropagation();
-				e.stopImmediatePropagation();
-			}
-			this.keyup(e.code);
-		}, options);
 	}
 
 	/**
@@ -184,6 +162,8 @@ export class KeyboardInput implements InputHandler {
 		});
 	}
 
+	public ingestButton(_code: string, _state: ButtonState): void {}
+
 	/**
 	 * Sets the key state to true when a key is pressed.
 	 * @param key_code - The button ID or string representing the key.
@@ -225,8 +205,6 @@ export class KeyboardInput implements InputHandler {
 	}
 
 	dispose(): void {
-		window.removeEventListener('keydown', e => { this.keydown(e.code); }, options);
-		window.removeEventListener('keyup', e => { this.keyup(e.code); }, options);
 		this.reset();
 		this.keyStates = {};
 		this.gamepadButtonStates = {};

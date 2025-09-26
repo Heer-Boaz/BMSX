@@ -2,7 +2,7 @@ import { AudioEventMapEntry } from '../audio/audioeventmanager';
 import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
-import type { PlatformServices } from '../platform/platform_services';
+import type { PlatformServices } from '../core/platform';
 
 export interface RomPack {
 	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.

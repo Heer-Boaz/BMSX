@@ -1,10 +1,14 @@
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
-import { Platform } from '../../src/bmsx/platform/platform_services';
-import { BrowserPlatformServices } from '../../src/bmsx/platform/browser_platform';
+import { bootstrapBrowserPlatform } from '../../src/bmsx/host/browser/bootstrap';
+import { Platform } from 'bmsx/core/platform';
 
-Platform.initialize(new BrowserPlatformServices());
+const surfaceElement = document.getElementById('gamescreen');
+if (!(surfaceElement instanceof HTMLElement)) {
+	throw new Error('Boot ROM bootstrap failed: #gamescreen element not found.');
+}
+bootstrapBrowserPlatform(surfaceElement);
 
 declare global {
 	interface Window {

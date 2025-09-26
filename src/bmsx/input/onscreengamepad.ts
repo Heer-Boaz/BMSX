@@ -1,7 +1,6 @@
 import { getPressedState, Input, makeButtonState, options, resetObject } from './input';
 import type { BGamepadButton, VibrationParams } from './inputtypes';
 import { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
-import { Platform } from '../platform/platform_services';
 
 /**
  * Represents an on-screen gamepad for handling input in a game.
@@ -252,15 +251,14 @@ export class OnscreenGamepad implements InputHandler {
 		this.controller = new AbortController();
 		const signal = this.controller.signal;
 
-		const inputSvc = Platform.instance.input;
 		const addPointerListeners = (controlsElement: HTMLElement, action_type: 'dpad' | 'action') => {
 			// Hint browsers: this region is interactive only
 			try { controlsElement.style.touchAction = 'none'; } catch { console.info('Failed to set touch-action:none on onscreen gamepad controls element. This may affect touch input behavior, but I wouldn\'t worry about it.'); }
-			inputSvc.addEventListener(controlsElement, 'pointerdown', e => { this.handlePointerDown(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
-			inputSvc.addEventListener(controlsElement, 'pointermove', e => { this.handlePointerMove(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
-			inputSvc.addEventListener(controlsElement, 'pointerup', e => { this.handlePointerUp(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
-			inputSvc.addEventListener(controlsElement, 'pointercancel', e => { this.handlePointerUp(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
-			inputSvc.addEventListener(controlsElement, 'lostpointercapture', e => { this.handlePointerUp(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('pointerdown', e => { this.handlePointerDown(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('pointermove', e => { this.handlePointerMove(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('pointerup', e => { this.handlePointerUp(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('pointercancel', e => { this.handlePointerUp(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
+			controlsElement.addEventListener('lostpointercapture', e => { this.handlePointerUp(e as PointerEvent, action_type, controlsElement); return true; }, { ...options, signal });
 		};
 
 		const doc = typeof document !== 'undefined' ? document : null;
@@ -273,11 +271,10 @@ export class OnscreenGamepad implements InputHandler {
 		addPointerListeners(buttonControls, 'action');
 		// No global touchstart preventDefault; rely on CSS touch-action and pointer capture.
 
-		const globalWindow: EventTarget | null = typeof window !== 'undefined' ? window : null;
-		if (globalWindow) {
-			inputSvc.addEventListener(globalWindow, 'blur', e => this.blur(e as FocusEvent), { signal });
-			inputSvc.addEventListener(globalWindow, 'focus', e => this.focus(e as FocusEvent), { signal });
-			inputSvc.addEventListener(globalWindow, 'mouseout', () => this.reset(), { ...options, signal });
+		if (typeof window !== 'undefined') {
+			window.addEventListener('blur', e => this.blur(e as FocusEvent), { signal });
+			window.addEventListener('focus', e => this.focus(e as FocusEvent), { signal });
+			window.addEventListener('mouseout', () => this.reset(), { ...options, signal });
 		}
 	}
 

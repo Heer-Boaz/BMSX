@@ -2,9 +2,7 @@ import { ActionDefinitionEvaluator } from './actionparser';
 import { Input, InputStateManager, makeActionState, makeButtonState } from './input';
 import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, GamepadBinding, GamepadInputMapping, InputHandler, InputMap, KeyboardBinding, KeyboardInputMapping, PointerBinding, PointerInputMapping, VibrationParams } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
-import { OnscreenGamepad } from './onscreengamepad';
 import { ContextStack, MappingContext } from './context';
-import { Platform } from '../platform/platform_services';
 
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
@@ -25,15 +23,9 @@ export class PlayerInput {
 		pointer: null,
 	};
 
-	/** Holds per-button pressed state flags from the previous frame for each handler. */
-	private previousStates: { [source in InputSource]: Record<string, boolean> } = {
-		keyboard: {},
-		gamepad: {},
-		pointer: {},
-	};
 
 	/** Manages buffered input events and button state aggregation. */
-	private stateManager: InputStateManager;
+	private _stateManager: InputStateManager;
 
 	/** Context stack for layered action maps */
 	private contexts: ContextStack = new ContextStack();
@@ -46,8 +38,6 @@ export class PlayerInput {
 	 * Currently used for determining whether to assign the on-screen gamepad automatically if any other assigned gamepad is disconnected.
 	 * @returns {boolean} True if the player is the main player, false otherwise.
 	 */
-	private get isMainPlayer(): boolean { return this.playerIndex === 1; }
-
 	/**
 	 * The input maps for each player.
 	 * @private
@@ -93,6 +83,10 @@ export class PlayerInput {
 
 	public checkActionsTriggered(...actions: { id: string; def: string; }[]): string[] {
 		return actions.filter(action => this.checkActionTriggered(action.def)).map(action => action.id);
+	}
+
+	public get stateManager(): InputStateManager {
+		return this._stateManager;
 	}
 
 	/**
@@ -237,13 +231,13 @@ export class PlayerInput {
 		const keyboardState = getStates(
 			keyboardKeys,
 			(key: ButtonId, framewindow?: number) => framewindow !== null
-				? this.stateManager.getButtonState(key, framewindow)
+				? this._stateManager.getButtonState(key, framewindow)
 				: this.getButtonState(key, 'keyboard')
 		);
 		const gamepadState = getStates(
 			gamepadButtons,
 			(button: ButtonId, framewindow?: number) => framewindow !== null
-				? this.stateManager.getButtonState(button, framewindow)
+				? this._stateManager.getButtonState(button, framewindow)
 				: this.getButtonState(button, 'gamepad')
 		);
 		const pointerState = getStates(
@@ -384,7 +378,7 @@ export class PlayerInput {
 					if (buttonState.pressed && !buttonState.consumed) {
 						handler.consumeButton(key);
 					}
-					this.stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
+					this._stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
 				}
 			} else if (source === 'gamepad') {
 				const keysOrButtons: GamepadBinding[] = inputMap.gamepad?.[action] ?? [];
@@ -394,7 +388,7 @@ export class PlayerInput {
 					if (buttonState.pressed && !buttonState.consumed) {
 						handler.consumeButton(key);
 					}
-					this.stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
+					this._stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
 				}
 			} else if (source === 'pointer') {
 				const keysOrButtons: PointerBinding[] = inputMap.pointer?.[action] ?? [];
@@ -404,7 +398,7 @@ export class PlayerInput {
 					if (buttonState.pressed && !buttonState.consumed) {
 						handler.consumeButton(key);
 					}
-					this.stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
+					this._stateManager.consumeBufferedEvent(key, buttonState.pressId ?? undefined);
 				}
 			}
 		}
@@ -475,228 +469,99 @@ export class PlayerInput {
 	assignGamepadToPlayer(gamepadInput: InputHandler): void {
 		if (this.inputHandlers['gamepad'] && this.inputHandlers['gamepad'] !== gamepadInput) {
 			console.warn(`Replacing existing gamepad for player ${this.playerIndex} with gamepad ${gamepadInput.gamepadIndex}.`);
-			if (this.inputHandlers['gamepad'] instanceof OnscreenGamepad) {
-				console.warn(`Existing gamepad ${gamepadInput.gamepadIndex} is an on-screen gamepad that will be reassigned.`);
-			}
+			this.inputHandlers['gamepad']?.reset();
 		}
-		// Clear existing gamepad input
-		this.inputHandlers['gamepad']?.reset();
-		this.previousStates['gamepad'] = {};
-
 		this.inputHandlers['gamepad'] = gamepadInput;
-
 		console.info(`Gamepad ${gamepadInput.gamepadIndex} assigned to player ${this.playerIndex}.`);
+	}
+
+	public clearGamepad(handler: InputHandler): void {
+		if (this.inputHandlers['gamepad'] !== handler) return;
+		this.inputHandlers['gamepad'] = null;
+		handler.reset();
 	}
 
 	/**
 	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
 	 */
 	pollInput(currentTime: number): void {
-		this.stateManager.beginFrame(currentTime);
+		this._stateManager.beginFrame(currentTime);
 		for (const source of INPUT_SOURCES) {
-			const handler: InputHandler = this.inputHandlers[source];
+			const handler = this.inputHandlers[source];
 			if (!handler) continue;
 			handler.pollInput();
+		}
+		this.processPendingRebind();
+	}
 
-			if (source === 'gamepad') {
-				for (const button of Input.BUTTON_IDS) {
-					const state = handler.getButtonState(button);
-					const prev = this.previousStates[source][button] ?? false;
-
-				if (state.justpressed) {
-					this.stateManager.addInputEvent({
-						eventType: 'press',
-						identifier: button,
-						timestamp: state.timestamp,
-						consumed: false,
-						pressId: state.pressId ?? null,
-					});
-				}
-
-				if (!state.pressed && prev) {
-					this.stateManager.addInputEvent({
-						eventType: 'release',
-						identifier: button,
-						timestamp: state.timestamp,
-						consumed: false,
-						pressId: state.pressId ?? null,
-					});
-				}
-
-					this.previousStates[source][button] = state.pressed;
-				}
+	private processPendingRebind(): void {
+		if (!this.pendingRebind) return;
+		const { action, source, mode } = this.pendingRebind;
+		const handler = this.inputHandlers[source];
+		if (!handler) return;
+		let capturedKb: string | null = null;
+		let capturedGp: BGamepadButton | null = null;
+		if (source === 'gamepad') {
+			for (const button of Input.BUTTON_IDS) {
+				const st = handler.getButtonState(button);
+				if (st?.justpressed) { capturedGp = button; break; }
 			}
-			else if (source === 'keyboard') {
-				const kbHandler = handler instanceof KeyboardInput ? handler : null;
-				if (!kbHandler) continue;
-				for (const key of Object.keys(kbHandler.keyStates)) {
-					const state = kbHandler.getButtonState(key);
-					const prev = this.previousStates[source][key] ?? false;
-
-					if (state.justpressed) {
-						this.stateManager.addInputEvent({
-							eventType: 'press',
-							identifier: key,
-							timestamp: state.timestamp,
-							consumed: false,
-							pressId: state.pressId ?? null,
-						});
-					}
-
-					if (!state.pressed && prev) {
-						this.stateManager.addInputEvent({
-							eventType: 'release',
-							identifier: key,
-							timestamp: state.timestamp,
-							consumed: false,
-							pressId: state.pressId ?? null,
-						});
-					}
-
-					this.previousStates[source][key] = state.pressed;
-				}
-			}
-			else if (source === 'pointer') {
-				for (const button of Input.POINTER_BUTTONS) {
-					const state = handler.getButtonState(button);
-					const prev = this.previousStates[source][button] ?? false;
-
-					if (state.justpressed) {
-						this.stateManager.addInputEvent({
-							eventType: 'press',
-							identifier: button,
-							timestamp: state.timestamp,
-							consumed: false,
-							pressId: state.pressId ?? null,
-						});
-					}
-
-					if (!state.pressed && prev) {
-						this.stateManager.addInputEvent({
-							eventType: 'release',
-							identifier: button,
-							timestamp: state.timestamp,
-							consumed: false,
-							pressId: state.pressId ?? null,
-						});
-					}
-
-					this.previousStates[source][button] = state.pressed;
-				}
+		} else if (handler instanceof KeyboardInput) {
+			for (const key of Object.keys(handler.keyStates)) {
+				const st = handler.getButtonState(key);
+				if (st?.justpressed) { capturedKb = key; break; }
 			}
 		}
-
-		// If rebinding, capture first just-pressed binding on the selected source
-		if (this.pendingRebind) {
-			const { action, source, mode } = this.pendingRebind;
-			const handler = this.inputHandlers[source];
-			if (handler) {
-				let capturedKb: string | null = null;
-				let capturedGp: BGamepadButton | null = null;
-				if (source === 'gamepad') {
-					for (const button of Input.BUTTON_IDS) {
-						const st = handler.getButtonState(button);
-						if (st?.justpressed) { capturedGp = button; break; }
-					}
-				} else if (handler instanceof KeyboardInput) {
-					for (const key of Object.keys(handler.keyStates)) {
-						const st = handler.getButtonState(key);
-						if (st?.justpressed) { capturedKb = key; break; }
-					}
-				}
-				if (capturedKb !== null || capturedGp !== null) {
-					if (capturedKb !== null) {
-						const id = capturedKb;
-						const arr: KeyboardBinding[] = this.inputMap.keyboard[action] ?? [];
-						const exists = arr.some((b) => (typeof b === 'string' ? b : b.id) === id);
-						const base: KeyboardBinding[] = (mode === 'replace') ? [] : (exists ? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id) : arr);
-						base.push(id);
-						this.inputMap.keyboard[action] = base;
-						// Conflict policy
-						for (const act in this.inputMap.keyboard) {
-							if (act === action) continue;
-							this.inputMap.keyboard[act] = (this.inputMap.keyboard[act] ?? []).filter(b => (typeof b === 'string' ? b : b.id) !== id);
-						}
-					} else if (capturedGp !== null) {
-						const id = capturedGp;
-						const arr: GamepadBinding[] = this.inputMap.gamepad[action] ?? [];
-						const exists = arr.some((b) => (typeof b === 'string' ? b : b.id) === id);
-						const base: GamepadBinding[] = (mode === 'replace') ? [] : (exists ? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id) : arr);
-						base.push(id);
-						this.inputMap.gamepad[action] = base;
-						// Conflict policy
-						for (const act in this.inputMap.gamepad) {
-							if (act === action) continue;
-							this.inputMap.gamepad[act] = (this.inputMap.gamepad[act] ?? []).filter(b => (typeof b === 'string' ? b : b.id) !== id);
-						}
-					}
-
-					// Persist
-					try { localStorage.setItem(`bmsx_bindings_p${this.playerIndex}`, JSON.stringify(this.inputMap)); } catch {
-						/* ignore */
-						console.warn(`Failed to persist bindings to localStorage for player ${this.playerIndex}.`);
-					}
-
-					this.pendingRebind = null;
-				}
+		if (capturedKb === null && capturedGp === null) return;
+		if (capturedKb !== null) {
+			const id = capturedKb;
+			const arr = this.inputMap.keyboard[action] ?? [];
+			const exists = arr.some(b => (typeof b === 'string' ? b : b.id) === id);
+			const base = mode === 'replace'
+				? []
+				: exists
+					? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id)
+					: arr.slice();
+			base.push(id);
+			this.inputMap.keyboard[action] = base;
+			for (const act of Object.keys(this.inputMap.keyboard)) {
+				if (act === action) continue;
+				const list = this.inputMap.keyboard[act] ?? [];
+				this.inputMap.keyboard[act] = list.filter(b => (typeof b === 'string' ? b : b.id) !== id);
 			}
 		}
+		if (capturedGp !== null) {
+			const id = capturedGp;
+			const arr = this.inputMap.gamepad[action] ?? [];
+			const exists = arr.some(b => (typeof b === 'string' ? b : b.id) === id);
+			const base = mode === 'replace'
+				? []
+				: exists
+					? arr.filter(b => (typeof b === 'string' ? b : b.id) !== id)
+					: arr.slice();
+			base.push(id);
+			this.inputMap.gamepad[action] = base;
+			for (const act of Object.keys(this.inputMap.gamepad)) {
+				if (act === action) continue;
+				const list = this.inputMap.gamepad[act] ?? [];
+				this.inputMap.gamepad[act] = list.filter(b => (typeof b === 'string' ? b : b.id) !== id);
+			}
+		}
+		this.pendingRebind = null;
 	}
 
 	/** Updates aggregated button states and cleans up stale events. */
 	update(currentTime: number): void {
-		this.stateManager.update(currentTime);
+		this._stateManager.update(currentTime);
 	}
 
 	/**
 	 * Initializes the input system.
 	 */
 	public constructor(public playerIndex: number) {
-		this.stateManager = new InputStateManager();
-		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
+		this._stateManager = new InputStateManager();
+		this.inputHandlers['gamepad'] = null;
 		this.reset();
-
-		const globalWindow: EventTarget | null = typeof window !== 'undefined' ? window : null;
-		if (globalWindow) {
-			Platform.instance.input.addEventListener(globalWindow, 'gamepaddisconnected', (evt: Event) => {
-				const e = evt as GamepadEvent;
-			const gamepad = e.gamepad;
-
-			if (!this.inputHandlers['gamepad']) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
-
-			if (e.gamepad.index === this.inputHandlers['gamepad'].gamepadIndex) {
-				if (this.playerIndex) {
-					console.info(`Gamepad ${gamepad.index}, that was assigned to player ${this.playerIndex}, disconnected.`);
-					this.previousStates['gamepad'] = {};
-					this.inputHandlers['gamepad']?.dispose();
-					this.inputHandlers['gamepad'] = null; // Remove gamepad for this input-object
-
-					// If this is the main player, assign the on-screen gamepad to the main player, if the onscreen gamepad is enabled and that onscreen gamepad is not already assigned to another player
-					if (this.isMainPlayer && Input.instance.isOnscreenGamepadEnabled) {
-						// Check whether the onscreen gamepad is being used by another player
-						let isOnscreenGamepadAssignedToAnotherPlayer = false;
-						for (let i = 1; i < Input.PLAYERS_MAX; i++) {
-							if (i === this.playerIndex) continue;
-							const playerInput = Input.instance.getPlayerInput(i);
-							if (playerInput.inputHandlers['gamepad'] instanceof OnscreenGamepad) {
-								isOnscreenGamepadAssignedToAnotherPlayer = true;
-								break;
-							}
-						}
-
-						if (!isOnscreenGamepadAssignedToAnotherPlayer) {
-							Input.instance.enableOnscreenGamepad();
-							this.inputHandlers['gamepad'] = Input.instance.getOnscreenGamepad();
-							console.info(`On-screen gamepad assigned to player ${this.playerIndex}, which is the main player.`);
-						}
-						else {
-							console.info(`On-screen gamepad is already assigned to another player and will not be assigned to player ${this.playerIndex}, which is the main player.`);
-						}
-					}
-				}
-			}
-		});
-		}
 	}
 
 	/**
@@ -721,10 +586,7 @@ export class PlayerInput {
 
 	/** Clears cached transition state so edge detectors don't fire spuriously. */
 	public clearEdgeState(): void {
-		this.stateManager.resetEdgeState();
-		for (const source of INPUT_SOURCES) {
-			this.previousStates[source] = {};
-		}
+		this._stateManager.resetEdgeState();
 	}
 
 	/**

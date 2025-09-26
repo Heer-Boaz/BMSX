@@ -16,8 +16,6 @@
 		<link rel="preconnect" href="https://fonts.googleapis.com">
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 		<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-		<script id="bootrom">//#bootromjs</script>
-		<script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
 		<style>
 			/*#css*/
 		</style>
@@ -143,8 +141,9 @@
 				<canvas id="gamescreen" hidden></canvas>
 			</div>
 		</div>
-	</body>
-	<script id="bload-script">
+		<script id="bootrom">//#bootromjs</script>
+		<script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
+		<script id="bload-script">
 		//#debug
 		window.onload = function () {
 			const romurl = getRomFromUrlParameter() ?? '#outfile';
@@ -155,6 +154,7 @@
 				bootrom.outputError(err?.message ?? err);
 			});
 		}
-	</script>
+		</script>
+	</body>
 
 </html>

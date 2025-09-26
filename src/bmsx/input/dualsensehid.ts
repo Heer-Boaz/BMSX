@@ -6,7 +6,8 @@
  * 0x0DF2 = DualSense Edge
  * 0x09cc = DualShock 4
  */
-import { Platform } from '../platform/platform_services';
+import { $ } from 'bmsx/core/game';
+import { Platform } from '../core/platform';
 
 const SONY_VID = 0x054C;
 const DUALSENSE_EDGE_PID = 0x0DF2; // DualSense Edge
@@ -52,14 +53,12 @@ export class DualSenseHID {
 		}
 		if (!DualSenseHID.pendingRequest) {
 			// Pause the game while the browser permission dialog is visible
-			const g = global as unknown as { $?: { paused?: boolean } };
-			const game = g.$;
-			if (!game) {
+			if (!$) {
 				throw new Error('[DualSenseHID] Global game state not initialised when requesting HID permissions.');
 			}
-			const wasPaused = !!game.paused;
+			const wasPaused = !!$.paused;
 			if (!wasPaused) {
-				game.paused = true;
+				$.paused = true;
 			}
 
 			const filters = ids
@@ -70,7 +69,7 @@ export class DualSenseHID {
 				.finally(() => {
 					DualSenseHID.pendingRequest = null;
 					if (!wasPaused) {
-						game.paused = false;
+						$.paused = false;
 					}
 				});
 		}
@@ -124,8 +123,15 @@ export class DualSenseHID {
 		return { vendorId, productId };
 	}
 
+	public inferIsDs4(description: string): boolean {
+		const ids = this.parseGamepadId(description);
+		if (!ids) return false;
+		return ids.vendorId === SONY_VID &&
+			(ids.productId === DUALSHOCK4_PID_2013 || ids.productId === DUALSHOCK4_PID_2016);
+	}
+
 	/** Requests the Sony HID device and initializes it. */
-	public async init(gamepad?: Gamepad): Promise<void> {
+	public async initForDevice(gamepadIndex: number, description: string): Promise<void> {
 		const hid = Platform.instance.hid;
 		if (!hid?.isSupported()) {
 			console.warn("HID API not supported on this platform.");
@@ -134,13 +140,10 @@ export class DualSenseHID {
 
 		const known = await hid.getDevices();
 
-		let ids: { vendorId: number; productId: number } | null = null;
-		if (gamepad) {
-			this.assignedIndex = gamepad.index;
-			ids = this.parseGamepadId(gamepad.id);
-			if (!ids) {
-				console.warn(`Failed to parse VID/PID from gamepad.id: "${gamepad.id}"`);
-			}
+		this.assignedIndex = gamepadIndex;
+		const ids = this.parseGamepadId(description);
+		if (!ids) {
+			console.warn(`Failed to parse VID/PID from gamepad description: "${description}"`);
 		}
 
 		// Reuse previously assigned device if still available and matching
@@ -312,6 +315,22 @@ export class DualSenseHID {
 		}
 	}
 
+	public disconnect(): void {
+		this.stop();
+		if (this.device && this.device.opened) {
+			try {
+				this.device.close();
+			} catch (err) {
+				console.warn('Failed to close HID device:', err);
+			}
+		}
+		if (this.assignedIndex !== null) {
+			DualSenseHID.assignedDevices.delete(this.assignedIndex);
+		}
+		this.device = null;
+		this.kind = null;
+	}
+
 	/**
 	 * Sends a rumble effect to the DualSense Edge HID device.
 	 * @param strong The intensity of the strong motor (0-255).
@@ -356,7 +375,7 @@ export class DualSenseHID {
 		// Automatically stop after `duration` ms.
 		if (duration > 0) {
 			clearTimeout(this.rumbleTimer);
-			this.rumbleTimer = window.setTimeout(() => this.stop(), duration);
+			this.rumbleTimer = globalThis.setTimeout(() => this.stop(), duration) as unknown as number;
 		}
 	}
 
