@@ -17,14 +17,26 @@ export class SpriteColliderSyncSystem extends ECSystem {
 		for (const [o, sprite] of world.objectsWithComponents(SpriteComponent, { scope: 'active' })) {
 			const col = resolveColliderForSprite(o, sprite);
 			if (!col) continue;
-			const id = sprite.imgid ?? 'none';
-			const flip_h = !!sprite.flip?.flip_h;
-			const flip_v = !!sprite.flip?.flip_v;
+			const id = sprite.imgid;
+			const flip_h = !!sprite.flip.flip_h;
+			const flip_v = !!sprite.flip.flip_v;
 			const token = `${id}|${flip_h ? 1 : 0}|${flip_v ? 1 : 0}`;
 			if (col.syncToken === token) continue;
+			if (id === 'none') {
+				col.setLocalArea(null);
+				col.setLocalPolygons(null);
+				col.syncToken = token;
+				continue;
+			}
 
-			const imgmeta = $rompack['img'][id]?.['imgmeta'];
-			if (!imgmeta) { col.setLocalArea(null); col.setLocalPolygons(null); col.syncToken = token; continue; }
+			const entry = $rompack.img[id];
+			if (!entry) {
+				throw new Error(`[SpriteColliderSyncSystem] Sprite asset '${id}' not found in rompack.`);
+			}
+			const imgmeta = entry['imgmeta'];
+			if (!imgmeta) {
+				throw new Error(`[SpriteColliderSyncSystem] Sprite asset '${id}' is missing metadata.`);
+			}
 
 			const box = imgmeta['boundingbox'] as BoundingBoxPrecalc | undefined;
 			if (box) col.setLocalArea(selectBoundingBox(flip_h, flip_v, box));

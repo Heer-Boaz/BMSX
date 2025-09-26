@@ -236,8 +236,8 @@ export function createTestromModule() {
 			// Bind camera to path with look-ahead + auto-rotation
 			const camBinder = new CameraPathBinder(runner, activeCam, { autoRotate: true, lookAheadU: 0.02 });
 			// Hook timeline camera events
-			eventTimeline.on('camera.fovPulse', d => camBinder.startFovPulse(d), this);
-			eventTimeline.on('camera.shake', d => camBinder.startShake(d), this);
+			eventTimeline.on('camera.fovPulse', (_event, _emitter, payload) => camBinder.startFovPulse(payload), this);
+			eventTimeline.on('camera.shake', (_event, _emitter, payload) => camBinder.startShake(payload), this);
 
 			// Reticle & bullets setup
 			const reticle = new Reticle();

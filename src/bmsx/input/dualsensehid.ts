@@ -47,17 +47,28 @@ export class DualSenseHID {
 		if (!DualSenseHID.pendingRequest) {
 			// Pause the game while the browser permission dialog is visible
 			const g = global as unknown as { $?: { paused?: boolean } };
-			const wasPaused = g.$?.paused ?? false;
-			if (!wasPaused && g.$) g.$.paused = true;
+			const game = g.$;
+			if (!game) {
+				throw new Error('[DualSenseHID] Global game state not initialised when requesting HID permissions.');
+			}
+			const wasPaused = !!game.paused;
+			if (!wasPaused) {
+				game.paused = true;
+			}
 
 			const filters = ids
 				? [{ vendorId: ids.vendorId, productId: ids.productId }]
 				: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }));
 
+			if (typeof navigator.hid.requestDevice !== 'function') {
+				throw new Error('[DualSenseHID] navigator.hid.requestDevice is not available.');
+			}
 			DualSenseHID.pendingRequest = navigator.hid.requestDevice({ filters })
 				.finally(() => {
 					DualSenseHID.pendingRequest = null;
-					if (!wasPaused && g.$) g.$.paused = false;
+					if (!wasPaused) {
+						game.paused = false;
+					}
 				});
 		}
 		return DualSenseHID.pendingRequest;
@@ -68,7 +79,7 @@ export class DualSenseHID {
 	}
 
 	public get isConnected(): boolean {
-		return this.device?.opened ?? false;
+		return this.device !== null && this.device.opened;
 	}
 
 	/** Type of the connected HID pad */
@@ -87,8 +98,10 @@ export class DualSenseHID {
 		const vendorReg = /(vendor|vid|idvendor|0x?[0-9a-f]{4})[^0-9a-f]*([0-9a-f]{4})/i;
 		const productReg = /(product|pid|idproduct|0x?[0-9a-f]{4})[^0-9a-f]*([0-9a-f]{4})/i;
 
-		let vendorStr = vendorReg.exec(id)?.[2] ?? null;
-		let productStr = productReg.exec(id)?.[2] ?? null;
+		const vendorMatch = vendorReg.exec(id);
+		const productMatch = productReg.exec(id);
+		let vendorStr = vendorMatch ? vendorMatch[2] : null;
+		let productStr = productMatch ? productMatch[2] : null;
 
 		if (!vendorStr || !productStr) {
 			// Broader fallback: capture any two hex groups separated by non-hex
@@ -115,7 +128,10 @@ export class DualSenseHID {
 			return; // HID not supported (e.g. Safari)
 		}
 
-		const known = await navigator.hid.getDevices?.() ?? [];
+		if (typeof navigator.hid.getDevices !== 'function') {
+			throw new Error('[DualSenseHID] navigator.hid.getDevices is not available.');
+		}
+		const known = await navigator.hid.getDevices();
 
 		let ids: { vendorId: number; productId: number } | null = null;
 		if (gamepad) {
@@ -207,10 +223,16 @@ export class DualSenseHID {
 	}
 
 	private detectPadKind(dev: HIDDevice): HidPadKind {
-		const has05 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x05)); // DS4-USB
-		const has02 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x02)); // DS5-USB
-		const has11 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x11)); // DS4-BT
-		const has31 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x31)); // DS5-BT
+		const collectionHasReport = (reportId: number): boolean => {
+			return dev.collections.some(collection => {
+				const reports = collection.outputReports ?? [];
+				return reports.some(report => report.reportId === reportId);
+			});
+		};
+		const has05 = collectionHasReport(0x05); // DS4-USB
+		const has02 = collectionHasReport(0x02); // DS5-USB
+		const has11 = collectionHasReport(0x11); // DS4-BT
+		const has31 = collectionHasReport(0x31); // DS5-BT
 
 		if (has02) return 'ds5_usb';
 		if (has05) return 'ds4_usb';
@@ -283,7 +305,7 @@ export class DualSenseHID {
 			clearTimeout(this.rumbleTimer);
 			this.rumbleTimer = null;
 		}
-		if (this.device?.opened) {
+		if (this.device && this.device.opened) {
 			// Zero‑out the rumble effect
 			this.sendRumble({ strong: 0, weak: 0, duration: 0 });
 		}
@@ -296,7 +318,7 @@ export class DualSenseHID {
 	 * @param duration The duration of the rumble effect in milliseconds.
 	 */
 	public sendRumble({ strong, weak, duration }: HidRumbleParams): void {
-		if (!this.device?.opened) {
+		if (!this.device || !this.device.opened) {
 			console.warn("DualSense Edge HID device is not opened.");
 			return;
 		}
@@ -430,7 +452,7 @@ export class DualSenseHID {
 	 * Closes the HID device.
 	 */
 	public async close(): Promise<void> {
-		if (this.device?.opened) {
+		if (this.device && this.device.opened) {
 			try {
 				await this.device.close();
 			} catch (error) {

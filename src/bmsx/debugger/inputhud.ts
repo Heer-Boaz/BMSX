@@ -132,7 +132,10 @@ export class InputHUDOverlay {
 	public dispose(): void {
 		EventEmitter.instance.removeSubscriber(this);
 		const el = document.getElementById(HUD_ID);
-		if (el?.parentElement) el.parentElement.removeChild(el);
+		if (!el) return;
+		const parent = el.parentElement;
+		if (!parent) throw new Error('[InputHUD] HUD element is detached from the DOM, cannot dispose cleanly.');
+		parent.removeChild(el);
 		this.enabled = false;
 	}
 
@@ -141,20 +144,19 @@ export class InputHUDOverlay {
 		if (!this.enabled) return;
 		const hud = ensureHudElement();
 		const contentEl = document.getElementById(HUD_ID + '-content');
-		if (!contentEl) return;
+		if (!contentEl) throw new Error('[InputHUD] HUD content element is missing.');
 		const inputSvc = $.input;
-		if (!inputSvc) {
-			contentEl.textContent = 'Input service unavailable';
-			return;
-		}
+		if (!inputSvc) throw new Error('[InputHUD] Input service is not registered.');
 
 		const blocks: string[] = [];
 		for (let i = 1; i <= Input.PLAYERS_MAX; i++) {
 			const playerInput = inputSvc.getPlayerInput(i);
 			const inputMap = (playerInput as unknown as { inputMap?: InputMap }).inputMap;
-			const hasKeyboard = !!playerInput.inputHandlers['keyboard'];
-			const hasGamepad = !!playerInput.inputHandlers['gamepad'];
-			const hasOnscreenGamepad = playerInput.inputHandlers['gamepad']?.gamepadIndex === OnscreenGamepad.VIRTUAL_PAD_INDEX;
+			const keyboardHandler = playerInput.inputHandlers['keyboard'];
+			const gamepadHandler = playerInput.inputHandlers['gamepad'];
+			const hasKeyboard = keyboardHandler != null;
+			const hasGamepad = gamepadHandler != null;
+			const hasOnscreenGamepad = hasGamepad && gamepadHandler.gamepadIndex === OnscreenGamepad.VIRTUAL_PAD_INDEX;
 			const header = `Player ${i}  k:${hasKeyboard ? '✓' : '–'}  g:${hasGamepad ? '✓' : '–'}  o:${hasOnscreenGamepad ? '✓' : '–'}`;
 			const lines: string[] = [header];
 			const { actions, keyboardKeys, gamepadButtons } = extractMappings(inputMap);
@@ -194,7 +196,12 @@ export class InputHUDOverlay {
 	}
 
 	enable(): void { this.enabled = true; ensureHudElement().style.display = 'block'; this.updateNow(); }
-	disable(): void { this.enabled = false; const el = document.getElementById(HUD_ID); if (el) el.style.display = 'none'; }
+	disable(): void {
+		this.enabled = false;
+		const el = document.getElementById(HUD_ID);
+		if (!el) throw new Error('[InputHUD] disable() called before HUD element was created.');
+		el.style.display = 'none';
+	}
 
 	public bind(): void { EventEmitter.instance.initClassBoundEventSubscriptions(this); }
 	public unbind(): void { EventEmitter.instance.removeSubscriber(this); }

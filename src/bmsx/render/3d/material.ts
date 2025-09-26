@@ -26,6 +26,19 @@ export interface MaterialGPUTextures {
 	emissive?: TextureKey;
 }
 
+export interface MaterialOptions {
+	textures?: MaterialTextures;
+	textureUVs?: MaterialTextureUVs;
+	color?: color_arr;
+	metallicFactor?: number;
+	roughnessFactor?: number;
+	doubleSided?: boolean;
+	occlusionStrength?: number;
+	normalScale?: number;
+	emissiveFactor?: color_arr;
+	unlit?: boolean;
+}
+
 @insavegame
 export class Material {
 	public textures: MaterialTextures;
@@ -45,30 +58,19 @@ export class Material {
 	public surface: 'opaque' | 'masked' | 'transparent';
 	public alphaCutoff: number;
 	public doubleSided: boolean;
-	constructor(opts?: {
-		textures?: MaterialTextures;
-		textureUVs?: MaterialTextureUVs;
-		color?: color_arr;
-		metallicFactor?: number;
-		roughnessFactor?: number;
-		doubleSided?: boolean;
-		occlusionStrength?: number;
-		normalScale?: number;
-		emissiveFactor?: color_arr;
-		unlit?: boolean;
-	}) {
-		this.textures = opts?.textures ?? {};
-		this.textureUVs = opts?.textureUVs ?? {};
-		this.color = opts?.color ?? [1, 1, 1, 1];
-		this.metallicFactor = opts?.metallicFactor ?? 1.0;
-		this.roughnessFactor = opts?.roughnessFactor ?? 1.0;
-		this.occlusionStrength = opts?.occlusionStrength ?? 1.0;
-		this.normalScale = opts?.normalScale ?? 1.0;
-		this.emissiveFactor = opts?.emissiveFactor ?? [0, 0, 0, 1];
+	constructor(opts: MaterialOptions = {}) {
+		this.textures = opts.textures ?? {};
+		this.textureUVs = opts.textureUVs ?? {};
+		this.color = opts.color ?? [1, 1, 1, 1];
+		this.metallicFactor = opts.metallicFactor ?? 1.0;
+		this.roughnessFactor = opts.roughnessFactor ?? 1.0;
+		this.occlusionStrength = opts.occlusionStrength ?? 1.0;
+		this.normalScale = opts.normalScale ?? 1.0;
+		this.emissiveFactor = opts.emissiveFactor ?? [0, 0, 0, 1];
 		this.surface = 'opaque';
 		this.alphaCutoff = 0.5;
-		this.doubleSided = opts?.doubleSided ?? false;
-		this.unlit = !!opts?.unlit;
+		this.doubleSided = opts.doubleSided ?? false;
+		this.unlit = !!opts.unlit;
 	}
 
 }

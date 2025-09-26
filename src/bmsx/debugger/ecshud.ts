@@ -123,7 +123,9 @@ export class ECSHUDOverlay {
 		// World metrics snapshot
 		const world = $.world;
 		if (world) {
-			const spaces = world.spaces?.length ?? 0;
+			const spacesList = world.spaces;
+			if (!Array.isArray(spacesList)) throw new Error('[ECSHUD] World.spaces is not an array.');
+			const spaces = spacesList.length;
 			const activeSpace = world.activeSpaceId ?? 'n/a';
 			const objCount = world.countFilteredObjects(() => true);
 			const cams = world.activeCameras.length;

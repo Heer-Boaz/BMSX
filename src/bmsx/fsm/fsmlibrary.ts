@@ -1,6 +1,6 @@
 import type { EventLane, EventPayload, EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
-import { deepClone, deepEqual } from '../utils/utils';
+import { deepClone, deepEqual, hasOwn } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
@@ -92,7 +92,7 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 	const reg = HandlerRegistry.instance;
 	const className = ctor.name;
 	const entries = getDeclaredFsmHandlers(ctor);
-	if (!entries.length || !linkedMachines?.size) return;
+	if (!entries.length || !linkedMachines || linkedMachines.size === 0) return;
 	const registered: Set<string> = ctor[HANDLERS_REGISTERED] ?? new Set<string>();
 
 	for (const { name: memberName, keys } of entries) {
@@ -101,7 +101,11 @@ export function registerHandlersForLinkedMachines(ctor: any, linkedMachines: Set
 				const id = `${machine}.handlers.${className}.${key}`;
 				if (registered.has(id)) continue;
 				const fn: GenericHandler = function (this: any, ...args) {
-					let impl = this[memberName] ?? Object.getPrototypeOf(this)?.[memberName];
+					let impl = (this as Record<string, any>)[memberName];
+					if (typeof impl !== 'function') {
+						const proto = Object.getPrototypeOf(this);
+						if (proto) impl = proto[memberName];
+					}
 					if (typeof impl !== 'function') {
 						throw new Error(`Registered FSM handler "${id}" is not callable (member: ${memberName})`);
 					}
@@ -141,8 +145,11 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 	// Remove stale children
 	for (const id of oldChildren) {
 		if (!newChildren.includes(id)) {
-			node.states[id]?.dispose?.();
-			delete node.states[id];
+			if (node.states) {
+				const existing = node.states[id];
+				if (existing && typeof existing.dispose === 'function') existing.dispose();
+				delete node.states[id];
+			}
 		}
 	}
 
@@ -159,10 +166,15 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 
 	// Recurse into common children
 	for (const id of newChildren) {
-		const childInst = node.states?.[id];
+		const childInst = node.states ? node.states[id] : undefined;
 		if (childInst) {
-			const oldChildDef = oldDef?.states?.[id] as StateDefinition | undefined;
-			const newChildDef = newDef.states![id] as StateDefinition;
+			const oldChildStates = oldDef ? oldDef.states : undefined;
+			const oldChildDef = oldChildStates ? oldChildStates[id] as StateDefinition | undefined : undefined;
+			const childStates = newDef.states;
+			const newChildDef = childStates ? childStates[id] as StateDefinition : undefined;
+			if (!newChildDef) {
+				throw new Error(`State definition '${newDef.def_id}' missing child definition '${id}' during reconciliation.`);
+			}
 			reconcileStateTree(childInst, oldChildDef, newChildDef);
 
 			// Fix child's currentid if needed
@@ -176,12 +188,17 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 
 /** Merge runtime data with new defaults, respecting old defaults to detect user-changed values. */
 function migrateDataTree(node: State<Stateful>, oldDef: StateDefinition | undefined, newDef: StateDefinition) {
-	node.data = mergeDataWithDefaults(node.data, oldDef?.data ?? {}, newDef.data ?? {});
+	const oldDefaults = oldDef ? oldDef.data ?? {} : {};
+	const newDefaults = newDef.data ?? {};
+	node.data = mergeDataWithDefaults(node.data, oldDefaults, newDefaults);
 	// Recurse
-	for (const id in node.states ?? {}) {
-		const child = node.states[id];
-		const oldChildDef = oldDef?.states?.[id] as StateDefinition | undefined;
-		const newChildDef = newDef.states?.[id] as StateDefinition | undefined;
+	const states = node.states ?? {};
+	for (const id in states) {
+		const child = states[id];
+		const oldChildStates = oldDef ? oldDef.states : undefined;
+		const oldChildDef = oldChildStates ? oldChildStates[id] as StateDefinition | undefined : undefined;
+		const newChildStates = newDef.states;
+		const newChildDef = newChildStates ? newChildStates[id] as StateDefinition | undefined : undefined;
 		if (child && newChildDef) {
 			migrateDataTree(child, oldChildDef, newChildDef);
 		}
@@ -238,8 +255,9 @@ function clampTape(node: State<Stateful>) {
 }
 
 function safeStartStateId(def: StateDefinition): Identifier {
-	if (def.initial && def.states?.[def.initial]) return def.initial;
-	const first = def.states ? Object.keys(def.states)[0] : undefined;
+	const states = def.states;
+	if (def.initial && states && states[def.initial]) return def.initial;
+	const first = states ? Object.keys(states)[0] : undefined;
 	if (!first) throw new Error(`StateDefinition '${def.id}' has no states.`);
 	return first;
 }
@@ -544,17 +562,18 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 			}
 			break;
 		case 'component': {
-			const owner = ctx.self as { componentMap?: Record<string, any[]> } | undefined;
-			if (!owner) return undefined;
+			const owner = ctx.self as WorldObject;
+			if (!owner) throw new Error(`[FSMLibrary] Cannot access component, stateful has no owner WorldObject.`);
 			const compKey = segments.shift();
-			if (typeof compKey !== 'string') return undefined;
-			const list = owner.componentMap?.[compKey];
-			if (!list || list.length === 0) return undefined;
+			if (typeof compKey !== 'string') throw new Error(`[FSMLibrary] Component key must be a string, got ${typeof compKey}.`);
+			const list = owner.componentMap[compKey];
+			if (!list || list.length === 0) throw new Error(`[FSMLibrary] Owner WorldObject has no components for key '${compKey}'.`);
 			let index = 0;
 			if (typeof segments[0] === 'number') {
 				index = segments.shift() as number;
 			}
 			current = list[index];
+			if (!current) throw new Error(`[FSMLibrary] Owner WorldObject has no component at index ${index} for key '${compKey}'.`);
 			break;
 		}
 		default:
@@ -568,7 +587,7 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 		if (next === undefined && typeof token === 'string') {
 			let ctor = typeof current === 'function' ? current : current.constructor;
 			while (ctor && ctor !== Object && ctor !== Function) {
-				if (Object.prototype.hasOwnProperty.call(ctor, token)) {
+				if (hasOwn(ctor, token)) {
 					next = ctor[token];
 					break;
 				}
@@ -681,10 +700,10 @@ function getPathValue(target: any, segments: (string | number)[]): any {
 }
 
 function resolveComponentFromSegments(self: any, segments: (string | number)[]): { component: any; rest: (string | number)[] } | null {
-	if (!self) return null;
+	if (!self || !self.componentMap) return null;
 	const compKey = segments.shift();
 	if (typeof compKey !== 'string') return null;
-	const list = self.componentMap?.[compKey];
+	const list = self.componentMap[compKey];
 	if (!list || list.length === 0) return null;
 	let index = 0;
 	if (typeof segments[0] === 'number') {
@@ -757,7 +776,7 @@ function applySetProperty(targetSpec: string, valueSpec: any, ctx: BuiltinExecut
 
 function resolveNumberOperand(spec: any, ctx: BuiltinExecutionContext): number {
 	if (spec && typeof spec === 'object' && !Array.isArray(spec)) {
-		if (Object.prototype.hasOwnProperty.call(spec, 'mul')) {
+		if (spec.mul) {
 			const factors = ensureArray((spec as { mul: any }).mul);
 			if (factors.length === 0) return 0;
 			let result = 1;
@@ -766,7 +785,7 @@ function resolveNumberOperand(spec: any, ctx: BuiltinExecutionContext): number {
 			}
 			return result;
 		}
-		if (Object.prototype.hasOwnProperty.call(spec, 'neg')) {
+		if (spec.neg) {
 			return -resolveNumberOperand((spec as { neg: any }).neg, ctx);
 		}
 	}
@@ -787,7 +806,7 @@ function toNumber(value: any): number {
 // function resolveCommandTarget(targetSpec: any, ctx: BuiltinExecutionContext, fallback: any): { id: Identifier; entity?: any } | null {
 // 	if (targetSpec === undefined || targetSpec === null) {
 // 		const entity = ctx.self ?? fallback;
-// 		const id = typeof entity?.id === 'string' ? entity.id as Identifier : undefined;
+// 		// const id = typeof entity.id === 'string' ? entity.id as Identifier : undefined;
 // 		return id ? { id, entity } : null;
 // 	}
 // 	const resolved = resolveTemplateValue(targetSpec, ctx);
@@ -921,8 +940,11 @@ function evaluateCondition(condition: StateActionCondition | undefined, ctx: Bui
 }
 
 function stateMatchesCondition(spec: string | { path: string; machine?: string }, ctx: BuiltinExecutionContext): boolean {
-	const controller = ctx.self?.sc as StateMachineController;
-	if (!controller?.matches_state_path) return false;
+	const owner = ctx.self as { sc?: StateMachineController } | undefined;
+	if (!owner || !owner.sc) {
+		throw new Error('[FSMLibrary] Unable to evaluate state match: context has no state controller.');
+	}
+	const controller = owner.sc;
 	let path: string;
 	if (typeof spec === 'string') {
 		path = spec;
@@ -977,7 +999,12 @@ function createBuiltinHandlerFromString(slot: string, value: string): GenericHan
 
 function resolveEmitter(emitterSpec: any, ctx: BuiltinExecutionContext, fallback: any): any {
 	if (emitterSpec === undefined || emitterSpec === 'self') return fallback;
-	if (emitterSpec === 'state') return ctx.state?.target ?? ctx.state;
+	if (emitterSpec === 'state') {
+		if (!ctx.state) {
+			throw new Error('[FSMLibrary] Emitter spec "state" requested but no state context is available.');
+		}
+		return ctx.state.target ?? ctx.state;
+	}
 	return resolveTemplateValue(emitterSpec, ctx);
 }
 
@@ -1023,8 +1050,13 @@ function createEmitHandler(spec: StateActionEmitSpec, slot: string): GenericHand
 
 function createDispatchEventHandler(spec: StateActionDispatchEventSpec['dispatch_event'], slot: string): GenericHandler {
 	return function (this: Stateful, state?: State, ...invokeArgs: any[]) {
-		if (!spec?.event) throw new Error(`[FSMLibrary] Cannot dispatch event with empty name in slot '${slot}'.`);
+		if (!spec || !spec.event) {
+			throw new Error(`[FSMLibrary] Cannot dispatch event with empty name in slot '${slot}'.`);
+		}
 		const controller = this.sc;
+		if (!controller) {
+			throw new Error(`[FSMLibrary] Cannot dispatch event '${spec.event}' without a state controller.`);
+		}
 		const ctx = buildContext(this, state, invokeArgs, slot);
 		const emitterResolved = spec.emitter !== undefined ? resolveTemplateValue(spec.emitter, ctx) : this;
 		const argsResolvedRaw = spec.payload === undefined ? [] : (Array.isArray(spec.payload) ? spec.payload : [spec.payload]);
@@ -1062,12 +1094,8 @@ type TransitionSpecKey = typeof TRANSITION_SPEC_KEYS[number];
 
 type TransitionLikeSpec = Partial<Record<TransitionSpecKey, unknown>> & { do?: StateActionSpec | StateActionSpec[] };
 
-function hasOwn(obj: object, key: string): boolean {
-	return Object.prototype.hasOwnProperty.call(obj, key);
-}
-
 function hasDoContainer(spec: unknown): spec is { do: StateActionSpec | StateActionSpec[] } {
-	return !!spec && typeof spec === 'object' && !Array.isArray(spec) && hasOwn(spec as object, 'do');
+	return !!spec && typeof spec === 'object' && !Array.isArray(spec) && hasOwn(spec, 'do');
 }
 
 function isConditionSlot(slot: string): boolean {
@@ -1081,7 +1109,7 @@ function looksLikeConditionSpec(spec: unknown): spec is StateActionCondition {
 
 function looksLikeTransitionSpec(spec: unknown): spec is TransitionLikeSpec {
 	if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return false;
-	return TRANSITION_SPEC_KEYS.some(key => hasOwn(spec as object, key));
+	return TRANSITION_SPEC_KEYS.some(key => hasOwn(spec, key));
 }
 
 function resolveTransitionInstruction(key: TransitionSpecKey, value: unknown, ctx: BuiltinExecutionContext, slot: string): any {
@@ -1204,9 +1232,11 @@ function compileAction(slot: string, spec: StateActionSpec | StateActionConditio
 		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
 			if (evaluateCondition(conditional.when, ctx)) {
+				if (!thenHandler) return undefined;
 				return thenHandler.call(this, state, ...args);
 			}
-			return elseHandler?.call(this, state, ...args);
+			if (!elseHandler) return undefined;
+			return elseHandler.call(this, state, ...args);
 		};
 	}
 	if ('set' in spec) {
@@ -1272,8 +1302,10 @@ function compileAction(slot: string, spec: StateActionSpec | StateActionConditio
 	if ('dispatch' in spec) {
 		const config = (spec as StateActionDispatchSpec).dispatch;
 		return function (this: Stateful, state?: State, ...args: any[]) {
-			const controller = this?.sc;
-			if (!controller?.dispatch_event) return;
+			const controller = this.sc;
+			if (!controller) {
+				throw new Error(`[FSMLibrary] Cannot dispatch event from slot '${slot}' without a state controller.`);
+			}
 			const ctx = buildContext(this, state, args, slot);
 			const eventName = String(resolveTemplateValue(config.event, ctx));
 			if (!eventName) throw new Error(`[FSMLibrary] Cannot dispatch event with empty name in slot '${slot}'.`);

@@ -15,29 +15,54 @@ const PRIMARY_COLLIDER_ID = 'primary';
  * Extends the WorldObject class.
  */
 export abstract class SpriteObject extends WorldObject {
-	private get spriteComp(): SpriteComponent | undefined { return this.getComponentByLocalId(SpriteComponent, BASE_SPRITE_ID); }
-	public get flip_h(): boolean { return !!this.spriteComp?.flip.flip_h; }
-	public set flip_h(fh: boolean) { if (this.spriteComp) this.spriteComp.flip = { ...this.spriteComp.flip, flip_h: !!fh }; this.updateHitareas(); }
-	public get flip_v(): boolean { return !!this.spriteComp?.flip.flip_v; }
-	public set flip_v(fv: boolean) { if (this.spriteComp) this.spriteComp.flip = { ...this.spriteComp.flip, flip_v: !!fv }; this.updateHitareas(); }
-	public get imgid(): string { return this.spriteComp?.imgid ?? 'none'; }
+	private get spriteComp(): SpriteComponent {
+		const comp = this.getComponentByLocalId(SpriteComponent, BASE_SPRITE_ID);
+		if (!comp) {
+			throw new Error(`[SpriteObject:${this.id}] Missing SpriteComponent '${BASE_SPRITE_ID}'.`);
+		}
+		return comp;
+	}
+	public get flip_h(): boolean { return this.spriteComp.flip.flip_h; }
+	public set flip_h(fh: boolean) { this.spriteComp.flip = { ...this.spriteComp.flip, flip_h: !!fh }; this.updateHitareas(); }
+	public get flip_v(): boolean { return this.spriteComp.flip.flip_v; }
+	public set flip_v(fv: boolean) { this.spriteComp.flip = { ...this.spriteComp.flip, flip_v: !!fv }; this.updateHitareas(); }
+	public get imgid(): string { return this.spriteComp.imgid; }
 	/** Sets the image id and updates object size/hitareas from ROM metadata. */
 	public set imgid(id: string) {
-		const comp = this.spriteComp; if (comp) comp.imgid = id;
-		const imgmeta = $rompack['img'][id]?.['imgmeta'];
-		if (imgmeta) {
-			this.sx = imgmeta['width'];
-			this.sy = imgmeta['height'];
-			this.updateHitareas();
+		const comp = this.spriteComp;
+		comp.imgid = id;
+		const entry = $rompack.img[id];
+		if (!entry) {
+			if (id === 'none') { this.updateHitareas(); return; }
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in rompack.`);
 		}
+		const imgmeta = entry.imgmeta;
+		if (!imgmeta) {
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' is missing metadata.`);
+		}
+		this.sx = imgmeta['width'];
+		this.sy = imgmeta['height'];
+		this.updateHitareas();
 	}
-	public get colorize(): color { return this.spriteComp?.colorize ?? { r: 1, g: 1, b: 1, a: 1 }; }
-	public set colorize(c: color) { if (this.spriteComp) this.spriteComp.colorize = c; }
+	public get colorize(): color { return this.spriteComp.colorize; }
+	public set colorize(c: color) { this.spriteComp.colorize = c; }
 
 	private updateHitareas() {
 		const id = this.imgid;
-		const imgmeta = $rompack['img'][id]?.['imgmeta'];
-		if (!imgmeta) return; // No image metadata available (e.g. for image 'none'), cannot update collider
+		if (id === 'none') {
+			const collider = this.getOrCreateCollider();
+			collider.setLocalArea(null);
+			collider.setLocalPolygons(null);
+			return;
+		}
+		const entry = $rompack.img[id];
+		if (!entry) {
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' not found in rompack.`);
+		}
+		const imgmeta = entry.imgmeta;
+		if (!imgmeta) {
+			throw new Error(`[SpriteObject:${this.id}] Sprite asset '${id}' is missing metadata.`);
+		}
 		const col = this.getOrCreateCollider();
 		const boundingbox = imgmeta['boundingbox'];
 		if (boundingbox) {

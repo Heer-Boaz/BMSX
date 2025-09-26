@@ -20,10 +20,11 @@ export class GamepadInput implements InputHandler {
 	 * @returns The index of the gamepad, or `null` if no gamepad is connected.
 	 */
 	public get gamepadIndex(): number | null {
-		return this.gamepad?.index ?? null;
+		return this.assignedIndex;
 	}
 
-	private _gamepad: Gamepad;
+	private _gamepad: Gamepad | null;
+	private assignedIndex: number | null = null;
 
 	/** HID device used for rumble of this specific gamepad */
 	private hidPad: DualSenseHID = new DualSenseHID();
@@ -65,8 +66,10 @@ export class GamepadInput implements InputHandler {
 		const vendorReg = /(vendor|vid|idvendor)[^0-9a-f]*([0-9a-f]{4})/i;
 		const productReg = /(product|pid|idproduct)[^0-9a-f]*([0-9a-f]{4})/i;
 
-		let vendorStr: string | null = vendorReg.exec(id)?.[2] ?? null;
-		let productStr: string | null = productReg.exec(id)?.[2] ?? null;
+		const vendorMatch = vendorReg.exec(id);
+		const productMatch = productReg.exec(id);
+		let vendorStr: string | null = vendorMatch ? vendorMatch[2] : null;
+		let productStr: string | null = productMatch ? productMatch[2] : null;
 
 		if (!vendorStr || !productStr) {
 			const alt = /([0-9a-f]{4})\W+([0-9a-f]{4})/i.exec(id);
@@ -96,7 +99,7 @@ export class GamepadInput implements InputHandler {
 
 	/** Determine if the connected gamepad represents a DualShock 4 */
 	private isDualShock4(): boolean {
-		return this.isDs4Gamepad;
+		return this.isDs4Gamepad === true;
 	}
 
 	/**
@@ -112,9 +115,16 @@ export class GamepadInput implements InputHandler {
 		if (now - this.lastRumbleAt < 16) return;
 		this.lastRumbleAt = now;
 
-		if (!this.gamepad && !this.hidPad.isConnected) {
+		const activeGamepad = this._gamepad;
+		if (!activeGamepad && !this.hidPad.isConnected) {
 			// Fallback: navigator.vibrate (Android); noop on iOS (ignored)
-			try { if ('vibrate' in navigator) { navigator.vibrate(Math.max(0, Math.round(params.duration * params.intensity))); } } catch { /* noop */ }
+			try {
+				if ('vibrate' in navigator) {
+					navigator.vibrate(Math.max(0, Math.round(params.duration * params.intensity)));
+				}
+			} catch {
+				// Ignored deliberately; vibration is best-effort.
+			}
 			return;
 		}
 
@@ -123,15 +133,17 @@ export class GamepadInput implements InputHandler {
 
 		const isDs4 = this.isDualShock4();
 
-		if (this.gamepad && this.gamepad.vibrationActuator && !isDs4) {
+		if (activeGamepad && activeGamepad.vibrationActuator && !isDs4) {
 			try {
-				this.gamepad.vibrationActuator.playEffect(params.effect, {
+				activeGamepad.vibrationActuator.playEffect(params.effect, {
 					duration: params.duration,
 					weakMagnitude,
 					strongMagnitude
 				});
 			} catch (e) {
 				// Silent dropout on disconnect
+				this.handleDisconnect();
+				console.warn(`Error applying gamepad vibration effect: ${e}, disconnecting controller and HID device.`);
 			}
 			return;
 		}
@@ -140,6 +152,8 @@ export class GamepadInput implements InputHandler {
 			this.hidPad.sendRumble({ strong: strongMagnitude, weak: weakMagnitude, duration: params.duration });
 		} catch (e) {
 			// Silent dropout on disconnect
+			this.handleDisconnect();
+			console.warn(`Error applying gamepad vibration effect: ${e}, disconnecting controller and HID device.`);
 		}
 	}
 
@@ -150,12 +164,12 @@ export class GamepadInput implements InputHandler {
 	 * *NOTE: REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
 	 */
 	public async init(): Promise<void> {
-		if (this._gamepad?.vibrationActuator && !this.isDualShock4()) {
+		if (this._gamepad && this._gamepad.vibrationActuator && !this.isDualShock4()) {
 			// Native actuator is available and reliable; skip HID init
 			return;
 		}
 		try {
-			await this.hidPad.init(this._gamepad);
+			await this.hidPad.init(this._gamepad ?? undefined);
 			this.updateDs4Flag(this._gamepad);
 		} catch (e) {
 			console.warn(`Error initializing HID device for rumble: ${e}`);
@@ -171,6 +185,7 @@ export class GamepadInput implements InputHandler {
 	 */
 	constructor(gamepad: Gamepad) {
 		this._gamepad = gamepad;
+		this.assignedIndex = gamepad.index;
 		this.updateDs4Flag(gamepad);
 
 		// Note that init should be called later to ensure user interaction for permission
@@ -195,6 +210,7 @@ export class GamepadInput implements InputHandler {
 		const newGamepad = gamepads[this.gamepadIndex];
 		if (this._gamepad !== newGamepad) {
 			this._gamepad = newGamepad;
+			this.assignedIndex = newGamepad.index;
 			this.updateDs4Flag(newGamepad);
 		} else {
 			this._gamepad = newGamepad;
@@ -232,10 +248,10 @@ export class GamepadInput implements InputHandler {
 	 * @param gamepad The gamepad to poll.
 	 */
 	private pollGamepadAxes(gamepad: Gamepad): void {
-		if (!gamepad) return; // Will be null if the gamepad was disconnected
 		const now = performance.now();
-		const x = gamepad.axes?.[0] ?? 0;
-		const y = gamepad.axes?.[1] ?? 0;
+		const axes = gamepad.axes;
+		const x = axes.length > 0 ? axes[0] : 0;
+		const y = axes.length > 1 ? axes[1] : 0;
 
 		// Radial deadzone and normalization
 		const mag = Math.hypot(x, y);
@@ -267,14 +283,21 @@ export class GamepadInput implements InputHandler {
 		this.axisDigitalState.down = downNow;
 
 		// Only set pressed flags here; edges handled in pollGamepadButtons
-		this.gamepadButtonStates['left'].pressed = leftNow || this.gamepadButtonStates['left'].pressed;
-		this.gamepadButtonStates['right'].pressed = rightNow || this.gamepadButtonStates['right'].pressed;
-		this.gamepadButtonStates['up'].pressed = upNow || this.gamepadButtonStates['up'].pressed;
-		this.gamepadButtonStates['down'].pressed = downNow || this.gamepadButtonStates['down'].pressed;
+		const leftState = this.gamepadButtonStates['left'];
+		const rightState = this.gamepadButtonStates['right'];
+		const upState = this.gamepadButtonStates['up'];
+		const downState = this.gamepadButtonStates['down'];
+		if (!leftState || !rightState || !upState || !downState) {
+			throw new Error('[GamepadInput] Axis digital states not initialised.');
+		}
+		leftState.pressed = leftNow || leftState.pressed;
+		rightState.pressed = rightNow || rightState.pressed;
+		upState.pressed = upNow || upState.pressed;
+		downState.pressed = downNow || downState.pressed;
 
 		// Right stick analog capture (axes 2,3)
-		const rx = gamepad.axes?.[2] ?? 0;
-		const ry = gamepad.axes?.[3] ?? 0;
+		const rx = axes.length > 2 ? axes[2] : 0;
+		const ry = axes.length > 3 ? axes[3] : 0;
 		const rmag = Math.hypot(rx, ry);
 		let rnx = 0, rny = 0, rnmag = 0;
 		if (rmag > dz) {
@@ -294,13 +317,15 @@ export class GamepadInput implements InputHandler {
 	 * @param gamepad The gamepad to poll.
 	 */
 	private pollGamepadButtons(gamepad: Gamepad): void {
-		if (!gamepad) return; // Will be null if the gamepad was disconnected
 		const buttons = gamepad.buttons;
-		if (!buttons) return;
+		if (!Array.isArray(buttons)) {
+			throw new Error('[GamepadInput] Gamepad buttons not available.');
+		}
 		const now = performance.now();
 		for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
 			const gamepadButton = buttons[btnIndex];
-			const pressed = typeof gamepadButton === 'object' ? gamepadButton.pressed : gamepadButton === 1.0;
+			const pressed = gamepadButton.pressed;
+			const buttonValue = Math.max(0, Math.min(1, gamepadButton.value));
 			// Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
 			const buttonId = Input.INDEX2BUTTON[btnIndex as keyof typeof Input.INDEX2BUTTON];
 			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
@@ -321,7 +346,7 @@ export class GamepadInput implements InputHandler {
 						timestamp: now,
 						pressedAtMs: now,
 						pressId: pid,
-						value:(typeof (gamepadButton).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton).value)) : 1,
+						value: buttonValue,
 					});
 				} else {
 					const st = prev;
@@ -330,7 +355,7 @@ export class GamepadInput implements InputHandler {
 					st.justreleased = false;
 					st.waspressed = true;
 					st.presstime = (st.presstime ?? 0) + 1;
-					st.value =(typeof (gamepadButton).value === 'number') ? Math.max(0, Math.min(1, (gamepadButton).value)) : 1;
+					st.value = buttonValue;
 					this.gamepadButtonStates[buttonId] = st;
 				}
 			} else {
@@ -366,6 +391,9 @@ export class GamepadInput implements InputHandler {
 	 * @param button The button to consume.
 	 */
 	public consumeButton(button: string) {
+		if (!this.gamepadButtonStates[button]) {
+			throw new Error(`[GamepadInput] Attempted to consume button '${button}' before it was initialised.`);
+		}
 		this.gamepadButtonStates[button].consumed = true;
 	}
 
@@ -375,16 +403,25 @@ export class GamepadInput implements InputHandler {
 	 */
 	public reset(except?: string[]): void {
 		if (!except) {
-			// Initialize the states of all gamepad buttons and axes
 			Object.values(this.gamepadButtonStates).forEach(state => Object.assign(state, makeButtonState()));
-		}
-		else {
+			this.axisDigitalState = { left: false, right: false, up: false, down: false };
+		} else {
 			resetObject(this.gamepadButtonStates, except);
 		}
 	}
 
 	/** Clean up event listeners and close HID device */
 	public dispose(): void {
-		this.hidPad?.close();
+		this.handleDisconnect();
+	}
+
+	private handleDisconnect(): void {
+		if (this._gamepad) {
+			this._gamepad = null;
+			this.updateDs4Flag(null);
+		}
+		this.lastSampleTimestamp = null;
+		this.reset();
+		void this.hidPad.close();
 	}
 }

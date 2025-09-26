@@ -1,3 +1,4 @@
+import { hasOwn } from 'bmsx';
 import type { AbilityId, AbilityRequestResult } from '../gas/gastypes';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
@@ -69,11 +70,15 @@ export function compileProgram(program: InputAbilityProgram, parse: PatternParse
 function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding {
 	const priority = binding.priority ?? 0;
 	const predicate = compilePredicate(binding);
-	const press = binding.on?.press ? parse(binding.on.press) : undefined;
-	const hold = binding.on?.hold ? parse(binding.on.hold) : undefined;
-	const release = binding.on?.release ? parse(binding.on.release) : undefined;
+	if (!binding.on) {
+		throw new Error(`[InputAbilityCompiler] Binding '${binding.name ?? '(unnamed)'}' is missing an 'on' clause.`);
+	}
+	const press = binding.on.press ? parse(binding.on.press) : undefined;
+	const hold = binding.on.hold ? parse(binding.on.hold) : undefined;
+	const release = binding.on.release ? parse(binding.on.release) : undefined;
+	const customEntries = binding.on.custom ?? [];
 	const customEffects = compileCustomEffects(binding);
-	const customEdges = (binding.on?.custom ?? []).map(item => ({
+	const customEdges = customEntries.map(item => ({
 		name: item.name,
 		match: parse(item.pattern),
 		effect: customEffects.get(item.name),
@@ -86,9 +91,9 @@ function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding
 		press,
 		hold,
 		release,
-		pressEffect: compileEffectList(binding.do?.press),
-		holdEffect: compileEffectList(binding.do?.hold),
-		releaseEffect: compileEffectList(binding.do?.release),
+		pressEffect: compileEffectList(binding.do?.press, undefined),//'press'),
+		holdEffect: compileEffectList(binding.do?.hold, undefined),//'hold'),
+		releaseEffect: compileEffectList(binding.do?.release, undefined),//'release'),
 		customEdges,
 	};
 }
@@ -141,23 +146,23 @@ function compileCustomEffects(binding: Binding): Map<string, EffectExecutor | un
 	return map;
 }
 
-function compileEffectList(spec: Effect | Effect[] | undefined): EffectExecutor | undefined {
-	if (!spec) return undefined;
-	const entries = Array.isArray(spec) ? spec : [spec];
-	const executors: EffectExecutor[] = [];
-	for (let i = 0; i < entries.length; i++) {
-		executors.push(compileEffect(entries[i]!));
-	}
-	if (executors.length === 0) throw new Error(`Empty effect list in ${JSON.stringify(spec)}`);
-	if (executors.length === 1) return executors[0];
-	return (ctx: EvalContext) => {
-		for (let i = 0; i < executors.length; i++) {
-			executors[i](ctx);
-		}
-	};
+function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string): EffectExecutor | undefined {
+    if (!spec) return undefined;
+    const entries = Array.isArray(spec) ? spec : [spec];
+    const executors: EffectExecutor[] = [];
+    for (let i = 0; i < entries.length; i++) {
+        executors.push(compileEffect(entries[i]!, slot));
+    }
+    if (executors.length === 0) throw new Error(`Empty effect list in slot '${slot ?? 'unknown'}'.`);
+    if (executors.length === 1) return executors[0];
+    return (ctx: EvalContext) => {
+        for (let i = 0; i < executors.length; i++) {
+            executors[i](ctx);
+        }
+    };
 }
 
-function compileEffect(effect: Effect): EffectExecutor {
+function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 	if (isAbilityRequest(effect)) {
 		const spec = effect['ability.request'];
 		if (!spec) throw new Error(`Missing ability request in effect ${JSON.stringify(effect)}`);
@@ -174,10 +179,15 @@ function compileEffect(effect: Effect): EffectExecutor {
 	if (isGameplayEmit(effect)) {
 		const { event, payload } = effect['emit.gameplay'];
 		if (!event) throw new Error(`Missing event name in emit.gameplay effect ${JSON.stringify(effect)}`);
-		return (ctx: EvalContext) => { if (ctx.pushEvent) ctx.pushEvent(event, payload); };
+		return (ctx: EvalContext) => {
+			if (!ctx.pushEvent) {
+				throw new Error(`[InputAbilityCompiler] emit.gameplay used in slot '${slot ?? 'unknown'}' without pushEvent handler.`);
+			}
+			ctx.pushEvent(event, payload);
+		};
 	}
 	if (isNestedCommands(effect)) {
-		const nested = compileEffectList(effect.commands);
+		const nested = compileEffectList(effect.commands, slot);
 		if (!nested) throw new Error(`Empty commands in nested effect ${JSON.stringify(effect)}`);
 		return nested;
 	}
@@ -185,17 +195,17 @@ function compileEffect(effect: Effect): EffectExecutor {
 }
 
 function isAbilityRequest(effect: Effect): effect is { 'ability.request': AbilityId | AbilityRequestDescriptor } {
-	return Object.prototype.hasOwnProperty.call(effect, 'ability.request');
+	return hasOwn(effect, 'ability.request');
 }
 
 function isInputConsume(effect: Effect): effect is { 'input.consume': string | string[] } {
-	return Object.prototype.hasOwnProperty.call(effect, 'input.consume');
+	return hasOwn(effect, 'input.consume');
 }
 
 function isGameplayEmit(effect: Effect): effect is { 'emit.gameplay': EmitGameplayDescriptor } {
-	return Object.prototype.hasOwnProperty.call(effect, 'emit.gameplay');
+	return hasOwn(effect, 'emit.gameplay');
 }
 
 function isNestedCommands(effect: Effect): effect is { commands: Effect[] } {
-	return Object.prototype.hasOwnProperty.call(effect, 'commands');
+	return hasOwn(effect, 'commands');
 }

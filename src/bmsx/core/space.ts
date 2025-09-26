@@ -92,9 +92,9 @@ export class Space  {
 	public spawn(o: WorldObject, pos?: vec3, options?: boolean | { skipOnSpawn?: boolean; reason?: 'fresh' | 'revive' | 'transfer' }): void {
 		if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
 		const world = $.world;
-		if (world.objToSpaceMap?.has(o.id)) {
-			console.error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${world.objToSpaceMap.get(o.id)}'!`);
-			return;
+		if (world.objToSpaceMap.has(o.id)) {
+			const existingSpaceId = world.objToSpaceMap.get(o.id);
+			throw new Error(`Cannot spawn object '${o.id}' in space '${this.id}' because it already exists in space '${existingSpaceId}'.`);
 		}
 
 		this.objects.push(o); // Add the object to the space
@@ -154,7 +154,8 @@ export class Space  {
 	public onloadSetup(): void {
 		// Rebuild fast id → object map from revived objects array
 		this._id2objMap.clear();
-		for (const o of (this.objects ?? [])) {
+		if (!this.objects) throw new Error(`[Space:${this.id}] objects array is undefined during onloadSetup.`);
+		for (const o of this.objects) {
 			this._id2objMap.set(o.id, o);
 			// Register object → space mapping and per-space indexes in world
 			$.world.objToSpaceMap.set(o.id, this.id);

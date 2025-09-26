@@ -30,7 +30,10 @@ export class PhysicsDescriptorComponent extends Component {
 		}
 	}
 	private attachRuntime() {
-		const parent = $.world.getWorldObject(this.parentid); if (!parent) return;
+		const parent = $.world.getWorldObject(this.parentid);
+		if (!parent) {
+			throw new Error(`[PhysicsDescriptorComponent] Parent '${this.parentid}' not found while attaching physics runtime.`);
+		}
 		if (parent.getUniqueComponent(PhysicsComponent)) return;
 		// console.log('[PhysicsDescriptorComponent] Attaching runtime physics to', parent.id);
 		// NOTE: Do NOT force 'kinematic' here. Kinematic bodies were never integrated in PhysicsWorld.step,
@@ -47,7 +50,7 @@ export class PhysicsDescriptorComponent extends Component {
 			mask: this.mask,
 			syncAxis: this.syncAxis,
 			writeBack: this.writeBack,
-			// type: desc?.bodyType // future extension
+			// type: desc.bodyType // future extension
 		};
 		parent.addComponent(new PhysicsComponent({ parentid: this.parentid, physicsOptions: opts }));
 	}

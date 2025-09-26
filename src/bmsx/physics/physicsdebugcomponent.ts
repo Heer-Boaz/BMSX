@@ -35,8 +35,7 @@ export class PhysicsDebugComponent extends Component {
 
 	private ensureGizmoRegistration() {
 		if (this._gizmoDrawer) return;
-		const world = $.get<PhysicsWorld>('physics_world');
-		if (!world) return; // try again later
+		const world = PhysicsWorld.ensure();
 		this._gizmoDrawer = (w) => this.collectGizmos(w);
 		world.addGizmo(this._gizmoDrawer);
 	}

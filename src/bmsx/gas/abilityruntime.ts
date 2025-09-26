@@ -9,10 +9,19 @@ export class AbilityRuntimeSystem extends ECSystem {
 		const commands = GameplayCommandBuffer.instance.drainByKind('ActivateAbility');
 		for (let i = 0; i < commands.length; i++) {
 			const command = commands[i]!;
-			const asc = AbilitySystemComponent.registryByOwner.get(command.owner);
-			if (asc) asc.tryActivate(command.ability_id, command.payload);
+			const owner = $.world.getWorldObject(command.owner);
+			if (!owner) {
+				throw new Error(`[AbilityRuntimeSystem] Owner '${command.owner}' not found while activating ability '${command.ability_id}'.`);
+			}
+			const asc = owner.getUniqueComponent(AbilitySystemComponent);
+			if (!asc) {
+				throw new Error(`[AbilityRuntimeSystem] AbilitySystemComponent missing on owner '${command.owner}' while activating ability '${command.ability_id}'.`);
+			}
+			asc.tryActivate(command.ability_id, command.payload);
 		}
 		const dtMs = $.deltaTime;
-		for (const asc of AbilitySystemComponent.registry) asc.step(dtMs);
+		for (const [, asc] of $.world.objectsWithComponents(AbilitySystemComponent, { scope: 'active' })) {
+			asc.step(dtMs);
+		}
 	}
 }

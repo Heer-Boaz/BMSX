@@ -78,13 +78,18 @@ export class StateMachineController {
 	 * Gets the current state machine.
 	 * @returns The current state machine.
 	 */
-	get current_machine(): State { return this.statemachines[this.current_machine_id]; }
+	get current_machine(): State | undefined {
+		return this.statemachines[this.current_machine_id];
+	}
 
 	/**
 	 * Gets the current state of the current state machine.
 	 * @returns The current state of the current state machine.
 	 */
-	get current_state(): State { return this.current_machine.current; }
+	get current_state(): State | undefined {
+		const machine = this.current_machine;
+		return machine ? machine.current : undefined;
+	}
 
 	/**
 	 * Gets the states of the current machine.
@@ -145,9 +150,7 @@ export class StateMachineController {
 	public bind(): void {
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
-
-			// Subscribe to all events that are defined in the machine definition for the machine and its submachines
-			const events = machine.definition?.event_list;
+			const events = machine.definition.event_list;
 			if (events && events.length > 0) {
 				events.forEach(event => {
 					let scope = event.scope;
@@ -176,7 +179,7 @@ export class StateMachineController {
 	public unbind(): void {
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
-			const events = machine.definition?.event_list;
+			const events = machine.definition.event_list;
 			if (!events) continue;
 			events.forEach(event => {
 				let scope = event.scope;
@@ -205,15 +208,15 @@ export class StateMachineController {
 	 * Also runs all state machines that have 'parallel' set to true.
 	 */
 	tick(): void {
-		if (!this.tickEnabled) return;
+		if (!this.tickEnabled || !this.current_machine) return; // If ticking is disabled or there is no current machine, do nothing. Some objects may not have a machine, so this is fine
 		// Runs the current state of the current state machine
-		this.current_machine?.tick();
+		this.current_machine.tick();
 
 		// Run all state machines that have 'parallel' set to true
 		for (let id in this.statemachines) {
 			// Skip the current machine, as it has already been run
 			if (id === this.current_machine_id) continue;
-			if (this.statemachines[id].is_concurrent) this.statemachines[id]?.tick();
+			if (this.statemachines[id].is_concurrent) this.statemachines[id].tick();
 		}
 	}
 
@@ -283,8 +286,9 @@ export class StateMachineController {
 		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
 
 		// Dispatch the event to the current machine
-		this.current_machine.dispatch_event(event_name, emitter_id, ...args);
+		this.current_machine?.dispatch_event(event_name, emitter_id, ...args); // Optional chaining in case there is no current machine (allowed for objects without a state machine)
 
+		// Dispatch the event to all other parallel running machines
 		for (const id in this.statemachines) {
 			if (this.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
 			if (this.statemachines[id].paused) continue; // Skip paused machines
@@ -340,13 +344,13 @@ export class StateMachineController {
 
 		// If there are no more parts, check the state of the current machine
 		if (stateids.length === 0) {
-			return this.current_machine.matches_state_path(machineid);
+			const machine = this.current_machine;
+			if (!machine) return false;
+			return machine.matches_state_path(machineid);
 		}
 
 		const machine = this.statemachines[machineid];
-		if (!machine) {
-			throw new Error(`No machine with ID '${machineid}'`);
-		}
+		if (!machine) return false;
 
 		// If there are more parts, check the state of the submachine with the given path
 		return machine.matches_state_path(stateids);

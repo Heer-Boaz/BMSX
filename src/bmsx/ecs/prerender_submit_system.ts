@@ -23,6 +23,9 @@ export class PreRenderSubmitSystem extends ECSystem {
 	update(world: World): void {
 		this.submitSpace(world.activeSpace);
 		const uiSpace = world[id_to_space_symbol]['ui'];
-		uiSpace && this.submitSpace(uiSpace);
+		if (!uiSpace) {
+			throw new Error('[PreRenderSubmitSystem] UI space is not registered.');
+		}
+		this.submitSpace(uiSpace);
 	}
 }

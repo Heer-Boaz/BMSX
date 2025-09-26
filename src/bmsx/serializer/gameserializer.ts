@@ -387,7 +387,10 @@ export class Reviver {
 		// First pass: create all objects (empty shells)
 		for (const id of Object.keys(objects)) {
 			const data = objects[id];
-			if (data && data.isTypedArray) {
+			if (data === undefined) {
+				throw new Error(`[Reviver] Missing object payload for id '${id}'.`);
+			}
+			if (typeof data === 'object' && 'isTypedArray' in data && (data as { isTypedArray: unknown }).isTypedArray) {
 				const ctorUnknown = (globalThis as unknown as Record<string, unknown>)[(data as { typename: string }).typename];
 				if (typeof ctorUnknown === "function") {
 					const C = ctorUnknown as new (data: number[]) => unknown;
@@ -415,12 +418,19 @@ export class Reviver {
 		// Second pass: assign properties
 		for (const id of Object.keys(objects)) {
 			const data = objects[id];
-			if (data?.isTypedArray) continue;
+			if (data === undefined) {
+				throw new Error(`[Reviver] Missing object payload for id '${id}' during assignment phase.`);
+			}
+			if (typeof data === 'object' && 'isTypedArray' in data && (data as { isTypedArray: unknown }).isTypedArray) continue;
 			const target = idToObject[id];
 			if (target === null || target === undefined) continue; // guard: geen assignment naar null/undefined
 			for (const key of Object.keys(data)) {
 				if (key === 'typename') continue;
-				if (data.typename && Reviver.excludedProperties[data.typename]?.[key]) continue;
+				if (typeof (data as { typename?: string }).typename === 'string') {
+					const typeName = (data as { typename: string }).typename;
+					const excluded = Reviver.excludedProperties[typeName];
+					if (excluded && excluded[key]) continue;
+				}
 				const val = data[key];
 				if (Array.isArray(val)) {
 					// If every element is a { r: ... }, resolve all and drop nulls
@@ -459,7 +469,11 @@ export class Reviver {
 		}
 		// --- Third pass: call all registered @onload methods if present ---
 		for (const id of Object.keys(idToObject)) {
-			if (objects[id]?.isTypedArray) continue;
+			const original = objects[id];
+			if (original === undefined) {
+				throw new Error(`[Reviver] Missing source payload for id '${id}' while invoking onload hooks.`);
+			}
+			if (typeof original === 'object' && 'isTypedArray' in original && (original as { isTypedArray: unknown }).isTypedArray) continue;
 			const obj = idToObject[id];
 			if (obj === null || obj === undefined) continue; // skip unknown or filtered types
 			let proto = Object.getPrototypeOf(obj);

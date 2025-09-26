@@ -26,6 +26,10 @@ export class EventTimeline extends EventEmitter {
 	loop = false;
 	playing = true;
 
+	private dispatch(name: string, data: unknown): void {
+		super.emit(name, this, data);
+	}
+
 	constructor(opts: EventTimelineOptions = {}) { super(); if (opts.mode) this._mode = opts.mode; if (opts.loop) this.loop = opts.loop; }
 	get mode() { return this._mode; }
 	get u() { return this._u; }
@@ -47,8 +51,8 @@ export class EventTimeline extends EventEmitter {
 			// Instants
 			for (const ev of this.instants) {
 				if (ev.fired) continue; const uVal = ev.u!;
-				if (!looped && uVal >= prevU && uVal < this._u) { this.emit(ev.name, ev.data); ev.fired = true; }
-				else if (looped && (uVal >= prevU || uVal < this._u)) { this.emit(ev.name, ev.data); ev.fired = true; }
+				if (!looped && uVal >= prevU && uVal < this._u) { this.dispatch(ev.name, ev.data); ev.fired = true; }
+				else if (looped && (uVal >= prevU || uVal < this._u)) { this.dispatch(ev.name, ev.data); ev.fired = true; }
 			}
 			// Ranges
 			for (const r of this.ranges) {
@@ -61,8 +65,8 @@ export class EventTimeline extends EventEmitter {
 			this._time += dt; const looped = this.loop && this._time < prevT; // unlikely unless externally reset
 			for (const ev of this.instants) {
 				if (ev.fired) continue; const tVal = ev.time!;
-				if (!looped && tVal >= prevT && tVal < this._time) { this.emit(ev.name, ev.data); ev.fired = true; }
-				else if (looped && (tVal >= prevT || tVal < this._time)) { this.emit(ev.name, ev.data); ev.fired = true; }
+				if (!looped && tVal >= prevT && tVal < this._time) { this.dispatch(ev.name, ev.data); ev.fired = true; }
+				else if (looped && (tVal >= prevT || tVal < this._time)) { this.dispatch(ev.name, ev.data); ev.fired = true; }
 			}
 			for (const r of this.ranges) {
 				if (r.done) continue; const a = r.startTime!, b = r.endTime!; const span = (b - a) || 1; let active = false, local = 0;

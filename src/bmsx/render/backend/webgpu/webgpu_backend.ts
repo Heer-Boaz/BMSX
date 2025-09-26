@@ -284,29 +284,34 @@ export class WebGPUBackend implements GPUBackend {
 		const bindGroupLayouts: GPUBindGroupLayout[] = [];
 		let expectedEntries = 0;
 		const expected: { binding: number; kind: 'buffer' | 'texture' | 'sampler' }[] = [];
-		if (desc.bindingLayout) {
+		const layout = desc.bindingLayout;
+		if (layout) {
 			const entries: GPUBindGroupLayoutEntry[] = [];
 			let binding = 0;
 
-			desc.bindingLayout.uniforms?.forEach(() => {
+			const uniformDefs = Array.isArray(layout.uniforms) ? layout.uniforms : [];
+			uniformDefs.forEach(() => {
 				entries.push({ binding: binding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
 				expected.push({ binding, kind: 'buffer' });
 				binding++;
 				expectedEntries++;
 			});
-			desc.bindingLayout.textures?.forEach(_t => {
+			const textureDefs = Array.isArray(layout.textures) ? layout.textures : [];
+			textureDefs.forEach(_t => {
 				entries.push({ binding: binding, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } });
 				expected.push({ binding, kind: 'texture' });
 				binding++;
 				expectedEntries++;
 			});
-			desc.bindingLayout.samplers?.forEach(_s => {
+			const samplerDefs = Array.isArray(layout.samplers) ? layout.samplers : [];
+			samplerDefs.forEach(_s => {
 				entries.push({ binding: binding, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } });
 				expected.push({ binding, kind: 'sampler' });
 				binding++;
 				expectedEntries++;
 			});
-			desc.bindingLayout.buffers?.forEach(b => {
+			const bufferDefs = Array.isArray(layout.buffers) ? layout.buffers : [];
+			bufferDefs.forEach(b => {
 				entries.push({ binding: binding, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: b.usage === 'storage' ? 'storage' : 'uniform' } });
 				expected.push({ binding, kind: 'buffer' });
 				binding++;
@@ -421,10 +426,12 @@ export class WebGPUBackend implements GPUBackend {
 
 	bindTextureWithSampler(texBinding: number, samplerBinding: number, texture: GPUTexture, samplerDesc?: { mag?: 'nearest' | 'linear'; min?: 'nearest' | 'linear'; wrapS?: 'clamp' | 'repeat'; wrapT?: 'clamp' | 'repeat' }): void {
 		const view = texture.createView();
-		const mag = samplerDesc?.mag === 'linear' ? 'linear' : 'nearest';
-		const min = samplerDesc?.min === 'linear' ? 'linear' : 'nearest';
+		const mag = samplerDesc && samplerDesc.mag === 'linear' ? 'linear' : 'nearest';
+		const min = samplerDesc && samplerDesc.min === 'linear' ? 'linear' : 'nearest';
 		const address = (wrap: 'clamp' | 'repeat' | undefined): GPUAddressMode => wrap === 'repeat' ? 'repeat' : 'clamp-to-edge';
-		const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(samplerDesc?.wrapS), addressModeV: address(samplerDesc?.wrapT) });
+		const wrapS = samplerDesc ? samplerDesc.wrapS : undefined;
+		const wrapT = samplerDesc ? samplerDesc.wrapT : undefined;
+		const sampler = this.device.createSampler({ magFilter: mag, minFilter: min, addressModeU: address(wrapS), addressModeV: address(wrapT) });
 		this.textureBindings.set(texBinding, view);
 		this.samplerBindings.set(samplerBinding, sampler);
 		this.bindGroupCache.clear();

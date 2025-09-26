@@ -284,10 +284,8 @@ export class EventEmitter implements RegisterablePersistent {
 
 	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
 		const lane: EventLane = payload?.lane ?? 'gameplay';
-		if (lane === 'gameplay') {
-			if (!emitter == null) {
-				throw new Error(`Gameplay events require an Identifiable emitter. Event "${event_name}" missing emitter id.`);
-			}
+		if (lane === 'gameplay' && emitter == null) {
+			throw new Error(`Gameplay events require an Identifiable emitter. Event "${event_name}" missing emitter id.`);
 		}
 		const self = EventEmitter.instance;
 		const previousLane = self.eventLaneRegistry.get(event_name);

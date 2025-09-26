@@ -309,7 +309,12 @@ export class TextureManager implements RegisterablePersistent {
 
 	public async fetchModelTextures(meshModel: GLTFModel): Promise<Index2GpuTexture> {
 		const gpuTextures: Index2GpuTexture = {};
-		const count = meshModel.imageBuffers ? meshModel.imageBuffers.length : (meshModel.imageURIs?.length ?? 0);
+		let count = 0;
+		if (meshModel.imageBuffers) {
+			count = meshModel.imageBuffers.length;
+		} else if (meshModel.imageURIs) {
+			count = meshModel.imageURIs.length;
+		}
 		if (count === 0) return gpuTextures;
 
 		for (let i = 0; i < count; i++) {
@@ -328,7 +333,12 @@ export class TextureManager implements RegisterablePersistent {
 	}
 
 	public async releaseModelTextures(model: GLTFModel): Promise<void> {
-		const count = model.imageBuffers ? model.imageBuffers.length : (model.imageURIs?.length ?? 0);
+		let count = 0;
+		if (model.imageBuffers) {
+			count = model.imageBuffers.length;
+		} else if (model.imageURIs) {
+			count = model.imageURIs.length;
+		}
 		for (let i = 0; i < count; i++) {
 			const key = model.imageBuffers
 				? this.makeModelBufferKey({ modelName: model.name, modelImageIndex: i })
@@ -361,7 +371,8 @@ export class TextureManager implements RegisterablePersistent {
 	}
 
 	public getTexture(key: TextureKey): TextureHandle | undefined {
-		return this.gpuCache.get(key)?.handle;
+		const entry = this.gpuCache.get(key);
+		return entry ? entry.handle : undefined;
 	}
 	public getTextureByUri(uri: string, desc: TextureParams = {}): TextureHandle | undefined {
 		return this.getTexture(this.makeKey(uri, desc));

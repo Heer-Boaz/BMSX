@@ -107,7 +107,7 @@ export class StateDefinition {
 	 */
 	public root!: StateDefinition; // The root state machine definition
 
- 	public event_list: { name: string; scope: EventScope; lane: EventLane | 'any' }[];
+	public event_list: { name: string; scope: EventScope; lane: EventLane | 'any' }[];
 
 	private get is_root(): boolean { return this.root === this; }
 
@@ -457,9 +457,10 @@ function resolveStateDefPath(from: StateDefinition, target: string, origin: stri
 
 	// Traverse segments
 	for (const seg of spec.segs) {
-		if (!ctx.states?.[seg]) {
+		const states = ctx.states;
+		if (!states || !states[seg]) {
 			throw new Error(`[Validate state machines] Machine '${origin}' - Invalid state path '${target}': state '${seg}' not found in transition from state '${ctx.id}' (${description})`);
 		}
-		ctx = ctx.states[seg] as StateDefinition;
+		ctx = states[seg] as StateDefinition;
 	}
 }

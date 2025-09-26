@@ -296,7 +296,14 @@ export function generateDetailedDrawError(
 		morphTangentBuffers3D: '[' + morphTangentBuffers3D.map((b, i) => b ? (bufferSize.morphTangentBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphTangentBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
 	};
 
-	const matColor = m.material?.color ?? [1, 1, 1, 1];
+	const material = m.material;
+	const matColor = material && material.color ? material.color : [1, 1, 1, 1];
+	const metallicFactor = material && material.metallicFactor !== undefined ? material.metallicFactor : 'none';
+	const roughnessFactor = material && material.roughnessFactor !== undefined ? material.roughnessFactor : 'none';
+	const shadowData = m.shadow;
+	const shadowMapTexture = shadowData ? shadowData.map.texture : 'none';
+	const shadowStrength = shadowData ? shadowData.strength : 'none';
+	const shadowMatrix = shadowData ? shadowData.matrix : 'none';
 	const mvp = new Float32Array(16);
 	// Fast-path: if model is identity, copy VP instead of multiplying
 	if (
@@ -338,7 +345,7 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
 		TEXTURE_UNIT_SHADOW_MAP === gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), shadowMapLocation3D)}
 		glTextureUniforms set correctly (thus: value correctly maps to texture unit):
 		_________________________________________________________________
-		Material Color: ${JSON.stringify(matColor)}, Metallic Factor: ${m.material?.metallicFactor}, Roughness Factor: ${m.material?.roughnessFactor}
+		Material Color: ${JSON.stringify(matColor)}, Metallic Factor: ${metallicFactor}, Roughness Factor: ${roughnessFactor}
 		Texture Albedo: ${m.gpuTextureAlbedo ? `'${m.gpuTextureAlbedo}'` : 'none'}
 		Texture Normal: ${m.gpuTextureNormal ? `'${m.gpuTextureNormal}'` : 'none'}
 		Texture MetallicRoughness: ${m.gpuTextureMetallicRoughness ? `'${m.gpuTextureMetallicRoughness}'` : 'none'}
@@ -348,8 +355,8 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
 		Has texcoords: ${m.hasTexcoords}
 		Has skinning: ${m.hasSkinning}
 		_________________________________________________________________
-		Shadow: ${m.shadow ? 'yes' : 'no'}, Shadow Map: ${m.shadow?.map.texture ?? 'none'}, Shadow Strength: ${m.shadow?.strength ?? 'none'}
-		Shadow Matrix: ${m.shadow?.matrix ?? 'none'}
+		Shadow: ${shadowData ? 'yes' : 'no'}, Shadow Map: ${shadowMapTexture}, Shadow Strength: ${shadowStrength}
+		Shadow Matrix: ${shadowMatrix}
 		Joint Matrices: ${jointMatrices ? jointMatrices.map(j => JSON.stringify(j)).join(', ') : 'none'}
 		Morph Targets: ${m.hasMorphTargets ? m.morphPositions!.length : 'none'}
 		Morph Weights: ${m.hasMorphTargets ? m.morphWeights.join(', ') : 'none'}
@@ -381,8 +388,8 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
 		Morph Weights uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), morphWeightLocation3D)}
 		Has Joint Matrices: ${m.hasSkinning && jointMatrices ? 'yes' : 'no'}
 		Joint Matrices uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), jointMatrixLocation3D)}
-		Has Joint Matrix Array: ${jointMatrixArray?.length > 0 ? 'yes' : 'no'}
-			Joint Matrix Array length: ${jointMatrixArray?.length / 16}
+		Has Joint Matrix Array: ${jointMatrixArray.length > 0 ? 'yes' : 'no'}
+			Joint Matrix Array length: ${jointMatrixArray.length / 16}
 			Joint Matrix Array data: ${JSON.stringify(jointData)}  // Reusing jointData
 		Joint Matrix Array: ${JSON.stringify(jointMatrixArray)}
 		_________________________________________________________________

@@ -58,17 +58,24 @@ export class Collider2DComponent extends Component<WorldObject> {
 
 	/** Returns world-space AABB. Falls back to object size if no local area is set. */
 	public get worldArea(): Area {
-		const p = this.parent.pos;
+		const parent = this.parentOrThrow();
+		const p = parent.pos;
 		if (!this._localArea) {
-			return { start: { x: p.x, y: p.y }, end: { x: p.x + (this.parent.size?.x ?? 0), y: p.y + (this.parent.size?.y ?? 0) } } as Area;
+			const size = parent.size;
+			return { start: { x: p.x, y: p.y }, end: { x: p.x + size.x, y: p.y + size.y } };
 		}
-		return { start: { x: p.x + this._localArea.start.x, y: p.y + this._localArea.start.y }, end: { x: p.x + this._localArea.end.x, y: p.y + this._localArea.end.y } } as Area;
+		return {
+			start: { x: p.x + this._localArea.start.x, y: p.y + this._localArea.start.y },
+			end: { x: p.x + this._localArea.end.x, y: p.y + this._localArea.end.y }
+		};
 	}
 
 	/** Returns world-space polygons, offset by parent position; null when none. */
 	public get worldPolygons(): Polygon[] | null {
 		if (!this._localPolys || this._localPolys.length === 0) return null;
-		const px = this.parent.x, py = this.parent.y;
+		const parent = this.parentOrThrow();
+		const px = parent.x;
+		const py = parent.y;
 		return this._localPolys.map(poly => {
 			const res: number[] = [];
 			for (let i = 0; i < poly.length; i += 2) res.push(poly[i] + px, poly[i + 1] + py);
@@ -93,7 +100,8 @@ export class Collider2DComponent extends Component<WorldObject> {
 	/** Returns world-space circle, if any. */
 	public get worldCircle(): { x: number; y: number; r: number } | null {
 		if (!this._localCircle) return null;
-		const p = this.parent.pos;
+		const parent = this.parentOrThrow();
+		const p = parent.pos;
 		return { x: p.x + this._localCircle.x, y: p.y + this._localCircle.y, r: this._localCircle.r };
 	}
 }
@@ -136,7 +144,8 @@ export abstract class PositionUpdateAxisComponent extends Component<WorldObject>
 	}
 
 	override preprocessingUpdate(): void {
-		set_inplace_vec2(this.oldPos, this.parent.pos); // Store the old position
+		const parent = this.parentOrThrow();
+		set_inplace_vec2(this.oldPos, parent.pos);
 	}
 }
 
@@ -154,12 +163,13 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	 */
 	override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
 		super.postprocessingUpdate({ params, returnvalue });
-		const currentPos = this.parent.pos;
+		const parent = this.parentOrThrow();
+		const currentPos = parent.pos;
 		if (this.oldPos.x !== currentPos.x) {
-			this.checkBoundaryForXAxis.call($.world.getWorldObject(this.parentid), this.oldPos.x, currentPos.x);
+			this.checkBoundaryForXAxis(parent, this.oldPos.x, currentPos.x);
 		}
 		if (this.oldPos.y !== currentPos.y) {
-			this.checkBoundaryForYAxis.call($.world.getWorldObject(this.parentid), this.oldPos.y, currentPos.y);
+			this.checkBoundaryForYAxis(parent, this.oldPos.y, currentPos.y);
 		}
 	}
 
@@ -170,25 +180,25 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	 * @param {number} oldx - The old x position.
 	 * @param {number} newx - The new x position.
 	 */
-	private checkBoundaryForXAxis(this: WorldObject, oldx: number, newx: number) {
+	private checkBoundaryForXAxis(parent: WorldObject, oldx: number, newx: number) {
 		if (newx < oldx) {
-			if (newx + this.size.x < 0) {
+			if (newx + parent.size.x < 0) {
 				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'left', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leaveScreen', this, payload);
+				EventEmitter.instance.emit('leaveScreen', parent, payload);
 			}
 			else if (newx < 0) {
 				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'left', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leavingScreen', this, payload);
+				EventEmitter.instance.emit('leavingScreen', parent, payload);
 			}
 		}
 		else if (newx > oldx) {
 			if (newx >= $.world.gamewidth) {
 				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'right', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leaveScreen', this, payload);
+				EventEmitter.instance.emit('leaveScreen', parent, payload);
 			}
-			else if (newx + this.size.x >= $.world.gamewidth) {
+			else if (newx + parent.size.x >= $.world.gamewidth) {
 				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'right', old_x_or_y: oldx };
-				EventEmitter.instance.emit('leavingScreen', this, payload);
+				EventEmitter.instance.emit('leavingScreen', parent, payload);
 			}
 		}
 	}
@@ -200,25 +210,25 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
 	 * @param {number} oldy - The old y position.
 	 * @param {number} newy - The new y position.
 	 */
-	private checkBoundaryForYAxis(this: WorldObject, oldy: number, newy: number) {
+	private checkBoundaryForYAxis(parent: WorldObject, oldy: number, newy: number) {
 		if (newy < oldy) {
-			if (newy + this.size.y < 0) {
+			if (newy + parent.size.y < 0) {
 				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'up', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leaveScreen', this, payload);
+				EventEmitter.instance.emit('leaveScreen', parent, payload);
 			}
 			else if (newy < 0) {
 				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'up', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leavingScreen', this, payload);
+				EventEmitter.instance.emit('leavingScreen', parent, payload);
 			}
 		}
 		else if (newy > oldy) {
 			if (newy >= $.world.gameheight) {
 				const payload: WorldObjectEventPayloads['leaveScreen'] = { d: 'down', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leaveScreen', this, payload);
+				EventEmitter.instance.emit('leaveScreen', parent, payload);
 			}
-			else if (newy + this.size.y >= $.world.gameheight) {
+			else if (newy + parent.size.y >= $.world.gameheight) {
 				const payload: WorldObjectEventPayloads['leavingScreen'] = { d: 'down', old_x_or_y: oldy };
-				EventEmitter.instance.emit('leavingScreen', this, payload);
+				EventEmitter.instance.emit('leavingScreen', parent, payload);
 			}
 		}
 	}
@@ -237,12 +247,13 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	 */
 	override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
 		super.postprocessingUpdate({ params, returnvalue });
-		const currentPos = this.parent.pos;
+		const parent = this.parentOrThrow();
+		const currentPos = parent.pos;
 		if (this.oldPos.x !== currentPos.x) {
-			this.checkTileCollisionForXAxis.call(this.parent, this.oldPos.x, currentPos.x);
+			this.checkTileCollisionForXAxis(parent, this.oldPos.x, currentPos.x);
 		}
 		if (this.oldPos.y !== currentPos.y) {
-			this.checkTileCollisionForYAxis.call(this.parent, this.oldPos.y, currentPos.y);
+			this.checkTileCollisionForYAxis(parent, this.oldPos.y, currentPos.y);
 		}
 	}
 
@@ -251,20 +262,20 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	 * @param oldx The previous X-coordinate of the object.
 	 * @param newx The new X-coordinate of the object.
 	 */
-	protected checkTileCollisionForXAxis(this: WorldObject, oldx: number, newx: number) {
+	protected checkTileCollisionForXAxis(parent: WorldObject, oldx: number, newx: number) {
 		if (newx < oldx) {
-			if ($.world.collidesWithTile(this, 'left')) {
-				EventEmitter.instance.emit('wallcollide', this, { d: 'left' });
+			if ($.world.collidesWithTile(parent, 'left')) {
+				EventEmitter.instance.emit('wallcollide', parent, { d: 'left' });
 				newx += TileSize - mod(newx, TileSize);
 			}
-			this.x = ~~newx;
+			parent.x = ~~newx;
 		}
 		else if (newx > oldx) {
-			if ($.world.collidesWithTile(this, 'right')) {
-				EventEmitter.instance.emit('wallcollide', this, { d: 'right' });
+			if ($.world.collidesWithTile(parent, 'right')) {
+				EventEmitter.instance.emit('wallcollide', parent, { d: 'right' });
 				newx -= newx % TileSize;
 			}
-			this.x = ~~newx;
+			parent.x = ~~newx;
 		}
 	}
 
@@ -273,20 +284,20 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
 	 * @param oldy The previous Y-coordinate of the object.
 	 * @param newy The new Y-coordinate of the object.
 	 */
-	protected checkTileCollisionForYAxis(this: WorldObject, oldy: number, newy: number) {
+	protected checkTileCollisionForYAxis(parent: WorldObject, oldy: number, newy: number) {
 		if (newy < oldy) {
-			if ($.world.collidesWithTile(this, 'up')) {
-				EventEmitter.instance.emit('wallcollide', this, { d: 'up' });
+			if ($.world.collidesWithTile(parent, 'up')) {
+				EventEmitter.instance.emit('wallcollide', parent, { d: 'up' });
 				newy += TileSize - mod(newy, TileSize);
 			}
-			this.y = ~~newy;
+			parent.y = ~~newy;
 		}
 		else if (newy > oldy) {
-			if ($.world.collidesWithTile(this, 'down')) {
-				EventEmitter.instance.emit('wallcollide', this, { d: 'down' });
+			if ($.world.collidesWithTile(parent, 'down')) {
+				EventEmitter.instance.emit('wallcollide', parent, { d: 'down' });
 				newy -= newy % TileSize;
 			}
-			this.y = ~~newy;
+			parent.y = ~~newy;
 		}
 	}
 }

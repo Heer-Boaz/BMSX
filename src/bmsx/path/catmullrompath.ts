@@ -38,7 +38,10 @@ export class CatmullRomPath extends EventEmitter implements Path {
 	uAtDistance(s: number): number { if (!this._arcLengths.length || this.length === 0) return 0; s = Math.min(this.length, Math.max(0, s)); let lo = 0, hi = this._arcLengths.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (this._arcLengths[mid] < s) lo = mid + 1; else hi = mid; } const idx = Math.max(1, lo); const s0 = this._arcLengths[idx - 1]; const s1 = this._arcLengths[idx]; const span = s1 - s0 || 1; const t = (s - s0) / span; const u0 = (idx - 1) / this._granularity; const u1 = idx / this._granularity; return u0 + (u1 - u0) * t; }
 	static fromJSON(json: string | CatmullRomPathJSON): CatmullRomPath {
 		const obj: CatmullRomPathJSON = (typeof json === 'string') ? JSON.parse(json) as CatmullRomPathJSON : json;
-		const pts: PathPoint[] = obj.points?.map(p => ({ p: { x: p.x, y: p.y, z: p.z }, t: p.t, meta: p.meta })) ?? [];
+		if (!obj || !Array.isArray(obj.points)) {
+			throw new Error('[CatmullRomPath] JSON payload does not contain a points array.');
+		}
+		const pts: PathPoint[] = obj.points.map(p => ({ p: { x: p.x, y: p.y, z: p.z }, t: p.t, meta: p.meta }));
 		return new CatmullRomPath(pts);
 	}
 	toJSON(): CatmullRomPathJSON { return { points: this.points.map(pt => ({ x: pt.p.x, y: pt.p.y, z: pt.p.z, t: pt.t, meta: pt.meta })) }; }

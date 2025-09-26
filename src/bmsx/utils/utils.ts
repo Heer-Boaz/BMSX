@@ -393,10 +393,10 @@ export function isStorageAvailable(storageType: string): boolean {
 		return true;
 	} catch (error) {
 		const e = error;
-		return e && e.hasOwnProperty('code') && (
+		return e && hasOwn(e, 'code') && (
 			e.code === 22 || // everything except Firefox
 			e.code === 1014 || // Firefox
-			(e.hasOwnProperty('name') && (
+			(hasOwn(e, 'name') && (
 				e.name === 'QuotaExceededError' || // everything except Firefox
 				e.name === 'NS_ERROR_DOM_QUOTA_REACHED' // Firefox
 			))
@@ -758,4 +758,7 @@ export function filterIterable<T>(iterable: Iterable<T>, predicate: (item: T) =>
 		}
 	}
 	return { [Symbol.iterator]: gen };
+}
+export function hasOwn(obj: object, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(obj, key);
 }

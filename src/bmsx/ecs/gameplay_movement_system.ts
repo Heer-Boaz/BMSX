@@ -18,7 +18,12 @@ export class GameplayMovementSystem extends ECSystem {
 			const command = ordered[i]!;
 			const targetId = command.target_id;
 			const obj = world.getWorldObject(targetId) as WorldObject | null;
-			if (!obj || obj.disposeFlag || obj.active === false) continue;
+			if (!obj) {
+				throw new Error(`[GameplayMovementSystem] Movement command targets unknown object '${targetId}'.`);
+			}
+			if (obj.disposeFlag || obj.active === false) {
+				throw new Error(`[GameplayMovementSystem] Movement command issued for inactive object '${targetId}'.`);
+			}
 
 			switch (command.kind) {
 				case 'moveto2d': {

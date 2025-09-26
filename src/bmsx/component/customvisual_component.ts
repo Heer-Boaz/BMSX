@@ -15,7 +15,7 @@ export type RenderProducer = (ctx: RenderProducerContext) => void;
  * the PreRender system calls flush() once per frame to submit them.
  */
 @insavegame
-export class CustomVisualComponent extends Component {
+export class CustomVisualComponent extends Component<WorldObject> {
 	// @excludepropfromsavegame
 	// private ops: RenderSubmission[] = [];
 	@excludepropfromsavegame
@@ -64,11 +64,10 @@ export class CustomVisualComponent extends Component {
 
 	/** Submit accumulated ops into the current frame's renderer and clear the buffer. */
 	public flush(_queue: RenderSubmitQueue): void {
-		// Let the producer enqueue ops first (migration path for legacy rendering logic)
-		if (this.producer) {
-			const parent = this.parentAs<WorldObject>();
-			if (parent) this.producer({ parent, rc: this });
-		}
+		const producer = this.producer;
+		if (!producer) return;
+		const parent = this.parentOrThrow();
+		producer({ parent, rc: this });
 
 		// for (let i = 0; i < this.ops.length; i++) {
 		// 	queue.submit.typed(this.ops[i]);

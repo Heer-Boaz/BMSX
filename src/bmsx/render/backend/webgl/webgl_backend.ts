@@ -158,8 +158,8 @@ export class WebGLBackend implements GPUBackend {
 		// Normalize single color into colors[0]
 		const firstColor = desc.colors && desc.colors.length ? desc.colors[0] : desc.color;
 		if (firstColor || desc.depth) {
-			const colorTex = firstColor?.tex as WebGLTexture | null;
-			const depthTex = desc.depth?.tex as WebGLTexture | null;
+			const colorTex = firstColor ? (firstColor.tex as WebGLTexture | null) : null;
+			const depthTex = desc.depth ? (desc.depth.tex as WebGLTexture | null) : null;
 			if (colorTex) {
 				if (!this.texIds.has(colorTex)) this.texIds.set(colorTex, this.nextTexId++);
 				const cid = this.texIds.get(colorTex)!;
@@ -173,9 +173,10 @@ export class WebGLBackend implements GPUBackend {
 				fbo = this.createRenderTarget(colorTex, depthTex) as WebGLFramebuffer | null;
 			}
 			this.bindFBO(fbo);
-			const clearColor = firstColor?.clear;
-			if (clearColor || desc.depth?.clearDepth !== undefined) {
-				this.clear({ color: clearColor, depth: desc.depth?.clearDepth });
+			const clearColor = firstColor ? firstColor.clear : undefined;
+			const clearDepth = desc.depth ? desc.depth.clearDepth : undefined;
+			if (clearColor || clearDepth !== undefined) {
+				this.clear({ color: clearColor, depth: clearDepth });
 			}
 		}
 		// Set the program related to this render-pass (if defined)
@@ -217,7 +218,7 @@ export class WebGLBackend implements GPUBackend {
 	// Remove registerCustomPipeline; use PipelineManager.register directly
 	private hashString(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return h >>> 0; }
 	getPassState<S = unknown>(label: string): S | undefined {
-		if (Object.prototype.hasOwnProperty.call(this.extraStates, label)) return this.extraStates[label] as unknown as S | undefined;
+		if (this.extraStates[label]) return this.extraStates[label] as unknown as S | undefined;
 		// Assume external PipelineManager; if integrated, call manager.getState
 		// For now, keep extraStates for legacy, but migrate to manager
 		return this.extraStates[label] as unknown as S | undefined;

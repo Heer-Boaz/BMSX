@@ -166,7 +166,12 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	// WebGL / pipeline state
 	public nativeCtx: unknown | null = null;
 	private _backend: GPUBackend | null = null;
-	public get backendType() { return this._backend?.type }
+	public get backendType(): GPUBackend['type'] {
+		if (!this._backend) {
+			throw new Error('[GameView] Backend type requested before backend was configured.');
+		}
+		return this._backend.type;
+	}
 	public renderGraph: RenderGraphRuntime | null = null;
 	private lightingSystem: LightingSystem | null = null;
 	public offscreenCanvasSize!: vec2;
@@ -218,26 +223,30 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	} = {
 			submit: {
 				typed: (o: RenderSubmission) => {
-					switch (o?.type) { // <--- Optional chaining because opt can be null
+					if (!o) {
+						throw new Error('[GameView] Render submission was not provided.');
+					}
+					switch (o.type) {
 						case 'img':
 							this.renderer.submit.sprite(o);
-							break;
+							return;
 						case 'mesh':
 							this.renderer.submit.mesh(o);
-							break;
+							return;
 						case 'particle':
 							this.renderer.submit.particle(o);
-							break;
+							return;
 						case 'rect':
 							this.renderer.submit.rect(o);
-							break;
+							return;
 						case 'poly':
 							this.renderer.submit.poly(o);
-							break;
+							return;
 						case 'glyphs':
 							this.renderer.submit.glyphs(o);
-							break;
+							return;
 					}
+					throw new Error(`[GameView] Unsupported render submission type '${(o as { type: string }).type}'.`);
 				},
 				particle: (o: ParticleRenderSubmission) => { ParticlesPipeline.submitParticle({ ...o }); },
 				sprite: (o: ImgRenderSubmission) => { SpritesPipeline.drawImg(o); },
@@ -246,11 +255,14 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				poly: (o: PolyRenderSubmission) => { SpritesPipeline.drawPolygon(o.points, o.z, o.color, o.thickness ?? 1, o.layer); },
 				glyphs: (o: GlyphRenderSubmission) => {
 					let lines: string | string[] = o.glyphs;
-					if (!o.font) o.font = this.default_font;
-					if (!o.font) { console.error('No font available for glyph rendering'); return; }
+					const resolvedFont = o.font ?? this.default_font;
+					if (!resolvedFont) {
+						throw new Error('[GameView] No font available for glyph rendering.');
+					}
+					o.font = resolvedFont;
 
 					// Optional char-based wrapping
-					if (typeof lines === 'string' && o.wrapChars > 0 && o.wrapChars > 0) {
+					if (typeof lines === 'string' && o.wrapChars !== undefined && o.wrapChars > 0) {
 						lines = wrapGlyphs(lines, o.wrapChars);
 					}
 					let xx = o.x;
@@ -259,7 +271,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 						const arr = Array.isArray(lines) ? lines : [lines];
 						xx += calculateCenteredBlockX(arr, o.font.char_width('a'), o.centerBlockWidth);
 					}
-					renderGlyphs(xx, o.y, lines, o?.z ?? 950, o?.font, o?.color, o?.backgroundColor, o?.layer);
+					renderGlyphs(xx, o.y, lines, o.z ?? 950, o.font, o.color, o.backgroundColor, o.layer);
 				},
 			},
 		};
@@ -280,7 +292,11 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		Registry.instance.register(this);
 		this.viewportSize = shallowCopy(viewportSize) as vec2;
 		this.canvasSize = (shallowCopy(canvasSize) ?? multiply_vec2(viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
-		this.canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
+		const canvasElement = document.getElementById('gamescreen');
+		if (!(canvasElement instanceof HTMLCanvasElement)) {
+			throw new Error('[GameView] Canvas element with id "gamescreen" not found or not a canvas.');
+		}
+		this.canvas = canvasElement;
 		// Offscreen resolution for internal render graph targets (view-agnostic)
 		this.offscreenCanvasSize = multiply_vec(viewportSize, 2);
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
@@ -310,17 +326,19 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public drawgame(): void {
 		if (!renderGate.ready) return;
 		const token = renderGate.begin({ blocking: true, category: 'frame', tag: 'frame' });
+		const backend = this.backend;
+		const renderGraph = this.renderGraph;
+		if (!renderGraph) {
+			renderGate.end(token);
+			throw new Error('[GameView] Render graph not built before drawgame.');
+		}
 		try {
-			this._backend.beginFrame();
-			// $.emit('framebegin', this, token);
+			backend.beginFrame();
 			const frame = buildFrameData(this);
-			// Submit draw calls via PreRender ECS system (renderSubmit)
-			// No need to check for invalid or missing render graph, as we assume it's valid for the frame given the render gate that blocks rendering if no graph present
-			// $.emit('frameupdate', this, token);
-			this.renderGraph!.execute(frame);
+			renderGraph.execute(frame);
 		} finally {
-		$.emitPresentation('frameend', this, token);
-			this._backend.endFrame();
+			$.emitPresentation('frameend', this, token);
+			backend.endFrame();
 			renderGate.end(token);
 		}
 	}
@@ -368,7 +386,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public handleResize(): void {
-		if (document.getElementById('gamescreen')!.style.visibility === 'hidden') return;
+		if (this.canvas.style.visibility === 'hidden') return;
 		// Determine whether we are in landscape or portrait mode
 		const isLandscape = window.innerWidth > window.innerHeight;
 
@@ -455,6 +473,9 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	 */
 	protected listenToMediaEvents(): void {
 		const view = $.view;
+		if (!view) {
+			throw new Error('[GameView] Global view not registered before listening to media events.');
+		}
 
 		function handleResizeHelper() {
 			view.handleResize.call(view);
@@ -574,19 +595,20 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public hideFadingOverlay() {
-		let pauseOverlay = document.getElementById('pause-overlay');
-		if (pauseOverlay) {
-			// Add the fade-out class to start the animation
-			pauseOverlay.classList.add('fade-out');
-			// Remove the visible class to hide the overlay by setting the opacity to 0
-			pauseOverlay.classList.remove('visible');
-			// Force a reflow to restart the animation
-			void pauseOverlay.offsetWidth;
-
-			pauseOverlay.onanimationend = () => {
-				pauseOverlay?.remove();
-			}
+		const pauseOverlay = document.getElementById('pause-overlay');
+		if (!(pauseOverlay instanceof HTMLElement)) {
+			throw new Error('[GameView] Pause overlay not found while attempting to hide it.');
 		}
+		// Add the fade-out class to start the animation
+		pauseOverlay.classList.add('fade-out');
+		// Remove the visible class to hide the overlay by setting the opacity to 0
+		pauseOverlay.classList.remove('visible');
+		// Force a reflow to restart the animation
+		void pauseOverlay.offsetWidth;
+
+		pauseOverlay.onanimationend = () => {
+			pauseOverlay.remove();
+		};
 	}
 
 	public showPauseOverlay() {
@@ -598,13 +620,25 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public set backend(backend: GPUBackend) {
+		if (!backend) {
+			throw new Error('[GameView] Attempted to assign an invalid backend.');
+		}
 		this._backend = backend;
 	}
 
-	public get backend(): GPUBackend { return this._backend; }
+	public get backend(): GPUBackend {
+		if (!this._backend) {
+			throw new Error('[GameView] Backend accessed before being configured.');
+		}
+		return this._backend;
+	}
 	public initializeDefaultTextures(): void {
-		const atlasImage = GameView.imgassets['_atlas']?._imgbin as ImageBitmap | undefined;
-		if (atlasImage) this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
+		const atlas = GameView.imgassets['_atlas'];
+		if (!atlas) {
+			throw new Error("[GameView] Default atlas '_atlas' missing while initializing textures.");
+		}
+		const atlasImage = atlas._imgbin;
+		this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
 		this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
@@ -620,8 +654,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const token = renderGate.begin({ blocking: true, category: 'rebuild_graph', tag: 'frame' });
 		if (!this.lightingSystem) this.lightingSystem = new LightingSystem();
 		if (!this.pipelineRegistry) {
-			console.warn('[GameView] PipelineRegistry not set on view yet; skipping render graph build');
-			return;
+			renderGate.end(token);
+			throw new Error('[GameView] PipelineRegistry not configured before rebuildGraph.');
 		}
 		// GameView implements RenderContext directly
 		this.renderGraph = this.pipelineRegistry.buildRenderGraph(this, this.lightingSystem);
@@ -636,9 +670,11 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this._dynamicAtlasIndex = index;
 		if (index == null) { this.activeTexUnit = 1; this.bind2DTex(null); return; }
 		const atlasName = generateAtlasName(index);
-		const atlasImage = GameView.imgassets[atlasName]?._imgbin;
-		if (!atlasImage) { console.error(`Atlas '${atlasName}' not found`); return; }
-		this.textures['_atlas_dynamic'] = this.backend.createTextureFromImage(atlasImage as ImageBitmap, {});
+		const atlas = GameView.imgassets[atlasName];
+		if (!atlas) {
+			throw new Error(`[GameView] Dynamic atlas '${atlasName}' not found.`);
+		}
+		this.textures['_atlas_dynamic'] = this.backend.createTextureFromImage(atlas._imgbin as ImageBitmap, {});
 	}
 
 	// Texture binding helpers
@@ -647,24 +683,39 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	set activeTexUnit(u: number | null) {
-		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
-
+		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
+		const backend = this.backend;
 		this._activeTexUnit = u;
-		if (u != null) this.backend.setActiveTexture?.(u);
+		if (u != null) {
+			const setActiveTexture = backend.setActiveTexture;
+			if (!setActiveTexture) {
+				throw new Error('[GameView] WebGL2 backend does not implement setActiveTexture.');
+			}
+			setActiveTexture.call(backend, u);
+		}
 	}
 
 	bind2DTex(tex: TextureHandle | null): void {
-		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
+		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
 		if (this._activeTexture2D === tex) return;
-		this.backend.bindTexture2D?.(tex);
+		const backend = this.backend;
+		const bindTexture2D = backend.bindTexture2D;
+		if (!bindTexture2D) {
+			throw new Error('[GameView] WebGL2 backend does not implement bindTexture2D.');
+		}
+		bindTexture2D.call(backend, tex);
 		this._activeTexture2D = tex;
 	}
 
 	bindCubemapTex(tex: TextureHandle | null): void {
-		if (this._backend.type !== 'webgl2') return; // Texture units are not a thing in WebGPU
-
+		if (this.backendType !== 'webgl2') return; // Texture units are not a thing in WebGPU
 		if (this._activeCubemap === tex) return;
-		this.backend.bindTextureCube?.(tex);
+		const backend = this.backend;
+		const bindTextureCube = backend.bindTextureCube;
+		if (!bindTextureCube) {
+			throw new Error('[GameView] WebGL2 backend does not implement bindTextureCube.');
+		}
+		bindTextureCube.call(backend, tex);
 		this._activeCubemap = tex;
 	}
 }
@@ -682,26 +733,32 @@ export interface AtmosphereParams {
 
 export function registerAtmosphereHotkeys(): void {
 	window.addEventListener('keydown', (e) => {
-		if (!$.view?.atmosphere) {
-			console.warn('No atmosphere found on view; cannot toggle atmosphere settings');
-			return;
+		const view = $.view;
+		if (!view) {
+			throw new Error('[GameView] No active view available while processing atmosphere hotkeys.');
+		}
+		const atmosphere = view.atmosphere;
+		if (!atmosphere) {
+			throw new Error('[GameView] Active view is missing atmosphere settings.');
 		}
 		if (e.key === 'f') {
-			$.view.atmosphere.fogD50 = ($.view.atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
-			console.info(`Fog ${$.view.atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${$.view.atmosphere.fogD50})`);
+			atmosphere.fogD50 = (atmosphere.fogD50 > 1e6) ? 320.0 : 1e9;
+			console.info(`Fog ${atmosphere.fogD50 > 1e6 ? 'disabled' : 'enabled'} (d50=${atmosphere.fogD50})`);
 		}
 		else if (e.key === 'g') {
-			const isNeutral = $.view.atmosphere.fogColorLow[0] === 1.0 && $.view.atmosphere.fogColorHigh[0] === 1.0
-				&& $.view.atmosphere.fogColorLow[1] === 1.0 && $.view.atmosphere.fogColorHigh[1] === 1.0
-				&& $.view.atmosphere.fogColorLow[2] === 1.0 && $.view.atmosphere.fogColorHigh[2] === 1.0;
+			const isNeutral = atmosphere.fogColorLow[0] === 1.0 && atmosphere.fogColorHigh[0] === 1.0
+				&& atmosphere.fogColorLow[1] === 1.0 && atmosphere.fogColorHigh[1] === 1.0
+				&& atmosphere.fogColorLow[2] === 1.0 && atmosphere.fogColorHigh[2] === 1.0;
 			if (isNeutral) {
-				$.view.atmosphere.fogColorLow = [0.90, 0.95, 1.00];
-				$.view.atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
+				atmosphere.fogColorLow = [0.90, 0.95, 1.00];
+				atmosphere.fogColorHigh = [1.05, 1.02, 0.95];
 			} else {
-				$.view.atmosphere.fogColorLow = [1.0, 1.0, 1.0];
-				$.view.atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
+				atmosphere.fogColorLow = [1.0, 1.0, 1.0];
+				atmosphere.fogColorHigh = [1.0, 1.0, 1.0];
 			}
 			console.info('Fog color gradient toggled');
 		}
 	});
-} export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);
+}
+
+export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);

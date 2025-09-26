@@ -102,15 +102,21 @@ export class AssetBarrier<T> {
 
 	addRef(key: string): void {
 		const e = this.map.get(key);
-		if (e) e.refCount++;
-		else console.warn(`[AssetBarrier] addRef on missing key="${key}"`);
+		if (!e) {
+			throw new Error(`[AssetBarrier] addRef called for unknown key "${key}".`);
+		}
+		e.refCount++;
 	}
 
 	release(key: string, disposer?: Disposer<T>): void {
 		const e = this.map.get(key);
-		if (!e) { console.warn(`[AssetBarrier] release on missing key="${key}"`); return; }
+		if (!e) {
+			throw new Error(`[AssetBarrier] release called for unknown key "${key}".`);
+		}
 		e.refCount--;
-		if (e.refCount < 0) console.warn(`[AssetBarrier] negative refCount for key="${key}"`);
+		if (e.refCount < 0) {
+			throw new Error(`[AssetBarrier] refCount underflow for key "${key}".`);
+		}
 		if (e.refCount <= 0) {
 			e.gen++;
 			if (e.value !== undefined && !e.isFallback) {
@@ -121,7 +127,10 @@ export class AssetBarrier<T> {
 	}
 
 	invalidate(key: string, disposer?: Disposer<T>): void {
-		const e = this.map.get(key); if (!e) return;
+		const e = this.map.get(key);
+		if (!e) {
+			throw new Error(`[AssetBarrier] invalidate called for unknown key "${key}".`);
+		}
 		e.gen++;
 		if (e.value !== undefined && !e.isFallback) {
 			try { (disposer ?? e.disposer)?.(e.value); } catch (err) { console.error('[AssetBarrier] disposer threw on invalidate', err); }

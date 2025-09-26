@@ -90,23 +90,28 @@ export class GateGroup {
 
 	/** End of scope. Late/other gen or wrong group → ignored. */
 	end(token: Token): void {
-		if (!token) { console.error(`[GateGroup:${this.name}] end() called without token`); return; }
-		if (token._group !== this.name) { console.warn(`[GateGroup:${this.name}] end() with foreign token id=${token.id} from "${token._group}"`); return; }
+		if (!token) {
+			throw new Error(`[GateGroup:${this.name}] end() called without token.`);
+		}
+		if (token._group !== this.name) {
+			throw new Error(`[GateGroup:${this.name}] end() with foreign token id=${token.id} from "${token._group}".`);
+		}
 
 		const b = this.gate._bucket(this.name);
 		if (token.gen !== b.gen) return; // late/other gen
 
 		if (!b.live.delete(token.id)) {
-			console.warn(`[GateGroup:${this.name}] end() on unknown token id=${token.id}`);
-			return;
+			throw new Error(`[GateGroup:${this.name}] end() on unknown token id=${token.id}.`);
 		}
 
 		const n = (b.countsByCat.get(token.category) ?? 1) - 1;
 		if (n > 0) b.countsByCat.set(token.category, n); else b.countsByCat.delete(token.category);
 
 		if (token.blocking) {
-			if (b.blockingPending > 0) b.blockingPending--;
-			else console.warn(`[GateGroup:${this.name}] blockingPending underflow`);
+			if (b.blockingPending <= 0) {
+				throw new Error(`[GateGroup:${this.name}] blockingPending underflow on token id=${token.id}.`);
+			}
+			b.blockingPending--;
 		}
 	}
 

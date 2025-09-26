@@ -132,22 +132,37 @@ export class MeshComponent extends Component {
 	}
 
 	private tryLoadModelAndBuild(): void {
-		const m = $.rompack.model?.[this.modelId];
-		if (!m) return;
-		this.model = m;
+		const rom = $.rompack.model;
+		if (!rom) {
+			throw new Error(`[MeshComponent] ROM pack not loaded when constructing '${this.id}'.`);
+		}
+		const model = rom[this.modelId];
+		if (!model) {
+			throw new Error(`[MeshComponent] Model '${this.modelId}' not found for '${this.id}'.`);
+		}
+		this.model = model;
 		this.buildInstances();
 		this.applyMaterialOverrides();
-		this.fetchAndBindModelTextures();
+		void this.fetchAndBindModelTextures();
+	}
+
+	private modelOrThrow(): GLTFModel {
+		const model = this.model;
+		if (!model) {
+			throw new Error(`[MeshComponent] Model '${this.modelId}' requested before load on '${this.id}'.`);
+		}
+		return model;
 	}
 
 	private resetSkinCaches(): void {
-		const count = this.model?.skins?.length ?? 0;
+		const model = this.modelOrThrow();
+		const count = model.skins?.length ?? 0;
 		this.skinMatrices = new Array(count);
 		this.skinDirty = new Array(count).fill(true);
 	}
 
 	private initializePoseFromModel(): void {
-		const nodes = this.model?.nodes ?? [];
+		const nodes = this.modelOrThrow().nodes ?? [];
 		this.baseTranslation = new Array(nodes.length);
 		this.baseRotation = new Array(nodes.length);
 		this.baseScale = new Array(nodes.length);
@@ -185,7 +200,7 @@ export class MeshComponent extends Component {
 	private buildInstances(): void {
 		this.instances.length = 0;
 		this.renderMeshes.length = 0;
-		const model = this.model!;
+		const model = this.modelOrThrow();
 		const nodes = model.nodes ?? [];
 		if (!nodes || nodes.length === 0) return;
 
@@ -275,9 +290,13 @@ export class MeshComponent extends Component {
 	}
 
 	private traverse(nodeIndex: number, parent: Float32Array): void {
-		if (!this.model?.nodes) return;
+		const model = this.modelOrThrow();
+		const nodes = model.nodes;
+		if (!nodes) {
+			throw new Error(`[MeshComponent] Model '${this.modelId}' is missing nodes while traversing '${this.id}'.`);
+		}
 		const world = this.getWorldMatrixFrom(nodeIndex, parent);
-		const node: GLTFNode = this.model.nodes[nodeIndex];
+		const node: GLTFNode = nodes[nodeIndex];
 		if (node.mesh !== undefined) {
 			const mesh = this.renderMeshes[node.mesh];
 			if (mesh) {
@@ -517,33 +536,30 @@ export class MeshComponent extends Component {
 	}
 
 	private dispatchMeshAnimationEvent(event: string, payload: Record<string, unknown>, scope?: 'self' | 'global'): void {
-		const parent = this.parent;
-		if (!parent) return;
+		const parent = this.parentOrThrow();
 		$.emit(event, parent, payload);
 		const sc = parent.sc;
-		if (sc) {
-			const name = scope === 'self' ? `$${event}` : event;
-			sc.dispatch_event(name, parent, payload);
+		if (!sc) {
+			throw new Error(`[MeshComponent] Parent '${parent.id}' is missing a state controller.`);
 		}
+		const name = scope === 'self' ? `$${event}` : event;
+		sc.dispatch_event(name, parent, payload);
 	}
 
 	private applyRootMotionDelta(): void {
 		const delta = this._rootMotionDelta;
 		if (Math.abs(delta[0]) + Math.abs(delta[1]) + Math.abs(delta[2]) <= 1e-4) return;
-		const parent = this.parent;
-		if (parent) {
-			parent.x += delta[0];
-			parent.y += delta[1];
-			parent.z += delta[2];
-		}
+		const parent = this.parentOrThrow();
+		parent.x += delta[0];
+		parent.y += delta[1];
+		parent.z += delta[2];
 		delta[0] = 0; delta[1] = 0; delta[2] = 0;
 	}
 
 	public playClip(name: string, options: MeshClipPlayOptions = {}): void {
 		const clip = this.getClipByName(name);
 		if (!clip) {
-			console.warn(`[MeshComponent] Clip '${name}' not found on model '${this.modelId}'.`);
-			return;
+			throw new Error(`[MeshComponent] Clip '${name}' not found on model '${this.modelId}'.`);
 		}
 		const key = this.resolveClipKey(clip);
 		const fade = Math.max(0, options.fadeSeconds ?? 0);
@@ -619,11 +635,13 @@ export class MeshComponent extends Component {
 	}
 
 	public setRootMotionNode(index: number): void {
-		this._rootMotionNode = Math.max(0, Math.min(index, (this.model?.nodes?.length ?? 1) - 1));
+		const model = this.modelOrThrow();
+		const nodeCount = model.nodes?.length ?? 1;
+		this._rootMotionNode = Math.max(0, Math.min(index, nodeCount - 1));
 	}
 
 	private getClipByName(name: string): GLTFAnimation | undefined {
-		const anims = this.model?.animations;
+		const anims = this.modelOrThrow().animations;
 		if (!anims || anims.length === 0) return undefined;
 		let clip = anims.find(anim => anim?.name === name);
 		if (clip) return clip;
@@ -639,7 +657,7 @@ export class MeshComponent extends Component {
 
 	private resolveClipKey(clip: GLTFAnimation): string {
 		if (clip.name && clip.name.length > 0) return clip.name;
-		const anims = this.model?.animations ?? [];
+		const anims = this.modelOrThrow().animations ?? [];
 		const idx = anims.indexOf(clip);
 		return idx >= 0 ? `clip_${idx}` : 'clip';
 	}
@@ -771,7 +789,8 @@ export class MeshComponent extends Component {
 	}
 
 	private computeSkinMatrices(skinIndex: number, meshNodeIndex: number, meshNodeWorld: Float32Array): Float32Array[] | undefined {
-		const skin = this.model?.skins?.[skinIndex];
+		const model = this.modelOrThrow();
+		const skin = model.skins?.[skinIndex];
 		if (!skin || skin.joints.length === 0) return undefined;
 		let cache = this.skinMatrices[skinIndex];
 		if (!cache || cache.length !== skin.joints.length) {
@@ -797,7 +816,8 @@ export class MeshComponent extends Component {
 	}
 
 	public stepAnimation(dtSec: number): void {
-		if (!this.model?.animations || this.model.animations.length === 0) return;
+		const model = this.modelOrThrow();
+		if (!model.animations || model.animations.length === 0) return;
 		this.advanceClips(dtSec);
 		if (!this._currentClip && !this._previousClip) {
 			if (this._autoResetPose) {
@@ -812,8 +832,8 @@ export class MeshComponent extends Component {
 		for (let i = 0; i < this.nodeDirty.length; i++) this.nodeDirty[i] = true;
 		this.markAllSkinsDirty();
 		this.applyRootMotionDelta();
-		if (this.model?.scenes && this.model.scenes.length > 0) {
-			const scene = this.model.scenes[this.model.scene ?? 0];
+		if (model.scenes && model.scenes.length > 0) {
+			const scene = model.scenes[model.scene ?? 0];
 			if (scene) for (const root of scene.nodes) this.getWorldMatrixFrom(root, MeshComponent._ID);
 		}
 	}
@@ -990,7 +1010,7 @@ export class MeshComponent extends Component {
 	public setMaterialOverride(meshIndex: number, overrides: PersistedMatTex): void {
 		this.materialOverrides ??= {};
 		this.materialOverrides[meshIndex] = { ...(this.materialOverrides[meshIndex] ?? {}), ...overrides };
-		if (!this.model) return;
+		const model = this.modelOrThrow();
 		for (const inst of this.instances) {
 			if (inst.meshIndex !== meshIndex) continue;
 			const mat = inst.mesh.material;
@@ -1002,7 +1022,11 @@ export class MeshComponent extends Component {
 			if (overrides.metallicFactor !== undefined) mat.metallicFactor = overrides.metallicFactor;
 			if (overrides.roughnessFactor !== undefined) mat.roughnessFactor = overrides.roughnessFactor;
 		}
-		this.rebindMaterialTexturesFromModelKeys();
+		if (!model.gpuTextures) {
+			void this.fetchAndBindModelTextures();
+			return;
+		}
+		this.rebindMaterialTexturesFromModelKeys(model);
 	}
 
 	private applyMaterialOverrides(): void {
@@ -1014,22 +1038,23 @@ export class MeshComponent extends Component {
 	}
 
 	private async fetchAndBindModelTextures(): Promise<void> {
-		const model = this.model; if (!model) return;
+		const model = this.modelOrThrow();
 		if (!model.gpuTextures) {
-			try {
-				const genGuard = model; // capture to guard against model switch during await
-				const keys = await $.texmanager.fetchModelTextures(model);
-				if (this.model !== genGuard) return; // model changed
-				this.model.gpuTextures = keys;
-			} catch (e) {
-				console.error('[MeshComponent] fetchModelTextures failed:', e);
+			const genGuard = model;
+			const keys = await $.texmanager.fetchModelTextures(model);
+			if (this.model !== genGuard) {
+				throw new Error(`[MeshComponent] Model switched while fetching textures for '${this.id}'.`);
 			}
+			model.gpuTextures = keys;
 		}
-		this.rebindMaterialTexturesFromModelKeys();
+		this.rebindMaterialTexturesFromModelKeys(model);
 	}
 
-	private rebindMaterialTexturesFromModelKeys(): void {
-		const keys = this.model?.gpuTextures; if (!keys) return;
+	private rebindMaterialTexturesFromModelKeys(model: GLTFModel): void {
+		const keys = model.gpuTextures;
+		if (!keys) {
+			throw new Error(`[MeshComponent] GPU textures not bound for '${this.id}'.`);
+		}
 		for (const inst of this.instances) {
 			const mat = inst.mesh.material; if (!mat) continue;
 			const t = mat.textures ?? {};
@@ -1043,9 +1068,10 @@ export class MeshComponent extends Component {
 
 	// Utility used by system to emit submissions for this component
 	public collectSubmissions(base: Float32Array, receiveShadow: boolean = true): MeshRenderSubmission[] {
+		this.modelOrThrow();
 		const out: MeshRenderSubmission[] = [];
 		for (const inst of this.instances) {
-			const nodeWorld = (this.model && inst.nodeIndex !== undefined) ? (this.worldMatrices[inst.nodeIndex] ?? MeshComponent._ID) : MeshComponent._ID;
+			const nodeWorld = inst.nodeIndex !== undefined ? (this.worldMatrices[inst.nodeIndex] ?? MeshComponent._ID) : MeshComponent._ID;
 			const world = inst.worldMatrix ?? (inst.worldMatrix = new Float32Array(16));
 			M4.mulAffineInto(world, base, nodeWorld);
 			const joints = (inst.skinIndex !== undefined && inst.nodeIndex !== undefined)
@@ -1104,11 +1130,12 @@ export class MeshComponent extends Component {
 		const runtime: MeshRuntime = { version: 1 };
 		if (this.modelId !== undefined) runtime.model_id = this.modelId;
 
-		if (this.model?.nodes && this.model.scenes?.length) {
-			const { toKey } = MeshComponent.buildNodeKeyMap(this.model);
+		const model = this.modelOrThrow();
+		if (model.nodes && model.scenes?.length) {
+			const { toKey } = MeshComponent.buildNodeKeyMap(model);
 			const map: Record<NodeKey, RuntimeNodeState> = {};
-			for (let i = 0; i < this.model.nodes.length; i++) {
-				const n = this.model.nodes[i];
+			for (let i = 0; i < model.nodes.length; i++) {
+				const n = model.nodes[i];
 				const k = toKey(i);
 				const st: RuntimeNodeState = {};
 				if (n.translation || n.rotation || n.scale) {
@@ -1161,16 +1188,26 @@ export class MeshComponent extends Component {
 		if (this._runtime) delete this._runtime;
 
 		if (rt?.model_id !== undefined) this.modelId = rt.model_id;
-		const model = $.rompack.model?.[this.modelId] ?? this.model;
-		if (!model) return;
+		const rom = $.rompack.model;
+		if (!rom) {
+			throw new Error(`[MeshComponent] ROM pack unavailable during onLoad for '${this.id}'.`);
+		}
+		const loaded = rom[this.modelId] ?? this.model;
+		if (!loaded) {
+			throw new Error(`[MeshComponent] Model '${this.modelId}' missing during onLoad for '${this.id}'.`);
+		}
 
-		this.model = model;
-		if (rt?.nodes && this.model?.nodes) {
-			const { toIndex } = MeshComponent.buildNodeKeyMap(this.model);
+		this.model = loaded;
+		if (rt?.nodes) {
+			const nodes = loaded.nodes;
+			if (!nodes) {
+				throw new Error(`[MeshComponent] Runtime node data provided but model '${this.modelId}' has no nodes.`);
+			}
+			const { toIndex } = MeshComponent.buildNodeKeyMap(loaded);
 			for (const [k, ns] of Object.entries(rt.nodes)) {
 				const idx = toIndex(k);
 				if (idx === undefined) continue;
-				const node = this.model.nodes[idx];
+				const node = nodes[idx];
 				if (ns.trs) {
 					if (ns.trs.t) node.translation = [...ns.trs.t] as vec3arr;
 					if (ns.trs.r) node.rotation = [...ns.trs.r] as vec4arr;
@@ -1191,13 +1228,11 @@ export class MeshComponent extends Component {
 		}
 
 		this.applyMaterialOverrides();
-
-		if (!this.model.gpuTextures) {
-			$.texmanager.fetchModelTextures(this.model).then(keys => {
-				if (this.model) { this.model.gpuTextures = keys; this.rebindMaterialTexturesFromModelKeys(); }
-			});
+		const modelInstance = this.modelOrThrow();
+		if (modelInstance.gpuTextures) {
+			this.rebindMaterialTexturesFromModelKeys(modelInstance);
 		} else {
-			this.rebindMaterialTexturesFromModelKeys();
+			void this.fetchAndBindModelTextures();
 		}
 	}
 }

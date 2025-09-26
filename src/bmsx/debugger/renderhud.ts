@@ -142,8 +142,8 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		const rg = gv.renderGraph;
 		if (!rg) { el.textContent = 'Render HUD: no graph'; return; }
 		const stats = rg.getPassStats();
-		const memInfo = rg.getPassTextureMemoryInfo?.();
-		const frameMem = rg.getTotalTextureMemoryInfo?.();
+		const memInfo = typeof rg.getPassTextureMemoryInfo === 'function' ? rg.getPassTextureMemoryInfo() : [];
+		const frameMem = typeof rg.getTotalTextureMemoryInfo === 'function' ? rg.getTotalTextureMemoryInfo() : undefined;
 		if (!stats || stats.length === 0) { el.textContent = 'Render HUD: no stats'; return; }
 		const lines: string[] = [];
 		const lightLines: string[] = [];
@@ -151,7 +151,8 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		for (const s of stats) total += s.ms;
 		// Backend draw call counters (if backend exposes them)
 		const b = gv.backend;
-		const fs = b?.getFrameStats?.();
+		if (!b) throw new Error('[RenderHUD] Render backend not initialized.');
+		const fs = typeof b.getFrameStats === 'function' ? b.getFrameStats() : undefined;
 		if (fs) {
 			const toKB = (n?: number) => ((n ?? 0) / 1024).toFixed(1);
 			const anyFs = fs as unknown as { vertexBytes?: number; indexBytes?: number; uniformBytes?: number; textureBytes?: number };
@@ -160,11 +161,16 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 				`upload:${toKB(fs.bytesUploaded)}KB (v:${toKB(anyFs.vertexBytes)}KB i:${toKB(anyFs.indexBytes)}KB u:${toKB(anyFs.uniformBytes)}KB t:${toKB(anyFs.textureBytes)}KB)`
 			);
 			// Lights summary (build separately)
-			const dCount = MeshPipeline.getDirectionalLightCount?.() ?? 0;
-			const pCount = MeshPipeline.getPointLightCount?.() ?? 0;
-			const amb = $.world.activeAmbientLight?.light;
-			const ambColor = amb?.color ?? [0, 0, 0];
-			const ambI = amb?.intensity ?? 0;
+			const dCount = typeof MeshPipeline.getDirectionalLightCount === 'function'
+				? MeshPipeline.getDirectionalLightCount()
+				: 0;
+			const pCount = typeof MeshPipeline.getPointLightCount === 'function'
+				? MeshPipeline.getPointLightCount()
+				: 0;
+			const ambient = $.world.activeAmbientLight;
+			const amb = ambient ? ambient.light : null;
+			const ambColor = amb ? amb.color : [0, 0, 0];
+			const ambI = amb ? amb.intensity : 0;
 			const r = Math.max(0, Math.min(255, Math.round((ambColor[0]) * 255)));
 			const g = Math.max(0, Math.min(255, Math.round((ambColor[1]) * 255)));
 			const b = Math.max(0, Math.min(255, Math.round((ambColor[2]) * 255)));
@@ -172,8 +178,12 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 			// Header text (human-friendly labels)
 			const header = `${ambChip}<strong>Ambient</strong> (intensity ${ambI.toFixed(2)})   |   Directional lights: ${dCount}   Point lights: ${pCount}   [${this.showLightDetail ? 'details shown' : 'click to show details'}]`;
 			(lightsHeaderEl as HTMLElement).innerHTML = header;
-			const dirs = MeshPipeline.getDirectionalLights?.() ?? [];
-			const pts = MeshPipeline.getPointLightsAll?.() ?? [];
+			const dirs = typeof MeshPipeline.getDirectionalLights === 'function'
+				? MeshPipeline.getDirectionalLights()
+				: [];
+			const pts = typeof MeshPipeline.getPointLightsAll === 'function'
+				? MeshPipeline.getPointLightsAll()
+				: [];
 			const topDir = dirs.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
 			const topPt = pts.slice(0, 2).map((l: any) => l.intensity.toFixed(2)).join(', ');
 			if (dCount || pCount) lightLines.push(`  Directional intensities: [${topDir}]   Point intensities: [${topPt}]`);
@@ -309,5 +319,11 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 const overlay = new RenderHUDOverlay();
 overlay.bind();
 
-export function toggleRenderHUD(): void { if (overlay?.enabled) overlay.disable(); else overlay?.enable(); }
-export function toggleRenderHUDAverageMode(): void { overlay?.toggleAverageMode(); }
+export function toggleRenderHUD(): void {
+	if (overlay.enabled) overlay.disable();
+	else overlay.enable();
+}
+
+export function toggleRenderHUDAverageMode(): void {
+	overlay.toggleAverageMode();
+}

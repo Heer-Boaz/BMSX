@@ -47,12 +47,13 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	 */
 	protected constructor(opts?: RevivableObjectArgs & { id?: Identifier }) {
 		this.id = opts?.id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
-		// Register service in global registry
-		this.bind();
 
 		const fsmName = this.constructor.name;
 		const hasDef = !!StateDefinitions?.[fsmName];
 		this.sc = hasDef ? new StateMachineController(fsmName, this.id) : new StateMachineController();
+
+		// Register service in global registry
+		this.bind();
 	}
 
 	/**
@@ -83,7 +84,10 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 		Registry.instance.register(this);
 		EventEmitter.instance.initClassBoundEventSubscriptions(this);
 		// Bind controller subscriptions (no start on revive/bind)
-		this.sc?.bind();
+		if (!this.sc) {
+			throw new Error(`[Service:${this.id}] State machine controller was not initialized before bind().`);
+		}
+		this.sc.bind();
 	}
 
 	/** Unwire all subscriptions for this service. */

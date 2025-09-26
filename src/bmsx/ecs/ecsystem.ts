@@ -107,7 +107,8 @@ export class PreTagSystem extends ECSystem {
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'active'}) ) {
 			for (let c of o.iterateComponents()) {
-				if (c.enabled && c.hasPreprocessingTag(this.tag)) c.preprocessingUpdate();
+				if (!c.enabled || !c.hasPreprocessingTag(this.tag)) continue;
+				c.preprocessingUpdate();
 			}
 		}
 	}
@@ -119,7 +120,8 @@ export class PostTagSystem extends ECSystem {
 	update(world: World): void {
 		for (let o of world.objects({ scope: 'active' })) {
 			for (let c of o.iterateComponents()) {
-				if (c.enabled && c.hasPostprocessingTag(this.tag)) c.postprocessingUpdate({ params: [] });
+				if (!c.enabled || !c.hasPostprocessingTag(this.tag)) continue;
+				c.postprocessingUpdate({ params: [] });
 			}
 		}
 	}
@@ -194,7 +196,10 @@ export class PrePositionSystem extends ECSystem {
 	update(world: World): void {
 		const objs = world.objectsWithComponents(PositionUpdateAxisComponent, { scope: 'active' });
 		// Preprocess all PositionUpdateAxisComponents
-		for (const [_o, c] of objs) c.enabled && c.preprocessingUpdate();
+		for (const [, c] of objs) {
+			if (!c.enabled) continue;
+			c.preprocessingUpdate();
+		}
 	}
 }
 
@@ -270,13 +275,13 @@ export class TileCollisionSystem extends ECSystem {
 			let newy = o.y;
 			// X axis movement
 			if (newx < oldx) {
-				if ($.world.collidesWithTile?.(o, 'left')) {
+				if ($.world.collidesWithTile(o, 'left')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'left' as const });
 					newx += TileSize - mod(newx, TileSize);
 				}
 				o.x = ~~newx;
 			} else if (newx > oldx) {
-				if ($.world.collidesWithTile?.(o, 'right')) {
+				if ($.world.collidesWithTile(o, 'right')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'right' as const });
 					newx -= newx % TileSize;
 				}
@@ -284,13 +289,13 @@ export class TileCollisionSystem extends ECSystem {
 			}
 			// Y axis movement
 			if (newy < oldy) {
-				if ($.world.collidesWithTile?.(o, 'up')) {
+				if ($.world.collidesWithTile(o, 'up')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'up' as const });
 					newy += TileSize - mod(newy, TileSize);
 				}
 				o.y = ~~newy;
 			} else if (newy > oldy) {
-				if ($.world.collidesWithTile?.(o, 'down')) {
+				if ($.world.collidesWithTile(o, 'down')) {
 					EventEmitter.instance.emit('wallcollide', o, { d: 'down' as const });
 					newy -= newy % TileSize;
 				}
@@ -315,17 +320,20 @@ export class PhysicsPreSystem extends ECSystem {
 				// here we assume it might have failed earlier due to timing; rely on preprocessingUpdate behavior
 				// We mirror minimal behavior using available fields
 				// Fallback: call preprocessingUpdate to ensure body
-				c.preprocessingUpdate?.();
+				c.preprocessingUpdate();
 			} else {
 				// If not writing back, push WO -> body
 				if (!c.writeBack) {
 					// However, c.parentid points to WO id; prefer that
-					const owner = c.parentid ? world.getWorldObject(c.parentid) : o;
-					if (!owner) continue;
+					const ownerId = c.parentid ?? o.id;
+					const owner = world.getWorldObject(ownerId);
+					if (!owner) {
+						throw new Error(`[PhysicsPreSystem] Unable to locate owner '${ownerId}' for physics component '${c.id}'.`);
+					}
 					let changed = false;
-					if (c.syncAxis?.x && c.body.position.x !== (owner.x)) { c.body.position.x = owner.x; changed = true; }
-					if (c.syncAxis?.y && c.body.position.y !== (owner.y)) { c.body.position.y = owner.y; changed = true; }
-					if (c.syncAxis?.z && c.body.position.z !== (owner.z)) { c.body.position.z = owner.z; changed = true; }
+					if (c.syncAxis.x && c.body.position.x !== owner.x) { c.body.position.x = owner.x; changed = true; }
+					if (c.syncAxis.y && c.body.position.y !== owner.y) { c.body.position.y = owner.y; changed = true; }
+					if (c.syncAxis.z && c.body.position.z !== owner.z) { c.body.position.z = owner.z; changed = true; }
 					if (changed) {
 						// Mark dirty via PhysicsWorld
 						PhysicsWorld.ensure().markBodyDirty(c.body);
@@ -346,13 +354,13 @@ export class PhysicsSyncBeforeStepSystem extends ECSystem {
 		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			if (!c.body) {
-				c.preprocessingUpdate?.();
+				c.preprocessingUpdate();
 			} else {
 				if (c.writeBack) continue;
 				let changed = false;
-				if (c.syncAxis?.x && c.body.position.x !== (o.x)) { c.body.position.x = o.x; changed = true; }
-				if (c.syncAxis?.y && c.body.position.y !== (o.y)) { c.body.position.y = o.y; changed = true; }
-				if (c.syncAxis?.z && c.body.position.z !== (o.z)) { c.body.position.z = o.z; changed = true; }
+				if (c.syncAxis.x && c.body.position.x !== o.x) { c.body.position.x = o.x; changed = true; }
+				if (c.syncAxis.y && c.body.position.y !== o.y) { c.body.position.y = o.y; changed = true; }
+				if (c.syncAxis.z && c.body.position.z !== o.z) { c.body.position.z = o.z; changed = true; }
 				if (changed) {
 					PhysicsWorld.ensure().markBodyDirty(c.body);
 				}
@@ -365,7 +373,10 @@ export class PhysicsWorldStepSystem extends ECSystem {
 	constructor(priority: number = 20) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		const dtMs = $.deltaTime as number;
-		if (!dtMs || !isFinite(dtMs)) return;
+		if (!Number.isFinite(dtMs)) {
+			throw new Error('[PhysicsWorldStepSystem] Game deltaTime is not finite.');
+		}
+		if (dtMs <= 0) return;
 		world.stepPhysics(dtMs);
 	}
 }
@@ -377,9 +388,12 @@ export class PhysicsPostSystem extends ECSystem {
 		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;
 			if (!c.writeBack) continue;
-			if (c.syncAxis?.x) o.x_nonotify = c.body.position.x;
-			if (c.syncAxis?.y) o.y_nonotify = c.body.position.y;
-			if (c.syncAxis?.z) o.z_nonotify = c.body.position.z;
+			if (!c.body) {
+				throw new Error(`[PhysicsPostSystem] Physics component '${c.id}' is missing its body while writeBack=true.`);
+			}
+			if (c.syncAxis.x) o.x_nonotify = c.body.position.x;
+			if (c.syncAxis.y) o.y_nonotify = c.body.position.y;
+			if (c.syncAxis.z) o.z_nonotify = c.body.position.z;
 			if (hasRotationQ(o) && c.body.rotationQ) {
 				o.rotationQ.x = c.body.rotationQ.x;
 				o.rotationQ.y = c.body.rotationQ.y;
@@ -395,13 +409,17 @@ export class PhysicsSyncAfterWorldCollisionSystem extends ECSystem {
 	constructor(p = 0) { super(TickGroup.Physics, p); }
 	update(world: World) {
 		for (let [o, c] of world.objectsWithComponents(PhysicsComponent, { scope: 'active' })) {
-			if (!c?.enabled || !c.body) continue;
+			if (!c.enabled) continue;
+			if (!c.body) {
+				throw new Error(`[PhysicsSyncAfterWorldCollisionSystem] Physics component '${c.id}' is missing its body.`);
+			}
 			// Only when body is authoritative (writeBack=true), mirror GO correction into the body
 			if (c.writeBack) {
-				const b = c.body, sa = c.syncAxis;
+				const b = c.body;
+				const sa = c.syncAxis;
 				if (sa.x) b.position.x = o.x;
 				if (sa.y) b.position.y = o.y;
-				if (sa.z && o.z !== undefined) b.position.z = o.z;
+				if (sa.z) b.position.z = o.z;
 				PhysicsWorld.ensure().markBodyDirty(b);
 			}
 		}
@@ -415,18 +433,39 @@ export class PhysicsCollisionEventSystem extends ECSystem {
 		const events: CollisionEvent[] = world.drainPhysicsEvents() ?? [];
 		if (!events || events.length === 0) return;
 		for (const evt of events) {
-			const goA = (evt.a.userData && typeof evt.a.userData === 'string') ? $.world.getWorldObject(evt.a.userData) : (evt.a.userData);
-			const goB = (evt.b.userData && typeof evt.b.userData === 'string') ? $.world.getWorldObject(evt.b.userData) : (evt.b.userData);
-			if (!goA && !goB) continue;
-			const payload = { type: evt.type, otherId: (goB as Identifiable).id ?? null, point: evt.point, normal: evt.normal };
-			if (goA) EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payload);
-			if (goB) EventEmitter.instance.emit('physicsCollision', goB as WorldObject, { ...payload, otherId: (goA as Identifiable).id ?? null });
+			const goA = resolveCollisionObject(evt.a.userData, 'A', world);
+			const goB = resolveCollisionObject(evt.b.userData, 'B', world);
+			const goAId = (goA as Identifiable).id;
+			const goBId = (goB as Identifiable).id;
+			if (goAId == null || goBId == null) {
+				throw new Error('[PhysicsCollisionEventSystem] Collision participants must be identifiable.');
+			}
+			const payload = { type: evt.type, otherId: goBId, point: evt.point, normal: evt.normal };
+			EventEmitter.instance.emit('physicsCollision', goA as WorldObject, payload);
+			EventEmitter.instance.emit('physicsCollision', goB as WorldObject, { ...payload, otherId: goAId });
 			// Also emit typed events if listeners prefer name-specific subscriptions
 			const name = 'physicsCollision_' + evt.type;
-			if (goA) EventEmitter.instance.emit(name, goA as WorldObject, payload);
-			if (goB) EventEmitter.instance.emit(name, goB as WorldObject, { ...payload, otherId: (goA as Identifiable)?.id ?? null });
+			EventEmitter.instance.emit(name, goA as WorldObject, payload);
+			EventEmitter.instance.emit(name, goB as WorldObject, { ...payload, otherId: goAId });
 		}
 	}
+}
+
+function resolveCollisionObject(userData: unknown, label: 'A' | 'B', world: World): WorldObject {
+	if (userData == null) {
+		throw new Error(`[PhysicsCollisionEventSystem] Body ${label} is missing userData.`);
+	}
+	if (typeof userData === 'string') {
+		const obj = world.getWorldObject(userData);
+		if (!obj) {
+			throw new Error(`[PhysicsCollisionEventSystem] Body ${label} references unknown object id '${userData}'.`);
+		}
+		return obj;
+	}
+	if (typeof userData === 'object' && 'id' in (userData as Record<string, unknown>)) {
+		return userData as WorldObject;
+	}
+	throw new Error(`[PhysicsCollisionEventSystem] Unsupported userData on body ${label}.`);
 }
 
 /** TransformSystem: update TransformComponent from WorldObject state (position/orientation/scale). */
@@ -434,12 +473,14 @@ export class TransformSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Physics, priority); }
 	update(world: World): void {
 		for (let [o, c] of world.objectsWithComponents(TransformComponent, { scope: 'active' })) {
-			if (!c || !c.enabled) continue;
-			if (o?.pos) {
-				c.position[0] = o.x;
-				c.position[1] = o.y;
-				c.position[2] = o.z;
+			if (!c.enabled) continue;
+			const pos = o.pos;
+			if (!pos) {
+				throw new Error(`[TransformSystem] WorldObject '${o.id}' does not expose a position vector.`);
 			}
+			c.position[0] = o.x;
+			c.position[1] = o.y;
+			c.position[2] = o.z;
 			if (hasRotationQ(o)) c["orientationQ"] = o.rotationQ;
 			if (hasScale(o)) {
 				c.scale[0] = o.scale[0];
@@ -455,6 +496,9 @@ export class TransformSystem extends ECSystem {
 export class MeshAnimationSystem extends ECSystem {
 	constructor(priority: number = 0) { super(TickGroup.Animation, priority); }
 	update(world: World): void {
+		if (!Number.isFinite($.deltaTime)) {
+			throw new Error('[MeshAnimationSystem] Game deltaTime is not finite.');
+		}
 		const dtSec = $.deltaTime / 1000;
 		for (const [, c] of world.objectsWithComponents(MeshComponent, { scope: 'active' })) {
 			if (!c.enabled) continue;

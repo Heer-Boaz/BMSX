@@ -11,6 +11,18 @@ import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../gameview';
 
+function resolveSkyboxImage(assetId: string): Promise<ImageBitmap> {
+	const asset = GameView.imgassets[assetId];
+	if (!asset) {
+		throw new Error(`[SkyboxPipeline] Skybox image '${assetId}' not found.`);
+	}
+	const binPromise = asset.imgbin;
+	if (!binPromise) {
+		throw new Error(`[SkyboxPipeline] Skybox asset '${assetId}' does not expose an imgbin promise.`);
+	}
+	return binPromise;
+}
+
 let vaoSkybox: WebGLVertexArrayObject | null = null;
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
@@ -95,12 +107,12 @@ export function setSkyboxImages(ids: SkyboxImageIds) {
 
 	// If an id is missing, use null for that face loader so the texture system can use the fallback
 	const loaders = [
-		posX != null ? GameView.imgassets[posX]?.imgbin ?? null : null,
-		negX != null ? GameView.imgassets[negX]?.imgbin ?? null : null,
-		posY != null ? GameView.imgassets[posY]?.imgbin ?? null : null,
-		negY != null ? GameView.imgassets[negY]?.imgbin ?? null : null,
-		posZ != null ? GameView.imgassets[posZ]?.imgbin ?? null : null,
-		negZ != null ? GameView.imgassets[negZ]?.imgbin ?? null : null,
+		posX != null ? resolveSkyboxImage(posX) : null,
+		negX != null ? resolveSkyboxImage(negX) : null,
+		posY != null ? resolveSkyboxImage(posY) : null,
+		negY != null ? resolveSkyboxImage(negY) : null,
+		posZ != null ? resolveSkyboxImage(posZ) : null,
+		negZ != null ? resolveSkyboxImage(negZ) : null,
 	] as const;
 
 	// Keep face id tuple in parallel; missing ids are represented as null

@@ -103,7 +103,8 @@ export class RenderPassLibrary {
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
 				});
 				// Ambient now resides in the Frame UBO
-				const amb = $.world.activeAmbientLight?.light;
+				const ambientEntry = $.world.activeAmbientLight;
+				const amb = ambientEntry ? ambientEntry.light : null;
 				updateAndBindFrameUniforms(backend, { offscreen: { x: 0, y: 0 }, logical: { x: 0, y: 0 }, ambient: amb ? { color: amb.color, intensity: amb.intensity } : undefined });
 			},
 		});
@@ -176,14 +177,16 @@ export class RenderPassLibrary {
 			pass = this.passes[idx];
 			const layout = pass.bindingLayout; if (!layout) return;
 			const gv = $.view;
-			if (layout.uniforms?.includes('FrameUniforms') && !backend.bindUniformBufferBase) {
+			const layoutUniforms = Array.isArray(layout.uniforms) ? layout.uniforms : [];
+			if (layoutUniforms.includes('FrameUniforms') && !backend.bindUniformBufferBase) {
 				console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
 			}
 			if (passId === 'sprites') {
-				const hasTextures = (v: unknown): v is { textures: { [k: string]: unknown | null } } => typeof v === 'object' && !!v && 'textures' in (v as Record<string, unknown>);
+				const hasTextures = (v: unknown): v is { textures: { [k: string]: unknown | null } } => typeof v === 'object' && v !== null && 'textures' in (v as Record<string, unknown>);
 				if (hasTextures(gv)) {
-					if (!gv.textures?.['_atlas']) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
-					if (!gv.textures?.['_atlas_dynamic']) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
+					const textures = gv.textures as { [k: string]: unknown | null };
+					if (!textures['_atlas']) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
+					if (!textures['_atlas_dynamic']) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
 				}
 			}
 			if (passId === 'meshbatch') {
@@ -193,7 +196,8 @@ export class RenderPassLibrary {
 				if (!ptBuf) console.warn(`[validate] ${pass.name}: PointLightBlock buffer not initialized`);
 			}
 		} catch {
-			console.error(`[validate] ${pass?.name ?? 'unknown'}: error occurred during validation`);
+			const passName = pass ? pass.name : 'unknown';
+			console.error(`[validate] ${passName}: error occurred during validation`);
 		}
 	}
 
@@ -243,9 +247,9 @@ export class RenderPassLibrary {
 			backend.setGraphicsPipeline(stubPass, p.pipelineHandle);
 		}
 		if (backend.type === 'webgl2') {
-			const uniforms = p.bindingLayout?.uniforms ?? [];
-			if (uniforms.length) {
-				for (const u of uniforms) {
+			const uniformList = p.bindingLayout && Array.isArray(p.bindingLayout.uniforms) ? p.bindingLayout.uniforms : [];
+			if (uniformList.length) {
+				for (const u of uniformList) {
 					if (u === 'FrameUniforms') (backend as WebGLBackend).setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 					if (u === 'DirLightBlock') (backend as WebGLBackend).setUniformBlockBinding('DirLightBlock', 0);
 					if (u === 'PointLightBlock') (backend as WebGLBackend).setUniformBlockBinding('PointLightBlock', 1);
@@ -309,7 +313,9 @@ export class RenderPassLibrary {
 				const cam = $.world.activeCamera3D; if (!cam) return;
 				const mats = cam.getMatrices();
 				const viewState = { camPos: cam.position, viewProj: mats.vp, skyboxView: cam.skyboxView, proj: mats.proj };
-				const lighting = lightingSystem.update($.world.activeAmbientLight?.light as AmbientLight);
+				const activeAmbient = $.world.activeAmbientLight;
+				const ambientLight = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
+				const lighting = lightingSystem.update(ambientLight);
 				// Build fog state alongside frame-shared so consumers can rely on it
 				const gv = $.view;
 				const fog: FogUniforms = {
@@ -321,15 +327,20 @@ export class RenderPassLibrary {
 					fogYMax: gv.atmosphere.fogYMax,
 				};
 				this.setState('frame_shared', { view: viewState, lighting, fog });
+				const frameTime = frame ? frame.time : 0;
+				const frameDelta = frame ? frame.delta : 0;
+				const ambientUniform = (lighting && lighting.ambient)
+					? { color: lighting.ambient.color, intensity: lighting.ambient.intensity }
+					: undefined;
 				updateAndBindFrameUniforms(gv.backend, {
 					offscreen: { x: gv.offscreenCanvasSize.x, y: gv.offscreenCanvasSize.y },
 					logical: { x: gv.viewportSize.x, y: gv.viewportSize.y },
-					time: frame?.time ?? 0,
-					delta: frame?.delta ?? 0,
+					time: frameTime,
+					delta: frameDelta,
 					view: mats.view,
 					proj: mats.proj,
 					cameraPos: cam.position,
-					ambient: lighting?.ambient ? { color: lighting.ambient.color, intensity: lighting.ambient.intensity } : undefined,
+					ambient: ambientUniform,
 				});
 			}
 		});
@@ -358,6 +369,8 @@ export class RenderPassLibrary {
 					if (!willRun) return;
 					if (data.present) {
 						const colorTex = frameColorHandle != null ? ctx.getTex(frameColorHandle) : null;
+						const postFxSource = frame && typeof frame === 'object' ? (frame as Record<string, unknown>)['postFx'] : undefined;
+						const crtOptions = postFxSource && typeof postFxSource === 'object' ? (postFxSource as Record<string, unknown>)['crt'] : undefined;
 						try {
 							this.setState('crt', {
 								width: view.offscreenCanvasSize.x,
@@ -366,9 +379,11 @@ export class RenderPassLibrary {
 								baseHeight: view.viewportSize.y,
 								// fragScale,
 								colorTex,
-								options: frame['postFx']?.crt,
+								options: crtOptions,
 							});
-						} catch { console.error(`Failed to set CRT state: ${frame['postFx']?.crt}`); }
+						} catch {
+							console.error(`Failed to set CRT state: ${String(crtOptions)}`);
+						}
 						// Execute the pass; PipelineRegistry ensures the program/pipeline is bound.
 						this.execute(desc.id as string, null);
 					} else if (isStateOnly) {

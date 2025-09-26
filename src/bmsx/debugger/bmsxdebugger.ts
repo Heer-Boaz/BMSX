@@ -70,23 +70,28 @@ export class PhysicsOverlayRenderer extends Component {
 		// Gather all PhysicsDebugComponents
 		const debugComponents: PhysicsDebugComponent[] = [];
 		// Iterate all spaces for game objects
-		const modelAny: any = $.world;
-		const spaceMap = modelAny[Symbol.for('id2space')] || modelAny['id2space'] || modelAny['spaceid_2_space'] || modelAny['spaceid_2_space'.toString()];
-		if (spaceMap) {
-			for (const sid in spaceMap) {
-				const space = spaceMap[sid];
-				if (!space || !space.objects) continue;
-				for (const wo of space.objects) {
-					const ps = wo.getComponents(PhysicsDebugComponent);
-					for (const p of ps) if (p && p.enabled) debugComponents.push(p);
+		const spaces = $.world.spaces;
+		if (!Array.isArray(spaces)) throw new Error('[PhysicsOverlayRenderer] World.spaces is not an array.');
+		for (const space of spaces) {
+			const objects = space.objects;
+			if (!Array.isArray(objects)) throw new Error(`[PhysicsOverlayRenderer] Space '${space.id}' does not expose an object list.`);
+			for (const wo of objects) {
+				const components = wo.getComponents(PhysicsDebugComponent);
+				if (!Array.isArray(components)) throw new Error(`[PhysicsOverlayRenderer] WorldObject '${wo.id}' returned an invalid PhysicsDebugComponent list.`);
+				for (const component of components) {
+					if (!component) throw new Error(`[PhysicsOverlayRenderer] WorldObject '${wo.id}' returned a null PhysicsDebugComponent instance.`);
+					if (component.enabled) debugComponents.push(component);
 				}
 			}
 		}
 		// if (!debugComponents.length) return;
 		// Camera-aware projection: project 3D -> NDC -> screen (overlay canvas coordinates)
-		const activeCamObj = $.world.getWorldObject($.world.activeCameraId) as CameraObject | undefined;
-		const cam = activeCamObj?.camera;
-		if (!cam) return; // no camera yet
+		const activeCameraId = $.world.activeCameraId;
+		if (!activeCameraId) return; // Pure 2D flows do not register a camera; overlay simply skips rendering.
+		const activeCamObj = $.world.getWorldObject<CameraObject>(activeCameraId);
+		if (!activeCamObj) return;
+		const cam = activeCamObj.camera;
+		if (!cam) return;
 		const vp = cam.viewProjection; // Float32Array length 16
 		const width = this.canvas.width; const height = this.canvas.height;
 		const project = (x: number, y: number, z: number): { sx: number; sy: number; depth: number; behind: boolean } => {
@@ -593,7 +598,9 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 	for (const o of $.world.objects({ scope: 'all' })) {
 		let row = addContent(table, 'tr', null);
 		row.classList.add('selectableoption');
-		addContent(row, 'td', `${o.constructor?.name}`);
+		const ctor = o.constructor as { name?: string } | undefined;
+		if (!ctor || typeof ctor.name !== 'string') throw new Error(`[DebugMenu] WorldObject '${o.id}' has no constructor name.`);
+		addContent(row, 'td', ctor.name);
 		addContent(row, 'td', `${o.id}`);
 
 		row.onclick = (_) => {
@@ -669,7 +676,10 @@ function handleOpenListenersDialog(eventName: string, scope: string, listeners: 
 	listeners.forEach(({ listener, subscriber }) => {
 		const row = addContent(table, 'tr', null);
 		addContent(row, 'td', listener.name);
-		addContent(row, 'td', subscriber.constructor?.name);
+		if (!subscriber) throw new Error(`[EventEmitterDebugger] Listener '${listener.name}' is missing a subscriber reference.`);
+		const ctor = (subscriber as { constructor?: { name?: string } }).constructor;
+		if (!ctor || typeof ctor.name !== 'string') throw new Error(`[EventEmitterDebugger] Subscriber for listener '${listener.name}' has no constructor name.`);
+		addContent(row, 'td', ctor.name);
 	});
 
 	document.body.insertBefore(dialogDiv, null);
@@ -853,16 +863,18 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 	$.requestPausedFrame();
 }
 
-function highlight_object(o: WorldObject) {
+function highlight_object(o: WorldObject | null) {
 	if (!o) {
-		currentHighlighterComponent && currentHighlighterComponent.isAttached && currentHighlighterComponent.detach();
+		if (!currentHighlighterComponent) return;
+		if (!currentHighlighterComponent.isAttached) return;
+		currentHighlighterComponent.detach();
+		return;
 	}
-	else {
-		if (!currentHighlighterComponent) {
-			currentHighlighterComponent = new ObjectHighlighterComponent({ parentid: o.id });
-		}
-		currentHighlighterComponent.attach(o.id); // Also automatically detaches it
+
+	if (!currentHighlighterComponent) {
+		currentHighlighterComponent = new ObjectHighlighterComponent({ parentid: o.id });
 	}
+	currentHighlighterComponent.attach(o.id); // Also automatically detaches it
 }
 
 export function handleDebugMouseUp(_e: MouseEvent): void {

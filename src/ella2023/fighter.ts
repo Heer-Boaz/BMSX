@@ -138,11 +138,6 @@ export abstract class Fighter extends SpriteObject {
 	}
 	public hp: number;
 
-	/**
-	 * The player index of the fighter.
-	 */
-	public player_index: number;
-
 	public performingStoerheidsdans!: boolean;
 	public readonly walkSpeed: number = Fighter.SPEED;
 

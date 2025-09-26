@@ -39,8 +39,16 @@ export class PathRunner {
 		let speedScale = 1;
 		if (this.path instanceof CatmullRomPath) {
 			const meta = this.path.segmentMetaAt(this.u);
-			if (meta?.speedScale !== undefined) speedScale = meta.speedScale;
-			if (meta?.bank !== undefined) this._segBankFactor = meta.bank; else this._segBankFactor = undefined;
+			if (meta !== undefined) {
+				if (meta.speedScale !== undefined) speedScale = meta.speedScale;
+				if (meta.bank !== undefined) {
+					this._segBankFactor = meta.bank;
+				} else {
+					this._segBankFactor = undefined;
+				}
+			} else {
+				this._segBankFactor = undefined;
+			}
 		}
 		const effSpeed = this.speed * speedScale;
 		if (this.distanceMode) {
@@ -59,8 +67,8 @@ export class PathRunner {
 					const span = (seg.u1 - seg.u0) || 1; const localT = (this.u - seg.u0) / span;
 					const baseAdvance = effSpeed * dt * this._forward; // in u units
 					const nextLocalT = localT + baseAdvance / span;
-					const easingName = seg.meta?.easing;
-					const easeFn = easingName ? EasingLookup[easingName] : undefined;
+					const easingName = seg.meta ? seg.meta.easing : undefined;
+					const easeFn = (easingName && EasingLookup[easingName]) ? EasingLookup[easingName] : undefined;
 					if (easeFn) {
 						const cl0 = Math.min(1, Math.max(0, localT)); const cl1 = Math.min(1, Math.max(0, nextLocalT));
 						const e0 = easeFn(cl0); const e1 = easeFn(cl1); const deltaEased = (e1 - e0) * span;

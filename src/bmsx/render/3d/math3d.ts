@@ -516,7 +516,12 @@ export const V3 = {
 		else { out[0] = v.x; out[1] = v.y; out[2] = v.z; }
 		return out;
 	},
-	equalsArr(a: vec3arr, b: vec3arr): boolean { return a?.length === b?.length && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]; },
+	equalsArr(a: vec3arr, b: vec3arr): boolean {
+		if (!a || !b) {
+			throw new Error('[Math3D] equalsArr received invalid vector data.');
+		}
+		return a.length === b.length && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+	},
 	rotateAroundAxis(v: vec3, axis: vec3, angle: number): vec3 {
 		// as = genormaliseerde as
 		const L = Math.hypot(axis.x, axis.y, axis.z) || 1;

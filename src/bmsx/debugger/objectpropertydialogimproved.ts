@@ -24,13 +24,9 @@ function getObjectEntries(obj: unknown): [string, any][] {
 	}
 	// Plain objects: prefer Object.entries
 	if (obj && typeof obj === 'object') {
-		try {
-			const ent = Object.entries(obj as Record<string, any>);
-			if (Array.isArray(ent)) return ent;
-		} catch {
-			// fallthrough to safe enumeration
-		}
-		// Fallback: enumerate own enumerable properties (handles array-like / prefixed-size objects)
+		const ent = Object.entries(obj as Record<string, any>);
+		if (Array.isArray(ent)) return ent;
+		// Fallback: enumerate own enumerable properties (handles array-like objects that might not report entries)
 		const out: [string, any][] = [];
 		for (const k in obj as Record<string, any>) {
 			if (Object.prototype.hasOwnProperty.call(obj as Record<string, any>, k)) {
@@ -124,9 +120,16 @@ function updateObjectTreeValues(
 		const path = parentPath ? parentPath + '.' + key : key;
 		if (typeof value === 'object' && value !== null) {
 			// Find <details> for this path
-			const details = Array.from(container.children).find(
-				el => el.tagName === 'DETAILS' && (el.querySelector('summary')?.textContent?.startsWith(key + ':'))
-			) as HTMLDetailsElement | undefined;
+			let details: HTMLDetailsElement | undefined;
+			for (const child of Array.from(container.children) as HTMLElement[]) {
+				if (child.tagName !== 'DETAILS') continue;
+				const summary = child.querySelector('summary');
+				if (!summary) continue;
+				const summaryText = summary.textContent;
+				if (!summaryText || !summaryText.startsWith(key + ':')) continue;
+				details = child as HTMLDetailsElement;
+				break;
+			}
 			if (details) {
 				// Recurse into child
 				const child = details.lastElementChild as HTMLElement | null;
@@ -163,7 +166,9 @@ export class ObjectPropertyDialog {
 		}
 		this.contentDiv.innerHTML = '';
 		this.contentDiv.classList.add('object-dialog-scrollable');
-		this.treeRoot = buildObjectTreePersistent(obj, this.ignoreProps, this.treeState);
+		const tree = buildObjectTreePersistent(obj, this.ignoreProps, this.treeState);
+		if (!tree) throw new Error('[ObjectPropertyDialog] Failed to build property tree for object.');
+		this.treeRoot = tree;
 		this.contentDiv.appendChild(this.treeRoot);
 		this.dialog.updateSize();
 		ObjectPropertyDialog.openDialogs.set(objectId, this);

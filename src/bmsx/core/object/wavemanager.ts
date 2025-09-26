@@ -9,12 +9,12 @@ interface Handler { name: string; fn: SpawnFactory; }
 export class WaveManager extends EventEmitter {
 	private timeline: EventTimeline; private handlers: Handler[] = [];
 	constructor(timeline: EventTimeline) { super(); this.timeline = timeline; }
-	onSpawn(eventName: string, factory: SpawnFactory): this {
-		this.handlers.push({ name: eventName, fn: factory });
-		this.timeline.on(eventName, (data: any) => {
-			const wo = factory(data);
-			if (wo) this.emit('spawned', wo);
-		}, this);
-		return this;
-	}
+		onSpawn(eventName: string, factory: SpawnFactory): this {
+			this.handlers.push({ name: eventName, fn: factory });
+			this.timeline.on(eventName, (_event, _emitter, payload) => {
+				const wo = factory(payload);
+				if (wo) this.emit('spawned', wo);
+			}, this);
+			return this;
+		}
 }

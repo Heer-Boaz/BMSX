@@ -244,10 +244,28 @@ function getVAOSignature(m: Mesh, instanced: boolean, morph: boolean): string {
 }
 
 // --- Pipeline helpers -------------------------------------------------------
-function isTransparent(m: Mesh): boolean { return m.material?.surface === 'transparent'; }
-// function isMasked(m: Mesh): boolean { return m.material?.surface === 'masked'; }
-function isOpaque(m: Mesh): boolean { const s = m.material?.surface; return s === undefined || s === 'opaque' || s === 'masked'; }
-function getMeshColor(m: Mesh): [number, number, number, number] { const c = m.material?.color; return [c?.[0] ?? 1, c?.[1] ?? 1, c?.[2] ?? 1, c?.[3] ?? 1]; }
+function isTransparent(m: Mesh): boolean {
+	const material = m.material;
+	return !!(material && material.surface === 'transparent');
+}
+// function isMasked(m: Mesh): boolean { return !!(m.material && m.material.surface === 'masked'); }
+function isOpaque(m: Mesh): boolean {
+	const material = m.material;
+	if (!material || material.surface === undefined) {
+		return true;
+	}
+	return material.surface === 'opaque' || material.surface === 'masked';
+}
+function getMeshColor(m: Mesh): [number, number, number, number] {
+	const material = m.material;
+	const color = material ? material.color : undefined;
+	return [
+		color ? color[0] : 1,
+		color ? color[1] : 1,
+		color ? color[2] : 1,
+		color ? color[3] : 1,
+	];
+}
 function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 	const { backend, gl } = runtime;
 	let buffers = meshBufferCache.get(m); if (buffers) return buffers;
@@ -260,7 +278,8 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 	if (m.hasSkinning) { buffers.joint = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint); gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.STATIC_DRAW); backend.accountUpload('vertex', m.jointIndices!.byteLength); buffers.weight = GLR.glCreateBuffer(gl); gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight); gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.STATIC_DRAW); backend.accountUpload('vertex', m.jointWeights!.byteLength); }
 	if (m.hasMorphTargets) {
 		// Build morph position texture (up to 4 targets), layout: width=vertexCount, height=targetCount, RGBA32F xyz delta + pad
-		const targetCount = Math.min(m.morphPositions?.length ?? 0, MAX_MORPH_TARGETS);
+		const morphPositions = m.morphPositions ?? [];
+		const targetCount = Math.min(morphPositions.length, MAX_MORPH_TARGETS);
 		if (targetCount > 0) {
 			const width = m.vertexCount;
 			const height = targetCount;
@@ -268,7 +287,7 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 			const texels = new Uint16Array(width * height * 4);
 			for (let ti = 0; ti < targetCount; ti++) {
 				const rowOffset = ti * width * 4;
-				const src = m.morphPositions![ti];
+				const src = morphPositions[ti];
 				// Compute per-target scalar scale: max abs component
 				let s = 1e-6;
 				for (let v = 0; v < width; v++) {
@@ -301,7 +320,8 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 			buffers.morphCount = targetCount;
 		}
 		// Build morph normal texture (up to 4 targets) if normals present
-		const nCount = Math.min(m.morphNormals?.length ?? 0, MAX_MORPH_TARGETS);
+		const morphNormals = m.morphNormals ?? [];
+		const nCount = Math.min(morphNormals.length, MAX_MORPH_TARGETS);
 		if (nCount > 0) {
 			const width = m.vertexCount;
 			const height = nCount;
@@ -309,7 +329,7 @@ function getMeshBuffers(runtime: MeshPassRuntime, m: Mesh): MeshBuffers {
 			const texels = new Uint16Array(width * height * 2);
 			for (let ti = 0; ti < nCount; ti++) {
 				const rowOffset = ti * width * 2;
-				const src = m.morphNormals![ti]!; // normal deltas
+				const src = morphNormals[ti]!; // normal deltas
 				for (let v = 0; v < width; v++) {
 					const si = v * 3; const di = rowOffset + v * 2;
 					// base + delta -> absolute target normal
@@ -738,7 +758,8 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 	checkWebGLError('mesh.instanced: after uploadJointPalette');
 	for (const { mesh: m, instances } of instancedGroups.values()) {
 		const buffers = getMeshBuffers(runtime, m);
-		const hasMorph = m.hasMorphTargets && (m.morphWeights?.some(w => w !== 0));
+		const morphWeights = m.morphWeights ?? [];
+		const hasMorph = m.hasMorphTargets && morphWeights.some(w => w !== 0);
 		const sig = getVAOSignature(m, true, hasMorph);
 		checkWebGLError('mesh.instanced: before getVAOSignature');
 		let vao: WebGLVertexArrayObject;
@@ -753,8 +774,10 @@ function renderInstancedMeshes(runtime: MeshPassRuntime, instancedGroups: Map<st
 		}
 		const indexed = !!buffers.index;
 		const indexType = buffers.indexType!;
-		const indexCount = buffers.indexCount ?? m.indices?.length ?? 0;
-		applyCullState(runtime, !!m.material?.doubleSided);
+		const fallbackIndexCount = m.indices ? m.indices.length : 0;
+		const indexCount = buffers.indexCount ?? fallbackIndexCount;
+		const materialForCull = m.material;
+		applyCullState(runtime, !!(materialForCull && materialForCull.doubleSided));
 		setMeshMaterial(gl, m);
 		checkWebGLError('mesh.instanced: after setMeshMaterial');
 		setMeshTextures(runtime, m, buffers, true);
@@ -818,13 +841,13 @@ let lastRoughness = 1.0;
 function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 	const mat = m.material;
 	const sig = m.materialSignature;
-	const color = mat?.color;
+	const color = mat ? mat.color : undefined;
 	const r = color ? color[0] : 1;
 	const g = color ? color[1] : 1;
 	const b = color ? color[2] : 1;
 	const a = color ? color[3] : 1;
-	const metallic = mat?.metallicFactor ?? 0.0;
-	const roughness = mat?.roughnessFactor ?? 1.0;
+	const metallic = mat && mat.metallicFactor !== undefined ? mat.metallicFactor : 0.0;
+	const roughness = mat && mat.roughnessFactor !== undefined ? mat.roughnessFactor : 1.0;
 	if (r !== lastMaterialColor[0] || g !== lastMaterialColor[1] || b !== lastMaterialColor[2] || a !== lastMaterialColor[3] || lastMaterialSig !== sig) {
 		gl.uniform4f(materialColorLocation3D, r, g, b, a);
 		lastMaterialColor[0] = r;
@@ -835,9 +858,11 @@ function setMeshMaterial(gl: WebGL2RenderingContext, m: Mesh): void {
 	if (lastMetallic !== metallic || lastMaterialSig !== sig) { gl.uniform1f(metallicFactorLocation3D, metallic); lastMetallic = metallic; }
 	if (lastRoughness !== roughness || lastMaterialSig !== sig) { gl.uniform1f(roughnessFactorLocation3D, roughness); lastRoughness = roughness; }
 	// Surface classification uniforms
-	const surf = mat?.surface === 'transparent' ? 2 : (mat?.surface === 'masked' ? 1 : 0);
+	const surfaceClass = mat ? mat.surface : undefined;
+	const surf = surfaceClass === 'transparent' ? 2 : (surfaceClass === 'masked' ? 1 : 0);
 	gl.uniform1i(surfaceLocation3D, surf);
-	gl.uniform1f(alphaCutoffLocation3D, mat?.alphaCutoff ?? 0.5);
+	const alphaCutoff = mat && mat.alphaCutoff !== undefined ? mat.alphaCutoff : 0.5;
+	gl.uniform1f(alphaCutoffLocation3D, alphaCutoff);
 	lastMaterialSig = sig;
 }
 function renderSingleMeshes(runtime: MeshPassRuntime, singles: MeshRenderSubmission[], framebuffer: WebGLFramebuffer): void {
@@ -862,7 +887,8 @@ function renderSingleMeshes(runtime: MeshPassRuntime, singles: MeshRenderSubmiss
 			for (let i = 0; i < Math.min(MAX_MORPH_TARGETS, srcWeights.length); i++) w[i] = srcWeights[i] ?? 0;
 			uploadMorphWeights(gl, w);
 		} else uploadMorphWeights(gl, null);
-		applyCullState(runtime, !!m.material?.doubleSided);
+		const instMaterial = m.material;
+		applyCullState(runtime, !!(instMaterial && instMaterial.doubleSided));
 		setMeshMaterial(gl, m);
 		const allowShadow = receiveShadow !== false;
 		setMeshTextures(runtime, m, buffers, allowShadow);

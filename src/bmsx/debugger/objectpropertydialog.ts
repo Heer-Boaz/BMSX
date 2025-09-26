@@ -53,10 +53,16 @@ function setExpanded(obj: any, objName: string, path: string, expanded: boolean,
 	harmonicaExpandedStateById.set(key, set);
 }
 
-function shouldPropertyBeExcluded(propName: string, parent_obj: Object): boolean {
-	let parent_obj_name = parent_obj?.constructor?.name;
-	if (!parent_obj_name || !propName) return false;
-	let exclude = Serializer.excludedProperties[parent_obj_name]?.[propName];
+function shouldPropertyBeExcluded(propName: string, parentObj: Object): boolean {
+	if (!propName) return false;
+	if (!parentObj) throw new Error(`[ObjectPropertyDialog] Parent object missing while evaluating exclusion for property '${propName}'.`);
+	const ctor = (parentObj as { constructor: { name?: string } }).constructor;
+	if (!ctor || typeof ctor.name !== 'string') throw new Error(`[ObjectPropertyDialog] Parent object for property '${propName}' has no constructor name.`);
+	const parentTypeName = ctor.name;
+	if (!parentTypeName) return false;
+	const excludedByType = Serializer.excludedProperties[parentTypeName];
+	if (!excludedByType) return false;
+	const exclude = excludedByType[propName];
 	return exclude ?? false;
 }
 
@@ -234,7 +240,8 @@ export function createObjectTableElement(
 								}
 							}
 						} catch (e) {
-							console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
+							console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`, e);
+							throw e;
 						}
 					}
 				};
@@ -442,7 +449,8 @@ export class ObjectPropertyDialogOld {
 								}
 							}
 						} catch (e) {
-							console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
+							console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`, e);
+							throw e;
 						}
 					}
 				};
@@ -453,7 +461,8 @@ export class ObjectPropertyDialogOld {
 		}
 		row.appendChild(valueCell);
 		this.valueCellMap.set(path, valueCell);
-		this.tableRoot?.appendChild(row);
+		if (!this.tableRoot) throw new Error('[ObjectPropertyDialogOld] Table root element is not initialised.');
+		this.tableRoot.appendChild(row);
 
 		// --- Vertical harmonica: insert nested table in a new row immediately after parent row if expanded ---
 		if (isObj && isExpandable && !useHorizontal && expanded) {

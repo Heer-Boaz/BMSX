@@ -61,7 +61,7 @@ export class bclass extends SpriteObject {
 	public static bouw(): StateMachineBlueprint {
 		function blarun(this: bclass) {
 			const speed = 2;
-			if (this.sc.current_state.def_id === 'blap') {
+			if (this.sc.current_state.def_id === '#blap') {
 				this.tickTree('bclass_tree');
 			}
 
@@ -88,7 +88,7 @@ export class bclass extends SpriteObject {
 						this.testmeuk();
 						$.emitPresentation('testEvent', this);
 
-						this.sc.machines.bclass_animation.transition_to('ani2');
+						this.sc.machines.bclass_animation.transition_to('#ani2');
 						this.sc.transition_to('bclass:/bla'); // Ugly, transitioning another state machine
 					case 'blap':
 						if (consumed) break;
@@ -96,11 +96,11 @@ export class bclass extends SpriteObject {
 						$.emitPresentation('testEventOnce', this);
 
 						this.sc.machines.bclass_animation.transition_to('ani1');
-						if (this.sc.matches_state_path('bclass_meuk:/meuk1.blupperblop1')) {
-							return this.sc.transition_to('bclass_meuk:/meuk1/blupperblop1'); // Ugly, transitioning another state machine
+						if (this.sc.matches_state_path('bclass_meuk:/#meuk1.blupperblop1')) {
+							return this.sc.transition_to('bclass_meuk:/#meuk1/blupperblop1'); // Ugly, transitioning another state machine
 						}
 						else {
-							return this.sc.transition_to('bclass_meuk:/meuk1/blupperblop2'); // Ugly, transitioning another state machine
+							return this.sc.transition_to('bclass_meuk:/#meuk1/blupperblop2'); // Ugly, transitioning another state machine
 						}
 				}
 			}

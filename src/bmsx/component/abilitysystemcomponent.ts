@@ -2,6 +2,7 @@ import { Component, type ComponentAttachOptions } from './basecomponent';
 import { EventEmitter } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
+import type { WorldObject } from '../core/object/worldobject';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TickGroup } from '../ecs/ecsystem';
 import type {
@@ -29,9 +30,6 @@ type WaitState =
 @insavegame
 export class AbilitySystemComponent extends Component {
 	static override get unique(): boolean { return true; }
-
-	public static readonly registry = new Set<AbilitySystemComponent>();
-	public static readonly registryByOwner = new Map<Identifier, AbilitySystemComponent>();
 
 	public readonly attrs: AttributeSet = {};
 	// Explicit tags set by gameplay (not derived from effects)
@@ -77,9 +75,16 @@ export class AbilitySystemComponent extends Component {
 
 	constructor(opts: ComponentAttachOptions & { now?: NowFn }) {
 		super(opts);
-		this.now = opts.now ?? (() => performance.now());
-		AbilitySystemComponent.registry.add(this);
-		AbilitySystemComponent.registryByOwner.set(this.parentid, this);
+		// Normalize the time provider so calling this.now() never loses the receiver.
+		// If a custom provider is supplied, use it. Otherwise bind performance.now
+		// to the performance object (avoids "Illegal invocation"), or fall back to Date.now.
+		if (opts.now) {
+			this.now = opts.now;
+		} else if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+			this.now = performance.now.bind(performance);
+		} else {
+			this.now = Date.now.bind(Date);
+		}
 	}
 
 	public addTag(tag: TagId): void {
@@ -153,8 +158,8 @@ export class AbilitySystemComponent extends Component {
 		const reason = this.canActivateReason(id);
 		if (reason) {
 			// Optional UX/debug hook
-			const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
-			$.emitGameplay('AbilityFailed', owner ?? { id: this.parentid }, { id, reason });
+			const owner = this.ownerOrThrow();
+			$.emitGameplay('AbilityFailed', owner, { id, reason });
 			return false;
 		}
 
@@ -181,8 +186,8 @@ export class AbilitySystemComponent extends Component {
 				requestAbility: (aid: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(aid, opts ?? {}),
 			},
 			emit: (name: string, payload?: any) => {
-				const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
-				EventEmitter.instance.emit(name, owner ?? { id: this.parentid }, payload);
+				const owner = this.ownerOrThrow();
+				EventEmitter.instance.emit(name, owner, payload);
 			},
 			intent: { id, payload }
 		};
@@ -193,8 +198,8 @@ export class AbilitySystemComponent extends Component {
 		const now = this.now();
 		if (spec.cooldownMs) {
 			this._cooldownUntil.set(id, now + spec.cooldownMs);
-			const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
-			EventEmitter.instance.emit('AbilityCooldownStart', owner ?? { id: this.parentid }, { id, until: now + spec.cooldownMs });
+			const owner = this.ownerOrThrow();
+			EventEmitter.instance.emit('AbilityCooldownStart', owner, { id, until: now + spec.cooldownMs });
 		}
 		const key = `${id}#${this._runnerCounter++}`;
 		this._active.set(key, { id, co: ability.activate(ctx) });
@@ -226,8 +231,8 @@ export class AbilitySystemComponent extends Component {
 		for (const [aid, until] of [...this._cooldownUntil]) {
 			if (now >= until) {
 				this._cooldownUntil.delete(aid);
-				const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
-				EventEmitter.instance.emit('AbilityCooldownEnd', owner ?? { id: this.parentid }, { id: aid });
+				const owner = this.ownerOrThrow();
+				EventEmitter.instance.emit('AbilityCooldownEnd', owner, { id: aid });
 			}
 		}
 		for (const [key, run] of [...this._active]) {
@@ -320,8 +325,6 @@ export class AbilitySystemComponent extends Component {
 		this.grantedTagRefs.clear();
 		// Clear cooldowns
 		this._cooldownUntil.clear();
-		AbilitySystemComponent.registry.delete(this);
-		AbilitySystemComponent.registryByOwner.delete(this.parentid);
 		super.dispose();
 	}
 
@@ -331,8 +334,6 @@ export class AbilitySystemComponent extends Component {
 		this.effects.length = 0;
 		this.grantedTagRefs.clear();
 		this._cooldownUntil.clear();
-		AbilitySystemComponent.registry.delete(this);
-		AbilitySystemComponent.registryByOwner.delete(this.parentid);
 		super.detach();
 	}
 
@@ -347,8 +348,8 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	private notifyAbilityFailed(id: AbilityId, reason: string): void {
-		const owner = $.getWorldObject(this.parentid) as { id: Identifier } | null;
-		$.emitGameplay('AbilityFailed', owner ?? { id: this.parentid }, { id, reason });
+		const owner = this.ownerOrThrow();
+		$.emitGameplay('AbilityFailed', owner, { id, reason });
 	}
 
 	private findActiveByAbility(id: AbilityId): string | undefined {
@@ -375,6 +376,12 @@ export class AbilitySystemComponent extends Component {
 	private clampAttribute(a: { current: number; min?: number; max?: number }): void {
 		if (a.min !== undefined && a.current < a.min) a.current = a.min;
 		if (a.max !== undefined && a.current > a.max) a.current = a.max;
+	}
+
+	private ownerOrThrow(): WorldObject {
+		const owner = $.world.getWorldObject(this.parentid);
+		if (!owner) throw new Error(`[AbilitySystemComponent] Owner '${this.parentid}' not found.`);
+		return owner;
 	}
 }
 

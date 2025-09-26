@@ -9,7 +9,13 @@ import { Serializer, Reviver, type ConstructorWithSaveGame } from './gameseriali
 export function onsave(value: (...args: any[]) => any, context: ClassMethodDecoratorContext) {
 	const method = value;
 	const register = (ctor: any) => {
-		const className = ctor?.name;
+		if (!ctor || typeof ctor !== 'function') {
+			throw new Error('[@onsave] Decorator used on a target without a constructor function.');
+		}
+		if (!ctor.name) {
+			throw new Error('[@onsave] Decorated class must have a constructor name.');
+		}
+		const className = ctor.name;
 		Serializer.onSaves[className] ??= [];
 		if (!Serializer.onSaves[className].includes(method)) {
 			Serializer.onSaves[className].push(method);
@@ -33,7 +39,13 @@ export function onsave(value: (...args: any[]) => any, context: ClassMethodDecor
 export function excludepropfromsavegame(_value: undefined, context: ClassFieldDecoratorContext) {
 	const prop = String(context.name);
 	const register = (ctor: any) => {
-		const type = normalizeDecoratedClassName(ctor?.name);
+		if (!ctor || typeof ctor !== 'function') {
+			throw new Error('[@excludepropfromsavegame] Decorator used on a target without a constructor function.');
+		}
+		if (!ctor.name) {
+			throw new Error('[@excludepropfromsavegame] Decorated class must have a constructor name.');
+		}
+		const type = normalizeDecoratedClassName(ctor.name);
 		Serializer.excludedProperties[type] ??= {};
 		Serializer.excludedProperties[type][prop] = true;
 
@@ -58,7 +70,13 @@ export function excludepropfromsavegame(_value: undefined, context: ClassFieldDe
 export function onload(value: (...args: any[]) => any, context: ClassMethodDecoratorContext) {
 	const method = value;
 	const register = (ctor: any) => {
-		const type = normalizeDecoratedClassName(ctor?.name);
+		if (!ctor || typeof ctor !== 'function') {
+			throw new Error('[@onload] Decorator used on a target without a constructor function.');
+		}
+		if (!ctor.name) {
+			throw new Error('[@onload] Decorated class must have a constructor name.');
+		}
+		const type = normalizeDecoratedClassName(ctor.name);
 
 		Reviver.onLoads ??= {};
 		Reviver.onLoads[type] ??= [];
@@ -148,7 +166,10 @@ export function insavegame(typeId: string): {
  */
 export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext) {
 	function register(ctor: any, typeId?: string) {
-		let key = typeId ?? (ctor?.name);
+		if (!ctor || typeof ctor !== 'function') {
+			throw new Error('[@insavegame] Decorator received an invalid constructor.');
+		}
+		let key = typeId ?? ctor.name;
 		if (!key) throw new Error('[@insavegame]: Failed to register class: no valid key found.');
 		// If no explicit typeId was supplied and the inferred class name starts with underscore
 		// (artifact of TS decorator transform emitting helper vars like _ClassName), strip it for the public key.
@@ -180,8 +201,14 @@ export function insavegame(valueOrId: any, maybeContext?: ClassDecoratorContext)
  */
 
 export function excludeclassfromsavegame(value: any, _context: ClassDecoratorContext) {
+	if (!value || typeof value !== 'function') {
+		throw new Error('[@excludeclassfromsavegame] Decorator must target a class.');
+	}
 	(value as ConstructorWithSaveGame).__exclude_savegame__ = true;
-	const key = normalizeDecoratedClassName((value as Function)?.name);
+	if (!(value as Function).name) {
+		throw new Error('[@excludeclassfromsavegame] Target class must have a constructor name.');
+	}
+	const key = normalizeDecoratedClassName((value as Function).name);
 	Serializer.classExcludeMap.set(key, true);
 	Serializer.excludedObjectTypes.add(key);
 }

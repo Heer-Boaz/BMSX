@@ -25,7 +25,8 @@ export class LightingSystem {
 		// Renderer-pulled: rebuild light lists from model indexes each frame
 		const active = $.world.activeLights;
 		MeshPipeline.clearLights();
-		let ambient: AmbientLight | null = $.world.activeAmbientLight?.light as AmbientLight || null;
+		const activeAmbient = $.world.activeAmbientLight;
+		let ambient: AmbientLight | null = activeAmbient ? (activeAmbient.light as AmbientLight) : null;
 		for (const lo of active) {
 			if (lo instanceof DirectionalLightObject) MeshPipeline.addDirectionalLight(lo.id, lo.light as DirectionalLight);
 			else if (lo instanceof PointLightObject) MeshPipeline.addPointLight(lo.id, lo.light as PointLight);

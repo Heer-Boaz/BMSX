@@ -47,7 +47,11 @@ export function registerSolidColorPass_WebGPU(library: RenderPassLibrary): void 
 			be.draw(fbo as WebGPUPassEncoder, 0, 3);
 			// Pop the error scope once submitted work completes
 			void be.device.queue.onSubmittedWorkDone().then(async () => {
-				const err = await be.device.popErrorScope?.();
+				const popErrorScope = be.device.popErrorScope;
+				if (!popErrorScope) {
+					throw new Error('[SolidColorPipeline] GPUDevice.popErrorScope is unavailable.');
+				}
+				const err = await popErrorScope.call(be.device);
 				if (err) console.error('WebGPU validation error (debug_solid):', err.message ?? err);
 			});
 		},

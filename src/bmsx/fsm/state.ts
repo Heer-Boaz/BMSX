@@ -193,19 +193,22 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	/**
 	 * Returns the current state of the FSM
 	 */
-	public get current(): State | undefined { return this.states?.[this.currentid]; }
+	public get current(): State | undefined {
+		if (!this.states) return undefined;
+		return this.states[this.currentid];
+	}
 
 	/**
 	 * Gets the definition of the current state machine.
 	 * @returns The definition of the current state machine.
 	 */
-	public get definition(): StateDefinition { return StateDefinitions[this.def_id]; }
+	public get definition(): StateDefinition { return this.definitionOrThrow(); }
 
 	/**
 	 * Gets the id of the start state of the FSM.
 	 * @returns The id of the start state of the FSM.
 	 */
-	public get start_state_id(): Identifier { return this.definition?.initial; }
+	public get start_state_id(): Identifier { return this.definition.initial; }
 
 	/**
 	 * Represents the counter for the critical section.
@@ -222,6 +225,36 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @property {Array<{ state_id: Identifier, args: any[] }>} transition_queue - The array of transition objects.
 	 */
 	private transition_queue: StateTransitionWithType[];
+
+	private definitionOrThrow(): StateDefinition {
+		if (!this.def_id) {
+			throw new Error(`[State] Definition id not resolved for state '${this.localdef_id}' (target '${this.target_id}').`);
+		}
+		const def = StateDefinitions[this.def_id];
+		if (!def) {
+			throw new Error(`[State] Definition '${this.def_id}' is not registered for state '${this.id}'.`);
+		}
+		return def;
+	}
+
+	private childDefinitionOrThrow(childId: Identifier): StateDefinition {
+		const def = this.definitionOrThrow();
+		if (!def.states) {
+			throw new Error(`[State] Definition '${def.def_id}' has no substates while resolving '${childId}'.`);
+		}
+		const child = def.states[childId] as StateDefinition | undefined;
+		if (!child) {
+			throw new Error(`[State] Definition '${def.def_id}' is missing child '${childId}'.`);
+		}
+		return child;
+	}
+
+	private statesOrThrow(ctx: State = this): id2sstate {
+		if (!ctx.states) {
+			throw new Error(`[State] State '${ctx.id}' does not define substates.`);
+		}
+		return ctx.states;
+	}
 
 	/**
 	 * Enters the critical section.
@@ -277,7 +310,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Note that the definition can be empty, as not all objects have a defined machine.
 	 */
 	public get current_state_definition(): StateDefinition {
-		return this.current?.definition;
+		const currentState = this.current;
+		if (!currentState) {
+			throw new Error(`[State] Current state '${this.currentid}' is not active for '${this.id}'.`);
+		}
+		return currentState.definition;
 	}
 
 	/**
@@ -303,27 +340,37 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this.localdef_id = opts.localdef_id ?? DEFAULT_BST_ID;
 		this.target_id = opts.target_id;
 		this.parent_ref = opts.parent;
-		// If no explicit root provided, inherit from parent or become own root
-		this.root_ref = opts.root ?? opts.parent?.root ?? this;
-		this.def_id = this.parent ? this.parent.definition.states[this.localdef_id].def_id : StateDefinitions[this.localdef_id]?.def_id; // Resolve definition id from parent or root
-		// Note that the definition can be empty, as not all objects have a defined machine.
-
-		this.paused ??= false;
-		// Note: do not initailize the states here, as this will be done in the populateStates function. Also, do not initialize the currentid here, as this will be done in the reset function
-		// Note: do not initialize the history here, as this will be done in the reset function
-		// Note: do not set the states to an empty object, as this state might not have any states defined. Instead, leave it as undefined, so that it can be checked if the state has states defined
-		// When parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-		if (opts.localdef_id && opts.target_id) {
-			this.id = this.make_id();
-			this.transition_queue = [];
-			this.critical_section_counter = 0;
-			this.is_processing_queue = false;
-			// Initialize history ring buffer
-			this._hist = new Array(BST_MAX_HISTORY);
-			this._histHead = 0;
-			this._histSize = 0;
-			// Registry.instance.register(this);
+		if (opts.root) {
+			this.root_ref = opts.root;
+		} else if (opts.parent) {
+			this.root_ref = opts.parent.root;
+		} else {
+			this.root_ref = this;
 		}
+
+		if (!opts.target_id) {
+			throw new Error(`[State] Missing target id while constructing state '${this.localdef_id}'.`);
+		}
+
+		if (opts.parent) {
+			const childDef = opts.parent.childDefinitionOrThrow(this.localdef_id);
+			this.def_id = childDef.def_id;
+		} else {
+			const rootDef = StateDefinitions[this.localdef_id];
+			if (!rootDef) {
+				throw new Error(`[State] Definition '${this.localdef_id}' not found while constructing root state for '${opts.target_id}'.`);
+			}
+			this.def_id = rootDef.def_id;
+		}
+
+		this.paused = false;
+		this.id = this.make_id();
+		this.transition_queue = [];
+		this.critical_section_counter = 0;
+		this.is_processing_queue = false;
+		this._hist = new Array(BST_MAX_HISTORY);
+		this._histHead = 0;
+		this._histSize = 0;
 	}
 
 	@onload
@@ -469,7 +516,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		const states = this.states;
 		const cur = states[this.currentid];
-		cur?.tick();
+		if (!cur) {
+			throw new Error(`[State] Current state '${this.currentid}' not found in '${this.id}'.`);
+		}
+		cur.tick();
 		// Parallel states run alongside the focused branch without stealing
 		// `currentid`, providing the same behaviour as controller-level concurrent
 		// machines.
@@ -525,10 +575,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public transition_to_path(path: string | string[], payload?: EventPayload): void {
 		if (Array.isArray(path)) {
 			let ctx: State = this;
-			for (let idx = 0; idx < path.length; idx++) {
-				const seg = path[idx];
-				if (!ctx.states?.[seg]) throw new Error(`No state with ID '${seg}'`);
-				const child = ctx.states[seg];
+			for (const seg of path) {
+				const states = this.statesOrThrow(ctx);
+				const child = states[seg];
+				if (!child) throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
 				if (!child.is_concurrent) ctx.transitionToState(seg, 'to', payload);
 				ctx = child;
 			}
@@ -547,10 +597,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		for (let i = 0; i < spec.segs.length; i++) {
 			const seg = spec.segs[i];
-			const child = ctx.states?.[seg];
+			const states = this.statesOrThrow(ctx);
+			const child = states[seg];
 			if (!child) {
-				const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
-				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${keys}`);
+				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
 			}
 			if (!child.is_concurrent) ctx.transitionToState(seg, 'to', payload);
 			ctx = child;
@@ -571,10 +621,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			let ctx: State = this;
 			for (let i = 0; i < path.length - 1; i++) {
 				const seg = path[i];
-				const child = ctx.states?.[seg];
+				const states = this.statesOrThrow(ctx);
+				const child = states[seg];
 				if (!child) {
-					const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
-					throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${keys}`);
+					throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
 				}
 				ctx = child;
 			}
@@ -591,10 +641,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		for (let i = 0; i < spec.segs.length - 1; i++) {
 			const seg = spec.segs[i];
-			const child = ctx.states?.[seg];
+			const states = this.statesOrThrow(ctx);
+			const child = states[seg];
 			if (!child) {
-				const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
-				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${keys}`);
+				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
 			}
 			ctx = child;
 		}
@@ -634,10 +684,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		for (let i = 0; i < segments.length - 1; i++) {
 			const seg = segments[i];
-			const child = ctx.states?.[seg];
+			const states = this.statesOrThrow(ctx);
+			const child = states[seg];
 			if (!child) {
-				const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
-				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${keys}`);
+				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
 			}
 			if (!child.is_concurrent && ctx.currentid !== seg) {
 				ctx.transitionToState(seg, 'switch', payload);
@@ -647,10 +697,10 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 
 		const leaf = segments[segments.length - 1];
-		const leafState = ctx.states?.[leaf];
+		const leafStates = this.statesOrThrow(ctx);
+		const leafState = leafStates[leaf];
 		if (!leafState) {
-			const keys = ctx.states ? Object.keys(ctx.states).join(', ') : '(none)';
-			throw new Error(`No state '${leaf}' under '${ctx.id}'. Children: ${keys}`);
+			throw new Error(`No state '${leaf}' under '${ctx.id}'. Children: ${Object.keys(leafStates).join(', ')}`);
 		}
 		if (parentChanged) ctx.transitionToState(leaf, 'to', payload);
 	}
@@ -700,11 +750,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public matches_state_path(path: string | string[]): boolean {
 		if (Array.isArray(path)) {
-			// Relative match
 			if (path.length === 0) return false;
 			const [head, ...tail] = path;
 			if (tail.length === 0) return this.currentid === head;
-			const next = this.states?.[head];
+			const states = this.statesOrThrow();
+			const next = states[head];
 			return !!next && next.matches_state_path(tail);
 		}
 
@@ -718,7 +768,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		let current: State = ctx;
 		for (let i = 0; i < spec.segs.length - 1; i++) {
 			const seg = spec.segs[i];
-			const child = current.states?.[seg];
+			const states = this.statesOrThrow(current);
+			const child = states[seg];
 			if (!child) return false;
 			current = child;
 		}
@@ -736,15 +787,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private checkStateGuardConditions(target_state_id: Identifier): boolean {
 		const curDef = this.current_state_definition;
-		const tgtDef = this.definition?.states?.[target_state_id];
-
-		const exitGuard = curDef?.transition_guards?.can_exit;
+		const exitGuardDef = curDef.transition_guards;
+		const exitGuard = exitGuardDef ? exitGuardDef.can_exit : undefined;
 		if (typeof exitGuard === 'function' && !exitGuard.call(this.target, this)) {
 			return false;
 		}
 
-		const tgt = this.states?.[target_state_id];
-		const enterGuard = tgtDef?.transition_guards?.can_enter;
+		const states = this.statesOrThrow();
+		const tgt = states[target_state_id];
+		if (!tgt) {
+			throw new Error(`[State] Target state '${target_state_id}' not found under '${this.id}'.`);
+		}
+		const enterGuardDef = this.childDefinitionOrThrow(target_state_id).transition_guards;
+		const enterGuard = enterGuardDef ? enterGuardDef.can_enter : undefined;
 		if (typeof enterGuard === 'function' && !enterGuard.call(this.target, tgt)) {
 			return false;
 		}
@@ -793,19 +848,25 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this.withCriticalSection(() => {
 			const prevId = this.currentid;
 			const prevDef = this.current_state_definition;
-
-			// Exit previous state
-			const exitHandler = prevDef?.exiting_state;
-			if (typeof exitHandler === 'function') {
-				exitHandler.call(this.target, this.current, payload);
+			const prevStates = this.statesOrThrow();
+			const prevInstance = prevStates[prevId];
+			if (!prevInstance) {
+				throw new Error(`[State] Previous state '${prevId}' not found in '${this.id}'.`);
 			}
-			if (prevDef) this.pushHistory(prevId);
+
+			const exitHandler = prevDef.exiting_state;
+			if (typeof exitHandler === 'function') {
+				exitHandler.call(this.target, prevInstance, payload);
+			}
+			this.pushHistory(prevId);
 
 			// Switch current id
 			this.currentid = state_id;
 			const cur = this.current;
+			if (!cur) {
+				throw new Error(`[State] State '${this.id}' transitioned to '${state_id}' but the instance was not created.`);
+			}
 			const curDef = this.current_state_definition;
-			if (!cur || !curDef) return; // No definition for the none-state
 			if (curDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
 			// Automatic reset behavior
@@ -847,9 +908,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		const hasChildren = !!this.states && Object.keys(this.states).length > 0;
 		if (hasChildren) {
-			const cur = this.current;
-			const parallels = this.states ? Object.values(this.states).filter(s => s.is_concurrent) : [];
-			cur?.dispatch_event(eventName, emitter_id, payload);
+			const states = this.statesOrThrow();
+			const cur = states[this.currentid];
+			if (!cur) {
+				throw new Error(`[State] Current child '${this.currentid}' not found in '${this.id}' while dispatching '${eventName}'.`);
+			}
+			const parallels = Object.values(states).filter(s => s.is_concurrent);
+			cur.dispatch_event(eventName, emitter_id, payload);
 			for (const s of parallels) s.dispatch_event(eventName, emitter_id, payload);
 			return;
 		}
@@ -922,7 +987,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private handleEvent(eventName: string, emitter_id: Identifier, payload?: EventPayload): boolean {
 		if (this.paused) return false;
 		return this.withCriticalSection(() => {
-			const spec = this.definition?.on?.[eventName];
+			const handlers = this.definition.on;
+			if (!handlers) return false;
+			const spec = handlers[eventName];
 			if (!spec) return false;
 			if (typeof spec !== 'string') {
 				const scope = spec.scope;
@@ -1094,7 +1161,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * If no tape is defined, returns undefined.
 	 * @returns The tape associated with the state machine definition, or undefined if not found.
 	 */
-	public get tape(): Tape { return this.definition?.tape_data; }
+	public get tape(): Tape { return this.definition.tape_data; }
 
 	/**
 	 * Returns the current value of the tape at the position of the tape head.
@@ -1201,7 +1268,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		try {
 			this._ticks = 0; // Always reset tapehead ticks after moving tapehead
 			const tape = this.tape;
-			const mode = this.definition?.tape_playback_mode ?? 'once';
+			const mode = this.definition.tape_playback_mode ?? 'once';
 
 			if (!tape || tape.length === 0) {
 				this._tapehead = TAPE_START_INDEX;
@@ -1295,7 +1362,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	public set ticks(v: number) {
 		this._ticks = v;
 		const def = this.definition;
-		if (!def) return;
 		const base = def.ticks2advance_tape;
 		if (base <= 0) {
 			this.advanceTapehead();
@@ -1308,7 +1374,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 	private advanceTapehead(): void {
 		const tape = this.tape;
-		const mode = this.definition?.tape_playback_mode ?? 'once';
+		const mode = this.definition.tape_playback_mode ?? 'once';
 		if (!tape || tape.length === 0) {
 			this.tapehead_position = this._tapehead + 1;
 			return;
@@ -1414,8 +1480,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public reset(reset_tree: boolean = true): void {
 		this.rewind_tape(); // Rewind the tape
-		if (!this.definition) return; // No definition exists for the empty 'none'-state
-		this.data = { ...this.definition.data }; // Reset the state data by shallow copying the definition's data
+		const def = this.definition;
+		this.data = def.data ? { ...def.data } : {};
 		if (reset_tree) this.resetSubmachine(); // Reset the substate machine if it exists
 	}
 
@@ -1425,16 +1491,15 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	// The history of previous states is cleared and the state machine is unpaused.
 	public resetSubmachine(reset_tree: boolean = true): void {
 		// N.B. doesn't trigger the onenter-event!
-		const start = this.definition?.initial; // Definition doesn't need to exist
-		this.currentid = start; // Set the current state to the start state (if it exists)
+		const def = this.definition;
+		const start = def.initial;
+		this.currentid = start;
 		// Reset history ring buffer
 		this._histHead = 0;
 		this._histSize = 0;
 		this.paused = false;
-		if (!this.definition) return; // If the definition doesn't exist, the state machine is empty and there is nothing to reset
-		this.data = { ...this.definition.data }; // Reset the state machine data by shallow copying the definition's data
+		this.data = def.data ? { ...def.data } : {};
 		if (reset_tree && this.states) {
-			// Call the reset function for each state
 			for (let state of Object.values(this.states)) {
 				state.reset(reset_tree);
 			}

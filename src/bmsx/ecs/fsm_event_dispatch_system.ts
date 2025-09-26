@@ -18,7 +18,12 @@ export class FsmEventDispatchSystem extends ECSystem {
 		for (let i = 0; i < events.length; i++) {
 			const cmd = events[i]!;
 			const target = world.getWorldObject<WorldObject>(cmd.target_id);
-			if (!target || !target.sc) continue;
+			if (!target) {
+				throw new Error(`[FsmEventDispatchSystem] Event '${cmd.event}' targets unknown object '${cmd.target_id}'.`);
+			}
+			if (!target.sc) {
+				throw new Error(`[FsmEventDispatchSystem] Target '${cmd.target_id}' has no state machine controller.`);
+			}
 			const emitterId = cmd.emitter_id ?? target.id;
 			target.sc.dispatch_event(cmd.event, emitterId, cmd.payload);
 		}

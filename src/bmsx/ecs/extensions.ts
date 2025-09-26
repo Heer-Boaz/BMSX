@@ -14,12 +14,8 @@ export function collectEcsPipelineExtensions(ctx: { world: World; profile?: stri
 	const out: NodeSpec[] = [];
 	const seenModules = new Set<ModelModule>();
 	for (const fn of _extensions) {
-		try {
-			const res = fn(ctx);
-			if (Array.isArray(res)) out.push(...res);
-		} catch (e) {
-			console.error('[ECS] Extension error:', e);
-		}
+		const res = fn(ctx);
+		if (Array.isArray(res)) out.push(...res);
 	}
 	for (const mod of ctx.world.modules) {
 		if (!mod || typeof mod !== 'object' || seenModules.has(mod)) continue;

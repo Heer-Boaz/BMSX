@@ -15,9 +15,13 @@ export class TextRenderSystem extends ECSystem {
 			if (!tcx.enabled) continue;
 			const parent = o as WorldObject;
 			const t = parent.getUniqueComponent(TransformComponent);
-			let x = (t ? t.position[0] : parent.x) + (tcx.offset?.x ?? 0);
-			const y = (t ? t.position[1] : parent.y) + (tcx.offset?.y ?? 0);
-			const z = (t ? t.position[2] : parent.z) + (tcx.offset?.z ?? 950);
+			const offset = tcx.offset;
+			if (!offset) {
+				throw new Error('[TextRenderSystem] TextComponent missing offset configuration.');
+			}
+			let x = (t ? t.position[0] : parent.x) + offset.x;
+			const y = (t ? t.position[1] : parent.y) + offset.y;
+			const z = (t ? t.position[2] : parent.z) + offset.z;
 			// Layout: wrapping and simple centering
 			let lines: string | string[] = tcx.text;
 			if (typeof lines === 'string' && tcx.wrapChars && tcx.wrapChars > 0) {

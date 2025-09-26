@@ -33,20 +33,32 @@ export class Overlap2DSystem extends ECSystem {
 
 		for (const col of eventColliders) {
 			const owner = col.parent;
-			if (!owner) continue;
-			const oSpace = world.getSpaceOfObject(owner.id)?.id ?? null;
+			if (!owner) {
+				throw new Error(`[Overlap2DSystem] Collider '${col.id}' is not attached to a parent.`);
+			}
+			const ownerSpace = world.getSpaceOfObject(owner.id);
+			if (!ownerSpace) {
+				throw new Error(`[Overlap2DSystem] Collider '${col.id}' with owner '${owner.id}' is not mapped to a space.`);
+			}
+			const oSpace = ownerSpace.id;
 			const candidates = Collision2DSystem.queryAABB(world, col.worldArea);
 			for (const otherCol of candidates) {
 				if (otherCol === col) continue;
 				const otherOwner = otherCol.parent;
-				if (!otherOwner) continue;
+				if (!otherOwner) {
+					throw new Error(`[Overlap2DSystem] Collider '${otherCol.id}' returned without a parent.`);
+				}
 				colliderLookup.set(otherCol.id, otherCol);
 				// Filter by layer/mask
 				const aHitsB = (col.mask & otherCol.layer) !== 0;
 				const bHitsA = (otherCol.mask & col.layer) !== 0;
 				if (!aHitsB || !bHitsA) continue;
 				// Filter by space scope
-				const otherSpace = world.getSpaceOfObject(otherOwner.id)?.id ?? null;
+				const otherSpaceObj = world.getSpaceOfObject(otherOwner.id);
+				if (!otherSpaceObj) {
+					throw new Error(`[Overlap2DSystem] Collider '${otherCol.id}' with owner '${otherOwner.id}' is not mapped to a space.`);
+				}
+				const otherSpace = otherSpaceObj.id;
 				if (!this.spaceMatch(col.spaceEvents, oSpace, otherSpace, world)) continue;
 				if (otherCol.generateOverlapEvents && otherCol.id < col.id) continue;
 				// Final narrow-phase test
@@ -67,7 +79,9 @@ export class Overlap2DSystem extends ECSystem {
 		const emitPair = (eventName: OverlapEvent, colA: Collider2DComponent, colB: Collider2DComponent) => {
 			const ownerA = colA.parent;
 			const ownerB = colB.parent;
-			if (!ownerA || !ownerB) return;
+			if (!ownerA || !ownerB) {
+				throw new Error('[Overlap2DSystem] Attempted to emit overlap event without collider parents.');
+			}
 			const emitA = colA.generateOverlapEvents;
 			const emitB = colB.generateOverlapEvents;
 			if (!emitA && !emitB) return;
@@ -82,22 +96,28 @@ export class Overlap2DSystem extends ECSystem {
 				EventEmitter.instance.emit(eventName, ownerB, { otherId: ownerA.id, otherColliderId: colA.id, colliderId: colB.id, contact: flipped });
 			}
 		};
-		const id2col = (id: string): Collider2DComponent | undefined => colliderLookup.get(id) ?? $.registry.get<Collider2DComponent>(id);
+		const id2col = (id: string): Collider2DComponent => {
+			const found = colliderLookup.get(id) ?? $.registry.get<Collider2DComponent>(id);
+			if (!found) {
+				throw new Error(`[Overlap2DSystem] Collider '${id}' could not be resolved.`);
+			}
+			return found;
+		};
 
 		for (const k of begins) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			if (a && b) emitPair('overlapBegin', a, b);
+			emitPair('overlapBegin', a, b);
 		}
 		for (const k of stays) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			if (a && b) emitPair('overlapStay', a, b);
+			emitPair('overlapStay', a, b);
 		}
 		for (const k of ends) {
 			const [aId, bId] = k.split('|');
 			const a = id2col(aId); const b = id2col(bId);
-			if (a && b) emitPair('overlapEnd', a, b);
+			emitPair('overlapEnd', a, b);
 		}
 
 		this.prevPairs = newPairs;
@@ -111,7 +131,8 @@ export class Overlap2DSystem extends ECSystem {
 			case 'current': return (bSpace === aSpace) && (bSpace === current);
 			case 'ui': return (bSpace === uiId);
 			case 'both': return (bSpace === aSpace && (bSpace === current)) || (bSpace === uiId);
-			default: console.error(`Unknown spaceEvents scope: ${scope}`); return false;
+			default:
+				throw new Error(`[Overlap2DSystem] Unknown spaceEvents scope '${scope}'.`);
 		}
 	}
 }

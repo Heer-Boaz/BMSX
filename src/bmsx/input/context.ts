@@ -32,13 +32,19 @@ export class ContextStack {
 		const seen = new Set<string>();
 		for (const c of active) {
 			if (device === 'keyboard') {
-				const arr = c.keyboard?.[action] ?? [];
+				if (!c.keyboard) {
+					throw new Error(`[ContextStack] Mapping context '${c.id}' is missing keyboard bindings.`);
+				}
+				const arr = c.keyboard[action] ?? [];
 				for (const b of arr) {
 					const id = typeof b === 'string' ? b : b.id;
 					if (!seen.has(id)) { out.push(b); seen.add(id); }
 				}
 			} else {
-				const arr = c.gamepad?.[action] ?? [];
+				if (!c.gamepad) {
+					throw new Error(`[ContextStack] Mapping context '${c.id}' is missing gamepad bindings.`);
+				}
+				const arr = c.gamepad[action] ?? [];
 				for (const b of arr) {
 					const id = typeof b === 'string' ? b : b.id;
 					if (!seen.has(id)) { out.push(b); seen.add(id); }

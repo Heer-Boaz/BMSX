@@ -204,7 +204,6 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	};
 	const ambientDefaultEnabled = state.ambientEnabledDefault ? 1 : 0;
 	spriteQueue.forEachFront(({ options, imgmeta }) => {
-		if (!imgmeta) { console.error(`[Sprite Pipeline] Image metadata missing for imgid '${options.imgid}'`); return; }
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
 		const layerIsUI = options.layer === 'ui';
 		const ambE = layerIsUI ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : ambientDefaultEnabled);
@@ -227,7 +226,15 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 }
 
 export function drawImg(options: ImgRenderSubmission): void {
-	const { imgid } = options; const imgmeta = GameView.imgassets[imgid]?.imgmeta; if (!imgmeta) { console.error(`[Sprite Pipeline] "drawImg": Image metadata missing for imgid '${imgid}'`); return; }
+	const { imgid } = options;
+	const asset = GameView.imgassets[imgid];
+	if (!asset) {
+		throw new Error(`[Sprite Pipeline] drawImg called with unknown image id '${imgid}'.`);
+	}
+	const imgmeta = asset.imgmeta;
+	if (!imgmeta) {
+		throw new Error(`[Sprite Pipeline] Image metadata missing for imgid '${imgid}'.`);
+	}
 	// Deep-copy nested objects to freeze values at submission time
 	spriteQueue.submit({
 		options: {
@@ -358,14 +365,22 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			const height = gv.offscreenCanvasSize.y;
 			const baseWidth = gv.viewportSize.x;
 			const baseHeight = gv.viewportSize.y;
+			const atlasTexture = gv.textures['_atlas'];
+			if (!atlasTexture) {
+				throw new Error("[SpritesPipeline] Texture '_atlas' missing from view textures.");
+			}
+			const dynamicAtlasTexture = gv.textures['_atlas_dynamic'];
+			if (dynamicAtlasTexture === undefined) {
+				throw new Error("[SpritesPipeline] Texture '_atlas_dynamic' entry missing from view textures.");
+			}
 			const spriteState: SpritesPipelineState = {
 				width,
 				height,
 				baseWidth,
 				baseHeight,
 				// Provide atlas textures for direct binding in render step when needed
-				atlasTex: gv.textures?._atlas ?? null,
-				atlasDynamicTex: gv.textures?._atlas_dynamic ?? null,
+				atlasTex: atlasTexture as WebGLTexture,
+				atlasDynamicTex: dynamicAtlasTexture as WebGLTexture | null,
 				ambientEnabledDefault: gv.spriteAmbientEnabledDefault,
 				ambientFactorDefault: gv.spriteAmbientFactorDefault ?? 1.0,
 			};

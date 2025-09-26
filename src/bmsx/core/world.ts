@@ -222,13 +222,18 @@ export class World implements Stateful, RegisterablePersistent {
 		const sid = this.objToSpaceMap.get(id);
 		if (!sid) return null;
 		const space = this[id_to_space_symbol][sid];
-		return space?.get<T>(id) ?? null;
+		if (!space) {
+			throw new Error(`[World] Object '${id}' is mapped to missing space '${sid}'.`);
+		}
+		return space.get<T>(id) ?? null;
 	}
 
 	public getSpaceOfObject(obj_id: Identifier): Space | null {
 		const sid = this[obj_id_to_space_id_symbol][obj_id];
 		if (!sid) return null;
-		return this[id_to_space_symbol][sid];
+		const space = this[id_to_space_symbol][sid];
+		if (!space) throw new Error(`[World] Space '${sid}' referenced by object '${obj_id}' is missing.`);
+		return space;
 	}
 
 	/**
@@ -252,8 +257,13 @@ export class World implements Stateful, RegisterablePersistent {
 		const target_space = this[id_to_space_symbol][spaceid_to_move_obj_to];
 		if (!target_space) throw Error(`Cannot move object '${obj_id}' to unknown space '${spaceid_to_move_obj_to}'!`);
 		const fromSid = this.objToSpaceMap.get(obj_id);
-		if (!fromSid) return; // Already absent
+		if (!fromSid) {
+			throw new Error(`Cannot move object '${obj_id}' because it is not registered in any space.`);
+		}
 		const origin_space = this[id_to_space_symbol][fromSid];
+		if (!origin_space) {
+			throw new Error(`Cannot move object '${obj_id}' because source space '${fromSid}' is missing.`);
+		}
 		origin_space.despawn(obj, true);
 		target_space.spawn(obj, null, true);
 	}
@@ -267,7 +277,10 @@ export class World implements Stateful, RegisterablePersistent {
 		if (!toSpace) throw new Error(`transfer: target space not found`);
 		const fromSid = this.objToSpaceMap.get(o.id);
 		const from = fromSid ? this[id_to_space_symbol][fromSid] : null;
-		if (!from || from === toSpace) return;
+		if (!from) {
+			throw new Error(`transfer: object '${o.id}' is not currently assigned to a space.`);
+		}
+		if (from === toSpace) return;
 		const suppress = opts?.suppressLifecycleHooks ?? true;
 		from.despawn(o, suppress);
 		toSpace.spawn(o, undefined, suppress);
@@ -346,7 +359,10 @@ export class World implements Stateful, RegisterablePersistent {
 		// World may have decorator-declared listeners in derived games
 		EventEmitter.instance.initClassBoundEventSubscriptions(this);
 		// Ensure FSM controller event wiring is active on revive as well
-		this.sc?.bind();
+		if (!this.sc) {
+			throw new Error('[World] State machine controller is not initialized before bind().');
+		}
+		this.sc.bind();
 	}
 
 	/** Unwire world subscriptions and FSM listeners. */

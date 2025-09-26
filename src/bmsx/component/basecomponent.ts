@@ -1,4 +1,4 @@
-import { EventEmitter, EventSubscription, type EventSubscriber } from '../core/eventemitter';
+import { EventEmitter, type EventSubscriber } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { type WorldObject, type WorldObjectConstructorBaseOrAbstract } from '../core/object/worldobject';
 import { Registry } from '../core/registry';
@@ -170,17 +170,24 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 */
 	public id: ComponentId; // The component id is the parent id + the component name
 	public id_local: Identifier;
-	public get name(): string { return this.constructor?.name; }
-	public static tagsPre: Set<ComponentTag>;
-	public static tagsPost: Set<ComponentTag>;
-	public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
+	public get name(): string { return this.constructor.name; }
+	// public static tagsPre: Set<ComponentTag>;
+	// public static tagsPost: Set<ComponentTag>;
+	// public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
 	/**
 	 * Gets the parent of the component.
 	 *
 	 * @returns The parent component.
 	 */
-	public get parent(): T | undefined { return Registry.instance.get<T>(this.parentid); }
-	public parentAs<T extends Registerable>(): T | undefined { return Registry.instance.get<T>(this.parentid); }
+	protected _parentRef?: T;
+	public get parent(): T | undefined {
+		if (this._parentRef) return this._parentRef;
+		if (!this.parentid) return undefined;
+		const parent = Registry.instance.get<T>(this.parentid);
+		if (parent) this._parentRef = parent;
+		return parent;
+	}
+
 	protected _enabled: boolean;
 	/**
 	 * Sets the enabled state of the component. If the component is disabled, it will not be updated.
@@ -195,7 +202,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 */
 	public get enabled() { return this._enabled; }
 
-	public get isAttached() { return !!this.parentid; }
+	public get isAttached() { return !!(this._parentRef ?? this.parentid); }
 
 	public get tagsPre() { return (this.constructor as ConstructorWithTagsProperty).tagsPre; }
 	public get tagsPost() { return (this.constructor as ConstructorWithTagsProperty).tagsPost; }
@@ -210,8 +217,11 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * - Guards against missing tag sets on the constructor prototypes.
 	 */
 	public get hasTag(): (tag: ComponentTag) => boolean {
-		return (tag: ComponentTag) =>
-			(this.tagsPre?.has(tag) ?? false) || (this.tagsPost?.has(tag) ?? false);
+		return (tag: ComponentTag) => {
+			const pre = this.tagsPre;
+			const post = this.tagsPost;
+			return (pre ? pre.has(tag) : false) || (post ? post.has(tag) : false);
+		};
 	}
 
 	/**
@@ -220,13 +230,13 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * @param parentid - The identifier of the parent.
 	 */
 	constructor(opts: ComponentAttachOptions) {
-		this.parentid ??= opts.parentid; // Store the parent id for later use
+		this.parentid = this.parentid ?? opts.parentid; // Store the parent id for later use
 		// If a local id is supplied, build a compatible id using the parent id and component type name.
 		// Otherwise default to `${parentid}_${Type}`. The container may suffix to ensure uniqueness.
-		const typeName = this.constructor?.name;
-		this.id ??= `${this.parentid}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
-		this.id_local ??= opts.id_local;;
-		this.enabled ??= true;
+		const typeName = this.constructor.name;
+		this.id = this.id ?? `${this.parentid}_${typeName}${opts.id_local ? `_${opts.id_local}` : ''}`;
+		this.id_local = this.id_local ?? opts.id_local;
+		this._enabled = true;
 		// Event binding is performed once from the container at addComponent-time or during deserialization (@onload),
 		// so do not bind here to avoid running before derived decorator initializers.
 	}
@@ -235,7 +245,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * Disposes the component by disabling it, removing event subscriptions, and deregistering it from the entity registry.
 	 */
 	public dispose() {
-		this.detach();
+		if (this.isAttached) this.detach();
 		this.enabled = false;
 		// Remove event subscriptions
 		this.unbind();
@@ -244,16 +254,12 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	public attach(newParent?: Identifier) {
 		// If a new parent is specified, detach from the old parent
 		if (newParent) {
-			this.isAttached && this.detach();
+			if (this.isAttached) this.detach();
 			this.parentid = newParent;
+			this._parentRef = undefined;
 		}
 
-		const parent = this.parent;
-		if (!parent) {
-			// Gracefully no-op if parent is not available (e.g., during dehydration/hydration or debug toggles)
-			console.debug(`Component ${this.id} has no parent to attach to.`);
-			return;
-		}
+		const parent = this.parentOrThrow();
 
 		// Enforce uniqueness if the component class declares it
 		const ctor = this.constructor as ConstructorWithTagsProperty & { unique?: boolean };
@@ -263,23 +269,16 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 		}
 		// Attach always allows multiple instances; container will assign final id and bind
 		parent.addComponent(this);
+		this._parentRef = parent;
 		this.bind();
 	}
 
 	public detach() {
-		const parent = this.parent;
-		if (!parent) {
-			console.debug(`Component ${this.id} has no parent to detach from.`);
-			// If there's no parent, there's nothing to detach; fail silently (common during dehydration/debugger operations)
-			return;
-		}
+		const parent = this.parentOrThrow();
 
 		// Remove this instance from the parent
 		parent.removeComponentInstance(this);
-
-		this.unbind();
-
-		// Clear the parent id to indicate that the component is no longer attached
+		this._parentRef = undefined;
 		this.parentid = null;
 	}
 
@@ -289,8 +288,8 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * @returns True if the component has the tag, false otherwise.
 	 */
 	hasPreprocessingTag(tag: ComponentTag): boolean {
-		const componentClass = this.constructor as ConstructorWithTagsProperty; // Get the component's constructor
-		return componentClass.tagsPre?.has(tag) ?? false; // Check if the component has the specified tag
+		const componentClass = this.constructor as ConstructorWithTagsProperty;
+		return componentClass.tagsPre ? componentClass.tagsPre.has(tag) : false;
 	}
 
 	/**
@@ -299,8 +298,8 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * @returns True if the component has the tag, false otherwise.
 	 */
 	hasPostprocessingTag(tag: ComponentTag): boolean {
-		const componentClass = this.constructor as ConstructorWithTagsProperty; // Get the component's constructor
-		return componentClass.tagsPost?.has(tag) ?? false; // Check if the component has the specified tag
+		const componentClass = this.constructor as ConstructorWithTagsProperty;
+		return componentClass.tagsPost ? componentClass.tagsPost.has(tag) : false;
 	}
 
 	/**
@@ -330,6 +329,24 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 
 	// Implement this method to handle postprocessing updates
 	public postprocessingUpdate(_args: ComponentUpdateParams): void {
+	}
+
+	protected parentOrThrow(): T {
+		const parent = this.parent;
+		if (!parent) {
+			throw new Error(`[Component:${this.id}] Parent '${this.parentid}' is not registered.`);
+		}
+		return parent;
+	}
+
+	public linkToParent(parent: T): void {
+		this._parentRef = parent;
+		this.parentid = parent.id;
+	}
+
+	public clearParentLink(): void {
+		this._parentRef = undefined;
+		this.parentid = null;
 	}
 }
 
@@ -363,9 +380,7 @@ type ConstructorWithTagsProperty = Function & {
 export function componenttags_preprocessing(...tags: ComponentTag[]) {
 	return function (value: any, _context: ClassDecoratorContext) {
 		const ctor = value as ConstructorWithTagsProperty;
-		if (!Object.prototype.hasOwnProperty.call(ctor, 'tagsPre')) {
-			ctor.tagsPre = new Set<ComponentTag>(); // Create a new set if not present on the class itself
-		}
+		ctor.tagsPre ??= new Set<ComponentTag>();
 		tags.forEach(tag => ctor.tagsPre!.add(tag));
 		updateAllPreprocessingTags(ctor);
 		// no class replacement
@@ -398,9 +413,7 @@ function updateAllPreprocessingTags(constructor: ConstructorWithTagsProperty) {
 export function componenttags_postprocessing(...tags: ComponentTag[]) {
 	return function (value: any, _context: ClassDecoratorContext) {
 		const constructor = value as ConstructorWithTagsProperty;
-		if (!Object.prototype.hasOwnProperty.call(constructor, 'tagsPost')) {
-			constructor.tagsPost = new Set<ComponentTag>();
-		}
+		constructor.tagsPost ??= new Set<ComponentTag>();
 		tags.forEach(tag => constructor.tagsPost!.add(tag));
 		updateAllPostprocessingTags(constructor);
 		// no class replacement

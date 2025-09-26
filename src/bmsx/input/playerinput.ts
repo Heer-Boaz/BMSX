@@ -584,7 +584,7 @@ export class PlayerInput {
 		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
 		this.reset();
 
-		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
+		window.addEventListener('gamepaddisconnected', (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
 
 			if (!this.inputHandlers['gamepad']) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)

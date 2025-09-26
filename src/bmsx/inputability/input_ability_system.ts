@@ -26,18 +26,23 @@ export class InputAbilitySystem extends ECSystem {
 	public override update(): void {
 		for (let [obj, component] of filterIterable($.world.objectsWithComponents(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
 			const program = this.resolveCompiledProgram(component);
-			if (!program) continue;
 
 			const componentPlayerIndex = component.playerIndex ?? 0;
-			const fallbackPlayerIndex = this.extractObjectPlayerIndex(obj) ?? 0;
+			const fallbackPlayerIndex = obj.player_index ?? 0;
 			const playerIndex = componentPlayerIndex > 0 ? componentPlayerIndex : fallbackPlayerIndex;
-			if (!playerIndex) continue;
+			if (playerIndex <= 0) {
+				const componentId = component.id ?? component.id_local ?? component.constructor.name;
+				throw new Error(`[InputAbilitySystem] Unable to resolve player index for object '${obj.id}' (component '${componentId}').`);
+			}
 
 			const input = $.input.getPlayerInput(playerIndex);
 			if (!input) continue;
 
 			const asc = obj.getUniqueComponent(AbilitySystemComponent);
-			if (!asc) continue;
+			if (!asc) {
+				const componentId = component.id ?? component.id_local ?? component.constructor.name;
+				throw new Error(`[InputAbilitySystem] AbilitySystemComponent missing on object '${obj.id}' (component '${componentId}').`);
+			}
 
 			const ownerId = asc.parentid ?? obj.id;
 
@@ -47,7 +52,7 @@ export class InputAbilitySystem extends ECSystem {
 			ctx.ownerId = ownerId;
 			ctx.playerIndex = playerIndex;
 			ctx.hasTag = (tag: string) => asc.hasGameplayTag(tag);
-			ctx.matchesMode = (path: string) => (obj.sc ? obj.sc.matches_state_path(path) ?? false : false);
+			ctx.matchesMode = (path: string) => obj.sc.matches_state_path(path);
 			ctx.consume = (actions: string[]) => {
 				for (let idx = 0; idx < actions.length; idx++) {
 					input.consumeAction(actions[idx]!);
@@ -182,7 +187,7 @@ export class InputAbilitySystem extends ECSystem {
 		return this.customMatchScratch;
 	}
 
-	private resolveCompiledProgram(component: InputAbilityComponent): CompiledProgram | null {
+	private resolveCompiledProgram(component: InputAbilityComponent): CompiledProgram {
 		if (component.program) {
 			let compiled = this.inlineCompiled.get(component.program);
 			if (!compiled) {
@@ -193,41 +198,41 @@ export class InputAbilitySystem extends ECSystem {
 		}
 
 		const programId = component.programId;
-		if (!programId) return null;
+		if (!programId) {
+			const hostId = component.parentid ?? component.id ?? '<unknown object>';
+			throw new Error(`[InputAbilitySystem] Component '${component.constructor.name}' on '${hostId}' is missing both an inline program and a programId.`);
+		}
 
 		let compiled = this.compiledById.get(programId);
 		if (compiled) return compiled;
 
 		const program = this.resolveProgramById(programId);
-		if (!program) return null;
 
 		compiled = compileProgram(program, pattern => this.parsePattern(pattern));
 		this.compiledById.set(programId, compiled);
 		return compiled;
 	}
 
-	private resolveProgramById(programId: string): InputAbilityProgram | null {
+	private resolveProgramById(programId: string): InputAbilityProgram {
 		const cached = this.resolvedPrograms.get(programId);
 		if (cached) return cached;
-		if (this.missingProgramIds.has(programId)) return null;
+		if (this.missingProgramIds.has(programId)) {
+			throw new Error(`[InputAbilitySystem] Program '${programId}' is marked as missing.`);
+		}
 
 		const rompack = $.rompack;
-		const data = rompack?.data?.[programId as keyof typeof rompack.data];
+		const rompackData = rompack.data;
+		if (!rompackData) {
+			throw new Error('[InputAbilitySystem] Rompack data unavailable while resolving programs.');
+		}
+		const data = rompackData[programId as keyof typeof rompackData];
 		if (!isInputAbilityProgram(data)) {
 			this.missingProgramIds.add(programId);
-			console.warn(`[InputAbilitySystem] Program '${programId}' not found or invalid.`);
-			return null;
+			throw new Error(`[InputAbilitySystem] Program '${programId}' not found or invalid.`);
 		}
 
 		this.resolvedPrograms.set(programId, data);
 		return data;
-	}
-
-	private extractObjectPlayerIndex(obj: WorldObject): number | undefined {
-		if (!Object.prototype.hasOwnProperty.call(obj, 'player_index')) return undefined;
-		const candidate = (obj as { player_index?: unknown }).player_index;
-		if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) return candidate;
-		return undefined;
 	}
 
 	private parsePattern(pattern: string): PatternPredicate {

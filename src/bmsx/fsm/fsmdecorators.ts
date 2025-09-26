@@ -15,9 +15,7 @@ export const StateDefinitionBuilders: Record<string, () => StateMachineBlueprint
 export function assign_fsm(...fsms: FSMName[]) {
 	return function (value: any, _context: ClassDecoratorContext) {
 		const ctor = value as ConstructorWithFSMProperty;
-		if (!Object.prototype.hasOwnProperty.call(ctor, 'linkedFSMs')) {
-			ctor.linkedFSMs = new Set<FSMName>();
-		}
+		ctor.linkedFSMs ??= new Set<FSMName>();
 		fsms.forEach(fsm => ctor.linkedFSMs!.add(fsm));
 		updateAssignedFSMs(ctor);
 		// no class replacement
@@ -53,7 +51,10 @@ export function build_fsm(fsm_name?: Identifier) {
 		// For static methods: addInitializer runs at class evaluation with `this` bound to the constructor.
 		// For instance methods (not typical here), we still register using the instance's constructor when created.
 		const register = (ctor: any) => {
-			const raw = fsm_name ?? ctor?.name;
+			if (!ctor || !ctor.name) {
+				throw new Error('[FSMDecorators] Cannot infer FSM name from constructor without a name.');
+			}
+			const raw = fsm_name ?? ctor.name;
 			// If no explicit fsm_name was supplied, normalize inferred class name for public key.
 			const key = fsm_name ? raw : normalizeDecoratedClassName(raw);
 			StateDefinitionBuilders[key] = value as () => StateMachineBlueprint;

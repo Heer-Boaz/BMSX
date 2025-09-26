@@ -22,9 +22,7 @@ export class SpriteComponent extends Component {
 
 	constructor(opts: ComponentAttachOptions & { imgid?: string; colliderLocalId?: Identifier | null }) {
 		super(opts);
-		if (opts?.imgid) this.imgid = opts.imgid ?? 'none';
-		if (Object.prototype.hasOwnProperty.call(opts ?? {}, 'colliderLocalId')) {
-			this.colliderLocalId = opts.colliderLocalId ?? null;
-		}
+		if (opts.imgid !== undefined) this.imgid = opts.imgid;
+		opts.colliderLocalId && (this.colliderLocalId = opts.colliderLocalId ?? null);
 	}
 }

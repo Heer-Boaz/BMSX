@@ -109,7 +109,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 */
 	addComponent<T extends Component>(component: T): void {
 		// Ensure parent linkage is correct even if caller used legacy constructor
-		if (!component.parentid) component.parentid = this.id;
+		component.linkToParent(this as any);
 		this.components.push(component);
 		const key = component.constructor?.name;
 		let arr = this.componentMap[key];
@@ -192,7 +192,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		if (i2 !== -1) this.components.splice(i2, 1);
 		// Unbind and clear parent linkage
 		component.unbind();
-		component.parentid = null;
+		component.clearParentLink();
 	}
 
 	/**
@@ -207,6 +207,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * The identifier of the world object, which is a unique string that is generated based on the class name and a unique number.
 	 */
 	public id: Identifier;
+
+	public player_index?: number; // 1-based player index, if controlled by a player
 
 	/** True when the object is part of the world and should participate in gameplay. */
 	public active: boolean = false;
@@ -442,8 +444,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public tickTree(bt_id: BehaviorTreeID): void {
 		const context = this.btreecontexts[bt_id];
 		if (!context) {
-			console.error(`Behavior tree context with ID '${bt_id}' does not exist!`);
-			return;
+			throw new Error(`[WorldObject:${this.id}] Behavior tree context '${bt_id}' does not exist.`);
 		}
 		if (!context.running) return;
 		const tree = context.root;
@@ -476,11 +477,11 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * @param bt_id The ID of the blackboard to reset.
 	 */
 	public resetTree(bt_id: BehaviorTreeID): void {
-		if (!this.btreecontexts[bt_id].blackboard) {
-			console.error(`Blackboard with ID ${bt_id} does not exist.`);
-			return;
+		const context = this.btreecontexts[bt_id];
+		if (!context) {
+			throw new Error(`[WorldObject:${this.id}] Behavior tree context '${bt_id}' does not exist.`);
 		}
-		this.btreecontexts[bt_id].blackboard.clearAllNodeData();
+		context.blackboard.clearAllNodeData();
 	}
 
 	/** Returns the ColliderComponent if attached. */
@@ -584,7 +585,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 		this.eventhandling_enabled = true; // Now active for event handling
 		this.tickEnabled = true;
-		this.sc && (this.sc.tickEnabled = true);
+		this.sc.tickEnabled = true;
 		this.active = true;
 		// Start the object's state machines on fresh spawn
 		// (Revive path skips onspawn, so revived machines are not reset.)
@@ -595,7 +596,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		this.active = false;
 		this.eventhandling_enabled = false;
 		this.tickEnabled = false;
-		if (this.sc) { this.sc.pause(); }
+		this.sc.pause();
 	}
 
 	/**
@@ -778,21 +779,16 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		//   1. When the caller passes an explicit `fsm_id`, we always instantiate that
 		//      machine (validation of the id happened just above).
 		//   2. Otherwise we fall back to the class name **only** when a definition exists
-		//      for it, or when the class has no linked FSM decorators. This preserves
-		//      the historic convenience of auto-creating a "master" machine for simple
-		//      objects while avoiding a phantom machine for objects that already declare
-		//      their own FSMs via `@assign_fsm`.
-		// When neither condition is met we start with an empty controller; linked FSMs
-		// are added later in `initializeLinkedFSMs()` so the first registered machine is
-		// always one the class asked for.
-		const ctor = this.constructor as ConstructorWithFSMProperty;
-		const hasLinkedMachines = (ctor.linkedFSMs?.size ?? 0) > 0;
+		//      for it. When no definition is registered we start with an empty controller
+		//      so the runtime fails fast if a state machine is actually required.
+		// Linked FSMs added via decorators are registered later in `initializeLinkedFSMs()`
+		// so the first machine is always one the class explicitly requested.
 		const explicitMachineId = opts?.fsm_id;
 		const inferredMachineId = this.constructor.name;
 		let initialMachineId: string | undefined = explicitMachineId;
 		if (!initialMachineId) {
 			const hasDefinitionForDefault = !!StateDefinitions[inferredMachineId];
-			if (hasDefinitionForDefault || !hasLinkedMachines) {
+			if (hasDefinitionForDefault) {
 				initialMachineId = inferredMachineId;
 			}
 		}

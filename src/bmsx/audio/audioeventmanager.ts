@@ -316,7 +316,12 @@ export class AudioEventManager implements RegisterablePersistent {
 
 		// voice policy / priority handling per channel
 		const channel = entry.channel ?? 'sfx';
-		const pr = action.priority ?? $.rompack.audio[action.audioId]?.audiometa.priority ?? 0;
+		const audioAsset = $.rompack.audio[action.audioId];
+		if (!audioAsset) {
+			throw new Error(`[AudioEventManager] Audio asset '${action.audioId}' not found.`);
+		}
+		const fallbackPriority = audioAsset.audiometa ? audioAsset.audiometa.priority : 0;
+		const pr = action.priority ?? fallbackPriority;
 		const maxVoices = entry.maxVoices ?? 1;
 		const active = $.sndmaster.activeCountByType(channel);
 		const policy = entry.policy ?? 'replace';
@@ -335,7 +340,12 @@ export class AudioEventManager implements RegisterablePersistent {
 					return true;
 				case 'replace': {
 					const infos: ActiveVoiceInfo[] = $.sndmaster.getActiveVoiceInfosByType(channel);
-					let minIdx = 0; let minPr = infos[0]?.priority ?? pr; let oldestStart = infos[0]?.startedAt ?? 0;
+					if (infos.length === 0) {
+						throw new Error(`[AudioEventManager] No active voices returned for channel '${channel}' despite active count.`);
+					}
+					let minIdx = 0;
+					let minPr = infos[0].priority;
+					let oldestStart = infos[0].startedAt;
 					for (let i = 1; i < infos.length; i++) {
 						const inf = infos[i];
 						if (inf.priority < minPr || (inf.priority === minPr && inf.startedAt < oldestStart)) {
@@ -402,7 +412,10 @@ export class AudioEventManager implements RegisterablePersistent {
 			const peek = q[0];
 			if (!peek) break;
 			const entry = this.merged.get(peek.name);
-			const maxVoicesForItem = entry?.maxVoices ?? 1;
+			if (!entry) {
+				throw new Error(`[AudioEventManager] Queued audio event '${peek.name}' no longer exists.`);
+			}
+			const maxVoicesForItem = entry.maxVoices ?? 1;
 			if ($.sndmaster.activeCountByType(type) >= maxVoicesForItem) return;
 			const item = q.shift();
 			if (!item) break;
@@ -425,7 +438,9 @@ export class AudioEventManager implements RegisterablePersistent {
 		const presetKey = ctx?.payload?.modulationPreset;
 		const params = ctx?.payload?.modulationParams as (RandomModulationParams | ModulationParams | undefined);
 		const request: SoundMasterPlayRequest = {};
-		if (opts?.priority !== undefined) request.priority = opts.priority;
+		if (opts?.priority !== undefined) {
+			request.priority = opts.priority;
+		}
 		if (params) {
 			request.params = params;
 		} else if (presetKey !== undefined) {

@@ -313,6 +313,30 @@ export class SoundMaster implements RegisterablePersistent {
 		return { params: options as (RandomModulationParams | ModulationParams) };
 	}
 
+	private getAudioMetaOrThrow(id: asset_id): AudioMeta {
+		if (!this.tracks) {
+			throw new Error('[SoundMaster] Audio tracks map is not initialised.');
+		}
+		const resource = this.tracks[id];
+		if (!resource || typeof resource !== 'object') {
+			throw new Error(`[SoundMaster] Audio asset '${String(id)}' not found.`);
+		}
+		const meta = (resource as unknown as { audiometa?: AudioMeta }).audiometa;
+		if (!meta) {
+			throw new Error(`[SoundMaster] Audio asset '${String(id)}' is missing audio metadata.`);
+		}
+		return meta;
+	}
+
+	private getAudioTypeFor(id: asset_id): AudioType {
+		const meta = this.getAudioMetaOrThrow(id);
+		const typeCandidate = meta.audiotype;
+		if (!this.isAudioType(typeCandidate)) {
+			throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(typeCandidate)}'.`);
+		}
+		return typeCandidate;
+	}
+
 	private resolvePlayParams(options: ModulationInput): ModulationParams {
 		if (!options) return {};
 		const anyOptions = options as RandomModulationParams | ModulationParams;
@@ -430,12 +454,11 @@ export class SoundMaster implements RegisterablePersistent {
 			}
 		}
 		const params = this.resolvePlayParams(sourceParams);
-		const track = this.tracks[id]?.['audiometa'];
-		if (!track) {
-			console.error(`SoundMaster: Attempted to play unknown track with id = "${String(id)}". Skipping.`);
-			return Promise.resolve(null);
-		}
+		const track = this.getAudioMetaOrThrow(id);
 		const audiotype = track['audiotype'];
+		if (!this.isAudioType(audiotype)) {
+			throw new Error(`[SoundMaster] Audio asset '${String(id)}' has unknown audio type '${String(audiotype)}'.`);
+		}
 		const playCallback = (node: AudioBufferSourceNode): VoiceId => {
 			// Enforce capacity (music single-voice; sfx/ui configurable)
 			const pool = this.voicesByType[audiotype];
@@ -472,10 +495,10 @@ export class SoundMaster implements RegisterablePersistent {
 			node.stop();
 		} catch { /* ignored */ }
 		node.disconnect();
-		if (extra?.gain) extra.gain.disconnect();
-		if (extra?.filter) extra.filter.disconnect();
+		if (extra && extra.gain) extra.gain.disconnect();
+		if (extra && extra.filter) extra.filter.disconnect();
 		this.nodeExtras.delete(node);
-		if (node?.buffer) node.buffer = null; // Help GC
+		if (node.buffer) node.buffer = null; // Help GC
 	}
 
 	private isAudioType(value: unknown): value is AudioType {
@@ -490,10 +513,11 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 		// Otherwise, treat as asset id and infer channel
 		if (idOrType !== undefined) {
-			const audioRes = this.tracks[idOrType];
-			const inferredType = audioRes?.['audiometa']?.['audiotype'] as AudioType | undefined;
-			if (inferredType) {
+			try {
+				const inferredType = this.getAudioTypeFor(idOrType);
 				this.stopByTypeInternal(inferredType, 'byid', idOrType);
+			} catch (err) {
+				console.error(err);
 			}
 		}
 	}
@@ -692,7 +716,7 @@ export class SoundMaster implements RegisterablePersistent {
 
 		// Stinger path: object with 'stinger' property
 		if (typeof sync === 'object' && 'stinger' in sync) {
-			const stingerType = (this.tracks[sync.stinger]?.['audiometa']?.['audiotype'] as AudioType | undefined) ?? 'music';
+			const stingerType = this.getAudioTypeFor(sync.stinger);
 			// Select return target: explicit id or previous music
 			if (sync.returnToPrevious) {
 				const prevId = this.currentTrackByType('music');
@@ -749,9 +773,13 @@ export class SoundMaster implements RegisterablePersistent {
 		const nowOffset = this.currentTimeByType('music');
 		const node = this.currentAudioNodeByType['music'];
 		const meta = this.currentAudioByType['music'];
-		const duration = node?.buffer?.duration ?? 0;
-		const loopStart = meta?.loop ?? undefined;
-		if (nowOffset == null || !duration || nowOffset < 0) {
+		if (!node || !node.buffer || !meta) {
+			this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart);
+			return;
+		}
+		const duration = node.buffer.duration;
+		const loopStart = meta.loop;
+		if (nowOffset == null || duration <= 0 || nowOffset < 0) {
 			this.startMusicWithFade(opts.to, fadeMs, startAtLoopStart);
 			return;
 		}
@@ -766,8 +794,10 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	private startMusicWithFade(target: asset_id, fadeMs: number, startAtLoopStart: boolean, startAtSeconds?: number): void {
-		const targetMeta = this.tracks[target]?.['audiometa'];
-		const startOffset = (startAtSeconds !== undefined) ? startAtSeconds : ((startAtLoopStart && targetMeta && targetMeta.loop != null) ? targetMeta.loop : 0);
+		const targetMeta = this.getAudioMetaOrThrow(target);
+		const startOffset = (startAtSeconds !== undefined)
+			? startAtSeconds
+			: (startAtLoopStart && targetMeta.loop != null ? targetMeta.loop : 0);
 
 		const currentNode = this.currentAudioNodeByType['music'];
 		const currentExtras = currentNode ? this.nodeExtras.get(currentNode) : undefined;
@@ -775,7 +805,7 @@ export class SoundMaster implements RegisterablePersistent {
 		const fadeSec = Math.max(0, fadeMs) / 1000;
 
 		// Ramp down old music if possible
-		if (currentExtras?.gain) {
+		if (currentExtras && currentExtras.gain) {
 			const g = currentExtras.gain.gain;
 			g.cancelScheduledValues(ctxTime);
 			const cur = g.value;
@@ -784,25 +814,21 @@ export class SoundMaster implements RegisterablePersistent {
 		}
 
 		this.createNode(target).then(node => {
-			const meta = this.tracks[target]?.['audiometa'];
-			if (!meta) {
-				console.error(`SoundMaster: Attempted to start missing music track ${String(target)}`);
-				return;
-			}
+			const meta = this.getAudioMetaOrThrow(target);
 			const playParams: ModulationParams = { offset: startOffset, volumeDelta: -80 };
 			this.currentAudioNodeByType['music'] = node;
-			this.currentAudioByType['music'] = meta ? { ...meta, id: target } : null;
+			this.currentAudioByType['music'] = { ...meta, id: target };
 			this.currentPlayParamsByType['music'] = playParams;
 			const startTime = this.sndContext.currentTime;
 			const voiceId = this.nextVoiceId++;
-			const voiceRecord = { voiceId, node, id: target, priority: meta?.priority ?? 0, params: playParams, startedAt: startTime, startOffset: 0, meta };
+			const voiceRecord = { voiceId, node, id: target, priority: meta.priority ?? 0, params: playParams, startedAt: startTime, startOffset: 0, meta };
 			this.voicesByType['music'].push(voiceRecord);
 			const resolvedStartOffset = this.playNodeWithParams(meta, node, playParams);
 			voiceRecord.startOffset = resolvedStartOffset;
 
 			// Fade in new
 			const extras = this.nodeExtras.get(node);
-			const g = extras?.gain?.gain;
+			const g = extras && extras.gain ? extras.gain.gain : undefined;
 			if (g) {
 				g.cancelScheduledValues(this.sndContext.currentTime);
 				g.setValueAtTime(g.value, this.sndContext.currentTime);

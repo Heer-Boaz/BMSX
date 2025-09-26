@@ -489,9 +489,18 @@ export class PhysicsWorld implements RegisterablePersistent {
 
 	// Generic shape cast (swept test) for sphere or AABB shapes moving from 'from' to 'to'. Returns earliest hit.
 	shapeCast(shape: { kind: 'sphere'; radius: number } | { kind: 'aabb'; halfExtents: vec3 }, from: vec3, to: vec3, opts?: { layerMask?: number; bodyMask?: number; exclude?: PhysicsBody }): ShapeCastHit | null {
-		const layerMask = opts?.layerMask ?? 0xFFFFFFFF;
-		const bodyMask = opts?.bodyMask ?? 0xFFFFFFFF;
-		const exclude = opts?.exclude;
+		const layerMask = opts && opts.layerMask !== undefined ? opts.layerMask : 0xFFFFFFFF;
+		const bodyMask = opts && opts.bodyMask !== undefined ? opts.bodyMask : 0xFFFFFFFF;
+		if (!Number.isInteger(layerMask) || layerMask < 0) {
+			throw new Error(`[PhysicsWorld] shapeCast received invalid layer mask '${String(layerMask)}'.`);
+		}
+		if (!Number.isInteger(bodyMask) || bodyMask < 0) {
+			throw new Error(`[PhysicsWorld] shapeCast received invalid body mask '${String(bodyMask)}'.`);
+		}
+		const exclude = opts ? opts.exclude : undefined;
+		if (exclude && !this.bodies.includes(exclude)) {
+			throw new Error('[PhysicsWorld] shapeCast exclude body is not registered in this world.');
+		}
 		const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
 		const velLenSq = dx * dx + dy * dy + dz * dz;
 		if (velLenSq === 0) return null;

@@ -6,6 +6,26 @@ import type { color } from '../../render/gameview';
 import type { vec3arr } from '../../rompack/rompack';
 import { excludeclassfromsavegame } from '../../serializer/serializationhooks';
 
+interface MeshOptions {
+	positions?: Float32Array;
+	texcoords?: Float32Array;
+	texcoords1?: Float32Array;
+	colors?: Float32Array;
+	normals?: Float32Array;
+	tangents?: Float32Array;
+	indices?: Uint8Array | Uint16Array | Uint32Array;
+	color?: color;
+	atlasId?: number;
+	material?: Material;
+	morphPositions?: Float32Array[];
+	morphNormals?: Float32Array[];
+	morphTangents?: Float32Array[];
+	morphWeights?: number[];
+	jointIndices?: Uint16Array;
+	jointWeights?: Float32Array;
+	meshname?: string;
+}
+
 @excludeclassfromsavegame
 export class Mesh {
   public positions: Float32Array;
@@ -27,30 +47,30 @@ export class Mesh {
   public morphTangents?: Float32Array[];
   public morphWeights: number[];
   public jointIndices?: Uint16Array;
-  public jointWeights?: Float32Array;
-  public name: string;
+	public jointWeights?: Float32Array;
+	public name: string;
   public boundingCenter: vec3arr = [0, 0, 0];
-  public boundingRadius: number = 0;
+	public boundingRadius: number = 0;
 
-  constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; texcoords1?: Float32Array; colors?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array, meshname: string }) {
-	this.name = opts?.meshname;
-	this.positions = opts?.positions ?? new Float32Array();
-	this.texcoords = opts?.texcoords ?? new Float32Array();
-	this.texcoords1 = opts?.texcoords1 ?? new Float32Array();
-	this.colors = opts?.colors ?? new Float32Array();
-	this.normals = opts?.normals ?? null;
-	this.tangents = opts?.tangents ?? null;
-	this.indices = opts?.indices;
-	this.color = opts?.color ?? DEFAULT_VERTEX_COLOR;
-	this.atlasId = opts?.atlasId ?? 255;
-	this.material = opts?.material;
-	this.morphPositions = opts?.morphPositions;
-	this.morphNormals = opts?.morphNormals;
-	this.morphTangents = opts?.morphTangents;
-	this.morphWeights = opts?.morphWeights ?? [];
-	this.jointIndices = opts?.jointIndices;
-	this.jointWeights = opts?.jointWeights;
-	this.updateBounds();
+  constructor(opts: MeshOptions = {}) {
+    this.name = opts.meshname ?? '';
+    this.positions = opts.positions ?? new Float32Array();
+    this.texcoords = opts.texcoords ?? new Float32Array();
+    this.texcoords1 = opts.texcoords1 ?? new Float32Array();
+    this.colors = opts.colors ?? new Float32Array();
+    this.normals = opts.normals ?? null;
+    this.tangents = opts.tangents ?? null;
+    this.indices = opts.indices;
+    this.color = opts.color ?? DEFAULT_VERTEX_COLOR;
+    this.atlasId = opts.atlasId ?? 255;
+    this.material = opts.material;
+    this.morphPositions = opts.morphPositions;
+    this.morphNormals = opts.morphNormals;
+    this.morphTangents = opts.morphTangents;
+    this.morphWeights = opts.morphWeights ?? [];
+    this.jointIndices = opts.jointIndices;
+    this.jointWeights = opts.jointWeights;
+    this.updateBounds();
   }
 
   public get vertexCount(): number { return this.positions.length / 3; }
@@ -60,15 +80,25 @@ export class Mesh {
   public get hasSkinning(): boolean { return !!(this.jointIndices && this.jointWeights); }
   public get hasMorphTargets(): boolean { return !!(this.morphPositions && this.morphPositions.length > 0); }
 
-  public get gpuTextureAlbedo(): TextureKey | undefined { return this.material?.gpuTextures.albedo; }
-  public get gpuTextureNormal(): TextureKey | undefined { return this.material?.gpuTextures.normal; }
-  public get gpuTextureMetallicRoughness(): TextureKey | undefined { return this.material?.gpuTextures.metallicRoughness; }
+  public get gpuTextureAlbedo(): TextureKey | undefined {
+    const material = this.material;
+    return material ? material.gpuTextures.albedo : undefined;
+  }
+  public get gpuTextureNormal(): TextureKey | undefined {
+    const material = this.material;
+    return material ? material.gpuTextures.normal : undefined;
+  }
+  public get gpuTextureMetallicRoughness(): TextureKey | undefined {
+    const material = this.material;
+    return material ? material.gpuTextures.metallicRoughness : undefined;
+  }
 
   /** Signature for batching by GPU state (exclude per-instance color). */
   public get materialSignature(): string {
-	const surf = this.material?.surface ?? 'opaque';
-	const doubleSided = this.material?.doubleSided ? 1 : 0;
-	return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${surf}|ds${doubleSided}`;
+    const material = this.material;
+    const surf = material ? material.surface : 'opaque';
+    const doubleSided = material && material.doubleSided ? 1 : 0;
+    return `${this.gpuTextureAlbedo ?? ''}|${this.gpuTextureNormal ?? ''}|${this.gpuTextureMetallicRoughness ?? ''}|${surf}|ds${doubleSided}`;
   }
 
   /**

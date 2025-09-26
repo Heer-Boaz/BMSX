@@ -64,13 +64,15 @@ export function ensureHudDock(anchor: Anchor = 'top-left'): HTMLElement {
 	dock.id = dock.id || `hud-dock-${anchor}`;
 	// Drag/drop support for relocating panels
 	dock.addEventListener('dragover', (e) => {
-		e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		e.preventDefault();
+		const dataTransfer = (e as DragEvent).dataTransfer;
+		if (!dataTransfer) throw new Error('[HUDPanel] Drag event is missing dataTransfer payload.');
+		dataTransfer.dropEffect = 'move';
 		// compute insertion position and show placeholder
 		const ph = getPlaceholderForDock(dock);
 		const flow = flows[key] || 'row';
 		const children = Array.from(dock.children).filter(ch => ch !== ph && (ch as HTMLElement).id !== dragState.panelId) as HTMLElement[];
-		const ptX = (e as DragEvent).clientX ?? 0;
-		const ptY = (e as DragEvent).clientY ?? 0;
+		const { clientX: ptX, clientY: ptY } = e as DragEvent;
 		let insertBefore: Element | null = null;
 		for (let i = 0; i < children.length; i++) {
 			const r = children[i].getBoundingClientRect();
@@ -92,18 +94,19 @@ export function ensureHudDock(anchor: Anchor = 'top-left'): HTMLElement {
 	});
 	dock.addEventListener('drop', (e) => {
 		e.preventDefault();
-		const id = e.dataTransfer?.getData('text/hudpanel') || e.dataTransfer?.getData('text/plain');
-		if (!id) return;
+		const dataTransfer = e.dataTransfer;
+		if (!dataTransfer) throw new Error('[HUDPanel] Drop event is missing dataTransfer payload.');
+		const id = dataTransfer.getData('text/hudpanel') || dataTransfer.getData('text/plain');
+		if (!id) throw new Error('[HUDPanel] Dropped panel id not found.');
 		const panel = document.getElementById(id);
 		const baseAnchorDock = dock; // hovered dock
 		const targetAnchor = resolveAnchorFromModifiers(baseAnchorDock, e as DragEvent);
 		const targetDock = targetAnchor === (dock.dataset.anchor as Anchor) ? dock : ensureHudDock(targetAnchor);
 		const ph = placeholders[targetDock.id];
-		if (panel) {
-			if (ph && ph.parentElement === targetDock) targetDock.insertBefore(panel, ph);
-			else targetDock.appendChild(panel);
-			persistPanelLayout(panel, targetDock);
-		}
+		if (!panel) throw new Error(`[HUDPanel] Dropped panel '${id}' could not be located in the DOM.`);
+		if (ph && ph.parentElement === targetDock) targetDock.insertBefore(panel, ph);
+		else targetDock.appendChild(panel);
+		persistPanelLayout(panel, targetDock);
 		baseAnchorDock.style.outline = '';
 		baseAnchorDock.style.outlineOffset = '';
 		clearPlaceholder(baseAnchorDock);
@@ -144,26 +147,28 @@ export function makeHudPanelDraggable(panel: HTMLElement & { __prevOpacity?: str
 		handle.addEventListener('mouseleave', disallow);
 	}
 	panel.addEventListener('dragstart', (e: DragEvent) => {
-		if (!allowDrag) { try { e.preventDefault(); } catch { /* noop */ } return; }
+		if (!allowDrag) {
+			e.preventDefault();
+			return;
+		}
 		allowDrag = !handle; // consume one-time allowance
-		try {
-			e.dataTransfer?.setData('text/hudpanel', panel.id);
-			e.dataTransfer?.setData('text/plain', panel.id);
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-			const r = panel.getBoundingClientRect();
-			dragState.panelId = panel.id;
-			dragState.panelHeight = r.height;
-			dragState.panelWidth = r.width;
-			// Hide the original panel visually (but keep layout slot) so drag continues reliably
-			panel.__prevOpacity = panel.style.opacity;
-			panel.style.opacity = '0';
-			// Optional: provide a minimal drag image to avoid default ghost
-			if (e.dataTransfer && typeof document !== 'undefined') {
-				const ghost = document.createElement('canvas');
-				ghost.width = 1; ghost.height = 1;
-				try { e.dataTransfer.setDragImage(ghost, 0, 0); } catch { /* noop */ }
-			}
-		} catch { /* noop */ }
+		const dataTransfer = e.dataTransfer;
+		if (!dataTransfer) throw new Error('[HUDPanel] Dragstart missing dataTransfer payload.');
+		dataTransfer.setData('text/hudpanel', panel.id);
+		dataTransfer.setData('text/plain', panel.id);
+		dataTransfer.effectAllowed = 'move';
+		const r = panel.getBoundingClientRect();
+		dragState.panelId = panel.id;
+		dragState.panelHeight = r.height;
+		dragState.panelWidth = r.width;
+		// Hide the original panel visually (but keep layout slot) so drag continues reliably
+		panel.__prevOpacity = panel.style.opacity;
+		panel.style.opacity = '0';
+		// Provide a minimal drag image to avoid default ghost
+		const ghost = document.createElement('canvas');
+		ghost.width = 1;
+		ghost.height = 1;
+		dataTransfer.setDragImage(ghost, 0, 0);
 	});
 	panel.addEventListener('dragend', () => {
 		for (const key of Object.keys(docks)) { docks[key].style.outline = ''; docks[key].style.outlineOffset = ''; clearPlaceholder(docks[key]); }
@@ -171,7 +176,7 @@ export function makeHudPanelDraggable(panel: HTMLElement & { __prevOpacity?: str
 		// Restore panel visibility
 		const prevOp = panel.__prevOpacity as string | undefined;
 		panel.style.opacity = prevOp ?? '';
-		try { delete panel.__prevOpacity; } catch { /* noop */ }
+		delete panel.__prevOpacity;
 	});
 	// Apply saved layout after ID is known
 	applySavedPanelLayout(panel);
@@ -205,20 +210,18 @@ type LayoutEntry = { anchor: Anchor; index: number };
 const LS_KEY = 'bmsx.hud.layout';
 
 function loadLayout(): Record<string, LayoutEntry> {
-	try {
-		const raw = localStorage.getItem(LS_KEY);
-		if (!raw) return {};
-		return JSON.parse(raw) as Record<string, LayoutEntry>;
-	} catch { return {}; }
+	const raw = localStorage.getItem(LS_KEY);
+	if (!raw) return {};
+	return JSON.parse(raw) as Record<string, LayoutEntry>;
 }
 
 function saveLayout(map: Record<string, LayoutEntry>): void {
-	try { localStorage.setItem(LS_KEY, JSON.stringify(map)); } catch { /* ignore */ }
+	localStorage.setItem(LS_KEY, JSON.stringify(map));
 }
 
 function persistPanelLayout(panel: HTMLElement, dock: HTMLElement): void {
 	const map = loadLayout();
-	const children = Array.from(dock.children).filter(ch => (ch as HTMLElement).classList?.contains('hud-panel'));
+	const children = Array.from(dock.children).filter(ch => (ch as HTMLElement).classList.contains('hud-panel'));
 	const index = children.indexOf(panel);
 	const anchor = (dock.dataset.anchor as Anchor) || 'top-left';
 	if (index >= 0) { map[panel.id] = { anchor, index }; saveLayout(map); }
@@ -230,7 +233,7 @@ export function applySavedPanelLayout(panel: HTMLElement): void {
 	if (!entry) return;
 	const dock = ensureHudDock(entry.anchor);
 	// Insert at saved index (clamped)
-	const panels = Array.from(dock.children).filter(ch => (ch as HTMLElement).classList?.contains('hud-panel'));
+	const panels = Array.from(dock.children).filter(ch => (ch as HTMLElement).classList.contains('hud-panel'));
 	const idx = Math.max(0, Math.min(entry.index, panels.length));
 	if (idx >= panels.length) dock.appendChild(panel); else dock.insertBefore(panel, panels[idx]);
 }

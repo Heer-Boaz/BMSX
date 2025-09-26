@@ -24,6 +24,6 @@ export class TextComponent extends Component {
 
 	constructor(opts: ComponentAttachOptions & { text?: string | string[] }) {
 		super(opts);
-		if (opts?.text !== undefined) this.text = opts.text;
+		if (opts.text !== undefined) this.text = opts.text;
 	}
 }

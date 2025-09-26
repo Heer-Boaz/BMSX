@@ -37,13 +37,21 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 						// Guard transitions so only the icon for the matching gamepad reacts.
 						controller_assigned: {
 							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
-								if (payload?.gamepadIndex === this.gamepadIndex) return '/assigned';
+								const { gamepadIndex } = payload;
+								if (gamepadIndex == null) {
+									throw new Error('[ControllerAssignmentUI] controller_assigned event missing gamepadIndex.');
+								}
+								if (gamepadIndex === this.gamepadIndex) return '/assigned';
 								return undefined;
 							}
 						},
 						controller_assignment_cancelled: {
 							do(this: SelectedPlayerIndexIcon, _src: any, payload: EventPayload & { gamepadIndex?: number }) {
-								if (payload?.gamepadIndex === this.gamepadIndex) return '/cancelled';
+								const { gamepadIndex } = payload;
+								if (gamepadIndex == null) {
+									throw new Error('[ControllerAssignmentUI] controller_assignment_cancelled event missing gamepadIndex.');
+								}
+								if (gamepadIndex === this.gamepadIndex) return '/cancelled';
 								return undefined;
 							}
 						},
@@ -63,7 +71,12 @@ export class SelectedPlayerIndexIcon extends SpriteObject {
 			},
 		};
 	}
-	public static getIconId(gamepadIndex: number): Identifier { return `joystick_icon_${gamepadIndex ?? 0}`; }
+	public static getIconId(gamepadIndex: number): Identifier {
+		if (!Number.isInteger(gamepadIndex)) {
+			throw new Error(`[ControllerAssignmentUI] Invalid gamepad index '${gamepadIndex}' when generating icon id.`);
+		}
+		return `joystick_icon_${gamepadIndex}`;
+	}
 	constructor(public gamepadIndex: number) {
 		super({ id: SelectedPlayerIndexIcon.getIconId(gamepadIndex) });
 		this.z = ZCOORD_MAX; this.colorize = { r: 1, g: 1, b: 1, a: .75 };
@@ -93,24 +106,36 @@ export class ControllerAssignmentUI extends WorldObject {
 	 * @param positionIndex The index of the position.
 	 * @returns The calculated X position of the icon.
 	 */
-	private calcIconPositionX(positionIndex: number) { return ControllerAssignmentUI.start.x + (ControllerAssignmentUI.stepX * (positionIndex ?? 0)); };
+	private calcIconPositionX(positionIndex: number) {
+		if (!Number.isFinite(positionIndex)) {
+			throw new Error(`[ControllerAssignmentUI] Position index '${positionIndex}' is not finite.`);
+		}
+		return ControllerAssignmentUI.start.x + (ControllerAssignmentUI.stepX * positionIndex);
+	};
 
 	constructor(opts?: RevivableObjectArgs & { id: Identifier }) {
 		super(opts);
 		// Initial sync: pending assignments may already exist when UI spawns late.
-		const pending = Input.instance.pendingGamepadAssignments ?? [];
+		const pending = Input.instance.pendingGamepadAssignments;
+		if (!Array.isArray(pending)) {
+			throw new Error('[ControllerAssignmentUI] Pending gamepad assignments not initialised.');
+		}
 		for (const p of pending) {
 			const gpIndex = p.inputHandler.gamepadIndex;
+			if (!Number.isInteger(gpIndex)) {
+				throw new Error(`[ControllerAssignmentUI] Pending assignment has invalid gamepad index '${gpIndex}'.`);
+			}
 			const icon = this.ensureIcon(gpIndex);
 			icon.playerIndex = p.proposedPlayerIndex ?? null;
 			icon.x = this.calcIconPositionX(gpIndex);
 			icon.y = ControllerAssignmentUI.start.y;
-			if (gpIndex == null) continue;
-			this.ensureIcon(gpIndex);
 		}
 	}
 
 	private ensureIcon(gpIndex: number): SelectedPlayerIndexIcon {
+		if (!Number.isInteger(gpIndex)) {
+			throw new Error(`[ControllerAssignmentUI] Attempted to create icon with invalid gamepad index '${gpIndex}'.`);
+		}
 		let icon = this.icons.get(gpIndex);
 		if (!icon) {
 			icon = new SelectedPlayerIndexIcon(gpIndex);
@@ -141,12 +166,20 @@ export class ControllerAssignmentUI extends WorldObject {
 	onAssigned(_source: any, payload: { gamepadIndex?: number }) {
 		// Icons listen to FSM events declared in their blueprint; no manual dispatch required.
 		// Remove only the icon for the given gamepad; it will self-dispose via FSM.
-		if (payload?.gamepadIndex != null) this.icons.delete(payload.gamepadIndex);
+		const { gamepadIndex } = payload;
+		if (gamepadIndex == null) {
+			throw new Error('[ControllerAssignmentUI] controller_assigned event missing gamepadIndex.');
+		}
+		this.icons.delete(gamepadIndex);
 	}
 
 	@subscribesToGlobalEvent('controller_assignment_cancelled', true)
 	onCancelled(_source: any, payload: { gamepadIndex?: number }) {
 		// Icons listen to FSM events declared in their blueprint; no manual dispatch required.
-		if (payload?.gamepadIndex != null) this.icons.delete(payload.gamepadIndex);
+		const { gamepadIndex } = payload;
+		if (gamepadIndex == null) {
+			throw new Error('[ControllerAssignmentUI] controller_assignment_cancelled event missing gamepadIndex.');
+		}
+		this.icons.delete(gamepadIndex);
 	}
 }

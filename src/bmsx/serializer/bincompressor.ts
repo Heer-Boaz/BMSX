@@ -48,14 +48,15 @@ export class BinaryCompressor {
 	 */
 
 	static compressBinary(input: Uint8Array, options?: CompressorOptions): Uint8Array {
+		const opts = options ?? {};
 		// cache constants locally (avoid this.* lookups in hot loop)
-		const DISABLE_LZ77 = options?.disableLZ77 === true;
-		const DISABLE_RLE = options?.disableRLE === true;
-		const WINDOW_SIZE = options?.windowSize ?? BinaryCompressor.WINDOW_SIZE;
-		const MIN_MATCH = options?.minMatch ?? BinaryCompressor.MIN_MATCH;
-		const MAX_MATCH = options?.maxMatch ?? BinaryCompressor.MAX_MATCH;
+		const DISABLE_LZ77 = opts.disableLZ77 === true;
+		const DISABLE_RLE = opts.disableRLE === true;
+		const WINDOW_SIZE = opts.windowSize ?? BinaryCompressor.WINDOW_SIZE;
+		const MIN_MATCH = opts.minMatch ?? BinaryCompressor.MIN_MATCH;
+		const MAX_MATCH = opts.maxMatch ?? BinaryCompressor.MAX_MATCH;
 		const MAX_RUN = BinaryCompressor.MAX_RUN;
-		const RLE_THRESHOLD = options?.rleThreshold ?? BinaryCompressor.RLE_THRESHOLD;
+		const RLE_THRESHOLD = opts.rleThreshold ?? BinaryCompressor.RLE_THRESHOLD;
 
 		// ensure output scratch capacity (grow x2)
 		if (BinaryCompressor.COMPRESS_SCRATCH.length < (input.length + 8)) {

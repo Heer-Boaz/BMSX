@@ -20,9 +20,9 @@ export class TransformComponent extends Component<WorldObject> {
 
 	constructor(opts: ComponentAttachOptions & { position?: vec3arr; scale?: vec3arr; orientationQ?: quat }) {
 		super(opts);
-		this.position = opts?.position ?? [0, 0, 0];
-		this.scale = opts?.scale ?? [1, 1, 1];
-		this.orientationQ ??= opts?.orientationQ;
+		this.position = opts.position ? [...opts.position] as vec3arr : [0, 0, 0];
+		this.scale = opts.scale ? [...opts.scale] as vec3arr : [1, 1, 1];
+		if (opts.orientationQ) this.orientationQ = opts.orientationQ;
 		M4.setIdentity(this.localMatrix);
 		M4.setIdentity(this.worldMatrix);
 	}
@@ -71,23 +71,21 @@ export class TransformComponent extends Component<WorldObject> {
 	}
 
 	override postprocessingUpdate(): void {
-		const parent = this.parentAs<WorldObject & Oriented & Scaled>();
+		const parent = this.parentOrThrow();
+		this.position[0] = parent.x;
+		this.position[1] = parent.y;
+		this.position[2] = parent.z;
 
-		if (parent.pos) {
-			this.position[0] = parent.x;
-			this.position[1] = parent.y;
-			this.position[2] = parent.z;
-		}
-
-		const oriented = parent as Oriented;
+		const oriented = parent as Partial<Oriented>;
 		if (oriented.rotationQ) {
 			this.orientationQ = oriented.rotationQ;
 		}
 
-		if (parent.scale) {
-			this.scale[0] = parent.scale[0];
-			this.scale[1] = parent.scale[1];
-			this.scale[2] = parent.scale[2];
+		const scaled = parent as Partial<Scaled>;
+		if (scaled.scale) {
+			this.scale[0] = scaled.scale[0];
+			this.scale[1] = scaled.scale[1];
+			this.scale[2] = scaled.scale[2];
 		}
 
 		this.markDirty();

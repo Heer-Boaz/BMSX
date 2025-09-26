@@ -50,8 +50,12 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 	let stateElements = new Map<string, HTMLElement>();
 	let machineElements = new Map<string, HTMLElement>();
 
+	const owner = $.get<Stateful>(bfsmControllerId);
+	if (!owner) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' not found.`);
+	const bfsmController = owner.sc;
+	if (!bfsmController) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' has no state controller instance.`);
+
 	function visualizeMachine(machine: State, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
-		const bfsmController = $.get<Stateful>(bfsmControllerId).sc;
 		let table = document.createElement('table');
 		parentElement.appendChild(table);
 		let machineNameRow = document.createElement('tr');
@@ -61,11 +65,14 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 		table.appendChild(machineNameRow);
 		machineElements.set(path, machineNameCell);
 
+		if (!machine.states) throw new Error(`[StateMachineVisualizer] Machine '${machineName}' has no states map.`);
 		for (let stateId in machine.states) {
-			let state = machine.states?.[stateId];
+			const state = machine.states[stateId];
+			if (!state) throw new Error(`[StateMachineVisualizer] Machine '${machineName}' is missing state '${stateId}'.`);
 			let stateRow = document.createElement('tr');
 			let stateCell = document.createElement('td');
-			stateCell.textContent = state?.localdef_id ?? 'undefined';
+			if (!state.localdef_id) throw new Error(`[StateMachineVisualizer] State '${stateId}' has no local definition id.`);
+			stateCell.textContent = state.localdef_id;
 			stateCell.classList.add('state');
 			stateRow.appendChild(stateCell);
 			table.appendChild(stateRow);
@@ -88,9 +95,9 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 		}
 	}
 
-	const bfsmController = $.get<Stateful>(bfsmControllerId).sc;
 	for (let machineName in bfsmController.machines) {
 		let machine = bfsmController.machines[machineName];
+		if (!machine) throw new Error(`[StateMachineVisualizer] Controller '${bfsmControllerId}' lists missing machine '${machineName}'.`);
 		let machineRow = document.createElement('tr');
 		let machineCell = document.createElement('td');
 		machineCell.textContent = machineName;
@@ -110,40 +117,47 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 }
 
 export function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmControllerId: Identifier): void {
-	const bfsmController = $.get<Stateful>(bfsmControllerId)?.sc;
-	if (!bfsmController) {
-		// If the bfsmController is not available, we cannot highlight the states.
-		// This might happen if the associated world object has been destroyed or is not initialized yet (e.g. when rewinding the game state)
-		return;
-	}
+	const owner = $.get<Stateful>(bfsmControllerId);
+	if (!owner) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' not found while highlighting current state.`);
+	const bfsmController = owner.sc;
+	if (!bfsmController) throw new Error(`[StateMachineVisualizer] Stateful owner '${bfsmControllerId}' lost its state controller.`);
 	function updateMachineClasses(machine: State, machineName: string, isActive: boolean, path: string): void {
-		let machineElement = machineElements.get(machineName);
+		const states = machine.states ?? {};
+		const hasChildMachines = Object.keys(states).length > 0;
+		const machineElement = machineElements.get(path);
+		if (hasChildMachines && !machineElement) {
+			throw new Error(`[StateMachineVisualizer] Machine element for path '${path}' is missing.`);
+		}
 		if (machineElement) {
 			machineElement.classList.remove('active-machine-or-state', 'parallel-machine');
+			if (isActive) {
+				machineElement.classList.add('active-machine-or-state');
+			} else if (machine.is_concurrent) {
+				machineElement.classList.add('parallel-machine');
+			}
 		}
-		if (isActive) {
-			machineElement?.classList.add('active-machine-or-state');
-		} else if (machine.is_concurrent) {
-			machineElement?.classList.add('parallel-machine');
-		}
-		for (let state_id in machine.states) {
+		for (let state_id in states) {
 			// The path to this state is the machineName:/stateId + '/' + substateId + '/' ...
 			const newpath = `${path}/${state_id}`;
 			let stateElement = stateElements.get(newpath);
-			if (stateElement) {
-				stateElement.classList.remove('active-machine-or-state');
-			}
+			if (!stateElement) throw new Error(`[StateMachineVisualizer] State element for path '${newpath}' is missing.`);
+			stateElement.classList.remove('active-machine-or-state');
+			const currentState = states[state_id];
+			if (!currentState) throw new Error(`[StateMachineVisualizer] Machine '${machineName}' is missing state '${state_id}'.`);
 			if (isActive && machine.currentid === state_id) {
-				stateElement?.classList.add('active-machine-or-state');
-			} else if (machine.states[state_id].is_concurrent) {
-				stateElement?.classList.add('parallel-machine');
+				stateElement.classList.add('active-machine-or-state');
+			} else if (currentState.is_concurrent) {
+				stateElement.classList.add('parallel-machine');
 			}
-			let state = machine.states?.[state_id];
-			updateMachineClasses(state, state.localdef_id, isActive && (machine.currentid === state_id || machine.states[state_id].is_concurrent), newpath);
+			const childStates = currentState.states ?? {};
+			if (Object.keys(childStates).length > 0) {
+				updateMachineClasses(currentState, currentState.localdef_id, isActive && (machine.currentid === state_id || currentState.is_concurrent), newpath);
+			}
 		}
 	}
 	for (let machineName in bfsmController.machines) {
 		let machine = bfsmController.machines[machineName];
+		if (!machine) throw new Error(`[StateMachineVisualizer] Controller '${bfsmControllerId}' lost machine '${machineName}'.`);
 		updateMachineClasses(machine, machineName, true, machineName + ':');
 	}
 }

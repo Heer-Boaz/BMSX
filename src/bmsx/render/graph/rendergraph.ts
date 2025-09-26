@@ -389,7 +389,7 @@ export class RenderGraphRuntime {
 	execute(frame: FrameData): void {
 		// If an external asset/task gate system is present (optional), we can delay execution until
 		// blocking async loads finish, and then invalidate once to rebuild resource lifetimes.
-		// Integration contract: global taskGate?.group('render') or similar provides readiness.
+		// Integration contract: global taskGate.group('render') or similar provides readiness.
 		const gateGroup = taskGate.group('render');
 		if (gateGroup && !gateGroup.ready) return; // Defer frame until required assets loaded
 		if (gateGroup && gateGroup.ready && this._pendingInvalidateOnReady) { this.invalidate(); this._pendingInvalidateOnReady = false; }
@@ -399,7 +399,10 @@ export class RenderGraphRuntime {
 		const setupData: unknown[] = this._setupData;
 
 		const ctx: PassContext = {
-			getTex: (h) => this.texResources[h]?.tex ?? null,
+			getTex: (h) => {
+				const resource = this.texResources[h];
+				return resource ? (resource.tex as TextureHandle | null) : null;
+			},
 			getFBO: (color, depth) => {
 				const colorRes = this.texResources[color];
 				if (!colorRes) return null;
@@ -453,7 +456,8 @@ export class RenderGraphRuntime {
 				//  * Reads -> shaderRead
 				//  * Color attachment writes -> colorAttachment
 				//  * Depth attachment writes -> depthAttachment
-				const backendTransition = this.backend.transitionTexture?.bind(this.backend);
+				const transitionTexture = this.backend.transitionTexture;
+				const backendTransition = transitionTexture ? transitionTexture.bind(this.backend) : undefined;
 				if (backendTransition) {
 					const desiredLayouts = new Map<number, string>();
 					const passReads = this._passReads[i] ?? [];
@@ -468,7 +472,7 @@ export class RenderGraphRuntime {
 					for (const [handle, layout] of desiredLayouts) {
 						const texRes = this.texResources[handle];
 						if (!texRes) continue;
-						const prev = texRes.state?.layout;
+						const prev = texRes.state ? texRes.state.layout : undefined;
 						if (prev !== layout) {
 							backendTransition(texRes.tex as TextureHandle, prev, layout);
 							texRes.state = { layout };
@@ -483,11 +487,16 @@ export class RenderGraphRuntime {
 				if (colorTargets.length) {
 					for (let idx = 0; idx < colorTargets.length; idx++) {
 						const ct = colorTargets[idx];
-						const clear = (idx === 0 && ct === colorRes && isFirstColorWriter) ? ct.clearOnWrite?.color : undefined;
+						const clear = (idx === 0 && ct === colorRes && isFirstColorWriter)
+							? (ct.clearOnWrite ? ct.clearOnWrite.color : undefined)
+							: undefined;
 						builder.addColor(ct.tex as TextureHandle, clear, !!ct.desc.transient);
 					}
 				}
-				if (depthRes) builder.depth(depthRes.tex as TextureHandle, isFirstDepthWriter ? depthRes.clearOnWrite?.depth : undefined, !!depthRes.desc.transient);
+				if (depthRes) {
+					const depthClear = isFirstDepthWriter && depthRes.clearOnWrite ? depthRes.clearOnWrite.depth : undefined;
+					builder.depth(depthRes.tex as TextureHandle, depthClear, !!depthRes.desc.transient);
+				}
 				const passEnc = builder.begin();
 				// Provide active pass encoder to backend (WebGPU uses it to bind pipeline and draw)
 				if (this.backend.type === 'webgpu') {

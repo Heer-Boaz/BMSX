@@ -31,7 +31,7 @@ export type BehaviorTreeDefinition = BehaviorTreeNodeSpec | { root: BehaviorTree
  * are defined in a declarative way.
  * @type { { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null }
  */
-export var BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null = null;
+export let BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinition } = {};
 
 /**
  * Represents the collection of behavior trees that are constructed based on the definitions.
@@ -39,16 +39,18 @@ export var BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinit
  * from their definitions that are defined in a declarative way.
  * @type {Object.<BehaviorTreeID, BTNode> | null}
  */
-export var BehaviorTrees: { [key: BehaviorTreeID]: BTNode } | null = null;
+export let BehaviorTrees: { [key: BehaviorTreeID]: BTNode } = {};
 
 /**
  * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_bt_library(): void {
+	if (Object.keys(BehaviorTreeDefinitions).length === 0) {
+		throw new Error('[BehaviorTree] No behavior tree definitions registered. Ensure build_bt decorators ran before setup.');
+	}
 	BehaviorTrees = {};
-	for (let bt_id in BehaviorTreeDefinitions) {
-		let bt_def = BehaviorTreeDefinitions[bt_id];
-		if (bt_def) BehaviorTrees[bt_id] = constructBehaviorTree(bt_id);
+	for (const bt_id of Object.keys(BehaviorTreeDefinitions)) {
+		BehaviorTrees[bt_id] = constructBehaviorTree(bt_id);
 	}
 }
 
@@ -57,9 +59,12 @@ export function setup_bt_library(): void {
  */
 export function setup_btdef_library(): void {
 	BehaviorTreeDefinitions = {};
-	for (let bt_id in behaviorTreeDefinitionsBuilders) {
-		let bt_def = behaviorTreeDefinitionsBuilders[bt_id]();
-		if (bt_def) BehaviorTreeDefinitions[bt_id] = bt_def;
+	for (const [bt_id, builder] of Object.entries(behaviorTreeDefinitionsBuilders)) {
+		const bt_def = builder();
+		if (!bt_def) {
+			throw new Error(`[BehaviorTree] Builder '${bt_id}' returned an invalid definition.`);
+		}
+		BehaviorTreeDefinitions[bt_id] = bt_def;
 	}
 }
 
@@ -72,7 +77,7 @@ export function setup_btdef_library(): void {
  *
  * @typeParam key - The key type for the definitions.
  */
-let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTreeDefinition } | null = null;
+let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTreeDefinition } = {};
 
 /**
  * Builds a behavior tree based on the provided configuration.
@@ -84,44 +89,113 @@ let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTree
  * @returns The root node of the built behavior tree, which can consist of multiple nodes (sub trees).
  */
 function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID): BTNode {
+	const ensureChildren = (children: BehaviorTreeNodeSpec[] | undefined, nodeType: string): BehaviorTreeNodeSpec[] => {
+		if (!Array.isArray(children) || children.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires at least one child.`);
+		}
+		return children;
+	};
+	const ensureActionNodes = (nodes: BehaviorTreeNodeSpec[], nodeType: string): ActionNode[] => {
+		return ensureChildren(nodes, nodeType).map(childSpec => {
+			const node = buildBehaviorTreeNode(childSpec, id);
+			if (!(node instanceof ActionNode)) {
+				throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' expects only ActionNode children.`);
+			}
+			return node;
+		});
+	};
+	const ensureDecorator = (decorator: NodeDecorator | undefined, nodeType: string): NodeDecorator => {
+		if (typeof decorator !== 'function') {
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a decorator function.`);
+		}
+		return decorator;
+	};
+	const ensureCondition = (condition: NodeCondition | undefined, nodeType: string): NodeCondition => {
+		if (typeof condition !== 'function') {
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a condition function.`);
+		}
+		return condition;
+	};
+	const ensureConditions = (conditions: NodeCondition[] | undefined, nodeType: string): NodeCondition[] => {
+		if (!Array.isArray(conditions) || conditions.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires one or more condition functions.`);
+		}
+		return conditions;
+	};
+	const ensureCompositeModifier = (modifier: NodeCompositeConditionModifier | undefined, nodeType: string): NodeCompositeConditionModifier => {
+		if (modifier !== 'AND' && modifier !== 'OR') {
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a modifier of 'AND' or 'OR'.`);
+		}
+		return modifier;
+	};
 	const typeValue = config.type;
 	switch (typeValue) {
 		case 'selector':
 		case 'Selector':
-			return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
+			return new SelectorNode(id, ensureChildren(config.children, 'selector').map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
 		case 'sequence':
 		case 'Sequence':
-			return new SequenceNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
+			return new SequenceNode(id, ensureChildren(config.children, 'sequence').map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
 		case 'parallel':
 		case 'Parallel':
-			return new ParallelNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.successPolicy, config.priority);
+			if (config.successPolicy !== 'ONE' && config.successPolicy !== 'ALL') {
+				throw new Error(`[BehaviorTree:${id}] Parallel node requires successPolicy 'ONE' or 'ALL'.`);
+			}
+			return new ParallelNode(id, ensureChildren(config.children, 'parallel').map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.successPolicy, config.priority);
 		case 'decorator':
 		case 'Decorator':
-			return new DecoratorNode(id, buildBehaviorTreeNode(config.child, id), config.decorator, config.priority);
+			if (!config.child) {
+				throw new Error(`[BehaviorTree:${id}] Decorator node requires a child.`);
+			}
+			return new DecoratorNode(id, buildBehaviorTreeNode(config.child, id), ensureDecorator(config.decorator, 'decorator'), config.priority);
 		case 'condition':
 		case 'Condition':
-			return new ConditionNode(id, config.condition, config.modifier ?? null, config.priority, config.parameters);
+			return new ConditionNode(id, ensureCondition(config.condition, 'condition'), config.modifier ?? null, config.priority, config.parameters);
 		case 'compositecondition':
 		case 'CompositeCondition':
-			return new CompositeConditionNode(id, config.conditions, config.modifier, config.priority, config.parameters);
+			return new CompositeConditionNode(id, ensureConditions(config.conditions, 'compositecondition'), ensureCompositeModifier(config.modifier, 'compositecondition'), config.priority, config.parameters);
 		case 'randomselector':
 		case 'RandomSelector':
-			return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.currentchild_propname, config.priority);
+			if (!config.currentchild_propname) {
+				throw new Error(`[BehaviorTree:${id}] RandomSelector node requires 'currentchild_propname'.`);
+			}
+			return new RandomSelectorNode(id, ensureChildren(config.children, 'randomselector').map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.currentchild_propname, config.priority);
 		case 'limit':
 		case 'Limit':
+			if (typeof config.limit !== 'number' || !Number.isFinite(config.limit)) {
+				throw new Error(`[BehaviorTree:${id}] Limit node requires a finite numeric 'limit'.`);
+			}
+			if (!config.count_propname) {
+				throw new Error(`[BehaviorTree:${id}] Limit node requires 'count_propname'.`);
+			}
+			if (!config.child) {
+				throw new Error(`[BehaviorTree:${id}] Limit node requires a child.`);
+			}
 			return new LimitNode(id, config.limit, config.count_propname, buildBehaviorTreeNode(config.child, id), config.priority);
 		case 'priorityselector':
 		case 'PrioritySelector':
-			return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
+			return new PrioritySelectorNode(id, ensureChildren(config.children, 'priorityselector').map(childConfig => buildBehaviorTreeNode(childConfig, id)), config.priority);
 		case 'wait':
 		case 'Wait':
+			if (typeof config.wait_time !== 'number' || config.wait_time < 0) {
+				throw new Error(`[BehaviorTree:${id}] Wait node requires a non-negative 'wait_time'.`);
+			}
+			if (!config.wait_propname) {
+				throw new Error(`[BehaviorTree:${id}] Wait node requires 'wait_propname'.`);
+			}
 			return new WaitNode(id, config.wait_time, config.wait_propname, config.priority);
 		case 'action':
 		case 'Action':
+			if (typeof config.action !== 'function') {
+				throw new Error(`[BehaviorTree:${id}] Action node requires an action function.`);
+			}
 			return new ActionNode(id, config.action, config.priority, config.parameters);
 		case 'compositeaction':
 		case 'CompositeAction':
-			return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTreeNode(actionConfig, id) as ActionNode), config.priority, config.parameters);
+			if (!Array.isArray(config.actions) || config.actions.length === 0) {
+				throw new Error(`[BehaviorTree:${id}] CompositeAction node requires one or more actions.`);
+			}
+			return new CompositeActionNode(id, ensureActionNodes(config.actions, 'compositeaction'), config.priority, config.parameters);
 		default:
 			throw new Error(`Unsupported behavior tree node type '${typeValue}'`);
 	}
@@ -145,9 +219,7 @@ export type ConstructorWithBTProperty = Function & {
 export function assign_bt(...bts: BehaviorTreeID[]) {
 	return function (value: any, _context: ClassDecoratorContext) {
 		const constructor = value as ConstructorWithBTProperty;
-		if (!Object.prototype.hasOwnProperty.call(constructor, 'linkedBTs')) {
-			constructor.linkedBTs = new Set<BehaviorTreeID>();
-		}
+		constructor.linkedBTs ??= new Set<BehaviorTreeID>();
 		bts.forEach(bt => constructor.linkedBTs!.add(bt));
 		updateAllAssignedBTs(constructor);
 		// no class replacement
@@ -181,10 +253,17 @@ function updateAllAssignedBTs(constructor: any) {
 export function build_bt(bt_id?: BehaviorTreeID) {
 	return function (value: any, context: ClassMethodDecoratorContext) {
 		const register = (ctor: any) => {
-			behaviorTreeDefinitionsBuilders ??= {};
-			// If no explicit bt_id supplied, normalize inferred class name for public key.
-			const inferred = ctor?.name;
-			const key = bt_id ? bt_id : normalizeDecoratedClassName(inferred);
+			if (typeof ctor !== 'function') {
+				throw new Error('[BehaviorTree] build_bt decorator applied to a non-class element.');
+			}
+			const inferred = ctor.name;
+			if (!bt_id && (!inferred || inferred.length === 0)) {
+				throw new Error('[BehaviorTree] Cannot infer behavior tree id from anonymous class. Provide an explicit id.');
+			}
+			const key = bt_id ?? normalizeDecoratedClassName(inferred);
+			if (!key || key.length === 0) {
+				throw new Error('[BehaviorTree] Behavior tree id resolved to an empty string.');
+			}
 			behaviorTreeDefinitionsBuilders[key] = value as () => BehaviorTreeDefinition;
 		};
 		if (context.static) {
@@ -202,9 +281,11 @@ export function build_bt(bt_id?: BehaviorTreeID) {
  * @param targetId - The ID of the target world object.
  * @returns The constructed behavior tree node, or null if the tree definition is not found.
  */
-export function constructBehaviorTree(bt_id: BehaviorTreeID): BTNode | null {
+export function constructBehaviorTree(bt_id: BehaviorTreeID): BTNode {
 	const btdef = BehaviorTreeDefinitions[bt_id];
-	if (!btdef) return null;
+	if (!btdef) {
+		throw new Error(`[BehaviorTree] Definition '${bt_id}' is not registered.`);
+	}
 	const root = (btdef as { root?: BehaviorTreeNodeSpec }).root ?? (btdef as BehaviorTreeNodeSpec);
 	return buildBehaviorTreeNode(root, bt_id);
 }
@@ -281,9 +362,13 @@ export class Blackboard implements Identifiable {
 	 * @param updates.id[].key - The key associated with the property (optional).
 	 */
 	applyUpdates(updates: { [id: string]: Array<{ property: string, value: any, key?: string }> }): void {
-		for (let properties of Object.values(updates)) {
-			for (let { value, key } of properties) {
-				this.set(key, value);
+		for (const properties of Object.values(updates)) {
+			for (const { value, key, property } of properties) {
+				const resolvedKey = key ?? property;
+				if (!resolvedKey) {
+					throw new Error(`[Blackboard:${this.id}] Update entry is missing both 'key' and 'property'.`);
+				}
+				this.set(resolvedKey, value);
 			}
 		}
 	}
@@ -344,7 +429,13 @@ export abstract class BTNode implements Identifiable {
 	 * @param targetid The Identifier of the target object.
 	 * @returns The target object casted to the specified type.
 	 */
-	public getTarget<T extends WorldObject>(targetid: Identifier) { return $.world.getWorldObject<T>(targetid); }
+	public getTarget<T extends WorldObject>(targetid: Identifier): T {
+		const target = $.world.getWorldObject<T>(targetid);
+		if (!target) {
+			throw new Error(`[BehaviorTree:${this.id}] Target '${targetid}' not found in world.`);
+		}
+		return target;
+	}
 
 	constructor(id: BehaviorTreeID, _priority = 0) {
 		this.id = id;
@@ -385,6 +476,9 @@ export class SequenceNode extends BTNode {
 
 	constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
 		super(id, _priority);
+		if (children.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] SequenceNode requires at least one child.`);
+		}
 		this.children = children;
 	}
 
@@ -410,6 +504,9 @@ export class SelectorNode extends BTNode {
 
 	constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
 		super(id, _priority);
+		if (children.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] SelectorNode requires at least one child.`);
+		}
 		this.children = children;
 	}
 
@@ -437,6 +534,9 @@ export class ParallelNode extends BTNode {
 
 	constructor(id: BehaviorTreeID, children: BTNode[], successPolicy: 'ONE' | 'ALL', _priority = 0) {
 		super(id, _priority);
+		if (children.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] ParallelNode requires at least one child.`);
+		}
 		this.children = children;
 		this.successPolicy = successPolicy;
 	}
@@ -623,6 +723,12 @@ export class RandomSelectorNode extends BTNode {
 
 	constructor(id: BehaviorTreeID, children: BTNode[], _currentchild_propname: string, _priority = 0) {
 		super(id, _priority);
+		if (children.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] RandomSelectorNode requires at least one child.`);
+		}
+		if (typeof _currentchild_propname !== 'string' || _currentchild_propname.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] RandomSelectorNode requires a non-empty property name for tracking state.`);
+		}
 		this.children = children;
 		this.currentchild_propname = _currentchild_propname;
 	}
@@ -632,15 +738,22 @@ export class RandomSelectorNode extends BTNode {
 	 * @returns The feedback from the selected child node.
 	 */
 	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-		let currentChildIndex = blackboard.nodedata[this.currentchild_propname] as number;
-
-		// If there is no currently executing child, select a random child
-		if (!currentChildIndex) {
-			currentChildIndex = Math.floor(Math.random() * this.children.length);
-			blackboard.nodedata[this.currentchild_propname] = currentChildIndex;
+		const storedIndex = blackboard.nodedata[this.currentchild_propname];
+		let currentChildIndex: number;
+		if (storedIndex === undefined) {
+			const nextIndex = Math.floor(Math.random() * this.children.length);
+			blackboard.nodedata[this.currentchild_propname] = nextIndex;
+			currentChildIndex = nextIndex;
+		} else if (typeof storedIndex !== 'number' || !Number.isInteger(storedIndex)) {
+			throw new Error(`[BehaviorTree:${this.id}] RandomSelectorNode stored index '${storedIndex}' is not a valid integer.`);
+		} else {
+			currentChildIndex = storedIndex;
 		}
 
-		// Tick the currently executing child
+		if (currentChildIndex < 0 || currentChildIndex >= this.children.length) {
+			throw new Error(`[BehaviorTree:${this.id}] RandomSelectorNode stored index '${currentChildIndex}' is out of range.`);
+		}
+
 		const feedback = this.children[currentChildIndex].tick(targetid, blackboard);
 
 		// If the child has finished executing (either succeeded or failed), reset the current child index
@@ -661,6 +774,15 @@ export class LimitNode extends BTNode {
 
 	constructor(id: BehaviorTreeID, limit: number, _count_propname: string, child: BTNode, _priority = 0) {
 		super(id, _priority);
+		if (!Number.isFinite(limit) || limit < 0) {
+			throw new Error(`[BehaviorTree:${id}] LimitNode requires a non-negative finite limit.`);
+		}
+		if (typeof _count_propname !== 'string' || _count_propname.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] LimitNode requires a non-empty property name for tracking count.`);
+		}
+		if (!child) {
+			throw new Error(`[BehaviorTree:${id}] LimitNode requires a child node.`);
+		}
 		this.limit = limit;
 		this.child = child;
 		this.count_propname = _count_propname;
@@ -671,10 +793,15 @@ export class LimitNode extends BTNode {
 	 * @returns The feedback of the node's execution.
 	 */
 	tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-		let count = blackboard.nodedata[this.count_propname] as number;
-		if (!count) {
+		const storedCount = blackboard.nodedata[this.count_propname];
+		let count: number;
+		if (storedCount === undefined) {
 			count = 0;
 			blackboard.nodedata[this.count_propname] = count;
+		} else if (typeof storedCount !== 'number' || !Number.isFinite(storedCount)) {
+			throw new Error(`[BehaviorTree:${this.id}] LimitNode count '${storedCount}' is not a finite number.`);
+		} else {
+			count = storedCount;
 		}
 
 		if (count < this.limit) {
@@ -697,6 +824,9 @@ export class PrioritySelectorNode extends BTNode {
 
 	constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
 		super(id, _priority);
+		if (children.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] PrioritySelectorNode requires at least one child.`);
+		}
 		this.children = children;
 	}
 
@@ -725,6 +855,12 @@ export class WaitNode extends BTNode {
 
 	constructor(id: BehaviorTreeID, waitTime: number, _wait_propname: string, _priority = 0) {
 		super(id, _priority);
+		if (!Number.isFinite(waitTime) || waitTime < 0) {
+			throw new Error(`[BehaviorTree:${id}] WaitNode requires a non-negative finite wait time.`);
+		}
+		if (typeof _wait_propname !== 'string' || _wait_propname.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] WaitNode requires a non-empty property name for tracking state.`);
+		}
 		this.wait_time = waitTime;
 		this.wait_propname = _wait_propname;
 	}
@@ -734,10 +870,15 @@ export class WaitNode extends BTNode {
 	 * @returns The feedback of the node.
 	 */
 	tick(_targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-		let currentTick = blackboard.nodedata[this.wait_propname] as number;
-		if (!currentTick) {
+		const storedTick = blackboard.nodedata[this.wait_propname];
+		let currentTick: number;
+		if (storedTick === undefined) {
 			currentTick = 0;
 			blackboard.nodedata[this.wait_propname] = currentTick;
+		} else if (typeof storedTick !== 'number' || !Number.isFinite(storedTick)) {
+			throw new Error(`[BehaviorTree:${this.id}] WaitNode tick '${storedTick}' is not a finite number.`);
+		} else {
+			currentTick = storedTick;
 		}
 
 		if (currentTick < this.wait_time) {
@@ -773,6 +914,9 @@ export class ActionNode extends ParametrizedBTNode {
 
 	constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0, parameters?: any[]) {
 		super(id, _priority, parameters);
+		if (typeof action !== 'function') {
+			throw new Error(`[BehaviorTree:${id}] ActionNode requires a callable action.`);
+		}
 		this.action = action;
 	}
 
@@ -797,6 +941,9 @@ export class CompositeActionNode extends ParametrizedBTNode {
 
 	constructor(id: BehaviorTreeID, actions: ActionNode[], _priority = 0, parameters?: any[]) {
 		super(id, _priority, parameters);
+		if (actions.length === 0) {
+			throw new Error(`[BehaviorTree:${id}] CompositeActionNode requires at least one action.`);
+		}
 		this.actions = actions;
 	}
 
@@ -815,6 +962,6 @@ export class CompositeActionNode extends ParametrizedBTNode {
 				feedback = result;
 			}
 		}
-		return feedback
+		return feedback;
 	}
 }

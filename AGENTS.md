@@ -30,12 +30,16 @@
 11. **Coding Standards**:
   - Follow established coding standards and best practices for TypeScript development.
   - Assume that I am the only developer. There are no other users or developers of the game engine.
-  - Try to move boilerplate code into reusable functions or classes of the core game engine codefiles.
   - Don't introduce `as any` casts or `<any>` type assertions.
-  - Don't introduce unused variables.
-  - Don't introduce assertions like `typeof foo === 'function'`.
+  - NO SILENT FAILURES!! If something is not supposed to be undefined, don't let it be undefined. Throw an error instead.
+  - Don't introduce `?.` or `??` or `if (x === undefined)` checks for properties that **should** always defined! THESE ARE BUGS! Fix the root cause instead OR JUST LET IT CRASH!!
+  - Try to move boilerplate code into reusable functions or classes of the core game engine codefiles.
   - Don't use `require` in non-script code (e.g. `rompacker-core.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
-  - Avoid direct references to GameObjects or Components. Rather, use the `World`-class (e.g. `$.getGameObject` or `$.getFromCurrentSpace`, `$.get`).
+  - Don't assert whether a property is of type function like `if (typeof this.onSomething === 'function') this.onSomething()`, instead, use optional chaining like `this.onSomething?.()`.
+  - Don't code any utility without first checking if a similar utility already exists in the codebase. Look under `src/bmsx/utils` and `src/bmsx/core`!!
+  - Avoid direct references to WorldObjects or Components. Rather, use the `World`-class (e.g. `$.getGameObject` or `$.getFromCurrentSpace`, `$.get`).
+  - Don't introduce circular dependencies.
+  - Don't introduce unused variables.
   - Ensure that registry persistent objects are not serialized.
   - Use the annotations provided in the codebase to maintain consistency, these include:
 	- `@attach_components`: Indicates that the decorated class should have `Component`s automatically attached.

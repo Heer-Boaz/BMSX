@@ -59,27 +59,28 @@ export class PhysicsComponent extends Component {
 		// This is a diagnostic change to confirm whether lack of sync is the root cause.
 		if (this.body && !this.writeBack) {
 			const wo = $.world.getWorldObject(this.parentid);
-			if (wo) {
-				let positionChanged = false;
-				if (this.syncAxis.x && this.body.position.x !== wo.x) {
-					this.body.position.x = wo.x;
-					positionChanged = true;
-				}
-				if (this.syncAxis.y && this.body.position.y !== wo.y) {
-					this.body.position.y = wo.y;
-					positionChanged = true;
-				}
-				if (this.syncAxis.z && this.body.position.z !== wo.z) {
-					this.body.position.z = wo.z;
-					positionChanged = true;
-				}
+			if (!wo) {
+				throw new Error(`[PhysicsComponent] Parent '${this.parentid}' disappeared while syncing to physics body.`);
+			}
+			let positionChanged = false;
+			if (this.syncAxis.x && this.body.position.x !== wo.x) {
+				this.body.position.x = wo.x;
+				positionChanged = true;
+			}
+			if (this.syncAxis.y && this.body.position.y !== wo.y) {
+				this.body.position.y = wo.y;
+				positionChanged = true;
+			}
+			if (this.syncAxis.z && this.body.position.z !== wo.z) {
+				this.body.position.z = wo.z;
+				positionChanged = true;
+			}
 
-				// Mark body dirty if position changed so broadphase updates
-				if (positionChanged) {
-					// console.log('[PhysAggSync]', this.parentid, 'sync -> body pos', this.body.position);
-					const world = PhysicsWorld.ensure();
-					world.markBodyDirty(this.body); // Mark dirty without requiring dynamic body
-				}
+			// Mark body dirty if position changed so broadphase updates
+			if (positionChanged) {
+				// console.log('[PhysAggSync]', this.parentid, 'sync -> body pos', this.body.position);
+				const world = PhysicsWorld.ensure();
+				world.markBodyDirty(this.body); // Mark dirty without requiring dynamic body
 			}
 		}
 	}
@@ -88,7 +89,9 @@ export class PhysicsComponent extends Component {
 		if (!this.body) return;
 		if (!this.writeBack) return;
 		const wo = $.world.getWorldObject<WorldObject & Oriented>(this.parentid);
-		if (!wo) return;
+		if (!wo) {
+			throw new Error(`[PhysicsComponent] Parent '${this.parentid}' disappeared before write-back.`);
+		}
 		if (this.syncAxis.x) wo.x_nonotify = this.body.position.x;
 		if (this.syncAxis.y) wo.y_nonotify = this.body.position.y;
 		if (this.syncAxis.z) wo.z_nonotify = this.body.position.z;
@@ -113,6 +116,9 @@ export class PhysicsComponent extends Component {
 	override dispose(): void {
 		super.dispose();
 		const world = $.get<PhysicsWorld>('physics_world');
+		if (!world && this.body) {
+			throw new Error(`[PhysicsComponent] Physics world is missing while disposing body for '${this.parentid}'.`);
+		}
 		if (world && this.body) world.removeBody(this.body);
 		this.body = null;
 	}
