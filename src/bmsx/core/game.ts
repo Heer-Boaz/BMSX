@@ -30,8 +30,10 @@ import { gameplaySpec } from "./pipelines/gameplay";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
 import { dumpEcsPipeline } from "../ecs/debug";
 // No direct space helpers needed here; Spaces are revived as part of the world.
+import { Platform, PlatformServices } from '../platform/platform_services';
 
-global = globalThis || window; // Ensure global is defined
+const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
+global = globalScope; // Ensure global is defined
 
 // Register global variables
 // Note that $ is defined at the bottom of the code file
@@ -50,6 +52,7 @@ export interface GameInitArgs {
 	 * ECS pipeline selection. Provide a spec or a profile string. Defaults to 'gameplay'.
 	 */
 	ecsPipeline?: NodeSpec[] | 'gameplay' | 'headless' | 'editor';
+	platformServices?: PlatformServices;
 }
 
 const GAME_FPS = 50;
@@ -279,7 +282,13 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, ecsPipeline } = init;
+		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, ecsPipeline, platformServices } = init;
+		if (platformServices) {
+			Platform.initialize(platformServices);
+		}
+		if (!Platform.isInitialized) {
+			throw new Error('[Game] Platform services not provided. Call Platform.initialize() before Game.init(), or pass platformServices in GameInitArgs.');
+		}
 		if (!viewHost) {
 			throw new Error('Game view host not provided to game init!');
 		}
@@ -364,7 +373,7 @@ export class Game {
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode
-			window.addEventListener('beforeunload', this.onBeforeUnload, true);
+			Platform.instance.events.addBeforeUnload(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
 		SoundMaster.instance.volume = 0;
@@ -392,10 +401,12 @@ export class Game {
 		if (!this.initialized) {
 			throw new Error('Game not initialized. Call init() before starting the game!');
 		}
-		this.lastUpdate = performance.now();
-		this.last_gametick_time = performance.now();
+		const platform = Platform.instance;
+		const now = platform.timing.now();
+		this.lastUpdate = now;
+		this.last_gametick_time = now;
 		this._turnCounter = 0;
-		this.animationFrameRequestid = window.requestAnimationFrame(this.run);
+		this.animationFrameRequestid = platform.timing.requestAnimationFrame(this.run);
 		this.running = true;
 	}
 
@@ -435,6 +446,7 @@ export class Game {
 	private run = (currentTime: number): void => {
 		if (!this.running) return;
 
+		const platform = Platform.instance;
 		Input.instance.pollInput();
 
 		this.deltaTime = Math.min(currentTime - this.lastUpdate, MAX_FRAME_DELTA);
@@ -447,10 +459,10 @@ export class Game {
 				this._pausedOneShotRenderPending = false;
 				// drawgame takes the renderGate token itself; call it from the main loop
 				this.view.drawgame();
-				window.dispatchEvent(new Event('frame'));
+				platform.events.dispatchFrameEvent();
 			}
 
-			this.animationFrameRequestid = window.requestAnimationFrame(this.run);
+			this.animationFrameRequestid = platform.timing.requestAnimationFrame(this.run);
 			return;
 		}
 
@@ -474,10 +486,10 @@ export class Game {
 
 		if (this.wasupdated) {
 			this.view.drawgame();
-			window.dispatchEvent(new Event('frame'));
+			platform.events.dispatchFrameEvent();
 		}
 
-		this.animationFrameRequestid = window.requestAnimationFrame(this.run);
+		this.animationFrameRequestid = platform.timing.requestAnimationFrame(this.run);
 	}
 
 	/**
@@ -485,14 +497,15 @@ export class Game {
 	 * @returns void
 	 */
 	public stop(): void {
+		const platform = Platform.instance;
 		this.running = false;
-		window.cancelAnimationFrame(this.animationFrameRequestid);
-		window.requestAnimationFrame(() => {
+		platform.timing.cancelAnimationFrame(this.animationFrameRequestid);
+		platform.timing.requestAnimationFrame(() => {
 			this.view.handleResize.call(this.view);
 			this.sndmaster.stopEffect();
 			this.sndmaster.stopMusic();
 		});
-		window.removeEventListener('beforeunload', this.onBeforeUnload, true);
+		platform.events.removeBeforeUnload(this.onBeforeUnload);
 	}
 
 	/** Serialize the full game state: world + selected services. */
@@ -582,7 +595,7 @@ export class Game {
 
 	private loadRewindFrame(frame: RewindFrame): void {
 		this.load(frame.state, true);
-		window.dispatchEvent(new Event('frame'));
+		Platform.instance.events.dispatchFrameEvent();
 	}
 
 	public rewindFrame(): boolean {

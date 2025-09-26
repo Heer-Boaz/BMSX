@@ -102,6 +102,8 @@ export * from './render/backend/renderpasslib';
 export * from './render/backend/webgl/webgl_backend';
 export * from './render/platform/gameview_host';
 export * from './render/platform/browser_gameview_host';
+export * from './platform/platform_services';
+export * from './platform/browser_platform';
 export * from './rompack/rompack';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';

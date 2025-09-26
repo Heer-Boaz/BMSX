@@ -1,6 +1,10 @@
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
+import { Platform } from '../../src/bmsx/platform/platform_services';
+import { BrowserPlatformServices } from '../../src/bmsx/platform/browser_platform';
+
+Platform.initialize(new BrowserPlatformServices());
 
 declare global {
 	interface Window {
@@ -128,7 +132,8 @@ export const bootrom = {
 			sndcontext: bootrom.sndcontext!,
 			gainnode: bootrom.gainnode!,
 			debug: this.debug,
-			startingGamepadIndex: bootrom.startingGamepadIndex
+			startingGamepadIndex: bootrom.startingGamepadIndex,
+			platformServices: Platform.instance
 		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;
