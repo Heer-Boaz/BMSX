@@ -589,9 +589,13 @@ let _model: modelclass;
 var _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): void => {
+	const { platformServices } = args;
+	if (!platformServices) {
+		throw new Error('[Bootloader:marlies2021] Platform services not provided. Ensure the host injects PlatformServices before starting the game.');
+	}
 	let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_model = new modelclass();
-	new Game({ ...args, model: _model, view: _view }).init({ ...args, _view }).then((game) => {
+	new Game({ ...args, model: _model, view: _view }).init({ ...args, platformServices, _view }).then((game) => {
 		game.view.default_font = new BFont(BitmapId);
 		global.game.start();
 		let model = game.model;

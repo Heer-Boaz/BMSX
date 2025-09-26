@@ -6,6 +6,8 @@
  * 0x0DF2 = DualSense Edge
  * 0x09cc = DualShock 4
  */
+import { Platform } from '../platform/platform_services';
+
 const SONY_VID = 0x054C;
 const DUALSENSE_EDGE_PID = 0x0DF2; // DualSense Edge
 const DUALSENSE_STANDARD_PID = 0x0CE6; // DualSense standard
@@ -44,6 +46,10 @@ export class DualSenseHID {
 
 
 	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<HIDDevice[]> {
+		const hid = Platform.instance.hid;
+		if (!hid?.isSupported()) {
+			throw new Error('[DualSenseHID] HID API not available on this platform.');
+		}
 		if (!DualSenseHID.pendingRequest) {
 			// Pause the game while the browser permission dialog is visible
 			const g = global as unknown as { $?: { paused?: boolean } };
@@ -60,10 +66,7 @@ export class DualSenseHID {
 				? [{ vendorId: ids.vendorId, productId: ids.productId }]
 				: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }));
 
-			if (typeof navigator.hid.requestDevice !== 'function') {
-				throw new Error('[DualSenseHID] navigator.hid.requestDevice is not available.');
-			}
-			DualSenseHID.pendingRequest = navigator.hid.requestDevice({ filters })
+			DualSenseHID.pendingRequest = hid.requestDevice({ filters })
 				.finally(() => {
 					DualSenseHID.pendingRequest = null;
 					if (!wasPaused) {
@@ -123,15 +126,13 @@ export class DualSenseHID {
 
 	/** Requests the Sony HID device and initializes it. */
 	public async init(gamepad?: Gamepad): Promise<void> {
-		if (!("hid" in navigator)) {
-			console.warn("HID API not supported in this browser.");
+		const hid = Platform.instance.hid;
+		if (!hid?.isSupported()) {
+			console.warn("HID API not supported on this platform.");
 			return; // HID not supported (e.g. Safari)
 		}
 
-		if (typeof navigator.hid.getDevices !== 'function') {
-			throw new Error('[DualSenseHID] navigator.hid.getDevices is not available.');
-		}
-		const known = await navigator.hid.getDevices();
+		const known = await hid.getDevices();
 
 		let ids: { vendorId: number; productId: number } | null = null;
 		if (gamepad) {

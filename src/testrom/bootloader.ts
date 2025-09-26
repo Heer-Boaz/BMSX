@@ -11,10 +11,14 @@ import './test_gamemodel';
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<any> => {
+	const { platformServices } = args;
+	if (!platformServices) {
+		throw new Error('[Bootloader:testrom] Platform services not provided. Ensure the host injects PlatformServices before starting the game.');
+	}
 	const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
 
 	const viewHost = BrowserGameViewHost.fromCanvasId('gamescreen');
-	return $.init({ ...args, worldConfig: worldConfiguration, viewHost }).then(() => {
+	return $.init({ ...args, platformServices, worldConfig: worldConfiguration, viewHost }).then(() => {
 		$.view.default_font = new BFont(BitmapId);
 		// Set input maps now that input is initialized
 		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });

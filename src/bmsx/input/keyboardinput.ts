@@ -1,5 +1,6 @@
 import { getPressedState, Input, makeButtonState, options, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
+import { Platform } from '../platform/platform_services';
 
 /**
  * Represents a keyboard input handler that implements the IInputHandler interface.
@@ -38,7 +39,9 @@ export class KeyboardInput implements InputHandler {
 		this.gamepadButtonStates = {};
 		this.reset();
 
-		window.addEventListener('keydown', e => {
+		const inputSvc = Platform.instance.input;
+		const target: EventTarget = (typeof window !== 'undefined' ? window : (globalThis as unknown as EventTarget));
+		inputSvc.addEventListener(target, 'keydown', (e: any) => {
 			const input = Input.instance;
 			if (input?.shouldCaptureKey(e.code)) {
 				e.preventDefault();
@@ -47,7 +50,7 @@ export class KeyboardInput implements InputHandler {
 			}
 			this.keydown(e.code);
 		}, options);
-		window.addEventListener('keyup', e => {
+		inputSvc.addEventListener(target, 'keyup', (e: any) => {
 			const input = Input.instance;
 			if (input?.shouldCaptureKey(e.code)) {
 				e.preventDefault();

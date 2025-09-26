@@ -1,5 +1,6 @@
 import { getPressedState, makeButtonState, options, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
+import { Platform } from '../platform/platform_services';
 
 const POINTER_BUTTON_MAP: Record<number, string> = {
 	0: 'pointer_primary',
@@ -40,24 +41,25 @@ export class PointerInput implements InputHandler {
 	}
 
 	private bindEventListeners(): void {
+		const input = Platform.instance.input;
 		const target = this.element;
-		target.addEventListener('pointerdown', this.handlePointerDown, options);
-		target.addEventListener('pointermove', this.handlePointerMove, options);
-		target.addEventListener('pointerup', this.handlePointerUp, options);
-		target.addEventListener('pointercancel', this.handlePointerUp, options);
-		target.addEventListener('pointerleave', this.handlePointerLeave, options);
-		target.addEventListener('wheel', this.handleWheel, { ...options, passive: false });
+		input.addEventListener(target, 'pointerdown', this.handlePointerDown, options);
+		input.addEventListener(target, 'pointermove', this.handlePointerMove, options);
+		input.addEventListener(target, 'pointerup', this.handlePointerUp, options);
+		input.addEventListener(target, 'pointercancel', this.handlePointerUp, options);
+		input.addEventListener(target, 'pointerleave', this.handlePointerLeave, options);
+		input.addEventListener(target, 'wheel', this.handleWheel, { ...options, passive: false });
 
 		// Fallbacks for environments without pointer events
-		target.addEventListener('mousedown', this.handleMouseDown, options);
-		target.addEventListener('mousemove', this.handleMouseMove, options);
-		target.addEventListener('mouseup', this.handleMouseUp, options);
-		target.addEventListener('mouseleave', this.handleMouseLeave, options);
+		input.addEventListener(target, 'mousedown', this.handleMouseDown, options);
+		input.addEventListener(target, 'mousemove', this.handleMouseMove, options);
+		input.addEventListener(target, 'mouseup', this.handleMouseUp, options);
+		input.addEventListener(target, 'mouseleave', this.handleMouseLeave, options);
 
-		target.addEventListener('touchstart', this.handleTouchStart, options);
-		target.addEventListener('touchmove', this.handleTouchMove, options);
-		target.addEventListener('touchend', this.handleTouchEnd, options);
-		target.addEventListener('touchcancel', this.handleTouchEnd, options);
+		input.addEventListener(target, 'touchstart', this.handleTouchStart, options);
+		input.addEventListener(target, 'touchmove', this.handleTouchMove, options);
+		input.addEventListener(target, 'touchend', this.handleTouchEnd, options);
+		input.addEventListener(target, 'touchcancel', this.handleTouchEnd, options);
 	}
 
 	private handlePointerDown = (event: PointerEvent): void => {
@@ -103,7 +105,7 @@ export class PointerInput implements InputHandler {
 
 	private handleMouseDown = (event: MouseEvent): void => {
 		// Only run fallback if pointer events are not supported
-		if (window.PointerEvent) return;
+		if (typeof window !== 'undefined' && window.PointerEvent) return;
 		if (event.button > 4) return;
 		this.updateButtonState(event.button, true);
 		this.pointerActive = true;
@@ -111,7 +113,7 @@ export class PointerInput implements InputHandler {
 	};
 
 	private handleMouseMove = (event: MouseEvent): void => {
-		if (window.PointerEvent) return;
+		if (typeof window !== 'undefined' && window.PointerEvent) return;
 		if (!this.pointerActive) return;
 		const dx = this.position ? event.clientX - this.position.x : 0;
 		const dy = this.position ? event.clientY - this.position.y : 0;
@@ -120,7 +122,7 @@ export class PointerInput implements InputHandler {
 	};
 
 	private handleMouseUp = (event: MouseEvent): void => {
-		if (window.PointerEvent) return;
+		if (typeof window !== 'undefined' && window.PointerEvent) return;
 		this.updateButtonState(event.button, false);
 		if (event.type === 'mouseup') {
 			this.pointerActive = false;
@@ -128,13 +130,13 @@ export class PointerInput implements InputHandler {
 	};
 
 	private handleMouseLeave = (_event: MouseEvent): void => {
-		if (window.PointerEvent) return;
+		if (typeof window !== 'undefined' && window.PointerEvent) return;
 		this.pointerActive = false;
 		this.position = null;
 	};
 
 	private handleTouchStart = (event: TouchEvent): void => {
-		if (window.PointerEvent) return;
+		if (typeof window !== 'undefined' && window.PointerEvent) return;
 		const touch = event.changedTouches[0];
 		if (!touch) return;
 		this.updateButtonState(0, true);
@@ -144,7 +146,7 @@ export class PointerInput implements InputHandler {
 	};
 
 	private handleTouchMove = (event: TouchEvent): void => {
-		if (window.PointerEvent) return;
+		if (typeof window !== 'undefined' && window.PointerEvent) return;
 		if (!this.pointerActive || this.pointerId === null) return;
 		const touch = Array.from(event.changedTouches).find(t => t.identifier === this.pointerId);
 		if (!touch) return;

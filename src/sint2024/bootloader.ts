@@ -6,9 +6,13 @@ import { sint } from './sint';
 const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
+	const { platformServices } = args;
+	if (!platformServices) {
+		throw new Error('[Bootloader:sint2024] Platform services not provided. Ensure the host injects PlatformServices before starting the game.');
+	}
 	const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintWorldFSM' };
 	const viewHost = BrowserGameViewHost.fromCanvasId('gamescreen');
-	return $.init({ ...args, worldConfig, viewHost }).then(() => {
+	return $.init({ ...args, platformServices, worldConfig, viewHost }).then(() => {
 		// set input map previously done in do_one_time_game_init
 		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
 		$.view.default_font = new BFont(BitmapId);

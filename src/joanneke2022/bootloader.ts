@@ -868,11 +868,15 @@ let _view: gameview;
 var _global = globalThis;
 
 _global['h406A'] = (args: BootArgs): void => {
+	const { platformServices } = args;
+	if (!platformServices) {
+		throw new Error('[Bootloader:joanneke2022] Platform services not provided. Ensure the host injects PlatformServices before starting the game.');
+	}
 	_model = new gamemodel();
 	_view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_view.default_font = new BFont(BitmapId);
 	_game = new Game();
-	_game.init({ ...args, model: _model, view: _view }).then(() => {
+	_game.init({ ...args, platformServices, model: _model, view: _view }).then(() => {
 		_game.start();
 	});
 };

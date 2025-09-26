@@ -17,6 +17,7 @@ import { ControllerAssignmentUI } from './controller_assignment_ui';
 import { PlayerInput } from './playerinput';
 import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
+import { Platform } from '../platform/platform_services';
 
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.
@@ -623,32 +624,42 @@ export class Input implements RegisterablePersistent {
 		Registry.instance.register(this);
 		EventEmitter.instance.on('spaceChanged', this.handleSpaceChanged, this, { persistent: true });
 
+		const inputSvc = Platform.instance.input;
+
+		const globalWindow: EventTarget | null = typeof window !== 'undefined' ? window : null;
+		const globalDocument: Document | null = typeof document !== 'undefined' ? document : null;
+
 		/**
 		 * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
 		 * @param e The gamepad event.
 		 */
-			window.addEventListener("gamepadconnected", (e: GamepadEvent) => {
-				const gamepad = e.gamepad;
+		if (globalWindow) {
+			inputSvc.addEventListener(globalWindow, 'gamepadconnected', (evt: Event) => {
+				const gamepad = (evt as GamepadEvent).gamepad;
 				if (!gamepad) return;
 			console.info(`Gamepad ${gamepad.index} connected.`);
 			this.addPendingGamepadAssignment(gamepad)
 		});
+		}
 
-		document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
-		window.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
-		document.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), options);
-		window.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), options);
-		document.addEventListener('contextmenu', e => {
-			if (e.target === document.getElementById('gamescreen')) {
-				return true; // Allow context menu on gamescreen
-			} else {
-				// e.preventDefault(); // Suppress context menu on rest of document
+		if (globalDocument) {
+			inputSvc.addEventListener(globalDocument, 'webkitmouseforcewillbegin', (e: Event) => preventActionAndPropagation(e), options);
+			inputSvc.addEventListener(globalDocument, 'webkitmouseforcedown', (e: Event) => preventActionAndPropagation(e), options);
+			inputSvc.addEventListener(globalDocument, 'contextmenu', (e: Event) => {
+				const target = e.target as HTMLElement | null;
+				if (target === globalDocument.getElementById('gamescreen')) {
+					return true; // Allow context menu on gamescreen
+				}
 				return false;
-			}
-		}, false);
+			}, false);
+		}
+		if (globalWindow) {
+			inputSvc.addEventListener(globalWindow, 'webkitmouseforcewillbegin', (e: Event) => preventActionAndPropagation(e), options);
+			inputSvc.addEventListener(globalWindow, 'webkitmouseforcedown', (e: Event) => preventActionAndPropagation(e), options);
+		}
 			// Gesture suppression is CSS-driven; avoid global touchforcechange handlers.
 
-		const gamescreenEl = document.getElementById('gamescreen');
+		const gamescreenEl = globalDocument ? globalDocument.getElementById('gamescreen') : null;
 		if (!(gamescreenEl instanceof HTMLElement)) {
 			throw new Error('[Input] Game screen element #gamescreen not found while initializing inputs.');
 		}
@@ -657,8 +668,9 @@ export class Input implements RegisterablePersistent {
 		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['pointer'] = new PointerInput(gamescreenEl);
 
 		// Mobile/browser UX: pointer capture aids consistent drag behavior across devices
-		gamescreenEl.addEventListener('pointerdown', (e: PointerEvent) => {
-			try { gamescreenEl.setPointerCapture(e.pointerId); } catch { /* noop */ }
+		inputSvc.addEventListener(gamescreenEl, 'pointerdown', (e: Event) => {
+			const evt = e as PointerEvent;
+			try { gamescreenEl.setPointerCapture(evt.pointerId); } catch { /* noop */ }
 		}, options);
 
 		// Visibility lifecycle: reset edges, cancel rumble, clear transient buffers
@@ -672,8 +684,12 @@ export class Input implements RegisterablePersistent {
 			}
 			try { if ('vibrate' in navigator) { navigator.vibrate(0); } } catch { /* noop */ }
 		};
-		document.addEventListener('visibilitychange', () => { if (document.hidden) handleVisibilityLost(); }, options);
-		window.addEventListener('pagehide', handleVisibilityLost, options);
+		if (globalDocument) {
+			inputSvc.addEventListener(globalDocument, 'visibilitychange', () => { if (globalDocument.hidden) handleVisibilityLost(); }, options);
+		}
+		if (globalWindow) {
+			inputSvc.addEventListener(globalWindow, 'pagehide', handleVisibilityLost, options);
+		}
 	}
 
 	public unbind(): void {

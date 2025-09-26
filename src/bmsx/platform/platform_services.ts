@@ -10,9 +10,24 @@ export interface PlatformEventService {
 	dispatchFrameEvent(): void;
 }
 
+export type PlatformEventListener = (event: any) => void;
+
+export interface PlatformInputService {
+	addEventListener(target: unknown, type: string, listener: PlatformEventListener, options?: boolean | AddEventListenerOptions): void;
+	removeEventListener(target: unknown, type: string, listener: PlatformEventListener, options?: boolean | EventListenerOptions): void;
+}
+
+export interface PlatformHIDService {
+	isSupported(): boolean;
+	getDevices(): Promise<HIDDevice[]>;
+	requestDevice(options: HIDDeviceRequestOptions): Promise<HIDDevice[]>;
+}
+
 export interface PlatformServices {
 	readonly timing: PlatformTimingService;
 	readonly events: PlatformEventService;
+	readonly input: PlatformInputService;
+	readonly hid?: PlatformHIDService;
 }
 
 export class Platform {

@@ -4,6 +4,7 @@ import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonSta
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { ContextStack, MappingContext } from './context';
+import { Platform } from '../platform/platform_services';
 
 export const INPUT_SOURCES = ['keyboard', 'gamepad', 'pointer'] as const;
 export type InputSource = typeof INPUT_SOURCES[number];
@@ -655,7 +656,10 @@ export class PlayerInput {
 		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
 		this.reset();
 
-		window.addEventListener('gamepaddisconnected', (e: GamepadEvent) => {
+		const globalWindow: EventTarget | null = typeof window !== 'undefined' ? window : null;
+		if (globalWindow) {
+			Platform.instance.input.addEventListener(globalWindow, 'gamepaddisconnected', (evt: Event) => {
+				const e = evt as GamepadEvent;
 			const gamepad = e.gamepad;
 
 			if (!this.inputHandlers['gamepad']) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
@@ -692,6 +696,7 @@ export class PlayerInput {
 				}
 			}
 		});
+		}
 	}
 
 	/**

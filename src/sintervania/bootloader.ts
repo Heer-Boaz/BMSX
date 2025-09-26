@@ -10,10 +10,14 @@ import { UglyView } from './uglyview';
 var _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): void => {
+	const { platformServices } = args;
+	if (!platformServices) {
+		throw new Error('[Bootloader:sintervania] Platform services not provided. Ensure the host injects PlatformServices before starting the game.');
+	}
 	let _model = new Model();
 	let _view = new UglyView({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
 	let _controller = new Controller();
-	new Game({ ...args, model: _model, view: _view });
+	new Game({ ...args, platformServices, model: _model, view: _view });
 
 	game.start();
 	(model as Model).SelectedChapterToPlay = Chapter.GameStart;

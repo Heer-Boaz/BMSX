@@ -2,6 +2,7 @@ import { $ } from '../core/game';
 import { GamepadInput } from './gamepad';
 import { Input } from './input';
 import type { BGamepadButton, InputHandler } from './inputtypes';
+import { Platform } from '../platform/platform_services';
 
 /**
  * Represents a processor for handling pending gamepad assignments.
@@ -90,7 +91,10 @@ export class PendingAssignmentProcessor {
 	 * which handles the disconnection of gamepads and manages pending assignments.
 	 */
 	constructor(public inputHandler: InputHandler, public proposedPlayerIndex: number | null) {
-		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
+		const globalWindow: EventTarget | null = typeof window !== 'undefined' ? window : null;
+		if (globalWindow) {
+			Platform.instance.input.addEventListener(globalWindow, "gamepaddisconnected", (evt: Event) => {
+				const e = evt as GamepadEvent;
 			const gamepad = e.gamepad;
 
 			if (!this.inputHandler) return; // No gamepad was not assigned to this object, so ignore the event (should not happen).
@@ -101,6 +105,7 @@ export class PendingAssignmentProcessor {
 				Input.instance.removePendingGamepadAssignment(gamepadIndex); // Remove pending gamepad assignment
 			}
 		});
+		}
 		// Defer UI creation to ControllerAssignmentUI
 	}
 
