@@ -1,4 +1,4 @@
-import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
+import { $, BFont, BGamepadButton, BrowserGameViewHost, World, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -7,7 +7,8 @@ const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) =
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
 	const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintWorldFSM' };
-	return $.init({ ...args, worldConfig }).then(() => {
+	const viewHost = BrowserGameViewHost.fromCanvasId('gamescreen');
+	return $.init({ ...args, worldConfig, viewHost }).then(() => {
 		// set input map previously done in do_one_time_game_init
 		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
 		$.view.default_font = new BFont(BitmapId);

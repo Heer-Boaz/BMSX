@@ -1,4 +1,5 @@
 import type { GPUBackend } from './pipeline_interfaces';
+import type { GameViewCanvas } from '../platform/gameview_host';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { WebGPUBackend } from './webgpu/webgpu_backend';
 
@@ -14,13 +15,13 @@ export interface BackendCreateResult {
  * otherwise falling back to WebGL2. The GameView stays backend-agnostic and
  * only receives the backend interface and the native context for helpers.
  */
-export async function createBackendForCanvasAsync(canvas: HTMLCanvasElement): Promise<BackendCreateResult> {
+export async function createBackendForSurfaceAsync(surface: GameViewCanvas): Promise<BackendCreateResult> {
 	// Try WebGPU first
 	if (WEBGPU_RENDERER_SUPPORT) {
 		try {
 			const nav: any = navigator;
-			if (nav && nav.gpu && typeof canvas.getContext === 'function') {
-				const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
+			if (nav && nav.gpu) {
+				const context = surface.requestWebGPUContext();
 				if (context) {
 					const adapter: GPUAdapter | null = await nav.gpu.requestAdapter();
 					if (adapter) {
@@ -44,7 +45,7 @@ export async function createBackendForCanvasAsync(canvas: HTMLCanvasElement): Pr
 	}
 
 	// Fallback to WebGL2
-	const gl = canvas.getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext | null;
+	const gl = surface.requestWebGL2Context({ alpha: true, antialias: false });
 	if (!gl) throw new Error('Failed to acquire WebGL2 context, cannot start the game :-(');
 	const backend = new WebGLBackend(gl);
 	console.info(WEBGPU_RENDERER_SUPPORT ? 'Browser doesn\'t support WebGPU, fallback to WebGL2-backend' : 'Forced using WebGL2-backend as the game engine doesn\'t support WebGPU yet');

@@ -6,10 +6,11 @@ import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
-import { createBackendForCanvasAsync } from "../render/backend/backend_selector";
+import { createBackendForSurfaceAsync } from "../render/backend/backend_selector";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { TextureManager } from "../render/texturemanager";
 import { GameView, renderGate } from "../render/gameview";
+import type { GameViewHost } from "../render/platform/gameview_host";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
@@ -42,6 +43,7 @@ export interface GameInitArgs {
 	worldConfig: WorldConfiguration;
 	sndcontext: AudioContext;
 	gainnode: GainNode;
+	viewHost: GameViewHost;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
 	/**
@@ -277,7 +279,10 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, ecsPipeline } = init;
+		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, ecsPipeline } = init;
+		if (!viewHost) {
+			throw new Error('Game view host not provided to game init!');
+		}
 		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
@@ -294,10 +299,10 @@ export class Game {
 		if (this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
-		const gview = new GameView(worldConfig.viewportSize);
+		const gview = new GameView(worldConfig.viewportSize, { host: viewHost });
 		// Initialize rendering backend + pipeline registry/manager (no global singletons)
 		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
-		const { backend, nativeCtx } = await createBackendForCanvasAsync(gview.canvas);
+		const { backend, nativeCtx } = await createBackendForSurfaceAsync(gview.surface);
 		gview.nativeCtx = nativeCtx;
 		gview.backend = backend; // Set the backend for the view before initializing
 		new TextureManager(backend);

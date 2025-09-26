@@ -17,6 +17,7 @@ import { RenderPassLibrary } from './backend/renderpasslib';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
+import type { GameViewHost, GameViewCanvas } from './platform/gameview_host';
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -122,6 +123,10 @@ export function generateAtlasName(atlasIndex: number): string {
 	return atlasName;
 }
 
+export interface GameViewDependencies {
+	host: GameViewHost;
+}
+
 /**
  * The `GameView` class is an abstract class that serves as the base for all views in the application.
  * It provides common functionality and properties that are shared across all views.
@@ -146,8 +151,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		Registry.instance.deregister(this);
 	}
 
-	public canvas: HTMLCanvasElement;
-	public context: CanvasRenderingContext2D;
+	public readonly host: GameViewHost;
+	public readonly surface: GameViewCanvas;
 	public static imgassets: id2imgres = {};
 	public accessor default_font: BFont;
 
@@ -288,15 +293,18 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 	}
 
-	constructor(viewportSize: vec2, canvasSize?: vec2) {
+	constructor(viewportSize: vec2, dependencies: GameViewDependencies, canvasSize?: vec2) {
+		if (!dependencies || !dependencies.host) {
+			throw new Error('[GameView] Missing GameViewHost dependency.');
+		}
+		if (!dependencies.host.surface) {
+			throw new Error('[GameView] GameViewHost did not provide a render surface.');
+		}
 		Registry.instance.register(this);
+		this.host = dependencies.host;
+		this.surface = this.host.surface;
 		this.viewportSize = shallowCopy(viewportSize) as vec2;
 		this.canvasSize = (shallowCopy(canvasSize) ?? multiply_vec2(viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
-		const canvasElement = document.getElementById('gamescreen');
-		if (!(canvasElement instanceof HTMLCanvasElement)) {
-			throw new Error('[GameView] Canvas element with id "gamescreen" not found or not a canvas.');
-		}
-		this.canvas = canvasElement;
 		// Offscreen resolution for internal render graph targets (view-agnostic)
 		this.offscreenCanvasSize = multiply_vec(viewportSize, 2);
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
@@ -304,8 +312,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public init(): void {
 		this.calculateSize();
-		this.canvas.width = this.canvasSize.x;
-		this.canvas.height = this.canvasSize.y;
+		this.surface.setRenderTargetSize(this.canvasSize.x, this.canvasSize.y);
 		this.handleResize();
 		this.listenToMediaEvents();
 		// Backend resources are configured externally via setBackend()
@@ -350,32 +357,52 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	 */
 	public calculateSize(): void {
 		const self = $.view || this;
+		const metrics = this.host.getViewportMetrics();
+		const documentWidth = metrics.document.width;
+		const documentHeight = metrics.document.height;
+		const innerWidth = metrics.windowInner.width;
+		const innerHeight = metrics.windowInner.height;
+		const screenWidth = metrics.screen.width;
+		const screenHeight = metrics.screen.height;
 
-		let w = Math.max(document.documentElement.clientWidth, window.innerWidth || screen.width);
-		let h = Math.max(document.documentElement.clientHeight, window.innerHeight || screen.height);
-
-		self.windowSize = { x: w, y: h };
-
-		// We need to respect the size of the onscreen gamepad, but only if the onscreen gamepad is visible and only in landscape mode
-		if (Input.instance.isOnscreenGamepadEnabled && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas') {
-			// Determine whether we are in landscape or portrait mode
-			const isLandscape = window.innerWidth > window.innerHeight;
-
-			if (isLandscape) {
-				const maxSvgScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
-				// Get the SVG element
-				const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
-				const actionbuttons_svg = document.querySelector<HTMLElement>('#action-buttons-svg');
-
-				const dpadWidth = parseInt(dpad_svg.getAttribute('width')!) * maxSvgScale;
-				const actionButtonsWidth = parseInt(actionbuttons_svg.getAttribute('width')!) * maxSvgScale;
-
-				// Calculate the maximum width of the windowSize based on the SVG elements
-				w -= dpadWidth + actionButtonsWidth;
-			}
+		const fallbackWidth = innerWidth > 0 ? innerWidth : screenWidth;
+		const fallbackHeight = innerHeight > 0 ? innerHeight : screenHeight;
+		let effectiveWidth = documentWidth;
+		let effectiveHeight = documentHeight;
+		if (fallbackWidth > effectiveWidth) {
+			effectiveWidth = fallbackWidth;
+		}
+		if (fallbackHeight > effectiveHeight) {
+			effectiveHeight = fallbackHeight;
 		}
 
-		self.availableWindowSize = { x: ~~w, y: ~~h };
+		const viewportWidth = innerWidth > 0 ? innerWidth : screenWidth;
+		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
+		const viewportIsLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
+
+		let adjustedWidth = effectiveWidth;
+		if (Input.instance.isOnscreenGamepadEnabled
+			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
+			&& viewportIsLandscape) {
+			const handles = this.host.getOnscreenGamepadHandles();
+			if (!handles) {
+				throw new Error('[GameView] Onscreen gamepad handles not available while calculating size.');
+			}
+			const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+			const maxSvgScale = referenceDimension * 0.20 / 100;
+			const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
+			const actionButtonsWidthAttr = handles.actionButtons.getNumericAttribute('width');
+			if (dpadWidthAttr === null || actionButtonsWidthAttr === null) {
+				throw new Error('[GameView] Onscreen gamepad width attributes missing.');
+			}
+			const dpadWidth = dpadWidthAttr * maxSvgScale;
+			const actionButtonsWidth = actionButtonsWidthAttr * maxSvgScale;
+			const reduction = dpadWidth + actionButtonsWidth;
+			adjustedWidth = Math.max(0, adjustedWidth - reduction);
+		}
+
+		self.windowSize = { x: adjustedWidth, y: effectiveHeight };
+		self.availableWindowSize = { x: ~~adjustedWidth, y: ~~effectiveHeight };
 		self.dx = self.availableWindowSize.x / self.viewportSize.x;
 		self.dy = self.availableWindowSize.y / self.viewportSize.y;
 		self.viewportScale = Math.min(self.dx, self.dy);
@@ -386,81 +413,79 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public handleResize(): void {
-		if (this.canvas.style.visibility === 'hidden') return;
-		// Determine whether we are in landscape or portrait mode
-		const isLandscape = window.innerWidth > window.innerHeight;
+		if (!this.surface.isVisible()) return;
 
-		let self = $.view || this;
+		const metrics = this.host.getViewportMetrics();
+		const innerWidth = metrics.windowInner.width;
+		const innerHeight = metrics.windowInner.height;
+		const screenWidth = metrics.screen.width;
+		const screenHeight = metrics.screen.height;
+		const viewportWidth = innerWidth > 0 ? innerWidth : screenWidth;
+		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
+		const isLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
+
+		const self = $.view || this;
 		self.calculateSize();
-		self.canvas.style.width = `${~~(self.canvasSize.x * self.canvasScale)}px`;
-		self.canvas.style.height = `${~~(self.canvasSize.y * self.canvasScale)}px`;
-		self.canvas.style.left = `${~~((self.windowSize.x - self.canvas.width * self.canvasScale) / 2)}px`;
-		let canvasTop: number;
-		if (isLandscape || !Input.instance.isOnscreenGamepadEnabled) {
-			canvasTop = ~~((self.windowSize.y - self.canvas.height * self.canvasScale) / 2);
-		}
-		else {
-			canvasTop = 0;
-		}
-		self.canvas.style.top = `${canvasTop}px`;
+		const displayWidth = ~~(self.canvasSize.x * self.canvasScale);
+		const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
+		const displayLeft = ~~((self.windowSize.x - self.canvasSize.x * self.canvasScale) / 2);
+		const displayTop = isLandscape || !Input.instance.isOnscreenGamepadEnabled
+			? ~~((self.windowSize.y - self.canvasSize.y * self.canvasScale) / 2)
+			: 0;
+
+		this.surface.setDisplaySize(displayWidth, displayHeight);
+		this.surface.setDisplayPosition(displayLeft, displayTop);
 
 		if (Input.instance.isOnscreenGamepadEnabled) {
-			// Get the SVG element
-			const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
-			const actionbuttons_svg = document.querySelector<HTMLElement>('#action-buttons-svg');
-			function updateBottomPosition(element: HTMLElement, isRightSide: boolean) {
+			const handles = this.host.getOnscreenGamepadHandles();
+			if (!handles) {
+				throw new Error('[GameView] Onscreen gamepad handles not available while handling resize.');
+			}
+			const { dpad, actionButtons } = handles;
+			const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+			const canvasRect = this.surface.measureDisplay();
+
+			const updateBottomPosition = (control: typeof dpad, isRightSide: boolean): void => {
+				const elementSize = control.measure();
 				let newBottom: number;
 				if (isLandscape) {
-					newBottom = (self.availableWindowSize.y - element.getBoundingClientRect().height) / 2;
+					newBottom = (self.availableWindowSize.y - elementSize.height) / 2;
+				} else if (isRightSide) {
+					newBottom = 0;
+				} else {
+					const rightSideHeight = actionButtons.measure().height;
+					newBottom = (rightSideHeight - elementSize.height) / 2;
 				}
-				else {
-					if (isRightSide) {
-						newBottom = 0;
-					}
-					else {
-						// Place the left side element such that it's middle is aligned with the middle of the right side element (actionbuttons_svg)
-						const rightside_height = actionbuttons_svg.getBoundingClientRect().height
-						const leftside_height = element.getBoundingClientRect().height;
-						newBottom = (rightside_height - leftside_height) / 2;
-					}
-				}
+				control.setBottom(newBottom);
+			};
 
-				// Apply the new bottom position
-				element.style.bottom = `${newBottom}`;
-			}
-
-			// Function to update the scale
-			// @ts-ignore
-			function updateScale(element: HTMLElement, isRightSide: boolean) {
-				// Calculate the new scale
-				let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
-
-				// If in landscape mode, limit the scale so that the SVG element does not overlap with the canvas
+			const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
+				let newScale = referenceDimension * 0.20 / 100;
 				if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
-					const canvasRect = self.canvas.getBoundingClientRect();
 					let maxSvgWidth: number;
 					if (isRightSide) {
-						maxSvgWidth = ~~(window.innerWidth - (canvasRect.left + canvasRect.width));
+						maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
 					} else {
 						maxSvgWidth = canvasRect.left;
 					}
-					const svgWidth = parseInt(element.getAttribute('width')!);
-					if (svgWidth * newScale > maxSvgWidth) {
-						newScale = maxSvgWidth / svgWidth;
+					if (maxSvgWidth < 0) {
+						maxSvgWidth = 0;
+					}
+					const widthAttr = control.getNumericAttribute('width');
+					if (widthAttr === null) {
+						throw new Error('[GameView] Onscreen gamepad control is missing width information while updating scale.');
+					}
+					if (widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
+						newScale = maxSvgWidth / widthAttr;
 					}
 				}
+				control.setScale(newScale);
+			};
 
-				// Apply the new scale
-				element.style.transform = `scale(${newScale})`;
-			}
-
-			// Update the scaling of the SVG elements
-			updateScale(dpad_svg!, false);
-			updateScale(actionbuttons_svg!, true);
-
-			// Update the bottom position of the SVG elements
-			updateBottomPosition(dpad_svg!, false);
-			updateBottomPosition(actionbuttons_svg!, true);
+			updateScale(dpad, false);
+			updateScale(actionButtons, true);
+			updateBottomPosition(dpad, false);
+			updateBottomPosition(actionButtons, true);
 		}
 	}
 
@@ -481,15 +506,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			view.handleResize.call(view);
 		}
 
-		window.addEventListener('resize', handleResizeHelper, false);
-		window.addEventListener('orientationchange', handleResizeHelper, false);
-		// https://stackoverflow.com/a/70719693
-		window.matchMedia('(display-mode: fullscreen)').addEventListener('change', ({ matches }) => {
-			if (matches) {
-				window['isFullScreen'] = true;
-			} else {
-				window['isFullScreen'] = false;
-			}
+		this.host.addWindowEventListener('resize', handleResizeHelper, false);
+		this.host.addWindowEventListener('orientationchange', handleResizeHelper, false);
+		this.host.addDisplayModeChangeListener(isFullscreen => {
+			this.host.updateFullscreenFlag(isFullscreen);
 		});
 	}
 
@@ -512,31 +532,30 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 	public toFullscreen(): void {
 		// https://zinoui.com/blog/javascript-fullscreen-api
-		window.addEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
+		this.host.addWindowEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
 	}
 
 	public get isFullscreen() {
-		return window['isFullScreen'] ?? false;
+		return this.host.getFullscreenFlag();
 	}
 
 	public static get fullscreenEnabled() {
-		return document.fullscreenEnabled || document.webkitFullscreenEnabled || document.webkitFullScreenEnabled || document.mozFullScreenEnabled;
+		const view = $.view;
+		if (!view) {
+			throw new Error('[GameView] View not available while checking fullscreen support.');
+		}
+		return view.host.fullscreenEnabled();
 	}
 
 	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
+		const view = $.view;
+		if (!view) {
+			throw new Error('[GameView] View not available while entering fullscreen.');
+		}
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				const elem: any = document.documentElement;
-				if (elem.requestFullscreen) {
-					await elem.requestFullscreen();
-				} else if (elem.mozRequestFullScreen) {
-					await elem.mozRequestFullScreen();
-				} else if (elem.webkitRequestFullScreen) {
-					elem.webkitRequestFullScreen();
-				} else if (elem.webkitRequestFullscreen) {
-					elem.webkitRequestFullscreen();
-				}
+				await view.host.requestFullscreen();
 			}
 			catch (error) {
 				console.error(error);
@@ -545,70 +564,53 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				$.paused = false;
 			}
 		}
-		window.removeEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
+		view.host.removeWindowEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
 	}
 
 	public ToWindowed(): void {
-		window.addEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
+		this.host.addWindowEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
 	}
 
 	public static async triggerWindowedOnFakeUserEvent(): Promise<void> {
+		const view = $.view;
+		if (!view) {
+			throw new Error('[GameView] View not available while exiting fullscreen.');
+		}
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				const doc: any = document;
-				if (doc.exitFullscreen) {
-					await doc.exitFullscreen();
-				} else if (doc.webkitExitFullscreen) {
-					doc.webkitExitFullscreen();
-				} else if (doc.mozExitFullScreen) {
-					doc.mozExitFullScreen();
-				}
+				await view.host.exitFullscreen();
 			}
 			catch (error) {
-				// !BUG: Heb een bug gezien waarbij dit voorkomt.
-				// Lijkt overeen te komen met het gebruik van de debugger-mogelijkheden van Boaz
+				// NOTE: Historical bug reports mentioned debugger interactions triggering failures here.
 				console.error(error);
 			}
 			finally {
 				$.paused = false;
 			}
 		}
-		window.removeEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
+		view.host.removeWindowEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
 	}
 
 
 	public showFadingOverlay(text: string) {
-		let pauseOverlay = document.getElementById('pause-overlay');
-		if (!pauseOverlay) {
-			pauseOverlay = document.createElement('div');
-			pauseOverlay.id = 'pause-overlay';
-			document.body.appendChild(pauseOverlay);
-		}
-		pauseOverlay.textContent = text;
-
-		// Remove the fade-out class to reset the animation
-		pauseOverlay.classList.remove('fade-out');
-
-		// Add the visible class to show the overlay by setting the opacity to 1
-		pauseOverlay.classList.add('visible');
+		const overlay = this.host.ensureOverlay('pause-overlay');
+		overlay.setText(text);
+		overlay.removeClass('fade-out');
+		overlay.addClass('visible');
 	}
 
 	public hideFadingOverlay() {
-		const pauseOverlay = document.getElementById('pause-overlay');
-		if (!(pauseOverlay instanceof HTMLElement)) {
+		const overlay = this.host.getOverlay('pause-overlay');
+		if (!overlay) {
 			throw new Error('[GameView] Pause overlay not found while attempting to hide it.');
 		}
-		// Add the fade-out class to start the animation
-		pauseOverlay.classList.add('fade-out');
-		// Remove the visible class to hide the overlay by setting the opacity to 0
-		pauseOverlay.classList.remove('visible');
-		// Force a reflow to restart the animation
-		void pauseOverlay.offsetWidth;
-
-		pauseOverlay.onanimationend = () => {
-			pauseOverlay.remove();
-		};
+		overlay.addClass('fade-out');
+		overlay.removeClass('visible');
+		overlay.forceReflow();
+		overlay.onAnimationEnd(() => {
+			overlay.remove();
+		});
 	}
 
 	public showPauseOverlay() {
@@ -732,12 +734,20 @@ export interface AtmosphereParams {
 }
 
 export function registerAtmosphereHotkeys(): void {
-	window.addEventListener('keydown', (e) => {
-		const view = $.view;
-		if (!view) {
+	const view = $.view;
+	if (!view) {
+		throw new Error('[GameView] No active view available while registering atmosphere hotkeys.');
+	}
+	const handler = (event: unknown) => {
+		if (!(event instanceof KeyboardEvent)) {
+			return;
+		}
+		const e = event;
+		const activeView = $.view;
+		if (!activeView) {
 			throw new Error('[GameView] No active view available while processing atmosphere hotkeys.');
 		}
-		const atmosphere = view.atmosphere;
+		const atmosphere = activeView.atmosphere;
 		if (!atmosphere) {
 			throw new Error('[GameView] Active view is missing atmosphere settings.');
 		}
@@ -758,7 +768,8 @@ export function registerAtmosphereHotkeys(): void {
 			}
 			console.info('Fog color gradient toggled');
 		}
-	});
+	};
+	view.host.addWindowEventListener('keydown', handler);
 }
 
 export type RenderSubmission = ({ type: 'img'; } & ImgRenderSubmission) | ({ type: 'mesh'; } & MeshRenderSubmission) | ({ type: 'particle'; } & ParticleRenderSubmission) | ({ type: 'poly'; } & PolyRenderSubmission) | ({ type: 'rect'; } & RectRenderSubmission) | ({ type: 'glyphs'; } & GlyphRenderSubmission);

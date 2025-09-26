@@ -1,4 +1,4 @@
-import { BFont, BootArgs, MSX1ScreenHeight, MSX1ScreenWidth, WorldConfiguration, $ } from 'bmsx';
+import { BFont, BootArgs, BrowserGameViewHost, MSX1ScreenHeight, MSX1ScreenWidth, WorldConfiguration, $ } from 'bmsx';
 import { EILA_MODULE } from './worldmodule';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
@@ -9,11 +9,13 @@ const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) =
 _global['h406A'] = (args: BootArgs): Promise<void> => {
 	// Use FSM id matching the registered blueprint (@build_fsm on EilaModelFSM.bouw()) so world state machine runs.
 	const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'EilaModelFSM', modules: [EILA_MODULE] };
+	const viewHost = BrowserGameViewHost.fromCanvasId('gamescreen');
 	return $.init({
 		rompack: args.rompack,
 		worldConfig: worldConfig,
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
+		viewHost,
 		debug: args.debug ?? false,
 		startingGamepadIndex: args.startingGamepadIndex ?? null
 	}).then(() => {

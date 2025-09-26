@@ -15,8 +15,8 @@ export function saveTextureToFile(): void {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, legacyFbo);
 
 	// 2. Read the pixels from the framebuffer into an array
-	const width = view.canvas.width;  // replace with the width of your texture
-	const height = view.canvas.height;  // replace with the height of your texture
+	const width = view.canvasSize.x;
+	const height = view.canvasSize.y;
 	const pixels = new Uint8Array(width * height * 4);
 	gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
