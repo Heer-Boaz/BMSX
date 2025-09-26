@@ -17,7 +17,7 @@ import { ControllerAssignmentUI } from './controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
-import type { DeviceKind, InputDevice, InputEvt } from '../core/platform';
+import type { DeviceKind, InputDevice, InputEvt, InputModifiers } from '../core/platform';
 import { Platform } from '../core/platform';
 
 /**
@@ -377,6 +377,8 @@ export class Input implements RegisterablePersistent {
 	private debugPointerSurface: HTMLElement | null = null;
 	private debugPointerInside = false;
 	private debugPointerLastOffset: { x: number; y: number } | null = null;
+	private debugPointerModifiers: InputModifiers = { ctrl: false, shift: false, alt: false };
+	private debugPointerButtonModifiers: { [button: number]: InputModifiers } = {};
 
 	private readonly handleSpaceChanged = (_event: string, _emitter: Identifiable, _payload?: unknown): void => {
 		for (const player of this.playerInputs) {
@@ -589,6 +591,8 @@ export class Input implements RegisterablePersistent {
 		this.debugPointerSurface = gamescreen;
 		this.debugPointerInside = false;
 		this.debugPointerLastOffset = null;
+		this.debugPointerModifiers = { ctrl: false, shift: false, alt: false };
+		this.debugPointerButtonModifiers = {};
 		this.debugHotkeysEnabled = true;
 	}
 
@@ -610,6 +614,8 @@ export class Input implements RegisterablePersistent {
 		this.debugPointerSurface = null;
 		this.debugPointerInside = false;
 		this.debugPointerLastOffset = null;
+		this.debugPointerModifiers = { ctrl: false, shift: false, alt: false };
+		this.debugPointerButtonModifiers = {};
 	}
 
 	public bind(): void {
@@ -655,6 +661,7 @@ export class Input implements RegisterablePersistent {
 			const handler = binding.handler as KeyboardInput;
 			if (evt.down) handler.keydown(evt.code); else handler.keyup(evt.code);
 		} else if (binding.source === 'pointer') {
+			this.applyPointerModifiers(evt.modifiers);
 			const handler = binding.handler as PointerInput;
 			handler.ingestButton(evt.code, makeButtonState({
 				pressed: evt.down,
@@ -675,6 +682,7 @@ export class Input implements RegisterablePersistent {
 
 	private routeAxis1(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'axis1' }>): void {
 		if (binding.source === 'pointer') {
+			this.applyPointerModifiers(evt.modifiers);
 			const handler = binding.handler as PointerInput;
 			handler.ingestAxis1(evt.code, evt.x, evt.timestamp);
 		}
@@ -682,6 +690,7 @@ export class Input implements RegisterablePersistent {
 
 	private routeAxis2(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'axis2' }>): void {
 		if (binding.source === 'pointer') {
+			this.applyPointerModifiers(evt.modifiers);
 			const handler = binding.handler as PointerInput;
 			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
 			return;
@@ -690,6 +699,15 @@ export class Input implements RegisterablePersistent {
 			const handler = binding.handler as GamepadInput;
 			handler.ingestAxis2(evt.code, evt.x, evt.y, evt.timestamp);
 		}
+	}
+
+	private applyPointerModifiers(modifiers: InputModifiers | undefined): void {
+		if (!modifiers) return;
+		this.debugPointerModifiers = {
+			ctrl: modifiers.ctrl === true,
+			shift: modifiers.shift === true,
+			alt: modifiers.alt === true,
+		};
 	}
 
 	private enqueueButtonEvent(playerIndex: number, code: string, type: 'press' | 'release', timestamp: number, pressId: number | null): void {
@@ -908,6 +926,7 @@ export class Input implements RegisterablePersistent {
 		if (!pointerHandler) return;
 		const surface = this.debugPointerSurface;
 		if (!surface) return;
+		const keyboardHandler = player.inputHandlers['keyboard'] as KeyboardInput | null;
 
 		const pointerPrimary = player.getButtonState('pointer_primary', 'pointer');
 		const pointerSecondary = player.getButtonState('pointer_secondary', 'pointer');
@@ -928,12 +947,45 @@ export class Input implements RegisterablePersistent {
 			offsetY = this.debugPointerLastOffset.y;
 		}
 
-		const ctrlKey = (player.getButtonState('ControlLeft', 'keyboard')?.pressed ?? false)
-			|| (player.getButtonState('ControlRight', 'keyboard')?.pressed ?? false);
-		const shiftKey = (player.getButtonState('ShiftLeft', 'keyboard')?.pressed ?? false)
-			|| (player.getButtonState('ShiftRight', 'keyboard')?.pressed ?? false);
-		const altKey = (player.getButtonState('AltLeft', 'keyboard')?.pressed ?? false)
-			|| (player.getButtonState('AltRight', 'keyboard')?.pressed ?? false);
+		let ctrlKey = this.debugPointerModifiers.ctrl === true;
+		let shiftKey = this.debugPointerModifiers.shift === true;
+		let altKey = this.debugPointerModifiers.alt === true;
+		if (!ctrlKey && keyboardHandler) {
+			const left = keyboardHandler.keyStates['ControlLeft'];
+			if (left && left.pressed) ctrlKey = true;
+			if (!ctrlKey) {
+				const right = keyboardHandler.keyStates['ControlRight'];
+				if (right && right.pressed) ctrlKey = true;
+			}
+			if (!ctrlKey) {
+				const generic = keyboardHandler.keyStates['Control'];
+				if (generic && generic.pressed) ctrlKey = true;
+			}
+		}
+		if (!shiftKey && keyboardHandler) {
+			const left = keyboardHandler.keyStates['ShiftLeft'];
+			if (left && left.pressed) shiftKey = true;
+			if (!shiftKey) {
+				const right = keyboardHandler.keyStates['ShiftRight'];
+				if (right && right.pressed) shiftKey = true;
+			}
+			if (!shiftKey) {
+				const generic = keyboardHandler.keyStates['Shift'];
+				if (generic && generic.pressed) shiftKey = true;
+			}
+		}
+		if (!altKey && keyboardHandler) {
+			const left = keyboardHandler.keyStates['AltLeft'];
+			if (left && left.pressed) altKey = true;
+			if (!altKey) {
+				const right = keyboardHandler.keyStates['AltRight'];
+				if (right && right.pressed) altKey = true;
+			}
+			if (!altKey) {
+				const generic = keyboardHandler.keyStates['Alt'];
+				if (generic && generic.pressed) altKey = true;
+			}
+		}
 		const buttonsMask = (pointerPrimary?.pressed ? 1 : 0)
 			| (pointerSecondary?.pressed ? 2 : 0)
 			| (pointerAux?.pressed ? 4 : 0);
@@ -941,58 +993,82 @@ export class Input implements RegisterablePersistent {
 		const clientY = pos2d?.[1] ?? (offsetY !== null ? rect.top + offsetY : rect.top);
 		const movement = pointerDelta?.value2d ?? null;
 
-		const createEvent = (button: number): DebugPointerEvent => ({
-			button,
-			buttons: buttonsMask,
-			ctrlKey,
-			shiftKey,
-			altKey,
-			metaKey: false,
-			clientX,
-			clientY,
-			offsetX: offsetX ?? 0,
-			offsetY: offsetY ?? 0,
-			movementX: movement?.[0] ?? 0,
-			movementY: movement?.[1] ?? 0,
-			preventDefault() { /* noop */ },
-			stopPropagation() { /* noop */ },
-			stopImmediatePropagation() { /* noop */ },
-		});
+		const createEvent = (button: number, usePressSnapshot: boolean): DebugPointerEvent => {
+			let eventCtrl = ctrlKey;
+			let eventShift = shiftKey;
+			let eventAlt = altKey;
+			if (usePressSnapshot) {
+				const stored = this.debugPointerButtonModifiers[button];
+				if (stored) {
+					if (stored.ctrl) eventCtrl = true;
+					if (stored.shift) eventShift = true;
+					if (stored.alt) eventAlt = true;
+				}
+			}
+			return {
+				button,
+				buttons: buttonsMask,
+				ctrlKey: eventCtrl,
+				shiftKey: eventShift,
+				altKey: eventAlt,
+				metaKey: false,
+				clientX,
+				clientY,
+				offsetX: offsetX ?? 0,
+				offsetY: offsetY ?? 0,
+				movementX: movement?.[0] ?? 0,
+				movementY: movement?.[1] ?? 0,
+				preventDefault() { /* noop */ },
+				stopPropagation() { /* noop */ },
+				stopImmediatePropagation() { /* noop */ },
+			};
+		};
 
 		const inside = !!(pos2d && pos2d[0] >= rect.left && pos2d[0] <= rect.right && pos2d[1] >= rect.top && pos2d[1] <= rect.bottom);
 		const allowMotion = inside || buttonsMask !== 0;
 
 		if (!inside && this.debugPointerInside) {
-			handleDebugMouseOut(createEvent(0));
+			handleDebugMouseOut(createEvent(0, false));
 		}
 		this.debugPointerInside = inside;
 
 		if (pointerPrimary?.justpressed && inside) {
-			handleDebugMouseDown(createEvent(0));
+			this.debugPointerButtonModifiers[0] = { ctrl: ctrlKey, shift: shiftKey, alt: altKey };
+			handleDebugMouseDown(createEvent(0, false));
 		}
 		if (pointerAux?.justpressed && inside) {
-			handleDebugMouseDown(createEvent(1));
+			this.debugPointerButtonModifiers[1] = { ctrl: ctrlKey, shift: shiftKey, alt: altKey };
+			handleDebugMouseDown(createEvent(1, false));
 		}
 		if (pointerSecondary?.justpressed && inside) {
-			handleDebugMouseDown(createEvent(2));
-			handleDebugContextMenu(createEvent(2));
+			this.debugPointerButtonModifiers[2] = { ctrl: ctrlKey, shift: shiftKey, alt: altKey };
+			const secondaryDownEvent = createEvent(2, false);
+			handleDebugMouseDown(secondaryDownEvent);
+			handleDebugContextMenu(secondaryDownEvent);
 		}
 
 		if (movement && allowMotion) {
-			handleDebugMouseMove(createEvent(0));
+			handleDebugMouseMove(createEvent(0, false));
 		}
 
 		if (pointerPrimary?.justreleased) {
-			handleDebugMouseUp(createEvent(0));
-			if (inside && pointerPrimary.waspressed) {
-				handleDebugClick(createEvent(0));
+			const primaryUpEvent = createEvent(0, true);
+			handleDebugMouseUp(primaryUpEvent);
+			const hadPrimaryPressSnapshot = this.debugPointerButtonModifiers[0] !== undefined;
+			if (inside && hadPrimaryPressSnapshot) { // Capture stored press info because pointer polling happens after debug handlers
+				handleDebugClick(primaryUpEvent);
 			}
+			delete this.debugPointerButtonModifiers[0];
 		}
 		if (pointerAux?.justreleased) {
-			handleDebugMouseUp(createEvent(1));
+			const auxUpEvent = createEvent(1, true);
+			handleDebugMouseUp(auxUpEvent);
+			delete this.debugPointerButtonModifiers[1];
 		}
 		if (pointerSecondary?.justreleased) {
-			handleDebugMouseUp(createEvent(2));
+			const secondaryUpEvent = createEvent(2, true);
+			handleDebugMouseUp(secondaryUpEvent);
+			delete this.debugPointerButtonModifiers[2];
 		}
 	}
 

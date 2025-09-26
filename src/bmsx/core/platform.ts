@@ -10,12 +10,18 @@ export type DeviceKind = 'keyboard' | 'gamepad' | 'pointer' | 'touch' | 'virtual
 
 export interface VibrationParams { effect: 'dual-rumble'; duration: number; intensity: number; }
 
+export interface InputModifiers {
+  ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+}
+
 export type InputEvt =
-	| { type: 'button'; deviceId: string; code: string; down: boolean; value: number; timestamp: MonoTime; pressId: number | null }
-	| { type: 'axis1'; deviceId: string; code: string; x: number; timestamp: MonoTime }
-	| { type: 'axis2'; deviceId: string; code: string; x: number; y: number; timestamp: MonoTime }
-	| { type: 'connect'; device: InputDevice; timestamp: MonoTime }
-	| { type: 'disconnect'; deviceId: string; timestamp: MonoTime };
+  | { type: 'button'; deviceId: string; code: string; down: boolean; value: number; timestamp: MonoTime; pressId: number | null; modifiers?: InputModifiers }
+  | { type: 'axis1'; deviceId: string; code: string; x: number; timestamp: MonoTime; modifiers?: InputModifiers }
+  | { type: 'axis2'; deviceId: string; code: string; x: number; y: number; timestamp: MonoTime; modifiers?: InputModifiers }
+  | { type: 'connect'; device: InputDevice; timestamp: MonoTime }
+  | { type: 'disconnect'; deviceId: string; timestamp: MonoTime };
 
 export interface InputDevice {
 	id: string;

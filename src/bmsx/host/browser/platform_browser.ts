@@ -10,6 +10,7 @@ import {
 	DeviceKind,
 	VibrationParams,
 	PlatformServices,
+	InputModifiers,
 } from '../../core/platform';
 
 class BrowserClock implements Clock {
@@ -223,6 +224,14 @@ function mapButton(index: number): string {
 	return 'touch';
 }
 
+function modifiersFrom(event: MouseEvent | PointerEvent | WheelEvent): InputModifiers {
+	return {
+		ctrl: event.ctrlKey === true,
+		shift: event.shiftKey === true,
+		alt: event.altKey === true,
+	};
+}
+
 
 class BrowserInputHub implements InputHub {
   private subs = new Set<(e: InputEvt) => void>();
@@ -304,8 +313,9 @@ class BrowserInputHub implements InputHub {
       try { target.setPointerCapture(event.pointerId); } catch { /* ignore */ }
     }
     const now = this.clock.now();
-    this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: true, value: 1, timestamp: now, pressId: null });
-    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now });
+    const modifiers = modifiersFrom(event);
+    this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: true, value: 1, timestamp: now, pressId: null, modifiers });
+    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
   };
 
   private onPointerUp = (event: PointerEvent) => {
@@ -317,8 +327,9 @@ class BrowserInputHub implements InputHub {
       try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
     }
     const now = this.clock.now();
-    this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null });
-    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now });
+    const modifiers = modifiersFrom(event);
+    this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
+    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
   };
 
   private onPointerMove = (event: PointerEvent) => {
@@ -326,7 +337,8 @@ class BrowserInputHub implements InputHub {
       event.preventDefault();
     }
     const now = this.clock.now();
-    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now });
+    const modifiers = modifiersFrom(event);
+    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
   };
 
 	private onWheel = (event: WheelEvent) => {
@@ -334,7 +346,8 @@ class BrowserInputHub implements InputHub {
 		event.stopPropagation();
 		event.stopImmediatePropagation();
 		const now = this.clock.now();
-		this.post({ type: 'axis1', deviceId: 'pointer:0', code: 'pointer_wheel', x: event.deltaY, timestamp: now });
+		const modifiers = modifiersFrom(event);
+		this.post({ type: 'axis1', deviceId: 'pointer:0', code: 'pointer_wheel', x: event.deltaY, timestamp: now, modifiers });
 	};
 
 	private onContextMenu = (event: MouseEvent) => {
@@ -352,13 +365,15 @@ class BrowserInputHub implements InputHub {
       try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
     }
     const now = this.clock.now();
-    this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null });
-    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now });
+    const modifiers = modifiersFrom(event);
+    this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
+    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
   };
 
   private onPointerLeave = (event: PointerEvent) => {
     const now = this.clock.now();
-    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now });
+    const modifiers = modifiersFrom(event);
+    this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
   };
 
 	private onGamepadConnected = (event: GamepadEvent) => {
