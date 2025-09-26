@@ -37,7 +37,8 @@ export class AbilitySystemComponent extends Component {
 
 	private assertExplicitTagMutationAllowed(op: 'add' | 'remove', tag: TagId): void {
 		const phase = $.world.currentPhase;
-		if (phase === null) throw new Error(`Gameplay tag '${tag}' ${op} denied: not in a world tick.`);
+		// Allow mutations while the world is constructing objects (no active phase yet)
+		if (phase === null) return;
 		if (phase === TickGroup.AbilityUpdate || phase === TickGroup.ModeResolution) return;
 		const phaseName = TickGroup[phase] ?? `${phase}`;
 		throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only AbilityUpdate (Phase 2) or ModeResolution (Phase 3) may mutate gameplay tags.`);

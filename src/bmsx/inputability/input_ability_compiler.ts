@@ -147,19 +147,19 @@ function compileCustomEffects(binding: Binding): Map<string, EffectExecutor | un
 }
 
 function compileEffectList(spec: Effect | Effect[] | undefined, slot?: string): EffectExecutor | undefined {
-    if (!spec) return undefined;
-    const entries = Array.isArray(spec) ? spec : [spec];
-    const executors: EffectExecutor[] = [];
-    for (let i = 0; i < entries.length; i++) {
-        executors.push(compileEffect(entries[i]!, slot));
-    }
-    if (executors.length === 0) throw new Error(`Empty effect list in slot '${slot ?? 'unknown'}'.`);
-    if (executors.length === 1) return executors[0];
-    return (ctx: EvalContext) => {
-        for (let i = 0; i < executors.length; i++) {
-            executors[i](ctx);
-        }
-    };
+	if (!spec) return undefined;
+	const entries = Array.isArray(spec) ? spec : [spec];
+	const executors: EffectExecutor[] = [];
+	for (let i = 0; i < entries.length; i++) {
+		executors.push(compileEffect(entries[i]!, slot));
+	}
+	if (executors.length === 0) throw new Error(`Empty effect list in slot '${slot ?? 'unknown'}'.`);
+	if (executors.length === 1) return executors[0];
+	return (ctx: EvalContext) => {
+		for (let i = 0; i < executors.length; i++) {
+			executors[i](ctx);
+		}
+	};
 }
 
 function compileEffect(effect: Effect, slot?: string): EffectExecutor {
