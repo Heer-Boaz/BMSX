@@ -62,7 +62,7 @@ export class InputAbilitySystem extends ECSystem {
 				GameplayCommandBuffer.instance.push({ kind: 'dispatchEvent', target_id: obj.id, event, emitter_id: ownerId, payload });
 			};
 			ctx.onAbilityRequestFailed = (id, reason) => {
-				console.debug('[InputAbilitySystem] ability request failed', { ownerId, playerIndex, abilityId: id, reason });
+				console.warn('[InputAbilitySystem] ability request failed', { ownerId, playerIndex, abilityId: id, reason });
 			};
 			ctx.requestAbility = (id, opts) => {
 				const res = asc.requestAbility(id, opts ?? {});

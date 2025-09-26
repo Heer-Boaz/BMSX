@@ -37,10 +37,10 @@ export class AbilitySystemComponent extends Component {
 
 	private assertExplicitTagMutationAllowed(op: 'add' | 'remove', tag: TagId): void {
 		const phase = $.world.currentPhase;
-		if (phase !== null && phase !== TickGroup.ModeResolution) {
-			const phaseName = TickGroup[phase] ?? `${phase}`;
-			throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only ModeGraph (Phase 4) may mutate gameplay tags.`);
-		}
+		if (phase === null) throw new Error(`Gameplay tag '${tag}' ${op} denied: not in a world tick.`);
+		if (phase === TickGroup.AbilityUpdate || phase === TickGroup.ModeResolution) return;
+		const phaseName = TickGroup[phase] ?? `${phase}`;
+		throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only AbilityUpdate (Phase 2) or ModeResolution (Phase 3) may mutate gameplay tags.`);
 	}
 
 	// Reference counts for effect-granted tags
