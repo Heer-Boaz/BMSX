@@ -668,27 +668,17 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public get dynamicAtlas(): number | null { return this._dynamicAtlasIndex; }
 	public set dynamicAtlas(index: number | null) {
 		if (this._dynamicAtlasIndex === index) return;
-		const previousHandle = this.textures['_atlas_dynamic'] as TextureHandle | null;
 		this.textures['_atlas_dynamic'] = null;
 		this._dynamicAtlasIndex = index;
-		if (previousHandle && this.backend) this.backend.destroyTexture(previousHandle);
 		if (index == null) { this.activeTexUnit = 1; this.bind2DTex(null); return; }
 		const atlasName = generateAtlasName(index);
 		const atlas = GameView.imgassets[atlasName];
 		if (!atlas) {
 			throw new Error(`[GameView] Dynamic atlas '${atlasName}' not found.`);
 		}
-		const loader = Platform.instance.textureLoader;
-		void (async () => {
-			const bytes = await atlas.imgbin;
-			const source = await loader.fromBytes(bytes);
-			const handle = this.backend.createTexture(source, {});
-			if (source.kind === 'external') source.image.close();
-			this.textures['_atlas_dynamic'] = handle;
-		})().catch(err => {
-			console.error(`[GameView] Failed to load dynamic atlas '${atlasName}'.`, err);
-		});
+		this.textures['_atlas_dynamic'] = this.backend.createTexture(atlas._imgbin as ImageBitmap, {});
 	}
+
 
 	// Texture binding helpers
 	get activeTexUnit(): number | null {
