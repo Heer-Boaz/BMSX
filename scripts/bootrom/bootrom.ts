@@ -104,7 +104,9 @@ export const bootrom = {
 			element.parentElement!.removeChild(element);
 		};
 
-		bootrom.enableOnscreenGamepad ??= false; // Default to false if not set yet, but allow true if set to true before usr() is called (via awaitPressedAnyKeyPromise)
+		if (bootrom.enableOnscreenGamepad !== true) {
+			bootrom.enableOnscreenGamepad = shouldEnableOnscreenGamepad();
+		}
 
 		const wrapup = () => {
 			(document.querySelector('#loading') as HTMLElement).hidden = true;
@@ -425,6 +427,15 @@ function setLoaderText(txt: string) {
 function setClassForLoader(cls: string) {
 	const loading = <HTMLElement>document.querySelector('#loading');
 	loading.className = cls;
+}
+
+function shouldEnableOnscreenGamepad(): boolean {
+	const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+	const hasTouch = typeof nav?.maxTouchPoints === 'number' && nav.maxTouchPoints > 0;
+	const coarsePointer = typeof window !== 'undefined'
+		&& typeof window.matchMedia === 'function'
+		&& window.matchMedia('(pointer: coarse)').matches;
+	return hasTouch || coarsePointer;
 }
 
 

@@ -77,16 +77,6 @@ export class PhysicsWorld implements RegisterablePersistent {
 	enablePostSolveStaticSeparation = true;
 	// World default linear damping (per second fraction removed). Each body can override.
 	defaultLinearDamping = 0.0;
-	// Debug
-	logFirstFramesContacts = true;
-	private _debugFrameCounter = 0;
-	private hudElement?: HTMLElement;
-	private hudParent?: HTMLElement;
-	private hudLastUpdate = 0;
-	private maxBodyId = 0;
-	private compactCheckCounter = 0;
-	hudAutoHide = true;
-	private hudCollapsed = false;
 
 	constructor(opts: PhysicsWorldOptions = {}) {
 		// Coordinate system clarification: Y+ is up. Gravity defaults to pulling downward (negative Y).
@@ -141,12 +131,20 @@ export class PhysicsWorld implements RegisterablePersistent {
 		this.pairInfo.clear();
 	}
 
+	addGizmo(drawer: (world: PhysicsWorld) => void): void {
+		if (this.gizmoDrawers.includes(drawer)) return;
+		this.gizmoDrawers.push(drawer);
+	}
+
+	removeGizmo(drawer: (world: PhysicsWorld) => void): void {
+		const idx = this.gizmoDrawers.indexOf(drawer);
+		if (idx >= 0) this.gizmoDrawers.splice(idx, 1);
+	}
+
 	addBody(desc: PhysicsBodyDesc): PhysicsBody {
 		const b = new PhysicsBody({ desc });
 		this.bodies.push(b);
 		this.broadphase.addBody(b);
-		if (b.id > this.maxBodyId) this.maxBodyId = b.id;
-		// console.log('[PhysicsDebug] Added body:', b.id, 'type:', b.type, 'invMass:', b.invMass, 'shape:', b.shape.kind, 'position:', b.position, 'layer:', b.layer, 'mask:', b.mask);
 		return b;
 	}
 
@@ -154,12 +152,6 @@ export class PhysicsWorld implements RegisterablePersistent {
 		const idx = this.bodies.indexOf(body);
 		if (idx >= 0) this.bodies.splice(idx, 1);
 		this.broadphase.removeBody(body);
-		if (++this.compactCheckCounter % 120 === 0) { // every ~2s at 60fps
-			if (this.maxBodyId > this.bodies.length * 4) {
-				this.resetPairTracking();
-				this.maxBodyId = 0; for (const b2 of this.bodies) if (b2.id > this.maxBodyId) this.maxBodyId = b2.id;
-			}
-		}
 	}
 
 	applyForce(body: PhysicsBody, fx: number, fy: number, fz: number) {
@@ -325,11 +317,8 @@ export class PhysicsWorld implements RegisterablePersistent {
 		} else {
 			for (const b of this.bodies) {
 				if (!b.asleep) {
-					const vx = b.velocity.x, vy = b.velocity.y, vz = b.velocity.z;
 					// Mark all bodies dirty for first few frames to ensure correct AABB setup
-					if (this._debugFrameCounter < 10 || (vx * vx + vy * vy + vz * vz) > this.movementEpsilon) {
-						this.broadphase.markDirty(b);
-					}
+					this.broadphase.markDirty(b);
 				}
 			}
 			this.broadphase.update();
@@ -464,23 +453,6 @@ export class PhysicsWorld implements RegisterablePersistent {
 				if (this.broadphase.yzPruneThreshold !== undefined) {
 					if (ratio > 0.85) this.broadphase.yzPruneThreshold = 1e9; else this.broadphase.yzPruneThreshold = 0;
 				}
-			}
-		}
-		if (this.logFirstFramesContacts && this._debugFrameCounter < 10) {
-			// console.log('[PhysDbg]', 'frame', this._debugFrameCounter, 'pairs', this.pairs.length, 'contacts', this.contacts.length);
-			if (this.contacts.length) {
-				// const sample = this.contacts[0];
-				// console.log('[PhysDbg] sample contact', { pen: sample.penetration, normal: sample.normal, a: sample.a.id, b: sample.b.id });
-			}
-			this._debugFrameCounter++;
-		}
-		if (this.hudElement && (Platform.instance.clock.now() - this.hudLastUpdate) > 100) {
-			this.hudLastUpdate = Platform.instance.clock.now();
-			const m = this.metrics;
-			if (!this.hudCollapsed) {
-				this.hudElement.textContent = `Physics\nframe ${m.frameMs.toFixed(2)} ms\nint ${m.phase.integrate.toFixed(2)} | broad ${m.phase.broadphase.toFixed(2)} | nar ${m.phase.narrow.toFixed(2)} | sol ${m.phase.solve.toFixed(2)} | evt ${m.phase.events.toFixed(2)} | ccd ${m.phase.ccd.toFixed(2)}\nPairs ${m.pairs} tests ${m.narrowTests} contacts ${m.contacts} solved ${m.solvedContacts}\nSleeping ${m.sleeping} moveEps ${this.movementEpsilon.toExponential(2)}`;
-			} else {
-				this.hudElement.textContent = 'Physics (hover)';
 			}
 		}
 	}
@@ -715,44 +687,4 @@ export class PhysicsWorld implements RegisterablePersistent {
 			body.position.x = nx; body.position.y = ny; body.position.z = nz;
 		}
 	}
-
-	/** Register a per-frame gizmo drawer (used by PhysicsDebugComponent). */
-	addGizmo(drawer: (world: PhysicsWorld) => void) { this.gizmoDrawers.push(drawer); }
-	/** Deregister a previously added gizmo drawer. */
-	removeGizmo(drawer: (world: PhysicsWorld) => void) { const i = this.gizmoDrawers.indexOf(drawer); if (i >= 0) this.gizmoDrawers.splice(i, 1); }
-
-	/** Attach an on-screen HUD with lightweight perf metrics (manual opt-in). */
-	enableMetricsHUD(parent: HTMLElement = document.body) {
-		if (this.hudElement) return;
-		this.enableMetrics = true;
-		this.hudParent = parent;
-		const el = document.createElement('pre');
-		el.style.position = 'fixed'; el.style.left = '4px'; el.style.top = '4px';
-		el.style.padding = '4px 6px'; el.style.background = 'rgba(0,0,0,0.5)'; el.style.color = '#0f8';
-		el.style.font = '12px monospace'; el.style.zIndex = '9999'; el.style.pointerEvents = 'none';
-		parent.appendChild(el); this.hudElement = el;
-		if (this.hudAutoHide) {
-			el.style.pointerEvents = 'auto';
-			el.style.cursor = 'default';
-			el.onmouseenter = () => { this.hudCollapsed = false; };
-			el.onmouseleave = () => { this.hudCollapsed = true; };
-			this.hudCollapsed = true; // start collapsed
-		}
-	}
-
-	/** Remove the on-screen physics HUD. */
-	disableMetricsHUD() { if (this.hudElement && this.hudParent) { this.hudParent.removeChild(this.hudElement); } this.hudElement = undefined; }
-
-	private resetPairTracking() {
-		this.previousFramePairs.clear();
-		this.pairInfo.clear();
-	}
-
-	// Runtime debug toggles
-	setDebugOptions(opts: { logFirstFramesContacts?: boolean }) {
-		if (opts.logFirstFramesContacts !== undefined) this.logFirstFramesContacts = opts.logFirstFramesContacts;
-	}
-
-	/** Toggle HUD auto-collapse behavior. */
-	setHUDAutoHide(on: boolean) { this.hudAutoHide = on; if (!on && this.hudElement) { this.hudCollapsed = false; } }
 }

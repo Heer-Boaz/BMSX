@@ -361,7 +361,7 @@ export class Game {
 		new PhysicsWorld().bind();
 
 		if (this.debug) {
-			Input.instance.enableDebugMode(); // Do this after the world is initialized to prevent race conditions
+			Input.instance.enableDebugMode(gview.surface); // Do this after the world is initialized to prevent race conditions
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode

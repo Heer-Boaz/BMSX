@@ -1,4 +1,4 @@
-import { $, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, build_fsm, type StateMachineBlueprint, type RevivableObjectArgs, onload } from 'bmsx';
+import { $, Platform, attach_components, CatmullRomPath, color_arr, WorldObject, Identifier, insavegame, TextureHandle, TextureKey, TransformComponent, V3, vec3arr, build_fsm, type StateMachineBlueprint, type RevivableObjectArgs, onload } from 'bmsx';
 import { MeshComponent } from 'bmsx';
 import { BitmapId, ModelId } from './resourceids';
 
@@ -101,7 +101,11 @@ export class SparkEmitter extends WorldObject {
 		super(opts);
 		this.parent_id = opts.parent_id;
 		// Request spark texture from Texture Manager
-		this.textureKey = $.texmanager.acquireTexture(this.id, () => $.rompack.img[BitmapId.joystick1].imgbinYFlipped, undefined);
+		const loader = Platform.instance.textureLoader;
+		this.textureKey = $.texmanager.acquireTexture(this.id, async () => {
+			const bytes = await $.rompack.img[BitmapId.joystick1].imgbinYFlipped;
+			return loader.fromBytes(bytes);
+		}, {});
 		// Producer: submit particles for each spark
 		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {
 			for (const s of this.sparks) rc.submitParticle({ position: s.pos, size: .5, color: s.color, texture: s.texture });

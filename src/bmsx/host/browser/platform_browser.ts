@@ -17,6 +17,8 @@ import {
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
 } from '../../core/platform';
+import type { TextureSourceLoader } from '../../render/texturesource';
+import { WebTextureSourceLoader } from './web_texture_loader';
 
 class BrowserClock implements Clock {
 	now(): number {
@@ -634,6 +636,7 @@ export class BrowserPlatformServices implements PlatformServices {
 	storage: StorageService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;
+	textureLoader: TextureSourceLoader;
 
 	constructor(surface: HTMLElement) {
 		this.clock = new BrowserClock();
@@ -655,6 +658,7 @@ export class BrowserPlatformServices implements PlatformServices {
 		} else {
 			this.hid = new UnsupportedHID();
 		}
+		this.textureLoader = new WebTextureSourceLoader();
 	}
 }
 export const options: EventListenerOptions & { passive: boolean; once: boolean; } = {

@@ -129,7 +129,7 @@ export class TextureManager implements RegisterablePersistent {
 			key,
 			async () => {
 				const bmp = await loadBitmapFn();
-				const h = this.backend!.createTextureFromImage(bmp, desc);
+				const h = this.backend!.createTexture(bmp, desc);
 				if ('close' in bmp) bmp.close();
 				return h;
 			},
@@ -168,7 +168,7 @@ export class TextureManager implements RegisterablePersistent {
 			key,
 			async () => {
 				const bmp = await loadBitmapFn();
-				const real = this.backend!.createTextureFromImage(bmp, desc);
+				const real = this.backend!.createTexture(bmp, desc);
 				if ('close' in bmp) bmp.close();
 				return real;
 			},
@@ -270,7 +270,7 @@ export class TextureManager implements RegisterablePersistent {
 
 				const faces = await Promise.all(promises) as
 					[ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
-				return this.backend!.createCubemapFromImages(faces, desc);
+				return this.backend!.createCubemapFromSources(faces, desc);
 			}, assetBarrier, `cubemap:${name}`);
 		} else {
 			this.launchCubemapReplacement(key, async () => {

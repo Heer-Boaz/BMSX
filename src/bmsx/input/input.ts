@@ -19,6 +19,7 @@ import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
 import type { DeviceKind, InputDevice, InputEvt, InputModifiers } from '../core/platform';
 import { Platform } from '../core/platform';
+import type { GameViewCanvas } from '../render/platform/gameview_host';
 
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.
@@ -369,7 +370,7 @@ export class Input implements RegisterablePersistent {
 	private uiControllerSpawned = false;
 
 	private debugHotkeysEnabled = false;
-	private debugPointerSurface: HTMLElement | null = null;
+	private debugPointerSurface: GameViewCanvas | null = null;
 	private debugPointerInside = false;
 	private debugPointerLastOffset: { x: number; y: number } | null = null;
 	private debugPointerModifiers: InputModifiers = { ctrl: false, shift: false, alt: false };
@@ -409,7 +410,7 @@ export class Input implements RegisterablePersistent {
 	/**
 	 * Hides the specified buttons.
 	 * @param gamepad_button_ids An array of button names to hide.
-	 * @throws Error if no HTML element is found matching a button name in the array of buttons.
+	 * @throws Error if no element is found matching a button name in the array of buttons.
 	 */
 	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
 		OnscreenGamepad.hideButtons(gamepad_button_ids);
@@ -581,12 +582,8 @@ export class Input implements RegisterablePersistent {
 	 * Enables the debug mode for the game screen.
 	 * Attaches event listeners to the game screen element to handle debug events.
 	 */
-	public enableDebugMode(): void {
-		const gamescreen = document.getElementById('gamescreen');
-		if (!(gamescreen instanceof HTMLElement)) {
-			throw new Error('[Input] Unable to enable debug mode: #gamescreen element not found.');
-		}
-		this.debugPointerSurface = gamescreen;
+	public enableDebugMode(surface: GameViewCanvas): void {
+		this.debugPointerSurface = surface;
 		this.debugPointerInside = false;
 		this.debugPointerLastOffset = null;
 		this.debugPointerModifiers = { ctrl: false, shift: false, alt: false };
@@ -932,7 +929,9 @@ export class Input implements RegisterablePersistent {
 		const pointerDelta = player.getButtonState('pointer_delta', 'pointer');
 		const pointerPosition = pointerHandler.getButtonState('pointer_position');
 
-		const rect = surface.getBoundingClientRect();
+		const rect = surface.measureDisplay();
+		const rectRight = rect.left + rect.width;
+		const rectBottom = rect.top + rect.height;
 		const pos2d = pointerPosition?.value2d ?? null;
 		let offsetX: number | null = null;
 		let offsetY: number | null = null;
@@ -1022,7 +1021,7 @@ export class Input implements RegisterablePersistent {
 			};
 		};
 
-		const inside = !!(pos2d && pos2d[0] >= rect.left && pos2d[0] <= rect.right && pos2d[1] >= rect.top && pos2d[1] <= rect.bottom);
+		const inside = !!(pos2d && pos2d[0] >= rect.left && pos2d[0] <= rectRight && pos2d[1] >= rect.top && pos2d[1] <= rectBottom);
 		const allowMotion = inside || buttonsMask !== 0;
 
 		if (!inside && this.debugPointerInside) {

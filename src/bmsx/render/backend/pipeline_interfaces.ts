@@ -1,5 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, type vec2 } from '../../rompack/rompack';
+import type { TextureSource } from '../texturesource';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { WebGPUBackend } from './webgpu/webgpu_backend';
 
@@ -124,12 +125,12 @@ export interface GPUBackend {
 	bindTexture2D?(tex: TextureHandle | null): void;
 	bindTextureCube?(tex: TextureHandle | null): void;
 
-	createTextureFromImage(img: ImageBitmap, desc: TextureParams): TextureHandle;
+	createTexture(src: TextureSource, desc: TextureParams): TextureHandle;
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
-	createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): TextureHandle;
+	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
 	createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle;
 	createCubemapEmpty(size: number, desc: TextureParams): TextureHandle;
-	uploadCubemapFace(cubemap: TextureHandle, face: number, img: ImageBitmap): void;
+	uploadCubemapFace(cubemap: TextureHandle, face: number, src: TextureSource): void;
 	destroyTexture(handle: TextureHandle): void;
 	createColorTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;
 	createDepthTexture(desc: { width: number; height: number; format?: TextureFormat }): TextureHandle;

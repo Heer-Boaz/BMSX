@@ -1,3 +1,5 @@
+import type { TextureSourceLoader } from '../render/texturesource';
+
 export type MonoTime = number;
 
 export interface Clock { now(): MonoTime; }
@@ -100,6 +102,7 @@ export interface PlatformServices {
 	storage: StorageService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;
+	textureLoader: TextureSourceLoader;
 }
 
 export class Platform {

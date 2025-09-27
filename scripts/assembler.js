@@ -7,6 +7,8 @@ const DATA_BYTES_PER_LINE_DECIMAL = 32;
 const DATA_BYTES_PER_LINE_HEX = 64;
 const DATA_BYTES_PER_LINE_BASE64 = 32;
 const DEFAULT_DATA_FORMAT = 'dec';
+const SEGMENT_START_MARKER = 256;
+const SEGMENT_END_MARKER = 257;
 
 /**
  * An array of 8-bit register names used in the assembler.
@@ -96,7 +98,7 @@ const validMnemonic = ['LD', 'INC', 'DEC', 'ADD', 'SUB', 'CP', 'AND', 'OR', 'XOR
  *
  * @type {RegExp}
  */
-const regex = /([A-Za-z_][A-Za-z0-9_]*:)|([A-Za-z_][A-Za-z0-9_]*\b)|(\$?[#]?[0-9A-Fa-f]+[Hh]?|\'.\'|\".*?\"|\d+)|([,\(\)])|(\S)/g;
+const regex = /([A-Za-z_][A-Za-z0-9_]*:)|([A-Za-z_][A-Za-z0-9_]*)|((?:0x|&H|#|\$)[0-9A-Fa-f]+|[0-9A-Fa-f]+[Hh]|%[01]+|[01]+[Bb]|\d+)|(\".*?\"|'.')|([,\(\)\+\-\*/])|(\S)/g;
 // Define ANSI escape codes for colors
 const colors = {
 	reset: "\x1b[0m",
@@ -116,6 +118,8 @@ const colors = {
  * @type {Object.<string, any>}
  */
 const symbolTable = {};
+let entryLabel = null;
+let entryAddress = null;
 
 /**
  * A mapping of assembly instructions to their corresponding opcodes and operands.
@@ -664,6 +668,11 @@ function handleDirective(instruction, locationCounter, lineNumber, line) {
 		} else {
 			throw new Error(`Line ${lineNumber}: Missing value for ORG directive\n"${line}"`);
 		}
+	} else if (directive === 'END') {
+		if (operands && operands.length > 0 && operands[0]) {
+			entryLabel = operands[0];
+			entryAddress = evaluateExpression(operands[0], lineNumber, line);
+		}
 	}
 	return locationCounter;
 }
@@ -727,6 +736,12 @@ function evaluateExpression(expr, lineNumber, line) {
 	expr = expr.replace(/([0-9A-Fa-f]+)[Hh]/g, (match, p1) => {
 		return parseInt(p1, 16);
 		return `0x${p1}`;
+	});
+	expr = expr.replace(/%([01]+)/g, (match, p1) => {
+		return parseInt(p1, 2);
+	});
+	expr = expr.replace(/([01]+)[Bb]/g, (match, p1) => {
+		return parseInt(p1, 2);
 	});
 
 	// Recognize registers and replace them with their values
@@ -1312,7 +1327,10 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 function assemble(assemblyCode, options = {}) {
 	const { filePath = 'input' } = options;
 	const lines = assemblyCode.split('\n');
+	entryLabel = null;
+	entryAddress = null;
 	let locationCounter = 0;
+	let loadAddressStart = null;
 	const instructions = [];
 	const errors = [];
 
@@ -1345,6 +1363,11 @@ function assemble(assemblyCode, options = {}) {
 						}
 					}
 					instruction.size = size;
+					if (size > 0) {
+						if (loadAddressStart === null || locationCounter < loadAddressStart) {
+							loadAddressStart = locationCounter;
+						}
+					}
 					instructions.push({ ...instruction, locationCounter, lineNumber, line });
 					locationCounter += size;
 				} else {
@@ -1400,6 +1423,11 @@ function assemble(assemblyCode, options = {}) {
 				} else {
 					instruction.size = opcodeTemplate.length;
 				}
+				if (instruction.size > 0) {
+					if (loadAddressStart === null || locationCounter < loadAddressStart) {
+						loadAddressStart = locationCounter;
+					}
+				}
 				instructions.push({ ...instruction, locationCounter, lineNumber, line });
 				locationCounter += instruction.size;
 			}
@@ -1409,19 +1437,39 @@ function assemble(assemblyCode, options = {}) {
 	}
 
 	const machineCode = [];
+	const segments = [];
+	let currentSegment = null;
 	for (const instr of instructions) {
 		try {
 			const opcodeBytes = encodeInstruction(instr, instr.locationCounter, instr.lineNumber, instr.line);
 			instr.bytes = opcodeBytes;
 			machineCode.push(...opcodeBytes);
+			if (opcodeBytes.length > 0) {
+				const start = instr.locationCounter;
+				const expectedNextAddress = currentSegment ? currentSegment.start + currentSegment.bytes.length : null;
+				if (!currentSegment || start !== expectedNextAddress) {
+					currentSegment = { start, bytes: [] };
+					segments.push(currentSegment);
+				}
+				currentSegment.bytes.push(...opcodeBytes);
+			}
 		} catch (error) {
 			errors.push(createErrorRecord(filePath, instr.lineNumber, instr.line, error));
 		}
 	}
 
+	if (segments.length > 0) {
+		const firstSegmentStart = segments.reduce((min, seg) => Math.min(min, seg.start), segments[0].start);
+		loadAddressStart = loadAddressStart === null ? firstSegmentStart : Math.min(loadAddressStart, firstSegmentStart);
+	}
+
 	return {
 		machineCode: errors.length === 0 ? machineCode : [],
-		errors
+		errors,
+		entryLabel,
+		entryAddress,
+		loadAddressStart,
+		segments: errors.length === 0 ? segments : []
 	};
 }
 
@@ -1447,34 +1495,56 @@ function getDataBytesPerLine(dataFormat) {
  * @constant {number} DATA_LINE_NUMBER_START - The starting line number for the data statements.
  * @constant {number} DATA_LINE_NUMBER_INCREMENT - The increment for the line numbers.
  */
-function generateDataStatements(machineCode, dataFormat) {
+function generateDataStatements(segments, dataFormat) {
+	segments = Array.isArray(segments) ? segments : [];
 	let dataLines = [];
 	let lineNumber = DATA_LINE_NUMBER_START;
 	let dataBytesPerLine = getDataBytesPerLine(dataFormat);
 
-	if (machineCode.length > 0xFFFF) {
-		throw new Error('Machine code exceeds maximum supported length of 65535 bytes for loader');
+	let totalLength = 0;
+	for (const segment of segments) {
+		if (!segment || !Array.isArray(segment.bytes) || segment.bytes.length === 0) {
+			continue;
+		}
+		const { start, bytes } = segment;
+		if (start < 0 || start > 0xFFFF) {
+			throw new Error(`Segment start address out of range: ${start}`);
+		}
+		if (bytes.length > 0xFFFF) {
+			throw new Error('Segment length exceeds maximum supported length of 65535 bytes for loader');
+		}
+		totalLength += bytes.length;
+		dataLines.push(`${lineNumber} DATA ${SEGMENT_START_MARKER},${start},${bytes.length}`);
+		lineNumber += DATA_LINE_NUMBER_INCREMENT;
+		for (let i = 0; i < bytes.length; i += dataBytesPerLine) {
+			const chunk = bytes.slice(i, i + dataBytesPerLine);
+			switch (dataFormat) {
+				case 'hex': {
+					const hexBytes = chunk.map(byte => `${byte.toString(16).toUpperCase().padStart(2, '0')}`).join('');
+					dataLines.push(`${lineNumber} DATA "${hexBytes}"`);
+					break;
+				}
+				case 'dec': {
+					const decBytes = chunk.join(',');
+					dataLines.push(`${lineNumber} DATA ${decBytes}`);
+					break;
+				}
+				case 'b64': {
+					const base64Bytes = Buffer.from(chunk).toString('base64');
+					dataLines.push(`${lineNumber} DATA "${base64Bytes}"`);
+					break;
+				}
+				default:
+					throw new Error(`Invalid data format for BASIC statements: ${dataFormat}`);
+			}
+			lineNumber += DATA_LINE_NUMBER_INCREMENT;
+		}
 	}
 
-	for (let i = 0; i < machineCode.length; i += dataBytesPerLine) {
-		const bytes = machineCode.slice(i, i + dataBytesPerLine);
-		switch (dataFormat) {
-			case 'hex':
-				const hexBytes = bytes.map(byte => `${byte.toString(16).toUpperCase().padStart(2, '0')}`).join('');
-				dataLines.push(`${lineNumber} DATA "${hexBytes}"`);
-				break;
-			case 'dec':
-				const decBytes = bytes.join(',');
-				dataLines.push(`${lineNumber} DATA ${decBytes}`);
-				break;
-			case 'b64':
-				const base64Bytes = Buffer.from(bytes).toString('base64');
-				dataLines.push(`${lineNumber} DATA "${base64Bytes}"`);
-				break;
-			default:
-				throw new Error(`Invalid data format for BASIC statements: ${dataFormat}`);
-		}
-		lineNumber += DATA_LINE_NUMBER_INCREMENT;
+	dataLines.push(`${lineNumber} DATA ${SEGMENT_END_MARKER}`);
+
+	if (totalLength > 0xFFFF) {
+		throw new Error('Machine code exceeds maximum supported length of 65535 bytes for loader');
 	}
 
 	return dataLines;
@@ -1486,35 +1556,71 @@ function generateDataStatements(machineCode, dataFormat) {
  * @param {number} datalineCount - The number of data lines to be included in the boilerplate.
  * @returns {string} The generated boilerplate code as a string.
  */
-function generateBoilerPlate(datalineCount, dataFormat) {
+function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddress, entryLabel) {
 	let dataBytesPerLine = getDataBytesPerLine(dataFormat);
-	const toDecBoilerPlate = `1040 READA:POKED,A:D=D+1:IFDMOD${dataBytesPerLine}=0THEN?".";
-1050 IFA<>201GOTO1040ELSEIFDMOD${dataBytesPerLine}<>0THEN?".";`;
-	const toHexBoilerPlate = `1040 READA$:FORI=1TOLEN(A$)STEP2:B$=MID$(A$,I,2):POKED,VAL("&H"+B$):D=D+1:NEXT:?".";:IFB$<>"C9"GOTO1040`
-	const toBase64BoilerPlate = `1040 DIM B$(63)
-1041 B$ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-1042 ' Read the Base64-encoded DATA
-1043 A = D
-1044 READ B64$
-1045 FOR I = 1 TO LEN(B64$) STEP 4
-1046  C1$ = MID$(B64$, I, 1)
-1047  C2$ = MID$(B64$, I + 1, 1)
-1048  C3$ = MID$(B64$, I + 2, 1)
-1049   C4$ = MID$(B64$, I + 3, 1)
-1050   B1 = INSTR(B$, C1$) - 1
-1051   B2 = INSTR(B$, C2$) - 1
-1052   B3 = INSTR(B$, C3$) - 1
-1053   B4 = INSTR(B$, C4$) - 1
-1054   Y1 = (B1 * 4) + (B2 \\ 16)
-1055   Y2 = ((B2 AND 15) * 16) + (B3 \\ 4)
-1056   Y3 = ((B3 AND 3) * 64) + B4
-1057   POKE A, Y1
-1058   A = A + 1
-1059   IF C3$ <> "=" THEN POKE A, Y2: A = A + 1
-1060   IF C4$ <> "=" THEN POKE A, Y3: A = A + 1
-1061 NEXT: ? ".";:READ B64$: IF B64$<>"!" GOTO 1045
-20000 DATA "!"
-`
+	const toDecBoilerPlate = [
+		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
+		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
+		`1060 READ D,L:T=L`,
+		`1070 FOR I=1 TO L`,
+		`1080  READ A:POKE D,A:D=D+1`,
+		`1090  B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
+		`1100 NEXT I`,
+		`1110 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
+		`1120 GOTO 1040`
+	].join('\n');
+
+	const toHexBoilerPlate = [
+		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
+		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
+		`1060 READ D,L:T=L`,
+		`1070 IF L=0 THEN 1180`,
+		`1080 READ A$:I=1`,
+		`1090 IF I>LEN(A$) THEN 1080`,
+		`1100 IF L=0 THEN 1180`,
+		`1110 B$=MID$(A$,I,2)`,
+		`1120 POKE D,VAL("&H"+B$)`,
+		`1130 D=D+1:L=L-1:B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
+		`1140 I=I+2`,
+		`1150 IF I<=LEN(A$) THEN 1100`,
+		`1160 GOTO 1070`,
+		`1180 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
+		`1190 GOTO 1040`
+	].join('\n');
+
+	const toBase64BoilerPlate = [
+		`1040 DIM B$(63)`,
+		`1041 B$="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"`,
+		`1042 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
+		`1043 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
+		`1044 READ D,L:T=L`,
+		`1045 IF L=0 THEN 1085`,
+		`1046 READ B64$:I=1`,
+		`1047 IF LEN(B64$)=0 THEN 1046`,
+		`1048 IF L=0 THEN 1085`,
+		`1049 C1$=MID$(B64$,I,1)`,
+		`1050 C2$=MID$(B64$,I+1,1)`,
+		`1051 C3$=MID$(B64$,I+2,1)`,
+		`1052 C4$=MID$(B64$,I+3,1)`,
+		`1053 B1=INSTR(B$,C1$)-1`,
+		`1054 B2=INSTR(B$,C2$)-1`,
+		`1055 B3=INSTR(B$,C3$)-1`,
+		`1056 B4=INSTR(B$,C4$)-1`,
+		`1057 Y=(B1*4)+(B2\\16):GOSUB 1900`,
+		`1058 IF L=0 THEN 1085`,
+		`1059 IF C3$<>"=" THEN Y=((B2 AND 15)*16)+(B3\\4):GOSUB 1900`,
+		`1060 IF L=0 THEN 1085`,
+		`1061 IF C4$<>"=" THEN Y=((B3 AND 3)*64)+B4:GOSUB 1900`,
+		`1062 I=I+4`,
+		`1063 IF I<=LEN(B64$) THEN 1048`,
+		`1064 GOTO 1045`,
+		`1085 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
+		`1090 GOTO 1042`,
+		`1900 IF L<=0 THEN RETURN`,
+		`1910 POKE D,Y:D=D+1:L=L-1:B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
+		`1920 RETURN`
+	].join('\n');
+
 	let dataFormatSpecificBoilerPlate;
 	switch (dataFormat) {
 		case 'hex':
@@ -1530,14 +1636,24 @@ function generateBoilerPlate(datalineCount, dataFormat) {
 			throw new Error(`Invalid data format for BASIC statements: ${dataFormat}`);
 	}
 
+	const formatHexWord = value => {
+		const numeric = Number(value) >>> 0;
+		return numeric.toString(16).toUpperCase().padStart(4, '0');
+	};
+
+	const loadAddressHex = formatHexWord(loadAddress ?? 0);
+	const entryAddressHex = formatHexWord(entryAddress ?? loadAddress ?? 0);
+	const entryComment = entryLabel ? ` (${entryLabel})` : '';
+
 	return `1000 ' Put program to memory
-1010 DEFINTA-Z:D=&HD000
+1010 DEFINTA-Z:D=&H${loadAddressHex}
+1015 B=0
 1020 ?"Laderen:":?"[";:LOCATE${datalineCount + 1}:?"]";:LOCATE1
 ${dataFormatSpecificBoilerPlate}
-1100 ?""
+1200 ?""
 2000 ' Run da program!!
 2010 ?"Ik heb de boel geladen, nu starten we de boel! Klaar?"
-2020 DEFUSR=&HD000' This defines USR() start address
+2020 DEFUSR=&H${entryAddressHex}' This defines USR() start address${entryComment}
 2030 ?"KABOEMMMM!!!"
 2040 X=USR(0)`
 }
@@ -1619,7 +1735,14 @@ function main() {
 		return;
 	}
 
-	const { machineCode, errors } = assemble(assemblyCode, { filePath: assemblyFilePath });
+	const {
+		machineCode,
+		errors,
+		entryLabel: assembledEntryLabel,
+		entryAddress: assembledEntryAddress,
+		loadAddressStart,
+		segments
+	} = assemble(assemblyCode, { filePath: assemblyFilePath });
 
 	if (errors.length > 0) {
 		printErrors(errors);
@@ -1629,16 +1752,25 @@ function main() {
 
 	let dataStatements;
 	try {
-		dataStatements = generateDataStatements(machineCode, dataFormat);
+		dataStatements = generateDataStatements(segments, dataFormat);
 	} catch (error) {
 		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
 		process.exitCode = 1;
 		return;
 	}
 
+	const loadAddress = loadAddressStart ?? (segments && segments.length > 0 ? segments[0].start : 0);
+	const entryPointAddress = assembledEntryAddress ?? loadAddress;
+
 	let boilerPlate;
 	try {
-		boilerPlate = generateBoilerPlate(dataStatements.length, dataFormat);
+		boilerPlate = generateBoilerPlate(
+			dataStatements.length,
+			dataFormat,
+			loadAddress,
+			entryPointAddress,
+			assembledEntryLabel
+		);
 	} catch (error) {
 		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
 		process.exitCode = 1;

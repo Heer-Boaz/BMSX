@@ -33,7 +33,7 @@ export class WebGPUBackend implements GPUBackend {
 		this._bytesUploaded += bytes;
 	}
 
-	createTextureFromImage(img: ImageBitmap, _desc: TextureParams): TextureHandle {
+	createTexture(img: ImageBitmap, _desc: TextureParams): TextureHandle {
 		// Use defaults since properties not in TextureParams
 		const texture = this.device.createTexture({
 			size: { width: img.width, height: img.height, depthOrArrayLayers: 1 },
@@ -77,7 +77,7 @@ export class WebGPUBackend implements GPUBackend {
 		return texture;
 	}
 
-	createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], _desc: TextureParams): TextureHandle {
+	createCubemapFromSources(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], _desc: TextureParams): TextureHandle {
 		if (faces.length !== 6 || !faces.every(f => f.width === faces[0].width && f.height === faces[0].height)) {
 			throw new Error('All cubemap faces must be the same square size');
 		}

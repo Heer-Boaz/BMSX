@@ -81,7 +81,6 @@ interface CRTOptionsCarrier {
 	// CRT/post-processing options exposed by the view
 	applyNoise: boolean; applyColorBleed: boolean; applyScanlines: boolean; applyBlur: boolean; applyGlow: boolean; applyFringing: boolean;
 	noiseIntensity: number; colorBleed: [number, number, number]; blurIntensity: number; glowColor: [number, number, number];
-	canvas: HTMLCanvasElement;
 }
 export function buildFrameData(view: { offscreenCanvasSize: { x: number; y: number } } & Partial<CRTOptionsCarrier>): FrameData {
 	const mainCam = $.world.activeCamera3D as Camera | undefined;

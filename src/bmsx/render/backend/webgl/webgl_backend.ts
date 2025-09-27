@@ -42,7 +42,7 @@ export class WebGLBackend implements GPUBackend {
 		// No internal manager; caller creates PipelineManager with this backend
 	}
 	// (Static helpers have moved to core/gl_resources.ts; existing external usages should import from there.)
-	createTextureFromImage(img: ImageBitmap, desc: TextureParams): WebGLTexture { const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null); this.frameStats.bytesUploaded += img.width * img.height * 4; this.frameStats.textureBytes += img.width * img.height * 4; return t; }
+	createTexture(img: ImageBitmap, desc: TextureParams): WebGLTexture { const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null); this.frameStats.bytesUploaded += img.width * img.height * 4; this.frameStats.textureBytes += img.width * img.height * 4; return t; }
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {
 		const gl = this.gl;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);
@@ -68,7 +68,7 @@ export class WebGLBackend implements GPUBackend {
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		return tex;
 	}
-	createCubemapFromImages(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): WebGLTexture {
+	createCubemapFromSources(faces: readonly [ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap], desc: TextureParams): WebGLTexture {
 		const gl = this.gl;
 		// Avoid global state; use local binding if possible, but for simplicity keep as is (refactor later if needed)
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);

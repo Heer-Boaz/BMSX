@@ -1,6 +1,7 @@
 ﻿import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
+import { Platform } from '../core/platform';
 import type { Mesh } from './3d/mesh';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
@@ -633,13 +634,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		}
 		return this._backend;
 	}
-	public initializeDefaultTextures(): void {
+	public async initializeDefaultTextures(): Promise<void> {
 		const atlas = GameView.imgassets['_atlas'];
 		if (!atlas) {
 			throw new Error("[GameView] Default atlas '_atlas' missing while initializing textures.");
 		}
 		const atlasImage = atlas._imgbin;
-		this.textures['_atlas'] = this.backend.createTextureFromImage(atlasImage, {});
+		this.textures['_atlas'] = this.backend.createTexture(atlasImage, {});
 		this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Default material textures for meshes
 		this.textures['_default_albedo'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
@@ -667,15 +668,26 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public get dynamicAtlas(): number | null { return this._dynamicAtlasIndex; }
 	public set dynamicAtlas(index: number | null) {
 		if (this._dynamicAtlasIndex === index) return;
+		const previousHandle = this.textures['_atlas_dynamic'] as TextureHandle | null;
 		this.textures['_atlas_dynamic'] = null;
 		this._dynamicAtlasIndex = index;
+		if (previousHandle && this.backend) this.backend.destroyTexture(previousHandle);
 		if (index == null) { this.activeTexUnit = 1; this.bind2DTex(null); return; }
 		const atlasName = generateAtlasName(index);
 		const atlas = GameView.imgassets[atlasName];
 		if (!atlas) {
 			throw new Error(`[GameView] Dynamic atlas '${atlasName}' not found.`);
 		}
-		this.textures['_atlas_dynamic'] = this.backend.createTextureFromImage(atlas._imgbin as ImageBitmap, {});
+		const loader = Platform.instance.textureLoader;
+		void (async () => {
+			const bytes = await atlas.imgbin;
+			const source = await loader.fromBytes(bytes);
+			const handle = this.backend.createTexture(source, {});
+			if (source.kind === 'external') source.image.close();
+			this.textures['_atlas_dynamic'] = handle;
+		})().catch(err => {
+			console.error(`[GameView] Failed to load dynamic atlas '${atlasName}'.`, err);
+		});
 	}
 
 	// Texture binding helpers
