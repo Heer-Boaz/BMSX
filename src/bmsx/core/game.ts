@@ -27,10 +27,14 @@ import { DefaultECSPipelineRegistry as ECSReg } from "../ecs/pipeline";
 import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { gameplaySpec } from "./pipelines/gameplay";
+import { headlessSpec } from "./pipelines/headless";
+import { editorSpec } from "./pipelines/editor";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
 // No direct space helpers needed here; Spaces are revived as part of the world.
 import { Platform, PlatformServices } from '../core/platform';
 import { EngineInputBridge } from '../input/input_bus_wire';
+import type { GameProfileSelection, GameProfile } from './gameprofile';
+import { resolveGameProfile } from './gameprofile';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -43,9 +47,9 @@ export var $debug: boolean;
 export interface GameInitArgs {
 	rompack: RomPack;
 	worldConfig: WorldConfiguration;
-	sndcontext: AudioContext;
-	gainnode: GainNode;
-	viewHost: GameViewHost;
+	sndcontext?: AudioContext;
+	gainnode?: GainNode;
+	viewHost?: GameViewHost;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
 	enableOnscreenGamepad?: boolean;
@@ -54,6 +58,7 @@ export interface GameInitArgs {
 	 */
 	ecsPipeline?: NodeSpec[] | 'gameplay' | 'headless' | 'editor';
 	platformServices?: PlatformServices;
+	profile?: GameProfileSelection;
 }
 
 const GAME_FPS = 50;
@@ -64,6 +69,27 @@ const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
+
+type PipelineProfileId = 'gameplay' | 'headless' | 'editor';
+
+function cloneSpec(spec: NodeSpec[]): NodeSpec[] {
+	const cloned: NodeSpec[] = [];
+	for (let i = 0; i < spec.length; i++) cloned.push({ ...spec[i] });
+	return cloned;
+}
+
+function pipelineSpecFor(id: PipelineProfileId): NodeSpec[] {
+	switch (id) {
+		case 'gameplay':
+			return cloneSpec(gameplaySpec());
+		case 'headless':
+			return cloneSpec(headlessSpec());
+		case 'editor':
+			return cloneSpec(editorSpec());
+		default:
+			throw new Error(`[Game] Unknown pipeline profile '${id}'.`);
+	}
+}
 
 /**
  * Represents the main game loop and manages the game state.
@@ -109,6 +135,9 @@ export class Game {
 	 */
 	private frameLoopHandle: { stop(): void } | null = null;
 	private inputBridge: EngineInputBridge | null = null;
+	private viewRef: GameView | null = null;
+	private initialViewportSize: vec2 = { x: 256, y: 192 };
+	public profile!: GameProfile;
 	/**
 	 * Indicates whether the game is currently running.
 	 */
@@ -125,14 +154,14 @@ export class Game {
 		this._paused = value;
 		if (this._paused === true) {
 			this.sndmaster.pause();
-			this.view.showPauseOverlay();
+			if (this.viewRef !== null) this.viewRef.showPauseOverlay();
 			if (this.debug) {
 				// Show debug information
 				gamePaused();
 			}
 		}
 		else if (this._paused === false) {
-			this.view.showResumeOverlay();
+			if (this.viewRef !== null) this.viewRef.showResumeOverlay();
 			gameResumed();
 			this.sndmaster.resume();
 		}
@@ -159,14 +188,21 @@ export class Game {
 	 * Multiple calls within the same frame are coalesced.
 	 */
 	public requestPausedFrame(): void {
-		if (this._paused) this._pausedOneShotRenderPending = true;
+		if (this._paused && this.viewRef !== null) this._pausedOneShotRenderPending = true;
 	}
 
 	public get rompack(): RomPack { return $rompack!; }
 
 	public get world(): World { return this.registry.get<World>('world')!; }
 
-	public get view(): GameView { return this.registry.get<GameView>('view'); }
+	public get view(): GameView {
+		if (this.viewRef === null) {
+			throw new Error(`[Game] View not available for profile '${this.profile.id}'.`);
+		}
+		return this.viewRef;
+	}
+
+	public get hasView(): boolean { return this.viewRef !== null; }
 
 	public get aem(): AudioEventManager { return AudioEventManager.instance!; }
 
@@ -262,7 +298,8 @@ export class Game {
 	}
 
 	public get viewportSize(): vec2 {
-		return this.view.viewportSize!;
+		if (this.viewRef !== null) return this.viewRef.viewportSize;
+		return this.initialViewportSize;
 	}
 
 	private rewindBuffer: RewindBuffer;
@@ -273,6 +310,7 @@ export class Game {
 	 */
 	constructor() {
 		this.initialized = false;
+		this.profile = resolveGameProfile('gameplay');
 	}
 
 	/**
@@ -285,22 +323,27 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platformServices } = init;
+		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platformServices, profile: profileSelection } = init;
 		if (platformServices) {
 			Platform.initialize(platformServices);
 		}
 		if (!Platform.isInitialized) {
 			throw new Error('[Game] Platform services not provided. Call Platform.initialize() before Game.init(), or pass platformServices in GameInitArgs.');
 		}
-		if (!viewHost) {
-			throw new Error('Game view host not provided to game init!');
-		}
+		this.profile = resolveGameProfile(profileSelection ?? this.profile);
 		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
 		this.updateInterval = 1000 / this.targetFPS;
 		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
+
+		const configuredViewport = worldConfig.viewportSize;
+		if (configuredViewport) {
+			this.initialViewportSize = { x: configuredViewport.x, y: configuredViewport.y };
+		} else {
+			this.initialViewportSize = { x: 256, y: 192 };
+		}
 
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
@@ -314,19 +357,30 @@ export class Game {
 		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
-		const gview = new GameView(worldConfig.viewportSize, { host: viewHost });
-		// Initialize rendering backend + pipeline registry/manager (no global singletons)
-		// Acquire WebGL2 context and backend; in future this can branch for WebGPU
-		const { backend, nativeCtx } = await createBackendForSurfaceAsync(gview.surface);
-		gview.nativeCtx = nativeCtx;
-		gview.backend = backend; // Set the backend for the view before initializing
-		new TextureManager(backend);
-		const pipelineRegistry = new RenderPassLibrary(backend);
-		pipelineRegistry.registerBuiltin(gview.backend); // We first need to register the built-in passes before calling view.init
-		// Store on view for graph rebuild
-		gview.pipelineRegistry = pipelineRegistry; // Register the pipeline registry with the view before initializing
-		gview.init(); // Init the view. Placed here to ensure that the world object is available to the view and that the Input module is initialized
-		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
+
+		let gview: GameView | null = null;
+		if (viewHost) {
+			gview = new GameView(this.initialViewportSize, { host: viewHost });
+			this.viewRef = gview;
+			const backendResult = await createBackendForSurfaceAsync(gview.surface);
+			gview.nativeCtx = backendResult.nativeCtx;
+			gview.backend = backendResult.backend;
+			new TextureManager(backendResult.backend);
+			const pipelineRegistry = new RenderPassLibrary(backendResult.backend);
+			pipelineRegistry.registerBuiltin(gview.backend);
+			gview.pipelineRegistry = pipelineRegistry;
+			gview.init();
+			gview.initializeDefaultTextures();
+		} else {
+			this.viewRef = null;
+		}
+		if (this.profile.requireView && this.viewRef === null) {
+			throw new Error(`[Game] Profile '${this.profile.id}' requires a GameViewHost.`);
+		}
+		if (this.viewRef === null) {
+			new TextureManager(undefined);
+		}
+
 		const modulationResolver: ModulationPresetResolver = {
 			resolve: (key: asset_id) => {
 				if (key === undefined || key === null) return undefined;
@@ -360,11 +414,13 @@ export class Game {
 				return undefined;
 			},
 		};
-		await SoundMaster.instance.init(rompack.audio, sndcontext, GameOptions.volumePercentage, gainnode, modulationResolver);
-		try {
-			await PSG.init(sndcontext, GameOptions.volumePercentage, gainnode);
-		} catch (error) {
-			console.error("Failed to initialize PSG:", error);
+		await SoundMaster.instance.init(rompack.audio, GameOptions.volumePercentage, modulationResolver);
+		if (sndcontext) {
+			try {
+				await PSG.init(sndcontext, GameOptions.volumePercentage, gainnode);
+			} catch (error) {
+				console.error("Failed to initialize PSG:", error);
+			}
 		}
 		AudioEventManager.instance.init(rompack.audioevents, null);
 
@@ -377,10 +433,13 @@ export class Game {
 		// Initialize world (spaces, FSM/BT libraries, modules onBoot)
 		$.world.init_on_boot();
 		// Compose pipeline spec from profile/custom and module extensions
+		const pipelineProfile = Array.isArray(ecsPipeline)
+			? 'custom'
+			: (ecsPipeline ?? this.profile.defaultPipeline);
 		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
 			? ecsPipeline
-			: gameplaySpec();
-		const extensions = collectEcsPipelineExtensions({ world: $.world, profile: (Array.isArray(ecsPipeline) ? 'custom' : (ecsPipeline ?? 'gameplay')), registry: ECSReg });
+			: pipelineSpecFor(pipelineProfile as PipelineProfileId);
+		const extensions = collectEcsPipelineExtensions({ world: $.world, profile: pipelineProfile, registry: ECSReg });
 		const finalSpec = baseSpec.concat(extensions);
 		const diag = ECSReg.build($.world, finalSpec);
 		if (diag.cyclesDetected) {
@@ -394,7 +453,9 @@ export class Game {
 		new PhysicsWorld().bind();
 
 		if (this.debug) {
-			Input.instance.enableDebugMode(gview.surface); // Do this after the world is initialized to prevent race conditions
+			if (this.viewRef !== null) {
+				Input.instance.enableDebugMode(this.viewRef.surface); // Do this after the world is initialized to prevent race conditions
+			}
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode
@@ -478,9 +539,9 @@ export class Game {
 
 		if (this._paused) {
 			this.accumulatedTime = 0;
-			if (this._pausedOneShotRenderPending) {
+			if (this._pausedOneShotRenderPending && this.viewRef !== null) {
 				this._pausedOneShotRenderPending = false;
-				this.view.drawgame();
+				this.viewRef.drawgame();
 			}
 			return;
 		}
@@ -502,8 +563,8 @@ export class Game {
 			++steps;
 		}
 
-		if (this.wasupdated) {
-			this.view.drawgame();
+		if (this.wasupdated && this.viewRef !== null) {
+			this.viewRef.drawgame();
 		}
 	}
 
@@ -524,7 +585,7 @@ export class Game {
 		const platform = Platform.instance;
 		const handle = platform.frames.start(() => {
 			handle.stop();
-			this.view.handleResize.call(this.view);
+			if (this.viewRef !== null) this.viewRef.handleResize();
 			this.sndmaster.stopEffect();
 			this.sndmaster.stopMusic();
 		});
@@ -580,7 +641,7 @@ export class Game {
 			this.registry.clear();
 			// Purge textures and reset view
 			this.texmanager.clear();
-			this.view.reset();
+			if (this.viewRef !== null) this.viewRef.reset();
 
 			const sg = Reviver.deserialize(buf) as Savegame;
 			// Apply plain world props back to world

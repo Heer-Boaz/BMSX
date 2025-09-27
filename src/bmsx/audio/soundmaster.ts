@@ -138,7 +138,7 @@ export class SoundMaster implements RegisterablePersistent {
 		return this.rng;
 	}
 
-	public async init(audioResources: id2res, _sndcontext: AudioContext, startingVolume: number, _gainnode?: GainNode, resolver?: ModulationPresetResolver) {
+	public async init(audioResources: id2res, startingVolume: number, resolver?: ModulationPresetResolver) {
 		this.audio = Platform.instance.audio;
 		this.rng = Platform.instance.rng;
 		this.modulationResolver = resolver ?? null;

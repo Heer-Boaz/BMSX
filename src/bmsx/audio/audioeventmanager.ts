@@ -267,20 +267,19 @@ export class AudioEventManager implements RegisterablePersistent {
 	}
 
 	dispose(): void {
-		if (this.anyListener) EventEmitter.instance.offAny(this.anyListener, true);
+		EventEmitter.instance.offAny(this.anyListener, true);
 		this.handlers = [];
-		this.anyListener = undefined;
 		if (this.endUnsubByType['sfx']) this.endUnsubByType['sfx']();
 		if (this.endUnsubByType['ui']) this.endUnsubByType['ui']();
 	}
 
 	/** Wire global audio event listener. */
 	public bind(): void {
-		if (this.anyListener) EventEmitter.instance.onAny(this.anyListener, true);
+		EventEmitter.instance.onAny(this.anyListener, true);
 	}
 	/** Unwire global audio event listener. */
 	public unbind(): void {
-		if (this.anyListener) EventEmitter.instance.offAny(this.anyListener, true);
+		EventEmitter.instance.offAny(this.anyListener, true);
 	}
 
 	private onEvent(name: string, payload: AudioEventPayload = {}, emitter: Identifiable): boolean {
