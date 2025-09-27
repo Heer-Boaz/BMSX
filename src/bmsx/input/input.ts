@@ -13,7 +13,7 @@ import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyO
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
-import { ControllerAssignmentUI } from './controller_assignment_ui';
+import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
