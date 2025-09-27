@@ -22,14 +22,14 @@ const eightBitRegisters = ['A', 'B', 'C', 'D', 'E', 'H', 'L'];
  * @type {string[]}
  * @constant
  */
-const sixteenBitRegisters = ['BC', 'DE', 'HL', 'SP', 'IX', 'IY'];
+const sixteenBitRegisters = ['BC', 'DE', 'HL', 'SP', 'IX', 'IY', 'AF'];
 
 /**
  * An array containing all the registers, including both 8-bit and 16-bit registers.
  *
  * @constant {Array} allRegisters
  */
-const allRegisters = [...eightBitRegisters, ...sixteenBitRegisters];
+const allRegisters = [...eightBitRegisters, ...sixteenBitRegisters, "AF'"];
 
 /**
  * An array of condition codes used in assembly language.
@@ -42,7 +42,7 @@ const allRegisters = [...eightBitRegisters, ...sixteenBitRegisters];
  *
  * @type {string[]}
  */
-const conditionCodes = ['NZ', 'Z', 'NC', 'C'];
+const conditionCodes = ['NZ', 'Z', 'NC', 'C', 'PO', 'PE', 'P', 'M'];
 
 /**
  * A mapping of condition codes to their corresponding hexadecimal values.
@@ -464,8 +464,6 @@ const opcodeMap = {
 	'LD (addr),A': [0x32, 'addr_low', 'addr_high'],
 	'LD HL,(addr)': [0x2A, 'addr_low', 'addr_high'],
 	'LD (addr),HL': [0x22, 'addr_low', 'addr_high'],
-	'LD (addr),nn': [0x32, 'addr_low', 'addr_high'], // Note: Adjust as needed
-
 	'LD (addr),BC': [0xED, 0x43, 'addr_low', 'addr_high'],
 	'LD (addr),DE': [0xED, 0x53, 'addr_low', 'addr_high'],
 	'LD (addr),SP': [0xED, 0x73, 'addr_low', 'addr_high'],
@@ -478,6 +476,67 @@ const opcodeMap = {
 	'INC IY': [0xFD, 0x23],
 	'DEC IY': [0xFD, 0x2B],
 };
+
+Object.assign(opcodeMap, {
+	'LD IX,nn': [0xDD, 0x21, 'nn_low', 'nn_high'],
+	'LD IY,nn': [0xFD, 0x21, 'nn_low', 'nn_high'],
+	'LD (addr),IX': [0xDD, 0x22, 'addr_low', 'addr_high'],
+	'LD (addr),IY': [0xFD, 0x22, 'addr_low', 'addr_high'],
+	'LD IX,(addr)': [0xDD, 0x2A, 'addr_low', 'addr_high'],
+	'LD IY,(addr)': [0xFD, 0x2A, 'addr_low', 'addr_high'],
+	'PUSH IX': [0xDD, 0xE5],
+	'POP IX': [0xDD, 0xE1],
+	'PUSH IY': [0xFD, 0xE5],
+	'POP IY': [0xFD, 0xE1],
+	'EX (SP),IX': [0xDD, 0xE3],
+	'EX (SP),IY': [0xFD, 0xE3],
+	'LD SP,IX': [0xDD, 0xF9],
+	'LD SP,IY': [0xFD, 0xF9],
+	'JP (IX)': [0xDD, 0xE9],
+	'JP (IY)': [0xFD, 0xE9],
+});
+
+Object.assign(opcodeMap, {
+	'ADC HL,BC': [0xED, 0x4A],
+	'ADC HL,DE': [0xED, 0x5A],
+	'ADC HL,HL': [0xED, 0x6A],
+	'ADC HL,SP': [0xED, 0x7A],
+	'SBC HL,BC': [0xED, 0x42],
+	'SBC HL,DE': [0xED, 0x52],
+	'SBC HL,HL': [0xED, 0x62],
+	'SBC HL,SP': [0xED, 0x72],
+	'LDI': [0xED, 0xA0],
+	'LDIR': [0xED, 0xB0],
+	'LDD': [0xED, 0xA8],
+	'LDDR': [0xED, 0xB8],
+	'CPI': [0xED, 0xA1],
+	'CPIR': [0xED, 0xB1],
+	'CPD': [0xED, 0xA9],
+	'CPDR': [0xED, 0xB9],
+	'IN B,(C)': [0xED, 0x40],
+	'IN C,(C)': [0xED, 0x48],
+	'IN D,(C)': [0xED, 0x50],
+	'IN E,(C)': [0xED, 0x58],
+	'IN H,(C)': [0xED, 0x60],
+	'IN L,(C)': [0xED, 0x68],
+	'IN A,(C)': [0xED, 0x78],
+	'OUT (C),B': [0xED, 0x41],
+	'OUT (C),C': [0xED, 0x49],
+	'OUT (C),D': [0xED, 0x51],
+	'OUT (C),E': [0xED, 0x59],
+	'OUT (C),H': [0xED, 0x61],
+	'OUT (C),L': [0xED, 0x69],
+	'OUT (C),A': [0xED, 0x79],
+	'IM 0': [0xED, 0x46],
+	'IM 1': [0xED, 0x56],
+	'IM 2': [0xED, 0x5E],
+	'RETI': [0xED, 0x4D],
+	'RETN': [0xED, 0x45],
+	'LD I,A': [0xED, 0x47],
+	'LD R,A': [0xED, 0x4F],
+	'LD A,I': [0xED, 0x57],
+	'LD A,R': [0xED, 0x5F],
+});
 
 /**
  * Tokenizes a given line of assembly code by removing comments and splitting it into tokens.
@@ -695,61 +754,173 @@ function evaluateExpression(expr, lineNumber, line) {
 	}
 }
 
+function isIndexOperand(operand) {
+	return /^\((IX|IY)/i.test(operand.trim());
+}
+
+function parseIndexDisp(op, lineNumber, line) {
+	const trimmed = op.trim();
+	let match = trimmed.match(/^\((IX|IY)\)$/i);
+	if (match) {
+		const prefix = match[1].toUpperCase() === 'IX' ? 0xDD : 0xFD;
+		return { prefix, d: 0 };
+	}
+	match = trimmed.match(/^\((IX|IY)\s*([+\-].+)\)$/i);
+	if (!match) {
+		return null;
+	}
+	const prefix = match[1].toUpperCase() === 'IX' ? 0xDD : 0xFD;
+	const displacement = evaluateExpression(match[2], lineNumber, line);
+	if (displacement < -128 || displacement > 127) {
+		throw new Error(`Line ${lineNumber}: Index displacement out of range: ${displacement}\n"${line}"`);
+	}
+	return { prefix, d: displacement & 0xFF };
+}
+
+function parseImmediateLiteral(op) {
+	const text = op.trim();
+	if (/^[+\-]?\d+$/u.test(text)) {
+		return parseInt(text, 10);
+	}
+	if (/^0x[0-9A-Fa-f]+$/u.test(text)) {
+		return parseInt(text, 16);
+	}
+	if (/^\$[0-9A-Fa-f]+$/u.test(text)) {
+		return parseInt(text.slice(1), 16);
+	}
+	if (/^#[0-9A-Fa-f]+$/u.test(text)) {
+		return parseInt(text.slice(1), 16);
+	}
+	if (/^[0-9A-Fa-f]+[Hh]$/u.test(text)) {
+		return parseInt(text.slice(0, -1), 16);
+	}
+	return null;
+}
+
+function sanitizeErrorMessage(rawMessage) {
+	if (!rawMessage) {
+		return 'Unknown error';
+	}
+	const withoutAnsi = String(rawMessage).replace(/\x1B\[[0-9;]*m/g, '').trim();
+	const [firstLine, ...rest] = withoutAnsi.split('\n');
+	let primary = firstLine.replace(/^Line \d+:\s*/i, '').trim();
+	if (!primary && rest.length > 0) {
+		primary = rest.shift().trim();
+	}
+	return primary || 'Unknown error';
+}
+
+function extractErrorDetail(rawMessage, lineContent) {
+	if (!rawMessage) {
+		return null;
+	}
+	const withoutAnsi = String(rawMessage).replace(/\x1B\[[0-9;]*m/g, '');
+	const [, ...rest] = withoutAnsi.split('\n');
+	const trimmedLine = lineContent ? lineContent.trim() : null;
+	const detail = rest
+		.map(line => line.trimEnd())
+		.filter(content => {
+			if (!content) {
+				return false;
+			}
+			const normalized = content.replace(/^"|"$/g, '').trim();
+			if (trimmedLine && (normalized === trimmedLine || content.trim() === trimmedLine)) {
+				return false;
+			}
+			return true;
+		})
+		.join('\n');
+	return detail || null;
+}
+
+function createErrorRecord(filePath, lineNumber, lineContent, error) {
+	const rawMessage = error && error.message ? error.message : error;
+	return {
+		filePath,
+		lineNumber,
+		column: 1,
+		message: sanitizeErrorMessage(rawMessage),
+		detail: extractErrorDetail(rawMessage, lineContent || ''),
+		lineContent
+	};
+}
+
 function normalizeOperand(op, idx, instruction) {
 	const upperOp = op.toUpperCase();
-	console.log(`normalizeOperand: op=${op}, idx=${idx}, instruction=${instruction.mnemonic}`);
+
+	if (upperOp === 'AF' || upperOp === "AF'") {
+		return upperOp;
+	}
 
 	if (sixteenBitRegisters.includes(upperOp)) {
-		console.log(`normalizeOperand: ${op} is a 16-bit register`);
 		return upperOp;
 	} else if (eightBitRegisters.includes(upperOp)) {
-		console.log(`normalizeOperand: ${op} is an 8-bit register`);
 		return upperOp;
 	} else if (conditionCodes.includes(upperOp)) {
-		console.log(`normalizeOperand: ${op} is a condition code`);
 		return upperOp;
 	} else if (op.startsWith('(') && op.endsWith(')')) {
 		const inner = op.slice(1, -1);
 		const upperInner = inner.toUpperCase();
 		if (allRegisters.includes(upperInner)) {
-			console.log(`normalizeOperand: ${op} is a register indirect`);
 			return `(${upperInner})`;
 		} else {
-			console.log(`normalizeOperand: ${op} is an address`);
 			return '(addr)';
 		}
-	} else if (/^'.'$/s.test(op) || !isNaN(parseInt(op))) {
-		console.log(`normalizeOperand: ${op} is a numeric value`);
+	} else if (/^'.'$/s.test(op)) {
+		if (['IM', 'RST'].includes(instruction.mnemonic)) {
+			return op.toUpperCase();
+		}
 		return 'n';
 	} else {
+		const immediateValue = parseImmediateLiteral(op);
+		if (immediateValue !== null) {
+			if (['IM', 'RST'].includes(instruction.mnemonic)) {
+				return op.toUpperCase();
+			}
+			if (instruction.mnemonic === 'LD') {
+				const firstOperandRaw = instruction.operands[0] ? instruction.operands[0].trim() : '';
+				const firstOperandNormalized = firstOperandRaw.replace(/^\((.*)\)$/u, '$1').toUpperCase();
+				const destIsRegisterPair = firstOperandRaw && !firstOperandRaw.startsWith('(') && sixteenBitRegisters.includes(firstOperandNormalized);
+				if (idx === 1 && destIsRegisterPair) {
+					return 'nn';
+				}
+				if (idx === 1 && !destIsRegisterPair && immediateValue > 0xFF) {
+				}
+				if (idx === 1) {
+					const placeholder = destIsRegisterPair ? 'nn' : 'n';
+					return placeholder;
+				}
+			}
+			if (['JP', 'CALL'].includes(instruction.mnemonic)) {
+				return 'nn';
+			}
+			if (instruction.mnemonic === 'JR') {
+				if (idx === 0 && conditionCodes.includes(upperOp)) {
+					return upperOp;
+				}
+				return 'e';
+			}
+			return 'n';
+		}
 		// Decide based on instruction and operand index
 		if (['JP', 'CALL'].includes(instruction.mnemonic)) {
-			console.log(`normalizeOperand: ${op} is a 16-bit immediate value for JP or CALL`);
 			return 'nn';
 		} else if (instruction.mnemonic === 'JR') {
 			if (idx === 0 && conditionCodes.includes(upperOp)) {
-				console.log(`normalizeOperand: ${op} is a condition code for JR`);
 				return upperOp;
 			} else {
-				console.log(`normalizeOperand: ${op} is an 8-bit offset for JR`);
 				return 'e';
 			}
 		} else if (instruction.mnemonic === 'LD') {
-			if (idx === 1 && sixteenBitRegisters.includes(instruction.operands[0].toUpperCase())) {
-				console.log(`normalizeOperand: ${op} is a 16-bit immediate value for LD`);
-				return 'nn';
-			} else if (idx === 1 && !isNaN(parseInt(op))) {
-				console.log(`normalizeOperand: ${op} is a 16-bit immediate value for LD`);
-				return 'nn';
-			} else if (idx === 1 && /^0x[0-9A-Fa-f]+$/.test(op)) {
-				console.log(`normalizeOperand: ${op} is a 16-bit immediate value for LD`);
+			const firstOperandRaw = instruction.operands[0] ? instruction.operands[0].trim() : '';
+			const firstOperandNormalized = firstOperandRaw.replace(/^\((.*)\)$/u, '$1').toUpperCase();
+			const destIsRegisterPair = firstOperandRaw && !firstOperandRaw.startsWith('(') && sixteenBitRegisters.includes(firstOperandNormalized);
+			if (idx === 1 && destIsRegisterPair) {
 				return 'nn';
 			} else {
-				console.log(`normalizeOperand: ${op} is an 8-bit immediate value for LD`);
 				return 'n';
 			}
 		} else {
-			console.log(`normalizeOperand: ${op} is an 8-bit immediate value`);
 			return 'n';
 		}
 	}
@@ -825,6 +996,9 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 	 * @throws {Error} - Throws an error if an undefined symbol is encountered.
 	 */
 	const resolvedOperands = operands.map(op => {
+		if (isIndexOperand(op)) {
+			return op.trim();
+		}
 		// Check if the operand is a symbol that references a 16-bit address
 		if (op.startsWith('(') && op.endsWith(')')) {
 			const addr = op.slice(1, -1);
@@ -857,24 +1031,27 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 	if (resolvedOperands.length > 0) {
 		const updatedOperands = resolvedOperands.map((op, idx) => {
 			if (typeof op === 'number') {
+				if (['IM', 'RST'].includes(mnemonic)) {
+					return op.toString();
+				}
 				// Decide placeholder based on mnemonic
 				// For example 'LD HL,nn', the second operand should be 'nn' instead of 'n' (16-bit register)
 				if (mnemonic === 'LD' && idx === 1 && sixteenBitRegisters.includes(operands[0].toUpperCase())) {
 					return 'nn';
 				}
-				// Also, 'LD (xx), name' should be 'n' (memory address) and we need to verify the first operand to be a 16-bit register)
+				// Also, 'LD (xx), name' should be 'n' (memory address) and we need to verify the first operand to be a register)
 				else if (mnemonic === 'LD' && idx === 1 && operands[0].startsWith('(') && operands[0].endsWith(')')) {
-					// Check if the first operand is a 16-bit register
-					const firstOperand = operands[0].slice(1, -1);
+					const firstOperand = operands[0].slice(1, -1).toUpperCase();
+					if (firstOperand === 'HL') {
+						return 'n';
+					}
 					if (sixteenBitRegisters.includes(firstOperand)) {
 						return 'nn';
 					}
-					// Check if the first operand is a 8-bit register
-					else if (eightBitRegisters.includes(firstOperand)) {
+					if (eightBitRegisters.includes(firstOperand)) {
 						return 'n';
 					}
-					// If not, it's an invalid instruction
-					throw new Error(`Line ${lineNumber}: Invalid instruction (only 16-bit registers are allowed as operands for memory addresses): ${mnemonic} ${operands.join(',')}\n"${line}"`);
+					throw new Error(`Line ${lineNumber}: Invalid instruction (only register indirect operands are allowed here): ${mnemonic} ${operands.join(',')}\n"${line}"`);
 				}
 				else if (['CALL', 'JP'].includes(mnemonic)) {
 					return 'nn';
@@ -898,10 +1075,22 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 
 	// Handle special cases
 	if (mnemonic === 'BIT' || mnemonic === 'SET' || mnemonic === 'RES') {
-		const bitNumber = resolvedOperands[0];
-		const register = resolvedOperands[1];
+		const bitValue = evaluateExpression(operands[0], lineNumber, line);
+		if (typeof bitValue !== 'number') {
+			throw new Error(`Line ${lineNumber}: Invalid bit value: ${operands[0]}\n"${line}"`);
+		}
+		if (bitValue < 0 || bitValue > 7) {
+			throw new Error(`Line ${lineNumber}: Bit value out of range: ${bitValue}\n"${line}"`);
+		}
+		const targetOperand = operands[1] || operands[0];
+		const indexedTarget = parseIndexDisp(targetOperand, lineNumber, line);
+		if (indexedTarget) {
+			const base = mnemonic === 'BIT' ? 0x40 : mnemonic === 'RES' ? 0x80 : 0xC0;
+			opcodeBytes.push(indexedTarget.prefix, 0xCB, indexedTarget.d, base + ((bitValue & 0x07) << 3) + 6);
+			return opcodeBytes;
+		}
 
-		// Get register code
+		const register = resolvedOperands[1];
 		const registerCodes = {
 			'B': 0,
 			'C': 1,
@@ -916,14 +1105,14 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 		if (regCode === undefined) {
 			throw new Error(`Line ${lineNumber}: Invalid register: ${register}\n"${line}"`);
 		}
-		let opcodePrefix = 0xCB;
+		const opcodePrefix = 0xCB;
 		let opcode;
 		if (mnemonic === 'BIT') {
-			opcode = 0x40 + (bitNumber << 3) + regCode;
+			opcode = 0x40 + (bitValue << 3) + regCode;
 		} else if (mnemonic === 'SET') {
-			opcode = 0xC0 + (bitNumber << 3) + regCode;
-		} else if (mnemonic === 'RES') {
-			opcode = 0x80 + (bitNumber << 3) + regCode;
+			opcode = 0xC0 + (bitValue << 3) + regCode;
+		} else {
+			opcode = 0x80 + (bitValue << 3) + regCode;
 		}
 		opcodeBytes.push(opcodePrefix, opcode);
 		return opcodeBytes;
@@ -946,6 +1135,95 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 		const opcode = conditionCodesMap[condition];
 		opcodeBytes.push(opcode, offset & 0xFF);
 		return opcodeBytes;
+	}
+
+	const indexedOperands = operands.map(op => parseIndexDisp(op, lineNumber, line));
+	const indexedCount = indexedOperands.filter(info => info !== null).length;
+
+	if (indexedCount > 0) {
+		if (indexedCount > 1 && mnemonic !== 'LD') {
+			throw new Error(`Line ${lineNumber}: Unsupported indexed operand combination for ${mnemonic}\n"${line}"`);
+		}
+		if (mnemonic === 'LD') {
+			if (indexedCount > 1) {
+				throw new Error(`Line ${lineNumber}: Unsupported indexed operands for LD\n"${line}"`);
+			}
+			if (indexedOperands[0]) {
+				const indexInfo = indexedOperands[0];
+				const source = operands[1];
+				if (source === undefined) {
+					throw new Error(`Line ${lineNumber}: Missing source operand for LD\n"${line}"`);
+				}
+				const upperSource = source.toUpperCase();
+				if (eightBitRegisters.includes(upperSource)) {
+					const baseKey = `LD (HL),${upperSource}`;
+					const baseTemplate = opcodeMap[baseKey];
+					if (!baseTemplate) {
+						throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed LD: ${baseKey}\n"${line}"`);
+					}
+					opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
+					return opcodeBytes;
+				}
+				const value = evaluateExpression(source, lineNumber, line);
+				if (typeof value !== 'number') {
+					throw new Error(`Line ${lineNumber}: Invalid immediate value: ${source}\n"${line}"`);
+				}
+				const storeTemplate = opcodeMap['LD (HL),n'];
+				if (!storeTemplate) {
+					throw new Error(`Line ${lineNumber}: Missing base template for LD (HL),n\n"${line}"`);
+				}
+				opcodeBytes.push(indexInfo.prefix, storeTemplate[0], indexInfo.d, value & 0xFF);
+				return opcodeBytes;
+			}
+			if (indexedOperands[1]) {
+				const indexInfo = indexedOperands[1];
+				const dest = operands[0].toUpperCase();
+				if (!eightBitRegisters.includes(dest)) {
+					throw new Error(`Line ${lineNumber}: Invalid destination register for indexed LD: ${operands[0]}\n"${line}"`);
+				}
+				const baseKey = `LD ${dest},(HL)`;
+				const baseTemplate = opcodeMap[baseKey];
+				if (!baseTemplate) {
+					throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed LD: ${baseKey}\n"${line}"`);
+				}
+				opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
+				return opcodeBytes;
+			}
+		}
+		if (['INC', 'DEC'].includes(mnemonic) && indexedOperands[0]) {
+			const indexInfo = indexedOperands[0];
+			const baseKey = `${mnemonic} (HL)`;
+			const baseTemplate = opcodeMap[baseKey];
+			if (!baseTemplate) {
+				throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed ${mnemonic}: ${baseKey}\n"${line}"`);
+			}
+			opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
+			return opcodeBytes;
+		}
+		if (['ADD', 'ADC', 'SBC'].includes(mnemonic) && indexedOperands[1]) {
+			if (operands[0].toUpperCase() !== 'A') {
+				throw new Error(`Line ${lineNumber}: ${mnemonic} with indexed operand requires A as destination\n"${line}"`);
+			}
+			const indexInfo = indexedOperands[1];
+			const baseKey = `${mnemonic} A,(HL)`;
+			const baseTemplate = opcodeMap[baseKey];
+			if (!baseTemplate) {
+				throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed ${mnemonic}: ${baseKey}\n"${line}"`);
+			}
+			opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
+			return opcodeBytes;
+		}
+		if (['SUB', 'AND', 'XOR', 'OR', 'CP'].includes(mnemonic) && indexedOperands[0]) {
+			const indexInfo = indexedOperands[0];
+			const baseKey = `${mnemonic} (HL)`;
+			const baseTemplate = opcodeMap[baseKey];
+			if (!baseTemplate) {
+				throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed ${mnemonic}: ${baseKey}\n"${line}"`);
+			}
+			opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
+			return opcodeBytes;
+		}
+		throw new Error(`Line ${lineNumber}: Unsupported indexed addressing for ${mnemonic}\n"${line}"`);
 	}
 
 	// Lookup the opcode template using the generated key
@@ -985,19 +1263,17 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 			}
 		} else if (byte === 'nn_low' || byte === 'nn_high') {
 			let value;
-			if (mnemonic === 'LD' && operands.length === 2 && sixteenBitRegisters.includes(operands[0].toUpperCase())) {
+			if (['JP', 'CALL'].includes(mnemonic) && typeof resolvedOperands[0] === 'string' && conditionCodes.includes(resolvedOperands[0])) {
+				value = resolvedOperands[1];
+			} else if (mnemonic === 'LD' && operands.length === 2 && sixteenBitRegisters.includes(operands[0].toUpperCase())) {
 				value = resolvedOperands[1];
 			} else {
-				value = resolvedOperands[0];
+				value = resolvedOperands[resolvedOperands.length - 1];
 			}
 			if (typeof value !== 'number') {
 				throw new Error(`Line ${lineNumber}: Invalid address value: ${value}\n"${line}"`);
 			}
-			if (byte === 'nn_low') {
-				opcodeBytes.push(value & 0xFF);
-			} else {
-				opcodeBytes.push((value >> 8) & 0xFF);
-			}
+			opcodeBytes.push(byte === 'nn_low' ? (value & 0xFF) : ((value >> 8) & 0xFF));
 		} else if (byte === 'n') {
 			const value = resolvedOperands[operands.length - 1];
 			if (typeof value !== 'number') {
@@ -1033,88 +1309,120 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
  *
  * @throws {Error} If an invalid instruction or operand is encountered during the first pass.
  */
-function assemble(assemblyCode) {
+function assemble(assemblyCode, options = {}) {
+	const { filePath = 'input' } = options;
 	const lines = assemblyCode.split('\n');
 	let locationCounter = 0;
-	const machineCode = [];
 	const instructions = [];
+	const errors = [];
 
 	// First pass: parse lines and build symbol table
 	for (let i = 0; i < lines.length; i++) {
+		const lineNumber = i + 1;
 		const line = lines[i];
-		const tokens = tokenize(line);
-		if (tokens.length === 0) continue;
+		try {
+			const tokens = tokenize(line);
+			if (tokens.length === 0) {
+				continue;
+			}
 
-		const instruction = parse(tokens);
+			const instruction = parse(tokens);
 
-		if (instruction.label) {
-			symbolTable[instruction.label] = locationCounter;
-		}
+			if (instruction.label) {
+				symbolTable[instruction.label] = locationCounter;
+			}
 
-		if (instruction.directive) {
-			if (instruction.directive === 'DB' || instruction.directive === 'DW') {
-				// Compute size of data
-				let size = 0;
-				for (let operand of instruction.operands) {
-					if (/^".*"$/.test(operand)) {
-						// String: each character is one byte
-						size += operand.length - 2; // Exclude quotes
-					} else {
-						if (instruction.directive === 'DB') {
+			if (instruction.directive) {
+				if (instruction.directive === 'DB' || instruction.directive === 'DW') {
+					let size = 0;
+					for (let operand of instruction.operands) {
+						if (/^".*"$/.test(operand)) {
+							size += operand.length - 2;
+						} else if (instruction.directive === 'DB') {
 							size += 1;
-						} else if (instruction.directive === 'DW') {
+						} else {
 							size += 2;
 						}
 					}
-				}
-				instruction.size = size;
-				instructions.push({ ...instruction, locationCounter, lineNumber: i + 1, line });
-				locationCounter += size;
-			} else {
-				locationCounter = handleDirective(instruction, locationCounter, i + 1, line);
-			}
-		} else if (instruction.mnemonic) {
-			// Estimate size based on opcode template
-			let key = instruction.mnemonic;
-			let operands = instruction.operands;
-			// Operand normalization
-			const normalizedOperands = operands.map((op, idx) => normalizeOperand(op, idx, instruction));
-
-			if (normalizedOperands.length > 0) {
-				key += ' ' + normalizedOperands.join(',');
-			}
-
-			let opcodeTemplate = opcodeMap[key];
-			if (!opcodeTemplate) {
-				// Handle special cases
-				if (instruction.mnemonic === 'JR') {
-					instruction.size = 2;
-				} else if (['BIT', 'SET', 'RES'].includes(instruction.mnemonic)) {
-					instruction.size = 2;
+					instruction.size = size;
+					instructions.push({ ...instruction, locationCounter, lineNumber, line });
+					locationCounter += size;
 				} else {
-					// Check whether the assembly code contains an invalid instruction or whether it contains a valid instruction, but an invalid operand
-					if (validMnemonic.includes(instruction.mnemonic)) {
-						throw new Error(`Line ${instruction.lineNumber}: Invalid operand(s) for instruction: ${key}\n"${line}"`);
-					} else {
-						throw new Error(`Line ${instruction.lineNumber}: Unknown instruction during first pass: ${key}\n"${line}"`);
-					}
+					locationCounter = handleDirective(instruction, locationCounter, lineNumber, line);
 				}
-			} else {
-				instruction.size = opcodeTemplate.length;
+			} else if (instruction.mnemonic) {
+				let key = instruction.mnemonic;
+				let operands = instruction.operands;
+				const normalizedOperands = operands.map((op, idx) => normalizeOperand(op, idx, instruction));
+
+				if (normalizedOperands.length > 0) {
+					key += ' ' + normalizedOperands.join(',');
+				}
+
+				const hasIndexedOperand = operands.some(isIndexOperand);
+				const indexedOperandCount = operands.filter(isIndexOperand).length;
+				const indexOperandIndex = operands.findIndex(isIndexOperand);
+				let opcodeTemplate = opcodeMap[key];
+				if (!opcodeTemplate) {
+					if (instruction.mnemonic === 'JR') {
+						instruction.size = 2;
+					} else if (['BIT', 'SET', 'RES'].includes(instruction.mnemonic)) {
+						instruction.size = hasIndexedOperand ? 4 : 2;
+					} else if (instruction.mnemonic === 'IM') {
+						instruction.size = 2;
+					} else if (hasIndexedOperand && instruction.mnemonic === 'LD') {
+						if (indexedOperandCount > 1) {
+							throw new Error(`Line ${lineNumber}: Unsupported indexed operands for LD\n"${line}"`);
+						}
+						if (indexOperandIndex === 0) {
+							const sourceOperand = operands[1];
+							if (sourceOperand === undefined) {
+								throw new Error(`Line ${lineNumber}: Missing source operand for LD\n"${line}"`);
+							}
+							const isRegisterSource = eightBitRegisters.includes(sourceOperand.toUpperCase());
+							instruction.size = isRegisterSource ? 3 : 4;
+						} else {
+							instruction.size = 3;
+						}
+					} else if (hasIndexedOperand && ['INC', 'DEC'].includes(instruction.mnemonic)) {
+						instruction.size = 3;
+					} else if (hasIndexedOperand && ['ADD', 'ADC', 'SBC'].includes(instruction.mnemonic)) {
+						instruction.size = 3;
+					} else if (hasIndexedOperand && ['SUB', 'AND', 'XOR', 'OR', 'CP'].includes(instruction.mnemonic)) {
+						instruction.size = 3;
+					} else {
+						if (validMnemonic.includes(instruction.mnemonic)) {
+							throw new Error(`Line ${lineNumber}: Invalid operand(s) for instruction: ${key}\n"${line}"`);
+						} else {
+							throw new Error(`Line ${lineNumber}: Unknown instruction during first pass: ${key}\n"${line}"`);
+						}
+					}
+				} else {
+					instruction.size = opcodeTemplate.length;
+				}
+				instructions.push({ ...instruction, locationCounter, lineNumber, line });
+				locationCounter += instruction.size;
 			}
-			instructions.push({ ...instruction, locationCounter, lineNumber: i + 1, line });
-			locationCounter += instruction.size;
+		} catch (error) {
+			errors.push(createErrorRecord(filePath, lineNumber, line, error));
 		}
 	}
 
-	// Second pass: encode instructions
+	const machineCode = [];
 	for (const instr of instructions) {
-		const opcodeBytes = encodeInstruction(instr, instr.locationCounter, instr.lineNumber, instr.line);
-		instr.bytes = opcodeBytes; // Store bytes for later use
-		machineCode.push(...opcodeBytes);
+		try {
+			const opcodeBytes = encodeInstruction(instr, instr.locationCounter, instr.lineNumber, instr.line);
+			instr.bytes = opcodeBytes;
+			machineCode.push(...opcodeBytes);
+		} catch (error) {
+			errors.push(createErrorRecord(filePath, instr.lineNumber, instr.line, error));
+		}
 	}
 
-	return machineCode;
+	return {
+		machineCode: errors.length === 0 ? machineCode : [],
+		errors
+	};
 }
 
 function getDataBytesPerLine(dataFormat) {
@@ -1143,6 +1451,10 @@ function generateDataStatements(machineCode, dataFormat) {
 	let dataLines = [];
 	let lineNumber = DATA_LINE_NUMBER_START;
 	let dataBytesPerLine = getDataBytesPerLine(dataFormat);
+
+	if (machineCode.length > 0xFFFF) {
+		throw new Error('Machine code exceeds maximum supported length of 65535 bytes for loader');
+	}
 
 	for (let i = 0; i < machineCode.length; i += dataBytesPerLine) {
 		const bytes = machineCode.slice(i, i + dataBytesPerLine);
@@ -1182,7 +1494,7 @@ function generateBoilerPlate(datalineCount, dataFormat) {
 	const toBase64BoilerPlate = `1040 DIM B$(63)
 1041 B$ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 1042 ' Read the Base64-encoded DATA
-1043 A = D: ?"Laderen:"
+1043 A = D
 1044 READ B64$
 1045 FOR I = 1 TO LEN(B64$) STEP 4
 1046  C1$ = MID$(B64$, I, 1)
@@ -1201,6 +1513,7 @@ function generateBoilerPlate(datalineCount, dataFormat) {
 1059   IF C3$ <> "=" THEN POKE A, Y2: A = A + 1
 1060   IF C4$ <> "=" THEN POKE A, Y3: A = A + 1
 1061 NEXT: ? ".";:READ B64$: IF B64$<>"!" GOTO 1045
+20000 DATA "!"
 `
 	let dataFormatSpecificBoilerPlate;
 	switch (dataFormat) {
@@ -1229,6 +1542,39 @@ ${dataFormatSpecificBoilerPlate}
 2040 X=USR(0)`
 }
 
+function formatFilePathForDisplay(filePath) {
+	if (!filePath) {
+		return 'unknown';
+	}
+	if (!path.isAbsolute(filePath)) {
+		return filePath;
+	}
+	const relative = path.relative(process.cwd(), filePath);
+	return relative && !relative.startsWith('..') ? relative : filePath;
+}
+
+function printErrors(errors) {
+	if (errors.length === 0) {
+		return;
+	}
+	console.error(colors.red + `\nFound ${errors.length} error(s) during assembly:` + colors.reset);
+	for (const error of errors) {
+		const file = formatFilePathForDisplay(error.filePath);
+		const line = error.lineNumber ?? 0;
+		const column = error.column ?? 1;
+		const message = error.message || 'Unknown error';
+		console.error(`${colors.red}${file}:${line}:${column}: error: ${message}${colors.reset}`);
+		if (error.lineContent) {
+			console.error(`${colors.red}  ${error.lineContent.trimStart()}${colors.reset}`);
+		}
+		if (error.detail) {
+			for (const detailLine of error.detail.split('\n')) {
+				console.error(`${colors.red}  ${detailLine}${colors.reset}`);
+			}
+		}
+	}
+}
+
 /**
  * Main entry point for the assembler script.
  * This function reads the assembly code from a file, assembles it into machine code,
@@ -1240,7 +1586,7 @@ ${dataFormatSpecificBoilerPlate}
  * @param {string[]} args - The command line arguments.
  * @returns {void}
  */
-try {
+function main() {
 	const assemblyFilePath = process.argv[2] && !process.argv[2].startsWith('-') ? process.argv[2] : path.join(__dirname, 'assemblycode.asm');
 	let outputFilePathIndex = process.argv.indexOf('-o');
 	let outputFilePath = null;
@@ -1265,19 +1611,40 @@ try {
 	}
 
 	let assemblyCode;
-	let machineCode;
 	try {
 		assemblyCode = fs.readFileSync(assemblyFilePath, 'utf8');
 	} catch (error) {
-		throw new Error(`Error reading assembly file: ${error.message}`);
+		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
+		process.exitCode = 1;
+		return;
 	}
+
+	const { machineCode, errors } = assemble(assemblyCode, { filePath: assemblyFilePath });
+
+	if (errors.length > 0) {
+		printErrors(errors);
+		process.exitCode = 1;
+		return;
+	}
+
+	let dataStatements;
 	try {
-		machineCode = assemble(assemblyCode);
+		dataStatements = generateDataStatements(machineCode, dataFormat);
 	} catch (error) {
-		throw new Error(`Assembly error: ${error.message}`);
+		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
+		process.exitCode = 1;
+		return;
 	}
-	const dataStatements = generateDataStatements(machineCode, dataFormat);
-	const boilerPlate = generateBoilerPlate(dataStatements.length, dataFormat);
+
+	let boilerPlate;
+	try {
+		boilerPlate = generateBoilerPlate(dataStatements.length, dataFormat);
+	} catch (error) {
+		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
+		process.exitCode = 1;
+		return;
+	}
+
 	console.log(colors.blue + boilerPlate + colors.reset);
 	console.log(colors.green + dataStatements.join('\n') + colors.reset);
 	const outputContent = boilerPlate + '\n' + dataStatements.join('\n');
@@ -1286,6 +1653,6 @@ try {
 		fs.writeFileSync(outputFilePath, outputContent, 'utf8');
 		console.log(colors.yellow + `Assembly output written to ${outputFilePath}` + colors.reset);
 	}
-} catch (error) {
-	console.error(colors.red + error.message + colors.reset);
 }
+
+main();
