@@ -1562,21 +1562,22 @@ function generateDataStatements(segments, dataFormat) {
  */
 function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddress, entryLabel) {
 	let dataBytesPerLine = getDataBytesPerLine(dataFormat);
+	const dataLineCountMarkerOffset = datalineCount - 1; // The number of data lines minus the start data line and end marker line, for visualising the progress bar
 	const toDecBoilerPlate = [
-		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
+		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2000`,
 		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
 		`1060 READ DL,DH,LL,LH`,
 		`1070 D=DL+256*DH:L=LL+256*LH:T=L`,
 		`1080 FOR I=1 TO L`,
 		`1090  READ A:POKE D,A:D=D+1`,
 		`1100  B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
-		`1110 NEXT I`,
+		`1110 NEXT`,
 		`1120 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
 		`1130 GOTO 1040`
 	].join('\n');
 
 	const toHexBoilerPlate = [
-		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
+		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2020`,
 		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
 		`1060 READ DL,DH,LL,LH`,
 		`1070 D=DL+256*DH:L=LL+256*LH:T=L`,
@@ -1597,7 +1598,7 @@ function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddres
 	const toBase64BoilerPlate = [
 		`1040 DIM B$(63)`,
 		`1041 B$="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"`,
-		`1042 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
+		`1042 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2020`,
 		`1043 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
 		`1044 READ DL,DH,LL,LH`,
 		`1045 D=DL+256*DH:L=LL+256*LH:T=L`,
@@ -1653,9 +1654,9 @@ function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddres
 	const entryComment = entryLabel ? ` (${entryLabel})` : '';
 
 	return `1000 ' Put program to memory
-1010 DEFINTA-Z:D=&H${loadAddressHex}
+1010 D=&H${loadAddressHex}
 1015 B=0
-1020 ?"Laderen:":?"[";:LOCATE${datalineCount + 1}:?"]";:LOCATE1
+1020 ?"Laderen:":?"[";:LOCATE${dataLineCountMarkerOffset}:?"]";:LOCATE1
 ${dataFormatSpecificBoilerPlate}
 1200 ?""
 2000 ' Run da program!!
