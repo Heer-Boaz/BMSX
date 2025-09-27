@@ -1,7 +1,6 @@
 ﻿import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
-import { Platform } from '../core/platform';
 import type { Mesh } from './3d/mesh';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
@@ -676,7 +675,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (!atlas) {
 			throw new Error(`[GameView] Dynamic atlas '${atlasName}' not found.`);
 		}
-		this.textures['_atlas_dynamic'] = this.backend.createTexture(atlas._imgbin as ImageBitmap, {});
+		this.textures['_atlas_dynamic'] = this.backend.createTexture(atlas._imgbin, {});
 	}
 
 

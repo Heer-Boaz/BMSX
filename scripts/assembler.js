@@ -7,8 +7,8 @@ const DATA_BYTES_PER_LINE_DECIMAL = 32;
 const DATA_BYTES_PER_LINE_HEX = 64;
 const DATA_BYTES_PER_LINE_BASE64 = 32;
 const DEFAULT_DATA_FORMAT = 'dec';
-const SEGMENT_START_MARKER = 256;
-const SEGMENT_END_MARKER = 257;
+const SEGMENT_START_MARKER = 254;
+const SEGMENT_END_MARKER = 255;
 
 /**
  * An array of 8-bit register names used in the assembler.
@@ -1514,7 +1514,11 @@ function generateDataStatements(segments, dataFormat) {
 			throw new Error('Segment length exceeds maximum supported length of 65535 bytes for loader');
 		}
 		totalLength += bytes.length;
-		dataLines.push(`${lineNumber} DATA ${SEGMENT_START_MARKER},${start},${bytes.length}`);
+		const startLow = start & 0xFF;
+		const startHigh = (start >> 8) & 0xFF;
+		const lengthLow = bytes.length & 0xFF;
+		const lengthHigh = (bytes.length >> 8) & 0xFF;
+		dataLines.push(`${lineNumber} DATA ${SEGMENT_START_MARKER},${startLow},${startHigh},${lengthLow},${lengthHigh}`);
 		lineNumber += DATA_LINE_NUMBER_INCREMENT;
 		for (let i = 0; i < bytes.length; i += dataBytesPerLine) {
 			const chunk = bytes.slice(i, i + dataBytesPerLine);
@@ -1561,29 +1565,31 @@ function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddres
 	const toDecBoilerPlate = [
 		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
 		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
-		`1060 READ D,L:T=L`,
-		`1070 FOR I=1 TO L`,
-		`1080  READ A:POKE D,A:D=D+1`,
-		`1090  B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
-		`1100 NEXT I`,
-		`1110 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
-		`1120 GOTO 1040`
+		`1060 READ DL,DH,LL,LH`,
+		`1070 D=DL+256*DH:L=LL+256*LH:T=L`,
+		`1080 FOR I=1 TO L`,
+		`1090  READ A:POKE D,A:D=D+1`,
+		`1100  B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
+		`1110 NEXT I`,
+		`1120 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
+		`1130 GOTO 1040`
 	].join('\n');
 
 	const toHexBoilerPlate = [
 		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
 		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
-		`1060 READ D,L:T=L`,
-		`1070 IF L=0 THEN 1180`,
-		`1080 READ A$:I=1`,
-		`1090 IF I>LEN(A$) THEN 1080`,
-		`1100 IF L=0 THEN 1180`,
-		`1110 B$=MID$(A$,I,2)`,
-		`1120 POKE D,VAL("&H"+B$)`,
-		`1130 D=D+1:L=L-1:B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
-		`1140 I=I+2`,
-		`1150 IF I<=LEN(A$) THEN 1100`,
-		`1160 GOTO 1070`,
+		`1060 READ DL,DH,LL,LH`,
+		`1070 D=DL+256*DH:L=LL+256*LH:T=L`,
+		`1080 IF L=0 THEN 1190`,
+		`1090 READ A$:I=1`,
+		`1100 IF I>LEN(A$) THEN 1090`,
+		`1110 IF L=0 THEN 1190`,
+		`1120 B$=MID$(A$,I,2)`,
+		`1130 POKE D,VAL("&H"+B$)`,
+		`1140 D=D+1:L=L-1:B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
+		`1150 I=I+2`,
+		`1160 IF I<=LEN(A$) THEN 1120`,
+		`1170 GOTO 1080`,
 		`1180 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
 		`1190 GOTO 1040`
 	].join('\n');
@@ -1593,29 +1599,30 @@ function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddres
 		`1041 B$="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"`,
 		`1042 READ M:IF M=${SEGMENT_END_MARKER} THEN RETURN`,
 		`1043 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
-		`1044 READ D,L:T=L`,
-		`1045 IF L=0 THEN 1085`,
-		`1046 READ B64$:I=1`,
-		`1047 IF LEN(B64$)=0 THEN 1046`,
-		`1048 IF L=0 THEN 1085`,
-		`1049 C1$=MID$(B64$,I,1)`,
-		`1050 C2$=MID$(B64$,I+1,1)`,
-		`1051 C3$=MID$(B64$,I+2,1)`,
-		`1052 C4$=MID$(B64$,I+3,1)`,
-		`1053 B1=INSTR(B$,C1$)-1`,
-		`1054 B2=INSTR(B$,C2$)-1`,
-		`1055 B3=INSTR(B$,C3$)-1`,
-		`1056 B4=INSTR(B$,C4$)-1`,
-		`1057 Y=(B1*4)+(B2\\16):GOSUB 1900`,
-		`1058 IF L=0 THEN 1085`,
-		`1059 IF C3$<>"=" THEN Y=((B2 AND 15)*16)+(B3\\4):GOSUB 1900`,
-		`1060 IF L=0 THEN 1085`,
-		`1061 IF C4$<>"=" THEN Y=((B3 AND 3)*64)+B4:GOSUB 1900`,
-		`1062 I=I+4`,
-		`1063 IF I<=LEN(B64$) THEN 1048`,
-		`1064 GOTO 1045`,
-		`1085 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
-		`1090 GOTO 1042`,
+		`1044 READ DL,DH,LL,LH`,
+		`1045 D=DL+256*DH:L=LL+256*LH:T=L`,
+		`1046 IF L=0 THEN 1105`,
+		`1047 READ B64$:I=1`,
+		`1048 IF LEN(B64$)=0 THEN 1047`,
+		`1049 IF L=0 THEN 1105`,
+		`1050 C1$=MID$(B64$,I,1)`,
+		`1051 C2$=MID$(B64$,I+1,1)`,
+		`1052 C3$=MID$(B64$,I+2,1)`,
+		`1053 C4$=MID$(B64$,I+3,1)`,
+		`1054 B1=INSTR(B$,C1$)-1`,
+		`1055 B2=INSTR(B$,C2$)-1`,
+		`1056 B3=INSTR(B$,C3$)-1`,
+		`1057 B4=INSTR(B$,C4$)-1`,
+		`1058 Y=(B1*4)+(B2\\16):GOSUB 1900`,
+		`1059 IF L=0 THEN 1105`,
+		`1060 IF C3$<>"=" THEN Y=((B2 AND 15)*16)+(B3\\4):GOSUB 1900`,
+		`1061 IF L=0 THEN 1105`,
+		`1062 IF C4$<>"=" THEN Y=((B3 AND 3)*64)+B4:GOSUB 1900`,
+		`1063 I=I+4`,
+		`1064 IF I<=LEN(B64$) THEN 1050`,
+		`1065 GOTO 1047`,
+		`1105 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
+		`1110 GOTO 1042`,
 		`1900 IF L<=0 THEN RETURN`,
 		`1910 POKE D,Y:D=D+1:L=L-1:B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
 		`1920 RETURN`

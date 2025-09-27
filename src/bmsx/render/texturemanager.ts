@@ -3,7 +3,7 @@ import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
-import { Platform } from '../core/platform';
+import { Platform, type TextureSource } from '../core/platform';
 
 export const TEXTMANAGER_ID = 'texmgr';
 export type TextureIdentifier = string;
@@ -17,8 +17,8 @@ export type TextureKey = string;
 export type ImageKey = string;
 
 interface ImageCacheEntry {
-	bitmap?: ImageBitmap;
-	promise?: Promise<ImageBitmap>;
+	bitmap?: TextureSource;
+	promise?: Promise<TextureSource>;
 	refCount: number;
 }
 
@@ -66,7 +66,7 @@ export class TextureManager implements RegisterablePersistent {
 	/** Ensure real GPU texture exists; returns the key. */
 	private async ensureTextureReady(
 		key: string,
-		loadBitmapFn: () => Promise<ImageBitmap>,
+		loadBitmapFn: () => Promise<TextureSource>,
 		desc: TextureParams
 	): Promise<TextureKey> {
 		if (!this.backend) throw new Error('TextureManager backend not set');
@@ -103,7 +103,7 @@ export class TextureManager implements RegisterablePersistent {
 	/** Non-blocking: install fallback (optional), kick async upload, return key immediately. */
 	public acquireTexture(
 		key: TextureKey,
-		loadBitmapFn: () => Promise<ImageBitmap>,
+		loadBitmapFn: () => Promise<TextureSource>,
 		desc: TextureParams = {},
 		fallbackHandle?: TextureHandle,
 	): TextureKey {
@@ -186,7 +186,7 @@ export class TextureManager implements RegisterablePersistent {
 		delayMs?: number;
 		assetBarrier?: AssetBarrier<TextureHandle>,
 		// loaders and face ids may be null intentionally (some faces left unset)
-		faceLoaders: readonly (Promise<ImageBitmap> | null)[],
+		faceLoaders: readonly (Promise<TextureSource> | null)[],
 		faceIdsForKey: readonly (string | null)[],
 		desc: TextureParams,
 		fallbackColor: color_arr,
@@ -212,15 +212,15 @@ export class TextureManager implements RegisterablePersistent {
 				let targetSize = 1;
 				if (firstProvidedIndex >= 0) {
 					// await the first provided to know size (it's safe to await promises multiple times)
-					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<ImageBitmap>);
+					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<TextureSource>);
 					targetSize = Math.max(1, firstImg.width, firstImg.height);
 				}
 
 				// Build array of promises for all faces, substituting missing faces with solid bitmaps of targetSize
-				const promises: Promise<ImageBitmap>[] = faceLoaders.map(p => p != null ? (p as Promise<ImageBitmap>) : Platform.instance.textureLoader.createSolidImageBitmap(targetSize, fallbackColor));
+				const promises: Promise<TextureSource>[] = faceLoaders.map(p => p != null ? (p as Promise<TextureSource>) : Platform.instance.textureLoader.createSolid(targetSize, fallbackColor));
 
 				const faces = await Promise.all(promises) as
-					[ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
+					[TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource];
 				return this.backend!.createCubemapFromSources(faces, desc);
 			}, assetBarrier, `cubemap:${name}`);
 		} else {
@@ -231,7 +231,7 @@ export class TextureManager implements RegisterablePersistent {
 				const firstProvidedIndex = faceLoaders.findIndex(p => p != null);
 				let size = 1;
 				if (firstProvidedIndex >= 0) {
-					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<ImageBitmap>);
+					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<TextureSource>);
 					size = Math.max(1, firstImg.width, firstImg.height);
 				}
 
@@ -240,11 +240,11 @@ export class TextureManager implements RegisterablePersistent {
 				// Upload every face: use provided loader or synthesized solid image
 				const uploadPromises: Promise<void>[] = faceLoaders.map((p, idx) => {
 					if (p != null) {
-						return (p as Promise<ImageBitmap>).then(img => {
+						return (p as Promise<TextureSource>).then(img => {
 							this.backend!.uploadCubemapFace(cubemap, idx, img);
 						});
 					} else {
-						return Platform.instance.textureLoader.createSolidImageBitmap(size, fallbackColor).then(img => {
+						return Platform.instance.textureLoader.createSolid(size, fallbackColor).then(img => {
 							this.backend!.uploadCubemapFace(cubemap, idx, img);
 						});
 					}
@@ -300,7 +300,7 @@ export class TextureManager implements RegisterablePersistent {
 
 	private async loadAndCacheTexture(
 		key: string,
-		loadBitmapFn: () => Promise<ImageBitmap>,
+		loadBitmapFn: () => Promise<TextureSource>,
 		desc: TextureParams
 	): Promise<TextureKey> {
 		return this.ensureTextureReady(key, loadBitmapFn, desc);
@@ -308,15 +308,15 @@ export class TextureManager implements RegisterablePersistent {
 
 	public async loadModelTextureFromBuffer(buffer: ArrayBuffer, identifier: ModelTextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
 		const key = this.makeModelBufferKey(identifier);
-		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.loadBitmapFromBuffer('', buffer), desc);
+		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.fromBuffer('', buffer), desc);
 	}
 
 	public async fetchModelTextureFromUri(uri: string, _identifier: ModelTextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
 		const key = this.makeKey(uri, desc);
-		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.loadBitmapFromBuffer(uri, buffer), desc);
+		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.fromBuffer(uri, buffer), desc);
 	}
 
-	public getImage(key: ImageKey): ImageBitmap | undefined {
+	public getImage(key: ImageKey): TextureSource | undefined {
 		const imgEntry = this.imageCache.get(key);
 		return imgEntry ? imgEntry.bitmap : undefined;
 	}

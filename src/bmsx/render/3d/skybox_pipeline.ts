@@ -10,8 +10,9 @@ import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../gameview';
+import type { TextureSource } from 'bmsx/core/platform';
 
-function resolveSkyboxImage(assetId: string): Promise<ImageBitmap> {
+function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
 	const asset = GameView.imgassets[assetId];
 	if (!asset) {
 		throw new Error(`[SkyboxPipeline] Skybox image '${assetId}' not found.`);

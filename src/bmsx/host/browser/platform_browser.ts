@@ -682,7 +682,7 @@ export class WebTextureSourceLoader implements TextureSourceLoader {
 		return bitmap;
 	}
 
-	async createSolidImageBitmap(size: number, color: color_arr): Promise<ImageBitmap> {
+	async createSolid(size: number, color: color_arr): Promise<ImageBitmap> {
 		const [r, g, b, a] = color;
 		const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
 		const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
@@ -710,7 +710,7 @@ export class WebTextureSourceLoader implements TextureSourceLoader {
 		return createImageBitmap(canvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
 	}
 
-	async loadBitmapFromBuffer(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap> {
+	async fromBuffer(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap> {
 		let dataBuffer: ArrayBuffer;
 		if (buffer) {
 			dataBuffer = buffer;
@@ -725,7 +725,7 @@ export class WebTextureSourceLoader implements TextureSourceLoader {
 		return await createImageBitmap(new Blob([dataBuffer]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
 	}
 
-	async getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap> {
+	async fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap> {
 		let source: ImageBitmap | Promise<ImageBitmap> | undefined;
 		if (options?.flipY) {
 			source = romImgAsset._imgbinYFlipped; // Use the private _imgbinYFlipped property
@@ -770,4 +770,5 @@ export class WebTextureSourceLoader implements TextureSourceLoader {
 		if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
 		return source;
 	}
+
 }

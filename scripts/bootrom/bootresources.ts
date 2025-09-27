@@ -1,15 +1,6 @@
-import { Platform } from '../../src/bmsx/core/platform';
+import { Platform, type TextureSource } from '../../src/bmsx/core/platform';
 import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
-
-export async function loadImage(url: string): Promise<ImageBitmap> {
-	return new Promise((resolve, reject) => {
-		const img = new Image();
-		img.onload = () => resolve(createImageBitmap(img));
-		img.onerror = () => reject(`Failed to load image's URL: ${url}`);
-		img.src = url;
-	});
-}
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	const bytearray = new Uint8Array(to_parse);
@@ -270,8 +261,8 @@ function getImageURL(buffer: ArrayBuffer): string {
 	return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
 }
 
-async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
-	return loadImage(getImageURL(buffer));
+async function getImageFromBuffer(buffer: ArrayBuffer): Promise<TextureSource> {
+	return Platform.instance.textureLoader.fromUri(getImageURL(buffer));
 }
 
 async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
@@ -419,7 +410,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 	switch (res.type) {
 		case 'image':
 		case 'atlas':
-			let img: ImageBitmap | undefined = undefined;
+			let img: TextureSource | undefined = undefined;
 			// Non-atlassed images can be loaded directly from their buffer
 			if (!res.imgmeta?.atlassed) {
 				if (opts && opts.loadImageFromBuffer) {
@@ -430,18 +421,18 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			}
 			// Create the RomImgAsset object, with a getter for the imgbin property
 			// that will extract the image from the atlas when required.
-			// Note that the _imgbin property will be populated with the ImageBitmap
+			// Note that the _imgbin property will be populated with the TextureSource
 			const imgAsset: RomImgAsset = {
 				...res,
-				_imgbin: img, // The Image Bitmap of the image asset or undefined if not available. Note that this will be populated with an ImageBitmap when `get imgbin()` is called! In other words, it also acts as a cache when required.
+				_imgbin: img, // The Image Source of the image asset or undefined if not available. Note that this will be populated with an TextureSource when `get imgbin()` is called! In other words, it also acts as a cache when required.
 				_imgbinYFlipped: undefined,
 				// ** THAT'S WHY YOU SHOULD USE THE `atlassed`-PROPERTY TO DETERMINE WHETHER AN IMAGE ASSET IS ATLASSED OR NOT! **
 				// Getter for imgbin property, compatible with RomImgAsset interface
 				get imgbin() {
-					return Platform.instance.textureLoader.getAssetImageBin(this, romResult); // This will populate the _imgbin property if required
+					return Platform.instance.textureLoader.fromAsset(this, romResult); // This will populate the _imgbin property if required
 				},
 				get imgbinYFlipped() {
-					return Platform.instance.textureLoader.getAssetImageBin(this, romResult, { flipY: true }); // This will populate the _imgbinYFlipped property if required
+					return Platform.instance.textureLoader.fromAsset(this, romResult, { flipY: true }); // This will populate the _imgbinYFlipped property if required
 				},
 			};
 			romResult.img[res.resid] = imgAsset;

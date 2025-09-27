@@ -13,9 +13,9 @@ export type TextureSource = any;
 export interface TextureSourceLoader {
 	fromUri(uri: string): Promise<TextureSource>;
 	fromBytes(bytes: ArrayBuffer): Promise<TextureSource>;
-	createSolidImageBitmap(size: number, color: color_arr): Promise<TextureSource>;
-	loadBitmapFromBuffer(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap>;
-	getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap>;
+	createSolid(size: number, color: color_arr): Promise<TextureSource>;
+	fromBuffer(uri: string, buffer?: ArrayBuffer): Promise<TextureSource>;
+	fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<TextureSource>;
 }
 
 export type DeviceKind = 'keyboard' | 'gamepad' | 'pointer' | 'touch' | 'virtual';
@@ -119,16 +119,16 @@ export class Platform {
 	private static svc: PlatformServices | null = null;
 
 	static initialize(services: PlatformServices): void {
-		if (Platform.svc !== null) throw new Error('Platform already initialized');
+		if (Platform.svc) throw new Error('Platform already initialized');
 		Platform.svc = services;
 	}
 
 	static get instance(): PlatformServices {
-		if (Platform.svc === null) throw new Error('Platform not initialized');
+		if (!Platform.svc) throw new Error('Platform not initialized');
 		return Platform.svc;
 	}
 
 	static get isInitialized(): boolean {
-		return Platform.svc !== null;
+		return !!Platform.svc;
 	}
 }
