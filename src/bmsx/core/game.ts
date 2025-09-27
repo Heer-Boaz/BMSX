@@ -1,6 +1,6 @@
 ﻿import { AudioEventManager } from '../audio/audioeventmanager';
 import { PSG } from "../audio/psg";
-import { ModulationParams, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
+import { ModulationParams, ModulationPresetResolver, RandomModulationParams, SoundMaster, SoundMasterPlayRequest } from "../audio/soundmaster";
 import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
@@ -327,7 +327,40 @@ export class Game {
 		gview.pipelineRegistry = pipelineRegistry; // Register the pipeline registry with the view before initializing
 		gview.init(); // Init the view. Placed here to ensure that the world object is available to the view and that the Input module is initialized
 		gview.initializeDefaultTextures(); // Initialize default textures for the view after the backend was set (initializing textures requires backend to be available)
-		await SoundMaster.instance.init(rompack['audio'], sndcontext, GameOptions.volumePercentage, gainnode);
+		const modulationResolver: ModulationPresetResolver = {
+			resolve: (key: asset_id) => {
+				if (key === undefined || key === null) return undefined;
+				const data = rompack.data;
+				if (!data || typeof data !== 'object') return undefined;
+				const keyString = String(key);
+				const direct = (data as Record<string, unknown>)[keyString];
+				if (direct && typeof direct === 'object') {
+					return direct as (RandomModulationParams | ModulationParams);
+				}
+				if (typeof key === 'string') {
+					const segments = key.split('.');
+					let cursor: unknown = data;
+					for (let i = 0; i < segments.length; i++) {
+						const segment = segments[i];
+						if (segment.length === 0) {
+							cursor = undefined;
+							break;
+						}
+						if (cursor && typeof cursor === 'object' && segment in (cursor as Record<string, unknown>)) {
+							cursor = (cursor as Record<string, unknown>)[segment];
+						} else {
+							cursor = undefined;
+							break;
+						}
+					}
+					if (cursor && typeof cursor === 'object') {
+						return cursor as (RandomModulationParams | ModulationParams);
+					}
+				}
+				return undefined;
+			},
+		};
+		await SoundMaster.instance.init(rompack.audio, sndcontext, GameOptions.volumePercentage, gainnode, modulationResolver);
 		try {
 			await PSG.init(sndcontext, GameOptions.volumePercentage, gainnode);
 		} catch (error) {
@@ -368,7 +401,7 @@ export class Game {
 			this.removeWillExit = Platform.instance.lifecycle.onWillExit(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
-		SoundMaster.instance.volume = 0;
+		// SoundMaster.instance.volume = 0;
 		return this!; // Allow chaining
 	}
 

@@ -18,6 +18,67 @@ export interface TextureSourceLoader {
 	fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<TextureSource>;
 }
 
+// --------- AUDIO TYPES (platform-level, engine-agnostic) ---------
+
+export type AudioChannel = 'sfx' | 'music' | 'ui';
+
+export interface AudioLoop {
+	start: number;
+	end?: number;
+}
+
+export interface AudioFilterParams {
+	type: BiquadFilterType;
+	frequency: number;
+	q: number;
+	gain: number;
+}
+
+export interface AudioPlaybackParams {
+	offset: number;
+	rate: number;
+	gainLinear: number;
+	loop: AudioLoop | null;
+	filter: AudioFilterParams | null;
+}
+
+export interface AudioClipHandle {
+	readonly duration: number;
+	dispose(): void;
+}
+
+export interface VoiceEndedEvent {
+	clippedAt: number;
+}
+
+export interface VoiceHandle {
+	readonly startedAt: number;
+	readonly startOffset: number;
+	onEnded(cb: (e: VoiceEndedEvent) => void): () => void;
+	setGainLinear(v: number): void;
+	rampGainLinear(target: number, durationSec: number): void;
+	setFilter(p: AudioFilterParams | null): void;
+	setRate(v: number): void;
+	stop(): void;
+	disconnect(): void;
+}
+
+export interface AudioService {
+	readonly available: boolean;
+	currentTime(): number;
+	resume(): Promise<void>;
+	suspend(): Promise<void>;
+	getMasterGain(): number;
+	setMasterGain(v: number): void;
+	decode(bytes: ArrayBuffer): Promise<AudioClipHandle>;
+	createVoice(clip: AudioClipHandle, params: AudioPlaybackParams): VoiceHandle;
+}
+
+export interface RngService {
+	next(): number;
+	seed(value: number): void;
+}
+
 export type DeviceKind = 'keyboard' | 'gamepad' | 'pointer' | 'touch' | 'virtual';
 
 export interface VibrationParams { effect: 'dual-rumble'; duration: number; intensity: number; }
@@ -113,6 +174,8 @@ export interface PlatformServices {
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;
 	textureLoader: TextureSourceLoader;
+	audio: AudioService;
+	rng: RngService;
 }
 
 export class Platform {

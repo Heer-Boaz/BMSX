@@ -14,6 +14,7 @@
 # Ignore all .js files except those in the "scripts" folder
 **.js
 !scripts/*.js
+!scripts/assembler/*.js
 **/tempCodeRunnerFile.*
 # Include specific .js files that were previously ignored
 **.map

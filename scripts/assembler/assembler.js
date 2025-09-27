@@ -16,7 +16,7 @@ const SEGMENT_END_MARKER = 255;
  * @type {string[]}
  * @constant
  */
-const eightBitRegisters = ['A', 'B', 'C', 'D', 'E', 'H', 'L'];
+const eightBitRegisters = ['A', 'B', 'C', 'D', 'E', 'H', 'L', 'I', 'R'];
 
 /**
  * An array of 16-bit register names used in the assembler.
@@ -75,7 +75,7 @@ const conditionCodesMap = {
  * @constant {string[]}
  * @default
  */
-const directives = ['EQU', 'ORG', 'END', 'DB', 'DW'];
+const directives = ['EQU', 'ORG', 'END', 'DB', 'DW', 'INCLUDE'];
 
 /**
  * An array of valid mnemonics for the assembler.
@@ -98,7 +98,7 @@ const validMnemonic = ['LD', 'INC', 'DEC', 'ADD', 'SUB', 'CP', 'AND', 'OR', 'XOR
  *
  * @type {RegExp}
  */
-const regex = /([A-Za-z_][A-Za-z0-9_]*:)|([A-Za-z_][A-Za-z0-9_]*)|((?:0x|&H|#|\$)[0-9A-Fa-f]+|[0-9A-Fa-f]+[Hh]|%[01]+|[01]+[Bb]|\d+)|(\".*?\"|'.')|([,\(\)\+\-\*/])|(\S)/g;
+const regex = /([A-Za-z_][A-Za-z0-9_\.]*:)|([A-Za-z_][A-Za-z0-9_\.]*)|((?:0x|&H|#|\$)[0-9A-Fa-f]+|[0-9A-Fa-f]+[Hh]|%[01]+|[01]+[Bb]|\d+)|(\".*?\"|'.')|([,\(\)\+\-\*/])|(\S)/g;
 // Define ANSI escape codes for colors
 const colors = {
 	reset: "\x1b[0m",
@@ -118,6 +118,72 @@ const colors = {
  * @type {Object.<string, any>}
  */
 const symbolTable = {};
+const persistentSymbols = {};
+
+function splitArguments(text) {
+	if (!text) {
+		return [];
+	}
+	const result = [];
+	let current = '';
+	let inString = false;
+	let stringChar = null;
+	let escape = false;
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (escape) {
+			current += ch;
+			escape = false;
+			continue;
+		}
+		if (ch === '\\') {
+			current += ch;
+			escape = true;
+			continue;
+		}
+		if ((ch === '"' || ch === '\'') && (!inString || ch === stringChar)) {
+			inString = !inString;
+			stringChar = inString ? ch : null;
+			current += ch;
+			continue;
+		}
+		if (ch === ',' && !inString) {
+			if (current.trim().length > 0) {
+				result.push(current.trim());
+			}
+			current = '';
+			continue;
+		}
+		current += ch;
+	}
+	if (current.trim().length > 0) {
+		result.push(current.trim());
+	}
+	return result;
+}
+
+function clearAllSymbolTables() {
+	for (const key of Object.keys(symbolTable)) {
+		delete symbolTable[key];
+	}
+	for (const key of Object.keys(persistentSymbols)) {
+		delete persistentSymbols[key];
+	}
+}
+
+function resetSymbolTableForAssembly() {
+	for (const key of Object.keys(symbolTable)) {
+		delete symbolTable[key];
+	}
+	for (const key of Object.keys(persistentSymbols)) {
+		symbolTable[key] = persistentSymbols[key];
+	}
+}
+
+function setPersistentSymbol(name, value) {
+	persistentSymbols[name] = value;
+	symbolTable[name] = value;
+}
 let entryLabel = null;
 let entryAddress = null;
 
@@ -556,6 +622,7 @@ function tokenize(line) {
 	// Regular expressions for different token types
 	const tokens = [];
 	let match;
+	regex.lastIndex = 0;
 
 	while ((match = regex.exec(line)) !== null) {
 		tokens.push(match[0]);
@@ -686,87 +753,709 @@ function handleDirective(instruction, locationCounter, lineNumber, line) {
  * @throws {Error} If the expression is empty, contains invalid character literals, or contains undefined symbols.
  * @returns {number|string} The evaluated result of the expression.
  */
-function evaluateExpression(expr, lineNumber, line) {
+function lexExpression(source) {
+	const tokens = [];
+	let i = 0;
+	const length = source.length;
+	const push = (type, value, pos) => tokens.push({ type, value, pos });
+	const isIdStart = char => /[A-Za-z_.]/.test(char);
+	const isIdBody = char => /[A-Za-z0-9_.$]/.test(char);
+	const twoCharOps = new Set(['<<', '>>', '&&', '||', '==', '!=', '>=', '<=']);
+
+	const readHex = (start) => {
+		let j = start;
+		while (j < length && /[0-9A-Fa-f]/.test(source[j])) {
+			j++;
+		}
+		if (j === start) {
+			throw new Error(`Invalid hexadecimal constant near position ${start}`);
+		}
+		const value = parseInt(source.slice(start, j), 16);
+		return { value, next: j };
+	};
+
+	while (i < length) {
+		const pos = i;
+		const char = source[i];
+
+		if (char === ';') {
+			break;
+		}
+
+		if (/\s/.test(char)) {
+			i++;
+			continue;
+		}
+
+		if (char === '\'') {
+			if (i + 1 >= length) {
+				throw new Error('Unterminated character literal');
+			}
+			let value;
+			let consumed = 0;
+			if (source[i + 1] === '\\') {
+				const escape = source[i + 2];
+				const map = { n: '\n', r: '\r', t: '\t', "'": "'", '"': '"', '\\': '\\', '0': '\0' };
+				if (escape === 'x' || escape === 'X') {
+					const { value: hexValue, next } = readHex(i + 3);
+					value = hexValue & 0xFF;
+					consumed = next - (i + 1);
+				} else {
+					const mapped = map[escape];
+					if (mapped === undefined) {
+						throw new Error(`Unknown escape sequence \\${escape}`);
+					}
+					value = mapped.charCodeAt(0);
+					consumed = 2;
+				}
+			} else {
+				value = source[i + 1].charCodeAt(0);
+				consumed = 1;
+			}
+			const closingIndex = i + consumed + 1;
+			if (closingIndex >= length || source[closingIndex] !== '\'') {
+				throw new Error('Unterminated character literal');
+			}
+			push('num', value & 0xFF, pos);
+			i = closingIndex + 1;
+			continue;
+		}
+
+		if (char === '&' && (source[i + 1] === 'H' || source[i + 1] === 'h')) {
+			const { value, next } = readHex(i + 2);
+			push('num', value, pos);
+			i = next;
+			continue;
+		}
+
+		if (char === '%' && /[01]/.test(source[i + 1] || '')) {
+			let j = i + 1;
+			while (j < length && /[01]/.test(source[j])) j++;
+			const value = parseInt(source.slice(i + 1, j) || '0', 2);
+			push('num', value, pos);
+			i = j;
+			continue;
+		}
+
+		if (char === '$' && /[0-9A-Fa-f]/.test(source[i + 1] || '')) {
+			const { value, next } = readHex(i + 1);
+			push('num', value, pos);
+			i = next;
+			continue;
+		}
+
+		if (char === '#') {
+			const { value, next } = readHex(i + 1);
+			push('num', value, pos);
+			i = next;
+			continue;
+		}
+
+		if (/[0-9]/.test(char)) {
+			if (char === '0' && (source[i + 1] === 'x' || source[i + 1] === 'X')) {
+				const { value, next } = readHex(i + 2);
+				push('num', value, pos);
+				i = next;
+				continue;
+			}
+			if (char === '0' && (source[i + 1] === 'b' || source[i + 1] === 'B')) {
+				let j = i + 2;
+				while (j < length && /[01]/.test(source[j])) j++;
+				const value = parseInt(source.slice(i + 2, j) || '0', 2);
+				push('num', value, pos);
+				i = j;
+				continue;
+			}
+			if (char === '0' && (source[i + 1] === 'o' || source[i + 1] === 'O')) {
+				let j = i + 2;
+				while (j < length && /[0-7]/.test(source[j])) j++;
+				const value = parseInt(source.slice(i + 2, j) || '0', 8);
+				push('num', value, pos);
+				i = j;
+				continue;
+			}
+
+			let j = i;
+			while (j < length && /[0-9A-Fa-f]/.test(source[j])) j++;
+			const digits = source.slice(i, j);
+			const suffix = (source[j] || '').toLowerCase();
+			let value;
+			if (suffix === 'h') {
+				value = parseInt(digits, 16);
+				j++;
+			} else if (suffix === 'b') {
+				value = parseInt(digits, 2);
+				j++;
+			} else if (suffix === 'o' || suffix === 'q') {
+				value = parseInt(digits, 8);
+				j++;
+			} else {
+				value = parseInt(digits, 10);
+			}
+			push('num', value, pos);
+			i = j;
+			continue;
+		}
+
+		if (isIdStart(char)) {
+			let j = i + 1;
+			while (j < length && isIdBody(source[j])) j++;
+			const id = source.slice(i, j);
+			push('id', id, pos);
+			i = j;
+			continue;
+		}
+
+		const two = source.slice(i, i + 2);
+		if (twoCharOps.has(two)) {
+			push('sym', two, pos);
+			i += 2;
+			continue;
+		}
+
+		const singleOps = '()+-*/%&|^~!,.:<>=';
+		if (singleOps.includes(char)) {
+			push('sym', char, pos);
+			i++;
+			continue;
+		}
+
+		throw new Error(`Unexpected token '${char}' in expression at position ${pos}`);
+	}
+
+	tokens.push({ type: 'eof', value: null, pos: source.length });
+	return tokens;
+}
+
+const expressionPrecedence = {
+	'||': 1,
+	'&&': 2,
+	'|': 3,
+	'^': 4,
+	'&': 5,
+	'==': 6,
+	'!=': 6,
+	'<': 7,
+	'>': 7,
+	'<=': 7,
+	'>=': 7,
+	'<<': 8,
+	'>>': 8,
+	'+': 9,
+	'-': 9,
+	'*': 10,
+	'/': 10,
+	'%': 10,
+};
+
+function parseExpressionTokens(tokens, startIndex = 0, minPrec = 0) {
+	function parsePrimary(index) {
+		const token = tokens[index];
+		if (!token) {
+			throw new Error('Unexpected end of expression');
+		}
+		if (token.type === 'num') {
+			return { node: { type: 'num', value: token.value | 0 }, index: index + 1 };
+		}
+		if (token.type === 'id') {
+			return { node: { type: 'sym', name: token.value }, index: index + 1 };
+		}
+		if (token.type === 'sym' && token.value === '(') {
+			const inner = parseExpressionTokens(tokens, index + 1, 0);
+			const nextToken = tokens[inner.index];
+			if (!nextToken || nextToken.type !== 'sym' || nextToken.value !== ')') {
+				throw new Error('Missing closing parenthesis in expression');
+			}
+			return { node: inner.node, index: inner.index + 1 };
+		}
+		if (token.type === 'sym' && ['+', '-', '~', '!'].includes(token.value)) {
+			const operand = parsePrimary(index + 1);
+			return { node: { type: 'un', op: token.value, a: operand.node }, index: operand.index };
+		}
+		throw new Error(`Unexpected token '${token.value}' in expression`);
+	}
+
+	let { node: left, index } = parsePrimary(startIndex);
+
+	while (true) {
+		const token = tokens[index];
+		if (!token || token.type !== 'sym') {
+			break;
+		}
+		const precedence = expressionPrecedence[token.value];
+		if (precedence === undefined || precedence < minPrec) {
+			break;
+		}
+		const op = token.value;
+		const nextMinPrec = precedence + 1;
+		const rightParsed = parseExpressionTokens(tokens, index + 1, nextMinPrec);
+		left = { type: 'bin', op, a: left, b: rightParsed.node };
+		index = rightParsed.index;
+	}
+
+	return { node: left, index };
+}
+
+function evaluateExpressionNode(node, symLookup) {
+	switch (node.type) {
+		case 'num':
+			return node.value | 0;
+		case 'sym': {
+			const value = symLookup(node.name);
+			if (value === undefined || value === null) {
+				throw new Error(`Undefined symbol: ${node.name}`);
+			}
+			return value | 0;
+		}
+		case 'un': {
+			const val = evaluateExpressionNode(node.a, symLookup);
+			switch (node.op) {
+				case '+':
+					return +val;
+				case '-':
+					return (-val) | 0;
+				case '~':
+					return (~val) | 0;
+				case '!':
+					return val ? 0 : 1;
+				default:
+					throw new Error(`Unsupported unary operator ${node.op}`);
+			}
+		}
+		case 'bin': {
+			const left = evaluateExpressionNode(node.a, symLookup);
+			const right = evaluateExpressionNode(node.b, symLookup);
+			switch (node.op) {
+				case '+':
+					return (left + right) | 0;
+				case '-':
+					return (left - right) | 0;
+				case '*':
+					return (left * right) | 0;
+				case '/':
+					if (right === 0) {
+						throw new Error('Division by zero');
+					}
+					return Math.trunc(left / right) | 0;
+				case '%':
+					if (right === 0) {
+						throw new Error('Modulo by zero');
+					}
+					return (left % right) | 0;
+				case '<<':
+					return (left << (right & 31)) | 0;
+				case '>>':
+					return (left >> (right & 31)) | 0;
+				case '&':
+					return (left & right) | 0;
+				case '^':
+					return (left ^ right) | 0;
+				case '|':
+					return (left | right) | 0;
+				case '&&':
+					return (left && right) ? 1 : 0;
+				case '||':
+					return (left || right) ? 1 : 0;
+				case '==':
+					return left === right ? 1 : 0;
+				case '!=':
+					return left !== right ? 1 : 0;
+				case '<':
+					return left < right ? 1 : 0;
+				case '>':
+					return left > right ? 1 : 0;
+				case '<=':
+					return left <= right ? 1 : 0;
+				case '>=':
+					return left >= right ? 1 : 0;
+				default:
+					throw new Error(`Unsupported operator ${node.op}`);
+			}
+		}
+		default:
+			throw new Error('Invalid expression node');
+	}
+}
+
+function evaluateExpression(expr, lineNumber, line, lookupFn) {
 	if (!expr) {
 		throw new Error('Empty expression in evaluateExpression');
 	}
+	const trimmedExpr = expr.trim();
+	const simpleHex = trimmedExpr.match(/^([0-9A-Fa-f]+)[Hh]$/);
+	if (simpleHex) {
+		return parseInt(simpleHex[1], 16) | 0;
+	}
+	if (/^0x[0-9A-Fa-f]+$/i.test(trimmedExpr)) {
+		return parseInt(trimmedExpr.slice(2), 16) | 0;
+	}
+	if (/^\$[0-9A-Fa-f]+$/i.test(trimmedExpr)) {
+		return parseInt(trimmedExpr.slice(1), 16) | 0;
+	}
+	if (/^&H[0-9A-Fa-f]+$/i.test(trimmedExpr)) {
+		return parseInt(trimmedExpr.slice(2), 16) | 0;
+	}
+	if (/^0b[01]+$/i.test(trimmedExpr)) {
+		return parseInt(trimmedExpr.slice(2), 2) | 0;
+	}
+	if (/^%[01]+$/.test(trimmedExpr)) {
+		return parseInt(trimmedExpr.slice(1), 2) | 0;
+	}
+	if (/^[0-9]+$/.test(trimmedExpr)) {
+		return parseInt(trimmedExpr, 10) | 0;
+	}
 
-	// Handle character literals
-	expr = expr.replace(/'(\\.|[^'])'/g, (match, p1) => {
-		if (p1.length === 1) {
-			//console.debug(`Character: "${p1.charCodeAt(0)}"`);
-			return p1.charCodeAt(0);
-		} else if (p1.startsWith('\\')) {
-			// Handle escape sequences
-			const escapeChars = {
-				'n': '\n',
-				'r': '\r',
-				't': '\t',
-				'\\': '\\',
-				"'": "'",
-				'"': '"',
-				'0': '\0',
-			};
-			const unescapedChar = escapeChars[p1[1]] || p1[1];
-			//console.debug(`Character: "${unescapedChar.charCodeAt(0)}"`);
-			return unescapedChar.charCodeAt(0);
-		} else {
-			throw new Error(`Line ${lineNumber}: Invalid character literal: ${match}\n"${line}"`);
+	const tokens = lexExpression(trimmedExpr);
+	const { node, index } = parseExpressionTokens(tokens, 0, 0);
+	const tail = tokens[index];
+	if (!tail || tail.type !== 'eof') {
+		throw new Error(`Line ${lineNumber}: Invalid expression: ${expr}\n"${line || ''}"`);
+	}
+	const symbolResolver = lookupFn || (name => {
+		if (symbolTable[name] !== undefined) {
+			return symbolTable[name];
 		}
+		throw new Error(`Undefined symbol: ${name}`);
 	});
+	try {
+		return evaluateExpressionNode(node, symbolResolver);
+	} catch (error) {
+		if (error && error.message) {
+			if (/Undefined symbol/.test(error.message)) {
+				throw new Error(`Line ${lineNumber}: ${error.message}\n"${line || ''}"`);
+			}
+			throw new Error(`Line ${lineNumber}: ${error.message}\n"${line || ''}"`);
+		}
+		throw error;
+	}
+}
 
-	// Remove spaces
-	expr = expr.replace(/\s+/g, '');
+function collectStructs(lines) {
+	let index = 0;
+	while (index < lines.length) {
+		const rawLine = lines[index];
+		if (!rawLine || !/^\s*STRUCT\b/i.test(rawLine)) {
+			index++;
+			continue;
+		}
 
-	// Handle hexadecimal numbers starting with '#' or ending with 'H'/'h' or starting with '$' or starting with '0x'
-	expr = expr.replace(/0x([0-9A-Fa-f]+)/g, (match, p1) => {
-		// Return decimal evaluation of hexidecimal number
-		return parseInt(p1, 16);
+		const parts = rawLine.trim().split(/\s+/);
+		const structName = parts[1];
+		if (!structName) {
+			throw new Error('STRUCT directive requires a name');
+		}
 
-		return `0x${p1}`;
-	});
-	expr = expr.replace(/\$([0-9A-Fa-f]+)/g, (match, p1) => {
-		return parseInt(p1, 16);
-		return `0x${p1}`;
-	});
-	expr = expr.replace(/#([0-9A-Fa-f]+)/g, (match, p1) => {
-		return parseInt(p1, 16);
-		return `0x${p1}`;
-	});
-	expr = expr.replace(/([0-9A-Fa-f]+)[Hh]/g, (match, p1) => {
-		return parseInt(p1, 16);
-		return `0x${p1}`;
-	});
-	expr = expr.replace(/%([01]+)/g, (match, p1) => {
-		return parseInt(p1, 2);
-	});
-	expr = expr.replace(/([01]+)[Bb]/g, (match, p1) => {
-		return parseInt(p1, 2);
-	});
+		let offset = 0;
+		index++;
+		setPersistentSymbol(structName, 0);
+		while (index < lines.length && !/^\s*ENDS\b/i.test(lines[index])) {
+			const currentRaw = lines[index];
+			const lineNumber = index + 1;
+			const lineNoComment = currentRaw.split(';')[0].trim();
+			index++;
+			if (!lineNoComment) {
+				continue;
+			}
 
-	// Recognize registers and replace them with their values
-	if (allRegisters.includes(expr)) {
-		// console.debug(`Register: ${expr}`);
-		return expr;
+			const equMatch = lineNoComment.match(/^([A-Za-z_][A-Za-z0-9_\.]*?):?\s+EQU\s+(.+)$/i);
+			if (equMatch) {
+				const field = equMatch[1];
+				const expr = equMatch[2].trim();
+				const value = evaluateExpression(expr, lineNumber, currentRaw);
+				setPersistentSymbol(`${structName}.${field}`, value | 0);
+				continue;
+			}
+
+			const fieldMatch = lineNoComment.match(/^([A-Za-z_][A-Za-z0-9_\.]*?):?\s+(RS|RB|DB|DW|DS|RW)\b\s*(.*)$/i);
+			if (!fieldMatch) {
+				continue;
+			}
+
+			const fieldName = fieldMatch[1];
+			const directive = fieldMatch[2].toUpperCase();
+			const operandText = (fieldMatch[3] || '').trim();
+
+			setPersistentSymbol(`${structName}.${fieldName}`, offset | 0);
+
+			let sizeIncrement = 0;
+			if (directive === 'DB' || directive === 'DW' || directive === 'RW') {
+				if (!operandText) {
+					sizeIncrement = directive === 'DB' ? 1 : 2;
+				} else {
+					const elements = splitArguments(operandText);
+					if (directive === 'DB') {
+						sizeIncrement = elements.reduce((total, item) => {
+							if (/^".*"$/.test(item)) {
+								return total + item.slice(1, -1).length;
+							}
+							return total + 1;
+						}, 0);
+					} else {
+						sizeIncrement = elements.length * 2;
+					}
+				}
+			} else {
+				const amount = operandText ? evaluateExpression(operandText, lineNumber, currentRaw) : 0;
+				sizeIncrement = amount | 0;
+			}
+
+			offset = (offset + sizeIncrement) | 0;
+		}
+
+		setPersistentSymbol(`${structName}.SIZE`, offset | 0);
+		if (index < lines.length && /^\s*ENDS\b/i.test(lines[index])) {
+			index++;
+		}
+	}
+}
+
+function processMacrosAndConditionals(lines, origins) {
+	const macros = new Map();
+	const outputLines = [];
+	const outputOrigins = [];
+	const conditionalStack = [];
+
+	const getCurrentActive = () => conditionalStack.length > 0 ? conditionalStack[conditionalStack.length - 1].active : true;
+
+	const lookupForCondition = name => {
+		if (symbolTable[name] !== undefined) {
+			return symbolTable[name];
+		}
+		if (persistentSymbols[name] !== undefined) {
+			return persistentSymbols[name];
+		}
+		return 0;
 	};
 
-	// Replace symbols with their values
-	expr = expr.replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, match => { // Match valid symbol names as whole words
-		if (symbolTable[match] !== undefined) { // Check if the symbol is defined in the symbol table already
-			// console.debug(`Symbol: ${expr} = ${symbolTable[match]}`);
-			return symbolTable[match]; // Return the symbol's value
-		} else {
-			throw new Error(`Line ${lineNumber}: Undefined symbol: ${match}\n"${line}"`);
-		}
-	});
+	let i = 0;
+	while (i < lines.length) {
+		const rawLine = lines[i];
+		const origin = origins[i];
+		const codePart = rawLine.split(';')[0];
+		const trimmed = codePart.trim();
+		const upperTrim = trimmed.toUpperCase();
+		const currentActive = getCurrentActive();
 
-	try {
-		// Evaluate the expression
-		// console.debug(`Expression: ${expr} = "${eval(expr)}"`);
-		return eval(expr);
-	} catch (e) {
-		throw new Error(`Line ${lineNumber}: Invalid expression: ${expr}\n"${line}"`);
+		// Handle conditional assembly directives
+		if (/^IFDEF\b/i.test(trimmed)) {
+			const symbol = trimmed.replace(/^IFDEF\b/i, '').trim();
+			const parentActive = getCurrentActive();
+			const defined = (symbolTable[symbol] !== undefined) || (persistentSymbols[symbol] !== undefined);
+			const cond = parentActive && defined;
+			conditionalStack.push({ parentActive, active: cond, hasTrue: cond });
+			i++;
+			continue;
+		}
+		if (/^IFNDEF\b/i.test(trimmed)) {
+			const symbol = trimmed.replace(/^IFNDEF\b/i, '').trim();
+			const parentActive = getCurrentActive();
+			const defined = (symbolTable[symbol] !== undefined) || (persistentSymbols[symbol] !== undefined);
+			const cond = parentActive && !defined;
+			conditionalStack.push({ parentActive, active: cond, hasTrue: cond });
+			i++;
+			continue;
+		}
+		if (/^IF\b/i.test(trimmed)) {
+			const expr = trimmed.replace(/^IF\b/i, '').trim();
+			const parentActive = getCurrentActive();
+			let cond = false;
+			if (parentActive && expr.length > 0) {
+				try {
+					cond = evaluateExpression(expr, origin.lineNumber, rawLine, lookupForCondition) !== 0;
+				} catch (error) {
+					cond = false;
+				}
+			}
+			const activeBranch = parentActive && cond;
+			conditionalStack.push({ parentActive, active: activeBranch, hasTrue: activeBranch });
+			i++;
+			continue;
+		}
+		if (/^ELSEIFDEF\b/i.test(upperTrim)) {
+			if (conditionalStack.length === 0) {
+				throw new Error('ELSEIFDEF without matching IF');
+			}
+			const symbol = trimmed.replace(/^ELSEIFDEF\b/i, '').trim();
+			const frame = conditionalStack[conditionalStack.length - 1];
+			if (!frame.parentActive || frame.hasTrue) {
+				frame.active = false;
+			} else {
+				const defined = (symbolTable[symbol] !== undefined) || (persistentSymbols[symbol] !== undefined);
+				frame.active = frame.parentActive && defined;
+				if (frame.active) {
+					frame.hasTrue = true;
+				}
+			}
+			i++;
+			continue;
+		}
+		if (/^ELSEIFNDEF\b/i.test(upperTrim)) {
+			if (conditionalStack.length === 0) {
+				throw new Error('ELSEIFNDEF without matching IF');
+			}
+			const symbol = trimmed.replace(/^ELSEIFNDEF\b/i, '').trim();
+			const frame = conditionalStack[conditionalStack.length - 1];
+			if (!frame.parentActive || frame.hasTrue) {
+				frame.active = false;
+			} else {
+				const defined = (symbolTable[symbol] !== undefined) || (persistentSymbols[symbol] !== undefined);
+				frame.active = frame.parentActive && !defined;
+				if (frame.active) {
+					frame.hasTrue = true;
+				}
+			}
+			i++;
+			continue;
+		}
+		if (/^ELSEIF\b/i.test(trimmed)) {
+			if (conditionalStack.length === 0) {
+				throw new Error('ELSEIF without matching IF');
+			}
+			const expr = trimmed.replace(/^ELSEIF\b/i, '').trim();
+			const frame = conditionalStack[conditionalStack.length - 1];
+			if (!frame.parentActive || frame.hasTrue) {
+				frame.active = false;
+			} else {
+				let cond = false;
+				if (expr.length > 0) {
+					try {
+						cond = evaluateExpression(expr, origin.lineNumber, rawLine, lookupForCondition) !== 0;
+					} catch (error) {
+						cond = false;
+					}
+				}
+				frame.active = frame.parentActive && cond;
+				if (frame.active) {
+					frame.hasTrue = true;
+				}
+			}
+			i++;
+			continue;
+		}
+		if (/^ELSE\b/i.test(trimmed)) {
+			if (conditionalStack.length === 0) {
+				throw new Error('ELSE without matching IF');
+			}
+			const frame = conditionalStack[conditionalStack.length - 1];
+			if (!frame.parentActive) {
+				frame.active = false;
+			} else {
+				frame.active = frame.parentActive && !frame.hasTrue;
+				if (frame.active) {
+					frame.hasTrue = true;
+				}
+			}
+			i++;
+			continue;
+		}
+		if (/^ENDIF\b/i.test(trimmed)) {
+			if (conditionalStack.length === 0) {
+				throw new Error('ENDIF without matching IF');
+			}
+			conditionalStack.pop();
+			i++;
+			continue;
+		}
+
+		const macroMatch = trimmed.match(/^([A-Za-z_][A-Za-z0-9_\.]*)\s+MACRO\b(.*)$/i);
+		if (macroMatch) {
+			const macroName = macroMatch[1].toUpperCase();
+			const paramText = macroMatch[2] ? macroMatch[2].trim() : '';
+			const params = splitArguments(paramText);
+			const body = [];
+			i++;
+			while (i < lines.length) {
+				const bodyLine = lines[i];
+				const bodyTrim = bodyLine.split(';')[0].trim();
+				if (/^ENDM\b/i.test(bodyTrim)) {
+					break;
+				}
+				body.push(bodyLine);
+				i++;
+			}
+			if (i >= lines.length) {
+				throw new Error('Unterminated MACRO definition');
+			}
+			// Skip ENDM line
+			i++;
+			if (currentActive) {
+				macros.set(macroName, { params, body });
+			}
+			continue;
+		}
+
+		if (!currentActive) {
+			i++;
+			continue;
+		}
+
+		// Track EQU symbols for conditionals/macros
+		const equMatch = trimmed.match(/^([A-Za-z_][A-Za-z0-9_\.]*)?:?\s+EQU\b\s*(.+)$/i);
+		if (equMatch) {
+			const symbolName = (equMatch[1] || '').replace(/:$/, '') || null;
+			const expr = equMatch[2] ? equMatch[2].trim() : '';
+			if (symbolName && expr) {
+				const value = evaluateExpression(expr, origin.lineNumber, rawLine);
+				setPersistentSymbol(symbolName, value | 0);
+			}
+		}
+
+		// Macro invocation
+		let labelPrefix = '';
+		let afterLabel = trimmed;
+		const labelMatch = afterLabel.match(/^([A-Za-z_][A-Za-z0-9_\.]*)\s*:/);
+		if (labelMatch) {
+			labelPrefix = labelMatch[0];
+			afterLabel = afterLabel.slice(labelMatch[0].length).trim();
+		}
+		if (afterLabel.length > 0) {
+			const parts = afterLabel.split(/\s+/);
+			const potentialMacroName = parts[0].toUpperCase();
+			if (macros.has(potentialMacroName)) {
+				const macro = macros.get(potentialMacroName);
+				const argText = afterLabel.slice(parts[0].length).trim();
+				const args = splitArguments(argText);
+				const expandedLines = [];
+				for (let j = 0; j < macro.body.length; j++) {
+					let expanded = macro.body[j];
+					const commentSplit = expanded.split(';');
+					let code = commentSplit.shift() || '';
+					const comment = commentSplit.length > 0 ? ';' + commentSplit.join(';') : '';
+					macro.params.forEach((param, idx) => {
+						const value = args[idx] !== undefined ? args[idx] : '';
+						const regex = new RegExp(`\\b${param}\\b`, 'gi');
+						code = code.replace(regex, value);
+					});
+					code = code.replace(/\\([0-9]+)/g, (match, num) => {
+						const idx = parseInt(num, 10) - 1;
+						return idx >= 0 && idx < args.length ? args[idx] : '';
+					});
+					expandedLines.push(code + comment);
+				}
+				if (expandedLines.length > 0) {
+					if (labelPrefix) {
+						expandedLines[0] = `${labelPrefix} ${expandedLines[0].trimStart()}`.trimEnd();
+					}
+					for (const expandedLine of expandedLines) {
+						outputLines.push(expandedLine);
+						outputOrigins.push(origin);
+					}
+				}
+				i++;
+				continue;
+			}
+		}
+
+		outputLines.push(rawLine);
+		outputOrigins.push(origin);
+		i++;
 	}
+
+	if (conditionalStack.length !== 0) {
+		throw new Error('Unterminated IF block');
+	}
+
+	return { lines: outputLines, origins: outputOrigins };
 }
 
 function isIndexOperand(operand) {
@@ -1135,8 +1824,8 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 		// Handle relative jumps
 		let condition = '';
 		let offsetOperandIndex = 0;
-		if (conditionCodes.includes(operands[0])) {
-			condition = operands[0];
+		if (operands.length > 1 && conditionCodes.includes(operands[0].toUpperCase())) {
+			condition = operands[0].toUpperCase();
 			offsetOperandIndex = 1;
 		}
 		const addr = resolvedOperands[offsetOperandIndex];
@@ -1325,8 +2014,12 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
  * @throws {Error} If an invalid instruction or operand is encountered during the first pass.
  */
 function assemble(assemblyCode, options = {}) {
-	const { filePath = 'input' } = options;
+	const { filePath = 'input', lineOrigins = [] } = options;
 	const lines = assemblyCode.split('\n');
+	const origins = lineOrigins.length === lines.length
+		? lineOrigins
+		: lines.map((line, idx) => ({ filePath, lineNumber: idx + 1, lineContent: line }));
+	resetSymbolTableForAssembly();
 	entryLabel = null;
 	entryAddress = null;
 	let locationCounter = 0;
@@ -1336,7 +2029,8 @@ function assemble(assemblyCode, options = {}) {
 
 	// First pass: parse lines and build symbol table
 	for (let i = 0; i < lines.length; i++) {
-		const lineNumber = i + 1;
+		const origin = origins[i];
+		const lineNumber = origin.lineNumber;
 		const line = lines[i];
 		try {
 			const tokens = tokenize(line);
@@ -1345,6 +2039,7 @@ function assemble(assemblyCode, options = {}) {
 			}
 
 			const instruction = parse(tokens);
+			instruction.filePath = origin.filePath;
 
 			if (instruction.label) {
 				symbolTable[instruction.label] = locationCounter;
@@ -1368,7 +2063,7 @@ function assemble(assemblyCode, options = {}) {
 							loadAddressStart = locationCounter;
 						}
 					}
-					instructions.push({ ...instruction, locationCounter, lineNumber, line });
+					instructions.push({ ...instruction, locationCounter, lineNumber, line, filePath: origin.filePath });
 					locationCounter += size;
 				} else {
 					locationCounter = handleDirective(instruction, locationCounter, lineNumber, line);
@@ -1428,11 +2123,11 @@ function assemble(assemblyCode, options = {}) {
 						loadAddressStart = locationCounter;
 					}
 				}
-				instructions.push({ ...instruction, locationCounter, lineNumber, line });
+				instructions.push({ ...instruction, locationCounter, lineNumber, line, filePath: origin.filePath });
 				locationCounter += instruction.size;
 			}
 		} catch (error) {
-			errors.push(createErrorRecord(filePath, lineNumber, line, error));
+			errors.push(createErrorRecord(origin.filePath, lineNumber, line, error));
 		}
 	}
 
@@ -1454,7 +2149,7 @@ function assemble(assemblyCode, options = {}) {
 				currentSegment.bytes.push(...opcodeBytes);
 			}
 		} catch (error) {
-			errors.push(createErrorRecord(filePath, instr.lineNumber, instr.line, error));
+			errors.push(createErrorRecord(instr.filePath || filePath, instr.lineNumber, instr.line, error));
 		}
 	}
 
@@ -1562,7 +2257,6 @@ function generateDataStatements(segments, dataFormat) {
  */
 function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddress, entryLabel) {
 	let dataBytesPerLine = getDataBytesPerLine(dataFormat);
-	const dataLineCountMarkerOffset = datalineCount - 1; // The number of data lines minus the start data line and end marker line, for visualising the progress bar
 	const toDecBoilerPlate = [
 		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2000`,
 		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
@@ -1571,13 +2265,13 @@ function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddres
 		`1080 FOR I=1 TO L`,
 		`1090  READ A:POKE D,A:D=D+1`,
 		`1100  B=B+1:IF B MOD ${dataBytesPerLine}=0 THEN ?".";`,
-		`1110 NEXT`,
+		`1110 NEXT I`,
 		`1120 IF T MOD ${dataBytesPerLine}<>0 THEN ?".";`,
 		`1130 GOTO 1040`
 	].join('\n');
 
 	const toHexBoilerPlate = [
-		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2020`,
+		`1040 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2000`,
 		`1050 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
 		`1060 READ DL,DH,LL,LH`,
 		`1070 D=DL+256*DH:L=LL+256*LH:T=L`,
@@ -1598,7 +2292,7 @@ function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddres
 	const toBase64BoilerPlate = [
 		`1040 DIM B$(63)`,
 		`1041 B$="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"`,
-		`1042 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2020`,
+		`1042 READ M:IF M=${SEGMENT_END_MARKER} THEN GOTO 2000`,
 		`1043 IF M<>${SEGMENT_START_MARKER} THEN ?"DATA ERROR":STOP`,
 		`1044 READ DL,DH,LL,LH`,
 		`1045 D=DL+256*DH:L=LL+256*LH:T=L`,
@@ -1656,7 +2350,7 @@ function generateBoilerPlate(datalineCount, dataFormat, loadAddress, entryAddres
 	return `1000 ' Put program to memory
 1010 D=&H${loadAddressHex}
 1015 B=0
-1020 ?"Laderen:":?"[";:LOCATE${dataLineCountMarkerOffset}:?"]";:LOCATE1
+1020 ?"Laderen:":?"[";:LOCATE${datalineCount + 1}:?"]";:LOCATE1
 ${dataFormatSpecificBoilerPlate}
 1200 ?""
 2000 ' Run da program!!
@@ -1677,26 +2371,94 @@ function formatFilePathForDisplay(filePath) {
 	return relative && !relative.startsWith('..') ? relative : filePath;
 }
 
-function printErrors(errors) {
+function printErrors(errors, errorOutputFilePath = null) {
 	if (errors.length === 0) {
 		return;
 	}
+	const outputFile = errorOutputFilePath ? fs.createWriteStream(errorOutputFilePath, { flags: 'w' }) : null;
 	console.error(colors.red + `\nFound ${errors.length} error(s) during assembly:` + colors.reset);
+	outputFile && outputFile.write(`Found ${errors.length} error(s) during assembly:\n`);
 	for (const error of errors) {
 		const file = formatFilePathForDisplay(error.filePath);
 		const line = error.lineNumber ?? 0;
 		const column = error.column ?? 1;
 		const message = error.message || 'Unknown error';
 		console.error(`${colors.red}${file}:${line}:${column}: error: ${message}${colors.reset}`);
+		outputFile && outputFile.write(`${file}:${line}:${column}: error: ${message}\n`);
 		if (error.lineContent) {
 			console.error(`${colors.red}  ${error.lineContent.trimStart()}${colors.reset}`);
+			outputFile && outputFile.write(`  ${error.lineContent.trimStart()}\n`);
 		}
 		if (error.detail) {
 			for (const detailLine of error.detail.split('\n')) {
 				console.error(`${colors.red}  ${detailLine}${colors.reset}`);
+				outputFile && outputFile.write(`  ${detailLine}\n`);
 			}
 		}
 	}
+	outputFile && outputFile.end();
+}
+
+/**
+ * Preprocesses INCLUDE directives recursively, returning flattened lines with origins.
+ *
+ * @param {string} entryFilePath - The starting file to preprocess.
+ * @param {{ stack?: string[] }} ctx - Internal recursion context for cycle detection.
+ * @returns {{ lines: string[], origins: { filePath: string, lineNumber: number, lineContent: string }[] }}
+ */
+function preprocessIncludes(entryFilePath, ctx = { stack: [] }) {
+	const absEntry = path.resolve(entryFilePath);
+	let text;
+	try {
+		text = fs.readFileSync(absEntry, 'utf8');
+	} catch (err) {
+		const error = new Error(`Cannot read source file: ${absEntry}\n${err.message}`);
+		error.filePath = absEntry;
+		error.lineNumber = 1;
+		error.lineContent = null;
+		throw error;
+	}
+
+	const lines = text.split('\n');
+	const outLines = [];
+	const origins = [];
+	const includeRe = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*:)?\s*INCLUDE\s+(?:"([^"]+)"|<([^>]+)>)/i;
+
+	for (let i = 0; i < lines.length; i++) {
+		const rawLine = lines[i];
+		const codePart = rawLine.split(';')[0] || '';
+		const match = includeRe.exec(codePart);
+		if (match) {
+			const incPath = (match[1] || match[2] || '').trim();
+			const resolved = path.isAbsolute(incPath) ? incPath : path.resolve(path.dirname(absEntry), incPath);
+			if (ctx.stack.includes(resolved)) {
+				const error = new Error(`Recursive include detected: ${ctx.stack.concat([resolved]).join(' -> ')}`);
+				error.filePath = absEntry;
+				error.lineNumber = i + 1;
+				error.lineContent = rawLine;
+				throw error;
+			}
+			try {
+				const child = preprocessIncludes(resolved, { stack: ctx.stack.concat([absEntry]) });
+				for (let j = 0; j < child.lines.length; j++) {
+					outLines.push(child.lines[j]);
+					origins.push(child.origins[j]);
+				}
+			} catch (error) {
+				if (!error.filePath) {
+					error.filePath = absEntry;
+					error.lineNumber = i + 1;
+					error.lineContent = rawLine;
+				}
+				throw error;
+			}
+		} else {
+			outLines.push(rawLine);
+			origins.push({ filePath: absEntry, lineNumber: i + 1, lineContent: rawLine });
+		}
+	}
+
+	return { lines: outLines, origins };
 }
 
 /**
@@ -1711,6 +2473,7 @@ function printErrors(errors) {
  * @returns {void}
  */
 function main() {
+	clearAllSymbolTables();
 	const assemblyFilePath = process.argv[2] && !process.argv[2].startsWith('-') ? process.argv[2] : path.join(__dirname, 'assemblycode.asm');
 	let outputFilePathIndex = process.argv.indexOf('-o');
 	let outputFilePath = null;
@@ -1734,14 +2497,54 @@ function main() {
 		}
 	}
 
-	let assemblyCode;
+	let errorOutputFilePathIndex = process.argv.indexOf('-errout');
+	let errorOutputFilePath = null;
+
+	if (errorOutputFilePathIndex > 0) {
+		if (errorOutputFilePathIndex + 1 < process.argv.length && !process.argv[errorOutputFilePathIndex + 1].startsWith('-')) {
+			errorOutputFilePath = process.argv[errorOutputFilePathIndex + 1];
+		} else {
+			errorOutputFilePath = assemblyFilePath.replace('.asm', '.errors.txt');
+		}
+	}
+
+	let preprocessed;
 	try {
-		assemblyCode = fs.readFileSync(assemblyFilePath, 'utf8');
+		preprocessed = preprocessIncludes(assemblyFilePath);
 	} catch (error) {
-		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
+		const fp = error.filePath || assemblyFilePath;
+		const ln = error.lineNumber || 1;
+		const lc = error.lineContent || null;
+		printErrors([createErrorRecord(fp, ln, lc, error)], errorOutputFilePath);
 		process.exitCode = 1;
 		return;
 	}
+
+	let expanded;
+	try {
+		expanded = processMacrosAndConditionals(preprocessed.lines, preprocessed.origins);
+	} catch (error) {
+		const fp = error.filePath || assemblyFilePath;
+		const ln = error.lineNumber || 1;
+		const lc = error.lineContent || null;
+		printErrors([createErrorRecord(fp, ln, lc, error), ], errorOutputFilePath);
+		process.exitCode = 1;
+		return;
+	}
+
+	try {
+		collectStructs(expanded.lines);
+	} catch (error) {
+		const fp = error.filePath || assemblyFilePath;
+		const ln = error.lineNumber || 1;
+		const lc = error.lineContent || null;
+		printErrors([createErrorRecord(fp, ln, lc, error), ], errorOutputFilePath);
+		process.exitCode = 1;
+		return;
+	}
+
+	resetSymbolTableForAssembly();
+	const assemblyCode = expanded.lines.join('\n');
 
 	const {
 		machineCode,
@@ -1750,10 +2553,10 @@ function main() {
 		entryAddress: assembledEntryAddress,
 		loadAddressStart,
 		segments
-	} = assemble(assemblyCode, { filePath: assemblyFilePath });
+	} = assemble(assemblyCode, { filePath: assemblyFilePath, lineOrigins: expanded.origins });
 
 	if (errors.length > 0) {
-		printErrors(errors);
+		printErrors(errors, errorOutputFilePath);
 		process.exitCode = 1;
 		return;
 	}
@@ -1762,7 +2565,7 @@ function main() {
 	try {
 		dataStatements = generateDataStatements(segments, dataFormat);
 	} catch (error) {
-		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
+		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)], errorOutputFilePath);
 		process.exitCode = 1;
 		return;
 	}
@@ -1780,7 +2583,7 @@ function main() {
 			assembledEntryLabel
 		);
 	} catch (error) {
-		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)]);
+		printErrors([createErrorRecord(assemblyFilePath, 1, null, error)], errorOutputFilePath);
 		process.exitCode = 1;
 		return;
 	}

@@ -183,6 +183,7 @@ export interface AudioMeta {
 	audiotype: AudioType; // The type of audio asset.
 	priority: number; // The priority of the audio asset.
 	loop?: number; // The loop point of the audio asset.
+	loopEnd?: number; // Optional loop end point of the audio asset.
 }
 
 export interface BoundingBoxPrecalc {

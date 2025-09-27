@@ -11,6 +11,8 @@ import {
 	DeviceKind,
 	VibrationParams,
 	PlatformServices,
+	AudioService,
+	RngService,
 	InputModifiers,
 	OnscreenGamepadControlKind,
 	OnscreenGamepadPlatform,
@@ -20,6 +22,7 @@ import {
 	type TextureSource,
 	type TextureSourceLoader,
 } from '../../core/platform';
+import { WebAudioService } from './web_audio';
 
 class BrowserClock implements Clock {
 	now(): number {
@@ -115,6 +118,34 @@ class WebHID implements HIDService {
 
 	async getDevices(): Promise<HIDDevice[]> {
 		return navigator.hid.getDevices();
+	}
+}
+
+class BrowserRngService implements RngService {
+	private state: number;
+
+	constructor(seed?: number) {
+		this.state = this.normalizeSeed(seed ?? Date.now());
+	}
+
+	seed(value: number): void {
+		this.state = this.normalizeSeed(value);
+	}
+
+	private normalizeSeed(value: number): number {
+		const base = Math.floor(value);
+		const normalized = base >>> 0;
+		if (normalized === 0) return 0x6d2b79f5;
+		return normalized;
+	}
+
+	next(): number {
+		this.state = (this.state + 0x6d2b79f5) >>> 0;
+		let t = this.state;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		const result = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+		return result;
 	}
 }
 
@@ -638,6 +669,8 @@ export class BrowserPlatformServices implements PlatformServices {
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;
 	textureLoader: TextureSourceLoader;
+	audio: AudioService;
+	rng: RngService;
 
 	constructor(surface: HTMLElement) {
 		this.clock = new BrowserClock();
@@ -660,6 +693,8 @@ export class BrowserPlatformServices implements PlatformServices {
 			this.hid = new UnsupportedHID();
 		}
 		this.textureLoader = new WebTextureSourceLoader();
+		this.audio = new WebAudioService();
+		this.rng = new BrowserRngService();
 	}
 }
 export const options: EventListenerOptions & { passive: boolean; once: boolean; } = {
