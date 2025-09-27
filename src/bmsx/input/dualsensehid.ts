@@ -6,7 +6,7 @@
  * 0x0DF2 = DualSense Edge
  * 0x09cc = DualShock 4
  */
-import { $ } from 'bmsx/core/game';
+import { $ } from '../core/game';
 import { Platform } from '../core/platform';
 
 const SONY_VID = 0x054C;

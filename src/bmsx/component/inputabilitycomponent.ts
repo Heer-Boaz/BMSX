@@ -1,6 +1,6 @@
 import { insavegame } from '../serializer/serializationhooks';
-import { Component } from '../component/basecomponent';
-import type { InputAbilityProgram } from './input_ability_dsl';
+import { Component } from './basecomponent';
+import type { InputAbilityProgram } from '../gas/input_ability_dsl';
 import type { Identifier } from '../rompack/rompack';
 
 @insavegame

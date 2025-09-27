@@ -1,5 +1,5 @@
 import { Platform, InputEvt } from '../core/platform';
-import { Input } from '../input/input';
+import { Input } from './input';
 
 export class EngineInputBridge {
 	private unsubscribe: (() => void) | null = null;

@@ -8,7 +8,7 @@ import { toggleECSHUD } from '../debugger/ecshud';
 import { toggleInputHUD } from '../debugger/inputhud';
 import type { Identifier, Identifiable, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
-import { controllerUnassignedToast } from './ui_toast';
+import { controllerUnassignedToast } from '../ui/ui_toast';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerBinding, PointerInputMapping } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';

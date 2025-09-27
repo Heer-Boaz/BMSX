@@ -1,12 +1,12 @@
 import { $ } from '../core/game';
 import type { PlayerInput } from '../input/playerinput';
-import { ECSystem, TickGroup } from '../ecs/ecsystem';
-import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
+import { ECSystem, TickGroup } from './ecsystem';
+import { GameplayCommandBuffer } from './gameplay_command_buffer';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 import type { WorldObject } from '../core/object/worldobject';
-import { InputAbilityComponent } from './inputabilitycomponent';
-import { compileProgram, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from './input_ability_compiler';
-import { isInputAbilityProgram, type InputAbilityProgram } from './input_ability_dsl';
+import { InputAbilityComponent } from '../component/inputabilitycomponent';
+import { compileProgram, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
+import { isInputAbilityProgram, type InputAbilityProgram } from '../gas/input_ability_dsl';
 import { filterIterable } from '../utils/utils';
 
 export class InputAbilitySystem extends ECSystem {

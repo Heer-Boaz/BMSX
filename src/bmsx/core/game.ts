@@ -30,7 +30,7 @@ import { gameplaySpec } from "./pipelines/gameplay";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
 // No direct space helpers needed here; Spaces are revived as part of the world.
 import { Platform, PlatformServices } from '../core/platform';
-import { EngineInputBridge } from '../engine/input_bus_wire';
+import { EngineInputBridge } from '../input/input_bus_wire';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined

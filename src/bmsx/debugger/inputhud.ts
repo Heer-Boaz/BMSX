@@ -5,7 +5,7 @@ import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 import { $ } from '../core/game';
 import { Input } from '../input/input';
 import type { InputMap, ButtonState, ActionState, BGamepadButton, KeyboardButton } from '../input/inputtypes';
-import { OnscreenGamepad } from 'bmsx';
+import { OnscreenGamepad } from '../input/onscreengamepad';
 
 const HUD_ID = 'bmsx-input-hud';
 

@@ -1,4 +1,4 @@
-import type { GameplayCommand } from 'bmsx';
+import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
 import type { EventLane, EventPayload, EventScope, EventSubscriber } from "../core/eventemitter";
 import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";

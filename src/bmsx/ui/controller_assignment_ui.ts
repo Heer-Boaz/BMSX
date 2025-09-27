@@ -8,7 +8,7 @@ import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import type { Identifier, Registerable } from '../rompack/rompack';
-import { Input } from './input';
+import { Input } from '../input/input';
 import { id_to_space_symbol } from '../core/space';
 
 // Branded types (compile-time only)

@@ -1,4 +1,4 @@
-import { hasOwn } from 'bmsx';
+import { hasOwn } from '../utils/utils';
 import type { AbilityId, AbilityRequestResult } from '../gas/gastypes';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
