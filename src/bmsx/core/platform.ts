@@ -1,4 +1,4 @@
-import type { TextureSourceLoader } from '../render/texturesource';
+import type { color_arr, RomImgAsset, RomPack } from '../../bmsx/rompack/rompack';
 
 export type MonoTime = number;
 
@@ -6,6 +6,16 @@ export interface Clock { now(): MonoTime; }
 
 export interface FrameLoop {
 	start(tick: (t: MonoTime) => void): { stop(): void };
+}
+
+export type TextureSource = any;
+
+export interface TextureSourceLoader {
+	fromUri(uri: string): Promise<TextureSource>;
+	fromBytes(bytes: ArrayBuffer): Promise<TextureSource>;
+	createSolidImageBitmap(size: number, color: color_arr): Promise<TextureSource>;
+	loadBitmapFromBuffer(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap>;
+	getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap>;
 }
 
 export type DeviceKind = 'keyboard' | 'gamepad' | 'pointer' | 'touch' | 'virtual';

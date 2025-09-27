@@ -1,6 +1,6 @@
+import { Platform } from '../../src/bmsx/core/platform';
 import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
-import { generateAtlasName } from '../rompacker/atlasbuilder';
 
 export async function loadImage(url: string): Promise<ImageBitmap> {
 	return new Promise((resolve, reject) => {
@@ -415,55 +415,6 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 	return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean }): Promise<ImageBitmap> {
-	let source: ImageBitmap | Promise<ImageBitmap> | undefined;
-	if (options?.flipY) {
-		source = romImgAsset._imgbinYFlipped; // Use the private _imgbinYFlipped property
-	} else {
-		source = romImgAsset._imgbin; // Use the private _imgbin property
-	}
-	if (source) return source;
-
-	// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
-	const imgmeta = romImgAsset.imgmeta;
-	if (!source && imgmeta.atlassed) {
-		const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
-		if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
-		const coords = imgmeta.texcoords;
-		if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
-
-		const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
-		const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
-		const minU = Math.min(...xs), maxU = Math.max(...xs);
-		const minV = Math.min(...ys), maxV = Math.max(...ys);
-
-		// const sx = minU * atlas.width;
-		// const sy = minV * atlas.height;
-		// let imgWidth = (maxU - minU) * atlas.width;
-		// let imgHeight = (maxV - minV) * atlas.height;
-		// Convert to pixel coordinates and clamp inside atlas bounds
-		const offsetX = Math.floor(minU * atlas.width);
-		const offsetY = Math.floor(minV * atlas.height);
-		const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
-		const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
-
-		const canvas = document.createElement('canvas');
-		canvas.width = imgWidth;
-		canvas.height = imgHeight;
-		const ctx = canvas.getContext('2d')!;
-		ctx.drawImage(atlas, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
-		// Convert canvas to ImageBitmap asynchronously
-		source = createImageBitmap(canvas, {
-			imageOrientation: options?.flipY ? 'flipY' : 'none',
-			premultiplyAlpha: 'none',
-			colorSpaceConversion: 'none',
-		});
-	}
-
-	if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
-	return source;
-}
-
 async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, _loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
 	switch (res.type) {
 		case 'image':
@@ -487,10 +438,10 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				// ** THAT'S WHY YOU SHOULD USE THE `atlassed`-PROPERTY TO DETERMINE WHETHER AN IMAGE ASSET IS ATLASSED OR NOT! **
 				// Getter for imgbin property, compatible with RomImgAsset interface
 				get imgbin() {
-					return getAssetImageBin(this, romResult); // This will populate the _imgbin property if required
+					return Platform.instance.textureLoader.getAssetImageBin(this, romResult); // This will populate the _imgbin property if required
 				},
 				get imgbinYFlipped() {
-					return getAssetImageBin(this, romResult, { flipY: true }); // This will populate the _imgbinYFlipped property if required
+					return Platform.instance.textureLoader.getAssetImageBin(this, romResult, { flipY: true }); // This will populate the _imgbinYFlipped property if required
 				},
 			};
 			romResult.img[res.resid] = imgAsset;

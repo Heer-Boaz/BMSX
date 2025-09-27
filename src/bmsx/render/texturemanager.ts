@@ -3,6 +3,7 @@ import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
+import { Platform } from '../core/platform';
 
 export const TEXTMANAGER_ID = 'texmgr';
 export type TextureIdentifier = string;
@@ -14,41 +15,6 @@ export interface ModelTextureIdentifier {
 
 export type TextureKey = string;
 export type ImageKey = string;
-
-async function bufferToImageBitmap(buffer: ArrayBuffer): Promise<ImageBitmap> {
-	const blob = new Blob([buffer]);
-	return await createImageBitmap(blob);
-}
-
-// Added: create a solid ImageBitmap of given size and color.
-// color_arr components may be 0..1 floats or 0..255 ints; handle both.
-async function createSolidImageBitmap(size: number, color: color_arr): Promise<ImageBitmap> {
-	const [r, g, b, a] = color;
-	const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
-	const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
-	const cssColor = `rgba(${toUint8(r)}, ${toUint8(g)}, ${toUint8(b)}, ${alpha})`;
-
-	// Prefer OffscreenCanvas when available (works in workers and main thread)
-	if (typeof OffscreenCanvas !== 'undefined') {
-		const oc = new OffscreenCanvas(Math.max(1, size), Math.max(1, size));
-		const ctx = oc.getContext('2d');
-		if (ctx) {
-			ctx.fillStyle = cssColor;
-			ctx.fillRect(0, 0, size, size);
-			return createImageBitmap(oc);
-		}
-	}
-
-	// Fallback to HTMLCanvasElement
-	const canvas = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
-	if (!canvas) throw new Error('No canvas available to create solid ImageBitmap');
-	canvas.width = Math.max(1, size);
-	canvas.height = Math.max(1, size);
-	const ctx = canvas.getContext('2d')!;
-	ctx.fillStyle = cssColor;
-	ctx.fillRect(0, 0, size, size);
-	return createImageBitmap(canvas);
-}
 
 interface ImageCacheEntry {
 	bitmap?: ImageBitmap;
@@ -95,21 +61,6 @@ export class TextureManager implements RegisterablePersistent {
 	private makeCubemapKey(name: string, faceIds: readonly (string | null)[], desc: TextureParams): TextureKey {
 		const descKey = JSON.stringify(desc);
 		return `cubemap:${name}|faces:${faceIds.join(',')}|${descKey}`;
-	}
-
-	private async loadBitmap(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap> {
-		let dataBuffer: ArrayBuffer;
-		if (buffer) {
-			dataBuffer = buffer;
-		} else if (uri.startsWith('data:')) {
-			const comma = uri.indexOf(',');
-			const base64 = comma >= 0 ? uri.slice(comma + 1) : '';
-			dataBuffer = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
-		} else {
-			const resp = await fetch(uri);
-			dataBuffer = await resp.arrayBuffer();
-		}
-		return bufferToImageBitmap(dataBuffer);
 	}
 
 	/** Ensure real GPU texture exists; returns the key. */
@@ -266,7 +217,7 @@ export class TextureManager implements RegisterablePersistent {
 				}
 
 				// Build array of promises for all faces, substituting missing faces with solid bitmaps of targetSize
-				const promises: Promise<ImageBitmap>[] = faceLoaders.map(p => p != null ? (p as Promise<ImageBitmap>) : createSolidImageBitmap(targetSize, fallbackColor));
+				const promises: Promise<ImageBitmap>[] = faceLoaders.map(p => p != null ? (p as Promise<ImageBitmap>) : Platform.instance.textureLoader.createSolidImageBitmap(targetSize, fallbackColor));
 
 				const faces = await Promise.all(promises) as
 					[ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap, ImageBitmap];
@@ -293,7 +244,7 @@ export class TextureManager implements RegisterablePersistent {
 							this.backend!.uploadCubemapFace(cubemap, idx, img);
 						});
 					} else {
-						return createSolidImageBitmap(size, fallbackColor).then(img => {
+						return Platform.instance.textureLoader.createSolidImageBitmap(size, fallbackColor).then(img => {
 							this.backend!.uploadCubemapFace(cubemap, idx, img);
 						});
 					}
@@ -357,12 +308,12 @@ export class TextureManager implements RegisterablePersistent {
 
 	public async loadModelTextureFromBuffer(buffer: ArrayBuffer, identifier: ModelTextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
 		const key = this.makeModelBufferKey(identifier);
-		return this.loadAndCacheTexture(key, () => this.loadBitmap('', buffer), desc);
+		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.loadBitmapFromBuffer('', buffer), desc);
 	}
 
 	public async fetchModelTextureFromUri(uri: string, _identifier: ModelTextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
 		const key = this.makeKey(uri, desc);
-		return this.loadAndCacheTexture(key, () => this.loadBitmap(uri, buffer), desc);
+		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.loadBitmapFromBuffer(uri, buffer), desc);
 	}
 
 	public getImage(key: ImageKey): ImageBitmap | undefined {

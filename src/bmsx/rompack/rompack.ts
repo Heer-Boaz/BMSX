@@ -3,7 +3,7 @@ import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
 import type { PlatformServices } from '../core/platform';
-import type { TextureSource } from 'bmsx/render/texturesource';
+import type { TextureSource } from 'bmsx/core/platform';
 
 export interface RomPack {
 	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.

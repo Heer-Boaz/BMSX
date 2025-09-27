@@ -1,3 +1,4 @@
+import type { color_arr, RomImgAsset, RomPack } from '../../rompack/rompack';
 import {
 	Clock,
 	FrameLoop,
@@ -16,9 +17,9 @@ import {
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
+	type TextureSource,
+	type TextureSourceLoader,
 } from '../../core/platform';
-import type { TextureSourceLoader } from '../../render/texturesource';
-import { WebTextureSourceLoader } from './web_texture_loader';
 
 class BrowserClock implements Clock {
 	now(): number {
@@ -240,16 +241,16 @@ function modifiersFrom(event: MouseEvent | PointerEvent | WheelEvent): InputModi
 
 
 class BrowserInputHub implements InputHub {
-  private subs = new Set<(e: InputEvt) => void>();
-  private devicesList: InputDevice[] = [];
-  private clock: Clock;
-  private keyboardCapture: ((code: string) => boolean) | null = null;
+	private subs = new Set<(e: InputEvt) => void>();
+	private devicesList: InputDevice[] = [];
+	private clock: Clock;
+	private keyboardCapture: ((code: string) => boolean) | null = null;
 
-  constructor(surface: HTMLElement, clock: Clock) {
-	this.clock = clock;
+	constructor(surface: HTMLElement, clock: Clock) {
+		this.clock = clock;
 
-	const keyboard = new KeyboardDevice();
-	const pointer = new PointerDevice();
+		const keyboard = new KeyboardDevice();
+		const pointer = new PointerDevice();
 		this.devicesList.push(keyboard);
 		this.devicesList.push(pointer);
 
@@ -257,7 +258,7 @@ class BrowserInputHub implements InputHub {
 		window.addEventListener('keyup', this.onKeyUp, { passive: false });
 		surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
 		surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
-	surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
+		surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
 		surface.addEventListener('wheel', this.onWheel, { passive: false });
 		surface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
 		surface.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
@@ -310,42 +311,42 @@ class BrowserInputHub implements InputHub {
 		this.post({ type: 'button', deviceId: 'keyboard:0', code: event.code, down: false, value: 0, timestamp: now, pressId: null });
 	};
 
-  private onPointerDown = (event: PointerEvent) => {
-	event.preventDefault();
-	event.stopPropagation();
-	event.stopImmediatePropagation();
-	const target = event.target as Element | null;
-	if (target?.setPointerCapture) {
-	  try { target.setPointerCapture(event.pointerId); } catch { /* ignore */ }
-	}
-	const now = this.clock.now();
-	const modifiers = modifiersFrom(event);
-	this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: true, value: 1, timestamp: now, pressId: null, modifiers });
-	this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
-  };
+	private onPointerDown = (event: PointerEvent) => {
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const target = event.target as Element | null;
+		if (target?.setPointerCapture) {
+			try { target.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+		}
+		const now = this.clock.now();
+		const modifiers = modifiersFrom(event);
+		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: true, value: 1, timestamp: now, pressId: null, modifiers });
+		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
+	};
 
-  private onPointerUp = (event: PointerEvent) => {
-	event.preventDefault();
-	event.stopPropagation();
-	event.stopImmediatePropagation();
-	const target = event.target as Element | null;
-	if (target && target.hasPointerCapture?.(event.pointerId)) {
-	  try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
-	}
-	const now = this.clock.now();
-	const modifiers = modifiersFrom(event);
-	this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
-	this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
-  };
+	private onPointerUp = (event: PointerEvent) => {
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const target = event.target as Element | null;
+		if (target && target.hasPointerCapture?.(event.pointerId)) {
+			try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+		}
+		const now = this.clock.now();
+		const modifiers = modifiersFrom(event);
+		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
+		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
+	};
 
-  private onPointerMove = (event: PointerEvent) => {
-	if (event.pointerType !== 'mouse') {
-	  event.preventDefault();
-	}
-	const now = this.clock.now();
-	const modifiers = modifiersFrom(event);
-	this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
-  };
+	private onPointerMove = (event: PointerEvent) => {
+		if (event.pointerType !== 'mouse') {
+			event.preventDefault();
+		}
+		const now = this.clock.now();
+		const modifiers = modifiersFrom(event);
+		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
+	};
 
 	private onWheel = (event: WheelEvent) => {
 		event.preventDefault();
@@ -362,25 +363,25 @@ class BrowserInputHub implements InputHub {
 		event.stopImmediatePropagation();
 	};
 
-  private onPointerCancel = (event: PointerEvent) => {
-	event.preventDefault();
-	event.stopPropagation();
-	event.stopImmediatePropagation();
-	const target = event.target as Element | null;
-	if (target && target.hasPointerCapture?.(event.pointerId)) {
-	  try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
-	}
-	const now = this.clock.now();
-	const modifiers = modifiersFrom(event);
-	this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
-	this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
-  };
+	private onPointerCancel = (event: PointerEvent) => {
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const target = event.target as Element | null;
+		if (target && target.hasPointerCapture?.(event.pointerId)) {
+			try { target.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+		}
+		const now = this.clock.now();
+		const modifiers = modifiersFrom(event);
+		this.post({ type: 'button', deviceId: 'pointer:0', code: pointerButton(event.button), down: false, value: 0, timestamp: now, pressId: null, modifiers });
+		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
+	};
 
-  private onPointerLeave = (event: PointerEvent) => {
-	const now = this.clock.now();
-	const modifiers = modifiersFrom(event);
-	this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
-  };
+	private onPointerLeave = (event: PointerEvent) => {
+		const now = this.clock.now();
+		const modifiers = modifiersFrom(event);
+		this.post({ type: 'axis2', deviceId: 'pointer:0', code: 'pointer_position', x: event.clientX, y: event.clientY, timestamp: now, modifiers });
+	};
 
 	private onGamepadConnected = (event: GamepadEvent) => {
 		const source = event.gamepad;
@@ -414,7 +415,7 @@ function pointerButton(button: number): string {
 }
 
 class BrowserOnscreenGamepadPlatformSession implements OnscreenGamepadPlatformSession {
-	constructor(private readonly controller: AbortController) {}
+	constructor(private readonly controller: AbortController) { }
 
 	dispose(): void {
 		this.controller.abort();
@@ -665,3 +666,108 @@ export const options: EventListenerOptions & { passive: boolean; once: boolean; 
 	passive: false,
 	once: false,
 };
+
+export class WebTextureSourceLoader implements TextureSourceLoader {
+	async fromUri(uri: string): Promise<TextureSource> {
+		const response = await fetch(uri);
+		if (!response.ok) throw new Error(`HTTP ${response.status} when fetching texture '${uri}'.`);
+		const blob = await response.blob();
+		const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+		return bitmap;
+	}
+
+	async fromBytes(bytes: ArrayBuffer): Promise<TextureSource> {
+		const blob = new Blob([bytes]);
+		const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+		return bitmap;
+	}
+
+	async createSolidImageBitmap(size: number, color: color_arr): Promise<ImageBitmap> {
+		const [r, g, b, a] = color;
+		const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
+		const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
+		const cssColor = `rgba(${toUint8(r)}, ${toUint8(g)}, ${toUint8(b)}, ${alpha})`;
+
+		// Prefer OffscreenCanvas when available (works in workers and main thread)
+		if (typeof OffscreenCanvas !== 'undefined') {
+			const oc = new OffscreenCanvas(Math.max(1, size), Math.max(1, size));
+			const ctx = oc.getContext('2d');
+			if (ctx) {
+				ctx.fillStyle = cssColor;
+				ctx.fillRect(0, 0, size, size);
+				return createImageBitmap(oc);
+			}
+		}
+
+		// Fallback to HTMLCanvasElement
+		const canvas = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
+		if (!canvas) throw new Error('No canvas available to create solid ImageBitmap');
+		canvas.width = Math.max(1, size);
+		canvas.height = Math.max(1, size);
+		const ctx = canvas.getContext('2d')!;
+		ctx.fillStyle = cssColor;
+		ctx.fillRect(0, 0, size, size);
+		return createImageBitmap(canvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+	}
+
+	async loadBitmapFromBuffer(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap> {
+		let dataBuffer: ArrayBuffer;
+		if (buffer) {
+			dataBuffer = buffer;
+		} else if (uri.startsWith('data:')) {
+			const comma = uri.indexOf(',');
+			const base64 = comma >= 0 ? uri.slice(comma + 1) : '';
+			dataBuffer = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+		} else {
+			const resp = await fetch(uri);
+			dataBuffer = await resp.arrayBuffer();
+		}
+		return await createImageBitmap(new Blob([dataBuffer]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+	}
+
+	async getAssetImageBin(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap> {
+		let source: ImageBitmap | Promise<ImageBitmap> | undefined;
+		if (options?.flipY) {
+			source = romImgAsset._imgbinYFlipped; // Use the private _imgbinYFlipped property
+		} else {
+			source = romImgAsset._imgbin; // Use the private _imgbin property
+		}
+		if (source) return source;
+
+		// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
+		const imgmeta = romImgAsset.imgmeta;
+		if (!source && imgmeta.atlassed) {
+			// const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
+			const atlas = rompack.img['_atlas']?._imgbin; // Atlas should have a populated _imgbin property
+			if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
+			const coords = imgmeta.texcoords;
+			if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
+
+			const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
+			const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
+			const minU = Math.min(...xs), maxU = Math.max(...xs);
+			const minV = Math.min(...ys), maxV = Math.max(...ys);
+
+			// Convert to pixel coordinates and clamp inside atlas bounds
+			const offsetX = Math.floor(minU * atlas.width);
+			const offsetY = Math.floor(minV * atlas.height);
+			const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
+			const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
+
+			const canvas = document.createElement('canvas');
+			canvas.width = imgWidth;
+			canvas.height = imgHeight;
+			const ctx = canvas.getContext('2d')!;
+			ctx.drawImage(atlas, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
+			// Convert canvas to ImageBitmap asynchronously
+			source = createImageBitmap(canvas, {
+				imageOrientation: options?.flipY ? 'flipY' : 'none',
+				premultiplyAlpha: 'none',
+				colorSpaceConversion: 'none',
+			});
+		}
+
+		if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
+		return source;
+	}
+}
