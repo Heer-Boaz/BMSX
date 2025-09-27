@@ -39,6 +39,42 @@ export interface InputHub {
   setKeyboardCapture(handler: (code: string) => boolean): void;
 }
 
+export type OnscreenGamepadControlKind = 'dpad' | 'action';
+
+export interface OnscreenPointerEvent {
+	pointerId: number;
+	clientX: number;
+	clientY: number;
+	pressure: number;
+	buttons: number;
+	capture(): void;
+	release(): void;
+}
+
+export interface OnscreenGamepadPlatformHooks {
+	pointerDown(kind: OnscreenGamepadControlKind, event: OnscreenPointerEvent): void;
+	pointerMove(kind: OnscreenGamepadControlKind, event: OnscreenPointerEvent): void;
+	pointerUp(kind: OnscreenGamepadControlKind, event: OnscreenPointerEvent): void;
+	blur(): void;
+	focus(): void;
+	pointerOut(): void;
+}
+
+export interface OnscreenGamepadPlatformSession {
+	dispose(): void;
+}
+
+export interface OnscreenGamepadPlatform {
+	attach(hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession;
+	hideElements(elementIds: string[]): void;
+	collectElementIds(x: number, y: number, kind: OnscreenGamepadControlKind): string[];
+	setElementActive(elementId: string, active: boolean): void;
+	resetElements(elementIds: string[]): void;
+	updateDpadRing(activeElementIds: string[]): void;
+	supportsVibration(): boolean;
+	vibrate(durationMs: number): void;
+}
+
 export interface Lifecycle {
 	onVisibilityChange(cb: (visible: boolean) => void): () => void;
 	onWillExit(cb: (event: BeforeUnloadEvent) => void): () => void;
@@ -63,6 +99,7 @@ export interface PlatformServices {
 	input: InputHub;
 	storage: StorageService;
 	hid: HIDService;
+	onscreenGamepad: OnscreenGamepadPlatform;
 }
 
 export class Platform {

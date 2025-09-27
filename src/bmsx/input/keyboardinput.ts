@@ -1,5 +1,6 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
+import { Platform } from '../core/platform';
 
 /**
  * Represents a keyboard input handler that implements the IInputHandler interface.
@@ -90,7 +91,7 @@ export class KeyboardInput implements InputHandler {
 	 * @returns void
 	 */
 	pollInput(): void {
-		const now = performance.now();
+		const now = Platform.instance.clock.now();
 		// Update existing keys in place, create states on demand
 		Object.keys(this.keyStates).forEach(buttonId => {
 			const prev = this.gamepadButtonStates[buttonId] ?? makeButtonState();
@@ -162,7 +163,7 @@ export class KeyboardInput implements InputHandler {
 		});
 	}
 
-	public ingestButton(_code: string, _state: ButtonState): void {}
+	public ingestButton(_code: string, _state: ButtonState): void { }
 
 	/**
 	 * Sets the key state to true when a key is pressed.
@@ -170,7 +171,7 @@ export class KeyboardInput implements InputHandler {
 	 */
 	keydown(key_code: KeyboardButtonId | string): void {
 		if (!this.keyStates[key_code]) {
-			this.keyStates[key_code] = makeButtonState({ pressed: true, justpressed: true, presstime: 0, timestamp: performance.now() });
+			this.keyStates[key_code] = makeButtonState({ pressed: true, justpressed: true, presstime: 0, timestamp: Platform.instance.clock.now() });
 		} else {
 			this.keyStates[key_code].pressed = true;
 		}

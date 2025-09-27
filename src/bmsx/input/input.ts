@@ -81,7 +81,7 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		wasreleased = false,
 		consumed = false,
 		presstime = null,
-		timestamp = performance.now(),
+		timestamp = Platform.instance.clock.now(),
 		pressedAtMs = null,
 		releasedAtMs = null,
 		pressId = null,
@@ -94,11 +94,6 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 export function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {
 	const { action = actionname, alljustpressed = false, allwaspressed = false, alljustreleased = false, ...buttonState } = partialState ?? {};
 	return { action, alljustpressed, allwaspressed, alljustreleased, ...makeButtonState(buttonState) };
-}
-
-export const options: EventListenerOptions & { passive: boolean, once: boolean } = {
-	passive: false,
-	once: false,
 }
 
 type DeviceBinding = {
@@ -210,7 +205,7 @@ export class InputStateManager {
 		const window = framewindow != null
 			? this.toMs(framewindow)
 			: this.bufferWindowDuration;
-		const currentTime = performance.now();
+		const currentTime = Platform.instance.clock.now();
 		const baseState = this.buttonStates.get(identifier);
 
 		const pressed = baseState?.pressed ?? false;
@@ -542,6 +537,9 @@ export class Input implements RegisterablePersistent {
 	constructor(startingGamepadIndex?: number) {
 		this.startupGamepadIndex = typeof startingGamepadIndex === 'number' ? startingGamepadIndex : null;
 		this.bind();
+		if (!this.onscreenGamepadFactory) {
+			this.onscreenGamepadFactory = () => new OnscreenGamepad();
+		}
 	}
 
 	/**
@@ -786,7 +784,7 @@ export class Input implements RegisterablePersistent {
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
 	public pollInput(): void {
-		const now = performance.now();
+		const now = Platform.instance.clock.now();
 		// Ensure UI controller exists once spaces are ready
 		if (!this.uiControllerSpawned) {
 			const ui = $.world[id_to_space_symbol]['ui'];

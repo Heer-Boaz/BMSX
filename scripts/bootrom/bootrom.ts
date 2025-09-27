@@ -23,6 +23,7 @@ declare global {
 			gainnode: GainNode | null;
 			theshowsover: boolean;
 			startingGamepadIndex: number | null;
+			enableOnscreenGamepad: boolean;
 			set defusr(rom: RomPack);
 			usr: (x: number) => number;
 			bload: (url: string) => Promise<RomPack | null>;
@@ -82,6 +83,7 @@ export const bootrom = {
 	gainnode: null as GainNode | null,
 	theshowsover: false,
 	startingGamepadIndex: null as number | null,
+	enableOnscreenGamepad: false,
 
 	/**
 	 * Sets the boot ROM pack.
@@ -101,6 +103,8 @@ export const bootrom = {
 			const element = document.querySelector(id);
 			element.parentElement!.removeChild(element);
 		};
+
+		bootrom.enableOnscreenGamepad ??= false; // Default to false if not set yet, but allow true if set to true before usr() is called (via awaitPressedAnyKeyPromise)
 
 		const wrapup = () => {
 			(document.querySelector('#loading') as HTMLElement).hidden = true;
@@ -137,7 +141,8 @@ export const bootrom = {
 			gainnode: bootrom.gainnode!,
 			debug: this.debug,
 			startingGamepadIndex: bootrom.startingGamepadIndex,
-			platformServices: Platform.instance
+			platformServices: Platform.instance,
+			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;
@@ -382,8 +387,8 @@ async function awaitPressedAnyKeyPromise(): Promise<void> {
 				if (e.type == 'touchend') {
 					document.getElementById("d-pad-controls")!.hidden = false;
 					document.getElementById("button-controls")!.hidden = false;
-					document.documentElement.setAttribute("style", "touch-action: none;");
-					document.documentElement.setAttribute("style", "pointer-events: none;");
+					document.documentElement.style.touchAction = 'none';
+					bootrom.enableOnscreenGamepad = true;
 				}
 				startGame();
 			}

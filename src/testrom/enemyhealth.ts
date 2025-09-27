@@ -1,4 +1,4 @@
-import { $ } from 'bmsx';
+import { $, Platform } from 'bmsx';
 import { Component, componenttags_postprocessing } from 'bmsx';
 import type { color_arr, Identifier, RevivableObjectArgs } from 'bmsx';
 import { insavegame } from 'bmsx';
@@ -17,7 +17,7 @@ export class EnemyHealthComponent extends Component {
 		super(opts); this.hp = opts.hp ?? 20; this.maxHp = opts.hp ?? 20; this.scoreValue = opts.scoreValue ?? 50; this.boss = !!opts?.boss;
 	}
 	applyDamage(d: number) {
-		if (this.dead) return; this.hp -= d; if (this.hp < 0) this.hp = 0; this.flashTimer = this.flashDur; if (this.dead && this.diedAt == null) this.diedAt = performance.now() / 1000;
+		if (this.dead) return; this.hp -= d; if (this.hp < 0) this.hp = 0; this.flashTimer = this.flashDur; if (this.dead && this.diedAt == null) this.diedAt = Platform.instance.clock.now() / 1000;
 	}
 	get dead() { return this.hp <= 0; }
 	override postprocessingUpdate(): void {
@@ -54,7 +54,7 @@ export class EnemyHealthComponent extends Component {
 			this.originalColors = undefined; // clear cache after restore
 		}
 		if (this.dead && this.diedAt) {
-			const t = performance.now() / 1000 - this.diedAt; if (t > this.despawnDelay) { const wo = $.world.getWorldObject(this.parentid); if (wo) wo.dispose(); }
+			const t = Platform.instance.clock.now() / 1000 - this.diedAt; if (t > this.despawnDelay) { const wo = $.world.getWorldObject(this.parentid); if (wo) wo.dispose(); }
 		}
 	}
 }

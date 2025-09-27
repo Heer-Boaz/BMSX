@@ -14,6 +14,7 @@ import { GPUBackend, TextureHandle } from '../backend/pipeline_interfaces';
 import { RenderPassBuilder } from '../backend/renderpass_builder';
 import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGPUBackend, WebGPUPassEncoder } from '../backend/webgpu/webgpu_backend';
+import { Platform } from '../../core/platform';
 
 // Internal graph texture handle. Named distinctly to avoid collision with existing TextureManager TextureHandle.
 export type RGTexHandle = number;
@@ -509,9 +510,9 @@ export class RenderGraphRuntime {
 					}
 				};
 			}
-			const t0 = performance.now();
+			const t0 = Platform.instance.clock.now();
 			pass.execute(ctx, frame, data);
-			const dt = performance.now() - t0;
+			const dt = Platform.instance.clock.now() - t0;
 			this.passStats.push({ name: pass.name, ms: dt });
 			if (rp) rp.end();
 			checkWebGLError(`After pass execution: ${i}: ${this.passes[i].name}`);

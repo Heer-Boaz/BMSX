@@ -1,3 +1,4 @@
+import { Platform } from '../core/platform';
 import type { World } from "../core/world";
 import { ECSystem, ECSystemManager, TickGroup } from "./ecsystem";
 
@@ -56,7 +57,7 @@ export class ECSPipelineRegistry {
 
 	/** Build and assign systems to the world's ECSystemManager based on nodes. */
 	build(world: World, nodes: NodeSpec[]): BuildDiagnostics {
-		const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+		const t0 = Platform.instance.clock.now();
 		const filtered = nodes.filter(n => (n.when ? n.when(world) : true));
 		const resolved: NodeResolved[] = [];
 		for (let i = 0; i < filtered.length; i++) {
@@ -140,7 +141,7 @@ export class ECSPipelineRegistry {
 			sys.__ecsId = d.id;
 			SM.register(sys);
 		}
-		const t1 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+		const t1 = Platform.instance.clock.now();
 		const diag: BuildDiagnostics = {
 			finalOrder: finalOrder.map(n => n.ref),
 			groupOrders,

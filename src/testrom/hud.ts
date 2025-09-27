@@ -1,4 +1,4 @@
-import { $, WorldObject, Msx1Colors, build_fsm, type StateMachineBlueprint } from 'bmsx';
+import { $, WorldObject, Msx1Colors, build_fsm, type StateMachineBlueprint, Platform } from 'bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
 export class RailShooterHUD extends WorldObject {
@@ -24,7 +24,7 @@ export class RailShooterHUD extends WorldObject {
 		};
 	}
 
-	run(): void { const now = performance.now() / 1000; if (now - this.lastHitTime > this.comboWindow) { this.combo = 1; } if (this.comboFade > 0) this.comboFade -= ($.deltaTime / 1000) * 1.5; if (this.hitFlash > 0) this.hitFlash -= $.deltaTime / 1000; }
+	run(): void { const now = Platform.instance.clock.now() / 1000; if (now - this.lastHitTime > this.comboWindow) { this.combo = 1; } if (this.comboFade > 0) this.comboFade -= ($.deltaTime / 1000) * 1.5; if (this.hitFlash > 0) this.hitFlash -= $.deltaTime / 1000; }
 	constructor() {
 		super({ id: 'rail_hud' });
 		this.getOrCreateCustomRenderer().addProducer(({ rc }) => {

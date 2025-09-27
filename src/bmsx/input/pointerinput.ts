@@ -1,5 +1,6 @@
 import { getPressedState, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
+import { Platform } from '../core/platform';
 
 const POINTER_DEFAULT_CODES = [
 	'pointer_primary',
@@ -51,7 +52,7 @@ export class PointerInput implements InputHandler {
 	public applyVibrationEffect(_params: VibrationParams): void { }
 
 	public pollInput(): void {
-		const now = performance.now();
+		const now = Platform.instance.clock.now();
 		for (const key of Object.keys(this.buttonStates)) {
 			const state = this.buttonStates[key];
 			if (!state) continue;
@@ -63,20 +64,20 @@ export class PointerInput implements InputHandler {
 				state.presstime = null;
 				state.justreleased = false;
 			}
-		if (key === 'pointer_delta') {
-			const ts = state.timestamp ?? 0;
-			if (ts === this.lastDeltaTimestamp) {
-				state.value2d = [0, 0];
+			if (key === 'pointer_delta') {
+				const ts = state.timestamp ?? 0;
+				if (ts === this.lastDeltaTimestamp) {
+					state.value2d = [0, 0];
+					state.value = 0;
+					state.pressed = false;
+					state.justpressed = false;
+					state.justreleased = false;
+				} else {
+					this.lastDeltaTimestamp = ts;
+				}
+			} else if (key === 'pointer_wheel') {
 				state.value = 0;
-				state.pressed = false;
-				state.justpressed = false;
-				state.justreleased = false;
-			} else {
-				this.lastDeltaTimestamp = ts;
 			}
-		} else if (key === 'pointer_wheel') {
-			state.value = 0;
-		}
 			state.waspressed = state.waspressed || state.pressed;
 			state.wasreleased = state.wasreleased || (!state.pressed);
 			state.consumed = false;
@@ -91,7 +92,7 @@ export class PointerInput implements InputHandler {
 		const target = cloneState(state);
 		if (target.pressed) {
 			if (!target.pressId) target.pressId = this.nextPressId++;
-			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? performance.now();
+			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? Platform.instance.clock.now();
 		}
 		this.buttonStates[code] = target;
 	}

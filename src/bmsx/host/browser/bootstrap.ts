@@ -1,5 +1,7 @@
 import { Platform } from '../../core/platform';
 import { BrowserPlatformServices } from './platform_browser';
+// NO ENGINE TYPES ARE ALLOWED TO BE IMPORTED HERE!! OTHERWISE, IT WILL CREATE ENGINE CYCLES AND OTHER DEPENDENCY PROBLEMS!!!!!!!!!
+
 export interface BrowserBootstrapOptions {
 	startingGamepadIndex?: number;
 }
@@ -9,6 +11,12 @@ export interface BrowserBootstrapHandle {
 	readonly startingGamepadIndex?: number;
 }
 
+/**
+ * THIS MUST BE A PURE PLATFORM INITIALIZER!! DON'T DO ANY ENGINE STUFF HERE!! OTHERWISE YOU'LL CREATE CYCLES AND OTHER DEPENDENCY PROBLEMS!!!!!!!!! I'M LOOKING AT YOU, CODEX!!!!!
+ * @param surface
+ * @param options
+ * @returns
+ */
 export function bootstrapBrowserPlatform(surface: HTMLElement, options: BrowserBootstrapOptions = {}): BrowserBootstrapHandle {
 	const services = new BrowserPlatformServices(surface);
 	if (!Platform.isInitialized) Platform.initialize(services);

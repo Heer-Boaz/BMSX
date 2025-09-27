@@ -48,6 +48,7 @@ export interface GameInitArgs {
 	viewHost: GameViewHost;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
+	enableOnscreenGamepad?: boolean;
 	/**
 	 * ECS pipeline selection. Provide a spec or a profile string. Defaults to 'gameplay'.
 	 */
@@ -284,7 +285,7 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, ecsPipeline, platformServices } = init;
+		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platformServices } = init;
 		if (platformServices) {
 			Platform.initialize(platformServices);
 		}
@@ -310,7 +311,7 @@ export class Game {
 		if (this.inputBridge !== null) this.inputBridge.detach();
 		this.inputBridge = new EngineInputBridge();
 		this.inputBridge.attach();
-		if (this.input.isOnscreenGamepadEnabled) {
+		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
 		const gview = new GameView(worldConfig.viewportSize, { host: viewHost });

@@ -1,4 +1,4 @@
-import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject, CatmullRomPath, PathRunner, CameraPathBinder, EventTimeline, WaveManager, WorldObject, build_fsm, type StateMachineBlueprint } from 'bmsx';
+import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject, CatmullRomPath, PathRunner, CameraPathBinder, EventTimeline, WaveManager, WorldObject, build_fsm, type StateMachineBlueprint, Platform } from 'bmsx';
 import { bclass } from './bclass';
 import { CameraController } from './camera_controller';
 import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D, spawnSimpleCity } from './objects3d';
@@ -103,7 +103,7 @@ class RailDemoDriver extends WorldObject {
 			if (enemy) {
 				const health = enemy.getFirstComponent(EnemyHealthComponent);
 				if (health) {
-					const now = performance.now() / 1000;
+					const now = Platform.instance.clock.now() / 1000;
 					if (health.dead) {
 						this.hud.registerHit(now, impact.damage, true, health.scoreValue, this.hud.combo);
 						$.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z]));

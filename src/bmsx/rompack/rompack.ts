@@ -72,6 +72,7 @@ export interface BootArgs {
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
 	platformServices?: PlatformServices;
+	enableOnscreenGamepad?: boolean;
 }
 
 export type Constructor<T> = new (...args: any[]) => T;

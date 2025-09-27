@@ -6,6 +6,7 @@ import * as ParticlesPipeline from '../render/3d/particles_pipeline';
 import { RegisterablePersistent } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 import { $ } from '../core/game';
+import { Platform } from '../core/platform';
 import { attachHudPanel, makeHudPanelDraggable } from './hudpanel';
 
 // TODO: FIND A WAY TO NOT INITIALIZE ALL THIS STUFF WHEN THE GAME ROM IS NOT A DEBUG-ROM!
@@ -215,7 +216,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 			// Update EMA for frame average
 			if (this.emaFrameAvg === null) this.emaFrameAvg = total;
 			else this.emaFrameAvg = this.emaAlpha * total + (1 - this.emaAlpha) * this.emaFrameAvg;
-			lines.push(`Frame ${Math.floor(performance.now())} time:${total.toFixed(2)}ms avg:${this.emaFrameAvg.toFixed(2)}ms mode=${modeStr}`);
+			lines.push(`Frame ${Math.floor(Platform.instance.clock.now())} time:${total.toFixed(2)}ms avg:${this.emaFrameAvg.toFixed(2)}ms mode=${modeStr}`);
 
 			if (frameMem) {
 				lines.push(`frame tex mem: ${(frameMem.total / (1024 * 1024)).toFixed(2)} MB (color ${(frameMem.color / (1024 * 1024)).toFixed(2)} + depth ${(frameMem.depth / (1024 * 1024)).toFixed(2)})`);
@@ -243,7 +244,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 			this.frameWindow.push(total);
 			if (this.frameWindow.length > this.SUMMARY_FREQUENCY) this.frameWindow.shift();
 			const frameAvg = (this.frameWindow.reduce((a, b) => a + b, 0) / this.frameWindow.length) || 0;
-			lines.push(`Frame ${Math.floor(performance.now())} time:${total.toFixed(2)}ms avg:${frameAvg.toFixed(2)}ms mode=${modeStr}`);
+			lines.push(`Frame ${Math.floor(Platform.instance.clock.now())} time:${total.toFixed(2)}ms avg:${frameAvg.toFixed(2)}ms mode=${modeStr}`);
 
 			// Update per-pass sliding windows and show per-pass averages
 			for (const s of stats) {

@@ -11,6 +11,11 @@ import {
 	VibrationParams,
 	PlatformServices,
 	InputModifiers,
+	OnscreenGamepadControlKind,
+	OnscreenGamepadPlatform,
+	OnscreenGamepadPlatformHooks,
+	OnscreenGamepadPlatformSession,
+	OnscreenPointerEvent,
 } from '../../core/platform';
 
 class BrowserClock implements Clock {
@@ -186,10 +191,10 @@ class GamepadDevice implements InputDevice {
 			if (pressed && !prev) {
 				const pressId = this.nextPressId++;
 				this.pressIds[i] = pressId;
-				this.post({ type: 'button', deviceId: this.id, code: mapButton(i), down: true, value: buttons[i].value, timestamp: now, pressId });
+				this.post({ type: 'button', deviceId: this.id, code: buttonMap[i], down: true, value: buttons[i].value, timestamp: now, pressId });
 			} else if (!pressed && prev) {
 				const pressId = this.pressIds[i] || null;
-				this.post({ type: 'button', deviceId: this.id, code: mapButton(i), down: false, value: 0, timestamp: now, pressId });
+				this.post({ type: 'button', deviceId: this.id, code: buttonMap[i], down: false, value: 0, timestamp: now, pressId });
 			}
 			this.buttonPrev[i] = pressed;
 		}
@@ -203,26 +208,25 @@ class GamepadDevice implements InputDevice {
 	}
 }
 
-function mapButton(index: number): string {
-	if (index === 0) return 'a';
-	if (index === 1) return 'b';
-	if (index === 2) return 'x';
-	if (index === 3) return 'y';
-	if (index === 4) return 'lb';
-	if (index === 5) return 'rb';
-	if (index === 6) return 'lt';
-	if (index === 7) return 'rt';
-	if (index === 8) return 'select';
-	if (index === 9) return 'start';
-	if (index === 10) return 'ls';
-	if (index === 11) return 'rs';
-	if (index === 12) return 'up';
-	if (index === 13) return 'down';
-	if (index === 14) return 'left';
-	if (index === 15) return 'right';
-	if (index === 16) return 'home';
-	return 'touch';
-}
+const buttonMap: { [index: number]: string } = {
+	0: 'a',
+	1: 'b',
+	2: 'x',
+	3: 'y',
+	4: 'lb',
+	5: 'rb',
+	6: 'lt',
+	7: 'rt',
+	8: 'select',
+	9: 'start',
+	10: 'ls',
+	11: 'rs',
+	12: 'up',
+	13: 'down',
+	14: 'left',
+	15: 'right',
+	16: 'home',
+};
 
 function modifiersFrom(event: MouseEvent | PointerEvent | WheelEvent): InputModifiers {
 	return {
@@ -251,7 +255,7 @@ class BrowserInputHub implements InputHub {
 		window.addEventListener('keyup', this.onKeyUp, { passive: false });
 		surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
 		surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
-		surface.addEventListener('pointermove', this.onPointerMove, { passive: true });
+	surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
 		surface.addEventListener('wheel', this.onWheel, { passive: false });
 		surface.addEventListener('contextmenu', this.onContextMenu, { passive: false });
 		surface.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
@@ -407,6 +411,221 @@ function pointerButton(button: number): string {
 	return 'pointer_forward';
 }
 
+class BrowserOnscreenGamepadPlatformSession implements OnscreenGamepadPlatformSession {
+	constructor(private readonly controller: AbortController) {}
+
+	dispose(): void {
+		this.controller.abort();
+	}
+}
+
+function makePointerEvent(event: PointerEvent, owner: HTMLElement): OnscreenPointerEvent {
+	const pointerId = event.pointerId;
+	return {
+		pointerId,
+		clientX: event.clientX,
+		clientY: event.clientY,
+		pressure: event.pressure,
+		buttons: event.buttons,
+		capture(): void {
+			owner.setPointerCapture(pointerId);
+		},
+		release(): void {
+			if (owner.hasPointerCapture(pointerId)) {
+				owner.releasePointerCapture(pointerId);
+			}
+		},
+	};
+}
+
+function removeDpadClasses(target: Element): void {
+	const removals: string[] = [];
+	for (let i = 0; i < target.classList.length; i++) {
+		const className = target.classList.item(i);
+		if (className && className.indexOf('d-pad-') === 0) {
+			removals.push(className);
+		}
+	}
+	for (let i = 0; i < removals.length; i++) {
+		target.classList.remove(removals[i]);
+	}
+}
+
+export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
+	private readonly document: Document;
+
+	constructor(doc?: Document) {
+		if (doc) {
+			this.document = doc;
+		} else {
+			if (typeof document === 'undefined') {
+				throw new Error('[BrowserOnscreenGamepadPlatform] Global document is not available.');
+			}
+			this.document = document;
+		}
+		if (typeof window === 'undefined') {
+			throw new Error('[BrowserOnscreenGamepadPlatform] Global window is not available.');
+		}
+	}
+
+	attach(hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession {
+		const controller = new AbortController();
+		const signal = controller.signal;
+		const dpadSurface = this.querySurface('d-pad-controls');
+		const actionSurface = this.querySurface('button-controls');
+		this.setTouchActionNone(dpadSurface);
+		this.setTouchActionNone(actionSurface);
+		const pointerOptions: AddEventListenerOptions = { passive: options.passive, once: options.once, signal };
+		this.bindSurfaceEvents(dpadSurface, 'dpad', hooks, pointerOptions);
+		this.bindSurfaceEvents(actionSurface, 'action', hooks, pointerOptions);
+		const blurHandler = () => hooks.blur();
+		const focusHandler = () => hooks.focus();
+		const outHandler = () => hooks.pointerOut();
+		window.addEventListener('blur', blurHandler, { signal });
+		window.addEventListener('focus', focusHandler, { signal });
+		window.addEventListener('mouseout', outHandler, { signal });
+		return new BrowserOnscreenGamepadPlatformSession(controller);
+	}
+
+	hideElements(elementIds: string[]): void {
+		for (let i = 0; i < elementIds.length; i++) {
+			const id = elementIds[i];
+			const element = this.requireElement(id);
+			element.classList.add('hidden');
+			element.setAttribute('hidden', 'true');
+			const textElement = this.requireElement(`${id}_text`);
+			textElement.classList.add('hidden');
+			textElement.setAttribute('hidden', 'true');
+		}
+	}
+
+	collectElementIds(x: number, y: number, _kind: OnscreenGamepadControlKind): string[] {
+		const elements = this.document.elementsFromPoint(x, y);
+		const ids: string[] = [];
+		for (let i = 0; i < elements.length; i++) {
+			const elementId = elements[i].id;
+			if (elementId && elementId.length > 0) {
+				ids.push(elementId);
+			}
+		}
+		return ids;
+	}
+
+	setElementActive(elementId: string, active: boolean): void {
+		const element = this.requireElement(elementId);
+		const isDpad = elementId.indexOf('d-pad-') === 0;
+		const textElement = isDpad ? null : this.optionalElement(`${elementId}_text`);
+		if (!isDpad && !textElement) {
+			throw new Error(`[BrowserOnscreenGamepadPlatform] Text element '#${elementId}_text' was not found.`);
+		}
+		if (active) {
+			element.classList.add('druk');
+			element.classList.remove('los');
+			element.setAttribute('data-touched', 'true');
+			if (textElement) {
+				textElement.classList.add('druk');
+				textElement.classList.remove('los');
+				textElement.setAttribute('data-touched', 'true');
+			}
+		} else {
+			element.classList.remove('druk');
+			element.classList.add('los');
+			element.setAttribute('data-touched', 'false');
+			if (textElement) {
+				textElement.classList.remove('druk');
+				textElement.classList.add('los');
+				textElement.setAttribute('data-touched', 'false');
+			}
+		}
+	}
+
+	resetElements(elementIds: string[]): void {
+		for (let i = 0; i < elementIds.length; i++) {
+			const id = elementIds[i];
+			const element = this.requireElement(id);
+			const isDpad = id.indexOf('d-pad-') === 0;
+			const textElement = isDpad ? null : this.optionalElement(`${id}_text`);
+			if (!isDpad && !textElement) {
+				throw new Error(`[BrowserOnscreenGamepadPlatform] Text element '#${id}_text' was not found.`);
+			}
+			element.classList.remove('druk');
+			element.classList.add('los');
+			element.setAttribute('data-touched', 'false');
+			if (textElement) {
+				textElement.classList.remove('druk');
+				textElement.classList.add('los');
+				textElement.setAttribute('data-touched', 'false');
+			}
+		}
+	}
+
+	updateDpadRing(activeElementIds: string[]): void {
+		const ring = this.requireElement('d-pad-omheining');
+		removeDpadClasses(ring);
+		for (let i = 0; i < activeElementIds.length; i++) {
+			ring.classList.add(activeElementIds[i]);
+		}
+	}
+
+	supportsVibration(): boolean {
+		if (typeof navigator === 'undefined') {
+			return false;
+		}
+		if (typeof navigator.vibrate !== 'function') {
+			return false;
+		}
+		return true;
+	}
+
+	vibrate(durationMs: number): void {
+		if (!this.supportsVibration()) {
+			throw new Error('[BrowserOnscreenGamepadPlatform] Vibration is not supported.');
+		}
+		navigator.vibrate(durationMs);
+	}
+
+	private bindSurfaceEvents(surface: HTMLElement, kind: OnscreenGamepadControlKind, hooks: OnscreenGamepadPlatformHooks, listenerOptions: AddEventListenerOptions): void {
+		const pointerDown = (event: PointerEvent) => {
+			hooks.pointerDown(kind, makePointerEvent(event, surface));
+		};
+		const pointerMove = (event: PointerEvent) => {
+			hooks.pointerMove(kind, makePointerEvent(event, surface));
+		};
+		const pointerUp = (event: PointerEvent) => {
+			hooks.pointerUp(kind, makePointerEvent(event, surface));
+		};
+		surface.addEventListener('pointerdown', pointerDown, listenerOptions);
+		surface.addEventListener('pointermove', pointerMove, listenerOptions);
+		surface.addEventListener('pointerup', pointerUp, listenerOptions);
+		surface.addEventListener('pointercancel', pointerUp, listenerOptions);
+		surface.addEventListener('lostpointercapture', pointerUp, listenerOptions);
+	}
+
+	private querySurface(id: string): HTMLElement {
+		const element = this.document.getElementById(id);
+		if (!(element instanceof HTMLElement)) {
+			throw new Error(`[BrowserOnscreenGamepadPlatform] Element '#${id}' was not found or is not an HTMLElement.`);
+		}
+		return element;
+	}
+
+	private requireElement(id: string): Element {
+		const element = this.document.getElementById(id);
+		if (!element) {
+			throw new Error(`[BrowserOnscreenGamepadPlatform] Element '#${id}' was not found.`);
+		}
+		return element;
+	}
+
+	private optionalElement(id: string): Element | null {
+		return this.document.getElementById(id);
+	}
+
+	private setTouchActionNone(surface: HTMLElement): void {
+		surface.style.touchAction = 'none';
+	}
+}
+
 export class BrowserPlatformServices implements PlatformServices {
 	clock: Clock;
 	frames: FrameLoop;
@@ -414,6 +633,7 @@ export class BrowserPlatformServices implements PlatformServices {
 	input: InputHub;
 	storage: StorageService;
 	hid: HIDService;
+	onscreenGamepad: OnscreenGamepadPlatform;
 
 	constructor(surface: HTMLElement) {
 		this.clock = new BrowserClock();
@@ -421,6 +641,15 @@ export class BrowserPlatformServices implements PlatformServices {
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
 		this.input = new BrowserInputHub(surface, this.clock);
+		const ownerDoc = surface.ownerDocument;
+		if (!(ownerDoc instanceof Document)) {
+			if (typeof document === 'undefined') {
+				throw new Error('[BrowserPlatformServices] Unable to resolve a Document for the onscreen gamepad service.');
+			}
+			this.onscreenGamepad = new BrowserOnscreenGamepadPlatform(document);
+		} else {
+			this.onscreenGamepad = new BrowserOnscreenGamepadPlatform(ownerDoc);
+		}
 		if ('hid' in navigator && navigator.hid !== undefined && navigator.hid !== null) {
 			this.hid = new WebHID();
 		} else {
@@ -428,3 +657,7 @@ export class BrowserPlatformServices implements PlatformServices {
 		}
 	}
 }
+export const options: EventListenerOptions & { passive: boolean; once: boolean; } = {
+	passive: false,
+	once: false,
+};
