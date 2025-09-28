@@ -1,4 +1,6 @@
-export type GameProfileId = 'gameplay' | 'headless' | 'editor';
+export const GameProfileIds = ['gameplay', 'headless', 'editor'] as const;
+export type GameProfileId = typeof GameProfileIds[number];
+
 
 export interface GameProfile {
 	readonly id: GameProfileId | string;

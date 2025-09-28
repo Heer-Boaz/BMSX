@@ -116,7 +116,7 @@ export type AnyBackend = WebGLBackend | WebGPUBackend | GPUBackend;
 
 export interface GPUBackend {
 	// Discriminator for runtime backend flavor
-	type: 'webgl2' | 'webgpu';
+	type: 'webgl2' | 'webgpu' | 'headless';
 
 	// Optional WebGL-like texture binding helpers (implemented by WebGL backend).
 	// These allow higher-level code (GameView / render graph) to perform texture
@@ -193,7 +193,7 @@ export type RenderPassStateId = keyof RenderPassStateRegistry;
 
 export interface RenderContext {
 	viewportSize: { x: number; y: number };
-	backendType: 'webgl2' | 'webgpu';
+	backendType: 'webgl2' | 'webgpu' | 'headless';
 	offscreenCanvasSize: { x: number; y: number; };
 	backend: GPUBackend;
 	activeTexUnit: number | null;

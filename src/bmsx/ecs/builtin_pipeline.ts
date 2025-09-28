@@ -50,7 +50,7 @@ export function registerBuiltinECS(): void {
 		// Presentation: typed renderers first, then custom producers
 		{ id: 'textRender', group: TickGroup.Presentation, create: (p: number) => new TextRenderSystem(p) },
 		{ id: 'spriteRender', group: TickGroup.Presentation, create: (p: number) => new SpriteRenderSystem(p) },
-		{ id: 'meshRender', group: TickGroup.Presentation, create: (p: number) => new MeshRenderSystem(p) },
-		{ id: 'renderSubmit', group: TickGroup.Presentation, create: (p: number) => new PreRenderSubmitSystem(p) },
-	]);
+			{ id: 'meshRender', group: TickGroup.Presentation, create: (p: number) => new MeshRenderSystem(p) },
+			{ id: 'renderSubmit', group: TickGroup.Presentation, create: (p: number) => new PreRenderSubmitSystem(p) },
+		]);
 }

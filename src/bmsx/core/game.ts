@@ -6,10 +6,9 @@ import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { PhysicsWorld } from '../physics/physicsworld';
-import { createBackendForSurfaceAsync } from "../render/backend/backend_selector";
-import { RenderPassLibrary } from "../render/backend/renderpasslib";
-import { TextureManager } from "../render/texturemanager";
 import { GameView, renderGate } from "../render/gameview";
+import { TextureManager } from "../render/texturemanager";
+import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import type { GameViewHost } from "../render/platform/gameview_host";
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
@@ -49,7 +48,7 @@ export interface GameInitArgs {
 	worldConfig: WorldConfiguration;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
-	viewHost?: GameViewHost;
+	viewHost: GameViewHost;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
 	enableOnscreenGamepad?: boolean;
@@ -135,7 +134,7 @@ export class Game {
 	 */
 	private frameLoopHandle: { stop(): void } | null = null;
 	private inputBridge: EngineInputBridge | null = null;
-	private viewRef: GameView | null = null;
+	private _view!: GameView;
 	private initialViewportSize: vec2 = { x: 256, y: 192 };
 	public profile!: GameProfile;
 	/**
@@ -154,14 +153,14 @@ export class Game {
 		this._paused = value;
 		if (this._paused === true) {
 			this.sndmaster.pause();
-			if (this.viewRef !== null) this.viewRef.showPauseOverlay();
+			this.view.showPauseOverlay();
 			if (this.debug) {
 				// Show debug information
 				gamePaused();
 			}
 		}
 		else if (this._paused === false) {
-			if (this.viewRef !== null) this.viewRef.showResumeOverlay();
+			this.view.showResumeOverlay();
 			gameResumed();
 			this.sndmaster.resume();
 		}
@@ -188,21 +187,16 @@ export class Game {
 	 * Multiple calls within the same frame are coalesced.
 	 */
 	public requestPausedFrame(): void {
-		if (this._paused && this.viewRef !== null) this._pausedOneShotRenderPending = true;
+		if (this._paused) this._pausedOneShotRenderPending = true;
 	}
 
 	public get rompack(): RomPack { return $rompack!; }
 
 	public get world(): World { return this.registry.get<World>('world')!; }
 
-	public get view(): GameView {
-		if (this.viewRef === null) {
-			throw new Error(`[Game] View not available for profile '${this.profile.id}'.`);
-		}
-		return this.viewRef;
-	}
+	public get view(): GameView { return this._view; }
 
-	public get hasView(): boolean { return this.viewRef !== null; }
+	public get hasView(): boolean { return true; }
 
 	public get aem(): AudioEventManager { return AudioEventManager.instance!; }
 
@@ -298,8 +292,7 @@ export class Game {
 	}
 
 	public get viewportSize(): vec2 {
-		if (this.viewRef !== null) return this.viewRef.viewportSize;
-		return this.initialViewportSize;
+		return this.view.viewportSize;
 	}
 
 	private rewindBuffer: RewindBuffer;
@@ -358,28 +351,17 @@ export class Game {
 			this.input.enableOnscreenGamepad();
 		}
 
-		let gview: GameView | null = null;
-		if (viewHost) {
-			gview = new GameView(this.initialViewportSize, { host: viewHost });
-			this.viewRef = gview;
-			const backendResult = await createBackendForSurfaceAsync(gview.surface);
-			gview.nativeCtx = backendResult.nativeCtx;
-			gview.backend = backendResult.backend;
-			new TextureManager(backendResult.backend);
-			const pipelineRegistry = new RenderPassLibrary(backendResult.backend);
-			pipelineRegistry.registerBuiltin(gview.backend);
-			gview.pipelineRegistry = pipelineRegistry;
-			gview.init();
-			gview.initializeDefaultTextures();
-		} else {
-			this.viewRef = null;
-		}
-		if (this.profile.requireView && this.viewRef === null) {
-			throw new Error(`[Game] Profile '${this.profile.id}' requires a GameViewHost.`);
-		}
-		if (this.viewRef === null) {
-			new TextureManager(undefined);
-		}
+		const gview = new GameView(this.initialViewportSize, { host: viewHost });
+		this._view = gview;
+		const backendResult = await Platform.instance.createBackendForSurface(gview.surface);
+		gview.nativeCtx = backendResult.nativeCtx;
+		gview.backend = backendResult.backend;
+		new TextureManager(backendResult.backend);
+		const pipelineRegistry = new RenderPassLibrary(backendResult.backend);
+		pipelineRegistry.registerBuiltin(gview.backend);
+		gview.pipelineRegistry = pipelineRegistry;
+		gview.init();
+		await gview.initializeDefaultTextures();
 
 		const modulationResolver: ModulationPresetResolver = {
 			resolve: (key: asset_id) => {
@@ -453,9 +435,7 @@ export class Game {
 		new PhysicsWorld().bind();
 
 		if (this.debug) {
-			if (this.viewRef !== null) {
-				Input.instance.enableDebugMode(this.viewRef.surface); // Do this after the world is initialized to prevent race conditions
-			}
+			Input.instance.enableDebugMode(this.view.surface); // Do this after the world is initialized to prevent race conditions
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode
@@ -539,9 +519,9 @@ export class Game {
 
 		if (this._paused) {
 			this.accumulatedTime = 0;
-			if (this._pausedOneShotRenderPending && this.viewRef !== null) {
+			if (this._pausedOneShotRenderPending) {
 				this._pausedOneShotRenderPending = false;
-				this.viewRef.drawgame();
+				this.view.drawgame();
 			}
 			return;
 		}
@@ -563,8 +543,8 @@ export class Game {
 			++steps;
 		}
 
-		if (this.wasupdated && this.viewRef !== null) {
-			this.viewRef.drawgame();
+		if (this.wasupdated) {
+			this.view.drawgame();
 		}
 	}
 
@@ -585,7 +565,7 @@ export class Game {
 		const platform = Platform.instance;
 		const handle = platform.frames.start(() => {
 			handle.stop();
-			if (this.viewRef !== null) this.viewRef.handleResize();
+			this.view.handleResize();
 			this.sndmaster.stopEffect();
 			this.sndmaster.stopMusic();
 		});
@@ -641,7 +621,7 @@ export class Game {
 			this.registry.clear();
 			// Purge textures and reset view
 			this.texmanager.clear();
-			if (this.viewRef !== null) this.viewRef.reset();
+			this.view.reset();
 
 			const sg = Reviver.deserialize(buf) as Savegame;
 			// Apply plain world props back to world

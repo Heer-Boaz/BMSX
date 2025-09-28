@@ -3,6 +3,8 @@ import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
 import type { PlatformServices } from '../core/platform';
+import type { GameProfileSelection } from '../core/gameprofile';
+import type { GameViewHost } from '../render/platform/gameview_host';
 import type { TextureSource } from 'bmsx/core/platform';
 
 export interface RomPack {
@@ -67,12 +69,14 @@ export type FsmId = asset_id;
  */
 export interface BootArgs {
 	rompack: RomPack;
-	sndcontext: AudioContext;
-	gainnode: GainNode;
+	sndcontext?: AudioContext;
+	gainnode?: GainNode;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
 	platformServices?: PlatformServices;
 	enableOnscreenGamepad?: boolean;
+	profile?: GameProfileSelection;
+	viewHost?: GameViewHost;
 }
 
 export type Constructor<T> = new (...args: any[]) => T;

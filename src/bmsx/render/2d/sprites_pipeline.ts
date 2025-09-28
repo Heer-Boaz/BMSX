@@ -32,8 +32,8 @@ import {
 	ZCOORDS_SIZE
 } from '../backend/webgl/webgl.constants';
 import { color, ImgRenderSubmission, RectRenderSubmission, GameView, type RenderLayer } from '../gameview';
-import { bvec } from './vertexutils2d';
 import { $ } from '../../core/game';
+import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 
@@ -64,8 +64,21 @@ const spriteShaderData = {
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
 // Feature-local, double-buffered submission queue (UE-like feature queue)
-type SpriteSubmission = { options: ImgRenderSubmission; imgmeta: ImgMeta };
+export type SpriteSubmission = { options: ImgRenderSubmission; imgmeta: ImgMeta };
 const spriteQueue = new FeatureQueue<SpriteSubmission>(256);
+
+export function beginSpriteBatch(): number {
+	spriteQueue.swap();
+	return spriteQueue.sizeFront();
+}
+
+export function sortSpriteBatch(compare: (a: SpriteSubmission, b: SpriteSubmission) => number): void {
+	spriteQueue.sortFront(compare);
+}
+
+export function forEachSpriteBatch(fn: (submission: SpriteSubmission, index: number) => void): void {
+	spriteQueue.forEachFront(fn);
+}
 
 interface SpriteRuntime {
 	backend: WebGLBackend;
@@ -156,8 +169,8 @@ export function setupSpriteLocations(backend: WebGLBackend): void {
 // PassEncoder shape for backend.draw(). WebGL draw ignores it; WebGPU may use it.
 export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: SpritesPipelineState): void {
 	const { backend, gl, context } = runtime;
-	spriteQueue.swap();
-	if (spriteQueue.sizeFront() === 0) return;
+	const spriteCount = beginSpriteBatch();
+	if (spriteCount === 0) return;
 	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -173,7 +186,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.bind2DTex(state.atlasDynamicTex);
 	}
 	const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
-	spriteQueue.sortFront((a, b) => {
+	sortSpriteBatch((a, b) => {
 		const la = a.options.layer === 'ui' ? 1 : 0;
 		const lb = b.options.layer === 'ui' ? 1 : 0;
 		if (la !== lb) return la - lb;
@@ -203,7 +216,7 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		i = 0;
 	};
 	const ambientDefaultEnabled = state.ambientEnabledDefault ? 1 : 0;
-	spriteQueue.forEachFront(({ options, imgmeta }) => {
+	forEachSpriteBatch(({ options, imgmeta }) => {
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
 		const layerIsUI = options.layer === 'ui';
 		const ambE = layerIsUI ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : ambientDefaultEnabled);

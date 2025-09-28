@@ -122,6 +122,8 @@ export {
 } from './core/platform';
 export * from './host/browser/platform_browser';
 export * from './host/browser/bootstrap';
+export * from './host/headless/platform_headless';
+export * from './host/headless/bootstrap_headless';
 export * from './rompack/rompack';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';

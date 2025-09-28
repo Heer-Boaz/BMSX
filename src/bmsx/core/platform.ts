@@ -1,4 +1,6 @@
 import type { color_arr, RomImgAsset, RomPack } from '../../bmsx/rompack/rompack';
+import type { GameViewCanvas } from '../render/platform/gameview_host';
+import type { BackendCreateResult } from '../render/backend/backend_selector';
 
 export type MonoTime = number;
 
@@ -176,6 +178,7 @@ export interface PlatformServices {
 	textureLoader: TextureSourceLoader;
 	audio: AudioService;
 	rng: RngService;
+	createBackendForSurface(surface: GameViewCanvas): Promise<BackendCreateResult>;
 }
 
 export class Platform {

@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BootArgs, BrowserGameViewHost, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration } from 'bmsx';
+import { BFont, BGamepadButton, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration } from 'bmsx';
 import { createTestromModule } from './worldmodule';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
@@ -8,19 +8,34 @@ import './test_gamemodel';
 // (\s*\(([^)]+?)\s+as\s+any\s*\))
 // ($2)
 
-const _global = (window || globalThis) as unknown as { h406A: (args: BootArgs) => Promise<void> };
+const globalTarget = globalThis as { h406A?: (args: BootArgs) => Promise<void> };
 
-_global['h406A'] = (args: BootArgs): Promise<any> => {
-	const { platformServices } = args;
+globalTarget.h406A = (args: BootArgs): Promise<any> => {
+	const { platformServices, viewHost } = args;
 	if (!platformServices) {
 		throw new Error('[Bootloader:testrom] Platform services not provided. Ensure the host injects PlatformServices before starting the game.');
 	}
+	if (!viewHost) {
+		throw new Error('[Bootloader:testrom] View host not provided. Ensure the boot process supplies a GameViewHost.');
+	}
+	const profile = args.profile ?? 'gameplay';
 	const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
 
-	const viewHost = BrowserGameViewHost.fromCanvasId('gamescreen');
-	return $.init({ ...args, platformServices, worldConfig: worldConfiguration, viewHost }).then(() => {
-		$.view.default_font = new BFont(BitmapId);
-		// Set input maps now that input is initialized
+	return $.init({
+		rompack: args.rompack,
+		worldConfig: worldConfiguration,
+		sndcontext: args.sndcontext,
+		gainnode: args.gainnode,
+		debug: args.debug,
+		startingGamepadIndex: args.startingGamepadIndex,
+		enableOnscreenGamepad: args.enableOnscreenGamepad,
+		platformServices,
+		profile,
+		viewHost,
+	}).then(() => {
+		if ($.hasView) {
+			$.view.default_font = new BFont(BitmapId);
+		}
 		$.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping, pointer: Input.clonePointerMapping() });
 		$.start();
 	});

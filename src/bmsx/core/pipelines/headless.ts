@@ -18,5 +18,8 @@ export function headlessSpec(): NodeSpec[] {
 		{ ref: 'physicsSyncAfterWorld', after: ['boundary', 'tileCollision'] },
 		{ ref: 'collisionBroadphase', after: ['physicsSyncAfterWorld'] },
 		{ ref: 'overlapEvents', after: ['collisionBroadphase'] },
+		{ ref: 'transform', after: ['overlapEvents'] },
+ 		{ ref: 'spriteRender', after: ['transform'] },
+ 		{ ref: 'renderSubmit', after: ['spriteRender'] },
 	];
 }

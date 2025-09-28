@@ -23,6 +23,9 @@ import {
 	type TextureSourceLoader,
 } from '../../core/platform';
 import { WebAudioService } from './web_audio';
+import { createBackendForSurfaceAsync } from '../../render/backend/backend_selector';
+import type { GameViewCanvas } from '../../render/platform/gameview_host';
+import type { BackendCreateResult } from '../../render/backend/backend_selector';
 
 class BrowserClock implements Clock {
 	now(): number {
@@ -695,6 +698,10 @@ export class BrowserPlatformServices implements PlatformServices {
 		this.textureLoader = new WebTextureSourceLoader();
 		this.audio = new WebAudioService();
 		this.rng = new BrowserRngService();
+	}
+
+	async createBackendForSurface(surface: GameViewCanvas): Promise<BackendCreateResult> {
+		return await createBackendForSurfaceAsync(surface);
 	}
 }
 export const options: EventListenerOptions & { passive: boolean; once: boolean; } = {

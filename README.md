@@ -1890,3 +1890,37 @@ For per‑game engine pinning and using the installed `bmsx` package instead of 
 # ECS Pipelines
 
 The World owns the ECS system manager and update loop, but the concrete list and order of systems (the pipeline) is selected and applied by the Game. Pipelines are not serialized; after loading a save, re-apply the selected pipeline. See ECSPipeline.md for details, available variants (gameplay, headless, editor), and usage of the `ecsPipeline` init option.
+
+## Headless Mode
+
+Headless environments can bootstrap the engine without a DOM/WebGL stack. Install the platform shim and initialize the game with the headless profile:
+
+```ts
+import { Game, bootstrapHeadlessPlatform } from 'bmsx';
+
+const { postInput } = bootstrapHeadlessPlatform({ frameIntervalMs: 20 });
+
+const game = new Game();
+await game.init({
+  rompack,
+  worldConfig,
+  profile: 'headless',
+});
+
+game.start();
+
+// postInput({ ... }) // feed synthetic events when required
+```
+
+`bootstrapHeadlessPlatform` installs deterministic clock/frame-loop, silent audio, virtual input devices, and in-memory storage. The headless pipeline omits presentation systems, so renders and texture loads are unavailable; use `postInput` from the bootstrap handle to feed synthetic input events when needed.
+
+Use `npm run pack:build:game <romname> -- -profile headless` (or pass `-profile headless` directly to `rompacker`) to bake ROMs with the headless profile wired through `BootArgs`.
+
+For day-to-day debugging you can run a built ROM directly from Node:
+
+```bash
+npm run build:game:headless -- <romname>
+npx tsx scripts/run-headless.ts --rom <romname>
+```
+
+The runner exposes `postHeadlessInput` on `globalThis` so you can inject custom `InputEvt` objects while the loop is ticking.

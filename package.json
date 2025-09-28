@@ -62,6 +62,8 @@
 	"pack:game": "npx tsx scripts/rompacker/rompacker.ts --buildreslist -respath ./src/testrom/res",
 	"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug -romname ",
 	"build:game:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug --force -romname ",
+	"build:game:headless": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug -profile headless -romname ",
+	"build:game:headless:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug --force -profile headless -romname ",
 	"build:game:production": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig -romname ",
 	"build:game:production:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --force -romname ",
 	"pack:engine": "npm pack ./src/bmsx",

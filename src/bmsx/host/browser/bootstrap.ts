@@ -1,5 +1,6 @@
 import { Platform } from '../../core/platform';
 import { BrowserPlatformServices } from './platform_browser';
+import { BrowserGameViewHost } from '../../render/platform/browser_gameview_host';
 // NO ENGINE TYPES ARE ALLOWED TO BE IMPORTED HERE!! OTHERWISE, IT WILL CREATE ENGINE CYCLES AND OTHER DEPENDENCY PROBLEMS!!!!!!!!!
 
 export interface BrowserBootstrapOptions {
@@ -9,6 +10,7 @@ export interface BrowserBootstrapOptions {
 export interface BrowserBootstrapHandle {
 	stop(): void;
 	readonly startingGamepadIndex?: number;
+	readonly viewHost: BrowserGameViewHost;
 }
 
 /**
@@ -21,6 +23,11 @@ export function bootstrapBrowserPlatform(surface: HTMLElement, options: BrowserB
 	const services = new BrowserPlatformServices(surface);
 	if (!Platform.isInitialized) Platform.initialize(services);
 
+	if (!(surface instanceof HTMLCanvasElement)) {
+		throw new Error('[bootstrapBrowserPlatform] Surface element must be a canvas.');
+	}
+	const viewHost = new BrowserGameViewHost(surface);
+
 	const plat = Platform.instance;
 	const deviceLoop = plat.frames.start(() => {
 		const devices = plat.input.devices();
@@ -32,5 +39,6 @@ export function bootstrapBrowserPlatform(surface: HTMLElement, options: BrowserB
 		stop: () => {
 			deviceLoop.stop();
 		},
+		viewHost,
 	};
 }
