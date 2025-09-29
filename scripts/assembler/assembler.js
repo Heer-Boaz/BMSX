@@ -9,7 +9,20 @@ const DATA_BYTES_PER_LINE_BASE64 = 64;
 const DEFAULT_DATA_FORMAT = 'dec';
 const SUPPORTED_DATA_FORMATS = new Set(['dec', 'hex', 'b64', 'rom']);
 const DEFAULT_ROM_MAPPER = 'linear';
-const SUPPORTED_ROM_MAPPERS = new Set(['konami8k', 'linear']);
+const SUPPORTED_ROM_MAPPERS = new Set([
+	'linear',
+	'konami8k',
+	'konami4',
+	'konami',
+	'ascii8',
+	'ascii8k',
+	'ascii16',
+	'ascii16k',
+	'scc',
+	'scc+',
+	'sccplus',
+	'scc512'
+]);
 const ROM_DEFAULT_FILL_VALUE = 0xFF;
 const ROM_DEFAULT_BANK_SIZE = 0x2000; // 8 KB banks for typical MSX MegaROMs
 const SEGMENT_START_MARKER = 254;
@@ -38,7 +51,7 @@ function readOptionValue(argv, optionNames) {
  * @type {string[]}
  * @constant
  */
-const eightBitRegisters = ['A', 'B', 'C', 'D', 'E', 'H', 'L', 'I', 'R'];
+const eightBitRegisters = ['A', 'B', 'C', 'D', 'E', 'H', 'L', 'I', 'R', 'IXH', 'IXL', 'IYH', 'IYL'];
 
 /**
  * An array of 16-bit register names used in the assembler.
@@ -54,6 +67,13 @@ const sixteenBitRegisters = ['BC', 'DE', 'HL', 'SP', 'IX', 'IY', 'AF'];
  * @constant {Array} allRegisters
  */
 const allRegisters = [...eightBitRegisters, ...sixteenBitRegisters, "AF'"];
+
+const indexRegisterInfo = {
+	IXH: { base: 'H', prefix: 0xDD },
+	IXL: { base: 'L', prefix: 0xDD },
+	IYH: { base: 'H', prefix: 0xFD },
+	IYL: { base: 'L', prefix: 0xFD }
+};
 
 /**
  * An array of condition codes used in assembly language.
@@ -97,7 +117,7 @@ const conditionCodesMap = {
  * @constant {string[]}
  * @default
  */
-const directives = ['EQU', 'ORG', 'END', 'DB', 'DW', 'INCLUDE', 'BYTE', 'WORD', 'DS', '#', 'ASSERT', 'MAP', 'STRUCT', 'ENDS'];
+const directives = ['EQU', 'ORG', 'END', 'DB', 'DW', 'INCLUDE', 'BYTE', 'WORD', 'DS', '#', 'ASSERT', 'MAP', 'MAPALIGN', 'ENDMAP', 'PAGE', 'DEFPAGE', 'STRUCT', 'ENDS', 'INCBIN', 'DEFB', 'DEFW', 'DEFS'];
 
 /**
  * An array of valid mnemonics for the assembler.
@@ -753,6 +773,14 @@ function parse(tokens) {
 				return 'DW';
 			case '#':
 				return 'DS';
+			case 'DEFB':
+				return 'DB';
+			case 'DEFW':
+				return 'DW';
+			case 'DEFS':
+				return 'DS';
+			case '##':
+				return 'MAPALIGN';
 			default:
 				return dir;
 		}
@@ -826,39 +854,216 @@ function parseOperands(tokens, index) {
  * @returns {number} - The updated location counter.
  * @throws {Error} - Throws an error if the directive is missing required values.
  */
-function handleDirective(instruction, locationCounter, lineNumber, line) {
+function resolveCurrentLocation(state, locationCounter) {
+	return state.mapActive ? state.mapAddress : locationCounter;
+}
+
+function ensurePageInfo(state, pageNumber) {
+	if (!Number.isInteger(pageNumber) || pageNumber < 0) {
+		throw new Error(`Invalid page number: ${pageNumber}`);
+	}
+	if (!state.pageTable.has(pageNumber)) {
+		state.pageTable.set(pageNumber, { origin: null, size: null, explicitOrigin: false });
+		if (!state.pageOrder.includes(pageNumber)) {
+			state.pageOrder.push(pageNumber);
+		}
+	}
+	return state.pageTable.get(pageNumber);
+}
+
+function expandPageSpecification(spec, state, locationCounter, lineNumber, line) {
+	const trimmed = (spec || '').trim();
+	if (!trimmed) {
+		throw new Error(`Line ${lineNumber}: Page specification expected\n"${line}"`);
+	}
+	const parts = trimmed.split('..');
+	const currentLocation = resolveCurrentLocation(state, locationCounter);
+	const evaluate = expr => evaluateExpression(expr, lineNumber, line, { currentLocation });
+	let start;
+	let end;
+	if (parts.length === 1) {
+		start = end = evaluate(parts[0]);
+	} else if (parts.length === 2) {
+		start = evaluate(parts[0]);
+		end = evaluate(parts[1]);
+		if (end < start) {
+			throw new Error(`Line ${lineNumber}: Invalid page range ${spec}\n"${line}"`);
+		}
+	} else {
+		throw new Error(`Line ${lineNumber}: Invalid page specification ${spec}\n"${line}"`);
+	}
+	const pages = [];
+	for (let value = start; value <= end; value++) {
+		const pageNumber = value | 0;
+		if (pageNumber < 0 || pageNumber > 255) {
+			throw new Error(`Line ${lineNumber}: Page number out of range (${pageNumber})\n"${line}"`);
+		}
+		pages.push(pageNumber);
+	}
+	return pages;
+}
+
+function handleDirective(instruction, state, locationCounter, lineNumber, line) {
 	const { directive, operands } = instruction;
-	if (directive === 'EQU') {
-		const symbol = instruction.label;
-		const value = operands[0];
-		if (symbol && value) {
-			symbolTable[symbol] = evaluateExpression(value, lineNumber, line, { currentLocation: locationCounter });
-		} else {
-			throw new Error(`Line ${lineNumber}: Missing value for EQU directive\n"${line}"`);
+	const currentLocation = resolveCurrentLocation(state, locationCounter);
+	switch (directive) {
+		case 'EQU': {
+			const symbol = instruction.label;
+			const valueExpr = operands[0];
+			if (symbol && valueExpr) {
+				symbolTable[symbol] = evaluateExpression(valueExpr, lineNumber, line, { currentLocation });
+			} else {
+				throw new Error(`Line ${lineNumber}: Missing value for EQU directive\n"${line}"`);
+			}
+			break;
 		}
-	} else if (directive === 'ORG' || directive === 'MAP') {
-		const [value] = operands;
-		if (value) {
-			const newLocationCounter = evaluateExpression(value, lineNumber, line, { currentLocation: locationCounter });
-			return newLocationCounter;
-		} else {
-			throw new Error(`Line ${lineNumber}: Missing value for ORG directive\n"${line}"`);
+		case 'ORG': {
+			const valueExpr = operands[0];
+			if (!valueExpr) {
+				throw new Error(`Line ${lineNumber}: Missing value for ORG directive\n"${line}"`);
+			}
+			const newAddress = evaluateExpression(valueExpr, lineNumber, line, { currentLocation });
+			const normalizedAddress = newAddress | 0;
+			state.currentAddressSpace = 'rom';
+			state.mapActive = false;
+			const pageInfo = ensurePageInfo(state, state.currentPage);
+			pageInfo.origin = normalizedAddress;
+			pageInfo.explicitOrigin = true;
+			state.pageAddress.set(state.currentPage, normalizedAddress);
+			state.pendingSegmentReset = true;
+			return normalizedAddress;
 		}
-	} else if (directive === 'END') {
-		if (operands && operands.length > 0 && operands[0]) {
-			entryLabel = operands[0];
-			entryAddress = evaluateExpression(operands[0], lineNumber, line, { currentLocation: locationCounter });
+		case 'MAP': {
+			const valueExpr = operands[0];
+			if (!valueExpr) {
+				throw new Error(`Line ${lineNumber}: Missing value for MAP directive\n"${line}"`);
+			}
+			state.mapStack.push({
+				mapAddress: state.mapAddress,
+				mapActive: state.mapActive,
+				currentAddressSpace: state.currentAddressSpace
+			});
+			state.mapAddress = evaluateExpression(valueExpr, lineNumber, line, { currentLocation }) | 0;
+			state.mapActive = true;
+			state.currentAddressSpace = 'ram';
+			break;
 		}
-	} else if (directive === 'STRUCT' || directive === 'ENDS') {
-		// STRUCT blocks are processed separately; ignore during assembly.
-	} else if (directive === 'ASSERT') {
-		if (!operands || operands.length === 0) {
-			throw new Error(`Line ${lineNumber}: ASSERT requires an expression\n"${line}"`);
+		case 'MAPALIGN': {
+			const valueExpr = operands[0] || '4';
+			const alignment = evaluateExpression(valueExpr, lineNumber, line, { currentLocation });
+			if (alignment <= 0) {
+				throw new Error(`Line ${lineNumber}: MAPALIGN requires a positive value\n"${line}"`);
+			}
+			const mask = alignment - 1;
+			state.mapAddress = (state.mapAddress + mask) & ~mask;
+			break;
 		}
-		const value = evaluateExpression(operands[0], lineNumber, line, { currentLocation: locationCounter });
-		if (!value) {
-			throw new Error(`Line ${lineNumber}: ASSERT failed: ${operands[0]}\n"${line}"`);
+		case 'ENDMAP': {
+			if (state.mapStack.length === 0) {
+				throw new Error(`Line ${lineNumber}: ENDMAP without preceding MAP\n"${line}"`);
+			}
+			const previous = state.mapStack.pop();
+			state.mapAddress = previous.mapAddress | 0;
+			state.mapActive = previous.mapActive;
+			state.currentAddressSpace = previous.currentAddressSpace;
+			if (state.currentAddressSpace === 'rom') {
+				state.pendingSegmentReset = true;
+			}
+			break;
 		}
+		case 'PAGE': {
+			if (!operands || operands.length === 0) {
+				throw new Error(`Line ${lineNumber}: PAGE requires at least one operand\n"${line}"`);
+			}
+			const pageNumber = evaluateExpression(operands[0], lineNumber, line, { currentLocation }) | 0;
+			if (pageNumber < 0 || pageNumber > 255) {
+				throw new Error(`Line ${lineNumber}: Page number out of range (${pageNumber})\n"${line}"`);
+			}
+			if (!state.mapActive) {
+				state.pageAddress.set(state.currentPage, locationCounter);
+			}
+			state.pageExplicitlySet = true;
+			state.currentPage = pageNumber;
+			state.mapActive = false;
+			state.currentAddressSpace = 'rom';
+			const pageInfo = ensurePageInfo(state, pageNumber);
+			let newAddress;
+			if (operands.length > 1 && operands[1]) {
+				newAddress = evaluateExpression(operands[1], lineNumber, line, { currentLocation }) | 0;
+				pageInfo.origin = newAddress;
+				pageInfo.explicitOrigin = true;
+				state.pageAddress.set(pageNumber, newAddress);
+			} else if (state.pageAddress.has(pageNumber)) {
+				newAddress = state.pageAddress.get(pageNumber) | 0;
+			} else if (pageInfo.origin !== null) {
+				newAddress = pageInfo.origin | 0;
+				state.pageAddress.set(pageNumber, newAddress);
+			} else {
+				const fallback = state.defaultPageOrigin | 0;
+				pageInfo.origin = fallback;
+				state.pageAddress.set(pageNumber, fallback);
+				newAddress = fallback;
+			}
+			state.pendingSegmentReset = true;
+			return newAddress;
+		}
+		case 'DEFPAGE': {
+			if (!operands || operands.length === 0) {
+				throw new Error(`Line ${lineNumber}: DEFPAGE requires a page specification\n"${line}"`);
+			}
+			state.pageExplicitlySet = true;
+			const pages = expandPageSpecification(operands[0], state, locationCounter, lineNumber, line);
+			const originExpr = operands.length > 1 ? operands[1] : null;
+			const sizeExpr = operands.length > 2 ? operands[2] : null;
+			const originValue = originExpr ? (evaluateExpression(originExpr, lineNumber, line, { currentLocation }) | 0) : null;
+			const sizeValue = sizeExpr ? (evaluateExpression(sizeExpr, lineNumber, line, { currentLocation }) | 0) : null;
+			for (const page of pages) {
+				const info = ensurePageInfo(state, page);
+				if (originValue !== null) {
+					info.origin = originValue;
+					info.explicitOrigin = true;
+					if (!state.pageAddress.has(page)) {
+						state.pageAddress.set(page, originValue);
+					}
+				}
+				if (sizeValue !== null) {
+					info.size = sizeValue;
+				}
+			}
+			break;
+		}
+		case 'SIZE': {
+			if (!operands || operands.length === 0) {
+				throw new Error(`Line ${lineNumber}: SIZE requires a value\n"${line}"`);
+			}
+			const sizeValue = evaluateExpression(operands[0], lineNumber, line, { currentLocation }) | 0;
+			const info = ensurePageInfo(state, state.currentPage);
+			info.size = sizeValue;
+			break;
+		}
+		case 'END': {
+			if (operands && operands.length > 0 && operands[0]) {
+				entryLabel = operands[0];
+				entryAddress = evaluateExpression(operands[0], lineNumber, line, { currentLocation });
+			}
+			break;
+		}
+		case 'STRUCT':
+		case 'ENDS':
+			// handled elsewhere
+			break;
+		case 'ASSERT': {
+			if (!operands || operands.length === 0) {
+				throw new Error(`Line ${lineNumber}: ASSERT requires an expression\n"${line}"`);
+			}
+			const value = evaluateExpression(operands[0], lineNumber, line, { currentLocation });
+			if (!value) {
+				throw new Error(`Line ${lineNumber}: ASSERT failed: ${operands[0]}\n"${line}"`);
+			}
+			break;
+		}
+		default:
+			break;
 	}
 	return locationCounter;
 }
@@ -1080,6 +1285,71 @@ const expressionPrecedence = {
 	'/': 10,
 	'%': 10,
 };
+
+function extractStringLiteral(token) {
+	if (!token) {
+		return null;
+	}
+	const trimmed = token.trim();
+	if (trimmed.length < 2) {
+		return null;
+	}
+	const first = trimmed[0];
+	const last = trimmed[trimmed.length - 1];
+	if ((first === '"' && last === '"') || (first === '\'' && last === '\'')) {
+		return trimmed.slice(1, -1);
+	}
+	if (first === '<' && last === '>') {
+		return trimmed.slice(1, -1);
+	}
+	return null;
+}
+
+const indexRegisterMnemonics = new Set(['LD', 'INC', 'DEC', 'ADD', 'ADC', 'SUB', 'SBC', 'AND', 'OR', 'XOR', 'CP']);
+
+function canonicalizeIndexOperands(mnemonic, operands, lineNumber, line) {
+	let requiredPrefix = null;
+	const canonical = operands.map(op => {
+		const trimmed = op != null ? op.trim() : '';
+		const upper = trimmed.toUpperCase();
+		if (Object.prototype.hasOwnProperty.call(indexRegisterInfo, upper)) {
+			const info = indexRegisterInfo[upper];
+			if (requiredPrefix !== null && requiredPrefix !== info.prefix) {
+				throw new Error(`Line ${lineNumber}: Cannot mix IX* and IY* register halves in the same instruction\n"${line}"`);
+			}
+			requiredPrefix = info.prefix;
+			return info.base;
+		}
+		return trimmed;
+	});
+	if (requiredPrefix !== null && !indexRegisterMnemonics.has(mnemonic)) {
+		throw new Error(`Line ${lineNumber}: ${mnemonic} does not support IXH/IXL/IYH/IYL operands\n"${line}"`);
+	}
+	return { canonical, prefix: requiredPrefix };
+}
+
+function getMapperConfiguration(mapper) {
+	const normalized = typeof mapper === 'string' ? mapper.toLowerCase() : DEFAULT_ROM_MAPPER;
+	switch (normalized) {
+		case 'linear':
+			return { name: 'linear', type: 'linear', bankSize: null, defaultPageOrigin: 0x0000 };
+		case 'ascii16':
+		case 'ascii16k':
+			return { name: normalized, type: 'banked', bankSize: 0x4000, defaultPageOrigin: 0x4000 };
+		case 'konami8k':
+		case 'konami4':
+		case 'konami':
+		case 'ascii8':
+		case 'ascii8k':
+		case 'scc':
+		case 'scc+':
+		case 'sccplus':
+		case 'scc512':
+			return { name: normalized, type: 'banked', bankSize: 0x2000, defaultPageOrigin: 0x4000 };
+		default:
+			return { name: normalized, type: 'banked', bankSize: 0x2000, defaultPageOrigin: 0x4000 };
+	}
+}
 
 function parseExpressionTokens(tokens, startIndex = 0, minPrec = 0) {
 	function parsePrimary(index) {
@@ -1822,9 +2092,29 @@ function normalizeOperand(op, idx, instruction) {
  * @throws {Error} If the instruction is invalid or contains undefined symbols.
  */
 function encodeInstruction(instruction, locationCounter, lineNumber, line) {
-	const { mnemonic, operands, directive } = instruction;
+	const { mnemonic, operands = [], directive } = instruction;
 	let opcodeBytes = [];
 	let key = mnemonic;
+
+	if (directive === 'INCBIN') {
+		const incbinInfo = instruction.incbin;
+		if (!incbinInfo || !incbinInfo.path) {
+			throw new Error(`Line ${lineNumber}: INCBIN metadata missing during encoding\n"${line}"`);
+		}
+		let buffer;
+		try {
+			buffer = fs.readFileSync(incbinInfo.path);
+		} catch (error) {
+			throw new Error(`Line ${lineNumber}: Unable to read INCBIN file ${incbinInfo.path}: ${error.message}\n"${line}"`);
+		}
+		const start = incbinInfo.offset || 0;
+		const length = typeof incbinInfo.length === 'number' ? incbinInfo.length : (buffer.length - start);
+		const end = Math.min(buffer.length, start + length);
+		if (start > buffer.length) {
+			throw new Error(`Line ${lineNumber}: INCBIN offset ${start} exceeds file size ${buffer.length}\n"${line}"`);
+		}
+		return Array.from(buffer.slice(start, end));
+	}
 
 	if (directive === 'DB' || directive === 'DW') {
 		let opcodeBytes = [];
@@ -1871,6 +2161,12 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 		return bytes;
 	}
 
+	const originalOperands = operands;
+	const { canonical: canonicalOperands, prefix: indexRegisterPrefix } = canonicalizeIndexOperands(mnemonic, originalOperands, lineNumber, line);
+	const canonicalOperandsTrimmed = canonicalOperands.map(op => (op || '').trim());
+	const canonicalUpperOperands = canonicalOperandsTrimmed.map(op => op.toUpperCase());
+	const originalOperandsTrimmed = originalOperands.map(op => (op || '').trim());
+
 	/**
 	 * Normalizes the operands for assembly instructions.
 	 *
@@ -1884,7 +2180,7 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 	 * @param {string[]} operands - The array of operands to normalize.
 	 * @returns {string[]} The array of normalized operands.
 	 */
-	const normalizedOperands = operands.map((op, idx) => normalizeOperand(op, idx, instruction));
+	const normalizedOperands = canonicalOperandsTrimmed.map((op, idx) => normalizeOperand(op, idx, instruction));
 	key += ' ' + normalizedOperands.join(',');
 
 	// Replace known symbols in operands with their values
@@ -1899,7 +2195,7 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 	 * @returns {Array<string|number>} - The list of resolved operands.
 	 * @throws {Error} - Throws an error if an undefined symbol is encountered.
 	 */
-	const resolvedOperands = operands.map(op => {
+	const resolvedOperands = canonicalOperandsTrimmed.map(op => {
 		if (isIndexOperand(op)) {
 			return op.trim();
 		}
@@ -2046,23 +2342,56 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 	const indexedOperands = operands.map(op => parseIndexDisp(op, lineNumber, line, locationCounter));
 	const indexedCount = indexedOperands.filter(info => info !== null).length;
 
-	if (indexedCount > 0) {
-		if (indexedCount > 1 && mnemonic !== 'LD') {
-			throw new Error(`Line ${lineNumber}: Unsupported indexed operand combination for ${mnemonic}\n"${line}"`);
-		}
-		if (mnemonic === 'LD') {
-			if (indexedCount > 1) {
-				throw new Error(`Line ${lineNumber}: Unsupported indexed operands for LD\n"${line}"`);
+	if (indexRegisterPrefix !== null) {
+		for (const info of indexedOperands) {
+			if (info && info.prefix !== indexRegisterPrefix) {
+				throw new Error(`Line ${lineNumber}: Cannot mix IX* register halves with IY-based addressing in the same instruction\n"${line}"`);
 			}
-			if (indexedOperands[0]) {
-				const indexInfo = indexedOperands[0];
-				const source = operands[1];
-				if (source === undefined) {
-					throw new Error(`Line ${lineNumber}: Missing source operand for LD\n"${line}"`);
+		}
+	}
+
+		if (indexedCount > 0) {
+			if (indexedCount > 1 && mnemonic !== 'LD') {
+				throw new Error(`Line ${lineNumber}: Unsupported indexed operand combination for ${mnemonic}\n"${line}"`);
+			}
+			if (mnemonic === 'LD') {
+				if (indexedCount > 1) {
+					throw new Error(`Line ${lineNumber}: Unsupported indexed operands for LD\n"${line}"`);
 				}
-				const upperSource = source.toUpperCase();
-				if (eightBitRegisters.includes(upperSource)) {
-					const baseKey = `LD (HL),${upperSource}`;
+				if (indexedOperands[0]) {
+					const indexInfo = indexedOperands[0];
+					const sourceOriginal = originalOperands[1];
+					const sourceCanonicalUpper = canonicalUpperOperands[1] || '';
+					if (sourceOriginal === undefined) {
+						throw new Error(`Line ${lineNumber}: Missing source operand for LD\n"${line}"`);
+					}
+					if (eightBitRegisters.includes(sourceCanonicalUpper)) {
+						const baseKey = `LD (HL),${sourceCanonicalUpper}`;
+						const baseTemplate = opcodeMap[baseKey];
+						if (!baseTemplate) {
+							throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed LD: ${baseKey}\n"${line}"`);
+						}
+						opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
+						return opcodeBytes;
+					}
+					const value = evaluateExpression(sourceOriginal, lineNumber, line, { currentLocation: locationCounter });
+					if (typeof value !== 'number') {
+						throw new Error(`Line ${lineNumber}: Invalid immediate value: ${sourceOriginal}\n"${line}"`);
+					}
+					const storeTemplate = opcodeMap['LD (HL),n'];
+					if (!storeTemplate) {
+						throw new Error(`Line ${lineNumber}: Missing base template for LD (HL),n\n"${line}"`);
+					}
+					opcodeBytes.push(indexInfo.prefix, storeTemplate[0], indexInfo.d, value & 0xFF);
+					return opcodeBytes;
+				}
+				if (indexedOperands[1]) {
+					const indexInfo = indexedOperands[1];
+					const destCanonicalUpper = canonicalUpperOperands[0] || '';
+					if (!eightBitRegisters.includes(destCanonicalUpper)) {
+						throw new Error(`Line ${lineNumber}: Invalid destination register for indexed LD: ${originalOperands[0]}\n"${line}"`);
+					}
+					const baseKey = `LD ${destCanonicalUpper},(HL)`;
 					const baseTemplate = opcodeMap[baseKey];
 					if (!baseTemplate) {
 						throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed LD: ${baseKey}\n"${line}"`);
@@ -2070,32 +2399,7 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 					opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
 					return opcodeBytes;
 				}
-				const value = evaluateExpression(source, lineNumber, line, { currentLocation: locationCounter });
-				if (typeof value !== 'number') {
-					throw new Error(`Line ${lineNumber}: Invalid immediate value: ${source}\n"${line}"`);
-				}
-				const storeTemplate = opcodeMap['LD (HL),n'];
-				if (!storeTemplate) {
-					throw new Error(`Line ${lineNumber}: Missing base template for LD (HL),n\n"${line}"`);
-				}
-				opcodeBytes.push(indexInfo.prefix, storeTemplate[0], indexInfo.d, value & 0xFF);
-				return opcodeBytes;
 			}
-			if (indexedOperands[1]) {
-				const indexInfo = indexedOperands[1];
-				const dest = operands[0].toUpperCase();
-				if (!eightBitRegisters.includes(dest)) {
-					throw new Error(`Line ${lineNumber}: Invalid destination register for indexed LD: ${operands[0]}\n"${line}"`);
-				}
-				const baseKey = `LD ${dest},(HL)`;
-				const baseTemplate = opcodeMap[baseKey];
-				if (!baseTemplate) {
-					throw new Error(`Line ${lineNumber}: Unknown base instruction for indexed LD: ${baseKey}\n"${line}"`);
-				}
-				opcodeBytes.push(indexInfo.prefix, baseTemplate[0], indexInfo.d);
-				return opcodeBytes;
-			}
-		}
 		if (['INC', 'DEC'].includes(mnemonic) && indexedOperands[0]) {
 			const indexInfo = indexedOperands[0];
 			const baseKey = `${mnemonic} (HL)`;
@@ -2199,6 +2503,14 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
 		}
 	}
 
+	if (indexRegisterPrefix !== null) {
+		if (opcodeBytes.length === 0) {
+			opcodeBytes.push(indexRegisterPrefix);
+		} else if (opcodeBytes[0] !== indexRegisterPrefix) {
+			opcodeBytes.unshift(indexRegisterPrefix);
+		}
+	}
+
 	return opcodeBytes;
 }
 
@@ -2216,7 +2528,7 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
  * @throws {Error} If an invalid instruction or operand is encountered during the first pass.
  */
 function assemble(assemblyCode, options = {}) {
-	const { filePath = 'input', lineOrigins = [] } = options;
+	const { filePath = 'input', lineOrigins = [], mapper = DEFAULT_ROM_MAPPER, defaultPageOrigin: defaultPageOriginOption = null } = options;
 	const lines = assemblyCode.split('\n');
 	const origins = lineOrigins.length === lines.length
 		? lineOrigins
@@ -2224,9 +2536,33 @@ function assemble(assemblyCode, options = {}) {
 	resetSymbolTableForAssembly();
 	entryLabel = null;
 	entryAddress = null;
-	let locationCounter = 0;
+	const mapperConfig = getMapperConfiguration(mapper);
+	const defaultPageOrigin = (defaultPageOriginOption !== null && defaultPageOriginOption !== undefined)
+		? (defaultPageOriginOption | 0)
+		: mapperConfig.defaultPageOrigin;
+	const state = {
+		currentPage: 0,
+		pageExplicitlySet: false,
+		pageTable: new Map(),
+		pageOrder: [],
+		pageAddress: new Map(),
+		mapStack: [],
+		mapActive: false,
+		mapAddress: 0,
+		currentAddressSpace: 'rom',
+		defaultPageOrigin,
+		pendingSegmentReset: false
+	};
+	ensurePageInfo(state, 0);
+	if (!state.pageAddress.has(0)) {
+		state.pageAddress.set(0, defaultPageOrigin);
+	}
+	const pageZeroInfo = state.pageTable.get(0);
+	if (pageZeroInfo && pageZeroInfo.origin === null) {
+		pageZeroInfo.origin = defaultPageOrigin;
+	}
+	let locationCounter = defaultPageOrigin;
 	let loadAddressStart = null;
-	let currentAddressSpace = 'rom';
 	const instructions = [];
 	const errors = [];
 
@@ -2244,23 +2580,71 @@ function assemble(assemblyCode, options = {}) {
 			const instruction = parse(tokens);
 			instruction.filePath = origin.filePath;
 
+			const effectiveLocationCounter = resolveCurrentLocation(state, locationCounter);
+
 			if (instruction.label) {
-				symbolTable[instruction.label] = locationCounter;
+				symbolTable[instruction.label] = effectiveLocationCounter;
 			}
 
 			if (instruction.directive) {
-			if (['DB', 'DW', 'DS'].includes(instruction.directive)) {
+			if (['DB', 'DW', 'DS', 'INCBIN'].includes(instruction.directive)) {
 				let size = 0;
 				if (instruction.directive === 'DS') {
 					const lengthExpr = instruction.operands[0];
 					if (!lengthExpr) {
 						throw new Error(`Line ${lineNumber}: DS requires a length\n"${line}"`);
 					}
-					const length = evaluateExpression(lengthExpr, lineNumber, line, { currentLocation: locationCounter });
+					const length = evaluateExpression(lengthExpr, lineNumber, line, { currentLocation: effectiveLocationCounter });
 					if (length < 0) {
 						throw new Error(`Line ${lineNumber}: DS length must be non-negative\n"${line}"`);
 					}
 					size = length | 0;
+				} else if (instruction.directive === 'INCBIN') {
+					const args = instruction.operands || [];
+					if (args.length === 0) {
+						throw new Error(`Line ${lineNumber}: INCBIN requires a file path\n"${line}"`);
+					}
+					const literal = extractStringLiteral(args[0]);
+					if (literal === null || literal.length === 0) {
+						throw new Error(`Line ${lineNumber}: INCBIN expects the first argument to be a quoted file path\n"${line}"`);
+					}
+					const baseDir = instruction.filePath ? path.dirname(instruction.filePath) : process.cwd();
+					const resolvedPath = path.isAbsolute(literal) ? literal : path.resolve(baseDir, literal);
+					let offset = 0;
+					if (args.length > 1 && args[1].trim().length > 0) {
+						offset = evaluateExpression(args[1], lineNumber, line, { currentLocation: effectiveLocationCounter });
+					}
+					if (offset < 0) {
+						throw new Error(`Line ${lineNumber}: INCBIN offset must be non-negative\n"${line}"`);
+					}
+					let lengthValue = null;
+					if (args.length > 2 && args[2].trim().length > 0) {
+						lengthValue = evaluateExpression(args[2], lineNumber, line, { currentLocation: effectiveLocationCounter });
+						if (lengthValue < 0) {
+							throw new Error(`Line ${lineNumber}: INCBIN length must be non-negative\n"${line}"`);
+						}
+					}
+					let fileBuffer;
+					try {
+						fileBuffer = fs.readFileSync(resolvedPath);
+					} catch (error) {
+						throw new Error(`Line ${lineNumber}: Unable to read INCBIN file ${resolvedPath}: ${error.message}\n"${line}"`);
+					}
+					const fileLength = fileBuffer.length;
+					if (offset > fileLength) {
+						throw new Error(`Line ${lineNumber}: INCBIN offset ${offset} exceeds file size ${fileLength} for ${literal}\n"${line}"`);
+					}
+					const available = fileLength - offset;
+					const resolvedLength = lengthValue === null ? available : Math.min(lengthValue, available);
+					if (lengthValue !== null && lengthValue > available) {
+						throw new Error(`Line ${lineNumber}: INCBIN requested ${lengthValue} byte(s) but only ${available} byte(s) available from offset in ${literal}\n"${line}"`);
+					}
+					size = resolvedLength;
+					instruction.incbin = {
+						path: resolvedPath,
+						offset,
+						length: resolvedLength
+					};
 				} else {
 					for (let operand of instruction.operands) {
 						if (/^".*"$/.test(operand)) {
@@ -2273,26 +2657,40 @@ function assemble(assemblyCode, options = {}) {
 					}
 				}
 				instruction.size = size;
-				instruction.addressSpace = currentAddressSpace;
-				if (size > 0) {
-					if (loadAddressStart === null || locationCounter < loadAddressStart) {
-						loadAddressStart = locationCounter;
-					}
+				const instructionAddressSpace = state.mapActive ? 'ram' : state.currentAddressSpace;
+				instruction.addressSpace = instructionAddressSpace;
+				instruction.page = state.currentPage;
+				instruction.locationCounter = effectiveLocationCounter;
+				if (instructionAddressSpace === 'rom') {
+					instruction.segmentReset = !!state.pendingSegmentReset;
+					state.pendingSegmentReset = false;
 				}
-				instructions.push({ ...instruction, locationCounter, lineNumber, line, filePath: origin.filePath });
-				locationCounter += size;
+				instructions.push({ ...instruction, locationCounter: instruction.locationCounter, lineNumber, line, filePath: origin.filePath, page: state.currentPage });
+				if (instructionAddressSpace === 'ram') {
+					state.mapAddress = (state.mapAddress + size) | 0;
 				} else {
-					locationCounter = handleDirective(instruction, locationCounter, lineNumber, line);
-					if (instruction.directive === 'MAP') {
-						currentAddressSpace = 'ram';
-					} else if (instruction.directive === 'ORG') {
-						currentAddressSpace = 'rom';
+					if (size > 0) {
+						if (loadAddressStart === null || instruction.locationCounter < loadAddressStart) {
+							loadAddressStart = instruction.locationCounter;
+						}
+					}
+					locationCounter = (instruction.locationCounter + size) | 0;
+					state.pageAddress.set(state.currentPage, locationCounter);
+				}
+				} else {
+					const updatedLocation = handleDirective(instruction, state, locationCounter, lineNumber, line);
+					if (typeof updatedLocation === 'number' && Number.isFinite(updatedLocation)) {
+						locationCounter = updatedLocation;
+					}
+					if (!state.mapActive) {
+						state.pageAddress.set(state.currentPage, locationCounter);
 					}
 				}
 			} else if (instruction.mnemonic) {
 				let key = instruction.mnemonic;
-				let operands = instruction.operands;
-				const normalizedOperands = operands.map((op, idx) => normalizeOperand(op, idx, instruction));
+				const operands = instruction.operands || [];
+				const { canonical: canonicalOperandsFirstPass } = canonicalizeIndexOperands(instruction.mnemonic, operands, lineNumber, line);
+				const normalizedOperands = canonicalOperandsFirstPass.map((op, idx) => normalizeOperand(op, idx, instruction));
 
 				if (normalizedOperands.length > 0) {
 					key += ' ' + normalizedOperands.join(',');
@@ -2339,14 +2737,26 @@ function assemble(assemblyCode, options = {}) {
 				} else {
 					instruction.size = opcodeTemplate.length;
 				}
-				if (instruction.size > 0) {
-					if (loadAddressStart === null || locationCounter < loadAddressStart) {
-						loadAddressStart = locationCounter;
-					}
+				const instructionAddressSpace = state.mapActive ? 'ram' : state.currentAddressSpace;
+				instruction.addressSpace = instructionAddressSpace;
+				instruction.page = state.currentPage;
+				instruction.locationCounter = effectiveLocationCounter;
+				if (instructionAddressSpace === 'rom') {
+					instruction.segmentReset = !!state.pendingSegmentReset;
+					state.pendingSegmentReset = false;
 				}
-				instruction.addressSpace = currentAddressSpace;
-				instructions.push({ ...instruction, locationCounter, lineNumber, line, filePath: origin.filePath });
-				locationCounter += instruction.size;
+				instructions.push({ ...instruction, locationCounter: instruction.locationCounter, lineNumber, line, filePath: origin.filePath, page: state.currentPage });
+				if (instructionAddressSpace === 'ram') {
+					state.mapAddress = (state.mapAddress + instruction.size) | 0;
+				} else {
+					if (instruction.size > 0) {
+						if (loadAddressStart === null || instruction.locationCounter < loadAddressStart) {
+							loadAddressStart = instruction.locationCounter;
+						}
+					}
+					locationCounter = (instruction.locationCounter + instruction.size) | 0;
+					state.pageAddress.set(state.currentPage, locationCounter);
+				}
 			}
 		} catch (error) {
 			errors.push(createErrorRecord(origin.filePath, lineNumber, line, error));
@@ -2354,9 +2764,12 @@ function assemble(assemblyCode, options = {}) {
 	}
 
 	const machineCode = [];
-	const segments = [];
+	let segments = [];
 	let currentSegment = null;
 	for (const instr of instructions) {
+		if ((instr.addressSpace || 'rom').toLowerCase() === 'ram') {
+			continue;
+		}
 		try {
 			const opcodeBytes = encodeInstruction(instr, instr.locationCounter, instr.lineNumber, instr.line);
 			instr.bytes = opcodeBytes;
@@ -2364,11 +2777,13 @@ function assemble(assemblyCode, options = {}) {
 			if (opcodeBytes.length > 0) {
 				const start = instr.locationCounter;
 				const instrAddressSpace = instr.addressSpace || 'rom';
-				const expectedNextAddress = currentSegment && currentSegment.addressSpace === instrAddressSpace
+				const instrPage = typeof instr.page === 'number' ? instr.page : 0;
+				const resetRequested = !!instr.segmentReset;
+				const expectedNextAddress = currentSegment && currentSegment.addressSpace === instrAddressSpace && currentSegment.page === instrPage
 					? currentSegment.start + currentSegment.bytes.length
 					: null;
-				if (!currentSegment || currentSegment.addressSpace !== instrAddressSpace || start !== expectedNextAddress) {
-					currentSegment = { start, bytes: [], addressSpace: instrAddressSpace };
+				if (!currentSegment || currentSegment.addressSpace !== instrAddressSpace || currentSegment.page !== instrPage || resetRequested || start !== expectedNextAddress) {
+					currentSegment = { start, bytes: [], addressSpace: instrAddressSpace, page: instrPage };
 					segments.push(currentSegment);
 				}
 				currentSegment.bytes.push(...opcodeBytes);
@@ -2383,13 +2798,33 @@ function assemble(assemblyCode, options = {}) {
 		loadAddressStart = loadAddressStart === null ? firstSegmentStart : Math.min(loadAddressStart, firstSegmentStart);
 	}
 
+	let pages;
+	if (state.pageExplicitlySet || mapperConfig.type !== 'banked' || !mapperConfig.bankSize) {
+		pages = state.pageOrder
+			.slice()
+			.sort((a, b) => a - b)
+			.map(pageNumber => {
+				const info = state.pageTable.get(pageNumber) || { origin: null, size: null };
+				return {
+					page: pageNumber,
+					origin: info.origin,
+					size: info.size
+				};
+			});
+	} else {
+		const autoResult = autoAssignRomPages(segments, mapperConfig.bankSize);
+		segments = autoResult.segments;
+		pages = autoResult.pages;
+	}
+
 	return {
 		machineCode: errors.length === 0 ? machineCode : [],
 		errors,
 		entryLabel,
 		entryAddress,
 		loadAddressStart,
-		segments: errors.length === 0 ? segments : []
+		segments: errors.length === 0 ? segments : [],
+		pages
 	};
 }
 
@@ -2424,6 +2859,10 @@ function generateDataStatements(segments, dataFormat) {
 	let totalLength = 0;
 	for (const segment of segments) {
 		if (!segment || !Array.isArray(segment.bytes) || segment.bytes.length === 0) {
+			continue;
+		}
+		const segmentSpace = (segment.addressSpace || 'rom').toLowerCase();
+		if (segmentSpace === 'ram') {
 			continue;
 		}
 		const { start, bytes } = segment;
@@ -2474,133 +2913,188 @@ function generateDataStatements(segments, dataFormat) {
 	return dataLines;
 }
 
+function autoAssignRomPages(segments, bankSize) {
+	if (!Array.isArray(segments) || !segments.length || !bankSize || bankSize <= 0) {
+		return { segments, pages: [] };
+	}
+	const normalizedSegments = [];
+	const pages = [];
+	let currentPage = null;
+
+	const fitsStart = (start, page) => {
+		if (!page) {
+			return false;
+		}
+		if (start < page.origin) {
+			return false;
+		}
+		if ((start - page.origin) >= bankSize) {
+			return false;
+		}
+		if (start < page.maxEnd) {
+			return false;
+		}
+		return true;
+	};
+
+	const createPage = (startAddress) => {
+		const page = {
+			number: pages.length,
+			origin: startAddress | 0,
+			maxEnd: startAddress | 0
+		};
+		pages.push(page);
+		return page;
+	};
+
+	for (const segment of segments) {
+		if (!segment || !Array.isArray(segment.bytes) || segment.bytes.length === 0) {
+			continue;
+		}
+		const space = (segment.addressSpace || 'rom').toLowerCase();
+		if (space === 'ram') {
+			continue;
+		}
+		let offset = 0;
+		while (offset < segment.bytes.length) {
+			const chunkStart = (segment.start | 0) + offset;
+			if (!currentPage || !fitsStart(chunkStart, currentPage)) {
+				currentPage = createPage(chunkStart);
+			}
+			const used = chunkStart - currentPage.origin;
+			const spaceLeft = bankSize - used;
+			if (spaceLeft <= 0) {
+				currentPage = createPage(chunkStart);
+			}
+			const remaining = segment.bytes.length - offset;
+			const chunkLength = Math.max(0, Math.min(spaceLeft, remaining));
+			if (chunkLength <= 0) {
+				// Avoid infinite loop in degenerate cases
+				break;
+			}
+			const chunkBytes = segment.bytes.slice(offset, offset + chunkLength);
+			normalizedSegments.push({
+				start: chunkStart,
+				bytes: chunkBytes,
+				addressSpace: segment.addressSpace || 'rom',
+				page: currentPage.number
+			});
+			offset += chunkLength;
+			const chunkEnd = chunkStart + chunkLength;
+			currentPage.maxEnd = Math.max(currentPage.maxEnd, chunkEnd);
+		}
+	}
+
+	return {
+		segments: normalizedSegments,
+		pages: pages.map(page => ({
+			page: page.number,
+			origin: page.origin,
+			size: bankSize
+		}))
+	};
+}
+
 function buildRomImage(segments, options = {}) {
 	if (!Array.isArray(segments)) {
 		throw new Error('Cannot build ROM image: no segments provided');
 	}
-	const fillerValue = (typeof options.filler === 'number' ? options.filler : ROM_DEFAULT_FILL_VALUE) & 0xFF;
-	const bankSize = typeof options.bankSize === 'number' && options.bankSize > 0 ? options.bankSize : ROM_DEFAULT_BANK_SIZE;
 	const mapper = (options.mapper || DEFAULT_ROM_MAPPER).toLowerCase();
+	const mapperConfig = getMapperConfiguration(mapper);
+	const fillerValue = (typeof options.filler === 'number' ? options.filler : ROM_DEFAULT_FILL_VALUE) & 0xFF;
+	const romSegments = segments.filter(segment => {
+		if (!segment || !Array.isArray(segment.bytes) || segment.bytes.length === 0) {
+			return false;
+		}
+		const space = (segment.addressSpace || 'rom').toLowerCase();
+		return space !== 'ram';
+	});
 
 	const buildLinearImage = () => {
 		const romChunks = [];
 		const layout = [];
 		let previousEnd = null;
-		for (const segment of segments) {
-			if (!segment || !Array.isArray(segment.bytes) || segment.bytes.length === 0) {
-				continue;
-			}
+		for (const segment of romSegments) {
 			const start = typeof segment.start === 'number' ? segment.start : 0;
-			const segmentSpace = (segment.addressSpace || 'rom').toLowerCase();
-			if (segmentSpace === 'ram') {
-				layout.push({ kind: 'skipped', start, length: segment.bytes.length, addressSpace: segmentSpace });
-				continue;
-			}
-
 			if (previousEnd !== null && start < previousEnd) {
 				previousEnd = start;
 			}
 			if (previousEnd !== null && start > previousEnd) {
 				const gap = start - previousEnd;
 				romChunks.push(Buffer.alloc(gap, fillerValue));
-				layout.push({ kind: 'gap', from: previousEnd, to: start, length: gap, addressSpace: segmentSpace });
+				layout.push({ kind: 'gap', from: previousEnd, to: start, length: gap });
 				previousEnd = start;
 			}
-
 			const dataBuffer = Buffer.from(segment.bytes);
 			romChunks.push(dataBuffer);
-			layout.push({ kind: 'segment', start, length: dataBuffer.length, addressSpace: segmentSpace });
+			layout.push({ kind: 'segment', start, length: dataBuffer.length, page: segment.page ?? 0 });
 			previousEnd = start + dataBuffer.length;
 		}
-
 		const buffer = romChunks.length > 0 ? Buffer.concat(romChunks) : Buffer.alloc(0);
+		const bankSize = mapperConfig.bankSize || ROM_DEFAULT_BANK_SIZE;
 		const bankCount = bankSize > 0 ? Math.ceil(buffer.length / bankSize) : null;
 		return { buffer, bankSize, fillerValue, layout, bankCount };
 	};
 
-	const buildKonami8kImage = () => {
-		const ROM_BASE_ADDRESS = 0x4000;
-		const WINDOWS_PER_BANK = 3; // 0x6000, 0x8000, 0xA000
-		const windowUsage = new Array(WINDOWS_PER_BANK).fill(0);
-		const pages = [];
-		const layout = [];
-		const getPage = (index) => {
-			while (pages.length <= index) {
-				pages.push(Buffer.alloc(bankSize, fillerValue));
-			}
-			return pages[index];
-		};
-		for (const segment of segments) {
-			if (!segment || !Array.isArray(segment.bytes) || segment.bytes.length === 0) {
-				continue;
-			}
-			const start = typeof segment.start === 'number' ? segment.start : 0;
-			const segmentSpace = (segment.addressSpace || 'rom').toLowerCase();
-			if (segmentSpace === 'ram') {
-				layout.push({ kind: 'skipped', start, length: segment.bytes.length, addressSpace: segmentSpace });
-				continue;
-			}
-
-			if (start < ROM_BASE_ADDRESS) {
-				throw new Error(`ROM segment starts before 0x4000: ${start.toString(16)}`);
-			}
-			const segmentWindowIndex = Math.floor((start - ROM_BASE_ADDRESS) / bankSize);
-			if (segmentWindowIndex < 0 || segmentWindowIndex > WINDOWS_PER_BANK) {
-				throw new Error(`ROM segment at ${start.toString(16)} falls outside mapper window`);
-			}
-			const segmentBuffer = Buffer.from(segment.bytes);
-			let offset = 0;
-			let address = start;
-			while (offset < segmentBuffer.length) {
-				const windowIndex = Math.floor((address - ROM_BASE_ADDRESS) / bankSize);
-				if (windowIndex < 0 || windowIndex > WINDOWS_PER_BANK) {
-					throw new Error(`Segment at ${start.toString(16)} crosses unsupported memory window`);
-				}
-				let pageIndex;
-				if (windowIndex === 0) {
-					pageIndex = 0;
-				} else {
-					const switchIndex = windowIndex - 1;
-					const usageCount = windowUsage[switchIndex];
-					pageIndex = 1 + usageCount * WINDOWS_PER_BANK + switchIndex;
-					const pageBuffer = getPage(pageIndex);
-					const pageBaseAddress = ROM_BASE_ADDRESS + windowIndex * bankSize;
-					const pageOffset = address - pageBaseAddress;
-					const remainingInPage = bankSize - pageOffset;
-					const remainingInSegment = segmentBuffer.length - offset;
-					const chunkLength = Math.min(remainingInPage, remainingInSegment);
-					segmentBuffer.copy(pageBuffer, pageOffset, offset, offset + chunkLength);
-					layout.push({ kind: 'segment', start: address, length: chunkLength, addressSpace: segmentSpace, pageIndex });
-					offset += chunkLength;
-					address += chunkLength;
-					if (pageOffset + chunkLength >= bankSize) {
-						windowUsage[switchIndex] = usageCount + 1;
-					}
+	const buildBankedImage = () => {
+		const pageDefinitions = new Map();
+		if (Array.isArray(options.pages)) {
+			for (const entry of options.pages) {
+				if (!entry || typeof entry.page !== 'number') {
 					continue;
 				}
-				const pageBuffer = getPage(pageIndex);
-				const pageBaseAddress = ROM_BASE_ADDRESS;
-				const pageOffset = address - pageBaseAddress;
-				const remainingInPage = bankSize - pageOffset;
-				const remainingInSegment = segmentBuffer.length - offset;
-				const chunkLength = Math.min(remainingInPage, remainingInSegment);
-				segmentBuffer.copy(pageBuffer, pageOffset, offset, offset + chunkLength);
-				layout.push({ kind: 'segment', start: address, length: chunkLength, addressSpace: segmentSpace, pageIndex });
-				offset += chunkLength;
-				address += chunkLength;
+				pageDefinitions.set(entry.page, {
+					origin: entry.origin !== null && entry.origin !== undefined ? entry.origin | 0 : null,
+					size: entry.size !== null && entry.size !== undefined ? entry.size | 0 : null
+				});
 			}
 		}
+		const banks = new Map();
+		const layout = [];
+		const ensureBank = (pageNumber) => {
+			if (!banks.has(pageNumber)) {
+				const def = pageDefinitions.get(pageNumber) || {};
+				const bankLength = def.size != null ? def.size : mapperConfig.bankSize;
+				if (!bankLength || bankLength <= 0) {
+					throw new Error(`Invalid bank size for page ${pageNumber}`);
+				}
+				banks.set(pageNumber, Buffer.alloc(bankLength, fillerValue));
+				if (!pageDefinitions.has(pageNumber)) {
+					pageDefinitions.set(pageNumber, { origin: null, size: bankLength });
+				} else if (pageDefinitions.get(pageNumber).size == null) {
+					pageDefinitions.get(pageNumber).size = bankLength;
+				}
+			}
+			return banks.get(pageNumber);
+		};
 
-		const buffer = pages.length > 0 ? Buffer.concat(pages) : Buffer.alloc(0);
-		const bankCount = pages.length;
-		return { buffer, bankSize, fillerValue, layout, bankCount };
+		for (const segment of romSegments) {
+			const pageNumber = typeof segment.page === 'number' ? segment.page : 0;
+			const def = pageDefinitions.get(pageNumber) || {};
+			const origin = def.origin != null ? def.origin : mapperConfig.defaultPageOrigin;
+			const bankBuffer = ensureBank(pageNumber);
+			const bankLength = bankBuffer.length;
+			for (let offset = 0; offset < segment.bytes.length; offset++) {
+				const absoluteAddress = (segment.start | 0) + offset;
+				const bankOffset = absoluteAddress - origin;
+				if (bankOffset < 0 || bankOffset >= bankLength) {
+					throw new Error(`Segment at ${absoluteAddress.toString(16)}h does not fit in page ${pageNumber}`);
+				}
+				bankBuffer[bankOffset] = segment.bytes[offset];
+			}
+			layout.push({ kind: 'segment', page: pageNumber, start: segment.start | 0, length: segment.bytes.length });
+		}
+
+		const sortedPages = Array.from(banks.keys()).sort((a, b) => a - b);
+		const buffer = sortedPages.length > 0 ? Buffer.concat(sortedPages.map(page => banks.get(page))) : Buffer.alloc(0);
+		return { buffer, bankSize: mapperConfig.bankSize, fillerValue, layout, bankCount: sortedPages.length, pages: sortedPages };
 	};
 
-	if (mapper === 'linear') {
+	if (mapperConfig.type === 'linear') {
 		return buildLinearImage();
 	}
-	if (mapper === 'konami8k') {
-		return buildKonami8kImage();
+	if (mapperConfig.type === 'banked') {
+		return buildBankedImage();
 	}
 
 	throw new Error(`Unsupported ROM mapper: ${mapper}`);
@@ -2948,8 +3442,9 @@ function main() {
 		entryLabel: assembledEntryLabel,
 		entryAddress: assembledEntryAddress,
 		loadAddressStart,
-		segments
-	} = assemble(assemblyCode, { filePath: assemblyFilePath, lineOrigins: expanded.origins });
+		segments,
+		pages
+	} = assemble(assemblyCode, { filePath: assemblyFilePath, lineOrigins: expanded.origins, mapper: romMapper });
 
 	if (errors.length > 0) {
 		printErrors(errors, errorOutputFilePath);
@@ -2962,11 +3457,11 @@ function main() {
 
 	if (dataFormat === 'rom') {
 		try {
-			const { buffer: romBuffer, bankCount, layout } = buildRomImage(segments, {
-				filler: ROM_DEFAULT_FILL_VALUE,
-				bankSize: ROM_DEFAULT_BANK_SIZE,
-				mapper: romMapper
-			});
+		const { buffer: romBuffer, bankCount, bankSize: resultBankSize, layout } = buildRomImage(segments, {
+			filler: ROM_DEFAULT_FILL_VALUE,
+			mapper: romMapper,
+			pages
+		});
 			if (!romBuffer || romBuffer.length === 0) {
 				throw new Error('Assembled ROM image is empty.');
 			}
@@ -2979,7 +3474,8 @@ function main() {
 			const romSize = romBuffer.length;
 			const entryHex = `0x${(entryPointAddress >>> 0).toString(16).toUpperCase().padStart(4, '0')}`;
 			const entryInfo = assembledEntryLabel ? `${entryHex} (${assembledEntryLabel})` : entryHex;
-			const bankInfo = bankCount ? `${bankCount} × ${(ROM_DEFAULT_BANK_SIZE / 1024) | 0}KB` : `${(ROM_DEFAULT_BANK_SIZE / 1024) | 0}KB slots`;
+			const effectiveBankSize = resultBankSize || ROM_DEFAULT_BANK_SIZE;
+			const bankInfo = bankCount ? `${bankCount} × ${(effectiveBankSize / 1024) | 0}KB` : `${(effectiveBankSize / 1024) | 0}KB slots`;
 			if (outputWasAutoselected) {
 				console.log(colors.yellow + `No -o specified; writing ROM to ${outputFilePath}` + colors.reset);
 			}
@@ -2989,7 +3485,7 @@ function main() {
 				console.log(colors.cyan + 'ROM layout (segments ordered as emitted):' + colors.reset);
 				layout.forEach((item, index) => {
 					if (item.kind === 'segment') {
-						const pageInfo = item.pageIndex !== undefined ? ` page=${item.pageIndex}` : '';
+						const pageInfo = item.page !== undefined ? ` page=${item.page}` : item.pageIndex !== undefined ? ` page=${item.pageIndex}` : '';
 						console.log(colors.cyan + `  [${index}] segment start=${item.start.toString(16)}h length=${item.length}${pageInfo}` + colors.reset);
 					} else if (item.kind === 'gap') {
 						console.log(colors.cyan + `  [${index}] gap from=${item.from.toString(16)}h to=${item.to.toString(16)}h length=${item.length}` + colors.reset);
@@ -2998,9 +3494,9 @@ function main() {
 					}
 				});
 			}
-			const tailBytes = romSize % ROM_DEFAULT_BANK_SIZE;
-			if (tailBytes !== 0) {
-				console.log(colors.yellow + `Warning: ROM size leaves ${tailBytes} byte(s) outside ${ROM_DEFAULT_BANK_SIZE} byte bank boundaries.` + colors.reset);
+			const tailBytes = effectiveBankSize ? romSize % effectiveBankSize : 0;
+			if (effectiveBankSize && tailBytes !== 0) {
+				console.log(colors.yellow + `Warning: ROM size leaves ${tailBytes} byte(s) outside ${effectiveBankSize} byte bank boundaries.` + colors.reset);
 			}
 		} catch (error) {
 			printErrors([createErrorRecord(assemblyFilePath, 1, null, error)], errorOutputFilePath);
