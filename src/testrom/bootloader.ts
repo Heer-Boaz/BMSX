@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration } from 'bmsx';
+import { BFont, BGamepadButton, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration, BrowserGameViewHost } from 'bmsx';
 import { createTestromModule } from './worldmodule';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
@@ -11,14 +11,32 @@ import './test_gamemodel';
 const globalTarget = globalThis as { h406A?: (args: BootArgs) => Promise<void> };
 
 globalTarget.h406A = (args: BootArgs): Promise<any> => {
-	const { platformServices, viewHost } = args;
+	let { platformServices, viewHost } = args;
+	let startingGamepadIndex = args.startingGamepadIndex ?? null;
 	if (!platformServices) {
-		throw new Error('[Bootloader:testrom] Platform services not provided. Ensure the host injects PlatformServices before starting the game.');
+		if (typeof document === 'undefined') {
+			throw new Error('[Bootloader:testrom] Platform services not provided and DOM is unavailable to bootstrap them.');
+		}
+		const canvas = document.getElementById('gamescreen');
+		if (!(canvas instanceof HTMLCanvasElement)) {
+			throw new Error('[Bootloader:testrom] gamescreen canvas not found while bootstrapping platform services.');
+		}
+		const handle = bootstrapBrowserPlatform(canvas);
+		platformServices = Platform.instance;
+		if (!viewHost) viewHost = handle.viewHost;
+		if (startingGamepadIndex === null && handle.startingGamepadIndex !== undefined) {
+			startingGamepadIndex = handle.startingGamepadIndex;
+		}
+	}
+	if (!platformServices) {
+		throw new Error('[Bootloader:testrom] Unable to resolve PlatformServices for game initialization.');
 	}
 	if (!viewHost) {
-		throw new Error('[Bootloader:testrom] View host not provided. Ensure the boot process supplies a GameViewHost.');
+		if (typeof document === 'undefined') {
+			throw new Error('[Bootloader:testrom] View host not provided and DOM is unavailable to create one.');
+		}
+		viewHost = BrowserGameViewHost.fromCanvasId('gamescreen');
 	}
-	const profile = args.profile ?? 'gameplay';
 	const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
 
 	return $.init({
@@ -27,10 +45,9 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
 		debug: args.debug,
-		startingGamepadIndex: args.startingGamepadIndex,
+		startingGamepadIndex,
 		enableOnscreenGamepad: args.enableOnscreenGamepad,
 		platformServices,
-		profile,
 		viewHost,
 	}).then(() => {
 		if ($.hasView) {

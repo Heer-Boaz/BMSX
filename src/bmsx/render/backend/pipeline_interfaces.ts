@@ -1,6 +1,6 @@
 /// <reference types="@webgpu/types" />
 import { color_arr, type vec2 } from '../../rompack/rompack';
-import type { TextureSource } from 'bmsx/core/platform';
+import type { TextureSource } from 'bmsx/rompack/rompack';
 import { WebGLBackend } from './webgl/webgl_backend';
 import { WebGPUBackend } from './webgpu/webgpu_backend';
 
@@ -117,6 +117,7 @@ export type AnyBackend = WebGLBackend | WebGPUBackend | GPUBackend;
 export interface GPUBackend {
 	// Discriminator for runtime backend flavor
 	type: 'webgl2' | 'webgpu' | 'headless';
+	context: unknown;
 
 	// Optional WebGL-like texture binding helpers (implemented by WebGL backend).
 	// These allow higher-level code (GameView / render graph) to perform texture
@@ -124,8 +125,8 @@ export interface GPUBackend {
 	setActiveTexture?(unit: number): void;
 	bindTexture2D?(tex: TextureHandle | null): void;
 	bindTextureCube?(tex: TextureHandle | null): void;
-
-	createTexture(src: TextureSource, desc: TextureParams): TextureHandle;
+	createImageBitmapFromSource?(src: TextureSource): Promise<ImageBitmap>;
+	createTexture(src: TextureSource | Promise<TextureSource>, desc: TextureParams): TextureHandle;
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc?: TextureParams): TextureHandle;
 	createCubemapFromSources(faces: readonly [TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource], desc: TextureParams): TextureHandle;
 	createSolidCubemap(size: number, rgba: color_arr, desc: TextureParams): TextureHandle;

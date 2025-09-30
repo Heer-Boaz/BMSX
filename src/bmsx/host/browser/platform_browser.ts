@@ -1,4 +1,3 @@
-import type { color_arr, RomImgAsset, RomPack } from '../../rompack/rompack';
 import {
 	Clock,
 	FrameLoop,
@@ -10,7 +9,7 @@ import {
 	InputDevice,
 	DeviceKind,
 	VibrationParams,
-	PlatformServices,
+	Platform,
 	AudioService,
 	RngService,
 	InputModifiers,
@@ -19,13 +18,50 @@ import {
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
-	type TextureSource,
-	type TextureSourceLoader,
-} from '../../core/platform';
+} from '../platform';
 import { WebAudioService } from './web_audio';
-import { createBackendForSurfaceAsync } from '../../render/backend/backend_selector';
-import type { GameViewCanvas } from '../../render/platform/gameview_host';
-import type { BackendCreateResult } from '../../render/backend/backend_selector';
+import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions, ViewportMetrics } from '../platform';
+import type { GPUBackend } from 'bmsx/render/backend/pipeline_interfaces';
+import { WebGLBackend } from 'bmsx/render/backend/webgl/webgl_backend';
+import { WebGPUBackend } from 'bmsx/render/backend/webgpu/webgpu_backend';
+
+export class BrowserPlatform implements Platform {
+	clock: Clock;
+	frames: FrameLoop;
+	lifecycle: Lifecycle;
+	input: InputHub;
+	storage: StorageService;
+	hid: HIDService;
+	onscreenGamepad: OnscreenGamepadPlatform;
+	audio: AudioService;
+	rng: RngService;
+	gameviewHost: BrowserGameViewHost;
+
+	constructor(surface: HTMLElement, canvas: HTMLCanvasElement) {
+		this.clock = new BrowserClock();
+		this.frames = new BrowserFrameLoop();
+		this.lifecycle = new BrowserLifecycle();
+		this.storage = new BrowserStorage();
+		this.input = new BrowserInputHub(surface, this.clock);
+		const ownerDoc = surface.ownerDocument;
+		if (!(ownerDoc instanceof Document)) {
+			if (typeof document === 'undefined') {
+				throw new Error('[BrowserPlatformServices] Unable to resolve a Document for the onscreen gamepad service.');
+			}
+			this.onscreenGamepad = new BrowserOnscreenGamepadPlatform(document);
+		} else {
+			this.onscreenGamepad = new BrowserOnscreenGamepadPlatform(ownerDoc);
+		}
+		if ('hid' in navigator && navigator.hid !== undefined && navigator.hid !== null) {
+			this.hid = new WebHID();
+		} else {
+			this.hid = new UnsupportedHID();
+		}
+		this.audio = new WebAudioService();
+		this.rng = new BrowserRngService();
+		this.gameviewHost = new BrowserGameViewHost(canvas);
+	}
+}
 
 class BrowserClock implements Clock {
 	now(): number {
@@ -663,154 +699,278 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	}
 }
 
-export class BrowserPlatformServices implements PlatformServices {
-	clock: Clock;
-	frames: FrameLoop;
-	lifecycle: Lifecycle;
-	input: InputHub;
-	storage: StorageService;
-	hid: HIDService;
-	onscreenGamepad: OnscreenGamepadPlatform;
-	textureLoader: TextureSourceLoader;
-	audio: AudioService;
-	rng: RngService;
-
-	constructor(surface: HTMLElement) {
-		this.clock = new BrowserClock();
-		this.frames = new BrowserFrameLoop();
-		this.lifecycle = new BrowserLifecycle();
-		this.storage = new BrowserStorage();
-		this.input = new BrowserInputHub(surface, this.clock);
-		const ownerDoc = surface.ownerDocument;
-		if (!(ownerDoc instanceof Document)) {
-			if (typeof document === 'undefined') {
-				throw new Error('[BrowserPlatformServices] Unable to resolve a Document for the onscreen gamepad service.');
-			}
-			this.onscreenGamepad = new BrowserOnscreenGamepadPlatform(document);
-		} else {
-			this.onscreenGamepad = new BrowserOnscreenGamepadPlatform(ownerDoc);
-		}
-		if ('hid' in navigator && navigator.hid !== undefined && navigator.hid !== null) {
-			this.hid = new WebHID();
-		} else {
-			this.hid = new UnsupportedHID();
-		}
-		this.textureLoader = new WebTextureSourceLoader();
-		this.audio = new WebAudioService();
-		this.rng = new BrowserRngService();
-	}
-
-	async createBackendForSurface(surface: GameViewCanvas): Promise<BackendCreateResult> {
-		return await createBackendForSurfaceAsync(surface);
-	}
-}
 export const options: EventListenerOptions & { passive: boolean; once: boolean; } = {
 	passive: false,
 	once: false,
 };
 
-export class WebTextureSourceLoader implements TextureSourceLoader {
-	async fromUri(uri: string): Promise<TextureSource> {
-		const response = await fetch(uri);
-		if (!response.ok) throw new Error(`HTTP ${response.status} when fetching texture '${uri}'.`);
-		const blob = await response.blob();
-		const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-		return bitmap;
+class BrowserGameViewCanvas implements GameViewCanvas {
+	public readonly handle: HTMLCanvasElement;
+
+	public constructor(canvas: HTMLCanvasElement) {
+		this.handle = canvas;
 	}
 
-	async fromBytes(bytes: ArrayBuffer): Promise<TextureSource> {
-		const blob = new Blob([bytes]);
-		const bitmap = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-		return bitmap;
+	public isVisible(): boolean {
+		return this.handle.style.visibility !== 'hidden';
 	}
 
-	async createSolid(size: number, color: color_arr): Promise<ImageBitmap> {
-		const [r, g, b, a] = color;
-		const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
-		const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
-		const cssColor = `rgba(${toUint8(r)}, ${toUint8(g)}, ${toUint8(b)}, ${alpha})`;
+	public setRenderTargetSize(width: number, height: number): void {
+		this.handle.width = width;
+		this.handle.height = height;
+	}
 
-		// Prefer OffscreenCanvas when available (works in workers and main thread)
-		if (typeof OffscreenCanvas !== 'undefined') {
-			const oc = new OffscreenCanvas(Math.max(1, size), Math.max(1, size));
-			const ctx = oc.getContext('2d');
-			if (ctx) {
-				ctx.fillStyle = cssColor;
-				ctx.fillRect(0, 0, size, size);
-				return createImageBitmap(oc);
+	public setDisplaySize(width: number, height: number): void {
+		this.handle.style.width = `${width}px`;
+		this.handle.style.height = `${height}px`;
+	}
+
+	public setDisplayPosition(left: number, top: number): void {
+		this.handle.style.left = `${left}px`;
+		this.handle.style.top = `${top}px`;
+	}
+
+	public measureDisplay(): SurfaceBounds {
+		const rect = this.handle.getBoundingClientRect();
+		return {
+			width: rect.width,
+			height: rect.height,
+			left: rect.left,
+			top: rect.top,
+		};
+	}
+}
+class BrowserGamepadControlHandle implements GamepadControlHandle {
+	public constructor(public readonly id: string, private readonly element: HTMLElement) { }
+
+	public getNumericAttribute(name: string): number | null {
+		const value = this.element.getAttribute(name);
+		return value ? parseInt(value, 10) : null;
+	}
+
+	public measure(): { width: number; height: number; } {
+		const rect = this.element.getBoundingClientRect();
+		return { width: rect.width, height: rect.height };
+	}
+
+	public setBottom(px: number): void {
+		this.element.style.bottom = `${px}px`;
+	}
+
+	public setScale(scale: number): void {
+		this.element.style.transform = `scale(${scale})`;
+	}
+}
+class BrowserOverlayHandle implements OverlayHandle {
+	public constructor(private readonly element: HTMLElement, private readonly dispose: () => void) { }
+
+	public setText(text: string): void {
+		this.element.textContent = text;
+	}
+
+	public addClass(className: string): void {
+		this.element.classList.add(className);
+	}
+
+	public removeClass(className: string): void {
+		this.element.classList.remove(className);
+	}
+
+	public onAnimationEnd(callback: () => void): void {
+		const handler = (_event: AnimationEvent) => {
+			this.element.removeEventListener('animationend', handler);
+			callback();
+		};
+		this.element.addEventListener('animationend', handler, { once: true });
+	}
+
+	public forceReflow(): void {
+		void this.element.offsetWidth;
+	}
+
+	public remove(): void {
+		this.element.remove();
+		this.dispose();
+	}
+
+	public get native(): HTMLElement {
+		return this.element;
+	}
+}
+function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOptions | undefined {
+	if (options === undefined) return undefined;
+	if (typeof options === 'boolean') return options;
+	return options as AddEventListenerOptions;
+}
+
+export class BrowserGameViewHost implements GameViewHost {
+	public readonly surface: BrowserGameViewCanvas;
+	private readonly overlays = new Map<string, BrowserOverlayHandle>();
+	private readonly listenerCache = new WeakMap<HostEventListenerTarget, EventListenerOrEventListenerObject>();
+
+	public constructor(canvas: HTMLCanvasElement) {
+		if (!(canvas instanceof HTMLCanvasElement)) {
+			throw new Error('[BrowserGameViewHost] Provided canvas element was not an HTMLCanvasElement.');
+		}
+		this.surface = new BrowserGameViewCanvas(canvas);
+	}
+
+	private getDomListener(listener: HostEventListenerTarget): EventListenerOrEventListenerObject {
+		let cached = this.listenerCache.get(listener);
+		if (cached) {
+			return cached;
+		}
+		if (typeof listener === 'function') {
+			const fn: EventListener = (event: Event) => listener(event);
+			this.listenerCache.set(listener, fn);
+			return fn;
+		}
+		const obj: EventListenerOrEventListenerObject = {
+			handleEvent: (event: Event) => listener.handleEvent(event),
+		};
+		this.listenerCache.set(listener, obj);
+		return obj;
+	}
+
+	public getViewportMetrics(): ViewportMetrics {
+		const documentElement = document.documentElement;
+		const documentDimensions: ViewportDimensions = {
+			width: documentElement ? documentElement.clientWidth : 0,
+			height: documentElement ? documentElement.clientHeight : 0,
+		};
+		const windowDimensions: ViewportDimensions = {
+			width: typeof window.innerWidth === 'number' ? window.innerWidth : 0,
+			height: typeof window.innerHeight === 'number' ? window.innerHeight : 0,
+		};
+		const screenDimensions: ViewportDimensions = {
+			width: typeof window.screen?.width === 'number' ? window.screen.width : 0,
+			height: typeof window.screen?.height === 'number' ? window.screen.height : 0,
+		};
+		return {
+			document: documentDimensions,
+			windowInner: windowDimensions,
+			screen: screenDimensions,
+		};
+	}
+
+	public getOnscreenGamepadHandles(): OnscreenGamepadHandles | null {
+		const dpad = document.querySelector<HTMLElement>('#d-pad-svg');
+		const actionButtons = document.querySelector<HTMLElement>('#action-buttons-svg');
+		if (!dpad || !actionButtons) {
+			return null;
+		}
+		return {
+			dpad: new BrowserGamepadControlHandle('d-pad-svg', dpad),
+			actionButtons: new BrowserGamepadControlHandle('action-buttons-svg', actionButtons),
+		};
+	}
+
+	public ensureOverlay(id: string): OverlayHandle {
+		let overlay = this.overlays.get(id);
+		if (!overlay) {
+			const element = document.createElement('div');
+			element.id = id;
+			if (!document.body) {
+				throw new Error('[BrowserGameViewHost] Document body not available while creating overlay element.');
 			}
+			document.body.appendChild(element);
+			overlay = new BrowserOverlayHandle(element, () => this.overlays.delete(id));
+			this.overlays.set(id, overlay);
 		}
-
-		// Fallback to HTMLCanvasElement
-		const canvas = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
-		if (!canvas) throw new Error('No canvas available to create solid ImageBitmap');
-		canvas.width = Math.max(1, size);
-		canvas.height = Math.max(1, size);
-		const ctx = canvas.getContext('2d')!;
-		ctx.fillStyle = cssColor;
-		ctx.fillRect(0, 0, size, size);
-		return createImageBitmap(canvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+		return overlay;
 	}
 
-	async fromBuffer(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap> {
-		let dataBuffer: ArrayBuffer;
-		if (buffer) {
-			dataBuffer = buffer;
-		} else if (uri.startsWith('data:')) {
-			const comma = uri.indexOf(',');
-			const base64 = comma >= 0 ? uri.slice(comma + 1) : '';
-			dataBuffer = Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+	public getOverlay(id: string): OverlayHandle | null {
+		return this.overlays.get(id) ?? null;
+	}
+
+	public addWindowEventListener(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): void {
+		window.addEventListener(type, this.getDomListener(listener), toDomOptions(options));
+	}
+
+	public removeWindowEventListener(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): void {
+		window.removeEventListener(type, this.getDomListener(listener), toDomOptions(options));
+	}
+
+	public addDisplayModeChangeListener(listener: (isFullscreen: boolean) => void): void {
+		const mediaQuery = window.matchMedia('(display-mode: fullscreen)');
+		const handler = (event: MediaQueryListEvent) => {
+			listener(event.matches);
+		};
+		mediaQuery.addEventListener('change', handler);
+	}
+
+	public fullscreenAvailable(): boolean {
+		return document.fullscreenEnabled ? true : false;
+	}
+
+	public get fullscreen(): boolean {
+		return document.fullscreenElement === document.documentElement;
+	}
+
+	public async setFullscreen(value: boolean): Promise<void> {
+		if (value) {
+			await document.documentElement.requestFullscreen().catch((e) => { console.warn(`Failed to enter fullscreen mode: ${e}`); });
 		} else {
-			const resp = await fetch(uri);
-			dataBuffer = await resp.arrayBuffer();
+			await document.exitFullscreen().catch((e) => { console.warn(`Failed to exit fullscreen mode: ${e}`); });
 		}
-		return await createImageBitmap(new Blob([dataBuffer]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
 	}
 
-	async fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap> {
-		let source: ImageBitmap | Promise<ImageBitmap> | undefined;
-		if (options?.flipY) {
-			source = romImgAsset._imgbinYFlipped; // Use the private _imgbinYFlipped property
-		} else {
-			source = romImgAsset._imgbin; // Use the private _imgbin property
+	public async createBackend() {
+		return createBackend(this);
+	}
+}
+const WEBGPU_RENDERER_SUPPORT = false;
+
+/**
+ * Create a GPU backend for the given canvas, preferring WebGPU if available,
+ * otherwise falling back to WebGL2. The GameView stays backend-agnostic and
+ * only receives the backend interface and the native context for helpers.
+ */
+
+export async function createBackend(host: BrowserGameViewHost): Promise<GPUBackend> {
+	const canvas = host.surface.handle;
+	if (!(canvas instanceof HTMLCanvasElement)) {
+		throw new Error('GameView host surface is not a canvas element.');
+	}
+	// Try WebGPU first
+	if (WEBGPU_RENDERER_SUPPORT) {
+		try {
+			if (!navigator.gpu) {
+				throw Error('WebGPU not supported.');
+			}
+
+			const adapter = await navigator.gpu.requestAdapter();
+			if (!adapter) {
+				throw Error('Couldn\'t request WebGPU adapter.');
+			}
+
+			const context = (canvas as HTMLCanvasElement).getContext('webgpu') as GPUCanvasContext | null;
+			if (context) {
+				const adapter: GPUAdapter | null = await navigator.gpu.requestAdapter();
+				if (adapter) {
+					const device: GPUDevice = await adapter.requestDevice();
+					// Configure the canvas context for presentation
+					const preferredFormat: GPUTextureFormat = (navigator.gpu.getPreferredCanvasFormat && navigator.gpu.getPreferredCanvasFormat()) || 'bgra8unorm';
+					try {
+						context.configure({ device, format: preferredFormat, alphaMode: 'premultiplied' });
+					} catch (e) {
+						console.error('Failed to configure WebGPU canvas context:', e);
+						throw e;
+					}
+					const backend = new WebGPUBackend(device, context);
+					return backend;
+				}
+			}
+		} catch (e) {
+			console.info(`WebGPU initialization failed: ${e}`);
 		}
-		if (source) return source;
-
-		// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
-		const imgmeta = romImgAsset.imgmeta;
-		if (!source && imgmeta.atlassed) {
-			// const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
-			const atlas = rompack.img['_atlas']?._imgbin; // Atlas should have a populated _imgbin property
-			if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
-			const coords = imgmeta.texcoords;
-			if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
-
-			const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
-			const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
-			const minU = Math.min(...xs), maxU = Math.max(...xs);
-			const minV = Math.min(...ys), maxV = Math.max(...ys);
-
-			// Convert to pixel coordinates and clamp inside atlas bounds
-			const offsetX = Math.floor(minU * atlas.width);
-			const offsetY = Math.floor(minV * atlas.height);
-			const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
-			const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
-
-			const canvas = document.createElement('canvas');
-			canvas.width = imgWidth;
-			canvas.height = imgHeight;
-			const ctx = canvas.getContext('2d')!;
-			ctx.drawImage(atlas, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
-			// Convert canvas to ImageBitmap asynchronously
-			source = createImageBitmap(canvas, {
-				imageOrientation: options?.flipY ? 'flipY' : 'none',
-				premultiplyAlpha: 'none',
-				colorSpaceConversion: 'none',
-			});
-		}
-
-		if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
-		return source;
 	}
 
+	// Fallback to WebGL2
+	const gl = (canvas as HTMLCanvasElement).getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext | null;
+	if (!gl) throw new Error('Failed to acquire WebGL2 context, cannot start the game :-(');
+	const backend = new WebGLBackend(gl);
+	console.info(WEBGPU_RENDERER_SUPPORT ? 'Browser doesn\'t support WebGPU, fallback to WebGL2-backend' : 'Forced using WebGL2-backend as the game engine doesn\'t support WebGPU yet');
+	return backend;
 }

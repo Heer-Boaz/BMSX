@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { Platform, AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService } from '../core/platform';
+import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService } from '../host/platform';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, id2res, RegisterablePersistent } from '../rompack/rompack';
 
@@ -139,8 +139,8 @@ export class SoundMaster implements RegisterablePersistent {
 	}
 
 	public async init(audioResources: id2res, startingVolume: number, resolver?: ModulationPresetResolver) {
-		this.audio = Platform.instance.audio;
-		this.rng = Platform.instance.rng;
+		this.audio = $.platform.audio;
+		this.rng = $.platform.rng;
 		this.modulationResolver = resolver ?? null;
 		this.modulationPresetCache.clear();
 

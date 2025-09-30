@@ -2,7 +2,12 @@ import type { World, ModelModule } from "../core/world";
 import type { NodeSpec } from "./pipeline";
 import type { ECSPipelineRegistry } from "./pipeline";
 
-export type ECSPipelineExtension = (ctx: { world: World; profile?: string; registry: ECSPipelineRegistry }) => NodeSpec[] | void;
+export interface ECSPipelineExtensionContext {
+	world: World;
+	registry: ECSPipelineRegistry;
+}
+
+export type ECSPipelineExtension = (ctx: ECSPipelineExtensionContext) => NodeSpec[] | void;
 
 const _extensions: ECSPipelineExtension[] = [];
 
@@ -10,7 +15,7 @@ export function registerEcsPipelineExtension(ext: ECSPipelineExtension): void {
 	_extensions.push(ext);
 }
 
-export function collectEcsPipelineExtensions(ctx: { world: World; profile?: string; registry: ECSPipelineRegistry }): NodeSpec[] {
+export function collectEcsPipelineExtensions(ctx: ECSPipelineExtensionContext): NodeSpec[] {
 	const out: NodeSpec[] = [];
 	const seenModules = new Set<ModelModule>();
 	for (const fn of _extensions) {

@@ -126,7 +126,7 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
  * @param {string} bootloader_path - The path to the bootloader file.
  * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
  */
-export async function esbuild(romname: string, bootloader_path: string, debug: boolean, tsconfigProjectOverride?: string, profile: 'gameplay' | 'headless' | 'editor' = 'gameplay'): Promise<void> {
+export async function esbuild(romname: string, bootloader_path: string, debug: boolean, tsconfigProjectOverride?: string): Promise<void> {
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
 	// Prefer the game's tsconfig.json if present to ensure path mappings (e.g. "bmsx") resolve correctly
 	// @ts-ignore
@@ -159,7 +159,6 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 	try {
 		const define = {
 			'process.env.NODE_ENV': '"production"',
-			BMSX_ROM_PROFILE: JSON.stringify(profile ?? 'gameplay'),
 		};
 		if (debug) {
 			await build({
@@ -1199,14 +1198,12 @@ export async function deployToServer(_rom_name: string, _title: string) {
 export interface BootromBuildOptions {
 	debug: boolean;
 	forceBuild: boolean;
-	profile: 'gameplay' | 'headless' | 'editor';
 }
 
 export async function buildBootromScriptIfNewer(options: BootromBuildOptions): Promise<void> {
-	const { debug, forceBuild, profile } = options;
+	const { debug, forceBuild } = options;
 	const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
 	const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
-	const profileMarkerPath = join(__dirname, '../../rom/bootrom.profile');
 
 	try {
 		await access(romTsPath);
@@ -1216,16 +1213,6 @@ export async function buildBootromScriptIfNewer(options: BootromBuildOptions): P
 
 	const romTsStats = await stat(romTsPath);
 	let romJsStats: Stats | undefined;
-	let lastProfile: string | null = null;
-
-	try {
-		const profileBuffer = await readFile(profileMarkerPath, 'utf8');
-		lastProfile = profileBuffer.trim();
-	} catch {
-		lastProfile = null;
-	}
-
-	const effectiveForceBuild = forceBuild || lastProfile !== profile;
 
 	try {
 		await access(romJsPath);
@@ -1233,7 +1220,7 @@ export async function buildBootromScriptIfNewer(options: BootromBuildOptions): P
 	}
 	catch { } // Ignore error if rom.js does not exist yet
 
-	if (!romJsStats || romTsStats.mtime > romJsStats.mtime || effectiveForceBuild) {
+	if (!romJsStats || romTsStats.mtime > romJsStats.mtime || forceBuild) {
 		try {
 			let options: any = {
 				entryPoints: [romTsPath],
@@ -1245,24 +1232,16 @@ export async function buildBootromScriptIfNewer(options: BootromBuildOptions): P
 				minify: debug ? false : true, // Don't minify in debug mode
 				keepNames: true,
 				outfile: romJsPath,
-				define: {
-					BMSX_ROM_PROFILE: JSON.stringify(profile ?? 'gameplay'),
-				},
 			};
 			if (debug) {
 				// In debug mode, we want to keep the source maps for easier debugging
 				options = { ...options, sourcemap: 'inline' }; // *We MUST do it like this, because 'sourcemap' is a flag and setting `sourcemap` to `false` still generates sourcemaps!*
 			}
 			await build(options);
-			await writeFile(profileMarkerPath, profile, 'utf8');
 		} catch (e) {
 			throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e} `);
 		}
 		return;
-	}
-	// rom.js is newer or up to date. No need to compile
-	if (lastProfile !== profile) {
-		await writeFile(profileMarkerPath, profile, 'utf8');
 	}
 }
 

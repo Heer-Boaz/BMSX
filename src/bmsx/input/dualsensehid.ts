@@ -7,7 +7,7 @@
  * 0x09cc = DualShock 4
  */
 import { $ } from '../core/game';
-import { Platform } from '../core/platform';
+
 
 const SONY_VID = 0x054C;
 const DUALSENSE_EDGE_PID = 0x0DF2; // DualSense Edge
@@ -47,7 +47,7 @@ export class DualSenseHID {
 
 
 	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<HIDDevice[]> {
-		const hid = Platform.instance.hid;
+		const hid = $.platform.hid;
 		if (!hid?.isSupported()) {
 			throw new Error('[DualSenseHID] HID API not available on this platform.');
 		}
@@ -132,7 +132,7 @@ export class DualSenseHID {
 
 	/** Requests the Sony HID device and initializes it. */
 	public async initForDevice(gamepadIndex: number, description: string): Promise<void> {
-		const hid = Platform.instance.hid;
+		const hid = $.platform.hid;
 		if (!hid?.isSupported()) {
 			console.warn("HID API not supported on this platform.");
 			return; // HID not supported (e.g. Safari)

@@ -6,16 +6,17 @@ import type {
 	OnscreenGamepadHandles,
 	OverlayHandle,
 	HostEventListenerTarget,
-	HostEventOptions,
-} from '../platform/gameview_host';
+	HostEventOptions
+} from 'bmsx/host/platform';
+import { HeadlessGPUBackend } from './headless_backend';
 
 class HeadlessOverlay implements OverlayHandle {
-  setText(_text: string): void {}
-  addClass(_className: string): void {}
-  removeClass(_className: string): void {}
-  onAnimationEnd(_callback: () => void): void {}
-  forceReflow(): void {}
-  remove(): void {}
+	setText(_text: string): void { }
+	addClass(_className: string): void { }
+	removeClass(_className: string): void { }
+	onAnimationEnd(_callback: () => void): void { }
+	forceReflow(): void { }
+	remove(): void { }
 }
 
 class HeadlessGameViewCanvas implements GameViewCanvas {
@@ -33,8 +34,8 @@ class HeadlessGameViewCanvas implements GameViewCanvas {
 		this.renderWidth = width;
 		this.renderHeight = height;
 	}
-	setDisplaySize(_width: number, _height: number): void {}
-	setDisplayPosition(_left: number, _top: number): void {}
+	setDisplaySize(_width: number, _height: number): void { }
+	setDisplayPosition(_left: number, _top: number): void { }
 	measureDisplay(): { width: number; height: number; left: number; top: number; } {
 		return { width: this.renderWidth, height: this.renderHeight, left: 0, top: 0 };
 	}
@@ -72,16 +73,16 @@ export class HeadlessGameViewHost implements GameViewHost {
 		if (!overlay) return null;
 		return overlay;
 	}
-	addWindowEventListener(_type: any, _listener: HostEventListenerTarget, _options?: HostEventOptions): void {}
-	removeWindowEventListener(_type: any, _listener: HostEventListenerTarget, _options?: HostEventOptions): void {}
-	addDisplayModeChangeListener(_listener: (isFullscreen: boolean) => void): void {}
-	updateFullscreenFlag(_isFullscreen: boolean): void {}
-	getFullscreenFlag(): boolean { return false; }
-	fullscreenEnabled(): boolean { return false; }
-	requestFullscreen(): Promise<void> { return Promise.resolve(); }
-	exitFullscreen(): Promise<void> { return Promise.resolve(); }
-}
+	addWindowEventListener(_type: any, _listener: HostEventListenerTarget, _options?: HostEventOptions): void { }
+	removeWindowEventListener(_type: any, _listener: HostEventListenerTarget, _options?: HostEventOptions): void { }
+	addDisplayModeChangeListener(_listener: (isFullscreen: boolean) => void): void { }
+	fullscreenAvailable(): boolean { return false; }
+	public get fullscreen(): boolean { return false; }
+	public async setFullscreen(_v: boolean): Promise<void> {
+		console.warn('HeadlessGameViewHost: fullscreen mode not supported in headless mode');
+	}
 
-export function createHeadlessGameViewHost(viewportSize: vec2): HeadlessGameViewHost {
-	return new HeadlessGameViewHost(viewportSize);
+	async createBackend(): Promise<HeadlessGPUBackend> {
+		return new HeadlessGPUBackend();
+	}
 }

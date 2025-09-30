@@ -10,7 +10,7 @@ import { TEXTURE_UNIT_SKYBOX } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { TextureKey } from '../texturemanager';
 import { GameView, SkyboxImageIds } from '../gameview';
-import type { TextureSource } from 'bmsx/core/platform';
+import type { TextureSource } from 'bmsx/rompack/rompack';
 
 function resolveSkyboxImage(assetId: string): Promise<TextureSource> {
 	const asset = GameView.imgassets[assetId];

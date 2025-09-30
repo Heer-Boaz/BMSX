@@ -22,10 +22,17 @@ export class WebGPUBackend implements GPUBackend {
 	private bindGroupCache: Map<number, GPUBindGroup> = new Map();
 	private _activePassEncoder: GPURenderPassEncoder | null = null;
 
-	private _bytesUploaded = 0;
-	constructor(public device: GPUDevice, public context?: GPUCanvasContext) {
-		this.limits = this.device.limits;
+	private _context: GPUCanvasContext | null = null;
+	public get context(): GPUCanvasContext | null {
+		return this._context;
 	}
+
+	private _bytesUploaded = 0;
+	constructor(public device: GPUDevice, context: GPUCanvasContext) {
+		this.limits = this.device.limits;
+		this._context = context;
+	}
+
 	beginFrame(): void { this._bytesUploaded = 0; }
 	endFrame(): void { }
 	getFrameStats() { return { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: this._bytesUploaded, vertexBytes: 0, indexBytes: 0, uniformBytes: this._bytesUploaded, textureBytes: 0 }; }

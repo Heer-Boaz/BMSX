@@ -5,7 +5,7 @@ import {
 	VoiceHandle,
 	VoiceEndedEvent,
 	AudioFilterParams,
-} from '../../core/platform';
+} from '../platform';
 
 function clamp01(x: number): number {
 	if (x < 0) return 0;

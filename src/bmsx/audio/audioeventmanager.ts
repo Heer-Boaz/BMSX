@@ -1,4 +1,3 @@
-import { Platform } from '../core/platform';
 import { EventEmitter, EventHandler } from '../core/eventemitter';
 import { $ } from '../core/game';
 import { Registry } from '../core/registry';
@@ -142,7 +141,7 @@ type CompiledAudioEventEntry = Omit<AudioEventMapEntry, 'rules'> & { rules: Comp
 //		if (payload.actorId !== 'barret') return false;
 
 // 		const key = `${payload.actorId}:${payload.targetId}`;
-// 		const now = Platform.instance.clock.now();
+// 		const now = $.platform.clock.now();
 // 		const arr = (buckets.get(key) ?? []).filter(t => now - t < windowMs);
 // 		arr.push(now); buckets.set(key, arr);
 
@@ -452,7 +451,7 @@ export class AudioEventManager implements RegisterablePersistent {
 	private nowMs(): number {
 		const audioTime = $.sndmaster.getCurrentTimeSec();
 		if (!Number.isNaN(audioTime)) return audioTime * 1000;
-		return Platform.instance.clock.now();
+		return $.platform.clock.now();
 	}
 
 	private pickAction(eventName: string, rules: CompiledAudioEventRule[], payload: AudioEventPayload): AudioAction | undefined {

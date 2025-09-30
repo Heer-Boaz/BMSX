@@ -3,7 +3,6 @@
  */
 import { Buffer } from 'buffer';
 import type { asset_type, ImgMeta } from '../../src/bmsx/rompack/rompack';
-import type { GameProfileId } from '../../src/bmsx/core/gameprofile';
 
 interface RomPackerOptions {
 	rom_name: string;
@@ -21,8 +20,6 @@ interface RomPackerOptions {
 	usePkgTsconfig?: boolean;
 	/** When true, skip type-checking for the game. */
 	skipTypecheck?: boolean;
-	/** Game profile to use when bootstrapping (e.g. gameplay, headless, editor). */
-	profile: GameProfileId;
 }
 
 export type resourcetype = asset_type | 'rommanifest' | 'romlabel' | 'fsm' | 'aem';

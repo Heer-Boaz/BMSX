@@ -2,10 +2,7 @@ import { AudioEventMapEntry } from '../audio/audioeventmanager';
 import { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { quat } from '../render/3d/math3d';
 import { TextureKey } from '../render/texturemanager';
-import type { PlatformServices } from '../core/platform';
-import type { GameProfileSelection } from '../core/gameprofile';
-import type { GameViewHost } from '../render/platform/gameview_host';
-import type { TextureSource } from 'bmsx/core/platform';
+import type { GameViewHostHandle } from 'bmsx/host/platform';
 
 export interface RomPack {
 	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
@@ -73,10 +70,8 @@ export interface BootArgs {
 	gainnode?: GainNode;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
-	platformServices?: PlatformServices;
 	enableOnscreenGamepad?: boolean;
-	profile?: GameProfileSelection;
-	viewHost?: GameViewHost;
+	gameViewHostHandle: GameViewHostHandle;
 }
 
 export type Constructor<T> = new (...args: any[]) => T;
@@ -323,4 +318,5 @@ export interface ImgMeta {
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
-}
+}export type TextureSource = unknown & { close(): void; width: number; height: number; }; // platform-specific source type (e.g. ImageBitmap in browsers)
+

@@ -9,7 +9,7 @@ import { PhysicsWorld } from '../physics/physicsworld';
 import { GameView, renderGate } from "../render/gameview";
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
-import type { GameViewHost } from "../render/platform/gameview_host";
+import { constructPlatformFromViewHostHandle, type GameViewHostHandle, type Platform } from 'bmsx/host/platform';
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
@@ -21,19 +21,14 @@ import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
 import { GateGroup, taskGate } from './taskgate';
-// Choose and apply an ECS pipeline here (gameplay/headless/editor)
-import { DefaultECSPipelineRegistry as ECSReg } from "../ecs/pipeline";
+// Choose and apply an ECS pipeline here (gameplay/headless)
+import { DefaultECSPipelineRegistry } from "../ecs/pipeline";
 import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
-import { gameplaySpec } from "./pipelines/gameplay";
-import { headlessSpec } from "./pipelines/headless";
-import { editorSpec } from "./pipelines/editor";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
+import { gameplaySpec } from './pipelines/gameplay';
+import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 // No direct space helpers needed here; Spaces are revived as part of the world.
-import { Platform, PlatformServices } from '../core/platform';
-import { EngineInputBridge } from '../input/input_bus_wire';
-import type { GameProfileSelection, GameProfile } from './gameprofile';
-import { resolveGameProfile } from './gameprofile';
 
 const globalScope: any = typeof window !== 'undefined' ? window : globalThis;
 global = globalScope; // Ensure global is defined
@@ -48,16 +43,14 @@ export interface GameInitArgs {
 	worldConfig: WorldConfiguration;
 	sndcontext?: AudioContext;
 	gainnode?: GainNode;
-	viewHost: GameViewHost;
 	debug?: boolean;
 	startingGamepadIndex?: number | null;
 	enableOnscreenGamepad?: boolean;
 	/**
-	 * ECS pipeline selection. Provide a spec or a profile string. Defaults to 'gameplay'.
+	 * ECS pipeline selection. Provide a spec or a pipeline id. Defaults to the platform's default pipeline.
 	 */
-	ecsPipeline?: NodeSpec[] | 'gameplay' | 'headless' | 'editor';
-	platformServices?: PlatformServices;
-	profile?: GameProfileSelection;
+	ecsPipeline?: NodeSpec[];
+	gameViewHostHandle: GameViewHostHandle;
 }
 
 const GAME_FPS = 50;
@@ -68,27 +61,6 @@ const REWIND_BUFFER_WRITE_FREQUENCY = 1; // Frames
 
 // Gate to block the game update/run loop (used when loading/hydrating game state)
 export const runGate: GateGroup = taskGate.group('run:main');
-
-type PipelineProfileId = 'gameplay' | 'headless' | 'editor';
-
-function cloneSpec(spec: NodeSpec[]): NodeSpec[] {
-	const cloned: NodeSpec[] = [];
-	for (let i = 0; i < spec.length; i++) cloned.push({ ...spec[i] });
-	return cloned;
-}
-
-function pipelineSpecFor(id: PipelineProfileId): NodeSpec[] {
-	switch (id) {
-		case 'gameplay':
-			return cloneSpec(gameplaySpec());
-		case 'headless':
-			return cloneSpec(headlessSpec());
-		case 'editor':
-			return cloneSpec(editorSpec());
-		default:
-			throw new Error(`[Game] Unknown pipeline profile '${id}'.`);
-	}
-}
 
 /**
  * Represents the main game loop and manages the game state.
@@ -133,10 +105,9 @@ export class Game {
 	 * The ID of the animation frame request.
 	 */
 	private frameLoopHandle: { stop(): void } | null = null;
-	private inputBridge: EngineInputBridge | null = null;
 	private _view!: GameView;
+	private _platform!: Platform;
 	private initialViewportSize: vec2 = { x: 256, y: 192 };
-	public profile!: GameProfile;
 	/**
 	 * Indicates whether the game is currently running.
 	 */
@@ -206,6 +177,7 @@ export class Game {
 	public get texmanager(): TextureManager { return TextureManager.instance!; }
 	public get registry(): Registry { return Registry.instance!; }
 	public get sndmaster(): SoundMaster { return this.registry.get<SoundMaster>('sm')!; }
+	public get platform(): Platform { return this._platform!; }
 
 	public emit(event_name: string, emitter: Identifiable | null, payload?: EventPayload) {
 		this.event_emitter.emit(event_name, emitter, { ...payload, lane: 'any' });
@@ -303,7 +275,6 @@ export class Game {
 	 */
 	constructor() {
 		this.initialized = false;
-		this.profile = resolveGameProfile('gameplay');
 	}
 
 	/**
@@ -316,14 +287,12 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, worldConfig, sndcontext, gainnode, viewHost, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platformServices, profile: profileSelection } = init;
-		if (platformServices) {
-			Platform.initialize(platformServices);
-		}
-		if (!Platform.isInitialized) {
+		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, gameViewHostHandle } = init;
+		this._platform = constructPlatformFromViewHostHandle(gameViewHostHandle);
+
+		if (!this._platform) {
 			throw new Error('[Game] Platform services not provided. Call Platform.initialize() before Game.init(), or pass platformServices in GameInitArgs.');
 		}
-		this.profile = resolveGameProfile(profileSelection ?? this.profile);
 		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
@@ -344,21 +313,17 @@ export class Game {
 		GameView.imgassets = rompack.img;
 		EventEmitter.instance; // Init event emitter
 		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
-		if (this.inputBridge !== null) this.inputBridge.detach();
-		this.inputBridge = new EngineInputBridge();
-		this.inputBridge.attach();
 		if (enableOnscreenGamepad || this.input.isOnscreenGamepadEnabled) {
 			this.input.enableOnscreenGamepad();
 		}
 
-		const gview = new GameView(this.initialViewportSize, { host: viewHost });
+		const gview = new GameView({ viewportSize: this.initialViewportSize, host: this._platform.gameviewHost });
 		this._view = gview;
-		const backendResult = await Platform.instance.createBackendForSurface(gview.surface);
-		gview.nativeCtx = backendResult.nativeCtx;
-		gview.backend = backendResult.backend;
-		new TextureManager(backendResult.backend);
-		const pipelineRegistry = new RenderPassLibrary(backendResult.backend);
-		pipelineRegistry.registerBuiltin(gview.backend);
+		const gpuBackend = await this._platform.gameviewHost.createBackend() as GPUBackend;
+		gview.backend = gpuBackend;
+		new TextureManager(gpuBackend);
+		const pipelineRegistry = new RenderPassLibrary(gpuBackend);
+		pipelineRegistry.registerBuiltin(gpuBackend);
 		gview.pipelineRegistry = pipelineRegistry;
 		gview.init();
 		await gview.initializeDefaultTextures();
@@ -413,17 +378,14 @@ export class Game {
 		// Register built-in ECS systems; allow modules to register extensions on boot
 		registerBuiltinECS();
 		// Initialize world (spaces, FSM/BT libraries, modules onBoot)
-		$.world.init_on_boot();
+		this.world.init_on_boot();
 		// Compose pipeline spec from profile/custom and module extensions
-		const pipelineProfile = Array.isArray(ecsPipeline)
-			? 'custom'
-			: (ecsPipeline ?? this.profile.defaultPipeline);
 		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
 			? ecsPipeline
-			: pipelineSpecFor(pipelineProfile as PipelineProfileId);
-		const extensions = collectEcsPipelineExtensions({ world: $.world, profile: pipelineProfile, registry: ECSReg });
+			: gameplaySpec();
+		const extensions = collectEcsPipelineExtensions({ world: this.world, registry: DefaultECSPipelineRegistry });
 		const finalSpec = baseSpec.concat(extensions);
-		const diag = ECSReg.build($.world, finalSpec);
+		const diag = DefaultECSPipelineRegistry.build(this.world, finalSpec);
 		if (diag.cyclesDetected) {
 			throw new Error(`[ECS] Cannot initialize ECS pipeline with cycles! Final order: ${diag.finalOrder.join(' -> ')}; Detected cycles: ${diag.cycleGroups.join(', ')}`);
 		}
@@ -439,7 +401,7 @@ export class Game {
 		}
 		else {
 			// Prevent the user from accidentally closing the game window if not in debug mode
-			this.removeWillExit = Platform.instance.lifecycle.onWillExit(this.onBeforeUnload);
+			this.removeWillExit = $.platform.lifecycle.onWillExit(this.onBeforeUnload);
 		}
 		this.initialized = true; // Mark the game as initialized
 		// SoundMaster.instance.volume = 0;
@@ -467,7 +429,7 @@ export class Game {
 		if (!this.initialized) {
 			throw new Error('Game not initialized. Call init() before starting the game!');
 		}
-		const platform = Platform.instance;
+		const platform = this.platform;
 		const now = platform.clock.now();
 		this.lastUpdate = now;
 		this.last_gametick_time = now;
@@ -558,11 +520,7 @@ export class Game {
 			this.frameLoopHandle.stop();
 			this.frameLoopHandle = null;
 		}
-		if (this.inputBridge) {
-			this.inputBridge.detach();
-			this.inputBridge = null;
-		}
-		const platform = Platform.instance;
+		const platform = this.platform;
 		const handle = platform.frames.start(() => {
 			handle.stop();
 			this.view.handleResize();

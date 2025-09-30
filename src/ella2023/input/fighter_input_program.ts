@@ -1,4 +1,4 @@
-import type { InputAbilityProgram } from 'bmsx/inputability/input_ability_dsl';
+import type { InputAbilityProgram } from 'bmsx/gas/input_ability_dsl';
 
 export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 	schema: 1,

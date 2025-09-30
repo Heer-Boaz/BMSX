@@ -1,8 +1,9 @@
 import { getPressedState, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
-import type { InputDevice } from '../core/platform';
+import type { InputDevice } from '../host/platform';
 import { DualSenseHID } from './dualsensehid';
-import { Platform } from '../core/platform';
+import { $ } from '../core/game';
+
 
 export class GamepadInput implements InputHandler {
 	private readonly buttonStates: KeyOrButtonId2ButtonState = {};
@@ -32,7 +33,7 @@ export class GamepadInput implements InputHandler {
 	}
 
 	public pollInput(): void {
-		const now = Platform.instance.clock.now();
+		const now = $.platform.clock.now();
 		if (this.lastPollTime === 0) this.lastPollTime = now;
 		this.lastPollTime = now;
 

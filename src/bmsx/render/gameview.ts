@@ -17,7 +17,7 @@ import { RenderPassLibrary } from './backend/renderpasslib';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
-import type { GameViewHost, GameViewCanvas } from './platform/gameview_host';
+import type { GameViewHost, GameViewCanvas } from 'bmsx/host/platform';
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -123,8 +123,10 @@ export function generateAtlasName(atlasIndex: number): string {
 	return atlasName;
 }
 
-export interface GameViewDependencies {
+export interface GameViewOpts {
 	host: GameViewHost;
+	viewportSize: vec2; // If not provided, defaults to 256x212 (MSX2) TODO: CHECK WHETHER THIS IS TRUE!
+	canvasSize?: vec2; // If not provided, defaults to 2x viewport size
 }
 
 /**
@@ -168,8 +170,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public canvas_dy: number;
 	public canvasScale: number;
 
-	// WebGL / pipeline state
-	public nativeCtx: unknown | null = null;
+	private _nativeCtx: unknown | null = null; // The underlying native rendering context (e.g. WebGL2RenderingContext or GPUDevice)
+	public get nativeCtx(): unknown | null {
+		return this._nativeCtx;
+	}
 	private _backend: GPUBackend | null = null;
 	public get backendType(): GPUBackend['type'] {
 		if (!this._backend) {
@@ -293,20 +297,20 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.spriteAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 	}
 
-	constructor(viewportSize: vec2, dependencies: GameViewDependencies, canvasSize?: vec2) {
-		if (!dependencies || !dependencies.host) {
+	constructor(opts: GameViewOpts) {
+		if (!opts || !opts.host) {
 			throw new Error('[GameView] Missing GameViewHost dependency.');
 		}
-		if (!dependencies.host.surface) {
+		if (!opts.host.surface) {
 			throw new Error('[GameView] GameViewHost did not provide a render surface.');
 		}
 		Registry.instance.register(this);
-		this.host = dependencies.host;
+		this.host = opts.host;
 		this.surface = this.host.surface;
-		this.viewportSize = shallowCopy(viewportSize) as vec2;
-		this.canvasSize = (shallowCopy(canvasSize) ?? multiply_vec2(viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
+		this.viewportSize = shallowCopy(opts.viewportSize) as vec2;
+		this.canvasSize = (shallowCopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		// Offscreen resolution for internal render graph targets (view-agnostic)
-		this.offscreenCanvasSize = multiply_vec(viewportSize, 2);
+		this.offscreenCanvasSize = multiply_vec(this.viewportSize, 2);
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}
 
@@ -508,7 +512,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.host.addWindowEventListener('resize', handleResizeHelper, false);
 		this.host.addWindowEventListener('orientationchange', handleResizeHelper, false);
 		this.host.addDisplayModeChangeListener(isFullscreen => {
-			this.host.updateFullscreenFlag(isFullscreen);
+			this.host.setFullscreen(isFullscreen);
 		});
 	}
 
@@ -534,8 +538,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.host.addWindowEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
 	}
 
-	public get isFullscreen() {
-		return this.host.getFullscreenFlag();
+	public get fullscreen(): boolean {
+		return this.host.fullscreen;
 	}
 
 	public static get fullscreenEnabled() {
@@ -543,7 +547,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (!view) {
 			throw new Error('[GameView] View not available while checking fullscreen support.');
 		}
-		return view.host.fullscreenEnabled();
+		return view.host.fullscreenAvailable();
 	}
 
 	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
@@ -554,7 +558,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				await view.host.requestFullscreen();
+				await view.host.setFullscreen(true);
 			}
 			catch (error) {
 				console.error(error);
@@ -578,7 +582,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				await view.host.exitFullscreen();
+				await view.host.setFullscreen(false);
 			}
 			catch (error) {
 				// NOTE: Historical bug reports mentioned debugger interactions triggering failures here.
@@ -625,6 +629,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			throw new Error('[GameView] Attempted to assign an invalid backend.');
 		}
 		this._backend = backend;
+		this._nativeCtx = backend.context;
 	}
 
 	public get backend(): GPUBackend {
@@ -638,7 +643,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (!atlas) {
 			throw new Error("[GameView] Default atlas '_atlas' missing while initializing textures.");
 		}
-		const atlasImage = atlas._imgbin;
+		const atlasImage = await atlas._imgbin;
 		this.textures['_atlas'] = this.backend.createTexture(atlasImage, {});
 		this.textures['_atlas_dynamic'] = this.backend.createSolidTexture2D(1, 1, [1, 1, 1, 1]);
 		// Default material textures for meshes

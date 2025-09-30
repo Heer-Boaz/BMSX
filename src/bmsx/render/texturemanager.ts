@@ -1,9 +1,9 @@
 import { AssetBarrier } from '../core/assetbarrier';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
-import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent } from '../rompack/rompack';
+import { color_arr, GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, type RomImgAsset, type TextureSource } from '../rompack/rompack';
 import { GPUBackend, TextureHandle, TextureParams } from './backend/pipeline_interfaces';
-import { Platform, type TextureSource } from '../core/platform';
+import { $ } from '../core/game';
 
 export const TEXTMANAGER_ID = 'texmgr';
 export type TextureIdentifier = string;
@@ -79,9 +79,9 @@ export class TextureManager implements RegisterablePersistent {
 		const handle = await this.textureBarrier.acquire(
 			key,
 			async () => {
-				const bmp = await loadBitmapFn();
+				const bmp = await loadBitmapFn() as TextureSource;
 				const h = this.backend!.createTexture(bmp, desc);
-				if ('close' in bmp) bmp.close();
+				if ('close' in bmp) (bmp as { close: () => void }).close();
 				return h;
 			},
 			{
@@ -118,9 +118,9 @@ export class TextureManager implements RegisterablePersistent {
 		void this.textureBarrier.acquire(
 			key,
 			async () => {
-				const bmp = await loadBitmapFn();
+				const bmp = await loadBitmapFn() as TextureSource;
 				const real = this.backend!.createTexture(bmp, desc);
-				if ('close' in bmp) bmp.close();
+				if ('close' in bmp) (bmp as { close: () => void }).close();
 				return real;
 			},
 			{
@@ -212,12 +212,12 @@ export class TextureManager implements RegisterablePersistent {
 				let targetSize = 1;
 				if (firstProvidedIndex >= 0) {
 					// await the first provided to know size (it's safe to await promises multiple times)
-					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<TextureSource>);
+					const firstImg = await (faceLoaders[firstProvidedIndex]) as TextureSource;
 					targetSize = Math.max(1, firstImg.width, firstImg.height);
 				}
 
 				// Build array of promises for all faces, substituting missing faces with solid bitmaps of targetSize
-				const promises: Promise<TextureSource>[] = faceLoaders.map(p => p != null ? (p as Promise<TextureSource>) : Platform.instance.textureLoader.createSolid(targetSize, fallbackColor));
+				const promises: Promise<TextureSource>[] = faceLoaders.map(p => p != null ? (p as Promise<TextureSource>) : this.createSolid(targetSize, fallbackColor));
 
 				const faces = await Promise.all(promises) as
 					[TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource];
@@ -244,7 +244,7 @@ export class TextureManager implements RegisterablePersistent {
 							this.backend!.uploadCubemapFace(cubemap, idx, img);
 						});
 					} else {
-						return Platform.instance.textureLoader.createSolid(size, fallbackColor).then(img => {
+						return this.createSolid(size, fallbackColor).then(img => {
 							this.backend!.uploadCubemapFace(cubemap, idx, img);
 						});
 					}
@@ -308,12 +308,12 @@ export class TextureManager implements RegisterablePersistent {
 
 	public async loadModelTextureFromBuffer(buffer: ArrayBuffer, identifier: ModelTextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
 		const key = this.makeModelBufferKey(identifier);
-		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.fromBuffer('', buffer), desc);
+		return this.loadAndCacheTexture(key, () => this.fromBuffer('', buffer), desc);
 	}
 
 	public async fetchModelTextureFromUri(uri: string, _identifier: ModelTextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
 		const key = this.makeKey(uri, desc);
-		return this.loadAndCacheTexture(key, () => Platform.instance.textureLoader.fromBuffer(uri, buffer), desc);
+		return this.loadAndCacheTexture(key, () => this.fromBuffer(uri, buffer), desc);
 	}
 
 	public getImage(key: ImageKey): TextureSource | undefined {
@@ -321,10 +321,119 @@ export class TextureManager implements RegisterablePersistent {
 		return imgEntry ? imgEntry.bitmap : undefined;
 	}
 
+	async fromBuffer(uri: string, buffer?: ArrayBuffer, options?: { flipY?: boolean; }): Promise<TextureSource> {
+		let entry = this.imageCache.get(uri);
+		if (entry) {
+			if (entry.bitmap) return entry.bitmap;
+			if (entry.promise) return entry.promise;
+		} else {
+			entry = { bitmap: undefined, promise: undefined, refCount: 0 };
+			this.imageCache.set(uri, entry);
+		}
+		entry.refCount++;
+
+		if (!entry.promise) {
+			entry.promise = (async () => {
+				if (!buffer) throw new Error(`No buffer provided to load image '${uri}'`);
+				const blob = new Blob([buffer]);
+				const img = await createImageBitmap(blob, {
+					imageOrientation: options?.flipY ? 'flipY' : 'none',
+					premultiplyAlpha: 'none',
+					colorSpaceConversion: 'none',
+				});
+				entry!.bitmap = img;
+				entry!.promise = undefined;
+				return img;
+			})();
+		}
+
+		return entry.promise;
+	}
+
+	private async createSolid(size: number, color: color_arr): Promise<TextureSource> {
+		const [r, g, b, a] = color;
+		const toUint8 = (v: number) => (v <= 1 ? Math.round(v * 255) : Math.round(v));
+		const alpha = a <= 1 ? a : Math.max(0, Math.min(1, a / 255));
+		const cssColor = `rgba(${toUint8(r)}, ${toUint8(g)}, ${toUint8(b)}, ${alpha})`;
+
+		// Prefer OffscreenCanvas when available (works in workers and main thread)
+		if (typeof OffscreenCanvas !== 'undefined') {
+			const oc = new OffscreenCanvas(Math.max(1, size), Math.max(1, size));
+			const ctx = oc.getContext('2d');
+			if (ctx) {
+				ctx.fillStyle = cssColor;
+				ctx.fillRect(0, 0, size, size);
+				return createImageBitmap(oc);
+			}
+		}
+
+		// Fallback to HTMLCanvasElement
+		const canvas = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
+		if (!canvas) throw new Error('No canvas available to create solid ImageBitmap');
+		canvas.width = Math.max(1, size);
+		canvas.height = Math.max(1, size);
+		const ctx = canvas.getContext('2d')!;
+		ctx.fillStyle = cssColor;
+		ctx.fillRect(0, 0, size, size);
+		return createImageBitmap(canvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+	}
+
+	// load image from RomImgAsset (possibly atlassed); does not cache result
+	// uses private _imgbin and _imgbinYFlipped properties to avoid double caching
+	// if options.flipY is true, uses or creates _imgbinYFlipped instead of _imgbin
+	// if the asset is atlassed, extracts the region from the atlas image
+	// returns ImageBitmap or equivalent platform-specific typed objects
+	async fromAsset(romImgAsset: RomImgAsset, options?: { flipY?: boolean; }): Promise<TextureSource> {
+		let source: ImageBitmap | Promise<ImageBitmap> | undefined;
+		if (options?.flipY) {
+			source = romImgAsset._imgbinYFlipped as ImageBitmap | Promise<ImageBitmap>; // Use the private _imgbinYFlipped property
+		} else {
+			source = romImgAsset._imgbin as ImageBitmap | Promise<ImageBitmap>; // Use the private _imgbin property
+		}
+		if (source) return source;
+
+		// If the image was packed into an atlas, extract its region and cache the result in the `_imgbin` property
+		const imgmeta = romImgAsset.imgmeta;
+		if (!source && imgmeta.atlassed) {
+			// const atlas = rompack.img[generateAtlasName(imgmeta.atlasid)]?._imgbin; // Atlas should have a populated _imgbin property
+			const atlas = $.rompack.img['_atlas']?._imgbin as ImageBitmap; // Atlas should have a populated _imgbin property
+			if (!atlas) throw new Error(`Texture atlas image not found for atlas ID ${imgmeta.atlasid}`);
+			const coords = imgmeta.texcoords;
+			if (!coords) throw new Error(`No texture coordinates for atlassed image '${romImgAsset.resid}'`);
+
+			const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
+			const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
+			const minU = Math.min(...xs), maxU = Math.max(...xs);
+			const minV = Math.min(...ys), maxV = Math.max(...ys);
+
+			// Convert to pixel coordinates and clamp inside atlas bounds
+			const offsetX = Math.floor(minU * atlas.width);
+			const offsetY = Math.floor(minV * atlas.height);
+			const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
+			const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
+
+			const canvas = document.createElement('canvas');
+			canvas.width = imgWidth;
+			canvas.height = imgHeight;
+			const ctx = canvas.getContext('2d')!;
+			ctx.drawImage(atlas, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
+			// Convert canvas to ImageBitmap asynchronously
+			source = createImageBitmap(canvas, {
+				imageOrientation: options?.flipY ? 'flipY' : 'none',
+				premultiplyAlpha: 'none',
+				colorSpaceConversion: 'none',
+			});
+		}
+
+		if (!source) throw new Error(`Image asset '${romImgAsset.resid}' has no image data`);
+		return source;
+	}
+
 	public getTexture(key: TextureKey): TextureHandle | undefined {
 		const entry = this.gpuCache.get(key);
 		return entry ? entry.handle : undefined;
 	}
+
 	public getTextureByUri(uri: string, desc: TextureParams = {}): TextureHandle | undefined {
 		return this.getTexture(this.makeKey(uri, desc));
 	}
@@ -362,3 +471,4 @@ export class TextureManager implements RegisterablePersistent {
 		Registry.instance.deregister(this, false);
 	}
 }
+

@@ -7,7 +7,7 @@ import { ContactSolver } from './contactsolver';
 import { Contact, Narrowphase } from './narrowphase';
 import { PhysicsBody, PhysicsBodyDesc } from './physicsbody';
 import { Registry } from '../core/registry';
-import { Platform } from '../core/platform';
+
 
 export interface PhysicsWorldOptions {
 	gravity?: vec3; // Default assumes Y+ is UP. Negative Y gravity pulls objects down.
@@ -176,7 +176,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 	}
 
 	step(dtMs: number, emitCollision?: (e: CollisionEvent) => void) {
-		const startFrame = this.enableMetrics ? Platform.instance.clock.now() : 0;
+		const startFrame = this.enableMetrics ? $.platform.clock.now() : 0;
 		const dt = dtMs / 1000;
 		this.lastEnterEvents.length = 0;
 		this.lastStayEvents.length = 0;
@@ -184,7 +184,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 		if (this.enableMetrics) { this.metrics.sleeping = 0; }
 
 		// Integrate
-		const t0 = this.enableMetrics ? Platform.instance.clock.now() : 0;
+		const t0 = this.enableMetrics ? $.platform.clock.now() : 0;
 		let sumSpeedSq = 0; let dynCount = 0;
 		const bodies = this.bodies;
 		for (let i = 0, n = bodies.length; i < n; ++i) {
@@ -301,7 +301,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 				}
 			}
 		}
-		if (this.enableMetrics) this._tIntegrate = Platform.instance.clock.now() - t0;
+		if (this.enableMetrics) this._tIntegrate = $.platform.clock.now() - t0;
 		if (this.autoTuneMovementEpsilon && dynCount) {
 			const avg = sumSpeedSq / dynCount;
 			this.avgSpeedSq = this.avgSpeedSq === 0 ? avg : this.avgSpeedSq * 0.9 + avg * 0.1;
@@ -310,7 +310,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 		}
 
 		// Broadphase incremental update
-		const tb0 = this.enableMetrics ? Platform.instance.clock.now() : 0;
+		const tb0 = this.enableMetrics ? $.platform.clock.now() : 0;
 		if (!this.firstBroadphaseBuilt) {
 			this.broadphase.rebuild(this.bodies);
 			this.firstBroadphaseBuilt = true;
@@ -324,14 +324,14 @@ export class PhysicsWorld implements RegisterablePersistent {
 			this.broadphase.update();
 		}
 		this.broadphase.computePairs(this.pairs);
-		if (this.enableMetrics) this._tBroad = Platform.instance.clock.now() - tb0;
+		if (this.enableMetrics) this._tBroad = $.platform.clock.now() - tb0;
 		if (this.enableMetrics) this.metrics.pairs = this.pairs.length;
 
 		// Narrowphase
 		this.contacts.length = 0;
 		// Reset contact pool for reuse (avoid GC churn)
 		this.narrow.resetPool();
-		const tn0 = this.enableMetrics ? Platform.instance.clock.now() : 0;
+		const tn0 = this.enableMetrics ? $.platform.clock.now() : 0;
 		let narrowTests = 0;
 		const toWake: PhysicsBody[] = [];
 		for (const p of this.pairs) {
@@ -350,13 +350,13 @@ export class PhysicsWorld implements RegisterablePersistent {
 			narrowTests++;
 		}
 		for (const b of toWake) b.asleep = false;
-		if (this.enableMetrics) { this._tNarrow = Platform.instance.clock.now() - tn0; this.metrics.narrowTests = narrowTests; }
+		if (this.enableMetrics) { this._tNarrow = $.platform.clock.now() - tn0; this.metrics.narrowTests = narrowTests; }
 
 		// Solve (allow multi-iteration)
-		const ts0 = this.enableMetrics ? Platform.instance.clock.now() : 0;
+		const ts0 = this.enableMetrics ? $.platform.clock.now() : 0;
 		const iters = this.solver.iterations ?? 1;
 		for (let i = 0; i < iters; i++) this.solver.solve(this.contacts);
-		if (this.enableMetrics) { this._tSolve = Platform.instance.clock.now() - ts0; this.metrics.solvedContacts = this.solver.lastSolvedContacts; this.metrics.contacts = this.contacts.length; }
+		if (this.enableMetrics) { this._tSolve = $.platform.clock.now() - ts0; this.metrics.solvedContacts = this.solver.lastSolvedContacts; this.metrics.contacts = this.contacts.length; }
 
 		// Post-solve static separation safety: ensure no lingering penetration for static/dynamic
 		if (this.enablePostSolveStaticSeparation && this.contacts.length) {
@@ -391,7 +391,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 
 		// Events
 		if (emitCollision) {
-			const te0 = this.enableMetrics ? Platform.instance.clock.now() : 0;
+			const te0 = this.enableMetrics ? $.platform.clock.now() : 0;
 			const currentPairs = new Set<number>();
 			// Enter / stay
 			this.aggregatedPairContact.clear();
@@ -429,7 +429,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 				}
 			}
 			this.previousFramePairs = currentPairs;
-			if (this.enableMetrics) this._tEvents = Platform.instance.clock.now() - te0;
+			if (this.enableMetrics) this._tEvents = $.platform.clock.now() - te0;
 		}
 
 		// CCD now handled during integration; keep zero timing for HUD
@@ -440,7 +440,7 @@ export class PhysicsWorld implements RegisterablePersistent {
 			for (const g of this.gizmoDrawers) g(this);
 		}
 		if (this.enableMetrics) {
-			const end = Platform.instance.clock.now();
+			const end = $.platform.clock.now();
 			this.metrics.phase.integrate = this._tIntegrate;
 			this.metrics.phase.broadphase = this._tBroad;
 			this.metrics.phase.narrow = this._tNarrow;

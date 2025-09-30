@@ -1,14 +1,15 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './input';
 import type { BGamepadButton, VibrationParams } from './inputtypes';
 import { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
-import { Platform } from '../core/platform';
+
 import type {
 	OnscreenGamepadControlKind,
 	OnscreenGamepadPlatform,
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
-} from '../core/platform';
+} from '../host/platform';
+import { $ } from '../core/game';
 
 export type {
 	OnscreenGamepadControlKind,
@@ -16,17 +17,7 @@ export type {
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
-} from '../core/platform';
-
-function resolveOnscreenGamepadPlatform(platform?: OnscreenGamepadPlatform): OnscreenGamepadPlatform {
-	if (platform) {
-		return platform;
-	}
-	if (!Platform.isInitialized) {
-		throw new Error('[OnscreenGamepad] Platform services have not been initialised. Provide an OnscreenGamepadPlatform explicitly or initialise the platform first.');
-	}
-	return Platform.instance.onscreenGamepad;
-}
+} from '../host/platform';
 
 export class NullOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	attach(): OnscreenGamepadPlatformSession {
@@ -79,8 +70,8 @@ export class OnscreenGamepad implements InputHandler {
 	private elementActiveCount = new Map<string, number>();
 	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
-	constructor(platform?: OnscreenGamepadPlatform) {
-		this.platform = resolveOnscreenGamepadPlatform(platform);
+	constructor(platform: OnscreenGamepadPlatform) {
+		this.platform = platform;
 	}
 
 	public get supportsVibrationEffect(): boolean {
@@ -116,7 +107,7 @@ export class OnscreenGamepad implements InputHandler {
 	}
 
 	public static hideButtons(gamepad_button_ids: string[]): void {
-		const platform = resolveOnscreenGamepadPlatform();
+		const platform = $.platform.onscreenGamepad; // TODO: UGLY!!
 		const elementIds: string[] = [];
 		for (let i = 0; i < gamepad_button_ids.length; i++) {
 			const button = gamepad_button_ids[i];
@@ -135,7 +126,7 @@ export class OnscreenGamepad implements InputHandler {
 
 	public pollInput(): void {
 		const defaultState = makeButtonState();
-		const now = Platform.instance.clock.now();
+		const now = $.platform.clock.now();
 		const newStates: KeyOrButtonId2ButtonState = {};
 		for (let i = 0; i < Input.BUTTON_IDS.length; i++) {
 			const button = Input.BUTTON_IDS[i];

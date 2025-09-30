@@ -2,37 +2,9 @@
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
-import { bootstrapBrowserPlatform } from '../../src/bmsx/host/browser/bootstrap';
-import { bootstrapHeadlessPlatform } from '../../src/bmsx/host/headless/bootstrap_headless';
-import { Platform } from '../../src/bmsx/core/platform';
 
-declare const BMSX_ROM_PROFILE: string;
-const ROM_PROFILE = (typeof BMSX_ROM_PROFILE !== 'undefined' && (BMSX_ROM_PROFILE as any)?.length > 0 ? BMSX_ROM_PROFILE : 'gameplay') as 'gameplay' | 'headless' | 'editor';
-const IS_BROWSER_PROFILE = ROM_PROFILE !== 'headless';
-const DEFAULT_VIEWPORT = { x: 256, y: 192 } as const;
-
-let surfaceElement: HTMLElement | null = null;
-let initialViewHost: BootArgs['viewHost'] | null = null;
-if (ROM_PROFILE === 'headless') {
-	const handle = bootstrapHeadlessPlatform({ viewportSize: DEFAULT_VIEWPORT });
-	initialViewHost = handle.viewHost;
-} else {
-	if (typeof document === 'undefined') {
-		throw new Error('Boot ROM bootstrap failed: document is not available in this environment.');
-	}
-	surfaceElement = document.getElementById('gamescreen');
-	if (!(surfaceElement instanceof HTMLElement)) {
-		throw new Error('Boot ROM bootstrap failed: #gamescreen element not found.');
-	}
-	if (!(surfaceElement instanceof HTMLCanvasElement)) {
-		throw new Error('Boot ROM bootstrap failed: #gamescreen is not a canvas element.');
-	}
-	const handle = bootstrapBrowserPlatform(surfaceElement);
-	initialViewHost = handle.viewHost;
-	if (handle.startingGamepadIndex !== undefined) {
-		bootrom.startingGamepadIndex = handle.startingGamepadIndex;
-	}
-}
+const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
+const initialStartingGamepadIndex: number | null = null;
 
 declare global {
 	interface Window {
@@ -106,10 +78,9 @@ export const bootrom = {
 	snd_unlocked: false,
 	gainnode: null as GainNode | null,
 	theshowsover: false,
-	startingGamepadIndex: null as number | null,
-	enableOnscreenGamepad: false,
-	profile: ROM_PROFILE,
-	viewHost: initialViewHost,
+	startingGamepadIndex: initialStartingGamepadIndex as BootArgs['startingGamepadIndex'],
+	enableOnscreenGamepad: false as BootArgs['enableOnscreenGamepad'],
+	gameViewHost: null as BootArgs['gameViewHostHandle'],
 
 	/**
 	 * Sets the boot ROM pack.
@@ -125,18 +96,23 @@ export const bootrom = {
 	 * @returns 255 after the game is started.
 	 */
 	usr(x: number): number {
-		const remove = (id: string) => {
-			const element = document.querySelector(id);
-			element.parentElement!.removeChild(element);
+		const remove = (selector: string) => {
+			if (!HAS_DOM_ENVIRONMENT) return;
+			const element = document.querySelector(selector);
+			if (!element) return;
+			const parent = element.parentElement;
+			if (!parent) return;
+			parent.removeChild(element);
 		};
 
-		if (IS_BROWSER_PROFILE && bootrom.enableOnscreenGamepad !== true) {
+		if (HAS_DOM_ENVIRONMENT && bootrom.enableOnscreenGamepad !== true) {
 			bootrom.enableOnscreenGamepad = shouldEnableOnscreenGamepad();
 		}
 
 		const wrapup = () => {
-			if (!IS_BROWSER_PROFILE) return;
-			(document.querySelector('#loading') as HTMLElement).hidden = true;
+			if (!HAS_DOM_ENVIRONMENT) return;
+			const loadingElement = document.querySelector('#loading') as HTMLElement | null;
+			if (loadingElement) loadingElement.hidden = true;
 			window.removeEventListener('resize', bootrom.resizeHandler);
 			remove('#msx');
 			remove('#hidor');
@@ -150,17 +126,24 @@ export const bootrom = {
 
 		function showUnhandledRejectionError(err: Error | string) {
 			console.error("Unhandled promise rejection:", err);
-			if (IS_BROWSER_PROFILE) {
-				document.getElementById('gamescreen')!.hidden = true;
-				document.getElementById('gamescreen')!.style.display = 'none';
+			if (HAS_DOM_ENVIRONMENT) {
+				const gamescreen = document.getElementById('gamescreen');
+				if (gamescreen instanceof HTMLElement) {
+					gamescreen.hidden = true;
+					gamescreen.style.display = 'none';
+				}
 			}
 			throw new Error(`Error in usr(0): "${typeof err === 'string' ? err : err?.message ?? 'unknown error :-('}"`);
 		}
 
 		if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
-		if (IS_BROWSER_PROFILE) {
-			document.getElementById('gamescreen')!.hidden = false;
-			document.getElementById('gamescreen')!.style.display = 'block';
+		if (HAS_DOM_ENVIRONMENT) {
+			const gamescreen = document.getElementById('gamescreen');
+			if (gamescreen instanceof HTMLElement) {
+				gamescreen.hidden = false;
+				gamescreen.style.display = 'block';
+				bootrom.gameViewHost = gamescreen;
+			}
 		}
 
 		if (typeof window !== 'undefined') {
@@ -170,21 +153,14 @@ export const bootrom = {
 			window.onerror = null;
 		}
 
-		const viewHost = bootrom.viewHost;
-		if (!viewHost) {
-			throw new Error('[bootrom] View host not initialized before launching the game.');
-		}
-
 		h406A({
 			rompack: bootrom.rom!,
 			sndcontext: bootrom.sndcontext ?? undefined,
 			gainnode: bootrom.gainnode ?? undefined,
 			debug: this.debug,
 			startingGamepadIndex: bootrom.startingGamepadIndex,
-			platformServices: Platform.instance,
 			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
-			profile: bootrom.profile,
-			viewHost,
+			gameViewHostHandle: bootrom.gameViewHost,
 		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;
@@ -212,11 +188,11 @@ export const bootrom = {
 			};
 		}
 
-		if (IS_BROWSER_PROFILE) {
+		if (typeof window !== 'undefined') {
 			createAudioContext(bootrom);
 		}
 
-		if (IS_BROWSER_PROFILE && !window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
+		if (HAS_DOM_ENVIRONMENT && typeof window !== 'undefined' && !window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
 			const extraMessageElement = document.querySelector<HTMLElement>('#extra-message');
 			const loadingElement = document.getElementById('loading');
 
@@ -242,9 +218,9 @@ export const bootrom = {
 			let loadedRomPack: RomPack | null = null;
 			let romlabel_bloburl: string | null = null;
 
-				function replaceBMSXImgWithRomLabel() {
-					if (!IS_BROWSER_PROFILE || !romlabel_bloburl) return;
-					const msx = document.querySelector('#msx') as HTMLImageElement;
+			function replaceBMSXImgWithRomLabel() {
+				if (!HAS_DOM_ENVIRONMENT || !romlabel_bloburl) return;
+				const msx = document.querySelector('#msx') as HTMLImageElement;
 				msx.src = romlabel_bloburl;
 
 				// Unhide the image if it is hidden
@@ -369,6 +345,9 @@ async function awaitBootComplete(): Promise<void> {
  * If an error occurs during loading, the Promise is rejected with an error message.
  */
 async function loadScript(rom: RomPack): Promise<void> {
+	if (!HAS_DOM_ENVIRONMENT) {
+		throw new Error('Cannot load script without a DOM environment.');
+	}
 	try {
 		const romcode = document.createElement('script');
 		romcode.async = false;
@@ -384,7 +363,7 @@ async function loadScript(rom: RomPack): Promise<void> {
  * @returns A Promise that resolves when the user presses any key.
  */
 async function awaitPressedAnyKeyPromise(): Promise<void> {
-	if (!IS_BROWSER_PROFILE) {
+	if (!HAS_DOM_ENVIRONMENT) {
 		return;
 	}
 	const result: Promise<void> = new Promise((resolve, reject) => {
@@ -463,7 +442,7 @@ async function awaitPressedAnyKeyPromise(): Promise<void> {
  * @param txt - The string to set as the text content of the loader element.
  */
 function setLoaderText(txt: string) {
-	if (!IS_BROWSER_PROFILE) return;
+	if (!HAS_DOM_ENVIRONMENT) return;
 	const loading = document.querySelector<HTMLElement>('#loading');
 	if (loading) loading.innerText = txt;
 }
@@ -473,7 +452,7 @@ function setLoaderText(txt: string) {
  * @param cls - The class name to set for the loader element.
  */
 function setClassForLoader(cls: string) {
-	if (!IS_BROWSER_PROFILE) return;
+	if (!HAS_DOM_ENVIRONMENT) return;
 	const loading = document.querySelector<HTMLElement>('#loading');
 	if (loading) loading.className = cls;
 }

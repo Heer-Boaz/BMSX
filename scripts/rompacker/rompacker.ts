@@ -1,6 +1,5 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 
-import { GameProfileIds, type GameProfileId } from '../../src/bmsx/core/gameprofile';
 import { validateAudioEventReferences } from './audioeventvalidator';
 import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomManifest, RomPackerOptions } from './rompacker.rompack';
@@ -86,7 +85,7 @@ function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: s
 
 function parseOptions(args: string[]): RomPackerOptions {
 	// Check for unrecognized arguments
-	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas', '--skiptypecheck', '--enginedts', '--usepkgtsconfig', '-profile'];
+	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas', '--skiptypecheck', '--enginedts', '--usepkgtsconfig'];
 	const unrecognizedArgs = args.filter(arg => arg.startsWith('-') && !knownArgs.includes(arg));
 	if (unrecognizedArgs.length > 0) {
 		throw new Error(`Unrecognized argument(s): ${unrecognizedArgs.join(', ')}`);
@@ -107,7 +106,6 @@ function parseOptions(args: string[]): RomPackerOptions {
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
 		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game`, 'warning');
 		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
-		writeOut(`  -profile <profile>       Set game profile (gameplay|headless|editor)`, 'warning');
 		process.exit(0);
 	}
 
@@ -123,11 +121,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name);
 	const bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', rom_name ? `./src/${rom_name}` : null);
 	const respath = getParamOrEnv(args, '-respath', 'RES_PATH', rom_name ? `./src/${rom_name}/res` : null);
-	const profile = getParamOrEnv(args, '-profile', 'PROFILE', 'gameplay').toLowerCase() as GameProfileId;
-	if (!GameProfileIds.includes(profile)) {
-		throw new Error(`Invalid profile '${profile}'. Expected one of: ${GameProfileIds.join(', ')}`);
-	}
-    const force = args.includes('--force');
+	    const force = args.includes('--force');
     const debug = args.includes('--debug');
 	const buildreslist = args.includes('--buildreslist');
 	const deploy = !args.includes('--nodeploy');
@@ -149,7 +143,6 @@ function parseOptions(args: string[]): RomPackerOptions {
 		enginedts,
 		usePkgTsconfig,
 		skipTypecheck,
-		profile,
 	};
 }
 
@@ -251,7 +244,7 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'));
 
 		const args = process.argv.slice(2);
-        let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, profile } = parseOptions(args);
+        let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 
 		// Define common assets path
@@ -335,9 +328,6 @@ async function main() {
             writeOut(`Skipping type-checking of the game as per ${_colors.brightRed.bold('--skiptypecheck')}.\n`);
             progress.removeTasks(typecheckTasks);
         }
-        if (profile && profile !== 'gameplay') {
-            writeOut(`Using game profile '${profile}'.\n`);
-        }
 		// split-engine removed
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
 		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
@@ -389,7 +379,7 @@ async function main() {
 					await progress?.taskCompleted();
 				}
 				const tsProject = usePkgTsconfig ? `${bootloader_path}/tsconfig.pkg.json` : undefined;
-				await esbuild(rom_name, bootloader_path, debug, tsProject, profile);
+				await esbuild(rom_name, bootloader_path, debug, tsProject);
 				await progress?.taskCompleted();
 				const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
 				await progress?.taskCompleted();
@@ -412,7 +402,7 @@ async function main() {
 				await progress?.taskCompleted();
 			}
 
-			await buildBootromScriptIfNewer({ debug, forceBuild: force, profile });
+			await buildBootromScriptIfNewer({ debug, forceBuild: force });
 			await progress?.taskCompleted();
 			await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
 			await progress?.taskCompleted();

@@ -1,6 +1,7 @@
+import { $ } from '../core/game';
 import { getPressedState, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
-import { Platform } from '../core/platform';
+
 
 const POINTER_DEFAULT_CODES = [
 	'pointer_primary',
@@ -52,7 +53,7 @@ export class PointerInput implements InputHandler {
 	public applyVibrationEffect(_params: VibrationParams): void { }
 
 	public pollInput(): void {
-		const now = Platform.instance.clock.now();
+		const now = $.platform.clock.now();
 		for (const key of Object.keys(this.buttonStates)) {
 			const state = this.buttonStates[key];
 			if (!state) continue;
@@ -92,7 +93,7 @@ export class PointerInput implements InputHandler {
 		const target = cloneState(state);
 		if (target.pressed) {
 			if (!target.pressId) target.pressId = this.nextPressId++;
-			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? Platform.instance.clock.now();
+			if (!target.pressedAtMs) target.pressedAtMs = target.timestamp ?? $.platform.clock.now();
 		}
 		this.buttonStates[code] = target;
 	}

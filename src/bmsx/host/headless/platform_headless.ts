@@ -1,4 +1,3 @@
-import type { color_arr, RomImgAsset, RomPack } from '../../rompack/rompack';
 import {
 	AudioClipHandle,
 	AudioPlaybackParams,
@@ -16,16 +15,13 @@ import {
 	OnscreenGamepadPlatform,
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
-	PlatformServices,
+	Platform,
 	StorageService,
-	TextureSource,
-	TextureSourceLoader,
 	VibrationParams,
- 	RngService,
-} from '../../core/platform';
-import type { GameViewCanvas } from '../../render/platform/gameview_host';
-import type { BackendCreateResult } from '../../render/backend/backend_selector';
-import { HeadlessGPUBackend } from '../../render/headless/headless_backend';
+	RngService,
+} from '../platform';
+import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
+import { new_vec2 } from '../../utils/utils';
 
 class HeadlessClock implements Clock {
 	private readonly origin = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
@@ -122,66 +118,6 @@ class HeadlessOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	vibrate(_durationMs: number): void { }
 }
 
-class HeadlessTextureSourceLoader implements TextureSourceLoader {
-	private async toImageBitmap(canvas: OffscreenCanvas | HTMLCanvasElement): Promise<ImageBitmap> {
-		if (typeof createImageBitmap !== 'function') {
-			return { width: canvas.width, height: canvas.height } as unknown as ImageBitmap;
-		}
-		if ('convertToBlob' in canvas && typeof (canvas as OffscreenCanvas).convertToBlob === 'function') {
-			const blob = await (canvas as OffscreenCanvas).convertToBlob();
-			return await createImageBitmap(blob);
-		}
-		return await createImageBitmap(canvas as HTMLCanvasElement);
-	}
-
-	private makeCanvas(width: number, height: number): OffscreenCanvas | HTMLCanvasElement {
-		if (typeof OffscreenCanvas !== 'undefined') {
-			return new OffscreenCanvas(Math.max(1, width), Math.max(1, height));
-		}
-		if (typeof document !== 'undefined') {
-			const canvas = document.createElement('canvas');
-			canvas.width = Math.max(1, width);
-			canvas.height = Math.max(1, height);
-			return canvas;
-		}
-		const fallback = { width: Math.max(1, width), height: Math.max(1, height) } as HTMLCanvasElement;
-		return fallback;
-	}
-
-	private async makeSolidBitmap(size: number, color: color_arr = [0, 0, 0, 255]): Promise<ImageBitmap> {
-		const canvas = this.makeCanvas(size, size);
-		const ctx = (canvas as any).getContext ? (canvas as any).getContext('2d') : null;
-		if (ctx) {
-			const [r, g, b, a] = color;
-			const rgba = `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${a <= 1 ? a : Math.round(a) / 255})`;
-			ctx.fillStyle = rgba;
-			ctx.fillRect(0, 0, size, size);
-		}
-		return await this.toImageBitmap(canvas);
-	}
-
-	async fromUri(uri: string): Promise<TextureSource> {
-		console.warn(`[HeadlessTextureSourceLoader] Substituting texture for URI '${uri}' in headless mode.`);
-		return await this.makeSolidBitmap(2, [128, 128, 128, 255]);
-	}
-
-	async fromBytes(_bytes: ArrayBuffer): Promise<TextureSource> {
-		return await this.makeSolidBitmap(2, [64, 64, 64, 255]);
-	}
-
-	async createSolid(size: number, color: color_arr): Promise<TextureSource> {
-		return await this.makeSolidBitmap(Math.max(1, size), color);
-	}
-
-	async fromBuffer(_uri: string, _buffer?: ArrayBuffer): Promise<TextureSource> {
-		return await this.makeSolidBitmap(2, [96, 96, 96, 255]);
-	}
-
-	async fromAsset(_romImgAsset: RomImgAsset, _rompack: RomPack): Promise<TextureSource> {
-		return await this.makeSolidBitmap(2, [160, 160, 160, 255]);
-	}
-}
-
 class SilentClip implements AudioClipHandle {
 	duration = 0;
 	dispose(): void { }
@@ -242,7 +178,7 @@ export interface HeadlessPlatformOptions {
 	rngSeed?: number;
 }
 
-export class HeadlessPlatformServices implements PlatformServices {
+export class HeadlessPlatformServices implements Platform {
 	readonly clock: Clock;
 	readonly frames: FrameLoop;
 	readonly lifecycle: Lifecycle;
@@ -250,9 +186,9 @@ export class HeadlessPlatformServices implements PlatformServices {
 	readonly storage: StorageService;
 	readonly hid: HIDService;
 	readonly onscreenGamepad: OnscreenGamepadPlatform;
-	readonly textureLoader: TextureSourceLoader;
 	readonly audio: AudioService;
 	readonly rng: RngService;
+	readonly gameviewHost: HeadlessGameViewHost;
 
 	constructor(options: HeadlessPlatformOptions = {}) {
 		const step = options.frameIntervalMs ?? 20;
@@ -263,12 +199,8 @@ export class HeadlessPlatformServices implements PlatformServices {
 		this.storage = new MemoryStorage();
 		this.hid = new UnsupportedHID();
 		this.onscreenGamepad = new HeadlessOnscreenGamepadPlatform();
-		this.textureLoader = new HeadlessTextureSourceLoader();
 		this.audio = new SilentAudioService();
 		this.rng = new SeededRng(options.rngSeed ?? Date.now());
-	}
-
-	async createBackendForSurface(_surface: GameViewCanvas): Promise<BackendCreateResult> {
-		return { backend: new HeadlessGPUBackend(), nativeCtx: null };
+		this.gameviewHost = new HeadlessGameViewHost(new_vec2(256, 212));
 	}
 }

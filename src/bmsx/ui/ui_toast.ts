@@ -5,7 +5,7 @@ import { ZCOORD_MAX } from '../render/backend/webgl/webgl.constants';
 import { BFont } from '../core/font';
 import { id_to_space_symbol } from '../core/space';
 import type { RenderProducerContext } from '../component/customvisual_component';
-import { Platform } from '../core/platform';
+
 
 const TOAST_DURATION = 1800;
 
@@ -27,12 +27,12 @@ class Toast extends WorldObject {
 
 	override onspawn(): void {
 		super.onspawn();
-		this.createdAt = Platform.instance.clock.now();
+		this.createdAt = $.platform.clock.now();
 	}
 
 	private yeOldePaint({ parent, rc }: RenderProducerContext): void {
 		const toast = parent as Toast;
-		const now = Platform.instance.clock.now();
+		const now = $.platform.clock.now();
 		const t = now - toast.createdAt;
 		// TODO: PRETTY UGLY TO NOT USE A (SIMPLE) STATE MACHINE FOR THIS
 		if (t >= toast.ms) { toast.markForDisposal(); return null; } // time's up

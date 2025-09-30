@@ -17,9 +17,9 @@ import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
-import type { DeviceKind, InputDevice, InputEvt, InputModifiers } from '../core/platform';
-import { Platform } from '../core/platform';
-import type { GameViewCanvas } from '../render/platform/gameview_host';
+import type { DeviceKind, InputDevice, InputEvt, InputModifiers } from '../host/platform';
+
+import type { GameViewCanvas } from 'bmsx/host/platform';
 
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.
@@ -82,7 +82,7 @@ export function makeButtonState(partialState?: Partial<ButtonState>): ButtonStat
 		wasreleased = false,
 		consumed = false,
 		presstime = null,
-		timestamp = Platform.instance.clock.now(),
+		timestamp = $.platform.clock.now(),
 		pressedAtMs = null,
 		releasedAtMs = null,
 		pressId = null,
@@ -206,7 +206,7 @@ export class InputStateManager {
 		const window = framewindow != null
 			? this.toMs(framewindow)
 			: this.bufferWindowDuration;
-		const currentTime = Platform.instance.clock.now();
+		const currentTime = $.platform.clock.now();
 		const baseState = this.buttonStates.get(identifier);
 
 		const pressed = baseState?.pressed ?? false;
@@ -538,9 +538,6 @@ export class Input implements RegisterablePersistent {
 	constructor(startingGamepadIndex?: number) {
 		this.startupGamepadIndex = typeof startingGamepadIndex === 'number' ? startingGamepadIndex : null;
 		this.bind();
-		if (!this.onscreenGamepadFactory) {
-			this.onscreenGamepadFactory = () => new OnscreenGamepad();
-		}
 	}
 
 	/**
@@ -554,10 +551,6 @@ export class Input implements RegisterablePersistent {
 	/**
 	 * Enables the onscreen gamepad and assigns it as the gamepad input for player 1.
 	 */
-	public setOnscreenGamepadFactory(factory: () => OnscreenGamepad): void {
-		this.onscreenGamepadFactory = factory;
-	}
-
 	public setStartupGamepadIndex(index: number | null): void {
 		this.startupGamepadIndex = index;
 	}
@@ -624,7 +617,7 @@ export class Input implements RegisterablePersistent {
 		player.inputHandlers['pointer'] = pointer;
 		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
 		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
-		Platform.instance.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
+		$.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
 	}
 
 	public handleInputEvent(evt: InputEvt): void {
@@ -781,7 +774,7 @@ export class Input implements RegisterablePersistent {
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
 	public pollInput(): void {
-		const now = Platform.instance.clock.now();
+		const now = $.platform.clock.now();
 		// Ensure UI controller exists once spaces are ready
 		if (!this.uiControllerSpawned) {
 			const ui = $.world[id_to_space_symbol]['ui'];
@@ -905,7 +898,7 @@ export class Input implements RegisterablePersistent {
 
 			const fullscreenToggle = player.getButtonState('F11', 'keyboard');
 			if (fullscreenToggle?.justpressed) {
-				if ($.view.isFullscreen) {
+				if ($.view.fullscreen) {
 					$.view.ToWindowed();
 				} else {
 					$.view.toFullscreen();

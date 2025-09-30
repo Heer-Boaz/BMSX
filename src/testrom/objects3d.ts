@@ -101,7 +101,7 @@ export class SparkEmitter extends WorldObject {
 		super(opts);
 		this.parent_id = opts.parent_id;
 		// Request spark texture from Texture Manager
-		const loader = Platform.instance.textureLoader;
+		const loader = $.platform.textureLoader;
 		this.textureKey = $.texmanager.acquireTexture(this.id, async () => {
 			const bytes = await $.rompack.img[BitmapId.joystick1].imgbinYFlipped;
 			return loader.fromBytes(bytes);

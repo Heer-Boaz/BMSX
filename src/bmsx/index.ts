@@ -84,8 +84,6 @@ export * from './ecs/overlap2d_system';
 export * from './ecs/ecsystem';
 export * from './core/pipelines/gameplay';
 export * from './core/pipelines/headless';
-export * from './core/pipelines/editor';
-export * from './core/gameprofile';
 export * from './collision/collision_profiles';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';
@@ -103,27 +101,8 @@ export * from './render/backend/pipeline_interfaces';
 export * from './render/backend/shader_module';
 export * from './render/backend/renderpasslib';
 export * from './render/backend/webgl/webgl_backend';
-export * from './render/platform/gameview_host';
-export * from './render/platform/browser_gameview_host';
-export {
-  Platform,
-  PlatformServices,
-  MonoTime,
-  Clock,
-  FrameLoop,
-  DeviceKind,
-  InputEvt,
-  InputDevice,
-  InputHub,
-  Lifecycle,
-  StorageService,
-  HIDService,
-  VibrationParams as PlatformVibrationParams,
-} from './core/platform';
 export * from './host/browser/platform_browser';
-export * from './host/browser/bootstrap';
 export * from './host/headless/platform_headless';
-export * from './host/headless/bootstrap_headless';
 export * from './rompack/rompack';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';

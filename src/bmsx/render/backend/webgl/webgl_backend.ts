@@ -38,11 +38,19 @@ export class WebGLBackend implements GPUBackend {
 	private attribCache = new WeakMap<WebGLProgram, Map<string, number>>();
 	private bufferSizes = new WeakMap<WebGLBuffer, number>();
 	private frameStats = { draws: 0, drawIndexed: 0, drawsInstanced: 0, drawIndexedInstanced: 0, bytesUploaded: 0, vertexBytes: 0, indexBytes: 0, uniformBytes: 0, textureBytes: 0 };
+	private _context: WebGL2RenderingContext;
+	public get context(): WebGL2RenderingContext { return this._context; }
 	constructor(public gl: WebGL2RenderingContext) {
-		// No internal manager; caller creates PipelineManager with this backend
+		this._context = gl;
 	}
-	// (Static helpers have moved to core/gl_resources.ts; existing external usages should import from there.)
-	createTexture(img: ImageBitmap, desc: TextureParams): WebGLTexture { const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null); this.frameStats.bytesUploaded += img.width * img.height * 4; this.frameStats.textureBytes += img.width * img.height * 4; return t; }
+
+	createTexture(img: ImageBitmap, desc: TextureParams): WebGLTexture {
+		const t = GLR.glCreateTextureFromImage(this.gl, img, desc, null);
+		this.frameStats.bytesUploaded += img.width * img.height * 4;
+		this.frameStats.textureBytes += img.width * img.height * 4;
+		return t;
+	}
+
 	createSolidTexture2D(width: number, height: number, rgba: color_arr, desc: TextureParams = {}): WebGLTexture {
 		const gl = this.gl;
 		gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_UPLOAD);

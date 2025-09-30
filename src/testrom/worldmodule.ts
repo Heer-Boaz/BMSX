@@ -103,7 +103,7 @@ class RailDemoDriver extends WorldObject {
 			if (enemy) {
 				const health = enemy.getFirstComponent(EnemyHealthComponent);
 				if (health) {
-					const now = Platform.instance.clock.now() / 1000;
+					const now = $.platform.clock.now() / 1000;
 					if (health.dead) {
 						this.hud.registerHit(now, impact.damage, true, health.scoreValue, this.hud.combo);
 						$.spawn(ExplosionEmitter.create([enemy.x, enemy.y, enemy.z]));

@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { Platform } from '../core/platform';
+
 
 export function showRewindDialog() {
 	// Remove any existing rewind overlay
@@ -40,7 +40,7 @@ export function showRewindDialog() {
 	let lastJumpTime = 0;
 	const JUMP_INTERVAL = 50; // ms
 	function setFrameFromBar(x: number) {
-		const now = Platform.instance.clock.now();
+		const now = $.platform.clock.now();
 		if (now - lastJumpTime < JUMP_INTERVAL) return;
 		lastJumpTime = now;
 		if (!$) return;
