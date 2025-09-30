@@ -121,8 +121,8 @@ function parseOptions(args: string[]): RomPackerOptions {
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name);
 	const bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', rom_name ? `./src/${rom_name}` : null);
 	const respath = getParamOrEnv(args, '-respath', 'RES_PATH', rom_name ? `./src/${rom_name}/res` : null);
-	    const force = args.includes('--force');
-    const debug = args.includes('--debug');
+		const force = args.includes('--force');
+	const debug = args.includes('--debug');
 	const buildreslist = args.includes('--buildreslist');
 	const deploy = !args.includes('--nodeploy');
 	const skipTypecheck = args.includes('--skiptypecheck');
@@ -244,7 +244,7 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'));
 
 		const args = process.argv.slice(2);
-        let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 
 		// Define common assets path
@@ -314,9 +314,9 @@ async function main() {
 		else {
 			writeOut(`Note: Recompilation and building only if required (based on file modification times).\n`);
 		}
-        if (useTextureAtlas) {
-            writeOut(`Note: Texture atlas generation enabled via ${_colors.brightGreen.bold('--textureatlas yes')} \n`);
-        }
+		if (useTextureAtlas) {
+			writeOut(`Note: Texture atlas generation enabled via ${_colors.brightGreen.bold('--textureatlas yes')} \n`);
+		}
 		else {
 			writeOut(`Note: Texture atlas generation disabled via ${_colors.brightRed.bold('--textureatlas no')} \n`);
 		}
@@ -324,10 +324,10 @@ async function main() {
 			writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')} \n`);
 			progress.removeTasks(deployTasks);
 		}
-        if (skipTypecheck) {
-            writeOut(`Skipping type-checking of the game as per ${_colors.brightRed.bold('--skiptypecheck')}.\n`);
-            progress.removeTasks(typecheckTasks);
-        }
+		if (skipTypecheck) {
+			writeOut(`Skipping type-checking of the game as per ${_colors.brightRed.bold('--skiptypecheck')}.\n`);
+			progress.removeTasks(typecheckTasks);
+		}
 		// split-engine removed
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
 		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
