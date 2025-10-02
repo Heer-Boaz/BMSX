@@ -3,13 +3,12 @@
   "compilerOptions": {
 	"noEmit": true,
 	"composite": false,
-	"rootDir": "./",
 	"baseUrl": "./",
 	"paths": {
-	  "bmsx": ["./", "./index.ts"],
-	  "bmsx/*": ["./*"]
+	  "bmsx": ["../bmsx/index.ts"],
+	  "bmsx/*": ["../bmsx/*"]
 	}
   },
-  "include": ["**/*.ts", "**/*.d.ts", "../../scripts/rompacker/convex_decomp_2d.ts"],
+  "include": ["**/*.ts", "**/*.d.ts", "../bmsx/glsl.d.ts"],
   "exclude": ["node_modules"]
 }

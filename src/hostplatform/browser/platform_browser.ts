@@ -21,9 +21,6 @@ import {
 } from '../platform';
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions, ViewportMetrics } from '../platform';
-import type { GPUBackend } from 'bmsx/render/backend/pipeline_interfaces';
-import { WebGLBackend } from 'bmsx/render/backend/webgl/webgl_backend';
-import { WebGPUBackend } from 'bmsx/render/backend/webgpu/webgpu_backend';
 
 export class BrowserPlatform implements Platform {
 	clock: Clock;
@@ -920,57 +917,23 @@ export class BrowserGameViewHost implements GameViewHost {
 		return createBackend(this);
 	}
 }
-const WEBGPU_RENDERER_SUPPORT = false;
+const backendFactoryKey = '__bmsxCreateBackend';
 
-/**
- * Create a GPU backend for the given canvas, preferring WebGPU if available,
- * otherwise falling back to WebGL2. The GameView stays backend-agnostic and
- * only receives the backend interface and the native context for helpers.
- */
+type BackendFactory = (host: BrowserGameViewHost) => Promise<unknown>;
+interface BackendFactoryHolder {
+	__bmsxCreateBackend?: BackendFactory;
+}
 
-export async function createBackend(host: BrowserGameViewHost): Promise<GPUBackend> {
-	const canvas = host.surface.handle;
-	if (!(canvas instanceof HTMLCanvasElement)) {
-		throw new Error('GameView host surface is not a canvas element.');
+function resolveBackendFactory(): BackendFactory {
+	const holder = globalThis as BackendFactoryHolder;
+	const factory = holder[backendFactoryKey];
+	if (typeof factory !== 'function') {
+		throw new Error('[BrowserPlatform] GPU backend factory not installed. Make sure the engine registers one before requesting it.');
 	}
-	// Try WebGPU first
-	if (WEBGPU_RENDERER_SUPPORT) {
-		try {
-			if (!navigator.gpu) {
-				throw Error('WebGPU not supported.');
-			}
+	return factory;
+}
 
-			const adapter = await navigator.gpu.requestAdapter();
-			if (!adapter) {
-				throw Error('Couldn\'t request WebGPU adapter.');
-			}
-
-			const context = (canvas as HTMLCanvasElement).getContext('webgpu') as GPUCanvasContext | null;
-			if (context) {
-				const adapter: GPUAdapter | null = await navigator.gpu.requestAdapter();
-				if (adapter) {
-					const device: GPUDevice = await adapter.requestDevice();
-					// Configure the canvas context for presentation
-					const preferredFormat: GPUTextureFormat = (navigator.gpu.getPreferredCanvasFormat && navigator.gpu.getPreferredCanvasFormat()) || 'bgra8unorm';
-					try {
-						context.configure({ device, format: preferredFormat, alphaMode: 'premultiplied' });
-					} catch (e) {
-						console.error('Failed to configure WebGPU canvas context:', e);
-						throw e;
-					}
-					const backend = new WebGPUBackend(device, context);
-					return backend;
-				}
-			}
-		} catch (e) {
-			console.info(`WebGPU initialization failed: ${e}`);
-		}
-	}
-
-	// Fallback to WebGL2
-	const gl = (canvas as HTMLCanvasElement).getContext('webgl2', { alpha: true, antialias: false }) as WebGL2RenderingContext | null;
-	if (!gl) throw new Error('Failed to acquire WebGL2 context, cannot start the game :-(');
-	const backend = new WebGLBackend(gl);
-	console.info(WEBGPU_RENDERER_SUPPORT ? 'Browser doesn\'t support WebGPU, fallback to WebGL2-backend' : 'Forced using WebGL2-backend as the game engine doesn\'t support WebGPU yet');
-	return backend;
+export async function createBackend(host: BrowserGameViewHost): Promise<unknown> {
+	const factory = resolveBackendFactory();
+	return factory(host);
 }

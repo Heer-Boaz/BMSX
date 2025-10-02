@@ -1,5 +1,6 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 import type { BootArgs, RomPack } from '../../src/bmsx/rompack/rompack';
+import { constructPlatformFromViewHostHandle } from '../../src/hostplatform/platform';
 import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
 
@@ -80,7 +81,8 @@ export const bootrom = {
 	theshowsover: false,
 	startingGamepadIndex: initialStartingGamepadIndex as BootArgs['startingGamepadIndex'],
 	enableOnscreenGamepad: false as BootArgs['enableOnscreenGamepad'],
-	gameViewHost: null as BootArgs['gameViewHostHandle'],
+	platform: null as BootArgs['platform'],
+	viewHost: null as BootArgs['viewHost'],
 
 	/**
 	 * Sets the boot ROM pack.
@@ -139,11 +141,17 @@ export const bootrom = {
 		if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
 		if (HAS_DOM_ENVIRONMENT) {
 			const gamescreen = document.getElementById('gamescreen');
-			if (gamescreen instanceof HTMLElement) {
-				gamescreen.hidden = false;
-				gamescreen.style.display = 'block';
-				bootrom.gameViewHost = gamescreen;
+			if (!(gamescreen instanceof HTMLElement)) {
+				throw new Error('[bootrom] #gamescreen element not found; cannot bootstrap platform.');
 			}
+			gamescreen.hidden = false;
+			gamescreen.style.display = 'block';
+			if (!(gamescreen instanceof HTMLCanvasElement)) {
+				throw new Error('[bootrom] #gamescreen must be a <canvas> to construct a Platform.');
+			}
+			const platform = constructPlatformFromViewHostHandle(gamescreen);
+			bootrom.platform = platform;
+			bootrom.viewHost = platform.gameviewHost;
 		}
 
 		if (typeof window !== 'undefined') {
@@ -153,6 +161,10 @@ export const bootrom = {
 			window.onerror = null;
 		}
 
+		const platform = bootrom.platform;
+		if (!platform) {
+			throw new Error('[bootrom] Platform not initialized before starting the game.');
+		}
 		h406A({
 			rompack: bootrom.rom!,
 			sndcontext: bootrom.sndcontext ?? undefined,
@@ -160,7 +172,8 @@ export const bootrom = {
 			debug: this.debug,
 			startingGamepadIndex: bootrom.startingGamepadIndex,
 			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
-			gameViewHostHandle: bootrom.gameViewHost,
+			platform,
+			viewHost: bootrom.viewHost ?? undefined,
 		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;

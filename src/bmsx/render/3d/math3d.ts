@@ -395,7 +395,6 @@ export const M4 = {
 	},
 
 	// 3x3 normal matrix (inverse-transpose)
-
 	normal3Into(out: Float32Array, model: Mat4Float32): Float32Array {
 		const a00 = model[0], a01 = model[1], a02 = model[2];
 		const a10 = model[4], a11 = model[5], a12 = model[6];

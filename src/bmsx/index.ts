@@ -101,8 +101,6 @@ export * from './render/backend/pipeline_interfaces';
 export * from './render/backend/shader_module';
 export * from './render/backend/renderpasslib';
 export * from './render/backend/webgl/webgl_backend';
-export * from './host/browser/platform_browser';
-export * from './host/headless/platform_headless';
 export * from './rompack/rompack';
 export * from './serializer/bincompressor';
 export * from './serializer/binencoder';

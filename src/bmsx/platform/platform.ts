@@ -1,5 +1,3 @@
-import { BrowserGameViewHost, BrowserPlatform } from './browser/platform_browser';
-
 export interface Platform {
 	clock: Clock;
 	frames: FrameLoop;
@@ -20,8 +18,6 @@ export interface Clock { now(): MonoTime; }
 export interface FrameLoop {
 	start(tick: (t: MonoTime) => void): { stop(): void };
 }
-
-// --------- AUDIO TYPES (platform-level, engine-agnostic) ---------
 
 export interface AudioLoop {
 	start: number;
@@ -166,7 +162,7 @@ export interface HIDService {
 	getDevices(): Promise<HIDDevice[]>;
 }
 
-export type GameViewHostHandle = unknown; // Represents a handle to the underlying platform-specific game view host (e.g., a canvas element in a browser).
+export type GameViewHostHandle = unknown;
 
 export interface ViewportDimensions {
 	width: number;
@@ -256,19 +252,5 @@ export interface GameViewHost {
 	get fullscreen(): boolean;
 	setFullscreen(v: boolean): Promise<void>;
 
-	createBackend(): Promise<unknown>; // Untyped to avoid circular dependency; should return GPUBackend
-}
-
-export function constructPlatformFromViewHostHandle(handle: GameViewHostHandle): Platform {
-	if (typeof handle !== 'object' || handle === null || handle === undefined) {
-		throw new Error(`[constructPlatformFromViewHostHandle] Invalid handle provided (${handle}); expected an object.`);
-	}
-	if (handle.constructor.name === 'HTMLCanvasElement') {
-		// Special case for HTMLCanvasElement to use BrowserGameViewHost
-		const viewHost = new BrowserGameViewHost(handle as HTMLCanvasElement) as BrowserGameViewHost;
-		const platform = new BrowserPlatform(viewHost.surface.handle, handle as HTMLCanvasElement) as Platform;
-		platform.gameviewHost = viewHost;
-		return platform;
-	}
-	throw new Error('[constructPlatformFromViewHostHandle] Unsupported handle type; cannot construct Platform.');
+	createBackend(): Promise<unknown>;
 }

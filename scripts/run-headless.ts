@@ -106,7 +106,7 @@
 // 		rompack,
 // 		sndcontext: undefined,
 // 		gainnode: undefined,
-// 		platformServices: Platform.instance,
+// 		platform: Platform.instance,
 // 		viewHostHandle: headlessHandle.viewHost,
 // 	};
 // 	if (options.debug) bootArgs.debug = true;

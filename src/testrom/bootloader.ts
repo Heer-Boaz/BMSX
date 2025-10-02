@@ -11,26 +11,12 @@ import './test_gamemodel';
 const globalTarget = globalThis as { h406A?: (args: BootArgs) => Promise<void> };
 
 globalTarget.h406A = (args: BootArgs): Promise<any> => {
-	let { platformServices, viewHost } = args;
-	let startingGamepadIndex = args.startingGamepadIndex ?? null;
-	if (!platformServices) {
-		if (typeof document === 'undefined') {
-			throw new Error('[Bootloader:testrom] Platform services not provided and DOM is unavailable to bootstrap them.');
-		}
-		const canvas = document.getElementById('gamescreen');
-		if (!(canvas instanceof HTMLCanvasElement)) {
-			throw new Error('[Bootloader:testrom] gamescreen canvas not found while bootstrapping platform services.');
-		}
-		const handle = bootstrapBrowserPlatform(canvas);
-		platformServices = Platform.instance;
-		if (!viewHost) viewHost = handle.viewHost;
-		if (startingGamepadIndex === null && handle.startingGamepadIndex !== undefined) {
-			startingGamepadIndex = handle.startingGamepadIndex;
-		}
+	const platform = args.platform;
+	if (!platform) {
+		throw new Error('[Bootloader:testrom] Platform instance not provided. Ensure the host supplies it in BootArgs.');
 	}
-	if (!platformServices) {
-		throw new Error('[Bootloader:testrom] Unable to resolve PlatformServices for game initialization.');
-	}
+	const startingGamepadIndex = args.startingGamepadIndex ?? null;
+	let viewHost = args.viewHost ?? platform.gameviewHost;
 	if (!viewHost) {
 		if (typeof document === 'undefined') {
 			throw new Error('[Bootloader:testrom] View host not provided and DOM is unavailable to create one.');
@@ -47,7 +33,7 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 		debug: args.debug,
 		startingGamepadIndex,
 		enableOnscreenGamepad: args.enableOnscreenGamepad,
-		platformServices,
+		platform,
 		viewHost,
 	}).then(() => {
 		if ($.hasView) {

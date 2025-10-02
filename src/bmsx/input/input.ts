@@ -17,9 +17,9 @@ import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
 import { PointerInput } from './pointerinput';
 import { id_to_space_symbol } from '../core/space';
-import type { DeviceKind, InputDevice, InputEvt, InputModifiers } from '../host/platform';
+import type { DeviceKind, InputDevice, InputEvt, InputModifiers } from '../platform';
 
-import type { GameViewCanvas } from 'bmsx/host/platform';
+import type { GameViewCanvas } from '../platform';
 
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.

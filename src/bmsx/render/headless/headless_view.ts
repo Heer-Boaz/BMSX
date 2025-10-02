@@ -7,7 +7,7 @@ import type {
 	OverlayHandle,
 	HostEventListenerTarget,
 	HostEventOptions
-} from 'bmsx/host/platform';
+} from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
 
 class HeadlessOverlay implements OverlayHandle {

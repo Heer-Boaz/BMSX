@@ -9,7 +9,8 @@ import { PhysicsWorld } from '../physics/physicsworld';
 import { GameView, renderGate } from "../render/gameview";
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
-import { constructPlatformFromViewHostHandle, type GameViewHostHandle, type Platform } from 'bmsx/host/platform';
+import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
+import type { GameViewHost, Platform } from '../platform';
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
@@ -50,7 +51,8 @@ export interface GameInitArgs {
 	 * ECS pipeline selection. Provide a spec or a pipeline id. Defaults to the platform's default pipeline.
 	 */
 	ecsPipeline?: NodeSpec[];
-	gameViewHostHandle: GameViewHostHandle;
+	platform: Platform;
+	viewHost?: GameViewHost;
 }
 
 const GAME_FPS = 50;
@@ -287,12 +289,16 @@ export class Game {
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	public async init(init: GameInitArgs): Promise<Game> {
-		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, gameViewHostHandle } = init;
-		this._platform = constructPlatformFromViewHostHandle(gameViewHostHandle);
-
-		if (!this._platform) {
-			throw new Error('[Game] Platform services not provided. Call Platform.initialize() before Game.init(), or pass platformServices in GameInitArgs.');
+		const { rompack, worldConfig, sndcontext, gainnode, debug = false, startingGamepadIndex = null, enableOnscreenGamepad = false, ecsPipeline, platform, viewHost } = init;
+		if (!platform) {
+			throw new Error('[Game] Platform services not provided. Pass a Platform instance in GameInitArgs.');
 		}
+		const resolvedViewHost = viewHost ?? platform.gameviewHost;
+		if (!resolvedViewHost) {
+			throw new Error('[Game] Platform did not expose a GameViewHost. Provide one in GameInitArgs.');
+		}
+		platform.gameviewHost = resolvedViewHost;
+		this._platform = platform;
 		$rompack = rompack;
 		this.running = false;
 		this._paused = false;
@@ -317,9 +323,12 @@ export class Game {
 			this.input.enableOnscreenGamepad();
 		}
 
-		const gview = new GameView({ viewportSize: this.initialViewportSize, host: this._platform.gameviewHost });
+		if (typeof document !== 'undefined') {
+			ensureBrowserBackendFactory();
+		}
+		const gview = new GameView({ viewportSize: this.initialViewportSize, host: resolvedViewHost });
 		this._view = gview;
-		const gpuBackend = await this._platform.gameviewHost.createBackend() as GPUBackend;
+		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;
 		new TextureManager(gpuBackend);
 		const pipelineRegistry = new RenderPassLibrary(gpuBackend);

@@ -8,7 +8,7 @@ import type {
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
-} from '../host/platform';
+} from '../platform';
 import { $ } from '../core/game';
 
 export type {
@@ -17,7 +17,7 @@ export type {
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
-} from '../host/platform';
+} from '../platform';
 
 export class NullOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	attach(): OnscreenGamepadPlatformSession {

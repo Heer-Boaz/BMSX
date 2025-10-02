@@ -1,5 +1,5 @@
 import { $ } from '../core/game';
-import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService } from '../host/platform';
+import { AudioPlaybackParams, AudioService, AudioClipHandle, VoiceHandle, RngService } from '../platform';
 import { Registry } from '../core/registry';
 import { asset_id, AudioMeta, AudioType, AudioTypes, id2res, RegisterablePersistent } from '../rompack/rompack';
 

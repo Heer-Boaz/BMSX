@@ -17,7 +17,7 @@ import { RenderPassLibrary } from './backend/renderpasslib';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
-import type { GameViewHost, GameViewCanvas } from 'bmsx/host/platform';
+import type { GameViewHost, GameViewCanvas } from '../platform';
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');

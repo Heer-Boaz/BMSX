@@ -21,7 +21,7 @@ import {
 	RngService,
 } from '../platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
-import { new_vec2 } from '../../utils/utils';
+import { new_vec2 } from 'bmsx/utils/utils';
 
 class HeadlessClock implements Clock {
 	private readonly origin = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();

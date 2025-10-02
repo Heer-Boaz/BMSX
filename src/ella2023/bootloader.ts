@@ -16,7 +16,8 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 		gainnode: args.gainnode,
 		debug: args.debug ?? false,
 		startingGamepadIndex: args.startingGamepadIndex,
-		gameViewHostHandle: args.gameViewHostHandle,
+		platform: args.platform,
+		viewHost: args.viewHost,
 	}).then(() => {
 		$.hideOnscreenGamepadButtons(['ls', 'rs', 'select', 'y']);
 		$.view.dynamicAtlas = null; // Must set this after creating the Game, otherwise GameView.images will not be initialized properly.
