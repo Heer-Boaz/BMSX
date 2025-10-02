@@ -368,6 +368,10 @@ export class Input implements RegisterablePersistent {
 
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
+	private platformInputUnsubscribe: (() => void) | null = null;
+	private readonly platformInputListener = (event: InputEvt): void => {
+		this.handleInputEvent(event);
+	};
 
 	private debugHotkeysEnabled = false;
 	private debugPointerSurface: GameViewCanvas | null = null;
@@ -618,6 +622,7 @@ export class Input implements RegisterablePersistent {
 		this.deviceBindings.set('keyboard:0', { handler: keyboard, source: 'keyboard', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
 		this.deviceBindings.set('pointer:0', { handler: pointer, source: 'pointer', assignedPlayer: Input.DEFAULT_KEYBOARD_PLAYER_INDEX, device: null });
 		$.platform.input.setKeyboardCapture(this.shouldCaptureKey.bind(this));
+		this.attachToPlatformInput();
 	}
 
 	public handleInputEvent(evt: InputEvt): void {
@@ -642,6 +647,40 @@ export class Input implements RegisterablePersistent {
 		if (evt.type === 'axis2') {
 			this.routeAxis2(binding, evt);
 		}
+	}
+
+	private attachToPlatformInput(): void {
+		if (this.platformInputUnsubscribe) {
+			const previous = this.platformInputUnsubscribe;
+			this.platformInputUnsubscribe = null;
+			previous();
+		}
+		const hub = $.platform.input;
+		const devices = hub.devices();
+		for (let i = 0; i < devices.length; i++) {
+			this.registerPlatformDevice(devices[i]);
+		}
+		this.platformInputUnsubscribe = hub.subscribe(this.platformInputListener);
+	}
+
+	private detachFromPlatformInput(): void {
+		if (!this.platformInputUnsubscribe) return;
+		const unsubscribe = this.platformInputUnsubscribe;
+		this.platformInputUnsubscribe = null;
+		unsubscribe();
+	}
+
+	private registerPlatformDevice(device: InputDevice): void {
+		const existing = this.deviceBindings.get(device.id);
+		if (existing) {
+			existing.device = device;
+			if (existing.source === 'gamepad') {
+				const handler = existing.handler as GamepadInput;
+				handler.setDevice(device);
+			}
+			return;
+		}
+		this.onDeviceConnected(device);
 	}
 
 	private routeButtonEvent(binding: DeviceBinding, evt: Extract<InputEvt, { type: 'button' }>): void {
@@ -768,12 +807,14 @@ export class Input implements RegisterablePersistent {
 
 		// Deregister the input system
 		Registry.instance.deregister(this);
+		this.detachFromPlatformInput();
 	}
 
 	/**
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
 	public pollInput(): void {
+		this.pollPlatformDevices();
 		const now = $.platform.clock.now();
 		// Ensure UI controller exists once spaces are ready
 		if (!this.uiControllerSpawned) {
@@ -801,6 +842,20 @@ export class Input implements RegisterablePersistent {
 			}
 		});
 		this.pendingGamepadAssignments.forEach(pending => pending.run());
+	}
+
+	private pollPlatformDevices(): void {
+		const iterator = this.deviceBindings.values();
+		const clock = $.platform.clock;
+		let current = iterator.next();
+		while (!current.done) {
+			const binding = current.value;
+			const device = binding.device;
+			if (device) {
+				device.poll(clock);
+			}
+			current = iterator.next();
+		}
 	}
 
 	/**
