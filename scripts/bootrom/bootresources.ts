@@ -260,13 +260,17 @@ function getImageURL(buffer: ArrayBuffer): string {
 	return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
 }
 
-async function getImageFromBuffer(buffer: ArrayBuffer): Promise<TextureSource> {
-	if (typeof createImageBitmap === 'function') {
-		const bmp = await createImageBitmap(new Blob([new Uint8Array(buffer)], { type: 'image/png' }), { imageOrientation: 'flipY' });
-		return bmp as TextureSource;
-	}
-	throw new Error('Unable to create image from buffer');
+async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
+    return loadImage(getImageURL(buffer));
 }
+
+// async function getImageFromBuffer(buffer: ArrayBuffer, options?: { flipY?: boolean }): Promise<TextureSource> {
+// 	if (typeof createImageBitmap === 'function') {
+// 		const bmp = await createImageBitmap(new Blob([new Uint8Array(buffer)], { type: 'image/png' }), { imageOrientation: options?.flipY ? 'flipY' : 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+// 		return bmp as TextureSource;
+// 	}
+// 	throw new Error('Unable to create image from buffer');
+// }
 
 async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
 	return decodeBinary(new Uint8Array(buffer));
@@ -562,3 +566,69 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
 	}
 }
+
+function loadImage(src: string): ImageBitmap | PromiseLike<ImageBitmap> {
+	// Use an async IIFE so we can return a Promise<ImageBitmap>
+	return (async function(): Promise<ImageBitmap> {
+		// Prefer fetch + createImageBitmap when possible (handles data: and blob: URLs well)
+		if (typeof fetch === 'function' && typeof createImageBitmap === 'function') {
+			try {
+				const resp = await fetch(src);
+				if (resp.ok) {
+					const blob = await resp.blob();
+					// Use conservative image creation options
+					// (Some envs accept the options object, others ignore it)
+					return await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any);
+				}
+			} catch (e) {
+				// fall through to Image element fallback
+			}
+		}
+
+		// Fallback: load via HTMLImageElement then convert to ImageBitmap
+		return await new Promise<ImageBitmap>((resolve, reject) => {
+			if (typeof Image === 'undefined') {
+				reject(new Error('Image is not available in this environment; cannot load image.'));
+				return;
+			}
+
+			const img = new Image();
+			img.crossOrigin = 'anonymous';
+			img.onload = () => {
+				try {
+					// If createImageBitmap exists, use it on the Image element
+					if (typeof createImageBitmap === 'function') {
+						createImageBitmap(img, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as any).then(resolve).catch(reject);
+						return;
+					}
+
+					// As a last resort, draw into a canvas and attempt to createImageBitmap from it
+					const canvas = document.createElement('canvas');
+					canvas.width = img.width;
+					canvas.height = img.height;
+					const ctx = canvas.getContext('2d');
+					if (!ctx) {
+						reject(new Error('2D canvas context not available; cannot create ImageBitmap fallback.'));
+						return;
+					}
+					ctx.drawImage(img, 0, 0);
+
+					if (typeof createImageBitmap === 'function') {
+						createImageBitmap(canvas).then(resolve).catch(reject);
+						return;
+					}
+
+					// If createImageBitmap is still not available, fail explicitly.
+					reject(new Error('createImageBitmap is not available; cannot convert loaded image to ImageBitmap.'));
+				} catch (err) {
+					reject(err);
+				}
+			};
+			img.onerror = () => {
+				reject(new Error('Failed to load image: ' + src));
+			};
+			img.src = src;
+		});
+	})();
+}
+
