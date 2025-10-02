@@ -19,6 +19,9 @@ import {
 	StorageService,
 	VibrationParams,
 	RngService,
+	PlatformExitEvent,
+	PlatformHIDDevice,
+	PlatformHIDDeviceRequestOptions,
 } from '../platform';
 import { HeadlessGameViewHost } from 'bmsx/render/headless/headless_view';
 import { new_vec2 } from 'bmsx/utils/utils';
@@ -53,7 +56,7 @@ class HeadlessLifecycle implements Lifecycle {
 	onVisibilityChange(_cb: (visible: boolean) => void): () => void {
 		return () => void 0;
 	}
-	onWillExit(_cb: (event: BeforeUnloadEvent) => void): () => void {
+	onWillExit(_cb: (event: PlatformExitEvent) => void): () => void {
 		return () => void 0;
 	}
 }
@@ -73,8 +76,8 @@ class MemoryStorage implements StorageService {
 
 class UnsupportedHID implements HIDService {
 	isSupported(): boolean { return false; }
-	async requestDevice(): Promise<HIDDevice[]> { throw new Error('HID not supported in headless mode'); }
-	async getDevices(): Promise<HIDDevice[]> { return []; }
+	async requestDevice(_options: PlatformHIDDeviceRequestOptions): Promise<PlatformHIDDevice[]> { throw new Error('HID not supported in headless mode'); }
+	async getDevices(): Promise<PlatformHIDDevice[]> { return []; }
 }
 
 class HeadlessInputDevice implements InputDevice {

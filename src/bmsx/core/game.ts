@@ -10,7 +10,7 @@ import { GameView, renderGate } from "../render/gameview";
 import { TextureManager } from "../render/texturemanager";
 import { RenderPassLibrary } from "../render/backend/renderpasslib";
 import { ensureBrowserBackendFactory } from "../render/backend/browser_backend_factory";
-import type { GameViewHost, Platform } from '../platform';
+import type { GameViewHost, Platform, PlatformExitEvent } from '../platform';
 import { asset_id, Identifiable, Identifier, Registerable, RomPack, type vec3, type vec2 } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
@@ -417,9 +417,9 @@ export class Game {
 		return this!; // Allow chaining
 	}
 
-	private onBeforeUnload = (e: BeforeUnloadEvent) => {
+	private onBeforeUnload = (e: PlatformExitEvent) => {
 		e.preventDefault();
-		e.returnValue = 'Are you sure you want to exit this awesome game?';
+		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
 
 	/**

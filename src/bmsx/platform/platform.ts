@@ -145,9 +145,14 @@ export interface OnscreenGamepadPlatform {
 	vibrate(durationMs: number): void;
 }
 
+export interface PlatformExitEvent {
+	preventDefault(): void;
+	setReturnMessage(message: string): void;
+}
+
 export interface Lifecycle {
 	onVisibilityChange(cb: (visible: boolean) => void): () => void;
-	onWillExit(cb: (event: BeforeUnloadEvent) => void): () => void;
+	onWillExit(cb: (event: PlatformExitEvent) => void): () => void;
 }
 
 export interface StorageService {
@@ -156,10 +161,46 @@ export interface StorageService {
 	removeItem(k: string): void;
 }
 
+export interface PlatformHIDDeviceFilter {
+	vendorId?: number;
+	productId?: number;
+	usage?: number;
+	usagePage?: number;
+}
+
+export interface PlatformHIDDeviceRequestOptions {
+	filters: ReadonlyArray<PlatformHIDDeviceFilter>;
+}
+
+export interface PlatformHIDReportInfo { reportId?: number; }
+
+export interface PlatformHIDCollectionInfo {
+	outputReports?: ReadonlyArray<PlatformHIDReportInfo>;
+}
+
+export interface PlatformHIDInputReportEvent {
+	device: PlatformHIDDevice;
+	reportId: number;
+	data: DataView;
+}
+
+export interface PlatformHIDDevice {
+	vendorId: number;
+	productId: number;
+	productName?: string;
+	opened: boolean;
+	collections: ReadonlyArray<PlatformHIDCollectionInfo>;
+	open(): Promise<void>;
+	close(): Promise<void>;
+	sendReport(reportId: number, data: BufferSource): Promise<void> | void;
+	addEventListener?(type: 'inputreport', listener: (event: PlatformHIDInputReportEvent) => void): void;
+	removeEventListener?(type: 'inputreport', listener: (event: PlatformHIDInputReportEvent) => void): void;
+}
+
 export interface HIDService {
 	isSupported(): boolean;
-	requestDevice(options: HIDDeviceRequestOptions): Promise<HIDDevice[]>;
-	getDevices(): Promise<HIDDevice[]>;
+	requestDevice(options: PlatformHIDDeviceRequestOptions): Promise<PlatformHIDDevice[]>;
+	getDevices(): Promise<PlatformHIDDevice[]>;
 }
 
 export type GameViewHostHandle = unknown;
@@ -230,27 +271,47 @@ export interface OverlayHandle {
 	remove(): void;
 }
 
+export interface ViewportMetricsProvider {
+	getViewportMetrics(): ViewportMetrics;
+}
+
+export interface OverlayManager {
+	ensureOverlay(id: string): OverlayHandle;
+	getOverlay(id: string): OverlayHandle | null;
+}
+
+export interface WindowEventHub {
+	subscribe(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): () => void;
+}
+
+export interface DisplayModeController {
+	isSupported(): boolean;
+	isFullscreen(): boolean;
+	setFullscreen(enabled: boolean): Promise<void>;
+	onChange(listener: (isFullscreen: boolean) => void): () => void;
+}
+
+export interface OnscreenGamepadHandleProvider {
+	getHandles(): OnscreenGamepadHandles | null;
+}
+
+export type GameViewHostCapabilityId =
+	| 'viewport-metrics'
+	| 'overlay'
+	| 'window-events'
+	| 'display-mode'
+	| 'onscreen-gamepad';
+
+export interface GameViewHostCapabilityMap {
+	'viewport-metrics': ViewportMetricsProvider;
+	'overlay': OverlayManager;
+	'window-events': WindowEventHub;
+	'display-mode': DisplayModeController;
+	'onscreen-gamepad': OnscreenGamepadHandleProvider;
+}
+
 export interface GameViewHost {
 	readonly surface: GameViewCanvas;
-
-	getViewportMetrics(): ViewportMetrics;
-
-	getOnscreenGamepadHandles(): OnscreenGamepadHandles | null;
-
-	ensureOverlay(id: string): OverlayHandle;
-
-	getOverlay(id: string): OverlayHandle | null;
-
-	addWindowEventListener(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): void;
-
-	removeWindowEventListener(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): void;
-
-	addDisplayModeChangeListener(listener: (isFullscreen: boolean) => void): void;
-
-	fullscreenAvailable(): boolean;
-
-	get fullscreen(): boolean;
-	setFullscreen(v: boolean): Promise<void>;
-
 	createBackend(): Promise<unknown>;
+	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null;
 }

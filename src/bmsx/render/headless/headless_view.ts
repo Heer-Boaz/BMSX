@@ -3,10 +3,12 @@ import type {
 	GameViewHost,
 	GameViewCanvas,
 	ViewportMetrics,
-	OnscreenGamepadHandles,
 	OverlayHandle,
-	HostEventListenerTarget,
-	HostEventOptions
+	ViewportMetricsProvider,
+	OverlayManager,
+	OnscreenGamepadHandleProvider,
+	GameViewHostCapabilityId,
+	GameViewHostCapabilityMap,
 } from '../../platform';
 import { HeadlessGPUBackend } from './headless_backend';
 
@@ -45,41 +47,50 @@ class HeadlessGameViewCanvas implements GameViewCanvas {
 
 export class HeadlessGameViewHost implements GameViewHost {
 	public readonly surface: HeadlessGameViewCanvas;
-	private overlays = new Map<string, HeadlessOverlay>();
+	private readonly overlays = new Map<string, HeadlessOverlay>();
+	private readonly viewportCapability: ViewportMetricsProvider;
+	private readonly overlayCapability: OverlayManager;
+	private readonly gamepadCapability: OnscreenGamepadHandleProvider;
 
 	constructor(initialSize: vec2) {
 		this.surface = new HeadlessGameViewCanvas(initialSize);
-	}
-
-	getViewportMetrics(): ViewportMetrics {
-		const bounds = this.surface.measureDisplay();
-		return {
-			document: { width: bounds.width, height: bounds.height },
-			windowInner: { width: bounds.width, height: bounds.height },
-			screen: { width: bounds.width, height: bounds.height },
+		this.viewportCapability = {
+			getViewportMetrics: (): ViewportMetrics => {
+				const bounds = this.surface.measureDisplay();
+				return {
+					document: { width: bounds.width, height: bounds.height },
+					windowInner: { width: bounds.width, height: bounds.height },
+					screen: { width: bounds.width, height: bounds.height },
+				};
+			},
+		};
+		this.overlayCapability = {
+			ensureOverlay: (id: string): OverlayHandle => {
+				let overlay = this.overlays.get(id);
+				if (!overlay) {
+					overlay = new HeadlessOverlay();
+					this.overlays.set(id, overlay);
+				}
+				return overlay;
+			},
+			getOverlay: (id: string): OverlayHandle | null => this.overlays.get(id) ?? null,
+		};
+		this.gamepadCapability = {
+			getHandles: () => null,
 		};
 	}
-	getOnscreenGamepadHandles(): OnscreenGamepadHandles | null { return null; }
-	ensureOverlay(id: string): OverlayHandle {
-		let overlay = this.overlays.get(id);
-		if (!overlay) {
-			overlay = new HeadlessOverlay();
-			this.overlays.set(id, overlay);
+
+	getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
+		switch (capability) {
+			case 'viewport-metrics':
+				return this.viewportCapability as GameViewHostCapabilityMap[T];
+			case 'overlay':
+				return this.overlayCapability as GameViewHostCapabilityMap[T];
+			case 'onscreen-gamepad':
+				return this.gamepadCapability as GameViewHostCapabilityMap[T];
+			default:
+				return null;
 		}
-		return overlay;
-	}
-	getOverlay(id: string): OverlayHandle | null {
-		const overlay = this.overlays.get(id);
-		if (!overlay) return null;
-		return overlay;
-	}
-	addWindowEventListener(_type: any, _listener: HostEventListenerTarget, _options?: HostEventOptions): void { }
-	removeWindowEventListener(_type: any, _listener: HostEventListenerTarget, _options?: HostEventOptions): void { }
-	addDisplayModeChangeListener(_listener: (isFullscreen: boolean) => void): void { }
-	fullscreenAvailable(): boolean { return false; }
-	public get fullscreen(): boolean { return false; }
-	public async setFullscreen(_v: boolean): Promise<void> {
-		console.warn('HeadlessGameViewHost: fullscreen mode not supported in headless mode');
 	}
 
 	async createBackend(): Promise<HeadlessGPUBackend> {

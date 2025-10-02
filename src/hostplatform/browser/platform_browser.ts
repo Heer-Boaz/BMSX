@@ -18,9 +18,20 @@ import {
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
 	OnscreenPointerEvent,
+	PlatformExitEvent,
+	PlatformHIDDevice,
+	PlatformHIDDeviceRequestOptions,
+	ViewportMetrics,
+	ViewportMetricsProvider,
+	OverlayManager,
+	WindowEventHub,
+	DisplayModeController,
+	OnscreenGamepadHandleProvider,
+	GameViewHostCapabilityId,
+	GameViewHostCapabilityMap,
 } from '../platform';
 import { WebAudioService } from './web_audio';
-import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions, ViewportMetrics } from '../platform';
+import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 
 export class BrowserPlatform implements Platform {
 	clock: Clock;
@@ -98,12 +109,19 @@ class BrowserLifecycle implements Lifecycle {
 		};
 	}
 
-	onWillExit(cb: (event: BeforeUnloadEvent) => void): () => void {
+	onWillExit(cb: (event: PlatformExitEvent) => void): () => void {
+		const toExitEvent = (domEvent: BeforeUnloadEvent): PlatformExitEvent => ({
+			preventDefault: () => domEvent.preventDefault(),
+			setReturnMessage: (message: string) => { domEvent.returnValue = message; },
+		});
 		const beforeUnload = (event: BeforeUnloadEvent) => {
-			cb(event);
+			cb(toExitEvent(event));
 		};
 		const pageHide = () => {
-			const synthetic = new Event('beforeunload') as BeforeUnloadEvent;
+			const synthetic: PlatformExitEvent = {
+				preventDefault: () => { },
+				setReturnMessage: () => { },
+			};
 			cb(synthetic);
 		};
 		window.addEventListener('beforeunload', beforeUnload);
@@ -134,11 +152,11 @@ class UnsupportedHID implements HIDService {
 		return false;
 	}
 
-	async requestDevice(): Promise<HIDDevice[]> {
+	async requestDevice(_options: PlatformHIDDeviceRequestOptions): Promise<PlatformHIDDevice[]> {
 		throw new Error('WebHID not supported');
 	}
 
-	async getDevices(): Promise<HIDDevice[]> {
+	async getDevices(): Promise<PlatformHIDDevice[]> {
 		return [];
 	}
 }
@@ -148,12 +166,14 @@ class WebHID implements HIDService {
 		return 'hid' in navigator && navigator.hid !== undefined && navigator.hid !== null;
 	}
 
-	async requestDevice(options: HIDDeviceRequestOptions): Promise<HIDDevice[]> {
-		return navigator.hid.requestDevice(options);
+	async requestDevice(options: PlatformHIDDeviceRequestOptions): Promise<PlatformHIDDevice[]> {
+		const devices = await navigator.hid.requestDevice(options as HIDDeviceRequestOptions);
+		return devices as PlatformHIDDevice[];
 	}
 
-	async getDevices(): Promise<HIDDevice[]> {
-		return navigator.hid.getDevices();
+	async getDevices(): Promise<PlatformHIDDevice[]> {
+		const devices = await navigator.hid.getDevices();
+		return devices as PlatformHIDDevice[];
 	}
 }
 
@@ -804,12 +824,51 @@ export class BrowserGameViewHost implements GameViewHost {
 	public readonly surface: BrowserGameViewCanvas;
 	private readonly overlays = new Map<string, BrowserOverlayHandle>();
 	private readonly listenerCache = new WeakMap<HostEventListenerTarget, EventListenerOrEventListenerObject>();
+ 	private readonly viewportCapability: ViewportMetricsProvider;
+ 	private readonly overlayCapability: OverlayManager;
+ 	private readonly windowEventsCapability: WindowEventHub;
+ 	private readonly displayModeCapability: DisplayModeController;
+ 	private readonly gamepadHandlesCapability: OnscreenGamepadHandleProvider;
 
 	public constructor(canvas: HTMLCanvasElement) {
 		if (!(canvas instanceof HTMLCanvasElement)) {
 			throw new Error('[BrowserGameViewHost] Provided canvas element was not an HTMLCanvasElement.');
 		}
 		this.surface = new BrowserGameViewCanvas(canvas);
+		this.viewportCapability = {
+			getViewportMetrics: () => this.computeViewportMetrics(),
+		};
+		this.overlayCapability = {
+			ensureOverlay: (id: string) => this.ensureOverlayInternal(id),
+			getOverlay: (id: string) => this.getOverlayInternal(id),
+		};
+		this.windowEventsCapability = {
+			subscribe: (type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions) => {
+				const domListener = this.getDomListener(listener);
+				const domOptions = toDomOptions(options);
+				window.addEventListener(type, domListener, domOptions);
+				return () => window.removeEventListener(type, domListener, domOptions);
+			},
+		};
+		this.displayModeCapability = {
+			isSupported: () => document.fullscreenEnabled ? true : false,
+			isFullscreen: () => document.fullscreenElement === document.documentElement,
+			setFullscreen: async (enabled: boolean) => {
+				if (enabled) {
+					await document.documentElement.requestFullscreen().catch((e) => { console.warn(`Failed to enter fullscreen mode: ${e}`); });
+				} else if (document.fullscreenElement) {
+					await document.exitFullscreen().catch((e) => { console.warn(`Failed to exit fullscreen mode: ${e}`); });
+				}
+			},
+			onChange: (listener: (isFullscreen: boolean) => void) => {
+				const handler = () => listener(document.fullscreenElement === document.documentElement);
+				document.addEventListener('fullscreenchange', handler);
+				return () => document.removeEventListener('fullscreenchange', handler);
+			},
+		};
+		this.gamepadHandlesCapability = {
+			getHandles: () => this.resolveOnscreenGamepadHandles(),
+		};
 	}
 
 	private getDomListener(listener: HostEventListenerTarget): EventListenerOrEventListenerObject {
@@ -829,7 +888,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		return obj;
 	}
 
-	public getViewportMetrics(): ViewportMetrics {
+	private computeViewportMetrics(): ViewportMetrics {
 		const documentElement = document.documentElement;
 		const documentDimensions: ViewportDimensions = {
 			width: documentElement ? documentElement.clientWidth : 0,
@@ -850,7 +909,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		};
 	}
 
-	public getOnscreenGamepadHandles(): OnscreenGamepadHandles | null {
+	private resolveOnscreenGamepadHandles(): OnscreenGamepadHandles | null {
 		const dpad = document.querySelector<HTMLElement>('#d-pad-svg');
 		const actionButtons = document.querySelector<HTMLElement>('#action-buttons-svg');
 		if (!dpad || !actionButtons) {
@@ -862,7 +921,7 @@ export class BrowserGameViewHost implements GameViewHost {
 		};
 	}
 
-	public ensureOverlay(id: string): OverlayHandle {
+	private ensureOverlayInternal(id: string): OverlayHandle {
 		let overlay = this.overlays.get(id);
 		if (!overlay) {
 			const element = document.createElement('div');
@@ -877,39 +936,24 @@ export class BrowserGameViewHost implements GameViewHost {
 		return overlay;
 	}
 
-	public getOverlay(id: string): OverlayHandle | null {
+	private getOverlayInternal(id: string): OverlayHandle | null {
 		return this.overlays.get(id) ?? null;
 	}
 
-	public addWindowEventListener(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): void {
-		window.addEventListener(type, this.getDomListener(listener), toDomOptions(options));
-	}
-
-	public removeWindowEventListener(type: HostWindowEventType, listener: HostEventListenerTarget, options?: HostEventOptions): void {
-		window.removeEventListener(type, this.getDomListener(listener), toDomOptions(options));
-	}
-
-	public addDisplayModeChangeListener(listener: (isFullscreen: boolean) => void): void {
-		const mediaQuery = window.matchMedia('(display-mode: fullscreen)');
-		const handler = (event: MediaQueryListEvent) => {
-			listener(event.matches);
-		};
-		mediaQuery.addEventListener('change', handler);
-	}
-
-	public fullscreenAvailable(): boolean {
-		return document.fullscreenEnabled ? true : false;
-	}
-
-	public get fullscreen(): boolean {
-		return document.fullscreenElement === document.documentElement;
-	}
-
-	public async setFullscreen(value: boolean): Promise<void> {
-		if (value) {
-			await document.documentElement.requestFullscreen().catch((e) => { console.warn(`Failed to enter fullscreen mode: ${e}`); });
-		} else {
-			await document.exitFullscreen().catch((e) => { console.warn(`Failed to exit fullscreen mode: ${e}`); });
+	public getCapability<T extends GameViewHostCapabilityId>(capability: T): GameViewHostCapabilityMap[T] | null {
+		switch (capability) {
+			case 'viewport-metrics':
+				return this.viewportCapability as GameViewHostCapabilityMap[T];
+			case 'overlay':
+				return this.overlayCapability as GameViewHostCapabilityMap[T];
+			case 'window-events':
+				return this.windowEventsCapability as GameViewHostCapabilityMap[T];
+			case 'display-mode':
+				return this.displayModeCapability as GameViewHostCapabilityMap[T];
+			case 'onscreen-gamepad':
+				return this.gamepadHandlesCapability as GameViewHostCapabilityMap[T];
+			default:
+				return null;
 		}
 	}
 

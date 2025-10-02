@@ -17,7 +17,16 @@ import { RenderPassLibrary } from './backend/renderpasslib';
 import { RenderGraphRuntime, buildFrameData } from './graph/rendergraph';
 import { LightingSystem } from './lighting/lightingsystem';
 import { calculateCenteredBlockX, renderGlyphs, wrapGlyphs } from './glyphs';
-import type { GameViewHost, GameViewCanvas } from '../platform';
+import type {
+	GameViewHost,
+	GameViewCanvas,
+	OverlayManager,
+	DisplayModeController,
+	WindowEventHub,
+	ViewportMetrics,
+	ViewportMetricsProvider,
+	OnscreenGamepadHandleProvider,
+} from '../platform';
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
@@ -151,12 +160,66 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public unbind(): void {
 		// Unbind the view from the registry
 		Registry.instance.deregister(this);
+		this.disposeReactiveSubscriptions();
+	}
+
+	private disposeReactiveSubscriptions(): void {
+		if (GameView.fullscreenKeyListenerUnsub) {
+			GameView.fullscreenKeyListenerUnsub();
+			GameView.fullscreenKeyListenerUnsub = null;
+		}
+		if (GameView.windowedKeyListenerUnsub) {
+			GameView.windowedKeyListenerUnsub();
+			GameView.windowedKeyListenerUnsub = null;
+		}
+		while (this.reactiveDisposables.length > 0) {
+			const dispose = this.reactiveDisposables.pop();
+			if (dispose) dispose();
+		}
+	}
+
+	private registerReactive(dispose: () => void): void {
+		this.reactiveDisposables.push(dispose);
+	}
+
+	private getViewportMetricsProvider(): ViewportMetricsProvider | null {
+		return this.host.getCapability('viewport-metrics');
+	}
+
+	private getOverlayManager(): OverlayManager | null {
+		return this.host.getCapability('overlay');
+	}
+
+	private getWindowEventHub(): WindowEventHub | null {
+		return this.host.getCapability('window-events');
+	}
+
+	private getDisplayModeController(): DisplayModeController | null {
+		return this.host.getCapability('display-mode');
+	}
+
+	private getOnscreenGamepadHandleProvider(): OnscreenGamepadHandleProvider | null {
+		return this.host.getCapability('onscreen-gamepad');
+	}
+
+	private readViewportMetrics(): ViewportMetrics {
+		const provider = this.getViewportMetricsProvider();
+		if (provider) return provider.getViewportMetrics();
+		const bounds = this.surface.measureDisplay();
+		return {
+			document: { width: bounds.width, height: bounds.height },
+			windowInner: { width: bounds.width, height: bounds.height },
+			screen: { width: bounds.width, height: bounds.height },
+		};
 	}
 
 	public readonly host: GameViewHost;
 	public readonly surface: GameViewCanvas;
 	public static imgassets: id2imgres = {};
+	private static fullscreenKeyListenerUnsub: (() => void) | null = null;
+	private static windowedKeyListenerUnsub: (() => void) | null = null;
 	public accessor default_font: BFont;
+	private readonly reactiveDisposables: (() => void)[] = [];
 
 	public windowSize: vec2;
 	public availableWindowSize: vec2;
@@ -360,7 +423,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	 */
 	public calculateSize(): void {
 		const self = $.view || this;
-		const metrics = this.host.getViewportMetrics();
+		const metrics = this.readViewportMetrics();
 		const documentWidth = metrics.document.width;
 		const documentHeight = metrics.document.height;
 		const innerWidth = metrics.windowInner.width;
@@ -387,21 +450,20 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (Input.instance.isOnscreenGamepadEnabled
 			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
 			&& viewportIsLandscape) {
-			const handles = this.host.getOnscreenGamepadHandles();
-			if (!handles) {
-				throw new Error('[GameView] Onscreen gamepad handles not available while calculating size.');
+			const handlesProvider = this.getOnscreenGamepadHandleProvider();
+			const handles = handlesProvider?.getHandles();
+			if (handles) {
+				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+				const maxSvgScale = referenceDimension * 0.20 / 100;
+				const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
+				const actionButtonsWidthAttr = handles.actionButtons.getNumericAttribute('width');
+				if (dpadWidthAttr !== null && actionButtonsWidthAttr !== null) {
+					const dpadWidth = dpadWidthAttr * maxSvgScale;
+					const actionButtonsWidth = actionButtonsWidthAttr * maxSvgScale;
+					const reduction = dpadWidth + actionButtonsWidth;
+					adjustedWidth = Math.max(0, adjustedWidth - reduction);
+				}
 			}
-			const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-			const maxSvgScale = referenceDimension * 0.20 / 100;
-			const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
-			const actionButtonsWidthAttr = handles.actionButtons.getNumericAttribute('width');
-			if (dpadWidthAttr === null || actionButtonsWidthAttr === null) {
-				throw new Error('[GameView] Onscreen gamepad width attributes missing.');
-			}
-			const dpadWidth = dpadWidthAttr * maxSvgScale;
-			const actionButtonsWidth = actionButtonsWidthAttr * maxSvgScale;
-			const reduction = dpadWidth + actionButtonsWidth;
-			adjustedWidth = Math.max(0, adjustedWidth - reduction);
 		}
 
 		self.windowSize = { x: adjustedWidth, y: effectiveHeight };
@@ -418,7 +480,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	public handleResize(): void {
 		if (!this.surface.isVisible()) return;
 
-		const metrics = this.host.getViewportMetrics();
+		const metrics = this.readViewportMetrics();
 		const innerWidth = metrics.windowInner.width;
 		const innerHeight = metrics.windowInner.height;
 		const screenWidth = metrics.screen.width;
@@ -440,55 +502,52 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.surface.setDisplayPosition(displayLeft, displayTop);
 
 		if (Input.instance.isOnscreenGamepadEnabled) {
-			const handles = this.host.getOnscreenGamepadHandles();
-			if (!handles) {
-				throw new Error('[GameView] Onscreen gamepad handles not available while handling resize.');
-			}
-			const { dpad, actionButtons } = handles;
-			const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-			const canvasRect = this.surface.measureDisplay();
+			const handlesProvider = this.getOnscreenGamepadHandleProvider();
+			const handles = handlesProvider?.getHandles();
+			if (handles) {
+				const { dpad, actionButtons } = handles;
+				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+				const canvasRect = this.surface.measureDisplay();
 
-			const updateBottomPosition = (control: typeof dpad, isRightSide: boolean): void => {
-				const elementSize = control.measure();
-				let newBottom: number;
-				if (isLandscape) {
-					newBottom = (self.availableWindowSize.y - elementSize.height) / 2;
-				} else if (isRightSide) {
-					newBottom = 0;
-				} else {
-					const rightSideHeight = actionButtons.measure().height;
-					newBottom = (rightSideHeight - elementSize.height) / 2;
-				}
-				control.setBottom(newBottom);
-			};
-
-			const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
-				let newScale = referenceDimension * 0.20 / 100;
-				if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
-					let maxSvgWidth: number;
-					if (isRightSide) {
-						maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
+				const updateBottomPosition = (control: typeof dpad, isRightSide: boolean): void => {
+					const elementSize = control.measure();
+					let newBottom: number;
+					if (isLandscape) {
+						newBottom = (self.availableWindowSize.y - elementSize.height) / 2;
+					} else if (isRightSide) {
+						newBottom = 0;
 					} else {
-						maxSvgWidth = canvasRect.left;
+						const rightSideHeight = actionButtons.measure().height;
+						newBottom = (rightSideHeight - elementSize.height) / 2;
 					}
-					if (maxSvgWidth < 0) {
-						maxSvgWidth = 0;
-					}
-					const widthAttr = control.getNumericAttribute('width');
-					if (widthAttr === null) {
-						throw new Error('[GameView] Onscreen gamepad control is missing width information while updating scale.');
-					}
-					if (widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
-						newScale = maxSvgWidth / widthAttr;
-					}
-				}
-				control.setScale(newScale);
-			};
+					control.setBottom(newBottom);
+				};
 
-			updateScale(dpad, false);
-			updateScale(actionButtons, true);
-			updateBottomPosition(dpad, false);
-			updateBottomPosition(actionButtons, true);
+				const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
+					let newScale = referenceDimension * 0.20 / 100;
+					if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
+						let maxSvgWidth: number;
+						if (isRightSide) {
+							maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
+						} else {
+							maxSvgWidth = canvasRect.left;
+						}
+						if (maxSvgWidth < 0) {
+							maxSvgWidth = 0;
+						}
+						const widthAttr = control.getNumericAttribute('width');
+						if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
+							newScale = maxSvgWidth / widthAttr;
+						}
+					}
+					control.setScale(newScale);
+				};
+
+				updateScale(dpad, false);
+				updateScale(actionButtons, true);
+				updateBottomPosition(dpad, false);
+				updateBottomPosition(actionButtons, true);
+			}
 		}
 	}
 
@@ -500,20 +559,20 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	 * When any of these events occur, the `handleResize` method is called to recalculate the size of the canvas and adjust its position and scale.
 	 */
 	protected listenToMediaEvents(): void {
-		const view = $.view;
-		if (!view) {
-			throw new Error('[GameView] Global view not registered before listening to media events.');
+		const view = $.view ?? this;
+		const events = this.getWindowEventHub();
+		if (events) {
+			const resizeDispose = events.subscribe('resize', () => view.handleResize.call(view));
+			const orientationDispose = events.subscribe('orientationchange', () => view.handleResize.call(view));
+			this.registerReactive(resizeDispose);
+			this.registerReactive(orientationDispose);
 		}
 
-		function handleResizeHelper() {
-			view.handleResize.call(view);
+		const displayMode = this.getDisplayModeController();
+		if (displayMode) {
+			const dispose = displayMode.onChange(() => view.handleResize.call(view));
+			this.registerReactive(dispose);
 		}
-
-		this.host.addWindowEventListener('resize', handleResizeHelper, false);
-		this.host.addWindowEventListener('orientationchange', handleResizeHelper, false);
-		this.host.addDisplayModeChangeListener(isFullscreen => {
-			this.host.setFullscreen(isFullscreen);
-		});
 	}
 
 	/**
@@ -534,12 +593,20 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	public toFullscreen(): void {
-		// https://zinoui.com/blog/javascript-fullscreen-api
-		this.host.addWindowEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
+		const events = this.getWindowEventHub();
+		if (!events) {
+			console.warn('[GameView] Window event hub not available; cannot request fullscreen transition.');
+			return;
+		}
+		if (GameView.fullscreenKeyListenerUnsub) {
+			GameView.fullscreenKeyListenerUnsub();
+		}
+		GameView.fullscreenKeyListenerUnsub = events.subscribe('keyup', GameView.triggerFullScreenOnFakeUserEvent);
 	}
 
 	public get fullscreen(): boolean {
-		return this.host.fullscreen;
+		const controller = this.getDisplayModeController();
+		return controller ? controller.isFullscreen() : false;
 	}
 
 	public static get fullscreenEnabled() {
@@ -547,7 +614,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (!view) {
 			throw new Error('[GameView] View not available while checking fullscreen support.');
 		}
-		return view.host.fullscreenAvailable();
+		const controller = view.getDisplayModeController();
+		return controller ? controller.isSupported() : false;
 	}
 
 	public static async triggerFullScreenOnFakeUserEvent(): Promise<void> {
@@ -558,7 +626,12 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				await view.host.setFullscreen(true);
+				const controller = view.getDisplayModeController();
+				if (!controller) {
+					console.warn('[GameView] Display mode controller not available; cannot enter fullscreen.');
+					return;
+				}
+				await controller.setFullscreen(true);
 			}
 			catch (error) {
 				console.error(error);
@@ -567,11 +640,22 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				$.paused = false;
 			}
 		}
-		view.host.removeWindowEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
+		if (GameView.fullscreenKeyListenerUnsub) {
+			GameView.fullscreenKeyListenerUnsub();
+			GameView.fullscreenKeyListenerUnsub = null;
+		}
 	}
 
 	public ToWindowed(): void {
-		this.host.addWindowEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
+		const events = this.getWindowEventHub();
+		if (!events) {
+			console.warn('[GameView] Window event hub not available; cannot request windowed transition.');
+			return;
+		}
+		if (GameView.windowedKeyListenerUnsub) {
+			GameView.windowedKeyListenerUnsub();
+		}
+		GameView.windowedKeyListenerUnsub = events.subscribe('keyup', GameView.triggerWindowedOnFakeUserEvent);
 	}
 
 	public static async triggerWindowedOnFakeUserEvent(): Promise<void> {
@@ -582,7 +666,12 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (GameView.fullscreenEnabled) {
 			try {
 				$.paused = true;
-				await view.host.setFullscreen(false);
+				const controller = view.getDisplayModeController();
+				if (!controller) {
+					console.warn('[GameView] Display mode controller not available; cannot exit fullscreen.');
+					return;
+				}
+				await controller.setFullscreen(false);
 			}
 			catch (error) {
 				// NOTE: Historical bug reports mentioned debugger interactions triggering failures here.
@@ -592,22 +681,30 @@ export class GameView implements RegisterablePersistent, RenderContext {
 				$.paused = false;
 			}
 		}
-		view.host.removeWindowEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
+		if (GameView.windowedKeyListenerUnsub) {
+			GameView.windowedKeyListenerUnsub();
+			GameView.windowedKeyListenerUnsub = null;
+		}
 	}
 
 
 	public showFadingOverlay(text: string) {
-		const overlay = this.host.ensureOverlay('pause-overlay');
+		const overlays = this.getOverlayManager();
+		if (!overlays) {
+			console.warn('[GameView] Overlay manager not available; skipping overlay presentation.');
+			return;
+		}
+		const overlay = overlays.ensureOverlay('pause-overlay');
 		overlay.setText(text);
 		overlay.removeClass('fade-out');
 		overlay.addClass('visible');
 	}
 
 	public hideFadingOverlay() {
-		const overlay = this.host.getOverlay('pause-overlay');
-		if (!overlay) {
-			throw new Error('[GameView] Pause overlay not found while attempting to hide it.');
-		}
+		const overlays = this.getOverlayManager();
+		if (!overlays) return;
+		const overlay = overlays.getOverlay('pause-overlay');
+		if (!overlay) return;
 		overlay.addClass('fade-out');
 		overlay.removeClass('visible');
 		overlay.forceReflow();

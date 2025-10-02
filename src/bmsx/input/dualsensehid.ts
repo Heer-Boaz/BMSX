@@ -7,6 +7,7 @@
  * 0x09cc = DualShock 4
  */
 import { $ } from '../core/game';
+import type { PlatformHIDDevice, PlatformHIDInputReportEvent } from '../platform';
 
 
 const SONY_VID = 0x054C;
@@ -34,19 +35,19 @@ export interface HidRumbleParams {
 
 
 export class DualSenseHID {
-	private device: HIDDevice | null = null;
+	private device: PlatformHIDDevice | null = null;
 	private rumbleTimer: number | null = null;
 	private kind: HidPadKind | null = null;
 	private assignedIndex: number | null = null;
 
 	/** Map of gamepad indices to HID devices that are in use */
-	private static assignedDevices = new Map<number, HIDDevice>();
+	private static assignedDevices = new Map<number, PlatformHIDDevice>();
 
 	/** Shared lock to avoid overlapping permission prompts */
-	private static pendingRequest: Promise<HIDDevice[]> | null = null;
+	private static pendingRequest: Promise<PlatformHIDDevice[]> | null = null;
 
 
-	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<HIDDevice[]> {
+	private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<PlatformHIDDevice[]> {
 		const hid = $.platform.hid;
 		if (!hid?.isSupported()) {
 			throw new Error('[DualSenseHID] HID API not available on this platform.');
@@ -76,7 +77,7 @@ export class DualSenseHID {
 		return DualSenseHID.pendingRequest;
 	}
 
-	private matchIds(device: HIDDevice, ids: { vendorId: number; productId: number } | null): boolean {
+	private matchIds(device: PlatformHIDDevice, ids: { vendorId: number; productId: number } | null): boolean {
 		return !!ids && device.vendorId === ids.vendorId && device.productId === ids.productId;
 	}
 
@@ -163,7 +164,7 @@ export class DualSenseHID {
 
 		const used = new Set(DualSenseHID.assignedDevices.values());
 
-		let candidates: HIDDevice[] = [];
+		let candidates: PlatformHIDDevice[] = [];
 		if (ids) {
 			candidates = known.filter(d => this.matchIds(d, ids) && !used.has(d));
 		} else {
@@ -226,11 +227,11 @@ export class DualSenseHID {
 		}
 	}
 
-	private detectPadKind(dev: HIDDevice): HidPadKind {
+	private detectPadKind(dev: PlatformHIDDevice): HidPadKind {
 		const collectionHasReport = (reportId: number): boolean => {
-			return dev.collections.some(collection => {
+			return dev.collections.some((collection: any) => {
 				const reports = collection.outputReports ?? [];
-				return reports.some(report => report.reportId === reportId);
+				return reports.some((report: any) => report.reportId === reportId);
 			});
 		};
 		const has05 = collectionHasReport(0x05); // DS4-USB
@@ -260,18 +261,25 @@ export class DualSenseHID {
 	 * @param timeoutMs Max time to wait for input (default 5000ms).
 	 * @returns The matching HIDDevice or null if no match.
 	 */
-	public async correlateWithInput(gamepad: Gamepad, candidates: HIDDevice[], timeoutMs: number = 5000): Promise<HIDDevice | null> {
+	public async correlateWithInput(gamepad: Gamepad, candidates: PlatformHIDDevice[], timeoutMs: number = 5000): Promise<PlatformHIDDevice | null> {
 		if (candidates.length <= 1) return candidates[0] ?? null;
 
 		console.info('Multiple candidates; starting input correlation. Press a button on the target controller.');
 
 		const prevGamepadState = { buttons: gamepad.buttons.map(b => b.pressed), axes: [...gamepad.axes] };
-		const hidInputPromises = candidates.map(device => new Promise<{ device: HIDDevice; changed: boolean }>((resolve) => {
-			const onInput = (_event: HIDInputReportEvent) => {
-				device.removeEventListener('inputreport', onInput);
+		const listeners = new Map<PlatformHIDDevice, (event: PlatformHIDInputReportEvent) => void>();
+		const hidInputPromises = candidates.map(device => new Promise<{ device: PlatformHIDDevice; changed: boolean }>((resolve) => {
+			const onInput = (_event: PlatformHIDInputReportEvent) => {
+				const listener = listeners.get(device);
+				if (listener && typeof device.removeEventListener === 'function') {
+					device.removeEventListener('inputreport', listener);
+				}
 				resolve({ device, changed: true });
 			};
-			device.addEventListener('inputreport', onInput);
+			listeners.set(device, onInput);
+			if (typeof device.addEventListener === 'function') {
+				device.addEventListener('inputreport', onInput);
+			}
 		}));
 
 		const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs));
@@ -291,7 +299,11 @@ export class DualSenseHID {
 
 		const result = await Promise.race([...hidInputPromises, timeout]);
 		clearInterval(pollInterval);
-		candidates.forEach(d => d.removeEventListener('inputreport', () => { })); // Clean up
+		for (const [device, listener] of listeners) {
+			if (typeof device.removeEventListener === 'function') {
+				device.removeEventListener('inputreport', listener);
+			}
+		}
 
 		if (result && result.changed) {
 			console.info(`Matched HID device via input: ${result.device.productName} serial: ${(result.device as unknown as { serialNumber?: string }).serialNumber || 'none'}`);
