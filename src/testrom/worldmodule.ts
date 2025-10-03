@@ -120,6 +120,7 @@ class RailDemoDriver extends WorldObject {
 
 export function createTestromModule() {
 	return {
+		id: 'testrom',
 		onBoot(world: World) {
 			// Scene scaffold (ported from previous do_one_time_game_init)
 			const cube = new Cube3D();

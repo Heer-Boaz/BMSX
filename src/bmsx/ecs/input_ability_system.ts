@@ -15,8 +15,10 @@ export class InputAbilitySystem extends ECSystem {
 	private readonly resolvedPrograms = new Map<string, InputAbilityProgram>();
 	private readonly missingProgramIds = new Set<string>();
 	private readonly patternCache = new Map<string, PatternPredicate>();
+	private readonly patternCacheMax = 256;
 	private readonly customMatchScratch: boolean[] = [];
 	private readonly bindingLatch = new Map<string, boolean>();
+	private readonly frameLatchTouched = new Set<string>();
 
 	constructor(priority = 0) {
 		super(TickGroup.Input, priority);
@@ -24,6 +26,7 @@ export class InputAbilitySystem extends ECSystem {
 	}
 
 	public override update(): void {
+		this.frameLatchTouched.clear();
 		for (let [obj, component] of filterIterable($.world.objectsWithComponents(InputAbilityComponent, { scope: 'active' }), (item: [ WorldObject, InputAbilityComponent]) => this.isEligibleObject(item[0]))) {
 			const program = this.resolveCompiledProgram(component);
 
@@ -80,6 +83,11 @@ export class InputAbilitySystem extends ECSystem {
 				abilityStats = { issued: false, success: false };
 			}, () => abilityStats);
 		}
+		const latchedKeys = Array.from(this.bindingLatch.keys());
+		for (let idx = 0; idx < latchedKeys.length; idx++) {
+			const key = latchedKeys[idx]!;
+			if (!this.frameLatchTouched.has(key)) this.bindingLatch.delete(key);
+		}
 	}
 
 	private resolveProgramKey(component: InputAbilityComponent, owner: WorldObject): string {
@@ -107,14 +115,16 @@ export class InputAbilitySystem extends ECSystem {
 			const binding = bindings[i]!;
 			if (!binding.predicate(ctx)) continue;
 
-			const bindingKey = this.makeBindingKey(ctx.ownerId, programKey, binding, i);
+			const bindingKey = this.makeBindingKey(ctx.ownerId, programKey, ctx.playerIndex, binding, i);
 			const armed = this.bindingLatch.get(bindingKey) === true;
+			if (armed) this.frameLatchTouched.add(bindingKey);
 
 			const pressMatched = binding.press ? binding.press(input) : false;
 			const holdMatched = binding.hold ? binding.hold(input) : false;
 			const releaseMatched = binding.release ? binding.release(input) : false;
-
 			const customEdges = binding.customEdges;
+			if (!armed && !pressMatched && !holdMatched && !releaseMatched && customEdges.length === 0) continue;
+
 			const scratch = this.ensureScratch(customEdges.length);
 			for (let j = 0; j < customEdges.length; j++) {
 				scratch[j] = customEdges[j]!.match(input);
@@ -129,16 +139,26 @@ export class InputAbilitySystem extends ECSystem {
 				return { executed: true, abilityIssued: stats.issued, abilitySuccess: stats.success };
 			};
 
-			if (pressMatched && binding.pressEffect) {
-				const result = runEffect(binding.pressEffect);
+			if (pressMatched) {
 				matched = true;
-				if (result.executed) {
-					if (result.abilityIssued) {
-						if (result.abilitySuccess) this.bindingLatch.set(bindingKey, true);
-						else this.bindingLatch.delete(bindingKey);
-					} else {
-						this.bindingLatch.set(bindingKey, true);
+				if (binding.pressEffect) {
+					const result = runEffect(binding.pressEffect);
+					if (result.executed) {
+						if (result.abilityIssued) {
+							if (result.abilitySuccess) {
+								this.bindingLatch.set(bindingKey, true);
+								this.frameLatchTouched.add(bindingKey);
+							} else {
+								this.bindingLatch.delete(bindingKey);
+							}
+						} else {
+							this.bindingLatch.set(bindingKey, true);
+							this.frameLatchTouched.add(bindingKey);
+						}
 					}
+				} else {
+					this.bindingLatch.set(bindingKey, true);
+					this.frameLatchTouched.add(bindingKey);
 				}
 			}
 			if (holdMatched && binding.holdEffect) {
@@ -146,9 +166,13 @@ export class InputAbilitySystem extends ECSystem {
 				matched = true;
 				if (result.executed) {
 					if (result.abilityIssued) {
-						if (result.abilitySuccess) this.bindingLatch.set(bindingKey, true);
+						if (result.abilitySuccess) {
+							this.bindingLatch.set(bindingKey, true);
+							this.frameLatchTouched.add(bindingKey);
+						}
 					} else {
 						this.bindingLatch.set(bindingKey, true);
+						this.frameLatchTouched.add(bindingKey);
 					}
 				}
 			}
@@ -173,9 +197,9 @@ export class InputAbilitySystem extends ECSystem {
 		}
 	}
 
-	private makeBindingKey(ownerId: string, programKey: string, binding: CompiledBinding, index: number): string {
+	private makeBindingKey(ownerId: string, programKey: string, playerIndex: number, binding: CompiledBinding, index: number): string {
 		const name = binding.name ?? `#${index}`;
-		return `${ownerId}|${programKey}|${name}`;
+		return `${ownerId}|${programKey}|p${playerIndex}|${name}|${index}`;
 	}
 
 	private ensureScratch(size: number): boolean[] {
@@ -240,6 +264,11 @@ export class InputAbilitySystem extends ECSystem {
 		if (predicate) return predicate;
 		predicate = (input: PlayerInput) => input.checkActionTriggered(pattern);
 		this.patternCache.set(pattern, predicate);
+		if (this.patternCache.size > this.patternCacheMax) {
+			const iterator = this.patternCache.keys();
+			const firstKey = iterator.next().value as string | undefined;
+			if (firstKey !== undefined && firstKey !== pattern) this.patternCache.delete(firstKey);
+		}
 		return predicate;
 	}
 }

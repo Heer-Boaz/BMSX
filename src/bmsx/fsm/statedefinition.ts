@@ -458,9 +458,13 @@ function resolveStateDefPath(from: StateDefinition, target: string, origin: stri
 	// Traverse segments
 	for (const seg of spec.segs) {
 		const states = ctx.states;
-		if (!states || !states[seg]) {
+		if (!states) {
 			throw new Error(`[Validate state machines] Machine '${origin}' - Invalid state path '${target}': state '${seg}' not found in transition from state '${ctx.id}' (${description})`);
 		}
-		ctx = states[seg] as StateDefinition;
+		const child = (states[seg] ?? states[`_${seg}`] ?? states[`#${seg}`]) as StateDefinition | undefined;
+		if (!child) {
+			throw new Error(`[Validate state machines] Machine '${origin}' - Invalid state path '${target}': state '${seg}' not found in transition from state '${ctx.id}' (${description})`);
+		}
+		ctx = child;
 	}
 }

@@ -41,7 +41,15 @@ export type ModelModuleEcsConfig = {
 	nodes?: NodeSpec[] | ((ctx: ECSPipelineExtensionContext) => NodeSpec[] | void);
 };
 
-export type ModelModule = {
+export type WorldModule = {
+	// The module's unique identifier (required, used for dependency management and debugging)
+	id: string;
+	// The module's version (optional, informational only)
+	version?: string;
+	// IDs of modules that must be loaded together with this one
+	dependencyIDs?: string[];
+	// A brief description of the module's purpose (optional, informational only)
+	description?: string;
 	onBoot: (world: World) => void;
 	onTick?: (world: World, dt: number) => void;
 	onLoad?: (world: World) => void;
@@ -52,7 +60,7 @@ export type ModelModule = {
 export type WorldConfiguration = {
 	viewportSize?: vec2;
 	collisionService?: TileCollisionService;
-	modules?: Array<ModelModule>;
+	modules?: Array<WorldModule>;
 	fsmId?: string;
 };
 
@@ -150,8 +158,8 @@ export class World implements Stateful, RegisterablePersistent {
 	// Model configuration (size, services, modules)
 	private _size: vec2 = { x: 256, y: 192 };
 	private _collision?: TileCollisionService;
-	private _modules: Array<ModelModule> = [];
-	public get modules(): Array<ModelModule> { return this._modules; }
+	private _modules: Array<WorldModule> = [];
+	public get modules(): Array<WorldModule> { return this._modules; }
 	private _fsmId: string = 'world';
 
 	public get gamewidth(): number { return this._size.x; }
@@ -421,8 +429,13 @@ export class World implements Stateful, RegisterablePersistent {
 	}
 
 	public registerModuleHooks(): this {
-		// modules boot hooks (explicit lifecycle; no property chaining)
-		for (const p of this._modules) p.onBoot(this);
+		// Modules boot hooks (explicit lifecycle; no property chaining)
+		for (const p of this._modules) {
+			p.dependencyIDs?.forEach(depId => {
+				if (!this._modules.find(m => m.id === depId)) { throw new Error(`[World] Module ${p.id} has unmet dependency: ${depId}`); }
+			});
+			p.onBoot(this);
+		}
 
 		return this; // Return the current instance of the World for chaining
 	}

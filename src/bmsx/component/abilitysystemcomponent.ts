@@ -14,6 +14,7 @@ import type {
 	AbilitySpec,
 	AbilityYield,
 	ActiveEffect,
+	AbilitySystemRef,
 	AttributeSet,
 	GameplayEffect,
 	TagId
@@ -61,6 +62,9 @@ export class AbilitySystemComponent extends Component {
 	public readonly effects: ActiveEffect[] = [];
 
 	private readonly now: NowFn;
+
+	@excludepropfromsavegame
+	private _ref?: AbilitySystemRef;
 
 	private _runnerCounter = 0;
 
@@ -113,7 +117,8 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	public applyEffect(effect: GameplayEffect): void {
-		const remaining = effect.durationMs ?? Number.POSITIVE_INFINITY;
+		const duration = effect.durationMs;
+		const remaining = duration === undefined ? Number.POSITIVE_INFINITY : Math.max(0, duration);
 		this.effects.push({ effect, remainingMs: remaining, elapsedSinceTickMs: 0 });
 		if (effect.grantedTags) for (const t of effect.grantedTags) this.incTagRef(t);
 		if (effect.modifiers && effect.modifiers.length > 0) this.recomputeAttributes();
@@ -180,13 +185,8 @@ export class AbilitySystemComponent extends Component {
 
 		const ctx: AbilityContext = {
 			parentid: this.parentid,
-			asc: {
-				parentid: this.parentid,
-				hasTag: (t: TagId) => this.hasGameplayTag(t),
-				tryActivate: (aid: AbilityId, pl?: Record<string, unknown>) => this.tryActivate(aid, pl),
-				requestAbility: (aid: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(aid, opts ?? {}),
-			},
-			emit: (name: string, payload?: any) => {
+			asc: this.ref(),
+			emit: (name: string, payload?: unknown) => {
 				const owner = this.ownerOrThrow();
 				EventEmitter.instance.emit(name, owner, payload);
 			},
@@ -210,21 +210,30 @@ export class AbilitySystemComponent extends Component {
 	// Called by runtime system each frame
 	public step(dtMs: number): void {
 		// Effects
+		let needRecompute = false;
 		for (let i = this.effects.length - 1; i >= 0; --i) {
-			const e = this.effects[i];
-			if (e.remainingMs !== Number.POSITIVE_INFINITY) e.remainingMs -= dtMs;
-			if (e.effect.periodMs) {
-				e.elapsedSinceTickMs += dtMs;
-				if (e.elapsedSinceTickMs >= e.effect.periodMs) {
-					e.elapsedSinceTickMs = 0;
-					// Periodic hooks
-					e.effect.onTick?.(this);
-					// Recompute attributes only when needed
-					if (e.effect.modifiers && e.effect.modifiers.length > 0) this.recomputeAttributes();
+			const entry = this.effects[i]!;
+			const effect = entry.effect;
+			if (entry.remainingMs !== Number.POSITIVE_INFINITY) entry.remainingMs -= dtMs;
+			const period = effect.periodMs ?? 0;
+			if (period > 0) {
+				entry.elapsedSinceTickMs += dtMs;
+				while (entry.elapsedSinceTickMs >= period) {
+					entry.elapsedSinceTickMs -= period;
+					effect.onTick?.(this.ref());
+					if (effect.modifiers && effect.modifiers.length > 0) needRecompute = true;
 				}
 			}
-			if (e.remainingMs <= 0) this.removeEffect(e.effect.id);
+			if (entry.remainingMs <= 0) {
+				this.effects.splice(i, 1);
+				if (effect.grantedTags) {
+					for (const tag of effect.grantedTags) this.decTagRef(tag);
+				}
+				if (effect.modifiers && effect.modifiers.length > 0) needRecompute = true;
+				continue;
+			}
 		}
+		if (needRecompute) this.recomputeAttributes();
 
 		// Abilities
 		const now = this.now();
@@ -303,6 +312,20 @@ export class AbilitySystemComponent extends Component {
 				}
 			}
 		}
+	}
+
+	private ref(): AbilitySystemRef {
+		if (!this._ref) {
+			this._ref = {
+				parentid: this.parentid,
+				hasTag: (tag: TagId) => this.hasGameplayTag(tag),
+				tryActivate: (abilityId: AbilityId, payload?: Record<string, unknown>) => this.tryActivate(abilityId, payload),
+				requestAbility: (abilityId: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(abilityId, opts ?? {})
+			};
+		} else {
+			this._ref.parentid = this.parentid;
+		}
+		return this._ref;
 	}
 
 	public canActivateReason(id: AbilityId): string | null {

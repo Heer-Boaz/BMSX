@@ -1,9 +1,13 @@
-import { $, World, InputAbilitySystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs } from 'bmsx';
+import { $, World, InputAbilitySystem, Input, insavegame, Service, subscribesToGlobalEvent, TickGroup, type InputMap, type PointerInputMapping, type RevivableObjectArgs, type WorldModule } from 'bmsx';
 import { Fighter } from './fighter';
 import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { YieArGameState } from './yieargamestate';
 
-export const EILA_MODULE = {
+export const EILA_MODULE: WorldModule = {
+	id: 'ella2023',
+	version: '0.1.0',
+	dependencyIDs: [],
+	description: 'Eila 2023 game module',
 	ecs: {
 		systems: [{
 			id: 'ella.inputAbility',

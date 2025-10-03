@@ -242,7 +242,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (!def.states) {
 			throw new Error(`[State] Definition '${def.def_id}' has no substates while resolving '${childId}'.`);
 		}
-		const child = def.states[childId] as StateDefinition | undefined;
+		const child = this.resolveDefinitionChild(def, childId);
 		if (!child) {
 			throw new Error(`[State] Definition '${def.def_id}' is missing child '${childId}'.`);
 		}
@@ -254,6 +254,52 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			throw new Error(`[State] State '${ctx.id}' does not define substates.`);
 		}
 		return ctx.states;
+	}
+
+	private resolveDefinitionChild(def: StateDefinition, childId: Identifier): StateDefinition | undefined {
+		const states = def.states;
+		if (!states) return undefined;
+		if (Object.prototype.hasOwnProperty.call(states, childId)) {
+			return states[childId] as StateDefinition;
+		}
+		const aliasUnderscore = `_${childId}`;
+		if (Object.prototype.hasOwnProperty.call(states, aliasUnderscore)) {
+			return states[aliasUnderscore] as StateDefinition;
+		}
+		const aliasHash = `#${childId}`;
+		if (Object.prototype.hasOwnProperty.call(states, aliasHash)) {
+			return states[aliasHash] as StateDefinition;
+		}
+		return undefined;
+	}
+
+	private findChild(ctx: State, seg: string): { child: State | undefined, key: string | undefined } {
+		const states = ctx.states;
+		if (!states) return { child: undefined, key: undefined };
+		if (Object.prototype.hasOwnProperty.call(states, seg)) {
+			return { child: states[seg], key: seg };
+		}
+		const aliasUnderscore = `_${seg}`;
+		if (Object.prototype.hasOwnProperty.call(states, aliasUnderscore)) {
+			return { child: states[aliasUnderscore], key: aliasUnderscore };
+		}
+		const aliasHash = `#${seg}`;
+		if (Object.prototype.hasOwnProperty.call(states, aliasHash)) {
+			return { child: states[aliasHash], key: aliasHash };
+		}
+		return { child: undefined, key: undefined };
+	}
+
+	private ensureChild(ctx: State, seg: string): { child: State, key: string } {
+		const resolved = this.findChild(ctx, seg);
+		if (!resolved.child || !resolved.key) {
+			if (!ctx.states) {
+				throw new Error(`[State] State '${ctx.id}' does not define substates.`);
+			}
+			const children = Object.keys(ctx.states).join(', ');
+			throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${children}`);
+		}
+		return { child: resolved.child, key: resolved.key };
 	}
 
 	/**
@@ -576,10 +622,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (Array.isArray(path)) {
 			let ctx: State = this;
 			for (const seg of path) {
-				const states = this.statesOrThrow(ctx);
-				const child = states[seg];
-				if (!child) throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
-				if (!child.is_concurrent) ctx.transitionToState(seg, 'to', payload);
+				const { child, key } = this.ensureChild(ctx, seg);
+				if (!child.is_concurrent) ctx.transitionToState(key, 'to', payload);
 				ctx = child;
 			}
 			return;
@@ -597,12 +641,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		for (let i = 0; i < spec.segs.length; i++) {
 			const seg = spec.segs[i];
-			const states = this.statesOrThrow(ctx);
-			const child = states[seg];
-			if (!child) {
-				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
-			}
-			if (!child.is_concurrent) ctx.transitionToState(seg, 'to', payload);
+			const { child, key } = this.ensureChild(ctx, seg);
+			if (!child.is_concurrent) ctx.transitionToState(key, 'to', payload);
 			ctx = child;
 		}
 	}
@@ -621,14 +661,14 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			let ctx: State = this;
 			for (let i = 0; i < path.length - 1; i++) {
 				const seg = path[i];
-				const states = this.statesOrThrow(ctx);
-				const child = states[seg];
-				if (!child) {
-					throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
-				}
+				const { child } = this.ensureChild(ctx, seg);
 				ctx = child;
 			}
-			if (path.length > 0) ctx.transitionToState(path[path.length - 1], 'switch', payload);
+			if (path.length > 0) {
+				const leafSeg = path[path.length - 1];
+				const { key } = this.ensureChild(ctx, leafSeg);
+				ctx.transitionToState(key, 'switch', payload);
+			}
 			return;
 		}
 
@@ -641,15 +681,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		for (let i = 0; i < spec.segs.length - 1; i++) {
 			const seg = spec.segs[i];
-			const states = this.statesOrThrow(ctx);
-			const child = states[seg];
-			if (!child) {
-				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
-			}
+			const { child } = this.ensureChild(ctx, seg);
 			ctx = child;
 		}
 		if (spec.segs.length > 0) {
-			ctx.transitionToState(spec.segs[spec.segs.length - 1], 'switch', payload);
+			const leafSeg = spec.segs[spec.segs.length - 1];
+			const { key } = this.ensureChild(ctx, leafSeg);
+			ctx.transitionToState(key, 'switch', payload);
 		}
 	}
 
@@ -680,29 +718,25 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (segments.length === 0) throw new Error(`Empty path is invalid.`);
 		}
 
-		let parentChanged = segments.length === 1 ? ctx.currentid !== segments[0] : false;
+		let parentChanged = false;
 
 		for (let i = 0; i < segments.length - 1; i++) {
 			const seg = segments[i];
-			const states = this.statesOrThrow(ctx);
-			const child = states[seg];
-			if (!child) {
-				throw new Error(`No state '${seg}' under '${ctx.id}'. Children: ${Object.keys(states).join(', ')}`);
-			}
-			if (!child.is_concurrent && ctx.currentid !== seg) {
-				ctx.transitionToState(seg, 'switch', payload);
+			const { child, key } = this.ensureChild(ctx, seg);
+			if (!child.is_concurrent && ctx.currentid !== key) {
+				ctx.transitionToState(key, 'switch', payload);
 				parentChanged = true;
 			}
 			ctx = child;
 		}
 
-		const leaf = segments[segments.length - 1];
-		const leafStates = this.statesOrThrow(ctx);
-		const leafState = leafStates[leaf];
-		if (!leafState) {
-			throw new Error(`No state '${leaf}' under '${ctx.id}'. Children: ${Object.keys(leafStates).join(', ')}`);
+		const leafSeg = segments[segments.length - 1];
+		const { key: leafKey } = this.ensureChild(ctx, leafSeg);
+		if (ctx.currentid !== leafKey) {
+			ctx.transitionToState(leafKey, 'switch', payload);
+		} else if (parentChanged) {
+			ctx.transitionToState(leafKey, 'to', payload);
 		}
-		if (parentChanged) ctx.transitionToState(leaf, 'to', payload);
 	}
 
 	private extractStateIdAndPayload(transition: Identifier | StateTransition | StateTransitionWithType, payload?: EventPayload): { state_id: Identifier, payload?: EventPayload } {
@@ -749,13 +783,22 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Supports filesystem style (":/", "/", "./", "../") and array of segments.
 	 */
 	public matches_state_path(path: string | string[]): boolean {
+		const matchSegments = (start: State, segments: readonly string[]): boolean => {
+			if (segments.length === 0) return false;
+			let ctx = start;
+			for (let i = 0; i < segments.length; i++) {
+				const seg = segments[i];
+				const { child, key } = this.findChild(ctx, seg);
+				if (!child || !key) return false;
+				if (!child.is_concurrent && ctx.currentid !== key) return false;
+				if (i === segments.length - 1) return true;
+				ctx = child;
+			}
+			return false;
+		};
+
 		if (Array.isArray(path)) {
-			if (path.length === 0) return false;
-			const [head, ...tail] = path;
-			if (tail.length === 0) return this.currentid === head;
-			const states = this.statesOrThrow();
-			const next = states[head];
-			return !!next && next.matches_state_path(tail);
+			return matchSegments(this, path);
 		}
 
 		const spec = State.parseFsPath(path);
@@ -764,17 +807,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			if (!ctx.parent) return false;
 			ctx = ctx.parent;
 		}
-		if (spec.segs.length === 0) return false;
-		let current: State = ctx;
-		for (let i = 0; i < spec.segs.length - 1; i++) {
-			const seg = spec.segs[i];
-			const states = this.statesOrThrow(current);
-			const child = states[seg];
-			if (!child) return false;
-			current = child;
-		}
-		const last = spec.segs[spec.segs.length - 1];
-		return current.currentid === last;
+		return matchSegments(ctx, spec.segs);
 	}
 
 	/**

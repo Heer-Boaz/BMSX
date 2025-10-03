@@ -7,21 +7,34 @@ export class AbilityRuntimeSystem extends ECSystem {
 	constructor(priority: number = 32) { super(TickGroup.AbilityUpdate, priority); }
 	update(): void {
 		const commands = GameplayCommandBuffer.instance.drainByKind('ActivateAbility');
+		const ascByOwner = new Map<string, AbilitySystemComponent>();
 		for (let i = 0; i < commands.length; i++) {
 			const command = commands[i]!;
-			const owner = $.world.getWorldObject(command.owner);
-			if (!owner) {
-				throw new Error(`[AbilityRuntimeSystem] Owner '${command.owner}' not found while activating ability '${command.ability_id}'.`);
-			}
-			const asc = owner.getUniqueComponent(AbilitySystemComponent);
+			let asc = ascByOwner.get(command.owner);
 			if (!asc) {
-				throw new Error(`[AbilityRuntimeSystem] AbilitySystemComponent missing on owner '${command.owner}' while activating ability '${command.ability_id}'.`);
+				const owner = $.world.getWorldObject(command.owner);
+				if (!owner) {
+					throw new Error(`[AbilityRuntimeSystem] Owner '${command.owner}' not found while activating ability '${command.ability_id}'.`);
+				}
+				asc = owner.getUniqueComponent(AbilitySystemComponent);
+				if (!asc) {
+					throw new Error(`[AbilityRuntimeSystem] AbilitySystemComponent missing on owner '${command.owner}' while activating ability '${command.ability_id}'.`);
+				}
+				ascByOwner.set(command.owner, asc);
 			}
-			asc.tryActivate(command.ability_id, command.payload);
+			try {
+				asc.tryActivate(command.ability_id, command.payload);
+			} catch (error) {
+				console.warn('[AbilityRuntimeSystem] tryActivate error', { owner: command.owner, ability: command.ability_id, error });
+			}
 		}
 		const dtMs = $.deltaTime;
 		for (const [, asc] of $.world.objectsWithComponents(AbilitySystemComponent, { scope: 'active' })) {
-			asc.step(dtMs);
+			try {
+				asc.step(dtMs);
+			} catch (error) {
+				console.warn('[AbilityRuntimeSystem] step error', error);
+			}
 		}
 	}
 }

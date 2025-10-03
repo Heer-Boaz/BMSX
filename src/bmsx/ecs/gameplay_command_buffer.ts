@@ -75,6 +75,6 @@ export class GameplayCommandBuffer {
 	}
 
 	public snapshot(): ReadonlyArray<GameplayCommandWithMeta> {
-		return this.commands;
+		return this.commands.slice();
 	}
 }

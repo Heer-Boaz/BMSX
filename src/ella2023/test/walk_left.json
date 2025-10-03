@@ -1,80 +1,80 @@
 [
   {
-    "description": "navigate down",
-    "frame": 30,
-    "event": {
-      "type": "button",
-      "deviceId": "keyboard:0",
-      "code": "ArrowDown",
-      "down": true,
-      "value": 1,
-      "timestamp": 0,
-      "pressId": 201
-    }
+	"description": "navigate down",
+	"frame": 30,
+	"event": {
+	  "type": "button",
+	  "deviceId": "keyboard:0",
+	  "code": "ArrowDown",
+	  "down": true,
+	  "value": 1,
+	  "timestamp": 0,
+	  "pressId": 201
+	}
   },
   {
-    "description": "navigate down release",
-    "frame": 32,
-    "event": {
-      "type": "button",
-      "deviceId": "keyboard:0",
-      "code": "ArrowDown",
-      "down": false,
-      "value": 0,
-      "timestamp": 0,
-      "pressId": 201
-    }
+	"description": "navigate down release",
+	"frame": 32,
+	"event": {
+	  "type": "button",
+	  "deviceId": "keyboard:0",
+	  "code": "ArrowDown",
+	  "down": false,
+	  "value": 0,
+	  "timestamp": 0,
+	  "pressId": 201
+	}
   },
   {
-    "description": "confirm",
-    "frame": 60,
-    "event": {
-      "type": "button",
-      "deviceId": "keyboard:0",
-      "code": "KeyZ",
-      "down": true,
-      "value": 1,
-      "timestamp": 0,
-      "pressId": 202
-    }
+	"description": "confirm",
+	"frame": 60,
+	"event": {
+	  "type": "button",
+	  "deviceId": "keyboard:0",
+	  "code": "KeyZ",
+	  "down": true,
+	  "value": 1,
+	  "timestamp": 0,
+	  "pressId": 202
+	}
   },
   {
-    "description": "confirm release",
-    "frame": 62,
-    "event": {
-      "type": "button",
-      "deviceId": "keyboard:0",
-      "code": "KeyZ",
-      "down": false,
-      "value": 0,
-      "timestamp": 0,
-      "pressId": 202
-    }
+	"description": "confirm release",
+	"frame": 62,
+	"event": {
+	  "type": "button",
+	  "deviceId": "keyboard:0",
+	  "code": "KeyZ",
+	  "down": false,
+	  "value": 0,
+	  "timestamp": 0,
+	  "pressId": 202
+	}
   },
   {
-    "description": "hold left",
-    "frame": 180,
-    "event": {
-      "type": "button",
-      "deviceId": "keyboard:0",
-      "code": "ArrowLeft",
-      "down": true,
-      "value": 1,
-      "timestamp": 0,
-      "pressId": 203
-    }
+	"description": "hold left",
+	"frame": 180,
+	"event": {
+	  "type": "button",
+	  "deviceId": "keyboard:0",
+	  "code": "ArrowLeft",
+	  "down": true,
+	  "value": 1,
+	  "timestamp": 0,
+	  "pressId": 203
+	}
   },
   {
-    "description": "release left",
-    "frame": 260,
-    "event": {
-      "type": "button",
-      "deviceId": "keyboard:0",
-      "code": "ArrowLeft",
-      "down": false,
-      "value": 0,
-      "timestamp": 0,
-      "pressId": 203
-    }
+	"description": "release left",
+	"frame": 260,
+	"event": {
+	  "type": "button",
+	  "deviceId": "keyboard:0",
+	  "code": "ArrowLeft",
+	  "down": false,
+	  "value": 0,
+	  "timestamp": 0,
+	  "pressId": 203
+	}
   }
 ]

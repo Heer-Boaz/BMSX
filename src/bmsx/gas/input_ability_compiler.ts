@@ -10,7 +10,7 @@ export interface EvalContext {
 	matchesMode: (path: string) => boolean;
 	requestAbility: (id: AbilityId, opts?: { payload?: Record<string, unknown>; source?: string }) => AbilityRequestResult;
 	consume: (actions: string[]) => void;
-	pushEvent?: (event: string, payload?: Record<string, unknown>) => void;
+	pushEvent?: (event: string, payload?: unknown) => void;
 	onAbilityRequestFailed?: (id: AbilityId, reason: string) => void;
 }
 
@@ -91,9 +91,9 @@ function compileBinding(binding: Binding, parse: PatternParser): CompiledBinding
 		press,
 		hold,
 		release,
-		pressEffect: compileEffectList(binding.do?.press, undefined),//'press'),
-		holdEffect: compileEffectList(binding.do?.hold, undefined),//'hold'),
-		releaseEffect: compileEffectList(binding.do?.release, undefined),//'release'),
+		pressEffect: compileEffectList(binding.do?.press, 'press'),
+		holdEffect: compileEffectList(binding.do?.hold, 'hold'),
+		releaseEffect: compileEffectList(binding.do?.release, 'release'),
 		customEdges,
 	};
 }
@@ -104,6 +104,15 @@ function compilePredicate(binding: Binding): (ctx: EvalContext) => boolean {
 
 	const tagPred = when.tags;
 	const modePred = when.mode;
+	const modeItems = modePred ? (Array.isArray(modePred) ? modePred : [modePred]) : undefined;
+	if (modeItems) {
+		for (let i = 0; i < modeItems.length; i++) {
+			const item = modeItems[i]!;
+			if (!item.path) {
+				throw new Error(`[InputAbilityCompiler] 'mode' clause missing 'path' in binding '${binding.name ?? '(unnamed)'}'.`);
+			}
+		}
+	}
 
 	return (ctx: EvalContext) => {
 		if (tagPred) {
@@ -118,12 +127,11 @@ function compilePredicate(binding: Binding): (ctx: EvalContext) => boolean {
 			if (tagPred.not && tagPred.not.some(tag => ctx.hasTag(tag))) return false;
 		}
 
-		if (modePred) {
-			const items = Array.isArray(modePred) ? modePred : [modePred];
-			for (let i = 0; i < items.length; i++) {
-				const entry = items[i]!;
-				const path = entry.path ?? '';
-				const matches = path !== '' ? ctx.matchesMode(path) : false;
+		if (modeItems) {
+			for (let i = 0; i < modeItems.length; i++) {
+				const entry = modeItems[i]!;
+				const entryPath = entry.path!;
+				const matches = ctx.matchesMode(entryPath);
 				if (entry.not) {
 					if (matches) return false;
 				} else if (!matches) {
@@ -191,7 +199,7 @@ function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 		if (!nested) throw new Error(`Empty commands in nested effect ${JSON.stringify(effect)}`);
 		return nested;
 	}
-	return () => undefined;
+	throw new Error(`[InputAbilityCompiler] Unknown effect in slot '${slot ?? 'unknown'}': ${JSON.stringify(effect)}`);
 }
 
 function isAbilityRequest(effect: Effect): effect is { 'ability.request': AbilityId | AbilityRequestDescriptor } {

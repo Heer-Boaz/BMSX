@@ -62,7 +62,7 @@ export type AbilityCoroutine = Generator<AbilityYield, void, void>;
 export interface AbilityContext {
   parentid: Identifier;
   asc: AbilitySystemRef;
-  emit?: (name: string, payload?: any) => void;
+  emit?: (name: string, payload?: unknown) => void;
   intent?: { id: AbilityId; payload?: Record<string, unknown> };
 }
 

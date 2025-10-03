@@ -257,22 +257,16 @@ export class StateMachineController {
 	 * @param args - Additional arguments to pass to the state switch function.
 	 */
 	switch_to(path: string, ...args: any[]): void {
-		let parts: string[];
-		if (typeof path === 'string') {
-			parts = path.split(':/');
-		} else {
-			parts = path;
-		}
-		const [machineid, ...stateids] = parts;
+		const sepIndex = path.indexOf(':/');
+		const machineid = sepIndex !== -1 ? path.slice(0, sepIndex) : path;
+		const statePath = sepIndex !== -1 ? path.slice(sepIndex + 2) : undefined;
 
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID '${machineid}'`);
 
-		// If no stateid is specified, assume that the stateid is the same as the machineid
-		const stateid = stateids.length > 0 ? stateids : machineid;
-
 		// Only switch the state in the specified machine, without changing the current machine
-		machine.transition_switch_path(stateid, ...args);
+		const targetPath = statePath ?? machineid;
+		machine.transition_switch_path(targetPath, ...args);
 	}
 
 	/**
@@ -340,20 +334,18 @@ export class StateMachineController {
 	 * @throws Error if the machine with the specified ID does not exist.
 	 */
 	matches_state_path(id: string): boolean {
-		const [machineid, ...stateids] = id.split(':/');
-
-		// If there are no more parts, check the state of the current machine
-		if (stateids.length === 0) {
+		const sepIndex = id.indexOf(':/');
+		if (sepIndex === -1) {
 			const machine = this.current_machine;
-			if (!machine) return false;
-			return machine.matches_state_path(machineid);
+			return machine ? machine.matches_state_path(id) : false;
 		}
 
+		const machineid = id.slice(0, sepIndex);
+		const statePath = id.slice(sepIndex + 2);
 		const machine = this.statemachines[machineid];
 		if (!machine) return false;
 
-		// If there are more parts, check the state of the submachine with the given path
-		return machine.matches_state_path(stateids);
+		return machine.matches_state_path(statePath);
 	}
 
 	/**
