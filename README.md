@@ -1924,4 +1924,18 @@ node dist/headless_debug.js --rom dist/<romname>.debug.rom
 
 CLI builds follow the same pattern (`npm run build:game:cli -- <romname>`, followed by `node dist/cli_debug.js --rom dist/<romname>.debug.rom`).
 
+Headless and CLI launchers support scripted input so you can automate menu navigation or combat loops while inspecting the render logs (sessions auto-terminate after 10 s by default; override with `--ttl <seconds>`). Supply a JSON timeline or a JavaScript module:
+
+```bash
+# Schedule inputs from a JSON timeline (frame numbers are multiplied by the frame interval)
+node dist/headless_debug.js --rom dist/<romname>.debug.rom \
+  --input-timeline scripts/headless_input_samples/menu_select.json
+
+# Run a custom scheduler module (exports default(context)) and optionally queue more events
+node dist/headless_debug.js --rom dist/<romname>.debug.rom \
+  --input-module ./scripts/my_headless_macro.js
+```
+
+Timeline entries accept `frame`, `timeMs`/`ms`, or `delayMs`, plus optional `repeat` with `repeatEveryFrames`/`repeatEveryMs`. Each entry must provide a full `InputEvt` object; the sample `menu_select.json` demonstrates moving the menu cursor and pressing enter (target `keyboard:0` and use `KeyboardEvent.code` names such as `KeyZ`, `ArrowDown`).
+
 The generated launchers expose `postHeadlessInput` on `globalThis` for headless builds so you can inject custom `InputEvt` objects while the loop is ticking.

@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 
 import { inflate } from 'pako';
 import { loadImage } from 'canvas';
@@ -18,10 +19,25 @@ interface LaunchOptions {
 	romPath?: string;
 	frameIntervalMs?: number;
 	debugOverride?: boolean;
+	inputTimelinePath?: string;
+	inputModulePath?: string;
+	ttlMs?: number;
 }
 
 interface BootGlobals {
 	h406A?: (args: BootArgs) => Promise<void>;
+}
+
+interface InputTimelineEntry {
+	frame?: number;
+	timeMs?: number;
+	ms?: number;
+	delayMs?: number;
+	event: InputEvt;
+	repeat?: number;
+	repeatEveryFrames?: number;
+	repeatEveryMs?: number;
+	description?: string;
 }
 
 function printHelp(): void {
@@ -34,6 +50,9 @@ function printHelp(): void {
 	console.log('  --frame-interval <ms>    Override frame loop interval in milliseconds (default 20).');
 	console.log('  --debug                  Force debug mode.');
 	console.log('  --no-debug               Force non-debug mode.');
+	console.log('  --ttl <seconds>          Auto-terminate after the given number of seconds (default 10).');
+	console.log('  --input-timeline <file>  JSON timeline of InputEvt entries to schedule.');
+	console.log('  --input-module <file>    JS/TS module exporting a scheduler for custom input logic.');
 	console.log('  --help, -h               Show this help message.');
 }
 
@@ -72,6 +91,31 @@ function parseArgs(argv: string[]): LaunchOptions {
 		if (arg === '--no-debug') {
 			options.debugOverride = false;
 			index += 1;
+			continue;
+		}
+		if (arg === '--ttl') {
+			const next = argv[index + 1];
+			if (!next) throw new Error('Expected seconds after --ttl.');
+			const parsed = Number(next);
+			if (!Number.isFinite(parsed) || parsed <= 0) {
+				throw new Error(`Invalid TTL value: ${next}`);
+			}
+			options.ttlMs = parsed * 1000;
+			index += 2;
+			continue;
+		}
+		if (arg === '--input-timeline') {
+			const next = argv[index + 1];
+			if (!next) throw new Error('Expected path after --input-timeline.');
+			options.inputTimelinePath = next;
+			index += 2;
+			continue;
+		}
+		if (arg === '--input-module') {
+			const next = argv[index + 1];
+			if (!next) throw new Error('Expected path after --input-module.');
+			options.inputModulePath = next;
+			index += 2;
 			continue;
 		}
 		if (arg === '--help' || arg === '-h') {
@@ -119,6 +163,100 @@ async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
 			return texture;
 		},
 	});
+}
+
+async function scheduleInputTimelineFromFile(filePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
+	const resolved = path.resolve(filePath);
+	const content = await fs.readFile(resolved, 'utf8');
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(content);
+	} catch (err) {
+		throw new Error(`Failed to parse input timeline '${filePath}': ${err instanceof Error ? err.message : String(err)}`);
+	}
+	if (!Array.isArray(parsed)) {
+		throw new Error(`Input timeline '${filePath}' must be a JSON array.`);
+	}
+	scheduleTimelineEntries(parsed as InputTimelineEntry[], frameIntervalMs, postInput, logger, `timeline:${path.basename(resolved)}`);
+}
+
+async function runInputModuleScheduler(modulePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
+	const resolved = path.resolve(modulePath);
+	const moduleUrl = pathToFileURL(resolved).href;
+	const imported = await import(moduleUrl);
+	const scheduler = typeof imported.default === 'function' ? imported.default : typeof imported.schedule === 'function' ? imported.schedule : null;
+	if (typeof scheduler !== 'function') {
+		throw new Error(`Input module '${modulePath}' must export a function (default or named 'schedule').`);
+	}
+	const context = {
+		postInput: (evt: InputEvt) => postInput(evt),
+		frameIntervalMs,
+		logger: (message: string) => logger(`module:${path.basename(resolved)} ${message}`),
+		schedule: (entries: InputTimelineEntry[]) => scheduleTimelineEntries(entries, frameIntervalMs, postInput, logger, `module:${path.basename(resolved)}`),
+	};
+	const result = await scheduler(context);
+	if (Array.isArray(result)) {
+		context.schedule(result as InputTimelineEntry[]);
+	}
+}
+
+function scheduleTimelineEntries(entries: InputTimelineEntry[], frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void, source: string): void {
+	let lastAbsoluteMs = 0;
+	entries.forEach((entry, idx) => {
+		if (!entry || typeof entry !== 'object') {
+			throw new Error(`Timeline entry ${idx} is not an object.`);
+		}
+		if (!entry.event) {
+			throw new Error(`Timeline entry ${idx} is missing an 'event'.`);
+		}
+		const baseMs = resolveBaseTime(entry, frameIntervalMs, lastAbsoluteMs, idx);
+		lastAbsoluteMs = baseMs;
+		const executionTimes = expandExecutionTimes(entry, baseMs, frameIntervalMs, idx);
+		executionTimes.forEach((timeMs) => {
+			const delay = Math.max(0, Math.round(timeMs));
+			const description = entry.description ? `${entry.description}` : `entry#${idx}`;
+			logger(`[${source}] schedule ${description} at ${delay}ms`);
+			setTimeout(() => {
+				const cloned = typeof structuredClone === 'function' ? structuredClone(entry.event) : JSON.parse(JSON.stringify(entry.event));
+				postInput(cloned);
+			}, delay);
+		});
+	});
+}
+
+function resolveBaseTime(entry: InputTimelineEntry, frameIntervalMs: number, lastAbsoluteMs: number, index: number): number {
+	if (typeof entry.timeMs === 'number') return sanitizeTime(entry.timeMs, index);
+	if (typeof entry.ms === 'number') return sanitizeTime(entry.ms, index);
+	if (typeof entry.frame === 'number') {
+		return sanitizeTime(entry.frame * frameIntervalMs, index);
+	}
+	if (typeof entry.delayMs === 'number') {
+		return sanitizeTime(lastAbsoluteMs + entry.delayMs, index);
+	}
+	throw new Error(`Timeline entry ${index} must specify 'frame', 'ms'/'timeMs', or 'delayMs'.`);
+}
+
+function expandExecutionTimes(entry: InputTimelineEntry, baseMs: number, frameIntervalMs: number, index: number): number[] {
+	const times = [baseMs];
+	const repeatCount = entry.repeat ?? 0;
+	if (repeatCount <= 0) {
+		return times;
+	}
+	const intervalMs = entry.repeatEveryMs ?? (entry.repeatEveryFrames !== undefined ? entry.repeatEveryFrames * frameIntervalMs : undefined);
+	if (intervalMs === undefined || intervalMs <= 0) {
+		throw new Error(`Timeline entry ${index} specifies repeat without a valid repeat interval.`);
+	}
+	for (let i = 1; i <= repeatCount; i++) {
+		times.push(baseMs + i * intervalMs);
+	}
+	return times;
+}
+
+function sanitizeTime(value: number, index: number): number {
+	if (!Number.isFinite(value) || value < 0) {
+		throw new Error(`Timeline entry ${index} has invalid time value '${value}'.`);
+	}
+	return value;
 }
 
 function executeRomCode(source: string, label: string): void {
@@ -179,11 +317,27 @@ async function main(): Promise<void> {
 	}
 
 	const platform = createPlatform(frameInterval);
+	const postInput = (event: InputEvt) => {
+		platform.input.post(event);
+	};
 	if (__BOOTROM_TARGET__ === 'headless') {
 		const globals = globalThis as unknown as Record<string, unknown>;
-		globals.postHeadlessInput = (event: InputEvt) => {
-			platform.input.post(event);
-		};
+		globals.postHeadlessInput = postInput;
+	}
+	const inputLogger = (message: string) => console.log(`[bootrom:${__BOOTROM_TARGET__}:input] ${message}`);
+	if (cliOptions.inputTimelinePath) {
+		await scheduleInputTimelineFromFile(cliOptions.inputTimelinePath, frameInterval, postInput, inputLogger);
+	}
+	if (cliOptions.inputModulePath) {
+		await runInputModuleScheduler(cliOptions.inputModulePath, frameInterval, postInput, inputLogger);
+	}
+	const ttlMs = typeof cliOptions.ttlMs === 'number' && cliOptions.ttlMs > 0 ? cliOptions.ttlMs : 10_000;
+	if (ttlMs > 0) {
+		console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL set to ${ttlMs}ms.`);
+		setTimeout(() => {
+			console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL reached (${ttlMs}ms). Terminating.`);
+			process.exit(0);
+		}, ttlMs);
 	}
 	const bootArgs: BootArgs = {
 		rompack,

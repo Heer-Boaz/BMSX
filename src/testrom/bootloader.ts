@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration, BrowserGameViewHost } from 'bmsx';
+import { BFont, BGamepadButton, BootArgs, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, Input, $, WorldConfiguration } from 'bmsx';
 import { createTestromModule } from './worldmodule';
 import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
@@ -18,10 +18,7 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 	const startingGamepadIndex = args.startingGamepadIndex ?? null;
 	let viewHost = args.viewHost ?? platform.gameviewHost;
 	if (!viewHost) {
-		if (typeof document === 'undefined') {
-			throw new Error('[Bootloader:testrom] View host not provided and DOM is unavailable to create one.');
-		}
-		viewHost = BrowserGameViewHost.fromCanvasId('gamescreen');
+		throw new Error('[Bootloader:testrom] View host not provided by Platform.');
 	}
 	const worldConfiguration: WorldConfiguration = { viewportSize: { x: 320, y: 240 }, fsmId: 'testrom_world_fsm', modules: [createTestromModule()] };
 

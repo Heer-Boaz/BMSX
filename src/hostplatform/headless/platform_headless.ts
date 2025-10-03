@@ -90,7 +90,10 @@ class HeadlessInputDevice implements InputDevice {
 
 class HeadlessInputHub implements InputHub {
 	private readonly subscribers = new Set<(e: InputEvt) => void>();
-	private readonly devicesList: InputDevice[] = [new HeadlessInputDevice('virtual:0', 'virtual')];
+	private readonly devicesList: InputDevice[] = [
+		new HeadlessInputDevice('keyboard:0', 'keyboard'),
+		new HeadlessInputDevice('virtual:0', 'virtual'),
+	];
 	subscribe(fn: (e: InputEvt) => void): () => void {
 		this.subscribers.add(fn);
 		return () => { this.subscribers.delete(fn); };

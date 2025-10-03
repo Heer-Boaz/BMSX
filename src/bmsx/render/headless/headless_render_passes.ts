@@ -54,6 +54,10 @@ function registerFramePasses(registry: RenderPassLibrary): void {
 	registry.register({ id: 'frame_shared', label: 'frame_shared', name: 'HeadlessFrameShared', stateOnly: true, exec: () => { /* noop */ } });
 }
 
+let spriteFrameIndex = 0;
+let meshFrameIndex = 0;
+let particleFrameIndex = 0;
+
 function resolveSpriteMetrics(state: SpritesPipelineState | undefined): { width: number; height: number; baseWidth: number; baseHeight: number; ambientEnabled: boolean; ambientFactor: number; } {
 	const view = $.view;
 	return {
@@ -79,7 +83,7 @@ function registerSpritePass(registry: RenderPassLibrary): void {
 				console.log('[headless:sprites] draws=0');
 				return;
 			}
-			console.log(`[headless:sprites] draws=${count} viewport=${resolved.width}x${resolved.height} base=${resolved.baseWidth}x${resolved.baseHeight}`);
+			console.log(`[headless:sprites] frame=${spriteFrameIndex++} draws=${count} viewport=${resolved.width}x${resolved.height} base=${resolved.baseWidth}x${resolved.baseHeight}`);
 			let index = 0;
 			forEachSpriteQueue((submission: SpriteQueueItem) => {
 				const { options, imgmeta } = submission;
@@ -118,7 +122,7 @@ function registerMeshPass(registry: RenderPassLibrary): void {
 				console.log('[headless:mesh] draws=0');
 				return;
 			}
-			console.log(`[headless:mesh] draws=${count} viewport=${metrics.width}x${metrics.height}`);
+			console.log(`[headless:mesh] frame=${meshFrameIndex++} draws=${count} viewport=${metrics.width}x${metrics.height}`);
 			let index = 0;
 			forEachMeshQueue((submission: MeshRenderSubmission) => {
 				const meshName = submission.mesh?.name ?? '<unnamed>';
@@ -154,7 +158,7 @@ function registerParticlePass(registry: RenderPassLibrary): void {
 				console.log('[headless:particles] draws=0');
 				return;
 			}
-			console.log(`[headless:particles] draws=${count} viewport=${metrics.width}x${metrics.height}`);
+			console.log(`[headless:particles] frame=${particleFrameIndex++} draws=${count} viewport=${metrics.width}x${metrics.height}`);
 			let index = 0;
 			forEachParticleQueue((submission: ParticleRenderSubmission) => {
 				const pos = formatVec3(submission.position);

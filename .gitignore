@@ -11,15 +11,16 @@
 **.js.map
 # Ignore all minimised CSS files
 **.min.css
-# Ignore all .js files except those in the "scripts" folder
-**.js
-!scripts/*.js
-!scripts/assembler/*.js
+# Ignore all temporary files
+tmp/**
+# Ignore all .js files in the rom-folder
+rom/**/*.js
+!pako_inflate.min.js
+!gl-matrix-min.js
+# Ignore any temp code runner files
 **/tempCodeRunnerFile.*
 # Include specific .js files that were previously ignored
 **.map
-!pako_inflate.min.js
-!gl-matrix-min.js
 **.tsbuildinfo
 **.rom
 **.d.ts

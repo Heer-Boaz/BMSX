@@ -1,4 +1,4 @@
-import { $, BFont, BGamepadButton, BrowserGameViewHost, World, BootArgs, GamepadInputMapping, Input, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
+import { $, BFont, BGamepadButton, World, BootArgs, GamepadInputMapping, Input, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, type State, WorldConfiguration } from 'bmsx';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -12,7 +12,10 @@ _global['h406A'] = (args: BootArgs): Promise<void> => {
 		throw new Error('[Bootloader:sint2024] Platform services not provided. Ensure the host injects a Platform instance before starting the game.');
 	}
 	const worldConfig: WorldConfiguration = { viewportSize: { x: MSX1ScreenWidth, y: MSX1ScreenHeight }, fsmId: 'SintWorldFSM' };
-	const viewHost = args.viewHost ?? BrowserGameViewHost.fromCanvasId('gamescreen');
+	const viewHost = args.viewHost ?? platform.gameviewHost;
+	if (!viewHost) {
+		throw new Error('[Bootloader:sint2024] View host not provided by Platform.');
+	}
 	return $.init({
 		rompack: args.rompack,
 		worldConfig,
