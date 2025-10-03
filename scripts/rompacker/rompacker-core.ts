@@ -5,7 +5,7 @@ import type { asset_type, AudioMeta, GLTFMesh, ImgMeta, Polygon, RomAsset } from
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
-import type { collisiontype, Resource, resourcetype, RomManifest } from './rompacker.rompack';
+import type { collisiontype, Resource, resourcetype, RomManifest, RomPackerTarget } from './rompacker.rompack';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -14,7 +14,7 @@ const { spawnSync } = require('child_process');
 const { join, parse } = require('path');
 
 // @ts-ignore
-const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
+const { access, mkdir, readdir, readFile, stat, writeFile, unlink } = require('fs/promises');
 // @ts-ignore
 // Import encodeBinary from the public API surface
 // Use direct path to avoid pulling entire engine via public alias during Node execution
@@ -38,6 +38,20 @@ export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
 export const BOOTROM_TS_RELATIVE_PATH = `../../scripts/bootrom/${BOOTROM_TS_FILENAME}`;
 export const BOOTROM_JS_RELATIVE_PATH = `../../rom/${BOOTROM_JS_FILENAME}`;
+export const NODE_BOOTROM_ENTRY_RELATIVE_PATH = `../../scripts/bootrom/platforms/node_entry.ts`;
+
+export function getNodeLauncherFilename(platform: RomPackerTarget, debug: boolean): string {
+	switch (platform) {
+		case 'headless':
+			return debug ? 'headless_debug.js' : 'headless.js';
+		case 'cli':
+			return debug ? 'cli_debug.js' : 'cli.js';
+		case 'browser':
+			throw new Error('Browser platform does not require a Node launcher filename.');
+		default:
+			throw new Error(`Unsupported platform "${platform}" for Node launcher filename resolution.`);
+	}
+}
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	none = 'none',`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
@@ -1198,10 +1212,11 @@ export async function deployToServer(_rom_name: string, _title: string) {
 export interface BootromBuildOptions {
 	debug: boolean;
 	forceBuild: boolean;
+	platform: RomPackerTarget;
+	romName: string;
 }
 
-export async function buildBootromScriptIfNewer(options: BootromBuildOptions): Promise<void> {
-	const { debug, forceBuild } = options;
+async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; }): Promise<void> {
 	const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
 	const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
 
@@ -1217,32 +1232,110 @@ export async function buildBootromScriptIfNewer(options: BootromBuildOptions): P
 	try {
 		await access(romJsPath);
 		romJsStats = await stat(romJsPath);
+	} catch {
+		romJsStats = undefined;
 	}
-	catch { } // Ignore error if rom.js does not exist yet
 
-	if (!romJsStats || romTsStats.mtime > romJsStats.mtime || forceBuild) {
-		try {
-			let options: any = {
-				entryPoints: [romTsPath],
-				bundle: true,
-				sourcesContent: debug ? true : false, // Don't include source content in production builds
-				platform: 'browser',
-				target: 'es2024',
-				format: 'iife',
-				minify: debug ? false : true, // Don't minify in debug mode
-				keepNames: true,
-				outfile: romJsPath,
-			};
-			if (debug) {
-				// In debug mode, we want to keep the source maps for easier debugging
-				options = { ...options, sourcemap: 'inline' }; // *We MUST do it like this, because 'sourcemap' is a flag and setting `sourcemap` to `false` still generates sourcemaps!*
-			}
-			await build(options);
-		} catch (e) {
-			throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e} `);
-		}
+	if (romJsStats && !options.forceBuild && romTsStats.mtime <= romJsStats.mtime) {
 		return;
 	}
+
+	const esbuildOptions: any = {
+		entryPoints: [romTsPath],
+		bundle: true,
+		sourcesContent: options.debug,
+		platform: 'browser',
+		target: 'es2024',
+		format: 'iife',
+		minify: !options.debug,
+		keepNames: true,
+		outfile: romJsPath,
+	};
+	if (options.debug) {
+		esbuildOptions['sourcemap'] = 'inline';
+	}
+	try {
+		await build(esbuildOptions);
+	} catch (e) {
+		throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e}`);
+	}
+}
+
+async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
+	const romTsPath = join(__dirname, NODE_BOOTROM_ENTRY_RELATIVE_PATH);
+	try {
+		await access(romTsPath);
+	} catch {
+		throw new Error(`Node boot entry could not be found at "${romTsPath}"`);
+	}
+
+	const outfileName = getNodeLauncherFilename(options.platform, options.debug);
+	const outPath = join(process.cwd(), 'dist', outfileName);
+
+	let rebuild = options.forceBuild;
+	if (!rebuild) {
+		let outStats: Stats | undefined;
+		let entryStats: Stats | undefined;
+		try {
+			outStats = await stat(outPath);
+		} catch {
+			outStats = undefined;
+		}
+		try {
+			entryStats = await stat(romTsPath);
+		} catch {
+			entryStats = undefined;
+		}
+		rebuild = !outStats || !entryStats || entryStats.mtime > outStats.mtime;
+	}
+
+	if (!rebuild) return;
+
+	try {
+		await mkdir(join(process.cwd(), 'dist'), { recursive: true });
+	} catch {
+		// Ignore errors; directory may already exist or be created elsewhere
+	}
+
+	const define = {
+		'__BOOTROM_TARGET__': JSON.stringify(options.platform),
+		'__BOOTROM_ROM_NAME__': JSON.stringify(options.romName),
+		'__BOOTROM_DEBUG__': options.debug ? 'true' : 'false',
+	};
+
+	const esbuildOptions: any = {
+		entryPoints: [romTsPath],
+		bundle: true,
+		platform: 'node',
+		target: 'node22',
+		format: 'cjs',
+		minify: !options.debug,
+		keepNames: true,
+		define,
+		external: ['canvas'],
+		sourcesContent: options.debug,
+		outfile: outPath,
+	};
+	if (options.debug) {
+		esbuildOptions['sourcemap'] = 'inline';
+	}
+	try {
+		await build(esbuildOptions);
+	} catch (e) {
+		throw new Error(`Error while compiling Node boot entry for platform "${options.platform}": ${e?.message ?? e}`);
+	}
+}
+
+export async function buildBootromScriptIfNewer(options: BootromBuildOptions): Promise<void> {
+	if (options.platform === 'browser') {
+		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild });
+		return;
+	}
+	if (options.platform === 'cli' || options.platform === 'headless') {
+		await buildNodeBootrom(options);
+		return;
+	}
+	throw new Error(`Unsupported platform "${options.platform}" when building bootrom script.`);
 }
 
 export const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml'];

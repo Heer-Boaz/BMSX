@@ -1,8 +1,8 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
-import type { RomManifest, RomPackerOptions } from './rompacker.rompack';
+import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import type { RomManifest, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
 
@@ -21,7 +21,7 @@ type TaskName =
 	'Rom-assets genereren' |
 	'Rompakket finaliseren' |
 	`bootrom compileren` |
-	'HTML+CSS bouwen' |
+	'Platform-artifacts bouwen' |
 	'Deployeren' |
 	'ROM PACKING GE-DONUT!! :-)';
 
@@ -36,7 +36,7 @@ const taskList: TaskName[] = [
 	'Rom-assets genereren',
 	'Rompakket finaliseren',
 	`bootrom compileren`,
-	'HTML+CSS bouwen',
+	'Platform-artifacts bouwen',
 	'Deployeren',
 	'ROM PACKING GE-DONUT!! :-)',
 ];
@@ -61,7 +61,7 @@ const deployTasks: TaskName[] = [
 // ];
 
 // const webTasks: TaskName[] = [
-// 	'HTML+CSS bouwen',
+// 	'Platform-artifacts bouwen',
 // ];
 
 const rebuildCheckTasks: TaskName[] = [
@@ -85,7 +85,7 @@ function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: s
 
 function parseOptions(args: string[]): RomPackerOptions {
 	// Check for unrecognized arguments
-	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas', '--skiptypecheck', '--enginedts', '--usepkgtsconfig'];
+	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas', '--skiptypecheck', '--enginedts', '--usepkgtsconfig', '--platform'];
 	const unrecognizedArgs = args.filter(arg => arg.startsWith('-') && !knownArgs.includes(arg));
 	if (unrecognizedArgs.length > 0) {
 		throw new Error(`Unrecognized argument(s): ${unrecognizedArgs.join(', ')}`);
@@ -106,6 +106,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
 		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game`, 'warning');
 		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
+		writeOut(`  --platform <target>      Target platform: browser (default), cli, or headless`, 'warning');
 		process.exit(0);
 	}
 
@@ -129,6 +130,22 @@ function parseOptions(args: string[]): RomPackerOptions {
 	const enginedtsIdx = args.indexOf('--enginedts');
 	const enginedts = enginedtsIdx !== -1 ? args[enginedtsIdx + 1] : undefined;
 	const usePkgTsconfig = args.includes('--usepkgtsconfig');
+	const platformRaw = getParamOrEnv(args, '--platform', 'ROM_PLATFORM', 'browser');
+	let platform: RomPackerTarget;
+	const platformKey = platformRaw ? platformRaw.toLowerCase() : '';
+	switch (platformKey) {
+		case 'browser':
+			platform = 'browser';
+			break;
+		case 'cli':
+			platform = 'cli';
+			break;
+		case 'headless':
+			platform = 'headless';
+			break;
+		default:
+			throw new Error(`Unsupported platform target "${platformRaw}". Expected one of: browser, cli, headless.`);
+	}
 
 	return {
 		rom_name,
@@ -143,6 +160,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		enginedts,
 		usePkgTsconfig,
 		skipTypecheck,
+		platform,
 	};
 }
 
@@ -244,7 +262,7 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'));
 
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 
 		// Define common assets path
@@ -282,6 +300,7 @@ async function main() {
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 		if (!commonResPath) throw new Error("Cannot determine common resource path; 'rom_name' is required.");
 
+		writeOut(`Target platform: ${platform}.\n`);
 		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
 		if (usePkgTsconfig) {
 			writeOut(`Using per-game tsconfig.pkg.json for bundling/type-checking.\n`);
@@ -402,9 +421,14 @@ async function main() {
 				await progress?.taskCompleted();
 			}
 
-			await buildBootromScriptIfNewer({ debug, forceBuild: force });
+			await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name });
 			await progress?.taskCompleted();
-			await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
+			if (platform === 'browser') {
+				await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
+			} else {
+				const launcherName = getNodeLauncherFilename(platform, debug);
+				writeOut(`Generated Node launcher "dist/${launcherName}" for platform "${platform}".\n`);
+			}
 			await progress?.taskCompleted();
 			if (deploy) {
 				await deployToServer(rom_name, title);

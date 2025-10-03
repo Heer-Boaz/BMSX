@@ -83,7 +83,6 @@ export * from './ecs/collision2d_broadphase_system';
 export * from './ecs/overlap2d_system';
 export * from './ecs/ecsystem';
 export * from './core/pipelines/gameplay';
-export * from './core/pipelines/headless';
 export * from './collision/collision_profiles';
 export * from './render/lighting/lightingsystem';
 export * from './render/texturemanager';

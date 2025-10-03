@@ -20,6 +20,7 @@ import { FRAME_UNIFORM_BINDING, updateAndBindFrameUniforms } from './frame_unifo
 import { AnyBackend, GPUBackend, PassEncoder, RenderContext, RenderPassDef, RenderPassDesc, RenderPassInstanceHandle, RenderPassStateId, TextureHandle } from './pipeline_interfaces';
 import { checkWebGLError } from './webgl/webgl.helpers';
 import { WebGLBackend } from './webgl/webgl_backend';
+import { registerHeadlessPasses } from '../headless/headless_render_passes';
 
 export type FogUniforms = {
 	fogD50: number;
@@ -87,6 +88,9 @@ export class RenderPassLibrary {
 				break;
 			case 'webgpu':
 				this.registerBuiltinPassesWebGPU();
+				break;
+			case 'headless':
+				this.registerBuiltinPassesHeadless();
 				break;
 		}
 	}
@@ -167,6 +171,10 @@ export class RenderPassLibrary {
 			stateOnly: true,
 			exec: () => { /* populated per frame by graph */ }
 		});
+	}
+
+	private registerBuiltinPassesHeadless() {
+		registerHeadlessPasses(this);
 	}
 
 	public validatePassResources(passId: string, backend: GPUBackend): void {

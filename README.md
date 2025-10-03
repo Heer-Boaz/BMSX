@@ -1919,7 +1919,9 @@ For day-to-day debugging you can run a built ROM directly from Node:
 
 ```bash
 npm run build:game:headless -- <romname>
-npx tsx scripts/run-headless.ts --rom <romname>
+node dist/headless_debug.js --rom dist/<romname>.debug.rom
 ```
 
-The runner exposes `postHeadlessInput` on `globalThis` so you can inject custom `InputEvt` objects while the loop is ticking.
+CLI builds follow the same pattern (`npm run build:game:cli -- <romname>`, followed by `node dist/cli_debug.js --rom dist/<romname>.debug.rom`).
+
+The generated launchers expose `postHeadlessInput` on `globalThis` for headless builds so you can inject custom `InputEvt` objects while the loop is ticking.

@@ -4,6 +4,8 @@
 import { Buffer } from 'buffer';
 import type { asset_type, ImgMeta } from '../../src/bmsx/rompack/rompack';
 
+export type RomPackerTarget = 'browser' | 'cli' | 'headless';
+
 interface RomPackerOptions {
 	rom_name: string;
 	title: string;
@@ -14,6 +16,7 @@ interface RomPackerOptions {
 	buildreslist: boolean;
 	deploy: boolean;
 	useTextureAtlas: boolean;
+	platform: RomPackerTarget;
 	/** Optional path to a directory of bmsx declarations to use for type-checking games. */
 	enginedts?: string;
 	/** When true, instruct rompacker to use per-game tsconfig.pkg.json for bundling/type-checking. */

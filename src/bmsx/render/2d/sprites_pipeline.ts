@@ -4,7 +4,6 @@ import { new_vec2, new_vec3 } from '../../utils/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import spriteFS from '../2d/shaders/2d.frag.glsl';
 import spriteVS from '../2d/shaders/2d.vert.glsl';
-import { FeatureQueue } from '../../utils/feature_queue';
 import * as GLR from '../backend/webgl/gl_resources';
 import type { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary, SpritesPipelineState } from '../backend/renderpasslib';
@@ -36,6 +35,15 @@ import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
+import {
+	beginSpriteQueue,
+	forEachSpriteQueue,
+	sortSpriteQueue,
+	spriteQueueBackSize,
+	spriteQueueFrontSize,
+	submitSprite as enqueueSprite,
+	type SpriteQueueItem,
+} from '../shared/render_queues';
 
 export let spriteShaderProgram: WebGLProgram;
 let vertexLocation: number;
@@ -63,21 +71,19 @@ const spriteShaderData = {
 	atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
 };
 let spriteShaderScaleLocation: WebGLUniformLocation;
-// Feature-local, double-buffered submission queue (UE-like feature queue)
-export type SpriteSubmission = { options: ImgRenderSubmission; imgmeta: ImgMeta };
-const spriteQueue = new FeatureQueue<SpriteSubmission>(256);
+// Feature-local, double-buffered submission queue shared across backends
+export type SpriteSubmission = SpriteQueueItem;
 
 export function beginSpriteBatch(): number {
-	spriteQueue.swap();
-	return spriteQueue.sizeFront();
+	return beginSpriteQueue();
 }
 
 export function sortSpriteBatch(compare: (a: SpriteSubmission, b: SpriteSubmission) => number): void {
-	spriteQueue.sortFront(compare);
+	sortSpriteQueue(compare);
 }
 
 export function forEachSpriteBatch(fn: (submission: SpriteSubmission, index: number) => void): void {
-	spriteQueue.forEachFront(fn);
+	forEachSpriteQueue(fn);
 }
 
 interface SpriteRuntime {
@@ -249,7 +255,7 @@ export function drawImg(options: ImgRenderSubmission): void {
 		throw new Error(`[Sprite Pipeline] Image metadata missing for imgid '${imgid}'.`);
 	}
 	// Deep-copy nested objects to freeze values at submission time
-	spriteQueue.submit({
+	enqueueSprite({
 		options: {
 			...options,
 			pos: options.pos ? { ...options.pos } : undefined,
@@ -261,8 +267,8 @@ export function drawImg(options: ImgRenderSubmission): void {
 	});
 }
 
-export function getQueuedSpriteCount(): number { return spriteQueue.sizeBack(); }
-export function getSpriteQueueDebug(): { front: number; back: number } { return { front: spriteQueue.sizeFront(), back: spriteQueue.sizeBack() }; }
+export function getQueuedSpriteCount(): number { return spriteQueueBackSize(); }
+export function getSpriteQueueDebug(): { front: number; back: number } { return { front: spriteQueueFrontSize(), back: spriteQueueBackSize() }; }
 
 export function getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
 	if (flip_h && flip_v) return imgmeta['texcoords_fliphv'];

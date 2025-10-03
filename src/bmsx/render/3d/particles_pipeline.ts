@@ -1,15 +1,20 @@
 import { $ } from '../../core/game';
 
-import type { vec3arr } from '../../rompack/rompack';
 import particleFS from '../3d/shaders/particle.frag.glsl';
 import particleVS from '../3d/shaders/particle.vert.glsl';
-import { FeatureQueue } from '../../utils/feature_queue';
 import type { PassEncoder, RenderContext, TextureHandle } from '../backend/pipeline_interfaces';
 import { ParticlePipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
-import { color } from '../gameview';
 import { M4 } from './math3d';
+import {
+	beginParticleQueue,
+	forEachParticleQueue,
+	particleQueueBackSize,
+	particleQueueFrontSize,
+	submitParticle as enqueueParticle,
+} from '../shared/render_queues';
+import type { ParticleRenderSubmission } from '../shared/render_types';
 
 const camRight = new Float32Array(3);
 const camUp = new Float32Array(3);
@@ -21,13 +26,11 @@ export function setAmbientDefaults(mode: 0 | 1, factor = 1.0): void {
 	particleAmbientFactorDefault = Math.max(0, Math.min(1, factor));
 }
 
-export interface DrawParticleOptions { position: vec3arr; size: number; color: color; texture?: TextureHandle; ambientMode?: 0 | 1; ambientFactor?: number; }
 const MAX_PARTICLES = 1000;
 const INSTANCE_FLOATS = 8; // vec4(position+size) + vec4(color)
 const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
 let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let textureLocation: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; let defaultTexture: TextureHandle; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
-const particleQueue = new FeatureQueue<DrawParticleOptions>(1024);
 let framePage = 0;
 export function init(backend: WebGLBackend): void {
 	const gl = backend.gl;
@@ -82,14 +85,14 @@ interface ParticleRuntime {
 
 export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
 	const { backend, gl, context } = runtime;
-	particleQueue.swap();
-	if (particleQueue.sizeFront() === 0) return;
+	const pending = beginParticleQueue();
+	if (pending === 0) return;
 	camRight.set(state.camRight);
 	camUp.set(state.camUp);
-	const batches = new Map<TextureHandle, Map<string, DrawParticleOptions[]>>();
-	particleQueue.forEachFront((p) => {
+	const batches = new Map<TextureHandle, Map<string, ParticleRenderSubmission[]>>();
+	forEachParticleQueue((p) => {
 		if (!p) return;
-		const tex = p.texture ?? defaultTexture;
+		const tex = (p.texture as TextureHandle | undefined) ?? defaultTexture;
 		let byAmbient = batches.get(tex);
 		if (!byAmbient) { byAmbient = new Map(); batches.set(tex, byAmbient); }
 		const mode = (p.ambientMode ?? particleAmbientModeDefault) | 0;
@@ -149,11 +152,11 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 }
 export function setDefaultParticleTexture(tex: TextureHandle): void { defaultTexture = tex; }
 // New submission helper (prefer over touching particlesToDraw)
-export function submitParticle(p: DrawParticleOptions): void {
-	particleQueue.submit({ ...p });
+export function submitParticle(p: ParticleRenderSubmission): void {
+	enqueueParticle({ ...p });
 }
-export function getQueuedParticleCount(): number { return particleQueue.sizeBack(); }
-export function getParticleQueueDebug(): { front: number; back: number } { return { front: particleQueue.sizeFront(), back: particleQueue.sizeBack() }; }
+export function getQueuedParticleCount(): number { return particleQueueBackSize(); }
+export function getParticleQueueDebug(): { front: number; back: number } { return { front: particleQueueFrontSize(), back: particleQueueBackSize() }; }
 
 export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 	registry.register({

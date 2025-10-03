@@ -7,7 +7,6 @@ import type { vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import meshFS from '../3d/shaders/3d.frag.glsl';
 import meshVS from '../3d/shaders/3d.vert.glsl';
-import { FeatureQueue } from '../../utils/feature_queue';
 import * as GLR from '../backend/webgl/gl_resources';
 import { MeshBatchPipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import type { PassEncoder, RenderContext } from '../backend/pipeline_interfaces';
@@ -19,6 +18,13 @@ import type { DirectionalLight, PointLight } from './light';
 import { M4, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
 import { arraysEqual } from '../../utils/utils';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
+import {
+	beginMeshQueue,
+	forEachMeshQueue,
+	meshQueueBackSize,
+	meshQueueFrontSize,
+	submitMesh as enqueueMesh,
+} from '../shared/render_queues';
 
 const BYTES_PER_FLOAT = 4;
 const COLUMN_BYTES = 4 * BYTES_PER_FLOAT; // 4 floats per kolom = 16 bytes
@@ -55,9 +61,8 @@ interface MeshDrawLists {
 
 let activeBackend: WebGLBackend | null = null;
 
-// Legacy direct submission array removed. Use submitMesh() with feature queue.
-const meshQueue = new FeatureQueue<MeshRenderSubmission>(256);
-export function getQueuedMeshCount(): number { return meshQueue.sizeBack(); }
+// Legacy direct submission array removed. Use submitMesh() with the shared render queue.
+export function getQueuedMeshCount(): number { return meshQueueBackSize(); }
 let lightsDirty: boolean = true; // set to true on any light mutation; consumed by LightingSystem
 
 interface MeshBuffers {
@@ -913,11 +918,11 @@ export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, f
 	assertTextureContext(context);
 	const gl = backend.gl as WebGL2RenderingContext;
 	const runtime: MeshPassRuntime = { backend, gl, context };
-	meshQueue.swap();
-	if (meshQueue.sizeFront() === 0) return;
+	const pending = beginMeshQueue();
+	if (pending === 0) return;
 	_morphUsage.pos = 0; _morphUsage.norm = 0;
 	const submissions: MeshRenderSubmission[] = [];
-	meshQueue.forEachFront((it) => { submissions.push(it); });
+	forEachMeshQueue((it) => { submissions.push(it); });
 	const drawLists = buildDrawLists(submissions, state);
 	setupViewport(runtime, state.width, state.height);
 	setupRenderingState(runtime, state);
@@ -934,9 +939,9 @@ export function renderMeshBatch(backend: WebGLBackend, context: RenderContext, f
 	}
 }
 
-export function submitMesh(o: MeshRenderSubmission): void { meshQueue.submit({ ...o }); }
+export function submitMesh(o: MeshRenderSubmission): void { enqueueMesh({ ...o }); }
 export function reset(_gl: WebGL2RenderingContext): void { normal9Pool.reset(); clearLights(); }
-export function getMeshQueueDebug(): { front: number; back: number } { return { front: meshQueue.sizeFront(), back: meshQueue.sizeBack() }; }
+export function getMeshQueueDebug(): { front: number; back: number } { return { front: meshQueueFrontSize(), back: meshQueueBackSize() }; }
 
 export function registerMeshBatchPass_WebGL(registry: RenderPassLibrary) {
 	registry.register({

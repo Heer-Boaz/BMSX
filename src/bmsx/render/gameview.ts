@@ -1,12 +1,11 @@
-﻿import { BFont } from '../core/font';
+import { BFont } from '../core/font';
 import { $ } from '../core/game';
 import { GameOptions } from '../core/gameoptions';
-import type { Mesh } from './3d/mesh';
 import { Registry } from '../core/registry';
 import { GateGroup, taskGate } from '../core/taskgate';
 import { multiply_vec, multiply_vec2, shallowCopy } from '../utils/utils';
 import { Input } from '../input/input';
-import type { Area, Polygon, id2imgres, vec2, vec3arr } from '../rompack/rompack';
+import type { id2imgres, vec2 } from '../rompack/rompack';
 import { type RegisterablePersistent } from '../rompack/rompack';
 import * as SpritesPipeline from './2d/sprites_pipeline';
 import * as MeshPipeline from './3d/mesh_pipeline';
@@ -27,97 +26,31 @@ import type {
 	ViewportMetricsProvider,
 	OnscreenGamepadHandleProvider,
 } from '../platform';
+import type {
+	RectRenderSubmission,
+	ImgRenderSubmission,
+	PolyRenderSubmission,
+	MeshRenderSubmission,
+	ParticleRenderSubmission,
+	GlyphRenderSubmission,
+	SkyboxImageIds,
+} from './shared/render_types';
+export type {
+	color,
+	FlipOptions,
+	RenderLayer,
+	RectRenderSubmission,
+	ImgRenderSubmission,
+	PolyRenderSubmission,
+	MeshRenderSubmission,
+	ParticleRenderSubmission,
+	GlyphRenderSubmission,
+	SkyboxImageIds,
+} from './shared/render_types';
 
 // Global gate used to coordinate rendering. When blocked, frames are skipped.
 export const renderGate: GateGroup = taskGate.group('render:main');
 export type RenderSubmitQueue = Pick<Pick<GameView, 'renderer'>['renderer'], 'submit'>;
-export type color = {
-	r: number;
-	g: number;
-	b: number;
-	a: number;
-};
-
-export type FlipOptions = {
-	flip_h: boolean;
-	flip_v: boolean;
-}
-
-/**
- * NOTE: ONLY 'world' AND 'ui' ARE CURRENTLY SUPPORTED
- */
-export type RenderLayer = 'background' | 'world' | 'ui' | 'overlay';
-
-export type RectRenderSubmission = {
-	kind: 'rect' | 'fill';
-	area: Area;
-	color: color;
-	// Optional sprite layer for sorting/grouping: 'world' (default) or 'ui'
-	layer?: RenderLayer;
-}
-
-export type ImgRenderSubmission = {
-	imgid: string;
-	pos: vec2;
-	scale?: vec2;
-	flip?: FlipOptions;
-	colorize?: color;
-	// Optional ambient lighting override for world sprites
-	ambientAffected?: boolean;
-	ambientFactor?: number; // 0..1
-	// Optional sprite layer for sorting/grouping: 'world' (default) or 'ui'
-	layer?: RenderLayer;
-}
-
-export type PolyRenderSubmission = {
-	points: Polygon;
-	z: number;
-	color: color;
-	thickness?: number;
-	layer?: RenderLayer;
-};
-
-export type MeshRenderSubmission = {
-	mesh: Mesh;
-	matrix: Float32Array;
-	jointMatrices?: Float32Array[];
-	morphWeights?: number[];
-	receiveShadow?: boolean;
-}
-
-export type ParticleRenderSubmission = {
-	position: vec3arr;
-	size: number;
-	color: color;
-	texture?: WebGLTexture;
-	// Optional ambient override
-	ambientMode?: 0 | 1; // 0=unlit, 1=ambient
-	ambientFactor?: number; // 0..1
-}
-
-export type GlyphRenderSubmission = {
-	x: number;
-	y: number;
-	z?: number;
-	glyphs: string | string[];
-	font?: BFont;
-	color?: color;
-	backgroundColor?: color;
-	wrapChars?: number;
-	centerBlockWidth?: number;
-	align?: CanvasTextAlign;
-	baseline?: CanvasTextBaseline;
-	layer?: RenderLayer;
-}
-
-export type SkyboxImageIds = {
-	posX: string;
-	negX: string;
-	posY: string;
-	negY: string;
-	posZ: string;
-	negZ: string;
-}
 
 const atlasNameCache = new Map<number, string>(); // Cache for atlas names to avoid regenerating them for each request
 export function generateAtlasName(atlasIndex: number): string {
