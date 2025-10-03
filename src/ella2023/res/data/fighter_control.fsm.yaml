@@ -48,12 +48,14 @@ states:
                 entering_state:
                     - invoke: { fn: '@self.onIdleEntered' }
                     - emit: animate_idle
-                    - tags: { remove: [state.attacking] }
+                    - tags: { add: [state.idle], remove: [state.attacking, state.walking] }
+                exiting_state:
+                    - tags: { remove: [state.idle] }
             walk:
                 data:
                     speedX: 0
                 entering_state:
-                    - tags: { remove: [state.attacking] }
+                    - tags: { add: [state.walking], remove: [state.attacking, state.idle] }
                     - emit: animate_walk
                 on:
                     mode.locomotion.walk:
@@ -67,6 +69,8 @@ states:
                                               payload: '@payload',
                                           },
                                   }
+                exiting_state:
+                    - tags: { remove: [state.walking] }
             duck:
                 entering_state:
                     - invoke: { fn: '@self.setDuckingState', payload: true }

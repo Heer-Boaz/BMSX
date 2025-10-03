@@ -3,7 +3,7 @@ import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
 
-const _global = (window || globalThis) as { h406A: (args: BootArgs) => Promise<void> };
+const _global = (window || globalThis) as { h406A?: (args: BootArgs) => Promise<void> };
 
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {

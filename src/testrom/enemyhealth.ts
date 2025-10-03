@@ -1,4 +1,4 @@
-import { $, Platform } from 'bmsx';
+import { $ } from 'bmsx';
 import { Component, componenttags_postprocessing } from 'bmsx';
 import type { color_arr, Identifier, RevivableObjectArgs } from 'bmsx';
 import { insavegame } from 'bmsx';

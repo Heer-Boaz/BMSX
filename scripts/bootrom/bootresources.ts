@@ -413,8 +413,8 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
 	return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
-async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap> {
-	let source: ImageBitmap | Promise<ImageBitmap> | undefined;
+async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: { flipY?: boolean; }): Promise<ImageBitmap | TextureSource> {
+	let source: TextureSource | ImageBitmap | Promise<ImageBitmap> | undefined;
 	if (options?.flipY) {
 		source = romImgAsset._imgbinYFlipped as TextureSource; // Use the private _imgbinYFlipped property
 	} else {
@@ -446,7 +446,7 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 		canvas.width = imgWidth;
 		canvas.height = imgHeight;
 		const ctx = canvas.getContext('2d')!;
-		ctx.drawImage(atlas, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
+		ctx.drawImage(atlas as ImageBitmap, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
 		// Convert canvas to ImageBitmap asynchronously
 		source = createImageBitmap(canvas, {
 			imageOrientation: options?.flipY ? 'flipY' : 'none',

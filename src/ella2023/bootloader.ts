@@ -4,7 +4,7 @@ import { BitmapId } from './resourceids';
 // Ensure FSM blueprint is registered
 import './world_fsm';
 
-const _global = (window || globalThis) as { h406A: (args: BootArgs) => Promise<void> };
+const _global = (window || globalThis) as { h406A?: (args: BootArgs) => Promise<void> };
 
 _global['h406A'] = (args: BootArgs): Promise<void> => {
 	// Use FSM id matching the registered blueprint (@build_fsm on EilaModelFSM.bouw()) so world state machine runs.

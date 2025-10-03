@@ -81,6 +81,7 @@ export abstract class Fighter extends SpriteObject {
 		const resolved = (typeof payload === 'string') ? payload : payload?.direction;
 		const direction: Direction | null = (resolved === 'left' || resolved === 'right') ? resolved : null;
 		const data = (state.data ??= {} as Record<string, unknown>);
+		console.warn('[debug] configureWalkState', { current: state.currentid, direction, existing: (data as { direction?: Direction }).direction });
 		if (direction) {
 			(data as { direction?: Direction }).direction = direction;
 			(data as { speedX?: number }).speedX = direction === 'right' ? this.walkSpeed : -this.walkSpeed;

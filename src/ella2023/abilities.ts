@@ -34,9 +34,24 @@ class FighterWalkAbility extends Ability {
 			const ducking = asc.hasTag('state.ducking');
 			if (!grounded || combatDisabled || attacking || ducking) break;
 
-			const controller = this.fighter.sc;
-			const stillWalking = controller?.matches_state_path('fighter_control:/_grounded/walk') ?? false;
-			if (!stillWalking && !firstTick) break;
+			const walking = asc.hasTag('state.walking');
+			if (firstTick) {
+				const controller = this.fighter.sc;
+				const fighterControl = controller?.get_statemachine('fighter_control');
+				const grounded = fighterControl?.states?.['_grounded'];
+				console.warn('[debug] walk ability first tick', {
+					fc: fighterControl?.currentid,
+					fcChild: fighterControl?.states?.[fighterControl.currentid ?? '']?.currentid,
+					fcInitial: fighterControl?.definition.initial,
+					groundedInitial: grounded?.definition?.initial,
+					walking,
+				});
+			}
+			if (!walking && !firstTick) {
+				console.warn('[debug] walk ability continuing without walking tag', {
+					frame: ctx.asc.parentid,
+				});
+			}
 
 			const speed = this.fighter.walkSpeed ?? Fighter.SPEED;
 			const deltaX = direction === 'right' ? speed : -speed;

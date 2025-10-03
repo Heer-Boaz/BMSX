@@ -61,8 +61,6 @@ export class Eila extends Fighter {
 	override onspawn(spawningPos?: Parameters<Fighter['onspawn']>[0]): void {
 		super.onspawn(spawningPos);
 		registerFighterAbilities(this);
-		// this.sc.transition_to('fighter_control:/grounded/idle');
-		// this.sc.transition_to('player_animation:/idle');
 	}
 
 	public onIdleEntered(): void {

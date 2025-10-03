@@ -7,9 +7,9 @@ import { loadImage } from 'canvas';
 
 import type { BootArgs, RomPack, TextureSource } from '../../../src/bmsx/rompack/rompack';
 import { getZippedRomAndRomLabelFromBlob, loadResources } from '../bootresources';
-import { HeadlessPlatformServices } from '../../../src/hostplatform/headless/platform_headless';
-import { CLIPlatformServices } from '../../../src/hostplatform/cli/platform_cli';
-import type { Platform, InputEvt } from '../../../src/hostplatform/platform';
+import { HeadlessPlatformServices } from '../../../src/bmsx_hostplatform/headless/platform_headless';
+import { CLIPlatformServices } from '../../../src/bmsx_hostplatform/cli/platform_cli';
+import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform';
 
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_ROM_NAME__: string;
@@ -158,11 +158,7 @@ async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
 	return loadResources(romBuffer, {
 		loadImageFromBuffer: async (buffer: ArrayBuffer): Promise<TextureSource> => {
 			const image = await loadImage(Buffer.from(buffer));
-			const texture = image as TextureSource & { close?: () => void };
-			if (typeof texture.close !== 'function') {
-				texture.close = () => { /* no-op for node-canvas Image */ };
-			}
-			return texture;
+			return image as TextureSource;
 		},
 	});
 }

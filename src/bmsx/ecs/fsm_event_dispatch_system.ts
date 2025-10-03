@@ -17,6 +17,9 @@ export class FsmEventDispatchSystem extends ECSystem {
 
 		for (let i = 0; i < events.length; i++) {
 			const cmd = events[i]!;
+			if (cmd.target_id === 'player') {
+				console.warn('[debug] dispatchEvent command', cmd);
+			}
 			const target = world.getWorldObject<WorldObject>(cmd.target_id);
 			if (!target) {
 				throw new Error(`[FsmEventDispatchSystem] Event '${cmd.event}' targets unknown object '${cmd.target_id}'.`);

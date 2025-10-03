@@ -445,7 +445,7 @@ async function main() {
 		},
 		mouse: true,
 		scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'yellow' } },
-	}) as contrib.Widgets.TableElement & { rows: blessed.Widgets.ListElement  & { selected: number }};
+	}) as contrib.Widgets.TableElement & { rows: blessed.Widgets.ListElement & { selected: number } };
 
 	updateTable();
 
@@ -456,7 +456,7 @@ async function main() {
 
 	// Add custom key handlers for pageup / pagedown / home / end
 	const tableRowsList = table.rows;
-	tableRowsList.key(['pageup'], function() {
+	tableRowsList.key(['pageup'], function () {
 		const page = this.height - 1;
 		this.select(Math.max(0, this.selected - page));
 		this.screen.render();
@@ -644,14 +644,50 @@ async function main() {
 				}
 				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
 				metadataLines.push(`Model content: ${JSON.stringify(selected.buffer, null)}`);
-				const modelData = selected.buffer as GLTFModel;
+
+				// Validate that selected.buffer is actually a GLTFModel at runtime.
+				// If not, try to reparsed the raw bytes (if available) or throw a clear error.
+				{
+					const bufCandidate = selected.buffer;
+					if (!isGLTFModel(bufCandidate)) {
+						// If the buffer looks like raw bytes, attempt to parse again explicitly
+						if (isBinaryBuffer(bufCandidate)) {
+							try {
+								const texBuf = (selected as any).texture_start != null && (selected as any).texture_end != null
+									? rombin.slice((selected as any).texture_start, (selected as any).texture_end)
+									: undefined;
+								// Re-parse using the loader to obtain a GLTFModel
+								// @ts-ignore
+								selected.buffer = await loadGLTFModelFromBuffer(String(selected.resid), rombin.slice(selected.start, selected.end), texBuf);
+							} catch (e: any) {
+								throw new Error(`Failed to parse GLTF model for '${selected.resid}': ${e?.message ?? String(e)}`);
+							}
+							// reassign candidate after parsing
+							if (!isGLTFModel(selected.buffer)) {
+								throw new Error(`Asset '${selected.resid}' was parsed but is not a GLTFModel.`);
+							}
+						} else {
+							throw new Error(`Asset '${selected.resid}' buffer is not a GLTFModel (got ${typeof bufCandidate}).`);
+						}
+					}
+				}
+
+				// At this point selected.buffer is validated to be a GLTFModel
+				// Use a local snapshot of the buffer so TypeScript can narrow its type
+				const bufCandidateAfterParse = selected.buffer;
+				if (!isGLTFModel(bufCandidateAfterParse)) {
+					// This should not happen because we validated/parsed above, but fail loudly if it does.
+					throw new Error(`Asset '${selected.resid}' buffer is not a GLTFModel after parsing (got ${typeof bufCandidateAfterParse}).`);
+				}
+				const modelData: GLTFModel = bufCandidateAfterParse;
+
 				metadataLines.push(`Nodes: ${modelData.nodes ? modelData.nodes.length : 0}`);
 				metadataLines.push(`Scenes: ${modelData.scenes ? modelData.scenes.length : 0}`);
 				metadataLines.push(`Skins: ${modelData.skins ? modelData.skins.length : 0}`);
 				const first = modelData.meshes[0];
-				if (first) metadataLines.push(`MorphTargets: ${first.morphPositions ? first.morphPositions.length : 0}`);
-				if (first) metadataLines.push(`Joints: ${first.jointIndices ? first.jointIndices.length / 4 : 0}`);
 				if (first) {
+					metadataLines.push(`MorphTargets: ${first.morphPositions ? first.morphPositions.length : 0}`);
+					metadataLines.push(`Joints: ${first.jointIndices ? first.jointIndices.length / 4 : 0}`);
 					asciiArt =
 						`Meshes: ${modelData.meshes.length}\n` +
 						`Vertices: ${first.positions.length / 3}\n` +
@@ -1156,4 +1192,25 @@ function asciiHexDump(buf: Uint8Array | ArrayBuffer, maxBytes?: number): string 
 		return result;
 	}
 	return result;
+}
+
+// Add a runtime type-guard for GLTFModel to avoid unsafe casts
+function isGLTFModel(obj: unknown): obj is GLTFModel {
+	if (!obj || typeof obj !== 'object') return false;
+	const anyObj = obj as { meshes?: unknown };
+	return Array.isArray(anyObj.meshes);
+}
+
+// New helper: robust binary buffer detector (Buffer | Uint8Array | ArrayBuffer)
+function isBinaryBuffer(x: unknown): x is ArrayBuffer | Uint8Array | Buffer {
+	if (!x) return false;
+	// Node Buffer
+	// Buffer should be available in Node environments used by this script
+	// Use Buffer.isBuffer when present
+	// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+	// @ts-ignore
+	if (typeof Buffer !== 'undefined' && typeof Buffer.isBuffer === 'function' && Buffer.isBuffer(x)) return true;
+	if (x instanceof Uint8Array) return true;
+	if (x instanceof ArrayBuffer) return true;
+	return false;
 }

@@ -1,4 +1,4 @@
-import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject, CatmullRomPath, PathRunner, CameraPathBinder, EventTimeline, WaveManager, WorldObject, build_fsm, type StateMachineBlueprint, Platform } from 'bmsx';
+import { $, World, CameraObject, new_vec3, V3, AmbientLightObject, DirectionalLightObject, PointLightObject, CatmullRomPath, PathRunner, CameraPathBinder, EventTimeline, WaveManager, WorldObject, build_fsm, type StateMachineBlueprint } from 'bmsx';
 import { bclass } from './bclass';
 import { CameraController } from './camera_controller';
 import { AnimatedMorphSphere, Cube3D, PhysDynamicCube, SmallCube3D, spawnSimpleCity } from './objects3d';

@@ -1,4 +1,4 @@
-import { $, WorldObject, Msx1Colors, build_fsm, type StateMachineBlueprint, Platform } from 'bmsx';
+import { $, WorldObject, Msx1Colors, build_fsm, type StateMachineBlueprint } from 'bmsx';
 import { EnemyHealthComponent } from './enemyhealth';
 
 export class RailShooterHUD extends WorldObject {
