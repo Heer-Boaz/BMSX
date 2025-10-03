@@ -824,11 +824,11 @@ export class BrowserGameViewHost implements GameViewHost {
 	public readonly surface: BrowserGameViewCanvas;
 	private readonly overlays = new Map<string, BrowserOverlayHandle>();
 	private readonly listenerCache = new WeakMap<HostEventListenerTarget, EventListenerOrEventListenerObject>();
- 	private readonly viewportCapability: ViewportMetricsProvider;
- 	private readonly overlayCapability: OverlayManager;
- 	private readonly windowEventsCapability: WindowEventHub;
- 	private readonly displayModeCapability: DisplayModeController;
- 	private readonly gamepadHandlesCapability: OnscreenGamepadHandleProvider;
+	 private readonly viewportCapability: ViewportMetricsProvider;
+	 private readonly overlayCapability: OverlayManager;
+	 private readonly windowEventsCapability: WindowEventHub;
+	 private readonly displayModeCapability: DisplayModeController;
+	 private readonly gamepadHandlesCapability: OnscreenGamepadHandleProvider;
 
 	public constructor(canvas: HTMLCanvasElement) {
 		if (!(canvas instanceof HTMLCanvasElement)) {

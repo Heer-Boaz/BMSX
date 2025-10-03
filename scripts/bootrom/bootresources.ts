@@ -261,7 +261,7 @@ function getImageURL(buffer: ArrayBuffer): string {
 }
 
 async function getImageFromBuffer(buffer: ArrayBuffer): Promise<ImageBitmap> {
-    return loadImage(getImageURL(buffer));
+	return loadImage(getImageURL(buffer));
 }
 
 // async function getImageFromBuffer(buffer: ArrayBuffer, options?: { flipY?: boolean }): Promise<TextureSource> {
