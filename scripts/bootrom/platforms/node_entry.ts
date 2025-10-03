@@ -40,6 +40,8 @@ interface InputTimelineEntry {
 	description?: string;
 }
 
+let maxScheduledMs = 0;
+
 function printHelp(): void {
 	console.log('Run a packaged BMSX ROM in a Node environment.');
 	console.log('');
@@ -156,7 +158,7 @@ async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
 	return loadResources(romBuffer, {
 		loadImageFromBuffer: async (buffer: ArrayBuffer): Promise<TextureSource> => {
 			const image = await loadImage(Buffer.from(buffer));
-			const texture = image as unknown as TextureSource & { close?: () => void };
+			const texture = image as TextureSource & { close?: () => void };
 			if (typeof texture.close !== 'function') {
 				texture.close = () => { /* no-op for node-canvas Image */ };
 			}
@@ -214,6 +216,7 @@ function scheduleTimelineEntries(entries: InputTimelineEntry[], frameIntervalMs:
 		const executionTimes = expandExecutionTimes(entry, baseMs, frameIntervalMs, idx);
 		executionTimes.forEach((timeMs) => {
 			const delay = Math.max(0, Math.round(timeMs));
+			if (delay > maxScheduledMs) maxScheduledMs = delay;
 			const description = entry.description ? `${entry.description}` : `entry#${idx}`;
 			logger(`[${source}] schedule ${description} at ${delay}ms`);
 			setTimeout(() => {
@@ -264,11 +267,11 @@ function executeRomCode(source: string, label: string): void {
 		throw new Error('ROM pack does not contain executable code.');
 	}
 	const wrapped = new Function('globalScope', `${source}\n//# sourceURL=${label}`);
-	wrapped(globalThis as unknown as Record<string, unknown>);
+	wrapped(globalThis as Record<string, unknown>);
 }
 
 function ensureHostEnvironment(): void {
-	const globals = globalThis as unknown as Record<string, unknown>;
+	const globals = globalThis as Record<string, unknown>;
 	if (globals.window === undefined) {
 		globals.window = globals;
 	}
@@ -310,7 +313,7 @@ async function main(): Promise<void> {
 
 	ensureHostEnvironment();
 	executeRomCode(rompack.code, `${__BOOTROM_ROM_NAME__}.${__BOOTROM_TARGET__}.js`);
-	const globals = globalThis as unknown as BootGlobals;
+	const globals = globalThis as BootGlobals;
 	const entry = globals.h406A;
 	if (typeof entry !== 'function') {
 		throw new Error('Bootloader entry point h406A not registered by ROM code.');
@@ -321,7 +324,7 @@ async function main(): Promise<void> {
 		platform.input.post(event);
 	};
 	if (__BOOTROM_TARGET__ === 'headless') {
-		const globals = globalThis as unknown as Record<string, unknown>;
+		const globals = globalThis as Record<string, unknown>;
 		globals.postHeadlessInput = postInput;
 	}
 	const inputLogger = (message: string) => console.log(`[bootrom:${__BOOTROM_TARGET__}:input] ${message}`);
@@ -331,14 +334,16 @@ async function main(): Promise<void> {
 	if (cliOptions.inputModulePath) {
 		await runInputModuleScheduler(cliOptions.inputModulePath, frameInterval, postInput, inputLogger);
 	}
-	const ttlMs = typeof cliOptions.ttlMs === 'number' && cliOptions.ttlMs > 0 ? cliOptions.ttlMs : 10_000;
-	if (ttlMs > 0) {
-		console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL set to ${ttlMs}ms.`);
-		setTimeout(() => {
-			console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL reached (${ttlMs}ms). Terminating.`);
-			process.exit(0);
-		}, ttlMs);
-	}
+	const defaultTtl = 1_000; // minimum 1 second default TTL to allow gameboot and graceful shutdown
+	const minTtl = maxScheduledMs > 0 ? maxScheduledMs + 5_000 : defaultTtl;
+	const requestedTtl = typeof cliOptions.ttlMs === 'number' && cliOptions.ttlMs > 0 ? Math.round(cliOptions.ttlMs) : defaultTtl;
+	const ttlMs = Math.max(requestedTtl, minTtl);
+	console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL set to ${ttlMs}ms (min required ${minTtl}ms).`);
+	setTimeout(() => {
+		console.log(`[bootrom:${__BOOTROM_TARGET__}] TTL reached (${ttlMs}ms). Terminating.`);
+		process.exit(0);
+	}, ttlMs);
+
 	const bootArgs: BootArgs = {
 		rompack,
 		platform,

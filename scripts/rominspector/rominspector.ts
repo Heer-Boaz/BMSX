@@ -644,7 +644,7 @@ async function main() {
 				}
 				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
 				metadataLines.push(`Model content: ${JSON.stringify(selected.buffer, null)}`);
-				const modelData = selected.buffer as unknown as GLTFModel;
+				const modelData = selected.buffer as GLTFModel;
 				metadataLines.push(`Nodes: ${modelData.nodes ? modelData.nodes.length : 0}`);
 				metadataLines.push(`Scenes: ${modelData.scenes ? modelData.scenes.length : 0}`);
 				metadataLines.push(`Skins: ${modelData.skins ? modelData.skins.length : 0}`);

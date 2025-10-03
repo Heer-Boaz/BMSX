@@ -1472,45 +1472,45 @@ type StateSlots = { [K in keyof StateDefinition]-?: StateDefinition[K] extends S
 
 // Event definition handlers
 function hoistEventIf(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'if', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
+	hoistSlot(ownerDef as Record<string, any>, 'if', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
 }
 
 function hoistEventDo(ownerDef: StateEventDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'do', id, registry, useProxyThunks);
+	hoistSlot(ownerDef as Record<string, any>, 'do', id, registry, useProxyThunks);
 }
 
 // Guard handlers
 function hoistGuardCanEnter(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'can_enter', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
+	hoistSlot(ownerDef as Record<string, any>, 'can_enter', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
 }
 
 function hoistGuardCanExit(ownerDef: StateGuard, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'can_exit', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
+	hoistSlot(ownerDef as Record<string, any>, 'can_exit', id, registry, useProxyThunks, { defaultValue: false, coerceBoolean: true });
 }
 
 // StateDefinition handlers
 function hoistStateTick(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'tick', id, registry, useProxyThunks);
+	hoistSlot(ownerDef as Record<string, any>, 'tick', id, registry, useProxyThunks);
 }
 
 function hoistStateTapeEnd(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'tape_end', id, registry, useProxyThunks);
+	hoistSlot(ownerDef as Record<string, any>, 'tape_end', id, registry, useProxyThunks);
 }
 
 function hoistStateTapeNext(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'tape_next', id, registry, useProxyThunks);
+	hoistSlot(ownerDef as Record<string, any>, 'tape_next', id, registry, useProxyThunks);
 }
 
 function hoistStateEntering(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'entering_state', id, registry, useProxyThunks);
+	hoistSlot(ownerDef as Record<string, any>, 'entering_state', id, registry, useProxyThunks);
 }
 
 function hoistStateExiting(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'exiting_state', id, registry, useProxyThunks);
+	hoistSlot(ownerDef as Record<string, any>, 'exiting_state', id, registry, useProxyThunks);
 }
 
 function hoistStateProcessInput(ownerDef: StateDefinition, id: string, registry: HandlerRegistry, useProxyThunks: boolean) {
-	hoistSlot(ownerDef as unknown as Record<string, any>, 'process_input', id, registry, useProxyThunks);
+	hoistSlot(ownerDef as Record<string, any>, 'process_input', id, registry, useProxyThunks);
 }
 
 function normalizeEventNameForId(name: string) {

@@ -156,7 +156,7 @@ export class RenderHUDOverlay implements RegisterablePersistent {
 		const fs = typeof b.getFrameStats === 'function' ? b.getFrameStats() : undefined;
 		if (fs) {
 			const toKB = (n?: number) => ((n ?? 0) / 1024).toFixed(1);
-			const anyFs = fs as unknown as { vertexBytes?: number; indexBytes?: number; uniformBytes?: number; textureBytes?: number };
+			const anyFs = fs as { vertexBytes?: number; indexBytes?: number; uniformBytes?: number; textureBytes?: number };
 			lines.push(
 				`draws:${fs.draws} idx:${fs.drawIndexed} inst:${fs.drawsInstanced} idxInst:${fs.drawIndexedInstanced} ` +
 				`upload:${toKB(fs.bytesUploaded)}KB (v:${toKB(anyFs.vertexBytes)}KB i:${toKB(anyFs.indexBytes)}KB u:${toKB(anyFs.uniformBytes)}KB t:${toKB(anyFs.textureBytes)}KB)`

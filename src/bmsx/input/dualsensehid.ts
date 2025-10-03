@@ -36,7 +36,7 @@ export interface HidRumbleParams {
 
 export class DualSenseHID {
 	private device: PlatformHIDDevice | null = null;
-	private rumbleTimer: number | null = null;
+	private rumbleTimer: { stop(): void } | null = null;
 	private kind: HidPadKind | null = null;
 	private assignedIndex: number | null = null;
 
@@ -201,13 +201,13 @@ export class DualSenseHID {
 		if (!this.device) {
 			console.info('Did not find any suitable controller device.');
 			console.info('Known devices:', known.map(d => {
-				const serial = (d as unknown as { serialNumber?: string }).serialNumber || 'none';
+				const serial = (d as { serialNumber?: string }).serialNumber || 'none';
 				return `${d.productName} (${d.vendorId.toString(16)}:${d.productId.toString(16)}) serial: ${serial}`;
 			}));
 			return; // No device found
 		}
 
-		console.info(`Found Sony HID device: ${this.device.productName} (${this.device.vendorId.toString(16)}:${this.device.productId.toString(16)}) serial: ${(this.device as unknown as { serialNumber?: string }).serialNumber || 'none'}`);
+		console.info(`Found Sony HID device: ${this.device.productName} (${this.device.vendorId.toString(16)}:${this.device.productId.toString(16)}) serial: ${(this.device as { serialNumber?: string }).serialNumber || 'none'}`);
 
 		this.kind = this.detectPadKind(this.device);
 		console.info(`Detected Sony HID device kind: ${this.kind ?? 'unknown'}`);
@@ -306,7 +306,7 @@ export class DualSenseHID {
 		}
 
 		if (result && result.changed) {
-			console.info(`Matched HID device via input: ${result.device.productName} serial: ${(result.device as unknown as { serialNumber?: string }).serialNumber || 'none'}`);
+			console.info(`Matched HID device via input: ${result.device.productName} serial: ${(result.device as { serialNumber?: string }).serialNumber || 'none'}`);
 			return result.device;
 		}
 		console.warn('Input correlation timed out or no match.');
@@ -317,10 +317,7 @@ export class DualSenseHID {
 		 * Stops the current rumble effect and resets the device.
 		 */
 	public stop(): void {
-		if (this.rumbleTimer) {
-			clearTimeout(this.rumbleTimer);
-			this.rumbleTimer = null;
-		}
+		this.clearRumbleTimer();
 		if (this.device && this.device.opened) {
 			// Zero‑out the rumble effect
 			this.sendRumble({ strong: 0, weak: 0, duration: 0 });
@@ -386,9 +383,28 @@ export class DualSenseHID {
 
 		// Automatically stop after `duration` ms.
 		if (duration > 0) {
-			clearTimeout(this.rumbleTimer);
-			this.rumbleTimer = globalThis.setTimeout(() => this.stop(), duration) as unknown as number;
+			this.scheduleRumbleStop(duration);
 		}
+	}
+
+	private clearRumbleTimer(): void {
+		if (this.rumbleTimer) {
+			this.rumbleTimer.stop();
+			this.rumbleTimer = null;
+		}
+	}
+
+	private scheduleRumbleStop(duration: number): void {
+		this.clearRumbleTimer();
+		const start = $.platform.clock.now();
+		const handle = $.platform.frames.start(() => {
+			if ($.platform.clock.now() - start >= duration) {
+				handle.stop();
+				this.rumbleTimer = null;
+				this.stop();
+			}
+		});
+		this.rumbleTimer = { stop: () => handle.stop() };
 	}
 
 	/** DualSense USB – report 0x02 (48 B) */
@@ -498,7 +514,13 @@ export class DualSenseHID {
 			this.assignedIndex = null;
 		}
 		if (this.rumbleTimer) {
-			clearTimeout(this.rumbleTimer);
+			// The rumbleTimer is an object { stop(): void } returned by platform.frames.start().
+			// Calling clearTimeout here is incorrect — call stop() instead.
+			try {
+				this.rumbleTimer.stop();
+			} catch (err) {
+				console.warn('Failed to stop rumble timer:', err);
+			}
 			this.rumbleTimer = null;
 		}
 	}

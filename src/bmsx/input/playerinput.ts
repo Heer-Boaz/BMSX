@@ -69,7 +69,7 @@ export class PlayerInput {
 	 *     },
 	 * });
 	 */
-	private inputMap: InputMap;
+	public inputMap: InputMap;
 
 	/**
 	 * Checks if all actions defined in the action definition string have been triggered.

@@ -381,52 +381,12 @@ export function LineLength(p1: vec3, p2: vec3): number {
 	return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2) - 1;
 }
 
-// https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API
-export function isStorageAvailable(storageType: string): boolean {
-	try {
-		// Convert window -> unknown -> Record<string, Storage|undefined> to satisfy TS
-		const storage = (window as unknown as Record<string, Storage | undefined>)[storageType];
-		if (!storage) return false;
-		const testKey = '__test__';
-		storage.setItem(testKey, testKey);
-		storage.removeItem(testKey);
-		return true;
-	} catch (error) {
-		const e = error;
-		return e && hasOwn(e, 'code') && (
-			e.code === 22 || // everything except Firefox
-			e.code === 1014 || // Firefox
-			(hasOwn(e, 'name') && (
-				e.name === 'QuotaExceededError' || // everything except Firefox
-				e.name === 'NS_ERROR_DOM_QUOTA_REACHED' // Firefox
-			))
-		);
-	}
-}
-
-/**
- * Checks if the localStorage is available in the current environment.
- * @returns {boolean} True if localStorage is available, false otherwise.
- */
-export function isLocalStorageAvailable(): boolean {
-	return isStorageAvailable('localStorage');
-}
-
-/**
- * Checks if the session storage is available in the current browser.
- * @returns A boolean value indicating whether the session storage is available.
- */
-
-export function isSessionStorageAvailable(): boolean {
-	return isStorageAvailable('sessionStorage');
-}
 /**
  * Calculates the direction from a subject position to a target position.
  * @param subjectpos The position of the subject.
  * @param targetpos The position of the target.
  * @returns The direction from the subject position to the target position.
  */
-
 export function getLookAtDirection(subjectpos: vec2, targetpos: vec2): Direction {
 	const delta: vec2 = { x: targetpos.x - subjectpos.x, y: targetpos.y - subjectpos.y };
 	if (Math.abs(delta.x) >= Math.abs(delta.y)) {
@@ -762,6 +722,26 @@ export function filterIterable<T>(iterable: Iterable<T>, predicate: (item: T) =>
 export function hasOwn(obj: object, key: string): boolean {
 	return Object.prototype.hasOwnProperty.call(obj, key);
 }
+
+// Explicit instance checks prevent relying on weak typing and avoid casts like `as any`.
+export function typedArrayToNumberArray(view: ArrayBufferView): number[] {
+	if (view instanceof Float32Array) return Array.from(view);
+	if (view instanceof Float64Array) return Array.from(view);
+	if (view instanceof Int8Array) return Array.from(view);
+	if (view instanceof Uint8Array) return Array.from(view);
+	if (view instanceof Uint8ClampedArray) return Array.from(view);
+	if (view instanceof Int16Array) return Array.from(view);
+	if (view instanceof Uint16Array) return Array.from(view);
+	if (view instanceof Int32Array) return Array.from(view);
+	if (view instanceof Uint32Array) return Array.from(view);
+	// BigInt typed arrays: coerce to Number (may lose precision but preserves runtime safety)
+	if (typeof BigInt64Array !== 'undefined' && view instanceof BigInt64Array) return Array.from(view, (v) => Number(v));
+	if (typeof BigUint64Array !== 'undefined' && view instanceof BigUint64Array) return Array.from(view, (v) => Number(v));
+	// Fallback: interpret raw bytes as Uint8Array slice
+	const asBytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+	return Array.from(asBytes);
+}
+
 // @ts-ignore
 function svgToPng(svgElement, filename) {
 	svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');

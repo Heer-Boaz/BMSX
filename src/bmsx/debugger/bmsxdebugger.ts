@@ -272,7 +272,7 @@ export class ObjectHighlighterComponent extends Component {
 	}
 
 	override preprocessingUpdate(): void {
-		const parent = this.parent as unknown as SpriteObject;
+		const parent = this.parent as SpriteObject;
 
 		// Draw polygons if available on the WorldObject
 		if (parent.hasHitPolygon) {

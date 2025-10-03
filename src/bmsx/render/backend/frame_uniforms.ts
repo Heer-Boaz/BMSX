@@ -20,7 +20,7 @@ const buf = new Float32Array(48);
 export function initFrameUniforms(backend: GPUBackend): void {
 	if (ubo || !backend.createUniformBuffer) return;
 	// Allocate a small UBO with fixed size
-	ubo = backend.createUniformBuffer!(buf.byteLength, 'dynamic') as unknown as WebGLBuffer;
+	ubo = backend.createUniformBuffer!(buf.byteLength, 'dynamic') as WebGLBuffer;
 }
 
 export interface FrameUniformsUpdate {
@@ -78,6 +78,6 @@ export function updateAndBindFrameUniforms(backend: GPUBackend, u: FrameUniforms
 	const amb = u.ambient;
 	if (amb) { buf[44] = amb.color[0]; buf[45] = amb.color[1]; buf[46] = amb.color[2]; buf[47] = amb.intensity; }
 	else { buf[44] = buf[45] = buf[46] = buf[47] = 0; }
-	backend.updateUniformBuffer(ubo as unknown as WebGLBuffer, buf);
-	backend.bindUniformBufferBase(frameBindingIndexFor(backend), ubo as unknown as WebGLBuffer);
+	backend.updateUniformBuffer(ubo as WebGLBuffer, buf);
+	backend.bindUniformBufferBase(frameBindingIndexFor(backend), ubo as WebGLBuffer);
 }

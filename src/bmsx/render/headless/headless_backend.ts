@@ -12,7 +12,7 @@ let textureIdSeq = 0;
 let passIdSeq = 0;
 
 function makeTextureHandle(kind: string, extra: Record<string, unknown> = {}): TextureHandle {
-	return { id: ++textureIdSeq, kind, ...extra } as unknown as TextureHandle;
+	return { id: ++textureIdSeq, kind, ...extra } as TextureHandle;
 }
 
 function makePassEncoder(desc: RenderPassDesc): PassEncoder {

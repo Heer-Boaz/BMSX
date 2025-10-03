@@ -1,6 +1,6 @@
 import { Component, type ComponentAttachOptions } from '../component/basecomponent';
 import { $ } from '../core/game';
-import { M4 } from '../render/3d/math3d';
+import { M4, V4 } from '../render/3d/math3d';
 import type { asset_id, GLTFModel, GLTFMesh, GLTFAnimation, GLTFAnimationSampler, GLTFNode, color_arr, vec3arr, vec4arr } from '../rompack/rompack';
 import { Mesh as RenderMesh } from '../render/3d/mesh';
 import { Material } from '../render/3d/material';
@@ -326,7 +326,7 @@ export class MeshComponent extends Component {
 		if (t) M4.translateSelf(out, t[0], t[1], t[2]);
 		if (r) {
 			MeshComponent.normalizeQuat(r);
-			M4.quatToMat4Into(this._tmpRotation, r as unknown as vec4arr);
+			M4.quatToMat4Into(this._tmpRotation, V4.fromF32ArrToArr(r));
 			M4.mulAffineInto(out, out, this._tmpRotation);
 		}
 		if (s) M4.scaleSelf(out, s[0], s[1], s[2]);

@@ -158,7 +158,7 @@ export class InputHUDOverlay {
 		const blocks: string[] = [];
 		for (let i = 1; i <= Input.PLAYERS_MAX; i++) {
 			const playerInput = inputSvc.getPlayerInput(i);
-			const inputMap = (playerInput as unknown as { inputMap?: InputMap }).inputMap;
+			const inputMap = playerInput.inputMap;
 			const keyboardHandler = playerInput.inputHandlers['keyboard'];
 			const gamepadHandler = playerInput.inputHandlers['gamepad'];
 			const pointerHandler = playerInput.inputHandlers['pointer'];

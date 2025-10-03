@@ -137,6 +137,8 @@ export type vec2arr = [number, number];
  */
 export type vec3arr = [number, number, number];
 
+export type vec4 = { x: number; y: number; z: number; w: number; };
+
 /**
  * Alternative representation of a 4D vector as an array.
  * Example: [x, y, z, w]

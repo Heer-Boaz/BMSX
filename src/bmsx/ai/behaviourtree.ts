@@ -2,6 +2,7 @@ import { $ } from '../core/game';
 import { normalizeDecoratedClassName } from '../utils/decorators';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
+import type { WorldObject } from '../core/object/worldobject';
 
 /** Node specification used to compose a behaviour tree. */
 export type BehaviorTreeNodeSpec =
@@ -303,8 +304,6 @@ export type BTNodeFeedback = {
 	updates?: (blackboard: Blackboard) => void; // The updates to apply to the blackboard
 };
 
-type BehaviorTreeTarget = { id: Identifier } & Record<string, unknown>;
-
 /**
  * Represents a blackboard that stores key-value bindings.
  */
@@ -384,7 +383,7 @@ export class Blackboard implements Identifiable {
 	 * @param {Array<{ property: keyof T, key?: string }>} properties - The properties to copy, along with optional custom keys.
 	 * @returns {void}
 	 */
-	public copyPropertiesToBlackboard<T extends BehaviorTreeTarget>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
+	public copyPropertiesToBlackboard<T extends WorldObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
 		for (let { property, key } of properties) {
 			// If no key is given, use the property name as the key
 			key = key ?? (property as string);
@@ -430,8 +429,8 @@ export abstract class BTNode implements Identifiable {
 	 * @param targetid The Identifier of the target object.
 	 * @returns The target object casted to the specified type.
 	 */
-	public getTarget<T extends BehaviorTreeTarget>(targetid: Identifier): T {
-		const target = $.world.getWorldObject(targetid) as unknown as BehaviorTreeTarget | null;
+	public getTarget<T extends WorldObject>(targetid: Identifier): T {
+		const target = $.world.getWorldObject(targetid) as WorldObject | null;
 		if (!target) {
 			throw new Error(`[BehaviorTree:${this.id}] Target '${targetid}' not found in world.`);
 		}

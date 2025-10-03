@@ -545,7 +545,7 @@ export class Game {
 	/** Serialize the full game state: world + selected services. */
 	public save(compress: boolean = true): Uint8Array {
 		// Assemble Savegame DTO using the same rules as World.save but orchestrated here
-		const worldAny = this.world as unknown as Record<string, unknown>;
+		const worldAny = this.world as Record<string, any>;
 		const keys = Object.keys(worldAny);
 		const data: Record<string, unknown> = {};
 		const worldCtor: any = this.world.constructor;

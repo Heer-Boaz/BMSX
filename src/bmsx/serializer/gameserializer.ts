@@ -19,6 +19,7 @@ import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Bindable, Identifier } from "bmsx/rompack/rompack";
 import { insavegame, type RevivableObjectArgs, onsave, onload } from './serializationhooks';
+import { typedArrayToNumberArray } from '../utils/utils';
 
 // Decorators onload/onsave are defined locally in this file
 export type ConstructorWithSaveGame<T = Bindable> = (new (...args: any[]) => T) & { __exclude_savegame__?: boolean };
@@ -207,7 +208,7 @@ export class Serializer {
 			if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
 				const id = getIdForObject(value);
 				const typename = Serializer.get_typename(value);
-				const taPlain: { typename: string; data: number[]; isTypedArray: true } = { typename, data: Array.from(value as unknown as ArrayLike<number>), isTypedArray: true };
+				const taPlain: { typename: string; data: number[]; isTypedArray: true } = { typename, data: typedArrayToNumberArray(value), isTypedArray: true };
 				if (parent && key !== undefined) parent[key] = { r: id };
 				else rootRef = { r: id };
 				objects[id] = taPlain;
@@ -391,7 +392,7 @@ export class Reviver {
 				throw new Error(`[Reviver] Missing object payload for id '${id}'.`);
 			}
 			if (typeof data === 'object' && 'isTypedArray' in data && (data as { isTypedArray: unknown }).isTypedArray) {
-				const ctorUnknown = (globalThis as unknown as Record<string, unknown>)[(data as { typename: string }).typename];
+				const ctorUnknown = (globalThis as Record<string, unknown>)[(data as { typename: string }).typename];
 				if (typeof ctorUnknown === "function") {
 					const C = ctorUnknown as new (data: number[]) => unknown;
 					idToObject[id] = new C((data as { data: number[] }).data);

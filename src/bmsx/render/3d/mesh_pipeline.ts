@@ -15,7 +15,7 @@ import { checkWebGLError } from '../backend/webgl/webgl.helpers';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { MeshRenderSubmission } from '../gameview';
 import type { DirectionalLight, PointLight } from './light';
-import { M4, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
+import { M4, V3, float32ToFloat16, isMatrixMirrored, sphereInFrustumPacked, transformBoundingSphereCenter, transformedBoundingSphereRadius, translationDistanceSquared } from './math3d';
 import { arraysEqual } from '../../utils/utils';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
 import {
@@ -620,7 +620,7 @@ function buildDrawLists(submissions: MeshRenderSubmission[], state: MeshBatchPip
 			if (meshEntry.boundingRadius === 0) return true;
 			transformBoundingSphereCenter(sphereCenterScratch, matrix, meshEntry.boundingCenter as vec3arr);
 			const radius = transformedBoundingSphereRadius(matrix, meshEntry.boundingRadius);
-			return sphereInFrustumPacked(frustum, sphereCenterScratch as unknown as vec3arr, radius);
+			return sphereInFrustumPacked(frustum, V3.fromF32ArrToArr(sphereCenterScratch), radius);
 		})
 		: submissions.slice();
 	visible.sort((a, b) => {

@@ -111,7 +111,7 @@ applyTo: '**/*.*'
   if (typeof anyO.activate === 'function') anyO.activate(spawnPos);
   else o.onspawn?.(spawnPos);
   // Activation (BeginPlay): if the object exposes activate, call it first
-  const activatable = o as unknown as { activate?: (pos?: Vector) => void };
+  const activatable = o as { activate?: (pos?: Vector) => void };
   if (typeof activatable.activate === 'function') activatable.activate(spawnPos);
   // Gameplay-aware spawn hook (legacy/back-compat)
   if (typeof o.onspawn === 'function') o.onspawn(spawnPos);

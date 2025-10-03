@@ -226,10 +226,10 @@ export class WebGLBackend implements GPUBackend {
 	// Remove registerCustomPipeline; use PipelineManager.register directly
 	private hashString(s: string): number { let h = 0; for (let i = 0; i < s.length; i++) h = Math.imul(31, h) + s.charCodeAt(i) | 0; return h >>> 0; }
 	getPassState<S = unknown>(label: string): S | undefined {
-		if (this.extraStates[label]) return this.extraStates[label] as unknown as S | undefined;
+		if (this.extraStates[label]) return this.extraStates[label] as S | undefined;
 		// Assume external PipelineManager; if integrated, call manager.getState
 		// For now, keep extraStates for legacy, but migrate to manager
-		return this.extraStates[label] as unknown as S | undefined;
+		return this.extraStates[label] as S | undefined;
 	}
 	setPassState<State = unknown>(label: string, state: State): void {
 		// Migrate to external manager.setState; for now keep extraStates

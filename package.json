@@ -65,6 +65,7 @@
 	"validate:game:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --debug --force -romname ",
 	"build:game:headless": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug --platform headless -romname ",
 	"build:game:headless:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug --platform headless --force -romname ",
+	"headless:ella2023": "npm run build:game:headless -- ella2023 && node dist/headless_debug.js --rom dist/yiear.debug.rom --input-timeline src/ella2023/test/ella2023_demo.json",
 	"build:game:cli": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug --platform cli -romname ",
 	"build:game:cli:force": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig --debug --platform cli --force -romname ",
 	"build:game:production": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --skiptypecheck --usepkgtsconfig -romname ",

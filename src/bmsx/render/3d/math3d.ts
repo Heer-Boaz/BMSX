@@ -1,4 +1,4 @@
-import type { vec3, vec3arr, vec4arr } from '../../rompack/rompack';
+import type { vec3, vec3arr, vec4, vec4arr } from '../../rompack/rompack';
 
 export type Mat4Float32 = Float32Array;
 
@@ -483,6 +483,21 @@ export function translationDistanceSquared(matrix: Float32Array, point: { x: num
 	return dx * dx + dy * dy + dz * dz;
 }
 
+export const V4 = {
+	of(x = 0, y = 0, z = 0, w = 0): vec4 { return { x, y, z, w }; },
+	ofArr(arr: vec4arr): vec4 { return { x: arr[0], y: arr[1], z: arr[2], w: arr[3] }; },
+	// Convert union to vec4 object (no allocation if already object)
+	toArr(v: vec4 | vec4arr): vec4arr { return Array.isArray(v) ? v : [v.x, v.y, v.z, v.w]; },
+	toF32Arr(v: vec4 | vec4arr): Float32Array {
+		const arr = this.toArr(v);
+		return new Float32Array(arr);
+	},
+	fromF32Arr(arr: Float32Array): vec4 { return { x: arr[0], y: arr[1], z: arr[2], w: arr[3] }; },
+	fromF32ArrInto(out: vec4, arr: Float32Array): vec4 { out.x = arr[0]; out.y = arr[1]; out.z = arr[2]; out.w = arr[3]; return out; },
+	fromF32ArrIntoArr(out: vec4arr, arr: Float32Array): vec4arr { out[0] = arr[0]; out[1] = arr[1]; out[2] = arr[2]; out[3] = arr[3]; return out; },
+	fromF32ArrToArr(arr: Float32Array): vec4arr { return (arr as unknown as vec4arr); },
+};
+
 // ====== Vec helpers ======
 // Quaternion helpers consolidated into lower section (Q)
 export const V3 = {
@@ -492,6 +507,7 @@ export const V3 = {
 	toVec3(v: vec3 | vec3arr): vec3 { return Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : v; },
 	// Convert vec3 or vec3arr to array form
 	toArr(v: vec3 | vec3arr): vec3arr { return Array.isArray(v) ? v : [v.x, v.y, v.z]; },
+	fromF32ArrToArr(arr: Float32Array): vec3arr { return arr as unknown as vec3arr; },
 	copy(p: vec3): vec3 { return { x: p.x, y: p.y, z: p.z }; },
 	set(p: vec3, x: number, y: number, z: number): void { p.x = x; p.y = y; p.z = z; },
 	assign(out: vec3, data: vec3): void { out.x = data.x; out.y = data.y; out.z = data.z; },
@@ -620,10 +636,10 @@ export function sphereInFrustumPacked(planes: Float32Array, center: [number, num
 }
 
 // ====== Quat helpers ======
-export type quat = { x: number; y: number; z: number; w: number };
+export type quat = vec4;
 
 export const Q = {
-	ident(): quat { return { x: 0, y: 0, z: 0, w: 1 }; },
+	ident(): quat { return V4.of(0, 0, 0, 1); },
 	fromEuler(rx: number, ry: number, rz: number): quat { // XYZ order (same as rotateX, then Y, then Z in paint legacy path)
 		const cx = Math.cos(rx * 0.5), sx = Math.sin(rx * 0.5);
 		const cy = Math.cos(ry * 0.5), sy = Math.sin(ry * 0.5);
