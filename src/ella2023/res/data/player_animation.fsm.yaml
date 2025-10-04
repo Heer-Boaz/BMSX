@@ -200,6 +200,13 @@ states:
                 lane: gameplay
                 payload:
                     attackType: flyingkick
+        exiting_state:
+            - emit:
+                event: fighter.attack.animation.flyingkick.finished
+                scope: self
+                lane: gameplay
+                payload:
+                    attackType: flyingkick
     duck:
         entering_state:
             - set_property:

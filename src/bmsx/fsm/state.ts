@@ -10,6 +10,76 @@ import { type id2sstate, type Stateful, type StateTransition, type StateTransiti
 import { StateDefinition } from './statedefinition';
 import { EventPayload } from '../core/eventemitter';
 
+type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
+
+type TransitionTrigger = 'manual' | 'event' | 'input' | 'run-check' | 'process-input' | 'tick' | 'tape' | 'enter' | 'queue-drain';
+
+interface TransitionOutcomeSnapshot {
+	from?: Identifier;
+	to: Identifier;
+	type: TransitionType;
+	execution: TransitionExecutionMode;
+	status: 'success' | 'queued' | 'blocked' | 'noop';
+	guardSummary?: string;
+	reason?: string;
+}
+
+interface TransitionDiagSnapshot {
+	trigger: TransitionTrigger;
+	description?: string;
+	eventName?: string;
+	emitter?: Identifier;
+	handlerName?: string;
+	scope?: string;
+	lane?: string;
+	payloadSummary?: string;
+	timestamp: number;
+	bubbled?: boolean;
+	actionEvaluations?: readonly string[];
+	guardEvaluations?: readonly GuardEvaluation[];
+	lastTransition?: TransitionOutcomeSnapshot;
+}
+
+interface TransitionDiagContext extends TransitionDiagSnapshot {
+	actionEvaluations?: string[];
+	guardEvaluations?: GuardEvaluation[];
+	transitions?: TransitionOutcomeSnapshot[];
+}
+
+type TransitionQueueItem = StateTransitionWithType & { diag?: TransitionDiagSnapshot };
+
+interface TransitionTraceEntry {
+	outcome: 'success' | 'queued' | 'blocked' | 'noop';
+	execution: TransitionExecutionMode;
+	from?: Identifier;
+	to: Identifier;
+	transitionType: TransitionType;
+	context?: TransitionDiagSnapshot;
+	guard?: TransitionGuardDiagnostics;
+	payload?: EventPayload;
+	queueSize?: number;
+	reason?: string;
+}
+
+interface EventDispatchResult {
+	handled: boolean;
+	context?: TransitionDiagSnapshot;
+}
+
+interface GuardEvaluation {
+	side: 'exit' | 'enter';
+	descriptor: string;
+	passed: boolean;
+	defined: boolean;
+	type: 'function' | 'string' | 'missing' | 'other';
+	reason?: string;
+}
+
+interface TransitionGuardDiagnostics {
+	allowed: boolean;
+	evaluations: GuardEvaluation[];
+}
+
 const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start of the tape, so that the first index of the tape is considered when the `next`-event is triggered
 
 @insavegame
@@ -18,20 +88,110 @@ const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start
  * @template T - The type of the world object or model associated with the state.
  */
 export class State<T extends Stateful = Stateful> implements Identifiable {
+	public static TraceMap = new Map<Identifier, string[]>();
+
 	/** Path parsing and diagnostics configuration. */
 	public static pathConfig = {
-		enableLegacyAliases: false,
 		cacheSize: 256,
 	};
 
-	/** Optional diagnostics toggles for development. */
 	public static diagnostics = {
-		logLegacyAliasUse: false,
-		traceTransitions: false,
+		/**
+		 * If true, trace state transitions to the TraceMap for later inspection.
+		 * The TraceMap maps state machine ids to arrays of transition descriptions.
+		 * E.g. "StateMachine1: idle -> running (event: start)".
+		 * It includes:
+		 * - Whether guards passed or failed. These include guard functions and action definition evaluations.
+		 * - Transition type (immediate, queued, deferred).
+		 * - Transition trigger (e.g. event, input, direct (transition)).
+		 */
+		traceTransitions: true,
+		/** Maximum number of entries kept per machine. Older entries are trimmed. */
+		maxEntriesPerMachine: 512,
+		/**
+		 * If true, trace event dispatches to the TraceMap for later inspection.
+		 * The TraceMap maps state machine ids to arrays of event dispatch descriptions.
+		 * E.g. "StateMachine1: dispatch event 'jump' to state 'running'".
+		 * It includes:
+		 * - Whether the event was handled or not (i.e. if there was a handler for it).
+		 * - The target state of the event, if any.
+		 * - The source of the event (e.g. input, run check, etc.).
+		 * - The event parameters.
+		 * - The event timestamp.
+		 * - The event scope and lane.
+		 * - The event handler function name, if any.
+		 * - The transition type (immediate, queued, deferred).
+		 * - Whether the event bubbled up.
+		 */
+		traceDispatch: true,
+		/** When true, also mirror diagnostics to the console for live debugging. */
+		mirrorToConsole: false,
 	};
 
 	/** Simple path parse cache. */
 	private static _pathCache = new Map<string, { abs: boolean, up: number, segs: readonly string[] }>();
+
+	private static shouldTraceTransitions(): boolean {
+		const diag = State.diagnostics;
+		return !!diag && diag.traceTransitions === true;
+	}
+
+	private static shouldTraceDispatch(): boolean {
+		const diag = State.diagnostics;
+		return !!diag && diag.traceDispatch === true;
+	}
+
+	private static appendTraceEntry(id: Identifier, message: string): void {
+		const diag = State.diagnostics;
+		if (!diag) return;
+		let list = State.TraceMap.get(id);
+		if (!list) {
+			list = [];
+			State.TraceMap.set(id, list);
+		}
+		list.push(message);
+		const limit = Math.max(0, diag.maxEntriesPerMachine ?? 0);
+		if (limit > 0 && list.length > limit) {
+			list.splice(0, list.length - limit);
+		}
+		if (diag.mirrorToConsole) {
+			// eslint-disable-next-line no-console
+			console.debug(`[FSM:${id}] ${message}`);
+		}
+	}
+
+	private static describePayload(payload?: EventPayload): string {
+		if (payload === undefined) return 'undefined';
+		if (payload === null) return 'null';
+		if (typeof payload === 'string') return payload;
+		if (typeof payload === 'number' || typeof payload === 'boolean') return String(payload);
+		try {
+			const json = JSON.stringify(payload);
+			if (!json) return 'undefined';
+			return json.length > 160 ? `${json.slice(0, 157)}…` : json;
+		} catch (err) {
+			return `[unserializable:${(err as Error).message}]`;
+		}
+	}
+
+	private static cloneSnapshot(ctx?: TransitionDiagContext): TransitionDiagSnapshot | undefined {
+		if (!ctx) return undefined;
+		return {
+			trigger: ctx.trigger,
+			description: ctx.description,
+			eventName: ctx.eventName,
+			emitter: ctx.emitter,
+			handlerName: ctx.handlerName,
+			scope: ctx.scope,
+			lane: ctx.lane,
+			payloadSummary: ctx.payloadSummary,
+			timestamp: ctx.timestamp,
+			bubbled: ctx.bubbled,
+			actionEvaluations: ctx.actionEvaluations ? [...ctx.actionEvaluations] : undefined,
+			guardEvaluations: ctx.guardEvaluations ? ctx.guardEvaluations.map(g => ({ ...g })) : undefined,
+			lastTransition: ctx.lastTransition ? { ...ctx.lastTransition } : undefined,
+		};
+	}
 
 	/** Parse filesystem-like path: '/', './', '../', quoting via ["..."] with escapes. */
 	public static parseFsPath(input: string): { abs: boolean, up: number, segs: readonly string[] } {
@@ -107,6 +267,247 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const rec = { abs, up, segs: segs as readonly string[] };
 		State._pathCache.set(input, rec);
 		return rec;
+	}
+
+	private runWithTransitionContext<T>(factory: () => TransitionDiagContext, fn: (ctx?: TransitionDiagContext) => T): T {
+		if (!State.shouldTraceTransitions()) return fn(undefined);
+		const ctx = factory();
+		if (!this.transitionContextStack) this.transitionContextStack = [];
+		this.transitionContextStack.push(ctx);
+		try {
+			return fn(ctx);
+		} finally {
+			const stack = this.transitionContextStack;
+			if (stack) {
+				stack.pop();
+				if (stack.length === 0) this.transitionContextStack = undefined;
+			}
+		}
+	}
+
+	private peekTransitionContext(): TransitionDiagContext | undefined {
+		const stack = this.transitionContextStack;
+		if (!stack || stack.length === 0) return undefined;
+		return stack[stack.length - 1];
+	}
+
+	private appendActionEvaluation(detail: string): void {
+		if (!State.shouldTraceTransitions()) return;
+		const ctx = this.peekTransitionContext();
+		if (!ctx) return;
+		if (!ctx.actionEvaluations) ctx.actionEvaluations = [];
+		ctx.actionEvaluations.push(detail);
+	}
+
+	private appendGuardEvaluation(detail: GuardEvaluation): void {
+		if (!State.shouldTraceTransitions()) return;
+		const ctx = this.peekTransitionContext();
+		if (!ctx) return;
+		if (!ctx.guardEvaluations) ctx.guardEvaluations = [];
+		ctx.guardEvaluations.push(detail);
+	}
+
+	private recordTransitionOutcomeOnContext(outcome: TransitionOutcomeSnapshot): void {
+		if (!State.shouldTraceTransitions()) return;
+		const ctx = this.peekTransitionContext();
+		if (!ctx) return;
+		ctx.lastTransition = outcome;
+		if (!ctx.transitions) ctx.transitions = [];
+		ctx.transitions.push(outcome);
+	}
+
+	private resolveContextSnapshot(provided?: TransitionDiagSnapshot): TransitionDiagSnapshot | undefined {
+		if (provided) return provided;
+		return State.cloneSnapshot(this.peekTransitionContext());
+	}
+
+	private formatGuardDiagnostics(guard: TransitionGuardDiagnostics | undefined): string | undefined {
+		if (!guard) return undefined;
+		if (!guard.evaluations || guard.evaluations.length === 0) return undefined;
+		return guard.evaluations.map(ev => {
+			const status = ev.passed ? 'pass' : 'fail';
+			const descriptor = ev.descriptor && ev.descriptor !== '<none>' ? `(${ev.descriptor})` : '';
+			const note = ev.reason && !ev.passed ? `!${ev.reason}` : undefined;
+			return `${ev.side}:${status}${descriptor}${note ? `[${note}]` : ''}`;
+		}).join(',');
+	}
+
+	private formatActionEvaluations(context?: TransitionDiagSnapshot): string | undefined {
+		if (!context || !context.actionEvaluations || context.actionEvaluations.length === 0) return undefined;
+		return context.actionEvaluations.join(';');
+	}
+
+	private emitTransitionTrace(entry: TransitionTraceEntry): void {
+		if (!State.shouldTraceTransitions()) return;
+		const context = this.resolveContextSnapshot(entry.context);
+		const message = this.composeTransitionTraceMessage({ ...entry, context });
+		State.appendTraceEntry(this.id, message);
+	}
+
+	private composeTransitionTraceMessage(entry: TransitionTraceEntry & { context?: TransitionDiagSnapshot }): string {
+		const parts: string[] = ['[transition]'];
+		parts.push(`outcome=${entry.outcome}`);
+		parts.push(`exec=${entry.execution}`);
+		parts.push(`to='${entry.to}'`);
+		if (entry.from !== undefined) parts.push(`from='${entry.from}'`);
+		parts.push(`type='${entry.transitionType}'`);
+		if (entry.context?.trigger) {
+			const triggerDetail = entry.context.eventName ? `${entry.context.trigger}(${entry.context.eventName})` : entry.context.trigger;
+			parts.push(`trigger=${triggerDetail}`);
+		}
+		if (entry.context?.description) parts.push(`desc=${entry.context.description}`);
+		if (entry.context?.handlerName) parts.push(`handler=${entry.context.handlerName}`);
+		if (entry.context?.scope) parts.push(`scope=${entry.context.scope}`);
+		if (entry.context?.lane) parts.push(`lane=${entry.context.lane}`);
+		if (entry.context?.emitter) parts.push(`emitter=${entry.context.emitter}`);
+		if (entry.context?.bubbled) parts.push('bubbled=true');
+		if (entry.reason) parts.push(`reason=${entry.reason}`);
+		const guardSummary = this.formatGuardDiagnostics(entry.guard);
+		if (guardSummary) parts.push(`guards=${guardSummary}`);
+		const actionSummary = this.formatActionEvaluations(entry.context);
+		if (actionSummary) parts.push(`actions=${actionSummary}`);
+		if (entry.payload !== undefined) parts.push(`payload=${State.describePayload(entry.payload)}`);
+		if (entry.context?.payloadSummary && entry.payload === undefined) parts.push(`payload=${entry.context.payloadSummary}`);
+		if (entry.queueSize !== undefined) parts.push(`queue=${entry.queueSize}`);
+		if (entry.context?.timestamp) parts.push(`ts=${entry.context.timestamp}`);
+		return parts.join(' ');
+	}
+
+	private createFallbackSnapshot(trigger: TransitionTrigger, description: string, payload?: EventPayload): TransitionDiagSnapshot {
+		return {
+			trigger,
+			description,
+			timestamp: $.platform.clock.now(),
+			payloadSummary: payload !== undefined ? State.describePayload(payload) : undefined,
+		};
+	}
+
+	private hydrateContext(snapshot: TransitionDiagSnapshot | undefined, trigger: TransitionTrigger, description: string): TransitionDiagContext {
+		if (snapshot) {
+			return {
+				trigger: snapshot.trigger,
+				description: snapshot.description ?? description,
+				eventName: snapshot.eventName,
+				emitter: snapshot.emitter,
+				handlerName: snapshot.handlerName,
+				scope: snapshot.scope,
+				lane: snapshot.lane,
+				payloadSummary: snapshot.payloadSummary,
+				timestamp: snapshot.timestamp,
+				bubbled: snapshot.bubbled,
+				actionEvaluations: snapshot.actionEvaluations ? [...snapshot.actionEvaluations] : undefined,
+				guardEvaluations: snapshot.guardEvaluations ? snapshot.guardEvaluations.map(g => ({ ...g })) : undefined,
+				lastTransition: snapshot.lastTransition ? { ...snapshot.lastTransition } : undefined,
+			};
+		}
+		return {
+			trigger,
+			description,
+			timestamp: $.platform.clock.now(),
+		};
+	}
+
+	private createEventContext(eventName: string, emitter: Identifier, payload?: EventPayload): TransitionDiagContext {
+		return {
+			trigger: 'event',
+			description: `event:${eventName}`,
+			eventName,
+			emitter,
+			timestamp: $.platform.clock.now(),
+			payloadSummary: payload !== undefined ? State.describePayload(payload) : undefined,
+		};
+	}
+
+	private createInputContext(pattern: string, playerIndex: number): TransitionDiagContext {
+		return {
+			trigger: 'input',
+			description: `input:${pattern}`,
+			timestamp: $.platform.clock.now(),
+			payloadSummary: `player=${playerIndex}`,
+		};
+	}
+
+	private createProcessInputContext(): TransitionDiagContext {
+		return {
+			trigger: 'process-input',
+			description: 'process_input',
+			timestamp: $.platform.clock.now(),
+		};
+	}
+
+	private createTickContext(handlerName: string): TransitionDiagContext {
+		return {
+			trigger: 'tick',
+			description: `tick:${handlerName}`,
+			timestamp: $.platform.clock.now(),
+		};
+	}
+
+	private createRunCheckContext(index: number): TransitionDiagContext {
+		return {
+			trigger: 'run-check',
+			description: `run_check#${index}`,
+			timestamp: $.platform.clock.now(),
+		};
+	}
+
+	private createTapeContext(action: 'next' | 'end'): TransitionDiagContext {
+		return {
+			trigger: 'tape',
+			description: `tape:${action}`,
+			timestamp: $.platform.clock.now(),
+		};
+	}
+
+	private createEnterContext(stateId: Identifier): TransitionDiagContext {
+		return {
+			trigger: 'enter',
+			description: `enter:${stateId}`,
+			timestamp: $.platform.clock.now(),
+		};
+	}
+
+	private describeStringHandler(targetState: string): string {
+		return `transition:${targetState}`;
+	}
+
+	private describeActionHandler(spec: StateEventDefinition | TickCheckDefinition): string {
+		if (typeof spec.do === 'function') return spec.do.name || '<anonymous>';
+		if (typeof spec.do === 'string') return `do:${spec.do}`;
+		if (typeof spec.to === 'string') return `to:${spec.to}`;
+		if (typeof spec.switch === 'string') return `switch:${spec.switch}`;
+		if (typeof spec.force_leaf === 'string') return `force_leaf:${spec.force_leaf}`;
+		if (spec.revert) return 'revert';
+		return 'handler';
+	}
+
+	private emitEventDispatchTrace(eventName: string, emitter: Identifier, payload: EventPayload | undefined, handled: boolean, bubbled: boolean, depth: number, context?: TransitionDiagSnapshot): void {
+		if (!State.shouldTraceDispatch()) return;
+		const ctx = context ?? this.createFallbackSnapshot('event', `event:${eventName}`, payload);
+		const transition = ctx.lastTransition;
+		const parts: string[] = ['[dispatch]'];
+		parts.push(`event=${eventName}`);
+		parts.push(`handled=${handled}`);
+		parts.push(`bubbled=${bubbled}`);
+		if (depth > 0) parts.push(`depth=${depth}`);
+		parts.push(`emitter=${emitter}`);
+		if (ctx.handlerName) parts.push(`handler=${ctx.handlerName}`);
+		if (ctx.scope) parts.push(`scope=${ctx.scope}`);
+		if (ctx.lane) parts.push(`lane=${ctx.lane}`);
+		parts.push(`state=${this.currentid}`);
+		if (transition) {
+			parts.push(`target=${transition.to}`);
+			parts.push(`transition=${transition.execution}`);
+			if (transition.guardSummary) parts.push(`guards=${transition.guardSummary}`);
+		}
+		else {
+			parts.push(`target=${this.currentid}`);
+			parts.push('transition=none');
+		}
+		if (ctx.payloadSummary) parts.push(`payload=${ctx.payloadSummary}`);
+		else if (payload !== undefined) parts.push(`payload=${State.describePayload(payload)}`);
+		if (ctx.timestamp) parts.push(`ts=${ctx.timestamp}`);
+		State.appendTraceEntry(this.id, parts.join(' '));
 	}
 
 	/**
@@ -224,7 +625,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Represents the transition queue of the state machine.
 	 * @property {Array<{ state_id: Identifier, args: any[] }>} transition_queue - The array of transition objects.
 	 */
-	private transition_queue: StateTransitionWithType[];
+	private transition_queue: TransitionQueueItem[];
+
+	private transitionContextStack?: TransitionDiagContext[];
 
 	private definitionOrThrow(): StateDefinition {
 		if (!this.def_id) {
@@ -343,7 +746,16 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		try {
 			for (let i = 0; i < this.transition_queue.length; i++) {
 				const t = this.transition_queue[i];
-				this.transitionToState(t.state_id, t.transition_type, t.payload);
+				if (State.shouldTraceTransitions()) {
+					this.runWithTransitionContext(
+						() => this.hydrateContext(t.diag, 'queue-drain', 'queued-execution'),
+						() => {
+							this.transitionToState(t.state_id, t.transition_type, t.payload, 'deferred');
+						},
+					);
+				} else {
+					this.transitionToState(t.state_id, t.transition_type, t.payload, 'deferred');
+				}
 			}
 			this.transition_queue.length = 0;
 		} finally {
@@ -383,6 +795,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param target_id - id of the object that is stated by this FSM. @see {@link World.getWorldObject}.
 	 */
 	constructor(opts: RevivableObjectArgs & { localdef_id: Identifier, target_id: Identifier, parent?: State, root?: State }) {
+		if (opts.constructReason === 'revive') {
+			// Only bind and populate states when not reviving, as reviving will call onLoadSetup which will do this.
+			// And we need to ensure that the state's parents are already bound when reviving, because reviving may access parent state information.
+			return;
+		}
+
 		this.localdef_id = opts.localdef_id ?? DEFAULT_BST_ID;
 		this.target_id = opts.target_id;
 		this.parent_ref = opts.parent;
@@ -409,6 +827,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			this.def_id = rootDef.def_id;
 		}
 
+
 		this.paused = false;
 		this.id = this.make_id();
 		this.transition_queue = [];
@@ -417,6 +836,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this._hist = new Array(BST_MAX_HISTORY);
 		this._histHead = 0;
 		this._histSize = 0;
+		this.bind();
 	}
 
 	@onload
@@ -424,14 +844,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * Performs the setup logic when the component is loaded.
 	 */
 	public onLoadSetup(): void {
-		// Restore parent/root links after revive
-		// if (!this.parent_ref) this.root_ref = this.root_ref ?? this;
-		// if (this.states) {
-		// 	for (const child of Object.values(this.states)) {
-		// 		child.parent_ref = this;
-		// 		child.root_ref = this.root;
-		// 	}
-		// }
+		this.bind();
 	}
 
 	/**
@@ -471,24 +884,18 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (!this.definition || this.paused) return;
 
 		this._transitionsThisTick = 0;
-		this.in_tick = true;
-		try {
-			this.withCriticalSection(() => {
-				if (!Registry.instance.has(this.id)) {
-					Registry.instance.register(this);
-				}
-				// Run states first
-				this.runSubstateMachines();
-				// Process input for the current state
-				this.processInput();
-				// Run the current state's logic
-				this.runCurrentState();
-				// Execute run checks
-				this.doRunChecks();
-			});
-		} finally {
+		this.withCriticalSection(() => {
+			this.in_tick = true;
+			// Run states first
+			this.runSubstateMachines();
+			// Process input for the current state
+			this.processInput();
+			// Run the current state's logic
+			this.runCurrentState();
+			// Execute run checks
+			this.doRunChecks();
 			this.in_tick = false;
-		}
+		});
 	}
 
 	/**
@@ -502,7 +909,16 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this.processInputForCurrentState();
 
 		const processInput = this.definition.process_input;
-		const next_state = typeof processInput === 'function' ? processInput.call(this.target, this) : undefined;
+		const next_state = typeof processInput === 'function'
+			? this.runWithTransitionContext(
+				() => {
+					const ctx = this.createProcessInputContext();
+					ctx.handlerName = processInput.name || '<anonymous>';
+					return ctx;
+				},
+				() => processInput.call(this.target, this),
+			)
+			: undefined;
 		this.transitionToNextStateIfProvided(next_state);
 	}
 
@@ -523,8 +939,14 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			const handler = inputHandlers[inputPattern];
 			if (!handler) continue;
 			if (!p.checkActionTriggered(inputPattern)) continue;
-			this.handleStateTransition(handler);
-			if (evalMode === 'first') break;
+			const handled = this.runWithTransitionContext(
+				() => this.createInputContext(inputPattern, playerIndex),
+				ctx => {
+					if (ctx) ctx.handlerName = typeof handler === 'string' ? this.describeStringHandler(handler) : this.describeActionHandler(handler);
+					return this.handleStateTransition(handler);
+				},
+			);
+			if (handled && evalMode === 'first') break;
 		}
 	}
 
@@ -546,7 +968,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private runCurrentState(): void {
 		const tickHandler = this.definition.tick;
-		const next_state = typeof tickHandler === 'function' ? tickHandler.call(this.target, this) : undefined;
+		const next_state = typeof tickHandler === 'function'
+			? this.runWithTransitionContext(
+				() => this.createTickContext(tickHandler.name || '<anonymous>'),
+				() => tickHandler.call(this.target, this),
+			)
+			: undefined;
 		if (next_state) {
 			this.transitionToNextStateIfProvided(next_state);
 		} else if (this.definition.enable_tape_autotick) {
@@ -595,12 +1022,26 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		const checks = this.definition.run_checks;
 		if (!checks) return;
 
+		let index = 0;
 		for (const rc of checks) {
-			const condition = rc.if;
-			if (typeof condition === 'function' && !condition.call(this.target, this)) continue;
-			if (typeof condition === 'string') continue;
-			this.handleStateTransition(rc);
-			break; // First passing check wins
+			const handled = this.runWithTransitionContext(
+				() => this.createRunCheckContext(index),
+				ctx => {
+					const condition = rc.if;
+					if (typeof condition === 'function') {
+						const passed = condition.call(this.target, this);
+						this.appendActionEvaluation(`if:${condition.name || '<anonymous>'}=${passed ? 'pass' : 'fail'}`);
+						if (!passed) return false;
+					} else if (typeof condition === 'string') {
+						this.appendActionEvaluation(`if:string=${condition}`);
+						return false;
+					}
+					if (ctx) ctx.handlerName = this.describeActionHandler(rc);
+					return this.handleStateTransition(rc);
+				},
+			);
+			if (handled) break; // First passing check wins
+			index++;
 		}
 	}
 
@@ -818,12 +1259,53 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param target_state_id - The identifier of the target state.
 	 * @returns true if the transition is allowed, false otherwise.
 	 */
-	private checkStateGuardConditions(target_state_id: Identifier): boolean {
+	private checkStateGuardConditions(target_state_id: Identifier): TransitionGuardDiagnostics {
+		let allowed = true;
+		const evaluations: GuardEvaluation[] = [];
+
 		const curDef = this.current_state_definition;
 		const exitGuardDef = curDef.transition_guards;
 		const exitGuard = exitGuardDef ? exitGuardDef.can_exit : undefined;
-		if (typeof exitGuard === 'function' && !exitGuard.call(this.target, this)) {
-			return false;
+		if (typeof exitGuard === 'function') {
+			const passed = exitGuard.call(this.target, this);
+			const evaluation: GuardEvaluation = {
+				side: 'exit',
+				descriptor: exitGuard.name || '<anonymous>',
+				passed,
+				defined: true,
+				type: 'function',
+				reason: passed ? undefined : 'exit guard returned false',
+			};
+			this.appendGuardEvaluation({ ...evaluation });
+			evaluations.push(evaluation);
+			if (!passed) allowed = false;
+		} else {
+			const evaluation: GuardEvaluation = exitGuard === undefined
+				? { side: 'exit', descriptor: '<none>', passed: true, defined: false, type: 'missing' }
+				: {
+					side: 'exit',
+					descriptor: String(exitGuard),
+					passed: true,
+					defined: true,
+					type: typeof exitGuard === 'string' ? 'string' : 'other',
+					reason: 'non-callable guard ignored',
+				};
+			this.appendGuardEvaluation({ ...evaluation });
+			evaluations.push(evaluation);
+		}
+
+		if (!allowed) {
+			const evaluation: GuardEvaluation = {
+				side: 'enter',
+				descriptor: '<not-evaluated>',
+				passed: false,
+				defined: false,
+				type: 'missing',
+				reason: 'enter guard skipped due to exit guard failure',
+			};
+			this.appendGuardEvaluation({ ...evaluation });
+			evaluations.push(evaluation);
+			return { allowed, evaluations };
 		}
 
 		const states = this.statesOrThrow();
@@ -833,11 +1315,35 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 		const enterGuardDef = this.childDefinitionOrThrow(target_state_id).transition_guards;
 		const enterGuard = enterGuardDef ? enterGuardDef.can_enter : undefined;
-		if (typeof enterGuard === 'function' && !enterGuard.call(this.target, tgt)) {
-			return false;
+		if (typeof enterGuard === 'function') {
+			const passed = enterGuard.call(this.target, tgt);
+			const evaluation: GuardEvaluation = {
+				side: 'enter',
+				descriptor: enterGuard.name || '<anonymous>',
+				passed,
+				defined: true,
+				type: 'function',
+				reason: passed ? undefined : 'enter guard returned false',
+			};
+			this.appendGuardEvaluation({ ...evaluation });
+			evaluations.push(evaluation);
+			if (!passed) allowed = false;
+		} else {
+			const evaluation: GuardEvaluation = enterGuard === undefined
+				? { side: 'enter', descriptor: '<none>', passed: true, defined: false, type: 'missing' }
+				: {
+					side: 'enter',
+					descriptor: String(enterGuard),
+					passed: true,
+					defined: true,
+					type: typeof enterGuard === 'string' ? 'string' : 'other',
+					reason: 'non-callable guard ignored',
+				};
+			this.appendGuardEvaluation({ ...evaluation });
+			evaluations.push(evaluation);
 		}
 
-		return true;
+		return { allowed, evaluations };
 	}
 
 	/**
@@ -852,31 +1358,47 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	private in_tick = false;
 	private static readonly MAX_TRANSITIONS_PER_TICK = 1000;
 
-	private trace(msg: string): void {
-		const diag: any = State.diagnostics;
-		if (diag && diag.traceTransitions) {
-			// eslint-disable-next-line no-console
-			console.debug(`[FSM] ${this.id}: ${msg}`);
-		}
-	}
-
-	private transitionToState(state_id: Identifier, transition_type: TransitionType, payload?: EventPayload): void {
+	private transitionToState(state_id: Identifier, transition_type: TransitionType, payload?: EventPayload, execMode: TransitionExecutionMode = 'immediate'): void {
 		if (this.in_tick) {
 			if (++this._transitionsThisTick > State.MAX_TRANSITIONS_PER_TICK) {
 				throw new Error(`Transition limit exceeded in one tick for '${this.id}'.`);
 			}
 		}
 
-		this.trace(`to='${state_id}' type='${transition_type}' from='${this.currentid}'`);
-		if (this.critical_section_counter > 0) {
-			this.transition_queue.push({ state_id, payload, transition_type: transition_type ?? 'to' });
+		const diagEnabled = State.shouldTraceTransitions();
+
+		if (this.critical_section_counter > 0 && execMode === 'immediate') {
+			if (diagEnabled) {
+				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot('manual', 'queued-transition', payload);
+				const outcome: TransitionOutcomeSnapshot = { from: this.currentid, to: state_id, type: transition_type, execution: 'queued', status: 'queued', reason: 'critical-section' };
+				this.recordTransitionOutcomeOnContext(outcome);
+				this.emitTransitionTrace({ outcome: 'queued', execution: 'queued', from: this.currentid, to: state_id, transitionType: transition_type, context, payload, queueSize: this.transition_queue.length + 1, reason: 'critical-section' });
+				this.transition_queue.push({ state_id, payload, transition_type, diag: context });
+			} else {
+				this.transition_queue.push({ state_id, payload, transition_type });
+			}
 			return;
 		}
 
-		if (transition_type === 'switch' && this.currentid === state_id) return;
+		if (transition_type === 'switch' && this.currentid === state_id) {
+			if (diagEnabled) {
+				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot(execMode === 'deferred' ? 'queue-drain' : 'manual', 'noop-transition', payload);
+				this.recordTransitionOutcomeOnContext({ from: this.currentid, to: state_id, type: transition_type, execution: execMode, status: 'noop', reason: 'already-current' });
+				this.emitTransitionTrace({ outcome: 'noop', execution: execMode, from: this.currentid, to: state_id, transitionType: transition_type, context, payload, reason: 'already-current' });
+			}
+			return;
+		}
 
-		// If any state guard conditions fail, prevent the transition
-		if (!this.checkStateGuardConditions(state_id)) return;
+		const guardDiagnostics = this.checkStateGuardConditions(state_id);
+		if (!guardDiagnostics.allowed) {
+			if (diagEnabled) {
+				const context = this.resolveContextSnapshot(undefined) ?? this.createFallbackSnapshot(execMode === 'deferred' ? 'queue-drain' : 'manual', 'guard-blocked', payload);
+				const outcome: TransitionOutcomeSnapshot = { from: this.currentid, to: state_id, type: transition_type, execution: execMode, status: 'blocked', guardSummary: this.formatGuardDiagnostics(guardDiagnostics) };
+				this.recordTransitionOutcomeOnContext(outcome);
+				this.emitTransitionTrace({ outcome: 'blocked', execution: execMode, from: this.currentid, to: state_id, transitionType: transition_type, context, guard: guardDiagnostics, payload, reason: 'guard' });
+			}
+			return;
+		}
 
 		this.withCriticalSection(() => {
 			const prevId = this.currentid;
@@ -893,7 +1415,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			}
 			this.pushHistory(prevId);
 
-			// Switch current id
 			this.currentid = state_id;
 			const cur = this.current;
 			if (!cur) {
@@ -902,29 +1423,31 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			const curDef = this.current_state_definition;
 			if (curDef.is_concurrent) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
-			// Automatic reset behavior
 			switch (curDef.automatic_reset_mode) {
 				case 'state': cur.reset(false); break;
 				case 'tree': cur.reset(true); break;
 				case 'subtree': cur.resetSubmachine(true); break;
 			}
 
-			// Enter new state and possibly chain to next state
 			const enterHandler = curDef.entering_state;
-			const next = typeof enterHandler === 'function' ? enterHandler.call(this.target, cur, payload) : undefined;
+			const next = typeof enterHandler === 'function'
+				? this.runWithTransitionContext(
+					() => {
+						const ctx = this.createEnterContext(state_id);
+						ctx.handlerName = enterHandler.name || '<anonymous>';
+						return ctx;
+					},
+					() => enterHandler.call(this.target, cur, payload),
+				)
+				: undefined;
 			cur.transitionToNextStateIfProvided(next);
-		});
-	}
 
-	/**
-	 * Executes the specified event on the state machine.
-	 *
-	 * @param eventName - The name of the event to execute.
-	 * @param emitter - The identifier or identifiable object that triggered the event.
-	 * @param args - Additional arguments to pass to the event handler.
-	 */
-	public dispatch_event_to_root(eventName: string, emitter: Identifier, payload?: EventPayload): void {
-		this.root.dispatch_event(eventName, emitter, payload);
+			if (diagEnabled) {
+				const outcome: TransitionOutcomeSnapshot = { from: prevId, to: state_id, type: transition_type, execution: execMode, status: 'success', guardSummary: this.formatGuardDiagnostics(guardDiagnostics) };
+				this.recordTransitionOutcomeOnContext(outcome);
+				this.emitTransitionTrace({ outcome: 'success', execution: execMode, from: prevId, to: state_id, transitionType: transition_type, guard: guardDiagnostics, payload });
+			}
+		});
 	}
 
 	/**
@@ -936,8 +1459,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param emitter_id - The identifier of the event emitter.
 	 * @param args - Additional arguments to pass to the event handlers.
 	 */
-	public dispatch_event(eventName: string, emitter_id: Identifier, payload?: EventPayload): void {
-		if (this.paused) return;
+	public dispatch_event(eventName: string, emitter_id: Identifier, payload?: EventPayload): boolean {
+		if (this.paused) return false;
 
 		const hasChildren = !!this.states && Object.keys(this.states).length > 0;
 		if (hasChildren) {
@@ -947,16 +1470,22 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				throw new Error(`[State] Current child '${this.currentid}' not found in '${this.id}' while dispatching '${eventName}'.`);
 			}
 			const parallels = Object.values(states).filter(s => s.is_concurrent);
-			cur.dispatch_event(eventName, emitter_id, payload);
-			for (const s of parallels) s.dispatch_event(eventName, emitter_id, payload);
-			return;
+			let handled = cur.dispatch_event(eventName, emitter_id, payload);
+			for (const s of parallels) handled = s.dispatch_event(eventName, emitter_id, payload) || handled;
+			if (handled) return true;
 		}
 
 		let current: State | undefined = this;
+		let depth = 0;
 		while (current) {
-			if (current.handleEvent(eventName, emitter_id, payload)) return;
+			const result = current.handleEvent(eventName, emitter_id, payload);
+			const bubbled = depth > 0 || (!result.handled && !!current.parent);
+			current.emitEventDispatchTrace(eventName, emitter_id, payload, result.handled, bubbled, depth, result.context);
+			if (result.handled) return true;
 			current = current.parent;
+			depth++;
 		}
+		return false;
 	}
 
 	/**
@@ -1017,19 +1546,31 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 * @param args - Additional arguments for the event.
 	 * @returns A boolean indicating whether the event was handled.
 	 */
-	private handleEvent(eventName: string, emitter_id: Identifier, payload?: EventPayload): boolean {
-		if (this.paused) return false;
-		return this.withCriticalSection(() => {
-			const handlers = this.definition.on;
-			if (!handlers) return false;
-			const spec = handlers[eventName];
-			if (!spec) return false;
-			if (typeof spec !== 'string') {
-				const scope = spec.scope;
-				if (scope && scope !== 'all' && scope !== emitter_id) return false;
-			}
-			return this.handleStateTransition(spec, payload);
-		});
+	private handleEvent(eventName: string, emitter_id: Identifier, payload?: EventPayload): EventDispatchResult {
+		if (this.paused) return { handled: false };
+		let capturedContext: TransitionDiagContext | undefined;
+		const handled = this.withCriticalSection(() => this.runWithTransitionContext(
+			() => this.createEventContext(eventName, emitter_id, payload),
+			ctx => {
+				capturedContext = ctx;
+				const handlers = this.definition.on;
+				if (!handlers) return false;
+				const spec = handlers[eventName];
+				if (!spec) return false;
+				if (typeof spec !== 'string') {
+					const scope = spec.scope;
+					if (scope && scope !== 'all' && scope !== emitter_id) return false;
+					ctx.scope = scope ?? ctx.scope;
+					if (spec.lane) ctx.lane = String(spec.lane);
+					ctx.handlerName = this.describeActionHandler(spec);
+				} else {
+					ctx.handlerName = this.describeStringHandler(spec);
+				}
+				return this.handleStateTransition(spec, payload);
+			},
+		));
+		if (!State.shouldTraceDispatch() && !State.shouldTraceTransitions()) return { handled };
+		return { handled, context: State.cloneSnapshot(capturedContext) };
 	}
 
 	private handleStateTransition(action: Identifier | StateEventDefinition | TickCheckDefinition | undefined, payload?: EventPayload): boolean {
@@ -1043,7 +1584,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 
 		const cond = action.if;
-		if (typeof cond === 'function' && !cond.call(this.target, this as State<T>, payload)) return false;
+		if (typeof cond === 'function') {
+			const passed = cond.call(this.target, this as State<T>, payload);
+			this.appendActionEvaluation(`if:${cond.name || '<anonymous>'}=${passed ? 'pass' : 'fail'}`);
+			if (!passed) return false;
+		} else if (typeof cond === 'string') {
+			this.appendActionEvaluation(`if:string=${cond}`);
+		}
 
 		let didRunDo = false;
 
@@ -1055,22 +1602,27 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		else if (typeof doHandler === 'function') {
 			didRunDo = true;
 			const next = this.getNextState(doHandler.call(this.target, this as State<T>, payload));
+			this.appendActionEvaluation(`do:${doHandler.name || '<anonymous>'}${next ? `->${next.state_id}` : ''}`);
 			if (next) {
 				if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
 					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
 				}
 				switch (next.transition_type) {
 					case 'switch':
+						this.appendActionEvaluation(`next:switch->${next.state_id}`);
 						this.switch_to_state(next.state_id, next.payload);
 						break;
 					case 'force_leaf':
+						this.appendActionEvaluation(`next:force_leaf->${next.state_id}`);
 						this.force_leaf_transition(next.state_id, next.payload);
 						break;
 					case 'revert':
+						this.appendActionEvaluation('next:revert');
 						this.pop_and_transition();
 						break;
 					case 'to':
 					default:
+						this.appendActionEvaluation(`next:to->${next.state_id}`);
 						this.transition_to(next.state_id, next.payload);
 						break;
 				}
@@ -1078,10 +1630,15 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			}
 		}
 
+		if (typeof doHandler === 'string' && !isNoOpString(doHandler)) {
+			this.appendActionEvaluation(`do:string=${doHandler}`);
+		}
+
 		// Fallback explicit transitions even if do() ran but did not transition
 		if (action.to) {
 			const t = this.getNextState(action.to);
 			if (t) {
+				this.appendActionEvaluation(`fallback:to->${t.state_id}`);
 				this.transition_to(t.state_id, t.payload);
 				return true;
 			}
@@ -1089,6 +1646,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (action.switch) {
 			const s = this.getNextState(action.switch);
 			if (s) {
+				this.appendActionEvaluation(`fallback:switch->${s.state_id}`);
 				this.switch_to_state(s.state_id, s.payload);
 				return true;
 			}
@@ -1096,11 +1654,13 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (action.force_leaf) {
 			const f = this.getNextState(action.force_leaf);
 			if (f) {
+				this.appendActionEvaluation(`fallback:force_leaf->${f.state_id}`);
 				this.force_leaf_transition(f.state_id, f.payload);
 				return true;
 			}
 		}
 		if (action.revert) {
+			this.appendActionEvaluation('fallback:revert');
 			this.pop_and_transition();
 			return true;
 		}
@@ -1262,15 +1822,12 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			this.states[state].dispose();
 		}
 	}
-
 	public bind(): void {
-		// No-op
-		// Registry.instance.register(this);
+		Registry.instance.register(this);
 	}
 
 	public unbind(): void {
-		// No-op
-		// Registry.instance.deregister(this);
+		Registry.instance.deregister(this);
 	}
 
 	/**
@@ -1470,7 +2027,16 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this.enterCriticalSection();
 		try {
 			const tapeNext = this.definition.tape_next;
-			const next_state = typeof tapeNext === 'function' ? tapeNext.call(this.target, this, { tape_rewound }) : undefined;
+			const next_state = typeof tapeNext === 'function'
+				? this.runWithTransitionContext(
+					() => {
+						const ctx = this.createTapeContext('next');
+						ctx.handlerName = tapeNext.name || '<anonymous>';
+						return ctx;
+					},
+					() => tapeNext.call(this.target, this, { tape_rewound }),
+				)
+				: undefined;
 			this.transitionToNextStateIfProvided(next_state);
 		} finally {
 			this.leaveCriticalSection();
@@ -1484,7 +2050,16 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this.enterCriticalSection();
 		try {
 			const tapeEnd = this.definition.tape_end;
-			const next_state = typeof tapeEnd === 'function' ? tapeEnd.call(this.target, this) : undefined;
+			const next_state = typeof tapeEnd === 'function'
+				? this.runWithTransitionContext(
+					() => {
+						const ctx = this.createTapeContext('end');
+						ctx.handlerName = tapeEnd.name || '<anonymous>';
+						return ctx;
+					},
+					() => tapeEnd.call(this.target, this),
+				)
+				: undefined;
 			this.transitionToNextStateIfProvided(next_state);
 		} finally {
 			this.leaveCriticalSection();

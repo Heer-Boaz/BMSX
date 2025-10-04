@@ -15,7 +15,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 	on: {
 		press: 'left[j] && right[!p]',
 		hold: 'left[h] && right[!p]',
-		release: 'left[jr] || right[jr]',
+		release: 'left[jr] && right[!p]',
 			},
 			do: {
 				press: [
@@ -38,7 +38,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 	on: {
 		press: 'right[j] && left[!p]',
 		hold: 'right[h] && left[!p]',
-		release: 'right[jr] || left[jr]',
+		release: 'right[jr] && left[!p]',
 			},
 			do: {
 				press: [
@@ -79,7 +79,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 					not: ['state.attacking', 'state.combat_disabled'],
 				},
 			},
-			on: { press: 'jump_right[j]' },
+			on: { press: 'jump[j] && right[p] && left[!p]' },
 			do: {
 				press: [
 					{ 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'right' }, source: 'input.ial' } },
@@ -96,7 +96,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 					not: ['state.attacking', 'state.combat_disabled'],
 				},
 			},
-			on: { press: 'jump_left[j]' },
+			on: { press: 'jump[j] && left[p] && right[!p]' },
 			do: {
 				press: [
 					{ 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'left' }, source: 'input.ial' } },

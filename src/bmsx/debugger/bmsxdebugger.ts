@@ -17,6 +17,7 @@ import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { StateMachineVisualizer } from './statemachinevisualizer';
 import { CustomVisualComponent } from '../component/customvisual_component';
+import { setAbilityTagHudTarget } from './abilitytaghud';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 const PHYSICS_OVERLAY_ID = 'physics_overlay_canvas';
 
@@ -774,7 +775,9 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 	if (obj) {
 		if (obj.id != null) {
 			ObjectPropertyDialog.openDialogById(obj.id, title, ['objects']);
-			// Optionally, position or focus dialog if needed
+			if (typeof obj.id === 'string') {
+				setAbilityTagHudTarget(obj.id);
+			}
 		}
 		else {
 			const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
@@ -920,6 +923,7 @@ export function handleContextMenu(e: DebugPointerEvent): void {
 	const { objUnderCursor } = getWorldObjectAtCursor(e);
 	// Add state visualiser to the UI
 	if (objUnderCursor) {
+		setAbilityTagHudTarget(objUnderCursor.id);
 		// Verify that there is no existing state visualiser dialog on screen
 		if (stateMachineVisualisers[objUnderCursor.id]) {
 			// If there is an existing state visualiser dialog, close it

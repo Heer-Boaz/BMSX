@@ -1,14 +1,14 @@
 input_eval: first
 
 on:
-    $mode.locomotion.idle:
+    mode.locomotion.idle:
         if:
             and:
                 - state_not_matches: './stoerheidsdans'
                 - state_not_matches: './nagenieten'
                 - state_not_matches: './humiliated'
         switch: './_grounded/_idle'
-    $mode.locomotion.walk:
+    mode.locomotion.walk:
         if:
             and:
                 - state_not_matches: './stoerheidsdans'
@@ -17,7 +17,7 @@ on:
         to:
             state_id: './_grounded/walk'
             payload: '@payload'
-    $mode.action.attack:
+    mode.action.attack:
         do:
             - when:
                   value_equals:
@@ -29,20 +29,20 @@ on:
                   to:
                       state_id: './_grounded/attack'
                       payload: '@payload'
-    $mode.control.duck: './_grounded/duck'
-    $mode.control.jump:
+    mode.control.duck: './_grounded/duck'
+    mode.control.jump:
         to:
             state_id: './airborne/_jump'
             payload: '@payload'
-    $mode.control.stoerheidsdans: './stoerheidsdans'
-    $mode.impact.humiliated: './humiliated'
+    mode.control.stoerheidsdans: './stoerheidsdans'
+    mode.impact.humiliated: './humiliated'
 
 states:
     _grounded:
         entering_state:
             - tags:
                   add: [state.grounded]
-                  remove: [state.airborne]
+                  remove: [state.airborne, state.airborne.attackUsed]
         states:
             _idle:
                 entering_state:
@@ -55,8 +55,23 @@ states:
                 data:
                     speedX: 0
                 entering_state:
+                    - invoke:
+                          {
+                              fn: '@self.configureWalkState',
+                              payload:
+                                  {
+                                      state: '@state',
+                                      payload: '@payload',
+                                  },
+                          }
                     - tags: { add: [state.walking], remove: [state.attacking, state.idle] }
                     - emit: animate_walk
+                tick:
+                    invoke:
+                        {
+                            fn: '@self.walkTick',
+                            payload: '@state',
+                        }
                 on:
                     mode.locomotion.walk:
                         do:
@@ -111,7 +126,7 @@ states:
             _jump:
                 automatic_reset_mode: tree
                 entering_state:
-                    - tags: { add: [state.airborne], remove: [state.grounded] }
+                    - tags: { add: [state.airborne], remove: [state.grounded, state.airborne.attackUsed] }
                     - invoke:
                           {
                               fn: '@self.startJump',
@@ -119,7 +134,7 @@ states:
                           }
                     - emit: animate_jump
                 exiting_state:
-                    - tags: { remove: [state.airborne], add: [state.grounded] }
+                    - tags: { remove: [state.airborne, state.airborne.attackUsed], add: [state.grounded] }
                     - invoke: { fn: '@self.finishJump' }
                 states:
                     _ascending:

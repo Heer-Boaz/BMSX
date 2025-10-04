@@ -1,4 +1,4 @@
-import { $, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction } from 'bmsx';
+import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction } from 'bmsx';
 import type { AbilityId } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
@@ -80,16 +80,15 @@ export abstract class Fighter extends SpriteObject {
 		if (!state) return;
 		const resolved = (typeof payload === 'string') ? payload : payload?.direction;
 		const direction: Direction | null = (resolved === 'left' || resolved === 'right') ? resolved : null;
-		const data = (state.data ??= {} as Record<string, unknown>);
-		console.warn('[debug] configureWalkState', { current: state.currentid, direction, existing: (data as { direction?: Direction }).direction });
-		if (direction) {
-			(data as { direction?: Direction }).direction = direction;
-			(data as { speedX?: number }).speedX = direction === 'right' ? this.walkSpeed : -this.walkSpeed;
-		} else if ((data as { direction?: Direction }).direction === undefined) {
-			(data as { direction?: Direction }).direction = this.facing ?? 'right';
-			(data as { speedX?: number }).speedX = (this.facing === 'left' ? -1 : 1) * this.walkSpeed;
-		}
+	const data = (state.data ??= {} as Record<string, unknown>);
+	if (direction) {
+		(data as { direction?: Direction }).direction = direction;
+		(data as { speedX?: number }).speedX = direction === 'right' ? this.walkSpeed : -this.walkSpeed;
+	} else if ((data as { direction?: Direction }).direction === undefined) {
+		(data as { direction?: Direction }).direction = this.facing ?? 'right';
+		(data as { speedX?: number }).speedX = (this.facing === 'left' ? -1 : 1) * this.walkSpeed;
 	}
+}
 
 	@build_fsm('hitanimation')
 	static bouw_hitanimation_fsm(): StateMachineBlueprint {
@@ -159,9 +158,9 @@ export abstract class Fighter extends SpriteObject {
 		inputAbility.playerIndex = this.player_index ?? 1;
 		inputAbility.program = FIGHTER_INPUT_PROGRAM;
 
-		// const controller = this.sc;
-		// Seed the locomotion state so gameplay tags like 'state.grounded' are available immediately.
-		// controller.dispatch_event('mode.locomotion.idle', this);
+		// Seed locomotion and animation so tags and sprites are valid on the first frame.
+		this.sc.dispatch_event('mode.locomotion.idle', this);
+		this.sc.dispatch_event('animate_idle', this);
 	}
 
 	public getAbilityId(name: FighterCoreAbilityName): AbilityId {
@@ -298,6 +297,18 @@ export abstract class Fighter extends SpriteObject {
 
 	public resetVerticalPosition(): void {
 		this.y_nonotify = VERTICAL_POSITION_FIGHTERS - this.sy;
+	}
+
+	public walkTick(state: State): void {
+		const data = state.data as { speedX?: number };
+		let dx = 0;
+		if (typeof data.speedX === 'number') dx = data.speedX;
+		else if (this.facing === 'left') dx = -this.walkSpeed;
+		else if (this.facing === 'right') dx = this.walkSpeed;
+	if (dx === 0) {
+		return;
+	}
+	GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: { x: dx, y: 0, z: 0 } });
 	}
 
 	private _hitSprite?: SpriteComponent;

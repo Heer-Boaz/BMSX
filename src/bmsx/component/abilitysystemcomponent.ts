@@ -5,21 +5,30 @@ import type { Identifier } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TickGroup } from '../ecs/ecsystem';
-import type {
+import {
 	Ability,
-	AbilityContext,
-	AbilityCoroutine,
-	AbilityId,
-	AbilityRequestResult,
-	AbilitySpec,
-	AbilityYield,
-	ActiveEffect,
-	AbilitySystemRef,
-	AttributeSet,
-	GameplayEffect,
-	TagId
+	type AbilityContext,
+	type AbilityCoroutine,
+	type AbilityId,
+	type AbilityRequestResult,
+	type AbilitySpec,
+	type AbilityYield,
+	type ActiveEffect,
+	type AbilitySystemRef,
+	type AttributeSet,
+	type GameplayEffect,
+	type TagId
 } from '../gas/gastypes';
+import type { AbilityRuntimeBindings } from '../gas/ability_blueprint';
+import { AbilityBlueprint, AbilityActionRegistry, AbilityBlueprintRunner } from '../gas/ability_blueprint';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
+import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
+
+export type AbilityTagSnapshot = {
+	explicit: TagId[];
+	granted: Array<{ tag: TagId; stacks: number }>;
+	combined: TagId[];
+};
 
 type NowFn = () => number;
 
@@ -102,17 +111,48 @@ export class AbilitySystemComponent extends Component {
 	}
 	public hasGameplayTag(tag: TagId): boolean { return this.tags.has(tag) || ((this.grantedTagRefs.get(tag) ?? 0) > 0); }
 
+	public snapshotTags(): AbilityTagSnapshot {
+		const explicitList: TagId[] = [];
+		for (const tag of this.tags.values()) {
+			explicitList.push(tag);
+		}
+		explicitList.sort((a, b) => a.localeCompare(b));
+		const grantedList: Array<{ tag: TagId; stacks: number }> = [];
+		for (const entry of this.grantedTagRefs.entries()) {
+			const stacks = entry[1];
+			if (stacks <= 0) {
+				continue;
+			}
+			grantedList.push({ tag: entry[0], stacks });
+		}
+		grantedList.sort((a, b) => a.tag.localeCompare(b.tag));
+		const combined: TagId[] = [];
+		for (const tag of explicitList) combined.push(tag);
+		for (const entry of grantedList) {
+			if (this.tags.has(entry.tag)) {
+				continue;
+			}
+			combined.push(entry.tag);
+		}
+		combined.sort((a, b) => a.localeCompare(b));
+		return { explicit: explicitList, granted: grantedList, combined };
+	}
+
 	public grantAbility(spec: AbilitySpec, factory: () => Ability): void {
 		this._abilities.set(spec.id, spec);
 		this._abilityFactory.set(spec.id, factory);
+	}
+
+	public grantBlueprint(blueprint: AbilityBlueprint, actions: AbilityActionRegistry): void {
+		this.grantAbility(blueprint, () => new BlueprintAbility(this, blueprint, actions));
 	}
 	public revokeAbility(id: AbilityId): void {
 		this._abilities.delete(id);
 		this._abilityFactory.delete(id);
 		// remove any active instances of this ability
-		for (const [key, run] of [...this._active]) if (run.id === id) {
-			if (run.wait?.kind === 'event') run.wait.unsub();
-			this._active.delete(key);
+		for (const [key, run] of [...this._active]) {
+			if (run.id !== id) continue;
+			this.stopAbilityRun(key, run);
 		}
 	}
 
@@ -175,8 +215,7 @@ export class AbilitySystemComponent extends Component {
 			if (existingKey) {
 				if (unique === 'restart') {
 					const entry = this._active.get(existingKey);
-					if (entry?.wait?.kind === 'event') entry.wait.unsub();
-					this._active.delete(existingKey);
+					if (entry) this.stopAbilityRun(existingKey, entry);
 				} else {
 					return false;
 				}
@@ -268,8 +307,7 @@ export class AbilitySystemComponent extends Component {
 				continue;
 			}
 			if (value && isAbilityYield(value) && value.type === 'finish') {
-				if (run.wait?.kind === 'event') run.wait.unsub();
-				this._active.delete(key);
+				this.stopAbilityRun(key, run);
 				continue;
 			}
 			if (!value || !isAbilityYield(value)) continue;
@@ -342,8 +380,9 @@ export class AbilitySystemComponent extends Component {
 
 	public override dispose(): void {
 		// Unsubscribe pending event waits and clear actives
-		for (const [, run] of this._active) if (run.wait?.kind === 'event') run.wait.unsub();
-		this._active.clear();
+		for (const [key, run] of [...this._active]) {
+			this.stopAbilityRun(key, run);
+		}
 		// Clear effects and derived tags
 		this.effects.length = 0;
 		this.grantedTagRefs.clear();
@@ -353,12 +392,32 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	public override detach(): void {
-		for (const [, run] of this._active) if (run.wait?.kind === 'event') run.wait.unsub();
-		this._active.clear();
+		for (const [key, run] of [...this._active]) {
+			this.stopAbilityRun(key, run);
+		}
 		this.effects.length = 0;
 		this.grantedTagRefs.clear();
 		this._cooldownUntil.clear();
 		super.detach();
+	}
+
+	public getAbilityOwner(): WorldObject {
+		return this.ownerOrThrow();
+	}
+
+	public createBlueprintRuntimeBindings(owner: WorldObject): AbilityRuntimeBindings {
+		const ownerId = this.parentid;
+		return {
+			owner,
+			ownerId,
+			hasTag: (tag: TagId) => this.hasGameplayTag(tag),
+			addTag: (tag: TagId) => this.addTag(tag),
+			removeTag: (tag: TagId) => this.removeTag(tag),
+			dispatchMode: (event: string, payload: Record<string, unknown> | undefined, target: Identifier | undefined) => this.dispatchBlueprintModeEvent(ownerId, event, payload, target),
+			emitGameplay: (event: string, payload: unknown) => $.emitGameplay(event, owner, payload),
+			pushCommand: (command: GameplayCommand) => GameplayCommandBuffer.instance.push(command),
+			requestAbility: (abilityId: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(abilityId, opts ?? {}),
+		};
 	}
 
 	private incTagRef(tag: TagId) {
@@ -369,6 +428,32 @@ export class AbilitySystemComponent extends Component {
 		const n = (this.grantedTagRefs.get(tag) ?? 0) - 1;
 		if (n > 0) this.grantedTagRefs.set(tag, n);
 		else this.grantedTagRefs.delete(tag);
+	}
+
+	private dispatchBlueprintModeEvent(ownerId: Identifier, event: string, payload: Record<string, unknown> | undefined, target: Identifier | undefined): void {
+		const targetId = target ?? ownerId;
+		GameplayCommandBuffer.instance.push({
+			kind: 'dispatchEvent',
+			event,
+			target_id: targetId,
+			emitter_id: ownerId,
+			payload,
+		});
+	}
+
+	private stopAbilityRun(key: string, run: { id: AbilityId; co: AbilityCoroutine; wait?: WaitState }): void {
+		if (run.wait && run.wait.kind === 'event') {
+			run.wait.unsub();
+		}
+		const ret = run.co.return;
+		if (typeof ret === 'function') {
+			try {
+				ret.call(run.co);
+			} catch (error) {
+				console.warn('[AbilitySystemComponent] Ability coroutine return failed', { id: run.id, error });
+			}
+		}
+		this._active.delete(key);
 	}
 
 	private notifyAbilityFailed(id: AbilityId, reason: string): void {
@@ -406,6 +491,32 @@ export class AbilitySystemComponent extends Component {
 		const owner = $.world.getWorldObject(this.parentid);
 		if (!owner) throw new Error(`[AbilitySystemComponent] Owner '${this.parentid}' not found.`);
 		return owner;
+	}
+}
+
+class BlueprintAbility extends Ability {
+	private readonly component: AbilitySystemComponent;
+	private readonly blueprint: AbilityBlueprint;
+	private readonly actions: AbilityActionRegistry;
+
+	constructor(component: AbilitySystemComponent, blueprint: AbilityBlueprint, actions: AbilityActionRegistry) {
+		super(blueprint.id, blueprint.unique);
+		this.component = component;
+		this.blueprint = blueprint;
+		this.actions = actions;
+	}
+
+	public override activate(ctx: AbilityContext): AbilityCoroutine {
+		const owner = this.component.getAbilityOwner();
+		const runtimeBindings = this.component.createBlueprintRuntimeBindings(owner);
+		const intent = ctx.intent;
+		let intentPayload: Record<string, unknown> | undefined;
+		if (intent && intent.payload) intentPayload = intent.payload;
+		return AbilityBlueprintRunner.createCoroutine(this.blueprint, {
+			runtime: runtimeBindings,
+			actionRegistry: this.actions,
+			intentPayload,
+		});
 	}
 }
 

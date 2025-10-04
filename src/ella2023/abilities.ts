@@ -1,266 +1,239 @@
-import { GameplayCommandBuffer } from 'bmsx/ecs/gameplay_command_buffer';
-import { Ability, AbilityContext, AbilityCoroutine, AbilityId, AbilitySpec } from 'bmsx/gas/gastypes';
-import { Fighter, FIGHTER_CORE_ABILITY_IDS } from './fighter';
-import type { AttackType, FighterCoreAbilityName } from './fighter';
+import { AbilityActionRegistry, abilityBlueprint, fromIntent, fromVar, literal } from 'bmsx';
+import type { AbilityBlueprint } from 'bmsx';
+import type { AbilityId } from 'bmsx/gas/gastypes';
+import type { Direction } from 'bmsx';
+import type { WorldObject } from 'bmsx/core/object/worldobject';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
+import { Fighter, FIGHTER_CORE_ABILITY_IDS, type AttackType } from './fighter';
 
-const ATTACK_FINISH_EVENT = (attackType: AttackType) => `fighter.attack.animation.${attackType}.finished`;
+const ATTACK_TYPES: readonly AttackType[] = ['punch', 'highkick', 'lowkick', 'duckkick', 'flyingkick'];
+const ATTACK_TYPE_SET: ReadonlySet<string> = new Set<string>(ATTACK_TYPES);
 
-function abilityIdForAttack(attackType: AttackType): AbilityId {
-	return `fighter.attack.${attackType}` as AbilityId;
-}
+const VAR_WALK_DIRECTION = 'locomotion.direction';
+const VAR_JUMP_DIRECTION = 'jump.direction';
+const VAR_ATTACK_CURRENT = 'combat.attack.current';
 
-type DirectionPayload = { dir?: 'left' | 'right' };
+const fighterActions = new AbilityActionRegistry();
 
-class FighterWalkAbility extends Ability {
-	public constructor(private readonly fighter: Fighter) { super(FIGHTER_CORE_ABILITY_IDS.walk, 'ignore'); }
-
-	public override *activate(ctx: AbilityContext): AbilityCoroutine {
-		const intentPayload = (ctx.intent?.payload ?? {}) as DirectionPayload;
-		const requestedDirection = intentPayload.dir;
-		const direction: 'left' | 'right' = requestedDirection === 'left' || requestedDirection === 'right'
-			? requestedDirection
-			: (this.fighter.facing === 'left' || this.fighter.facing === 'right') ? this.fighter.facing : 'right';
-
-		this.fighter.facing = direction;
-		this.dispatchModeEvent(ctx, 'mode.locomotion.walk', { direction });
-
-		let firstTick = true;
-		while (true) {
-			const asc = ctx.asc;
-			const grounded = asc.hasTag('state.grounded');
-			const combatDisabled = asc.hasTag('state.combat_disabled');
-			const attacking = asc.hasTag('state.attacking');
-			const ducking = asc.hasTag('state.ducking');
-			if (!grounded || combatDisabled || attacking || ducking) break;
-
-			const walking = asc.hasTag('state.walking');
-			if (firstTick) {
-				const controller = this.fighter.sc;
-				const fighterControl = controller?.get_statemachine('fighter_control');
-				const grounded = fighterControl?.states?.['_grounded'];
-				console.warn('[debug] walk ability first tick', {
-					fc: fighterControl?.currentid,
-					fcChild: fighterControl?.states?.[fighterControl.currentid ?? '']?.currentid,
-					fcInitial: fighterControl?.definition.initial,
-					groundedInitial: grounded?.definition?.initial,
-					walking,
-				});
-			}
-			if (!walking && !firstTick) {
-				console.warn('[debug] walk ability continuing without walking tag', {
-					frame: ctx.asc.parentid,
-				});
-			}
-
-			const speed = this.fighter.walkSpeed ?? Fighter.SPEED;
-			const deltaX = direction === 'right' ? speed : -speed;
-			GameplayCommandBuffer.instance.push({
-				kind: 'moveby2d',
-				target_id: this.fighter.id,
-				delta: { x: deltaX, y: 0, z: 0 },
-				space: 'world',
-			});
-
-			firstTick = false;
-			yield;
-		}
+fighterActions.register('fighter.configureWalk', (ctx, params) => {
+	const fighter = asFighter(ctx.owner);
+	let direction: Direction;
+	const input = readString(params, 'direction');
+	if (isDirection(input)) {
+		direction = input;
+	} else {
+		const facing = fighter.facing;
+		if (isDirection(facing)) direction = facing;
+		else direction = 'right';
 	}
-}
+	fighter.facing = direction;
+	ctx.vars[VAR_WALK_DIRECTION] = direction;
+});
 
-class FighterWalkStopAbility extends Ability {
-	public constructor() { super(FIGHTER_CORE_ABILITY_IDS.walk_stop, 'ignore'); }
-
-	public override *activate(ctx: AbilityContext): AbilityCoroutine {
-		this.dispatchModeEvent(ctx, 'mode.locomotion.idle');
+fighterActions.register('fighter.prepareJump', (ctx, params) => {
+	const fighter = asFighter(ctx.owner);
+	const input = readString(params, 'direction');
+	if (isDirection(input)) {
+		fighter.facing = input;
+		ctx.vars[VAR_JUMP_DIRECTION] = input;
+	} else {
+		delete ctx.vars[VAR_JUMP_DIRECTION];
 	}
-}
+});
 
-class FighterDuckHoldAbility extends Ability {
-	public constructor() { super(FIGHTER_CORE_ABILITY_IDS.duck_hold); }
-
-	public override *activate(ctx: AbilityContext): AbilityCoroutine {
-		this.dispatchModeEvent(ctx, 'mode.control.duck');
+fighterActions.register('fighter.dispatchJump', (ctx, _params) => {
+	const stored = ctx.vars[VAR_JUMP_DIRECTION];
+	let payload: Record<string, unknown> | undefined;
+	if (typeof stored === 'string' && isDirection(stored)) {
+		payload = { direction: stored } as Record<string, unknown>;
 	}
-}
+	ctx.dispatchMode('mode.control.jump', payload, undefined);
+});
 
-class FighterDuckReleaseAbility extends Ability {
-	public constructor() { super(FIGHTER_CORE_ABILITY_IDS.duck_release); }
-
-	public override *activate(ctx: AbilityContext): AbilityCoroutine {
-		this.dispatchModeEvent(ctx, 'mode.locomotion.idle');
+fighterActions.register('fighter.beginAttack', (ctx, params) => {
+	const fighter = asFighter(ctx.owner);
+	const attack = resolveAttackType(params, ctx.vars);
+	ctx.vars[VAR_ATTACK_CURRENT] = attack;
+	const payload = { attackType: attack } as Record<string, unknown>;
+	if (fighter.performingStoerheidsdans) {
+		fighter.performAttack(attack);
+	} else {
+		ctx.dispatchMode('mode.action.attack', payload, undefined);
 	}
-}
+});
 
-class FighterJumpAbility extends Ability {
-	public constructor(private readonly fighter: Fighter) { super(FIGHTER_CORE_ABILITY_IDS.jump); }
-
-	public override *activate(ctx: AbilityContext): AbilityCoroutine {
-		const payload = (ctx.intent?.payload ?? {}) as { direction?: 'left' | 'right' };
-		const direction = payload.direction;
-		if (direction === 'left' || direction === 'right') this.fighter.facing = direction;
-		this.dispatchModeEvent(ctx, 'mode.control.jump', direction ? { direction } : undefined);
+fighterActions.register('fighter.completeAttack', (ctx, params) => {
+	const fighter = asFighter(ctx.owner);
+	const attack = resolveAttackType(params, ctx.vars);
+	if (fighter.performingStoerheidsdans) {
+		fighter.completeAttack(attack);
+	} else if (attack !== 'flyingkick') {
+		const payload = { attackType: attack } as Record<string, unknown>;
+		ctx.dispatchMode('mode.action.complete', payload, undefined);
 	}
-}
+	delete ctx.vars[VAR_ATTACK_CURRENT];
+});
 
-class FighterAttackAbility extends Ability {
-	protected readonly fighter: Fighter;
-	protected readonly attackType: AttackType;
+fighterActions.register('fighter.cancelAttack', (ctx, params) => {
+	const fighter = asFighter(ctx.owner);
+	const attack = resolveAttackType(params, ctx.vars);
+	fighter.finishAttack(attack);
+	delete ctx.vars[VAR_ATTACK_CURRENT];
+});
 
-	public constructor(fighter: Fighter, attackType: AttackType, id: AbilityId) {
-		super(id);
-		this.fighter = fighter;
-		this.attackType = attackType;
-	}
+fighterActions.register('fighter.noteFlyingKickSpent', (ctx, _params) => {
+	const fighter = asFighter(ctx.owner);
+	fighter.attacked_while_jumping = true;
+	ctx.addTag('state.airborne.attackUsed');
+});
 
-	public override canActivate(ctx: AbilityContext): boolean {
-		if (!super.canActivate(ctx)) return false;
-		if (this.fighter.isAttacking) return false;
-		return true;
-	}
+fighterActions.register('fighter.clearFlyingKickSpent', (ctx, _params) => {
+	const fighter = asFighter(ctx.owner);
+	fighter.attacked_while_jumping = false;
+	ctx.removeTag('state.airborne.attackUsed');
+});
 
-	public override *activate(ctx: AbilityContext): AbilityCoroutine {
-		const fighter = this.fighter;
-		const attackType = this.attackType;
-		if (!fighter.performingStoerheidsdans) {
-			this.dispatchModeEvent(ctx, 'mode.action.attack', { attackType });
-		} else {
-			fighter.performAttack(attackType);
-		}
-		ctx.emit?.('fighter.attack.started', { id: this.id, attackType });
-		yield { type: 'waitEvent', name: ATTACK_FINISH_EVENT(attackType), scope: 'self' };
-		if (fighter.performingStoerheidsdans) {
-			fighter.completeAttack(attackType);
-		} else if (attackType !== 'flyingkick') {
-			this.dispatchModeEvent(ctx, 'mode.action.complete', { attackType });
-		}
-		ctx.emit?.('fighter.attack.completed', { id: this.id, attackType });
-	}
-}
-
-class FighterFlyingKickAbility extends FighterAttackAbility {
-	public constructor(fighter: Fighter, id: AbilityId) {
-		super(fighter, 'flyingkick', id);
-	}
-
-	public override canActivate(ctx: AbilityContext): boolean {
-		if (!super.canActivate(ctx)) return false;
-		if (!this.fighter.isJumping) return false;
-		if (this.fighter.attacked_while_jumping) return false;
-		return true;
-	}
-
-	public override *activate(ctx: AbilityContext): AbilityCoroutine {
-		this.fighter.attacked_while_jumping = true;
-		ctx.emit?.('fighter.attack.jumping', { id: this.id });
-		yield* super.activate(ctx);
-		this.dispatchModeEvent(ctx, 'flyingkick_end');
-	}
-}
-
-type AbilityEntry = { spec: AbilitySpec; factory: (fighter: Fighter) => Ability };
-
-const CORE_ABILITIES: AbilityEntry[] = [
-	{
-		spec: {
-			id: FIGHTER_CORE_ABILITY_IDS.walk,
-			unique: 'restart',
-			requiredTags: ['state.grounded'],
-			blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
-		},
-		factory: fighter => new FighterWalkAbility(fighter),
-	},
-	{
-		spec: {
-			id: FIGHTER_CORE_ABILITY_IDS.walk_stop,
-			unique: 'ignore',
-		},
-		factory: _fighter => new FighterWalkStopAbility(),
-	},
-	{
-		spec: {
-			id: FIGHTER_CORE_ABILITY_IDS.duck_hold,
-			requiredTags: ['state.grounded'],
-			blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
-		},
-		factory: _fighter => new FighterDuckHoldAbility(),
-	},
-	{
-		spec: {
-			id: FIGHTER_CORE_ABILITY_IDS.duck_release,
-			requiredTags: ['state.ducking'],
-		},
-		factory: _fighter => new FighterDuckReleaseAbility(),
-	},
-	{
-		spec: {
-			id: FIGHTER_CORE_ABILITY_IDS.jump,
-			requiredTags: ['state.grounded'],
-			blockedTags: ['state.attacking', 'state.combat_disabled'],
-		},
-		factory: fighter => new FighterJumpAbility(fighter),
-	},
+const CORE_BLUEPRINTS: AbilityBlueprint[] = [
+	abilityBlueprint({
+		id: FIGHTER_CORE_ABILITY_IDS.walk,
+		unique: 'restart',
+		requiredTags: ['state.grounded'],
+		blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
+		activation: [
+			{ kind: 'call.action', action: 'fighter.configureWalk', params: { direction: fromIntent('payload.direction', undefined, true) } },
+			{ kind: 'mode.dispatch', event: 'mode.locomotion.walk', payload: { direction: fromVar(VAR_WALK_DIRECTION, literal('right')) } },
+		],
+		onCancel: [
+			{ kind: 'mode.dispatch', event: 'mode.locomotion.idle' },
+		],
+	}),
+	abilityBlueprint({
+		id: FIGHTER_CORE_ABILITY_IDS.walk_stop,
+		unique: 'ignore',
+		activation: [
+			{ kind: 'mode.dispatch', event: 'mode.locomotion.idle' },
+		],
+	}),
+	abilityBlueprint({
+		id: FIGHTER_CORE_ABILITY_IDS.duck_hold,
+		requiredTags: ['state.grounded'],
+		blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
+		activation: [
+			{ kind: 'mode.dispatch', event: 'mode.control.duck' },
+		],
+	}),
+	abilityBlueprint({
+		id: FIGHTER_CORE_ABILITY_IDS.duck_release,
+		requiredTags: ['state.ducking'],
+		activation: [
+			{ kind: 'mode.dispatch', event: 'mode.locomotion.idle' },
+		],
+	}),
+	abilityBlueprint({
+		id: FIGHTER_CORE_ABILITY_IDS.jump,
+		requiredTags: ['state.grounded'],
+		blockedTags: ['state.attacking', 'state.combat_disabled'],
+		activation: [
+			{ kind: 'call.action', action: 'fighter.prepareJump', params: { direction: fromIntent('payload.direction', undefined, true) } },
+			{ kind: 'call.action', action: 'fighter.dispatchJump' },
+		],
+	}),
 ];
 
-const ATTACK_ABILITIES: AbilityEntry[] = [
-	{
-		spec: {
-			id: abilityIdForAttack('punch'),
-			blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
-		},
-		factory: fighter => new FighterAttackAbility(fighter, 'punch', abilityIdForAttack('punch')),
-	},
-	{
-		spec: {
-			id: abilityIdForAttack('highkick'),
-			blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
-		},
-		factory: fighter => new FighterAttackAbility(fighter, 'highkick', abilityIdForAttack('highkick')),
-	},
-	{
-		spec: {
-			id: abilityIdForAttack('lowkick'),
-			blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
-		},
-		factory: fighter => new FighterAttackAbility(fighter, 'lowkick', abilityIdForAttack('lowkick')),
-	},
-	{
-		spec: {
-			id: abilityIdForAttack('duckkick'),
-			blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
-		},
-		factory: fighter => new FighterAttackAbility(fighter, 'duckkick', abilityIdForAttack('duckkick')),
-	},
-	{
-		spec: {
-			id: abilityIdForAttack('flyingkick'),
-			blockedTags: ['state.attacking'],
-			requiredTags: ['state.airborne'],
-		},
-		factory: fighter => new FighterFlyingKickAbility(fighter, abilityIdForAttack('flyingkick')),
-	},
+const ATTACK_BLUEPRINTS: AbilityBlueprint[] = [
+	createAttackBlueprint('punch'),
+	createAttackBlueprint('highkick'),
+	createAttackBlueprint('lowkick'),
+	createAttackBlueprint('duckkick'),
+	createFlyingKickBlueprint(),
 ];
 
-const ALL_ABILITIES: readonly AbilityEntry[] = [...CORE_ABILITIES, ...ATTACK_ABILITIES];
+const ALL_BLUEPRINTS: readonly AbilityBlueprint[] = [...CORE_BLUEPRINTS, ...ATTACK_BLUEPRINTS];
 
-export const FIGHTER_ATTACK_ABILITY_IDS = ATTACK_ABILITIES.map(({ spec }) => spec.id);
-
-function abilityIdsToRevoke(entries: readonly AbilityEntry[]): AbilityId[] {
-	return entries.map(entry => entry.spec.id);
-}
+export const FIGHTER_ATTACK_ABILITY_IDS: AbilityId[] = ATTACK_BLUEPRINTS.map(blueprint => blueprint.id);
 
 export function registerFighterAbilities(fighter: Fighter): void {
 	const asc = fighter.getUniqueComponent(AbilitySystemComponent);
-
-	for (const id of abilityIdsToRevoke(ALL_ABILITIES)) {
-		asc.revokeAbility(id);
+	for (let i = 0; i < ALL_BLUEPRINTS.length; i++) {
+		asc.revokeAbility(ALL_BLUEPRINTS[i]!.id);
 	}
-
-	for (const entry of ALL_ABILITIES) {
-		asc.grantAbility(entry.spec, () => entry.factory(fighter));
+	for (let i = 0; i < ALL_BLUEPRINTS.length; i++) {
+		asc.grantBlueprint(ALL_BLUEPRINTS[i]!, fighterActions);
 	}
 }
 
-export function getCoreAbilityId(name: FighterCoreAbilityName): AbilityId {
+export function getCoreAbilityId(name: keyof typeof FIGHTER_CORE_ABILITY_IDS): AbilityId {
 	return FIGHTER_CORE_ABILITY_IDS[name];
+}
+
+function createAttackBlueprint(attack: Exclude<AttackType, 'flyingkick'>): AbilityBlueprint {
+	const id = abilityIdForAttack(attack);
+	return abilityBlueprint({
+		id,
+		blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
+		activation: [
+			{ kind: 'call.action', action: 'fighter.beginAttack', params: { attackType: literal(attack) } },
+			{ kind: 'emit.gameplay', event: 'fighter.attack.started', payload: { id: literal(id), attackType: literal(attack) } },
+			{ kind: 'wait.event', event: `fighter.attack.animation.${attack}.finished`, scope: { kind: 'self' } },
+			{ kind: 'call.action', action: 'fighter.completeAttack', params: { attackType: literal(attack) } },
+			{ kind: 'emit.gameplay', event: 'fighter.attack.completed', payload: { id: literal(id), attackType: literal(attack) } },
+		],
+		onCancel: [
+			{ kind: 'call.action', action: 'fighter.cancelAttack', params: { attackType: literal(attack) } },
+		],
+	});
+}
+
+function createFlyingKickBlueprint(): AbilityBlueprint {
+	const attack: AttackType = 'flyingkick';
+	const id = abilityIdForAttack(attack);
+	return abilityBlueprint({
+		id,
+		requiredTags: ['state.airborne'],
+		blockedTags: ['state.attacking', 'state.airborne.attackUsed', 'state.combat_disabled'],
+		activation: [
+			{ kind: 'call.action', action: 'fighter.beginAttack', params: { attackType: literal(attack) } },
+			{ kind: 'call.action', action: 'fighter.noteFlyingKickSpent' },
+			{ kind: 'emit.gameplay', event: 'fighter.attack.started', payload: { id: literal(id), attackType: literal(attack) } },
+			{ kind: 'wait.event', event: 'fighter.attack.animation.flyingkick.finished', scope: { kind: 'self' } },
+			{ kind: 'call.action', action: 'fighter.completeAttack', params: { attackType: literal(attack) } },
+			{ kind: 'mode.dispatch', event: 'flyingkick_end' },
+			{ kind: 'emit.gameplay', event: 'fighter.attack.completed', payload: { id: literal(id), attackType: literal(attack) } },
+		],
+		onCancel: [
+			{ kind: 'call.action', action: 'fighter.cancelAttack', params: { attackType: literal(attack) } },
+			{ kind: 'call.action', action: 'fighter.clearFlyingKickSpent' },
+		],
+		onComplete: [
+			{ kind: 'call.action', action: 'fighter.clearFlyingKickSpent' },
+		],
+	});
+}
+
+function asFighter(owner: WorldObject): Fighter {
+	if (owner instanceof Fighter) return owner;
+	const id = owner ? owner.id : '<unknown>';
+	throw new Error(`[ella2023/abilities] Ability owner '${id}' is not a Fighter.`);
+}
+
+function isDirection(value: unknown): value is Direction {
+	return value === 'left' || value === 'right';
+}
+
+function readString(source: Record<string, unknown> | undefined, key: string): string | undefined {
+	if (!source) return undefined;
+	const value = source[key];
+	return typeof value === 'string' ? value : undefined;
+}
+
+function resolveAttackType(params: Record<string, unknown> | undefined, vars: Record<string, unknown>): AttackType {
+	const candidate = readString(params, 'attackType');
+	if (candidate && ATTACK_TYPE_SET.has(candidate)) return candidate as AttackType;
+	const fromVars = vars[VAR_ATTACK_CURRENT];
+	if (typeof fromVars === 'string' && ATTACK_TYPE_SET.has(fromVars)) return fromVars as AttackType;
+	throw new Error('[ella2023/abilities] Missing or invalid attackType for fighter ability.');
+}
+
+function abilityIdForAttack(attack: AttackType): AbilityId {
+	return `fighter.attack.${attack}` as AbilityId;
 }
