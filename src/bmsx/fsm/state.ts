@@ -130,6 +130,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 	/** Simple path parse cache. */
 	private static _pathCache = new Map<string, { abs: boolean, up: number, segs: readonly string[] }>();
+	private static _dumpHookRegistered = false;
 
 	private static shouldTraceTransitions(): boolean {
 		const diag = State.diagnostics;
@@ -142,6 +143,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	}
 
 	private static appendTraceEntry(id: Identifier, message: string): void {
+		State.ensureTraceDumpHook();
 		const diag = State.diagnostics;
 		if (!diag) return;
 		let list = State.TraceMap.get(id);
@@ -158,6 +160,24 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			// eslint-disable-next-line no-console
 			console.debug(`[FSM:${id}] ${message}`);
 		}
+	}
+
+	private static ensureTraceDumpHook(): void {
+		if (State._dumpHookRegistered) return;
+		State._dumpHookRegistered = true;
+		if (typeof process === 'undefined' || typeof process.on !== 'function') return;
+		process.once('exit', () => {
+			if (!State.diagnostics) return;
+			if (State.TraceMap.size === 0) return;
+			try {
+				const payload = JSON.stringify(Array.from(State.TraceMap.entries()), null, 2);
+				// eslint-disable-next-line no-console
+				console.log('[StateTraceDump]', payload);
+			} catch (error) {
+				// eslint-disable-next-line no-console
+				console.log('[StateTraceDump]', '<<unserializable>>');
+			}
+		});
 	}
 
 	private static describePayload(payload?: EventPayload): string {
@@ -830,6 +850,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 
 		this.paused = false;
 		this.id = this.make_id();
+		State.appendTraceEntry(this.id, `[create] machine='${this.localdef_id}' target='${this.target_id}'`);
 		this.transition_queue = [];
 		this.critical_section_counter = 0;
 		this.is_processing_queue = false;
