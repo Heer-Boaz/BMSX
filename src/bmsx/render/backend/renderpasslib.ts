@@ -190,12 +190,8 @@ export class RenderPassLibrary {
 				console.warn(`[validate] ${pass.name}: backend lacks uniform buffer binding API`);
 			}
 			if (passId === 'sprites') {
-				const hasTextures = (v: unknown): v is { textures: { [k: string]: unknown | null } } => typeof v === 'object' && v !== null && 'textures' in (v as Record<string, unknown>);
-				if (hasTextures(gv)) {
-					const textures = gv.textures as { [k: string]: unknown | null };
-					if (!textures['_atlas']) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
-					if (!textures['_atlas_dynamic']) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
-				}
+				if (!gv.textures['_atlas']) console.warn(`[validate] ${pass.name}: texture '_atlas' missing`);
+				if (!gv.textures['_atlas_dynamic']) console.warn(`[validate] ${pass.name}: texture '_atlas_dynamic' missing`);
 			}
 			if (passId === 'meshbatch') {
 				const dirBuf = MeshPipeline.getDirectionalLightBuffer();
@@ -203,9 +199,9 @@ export class RenderPassLibrary {
 				if (!dirBuf) console.warn(`[validate] ${pass.name}: DirLightBlock buffer not initialized`);
 				if (!ptBuf) console.warn(`[validate] ${pass.name}: PointLightBlock buffer not initialized`);
 			}
-		} catch {
+		} catch (e) {
 			const passName = pass ? pass.name : 'unknown';
-			console.error(`[validate] ${passName}: error occurred during validation`);
+			console.error(`[validate] ${passName}: error occurred during validation: ${e}`);
 		}
 	}
 

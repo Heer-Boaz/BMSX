@@ -1,28 +1,32 @@
 import { Component, type ComponentAttachOptions } from './basecomponent';
-import { EventEmitter } from '../core/eventemitter';
+import { EventEmitter, type EventLane, type EventPayload, type StructuredEventPayload } from '../core/eventemitter';
 import { $ } from '../core/game';
 import type { Identifier } from '../rompack/rompack';
 import type { WorldObject } from '../core/object/worldobject';
 import { excludepropfromsavegame, insavegame } from '../serializer/serializationhooks';
 import { TickGroup } from '../ecs/ecsystem';
+import { abilityRegistry } from '../gas/ability_registry';
 import {
-	Ability,
-	type AbilityContext,
-	type AbilityCoroutine,
 	type AbilityId,
+	type AbilityPayloadFor,
+	type AbilityRequestOptions,
 	type AbilityRequestResult,
 	type AbilitySpec,
-	type AbilityYield,
 	type ActiveEffect,
 	type AbilitySystemRef,
 	type AttributeSet,
 	type GameplayEffect,
 	type TagId
 } from '../gas/gastypes';
-import type { AbilityRuntimeBindings } from '../gas/ability_blueprint';
-import { AbilityBlueprint, AbilityActionRegistry, AbilityBlueprintRunner } from '../gas/ability_blueprint';
+import {
+	AbilityActionRegistry,
+	GameplayAbilityExecution,
+	type AbilityRuntimeBindings,
+	type AbilityWaitInstruction,
+	type GameplayAbilityDefinition
+} from '../gas/gameplay_ability';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
-import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
+import type { GameplayCommand, ActivateAbilityCommand } from '../ecs/gameplay_command_buffer';
 
 export type AbilityTagSnapshot = {
 	explicit: TagId[];
@@ -32,10 +36,21 @@ export type AbilityTagSnapshot = {
 
 type NowFn = () => number;
 
+type EventWaitState = { kind: 'event'; instruction: AbilityWaitInstruction & { kind: 'event' }; unsub: () => void };
+
 type WaitState =
 	| { kind: 'time'; until: number }
 	| { kind: 'tag'; tag: TagId; present: boolean }
-	| { kind: 'event'; name: string; unsub: () => void };
+	| EventWaitState;
+
+type ActiveAbilityRun = {
+	id: AbilityId;
+	definition: GameplayAbilityDefinition;
+	execution: GameplayAbilityExecution;
+	wait?: WaitState;
+	grantedTags: TagId[];
+	removeOnEnd: TagId[];
+};
 
 @insavegame
 export class AbilitySystemComponent extends Component {
@@ -58,11 +73,11 @@ export class AbilitySystemComponent extends Component {
 	@excludepropfromsavegame
 	private readonly grantedTagRefs = new Map<TagId, number>();
 
-	private readonly _abilities = new Map<AbilityId, AbilitySpec>();
-	private readonly _abilityFactory = new Map<AbilityId, () => Ability>();
+	private readonly _abilities = new Map<AbilityId, GameplayAbilityDefinition>();
+	private readonly _abilityActions = new Map<AbilityId, AbilityActionRegistry>();
 
 	@excludepropfromsavegame
-	private readonly _active = new Map<string, { id: AbilityId; co: AbilityCoroutine; wait?: WaitState }>();
+	private readonly _active = new Map<string, ActiveAbilityRun>();
 
 	@excludepropfromsavegame
 	private readonly _cooldownUntil = new Map<AbilityId, number>(); // ms timestamp
@@ -77,13 +92,22 @@ export class AbilitySystemComponent extends Component {
 
 	private _runnerCounter = 0;
 
-	public requestAbility(id: AbilityId, opts: { source?: string; payload?: Record<string, unknown> } = {}): AbilityRequestResult {
+	public requestAbility<Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>): AbilityRequestResult {
+		const payload = opts && 'payload' in opts ? (opts as { payload?: AbilityPayloadFor<Id> }).payload : undefined;
+		abilityRegistry.validate(id, payload);
 		const reason = this.canActivateReason(id);
 		if (reason) {
 			this.notifyAbilityFailed(id, reason);
 			return { ok: false as const, reason };
 		}
-		GameplayCommandBuffer.instance.push({ kind: 'ActivateAbility', owner: this.parentid, ability_id: id, payload: opts.payload, source: opts.source });
+		const command: ActivateAbilityCommand = {
+			kind: 'ActivateAbility',
+			owner: this.parentid,
+			ability_id: id,
+			source: opts?.source,
+		};
+		if (payload !== undefined) command.payload = payload as AbilityPayloadFor<AbilityId>;
+		GameplayCommandBuffer.instance.push(command);
 		return { ok: true as const };
 	}
 
@@ -138,21 +162,21 @@ export class AbilitySystemComponent extends Component {
 		return { explicit: explicitList, granted: grantedList, combined };
 	}
 
-	public grantAbility(spec: AbilitySpec, factory: () => Ability): void {
-		this._abilities.set(spec.id, spec);
-		this._abilityFactory.set(spec.id, factory);
-	}
-
-	public grantBlueprint(blueprint: AbilityBlueprint, actions: AbilityActionRegistry): void {
-		this.grantAbility(blueprint, () => new BlueprintAbility(this, blueprint, actions));
+	public grantAbility(definition: GameplayAbilityDefinition, actions?: AbilityActionRegistry): void {
+		if (!definition || !definition.id) {
+			throw new Error('[AbilitySystemComponent] Cannot grant ability without a valid definition id.');
+		}
+		const registry = actions ?? new AbilityActionRegistry();
+		this._abilities.set(definition.id, definition);
+		this._abilityActions.set(definition.id, registry);
 	}
 	public revokeAbility(id: AbilityId): void {
 		this._abilities.delete(id);
-		this._abilityFactory.delete(id);
+		this._abilityActions.delete(id);
 		// remove any active instances of this ability
 		for (const [key, run] of [...this._active]) {
 			if (run.id !== id) continue;
-			this.stopAbilityRun(key, run);
+			this.cancelAbilityRun(key, run);
 		}
 	}
 
@@ -196,53 +220,79 @@ export class AbilitySystemComponent extends Component {
 		}
 	}
 
-	public tryActivate(id: AbilityId, payload?: Record<string, unknown>): boolean {
-		const spec = this._abilities.get(id);
-		const factory = this._abilityFactory.get(id);
-		if (!spec || !factory) return false;
+	public tryActivate<Id extends AbilityId>(id: Id, payload?: AbilityPayloadFor<Id>): boolean {
+		const definition = this._abilities.get(id);
+		const actions = this._abilityActions.get(id);
+		if (!definition || !actions) return false;
+		abilityRegistry.validate(id, payload);
 
 		const reason = this.canActivateReason(id);
 		if (reason) {
-			// Optional UX/debug hook
 			const owner = this.ownerOrThrow();
 			$.emitGameplay('AbilityFailed', owner, { id, reason });
 			return false;
 		}
 
-		const unique = spec.unique ?? 'ignore';
+		const unique = definition.unique ?? 'ignore';
 		if (unique !== 'stack') {
 			const existingKey = this.findActiveByAbility(id);
 			if (existingKey) {
 				if (unique === 'restart') {
 					const entry = this._active.get(existingKey);
-					if (entry) this.stopAbilityRun(existingKey, entry);
+					if (entry) this.cancelAbilityRun(existingKey, entry);
 				} else {
 					return false;
 				}
 			}
 		}
 
-		const ctx: AbilityContext = {
-			parentid: this.parentid,
-			asc: this.ref(),
-			emit: (name: string, payload?: unknown) => {
-				const owner = this.ownerOrThrow();
-				EventEmitter.instance.emit(name, owner, payload);
-			},
-			intent: { id, payload }
-		};
-		const ability = factory();
-		if (!ability.canActivate(ctx)) return false;
+		const owner = this.ownerOrThrow();
+		const runtime = this.createRuntimeBindings(owner);
+		const execution = new GameplayAbilityExecution(definition, runtime, actions, payload as EventPayload);
 
-		this.pay(spec);
+		this.pay(definition);
 		const now = this.now();
-		if (spec.cooldownMs) {
-			this._cooldownUntil.set(id, now + spec.cooldownMs);
-			const owner = this.ownerOrThrow();
-			EventEmitter.instance.emit('AbilityCooldownStart', owner, { id, until: now + spec.cooldownMs });
+		if (definition.cooldownMs) {
+			const until = now + definition.cooldownMs;
+			this._cooldownUntil.set(id, until);
+			EventEmitter.instance.emit('AbilityCooldownStart', owner, { id, until });
 		}
+
+		const grantedTags: TagId[] = [];
+		const removeOnEnd: TagId[] = [];
+		const tagOps = definition.tags;
+		if (tagOps) {
+			if (tagOps.grant) {
+				for (let i = 0; i < tagOps.grant.length; i++) {
+					const tag = tagOps.grant[i];
+					if (!tag) continue;
+					this.addTag(tag);
+					grantedTags.push(tag);
+				}
+			}
+			if (tagOps.removeOnActivate) {
+				for (let i = 0; i < tagOps.removeOnActivate.length; i++) {
+					const tag = tagOps.removeOnActivate[i];
+					if (!tag) continue;
+					this.removeTag(tag);
+				}
+			}
+			if (tagOps.removeOnEnd) {
+				for (let i = 0; i < tagOps.removeOnEnd.length; i++) {
+					const tag = tagOps.removeOnEnd[i];
+					if (tag) removeOnEnd.push(tag);
+				}
+			}
+		}
+
 		const key = `${id}#${this._runnerCounter++}`;
-		this._active.set(key, { id, co: ability.activate(ctx) });
+		this._active.set(key, {
+			id,
+			definition,
+			execution,
+			grantedTags,
+			removeOnEnd,
+		});
 		return true;
 	}
 
@@ -276,7 +326,6 @@ export class AbilitySystemComponent extends Component {
 
 		// Abilities
 		const now = this.now();
-		// Cooldown end notifications
 		for (const [aid, until] of [...this._cooldownUntil]) {
 			if (now >= until) {
 				this._cooldownUntil.delete(aid);
@@ -285,69 +334,31 @@ export class AbilitySystemComponent extends Component {
 			}
 		}
 		for (const [key, run] of [...this._active]) {
-			// honor waits
 			if (run.wait) {
-				if (run.wait.kind === 'time') {
-					if (now < run.wait.until) continue;
-					run.wait = undefined;
-				} else if (run.wait.kind === 'tag') {
-					const ok = this.hasGameplayTag(run.wait.tag) === run.wait.present;
-					if (!ok) continue;
-					run.wait = undefined;
-				} else if (run.wait.kind === 'event') {
-					// event will clear itself via handler
-					continue;
+				switch (run.wait.kind) {
+					case 'time':
+						if (now < run.wait.until) continue;
+						run.wait = undefined;
+						break;
+					case 'tag': {
+						const satisfied = this.hasGameplayTag(run.wait.tag) === run.wait.present;
+						if (!satisfied) continue;
+						run.wait = undefined;
+						break;
+					}
+					case 'event':
+						// Event listeners clear the wait state when delivered.
+						continue;
 				}
 			}
 
-			const { done, value } = run.co.next();
-			if (done) {
-				if (run.wait?.kind === 'event') run.wait.unsub();
-				this._active.delete(key);
+			const result = run.execution.advance(now);
+			if (result.kind === 'wait') {
+				this.applyWaitState(key, run, result.wait);
 				continue;
 			}
-			if (value && isAbilityYield(value) && value.type === 'finish') {
-				this.stopAbilityRun(key, run);
-				continue;
-			}
-			if (!value || !isAbilityYield(value)) continue;
-
-			switch (value.type) {
-				case 'waitTime':
-					run.wait = { kind: 'time', until: now + value.ms };
-					break;
-				case 'waitTag':
-					if (this.hasGameplayTag(value.tag) !== value.present) {
-						run.wait = { kind: 'tag', tag: value.tag, present: value.present };
-					}
-					break;
-				case 'waitEvent': {
-					const name = value.name;
-					const scope = value.scope;
-					const handler = (_eventName: string) => {
-						const ent = this._active.get(key);
-						if (!ent) return;
-						if (ent.wait?.kind === 'event') {
-							ent.wait.unsub();
-							ent.wait = undefined;
-						}
-					};
-					let unsub: () => void;
-					// Use a unique subscriber token so we can remove precisely this handler
-					const token: any = { __ascWait: true, key };
-					if (!scope || scope === 'all') {
-						const listener = (evName: string) => { if (evName === name) handler(evName); };
-						EventEmitter.instance.on(name, listener, token, undefined, false);
-						unsub = () => EventEmitter.instance.removeSubscriber(token);
-					} else {
-						const filter: Identifier = (scope === 'self') ? (this.parentid as Identifier) : (scope as Identifier);
-						const listener = (evName: string) => { if (evName === name) handler(evName); };
-						EventEmitter.instance.on(name, listener, token, filter, false);
-						unsub = () => EventEmitter.instance.removeSubscriber(token);
-					}
-					run.wait = { kind: 'event', name, unsub };
-					break;
-				}
+			if (result.kind === 'completed') {
+				this.finishAbilityRun(key, run);
 			}
 		}
 	}
@@ -357,8 +368,8 @@ export class AbilitySystemComponent extends Component {
 			this._ref = {
 				parentid: this.parentid,
 				hasTag: (tag: TagId) => this.hasGameplayTag(tag),
-				tryActivate: (abilityId: AbilityId, payload?: Record<string, unknown>) => this.tryActivate(abilityId, payload),
-				requestAbility: (abilityId: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(abilityId, opts ?? {})
+				tryActivate: <Id extends AbilityId>(abilityId: Id, payload?: AbilityPayloadFor<Id>) => this.tryActivate(abilityId, payload),
+				requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.requestAbility(abilityId, opts)
 			};
 		} else {
 			this._ref.parentid = this.parentid;
@@ -381,7 +392,7 @@ export class AbilitySystemComponent extends Component {
 	public override dispose(): void {
 		// Unsubscribe pending event waits and clear actives
 		for (const [key, run] of [...this._active]) {
-			this.stopAbilityRun(key, run);
+			this.cancelAbilityRun(key, run);
 		}
 		// Clear effects and derived tags
 		this.effects.length = 0;
@@ -393,7 +404,7 @@ export class AbilitySystemComponent extends Component {
 
 	public override detach(): void {
 		for (const [key, run] of [...this._active]) {
-			this.stopAbilityRun(key, run);
+			this.cancelAbilityRun(key, run);
 		}
 		this.effects.length = 0;
 		this.grantedTagRefs.clear();
@@ -401,11 +412,7 @@ export class AbilitySystemComponent extends Component {
 		super.detach();
 	}
 
-	public getAbilityOwner(): WorldObject {
-		return this.ownerOrThrow();
-	}
-
-	public createBlueprintRuntimeBindings(owner: WorldObject): AbilityRuntimeBindings {
+	private createRuntimeBindings(owner: WorldObject): AbilityRuntimeBindings {
 		const ownerId = this.parentid;
 		return {
 			owner,
@@ -413,10 +420,26 @@ export class AbilitySystemComponent extends Component {
 			hasTag: (tag: TagId) => this.hasGameplayTag(tag),
 			addTag: (tag: TagId) => this.addTag(tag),
 			removeTag: (tag: TagId) => this.removeTag(tag),
-			dispatchMode: (event: string, payload: Record<string, unknown> | undefined, target: Identifier | undefined) => this.dispatchBlueprintModeEvent(ownerId, event, payload, target),
-			emitGameplay: (event: string, payload: unknown) => $.emitGameplay(event, owner, payload),
+			dispatchMode: (event: string, payload: EventPayload | undefined, target: Identifier | undefined, lane?: EventLane) => {
+				this.dispatchModeEvent(ownerId, event, payload, target, lane);
+			},
+			emitGameplay: (event: string, payload: EventPayload, lane?: EventLane) => {
+				if (lane) {
+					if (payload && typeof payload === 'object') {
+						const structured = { ...(payload as StructuredEventPayload), lane };
+						$.emitGameplay(event, owner, structured);
+						return;
+					}
+					if (payload === undefined || payload === null) {
+						$.emitGameplay(event, owner, { lane });
+						return;
+					}
+					throw new Error(`[AbilitySystemComponent] Cannot emit gameplay event '${event}' on lane '${lane}' with primitive payload.`);
+				}
+				$.emitGameplay(event, owner, payload);
+			},
 			pushCommand: (command: GameplayCommand) => GameplayCommandBuffer.instance.push(command),
-			requestAbility: (abilityId: AbilityId, opts?: { source?: string; payload?: Record<string, unknown> }) => this.requestAbility(abilityId, opts ?? {}),
+			requestAbility: <Id extends AbilityId>(abilityId: Id, opts?: AbilityRequestOptions<Id>) => this.requestAbility(abilityId, opts),
 		};
 	}
 
@@ -430,30 +453,87 @@ export class AbilitySystemComponent extends Component {
 		else this.grantedTagRefs.delete(tag);
 	}
 
-	private dispatchBlueprintModeEvent(ownerId: Identifier, event: string, payload: Record<string, unknown> | undefined, target: Identifier | undefined): void {
+	private dispatchModeEvent(ownerId: Identifier, event: string, payload: EventPayload | undefined, target: Identifier | undefined, lane?: EventLane): void {
+		if (lane && (payload === undefined || typeof payload !== 'object')) {
+			throw new Error(`[AbilitySystemComponent] Cannot attach lane '${lane}' to non-object payload for event '${event}'.`);
+		}
 		const targetId = target ?? ownerId;
+		const finalPayload = lane && payload ? { ...(payload as Record<string, unknown>), lane } : payload;
 		GameplayCommandBuffer.instance.push({
 			kind: 'dispatchEvent',
 			event,
 			target_id: targetId,
 			emitter_id: ownerId,
-			payload,
+			payload: finalPayload,
 		});
 	}
 
-	private stopAbilityRun(key: string, run: { id: AbilityId; co: AbilityCoroutine; wait?: WaitState }): void {
-		if (run.wait && run.wait.kind === 'event') {
-			run.wait.unsub();
-		}
-		const ret = run.co.return;
-		if (typeof ret === 'function') {
-			try {
-				ret.call(run.co);
-			} catch (error) {
-				console.warn('[AbilitySystemComponent] Ability coroutine return failed', { id: run.id, error });
+	private applyWaitState(key: string, run: ActiveAbilityRun, instruction: AbilityWaitInstruction): void {
+		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
+		switch (instruction.kind) {
+			case 'time':
+				run.wait = { kind: 'time', until: instruction.until };
+				return;
+			case 'tag': {
+				const satisfied = this.hasGameplayTag(instruction.tag) === instruction.present;
+				if (satisfied) {
+					run.wait = undefined;
+				} else {
+					run.wait = { kind: 'tag', tag: instruction.tag, present: instruction.present };
+				}
+				return;
+			}
+			case 'event': {
+				const token: any = { __ascWait: true, key };
+				const listener = (eventName: string) => {
+					if (eventName !== instruction.event) return;
+					const entry = this._active.get(key);
+					if (!entry) return;
+					const pending = entry.wait;
+					if (pending && pending.kind === 'event') {
+						pending.unsub();
+						entry.wait = undefined;
+					}
+				};
+				const options: { emitter?: Identifier; persistent?: boolean; lane?: EventLane } = { persistent: false };
+				if (instruction.scope !== undefined) options.emitter = instruction.scope as Identifier;
+				if (instruction.lane) options.lane = instruction.lane;
+				EventEmitter.instance.on(instruction.event, listener, token, options, false);
+				const unsub = () => EventEmitter.instance.removeSubscriber(token);
+				run.wait = { kind: 'event', instruction, unsub };
+				return;
 			}
 		}
+	}
+
+	private finishAbilityRun(key: string, run: ActiveAbilityRun): void {
+		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
+		run.wait = undefined;
+		this.cleanupAbilityTags(run);
 		this._active.delete(key);
+	}
+
+	private cancelAbilityRun(key: string, run: ActiveAbilityRun): void {
+		if (run.wait && run.wait.kind === 'event') run.wait.unsub();
+		run.wait = undefined;
+		try {
+			run.execution.cancel();
+		} catch (error) {
+			console.warn('[AbilitySystemComponent] Ability cancel handler failed', { id: run.id, error });
+		}
+		this.cleanupAbilityTags(run);
+		this._active.delete(key);
+	}
+
+	private cleanupAbilityTags(run: ActiveAbilityRun): void {
+		for (let i = 0; i < run.grantedTags.length; i++) {
+			const tag = run.grantedTags[i];
+			if (tag) this.removeTag(tag);
+		}
+		for (let i = 0; i < run.removeOnEnd.length; i++) {
+			const tag = run.removeOnEnd[i];
+			if (tag) this.removeTag(tag);
+		}
 	}
 
 	private notifyAbilityFailed(id: AbilityId, reason: string): void {
@@ -492,34 +572,4 @@ export class AbilitySystemComponent extends Component {
 		if (!owner) throw new Error(`[AbilitySystemComponent] Owner '${this.parentid}' not found.`);
 		return owner;
 	}
-}
-
-class BlueprintAbility extends Ability {
-	private readonly component: AbilitySystemComponent;
-	private readonly blueprint: AbilityBlueprint;
-	private readonly actions: AbilityActionRegistry;
-
-	constructor(component: AbilitySystemComponent, blueprint: AbilityBlueprint, actions: AbilityActionRegistry) {
-		super(blueprint.id, blueprint.unique);
-		this.component = component;
-		this.blueprint = blueprint;
-		this.actions = actions;
-	}
-
-	public override activate(ctx: AbilityContext): AbilityCoroutine {
-		const owner = this.component.getAbilityOwner();
-		const runtimeBindings = this.component.createBlueprintRuntimeBindings(owner);
-		const intent = ctx.intent;
-		let intentPayload: Record<string, unknown> | undefined;
-		if (intent && intent.payload) intentPayload = intent.payload;
-		return AbilityBlueprintRunner.createCoroutine(this.blueprint, {
-			runtime: runtimeBindings,
-			actionRegistry: this.actions,
-			intentPayload,
-		});
-	}
-}
-
-function isAbilityYield(x: unknown): x is AbilityYield {
-	return !!x && typeof x === 'object' && 'type' in (x as Record<string, unknown>);
 }

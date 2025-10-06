@@ -179,7 +179,7 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 				entryPoints: [bootloader_ts_path], // Entry point for the rompack
 				bundle: true, // Bundle all dependencies into a single file
 				sourcemap: 'inline', // Include inline source maps for debugging
-				sourcesContent: false,
+				sourcesContent: true,
 				outfile: `./rom/${romname}.js`, // Output file for the bundled code
 				platform: 'browser', // Target platform for the bundle
 				target: 'es2024', // Specify the ECMAScript version to target

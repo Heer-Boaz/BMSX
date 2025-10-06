@@ -1,8 +1,9 @@
-import type { EventLane, EventPayload, EventScope } from "../core/eventemitter";
+import type { EventLane, EventPayload, EventScope, StructuredEventPayload } from "../core/eventemitter";
 import { $ } from '../core/game';
 import { deepClone, deepEqual, hasOwn } from '../utils/utils';
 import type { Identifier } from '../rompack/rompack';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import type { AbilityId, AbilityRequestOptions } from '../gas/gastypes';
 import { GameplayCommandBuffer, type GameplayCommand } from '../ecs/gameplay_command_buffer';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import type {
@@ -557,9 +558,9 @@ function resolveBinding(binding: string, ctx: BuiltinExecutionContext): any {
 			break;
 		case 'payload':
 			current = ctx.payload;
-			if (segments.length > 0 && (current === null || typeof current !== 'object' || Array.isArray(current)) && current !== undefined) {
-				throw new Error(`[FSMLibrary] Payload is not "object", but "${typeof current}", cannot get property ${segments.join('.')}.`);
-			}
+			// if (segments.length > 0 && (current === null || typeof current !== 'object' || Array.isArray(current)) && current !== undefined) {
+			// 	throw new Error(`[FSMLibrary] Payload is not "object", but "${typeof current}", cannot get property ${segments.join('.')}.`);
+			// }
 			break;
 		case 'component': {
 			const owner = ctx.self as WorldObject;
@@ -935,7 +936,15 @@ function evaluateCondition(condition: StateActionCondition | undefined, ctx: Bui
 		}
 		if (!matched) return false;
 	}
-	if (condition.not && evaluateCondition(condition.not, ctx)) return false;
+	if (condition.not) {
+		if (Array.isArray(condition.not)) {
+			for (const sub of condition.not) {
+				if (evaluateCondition(sub, ctx)) return false;
+			}
+		} else if (evaluateCondition(condition.not, ctx)) {
+			return false;
+		}
+	}
 	return true;
 }
 
@@ -988,13 +997,13 @@ function createProxyForRegistryId(id: string, registry: HandlerRegistry, opts: H
 	};
 }
 
-function createBuiltinHandlerFromString(slot: string, value: string): GenericHandler | undefined {
-	if (slot === 'tape_next' || slot === 'tape_end') {
-		const path = value.trim();
-		if (!path) return undefined;
-		return function () { return path; };
-	}
-	return undefined;
+function createBuiltinHandlerFromString(value: string): GenericHandler | undefined {
+	// if (slot === 'tape_next' || slot === 'tape_end') {
+	// const path = value.trim();
+	// if (!path) return undefined;
+	return function () { return value; };
+	// }
+	// return undefined;
 }
 
 function resolveEmitter(emitterSpec: any, ctx: BuiltinExecutionContext, fallback: any): any {
@@ -1018,32 +1027,61 @@ function buildEventName(source: any, ctx: BuiltinExecutionContext): string {
 	return String(resolveTemplateValue(source, ctx));
 }
 
+function inferLaneByName(name: string): EventLane | 'any' {
+	const lowered = name.trim().toLowerCase();
+	if (!lowered) return 'any';
+	if (
+		lowered.startsWith('mode.') ||
+		lowered.startsWith('state.') ||
+		lowered.startsWith('combat.') ||
+		lowered.startsWith('ability.') ||
+		lowered.startsWith('input.') ||
+		lowered.startsWith('hit') ||
+		lowered.startsWith('ai.') ||
+		lowered.startsWith('fighter.')
+	) {
+		return 'gameplay';
+	}
+	if (
+		lowered.startsWith('animate') ||
+		lowered.startsWith('fx.') ||
+		lowered.startsWith('sfx.') ||
+		lowered.startsWith('ui.') ||
+		lowered.startsWith('camera.') ||
+		lowered.startsWith('music.') ||
+		lowered.startsWith('screen') ||
+		lowered.startsWith('presentation.')
+	) {
+		return 'presentation';
+	}
+	return 'any';
+}
+
 function createEmitHandler(spec: StateActionEmitSpec, slot: string): GenericHandler {
 	const normalized = typeof spec === 'string' ? { event: spec } : (spec ?? {});
 	const emitterSpec = normalized.emitter;
-	const laneDefault = normalized.lane ?? 'presentation';
 	const eventSpec = normalized.event;
 	return function (this: Stateful, state?: State, ...invokeArgs: any[]) {
 		const ctx = buildContext(this, state, invokeArgs, slot);
+		const eventName = buildEventName(eventSpec, ctx);
+		if (!eventName) {
+			throw new Error(`[FSMLibrary] Cannot emit event with empty name in slot '${slot}'.`);
+		}
 		const emitter = resolveEmitter(emitterSpec, ctx, this) ?? this;
 		const payload = normalized.payload !== undefined ? resolveTemplateValue(normalized.payload, ctx) : undefined;
-		const lane = laneDefault as EventLane;
-		const eventName = buildEventName(eventSpec, ctx);
-		if (!eventName) throw new Error(`[FSMLibrary] Cannot emit event with empty name in slot '${slot}'.`);
+		const lane = normalized.lane ?? inferLaneByName(eventName);
 		switch (lane) {
-			case 'any':
-				$.emit(eventName, emitter, payload);
 			case 'gameplay':
 				$.emitGameplay(eventName, emitter, payload);
 				break;
 			case 'presentation':
 				$.emitPresentation(eventName, emitter, payload);
 				break;
+			case 'any':
+				$.emit(eventName, emitter, payload);
+				break;
 			default:
 				throw new Error(`[FSMLibrary] Cannot emit event with invalid lane '${lane}' in slot '${slot}'.`);
-		}
-		if (typeof eventName !== 'string' || !eventName.trim()) {
-			throw new Error(`[FSMLibrary] Cannot emit event with empty name in slot '${slot}'.`);
 		}
 	};
 }
@@ -1125,7 +1163,7 @@ function resolveTransitionInstruction(key: TransitionSpecKey, value: unknown, ct
 	let transitionType: TransitionType = key;
 
 	if (typeof value === 'object' && !Array.isArray(value)) {
-		const obj = value as Record<string, unknown>;
+		const obj = value as StructuredEventPayload;
 		if ('state_id' in obj) {
 			stateSpec = obj.state_id;
 		}
@@ -1153,9 +1191,9 @@ function resolveTransitionInstruction(key: TransitionSpecKey, value: unknown, ct
 		throw new Error(`[FSMLibrary] Transition '${key}' in slot '${slot}' must resolve to a string.`);
 	}
 	const state_id = typeof resolvedState === 'string' ? resolvedState : String(resolvedState);
-	const resolvedPayload = payloadSpec !== undefined ? resolveTemplateValue(payloadSpec, ctx) : undefined;
+	const resolvedPayload = payloadSpec === undefined ? ctx.payload : resolveTemplateValue(payloadSpec, ctx);
 	const resolvedForceSame = forceSameSpec !== undefined ? !!resolveTemplateValue(forceSameSpec, ctx) : false;
-	const instruction: Record<string, unknown> = { state_id, transition_type: transitionType };
+	const instruction: StructuredEventPayload = { state_id, transition_type: transitionType };
 	if (resolvedPayload !== undefined) instruction.payload = resolvedPayload;
 	if (resolvedForceSame) instruction.force_transition_to_same_state = true;
 	return instruction;
@@ -1197,6 +1235,12 @@ function createBuiltinHandlerFromSpec(slot: string, spec: StateActionSpec | Stat
 
 function compileAction(slot: string, spec: StateActionSpec | StateActionCondition | undefined): GenericHandler | undefined {
 	if (spec == null) throw new Error(`[FSMLibrary] Action spec is null or undefined in slot '${slot}'.`);
+	// Built-in simple handlers by string value
+	if (typeof spec === 'string') {
+		const builtin = createBuiltinHandlerFromString(spec);
+		if (builtin) return builtin;
+	}
+
 	if (isConditionSlot(slot) && looksLikeConditionSpec(spec)) {
 		return function (this: Stateful, state?: State, ...args: any[]) {
 			const ctx = buildContext(this, state, args, slot);
@@ -1346,12 +1390,14 @@ function compileAction(slot: string, spec: StateActionSpec | StateActionConditio
 			if (!resolved) throw new Error(`[FSMLibrary] Ability spec in slot '${slot}' did not resolve to a valid ability identifier or object.`);
 			const id = typeof resolved === 'string' ? resolved : resolved.id;
 			if (!id) throw new Error(`[FSMLibrary] Ability spec in slot '${slot}' did not resolve to a valid ability identifier.`);
-			const opts: { source?: string; payload?: Record<string, unknown> } = {};
+			const abilityId = id as AbilityId;
+			let opts: AbilityRequestOptions<AbilityId> | undefined;
 			if (typeof resolved === 'object' && resolved) {
-				if ('payload' in resolved) opts.payload = resolved.payload as Record<string, unknown> | undefined;
-				if ('source' in resolved && typeof resolved.source === 'string') opts.source = resolved.source;
+				const source = (typeof resolved.source === 'string') ? resolved.source : undefined;
+				const payload = 'payload' in resolved ? (resolved.payload as EventPayload | undefined) : undefined;
+				opts = { source, payload } as AbilityRequestOptions<AbilityId>;
 			}
-			const result = asc.requestAbility(id, opts);
+			const result = opts === undefined ? asc.requestAbility(abilityId) : asc.requestAbility(abilityId, opts);
 			if (!result.ok) {
 				if ($.debug) {
 					const reason = 'reason' in result ? result.reason : 'unknown';
@@ -1361,16 +1407,26 @@ function compileAction(slot: string, spec: StateActionSpec | StateActionConditio
 		};
 	}
 	if ('invoke' in spec) {
-		const { fn, payload } = (spec as StateActionInvokeSpec).invoke ?? {};
-		return function (this: Stateful, state?: State, ...args: any[]) {
-			const ctx = buildContext(this, state, args, slot);
+		const { fn, payload, args: explicitArgs } = (spec as StateActionInvokeSpec).invoke ?? {};
+		return function (this: Stateful, state?: State, ...raw: any[]) {
+			const ctx = buildContext(this, state, raw, slot);
 			const resolvedFn = typeof fn === 'string' && fn.startsWith('@')
 				? resolveBinding(fn.slice(1), ctx)
 				: resolveTemplateValue(fn, ctx);
-			if (typeof resolvedFn !== 'function') throw new Error(`[FSMLibrary] Cannot invoke non-function in slot '${slot}'.`);
-			let payloadValue = payload !== undefined ? resolveTemplateValue(payload, ctx) : undefined;
-			if (payloadValue === undefined) payloadValue = { state, payload: ctx.payload };
-			resolvedFn.call(ctx.self ?? this, payloadValue);
+			if (typeof resolvedFn !== 'function') {
+				throw new Error(`[FSMLibrary] Cannot invoke non-function in slot '${slot}'.`);
+			}
+
+			const receiver = ctx.self ?? this;
+			if (explicitArgs !== undefined) {
+				const resolvedArgs = ensureArray(resolveTemplateValue(explicitArgs, ctx));
+				return resolvedFn.apply(receiver, resolvedArgs);
+			}
+			if (payload !== undefined) {
+				const resolvedPayload = resolveTemplateValue(payload, ctx);
+				return resolvedFn.call(receiver, resolvedPayload);
+			}
+			return resolvedFn.call(receiver, state, ctx.payload);
 		};
 	}
 	if ('consume_action' in spec) {
@@ -1419,7 +1475,7 @@ function hoistSlot(
 		return;
 	}
 	if (typeof current === 'string') {
-		const builtin = createBuiltinHandlerFromString(slot, current);
+		const builtin = createBuiltinHandlerFromString(current);
 		if (builtin) {
 			registry.register(id, builtin);
 			if (useProxyThunks) {

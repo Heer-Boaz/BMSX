@@ -1,4 +1,4 @@
-import type { AbilityId } from '../gas/gastypes';
+import type { AbilityId, AbilityPayloadFor } from '../gas/gastypes';
 import type { Identifier, vec3 } from '../rompack/rompack';
 
 type Move2DCommandBase = {
@@ -19,7 +19,7 @@ export type ActivateAbilityCommand = {
 	owner: Identifier;
 	target_id?: Identifier;
 	ability_id: AbilityId;
-	payload?: Record<string, unknown>;
+	payload?: AbilityPayloadFor<AbilityId>;
 	source?: string;
 };
 
@@ -54,12 +54,6 @@ export class GameplayCommandBuffer {
 
 	public push<C extends GameplayCommand>(command: C): void {
 		this.commands.push({ ...command, frame: this.frame, seq: this.seq++ });
-	}
-
-	public drainAll(): GameplayCommandWithMeta[] {
-		const drained = this.commands;
-		this.commands = [];
-		return drained;
 	}
 
 	public drainByKind<K extends GameplayCommand['kind']>(kind: K): Extract<GameplayCommandWithMeta, { kind: K }>[] {

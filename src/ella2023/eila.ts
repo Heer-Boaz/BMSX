@@ -1,9 +1,10 @@
 import { $, Component, WorldObjectEventPayloads, Identifier, ScreenBoundaryComponent, assign_fsm, attach_components, insavegame, subscribesToParentScopedEvent, State, type ComponentAttachOptions, type EventPayload, type RevivableObjectArgs, type Direction, GameplayCommandBuffer, V3 } from 'bmsx';
+import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { BitmapId } from './resourceids';
 import { Fighter } from './fighter';
 import { EILA_START_HP } from './gameconstants';
-import { registerFighterAbilities } from './abilities';
 import { EilaEventService } from './worldmodule';
+import { registerFighterAbilities } from './abilities';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'duckkick';
 
@@ -58,80 +59,62 @@ export class Eila extends Fighter {
 		this.hp = EILA_START_HP;
 	}
 
-	override onspawn(spawningPos?: Parameters<Fighter['onspawn']>[0]): void {
-		super.onspawn(spawningPos);
+	public override activate(): void {
+		super.activate();
 		registerFighterAbilities(this);
 	}
 
-	public onIdleEntered(): void {
-		this.setAttackingState(false);
-		this.attacked_while_jumping = false;
-		this.setJumpingState(false);
+	override onspawn(spawningPos?: Parameters<Fighter['onspawn']>[0]): void {
+		super.onspawn(spawningPos);
 	}
 
-	public onWalkEntered(): void {
-		this.setAttackingState(false);
-	}
-
-	public onDuckEntered(): void {
-		this.setDuckingState(true);
-		this.setAttackingState(false);
-	}
-
-	public onDuckExited(): void {
-		this.setDuckingState(false);
-	}
-
-	public startJump({ state, payload }: { state: State; payload?: EventPayload & { direction?: Direction | null; directional?: boolean | string } }): void {
+	public startJump(state?: State, payload?: EventPayload & { direction?: Direction | null; directional?: boolean | string }): void {
+		if (!state) throw new Error('[Eila] startJump invoked without state context.');
 		const data = state.data as JumpStateData;
 		let direction: Direction;
-		if (payload) {
-			if (payload.direction === 'left' || payload.direction === 'right') {
-				direction = payload.direction;
-			}
-			else if (typeof payload.directional === 'string' && (payload.directional === 'left' || payload.directional === 'right')) {
-				direction = payload.directional;
-			}
-			else if (payload.directional) {
-				direction = this.facing;
-			}
+		if (payload.direction === 'left' || payload.direction === 'right') {
+			direction = payload.direction;
+		}
+		else if (typeof payload.directional === 'string' && (payload.directional === 'left' || payload.directional === 'right')) {
+			direction = payload.directional;
+		}
+		else if (payload.directional) {
+			direction = this.facing;
 		}
 		data.direction = direction;
 		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
-		this.setJumpingState(true);
-		this.attacked_while_jumping = false;
 	}
 
 	public finishJump(): void {
 		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = false;
-		this.setJumpingState(false);
 		this.resetVerticalPosition();
-		this.attacked_while_jumping = false;
 	}
 
-	public jumpAscendingTick(state: State): void {
+	public jumpAscendingTick(state?: State): void {
+		if (!state) throw new Error('[Eila] jumpAscendingTick invoked without state context.');
 		const data = state.data as JumpStateData;
 		const dx = this.resolveJumpHorizontal(data);
 		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: V3.of(dx, -Fighter.JUMP_SPEED, 0), space: 'world' });
 	}
 
-	public jumpDescendingTick(state: State): void {
+	public jumpDescendingTick(state?: State): void {
+		if (!state) throw new Error('[Eila] jumpDescendingTick invoked without state context.');
 		const data = state.data as JumpStateData;
 		const dx = this.resolveJumpHorizontal(data);
 		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: V3.of(dx, Fighter.JUMP_SPEED, 0), space: 'world' });
 	}
 
 	public canStartFlyingKick(): boolean {
-		return this.isJumping && !this.attacked_while_jumping;
+		const asc = this.getUniqueComponent(AbilitySystemComponent);
+		return this.isJumping && !asc.hasGameplayTag('state.airborne.attackUsed');
 	}
 
 	public onFlyingKickEntered(): void {
-		this.startAttack('flyingkick');
-		this.attacked_while_jumping = true;
+		this.startAttack(undefined, { attackType: 'flyingkick' });
 	}
 
 	public onFlyingKickExited(): void {
-		this.finishAttack('flyingkick');
+		this.finishAttack(undefined, { attackType: 'flyingkick' });
 	}
 
 	public updateJumpDirection(direction: 'left' | 'right'): void {
@@ -152,9 +135,9 @@ export class Eila extends Fighter {
 		return 0;
 	}
 
-	public enterStoerheidsdans(state: State): void {
+	public enterStoerheidsdans(state?: State): void {
+		if (!state) throw new Error('[Eila] enterStoerheidsdans invoked without state context.');
 		this.performingStoerheidsdans = true;
-		this.setFightingState(false);
 		this.resetVerticalPosition();
 		$.emitPresentation('animate_idle', this);
 		const data = state.data as StoerheidsdansStateData;
@@ -162,8 +145,8 @@ export class Eila extends Fighter {
 		state.ticks += 1;
 	}
 
-	public handleStoerAnimationEnd({ state, payload }: { state: State; payload?: EventPayload & { animation_name?: string } }): void {
-		if (!payload?.animation_name) return;
+	public handleStoerAnimationEnd(state?: State, payload?: EventPayload & { animation_name?: string }): void {
+		if (!state || !payload?.animation_name) return;
 		const data = state.data as StoerheidsdansStateData;
 		if (data.expectedAnimation !== payload.animation_name) return;
 		data.expectedAnimation = null;
@@ -171,21 +154,20 @@ export class Eila extends Fighter {
 		state.ticks += 1;
 	}
 
-	public handleStoerTapeNext({ state, payload }: { state: State; payload: EventPayload & { tape_rewound: boolean } }): void {
-		if (payload.tape_rewound) return;
+	public handleStoerTapeNext(state?: State, payload?: EventPayload & { tape_rewound: boolean }): void {
+		if (!state || payload?.tape_rewound) return;
 		const nextAnimation = state.current_tape_value;
 		const data = state.data as StoerheidsdansStateData;
 		data.expectedAnimation = typeof nextAnimation === 'string' ? nextAnimation : null;
 		this.facing = this.facing === 'left' ? 'right' : 'left';
 		if (typeof nextAnimation === 'string') {
 			const attack = nextAnimation as EilaAttackType;
-			if (!this.requestAbility(this.getAttackAbilityId(attack), { attackType: attack })) {
-				this.performAttack(attack);
-			}
+			this.sc.dispatch_event('mode.action.attack', this, { attackType: attack });
 		}
 	}
 
-	public completeStoerheidsdans(state: State): string {
+	public completeStoerheidsdans(state?: State): string {
+		if (!state) throw new Error('[Eila] completeStoerheidsdans invoked without state context.');
 		const data = state.data as StoerheidsdansStateData;
 		data.expectedAnimation = null;
 		this.facing = this.facing === 'left' ? 'right' : 'left';
@@ -194,25 +176,16 @@ export class Eila extends Fighter {
 	}
 
 	public startNagenieten(): void {
-		this.setFightingState(false);
 		$.emitPresentation('animate_idle', this);
 	}
 
 	public enterHumiliated(): void {
 		this.hittable = false;
-		this.setFightingState(false);
 		this.resetVerticalPosition();
-		this.setAttackingState(false);
-		this.setJumpingState(false);
-		this.setDuckingState(false);
 	}
 
 	public exitHumiliated(): void {
 		this.hittable = true;
-		this.setFightingState(true);
-		this.setJumpingState(false);
-		this.setDuckingState(false);
-		this.setAttackingState(false);
 	}
 
 	protected override getAttackOpponent(): Fighter | null {

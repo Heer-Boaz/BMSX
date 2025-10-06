@@ -104,6 +104,7 @@ export type StateActionEmitSpec = string | {
 	event?: string;
 	payload?: EventPayload;
 	emitter?: Identifier;
+	scope?: EventScope | string;
 	lane?: EventLane;
 };
 
@@ -167,6 +168,7 @@ export interface StateActionInvokeSpec {
 	invoke: {
 		fn: any;
 		payload?: EventPayload;
+		args?: unknown | unknown[];
 	};
 }
 
@@ -175,7 +177,7 @@ export interface StateActionAddTagSpec { add_tag: any; }
 export interface StateActionRemoveTagSpec { remove_tag: any; }
 
 export interface StateActionActivateAbilitySpec {
-	activate_ability: string | { id: string; payload?: Record<string, unknown>; source?: string };
+	activate_ability: string | { id: string; payload?: EventPayload; source?: string };
 }
 
 export interface StateActionConsumeActionSpec {
@@ -193,7 +195,7 @@ export interface StateActionCondition {
 	};
 	state_matches?: string | { path: string; machine?: string };
 	state_not_matches?: string | { path: string; machine?: string };
-	not?: StateActionCondition;
+	not?: StateActionCondition | StateActionCondition[];
 	and?: StateActionCondition[];
 	or?: StateActionCondition[];
 }
@@ -244,7 +246,8 @@ export type StateActionSpec =
 	| StateActionConsumeActionSpec
 	| StateActionSubmitCommandSpec
 	| StateActionTransitionSpec
-	| StateActionTransitionCompositeSpec;
+	| StateActionTransitionCompositeSpec
+	| Identifier; // State identifier to transition to
 
 export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	/**
@@ -268,9 +271,14 @@ export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
 	force_leaf?: StateTransition | Identifier,
 
 	/**
-	 * The condition that must be met for the transition to occur.
+	 * The condition that must be met for the logic under "do" to be executed and/or transition to occur.
 	 */
 	if?: StateEventCondition<T> | StateActionCondition | string,
+
+	/**
+	 * The logic that is executed when the "if"-condition is *not* met. (Not implemented)
+	 */
+	// else?: StateEventCondition<T> | StateActionCondition | string,
 
 	/**
 	 * The action that is executed when the transition occurs.

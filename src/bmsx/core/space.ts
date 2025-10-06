@@ -2,14 +2,10 @@ import { type Identifier, vec3 } from '../rompack/rompack';
 import { insavegame, excludepropfromsavegame, onload, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { $ } from './game';
 import { WorldObject } from './object/worldobject';
-import { id2obj, id2objectType } from './world';
+import { id2obj, id2objectType, type SpawnReason } from './world';
 import { makeIndexProxy } from "../utils/utils";
 export type initial_world_spaces = 'game_start' | 'default' | 'ui';
 
-export interface SpaceObject {
-	spaceid: Identifier;
-	objects: WorldObject[];
-}
 export type id2spaceType = Record<Identifier, Space>;
 export type obj_id2space_id_type = Record<Identifier, Identifier>;
 export const id_to_space_symbol = Symbol('id2space');
@@ -85,14 +81,14 @@ export class Space  {
 	 * Adds object to the game and triggers it's onspawn-event.
 	 * @param {WorldObject} o  - WorldObject to add
 	 * @param {vec3} pos - Position to spawn object
-	 * @param {boolean | { skipOnSpawn?: boolean; reason?: 'fresh' | 'revive' | 'transfer' }} options - Either a legacy boolean (skip), or an options object with a spawn reason.
+	 * @param {boolean | { skipOnSpawn?: boolean; reason?: SpawnReason }} opts - Either a legacy boolean (skip), or an options object with a spawn reason.
 	 * Example uses include reviving the game (part of loading a saved game) and moving objects from one space to another.
 	 * @returns {void} Nothing
 	 */
-	public spawn(o: WorldObject, pos?: vec3, options?: boolean | { skipOnSpawn?: boolean; reason?: 'fresh' | 'revive' | 'transfer' }): void {
+	public spawn(o: WorldObject, pos?: vec3, opts?: { skipOnSpawn?: boolean; reason?: SpawnReason }): void {
 		if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
 		const world = $.world;
-		if (world.objToSpaceMap.has(o.id)) {
+		if (world.objToSpaceMap.has(o.id) && opts?.reason === 'fresh') {
 			const existingSpaceId = world.objToSpaceMap.get(o.id);
 			throw new Error(`Cannot spawn object '${o.id}' in space '${this.id}' because it already exists in space '${existingSpaceId}'.`);
 		}
@@ -105,8 +101,8 @@ export class Space  {
 		// Ensure we pass a full vec3 to onspawn (z defaults to 0)
 		const spawnPos = pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined;
 		// BeginPlay: call onspawn once with an explicit reason; transfer/move paths pass skip=true.
-		const skip = typeof options === 'boolean' ? options : options?.skipOnSpawn ?? false;
-		const reason = (typeof options === 'object' && options !== null && !(options instanceof Boolean)) ? options.reason : undefined;
+		const skip = opts?.skipOnSpawn ?? false;
+		const reason = (typeof opts === 'object' && opts !== null && !(opts instanceof Boolean)) ? opts.reason : undefined;
 		if (!skip) { o.onspawn?.(spawnPos, { reason: reason ?? 'fresh' }); }
 
 		// Mark depth sort dirty; if in a batch, collect space id once

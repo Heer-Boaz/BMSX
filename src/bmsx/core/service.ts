@@ -50,7 +50,7 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 
 		const fsmName = this.constructor.name;
 		const hasDef = !!StateDefinitions?.[fsmName];
-		this.sc = hasDef ? new StateMachineController(fsmName, this.id) : new StateMachineController();
+		this.sc = hasDef ? new StateMachineController({ ...opts, fsm_id: fsmName, id: this.id }) : new StateMachineController(opts);
 
 		// Register service in global registry
 		this.bind();

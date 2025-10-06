@@ -25,7 +25,8 @@ export class AbilityRuntimeSystem extends ECSystem {
 			try {
 				asc.tryActivate(command.ability_id, command.payload);
 			} catch (error) {
-				console.warn('[AbilityRuntimeSystem] tryActivate error', { owner: command.owner, ability: command.ability_id, error });
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(`[AbilityRuntimeSystem] Activation failed for ability '${command.ability_id}' on owner '${command.owner}': ${message}`);
 			}
 		}
 		const dtMs = $.deltaTime;
@@ -33,7 +34,9 @@ export class AbilityRuntimeSystem extends ECSystem {
 			try {
 				asc.step(dtMs);
 			} catch (error) {
-				console.warn('[AbilityRuntimeSystem] step error', error);
+				const message = error instanceof Error ? error.message : String(error);
+				const ownerId = asc.parentid ? asc.parentid : '<unknown>';
+				throw new Error(`[AbilityRuntimeSystem] Tick failed for AbilitySystemComponent '${ownerId}': ${message}`);
 			}
 		}
 	}

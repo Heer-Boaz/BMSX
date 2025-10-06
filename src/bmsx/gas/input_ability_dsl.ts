@@ -1,4 +1,5 @@
-import type { AbilityId } from '../gas/gastypes';
+import type { EventPayload } from '../core/eventemitter';
+import type { AbilityId, AbilityPayloadFor, AbilityTableKeys } from '../gas/gastypes';
 import type { Identifier } from '../rompack/rompack';
 
 export type TagId = string;
@@ -28,15 +29,24 @@ export interface OnClause {
 	custom?: Array<{ name: string; pattern: string }>;
 }
 
-export interface AbilityRequestDescriptor {
-	id: AbilityIdentifier;
-	payload?: Record<string, unknown>;
-	source?: string;
-}
+type KnownAbilityRequestDescriptor = AbilityTableKeys extends never
+	? never
+	: {
+		[Id in AbilityTableKeys]: {
+			id: Id;
+			source?: string;
+		} & { payload?: AbilityPayloadFor<Id> };
+	}[AbilityTableKeys];
+
+type FallbackAbilityRequestDescriptor = AbilityTableKeys extends never
+	? { id: AbilityIdentifier; source?: string; payload?: unknown }
+	: never;
+
+export type AbilityRequestDescriptor = KnownAbilityRequestDescriptor | FallbackAbilityRequestDescriptor;
 
 export interface EmitGameplayDescriptor {
 	event: string;
-	payload?: Record<string, unknown>;
+	payload?: EventPayload;
 }
 
 export type Effect =

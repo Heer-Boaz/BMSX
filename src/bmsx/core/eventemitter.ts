@@ -3,7 +3,10 @@ import { Registry } from "./registry";
 import { $ } from './game';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
 
-export type EventPayload = Record<string, any> & { lane?: EventLane };
+// export type EventPayload = StructuredEventPayload | string | number | boolean | null | undefined;
+// export type StructuredEventPayload = Record<string, any> & { lane?: EventLane };
+export type EventPayload = Record<string, any> & ({ lane?: EventLane } | undefined);
+export type StructuredEventPayload = EventPayload;
 // Generic event handler that allows more specific payload shapes, e.g. EventHandler<EventPayload & { bladiebla: boolean }>
 export type EventHandler<P extends EventPayload = EventPayload> = (event_name: string, emitter: Identifiable, payload?: P) => any;
 
@@ -283,7 +286,8 @@ export class EventEmitter implements RegisterablePersistent {
 	}
 
 	public emit<P extends EventPayload = EventPayload>(event_name: string, emitter: Identifiable, payload?: P): void {
-		const lane: EventLane = payload?.lane ?? 'gameplay';
+		const structuredPayload = EventEmitter.asStructuredPayload(payload);
+		const lane: EventLane = structuredPayload?.lane ?? 'gameplay';
 		if (lane === 'gameplay' && emitter == null) {
 			throw new Error(`Gameplay events require an Identifiable emitter. Event "${event_name}" missing emitter id.`);
 		}
@@ -318,6 +322,12 @@ export class EventEmitter implements RegisterablePersistent {
 			console.warn(`No listeners for event "${event_name}" [${lane}] and emitter "${emitterId}", payload: "${payload ? JSON.stringify(payload) : 'no payload'}"`);
 			if (self.anyListeners.length === 0) console.warn(`Also, no wildcard listeners for event "${event_name}"!`);
 		}
+	}
+
+	private static asStructuredPayload(payload: EventPayload): StructuredEventPayload | undefined {
+		if (!payload) return undefined;
+		if (typeof payload === 'object') return payload as StructuredEventPayload;
+		return undefined;
 	}
 
 	/**

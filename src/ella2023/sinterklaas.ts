@@ -167,12 +167,17 @@ export class Sinterklaas extends Fighter {
 		function jump(this: Fighter): BTStatus {
 			if (this.isJumping) return 'RUNNING';
 			const dir = this.facing === 'left' || this.facing === 'right' ? this.facing : undefined;
-			return this.requestAbility(this.getAbilityId('jump'), dir ? { direction: dir } : undefined) ? 'SUCCESS' : 'FAILED';
+			return dir
+				? this.requestAbility(this.getAbilityId('jump'), { direction: dir }) ? 'SUCCESS' : 'FAILED'
+				: this.requestAbility(this.getAbilityId('jump')) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function straightJump(this: Fighter): BTStatus {
 			if (this.isJumping) return 'RUNNING';
-			return this.requestAbility(this.getAbilityId('jump')) ? 'SUCCESS' : 'FAILED';
+			const dir = this.facing === 'left' || this.facing === 'right' ? this.facing : undefined;
+			return dir
+				? this.requestAbility(this.getAbilityId('jump'), { direction: dir }) ? 'SUCCESS' : 'FAILED'
+				: this.requestAbility(this.getAbilityId('jump')) ? 'SUCCESS' : 'FAILED';
 		}
 
 		function jumpkick(this: Fighter): BTStatus {
@@ -186,8 +191,8 @@ export class Sinterklaas extends Fighter {
 		}
 
 		function walk(this: Fighter, blackboard: Blackboard): BTStatus {
-			const dir = this.facing === 'left' || this.facing === 'right' ? this.facing : 'right';
-			const ok = this.requestAbility(this.getAbilityId('walk'), { dir });
+			const direction = this.facing === 'left' || this.facing === 'right' ? this.facing : 'right';
+			const ok = this.requestAbility(this.getAbilityId('walk'), { direction });
 			if (ok) blackboard.set('walking', true);
 			return ok ? 'SUCCESS' : 'FAILED';
 		}

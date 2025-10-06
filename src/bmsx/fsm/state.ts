@@ -495,6 +495,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (typeof spec.do === 'function') return spec.do.name || '<anonymous>';
 		if (typeof spec.do === 'string') return `do:${spec.do}`;
 		if (typeof spec.to === 'string') return `to:${spec.to}`;
+		// if (typeof spec.else === 'string') return `else:${spec.else}`;
+		// if (typeof spec.else === 'function') return spec.else.name || '<anonymous>';
 		if (typeof spec.switch === 'string') return `switch:${spec.switch}`;
 		if (typeof spec.force_leaf === 'string') return `force_leaf:${spec.force_leaf}`;
 		if (spec.revert) return 'revert';
@@ -1065,14 +1067,6 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			index++;
 		}
 	}
-
-	/**
-	 * Handles the given path and returns the current part, remaining parts, and current context.
-	 * @param path - The path to handle, can be a string or an array of strings.
-	 * @returns An array containing the current part, remaining parts, and current context.
-	 * @throws {Error} If no state with the given ID is found.
-	 */
-	// Legacy helper removed; path handling now uses filesystem-style parser.
 
 	/**
 	 * Transition to a new state identified by the given ID. If the ID contains multiple parts separated by '/', it traverses through the states accordingly and switches the state of each part.

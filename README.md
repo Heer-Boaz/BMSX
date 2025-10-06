@@ -401,20 +401,28 @@ BMSX is designed to support multiple games in a single repository. Each game liv
    ```bash
    npm install -g tslib
    ```
-3. Run `npx tsx scripts/rompacker.ts -romname <game>` where `<game>` is a folder inside `src/`.
-   The "build the game" task in `.vscode/tasks.json` executes this command for you.
+3. * Use `npm run pack:game <romname>` to only pack the resources without building the rompack.
+   * Use `npm run build:game <romname>` to build the rompack without packing the resources *(debug version)*.
+   * Use `npm run build:game:force <romname>` to force re-building the rompack *(debug version)*.
+   * Use `npm run build:game:production <romname>` to build a production version of the rompack (game) without debug information and with optimizations enabled.
+   * Use `npm run build:game:production:force <romname>` see above, but force re-building the rompack.
+   * Use `npm run pack:engine` to create a tarball of the bmsx package (the game engine). The tarball will be created in the current directory. This is useful for pinning a specific version of the engine in a rompack's `package.json` file.
+   * Use `npm run serve:dist` to serve the contents of the `dist` directory on `http://localhost:8080`. This is useful for testing the built rompacks (games) in a web browser.
+   * Use `npm run serve:dist:wsl` to serve the contents of the `dist` directory on `http://<WSL_IP_ADDRESS>:8080`. This is useful for testing the built rompacks (games) in a web browser from Windows when using WSL.
+   * Use `npm run fix:indent` to fix the indentation of all TypeScript files in the `src` and `scripts` directories.
+   * Use `npm run check:indent` to check the indentation of all TypeScript files in the `src` and `scripts` directories.
+
+   > Important: It is not required to make changes to the `resourceids.ts`-file in the rompack projects! The `pack:game` command will generate the `resourceids.ts` file automatically. This is required when you add or modify resources in the `res` directory, because the `resourceids.ts` is used by the rompack!
+   > Note: The `pack:build:game` command will skip type-checking of the game source files for performance reasons. It is assumed that the game source files are already type-checked. If you want to type-check the game source files, you can run `npm run validate:engine:scripts` before running the `pack:build:game` command.
+   > Note: Resources for debug and production builds are the same and no separate pack is needed. The build command will use the same packed resources for both debug and production builds.
 
 During the build the bootloader is bundled with `esbuild`, a texture atlas is generated, resources are packaged and `<game>.rom` plus `game.html`/`game_debug.html` are produced in `dist/`.
-
-Example for building the example game `testrom` which is located in `src/testrom`:
-```bash
-npx tsx scripts/rompacker.ts -romname testrom
-```
 > **WARNING**: Any other attempt at building the TypeScript project (e.g. `tsc`) will **FAIL**! Always run the rompacker script to generate the `.rom` file and HTML loader.
 
 # Running
 
-Open `dist/game.html` in a modern browser. The inlined boot loader (`bootrom.js`) fetches the `.rom` file, unpacks it using `pako` and executes the game code.
+* npm run headless:game <gameromname> # WARNING: `<gameromname>` must be replaced with the folder name of the rompack (game) you want to test, e.g. `ella2023` or `testrom`! This is different from the rom name specified in the `rommanifest.json` file inside the `res` directory! The `rominspector` tool uses the rom name specified in the `rommanifest.json` file, so that is different from this!
+* Alternatively, open `dist/game_debug.html` in a modern browser. The inlined boot loader (`bootrom.js`) fetches the `.rom` file, unpacks it using `pako` and executes the game code.
 
 # ROM Pack Structure
 

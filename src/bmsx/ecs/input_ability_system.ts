@@ -1,17 +1,41 @@
 import { $ } from '../core/game';
 import type { PlayerInput } from '../input/playerinput';
 import { ECSystem, TickGroup } from './ecsystem';
-import { GameplayCommandBuffer } from './gameplay_command_buffer';
 import { AbilitySystemComponent } from '../component/abilitysystemcomponent';
+import type { AbilityId, AbilityRequestOptions } from '../gas/gastypes';
+import { GameplayCommandBuffer } from './gameplay_command_buffer';
 import type { WorldObject } from '../core/object/worldobject';
 import { InputAbilityComponent } from '../component/inputabilitycomponent';
-import { compileProgram, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
+import { compileProgram, validateProgramAbilities, type CompiledProgram, type CompiledBinding, type EvalContext, type PatternPredicate, type EffectExecutor } from '../gas/input_ability_compiler';
 import { isInputAbilityProgram, type InputAbilityProgram } from '../gas/input_ability_dsl';
 import { filterIterable } from '../utils/utils';
+
+let assetProgramsValidated = false;
+
+function validateProgramAssetsOnBoot(): void {
+	if (assetProgramsValidated) return;
+	const rompack = $.rompack;
+	if (!rompack) {
+		throw new Error('[InputAbilitySystem] Rompack unavailable while validating input ability programs.');
+	}
+	const data = rompack.data;
+	if (!data || typeof data !== 'object') {
+		throw new Error('[InputAbilitySystem] Rompack data unavailable while validating input ability programs.');
+	}
+	const entries = Object.keys(data);
+	for (let i = 0; i < entries.length; i++) {
+		const key = entries[i]!;
+		const value = (data as Record<string, unknown>)[key];
+		if (!isInputAbilityProgram(value)) continue;
+		validateProgramAbilities(value, key);
+	}
+	assetProgramsValidated = true;
+}
 
 export class InputAbilitySystem extends ECSystem {
 	private readonly compiledById = new Map<string, CompiledProgram>();
 	private readonly inlineCompiled = new WeakMap<InputAbilityProgram, CompiledProgram>();
+	private readonly validatedInlinePrograms = new WeakSet<InputAbilityProgram>();
 	private readonly resolvedPrograms = new Map<string, InputAbilityProgram>();
 	private readonly missingProgramIds = new Set<string>();
 	private readonly patternCache = new Map<string, PatternPredicate>();
@@ -22,6 +46,7 @@ export class InputAbilitySystem extends ECSystem {
 
 	constructor(priority = 0) {
 		super(TickGroup.Input, priority);
+		validateProgramAssetsOnBoot();
 		this.__ecsId = 'inputAbilitySystem';
 	}
 
@@ -50,38 +75,34 @@ export class InputAbilitySystem extends ECSystem {
 			const ownerId = asc.parentid ?? obj.id;
 
 			const programKey = this.resolveProgramKey(component, obj);
-			let abilityStats = { issued: false, success: false };
-			const ctx = {} as EvalContext;
-			ctx.ownerId = ownerId;
-			ctx.playerIndex = playerIndex;
-			ctx.hasTag = (tag: string) => asc.hasGameplayTag(tag);
-			ctx.matchesMode = (path: string) => obj.sc.matches_state_path(path);
-			ctx.consume = (actions: string[]) => {
-				for (let idx = 0; idx < actions.length; idx++) {
-					input.consumeAction(actions[idx]!);
-				}
-			};
-			ctx.pushEvent = (event, payload) => {
-				GameplayCommandBuffer.instance.push({ kind: 'dispatchEvent', target_id: obj.id, event, emitter_id: ownerId, payload });
-			};
-			ctx.onAbilityRequestFailed = (id, reason) => {
-				console.warn('[InputAbilitySystem] ability request failed', { ownerId, playerIndex, abilityId: id, reason });
-			};
-			ctx.requestAbility = (id, opts) => {
-				const res = asc.requestAbility(id, opts ?? {});
-				abilityStats.issued = true;
-				if (res.ok) {
-					abilityStats.success = true;
-				} else {
-					const reason = 'reason' in res ? res.reason : 'unknown';
-					ctx.onAbilityRequestFailed?.(id, reason);
-				}
-				return res;
+			const queuedEvents: Array<{ event: string; payload?: unknown }> = [];
+			const ctx: EvalContext = {
+				ownerId,
+				playerIndex,
+				hasTag: (tag: string) => asc.hasGameplayTag(tag),
+				matchesMode: (path: string) => obj.sc.matches_state_path(path),
+				requestAbility: <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => asc.requestAbility(id, opts),
+				consume: (actions: string[]) => {
+					for (let idx = 0; idx < actions.length; idx++) {
+						input.consumeAction(actions[idx]!);
+					}
+				},
+				pushEvent: (event: string, payload?: unknown) => {
+					queuedEvents.push({ event, payload });
+				},
 			};
 
-			this.evaluateProgram(program, input, ctx, programKey, () => {
-				abilityStats = { issued: false, success: false };
-			}, () => abilityStats);
+			this.evaluateProgram(program, input, ctx, programKey);
+				for (let idx = 0; idx < queuedEvents.length; idx++) {
+					const evt = queuedEvents[idx]!;
+					GameplayCommandBuffer.instance.push({
+						kind: 'dispatchEvent',
+						target_id: obj.id,
+						event: evt.event,
+						emitter_id: ownerId,
+						payload: evt.payload,
+					});
+				}
 		}
 		const latchedKeys = Array.from(this.bindingLatch.keys());
 		for (let idx = 0; idx < latchedKeys.length; idx++) {
@@ -93,6 +114,24 @@ export class InputAbilitySystem extends ECSystem {
 	private resolveProgramKey(component: InputAbilityComponent, owner: WorldObject): string {
 		if (component.programId) return component.programId;
 		return `inline:${owner.id}`;
+	}
+
+	private describeInlineProgram(component: InputAbilityComponent): string {
+		let ownerId: string;
+		if (component.parentid) {
+			ownerId = component.parentid;
+		} else {
+			ownerId = '<unattached>';
+		}
+		let componentId: string;
+		if (component.id) {
+			componentId = component.id;
+		} else if (component.id_local) {
+			componentId = component.id_local;
+		} else {
+			componentId = component.constructor.name;
+		}
+		return `inline:${ownerId}:${componentId}`;
 	}
 
 	private isEligibleObject(obj: WorldObject): boolean {
@@ -107,8 +146,6 @@ export class InputAbilitySystem extends ECSystem {
 		input: PlayerInput,
 		ctx: EvalContext,
 		programKey: string,
-		resetAbilityStats: () => void,
-		getAbilityStats: () => { issued: boolean; success: boolean },
 	): void {
 		const bindings = program.bindings;
 		for (let i = 0; i < bindings.length; i++) {
@@ -131,54 +168,36 @@ export class InputAbilitySystem extends ECSystem {
 			}
 
 			let matched = false;
-			const runEffect = (effect: EffectExecutor | undefined) => {
-				resetAbilityStats();
-				if (!effect) return { executed: false, abilityIssued: false, abilitySuccess: false };
+			const runEffect = (effect: EffectExecutor | undefined): boolean => {
+				if (!effect) return false;
 				effect(ctx);
-				const stats = getAbilityStats();
-				return { executed: true, abilityIssued: stats.issued, abilitySuccess: stats.success };
+				return true;
 			};
 
 			if (pressMatched) {
 				matched = true;
 				if (binding.pressEffect) {
-					const result = runEffect(binding.pressEffect);
-					if (result.executed) {
-						if (result.abilityIssued) {
-							if (result.abilitySuccess) {
-								this.bindingLatch.set(bindingKey, true);
-								this.frameLatchTouched.add(bindingKey);
-							} else {
-								this.bindingLatch.delete(bindingKey);
-							}
-						} else {
-							this.bindingLatch.set(bindingKey, true);
-							this.frameLatchTouched.add(bindingKey);
-						}
+					if (runEffect(binding.pressEffect)) {
+						this.bindingLatch.set(bindingKey, true);
+						this.frameLatchTouched.add(bindingKey);
 					}
 				} else {
 					this.bindingLatch.set(bindingKey, true);
 					this.frameLatchTouched.add(bindingKey);
 				}
 			}
-			if (holdMatched && binding.holdEffect) {
-				const result = runEffect(binding.holdEffect);
+			if (holdMatched) {
 				matched = true;
-				if (result.executed) {
-					if (result.abilityIssued) {
-						if (result.abilitySuccess) {
-							this.bindingLatch.set(bindingKey, true);
-							this.frameLatchTouched.add(bindingKey);
-						}
-					} else {
-						this.bindingLatch.set(bindingKey, true);
-						this.frameLatchTouched.add(bindingKey);
-					}
-				}
+				if (binding.holdEffect) runEffect(binding.holdEffect);
+				this.bindingLatch.set(bindingKey, true);
+				this.frameLatchTouched.add(bindingKey);
 			}
-			if (releaseMatched && binding.releaseEffect && armed) {
-				const result = runEffect(binding.releaseEffect);
-				if (result.executed) matched = true;
+			if (releaseMatched && armed) {
+				if (binding.releaseEffect && runEffect(binding.releaseEffect)) {
+					matched = true;
+				} else if (binding.releaseEffect === undefined) {
+					matched = true;
+				}
 				this.bindingLatch.delete(bindingKey);
 			}
 
@@ -186,8 +205,7 @@ export class InputAbilitySystem extends ECSystem {
 				if (!scratch[j]) continue;
 				const effect = customEdges[j]!.effect;
 				if (effect) {
-					runEffect(effect);
-					matched = true;
+					if (runEffect(effect)) matched = true;
 				} else {
 					matched = true;
 				}
@@ -213,10 +231,16 @@ export class InputAbilitySystem extends ECSystem {
 
 	private resolveCompiledProgram(component: InputAbilityComponent): CompiledProgram {
 		if (component.program) {
-			let compiled = this.inlineCompiled.get(component.program);
+			const program = component.program;
+			if (!this.validatedInlinePrograms.has(program)) {
+				const inlineId = this.describeInlineProgram(component);
+				validateProgramAbilities(program, inlineId);
+				this.validatedInlinePrograms.add(program);
+			}
+			let compiled = this.inlineCompiled.get(program);
 			if (!compiled) {
-				compiled = compileProgram(component.program, pattern => this.parsePattern(pattern));
-				this.inlineCompiled.set(component.program, compiled);
+				compiled = compileProgram(program, pattern => this.parsePattern(pattern));
+				this.inlineCompiled.set(program, compiled);
 			}
 			return compiled;
 		}

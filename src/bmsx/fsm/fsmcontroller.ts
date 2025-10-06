@@ -1,10 +1,9 @@
 import { EventEmitter, type EventLane, type EventPayload } from '../core/eventemitter';
 import { Identifiable, Identifier } from '../rompack/rompack';
-import { insavegame, onload, excludepropfromsavegame } from '../serializer/serializationhooks';
+import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import { ActiveStateMachines } from './fsmlibrary';
-import { type Stateful, type id2sstate } from './fsmtypes';
+import { type Stateful } from './fsmtypes';
 import { State } from './state';
-import { StateDefinition } from './statedefinition';
 
 /**
  * Maximum history size for the state transition stack.
@@ -16,11 +15,11 @@ export const BST_MAX_HISTORY = 10;
  */
 export const DEFAULT_BST_ID = 'master';
 
-export interface FSMControllerOptions {
+export interface FSMControllerOptions extends RevivableObjectArgs {
 	/** The ID of the state machine. */
-	fsm_id: string;
+	fsm_id?: string;
 	/** The ID of the object being controlled. */
-	id: string;
+	id?: string;
 
 }
 
@@ -63,53 +62,37 @@ export class StateMachineController {
 	}
 
 	/**
-	 * The identifier of the machine that receives `tick()` and implicit transitions.
-	 *
-	 * The first machine that is registered becomes current by default; subsequent
-	 * calls to {@link add_statemachine} leave the selection unchanged so decorators
-	 * can deterministically control the primary machine. When {@link transition_to}
-	 * targets a non-concurrent machine the controller automatically pivots the
-	 * current machine pointer, mirroring how designers "focus" a top-level state
-	 * machine in tools like Unreal or Unity.
+	 * Updates the cache of active state machines by adding any new machines that have been added to the controller.
+	 * This ensures that the ActiveStateMachines map is always up-to-date with the current state of the controller.
+	 * Note that this method is called automatically in the constructor and on bind() (after deserialization).
 	 */
-	current_machine_id: Identifier;
-
-	/**
-	 * Gets the current state machine.
-	 * @returns The current state machine.
-	 */
-	get current_machine(): State | undefined {
-		return this.statemachines[this.current_machine_id];
+	private updateActiveMachinesCache(): void {
+		for (let id in this.statemachines) {
+			const activeStateMachinesWithSameId = ActiveStateMachines.get(id) ?? [];
+			if (!activeStateMachinesWithSameId.includes(this.statemachines[id])) {
+				ActiveStateMachines.set(id, [...activeStateMachinesWithSameId, this.statemachines[id]]); // Track active machines by fsm_id
+			}
+		}
 	}
 
 	/**
-	 * Gets the current state of the current state machine.
-	 * @returns The current state of the current state machine.
+	 * Creates a new instance of the StateMachineController class.
+	 * @param opts - The options for the state machine controller.
+	 * @throws {Error} If fsm_id or id is not provided in the options.
 	 */
-	get current_state(): State | undefined {
-		const machine = this.current_machine;
-		return machine ? machine.current : undefined;
-	}
-
-	/**
-	 * Gets the states of the current machine.
-	 * @returns The states of the current machine.
-	 */
-	get states(): id2sstate { return this.current_machine.states; }
-
-	/**
-	 * Gets the state definition of the current machine.
-	 */
-	get definition(): StateDefinition { return this.current_machine.definition; }
-
-	constructor(fsm_id?: string, id?: string) {
+	constructor(opts: FSMControllerOptions) {
 		// Support parameterless construction for deserialization. In normal runtime code,
 		// WorldObject passes explicit ids. When fsm_id is supplied, eagerly add the machine.
+		if (opts.constructReason === 'revive') {
+			return; // Deserialization will populate properties
+		}
+		// if (!opts.fsm_id) throw new Error('FSMController requires fsm_id (the id of the state machine to load)');
+		// if (!opts.id) throw new Error('FSMController requires id that reflects the target object (the object being controlled)');
 		this.statemachines = {};
-		if (fsm_id && id) {
-			this.add_statemachine(fsm_id, id);
-			const activeStateMachinesWithSameId = ActiveStateMachines.get(fsm_id) ?? [];
-			ActiveStateMachines.set(fsm_id, [...activeStateMachinesWithSameId, this.current_machine]);
+		if (opts.fsm_id && opts.id) {
+			this.add_statemachine(opts.fsm_id, opts.id);
+			// Track active machines by fsm_id (used for global event dispatch?)
+			this.updateActiveMachinesCache();
 		}
 	}
 
@@ -172,6 +155,7 @@ export class StateMachineController {
 					}
 				});
 			}
+			this.updateActiveMachinesCache();
 		}
 	}
 
@@ -208,15 +192,16 @@ export class StateMachineController {
 	 * Also runs all state machines that have 'parallel' set to true.
 	 */
 	tick(): void {
-		if (!this.tickEnabled || !this.current_machine) return; // If ticking is disabled or there is no current machine, do nothing. Some objects may not have a machine, so this is fine
+		if (!this.tickEnabled) return; // If ticking is disabled or there is no current machine, do nothing. Some objects may not have a machine, so this is fine
 		// Runs the current state of the current state machine
-		this.current_machine.tick();
+		// this.current_machine.tick();
 
-		// Run all state machines that have 'parallel' set to true
+		// Run all state machines. The machine itself handles the `paused` flag or lack of any definition
 		for (let id in this.statemachines) {
 			// Skip the current machine, as it has already been run
-			if (id === this.current_machine_id) continue;
-			if (this.statemachines[id].is_concurrent) this.statemachines[id].tick();
+			// if (id === this.current_machine_id) continue;
+			// if (this.statemachines[id].is_concurrent) this.statemachines[id].tick();
+			this.statemachines[id].tick(); // Run all non-paused machines, even if they are not concurrent. This allows for event-driven state changes in non-concurrent machines and it makes sense to regard all distinct machines as "parallel".
 		}
 	}
 
@@ -237,14 +222,14 @@ export class StateMachineController {
 		// Allow for switching to a state in the same machine without having to specify the machineid
 		if (!stateids) {
 			stateids = machineid; // If no stateid is specified, assume that the stateid is the same as the machineid
-			machineid = this.current_machine_id; // If no machineid is specified, assume that the machineid is the same as the current machine
+			// machineid = this.current_machine_id; // If no machineid is specified, assume that the machineid is the same as the current machine
 		}
 
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID '${machineid}'`);
-		if (!machine.is_concurrent) { // If the machine is not running in parallel, set it as the current machine
-			this.current_machine_id = machineid;
-		}
+		// if (!machine.is_concurrent) { // If the machine is not running in parallel, set it as the current machine
+			// this.current_machine_id = machineid;
+		// }
 		machine.transition_to_path(stateids, ...args);
 	}
 
@@ -280,13 +265,12 @@ export class StateMachineController {
 		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
 
 		// Dispatch the event to the current machine
-		this.current_machine?.dispatch_event(event_name, emitter_id, ...args); // Optional chaining in case there is no current machine (allowed for objects without a state machine)
+		// this.current_machine?.dispatch_event(event_name, emitter_id, ...args); // Optional chaining in case there is no current machine (allowed for objects without a state machine)
 
-		// Dispatch the event to all other parallel running machines
+		// Dispatch the event to all other machines. Note that the machine itself handles the `paused` flag or lack of any definition
 		for (const id in this.statemachines) {
-			if (this.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
-			if (this.statemachines[id].paused) continue; // Skip paused machines
-			if (!this.statemachines[id].is_concurrent) continue; // Skip machines that are not running in parallel
+			// if (this.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
+			// if (!this.statemachines[id].is_concurrent) continue; // ~Skip machines that are not running in parallel~ // Actually, dispatch to all non-paused machines, even if they are not concurrent. This allows for event-driven state changes in non-concurrent machines and it makes sense to regard all distinct machines as "parallel".
 			this.statemachines[id].dispatch_event(event_name, emitter_id, ...args);
 		}
 	}
@@ -315,7 +299,7 @@ export class StateMachineController {
 		// auto-created machines (from the WorldObject constructor or decorators)
 		// define the initial update order, while later dynamic additions only join
 		// the set.
-		if (!this.current_machine_id) this.current_machine_id = id;
+		// if (!this.current_machine_id) this.current_machine_id = id;
 	}
 
 	/**
@@ -336,16 +320,25 @@ export class StateMachineController {
 	matches_state_path(id: string): boolean {
 		const sepIndex = id.indexOf(':/');
 		if (sepIndex === -1) {
-			const machine = this.current_machine;
-			return machine ? machine.matches_state_path(id) : false;
+			// No machine specified, check all machines
+			for (const id in this.statemachines) {
+				const machine = this.statemachines[id];
+				if (machine.matches_state_path(id)) return true;
+			}
+			// const machine = this.current_machine;
+			// return machine ? machine.matches_state_path(id) : false;
+			return false;
 		}
+		else {
+			// Machine specified, check only that machine
 
-		const machineid = id.slice(0, sepIndex);
-		const statePath = id.slice(sepIndex + 2);
-		const machine = this.statemachines[machineid];
-		if (!machine) return false;
+			const machineid = id.slice(0, sepIndex);
+			const statePath = id.slice(sepIndex + 2);
+			const machine = this.statemachines[machineid];
+			if (!machine) return false;
 
-		return machine.matches_state_path(statePath);
+			return machine.matches_state_path(statePath);
+		}
 	}
 
 	/**
@@ -380,13 +373,6 @@ export class StateMachineController {
 		for (const id in this.statemachines) {
 			this.reset_statemachine(id);
 		}
-	}
-
-	/**
-	 * Goes back to the previous state of the current state machine
-	 */
-	pop_and_transition(): void {
-		this.current_machine.pop_and_transition();
 	}
 
 	/**

@@ -1,5 +1,6 @@
 import { hasOwn } from '../utils/utils';
-import type { AbilityId, AbilityRequestResult } from '../gas/gastypes';
+import type { AbilityId, AbilityRequestOptions, AbilityRequestResult } from '../gas/gastypes';
+import { abilityRegistry } from './ability_registry';
 import type { PlayerInput } from '../input/playerinput';
 import type { InputAbilityProgram, Binding, Effect, AbilityRequestDescriptor, EmitGameplayDescriptor } from './input_ability_dsl';
 
@@ -8,10 +9,9 @@ export interface EvalContext {
 	playerIndex: number;
 	hasTag: (tag: string) => boolean;
 	matchesMode: (path: string) => boolean;
-	requestAbility: (id: AbilityId, opts?: { payload?: Record<string, unknown>; source?: string }) => AbilityRequestResult;
+	requestAbility: <Id extends AbilityId>(id: Id, opts?: AbilityRequestOptions<Id>) => AbilityRequestResult;
 	consume: (actions: string[]) => void;
 	pushEvent?: (event: string, payload?: unknown) => void;
-	onAbilityRequestFailed?: (id: AbilityId, reason: string) => void;
 }
 
 export type PatternPredicate = (input: PlayerInput) => boolean;
@@ -175,9 +175,13 @@ function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 		const spec = effect['ability.request'];
 		if (!spec) throw new Error(`Missing ability request in effect ${JSON.stringify(effect)}`);
 		if (typeof spec === 'string') {
-			return (ctx: EvalContext) => { ctx.requestAbility(spec); };
+			return (ctx: EvalContext) => {
+				ctx.requestAbility(spec);
+			};
 		}
-		return (ctx: EvalContext) => { ctx.requestAbility(spec.id, { payload: spec.payload, source: spec.source }); };
+		return (ctx: EvalContext) => {
+			ctx.requestAbility(spec.id, { payload: spec.payload, source: spec.source });
+		};
 	}
 	if (isInputConsume(effect)) {
 		const actions = Array.isArray(effect['input.consume']) ? effect['input.consume'] : [effect['input.consume']];
@@ -200,6 +204,85 @@ function compileEffect(effect: Effect, slot?: string): EffectExecutor {
 		return nested;
 	}
 	throw new Error(`[InputAbilityCompiler] Unknown effect in slot '${slot ?? 'unknown'}': ${JSON.stringify(effect)}`);
+}
+
+type ValidationContext = {
+	programId: string;
+	bindingName: string;
+	slot: string;
+};
+
+export function validateProgramAbilities(program: InputAbilityProgram, programId: string): void {
+	const bindings = program.bindings;
+	for (let index = 0; index < bindings.length; index++) {
+		const binding = bindings[index]!;
+		const bindingName = binding.name ? binding.name : `#${index}`;
+		const table = binding.do;
+		if (!table) {
+			throw new Error(`[InputAbilityProgramValidation] Program '${programId}' binding '${bindingName}' missing effect table.`);
+		}
+		validateEffectSpec(table.press, { programId, bindingName, slot: 'press' });
+		validateEffectSpec(table.hold, { programId, bindingName, slot: 'hold' });
+		validateEffectSpec(table.release, { programId, bindingName, slot: 'release' });
+		const keys = Object.keys(table);
+		for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+			const key = keys[keyIndex]!;
+			if (key === 'press' || key === 'hold' || key === 'release') continue;
+			const customSpec = table[key];
+			if (!customSpec) continue;
+			const slot = `custom:${key}`;
+			validateEffectSpec(customSpec, { programId, bindingName, slot });
+		}
+	}
+}
+function validateEffectSpec(spec: Effect | Effect[] | undefined, ctx: ValidationContext): void {
+	if (!spec) return;
+	if (Array.isArray(spec)) {
+		for (let i = 0; i < spec.length; i++) {
+			const entry = spec[i]!;
+			const slot = `${ctx.slot}[${i}]`;
+			validateEffect(entry, { programId: ctx.programId, bindingName: ctx.bindingName, slot });
+		}
+		return;
+	}
+	validateEffect(spec, ctx);
+}
+
+function validateEffect(effect: Effect, ctx: ValidationContext): void {
+	if (isAbilityRequest(effect)) {
+		const descriptor = effect['ability.request'];
+		if (!descriptor) {
+			throw new Error(`[InputAbilityProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' missing ability request descriptor.`);
+		}
+		let abilityId: AbilityId;
+		let payload: unknown;
+		if (typeof descriptor === 'string') {
+			abilityId = descriptor as AbilityId;
+			payload = undefined;
+		} else {
+			const id = descriptor.id;
+			if (!id) {
+				throw new Error(`[InputAbilityProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' ability request missing id.`);
+			}
+			abilityId = id as AbilityId;
+			payload = descriptor.payload;
+		}
+		try {
+			abilityRegistry.validate(abilityId, payload);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`[InputAbilityProgramValidation] Program '${ctx.programId}' binding '${ctx.bindingName}' slot '${ctx.slot}' ability '${abilityId}' validation failed: ${message}`);
+		}
+		return;
+	}
+	if (isNestedCommands(effect)) {
+		const commands = effect.commands;
+		for (let i = 0; i < commands.length; i++) {
+			const nested = commands[i]!;
+			const slot = `${ctx.slot}.commands[${i}]`;
+			validateEffect(nested, { programId: ctx.programId, bindingName: ctx.bindingName, slot });
+		}
+	}
 }
 
 function isAbilityRequest(effect: Effect): effect is { 'ability.request': AbilityId | AbilityRequestDescriptor } {

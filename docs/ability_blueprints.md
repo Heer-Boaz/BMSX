@@ -1,42 +1,53 @@
-# Ability Blueprints
+# Gameplay Ability Definitions
 
-The Gameplay Ability System now supports declarative **Ability Blueprints**. Instead of hand-written `Ability` subclasses, abilities are defined as data objects and interpreted by `AbilityBlueprintRunner`. Key concepts:
+The Gameplay Ability System now consumes strongly typed **Gameplay Ability Definitions** instead of the previous coroutine/blueprint runner. Abilities remain fully data-driven, but the execution model is simpler and mirrors Unreal's phase/task approach.
 
-- **AbilityBlueprint** extends the traditional `AbilitySpec` metadata and adds `activation`, `onComplete`, and `onCancel` task lists.
-- **Ability Tasks** perform the work of an ability. Provided tasks include `call.action`, `mode.dispatch`, `emit.gameplay`, `wait.event`, `wait.time`, `wait.tag`, `tags.add`, `tags.remove`, and `ability.request`.
-- **AbilityActionRegistry** allows binding string identifiers to TypeScript functions. Tasks with `kind: 'call.action'` execute these actions and receive the shared ability execution context.
-- **Execution Context** gives actions access to the owning object, gameplay tag mutations, command buffer, additional ability requests, and per-ability scratch variables.
-- Blueprints run inside the existing `AbilitySystemComponent`, so cooldowns, costs, and tags continue to work exactly as before. The component exposes `grantBlueprint` for registering data-driven abilities.
+## Key Building Blocks
+
+- **GameplayAbilityDefinition** extends the base `AbilitySpec` metadata (id, unique policy, cooldown, tag requirements) and provides `activation`, optional `completion`, and optional `cancel` step lists.
+- **Ability Steps** describe the work performed by an ability. Supported step kinds:
+  - `call` &mdash; invoke a registered action with optional parameters.
+  - `dispatch` &mdash; enqueue a mode/event dispatch on the owning object (optionally targeting another entity or lane).
+  - `emit` &mdash; broadcast a gameplay event with payload and optional lane.
+  - `waitEvent`, `waitTime`, `waitTag` &mdash; pause execution until an event, duration, or tag condition is satisfied.
+  - `setVar`, `clearVar` &mdash; mutate per-ability scratch variables.
+  - `modifyTags` &mdash; add/remove explicit gameplay tags while active.
+  - `requestAbility` &mdash; trigger another ability.
+  - `sequence` &mdash; group nested steps for clarity.
+- **AbilityActionRegistry** maps string identifiers to TypeScript functions. `call` steps run these actions with a rich context (owner, tags, vars, command buffer, nested ability requests).
+- **Runtime Bindings** expose tag mutation, gameplay event emission, and command submission through the existing `AbilitySystemComponent`. Definitions add optional `tags.grant`, `tags.removeOnActivate`, and `tags.removeOnEnd` helpers for common tag choreography.
 
 ## Authoring Workflow
 
-1. Create (or reuse) an `AbilityActionRegistry` and register high-level actions that encapsulate complex logic (e.g. toggling fighter state, broadcasting events, applying movement).
-2. Define ability data using `abilityBlueprint(...)`, supplying metadata (`id`, `requiredTags`, etc.) alongside task arrays.
-3. Register the blueprint via `AbilitySystemComponent.grantBlueprint(blueprint, registry)`.
-4. Optionally, supply `onCancel` or `onComplete` tasks for clean-up work.
+1. Register domain-specific actions on an `AbilityActionRegistry`:
+   ```ts
+   const actions = new AbilityActionRegistry();
+   actions.register('fighter.configureWalk', (ctx, params) => { /* ... */ });
+   actions.register('fighter.beginAttack', (ctx, params) => { /* ... */ });
+   ```
+2. Describe abilities with plain objects, using the helper value builders exported from `bmsx/gas/gameplay_ability` (`literal`, `fromIntent`, `fromVar`, etc.).
+   ```ts
+   const walkAbility: GameplayAbilityDefinition = {
+     id: 'fighter.locomotion.walk',
+     unique: 'restart',
+     requiredTags: ['state.grounded'],
+     blockedTags: ['state.attacking', 'state.airborne', 'state.combat_disabled'],
+     activation: [
+      { type: 'call', action: 'fighter.configureWalk', params: { direction: fromIntent('payload.direction', { optional: true }) } },
+      { type: 'dispatch', event: 'mode.locomotion.walk', payload: { direction: fromVar('locomotion.direction', { fallback: literal('right') }) } },
+     ],
+     cancel: [
+       { type: 'dispatch', event: 'mode.locomotion.idle' },
+     ],
+   };
+   ```
+3. Grant abilities via the component: `asc.grantAbility(walkAbility, actions);`
+4. Optional `completion` or `cancel` steps cover clean-up work without re-entering the main activation flow.
 
-Example:
+## Fighter Overhaul Highlights
 
-```ts
-const walkAbility = abilityBlueprint({
-	id: 'fighter.locomotion.walk',
-	requiredTags: ['state.grounded'],
-	blockedTags: ['state.attacking'],
-	activation: [
-		{ kind: 'call.action', action: 'fighter.configureWalk', params: { direction: fromIntent('payload.direction', undefined, true) } },
-		{ kind: 'mode.dispatch', event: 'mode.locomotion.walk', payload: { direction: fromVar('locomotion.direction', literal('right')) } },
-	],
-	onCancel: [
-		{ kind: 'mode.dispatch', event: 'mode.locomotion.idle' },
-	],
-});
-```
+- All fighter locomotion, jump, and attack abilities are authored with the new definitions in `src/ella2023/abilities.ts`.
+- The action registry encapsulates operations like walking configuration, jump dispatch, attack bookkeeping, and flying-kick gating without scattering logic across abilities.
+- Cooldowns, costs, and gameplay tags remain enforced by `AbilitySystemComponent`. Grant/remove helpers ensure tags revert correctly when abilities finish or cancel.
 
-## Fighter Updates
-
-- Fighter locomotion, jump, and attack abilities are now defined through blueprints in `src/ella2023/abilities.ts`.
-- A shared registry (`fighterActions`) encapsulates reusable operations such as configuring walk direction, beginning attacks, dispatching jump events, and tracking the one-per-jump flying kick rule.
-- The `fighter_control` state machine now calls `walkTick` on each frame, shifting horizontal movement into the FSM layer rather than the ability runner.
-- A new gameplay tag `state.airborne.attackUsed` replaces the previous boolean for flying-kick gating. The tag is applied via blueprint tasks and cleared when the jump state exits or when the ability completes/cancels.
-
-Refer to the updated source for further examples of composing blueprints with actions and state-machine automation.
+The new structure keeps abilities declarative, favors compile-time safety, and removes the coroutine-specific boilerplate from the previous blueprint runner.

@@ -103,14 +103,15 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 		machineCell.textContent = machineName;
 		machineRow.appendChild(machineCell);
 		baseTable.appendChild(machineRow);
-		if (bfsmController.current_machine_id === machineName) {
-			machineCell.classList.add('active-machine-or-state');
-		} else if (machine.is_concurrent) {
+		// if (bfsmController.current_machine_id === machineName) {
+		// 	machineCell.classList.add('active-machine-or-state');
+		// } else if (machine.is_concurrent) {
 			machineCell.classList.add('parallel-machine');
-		}
+		// }
 		let subTableCell = document.createElement('td');
 		machineRow.appendChild(subTableCell);
-		visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.is_concurrent, machineName + ':');
+		// visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.is_concurrent, machineName + ':');
+		visualizeMachine(machine, machineName, subTableCell, true, machineName + ':');
 	}
 
 	return [container, machineElements, stateElements];

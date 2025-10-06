@@ -89,6 +89,7 @@ export type ConcreteOrAbstractConstructor<T> = Function & { prototype: T; };
  * Represents the direction values.
  */
 export type Direction = 'none' | 'up' | 'right' | 'down' | 'left';
+export type Facing = Direction | 'up-right' | 'down-right' | 'down-left' | 'up-left';
 
 export type Identifier = string | 'model';
 export interface Identifiable {

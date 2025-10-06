@@ -4,7 +4,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 	schema: 1,
 	bindings: [
 		{
-			name: 'WalkLeft',
+			name: 'Walk',
 			priority: 10,
 			when: {
 				tags: {
@@ -12,46 +12,22 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 					not: ['state.attacking', 'state.combat_disabled', 'state.ducking'],
 				},
 			},
-	on: {
-		press: 'left[j] && right[!p]',
-		hold: 'left[h] && right[!p]',
-		release: 'left[jr] && right[!p]',
+			on: {
+				custom: [
+					{ name: 'left', pattern: 'left[h] && right[!p] && duck[!p] && jump[!p]' },
+					{ name: 'right', pattern: 'right[h] && left[!p] && duck[!p] && jump[!p]' },
+				],
+				release: '(left[jr] && right[!p] && duck[!p] && jump[!p]) || (right[jr] && left[!p] && duck[!p] && jump[!p])',
 			},
 			do: {
-				press: [
-					{ 'ability.request': { id: 'fighter.locomotion.walk', payload: { dir: 'left' }, source: 'input.ial' } },
-					{ 'input.consume': ['left'] },
-				],
-				hold: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { dir: 'left' }, source: 'input.ial' } },
-				release: { 'ability.request': { id: 'fighter.locomotion.walk_stop', source: 'input.ial' } },
-			},
-		},
-		{
-			name: 'WalkRight',
-			priority: 10,
-			when: {
-				tags: {
-					all: ['state.grounded'],
-					not: ['state.attacking', 'state.combat_disabled', 'state.ducking'],
-				},
-			},
-	on: {
-		press: 'right[j] && left[!p]',
-		hold: 'right[h] && left[!p]',
-		release: 'right[jr] && left[!p]',
-			},
-			do: {
-				press: [
-					{ 'ability.request': { id: 'fighter.locomotion.walk', payload: { dir: 'right' }, source: 'input.ial' } },
-					{ 'input.consume': ['right'] },
-				],
-				hold: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { dir: 'right' }, source: 'input.ial' } },
+				left: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { direction: 'left' }, source: 'input.ial' } },
+				right: { 'ability.request': { id: 'fighter.locomotion.walk', payload: { direction: 'right' }, source: 'input.ial' } },
 				release: { 'ability.request': { id: 'fighter.locomotion.walk_stop', source: 'input.ial' } },
 			},
 		},
 		{
 			name: 'Duck',
-			priority: 9,
+			priority: 20,
 			when: {
 				tags: {
 					all: ['state.grounded'],
@@ -63,50 +39,41 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 				release: 'duck[jr]',
 			},
 			do: {
-				press: [
-					{ 'ability.request': { id: 'fighter.control.duck_hold', source: 'input.ial' } },
-					{ 'input.consume': ['duck'] },
-				],
+				press: { 'ability.request': { id: 'fighter.control.duck_hold', source: 'input.ial' } },
 				release: { 'ability.request': { id: 'fighter.control.duck_release', source: 'input.ial' } },
 			},
 		},
 		{
 			name: 'JumpRight',
-			priority: 8,
+			priority: 30,
 			when: {
 				tags: {
 					all: ['state.grounded'],
 					not: ['state.attacking', 'state.combat_disabled'],
 				},
 			},
-			on: { press: 'jump[j] && right[p] && left[!p]' },
+			on: { press: 'jump[j] && right[wp{6}] && left[!p]' },
 			do: {
-				press: [
-					{ 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'right' }, source: 'input.ial' } },
-					{ 'input.consume': ['jump'] },
-				],
+				press: { 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'right' }, source: 'input.ial' } },
 			},
 		},
 		{
 			name: 'JumpLeft',
-			priority: 8,
+			priority: 30,
 			when: {
 				tags: {
 					all: ['state.grounded'],
 					not: ['state.attacking', 'state.combat_disabled'],
 				},
 			},
-			on: { press: 'jump[j] && left[p] && right[!p]' },
+			on: { press: 'jump[j] && left[wp{6}] && right[!p]' },
 			do: {
-				press: [
-					{ 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'left' }, source: 'input.ial' } },
-					{ 'input.consume': ['jump'] },
-				],
+				press: { 'ability.request': { id: 'fighter.control.jump', payload: { direction: 'left' }, source: 'input.ial' } },
 			},
 		},
 		{
 			name: 'NeutralJump',
-			priority: 7,
+			priority: 25,
 			when: {
 				tags: {
 					all: ['state.grounded'],
@@ -115,10 +82,7 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			},
 			on: { press: 'jump[j]' },
 			do: {
-				press: [
-					{ 'ability.request': { id: 'fighter.control.jump', source: 'input.ial' } },
-					{ 'input.consume': ['jump'] },
-				],
+				press: { 'ability.request': { id: 'fighter.control.jump', source: 'input.ial' } },
 			},
 		},
 		{
@@ -127,10 +91,10 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 			when: {
 				tags: {
 					all: ['state.airborne'],
-					not: ['state.attacking', 'state.combat_disabled'],
+					not: ['state.attacking', 'state.combat_disabled', 'state.airborne.attackUsed'],
 				},
 			},
-	on: { press: 'highkick[wp{6}] || lowkick[wp{6}]' },
+			on: { press: 'highkick[wp{6}] || lowkick[wp{6}]' },
 			do: {
 				press: [
 					{ 'ability.request': { id: 'fighter.attack.flyingkick', payload: { attackType: 'flyingkick' }, source: 'input.ial' } },
@@ -201,6 +165,20 @@ export const FIGHTER_INPUT_PROGRAM: InputAbilityProgram = {
 					{ 'ability.request': { id: 'fighter.attack.lowkick', payload: { attackType: 'lowkick' }, source: 'input.ial' } },
 					{ 'input.consume': ['lowkick'] },
 				],
+			},
+		},
+		{
+			name: 'WalkBrakeWhenNoDir',
+			priority: 0,
+			when: {
+				tags: {
+					all: ['state.grounded', 'state.walking'],
+					not: ['state.combat_disabled'],
+				},
+			},
+			on: { hold: 'left[!p] && right[!p]' },
+			do: {
+				hold: { 'ability.request': { id: 'fighter.locomotion.walk_stop', source: 'input.ial' } },
 			},
 		},
 	],

@@ -2,7 +2,7 @@ import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, Constru
 import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, ComponentConstructor } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
-import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon } from "../../rompack/rompack";
+import { ConcreteOrAbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type Facing } from "../../rompack/rompack";
 import { insavegame, onload, excludepropfromsavegame, type RevivableObjectArgs } from '../../serializer/serializationhooks';
 import { $ } from '../game';
 import type { Space } from '../space';
@@ -14,6 +14,7 @@ import { Registry } from "../registry";
 import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
+import type { SpawnReason } from '../world';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -554,7 +555,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 * the FSM-state to the initial state (if specified).
 	 * @param spawningPos The position to spawn the object at.
 	 */
-	public onspawn(spawningPos?: vec3, opts?: { reason?: 'fresh' | 'revive' | 'transfer' }): void {
+	public onspawn(spawningPos?: vec3, opts?: { reason?: SpawnReason }): void {
 		if (spawningPos) {
 			this.x_nonotify = spawningPos.x ?? this.x;
 			this.y_nonotify = spawningPos.y ?? this.y;
@@ -700,8 +701,8 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	public onleaveSpace?: (from: Identifier) => void;
 	public onenterSpace?: (to: Identifier) => void;
 
-	protected _facing: Direction;
-	public prevFacing: Direction;
+	protected _facing: Facing;
+	public prevFacing: Facing;
 
 	private _orientation: vec3;
 	public prevOrientation: vec3;
@@ -732,7 +733,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 *
 	 * @returns The direction of the world object.
 	 */
-	public get facing(): Partial<Direction> {
+	public get facing(): Partial<Facing> {
 		return this._facing;
 	}
 
@@ -741,7 +742,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	 *
 	 * @param value - The new direction to set.
 	 */
-	public set facing(value: Partial<Direction>) {
+	public set facing(value: Partial<Facing>) {
 		this.prevFacing = this._facing;
 		this._facing = value;
 	}
@@ -792,7 +793,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 				initialMachineId = inferredMachineId;
 			}
 		}
-		this.sc = new StateMachineController(initialMachineId, this.id);
+		this.sc = new StateMachineController({ constructReason: undefined, fsm_id: initialMachineId, id: this.id });
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {

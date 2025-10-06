@@ -402,7 +402,7 @@ export class Reviver {
 				continue;
 			}
 			if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
-				const ctor = Reviver.get_constructor_for_type(data.typename);
+				const ctor = Reviver.get_constructor_for_type(data.typename) as (new (opts: RevivableObjectArgs) => any);
 				if (!ctor) {
 					console.error(`[Reviver] No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
 					// Add the typename to the excluded properties to prevent deserialization again after raising the error
@@ -411,7 +411,7 @@ export class Reviver {
 					idToObject[id] = null; // Mark as null to avoid further processing
 					continue;
 				}
-				else idToObject[id] = new ctor();
+				else idToObject[id] = new ctor({ constructReason: 'revive' });
 			} else {
 				idToObject[id] = Array.isArray(data) ? [] : {};
 			}

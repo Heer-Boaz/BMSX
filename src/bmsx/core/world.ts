@@ -66,6 +66,8 @@ export type WorldConfiguration = {
 
 export type WorldScope = 'active' | 'all';
 
+export type SpawnReason = 'fresh' | 'transfer' | 'revive';
+
 @insavegame
 /**
  * The base world class for the game. Contains all the spaces and objects in the game world.
@@ -274,7 +276,7 @@ export class World implements Stateful, RegisterablePersistent {
 			throw new Error(`Cannot move object '${obj_id}' because source space '${fromSid}' is missing.`);
 		}
 		origin_space.despawn(obj, true);
-		target_space.spawn(obj, null, true);
+		target_space.spawn(obj, null, { skipOnSpawn: true, reason: 'transfer' });
 	}
 
 	/**
@@ -292,7 +294,7 @@ export class World implements Stateful, RegisterablePersistent {
 		if (from === toSpace) return;
 		const suppress = opts?.suppressLifecycleHooks ?? true;
 		from.despawn(o, suppress);
-		toSpace.spawn(o, undefined, suppress);
+		toSpace.spawn(o, undefined, { skipOnSpawn: suppress, reason: 'transfer' });
 		o.onleaveSpace?.(from.id);
 		o.onenterSpace?.(toSpace.id);
 	}
@@ -422,7 +424,7 @@ export class World implements Stateful, RegisterablePersistent {
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
 		if (this._fsmId && !StateDefinitions[this._fsmId]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${this._fsmId}'"`);
 
-		this.sc = new StateMachineController(this._fsmId ?? 'world', this.id);
+		this.sc = new StateMachineController({ fsm_id: this._fsmId ?? 'world', id: this.id });
 		this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the world, and subscribe to all events that are defined in the state machine definitions
 
 		return this; // Return the current instance of the World for chaining
@@ -572,9 +574,9 @@ export class World implements Stateful, RegisterablePersistent {
 	 * @param {boolean} [ignoreSpawnhandler=false] - Whether to ignore the world object's spawn handler. If not provided, the spawn handler will be executed.
 	 * @returns {void} Nothing.
 	 */
-	public spawn(o: WorldObject, pos?: vec3, ignoreSpawnhandler?: boolean): void {
+	public spawn(o: WorldObject, pos?: vec3, opts?: { ignoreSpawnhandler?: boolean, reason?: SpawnReason }): void {
 		if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id.`);
-		this.activeSpace.spawn(o, pos, ignoreSpawnhandler);
+		this.activeSpace.spawn(o, pos, opts);
 	}
 
 	/**

@@ -1,12 +1,49 @@
 import { $, GameplayCommandBuffer, InputAbilityComponent, assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Collision2DSystem, type RevivableObjectArgs, type vec2, type Direction } from 'bmsx';
-import type { AbilityId } from 'bmsx/gas/gastypes';
+import './fighter_fsms';
+import type { AbilityId, AbilityPayloadFor, AbilityRequestOptions } from 'bmsx/gas/gastypes';
 import { AbilitySystemComponent } from 'bmsx/component/abilitysystemcomponent';
 import { SpriteComponent } from 'bmsx/component/sprite_component';
 import { VERTICAL_POSITION_FIGHTERS } from './gameconstants';
 import { BitmapId } from './resourceids';
 import { FIGHTER_INPUT_PROGRAM } from './input/fighter_input_program';
 
-export type AttackType = string;
+export type AttackType = 'punch' | 'highkick' | 'lowkick' | 'duckkick' | 'flyingkick';
+
+type FighterAbilityPayloadTable = {
+	'fighter.locomotion.walk': { direction: Direction };
+	'fighter.locomotion.walk_stop': undefined;
+	'fighter.control.duck_hold': undefined;
+	'fighter.control.duck_release': undefined;
+	'fighter.control.jump': { direction?: Direction };
+	'fighter.attack.punch': { attackType: 'punch' };
+	'fighter.attack.highkick': { attackType: 'highkick' };
+	'fighter.attack.lowkick': { attackType: 'lowkick' };
+	'fighter.attack.duckkick': { attackType: 'duckkick' };
+	'fighter.attack.flyingkick': { attackType: 'flyingkick' };
+};
+
+const ATTACK_ABILITY_IDS: { readonly [K in AttackType]: `fighter.attack.${K}` } = {
+	punch: 'fighter.attack.punch',
+	highkick: 'fighter.attack.highkick',
+	lowkick: 'fighter.attack.lowkick',
+	duckkick: 'fighter.attack.duckkick',
+	flyingkick: 'fighter.attack.flyingkick',
+} as const;
+
+const ATTACK_ABILITY_PAYLOADS: { readonly [K in AttackType]: FighterAbilityPayloadTable[`fighter.attack.${K}`] } = {
+	punch: { attackType: 'punch' },
+	highkick: { attackType: 'highkick' },
+	lowkick: { attackType: 'lowkick' },
+	duckkick: { attackType: 'duckkick' },
+	flyingkick: { attackType: 'flyingkick' },
+} as const;
+
+type AttackAbilityId = typeof ATTACK_ABILITY_IDS[AttackType];
+
+type FighterAbilityId = keyof FighterAbilityPayloadTable;
+type AbilityRequestArgs<I extends FighterAbilityId> = [payload?: FighterAbilityPayloadTable[I], opts?: { source?: string }];
+
+type WalkAbilityPayload = AbilityPayloadFor<'fighter.locomotion.walk'>;
 
 export type HitMarkerType = 'player_hit' | 'enemy_hit' | 'poef';
 
@@ -42,53 +79,23 @@ export abstract class Fighter extends SpriteObject {
 	public static readonly JUMP_SPEED = 2;
 	public static readonly JUMP_DURATION = 60;
 	public static readonly SPEED = 2;
-	private _fighting: boolean = true;
-	private _attacking: boolean = false;
-	private _jumping: boolean = false;
-	private _ducking: boolean = false;
-	public attacked_while_jumping: boolean = false;
 	public _aied: boolean = false;
-	public previousAttackType: AttackType = null;
-	public currentAttackType: AttackType = null;
-	public get isAttacking(): boolean { return this._attacking; }
-	public get isJumping(): boolean { return this._jumping; }
-	public get isDucking(): boolean { return this._ducking; }
-	public get isFighting(): boolean { return this._fighting; }
 	public get isAIed(): boolean { return this._aied; }
+	public previousAttackType: AttackType | null = null;
+	public currentAttackType: AttackType | null = null;
+	private get asc(): AbilitySystemComponent { return this.getUniqueComponent(AbilitySystemComponent); }
 
-	protected setFightingState(active: boolean, force: boolean = false): void {
-		if (!force && this._fighting === active) return;
-		this._fighting = active;
-	}
+	public get isAttacking(): boolean { return this.asc.hasGameplayTag('state.attacking'); }
+	public get isJumping(): boolean { return this.asc.hasGameplayTag('state.airborne'); }
+	public get isDucking(): boolean { return this.asc.hasGameplayTag('state.ducking'); }
+	public get isFighting(): boolean { return !this.asc.hasGameplayTag('state.combat_disabled'); }
+	public get hasUsedAirborneAttack(): boolean { return this.asc.hasGameplayTag('state.airborne.attackUsed'); }
 
-	protected setAttackingState(active: boolean, force: boolean = false): void {
-		if (!force && this._attacking === active) return;
-		this._attacking = active;
+	public applyWalkFacing(_state: State | undefined, payload: WalkAbilityPayload): void {
+		if (!payload) return;
+		const { direction } = payload;
+		if (direction === 'left' || direction === 'right') this.facing = direction;
 	}
-
-	protected setJumpingState(active: boolean, force: boolean = false): void {
-		if (!force && this._jumping === active) return;
-		this._jumping = active;
-	}
-
-	protected setDuckingState(active: boolean, force: boolean = false): void {
-		if (!force && this._ducking === active) return;
-		this._ducking = active;
-	}
-
-	public configureWalkState({ state, payload }: { state: State; payload?: { direction?: Direction } | Direction }): void {
-		if (!state) return;
-		const resolved = (typeof payload === 'string') ? payload : payload?.direction;
-		const direction: Direction | null = (resolved === 'left' || resolved === 'right') ? resolved : null;
-	const data = (state.data ??= {} as Record<string, unknown>);
-	if (direction) {
-		(data as { direction?: Direction }).direction = direction;
-		(data as { speedX?: number }).speedX = direction === 'right' ? this.walkSpeed : -this.walkSpeed;
-	} else if ((data as { direction?: Direction }).direction === undefined) {
-		(data as { direction?: Direction }).direction = this.facing ?? 'right';
-		(data as { speedX?: number }).speedX = (this.facing === 'left' ? -1 : 1) * this.walkSpeed;
-	}
-}
 
 	@build_fsm('hitanimation')
 	static bouw_hitanimation_fsm(): StateMachineBlueprint {
@@ -163,20 +170,28 @@ export abstract class Fighter extends SpriteObject {
 		this.sc.dispatch_event('animate_idle', this);
 	}
 
-	public getAbilityId(name: FighterCoreAbilityName): AbilityId {
-		return FIGHTER_CORE_ABILITY_IDS[name];
+	public getAbilityId<Name extends FighterCoreAbilityName>(name: Name): typeof CORE_ABILITY_IDS[Name] {
+		return CORE_ABILITY_IDS[name];
 	}
 
-	public requestAbility(abilityId: AbilityId, payload?: Record<string, unknown>): boolean {
+	public requestAbility<I extends FighterAbilityId>(abilityId: I, ...args: AbilityRequestArgs<I>): boolean {
+		const payload = (args.length > 0 ? args[0] : undefined) as FighterAbilityPayloadTable[I] | undefined;
+		const opts = (args.length > 1 ? args[1] : undefined) as { source?: string } | undefined;
 		const asc = this.getUniqueComponent(AbilitySystemComponent);
-		const res = asc.requestAbility(abilityId, { source: 'input.fsm', payload });
-		return res.ok;
+		const source = opts?.source ?? 'fighter.script';
+		if (payload === undefined) {
+			const result = asc.requestAbility(abilityId, { source } as AbilityRequestOptions<I>);
+			return result.ok;
+		}
+		const result = asc.requestAbility(abilityId, { source, payload } as AbilityRequestOptions<I>);
+		return result.ok;
 	}
 
 	public tryActivateAttackAbility(attackType: AttackType): boolean {
 		const abilityId = this.getAttackAbilityId(attackType);
+		const payload = ATTACK_ABILITY_PAYLOADS[attackType];
 		const asc = this.getUniqueComponent(AbilitySystemComponent);
-		const result = asc.requestAbility(abilityId, { source: 'fighter.attack', payload: { attackType } });
+		const result = asc.requestAbility(abilityId, { source: 'fighter.attack', payload } as AbilityRequestOptions<typeof abilityId>);
 		return result.ok;
 	}
 
@@ -186,30 +201,28 @@ export abstract class Fighter extends SpriteObject {
 		return asc.canActivateReason(abilityId) === null;
 	}
 
-	public getAttackAbilityId(attackType: AttackType): AbilityId {
-		return `fighter.attack.${attackType}` as AbilityId;
+	public getAttackAbilityId(attackType: AttackType): AttackAbilityId {
+		return ATTACK_ABILITY_IDS[attackType];
 	}
 
-	public startAttack(attackType: AttackType): void {
-		this.setAttackingState(true);
-		this.currentAttackType = attackType;
-		if (attackType === 'duckkick') this.setDuckingState(true);
-		if (attackType === 'flyingkick') {
-			this.attacked_while_jumping = true;
+	public startAttack(_state: State, payload?: { attackType?: AttackType }): void {
+		const attackType = payload.attackType;
+		if (!attackType) {
+			throw new Error('[Fighter] startAttack invoked without attack type.');
 		}
+		this.currentAttackType = attackType;
 		const opponent = this.getAttackOpponent();
 		this.sc.dispatch_event(`animate_${attackType}`, this);
 		this.doAttackFlow(attackType, opponent);
 	}
 
-	public finishAttack(attackType: AttackType): void {
-		this.previousAttackType = attackType;
-		this.currentAttackType = null;
-		this.setAttackingState(false);
-		if (attackType === 'duckkick') this.setDuckingState(false);
-		if (attackType === 'flyingkick') {
-			this.attacked_while_jumping = false;
+	public finishAttack(_state: State, payload?: { attackType?: AttackType }): void {
+		const resolved = payload.attackType ?? this.currentAttackType;
+		if (!resolved) {
+			throw new Error('[Fighter] finishAttack invoked without attack type.');
 		}
+		this.previousAttackType = resolved;
+		this.currentAttackType = null;
 	}
 
 	public doAttackFlow(attackType: AttackType, opponent: Fighter | null): boolean {
@@ -233,11 +246,11 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public performAttack(attackType: AttackType): void {
-		this.startAttack(attackType);
+		this.startAttack(undefined, { attackType });
 	}
 
 	public completeAttack(attackType: AttackType): void {
-		this.finishAttack(attackType);
+		this.finishAttack(undefined, { attackType });
 	}
 
 	protected getAttackOpponent(): Fighter | null {
@@ -299,16 +312,12 @@ export abstract class Fighter extends SpriteObject {
 		this.y_nonotify = VERTICAL_POSITION_FIGHTERS - this.sy;
 	}
 
-	public walkTick(state: State): void {
-		const data = state.data as { speedX?: number };
+	public walkTick(): void {
 		let dx = 0;
-		if (typeof data.speedX === 'number') dx = data.speedX;
-		else if (this.facing === 'left') dx = -this.walkSpeed;
+		if (this.facing === 'left') dx = -this.walkSpeed;
 		else if (this.facing === 'right') dx = this.walkSpeed;
-	if (dx === 0) {
-		return;
-	}
-	GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: { x: dx, y: 0, z: 0 } });
+		if (dx === 0) return;
+		GameplayCommandBuffer.instance.push({ kind: 'moveby2d', target_id: this.id, delta: { x: dx, y: 0, z: 0 } });
 	}
 
 	private _hitSprite?: SpriteComponent;

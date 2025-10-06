@@ -16,8 +16,8 @@ import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer } from "../serializer/gameserializer";
 import { Service } from "./service";
 import { RewindBuffer, RewindFrame } from "../serializer/rewind";
-import { World, WorldConfiguration } from "./world";
-import { EventEmitter, EventPayload } from "./eventemitter";
+import { World, WorldConfiguration, type SpawnReason } from "./world";
+import { EventEmitter, type EventLane, type EventPayload, type StructuredEventPayload } from "./eventemitter";
 import { WorldObject } from "./object/worldobject";
 import { GameOptions } from './gameoptions';
 import { Registry } from "./registry";
@@ -182,15 +182,18 @@ export class Game {
 	public get platform(): Platform { return this._platform!; }
 
 	public emit(event_name: string, emitter: Identifiable | null, payload?: EventPayload) {
-		this.event_emitter.emit(event_name, emitter, { ...payload, lane: 'any' });
+		const finalPayload = Game.attachLane('any', payload);
+		this.event_emitter.emit(event_name, emitter, finalPayload);
 	}
 
 	public emitGameplay(event_name: string, emitter: Identifiable, payload?: EventPayload): void {
-		this.event_emitter.emit(event_name, emitter, { ...payload, lane: 'gameplay' });
+		const finalPayload = Game.attachLane('gameplay', payload);
+		this.event_emitter.emit(event_name, emitter, finalPayload);
 	}
 
 	public emitPresentation(event_name: string, emitter: Identifiable | null, payload?: EventPayload): void {
-		this.event_emitter.emit(event_name, emitter, { ...payload, lane: 'presentation' });
+		const finalPayload = Game.attachLane('presentation', payload);
+		this.event_emitter.emit(event_name, emitter, finalPayload);
 	}
 
 	public get<T extends Registerable>(id: Identifier): T {
@@ -209,12 +212,18 @@ export class Game {
 		this.registry.register(value);
 	}
 
+	private static attachLane(lane: EventLane, payload?: EventPayload): EventPayload {
+		if (payload === undefined || payload === null) return { lane };
+		if (typeof payload === 'object') return { ...(payload as StructuredEventPayload), lane };
+		throw new Error(`[Game] Cannot attach lane '${lane}' to primitive payload emitted via Game API.`);
+	}
+
 	public deregister(id: Identifier | Registerable): void {
 		this.registry.deregister(id);
 	}
 
-	public spawn(o: WorldObject, pos?: vec3, ignoreSpawnhandler?: boolean): void {
-		this.world.spawn(o, pos, ignoreSpawnhandler);
+	public spawn(o: WorldObject, pos?: vec3, opts?: { ignoreSpawnhandler?: boolean, reason?: SpawnReason }): void {
+		this.world.spawn(o, pos, opts);
 	}
 
 	public exile(o: WorldObject): void { this.world.despawnFromAllSpaces(o); }
@@ -675,3 +684,8 @@ export class Game {
 }
 
 export var $: Game = new Game()!;
+
+// Expose legacy global `$` for scripts that expect a global symbol (e.g. bootrom/html glue)
+// We intentionally write to the global scope we resolved earlier so both browser and
+// node-headless runtimes have the same behaviour.
+(globalScope as any).$ = $;
