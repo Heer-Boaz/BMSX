@@ -71,17 +71,7 @@ export class Eila extends Fighter {
 	public startJump(state?: State, payload?: EventPayload & { direction?: Direction | null; directional?: boolean | string }): void {
 		if (!state) throw new Error('[Eila] startJump invoked without state context.');
 		const data = state.data as JumpStateData;
-		let direction: Direction;
-		if (payload.direction === 'left' || payload.direction === 'right') {
-			direction = payload.direction;
-		}
-		else if (typeof payload.directional === 'string' && (payload.directional === 'left' || payload.directional === 'right')) {
-			direction = payload.directional;
-		}
-		else if (payload.directional) {
-			direction = this.facing;
-		}
-		data.direction = direction;
+		data.direction = payload?.direction;
 		this.getUniqueComponent(JumpingWhileLeavingScreenComponent).enabled = true;
 	}
 

@@ -221,6 +221,7 @@ export interface StateActionTransitionSpec {
 	switch?: StateTransition | Identifier;
 	force_leaf?: StateTransition | Identifier;
 	revert?: boolean | StateTransition | Identifier;
+	payload?: EventPayload;
 }
 
 export interface StateActionTransitionCompositeSpec extends StateActionTransitionSpec {

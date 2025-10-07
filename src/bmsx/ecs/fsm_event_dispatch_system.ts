@@ -1,5 +1,4 @@
-import type { WorldObject } from '../core/object/worldobject';
-import type { World } from '../core/world';
+import { Registry } from '../core/registry';
 import { ECSystem, TickGroup } from './ecsystem';
 import { GameplayCommandBuffer } from './gameplay_command_buffer';
 
@@ -11,11 +10,11 @@ export class FsmEventDispatchSystem extends ECSystem {
 		super(TickGroup.ModeResolution, priority);
 	}
 
-	public override update(world: World): void {
+	public override update(): void {
 		const events = GameplayCommandBuffer.instance.drainByKind('dispatchEvent');
 
 		for (const cmd of events) {
-			const target = world.getWorldObject<WorldObject>(cmd.target_id);
+			const target = Registry.instance.get(cmd.target_id); // Allow global objects to be targets too, like services.
 			if (!target) {
 				throw new Error(`[FsmEventDispatchSystem] Event '${cmd.event}' targets unknown object '${cmd.target_id}'.`);
 			}

@@ -6,7 +6,7 @@ import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 export class AbilityRuntimeSystem extends ECSystem {
 	constructor(priority: number = 32) { super(TickGroup.AbilityUpdate, priority); }
 	update(): void {
-		const commands = GameplayCommandBuffer.instance.drainByKind('ActivateAbility');
+		const commands = GameplayCommandBuffer.instance.drainByKind('activateability');
 		const ascByOwner = new Map<string, AbilitySystemComponent>();
 		for (let i = 0; i < commands.length; i++) {
 			const command = commands[i]!;

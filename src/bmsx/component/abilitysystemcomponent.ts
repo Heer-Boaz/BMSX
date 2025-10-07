@@ -26,7 +26,7 @@ import {
 	type GameplayAbilityDefinition
 } from '../gas/gameplay_ability';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
-import type { GameplayCommand, ActivateAbilityCommand } from '../ecs/gameplay_command_buffer';
+import type { GameplayCommand } from '../ecs/gameplay_command_buffer';
 
 export type AbilityTagSnapshot = {
 	explicit: TagId[];
@@ -100,8 +100,8 @@ export class AbilitySystemComponent extends Component {
 			this.notifyAbilityFailed(id, reason);
 			return { ok: false as const, reason };
 		}
-		const command: ActivateAbilityCommand = {
-			kind: 'ActivateAbility',
+		const command: GameplayCommand = {
+			kind: 'activateability',
 			owner: this.parentid,
 			ability_id: id,
 			source: opts?.source,

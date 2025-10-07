@@ -1424,7 +1424,7 @@ function compileAction(slot: string, spec: StateActionSpec | StateActionConditio
 			}
 			if (payload !== undefined) {
 				const resolvedPayload = resolveTemplateValue(payload, ctx);
-				return resolvedFn.call(receiver, resolvedPayload);
+				return resolvedFn.call(receiver, state, resolvedPayload);
 			}
 			return resolvedFn.call(receiver, state, ctx.payload);
 		};
