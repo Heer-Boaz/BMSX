@@ -1,12 +1,13 @@
 /**
- * Interface for a loaded resource, which includes metadata about the resource.
+ * Type definitions shared between the rompacker CLI and the engine runtime.
  */
 import { Buffer } from 'buffer';
-import type { asset_type, ImgMeta } from '../../src/bmsx/rompack/rompack';
+import type { Canvas, Image as NodeCanvasImage } from 'canvas';
+import type { asset_type } from '../../src/bmsx/rompack/rompack';
 
 export type RomPackerTarget = 'browser' | 'cli' | 'headless';
 
-interface RomPackerOptions {
+export interface RomPackerOptions {
 	rom_name: string;
 	title: string;
 	bootloader_path: string;
@@ -25,24 +26,90 @@ interface RomPackerOptions {
 	skipTypecheck?: boolean;
 }
 
-export type resourcetype = asset_type | 'rommanifest' | 'romlabel' | 'fsm' | 'aem';
+export type resourcetype = asset_type | 'rommanifest';
 export type collisiontype = 'concave' | 'convex' | 'aabb';
 export type datatype = 'json' | 'yaml' | 'bin';
 
-export interface Resource {
-	filepath?: string;
+export type AtlasTexcoords = [
+	number, number,
+	number, number,
+	number, number,
+	number, number,
+	number, number,
+	number, number
+];
+
+interface BaseResource<TType extends resourcetype> {
+	type: TType;
 	name: string;
+	filepath?: string;
 	ext?: string;
-	type: resourcetype;
+	id?: number;
+	buffer?: Buffer;
+}
+
+export interface ImageResource extends BaseResource<'image'> {
 	id: number;
-	collisionType?: collisiontype;
-	datatype?: datatype;
+	collisionType: collisiontype;
 	targetAtlasIndex?: number;
 	atlasid?: number;
-	buffer?: Buffer;
-	img?: any;
-	imgmeta?: ImgMeta;
+	img?: NodeCanvasImage;
+	atlasTexcoords?: AtlasTexcoords;
 }
+
+export interface AtlasResource extends BaseResource<'atlas'> {
+	id: number;
+	atlasid: number;
+	img?: Canvas & { toBuffer?: (format: string) => Buffer; };
+}
+
+export interface AudioResource extends BaseResource<'audio'> {
+	id: number;
+}
+
+export interface DataResource extends BaseResource<'data'> {
+	id: number;
+	datatype: datatype;
+}
+
+export interface AemResource extends BaseResource<'aem'> {
+	id: number;
+	datatype: datatype;
+}
+
+export interface CodeResource extends BaseResource<'code'> {
+	id: number;
+}
+
+export interface ModelResource extends BaseResource<'model'> {
+	id: number;
+	datatype: datatype;
+}
+
+export interface FsmResource extends BaseResource<'fsm'> {
+	id: number;
+	datatype: datatype;
+}
+
+export interface RomLabelResource extends BaseResource<'romlabel'> {
+	id?: number;
+}
+
+export interface RomManifestResource extends BaseResource<'rommanifest'> {
+	id?: number;
+}
+
+export type Resource =
+	| ImageResource
+	| AtlasResource
+	| AudioResource
+	| DataResource
+	| AemResource
+	| CodeResource
+ 	| ModelResource
+	| FsmResource
+	| RomLabelResource
+	| RomManifestResource;
 
 export interface RomManifest {
 	title?: string;

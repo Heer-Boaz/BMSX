@@ -1,13 +1,41 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomManifest, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
 
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
+
+const KNOWN_FLAGS = new Set<string>([
+	'-romname',
+	'-title',
+	'-bootloaderpath',
+	'-respath',
+	'--debug',
+	'--force',
+	'--buildreslist',
+	'--nodeploy',
+	'--textureatlas',
+	'--skiptypecheck',
+	'--enginedts',
+	'--usepkgtsconfig',
+	'--platform',
+	'-h',
+	'--help',
+]);
+
+const FLAGS_WITH_VALUES = new Set<string>([
+	'-romname',
+	'-title',
+	'-bootloaderpath',
+	'-respath',
+	'--textureatlas',
+	'--enginedts',
+	'--platform',
+]);
 
 type logentryType = undefined | 'error' | 'warning';
 type TaskName =
@@ -78,21 +106,48 @@ const typecheckTasks: TaskName[] = [
 // `process` is provided by Node and declared in @types/node; no local ambient needed.
 function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
 	const idx = args.indexOf(flag);
-	if (idx !== -1 && args[idx + 1]) return args[idx + 1];
-	if (process.env[envVar]) return process.env[envVar]!;
+	if (idx !== -1) {
+		const valueIdx = idx + 1;
+		if (valueIdx >= args.length) {
+			throw new Error(`Flag "${flag}" expects a value.`);
+		}
+		const candidate = args[valueIdx];
+		if (KNOWN_FLAGS.has(candidate)) {
+			throw new Error(`Flag "${flag}" expects a value, but received another flag "${candidate}".`);
+		}
+		return candidate;
+	}
+	const envValue = process.env[envVar];
+	if (envValue && envValue.length > 0) return envValue;
 	return fallback;
 }
 
+function parseArgsVector(argv: string[]): Set<string> {
+	const seen = new Set<string>();
+	for (let i = 0; i < argv.length; i++) {
+		const token = argv[i];
+		if (!token.startsWith('-')) continue;
+		seen.add(token);
+		if (FLAGS_WITH_VALUES.has(token)) {
+			i += 1;
+		}
+	}
+	return seen;
+}
+
+function getOptionalParam(args: string[], flag: string, envVar: string): string | undefined {
+	const value = getParamOrEnv(args, flag, envVar, '');
+	return value.length > 0 ? value : undefined;
+}
+
 function parseOptions(args: string[]): RomPackerOptions {
-	// Check for unrecognized arguments
-	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas', '--skiptypecheck', '--enginedts', '--usepkgtsconfig', '--platform'];
-	const unrecognizedArgs = args.filter(arg => arg.startsWith('-') && !knownArgs.includes(arg));
-	if (unrecognizedArgs.length > 0) {
-		throw new Error(`Unrecognized argument(s): ${unrecognizedArgs.join(', ')}`);
+	const seenFlags = parseArgsVector(args);
+	const unknownFlags = [...seenFlags].filter(flag => !KNOWN_FLAGS.has(flag));
+	if (unknownFlags.length > 0) {
+		throw new Error(`Unrecognized argument(s): ${unknownFlags.join(', ')}`);
 	}
 
-	// Handle the case for -h or --help
-	if (args.includes('-h') || args.includes('--help')) {
+	if (seenFlags.has('-h') || seenFlags.has('--help')) {
 		writeOut(`Usage: <command> [options]`, 'warning');
 		writeOut(`Options:`, 'warning');
 		writeOut(`  -romname <name>        Name of the ROM`, 'warning');
@@ -110,29 +165,36 @@ function parseOptions(args: string[]): RomPackerOptions {
 		process.exit(0);
 	}
 
-	// Parse options
-	const useTextureAtlasArgIdx = args.indexOf('--textureatlas');
+	const textureSetting = getOptionalParam(args, '--textureatlas', 'ROM_TEXTURE_ATLAS');
 	let useTextureAtlas = true;
-	if (useTextureAtlasArgIdx !== -1 && args[useTextureAtlasArgIdx + 1]) {
-		const val = args[useTextureAtlasArgIdx + 1].toLowerCase();
-		useTextureAtlas = val === 'yes' || val === 'true' || val === '1';
+	if (textureSetting !== undefined) {
+		const raw = textureSetting.toLowerCase();
+		if (raw === 'yes' || raw === 'true' || raw === '1') {
+			useTextureAtlas = true;
+		} else if (raw === 'no' || raw === 'false' || raw === '0') {
+			useTextureAtlas = false;
+		} else {
+			throw new Error(`Unsupported value "${raw}" for --textureatlas. Expected one of: yes, no, true, false, 1, 0.`);
+		}
 	}
 
-	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', null);
+	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', '');
 	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name);
-	const bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', rom_name ? `./src/${rom_name}` : null);
-	const respath = getParamOrEnv(args, '-respath', 'RES_PATH', rom_name ? `./src/${rom_name}/res` : null);
-		const force = args.includes('--force');
-	const debug = args.includes('--debug');
-	const buildreslist = args.includes('--buildreslist');
-	const deploy = !args.includes('--nodeploy');
-	const skipTypecheck = args.includes('--skiptypecheck');
-	const enginedtsIdx = args.indexOf('--enginedts');
-	const enginedts = enginedtsIdx !== -1 ? args[enginedtsIdx + 1] : undefined;
-	const usePkgTsconfig = args.includes('--usepkgtsconfig');
+	const defaultBootloaderPath = rom_name ? `./src/${rom_name}` : '';
+	const bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', defaultBootloaderPath);
+	const defaultResPath = rom_name ? `${defaultBootloaderPath}/res` : '';
+	const respath = getParamOrEnv(args, '-respath', 'RES_PATH', defaultResPath);
+
+	const force = seenFlags.has('--force');
+	const debug = seenFlags.has('--debug');
+	const buildreslist = seenFlags.has('--buildreslist');
+	const deploy = !seenFlags.has('--nodeploy');
+	const skipTypecheck = seenFlags.has('--skiptypecheck');
+	const enginedts = getOptionalParam(args, '--enginedts', 'ROM_ENGINE_DTS');
+	const usePkgTsconfig = seenFlags.has('--usepkgtsconfig');
 	const platformRaw = getParamOrEnv(args, '--platform', 'ROM_PLATFORM', 'browser');
+	const platformKey = platformRaw.toLowerCase();
 	let platform: RomPackerTarget;
-	const platformKey = platformRaw ? platformRaw.toLowerCase() : '';
 	switch (platformKey) {
 		case 'browser':
 			platform = 'browser';
@@ -264,6 +326,7 @@ async function main() {
 		const args = process.argv.slice(2);
 		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
+		setAtlasFlag(useTextureAtlas);
 
 		// Define common assets path
 		const commonResPath = `./src/bmsx/res`

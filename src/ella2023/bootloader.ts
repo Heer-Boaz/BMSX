@@ -22,6 +22,6 @@ _global['h406A'] = async function (args: BootArgs): Promise<void> {
 		$.hideOnscreenGamepadButtons(['ls', 'rs', 'select', 'y']);
 		$.view.dynamicAtlas = null; // Must set this after creating the Game, otherwise GameView.images will not be initialized properly.
 		$.view.default_font = new BFont(BitmapId);
-		// $.start();
+		$.start();
 	});
 };

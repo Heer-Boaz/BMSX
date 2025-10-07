@@ -5,7 +5,7 @@ import type { asset_type, AudioMeta, GLTFMesh, ImgMeta, Polygon, RomAsset } from
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { loadGLTFModel } from './gltfloader';
-import type { collisiontype, Resource, resourcetype, RomManifest, RomPackerTarget } from './rompacker.rompack';
+import type { AtlasResource, ImageResource, Resource, resourcetype, RomManifest, RomPackerTarget } from './rompacker.rompack';
 // @ts-ignore
 const { build } = require('esbuild');
 // @ts-ignore
@@ -15,6 +15,12 @@ const { join, parse } = require('path');
 
 // @ts-ignore
 const { access, mkdir, readdir, readFile, stat, writeFile, unlink } = require('fs/promises');
+// @ts-ignore
+const { createWriteStream } = require('fs');
+// @ts-ignore
+const { once } = require('events');
+// @ts-ignore
+const { finished } = require('stream/promises');
 // @ts-ignore
 // Import encodeBinary from the public API surface
 // Use direct path to avoid pulling entire engine via public alias during Node execution
@@ -30,9 +36,18 @@ const cleanCSS = require('@node-minify/clean-css');
 const { loadImage } = require('canvas');
 // @ts-ignore
 const yaml = require('js-yaml');
+// @ts-ignore
+const { createHash } = require('crypto');
 
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
+export function setAtlasFlag(enabled: boolean): void {
+	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
+}
+
+export function getAtlasFlag(): boolean {
+	return GENERATE_AND_USE_TEXTURE_ATLAS;
+}
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
@@ -83,6 +98,15 @@ export function addFile(dirPath: string, filePath: string, arrayOfFiles: string[
 	arrayOfFiles.push(join(dirPath, "/", filePath));
 }
 
+const RESOURCE_SCAN_EXCLUDE = new Set<string>([
+	'.rom',
+	'.js',
+	'.ts',
+	'.map',
+	'.tsbuildinfo',
+	'.rommanifest',
+]);
+
 /**
  * Recursively gets all files in a directory and its subdirectories, optionally filtered by file extension.
  * @param {string} dirPath - The path of the directory to search.
@@ -106,13 +130,12 @@ export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterE
 		if (stats.isDirectory()) {
 			array = await getFiles(fullpath, array, filterExtension);
 		} else {
-			let ext = parse(file).ext;
+			const ext = parse(file).ext.toLowerCase();
 			if (filterExtension) {
 				if (ext === filterExtension) {
 					array.push(fullpath);
 				}
-			}
-			else if (ext !== ".rom" && ext !== ".js" && ext !== ".ts" && ext !== ".map" && ext !== ".tsbuildinfo" && ext !== ".rommanifest") {
+			} else if (!RESOURCE_SCAN_EXCLUDE.has(ext)) {
 				array.push(fullpath);
 			}
 		}
@@ -143,7 +166,6 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
 export async function esbuild(romname: string, bootloader_path: string, debug: boolean, tsconfigProjectOverride?: string): Promise<void> {
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
 	// Prefer the game's tsconfig.json if present to ensure path mappings (e.g. "bmsx") resolve correctly
-	// @ts-ignore
 	const tsconfigPath = (() => {
 		const fs = require('fs');
 		try {
@@ -170,58 +192,53 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
 			return p;
 		} catch { return undefined; }
 	})();
-	try {
-		const define = {
-			'process.env.NODE_ENV': '"production"',
-		};
-		if (debug) {
-			await build({
-				entryPoints: [bootloader_ts_path], // Entry point for the rompack
-				bundle: true, // Bundle all dependencies into a single file
-				sourcemap: 'inline', // Include inline source maps for debugging
-				sourcesContent: true,
-				outfile: `./rom/${romname}.js`, // Output file for the bundled code
-				platform: 'browser', // Target platform for the bundle
-				target: 'es2024', // Specify the ECMAScript version to target
-				// Specify the ECMAScript version to target
-				loader: { '.glsl': 'text' }, // Handles GLSL files as text
-				plugins: [glsl({
-					minify: true
-				})],
-				tsconfig: tsconfigPath,
-				define,
-				minify: false,
-				keepNames: true,
-				external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-				treeShaking: true,
-			});
-		}
-		else {
-			await build({
-				entryPoints: [bootloader_ts_path], // Entry point for the rompack
-				bundle: true, // Bundle all dependencies into a single file
-				sourcemap: false,
-				sourcesContent: false,
-				outfile: `./rom/${romname}.js`, // Output file for the bundled code
-				platform: 'browser', // Target platform for the bundle
-				target: 'es2024', // Specify the ECMAScript version to target
-				// Specify the ECMAScript version to target
-				loader: { '.glsl': 'text' }, // Handles GLSL files as text
-				plugins: [glsl({
-					minify: true
-				})],
-				tsconfig: tsconfigPath,
-				define,
-				minify: true,
-				keepNames: true,
-				external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-				treeShaking: true,
-			});
-		}
-		return null;
-	} catch (err) {
-		throw err;
+	const define = {
+		'process.env.NODE_ENV': '"production"',
+	};
+	if (debug) {
+		await build({
+			entryPoints: [bootloader_ts_path], // Entry point for the rompack
+			bundle: true, // Bundle all dependencies into a single file
+			sourcemap: 'inline', // Include inline source maps for debugging
+			sourcesContent: false,
+			footer: {
+				js: `\n//# sourceURL=${romname}.debug.rom`,
+			},
+			outfile: `./rom/${romname}.js`, // Output file for the bundled code
+			platform: 'browser', // Target platform for the bundle
+			target: 'es2024', // Specify the ECMAScript version to target
+			// Specify the ECMAScript version to target
+			loader: { '.glsl': 'text' }, // Handles GLSL files as text
+			plugins: [glsl({ minify: true })],
+			tsconfig: tsconfigPath,
+			define,
+			minify: false,
+			keepNames: true,
+			external: ['ts-key-enum'],
+			treeShaking: true,
+		});
 	}
+	else {
+		await build({
+			entryPoints: [bootloader_ts_path], // Entry point for the rompack
+			bundle: true, // Bundle all dependencies into a single file
+			sourcemap: false,
+			sourcesContent: false,
+			outfile: `./rom/${romname}.js`, // Output file for the bundled code
+			platform: 'browser', // Target platform for the bundle
+			target: 'es2024', // Specify the ECMAScript version to target
+			// Specify the ECMAScript version to target
+			loader: { '.glsl': 'text' }, // Handles GLSL files as text
+			plugins: [glsl({ minify: true })],
+			tsconfig: tsconfigPath,
+			define,
+			minify: true,
+			keepNames: true,
+			external: ['ts-key-enum'],
+			treeShaking: true,
+		});
+	}
+	return null;
 }
 
 /**
@@ -284,7 +301,9 @@ export function typecheckGameWithDts(bootloader_path: string, dtsDir: string, ba
 		} catch { return undefined; }
 	})();
 
-	const tmpCfg = path.join(process.cwd(), 'rom', '_ignore', 'tsconfig.game.with.dts.json');
+	const bootloaderIdRaw = bootloader_path ? path.basename(bootloader_path) : 'game';
+	const bootloaderId = bootloaderIdRaw.replace(/[^a-zA-Z0-9_-]/g, '_') || 'game';
+	const tmpCfg = path.join(process.cwd(), 'rom', '_ignore', `tsconfig.game.with.dts.${bootloaderId}.json`);
 	const extendsPath = (baseProjectOverride
 		? ((baseProjectOverride.startsWith('.') || baseProjectOverride.startsWith('src/'))
 			? path.join(process.cwd(), baseProjectOverride)
@@ -320,7 +339,7 @@ export function typecheckGameWithDts(bootloader_path: string, dtsDir: string, ba
 export function applyStringReplacements(str: string, replacements: { [key: string]: string }): string {
 	let result = str;
 	for (const [key, value] of Object.entries(replacements)) {
-		result = result.replace(new RegExp(key, 'g'), value);
+		result = result.split(key).join(value);
 	}
 	return result;
 }
@@ -370,12 +389,24 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 	 */
 	async function loadImages(paths: string[]): Promise<{ [key: string]: string }> {
 		const images: { [key: string]: string } = {};
-		const results = await Promise.all(paths.map(async (path) => {
-			return [path, await loadImgAndConvertToBase64String(path)] as [string, string];
-		}));
-		for (const [path, base64] of results) {
-			images[path] = base64;
+		if (paths.length === 0) {
+			return images;
 		}
+		let cursor = 0;
+		const concurrency = Math.min(8, paths.length);
+		const workers = Array.from({ length: concurrency }, async () => {
+			while (true) {
+				const index = cursor;
+				cursor += 1;
+				if (index >= paths.length) {
+					break;
+				}
+				const path = paths[index];
+				const base64 = await loadImgAndConvertToBase64String(path);
+				images[path] = base64;
+			}
+		});
+		await Promise.all(workers);
 		return images;
 	}
 
@@ -392,20 +423,20 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 		const replacements = {
 			'//#bootromjs': romjs,
 			'//#zipjs': zipjs,
-			'/\\*#css\\*/': cssMinified,
+			'/*#css*/': cssMinified,
 			'#title': title,
 			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
 			'#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
-			'#bmsxurl': `${imgPrefix}${images['./rom/bmsx.png']}`,
-			'#d-pad-d_': `${imgPrefix}${images['./rom/d-pad-d.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
-			'#d-pad-l_': `${imgPrefix}${images['./rom/d-pad-l.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
-			'#d-pad-ld': `${imgPrefix}${images['./rom/d-pad-ld.png']}`,
-			'#d-pad-lu': `${imgPrefix}${images['./rom/d-pad-lu.png']}`,
-			'#d-pad-neutral': `${imgPrefix}${images['./rom/d-pad-neutral.png']}`,
-			'#d-pad-r_': `${imgPrefix}${images['./rom/d-pad-r.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
-			'#d-pad-rd': `${imgPrefix}${images['./rom/d-pad-rd.png']}`,
-			'#d-pad-ru': `${imgPrefix}${images['./rom/d-pad-ru.png']}`,
-			'#d-pad-u_': `${imgPrefix}${images['./rom/d-pad-u.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+			'@@BMSX_LOGO@@': `${imgPrefix}${images['./rom/bmsx.png']}`,
+			'@@DPAD_D@@': `${imgPrefix}${images['./rom/d-pad-d.png']}`,
+			'@@DPAD_L@@': `${imgPrefix}${images['./rom/d-pad-l.png']}`,
+			'@@DPAD_LD@@': `${imgPrefix}${images['./rom/d-pad-ld.png']}`,
+			'@@DPAD_LU@@': `${imgPrefix}${images['./rom/d-pad-lu.png']}`,
+			'@@DPAD_NEUTRAL@@': `${imgPrefix}${images['./rom/d-pad-neutral.png']}`,
+			'@@DPAD_R@@': `${imgPrefix}${images['./rom/d-pad-r.png']}`,
+			'@@DPAD_RD@@': `${imgPrefix}${images['./rom/d-pad-rd.png']}`,
+			'@@DPAD_RU@@': `${imgPrefix}${images['./rom/d-pad-ru.png']}`,
+			'@@DPAD_U@@': `${imgPrefix}${images['./rom/d-pad-u.png']}`,
 		};
 
 		return applyStringReplacements(htmlToTransform, replacements);
@@ -414,7 +445,7 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 	let html: string, romjs: string, zipjs: string;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
-		romjs = (await readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8')).replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
+		romjs = await readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8');
 		zipjs = await readFile("./scripts/pako_inflate.min.js", 'utf8');
 	} catch (error) {
 		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
@@ -462,17 +493,24 @@ export function parseAudioMeta(filename: string) {
 	const prioritystr = priorityresult ? priorityresult[0] : undefined;
 	const priority = prioritystr ? parseInt(prioritystr.slice(3)) : 0;
 
-	const loopregex = /@l\=\d+(,\d+)?/;
+	const loopregex = /@l=([0-9]+(?:[.,][0-9]+)?)(?:,([0-9]+(?:[.,][0-9]+)?))?/i;
 	const loopresult = loopregex.exec(filename);
-	const loopstr = loopresult ? loopresult[0] : undefined;
-	const loop = loopstr ? parseFloat(loopstr.replace(',', '.').slice(3)) : null;
+	let loopStart: number | undefined;
+	let loopEnd: number | undefined;
+	if (loopresult) {
+		loopStart = parseFloat(loopresult[1].replace(',', '.'));
+		if (loopresult[2]) {
+			loopEnd = parseFloat(loopresult[2].replace(',', '.'));
+		}
+	}
 
 	const sanitizedName = filename.replace(priorityregex, '').replace(loopregex, '').replace('@m', '');
 	const audiometa: AudioMeta =
 	{
 		audiotype: filename.indexOf('@m') >= 0 ? 'music' : 'sfx',
 		priority: priority,
-		loop: loop !== null ? loop : undefined
+		loop: loopStart,
+		loopEnd,
 	};
 	return { sanitizedName, audiometa };
 }
@@ -513,7 +551,7 @@ export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: str
 // @ts-ignore
 export function zip(content: Buffer): Uint8Array {
 	const toCompress = new Uint8Array(content);
-	return pako.deflate(toCompress);
+	return pako.deflate(toCompress, { level: 9 });
 }
 
 /**
@@ -603,6 +641,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	if (romname) {
 		addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
 	}
+	arrayOfFiles.sort((a, b) => a.localeCompare(b));
 
 	const result: Array<Resource> = [];
 	const targetAtlasIdSet = new Set<number>();
@@ -612,6 +651,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	let dataid = 1;
 	let modelid = 1;
 	let fsmid = 1;
+	let codeFileCount = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		const filepath = arrayOfFiles[i];
 		const meta = getResMetaByFilename(filepath);
@@ -643,7 +683,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 				result.push({ filepath, name, ext, type, id: undefined });
 				break;
 			case 'code':
-				// For code files, we use the romname as the name
+				codeFileCount += 1;
 				break;
 			case 'data':
 			case 'aem': // AEM files are added to the data asset list
@@ -667,10 +707,19 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 
 	// If we are generating and using texture atlases, we need to add the atlasses to the resource list
 	// @ts-ignore
-	for (const id of targetAtlasIdSet) {
+	for (const id of Array.from(targetAtlasIdSet).sort((a, b) => a - b)) {
 		const name = generateAtlasName(id);
-		result.push({ filepath: undefined, name, ext: '.atlas', type: 'atlas', id: imgid++, collisionType: undefined, targetAtlasIndex: undefined, atlasid: id });
+		result.push({ filepath: undefined, name, ext: '.atlas', type: 'atlas', id: imgid++, atlasid: id });
 	}
+
+	if (codeFileCount > 1) {
+		throw new Error(`Expected a single ROM source bundle, but found ${codeFileCount}. Ensure only one generated "${romname}.js" exists.`);
+	}
+
+	result.sort((left, right) => {
+		if (left.type !== right.type) return left.type.localeCompare(right.type);
+		return left.name.localeCompare(right.name);
+	});
 
 	// Validation: ensure no duplicate IDs within the same resource type (image or audio)
 	const checkDuplicateIds = (type: string) => {
@@ -711,7 +760,6 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	checkDuplicateNames('data');
 	checkDuplicateNames('image');
 	checkDuplicateNames('audio');
-	checkDuplicateNames('data');
 	checkDuplicateNames('model');
 	checkDuplicateNames('fsm');
 
@@ -739,18 +787,38 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 	}
 
 	// Parallelize buffer and image loading
-	const resourcePromises = resMetaList.map(async (meta) => {
-		const type = meta.type;
-		const buffer = meta.filepath ? await readFile(meta.filepath) : null;
-		let img: any = undefined;
-		if (type === 'image') img = await getImageFromBuffer(buffer);
-		const toAdd: Resource = {
-			...meta,
-			buffer: buffer,
-			img: img,
-		};
-
-		return toAdd;
+	const resourcePromises = resMetaList.map(async (meta): Promise<Resource> => {
+		const buffer = meta.filepath ? await readFile(meta.filepath) : undefined;
+		switch (meta.type) {
+			case 'image': {
+				if (!buffer) {
+					throw new Error(`Image resource "${meta.name}" is missing its binary payload.`);
+				}
+				const img = await getImageFromBuffer(buffer);
+				return {
+					...meta,
+					buffer,
+					img,
+				};
+			}
+			case 'audio':
+			case 'data':
+			case 'aem':
+			case 'model':
+			case 'fsm':
+			case 'romlabel':
+			case 'rommanifest':
+			case 'atlas':
+				return {
+					...meta,
+					buffer,
+				};
+			default:
+				return {
+					...meta,
+					buffer,
+				};
+		}
 	});
 	resourcePromises.push((async () => {
 		const megarom_filename = `${rom_name}.js`;
@@ -762,9 +830,7 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 			name: megarom_filename,
 			ext: '.js',
 			type: 'code',
-			img: undefined as any, // Add missing fields to match Resource
 			id: 1,
-			collisionType: undefined as collisiontype // Add missing fields to match Resource
 		};
 	})());
 
@@ -1003,8 +1069,11 @@ export async function generateRomAssets(resources: Resource[]) {
  * @param generated_atlas - An optional canvas element where an atlas has been generated.
  * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
  */
-export function buildImgMeta(res: Resource): ImgMeta {
+export function buildImgMeta(res: ImageResource): ImgMeta {
 	const img = res.img;
+	if (!img) {
+		throw new Error(`Image resource "${res.name}" is missing its decoded image data.`);
+	}
 	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
 	let extracted_hitpolygon: Polygon[] = undefined;
 	let hitpolygons: {
@@ -1051,17 +1120,19 @@ export function buildImgMeta(res: Resource): ImgMeta {
 		hitpolygons: hitpolygons
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		const targetAtlas = res.targetAtlasIndex;
+		const texcoords = res.atlasTexcoords;
 		imgmeta = {
 			...imgmeta,
-			atlassed: res.targetAtlasIndex !== undefined,
-			atlasid: res.targetAtlasIndex,
-			texcoords: res.imgmeta.texcoords,
+			atlassed: targetAtlas !== undefined,
+			atlasid: targetAtlas,
+			texcoords: texcoords ? [...texcoords] : undefined,
 		};
 	}
 	return imgmeta;
 }
 
-export function buildImgMetaForAtlas(res: Resource): ImgMeta {
+export function buildImgMetaForAtlas(res: AtlasResource): ImgMeta {
 	return {
 		atlassed: false,
 		atlasid: res.atlasid, // Use the atlas ID from the base resource
@@ -1082,16 +1153,16 @@ export function buildImgMetaForAtlas(res: Resource): ImgMeta {
  */
 export async function createAtlasses(resources: Resource[]) {
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		const atlasses = resources.filter(res => res.type === 'atlas');
+		const atlasses = resources.filter((res): res is AtlasResource => res.type === 'atlas');
 		if (atlasses.length === 0) throw new Error('No atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any atlasses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
 		// Determine the indexes of atlasses to be generated
 		for (const atlas of atlasses) {
-			const image_assets = resources.filter(resource => resource.type === 'image');
+			const image_assets = resources.filter((resource): resource is ImageResource => resource.type === 'image');
 			const filteredImages = image_assets.filter(resource => resource.targetAtlasIndex === atlas.atlasid);
 			const atlasCanvas = createOptimizedAtlas(filteredImages);
 			if (!atlasCanvas) throw new Error(`Failed to create texture atlas for ${atlas.name}.`);
 			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
-			atlas.buffer = (atlasCanvas as (HTMLCanvasElement & { toBuffer: (format: string) => Buffer })).toBuffer('image/png'); // Convert canvas to PNG buffer
+			atlas.buffer = atlasCanvas.toBuffer('image/png'); // Convert canvas to PNG buffer
 			await writeFile(`./rom/_ignore/${generateAtlasName(atlas.atlasid)}.png`, atlas.buffer);
 		}
 	}
@@ -1117,84 +1188,85 @@ export async function finalizeRompack(
 	rom_name: string,
 	debug: boolean
 ) {
-	// Capture resource buffers in the order as given by the assetList
-	// @ts-ignore
-	const buffers: Buffer[] = [];
-	const outfile = `${rom_name}${debug ? '.debug' : ''}.rom`; // Use the provided rom_name as the output file name
-	let offset = 0; // Offset for the next buffer to be added
+	const outfileBasename = `${rom_name}${debug ? '.debug' : ''}.rom`;
+	const distPath = `./dist/${outfileBasename}`;
+	const ignoreDir = './rom/_ignore';
 
-	// First write the romlabel buffer if it exists and remove it from the assetList
-	// Note that we will use the romlabel buffer to prepend the ROM label to the final output
-	// This is useful when changing the extension of the ROM file to .PNG, which will then be recognized as a PNG file by the browser.
-	// @ts-ignore
-	let romlabel_buffer: Buffer | undefined = undefined;
-	let romlabel_index = assetList.findIndex(asset => asset.type === 'romlabel');
-	if (romlabel_index >= 0) {
-		romlabel_buffer = assetList[romlabel_index].buffer;
-		// Remove the romlabel from the assetList
-		assetList.splice(romlabel_index, 1);
+	await mkdir('./dist', { recursive: true });
+	await mkdir(ignoreDir, { recursive: true });
+
+	let romlabelBuffer: Buffer | undefined;
+	const romlabelIndex = assetList.findIndex(asset => asset.type === 'romlabel');
+	if (romlabelIndex >= 0) {
+		const [romlabel] = assetList.splice(romlabelIndex, 1);
+		if (romlabel?.buffer && romlabel.buffer.length > 0) {
+			romlabelBuffer = Buffer.from(romlabel.buffer);
+		}
 	}
 
-	for (const asset of assetList) {
-		// Main buffer (if nonzero length)
-		const hasBuffer = asset.buffer !== undefined && asset.buffer.length > 0;
-		if (hasBuffer) {
-			// Copy the buffer to avoid modifying the original
-			// @ts-ignore
-			const resBuf = Buffer.from(asset.buffer);
-			// Update asset offsets
-			asset.start = offset;
-			asset.end = offset + resBuf.length;
-			buffers.push(resBuf);
-			offset += resBuf.length;
+	const tempFile = `${ignoreDir}/.${outfileBasename}.work`;
+	const writer = createWriteStream(tempFile);
+	let offset = 0;
+
+	const writeBuffer = async (payload: Buffer) => {
+		if (!payload || payload.length === 0) return;
+		const ok = writer.write(payload);
+		offset += payload.length;
+		if (!ok) {
+			await once(writer, 'drain');
 		}
-		if (asset.texture_buffer && asset.texture_buffer.length > 0) {
-			// @ts-ignore
-			const texBuf = Buffer.from(asset.texture_buffer);
-			asset.texture_start = offset;
-			asset.texture_end = offset + texBuf.length;
-			buffers.push(texBuf);
-			offset += texBuf.length;
+	};
+
+	try {
+		for (const asset of assetList) {
+			if (asset.buffer && asset.buffer.length > 0) {
+				const mainBuffer = Buffer.from(asset.buffer);
+				asset.start = offset;
+				asset.end = offset + mainBuffer.length;
+				await writeBuffer(mainBuffer);
+			}
+			if (asset.texture_buffer && asset.texture_buffer.length > 0) {
+				const textureBuffer = Buffer.from(asset.texture_buffer);
+				asset.texture_start = offset;
+				asset.texture_end = offset + textureBuffer.length;
+				await writeBuffer(textureBuffer);
+			}
+			const perMeta = asset.imgmeta ?? asset.audiometa;
+			if (perMeta) {
+				const encoded = Buffer.from(encodeBinary(perMeta));
+				asset.metabuffer_start = offset;
+				asset.metabuffer_end = offset + encoded.length;
+				await writeBuffer(encoded);
+			}
+			delete asset.imgmeta;
+			delete asset.audiometa;
+			delete asset.buffer;
+			delete asset.texture_buffer;
 		}
-		// Per-asset metadata
-		const perMeta = asset.imgmeta ?? asset.audiometa;
-		if (perMeta) {
-			// @ts-ignore
-			const metaBuf = Buffer.from(encodeBinary(perMeta));
-			asset.metabuffer_start = offset;
-			asset.metabuffer_end = offset + metaBuf.length;
-			buffers.push(metaBuf);
-			offset += metaBuf.length;
-		}
-		// Remove per-asset fields
-		delete asset.imgmeta;
-		delete asset.audiometa;
-		// Remove the buffer from the asset, so that it is not included in the final JSON output
-		delete asset.buffer;
-		delete asset.texture_buffer;
+
+		const metadataBuffer = Buffer.from(encodeBinary(assetList));
+		const globalMetadataOffset = offset;
+		const globalMetadataLength = metadataBuffer.length;
+		await writeBuffer(metadataBuffer);
+
+		const footer = Buffer.alloc(16);
+		footer.writeBigUInt64LE(BigInt(globalMetadataOffset), 0);
+		footer.writeBigUInt64LE(BigInt(globalMetadataLength), 8);
+		await writeBuffer(footer);
+	} finally {
+		writer.end();
 	}
 
-	// Global metadata
-	// @ts-ignore
-	const binaryAssetListBuffer = Buffer.from(encodeBinary(assetList));
-	const globalMetadataOffset = offset;
-	const globalMetadataLength = binaryAssetListBuffer.length;
-	buffers.push(binaryAssetListBuffer);
+	await finished(writer);
+	const romBinary = await readFile(tempFile);
+	const compressed = Buffer.from(zip(romBinary));
+	const finalPayload = romlabelBuffer
+		? Buffer.concat([romlabelBuffer, compressed])
+		: compressed;
 
-	// Footer
-	// @ts-ignore
-	const rompackFooter = Buffer.alloc(16);
-	rompackFooter.writeBigUInt64LE(BigInt(globalMetadataOffset), 0);
-	rompackFooter.writeBigUInt64LE(BigInt(globalMetadataLength), 8);
-	buffers.push(rompackFooter);
-
-	// Write final output
-	// @ts-ignore
-	const all = Buffer.concat(buffers);
-	const zipped = zip(all);
-	// @ts-ignore
-	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped]));
-	await writeFile('./rom/_ignore/romresources.json', JSON.stringify(assetList, null, 2));
+	await writeFile(distPath, finalPayload);
+	await unlink(tempFile);
+	await writeFile(`${ignoreDir}/romresources.json`, JSON.stringify(assetList, null, 2));
 }
 
 export async function deployToServer(_rom_name: string, _title: string) {
@@ -1382,7 +1454,7 @@ export async function isRebuildRequired(romname: string, bootloaderPath: string,
 			const entryPath = join(dir, entry.name);
 
 			if (entry.isDirectory()) {
-				if (entry.name === '_ignore') {
+				if (entry.name === '_ignore' || entry.name === 'node_modules') {
 					continue;
 				}
 				const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets);

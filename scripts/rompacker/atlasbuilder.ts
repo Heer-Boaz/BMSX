@@ -1,4 +1,5 @@
-import type { Resource } from './rompacker.rompack';
+import type { Canvas, CanvasRenderingContext2D } from 'canvas';
+import type { AtlasTexcoords, ImageResource } from './rompacker.rompack';
 // @ts-ignore
 const { createCanvas } = require('canvas');
 
@@ -338,7 +339,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 	return { items: items, width: width, height: height };
 }
 
-export function createOptimizedAtlas(imageResources: Resource[]): HTMLCanvasElement {
+export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 	const rects = imageResources.map(img_resource => ({ x: undefined as number, y: undefined as number, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
 	const maxrect_result = maximalRectanglesPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
@@ -355,15 +356,28 @@ export function createOptimizedAtlas(imageResources: Resource[]): HTMLCanvasElem
 
 	const atlas_width = CROP_ATLAS ? smallest_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? smallest_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
 
-	const atlasCanvas: HTMLCanvasElement = createCanvas(atlas_width, atlas_height);
+	const atlasCanvas: Canvas = createCanvas(atlas_width, atlas_height);
 	const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
 
 	// Draw images onto the atlas canvas
 	for (const packedRect of smallest_result.items) {
-		const img_asset = imageResources.find(img_asset => img_asset.id == packedRect.item.id);
+		const img_asset = imageResources.find(candidate => candidate.id === packedRect.item.id);
+		if (!img_asset) {
+			throw new Error(`Failed to locate image resource with id ${packedRect.item.id} for atlas packing.`);
+		}
+		if (!img_asset.img) {
+			throw new Error(`Image resource "${img_asset.name}" is missing its image payload.`);
+		}
 		const img = img_asset.img;
 		ctx.drawImage(img, packedRect.x, packedRect.y);
-		img_asset.imgmeta = { ...img_asset.imgmeta, ...uvcoords(packedRect.x, packedRect.y, atlas_width, atlas_height, img.width, img.height) };
+		img_asset.atlasTexcoords = uvcoords(
+			packedRect.x,
+			packedRect.y,
+			atlas_width,
+			atlas_height,
+			img.width,
+			img.height
+		);
 	}
 	return atlasCanvas;
 }
@@ -378,24 +392,18 @@ export function createOptimizedAtlas(imageResources: Resource[]): HTMLCanvasElem
  * @param imageHeight The height of the image.
  * @returns An object containing the UV coordinates of the image in the texture atlas.
  */
-function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-		const result = { width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[] };
-		const left = x / width;
-		const top = y / height;
-		const right = (x + imageWidth) / width;
-		const bottom = (y + imageHeight) / height;
+function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number): AtlasTexcoords {
+	const left = x / width;
+	const top = y / height;
+	const right = (x + imageWidth) / width;
+	const bottom = (y + imageHeight) / height;
 
-		// The vertex order for quads starts at the top-left corner and
-		// proceeds counter-clockwise after the Y-axis flip in the vertex shader.
-		// Arrange the texture coordinates in the same order so sprites are
-		// oriented correctly when drawn.
-		result.texcoords.push(
-			left, top,
-			left, bottom,
-			right, top,
-			right, top,
-			left, bottom,
-			right, bottom
-		);
-		return result;
+	return [
+		left, top,
+		left, bottom,
+		right, top,
+		right, top,
+		left, bottom,
+		right, bottom,
+	] as AtlasTexcoords;
 }

@@ -8,7 +8,7 @@ import { YieArGameState } from './yieargamestate';
 import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
 
 export class EilaModelFSM {
-	@build_fsm()
+	@build_fsm('EilaModelFSM')
 	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {

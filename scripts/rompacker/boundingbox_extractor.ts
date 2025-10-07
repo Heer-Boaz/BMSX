@@ -2,7 +2,7 @@
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
 import type { Area, Polygon, vec2arr } from '../../src/bmsx/rompack/rompack';
-import type { Resource } from './rompacker.rompack';
+import type { ImageResource } from './rompacker.rompack';
 import earcut from 'earcut';
 
 /**
@@ -462,7 +462,7 @@ export class BoundingBoxExtractor {
 		return tris;
 	}
 
-	static decomposeConcaveToConvex(poly: Polygon[], res: Resource): Polygon[] {
+    static decomposeConcaveToConvex(poly: Polygon[], res: ImageResource): Polygon[] {
 		const convexes: Polygon[] = [];
 		const rings = poly
 			.map(p => this.sanitizePolygon(p))
@@ -474,18 +474,18 @@ export class BoundingBoxExtractor {
 			const aTris = tris.reduce((s, t) => s + Math.abs(this.polyArea(t)), 0);
 			const absErr = Math.abs(signedSrc - aTris);
 			const relErr = signedSrc > 1e-6 ? absErr / signedSrc : 0;
-			// Extra validation: compare with mask area from source image when available
-			let maskRelErr = 0;
-			if (res?.img && typeof res.img.getContext === 'function') {
-				try {
-					const img: any = res.img;
-					const ctx = img.getContext('2d');
-					const w = img.width, h = img.height;
-					const data = ctx.getImageData(0, 0, w, h).data;
-					let on = 0; for (let i = 3; i < data.length; i += 4) if (data[i] >= this.DEFAULT_ALPHA_T) on++;
-					const maskArea = on; // unit squares
-					maskRelErr = maskArea > 1e-6 ? Math.abs(maskArea - aTris) / maskArea : 0;
-				} catch { }
+		// Extra validation: compare with mask area from source image when available
+		let maskRelErr = 0;
+		const maybeCanvas = res?.img as unknown as { getContext?: (type: '2d') => CanvasRenderingContext2D; width: number; height: number; };
+		if (maybeCanvas?.getContext) {
+			try {
+				const ctx = maybeCanvas.getContext('2d');
+				const w = maybeCanvas.width, h = maybeCanvas.height;
+				const data = ctx.getImageData(0, 0, w, h).data;
+				let on = 0; for (let i = 3; i < data.length; i += 4) if (data[i] >= this.DEFAULT_ALPHA_T) on++;
+				const maskArea = on; // unit squares
+				maskRelErr = maskArea > 1e-6 ? Math.abs(maskArea - aTris) / maskArea : 0;
+			} catch { }
 			}
 			if (!(aTris > 0) || (absErr > 2 && relErr > 1e-2) || (maskRelErr > 0.2)) {
 				// Fallback to convex hull fan of all ring points

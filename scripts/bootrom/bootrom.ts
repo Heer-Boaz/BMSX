@@ -178,8 +178,6 @@ export const bootrom = {
 			wrapup();
 			bootrom.rom = undefined;
 			delete bootrom.rom;
-			// @ts-ignore
-			$.start();
 		}).catch(err => {
 			showUnhandledRejectionError(err);
 		});
