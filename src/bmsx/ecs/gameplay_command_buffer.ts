@@ -1,38 +1,19 @@
+import type { EventPayload } from '../core/eventemitter';
 import type { AbilityId, AbilityPayloadFor } from '../gas/gastypes';
 import type { Identifier, vec3 } from '../rompack/rompack';
 
-type Move2DCommandBase = {
-	target_id: Identifier;
-	delta: vec3;
+type CommandTable = {
+	'moveto2d': { kind: 'moveto2d'; target_id: Identifier; delta: vec3; };
+	'moveby2d': { kind: 'moveby2d'; target_id: Identifier; delta: vec3; };
+	'posx': { kind: 'posx'; target_id: Identifier; x: number; };
+	'posy': { kind: 'posy'; target_id: Identifier; y: number; };
+	'posz': { kind: 'posz'; target_id: Identifier; z: number; };
+	'activateability': { kind: 'activateability'; owner: Identifier; target_id?: Identifier; ability_id: AbilityId; payload?: AbilityPayloadFor<AbilityId>; source?: string; };
+	'dispatchEvent': { kind: 'dispatchEvent'; target_id: Identifier; event: string; emitter_id?: Identifier; payload?: EventPayload; };
 };
 
-export type MoveTo2DCommand = Move2DCommandBase & {
-	kind: 'moveto2d';
-};
-
-export type MoveBy2DCommand = Move2DCommandBase & {
-	kind: 'moveby2d';
-};
-
-export type ActivateAbilityCommand = {
-	kind: 'ActivateAbility';
-	owner: Identifier;
-	target_id?: Identifier;
-	ability_id: AbilityId;
-	payload?: AbilityPayloadFor<AbilityId>;
-	source?: string;
-};
-
-export type DispatchEventCommand = {
-	kind: 'dispatchEvent';
-	target_id: Identifier;
-	event: string;
-	emitter_id?: Identifier;
-	payload?: unknown;
-};
-
-export type GameplayCommand = MoveTo2DCommand | MoveBy2DCommand | ActivateAbilityCommand | DispatchEventCommand;
-
+export type CommandKind = keyof CommandTable;
+export type GameplayCommand = CommandTable[CommandKind];
 export type GameplayCommandWithMeta = GameplayCommand & { frame: number; seq: number };
 
 /**
