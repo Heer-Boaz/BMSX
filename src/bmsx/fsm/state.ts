@@ -1708,14 +1708,20 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				if (!handlers) return false;
 				const spec = handlers[eventName];
 				if (!spec) return false;
-				const scope = typeof spec === 'object' && spec.scope ? spec.scope : 'all';
+				let scope = typeof spec === 'object' && spec.scope ? spec.scope : 'all';
 				if (scope !== 'all') {
-					const matches = scope === 'self' ? emitter_id === this.id : emitter_id === scope;
+					let matches = false;
+					if (scope === 'self') {
+						matches = emitter_id === this.target_id;
+					} else if (scope === 'parent') {
+						matches = this.parent ? emitter_id === this.parent.target_id : false;
+					} else {
+						matches = emitter_id === scope;
+					}
 					if (!matches) return false;
 				}
-				if (typeof spec === 'string') {
-					ctx.handlerName = this.describeStringHandler(spec);
-				} else {
+				if (typeof spec === 'string') ctx.handlerName = this.describeStringHandler(spec);
+				else {
 					ctx.scope = scope;
 					if (spec.lane) ctx.lane = String(spec.lane);
 					ctx.handlerName = this.describeActionHandler(spec);
