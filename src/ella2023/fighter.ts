@@ -210,23 +210,30 @@ export abstract class Fighter extends SpriteObject {
 	}
 
 	public startAttack(_state: State, payload?: { attackType?: AttackType }): void {
+		if (!payload) {
+			throw new Error('[Fighter] startAttack invoked without payload.');
+		}
 		const attackType = payload.attackType;
 		if (!attackType) {
 			throw new Error('[Fighter] startAttack invoked without attack type.');
 		}
 		this.currentAttackType = attackType;
-		const opponent = this.getAttackOpponent();
 		this.sc.dispatch_event(`animate_${attackType}`, this);
-		this.doAttackFlow(attackType, opponent);
 	}
 
 	public finishAttack(_state: State, payload?: { attackType?: AttackType }): void {
-		const resolved = payload.attackType ?? this.currentAttackType;
-		if (!resolved) {
+		let resolved: AttackType | null = null;
+		if (payload && payload.attackType) {
+			resolved = payload.attackType;
+		} else if (this.currentAttackType) {
+			resolved = this.currentAttackType;
+		}
+		if (resolved === null) {
 			throw new Error('[Fighter] finishAttack invoked without attack type.');
 		}
 		this.previousAttackType = resolved;
 		this.currentAttackType = null;
+		this.hideHitMarker();
 	}
 
 	public doAttackFlow(attackType: AttackType, opponent: Fighter | null): boolean {
@@ -247,10 +254,6 @@ export abstract class Fighter extends SpriteObject {
 			$.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
 		}
 		return hit;
-	}
-
-	public performAttack(attackType: AttackType): void {
-		this.startAttack(undefined, { attackType });
 	}
 
 	public completeAttack(attackType: AttackType): void {

@@ -19,6 +19,14 @@ type AttackEventPayload = EventPayload & { attackType?: AttackType };
 type AnimationEventPayload = EventPayload & { animation_name?: string };
 type JumpEventPayload = EventPayload & { direction?: Direction | null; directional?: boolean | string };
 
+const ATTACK_FRAMES: Record<AttackType, number> = {
+	punch: 6,
+	highkick: 8,
+	lowkick: 7,
+	duckkick: 6,
+	flyingkick: 10,
+};
+
 const CONTROL_MACHINE_ID = 'fighter_control';
 const STOER_STATE_PATH = `${CONTROL_MACHINE_ID}:/stoerheidsdans`;
 const NAGENIETEN_STATE_PATH = `${CONTROL_MACHINE_ID}:/nagenieten`;
@@ -122,6 +130,21 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						this.startAttack(state, resolved);
 					},
 					on: {
+						'window.attackActive.start': {
+							do(this: Fighter) {
+								const attackType = this.currentAttackType;
+								if (!attackType) {
+									throw new Error('[FighterFSMs] Attack window opened without active attack.');
+								}
+								const opponent = this.getAttackOpponent();
+								this.doAttackFlow(attackType, opponent);
+							},
+						},
+						'window.attackActive.end': {
+							do(this: Fighter) {
+								this.hideHitMarker();
+							},
+						},
 						animationEnd: {
 							do(this: Fighter, _state: State, payload?: AnimationEventPayload): StateTransition | void {
 								const animation = payload?.animation_name;
@@ -135,11 +158,20 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						},
 					},
 					exiting_state(this: Fighter, state: State, payload?: AttackEventPayload) {
-						const resolved = resolveAttackPayload(payload ?? { attackType: this.currentAttackType });
+						let nextPayload: AttackEventPayload | undefined = payload;
+						const activeType = this.currentAttackType;
+						if (!nextPayload || !nextPayload.attackType) {
+							if (!activeType) {
+								throw new Error('[FighterFSMs] Attack exit missing active attack type.');
+							}
+							nextPayload = { attackType: activeType };
+						}
+						const resolved = resolveAttackPayload(nextPayload);
 						this.finishAttack(state, resolved);
+						this.hideHitMarker();
 						this.abilitySystem.removeTags('state.attacking');
 					},
-				},
+					},
 			},
 		},
 		airborne: {
@@ -177,15 +209,44 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 							states: {
 								_ready: {},
 								active: {
-									entering_state(this: Fighter) {
+									entering_state(this: Fighter, state: State, payload?: AttackEventPayload) {
+										let nextPayload: AttackEventPayload | undefined = payload;
+										if (!nextPayload || !nextPayload.attackType) {
+											nextPayload = { attackType: 'flyingkick' };
+										}
+										const resolved = resolveAttackPayload(nextPayload);
 										this.abilitySystem.addTags('state.attacking', 'state.airborne.attackUsed');
-										this.performAttack('flyingkick');
+										this.startAttack(state, resolved);
 									},
 									on: {
-										flyingkick_end: '../_ready',
+										'window.attackActive.start': {
+											do(this: Fighter) {
+												const attackType = this.currentAttackType;
+												if (attackType !== 'flyingkick') {
+													throw new Error('[FighterFSMs] Flying kick window opened without active flying kick.');
+												}
+												const opponent = this.getAttackOpponent();
+												this.doAttackFlow('flyingkick', opponent);
+											},
+										},
+										'window.attackActive.end': {
+											do(this: Fighter) {
+												this.hideHitMarker();
+											},
+										},
+										animationEnd: {
+											if(this: Fighter, _state: State, payload?: AnimationEventPayload) {
+												if (!payload) return false;
+												const animation = payload.animation_name;
+												if (!animation) return false;
+												return animation === 'flyingkick';
+											},
+											to: '../_ready',
+										},
 									},
 									exiting_state(this: Fighter) {
 										this.completeAttack('flyingkick');
+										this.hideHitMarker();
 										this.abilitySystem.removeTags('state.attacking');
 										$.emitPresentation('animate_jump', this);
 									},
@@ -263,27 +324,6 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 				setTicksToLastFrame(_state);
 			},
 		},
-		'$animationEnd': {
-			do(this: Fighter, _state: State, payload?: AnimationEventPayload) {
-				const animation = payload?.animation_name;
-				if (!animation) return;
-				switch (animation) {
-					case 'highkick':
-					case 'punch':
-					case 'lowkick':
-						this.sc.dispatch_event('go_idle', this);
-						break;
-					case 'flyingkick':
-						this.sc.dispatch_event('flyingkick_end', this);
-						break;
-					case 'duckkick':
-						if (!this.performingStoerheidsdans) {
-							this.sc.dispatch_event('go_duck', this);
-						}
-						break;
-				}
-			},
-		},
 		'$animate_idle': '_idle',
 		'$animate_humiliated': 'humiliated',
 		'$animate_walk': {
@@ -328,7 +368,7 @@ const playerAnimationBlueprint: StateMachineBlueprint = {
 		lowkick: createAttackAnimationState('lowkick', 'heavy'),
 		punch: createAttackAnimationState('punch', 'light'),
 		duckkick: createAttackAnimationState('duckkick', 'light'),
-		flyingkick: createAttackAnimationState('flyingkick', 'heavy', true),
+		flyingkick: createAttackAnimationState('flyingkick', 'heavy'),
 		duck: {
 			entering_state(this: Fighter) {
 				setSpriteFrame(this, 'duck');
@@ -412,24 +452,42 @@ function setSpriteFrame(self: Fighter, frameKey: string): void {
 	self.imgid = sprite;
 }
 
-function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'heavy', emitOnExit: boolean = false): StateMachineBlueprint {
-	const state: StateMachineBlueprint = {
-		ticks2advance_tape: 15,
+function createAttackAnimationState(name: AttackType, weaponClass: 'light' | 'heavy'): StateMachineBlueprint {
+	const configuredFrames = ATTACK_FRAMES[name];
+	const totalFrames = configuredFrames > 0 ? configuredFrames : 1;
+	const tape: number[] = [];
+	for (let i = 0; i < totalFrames; i += 1) {
+		tape.push(i);
+	}
+	const startFrame = Math.max(0, Math.min(totalFrames - 1, Math.floor(totalFrames * 0.32)));
+	const endFrame = Math.max(startFrame, Math.min(totalFrames - 1, Math.floor(totalFrames * 0.55)));
+	return {
+		tape_data: tape,
+		ticks2advance_tape: 1,
+		windows: [
+			{
+				name: 'attackActive',
+				start: { frame: startFrame },
+				end: { frame: endFrame },
+				tag: 'attack.active',
+				lane: 'gameplay',
+			},
+		],
+		markers: [
+			{ frame: 0, lane: 'presentation', event: `fx.${name}.windup` },
+		],
 		entering_state(this: Fighter) {
 			setSpriteFrame(this, name);
 			$.emitGameplay('combat.attack', this, { animation_name: name, weaponClass });
 		},
-		tape_next(this: Fighter) {
+		tape_next(this: Fighter, state: State) {
+			if (!state.is_at_tape_end) {
+				return;
+			}
 			$.emit('animationEnd', this, { animation_name: name });
 			$.emitGameplay(`fighter.attack.animation.${name}.finished`, this, { attackType: name });
 		},
 	};
-	if (emitOnExit) {
-		state.exiting_state = function (this: Fighter) {
-			$.emitGameplay(`fighter.attack.animation.${name}.finished`, this, { attackType: name });
-		};
-	}
-	return state;
 }
 
 export default FighterFSMs;
