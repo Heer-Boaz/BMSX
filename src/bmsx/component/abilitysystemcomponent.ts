@@ -64,9 +64,13 @@ export class AbilitySystemComponent extends Component {
 		const phase = $.world.currentPhase;
 		// Allow mutations while the world is constructing objects (no active phase yet)
 		if (phase === null) return;
-		if (phase === TickGroup.AbilityUpdate || phase === TickGroup.ModeResolution) return;
+		if (
+			phase === TickGroup.AbilityUpdate ||
+			phase === TickGroup.ModeResolution ||
+			phase === TickGroup.Animation
+		) return;
 		const phaseName = TickGroup[phase] ?? `${phase}`;
-		throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only AbilityUpdate (Phase 2) or ModeResolution (Phase 3) may mutate gameplay tags.`);
+		throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only AbilityUpdate (Phase 2), ModeResolution (Phase 3), or Animation (Phase 5) may mutate gameplay tags.`);
 	}
 
 	// Reference counts for effect-granted tags
