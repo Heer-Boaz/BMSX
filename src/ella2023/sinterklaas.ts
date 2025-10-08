@@ -1,5 +1,5 @@
 import { $, BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, insavegame, vec3, type RevivableObjectArgs } from 'bmsx';
-import { JumpingWhileLeavingScreenComponent } from './eila';
+import { JumpingWhileLeavingScreenComponent } from './fighter';
 import { Fighter } from "./fighter";
 import { SINTERKLAAS_START_HP } from './gameconstants';
 import { EilaEventService } from './worldmodule';
