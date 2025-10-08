@@ -15,6 +15,7 @@ import { CustomVisualComponent } from '../../component/customvisual_component';
 import { Collider2DComponent } from '../../component/collisioncomponents';
 import { V3 } from '../../render/3d/math3d';
 import type { SpawnReason } from '../world';
+import { AbilitySystemComponent } from '../../component/abilitysystemcomponent';
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -194,6 +195,13 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 		// Unbind and clear parent linkage
 		component.unbind();
 		component.clearParentLink();
+	}
+
+	/**
+	 * Shorthand getter for retrieving the ability system component attached to this object.
+	 */
+	public get abilitySystem(): AbilitySystemComponent | undefined {
+		return this.getUniqueComponent(AbilitySystemComponent);
 	}
 
 	/**

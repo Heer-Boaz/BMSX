@@ -8,7 +8,8 @@ import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';
 import { type id2sstate, type Stateful, type StateTransition, type StateTransitionWithType, type Tape, type TransitionType, type StateEventDefinition, type TickCheckDefinition } from './fsmtypes';
 import { StateDefinition } from './statedefinition';
-import { EventPayload } from '../core/eventemitter';
+import { EventPayload, EventLane } from '../core/eventemitter';
+import type { AbilitySystemComponent } from '../component/abilitysystemcomponent';
 
 type TransitionExecutionMode = 'immediate' | 'queued' | 'deferred';
 
@@ -81,6 +82,52 @@ interface TransitionGuardDiagnostics {
 }
 
 const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start of the tape, so that the first index of the tape is considered when the `next`-event is triggered
+
+function uniqueStrings(values: readonly string[] | undefined): string[] {
+	if (!values || values.length === 0) return [];
+	return Array.from(new Set(values));
+}
+
+function emitMarkerEvent(lane: EventLane | 'any', event: string, target: Stateful, payload?: EventPayload): void {
+	switch (lane) {
+		case 'presentation':
+			$.emitPresentation(event, target, payload);
+			break;
+		case 'gameplay':
+			$.emitGameplay(event, target, payload);
+			break;
+		default:
+			$.event_emitter.emit(event, target, payload);
+			break;
+	}
+}
+
+function fireMarkersForFrame(node: State, frame: number): void {
+	const definition = node.definition;
+	const compiled = definition._compiled_markers;
+	if (!compiled) return;
+	const bucket = compiled.byFrame[frame];
+	if (!bucket || bucket.length === 0) return;
+
+	const target = node.target as Stateful & { abilitySystem?: AbilitySystemComponent };
+	for (const marker of bucket) {
+		const addTags = uniqueStrings(marker.addTags);
+		const removeTags = uniqueStrings(marker.removeTags);
+		const hasAdd = addTags.length > 0;
+		const hasRemove = removeTags.length > 0;
+		if (hasAdd || hasRemove) {
+			const abilitySystem = target.abilitySystem;
+			if (!abilitySystem) {
+				throw new Error(`[FSM] Marker '${marker.event}' requires ability system on target '${target.id}'.`);
+			}
+			if (hasAdd) abilitySystem.addTags(...addTags);
+			if (hasRemove) abilitySystem.removeTags(...removeTags);
+		}
+		const lane = marker.lane ?? 'gameplay';
+		const payload = marker.payload ? { ...marker.payload } : undefined;
+		emitMarkerEvent(lane, marker.event, target, payload);
+	}
+}
 
 @insavegame
 /**
@@ -649,6 +696,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	private transition_queue: TransitionQueueItem[];
 
+	private skipMarkerForFrameZero: boolean = false;
+
 	private transitionContextStack?: TransitionDiagContext[];
 
 	private definitionOrThrow(): StateDefinition {
@@ -772,17 +821,95 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 					this.runWithTransitionContext(
 						() => this.hydrateContext(t.diag, 'queue-drain', 'queued-execution'),
 						() => {
-							this.transitionToState(t.state_id, t.transition_type, t.payload, 'deferred');
+							this.transitionToState(t.path, t.transition_type, t.payload, 'deferred');
 						},
 					);
 				} else {
-					this.transitionToState(t.state_id, t.transition_type, t.payload, 'deferred');
+					this.transitionToState(t.path, t.transition_type, t.payload, 'deferred');
 				}
 			}
 			this.transition_queue.length = 0;
 		} finally {
 			this.is_processing_queue = false;
 		}
+	}
+
+	private dispatchMarkersForTapeFrame(previousFrame: number, nextFrame: number): void {
+		const tape = this.tape;
+		if (!tape || tape.length === 0) return;
+		if (nextFrame < 0 || nextFrame >= tape.length) return;
+		if (nextFrame === previousFrame) return;
+		if (nextFrame === 0 && this.skipMarkerForFrameZero) {
+			this.skipMarkerForFrameZero = false;
+			return;
+		}
+		fireMarkersForFrame(this, nextFrame);
+	}
+
+	private syncWindowTagsAtCurrentFrame(): void {
+		const compiled = this.definition._compiled_markers;
+		const tape = this.tape;
+		if (!compiled) return;
+		const abilitySystem = (this.target as Stateful & { abilitySystem?: AbilitySystemComponent }).abilitySystem;
+		const controlledTags = new Set<string>();
+		for (const bucket of Object.values(compiled.byFrame)) {
+			if (!bucket) continue;
+			for (const marker of bucket) {
+				if (marker.addTags) for (const tag of marker.addTags) controlledTags.add(tag);
+				if (marker.removeTags) for (const tag of marker.removeTags) controlledTags.add(tag);
+			}
+		}
+		if (!abilitySystem || controlledTags.size === 0) return;
+
+		const allTags = Array.from(controlledTags);
+		abilitySystem.removeTags(...allTags);
+
+		if (!tape || this._tapehead < 0) return;
+		const head = Math.min(this._tapehead, tape.length - 1);
+		if (head < 0) return;
+
+		const counts = new Map<string, number>();
+		for (let frame = 0; frame <= head; frame++) {
+			const bucket = compiled.byFrame[frame];
+			if (!bucket) continue;
+			for (const marker of bucket) {
+				if (marker.addTags) {
+					for (const tag of marker.addTags) {
+						const next = (counts.get(tag) ?? 0) + 1;
+						counts.set(tag, next);
+					}
+				}
+				if (marker.removeTags) {
+					for (const tag of marker.removeTags) {
+						const current = counts.get(tag) ?? 0;
+						const next = current - 1;
+						counts.set(tag, next > 0 ? next : 0);
+					}
+				}
+			}
+		}
+
+		const active = Array.from(counts.entries()).filter(([, count]) => count > 0).map(([tag]) => tag);
+		if (active.length > 0) abilitySystem.addTags(...uniqueStrings(active));
+	}
+
+	private applyEntryMarkers(next_state: StateTransition | string | void): void {
+		if (next_state !== undefined) {
+			this.skipMarkerForFrameZero = false;
+			return;
+		}
+		const compiled = this.definition._compiled_markers;
+		if (!compiled) {
+			this.skipMarkerForFrameZero = false;
+			return;
+		}
+		const bucket = compiled.byFrame[0];
+		if (!bucket || bucket.length === 0) {
+			this.skipMarkerForFrameZero = false;
+			return;
+		}
+		fireMarkersForFrame(this, 0);
+		this.skipMarkerForFrameZero = true;
 	}
 
 	/**
@@ -868,6 +995,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 	 */
 	public onLoadSetup(): void {
 		this.bind();
+		this.reapplyMarkersForCurrentFrame(true);
 	}
 
 	/**
@@ -882,19 +1010,26 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			throw new Error(`No start state defined for state machine '${this.id}', while the state machine has states defined.'`); // If there are states defined, but no start state, throw an error as we can't start the state machine
 		}
 
-		const startStateDef = this.states[startStateId].definition; // Get the start state definition from the state machine definition
-		if (!startStateDef) throw new Error(`[State] start(): Start state '${startStateId}' not found in state machine '${this.id}'.`); // If the start state is not found in the states, throw an error
+		const states = this.states;
+		if (!states) {
+			throw new Error(`[State] start(): State '${this.id}' has no instantiated substates.`);
+		}
+		const startInstance = states[startStateId];
+		if (!startInstance) throw new Error(`[State] start(): Start state '${startStateId}' not found in state machine '${this.id}'.`);
+		const startStateDef = startInstance.definition;
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
 		this.withCriticalSection(() => {
 			const enterStart = startStateDef.entering_state;
+			let startNext: StateTransition | Identifier | void;
 			if (typeof enterStart === 'function') {
-				enterStart.call(this.target, this.states[startStateId]);
+				startNext = enterStart.call(this.target, startInstance);
 			}
+			startInstance.applyEntryMarkers(startNext);
 		});
 
 		// Start the state machine for the current active state recursively
-		this.states[startStateId].start();
+		startInstance.start();
 	}
 
 	/**
@@ -1199,7 +1334,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (typeof transition === 'string') {
 			return { state_id: transition, payload };
 		}
-		return { state_id: transition.state_id, payload: transition.payload };
+		return { state_id: transition.path, payload: transition.payload };
 	}
 
 	transition_to(state_id: Identifier, payload?: EventPayload): void;
@@ -1388,9 +1523,9 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				const outcome: TransitionOutcomeSnapshot = { from: this.currentid, to: state_id, type: transition_type, execution: 'queued', status: 'queued', reason: 'critical-section' };
 				this.recordTransitionOutcomeOnContext(outcome);
 				this.emitTransitionTrace({ outcome: 'queued', execution: 'queued', from: this.currentid, to: state_id, transitionType: transition_type, context, payload, queueSize: this.transition_queue.length + 1, reason: 'critical-section' });
-				this.transition_queue.push({ state_id, payload, transition_type, diag: context });
+				this.transition_queue.push({ path: state_id, payload, transition_type, diag: context });
 			} else {
-				this.transition_queue.push({ state_id, payload, transition_type });
+				this.transition_queue.push({ path: state_id, payload, transition_type });
 			}
 			return;
 		}
@@ -1455,6 +1590,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 					() => enterHandler.call(this.target, cur, payload),
 				)
 				: undefined;
+			cur.applyEntryMarkers(next);
 			cur.transitionToNextStateIfProvided(next);
 
 			if (diagEnabled) {
@@ -1516,7 +1652,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		}
 
 		if (typeof next_state === 'string') {
-			return { state_id: next_state };
+			return { path: next_state };
 		}
 
 		if (typeof next_state === 'object') {
@@ -1538,17 +1674,17 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (next_state_transition) {
 			switch (transition_type) {
 				case 'switch':
-					this.switch_to_state(next_state_transition.state_id, next_state_transition.payload);
+					this.switch_to_state(next_state_transition.path, next_state_transition.payload);
 					break;
 				case 'force_leaf':
-					this.force_leaf_transition(next_state_transition.state_id, next_state_transition.payload);
+					this.force_leaf_transition(next_state_transition.path, next_state_transition.payload);
 					break;
 				case 'revert':
 					this.pop_and_transition();
 					break;
 				case 'to':
 				default:
-					this.transition_to(next_state_transition.state_id, next_state_transition.payload);
+					this.transition_to(next_state_transition.path, next_state_transition.payload);
 					break;
 			}
 		}
@@ -1572,14 +1708,17 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				if (!handlers) return false;
 				const spec = handlers[eventName];
 				if (!spec) return false;
-				if (typeof spec !== 'string') {
-					const scope = spec.scope;
-					if (scope && scope !== 'all' && scope !== emitter_id) return false;
-					ctx.scope = scope ?? ctx.scope;
+				const scope = typeof spec === 'object' && spec.scope ? spec.scope : 'all';
+				if (scope !== 'all') {
+					const matches = scope === 'self' ? emitter_id === this.id : emitter_id === scope;
+					if (!matches) return false;
+				}
+				if (typeof spec === 'string') {
+					ctx.handlerName = this.describeStringHandler(spec);
+				} else {
+					ctx.scope = scope;
 					if (spec.lane) ctx.lane = String(spec.lane);
 					ctx.handlerName = this.describeActionHandler(spec);
-				} else {
-					ctx.handlerName = this.describeStringHandler(spec);
 				}
 				return this.handleStateTransition(spec, payload);
 			},
@@ -1617,19 +1756,19 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		else if (typeof doHandler === 'function') {
 			didRunDo = true;
 			const next = this.getNextState(doHandler.call(this.target, this as State<T>, payload));
-			this.appendActionEvaluation(`do:${doHandler.name || '<anonymous>'}${next ? `->${next.state_id}` : ''}`);
+			this.appendActionEvaluation(`do:${doHandler.name || '<anonymous>'}${next ? `->${next.path}` : ''}`);
 			if (next) {
 				if (next.force_transition_to_same_state && next.transition_type && next.transition_type !== 'to') {
 					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
 				}
 				switch (next.transition_type) {
 					case 'switch':
-						this.appendActionEvaluation(`next:switch->${next.state_id}`);
-						this.switch_to_state(next.state_id, next.payload);
+						this.appendActionEvaluation(`next:switch->${next.path}`);
+						this.switch_to_state(next.path, next.payload);
 						break;
 					case 'force_leaf':
-						this.appendActionEvaluation(`next:force_leaf->${next.state_id}`);
-						this.force_leaf_transition(next.state_id, next.payload);
+						this.appendActionEvaluation(`next:force_leaf->${next.path}`);
+						this.force_leaf_transition(next.path, next.payload);
 						break;
 					case 'revert':
 						this.appendActionEvaluation('next:revert');
@@ -1637,8 +1776,8 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 						break;
 					case 'to':
 					default:
-						this.appendActionEvaluation(`next:to->${next.state_id}`);
-						this.transition_to(next.state_id, next.payload);
+						this.appendActionEvaluation(`next:to->${next.path}`);
+						this.transition_to(next.path, next.payload);
 						break;
 				}
 				return true;
@@ -1653,24 +1792,24 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		if (action.to) {
 			const t = this.getNextState(action.to);
 			if (t) {
-				this.appendActionEvaluation(`fallback:to->${t.state_id}`);
-				this.transition_to(t.state_id, t.payload);
+				this.appendActionEvaluation(`fallback:to->${t.path}`);
+				this.transition_to(t.path, t.payload);
 				return true;
 			}
 		}
 		if (action.switch) {
 			const s = this.getNextState(action.switch);
 			if (s) {
-				this.appendActionEvaluation(`fallback:switch->${s.state_id}`);
-				this.switch_to_state(s.state_id, s.payload);
+				this.appendActionEvaluation(`fallback:switch->${s.path}`);
+				this.switch_to_state(s.path, s.payload);
 				return true;
 			}
 		}
 		if (action.force_leaf) {
 			const f = this.getNextState(action.force_leaf);
 			if (f) {
-				this.appendActionEvaluation(`fallback:force_leaf->${f.state_id}`);
-				this.force_leaf_transition(f.state_id, f.payload);
+				this.appendActionEvaluation(`fallback:force_leaf->${f.path}`);
+				this.force_leaf_transition(f.path, f.payload);
 				return true;
 			}
 		}
@@ -1874,6 +2013,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			this._ticks = 0; // Always reset tapehead ticks after moving tapehead
 			const tape = this.tape;
 			const mode = this.definition.tape_playback_mode ?? 'once';
+			const previousHead = typeof this._tapehead === 'number' ? this._tapehead : TAPE_START_INDEX;
 
 			if (!tape || tape.length === 0) {
 				this._tapehead = TAPE_START_INDEX;
@@ -1892,9 +2032,11 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				if (mode === 'pingpong') {
 					this._tapehead = 0;
 					this._tapePlaybackDirection = 1;
+					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
 					this.tapeend();
 				} else {
 					this._tapehead = 0;
+					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
 					this.tapemove();
 					this.tapeend();
 				}
@@ -1906,15 +2048,18 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 				if (mode === 'loop') {
 					this._tapehead = 0;
 					this._tapePlaybackDirection = 1;
+					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
 					this.tapemove(true);
 				} else if (mode === 'pingpong') {
 					this._tapehead = lastIndex;
 					if (lastIndex > 0) this._tapePlaybackDirection = -1;
+					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
 					this.tapeend();
 					this.updateTapeTickThreshold();
 					return;
 				} else {
 					this._tapehead = lastIndex;
+					this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
 					this.tapeend();
 					this.updateTapeTickThreshold();
 					return;
@@ -1925,6 +2070,7 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 			}
 
 			this._tapehead = v; // Move the tape to new position
+			this.dispatchMarkersForTapeFrame(previousHead, this._tapehead);
 			this.tapemove();
 			this.updateTapeTickThreshold();
 		} finally {
@@ -2095,7 +2241,17 @@ export class State<T extends Stateful = Stateful> implements Identifiable {
 		this.setHeadNoSideEffect(TAPE_START_INDEX); // Reset the tapehead to the beginning of the tape
 		this.setTicksNoSideEffect(0); // Reset the ticks
 		this._tapePlaybackDirection = 1;
+		this.skipMarkerForFrameZero = false;
 		this.updateTapeTickThreshold();
+	}
+
+	public reapplyMarkersForCurrentFrame(recursive: boolean = false): void {
+		this.skipMarkerForFrameZero = false;
+		this.syncWindowTagsAtCurrentFrame();
+		if (!recursive || !this.states) return;
+		for (const child of Object.values(this.states)) {
+			if (child) child.reapplyMarkersForCurrentFrame(true);
+		}
 	}
 
 	/**

@@ -66,6 +66,39 @@ export interface StateEventCondition<T extends Stateful & EventSubscriber = any,
 
 export type listed_sdef_event = { name: string, scope: EventScope, lane?: EventLane | 'any' };
 
+export type MarkerAt = { frame: number } | { u: number };
+
+export type Marker = MarkerAt & {
+	event: string;
+	lane?: EventLane | 'any';
+	payload?: Record<string, any>;
+	addTags?: string[];
+	removeTags?: string[];
+};
+
+export type Window = {
+	name: string;
+	start: MarkerAt;
+	end: MarkerAt;
+	lane?: EventLane | 'any';
+	tag?: string;
+	payloadStart?: Record<string, any>;
+	payloadEnd?: Record<string, any>;
+};
+
+export type CompiledMarker = {
+	frame: number;
+	event: string;
+	lane: EventLane | 'any';
+	payload?: Record<string, any>;
+	addTags?: string[];
+	removeTags?: string[];
+};
+
+export interface CompiledMarkerCache {
+	byFrame: Record<number, CompiledMarker[]>;
+}
+
 /**
  * Represents a state transition.
  */
@@ -73,7 +106,7 @@ export type StateTransition = {
 	/**
 	 * The next state to transition to.
 	 */
-	state_id: Identifier;
+	path: Identifier;
 
 	/**
 	 * The arguments for the state transition.

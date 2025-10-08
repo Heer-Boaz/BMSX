@@ -1,7 +1,7 @@
 import { EventLane, EventScope } from '../core/eventemitter';
 import { type Identifier } from '../rompack/rompack';
 import { excludepropfromsavegame } from '../serializer/serializationhooks';
-import { type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type id2partial_sdef } from './fsmtypes';
+import { type CompiledMarkerCache, type Marker, type MarkerAt, type StateActionSpec, type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateNextHandler, type Tape, type TickCheckDefinition, type Window, type id2partial_sdef } from './fsmtypes';
 import { State } from './state';
 
 function looksLikeStatePath(value: string): boolean {
@@ -28,6 +28,12 @@ export class StateDefinition {
 	 * Optional data associated with the bfsm.
 	 */
 	public data?: { [key: string]: any; };
+
+	public markers?: Marker[];
+
+	public windows?: Window[];
+
+	public _compiled_markers?: CompiledMarkerCache;
 
 	/**
 	 * Indicates whether this state (or nested state machine) runs in parallel with
@@ -299,8 +305,6 @@ export class StateDefinition {
  */
 
 export function validateStateMachine(machinedef: StateDefinition, path: string = machinedef.id): void {
-	if (!machinedef.states) return;
-
 	try {
 		// Strict preflight checks for tape/ticks configuration on the current definition
 		const checkTapeConfig = (def: StateDefinition, atPath: string) => {
@@ -323,8 +327,64 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 			}
 		};
 
+		const resolveMarkerCoordinate = (coordinate: MarkerAt, length: number, label: string): number => {
+			if (length <= 0) {
+				throw new Error(`Cannot resolve marker coordinate '${label}' without tape data.`);
+			}
+			if ('frame' in coordinate) {
+				const frame = coordinate.frame;
+				if (!Number.isFinite(frame) || Math.floor(frame) !== frame) {
+					throw new Error(`Marker coordinate '${label}' uses non-integer frame value '${frame}'.`);
+				}
+				if (frame < 0 || frame >= length) {
+					throw new Error(`Marker coordinate '${label}' frame '${frame}' is outside tape length '${length}'.`);
+				}
+				return frame;
+			}
+			const u = coordinate.u;
+			if (typeof u !== 'number' || Number.isNaN(u)) {
+				throw new Error(`Marker coordinate '${label}' has invalid normalized value '${u}'.`);
+			}
+			if (u < 0 || u > 1) {
+				throw new Error(`Marker coordinate '${label}' normalized value '${u}' must be within [0, 1].`);
+			}
+			if (length === 1) return 0;
+			const projected = Math.round(u * (length - 1));
+			if (projected < 0 || projected >= length) {
+				throw new Error(`Marker coordinate '${label}' resolved frame '${projected}' outside tape length '${length}'.`);
+			}
+			return projected;
+		};
+
+		const validateTimelineAnnotations = (def: StateDefinition, atPath: string) => {
+			const tapeLength = def.tape_data ? def.tape_data.length : 0;
+			if (def.windows && def.windows.length > 0) {
+				if (tapeLength <= 0) {
+					throw new Error(`State '${atPath}' defines windows but has no tape_data.`);
+				}
+				for (const windowDef of def.windows) {
+					const startFrame = resolveMarkerCoordinate(windowDef.start, tapeLength, `${atPath}.windows['${windowDef.name}'].start`);
+					const endFrame = resolveMarkerCoordinate(windowDef.end, tapeLength, `${atPath}.windows['${windowDef.name}'].end`);
+					if (startFrame > endFrame) {
+						throw new Error(`Window '${windowDef.name}' in state '${atPath}' has start frame ${startFrame} after end frame ${endFrame}.`);
+					}
+				}
+			}
+			if (def.markers && def.markers.length > 0) {
+				if (tapeLength <= 0) {
+					throw new Error(`State '${atPath}' defines markers but has no tape_data.`);
+				}
+				for (const marker of def.markers) {
+					resolveMarkerCoordinate(marker, tapeLength, `${atPath}.markers['${marker.event}']`);
+				}
+			}
+		};
+
 		// Validate current definition first
 		checkTapeConfig(machinedef, path);
+		validateTimelineAnnotations(machinedef, path);
+
+		if (!machinedef.states) return;
 
 		const stateIds = Object.keys(machinedef.states);
 
@@ -340,6 +400,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 
 			// Strict preflight for each sub definition
 			checkTapeConfig(stateDef, statePath);
+			validateTimelineAnnotations(stateDef, statePath);
 
 			const checkTransitions = (transitions: { [key: string]: Identifier | StateEventDefinition; }, description: string) => {
 				if (!transitions) return;
@@ -388,63 +449,6 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
 }
 
 function resolveStateDefPath(from: StateDefinition, target: string, origin: string, description: string): void {
-	// // Simple single-pass parser for filesystem-like paths with quoting and escapes
-	// const parse = (input: string): { abs: boolean; up: number; segs: string[] } => {
-	// 	const len = input.length;
-	// 	let i = 0;
-	// 	let abs = false;
-	// 	let up = 0;
-	// 	const segs: string[] = [];
-
-	// 	if (len === 0) return { abs: false, up: 0, segs };
-	// 	if (input[i] === '/') { abs = true; i++; }
-
-	// 	if (!abs) {
-	// 		if (input.startsWith('./', i)) {
-	// 			i += 2;
-	// 		} else {
-	// 			while (input.startsWith('../', i)) { up++; i += 3; }
-	// 		}
-	// 	}
-
-	// 	const pushSeg = (s: string) => {
-	// 		if (s.length === 0 || s === '.') return;
-	// 		if (s === '..') {
-	// 			if (segs.length > 0) segs.pop(); else up++;
-	// 			return;
-	// 		}
-	// 		segs.push(s);
-	// 	};
-
-	// 	while (i < len) {
-	// 		const c = input[i];
-	// 		if (c === '/') { i++; continue; }
-	// 		if (c === '[' && i + 1 < len && input[i + 1] === '"') {
-	// 			i += 2; // skip ["
-	// 			let seg = '';
-	// 			while (i < len) {
-	// 				const ch = input[i++];
-	// 				if (ch === '\\') {
-	// 					if (i < len) {
-	// 						const esc = input[i++];
-	// 						if (esc === '"') seg += '"'; else if (esc === '/') seg += '/'; else seg += esc;
-	// 					}
-	// 					continue;
-	// 				}
-	// 				if (ch === '"' && i < len && input[i] === ']') { i++; break; }
-	// 				seg += ch;
-	// 			}
-	// 			pushSeg(seg);
-	// 			continue;
-	// 		}
-	// 		let start = i;
-	// 		while (i < len && input[i] !== '/') i++;
-	// 		pushSeg(input.slice(start, i));
-	// 	}
-
-	// 	return { abs, up, segs };
-	// };
-
 	const spec = State.parseFsPath(target);
 
 	// Determine starting context

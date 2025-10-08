@@ -133,6 +133,34 @@ export class AbilitySystemComponent extends Component {
 		this.assertExplicitTagMutationAllowed('remove', tag);
 		this.tags.delete(tag);
 	}
+
+	public addTags(...tags: string[]): void {
+		for (const tag of tags) this.addTag(tag);
+	}
+
+	public removeTags(...tags: string[]): void {
+		for (const tag of tags) this.removeTag(tag);
+	}
+
+	public hasAllTags(...tags: string[]): boolean {
+		return tags.every(tag => this.hasTag(tag));
+	}
+
+	public hasAnyTag(...tags: string[]): boolean {
+		return tags.some(tag => this.hasTag(tag));
+	}
+
+	public toggleTag(tag: string): void {
+		if (this.hasTag(tag)) {
+			this.removeTags(tag);
+		} else {
+			this.addTags(tag);
+		}
+	}
+
+	public toggleTags(...tags: string[]): void {
+		for (const tag of tags) this.toggleTag(tag);
+	}
 	public hasGameplayTag(tag: TagId): boolean { return this.tags.has(tag) || ((this.grantedTagRefs.get(tag) ?? 0) > 0); }
 
 	public snapshotTags(): AbilityTagSnapshot {
