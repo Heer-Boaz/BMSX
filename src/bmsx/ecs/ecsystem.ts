@@ -65,9 +65,9 @@ export class ECSystemManager {
 	updateUntil(model: World, maxGroup: TickGroup): void {
 		for (const s of this._systems) {
 			if (s.group <= maxGroup) {
-				const t0 = (typeof performance !== 'undefined' && performance.now) ? $.platform.clock.now() : Date.now();
+				const t0 = $.platform.clock.now();
 				s.update(model);
-				const t1 = (typeof performance !== 'undefined' && performance.now) ? $.platform.clock.now() : Date.now();
+				const t1 = $.platform.clock.now();
 				const id = s.__ecsId ?? s.constructor.name;
 				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
 			}
@@ -78,9 +78,9 @@ export class ECSystemManager {
 	updateFrom(model: World, minGroup: TickGroup): void {
 		for (const s of this._systems) {
 			if (s.group >= minGroup) {
-				const t0 = (typeof performance !== 'undefined' && performance.now) ? $.platform.clock.now() : Date.now();
+				const t0 = $.platform.clock.now();
 				s.update(model);
-				const t1 = (typeof performance !== 'undefined' && performance.now) ? $.platform.clock.now() : Date.now();
+				const t1 = $.platform.clock.now();
 				const anyS = s;
 				const id = anyS.__ecsId ?? s.constructor.name;
 				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
@@ -92,9 +92,9 @@ export class ECSystemManager {
 	updatePhase(model: World, group: TickGroup): void {
 		for (const s of this._systems) {
 			if (s.group === group) {
-				const t0 = (typeof performance !== 'undefined' && performance.now) ? $.platform.clock.now() : Date.now();
+				const t0 = $.platform.clock.now();
 				s.update(model);
-				const t1 = (typeof performance !== 'undefined' && performance.now) ? $.platform.clock.now() : Date.now();
+				const t1 = $.platform.clock.now();
 				const id = s.__ecsId ?? s.constructor.name;
 				this._stats.push({ id, name: s.constructor.name, group: s.group, priority: s.priority, ms: (t1 - t0) });
 			}

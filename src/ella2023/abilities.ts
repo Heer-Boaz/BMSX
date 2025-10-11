@@ -79,8 +79,11 @@ function createAttackAbility(attack: Exclude<AttackType, 'flyingkick'>): Gamepla
 		activation: [
 			{ type: 'dispatch', event: 'mode.action.attack', payload: { attackType: literal(attack) } },
 			{ type: 'emit', event: 'fighter.attack.started', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: 'window.attackActive.start', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'call', action: 'fighter.attack.tryHit', params: { attackType: literal(attack) } },
+			{ type: 'waitEvent', event: 'window.attackActive.end', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'call', action: 'fighter.attack.hideMarker' },
 			{ type: 'waitEvent', event: `fighter.attack.animation.${attack}.finished`, scope: { kind: 'self' }, lane: 'gameplay' },
-			{ type: 'dispatch', event: 'mode.action.complete', payload: { attackType: literal(attack) } },
 			{ type: 'emit', event: 'fighter.attack.completed', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
 		],
 	};
@@ -93,12 +96,14 @@ function createFlyingKickAbility(): GameplayAbilityDefinition {
 		id,
 		requiredTags: ['state.airborne'],
 		blockedTags: ['state.attacking', 'state.airborne.attackUsed', 'state.combat_disabled'],
-		tags: { grant: ['state.airborne.attackUsed'] },
 		activation: [
 			{ type: 'dispatch', event: 'mode.action.attack', payload: { attackType: literal(attack) } },
 			{ type: 'emit', event: 'fighter.attack.started', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
+			{ type: 'waitEvent', event: 'window.attackActive.start', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'call', action: 'fighter.attack.tryHit', params: { attackType: literal(attack) } },
+			{ type: 'waitEvent', event: 'window.attackActive.end', scope: { kind: 'self' }, lane: 'gameplay' },
+			{ type: 'call', action: 'fighter.attack.hideMarker' },
 			{ type: 'waitEvent', event: 'fighter.attack.animation.flyingkick.finished', scope: { kind: 'self' }, lane: 'gameplay' },
-			{ type: 'dispatch', event: 'flyingkick_end' },
 			{ type: 'emit', event: 'fighter.attack.completed', payload: { id: literal(id), attackType: literal(attack) }, lane: 'gameplay' },
 		],
 	};

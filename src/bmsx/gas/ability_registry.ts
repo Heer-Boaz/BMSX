@@ -1,4 +1,5 @@
 import type { AbilityId } from './gastypes';
+import { AbilityActionRegistry } from './gameplay_ability';
 
 export type Schema<T> = {
 	validate(value: unknown): value is T;
@@ -10,7 +11,9 @@ class AbilityRegistry {
 	private readonly validators = new Map<AbilityId, (payload: unknown) => void>();
 
 	public register<Id extends AbilityId, P>(id: Id, opts?: { schema?: Schema<P>; validate?: (payload: P) => void }): void {
-		if (this.validators.has(id)) return;
+		if (this.validators.has(id)) {
+			throw new Error(`[AbilityRegistry] '${id}' already registered.`);
+		}
 		if (opts && opts.schema) {
 			this.schemas.set(id, opts.schema as Schema<unknown>);
 		}
@@ -44,6 +47,8 @@ class AbilityRegistry {
 }
 
 export const abilityRegistry = new AbilityRegistry();
+
+export const abilityActions = new AbilityActionRegistry();
 
 export function defineAbility<Id extends AbilityId, P>(id: Id, opts?: { schema?: Schema<P>; validate?: (payload: P) => void }): Id {
 	abilityRegistry.register(id, opts);

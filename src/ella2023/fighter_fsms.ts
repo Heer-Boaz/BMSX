@@ -130,21 +130,6 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 						this.startAttack(state, resolved);
 					},
 					on: {
-						'window.attackActive.start': {
-							do(this: Fighter) {
-								const attackType = this.currentAttackType;
-								if (!attackType) {
-									throw new Error('[FighterFSMs] Attack window opened without active attack.');
-								}
-								const opponent = this.getAttackOpponent();
-								this.doAttackFlow(attackType, opponent);
-							},
-						},
-						'window.attackActive.end': {
-							do(this: Fighter) {
-								this.hideHitMarker();
-							},
-						},
 						animationEnd: {
 							do(this: Fighter, _state: State, payload?: AnimationEventPayload): StateTransition | void {
 								const animation = payload?.animation_name;
@@ -219,21 +204,6 @@ const fighterControlBlueprint: StateMachineBlueprint = {
 										this.startAttack(state, resolved);
 									},
 									on: {
-										'window.attackActive.start': {
-											do(this: Fighter) {
-												const attackType = this.currentAttackType;
-												if (attackType !== 'flyingkick') {
-													throw new Error('[FighterFSMs] Flying kick window opened without active flying kick.');
-												}
-												const opponent = this.getAttackOpponent();
-												this.doAttackFlow('flyingkick', opponent);
-											},
-										},
-										'window.attackActive.end': {
-											do(this: Fighter) {
-												this.hideHitMarker();
-											},
-										},
 										animationEnd: {
 											if(this: Fighter, _state: State, payload?: AnimationEventPayload) {
 												if (!payload) return false;
