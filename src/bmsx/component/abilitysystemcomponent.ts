@@ -17,8 +17,6 @@ import {
 	type AttributeSet,
 	type GameplayEffect,
 	type TagId,
-	type AttributeModifier,
-	type ModifierOp
 } from '../gas/gastypes';
 import {
 	AbilityActionRegistry,
