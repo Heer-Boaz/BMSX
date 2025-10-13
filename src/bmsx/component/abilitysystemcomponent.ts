@@ -16,7 +16,9 @@ import {
 	type AbilitySystemRef,
 	type AttributeSet,
 	type GameplayEffect,
-	type TagId
+	type TagId,
+	type AttributeModifier,
+	type ModifierOp
 } from '../gas/gastypes';
 import {
 	AbilityActionRegistry,
@@ -50,6 +52,9 @@ type ActiveAbilityRun = {
 	removeOnEnd: TagId[];
 };
 
+type TagMutationOperation = 'add' | 'remove';
+const TagMutationPhases = new Set([null, TickGroup.AbilityUpdate, TickGroup.ModeResolution, TickGroup.Animation ]);
+
 @insavegame
 export class AbilitySystemComponent extends Component {
 	static override get unique(): boolean { return true; }
@@ -58,15 +63,10 @@ export class AbilitySystemComponent extends Component {
 	// Explicit tags set by gameplay (not derived from effects)
 	public readonly tags: Set<TagId> = new Set();
 
-	private assertExplicitTagMutationAllowed(op: 'add' | 'remove', tag: TagId): void {
+	private assertExplicitTagMutationAllowed(op: TagMutationOperation, tag: TagId): void {
 		const phase = $.world.currentPhase;
 		// Allow mutations while the world is constructing objects (no active phase yet)
-		if (phase === null) return;
-		if (
-			phase === TickGroup.AbilityUpdate ||
-			phase === TickGroup.ModeResolution ||
-			phase === TickGroup.Animation
-		) return;
+		if (TagMutationPhases.has(phase)) return;
 		const phaseName = TickGroup[phase] ?? `${phase}`;
 		throw new Error(`Gameplay tag '${tag}' ${op} denied: phase '${phaseName}' is not permitted. Only AbilityUpdate (Phase 2), ModeResolution (Phase 3), or Animation (Phase 5) may mutate gameplay tags.`);
 	}
@@ -140,11 +140,11 @@ export class AbilitySystemComponent extends Component {
 	}
 
 	public hasAllTags(...tags: TagId[]): boolean {
-		return tags.every(tag => this.hasTag(tag));
+		return tags.every(tag => this.hasProcessingTag(tag));
 	}
 
 	public hasAnyTag(...tags: TagId[]): boolean {
-		return tags.some(tag => this.hasTag(tag));
+		return tags.some(tag => this.hasProcessingTag(tag));
 	}
 
 	public toggleTag(tag: TagId): void {
@@ -233,9 +233,17 @@ export class AbilitySystemComponent extends Component {
 			if (!this.attrs[m.attr]) continue;
 			let b = byAttr.get(m.attr);
 			if (!b) { b = { mul: 1, add: 0 }; byAttr.set(m.attr, b); }
-			if (m.op === 'override') b.override = m.value;
-			else if (m.op === 'mul') b.mul *= m.value;
-			else if (m.op === 'add') b.add += m.value;
+			switch (m.op) {
+				case 'override':
+					b.override = m.value;
+					break;
+				case 'mul':
+					b.mul *= m.value;
+					break;
+				case 'add':
+					b.add += m.value;
+					break;
+			}
 		}
 		for (const key of Object.keys(this.attrs)) {
 			const a = this.attrs[key];

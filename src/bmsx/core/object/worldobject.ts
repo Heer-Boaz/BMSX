@@ -805,7 +805,7 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 	}
 
 	removeComponentsWithTag(tag: ComponentTag): void {
-		const componentsToRemove = this.components.filter(component => component.hasTag(tag));
+		const componentsToRemove = this.components.filter(component => component.hasProcessingTag(tag));
 		componentsToRemove.forEach(component => this.removeComponentInstance(component));
 	}
 

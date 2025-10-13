@@ -216,7 +216,7 @@ export abstract class Component<T extends WorldObject = WorldObject> implements 
 	 * - Avoids repeated method lookup when used heavily (small performance benefit).
 	 * - Guards against missing tag sets on the constructor prototypes.
 	 */
-	public get hasTag(): (tag: ComponentTag) => boolean {
+	public get hasProcessingTag(): (tag: ComponentTag) => boolean {
 		return (tag: ComponentTag) => {
 			const pre = this.tagsPre;
 			const post = this.tagsPost;
