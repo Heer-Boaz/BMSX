@@ -109,7 +109,6 @@ export class Game {
 	private frameLoopHandle: { stop(): void } | null = null;
 	private _view!: GameView;
 	private _platform!: Platform;
-	private initialViewportSize: vec2 = { x: 256, y: 192 };
 	/**
 	 * Indicates whether the game is currently running.
 	 */
@@ -315,13 +314,6 @@ export class Game {
 		this.updateInterval = 1000 / this.targetFPS;
 		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
 
-		const configuredViewport = worldConfig.viewportSize;
-		if (configuredViewport) {
-			this.initialViewportSize = { x: configuredViewport.x, y: configuredViewport.y };
-		} else {
-			this.initialViewportSize = { x: 256, y: 192 };
-		}
-
 		this._debug = debug ?? this._debug;
 		$debug = this._debug;
 
@@ -335,7 +327,13 @@ export class Game {
 		if (typeof document !== 'undefined') {
 			ensureBrowserBackendFactory();
 		}
-		const gview = new GameView({ viewportSize: this.initialViewportSize, host: resolvedViewHost });
+		const viewportSize = worldConfig.viewportSize ?? { x: 256, y: 192 };
+		const gview = new GameView({
+			viewportSize,
+			canvasSize: worldConfig.viewCanvasSize,
+			offscreenSize: worldConfig.viewOffscreenSize,
+			host: resolvedViewHost,
+		});
 		this._view = gview;
 		const gpuBackend = await resolvedViewHost.createBackend() as GPUBackend;
 		gview.backend = gpuBackend;

@@ -7,34 +7,8 @@ import type { ConsoleGlyph } from './font';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { BmsxConsoleButton } from './types';
-import { Input } from '../input/input';
-import { OnscreenGamepad } from '../input/onscreengamepad';
-
-type PatchedInputPrototype = typeof Input.prototype & {
-	enableOnscreenGamepad(this: Input): void;
-};
-
-const inputConstructor = Input as unknown as {
-	prototype: PatchedInputPrototype;
-	__bmsxConsolePatched?: boolean;
-};
-
-if (!inputConstructor.__bmsxConsolePatched) {
-	const originalEnableOnscreenGamepad = inputConstructor.prototype.enableOnscreenGamepad;
-	inputConstructor.__bmsxConsolePatched = true;
-	inputConstructor.prototype.enableOnscreenGamepad = function (this: Input): void {
-		const self = this as unknown as { onscreenGamepadFactory: (() => OnscreenGamepad) | null };
-		if (!self.onscreenGamepadFactory) {
-			const platform = $.platform;
-			self.onscreenGamepadFactory = () => new OnscreenGamepad(platform.onscreenGamepad);
-		}
-		originalEnableOnscreenGamepad.call(this);
-	};
-}
 
 export type BmsxConsoleApiOptions = {
-	displayWidth: number;
-	displayHeight: number;
 	input: BmsxConsoleInput;
 	storage: BmsxConsoleStorage;
 };
@@ -42,8 +16,6 @@ export type BmsxConsoleApiOptions = {
 const DRAW_LAYER: RectRenderSubmission['layer'] = 'ui';
 
 export class BmsxConsoleApi {
-	private readonly displayWidthValue: number;
-	private readonly displayHeightValue: number;
 	private readonly input: BmsxConsoleInput;
 	private readonly storage: BmsxConsoleStorage;
 	private readonly font: ConsoleFont;
@@ -51,11 +23,14 @@ export class BmsxConsoleApi {
 	private deltaSecondsValue: number = 0;
 
 	constructor(options: BmsxConsoleApiOptions) {
-		if (options.displayWidth <= 0 || options.displayHeight <= 0) {
-			throw new Error('[BmsxConsoleApi] Display width and height must be positive.');
+		const view = $.view;
+		if (!view) {
+			throw new Error('[BmsxConsoleApi] Game view not initialised.');
 		}
-		this.displayWidthValue = Math.floor(options.displayWidth);
-		this.displayHeightValue = Math.floor(options.displayHeight);
+		const viewport = view.viewportSize;
+		if (viewport.x <= 0 || viewport.y <= 0) {
+			throw new Error('[BmsxConsoleApi] Invalid viewport size.');
+		}
 		this.input = options.input;
 		this.storage = options.storage;
 		this.font = new ConsoleFont();
@@ -77,12 +52,12 @@ export class BmsxConsoleApi {
 		return this.deltaSecondsValue;
 	}
 
-	public displayWidth(): number {
-		return this.displayWidthValue;
+	public get displayWidth(): number {
+		return $.view.viewportSize.x;
 	}
 
-	public displayHeight(): number {
-		return this.displayHeightValue;
+	public get displayHeight(): number {
+		return $.view.viewportSize.y;
 	}
 
 	public btn(button: BmsxConsoleButton): boolean {
@@ -94,7 +69,7 @@ export class BmsxConsoleApi {
 	}
 
 	public cls(colorIndex: number): void {
-		this.rectfill(0, 0, this.displayWidthValue, this.displayHeightValue, colorIndex);
+		this.rectfill(0, 0, this.displayWidth, this.displayHeight, colorIndex);
 	}
 
 	public rect(x0: number, y0: number, x1: number, y1: number, colorIndex: number): void {

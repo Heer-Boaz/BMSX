@@ -2,18 +2,18 @@ import type { BmsxConsoleApi, BmsxConsoleCartridge } from 'bmsx/console';
 import { BmsxConsoleButton } from 'bmsx/console';
 import { clamp } from 'bmsx/utils/utils';
 
-const SAVE_VERSION: number = 1;
-const STORAGE_NAMESPACE: string = 'fu_char_mgr_v1';
+const SAVE_VERSION = 2;
+const STORAGE_NAMESPACE = 'fu_char_mgr_v2';
+
+const DIE_STEPS: number[] = [6, 8, 10, 12];
 
 type Mode = 'track' | 'status' | 'edit';
 
-type BaseStats = {
-	str: number;
-	agi: number;
-	int: number;
-	wil: number;
-	def: number;
-	res: number;
+type BaseDice = {
+	dex: number;
+	ins: number;
+	mig: number;
+	wlp: number;
 };
 
 type CharacterPools = {
@@ -27,93 +27,122 @@ type CharacterPools = {
 
 type Character = CharacterPools & {
 	name: string;
-	base: BaseStats;
+	base: BaseDice;
 	smask: number;
 };
-
-type StatModifier = BaseStats;
 
 type StatusDefinition = {
 	id: number;
 	name: string;
-	modifier: StatModifier;
+};
+
+type StatusReductions = {
+	dex: number;
+	ins: number;
+	mig: number;
+	wlp: number;
+};
+
+type CurrentDice = BaseDice;
+
+type Defenses = {
+	def: number;
+	mdef: number;
 };
 
 type ActionFlags = {
 	attack: boolean;
-	defend: boolean;
-	technique: boolean;
+	equipment: boolean;
+	guard: boolean;
+	hinder: boolean;
+	inventory: boolean;
+	objective: boolean;
 	spell: boolean;
-	item: boolean;
+	study: boolean;
+	skill: boolean;
 	other: boolean;
 };
 
 const COLOR_BACKGROUND = 0;
-const COLOR_PANEL = 4;
 const COLOR_PANEL_BORDER = 14;
+const COLOR_PANEL_FILL = 4;
 const COLOR_TEXT = 15;
 const COLOR_TEXT_DIM = 9;
 const COLOR_HEADER = 11;
 const COLOR_HIGHLIGHT = 13;
-const COLOR_BUFF = 7;
-const COLOR_DEBUFF = 6;
+const COLOR_WARNING = 8;
 
 const STATUS_DEFINITIONS: StatusDefinition[] = [
-	createStatus(0, 'HASTE', createModifier(0, 2, 0, 0, 0, 0)),
-	createStatus(1, 'WEAKEN', createModifier(-2, 0, 0, 0, 0, 0)),
-	createStatus(2, 'SHIELD', createModifier(0, 0, 0, 0, 0, 2)),
-	createStatus(3, 'EXPOSED', createModifier(0, 0, 0, 0, -2, 0)),
-	createStatus(4, 'FOCUS', createModifier(0, 0, 2, 1, 0, 0)),
-	createStatus(5, 'POISON', createModifier(0, 0, 0, 0, 0, 0)),
+	{ id: 0, name: 'DAZED' },
+	{ id: 1, name: 'ENRAGED' },
+	{ id: 2, name: 'POISONED' },
+	{ id: 3, name: 'SHAKEN' },
+	{ id: 4, name: 'SLOW' },
+	{ id: 5, name: 'WEAK' },
 ];
 
 const SAVE_SLOT_VERSION = 0;
-const SAVE_SLOT_HPMAX = 1;
-const SAVE_SLOT_MPMAX = 2;
-const SAVE_SLOT_IPMAX = 3;
-const SAVE_SLOT_HP = 4;
-const SAVE_SLOT_MP = 5;
-const SAVE_SLOT_IP = 6;
-const SAVE_SLOT_STR = 7;
-const SAVE_SLOT_AGI = 8;
-const SAVE_SLOT_INT = 9;
-const SAVE_SLOT_WIL = 10;
-const SAVE_SLOT_DEF = 11;
-const SAVE_SLOT_RES = 12;
-const SAVE_SLOT_STATUS = 13;
+const SAVE_SLOT_BASE_DEX = 1;
+const SAVE_SLOT_BASE_INS = 2;
+const SAVE_SLOT_BASE_MIG = 3;
+const SAVE_SLOT_BASE_WLP = 4;
+const SAVE_SLOT_HPMAX = 5;
+const SAVE_SLOT_MPMAX = 6;
+const SAVE_SLOT_IPMAX = 7;
+const SAVE_SLOT_HP = 8;
+const SAVE_SLOT_MP = 9;
+const SAVE_SLOT_IP = 10;
+const SAVE_SLOT_STATUS = 11;
 
-function createModifier(str: number, agi: number, int: number, wil: number, def: number, res: number): StatModifier {
-	return { str, agi, int, wil, def, res };
+function dieToNumber(value: string | number): number {
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return value;
+	}
+	if (typeof value !== 'string') return 0;
+	let cursor = value.trim();
+	if (!cursor) return 0;
+	const first = cursor.charAt(0);
+	if (first === 'd' || first === 'D') {
+		cursor = cursor.slice(1);
+	}
+	const direct = Number(cursor);
+	if (Number.isFinite(direct)) return direct;
+	const match = cursor.match(/\d+/);
+	if (!match) return 0;
+	return Number(match[0]);
 }
 
-function createStatus(id: number, name: string, modifier: StatModifier): StatusDefinition {
-	return { id, name, modifier };
+function dieIndex(value: string | number): number {
+	const numeric = dieToNumber(value);
+	for (let i = 0; i < DIE_STEPS.length; i++) {
+		if (DIE_STEPS[i] === numeric) return i + 1;
+	}
+	return 1;
 }
 
-function cloneStats(stats: BaseStats): BaseStats {
-	return { str: stats.str, agi: stats.agi, int: stats.int, wil: stats.wil, def: stats.def, res: stats.res };
+function stepDie(value: string | number, delta: number): number {
+	const currentIndex = dieIndex(value);
+	const nextIndex = clamp(currentIndex + delta, 1, DIE_STEPS.length);
+	return DIE_STEPS[nextIndex - 1];
 }
 
-function addStats(target: BaseStats, modifier: StatModifier): BaseStats {
-	return {
-		str: target.str + modifier.str,
-		agi: target.agi + modifier.agi,
-		int: target.int + modifier.int,
-		wil: target.wil + modifier.wil,
-		def: target.def + modifier.def,
-		res: target.res + modifier.res,
-	};
+function dieString(value: number): string {
+	return `d${value}`;
+}
+
+function colorForAvailability(ok: boolean): number {
+	return ok ? COLOR_TEXT : COLOR_TEXT_DIM;
 }
 
 class CharacterManagerCart implements BmsxConsoleCartridge {
 	public readonly meta = {
-		title: 'BMSX Console Demo',
-		version: '0.1.0',
+		title: 'Manga Ultima Helper',
+		version: '0.2.0',
 		persistentId: STORAGE_NAMESPACE,
 	};
 
 	private mode: Mode = 'track';
-	private selection: number = 1;
+	private selection = 1;
 	private character: Character = this.createCharacter();
 
 	public init(api: BmsxConsoleApi): void {
@@ -121,7 +150,7 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		this.load(api);
 	}
 
-	public update(api: BmsxConsoleApi, _deltaSeconds: number): void {
+	public update(api: BmsxConsoleApi): void {
 		if (api.btnp(BmsxConsoleButton.ActionX)) {
 			this.advanceMode();
 			this.selection = 1;
@@ -138,9 +167,8 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 	public draw(api: BmsxConsoleApi): void {
 		api.cls(COLOR_BACKGROUND);
 		this.drawHeader(api);
-		this.drawPools(api);
-		this.drawStats(api);
-		this.drawStatuses(api);
+		this.drawPoolsAndActions(api);
+		this.drawStatsAndStatuses(api);
 	}
 
 	private createCharacter(): Character {
@@ -152,7 +180,7 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 			mpmax: 10,
 			ip: 3,
 			ipmax: 3,
-			base: { str: 10, agi: 8, int: 8, wil: 8, def: 2, res: 2 },
+			base: { dex: 8, ins: 8, mig: 8, wlp: 8 },
 			smask: 0,
 		};
 	}
@@ -167,16 +195,15 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		let delta = 0;
 		if (api.btnp(BmsxConsoleButton.Left)) delta -= 1;
 		if (api.btnp(BmsxConsoleButton.Right)) delta += 1;
-		if (delta !== 0) {
-			if (this.selection === 1) {
-				this.character.hp = clamp(this.character.hp + delta, 0, this.character.hpmax);
-			} else if (this.selection === 2) {
-				this.character.mp = clamp(this.character.mp + delta, 0, this.character.mpmax);
-			} else {
-				this.character.ip = clamp(this.character.ip + delta, 0, this.character.ipmax);
-			}
-			this.save(api);
+		if (delta === 0) return;
+		if (this.selection === 1) {
+			this.character.hp = clamp(this.character.hp + delta, 0, this.character.hpmax);
+		} else if (this.selection === 2) {
+			this.character.mp = clamp(this.character.mp + delta, 0, this.character.mpmax);
+		} else {
+			this.character.ip = clamp(this.character.ip + delta, 0, this.character.ipmax);
 		}
+		this.save(api);
 	}
 
 	private handleStatusInput(api: BmsxConsoleApi): void {
@@ -188,14 +215,14 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 			this.selection = clamp(this.selection + 1, 1, maxIndex);
 		}
 		if (api.btnp(BmsxConsoleButton.ActionO)) {
-			const def = STATUS_DEFINITIONS[this.selection - 1];
-			this.toggleStatus(def.id);
+			const status = STATUS_DEFINITIONS[this.selection - 1];
+			this.toggleStatus(status.id);
 			this.save(api);
 		}
 	}
 
 	private handleEditInput(api: BmsxConsoleApi): void {
-		const maxIndex = 9;
+		const maxIndex = 7;
 		if (api.btnp(BmsxConsoleButton.Up)) {
 			this.selection = clamp(this.selection - 1, 1, maxIndex);
 		}
@@ -205,143 +232,151 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		let delta = 0;
 		if (api.btnp(BmsxConsoleButton.Left)) delta -= 1;
 		if (api.btnp(BmsxConsoleButton.Right)) delta += 1;
-		if (delta !== 0) {
-			if (this.selection === 1) this.character.base.str += delta;
-			else if (this.selection === 2) this.character.base.agi += delta;
-			else if (this.selection === 3) this.character.base.int += delta;
-			else if (this.selection === 4) this.character.base.wil += delta;
-			else if (this.selection === 5) this.character.base.def += delta;
-			else if (this.selection === 6) this.character.base.res += delta;
-			else if (this.selection === 7) this.character.hpmax = Math.max(1, this.character.hpmax + delta);
-			else if (this.selection === 8) this.character.mpmax = Math.max(0, this.character.mpmax + delta);
-			else this.character.ipmax = Math.max(0, this.character.ipmax + delta);
-			this.clampAll();
-			this.save(api);
+		if (delta === 0) return;
+		if (this.selection === 1) this.character.base.dex = stepDie(this.character.base.dex, delta);
+		else if (this.selection === 2) this.character.base.ins = stepDie(this.character.base.ins, delta);
+		else if (this.selection === 3) this.character.base.mig = stepDie(this.character.base.mig, delta);
+		else if (this.selection === 4) this.character.base.wlp = stepDie(this.character.base.wlp, delta);
+		else if (this.selection === 5) {
+			this.character.hpmax = Math.max(1, this.character.hpmax + delta);
+			this.character.hp = clamp(this.character.hp, 0, this.character.hpmax);
+		} else if (this.selection === 6) {
+			this.character.mpmax = Math.max(0, this.character.mpmax + delta);
+			this.character.mp = clamp(this.character.mp, 0, this.character.mpmax);
+		} else {
+			this.character.ipmax = Math.max(0, this.character.ipmax + delta);
+			this.character.ip = clamp(this.character.ip, 0, this.character.ipmax);
 		}
+		this.clampAll();
+		this.save(api);
 	}
 
 	private drawHeader(api: BmsxConsoleApi): void {
-		api.rectfill(2, 2, 126, 20, COLOR_PANEL);
-		api.rect(2, 2, 126, 20, COLOR_PANEL_BORDER);
-		api.print('FABULA ULTIMA CHARACTER HELPER', 6, 4, COLOR_HEADER);
+		api.rectfill(2, 2, 126, 12, COLOR_PANEL_FILL);
+		api.rect(2, 2, 126, 12, COLOR_PANEL_BORDER);
+		api.print('MANGA ULTIMA!!', 4, 4, COLOR_HEADER);
 		const modeLabel = this.mode === 'track' ? 'MODE: TRACK' : this.mode === 'status' ? 'MODE: STATUS' : 'MODE: EDIT';
-		api.print(modeLabel, 6, 12, COLOR_TEXT);
-		api.print('X SWITCH MODE   O TOGGLE STATUS', 6, 18, COLOR_TEXT_DIM);
+		api.print(modeLabel, 4, 10, COLOR_TEXT);
+		api.print('X=MODE  O=STATUS', 86, 10, COLOR_TEXT_DIM);
 	}
 
-	private drawPools(api: BmsxConsoleApi): void {
-		const startX = 4;
-		const startY = 26;
-		const endX = 60;
-		const endY = 118;
-		api.rectfill(startX, startY, endX, endY, COLOR_PANEL);
-		api.rect(startX, startY, endX, endY, COLOR_PANEL_BORDER);
-		api.print('POOLS', startX + 2, startY + 2, COLOR_HEADER);
+	private drawPoolsAndActions(api: BmsxConsoleApi): void {
+		// Pools box
+		api.rect(2, 14, 62, 46, COLOR_PANEL_BORDER);
+		api.print('POOLS', 6, 16, COLOR_HEADER);
+		let y = 24;
 		const labels = ['HP', 'MP', 'IP'];
 		const values = [
 			`${this.character.hp}/${this.character.hpmax}`,
 			`${this.character.mp}/${this.character.mpmax}`,
 			`${this.character.ip}/${this.character.ipmax}`,
 		];
-		let lineY = startY + 12;
 		for (let i = 0; i < labels.length; i++) {
 			const active = this.mode === 'track' && this.selection === i + 1;
 			const color = active ? COLOR_HIGHLIGHT : COLOR_TEXT;
-			api.print(`${labels[i]}: ${values[i]}`, startX + 2, lineY, color);
-			lineY += 10;
+			api.print(`${labels[i]}: ${values[i]}`, 6, y, color);
+			y += 8;
 		}
-		this.drawActionBar(api, startX + 2, startY + 48);
-		if (this.character.hp <= 0) {
-			api.print('STATUS: KO (NO ACTIONS)', startX + 2, startY + 76, COLOR_DEBUFF);
-		}
-	}
 
-	private drawActionBar(api: BmsxConsoleApi, originX: number, originY: number): void {
+		// Actions box
+		api.rect(2, 48, 62, 126, COLOR_PANEL_BORDER);
+		api.print('ACTIONS', 6, 50, COLOR_HEADER);
 		const flags = this.actionFlags();
-		const entries: Array<{ label: string; enabled: boolean; }> = [
-			{ label: 'ATTACK', enabled: flags.attack },
-			{ label: 'TECH', enabled: flags.technique },
-			{ label: 'SPELL', enabled: flags.spell },
-			{ label: 'ITEM', enabled: flags.item },
-			{ label: 'DEFEND', enabled: flags.defend },
-			{ label: 'OTHER', enabled: flags.other },
+		const entries: Array<[string, boolean]> = [
+			['ATTACK', flags.attack],
+			['EQUIPMENT', flags.equipment],
+			['GUARD', flags.guard],
+			['HINDER', flags.hinder],
+			['INVENTORY', flags.inventory],
+			['OBJECTIVE', flags.objective],
+			['SPELL', flags.spell],
+			['STUDY', flags.study],
+			['SKILL', flags.skill],
+			['OTHER', flags.other],
 		];
-		api.print('ACTIONS', originX, originY, COLOR_HEADER);
-		let x = originX;
-		const barY = originY + 8;
+		y = 58;
 		for (const entry of entries) {
-			const color = entry.enabled ? COLOR_TEXT : COLOR_TEXT_DIM;
-			api.rectfill(x - 2, barY, x + 18, barY + 10, COLOR_PANEL_BORDER);
-			api.rect(x - 2, barY, x + 18, barY + 10, COLOR_PANEL_BORDER);
-			api.print(entry.label, x, barY + 2, color);
-			x += 24;
+			api.print(entry[0], 6, y, colorForAvailability(entry[1]));
+			y += 7;
+		}
+		if (this.character.hp <= 0) {
+			api.print('STATUS: KO', 6, 120, COLOR_WARNING);
 		}
 	}
 
-	private drawStatuses(api: BmsxConsoleApi): void {
-		const startX = 66;
-		const startY = 26;
-		const endX = 124;
-		const endY = 118;
-		api.rectfill(startX, startY, endX, endY, COLOR_PANEL);
-		api.rect(startX, startY, endX, endY, COLOR_PANEL_BORDER);
-		api.print('STATUSES', startX + 2, startY + 2, COLOR_HEADER);
-		let lineY = startY + 12;
-		for (let index = 0; index < STATUS_DEFINITIONS.length; index++) {
-			const def = STATUS_DEFINITIONS[index];
-			const active = this.hasStatus(def.id);
-			const selected = this.mode === 'status' && this.selection === index + 1;
+	private drawStatsAndStatuses(api: BmsxConsoleApi): void {
+		api.rect(66, 14, 126, 66, COLOR_PANEL_BORDER);
+		api.print('STATS', 70, 16, COLOR_HEADER);
+		const current = this.currentDice();
+		const base = this.character.base;
+		const names = ['DEX', 'INS', 'MIG', 'WLP'];
+		const baseValues = [base.dex, base.ins, base.mig, base.wlp];
+		const currentValues = [current.dex, current.ins, current.mig, current.wlp];
+		let y = 24;
+		for (let i = 0; i < names.length; i++) {
+			const isSelected = this.mode === 'edit' && this.selection === i + 1;
+			const reduced = currentValues[i] < baseValues[i];
+			const color = isSelected ? COLOR_HIGHLIGHT : reduced ? COLOR_WARNING : COLOR_TEXT;
+			api.print(`${names[i]}: ${dieString(currentValues[i])} (${dieString(baseValues[i])})`, 70, y, color);
+			y += 8;
+		}
+		const defense = this.defenses();
+		api.print(`D: ${defense.def}`, 70, 56, COLOR_TEXT);
+		api.print(`MD: ${defense.mdef}`, 96, 56, COLOR_TEXT);
+
+		api.rect(66, 68, 126, 126, COLOR_PANEL_BORDER);
+		api.print('STATUSES', 70, 70, COLOR_HEADER);
+		y = 78;
+		for (let i = 0; i < STATUS_DEFINITIONS.length; i++) {
+			const status = STATUS_DEFINITIONS[i];
+			const active = this.hasStatus(status.id);
+			const selected = this.mode === 'status' && this.selection === i + 1;
 			const color = selected ? COLOR_HIGHLIGHT : active ? COLOR_TEXT : COLOR_TEXT_DIM;
 			const mark = active ? '[X] ' : '[ ] ';
-			api.print(`${mark}${def.name}`, startX + 2, lineY, color);
-			lineY += 10;
+			api.print(`${mark}${status.name}`, 70, y, color);
+			y += 8;
 		}
-	}
 
-	private drawStats(api: BmsxConsoleApi): void {
-		const startX = 34;
-		const startY = 26;
-		const endX = 94;
-		const endY = 74;
-		api.rectfill(startX, startY, endX, endY, COLOR_PANEL);
-		api.rect(startX, startY, endX, endY, COLOR_PANEL_BORDER);
-		api.print('STATS', startX + 2, startY + 2, COLOR_HEADER);
-		const base = this.character.base;
-		const effective = this.effectiveStats();
-		const keys: Array<keyof BaseStats> = ['str', 'agi', 'int', 'wil', 'def', 'res'];
-		const names = ['STR', 'AGI', 'INT', 'WIL', 'DEF', 'RES'];
-		let lineY = startY + 12;
-		for (let i = 0; i < keys.length; i++) {
-			const key = keys[i];
-			const baseValue = base[key];
-			const effValue = effective[key];
-			const delta = effValue - baseValue;
-			let color = COLOR_TEXT;
-			if (delta > 0) color = COLOR_BUFF;
-			else if (delta < 0) color = COLOR_DEBUFF;
-			if (this.mode === 'edit' && this.selection === i + 1) color = COLOR_HIGHLIGHT;
-			let label = `${names[i]}: ${effValue}`;
-			if (delta !== 0) {
-				const sign = delta > 0 ? '+' : '';
-				label += ` (${sign}${delta})`;
-			}
-			api.print(label, startX + 2, lineY, color);
-			lineY += 10;
-		}
 		if (this.mode === 'edit') {
-			this.drawPoolMaxRows(api, startX + 2, lineY);
+			const labels = ['HPMAX', 'MPMAX', 'IPMAX'];
+			const values = [this.character.hpmax, this.character.mpmax, this.character.ipmax];
+			y = 40;
+			for (let i = 0; i < labels.length; i++) {
+				const index = 5 + i;
+				const color = this.selection === index ? COLOR_HIGHLIGHT : COLOR_TEXT;
+				api.print(`${labels[i]}: ${values[i]}`, 70, y, color);
+				y += 8;
+			}
 		}
 	}
 
-	private drawPoolMaxRows(api: BmsxConsoleApi, originX: number, originY: number): void {
-		const labels = ['HPMAX', 'MPMAX', 'IPMAX'];
-		const values = [this.character.hpmax, this.character.mpmax, this.character.ipmax];
-		for (let i = 0; i < labels.length; i++) {
-			const index = 7 + i;
-			const color = this.selection === index ? COLOR_HIGHLIGHT : COLOR_TEXT;
-			api.print(`${labels[i]}: ${values[i]}`, originX, originY, color);
-			originY += 10;
-		}
+	private currentDice(): CurrentDice {
+		const reductions = this.statusReductions();
+		const base = this.character.base;
+		return {
+			dex: DIE_STEPS[clamp(dieIndex(base.dex) - reductions.dex, 1, DIE_STEPS.length) - 1],
+			ins: DIE_STEPS[clamp(dieIndex(base.ins) - reductions.ins, 1, DIE_STEPS.length) - 1],
+			mig: DIE_STEPS[clamp(dieIndex(base.mig) - reductions.mig, 1, DIE_STEPS.length) - 1],
+			wlp: DIE_STEPS[clamp(dieIndex(base.wlp) - reductions.wlp, 1, DIE_STEPS.length) - 1],
+		};
+	}
+
+	private statusReductions(): StatusReductions {
+		const reductions: StatusReductions = { dex: 0, ins: 0, mig: 0, wlp: 0 };
+		if (this.hasStatus(0)) reductions.ins += 1; // dazed
+		if (this.hasStatus(1)) { reductions.dex += 1; reductions.ins += 1; } // enraged
+		if (this.hasStatus(2)) { reductions.mig += 1; reductions.wlp += 1; } // poisoned
+		if (this.hasStatus(3)) reductions.wlp += 1; // shaken
+		if (this.hasStatus(4)) reductions.dex += 1; // slow
+		if (this.hasStatus(5)) reductions.mig += 1; // weak
+		return reductions;
+	}
+
+	private defenses(): Defenses {
+		const current = this.currentDice();
+		const def = dieToNumber(current.dex);
+		const mdef = dieToNumber(current.ins);
+		return { def, mdef };
 	}
 
 	private actionFlags(): ActionFlags {
@@ -350,44 +385,24 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		const hasIp = this.character.ip > 0;
 		return {
 			attack: !knockedOut,
-			defend: !knockedOut,
-			technique: !knockedOut,
+			equipment: !knockedOut,
+			guard: !knockedOut,
+			hinder: !knockedOut,
+			inventory: !knockedOut && hasIp,
+			objective: !knockedOut,
 			spell: !knockedOut && hasMp,
-			item: !knockedOut && hasIp,
+			study: !knockedOut,
+			skill: !knockedOut,
 			other: !knockedOut,
 		};
 	}
 
-	private effectiveStats(): BaseStats {
-		let result = cloneStats(this.character.base);
-		for (const def of STATUS_DEFINITIONS) {
-			if (this.hasStatus(def.id)) {
-				result = addStats(result, def.modifier);
-			}
-		}
-		return result;
-	}
-
 	private hasStatus(id: number): boolean {
-		const mask = 1 << id;
-		return (this.character.smask & mask) !== 0;
+		return (this.character.smask & (1 << id)) !== 0;
 	}
 
 	private toggleStatus(id: number): void {
-		const mask = 1 << id;
-		this.character.smask ^= mask;
-	}
-
-	private clampAll(): void {
-		this.character.hp = clamp(this.character.hp, 0, this.character.hpmax);
-		this.character.mp = clamp(this.character.mp, 0, this.character.mpmax);
-		this.character.ip = clamp(this.character.ip, 0, this.character.ipmax);
-		this.character.base.str = Math.max(0, Math.floor(this.character.base.str));
-		this.character.base.agi = Math.max(0, Math.floor(this.character.base.agi));
-		this.character.base.int = Math.max(0, Math.floor(this.character.base.int));
-		this.character.base.wil = Math.max(0, Math.floor(this.character.base.wil));
-		this.character.base.def = Math.max(0, Math.floor(this.character.base.def));
-		this.character.base.res = Math.max(0, Math.floor(this.character.base.res));
+		this.character.smask ^= 1 << id;
 	}
 
 	private advanceMode(): void {
@@ -396,44 +411,48 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		else this.mode = 'track';
 	}
 
+	private clampAll(): void {
+		this.character.hp = clamp(this.character.hp, 0, this.character.hpmax);
+		this.character.mp = clamp(this.character.mp, 0, this.character.mpmax);
+		this.character.ip = clamp(this.character.ip, 0, this.character.ipmax);
+		this.character.base.dex = DIE_STEPS[clamp(dieIndex(this.character.base.dex), 1, DIE_STEPS.length) - 1];
+		this.character.base.ins = DIE_STEPS[clamp(dieIndex(this.character.base.ins), 1, DIE_STEPS.length) - 1];
+		this.character.base.mig = DIE_STEPS[clamp(dieIndex(this.character.base.mig), 1, DIE_STEPS.length) - 1];
+		this.character.base.wlp = DIE_STEPS[clamp(dieIndex(this.character.base.wlp), 1, DIE_STEPS.length) - 1];
+	}
+
 	private save(api: BmsxConsoleApi): void {
 		api.cartdata(STORAGE_NAMESPACE);
 		api.dset(SAVE_SLOT_VERSION, SAVE_VERSION);
+		api.dset(SAVE_SLOT_BASE_DEX, this.character.base.dex);
+		api.dset(SAVE_SLOT_BASE_INS, this.character.base.ins);
+		api.dset(SAVE_SLOT_BASE_MIG, this.character.base.mig);
+		api.dset(SAVE_SLOT_BASE_WLP, this.character.base.wlp);
 		api.dset(SAVE_SLOT_HPMAX, this.character.hpmax);
 		api.dset(SAVE_SLOT_MPMAX, this.character.mpmax);
 		api.dset(SAVE_SLOT_IPMAX, this.character.ipmax);
 		api.dset(SAVE_SLOT_HP, this.character.hp);
 		api.dset(SAVE_SLOT_MP, this.character.mp);
 		api.dset(SAVE_SLOT_IP, this.character.ip);
-		api.dset(SAVE_SLOT_STR, this.character.base.str);
-		api.dset(SAVE_SLOT_AGI, this.character.base.agi);
-		api.dset(SAVE_SLOT_INT, this.character.base.int);
-		api.dset(SAVE_SLOT_WIL, this.character.base.wil);
-		api.dset(SAVE_SLOT_DEF, this.character.base.def);
-		api.dset(SAVE_SLOT_RES, this.character.base.res);
 		api.dset(SAVE_SLOT_STATUS, this.character.smask);
 	}
 
 	private load(api: BmsxConsoleApi): void {
 		api.cartdata(STORAGE_NAMESPACE);
 		const version = Math.floor(api.dget(SAVE_SLOT_VERSION));
-		if (version !== SAVE_VERSION) {
-			this.clampAll();
-			return;
+		if (version === SAVE_VERSION) {
+			this.character.base.dex = dieToNumber(api.dget(SAVE_SLOT_BASE_DEX));
+			this.character.base.ins = dieToNumber(api.dget(SAVE_SLOT_BASE_INS));
+			this.character.base.mig = dieToNumber(api.dget(SAVE_SLOT_BASE_MIG));
+			this.character.base.wlp = dieToNumber(api.dget(SAVE_SLOT_BASE_WLP));
+			this.character.hpmax = Math.max(1, Math.floor(api.dget(SAVE_SLOT_HPMAX)));
+			this.character.mpmax = Math.max(0, Math.floor(api.dget(SAVE_SLOT_MPMAX)));
+			this.character.ipmax = Math.max(0, Math.floor(api.dget(SAVE_SLOT_IPMAX)));
+			this.character.hp = clamp(Math.floor(api.dget(SAVE_SLOT_HP)), 0, this.character.hpmax);
+			this.character.mp = clamp(Math.floor(api.dget(SAVE_SLOT_MP)), 0, this.character.mpmax);
+			this.character.ip = clamp(Math.floor(api.dget(SAVE_SLOT_IP)), 0, this.character.ipmax);
+			this.character.smask = Math.max(0, Math.floor(api.dget(SAVE_SLOT_STATUS)));
 		}
-		this.character.hpmax = Math.max(1, Math.floor(api.dget(SAVE_SLOT_HPMAX)));
-		this.character.mpmax = Math.max(0, Math.floor(api.dget(SAVE_SLOT_MPMAX)));
-		this.character.ipmax = Math.max(0, Math.floor(api.dget(SAVE_SLOT_IPMAX)));
-		this.character.hp = clamp(Math.floor(api.dget(SAVE_SLOT_HP)), 0, this.character.hpmax);
-		this.character.mp = clamp(Math.floor(api.dget(SAVE_SLOT_MP)), 0, this.character.mpmax);
-		this.character.ip = clamp(Math.floor(api.dget(SAVE_SLOT_IP)), 0, this.character.ipmax);
-		this.character.base.str = Math.max(0, Math.floor(api.dget(SAVE_SLOT_STR)));
-		this.character.base.agi = Math.max(0, Math.floor(api.dget(SAVE_SLOT_AGI)));
-		this.character.base.int = Math.max(0, Math.floor(api.dget(SAVE_SLOT_INT)));
-		this.character.base.wil = Math.max(0, Math.floor(api.dget(SAVE_SLOT_WIL)));
-		this.character.base.def = Math.max(0, Math.floor(api.dget(SAVE_SLOT_DEF)));
-		this.character.base.res = Math.max(0, Math.floor(api.dget(SAVE_SLOT_RES)));
-		this.character.smask = Math.max(0, Math.floor(api.dget(SAVE_SLOT_STATUS)));
 		this.clampAll();
 	}
 }

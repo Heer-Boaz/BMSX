@@ -561,7 +561,8 @@ export class Input implements RegisterablePersistent {
 
 	public enableOnscreenGamepad(): void {
 		if (!this.onscreenGamepadFactory) {
-			throw new Error('[Input] Onscreen gamepad factory not provided. Set via setOnscreenGamepadFactory before enabling.');
+			console.warn('[Input] Onscreen gamepad factory not provided. Skipping onscreen gamepad.');
+			return;
 		}
 		if (!this.onscreenGamepad) {
 			const instance = this.onscreenGamepadFactory();

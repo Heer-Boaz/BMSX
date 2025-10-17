@@ -69,6 +69,7 @@ export interface GameViewOpts {
 	host: GameViewHost;
 	viewportSize: vec2; // If not provided, defaults to 256x212 (MSX2) TODO: CHECK WHETHER THIS IS TRUE!
 	canvasSize?: vec2; // If not provided, defaults to 2x viewport size
+	offscreenSize?: vec2; // Optional offscreen render resolution; defaults to 2x viewport
 }
 
 /**
@@ -306,8 +307,75 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.viewportSize = shallowCopy(opts.viewportSize) as vec2;
 		this.canvasSize = (shallowCopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
 		// Offscreen resolution for internal render graph targets (view-agnostic)
-		this.offscreenCanvasSize = multiply_vec(this.viewportSize, 2);
+		this.offscreenCanvasSize = shallowCopy(opts.offscreenSize ?? multiply_vec(this.viewportSize, 2)) as vec2;
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
+	}
+
+	public configureRenderTargets(dimensions: { viewportSize?: vec2; canvasSize?: vec2; offscreenSize?: vec2; }): void {
+		if (!dimensions) {
+			throw new Error('[GameView] configureRenderTargets called without dimensions.');
+		}
+		let viewportChanged = false;
+		let canvasChanged = false;
+		let offscreenChanged = false;
+
+		if (dimensions.viewportSize !== undefined) {
+			const viewport = dimensions.viewportSize;
+			if (!viewport) {
+				throw new Error('[GameView] viewportSize override must be provided when specified.');
+			}
+			if (viewport.x <= 0 || viewport.y <= 0) {
+				throw new Error('[GameView] viewportSize override must be positive.');
+			}
+			if (this.viewportSize.x !== viewport.x || this.viewportSize.y !== viewport.y) {
+				this.viewportSize = shallowCopy(viewport) as vec2;
+				viewportChanged = true;
+			}
+		}
+
+		if (dimensions.canvasSize !== undefined) {
+			const canvas = dimensions.canvasSize;
+			if (!canvas) {
+				throw new Error('[GameView] canvasSize override must be provided when specified.');
+			}
+			if (canvas.x <= 0 || canvas.y <= 0) {
+				throw new Error('[GameView] canvasSize override must be positive.');
+			}
+			if (this.canvasSize.x !== canvas.x || this.canvasSize.y !== canvas.y) {
+				this.canvasSize = shallowCopy(canvas) as vec2;
+				canvasChanged = true;
+			}
+		}
+
+		if (dimensions.offscreenSize !== undefined) {
+			const offscreen = dimensions.offscreenSize;
+			if (!offscreen) {
+				throw new Error('[GameView] offscreenSize override must be provided when specified.');
+			}
+			if (offscreen.x <= 0 || offscreen.y <= 0) {
+				throw new Error('[GameView] offscreenSize override must be positive.');
+			}
+			if (this.offscreenCanvasSize.x !== offscreen.x || this.offscreenCanvasSize.y !== offscreen.y) {
+				this.offscreenCanvasSize = shallowCopy(offscreen) as vec2;
+				offscreenChanged = true;
+			}
+		}
+
+		if (!(viewportChanged || canvasChanged || offscreenChanged)) {
+			return;
+		}
+
+		if (canvasChanged) {
+			this.surface.setRenderTargetSize(this.canvasSize.x, this.canvasSize.y);
+		}
+
+		if (!this.pipelineRegistry) {
+			throw new Error('[GameView] Pipeline registry not configured while updating render targets.');
+		}
+
+		this.rebuildGraph();
+		this.calculateSize();
+		this.handleResize();
 	}
 
 	public init(): void {

@@ -16,8 +16,6 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 				cart,
 				storage: $.platform.storage,
 				playerIndex: options.playerIndex,
-				displayWidth: options.viewport.width,
-				displayHeight: options.viewport.height,
 			});
 			runtime.boot();
 		},

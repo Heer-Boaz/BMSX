@@ -86,7 +86,6 @@ export class ConsoleFont {
 				this.glyphs.set(label, compiled);
 			}
 		}
-		// Ensure lowercase fallbacks mirror uppercase definitions
 		for (const entry of GLYPH_DATA) {
 			for (const label of entry.chars) {
 				if (label.length === 1) {
