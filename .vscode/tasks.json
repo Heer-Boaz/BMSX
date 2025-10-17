@@ -320,6 +320,7 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
+				"bmsxconsole",
 				"sint2024",
 				"ella2023",
 				"testrom",

@@ -45,9 +45,6 @@ export let BehaviorTrees: { [key: BehaviorTreeID]: BTNode } = {};
  * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_bt_library(): void {
-	if (Object.keys(BehaviorTreeDefinitions).length === 0) {
-		throw new Error('[BehaviorTree] No behavior tree definitions registered. Ensure build_bt decorators ran before setup.');
-	}
 	BehaviorTrees = {};
 	for (const bt_id of Object.keys(BehaviorTreeDefinitions)) {
 		BehaviorTrees[bt_id] = constructBehaviorTree(bt_id);

@@ -120,3 +120,4 @@ export * from './component/sprite_component';
 export * from './component/text_component';
 export * from './render/glyphs';
 export * from './gas/gameplay_ability';
+export * from './console';

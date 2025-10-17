@@ -1,0 +1,40 @@
+import { $ } from '../core/game';
+import type { World, WorldModule } from '../core/world';
+import { BmsxConsoleRuntime } from './runtime';
+import type { BmsxConsoleCartridge, ConsoleModuleOptions } from './types';
+
+export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: ConsoleModuleOptions): WorldModule {
+	let runtime: BmsxConsoleRuntime | null = null;
+	return {
+		id: options.moduleId,
+		ecs: {
+			systems: [],
+			nodes: [],
+		},
+		onBoot(_world: World) {
+			runtime = new BmsxConsoleRuntime({
+				cart,
+				storage: $.platform.storage,
+				playerIndex: options.playerIndex,
+				displayWidth: options.viewport.width,
+				displayHeight: options.viewport.height,
+			});
+			runtime.boot();
+		},
+		onTick(_world: World, deltaMilliseconds: number) {
+			if (!runtime) {
+				throw new Error('[createBmsxConsoleModule] Runtime not initialised before tick.');
+			}
+			runtime.frame(deltaMilliseconds);
+		},
+		onLoad(_world: World) {
+			if (!runtime) {
+				throw new Error('[createBmsxConsoleModule] Runtime not initialised before load.');
+			}
+			runtime.boot();
+		},
+		dispose() {
+			runtime = null;
+		},
+	};
+}
