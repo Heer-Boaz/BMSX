@@ -51,6 +51,7 @@ export enum BitmapId {
 	letter_x = 'letter_x',
 	letter_y = 'letter_y',
 	letter_z = 'letter_z',
+	ball = 'ball',
 	_atlas = '_atlas',
 }
 

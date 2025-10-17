@@ -29,6 +29,7 @@ export class BmsxConsoleRuntime {
 
 	public boot(): void {
 		this.api.cartdata(this.cart.meta.persistentId);
+		this.api.colliderClear();
 		this.cart.init(this.api);
 	}
 

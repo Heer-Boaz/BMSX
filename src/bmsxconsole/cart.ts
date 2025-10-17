@@ -1,5 +1,6 @@
 import type { BmsxConsoleApi, BmsxConsoleCartridge } from 'bmsx/console';
 import { BmsxConsoleButton } from 'bmsx/console';
+import { BitmapId } from './resourceids';
 import { clamp } from 'bmsx/utils/utils';
 
 const SAVE_VERSION = 2;
@@ -71,6 +72,23 @@ const COLOR_TEXT_DIM = 9;
 const COLOR_HEADER = 11;
 const COLOR_HIGHLIGHT = 13;
 const COLOR_WARNING = 8;
+type DemoBounds = { x: number; y: number; width: number; height: number };
+
+type DemoBall = {
+	id: number;
+	x: number;
+	y: number;
+	vx: number;
+	vy: number;
+	radius: number;
+	color: number;
+	colliderId: string;
+};
+
+const DEMO_BOUNDS: DemoBounds = { x: 68, y: 108, width: 56, height: 18 };
+const WALL_IDS = ['console_wall_left', 'console_wall_right', 'console_wall_top', 'console_wall_bottom'] as const;
+const DEMO_RESTITUTION = 0.95;
+const DEMO_LABEL_COLOR = 12;
 
 const STATUS_DEFINITIONS: StatusDefinition[] = [
 	{ id: 0, name: 'DAZED' },
@@ -144,13 +162,15 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 	private mode: Mode = 'track';
 	private selection = 1;
 	private character: Character = this.createCharacter();
+	private demoBalls: DemoBall[] = [];
 
 	public init(api: BmsxConsoleApi): void {
 		this.character = this.createCharacter();
 		this.load(api);
+		this.initializeDemo(api);
 	}
 
-	public update(api: BmsxConsoleApi): void {
+	public update(api: BmsxConsoleApi, deltaSeconds: number): void {
 		if (api.btnp(BmsxConsoleButton.ActionX)) {
 			this.advanceMode();
 			this.selection = 1;
@@ -162,6 +182,7 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		} else {
 			this.handleEditInput(api);
 		}
+		this.updateDemoBalls(api, deltaSeconds);
 	}
 
 	public draw(api: BmsxConsoleApi): void {
@@ -169,6 +190,7 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		this.drawHeader(api);
 		this.drawPoolsAndActions(api);
 		this.drawStatsAndStatuses(api);
+		this.drawBallDemo(api);
 	}
 
 	private createCharacter(): Character {
@@ -183,6 +205,118 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 			base: { dex: 8, ins: 8, mig: 8, wlp: 8 },
 			smask: 0,
 		};
+	}
+
+	private initializeDemo(api: BmsxConsoleApi): void {
+		api.colliderClear();
+		const radius = 3;
+		api.defineSprite(1, BitmapId.ball, { width: 6, height: 6, originX: 3, originY: 3, collider: { kind: 'circle', radius } });
+		const bounds = DEMO_BOUNDS;
+		const wallSpecs = [
+			{ id: WALL_IDS[0], kind: 'box' as const, width: 1, height: bounds.height, x: bounds.x - 0.5, y: bounds.y + bounds.height / 2 },
+			{ id: WALL_IDS[1], kind: 'box' as const, width: 1, height: bounds.height, x: bounds.x + bounds.width + 0.5, y: bounds.y + bounds.height / 2 },
+			{ id: WALL_IDS[2], kind: 'box' as const, width: bounds.width, height: 1, x: bounds.x + bounds.width / 2, y: bounds.y - 0.5 },
+			{ id: WALL_IDS[3], kind: 'box' as const, width: bounds.width, height: 1, x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height + 0.5 },
+		];
+		for (const wall of wallSpecs) {
+			api.colliderCreate(wall.id, { kind: 'box', width: wall.width, height: wall.height, isTrigger: false });
+			api.colliderSetPosition(wall.id, wall.x, wall.y);
+		}
+		const initial = [
+			{ id: 0, colliderId: 'console_ball_0', x: bounds.x + radius + 6, y: bounds.y + radius + 3, vx: 48, vy: 28, radius, color: COLOR_HEADER },
+			{ id: 1, colliderId: 'console_ball_1', x: bounds.x + bounds.width - radius - 6, y: bounds.y + radius + 8, vx: -36, vy: -30, radius, color: COLOR_HIGHLIGHT },
+		];
+		this.demoBalls = initial.map(ball => ({ ...ball }));
+	}
+
+	private updateDemoBalls(api: BmsxConsoleApi, deltaSeconds: number): void {
+		if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) return;
+		const dt = Math.min(deltaSeconds, 0.05);
+		for (const ball of this.demoBalls) {
+			ball.x += ball.vx * dt;
+			ball.y += ball.vy * dt;
+			api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
+		}
+
+		for (const ball of this.demoBalls) {
+			this.resolveBallWalls(api, ball);
+		}
+
+		for (let i = 0; i < this.demoBalls.length - 1; i++) {
+			const a = this.demoBalls[i];
+			for (let j = i + 1; j < this.demoBalls.length; j++) {
+				const b = this.demoBalls[j];
+				this.resolveBallPair(api, a, b);
+			}
+		}
+	}
+
+	private resolveBallWalls(api: BmsxConsoleApi, ball: DemoBall): void {
+		for (const wallId of WALL_IDS) {
+			const contact = api.colliderContact(ball.colliderId, wallId);
+			if (!contact) continue;
+			let normal = this.normalized(contact.normalX, contact.normalY);
+			if (!normal) continue;
+			let velAlongNormal = ball.vx * normal.x + ball.vy * normal.y;
+			if (velAlongNormal > 0) {
+				normal = { x: -normal.x, y: -normal.y };
+				velAlongNormal = ball.vx * normal.x + ball.vy * normal.y;
+			}
+			if (velAlongNormal >= 0) continue;
+			const bounceMagnitude = -(1 + DEMO_RESTITUTION) * velAlongNormal;
+			ball.vx += bounceMagnitude * normal.x;
+			ball.vy += bounceMagnitude * normal.y;
+			const penetration = contact.depth ?? 0;
+			if (penetration > 0) {
+				ball.x += normal.x * penetration;
+				ball.y += normal.y * penetration;
+				api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
+			}
+		}
+	}
+
+	private resolveBallPair(api: BmsxConsoleApi, a: DemoBall, b: DemoBall): void {
+		const contact = api.colliderContact(a.colliderId, b.colliderId);
+		if (!contact) return;
+		let normal = this.normalized(contact.normalX, contact.normalY) ?? this.normalFromCenters(a, b);
+		if (!normal) return;
+		let relativeVel = (b.vx - a.vx) * normal.x + (b.vy - a.vy) * normal.y;
+		if (relativeVel > 0) {
+			normal = { x: -normal.x, y: -normal.y };
+			relativeVel = (b.vx - a.vx) * normal.x + (b.vy - a.vy) * normal.y;
+		}
+		if (relativeVel >= 0) return;
+		const impulse = -relativeVel;
+		a.vx -= impulse * normal.x;
+		a.vy -= impulse * normal.y;
+		b.vx += impulse * normal.x;
+		b.vy += impulse * normal.y;
+		const penetration = contact.depth ?? 0;
+		if (penetration > 0) {
+			const correction = penetration * 0.5;
+			a.x -= normal.x * correction;
+			a.y -= normal.y * correction;
+			b.x += normal.x * correction;
+			b.y += normal.y * correction;
+			api.spriteSetPosition(a.colliderId, a.x, a.y);
+			api.spriteSetPosition(b.colliderId, b.x, b.y);
+		}
+	}
+
+	private normalFromCenters(a: DemoBall, b: DemoBall): { x: number; y: number } | null {
+		const dx = b.x - a.x;
+		const dy = b.y - a.y;
+		const lengthSq = dx * dx + dy * dy;
+		if (lengthSq <= 0) return null;
+		const invLen = 1 / Math.sqrt(lengthSq);
+		return { x: dx * invLen, y: dy * invLen };
+	}
+
+	private normalized(nx: number, ny: number): { x: number; y: number } | null {
+		const lengthSq = nx * nx + ny * ny;
+		if (lengthSq <= 0) return null;
+		const invLen = 1 / Math.sqrt(lengthSq);
+		return { x: nx * invLen, y: ny * invLen };
 	}
 
 	private handleTrackInput(api: BmsxConsoleApi): void {
@@ -324,9 +458,11 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		api.print(`D: ${defense.def}`, 70, 56, COLOR_TEXT);
 		api.print(`MD: ${defense.mdef}`, 96, 56, COLOR_TEXT);
 
-		api.rect(66, 68, 126, 126, COLOR_PANEL_BORDER);
+		const statusBottom = 106;
+		api.rect(66, 68, 126, statusBottom, COLOR_PANEL_BORDER);
 		api.print('STATUSES', 70, 70, COLOR_HEADER);
-		y = 78;
+		y = 76;
+		const spacing = 6;
 		for (let i = 0; i < STATUS_DEFINITIONS.length; i++) {
 			const status = STATUS_DEFINITIONS[i];
 			const active = this.hasStatus(status.id);
@@ -334,7 +470,7 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 			const color = selected ? COLOR_HIGHLIGHT : active ? COLOR_TEXT : COLOR_TEXT_DIM;
 			const mark = active ? '[X] ' : '[ ] ';
 			api.print(`${mark}${status.name}`, 70, y, color);
-			y += 8;
+			y += spacing;
 		}
 
 		if (this.mode === 'edit') {
@@ -347,6 +483,17 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 				api.print(`${labels[i]}: ${values[i]}`, 70, y, color);
 				y += 8;
 			}
+		}
+	}
+
+	private drawBallDemo(api: BmsxConsoleApi): void {
+		const bounds = DEMO_BOUNDS;
+		api.rectfill(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, COLOR_PANEL_FILL);
+		api.rect(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, COLOR_PANEL_BORDER);
+		api.print('bounce demo', bounds.x, bounds.y - 7, DEMO_LABEL_COLOR);
+		for (const ball of this.demoBalls) {
+			api.rectfill(ball.x - ball.radius, ball.y - ball.radius, ball.x + ball.radius, ball.y + ball.radius, ball.color);
+			api.spr(1, ball.x, ball.y, { scale: 1, layer: 'ui', id: ball.colliderId });
 		}
 	}
 
