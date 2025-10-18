@@ -1,3 +1,4 @@
+import { LuaRuntimeError } from './errors';
 import type { LuaValue } from './value';
 
 export class LuaEnvironment {
@@ -22,15 +23,11 @@ export class LuaEnvironment {
 	}
 
 	public assignExisting(name: string, value: LuaValue): void {
-		if (this.values.has(name)) {
-			this.values.set(name, value);
-			return;
+		const resolved = this.resolve(name);
+		if (resolved === null) {
+			throw new LuaRuntimeError(`[LuaEnvironment] Attempted to assign to undefined variable '${name}'.`, '<environment>', 0, 0);
 		}
-		if (this.parent !== null) {
-			this.parent.assignExisting(name, value);
-			return;
-		}
-		throw new Error(`[LuaEnvironment] Attempted to assign to undefined global '${name}'.`);
+		resolved.values.set(name, value);
 	}
 
 	public get(name: string): LuaValue | null {
@@ -46,5 +43,19 @@ export class LuaEnvironment {
 
 	public hasLocal(name: string): boolean {
 		return this.values.has(name);
+	}
+
+	public resolve(name: string): LuaEnvironment | null {
+		if (this.values.has(name)) {
+			return this;
+		}
+		if (this.parent !== null) {
+			return this.parent.resolve(name);
+		}
+		return null;
+	}
+
+	public getParent(): LuaEnvironment | null {
+		return this.parent;
 	}
 }
