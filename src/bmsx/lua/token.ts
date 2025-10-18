@@ -1,0 +1,116 @@
+export const enum LuaTokenType {
+	LeftParen,
+	RightParen,
+	LeftBrace,
+	RightBrace,
+	LeftBracket,
+	RightBracket,
+	Plus,
+	Minus,
+	Star,
+	Slash,
+	Percent,
+	Caret,
+	Hash,
+	Equal,
+	EqualEqual,
+	TildeEqual,
+	Less,
+	LessEqual,
+	Greater,
+	GreaterEqual,
+	Colon,
+	DoubleColon,
+	Semicolon,
+	Comma,
+	Dot,
+	DotDot,
+	String,
+	Number,
+	Identifier,
+	And,
+	Break,
+	Do,
+	Else,
+	ElseIf,
+	End,
+	False,
+	For,
+	Function,
+	Goto,
+	If,
+	In,
+	Local,
+	Nil,
+	Not,
+	Or,
+	Repeat,
+	Return,
+	Then,
+	True,
+	Until,
+	While,
+	Vararg,
+	Eof,
+}
+
+export type LuaTokenLiteral = number | string | boolean | null;
+
+export type LuaToken = {
+	readonly type: LuaTokenType;
+	readonly lexeme: string;
+	readonly line: number;
+	readonly column: number;
+	readonly literal: LuaTokenLiteral;
+};
+
+export function resolveKeyword(identifier: string): LuaTokenType | null {
+	switch (identifier) {
+		case 'and':
+			return LuaTokenType.And;
+		case 'break':
+			return LuaTokenType.Break;
+		case 'do':
+			return LuaTokenType.Do;
+		case 'else':
+			return LuaTokenType.Else;
+		case 'elseif':
+			return LuaTokenType.ElseIf;
+		case 'end':
+			return LuaTokenType.End;
+		case 'false':
+			return LuaTokenType.False;
+		case 'for':
+			return LuaTokenType.For;
+		case 'function':
+			return LuaTokenType.Function;
+		case 'goto':
+			return LuaTokenType.Goto;
+		case 'if':
+			return LuaTokenType.If;
+		case 'in':
+			return LuaTokenType.In;
+		case 'local':
+			return LuaTokenType.Local;
+		case 'nil':
+			return LuaTokenType.Nil;
+		case 'not':
+			return LuaTokenType.Not;
+		case 'or':
+			return LuaTokenType.Or;
+		case 'repeat':
+			return LuaTokenType.Repeat;
+		case 'return':
+			return LuaTokenType.Return;
+		case 'then':
+			return LuaTokenType.Then;
+		case 'true':
+			return LuaTokenType.True;
+		case 'until':
+			return LuaTokenType.Until;
+		case 'while':
+			return LuaTokenType.While;
+		default:
+			return null;
+	}
+}
