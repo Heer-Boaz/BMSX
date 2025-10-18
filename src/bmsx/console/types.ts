@@ -13,9 +13,17 @@ export type BmsxConsoleLuaProgramEntryPoints = {
 	draw?: string;
 };
 
-export type BmsxConsoleLuaProgram = {
-	readonly chunkName: string;
+type BmsxConsoleLuaInlineProgram = {
+	readonly chunkName?: string;
 	readonly source: string;
+};
+
+type BmsxConsoleLuaAssetProgram = {
+	readonly chunkName?: string;
+	readonly assetId: string;
+};
+
+export type BmsxConsoleLuaProgram = (BmsxConsoleLuaInlineProgram | BmsxConsoleLuaAssetProgram) & {
 	readonly entry?: BmsxConsoleLuaProgramEntryPoints;
 };
 

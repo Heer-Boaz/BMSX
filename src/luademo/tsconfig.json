@@ -1,0 +1,17 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"composite": false,
+		"noEmit": true,
+		"rootDir": "../"
+	},
+	"include": [
+		".",
+		"../bmsx/index.ts",
+		"../bmsx/**/*"
+	],
+	"exclude": [
+		"../bmsx/bmsx.js",
+		"../bmsx/bmsx.d.ts"
+	]
+}

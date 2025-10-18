@@ -6,9 +6,11 @@ import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram } from './types';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime';
+import { LuaEnvironment } from '../lua/environment';
 import type { LuaFunctionValue, LuaValue } from '../lua/value';
 import { LuaTable } from '../lua/value';
 import { LuaRuntimeError } from '../lua/errors';
+import { $ } from '../core/game';
 
 export type BmsxConsoleRuntimeOptions = {
 	cart: BmsxConsoleCartridge;
@@ -29,6 +31,7 @@ export class BmsxConsoleRuntime {
 	private luaInitFunction: LuaFunctionValue | null = null;
 	private luaUpdateFunction: LuaFunctionValue | null = null;
 	private luaDrawFunction: LuaFunctionValue | null = null;
+	private luaChunkName: string | null = null;
 	private frameCounter = 0;
 
 	constructor(options: BmsxConsoleRuntimeOptions) {
@@ -81,10 +84,6 @@ export class BmsxConsoleRuntime {
 		this.frameCounter += 1;
 	}
 
-	public getApi(): BmsxConsoleApi {
-		return this.api;
-	}
-
 	private hasLuaProgram(): boolean {
 		return this.luaProgram !== null;
 	}
@@ -93,13 +92,17 @@ export class BmsxConsoleRuntime {
 		const program = this.luaProgram;
 		if (!program) return;
 
+		const source = this.resolveLuaProgramSource(program);
+		const chunkName = this.resolveLuaProgramChunkName(program);
+
 		this.luaInterpreter = createLuaInterpreter();
 		this.luaInitFunction = null;
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
+		this.luaChunkName = chunkName;
 
 		this.registerApiBuiltins(this.luaInterpreter);
-		this.luaInterpreter.execute(program.source, program.chunkName);
+		this.luaInterpreter.execute(source, chunkName);
 
 		const env = this.luaInterpreter.getGlobalEnvironment();
 		this.luaInitFunction = this.resolveLuaFunction(env.get(program.entry?.init ?? 'init'));
@@ -142,7 +145,7 @@ export class BmsxConsoleRuntime {
 				const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
 					const jsArgs = Array.from(args, (arg) => this.luaValueToJs(arg));
 					try {
-					const target = this.api as unknown as Record<string, unknown>;
+						const target = this.api as unknown as Record<string, unknown>;
 						const candidate = target[name];
 						if (typeof candidate !== 'function') {
 							throw new Error(`Method '${name}' is not callable.`);
@@ -155,7 +158,7 @@ export class BmsxConsoleRuntime {
 							throw error;
 						}
 						const message = error instanceof Error ? error.message : String(error);
-						throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaProgram?.chunkName ?? 'lua', 0, 0);
+						throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
 					}
 				});
 				env.set(name, native);
@@ -175,7 +178,7 @@ export class BmsxConsoleRuntime {
 							throw error;
 						}
 						const message = error instanceof Error ? error.message : String(error);
-						throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaProgram?.chunkName ?? 'lua', 0, 0);
+						throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
 					}
 				});
 				env.set(name, native);
@@ -183,6 +186,59 @@ export class BmsxConsoleRuntime {
 			}
 		}
 		env.set('api', apiTable);
+
+		this.registerLuaTableLibrary(env, interpreter);
+	}
+
+	private registerLuaTableLibrary(env: LuaEnvironment, interpreter: LuaInterpreter): void {
+		const tableLibrary = new LuaTable();
+
+		tableLibrary.set('insert', createLuaNativeFunction('table.insert', interpreter, (_lua, args) => {
+			if (args.length < 2) {
+				throw new LuaRuntimeError('[table.insert] requires at least 2 arguments.', this.luaChunkName ?? 'lua', 0, 0);
+			}
+			const target = args[0];
+			if (!(target instanceof LuaTable)) {
+				throw new LuaRuntimeError('[table.insert] target must be a table.', this.luaChunkName ?? 'lua', 0, 0);
+			}
+			let position: number | null = null;
+			let value: LuaValue;
+			if (args.length === 2) {
+				value = args[1];
+			}
+			else {
+				const positionValue = args[1];
+				if (typeof positionValue !== 'number' || !Number.isInteger(positionValue)) {
+					throw new LuaRuntimeError('[table.insert] position must be an integer.', this.luaChunkName ?? 'lua', 0, 0);
+				}
+				position = positionValue;
+				value = args[2];
+			}
+			this.luaTableInsert(target, value, position);
+			return [];
+		}));
+
+		tableLibrary.set('remove', createLuaNativeFunction('table.remove', interpreter, (_lua, args) => {
+			if (args.length === 0) {
+				throw new LuaRuntimeError('[table.remove] requires a table argument.', this.luaChunkName ?? 'lua', 0, 0);
+			}
+			const target = args[0];
+			if (!(target instanceof LuaTable)) {
+				throw new LuaRuntimeError('[table.remove] target must be a table.', this.luaChunkName ?? 'lua', 0, 0);
+			}
+			let position: number | null = null;
+			if (args.length >= 2) {
+				const positionValue = args[1];
+				if (typeof positionValue !== 'number' || !Number.isInteger(positionValue)) {
+					throw new LuaRuntimeError('[table.remove] position must be an integer.', this.luaChunkName ?? 'lua', 0, 0);
+				}
+				position = positionValue;
+			}
+			const removed = this.luaTableRemove(target, position);
+			return removed === null ? [] : [removed];
+		}));
+
+		env.set('table', tableLibrary);
 	}
 
 	private collectApiMembers(): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor | undefined }> {
@@ -206,8 +262,11 @@ export class BmsxConsoleRuntime {
 	}
 
 	private wrapResultValue(value: unknown): ReadonlyArray<LuaValue> {
-		if (Array.isArray(value) && value.every((entry) => this.isLuaValue(entry))) {
-			return value as LuaValue[];
+		if (Array.isArray(value)) {
+			if (value.every((entry) => this.isLuaValue(entry))) {
+				return value as LuaValue[];
+			}
+			return value.map((entry) => this.jsToLua(entry));
 		}
 		if (value === undefined) {
 			return [];
@@ -239,29 +298,24 @@ export class BmsxConsoleRuntime {
 			if (entries.length === 0) {
 				return {};
 			}
-			let isArray = true;
 			const arrayValues: unknown[] = [];
 			const objectValues: Record<string, unknown> = {};
+			let sequentialCount = 0;
 			for (const [key, entryValue] of entries) {
 				const converted = this.luaValueToJs(entryValue);
 				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
 					arrayValues[key - 1] = converted;
-				}
-				else if (typeof key === 'string') {
-					objectValues[key] = converted;
-					isArray = false;
-				}
-				else {
+					sequentialCount += 1;
+				} else {
 					objectValues[String(key)] = converted;
-					isArray = false;
 				}
 			}
-			if (isArray && Object.keys(objectValues).length === 0) {
+			if (sequentialCount === entries.length) {
 				return arrayValues;
 			}
-			for (let index = 0; index < arrayValues.length; index += 1) {
-				if (arrayValues[index] !== undefined) {
-					objectValues[String(index + 1)] = arrayValues[index];
+			for (const [index, entryValue] of arrayValues.entries()) {
+				if (entryValue !== undefined) {
+					objectValues[String(index + 1)] = entryValue;
 				}
 			}
 			return objectValues;
@@ -294,5 +348,86 @@ export class BmsxConsoleRuntime {
 			return table;
 		}
 		return null;
+	}
+
+	private resolveLuaProgramSource(program: BmsxConsoleLuaProgram): string {
+		if ('source' in program && program.source) {
+			return program.source;
+		}
+		if ('assetId' in program && program.assetId) {
+			const rompack = $.rompack;
+			if (!rompack) {
+				throw new Error('[BmsxConsoleRuntime] Rompack not loaded. Cannot access Lua asset.');
+			}
+			const source = rompack.lua?.[program.assetId];
+			if (typeof source !== 'string') {
+				throw new Error(`[BmsxConsoleRuntime] Lua asset '${program.assetId}' not found in rompack.`);
+			}
+			return source;
+		}
+		throw new Error('[BmsxConsoleRuntime] Lua program requires either an inline source or an asset id.');
+	}
+
+	private resolveLuaProgramChunkName(program: BmsxConsoleLuaProgram): string {
+		if (program.chunkName && program.chunkName.length > 0) {
+			return program.chunkName;
+		}
+		if ('assetId' in program && program.assetId) {
+			return program.assetId;
+		}
+		return 'bmsx-lua';
+	}
+
+	private luaTableInsert(table: LuaTable, value: LuaValue, position: number | null): void {
+		const sequence = this.getLuaTableSequence(table);
+		if (position === null) {
+			sequence.push(value);
+		}
+		else {
+			const index = Math.max(1, position);
+			const zeroBased = Math.min(index, sequence.length + 1) - 1;
+			sequence.splice(zeroBased, 0, value);
+		}
+		this.setLuaTableSequence(table, sequence);
+	}
+
+	private luaTableRemove(table: LuaTable, position: number | null): LuaValue | null {
+		const sequence = this.getLuaTableSequence(table);
+		if (sequence.length === 0) {
+			return null;
+		}
+		let index: number;
+		if (position === null) {
+			index = sequence.length - 1;
+		}
+		else {
+			if (position < 1 || position > sequence.length) {
+				return null;
+			}
+			index = position - 1;
+		}
+		const [removed] = sequence.splice(index, 1);
+		this.setLuaTableSequence(table, sequence);
+		return removed ?? null;
+	}
+
+	private getLuaTableSequence(table: LuaTable): LuaValue[] {
+		const length = table.numericLength();
+		const values: LuaValue[] = [];
+		for (let i = 1; i <= length; i += 1) {
+			values.push(table.get(i));
+		}
+		return values;
+	}
+
+	private setLuaTableSequence(table: LuaTable, values: LuaValue[]): void {
+		for (const [key] of table.entriesArray()) {
+			if (typeof key === 'number') {
+				table.delete(key);
+			}
+		}
+		for (let index = 0; index < values.length; index += 1) {
+			table.set(index + 1, values[index] ?? null);
+		}
 	}
 }

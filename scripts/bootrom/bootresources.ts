@@ -224,7 +224,8 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		data: {},
 		fsm: {},
 		code: null,
-		audioevents: {}
+		audioevents: {},
+		lua: {}
 	};
 
 	const assetList = await loadAssetList(rom);
@@ -513,6 +514,14 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
 			}
 			break;
+		case 'lua':
+			try {
+				const sliced = new Uint8Array(rom, res.start, res.end - res.start);
+				romResult.lua[res.resid] = decodeuint8arr(sliced);
+			} catch (err: any) {
+				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);
+			}
+			break;
 		case 'model':
 			try {
 				let model: GLTFModel;
@@ -631,4 +640,3 @@ function loadImage(src: string): ImageBitmap | PromiseLike<ImageBitmap> {
 		});
 	})();
 }
-

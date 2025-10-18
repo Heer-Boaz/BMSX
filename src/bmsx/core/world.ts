@@ -2,7 +2,7 @@ import { setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
 import { ECSystemManager, TickGroup } from "../ecs/ecsystem";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import { setupFSMlibrary, StateDefinitions } from "../fsm/fsmlibrary";
-import { Stateful } from "../fsm/fsmtypes";
+import { Stateful, type StateMachineBlueprint } from "../fsm/fsmtypes";
 import { State } from '../fsm/state';
 import { CollisionEvent, PhysicsWorld } from '../physics/physicsworld';
 import { Camera } from '../render/3d/camera3d';
@@ -23,8 +23,10 @@ import { filterIterable, makeIndexProxy, shallowCopy } from '../utils/utils';
 import { Collision2DSystem } from '../service/collision2d_service';
 import { GameplayCommandBuffer } from '../ecs/gameplay_command_buffer';
 import { GameplayEventRecorder } from './replay/gameplayeventrecorder';
+import { build_fsm } from '../fsm/fsmdecorators';
 
 const MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // 53-bit monotonic id space
+const WORLD_DEFAULT_FSM_ID = 'world_default';
 
 // Backwards-compatible index proxies: runtime uses Map for performance, while
 // external code can still index with [id] due to Proxy handling.
@@ -79,6 +81,20 @@ export type SpawnReason = 'fresh' | 'transfer' | 'revive';
  * (which systems run) are selected and applied by the Game (see core/pipelines/*).
  */
 export class World implements Stateful, RegisterablePersistent {
+	@build_fsm(WORLD_DEFAULT_FSM_ID)
+	public static define_default_fsm(): StateMachineBlueprint {
+		return {
+			initial: 'game',
+			states: {
+				game: {
+					tick(this: World): void {
+						// No-op; default worlds remain in the game state.
+					},
+				},
+			},
+		};
+	}
+
 	get registrypersistent(): true {
 		return true;
 	}
@@ -424,7 +440,14 @@ export class World implements Stateful, RegisterablePersistent {
 	*/
 	public startWorldStateMachine(): this {
 		// Check if the FSM ID refers to a valid state machine in the library, but only if it was explicitly passed as an argument
-		if (this._fsmId && !StateDefinitions[this._fsmId]) throw new Error(`[StateMachineController] Invalid FSM ID: "'${this._fsmId}'"`);
+		if (this._fsmId && !StateDefinitions[this._fsmId]) {
+			console.warn(`[World] FSM ID '${this._fsmId}' not found in StateDefinitions; defaulting to 'default_world'.`);
+			this._fsmId = WORLD_DEFAULT_FSM_ID;
+			if (!StateDefinitions[this._fsmId]) {
+				throw new Error(`[World] Default FSM ID 'default_world' not found in StateDefinitions.`);
+			}
+		}
+		// throw new Error(`[StateMachineController] Invalid FSM ID: "'${this._fsmId}'"`);
 
 		this.sc = new StateMachineController({ fsm_id: this._fsmId ?? 'world', id: this.id });
 		this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the world, and subscribe to all events that are defined in the state machine definitions

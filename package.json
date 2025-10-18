@@ -7,7 +7,8 @@
 	"src/bmsx",
 	"src/testrom",
 	"src/ella2023",
-	"src/sint2024"
+	"src/sint2024",
+	"src/luademo"
   ],
   "dependencies": {
 	"blob": "*",

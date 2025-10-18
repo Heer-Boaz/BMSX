@@ -1,0 +1,9 @@
+{
+  "name": "bmsx-lua-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "dependencies": {
+    "bmsx": "0.0.0-dev"
+  }
+}

@@ -83,6 +83,9 @@ const BOILERPLATE_RESOURCE_ID_MODEL = `export enum ModelId {
 const BOILERPLATE_RESOURCE_ID_FSM = `export enum FsmId {
 	none = 'none',`;
 
+const BOILERPLATE_RESOURCE_ID_LUA = `export enum LuaId {
+	none = 'none',`;
+
 declare global {
 	var __dirname: string;
 }
@@ -614,13 +617,16 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 		case '.glb':
 			type = 'model';
 			break;
-		case '.yaml':
-		case '.yml':
-			datatype = 'yaml';
-			type = getDataSubtype(name);
-			name = removeExtension(name);
-			break;
-	}
+	case '.yaml':
+	case '.yml':
+		datatype = 'yaml';
+		type = getDataSubtype(name);
+		name = removeExtension(name);
+		break;
+	case '.lua':
+		type = 'lua';
+		break;
+}
 	return { name, ext, type, collisionType, datatype };
 }
 
@@ -651,6 +657,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	let dataid = 1;
 	let modelid = 1;
 	let fsmid = 1;
+	let luaid = 1;
 	let codeFileCount = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		const filepath = arrayOfFiles[i];
@@ -685,12 +692,16 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			case 'code':
 				codeFileCount += 1;
 				break;
-			case 'data':
-			case 'aem': // AEM files are added to the data asset list
-				// For data files, we use the name as is
-				result.push({ filepath, name, ext, type, id: dataid, datatype: meta.datatype });
-				++dataid;
-				break;
+		case 'data':
+		case 'aem': // AEM files are added to the data asset list
+			// For data files, we use the name as is
+			result.push({ filepath, name, ext, type, id: dataid, datatype: meta.datatype });
+			++dataid;
+			break;
+		case 'lua':
+			result.push({ filepath, name, ext, type, id: luaid });
+			++luaid;
+			break;
 			case 'model':
 				result.push({ filepath, name, ext, type, id: modelid, datatype: meta.datatype });
 				++modelid;
@@ -762,6 +773,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	checkDuplicateNames('audio');
 	checkDuplicateNames('model');
 	checkDuplicateNames('fsm');
+	checkDuplicateNames('lua');
 
 	return result;
 }
@@ -850,14 +862,16 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 	const tsdataout = new Array<string>();
 	const tsmodelout = new Array<string>();
 	const tsfsmout = new Array<string>();
+	const tsluaout = new Array<string>();
 
-	const metalist: Resource[] = await getResMetaList(respaths, rom_name)
+	const metalist: Resource[] = await getResMetaList(respaths, rom_name);
 
 	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
 	tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
 	tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
 	tsfsmout.push(BOILERPLATE_RESOURCE_ID_FSM);
+	tsluaout.push(BOILERPLATE_RESOURCE_ID_LUA);
 
 	for (let i = 0; i < metalist.length; i++) {
 		const current = metalist[i];
@@ -873,15 +887,18 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 			case 'audio':
 				tssndout.push(`${enum_member_to_add} `);
 				break;
-			case 'data':
-				tsdataout.push(`${enum_member_to_add} `);
-				break;
-			case 'model':
-				tsmodelout.push(`${enum_member_to_add} `);
-				break;
-			case 'fsm':
-				tsfsmout.push(`${enum_member_to_add} `);
-				break;
+		case 'data':
+			tsdataout.push(`${enum_member_to_add} `);
+			break;
+		case 'lua':
+			tsluaout.push(`${enum_member_to_add} `);
+			break;
+		case 'model':
+			tsmodelout.push(`${enum_member_to_add} `);
+			break;
+		case 'fsm':
+			tsfsmout.push(`${enum_member_to_add} `);
+			break;
 			case 'romlabel':
 				// Ignore this part
 				break;
@@ -896,8 +913,9 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
 	tsdataout.push("}\n");
 	tsmodelout.push("}\n");
 	tsfsmout.push("}\n");
+	tsluaout.push("}\n");
 
-	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout, tsfsmout).join('\n');
+	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout, tsfsmout, tsluaout).join('\n');
 
 	const targetPath = respaths[0].replace('/res', '/resourceids.ts');
 	await writeFile(targetPath, total_output);
@@ -948,13 +966,16 @@ export async function generateRomAssets(resources: Resource[]) {
 				const { audiometa } = parseAudioMeta(res.filepath);
 				romAssets.push({ resid, type, audiometa, buffer });
 				break;
-			case 'code':
-				resid = resid.replace('.min', '');
-				romAssets.push({ resid, type, buffer });
-				break;
-			case 'data':
-			case 'fsm':
-			case 'aem':
+		case 'code':
+			resid = resid.replace('.min', '');
+			romAssets.push({ resid, type, buffer });
+			break;
+		case 'lua':
+			romAssets.push({ resid, type, buffer });
+			break;
+		case 'data':
+		case 'fsm':
+		case 'aem':
 				// Encode the JSON-data via the binencoder
 				// Convert the buffer to a JSON string and then encode it
 				switch (res.datatype) {
@@ -1410,7 +1431,7 @@ export async function buildBootromScriptIfNewer(options: BootromBuildOptions): P
 	throw new Error(`Unsupported platform "${options.platform}" when building bootrom script.`);
 }
 
-export const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml'];
+export const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml', '.lua'];
 
 export const isCodeFile = (filename: string) => codeFileExtensions.some(extension => filename.endsWith(extension));
 export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, checkAssets: boolean) => (checkCodeFiles && isCodeFile(filename)) || checkAssets;

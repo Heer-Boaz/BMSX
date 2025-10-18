@@ -10,12 +10,13 @@ export interface RomPack {
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
-	code: string; // The loaded game code in the ROM pack.
+	code: string | null; // The loaded game code in the ROM pack.
 	fsm: id2fsm; // Reference to the loaded FSM assets in the ROM pack, including metadata.
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata.
+	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack.
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem';
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem' | 'lua';
 export type asset_id = string;
 
 /**
@@ -60,6 +61,7 @@ export type AudioId = asset_id;
 export type ModelId = asset_id;
 export type DataId = asset_id;
 export type FsmId = asset_id;
+export type LuaId = asset_id;
 
 /**
  * Arguments passed from the bootloader to the game constructor.
