@@ -26,6 +26,7 @@ export class BmsxConsoleRuntime {
 	private readonly storage: BmsxConsoleStorage;
 	private readonly colliders: ConsoleColliderManager;
 	private readonly physics: Physics2DManager;
+	private readonly apiFunctionNames = new Set<string>();
 	private readonly luaProgram: BmsxConsoleLuaProgram | null;
 	private luaInterpreter: LuaInterpreter | null = null;
 	private luaInitFunction: LuaFunctionValue | null = null;
@@ -102,6 +103,7 @@ export class BmsxConsoleRuntime {
 		this.luaChunkName = chunkName;
 
 		this.registerApiBuiltins(this.luaInterpreter);
+		this.luaInterpreter.setReservedIdentifiers(this.apiFunctionNames);
 		this.luaInterpreter.execute(source, chunkName);
 
 		const env = this.luaInterpreter.getGlobalEnvironment();
@@ -130,6 +132,8 @@ export class BmsxConsoleRuntime {
 	}
 
 	private registerApiBuiltins(interpreter: LuaInterpreter): void {
+		this.apiFunctionNames.clear();
+
 		const env = interpreter.getGlobalEnvironment();
 		const apiTable = new LuaTable();
 		const members = this.collectApiMembers();
@@ -163,6 +167,7 @@ export class BmsxConsoleRuntime {
 				});
 				env.set(name, native);
 				apiTable.set(name, native);
+				this.apiFunctionNames.add(name);
 				continue;
 			}
 
@@ -183,6 +188,7 @@ export class BmsxConsoleRuntime {
 				});
 				env.set(name, native);
 				apiTable.set(name, native);
+				this.apiFunctionNames.add(name);
 			}
 		}
 		env.set('api', apiTable);
@@ -239,6 +245,7 @@ export class BmsxConsoleRuntime {
 		}));
 
 		env.set('table', tableLibrary);
+		this.apiFunctionNames.add('table');
 	}
 
 	private collectApiMembers(): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor | undefined }> {
