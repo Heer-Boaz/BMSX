@@ -135,7 +135,7 @@ export class LuaInterpreter {
 	public execute(source: string, chunkName: string): LuaValue[] {
 		const lexer = new LuaLexer(source, chunkName);
 		const tokens = lexer.scanTokens();
-		const parser = new LuaParser(tokens, chunkName);
+		const parser = new LuaParser(tokens, chunkName, source);
 		const chunk = parser.parseChunk();
 		this.validateReservedIdentifiers(chunk.body);
 		return this.executeChunk(chunk);

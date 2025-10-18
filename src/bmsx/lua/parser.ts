@@ -60,11 +60,13 @@ type ParsedArguments = {
 export class LuaParser {
 	private readonly tokens: ReadonlyArray<LuaToken>;
 	private readonly chunkName: string;
+	private readonly sourceLines: string[];
 	private index: number;
 
-	constructor(tokens: ReadonlyArray<LuaToken>, chunkName: string) {
+	constructor(tokens: ReadonlyArray<LuaToken>, chunkName: string, source: string) {
 		this.tokens = tokens;
 		this.chunkName = chunkName;
+		this.sourceLines = source.split(/\r?\n/);
 		this.index = 0;
 	}
 
@@ -443,7 +445,7 @@ export class LuaParser {
 		if (expression.kind === LuaSyntaxKind.CallExpression) {
 			return this.createCallStatement(expression as LuaCallExpression);
 		}
-		throw this.error(this.current(), 'Expected assignment or function call.');
+		throw this.errorAtRange(expression.range, 'Expected assignment or function call.');
 	}
 
 	private parseAssignment(firstExpression: LuaExpression): LuaAssignmentStatement {
@@ -1025,6 +1027,32 @@ export class LuaParser {
 	}
 
 	private error(token: LuaToken, message: string): LuaSyntaxError {
-		return new LuaSyntaxError(message, this.chunkName, token.line, token.column);
+		const payload = this.formatError(token.line, token.column, message, token.lexeme ?? '');
+		return new LuaSyntaxError(payload, this.chunkName, token.line, token.column);
+	}
+
+	private errorAtRange(range: LuaSourceRange, message: string): LuaSyntaxError {
+		const lexeme = this.extractLexeme(range);
+		const payload = this.formatError(range.start.line, range.start.column, message, lexeme);
+		return new LuaSyntaxError(payload, this.chunkName, range.start.line, range.start.column);
+	}
+
+	private formatError(line: number, column: number, message: string, lexeme: string): string {
+		const near = lexeme.length > 0 ? ` near '${lexeme}'` : '';
+		const lineText = this.sourceLines[line - 1] ?? '';
+		const pointer = ' '.repeat(Math.max(column - 1, 0)) + '^';
+		return `[line ${line}, column ${column}] ${message}${near}\n${lineText}\n${pointer}`;
+	}
+
+	private extractLexeme(range: LuaSourceRange): string {
+		const lineIndex = range.start.line - 1;
+		if (lineIndex < 0 || lineIndex >= this.sourceLines.length) {
+			return '';
+		}
+		const line = this.sourceLines[lineIndex];
+		const startIndex = Math.max(range.start.column - 1, 0);
+		let endIndex = Math.max(range.end.column - 1, startIndex + 1);
+		endIndex = Math.min(endIndex, line.length);
+		return line.slice(startIndex, endIndex);
 	}
 }
