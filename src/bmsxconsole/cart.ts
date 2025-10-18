@@ -210,7 +210,14 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 	private initializeDemo(api: BmsxConsoleApi): void {
 		api.colliderClear();
 		const radius = 3;
-		api.defineSprite(1, BitmapId.ball, { width: 6, height: 6, originX: 3, originY: 3, collider: { kind: 'circle', radius } });
+		api.defineSprite(1, BitmapId.ball, {
+			width: 6,
+			height: 6,
+			originX: 3,
+			originY: 3,
+			// collider: { kind: 'circle', radius },
+			physics: { mass: 1, restitution: DEMO_RESTITUTION, gravityScale: 0, isStatic: false },
+		});
 		const bounds = DEMO_BOUNDS;
 		const wallSpecs = [
 			{ id: WALL_IDS[0], kind: 'box' as const, width: 1, height: bounds.height, x: bounds.x - 0.5, y: bounds.y + bounds.height / 2 },
@@ -227,96 +234,26 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 			{ id: 1, colliderId: 'console_ball_1', x: bounds.x + bounds.width - radius - 6, y: bounds.y + radius + 8, vx: -36, vy: -30, radius, color: COLOR_HIGHLIGHT },
 		];
 		this.demoBalls = initial.map(ball => ({ ...ball }));
+		for (const ball of this.demoBalls) {
+			api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
+			api.spriteSetVelocity(ball.colliderId, ball.vx, ball.vy);
+		}
 	}
 
 	private updateDemoBalls(api: BmsxConsoleApi, deltaSeconds: number): void {
-		if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) return;
-		const dt = Math.min(deltaSeconds, 0.05);
-		for (const ball of this.demoBalls) {
-			ball.x += ball.vx * dt;
-			ball.y += ball.vy * dt;
-			api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
-		}
-
-		for (const ball of this.demoBalls) {
-			this.resolveBallWalls(api, ball);
-		}
-
-		for (let i = 0; i < this.demoBalls.length - 1; i++) {
-			const a = this.demoBalls[i];
-			for (let j = i + 1; j < this.demoBalls.length; j++) {
-				const b = this.demoBalls[j];
-				this.resolveBallPair(api, a, b);
-			}
-		}
-	}
-
-	private resolveBallWalls(api: BmsxConsoleApi, ball: DemoBall): void {
-		for (const wallId of WALL_IDS) {
-			const contact = api.colliderContact(ball.colliderId, wallId);
-			if (!contact) continue;
-			let normal = this.normalized(contact.normalX, contact.normalY);
-			if (!normal) continue;
-			let velAlongNormal = ball.vx * normal.x + ball.vy * normal.y;
-			if (velAlongNormal > 0) {
-				normal = { x: -normal.x, y: -normal.y };
-				velAlongNormal = ball.vx * normal.x + ball.vy * normal.y;
-			}
-			if (velAlongNormal >= 0) continue;
-			const bounceMagnitude = -(1 + DEMO_RESTITUTION) * velAlongNormal;
-			ball.vx += bounceMagnitude * normal.x;
-			ball.vy += bounceMagnitude * normal.y;
-			const penetration = contact.depth ?? 0;
-			if (penetration > 0) {
-				ball.x += normal.x * penetration;
-				ball.y += normal.y * penetration;
+		if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) return;
+		if (deltaSeconds === 0) {
+			for (const ball of this.demoBalls) {
 				api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
+				api.spriteSetVelocity(ball.colliderId, ball.vx, ball.vy);
 			}
 		}
-	}
-
-	private resolveBallPair(api: BmsxConsoleApi, a: DemoBall, b: DemoBall): void {
-		const contact = api.colliderContact(a.colliderId, b.colliderId);
-		if (!contact) return;
-		let normal = this.normalized(contact.normalX, contact.normalY) ?? this.normalFromCenters(a, b);
-		if (!normal) return;
-		let relativeVel = (b.vx - a.vx) * normal.x + (b.vy - a.vy) * normal.y;
-		if (relativeVel > 0) {
-			normal = { x: -normal.x, y: -normal.y };
-			relativeVel = (b.vx - a.vx) * normal.x + (b.vy - a.vy) * normal.y;
+		for (const ball of this.demoBalls) {
+			const center = api.spriteCenter(ball.colliderId);
+			if (!center) continue;
+			ball.x = center.x;
+			ball.y = center.y;
 		}
-		if (relativeVel >= 0) return;
-		const impulse = -relativeVel;
-		a.vx -= impulse * normal.x;
-		a.vy -= impulse * normal.y;
-		b.vx += impulse * normal.x;
-		b.vy += impulse * normal.y;
-		const penetration = contact.depth ?? 0;
-		if (penetration > 0) {
-			const correction = penetration * 0.5;
-			a.x -= normal.x * correction;
-			a.y -= normal.y * correction;
-			b.x += normal.x * correction;
-			b.y += normal.y * correction;
-			api.spriteSetPosition(a.colliderId, a.x, a.y);
-			api.spriteSetPosition(b.colliderId, b.x, b.y);
-		}
-	}
-
-	private normalFromCenters(a: DemoBall, b: DemoBall): { x: number; y: number } | null {
-		const dx = b.x - a.x;
-		const dy = b.y - a.y;
-		const lengthSq = dx * dx + dy * dy;
-		if (lengthSq <= 0) return null;
-		const invLen = 1 / Math.sqrt(lengthSq);
-		return { x: dx * invLen, y: dy * invLen };
-	}
-
-	private normalized(nx: number, ny: number): { x: number; y: number } | null {
-		const lengthSq = nx * nx + ny * ny;
-		if (lengthSq <= 0) return null;
-		const invLen = 1 / Math.sqrt(lengthSq);
-		return { x: nx * invLen, y: ny * invLen };
 	}
 
 	private handleTrackInput(api: BmsxConsoleApi): void {

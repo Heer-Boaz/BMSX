@@ -8,6 +8,14 @@ export type SpriteColliderConfig =
 	| { kind: 'box'; width?: number; height?: number; layer?: number; mask?: number; isTrigger?: boolean }
 	| { kind: 'circle'; radius?: number; layer?: number; mask?: number; isTrigger?: boolean };
 
+export type SpritePhysicsConfig = {
+	mass?: number;
+	restitution?: number;
+	gravityScale?: number;
+	maxSpeed?: number | null;
+	isStatic?: boolean;
+};
+
 export type SpriteDefinition = {
 	id: number;
 	bitmapId: string;
@@ -17,13 +25,14 @@ export type SpriteDefinition = {
 	originY: number;
 	flags: SpriteFlags;
 	collider: SpriteColliderConfig | null;
+	physics: SpritePhysicsConfig | null;
 };
 
 export class ConsoleSpriteRegistry {
 	private readonly sprites = new Map<number, SpriteDefinition>();
 	private readonly defaultTileSize = { width: 8, height: 8 };
 
-	public defineSprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: SpriteFlags; collider?: SpriteColliderConfig | null }): void {
+	public defineSprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: SpriteFlags; collider?: SpriteColliderConfig | null; physics?: SpritePhysicsConfig | null }): void {
 		if (!Number.isInteger(index) || index < 0) {
 			throw new Error(`[ConsoleSpriteRegistry] Sprite index '${index}' must be a non-negative integer.`);
 		}
@@ -45,6 +54,7 @@ export class ConsoleSpriteRegistry {
 			originY: opts?.originY ?? 0,
 			flags: opts?.flags ?? 0,
 			collider: this.resolveColliderConfig(opts?.collider),
+			physics: this.resolvePhysicsConfig(opts?.physics),
 		};
 		this.sprites.set(index, definition);
 	}
@@ -85,6 +95,34 @@ export class ConsoleSpriteRegistry {
 			layer: config.layer,
 			mask: config.mask,
 			isTrigger: config.isTrigger,
+		};
+	}
+
+	private resolvePhysicsConfig(config: SpritePhysicsConfig | null | undefined): SpritePhysicsConfig | null {
+		if (config === undefined) {
+			return {
+				mass: 1,
+				restitution: 1,
+				gravityScale: 0,
+				maxSpeed: null,
+				isStatic: false,
+			};
+		}
+		if (config === null) return null;
+		const mass = config.mass ?? 1;
+		if (!(mass > 0)) throw new Error('[ConsoleSpriteRegistry] Sprite physics mass must be positive.');
+		const restitution = config.restitution ?? 1;
+		if (restitution < 0) throw new Error('[ConsoleSpriteRegistry] Sprite physics restitution must be non-negative.');
+		const gravityScale = config.gravityScale ?? 0;
+		if (!Number.isFinite(gravityScale)) throw new Error('[ConsoleSpriteRegistry] Sprite physics gravity scale must be finite.');
+		const maxSpeed = config.maxSpeed ?? null;
+		if (maxSpeed !== null && !(maxSpeed > 0)) throw new Error('[ConsoleSpriteRegistry] Sprite physics max speed must be positive when provided.');
+		return {
+			mass,
+			restitution,
+			gravityScale,
+			maxSpeed,
+			isStatic: config.isStatic ?? false,
 		};
 	}
 

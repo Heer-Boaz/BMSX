@@ -121,6 +121,10 @@ export class ConsoleColliderManager {
 		this.upsert(id, opts);
 	}
 
+	public get(id: string): ConsoleColliderObject | null {
+		return this.colliders.get(id) ?? null;
+	}
+
 	public remove(id: string): void {
 		const obj = this.colliders.get(id);
 		if (!obj) return;
@@ -150,6 +154,15 @@ export class ConsoleColliderManager {
 
 	public has(id: string): boolean {
 		return this.colliders.has(id);
+	}
+
+	public getState(id: string): { centerX: number; centerY: number; width: number; height: number } {
+		const obj = this.require(id);
+		const width = obj.sx;
+		const height = obj.sy;
+		const centerX = obj.pos.x + width / 2;
+		const centerY = obj.pos.y + height / 2;
+		return { centerX, centerY, width, height };
 	}
 
 	public setPosition(id: string, centerX: number, centerY: number): void {

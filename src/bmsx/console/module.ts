@@ -1,14 +1,22 @@
 import { $ } from '../core/game';
 import type { World, WorldModule } from '../core/world';
+import { TickGroup } from '../ecs/ecsystem';
 import { BmsxConsoleRuntime } from './runtime';
+import { Physics2DManager, Physics2DSystem } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, ConsoleModuleOptions } from './types';
 
 export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: ConsoleModuleOptions): WorldModule {
 	let runtime: BmsxConsoleRuntime | null = null;
+	const physics = new Physics2DManager();
 	return {
 		id: options.moduleId,
 		ecs: {
-			systems: [],
+				systems: [{
+					id: 'bmsx.console.physics2d',
+					group: TickGroup.Physics,
+					defaultPriority: 18,
+					create: (priority: number) => new Physics2DSystem(physics, priority),
+				}],
 			nodes: [],
 		},
 		onBoot(_world: World) {
@@ -16,6 +24,7 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 				cart,
 				storage: $.platform.storage,
 				playerIndex: options.playerIndex,
+				physics,
 			});
 			runtime.boot();
 		},
