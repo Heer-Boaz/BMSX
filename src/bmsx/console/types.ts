@@ -7,11 +7,24 @@ export interface BmsxConsoleMetadata {
 	persistentId: string;
 }
 
+export type BmsxConsoleLuaProgramEntryPoints = {
+	init?: string;
+	update?: string;
+	draw?: string;
+};
+
+export type BmsxConsoleLuaProgram = {
+	readonly chunkName: string;
+	readonly source: string;
+	readonly entry?: BmsxConsoleLuaProgramEntryPoints;
+};
+
 export interface BmsxConsoleCartridge {
 	readonly meta: BmsxConsoleMetadata;
 	init(api: BmsxConsoleApi): void;
 	update(api: BmsxConsoleApi, deltaSeconds: number): void;
 	draw(api: BmsxConsoleApi): void;
+	readonly luaProgram?: BmsxConsoleLuaProgram;
 }
 
 export const enum BmsxConsoleButton {

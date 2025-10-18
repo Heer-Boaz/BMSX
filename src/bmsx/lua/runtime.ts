@@ -1414,3 +1414,7 @@ export class LuaInterpreter {
 export function createLuaInterpreter(): LuaInterpreter {
 	return new LuaInterpreter(null);
 }
+
+export function createLuaNativeFunction(name: string, interpreter: LuaInterpreter, handler: (interpreter: LuaInterpreter, args: ReadonlyArray<LuaValue>) => ReadonlyArray<LuaValue>): LuaFunctionValue {
+	return new LuaNativeFunction(name, interpreter, handler);
+}
