@@ -44,7 +44,7 @@ import type {
 	LuaSourceRange,
 } from './ast';
 import { LuaEnvironment } from './environment';
-import { LuaRuntimeError } from './errors';
+import { LuaRuntimeError, LuaSyntaxError } from './errors';
 import { LuaLexer } from './lexer';
 import { LuaParser } from './parser';
 import type { LuaFunctionValue, LuaValue } from './value';
@@ -115,9 +115,10 @@ type LabelScope = {
 };
 
 export class LuaInterpreter {
-	private readonly globals: LuaEnvironment;
-	private currentChunk: string;
-	private randomSeedValue: number;
+ 	private readonly globals: LuaEnvironment;
+ 	private currentChunk: string;
+ 	private randomSeedValue: number;
+ 	private reservedIdentifiers: Set<string> = new Set<string>();
 
 	constructor(globals: LuaEnvironment | null) {
 		if (globals === null) {
@@ -136,7 +137,17 @@ export class LuaInterpreter {
 		const tokens = lexer.scanTokens();
 		const parser = new LuaParser(tokens, chunkName);
 		const chunk = parser.parseChunk();
+		this.validateReservedIdentifiers(chunk.body);
 		return this.executeChunk(chunk);
+	}
+
+	public setReservedIdentifiers(names: Iterable<string>): void {
+		this.reservedIdentifiers = new Set<string>();
+		for (const name of names) {
+			if (typeof name === 'string' && name.length > 0) {
+				this.reservedIdentifiers.add(name);
+			}
+		}
 	}
 
 	public getGlobalEnvironment(): LuaEnvironment {
@@ -1016,6 +1027,95 @@ export class LuaInterpreter {
 			throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found in function '${name}'.`);
 		}
 		return [];
+	}
+
+	private validateReservedIdentifiers(statements: ReadonlyArray<LuaStatement>): void {
+		if (this.reservedIdentifiers.size === 0) {
+			return;
+		}
+		for (const statement of statements) {
+			switch (statement.kind) {
+				case LuaSyntaxKind.LocalAssignmentStatement: {
+					const localAssignment = statement as LuaLocalAssignmentStatement;
+					for (const name of localAssignment.names) {
+						this.ensureIdentifierNotReserved(name.name, name.range);
+					}
+					break;
+				}
+				case LuaSyntaxKind.LocalFunctionStatement: {
+					const localFunc = statement as LuaLocalFunctionStatement;
+					this.ensureIdentifierNotReserved(localFunc.name.name, localFunc.name.range);
+					this.validateFunctionExpression(localFunc.functionExpression);
+					break;
+				}
+				case LuaSyntaxKind.FunctionDeclarationStatement: {
+					const funcDecl = statement as LuaFunctionDeclarationStatement;
+					if (funcDecl.name.identifiers.length > 0) {
+						this.ensureIdentifierNotReserved(funcDecl.name.identifiers[0], funcDecl.range);
+					}
+					if (funcDecl.name.methodName) {
+						this.ensureIdentifierNotReserved(funcDecl.name.methodName, funcDecl.range);
+					}
+					this.validateFunctionExpression(funcDecl.functionExpression);
+					break;
+				}
+				case LuaSyntaxKind.AssignmentStatement: {
+					const assignment = statement as LuaAssignmentStatement;
+					for (const target of assignment.left) {
+						if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+							const identifier = target as LuaIdentifierExpression;
+							this.ensureIdentifierNotReserved(identifier.name, identifier.range);
+						}
+					}
+					break;
+				}
+				case LuaSyntaxKind.IfStatement: {
+					const ifStatement = statement as LuaIfStatement;
+					for (const clause of ifStatement.clauses) {
+						this.validateReservedIdentifiers(clause.block.body);
+					}
+					break;
+				}
+				case LuaSyntaxKind.WhileStatement:
+					this.validateReservedIdentifiers((statement as LuaWhileStatement).block.body);
+					break;
+				case LuaSyntaxKind.RepeatStatement:
+					this.validateReservedIdentifiers((statement as LuaRepeatStatement).block.body);
+					break;
+				case LuaSyntaxKind.ForNumericStatement: {
+					const numeric = statement as LuaForNumericStatement;
+					this.ensureIdentifierNotReserved(numeric.variable.name, numeric.variable.range);
+					this.validateReservedIdentifiers(numeric.block.body);
+					break;
+				}
+				case LuaSyntaxKind.ForGenericStatement: {
+					const generic = statement as LuaForGenericStatement;
+					for (const variable of generic.variables) {
+						this.ensureIdentifierNotReserved(variable.name, variable.range);
+					}
+					this.validateReservedIdentifiers(generic.block.body);
+					break;
+				}
+				case LuaSyntaxKind.DoStatement:
+					this.validateReservedIdentifiers((statement as LuaDoStatement).block.body);
+					break;
+				default:
+					break;
+			}
+		}
+	}
+
+	private ensureIdentifierNotReserved(name: string, range: LuaSourceRange): void {
+		if (this.reservedIdentifiers.has(name)) {
+			throw new LuaSyntaxError(`'${name}' is reserved and cannot be redefined.`, range.chunkName, range.start.line, range.start.column);
+		}
+	}
+
+	private validateFunctionExpression(expression: LuaFunctionExpression): void {
+		for (const parameter of expression.parameters) {
+			this.ensureIdentifierNotReserved(parameter.name, parameter.range);
+		}
+		this.validateReservedIdentifiers(expression.body.body);
 	}
 
 	private initializeBuiltins(): void {
