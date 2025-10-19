@@ -1,6 +1,7 @@
 import { $ } from '../core/game';
 import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
+import type { ClipboardService } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
 import type { BmsxConsoleMetadata, ConsoleViewport } from './types';
 import { ConsoleEditorFont } from './editor_font';
@@ -347,54 +348,61 @@ export class ConsoleCartEditor {
 		if (shiftDown) {
 			this.ensureSelectionAnchor(previousPosition);
 		}
-		else {
-			this.clearSelection();
+
+		if (!shiftDown && this.collapseSelectionOnNavigation(keyboard)) {
+			return;
 		}
+
+		let moved = false;
 
 		if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
 			this.moveCursorVertical(-1);
 			this.consumeKey(keyboard, 'ArrowUp');
+			moved = true;
 		}
 		if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
 			this.moveCursorVertical(1);
 			this.consumeKey(keyboard, 'ArrowDown');
+			moved = true;
 		}
 		if (ctrlDown) {
 			if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
 				this.moveWordLeft();
 				this.consumeKey(keyboard, 'ArrowLeft');
+				moved = true;
 			}
 			if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
 				this.moveWordRight();
 				this.consumeKey(keyboard, 'ArrowRight');
+				moved = true;
 			}
 		}
 		else {
 			if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
 				this.moveCursorHorizontal(-1);
 				this.consumeKey(keyboard, 'ArrowLeft');
+				moved = true;
 			}
 			if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
 				this.moveCursorHorizontal(1);
 				this.consumeKey(keyboard, 'ArrowRight');
+				moved = true;
 			}
 		}
-		if (shiftDown) {
-			if (!this.hasSelection()) {
-				this.clearSelection();
-			}
-		}
+
 		if (this.isKeyJustPressed(keyboard, 'Home')) {
 			this.cursorColumn = 0;
 			this.updateDesiredColumn();
 			this.resetBlink();
 			this.consumeKey(keyboard, 'Home');
+			moved = true;
 		}
 		if (this.isKeyJustPressed(keyboard, 'End')) {
 			this.cursorColumn = this.currentLine().length;
 			this.updateDesiredColumn();
 			this.resetBlink();
 			this.consumeKey(keyboard, 'End');
+			moved = true;
 		}
 		if (this.isKeyJustPressed(keyboard, 'PageUp')) {
 			const rows = this.visibleRowCount();
@@ -404,6 +412,7 @@ export class ConsoleCartEditor {
 			this.cursorColumn = targetColumn;
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageUp');
+			moved = true;
 		}
 		if (this.isKeyJustPressed(keyboard, 'PageDown')) {
 			const rows = this.visibleRowCount();
@@ -413,7 +422,13 @@ export class ConsoleCartEditor {
 			this.cursorColumn = targetColumn;
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageDown');
+			moved = true;
 		}
+
+		if (!shiftDown && moved) {
+			this.clearSelection();
+		}
+
 		if (shiftDown && this.isKeyJustPressed(keyboard, 'Tab')) {
 			this.unindentCurrentLine();
 			this.consumeKey(keyboard, 'Tab');
@@ -860,6 +875,46 @@ private insertTab(): void {
 		return { start: anchor, end: cursor };
 	}
 
+	private collapseSelectionTo(target: 'start' | 'end'): void {
+		const range = this.getSelectionRange();
+		if (!range) {
+			return;
+		}
+		const destination = target === 'start' ? range.start : range.end;
+		this.cursorRow = destination.row;
+		this.cursorColumn = destination.column;
+		this.selectionAnchor = null;
+		this.updateDesiredColumn();
+		this.resetBlink();
+	}
+
+	private collapseSelectionOnNavigation(keyboard: KeyboardInput): boolean {
+		if (!this.hasSelection()) {
+			return false;
+		}
+		if (this.isKeyJustPressed(keyboard, 'ArrowLeft')) {
+			this.consumeKey(keyboard, 'ArrowLeft');
+			this.collapseSelectionTo('start');
+			return true;
+		}
+		if (this.isKeyJustPressed(keyboard, 'ArrowUp')) {
+			this.consumeKey(keyboard, 'ArrowUp');
+			this.collapseSelectionTo('start');
+			return true;
+		}
+		if (this.isKeyJustPressed(keyboard, 'ArrowRight')) {
+			this.consumeKey(keyboard, 'ArrowRight');
+			this.collapseSelectionTo('end');
+			return true;
+		}
+		if (this.isKeyJustPressed(keyboard, 'ArrowDown')) {
+			this.consumeKey(keyboard, 'ArrowDown');
+			this.collapseSelectionTo('end');
+			return true;
+		}
+		return false;
+	}
+
 	private deleteSelectionIfPresent(): boolean {
 		if (!this.hasSelection()) {
 			return false;
@@ -918,6 +973,14 @@ private insertTab(): void {
 		return parts.join('\n');
 	}
 
+	private getClipboardService(): ClipboardService | null {
+		const clipboard = $.platform.clipboard;
+		if (!clipboard.isSupported()) {
+			return null;
+		}
+		return clipboard;
+	}
+
 	private async copySelectionToClipboard(): Promise<void> {
 		const text = this.getSelectionText();
 		if (text === null) {
@@ -945,11 +1008,19 @@ private insertTab(): void {
 
 	private async writeClipboard(text: string): Promise<void> {
 		this.clipboardFallback = text;
-		if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.writeText) {
+		const clipboard = this.getClipboardService();
+		if (!clipboard) {
 			return;
 		}
 		try {
-			await navigator.clipboard.writeText(text);
+			let state = clipboard.getWritePermissionState();
+			if (state === 'unknown' || state === 'prompt') {
+				state = await clipboard.requestWritePermission();
+			}
+			if (state === 'denied') {
+				throw new Error('[ConsoleCartEditor] Clipboard write permission denied.');
+			}
+			await clipboard.writeText(text);
 		}
 		catch (error) {
 			console.warn('[ConsoleCartEditor] Clipboard write failed:', error);
@@ -957,20 +1028,26 @@ private insertTab(): void {
 	}
 
 	private async readClipboard(): Promise<string | null> {
-		if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.readText) {
+		const clipboard = this.getClipboardService();
+		if (!clipboard) {
 			return this.clipboardFallback;
 		}
 		try {
-			const text = await navigator.clipboard.readText();
-			if (text !== undefined && text !== null) {
-				this.clipboardFallback = text;
-				return text;
+			let state = clipboard.getReadPermissionState();
+			if (state === 'unknown' || state === 'prompt') {
+				state = await clipboard.requestReadPermission();
 			}
+			if (state === 'denied') {
+				throw new Error('[ConsoleCartEditor] Clipboard read permission denied.');
+			}
+			const text = await clipboard.readText();
+			this.clipboardFallback = text;
+			return text;
 		}
 		catch (error) {
 			console.warn('[ConsoleCartEditor] Clipboard read failed:', error);
+			return this.clipboardFallback;
 		}
-		return this.clipboardFallback;
 	}
 
 	private moveSelectionLines(delta: number): void {
@@ -986,6 +1063,7 @@ private insertTab(): void {
 		if (this.selectionAnchor) {
 			this.selectionAnchor = { row: this.selectionAnchor.row + delta, column: this.selectionAnchor.column };
 		}
+		this.clampCursorColumn();
 		this.dirty = true;
 		this.resetBlink();
 		this.updateDesiredColumn();

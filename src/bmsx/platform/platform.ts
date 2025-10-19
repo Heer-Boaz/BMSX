@@ -4,6 +4,7 @@ export interface Platform {
 	lifecycle: Lifecycle;
 	input: InputHub;
 	storage: StorageService;
+	clipboard: ClipboardService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;
 	audio: AudioService;
@@ -159,6 +160,18 @@ export interface StorageService {
 	getItem(k: string): string | null;
 	setItem(k: string, v: string): void;
 	removeItem(k: string): void;
+}
+
+export type ClipboardPermissionState = 'unknown' | 'prompt' | 'granted' | 'denied';
+
+export interface ClipboardService {
+	isSupported(): boolean;
+	readText(): Promise<string>;
+	writeText(text: string): Promise<void>;
+	getReadPermissionState(): ClipboardPermissionState;
+	getWritePermissionState(): ClipboardPermissionState;
+	requestReadPermission(): Promise<ClipboardPermissionState>;
+	requestWritePermission(): Promise<ClipboardPermissionState>;
 }
 
 export interface PlatformHIDDeviceFilter {

@@ -9,6 +9,7 @@ import {
 	Platform,
 	RngService,
 	StorageService,
+	ClipboardService,
 	GameViewHost,
 	ViewportMetrics,
 	ViewportMetricsProvider,
@@ -126,6 +127,7 @@ export class CLIPlatformServices implements Platform {
 	readonly lifecycle: Lifecycle;
 	readonly input: InputHub;
 	readonly storage: StorageService;
+	readonly clipboard: ClipboardService;
 	readonly hid: HIDService;
 	readonly onscreenGamepad: OnscreenGamepadPlatform;
 	readonly audio: AudioService;
@@ -139,6 +141,7 @@ export class CLIPlatformServices implements Platform {
 		this.lifecycle = base.lifecycle;
 		this.input = base.input;
 		this.storage = base.storage;
+		this.clipboard = base.clipboard;
 		this.hid = base.hid;
 		this.onscreenGamepad = base.onscreenGamepad;
 		this.audio = base.audio;

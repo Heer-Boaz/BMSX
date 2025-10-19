@@ -3,6 +3,8 @@ import {
 	FrameLoop,
 	Lifecycle,
 	StorageService,
+	ClipboardService,
+	ClipboardPermissionState,
 	HIDService,
 	InputHub,
 	InputEvt,
@@ -39,6 +41,7 @@ export class BrowserPlatform implements Platform {
 	lifecycle: Lifecycle;
 	input: InputHub;
 	storage: StorageService;
+	clipboard: ClipboardService;
 	hid: HIDService;
 	onscreenGamepad: OnscreenGamepadPlatform;
 	audio: AudioService;
@@ -50,6 +53,7 @@ export class BrowserPlatform implements Platform {
 		this.frames = new BrowserFrameLoop();
 		this.lifecycle = new BrowserLifecycle();
 		this.storage = new BrowserStorage();
+		this.clipboard = new BrowserClipboardService();
 		this.input = new BrowserInputHub(surface, this.clock);
 		const ownerDoc = surface.ownerDocument;
 		if (!(ownerDoc instanceof Document)) {
@@ -144,6 +148,167 @@ class BrowserStorage implements StorageService {
 
 	removeItem(k: string): void {
 		window.localStorage.removeItem(k);
+	}
+}
+
+type ClipboardPermissionName = 'clipboard-read' | 'clipboard-write';
+
+class BrowserClipboardService implements ClipboardService {
+	private readState: ClipboardPermissionState = 'unknown';
+	private writeState: ClipboardPermissionState = 'unknown';
+
+	isSupported(): boolean {
+		if (typeof navigator === 'undefined') {
+			return false;
+		}
+		const clipboard = navigator.clipboard;
+		if (!clipboard) {
+			return false;
+		}
+		const hasRead = typeof clipboard.readText === 'function';
+		const hasWrite = typeof clipboard.writeText === 'function';
+		return hasRead && hasWrite;
+	}
+
+	async readText(): Promise<string> {
+		if (!this.isSupported()) {
+			throw new Error('[BrowserClipboardService] Clipboard API is not available.');
+		}
+		await this.ensureReadPermission();
+		const clipboard = this.requireClipboard();
+		if (typeof clipboard.readText !== 'function') {
+			throw new Error('[BrowserClipboardService] Clipboard readText() is not available.');
+		}
+		try {
+			const text = await clipboard.readText();
+			this.readState = 'granted';
+			return text;
+		}
+		catch (error) {
+			this.updatePermissionFromError(error, 'read');
+			throw error;
+		}
+	}
+
+	async writeText(text: string): Promise<void> {
+		if (!this.isSupported()) {
+			throw new Error('[BrowserClipboardService] Clipboard API is not available.');
+		}
+		await this.ensureWritePermission();
+		const clipboard = this.requireClipboard();
+		if (typeof clipboard.writeText !== 'function') {
+			throw new Error('[BrowserClipboardService] Clipboard writeText() is not available.');
+		}
+		try {
+			await clipboard.writeText(text);
+			this.writeState = 'granted';
+		}
+		catch (error) {
+			this.updatePermissionFromError(error, 'write');
+			throw error;
+		}
+	}
+
+	getReadPermissionState(): ClipboardPermissionState {
+		return this.readState;
+	}
+
+	getWritePermissionState(): ClipboardPermissionState {
+		return this.writeState;
+	}
+
+	async requestReadPermission(): Promise<ClipboardPermissionState> {
+		const state = await this.queryPermission('clipboard-read');
+		this.readState = state;
+		return this.readState;
+	}
+
+	async requestWritePermission(): Promise<ClipboardPermissionState> {
+		const state = await this.queryPermission('clipboard-write');
+		this.writeState = state;
+		return this.writeState;
+	}
+
+	private requireClipboard(): Clipboard {
+		if (typeof navigator === 'undefined' || !navigator.clipboard) {
+			throw new Error('[BrowserClipboardService] Clipboard API is not available.');
+		}
+		return navigator.clipboard;
+	}
+
+	private async ensureReadPermission(): Promise<void> {
+		if (this.readState === 'granted') {
+			return;
+		}
+		if (this.readState === 'denied') {
+			throw new Error('[BrowserClipboardService] Clipboard read permission has been denied.');
+		}
+		const state = await this.queryPermission('clipboard-read');
+		if (state === 'denied') {
+			this.readState = 'denied';
+			throw new Error('[BrowserClipboardService] Clipboard read permission has been denied.');
+		}
+		if (state === 'granted') {
+			this.readState = 'granted';
+			return;
+		}
+		this.readState = 'prompt';
+	}
+
+	private async ensureWritePermission(): Promise<void> {
+		if (this.writeState === 'granted') {
+			return;
+		}
+		if (this.writeState === 'denied') {
+			throw new Error('[BrowserClipboardService] Clipboard write permission has been denied.');
+		}
+		const state = await this.queryPermission('clipboard-write');
+		if (state === 'denied') {
+			this.writeState = 'denied';
+			throw new Error('[BrowserClipboardService] Clipboard write permission has been denied.');
+		}
+		if (state === 'granted') {
+			this.writeState = 'granted';
+			return;
+		}
+		this.writeState = 'prompt';
+	}
+
+	private async queryPermission(name: ClipboardPermissionName): Promise<ClipboardPermissionState> {
+		if (typeof navigator === 'undefined') {
+			return 'denied';
+		}
+		const permissions = (navigator as Navigator & { permissions?: Permissions }).permissions;
+		if (!permissions || typeof permissions.query !== 'function') {
+			return 'unknown';
+		}
+		try {
+			const descriptor: PermissionDescriptor = { name: name as PermissionName };
+			const status = await permissions.query(descriptor);
+			if (status.state === 'granted') {
+				return 'granted';
+			}
+			if (status.state === 'denied') {
+				return 'denied';
+			}
+			return 'prompt';
+		}
+		catch (_error) {
+			return 'unknown';
+		}
+	}
+
+	private updatePermissionFromError(error: unknown, mode: 'read' | 'write'): void {
+		if (error instanceof DOMException) {
+			if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+				if (mode === 'read') {
+					this.readState = 'denied';
+				}
+				else {
+					this.writeState = 'denied';
+				}
+			}
+		}
 	}
 }
 

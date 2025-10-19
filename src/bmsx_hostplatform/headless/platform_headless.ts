@@ -17,6 +17,8 @@ import {
 	OnscreenGamepadPlatformSession,
 	Platform,
 	StorageService,
+	ClipboardService,
+	ClipboardPermissionState,
 	VibrationParams,
 	RngService,
 	PlatformExitEvent,
@@ -71,6 +73,40 @@ class MemoryStorage implements StorageService {
 	}
 	removeItem(k: string): void {
 		this.store.delete(k);
+	}
+}
+
+class HeadlessClipboardService implements ClipboardService {
+	private buffer = '';
+	private readonly readState: ClipboardPermissionState = 'granted';
+	private readonly writeState: ClipboardPermissionState = 'granted';
+
+	isSupported(): boolean {
+		return true;
+	}
+
+	async readText(): Promise<string> {
+		return this.buffer;
+	}
+
+	async writeText(text: string): Promise<void> {
+		this.buffer = text;
+	}
+
+	getReadPermissionState(): ClipboardPermissionState {
+		return this.readState;
+	}
+
+	getWritePermissionState(): ClipboardPermissionState {
+		return this.writeState;
+	}
+
+	async requestReadPermission(): Promise<ClipboardPermissionState> {
+		return this.readState;
+	}
+
+	async requestWritePermission(): Promise<ClipboardPermissionState> {
+		return this.writeState;
 	}
 }
 
@@ -190,6 +226,7 @@ export class HeadlessPlatformServices implements Platform {
 	readonly lifecycle: Lifecycle;
 	readonly input: InputHub;
 	readonly storage: StorageService;
+	readonly clipboard: ClipboardService;
 	readonly hid: HIDService;
 	readonly onscreenGamepad: OnscreenGamepadPlatform;
 	readonly audio: AudioService;
@@ -203,6 +240,7 @@ export class HeadlessPlatformServices implements Platform {
 		this.lifecycle = new HeadlessLifecycle();
 		this.input = new HeadlessInputHub();
 		this.storage = new MemoryStorage();
+		this.clipboard = new HeadlessClipboardService();
 		this.hid = new UnsupportedHID();
 		this.onscreenGamepad = new HeadlessOnscreenGamepadPlatform();
 		this.audio = new SilentAudioService();
