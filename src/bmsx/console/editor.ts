@@ -150,6 +150,7 @@ export class ConsoleCartEditor {
 	private static readonly KEYWORDS = new Set([
 		'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 	]);
+	private static customClipboard: string | null = null;
 
 	private active = false;
 	private lines: string[] = [''];
@@ -310,6 +311,11 @@ export class ConsoleCartEditor {
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyX')) {
 			this.consumeKey(keyboard, 'KeyX');
 			void this.cutSelectionToClipboard();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyV')) {
+			this.consumeKey(keyboard, 'KeyV');
+			this.pasteFromClipboard();
 			return;
 		}
 		this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
@@ -986,10 +992,23 @@ private insertTab(): void {
 		this.replaceSelectionWith('');
 	}
 
+	private pasteFromClipboard(): void {
+		const text = ConsoleCartEditor.customClipboard;
+		if (text === null || text.length === 0) {
+			this.showMessage('Editor clipboard is empty.', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		this.deleteSelectionIfPresent();
+		this.insertClipboardText(text);
+		this.showMessage('Pasted from editor clipboard.', COLOR_STATUS_SUCCESS, 1.5);
+	}
+
 	private async writeClipboard(text: string, successMessage: string): Promise<void> {
+		ConsoleCartEditor.customClipboard = text;
 		const clipboard = this.getClipboardService();
 		if (!clipboard.isSupported()) {
-			this.showMessage('Clipboard is unavailable.', COLOR_STATUS_WARNING, 3.5);
+			const message = successMessage + ' (Editor clipboard only)';
+			this.showMessage(message, COLOR_STATUS_SUCCESS, 1.5);
 			return;
 		}
 		try {
@@ -997,9 +1016,39 @@ private insertTab(): void {
 			this.showMessage(successMessage, COLOR_STATUS_SUCCESS, 1.5);
 		}
 		catch (error) {
-			const message = error instanceof Error ? error.message : 'Clipboard write failed.';
-			this.showMessage(message, COLOR_STATUS_WARNING, 3.5);
+			this.showMessage('System clipboard write failed. Editor clipboard updated.', COLOR_STATUS_WARNING, 3.5);
 		}
+	}
+
+	private insertClipboardText(text: string): void {
+		const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+		const fragments = normalized.split('\n');
+		const currentLine = this.currentLine();
+		const before = currentLine.slice(0, this.cursorColumn);
+		const after = currentLine.slice(this.cursorColumn);
+		if (fragments.length === 1) {
+			const fragment = fragments[0];
+			this.lines[this.cursorRow] = before + fragment + after;
+			this.cursorColumn = before.length + fragment.length;
+		} else {
+			const firstLine = before + fragments[0];
+			const lastIndex = fragments.length - 1;
+			const lastFragment = fragments[lastIndex];
+			const newLines: string[] = [];
+			newLines.push(firstLine);
+			for (let i = 1; i < lastIndex; i++) {
+				newLines.push(fragments[i]);
+			}
+			newLines.push(lastFragment + after);
+			const insertionRow = this.cursorRow;
+			this.lines.splice(insertionRow, 1, ...newLines);
+			this.cursorRow = insertionRow + lastIndex;
+			this.cursorColumn = lastFragment.length;
+		}
+		this.dirty = true;
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.clearSelection();
 	}
 
 	private moveSelectionLines(delta: number): void {
@@ -1203,10 +1252,10 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		const statusBottom = this.viewportHeight;
 		api.rectfill(0, statusTop, this.viewportWidth, statusBottom, COLOR_STATUS_BACKGROUND);
 
-		const lineInfo = `LINE ${this.cursorRow + 1}/${this.lines.length}`;
-		const charInfo = `${this.countCharacters()}/8192`;
+		const lineInfo = `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
+		const filenameInfo = `${this.metadata.title || 'UNTITLED'}.lua`;
 		this.drawText(api, lineInfo, 4, statusTop + 2, COLOR_STATUS_TEXT);
-		this.drawText(api, charInfo, this.viewportWidth - this.measureText(charInfo) - 4, statusTop + 2, COLOR_STATUS_TEXT);
+		this.drawText(api, filenameInfo, this.viewportWidth - this.measureText(filenameInfo) - 4, statusTop + 2, COLOR_STATUS_TEXT);
 
 		if (this.message.visible) {
 			const msgX = Math.max(4, Math.floor((this.viewportWidth - this.measureText(this.message.text)) / 2));
@@ -1554,6 +1603,7 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		}
 	}
 
+	// @ts-ignore
 	private countCharacters(): number {
 		let total = 0;
 		for (let i = 0; i < this.lines.length; i++) {
