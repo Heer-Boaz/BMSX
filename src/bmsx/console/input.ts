@@ -12,17 +12,20 @@ const BUTTON_ACTIONS: string[] = [
 	'console_x',
 ];
 
+type RepeatStateEntry = {
+	active: boolean;
+	repeatCount: number;
+	lastFrameEvaluated: number;
+	lastResult: boolean;
+};
+
 export class BmsxConsoleInput {
 	private static readonly INITIAL_REPEAT_DELAY_FRAMES = 15;
 	private static readonly REPEAT_INTERVAL_FRAMES = 4;
 
 	private readonly playerIndex: number;
 	private currentFrame: number = 0;
-	private readonly repeatState: Array<{
-		repeatCooldown: number;
-		lastFrameEvaluated: number;
-		lastResult: boolean;
-	}> = [];
+	private readonly repeatState: RepeatStateEntry[] = [];
 
 	constructor(playerIndex: number) {
 		this.playerIndex = playerIndex;
@@ -45,17 +48,24 @@ export class BmsxConsoleInput {
 		}
 		let result = false;
 		if (state.justpressed) {
-			repeat.repeatCooldown = BmsxConsoleInput.INITIAL_REPEAT_DELAY_FRAMES;
+			repeat.active = true;
+			repeat.repeatCount = 0;
 			result = true;
 		} else if (!state.pressed) {
-			repeat.repeatCooldown = 0;
+			this.resetRepeatState(button, repeat);
 		} else {
-			if (repeat.repeatCooldown > 0) {
-				repeat.repeatCooldown -= 1;
+			if (!repeat.active) {
+				repeat.active = true;
+				repeat.repeatCount = 0;
 			}
-			if (repeat.repeatCooldown <= 0) {
+			const presstime = state.presstime;
+			if (presstime == null) {
+				throw new Error(`[BmsxConsoleInput] Action state for button ${button} missing presstime while pressed.`);
+			}
+			const repeatsElapsed = this.computeRepeatCount(presstime);
+			if (repeatsElapsed > repeat.repeatCount) {
+				repeat.repeatCount = repeatsElapsed;
 				result = true;
-				repeat.repeatCooldown = BmsxConsoleInput.REPEAT_INTERVAL_FRAMES;
 			}
 		}
 		repeat.lastFrameEvaluated = this.currentFrame;
@@ -63,14 +73,40 @@ export class BmsxConsoleInput {
 		return result;
 	}
 
-	private ensureRepeatState(button: BmsxConsoleButton) {
+	private ensureRepeatState(button: BmsxConsoleButton): RepeatStateEntry {
 		const idx = button as number;
 		let entry = this.repeatState[idx];
 		if (!entry) {
-			entry = { repeatCooldown: 0, lastFrameEvaluated: -1, lastResult: false };
+			entry = { active: false, repeatCount: 0, lastFrameEvaluated: -1, lastResult: false };
 			this.repeatState[idx] = entry;
 		}
 		return entry;
+	}
+
+	private resetRepeatState(button: BmsxConsoleButton, entry?: RepeatStateEntry): void {
+		const repeat = entry ?? this.ensureRepeatState(button);
+		repeat.active = false;
+		repeat.repeatCount = 0;
+		repeat.lastResult = false;
+		repeat.lastFrameEvaluated = this.currentFrame;
+	}
+
+	private computeRepeatCount(presstimeMs: number): number {
+		const fps = $.targetFPS;
+		if (!Number.isFinite(fps) || fps <= 0) {
+			throw new Error(`[BmsxConsoleInput] Invalid target FPS ${fps}.`);
+		}
+		const frameDurationMs = 1000 / fps;
+		const repeatDelayMs = BmsxConsoleInput.INITIAL_REPEAT_DELAY_FRAMES * frameDurationMs;
+		if (presstimeMs < repeatDelayMs) {
+			return 0;
+		}
+		const repeatIntervalMs = BmsxConsoleInput.REPEAT_INTERVAL_FRAMES * frameDurationMs;
+		if (repeatIntervalMs <= 0) {
+			throw new Error('[BmsxConsoleInput] Repeat interval must be greater than zero.');
+		}
+		const elapsedSinceDelay = presstimeMs - repeatDelayMs;
+		return Math.floor(elapsedSinceDelay / repeatIntervalMs) + 1;
 	}
 
 	private getState(button: BmsxConsoleButton): ActionState {
@@ -81,10 +117,7 @@ export class BmsxConsoleInput {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		const state = playerInput.getActionState(actionName);
 		if (!state.pressed) {
-			const repeat = this.ensureRepeatState(button);
-			repeat.repeatCooldown = 0;
-			repeat.lastResult = false;
-			repeat.lastFrameEvaluated = this.currentFrame;
+			this.resetRepeatState(button);
 		}
 		return state;
 	}
