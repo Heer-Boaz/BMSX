@@ -154,6 +154,8 @@ export class ConsoleCartEditor {
 		'End',
 		'Home',
 		'KeyS',
+		'KeyY',
+		'KeyZ',
 		'PageDown',
 		'PageUp',
 		'Space',
@@ -177,6 +179,7 @@ export class ConsoleCartEditor {
 	private desiredColumn = 0;
 	private selectionAnchor: Position | null = null;
 	private undoStack: EditorSnapshot[] = [];
+	private redoStack: EditorSnapshot[] = [];
 	private lastHistoryKey: string | null = null;
 	private lastHistoryTimestamp = 0;
 
@@ -284,6 +287,7 @@ export class ConsoleCartEditor {
 		this.updateDesiredColumn();
 		this.selectionAnchor = null;
 		this.undoStack = [];
+		this.redoStack = [];
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
 	}
@@ -294,6 +298,7 @@ export class ConsoleCartEditor {
 		this.applyInputOverrides(false);
 		this.selectionAnchor = null;
 		this.undoStack = [];
+		this.redoStack = [];
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
 	}
@@ -322,7 +327,16 @@ export class ConsoleCartEditor {
 
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyZ')) {
 			this.consumeKey(keyboard, 'KeyZ');
-			this.undo();
+			if (shiftDown) {
+				this.redo();
+			} else {
+				this.undo();
+			}
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyY')) {
+			this.consumeKey(keyboard, 'KeyY');
+			this.redo();
 			return;
 		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
@@ -1148,6 +1162,7 @@ private insertTab(): void {
 			this.undoStack.shift();
 		}
 		this.undoStack.push(snapshot);
+		this.redoStack.length = 0;
 		this.lastHistoryTimestamp = now;
 		if (allowMerge) {
 			this.lastHistoryKey = key;
@@ -1164,6 +1179,28 @@ private insertTab(): void {
 		if (!snapshot) {
 			return;
 		}
+		const current = this.captureSnapshot();
+		if (this.redoStack.length >= UNDO_HISTORY_LIMIT) {
+			this.redoStack.shift();
+		}
+		this.redoStack.push(current);
+		this.restoreSnapshot(snapshot);
+		this.breakUndoSequence();
+	}
+
+	private redo(): void {
+		if (this.redoStack.length === 0) {
+			return;
+		}
+		const snapshot = this.redoStack.pop();
+		if (!snapshot) {
+			return;
+		}
+		const current = this.captureSnapshot();
+		if (this.undoStack.length >= UNDO_HISTORY_LIMIT) {
+			this.undoStack.shift();
+		}
+		this.undoStack.push(current);
 		this.restoreSnapshot(snapshot);
 		this.breakUndoSequence();
 	}
