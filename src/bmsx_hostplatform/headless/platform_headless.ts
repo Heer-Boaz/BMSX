@@ -77,7 +77,6 @@ class MemoryStorage implements StorageService {
 }
 
 class HeadlessClipboardService implements ClipboardService {
-	private buffer = '';
 	private readonly writeState: ClipboardPermissionState = 'granted';
 
 	isSupported(): boolean {
@@ -85,7 +84,7 @@ class HeadlessClipboardService implements ClipboardService {
 	}
 
 	async writeText(text: string): Promise<void> {
-		this.buffer = text;
+		void text;
 	}
 
 	getWritePermissionState(): ClipboardPermissionState {
