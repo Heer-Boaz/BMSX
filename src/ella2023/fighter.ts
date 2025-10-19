@@ -260,8 +260,8 @@ export abstract class Fighter extends SpriteObject {
 		this.finishAttack(undefined, { attackType });
 	}
 
-	protected getAttackOpponent(): Fighter | null {
-		return null;
+	public getAttackOpponent(): Fighter | null {
+		return null; // ERROR: to be implemented in subclasses
 	}
 
 	public attackHitsOpponent(attackType: AttackType, opponent: Fighter): vec2 | null {

@@ -291,26 +291,26 @@ export class quiz extends WorldObject {
 							do(this: quiz) {
 								$.consumeAction(1, 'a');
 								this.currentAnswerOptionChosen = 'a';
-								return { state_id: '/antwoord', args: this.currentAnswerOptionChosen };
+								return { path: '/antwoord', payload: { gekozen_antwoord: this.currentAnswerOptionChosen } };
 							},
 						},
 						'b[j!c]': { // Handle answer option B
 							do(this: quiz) {
 								$.consumeAction(1, 'b');
 								this.currentAnswerOptionChosen = 'b';
-								return { state_id: '/antwoord', args: this.currentAnswerOptionChosen };
+								return { path: '/antwoord', payload: { gekozen_antwoord: this.currentAnswerOptionChosen } };
 							},
 						},
 						'left[j!c]': { // Handle previous question on "left"
 							do(this: quiz) {
 								$.consumeAction(1, 'left');
-								return { state_id: '/vraag', payload: { bla: 'prev' }, force_transition_to_same_state: true, transition_type: 'to' };
+								return { path: '/vraag', payload: { bla: 'prev' }, force_transition_to_same_state: true, transition_type: 'to' };
 							},
 						},
 						'right[j!c]': { // Handle next question on "right"
 							do(this: quiz) {
 								$.consumeAction(1, 'right');
-								return { state_id: '/vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
+								return { path: '/vraag', payload: { bla: 'next' }, force_transition_to_same_state: true, transition_type: 'to' };
 							},
 						},
 					},

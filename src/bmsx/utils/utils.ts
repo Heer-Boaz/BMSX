@@ -162,6 +162,9 @@ export function to_vec3arr(v: vec3 | vec3arr): vec3arr { return V3.toArr(v); }
  * @returns A new Vector object with the same x, y and z values as the original.
  */
 export function shallowCopy<T>(toCopy: T): T {
+	if (toCopy === null || toCopy === undefined) {
+		return toCopy;
+	}
 	if (Array.isArray(toCopy)) {
 		return [...toCopy] as T;
 	}

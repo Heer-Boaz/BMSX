@@ -41,6 +41,9 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 			runtime.boot();
 		},
 		dispose() {
+			if (runtime) {
+				runtime.dispose();
+			}
 			runtime = null;
 		},
 	};

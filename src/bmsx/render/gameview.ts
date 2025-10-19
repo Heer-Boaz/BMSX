@@ -306,7 +306,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.surface = this.host.surface;
 		this.viewportSize = shallowCopy(opts.viewportSize) as vec2;
 		this.canvasSize = (shallowCopy(opts.canvasSize) ?? multiply_vec2(this.viewportSize, 2)) as vec2; // By default, the canvas is twice the size of the viewport!!
-		// Offscreen resolution for internal render graph targets (view-agnostic)
+		// Offscreen resolution for internal render graph targets (view-agnostic, but usually twice the viewport size to allow for effects like CRT post processing)
 		this.offscreenCanvasSize = shallowCopy(opts.offscreenSize ?? multiply_vec(this.viewportSize, 2)) as vec2;
 		renderGate.begin({ blocking: true, category: 'init', tag: 'init' }); // Note that we don't store the token; We can end the scope by calling renderGate.end() without a token, assuming that the category is unique fot init. It means that we can safely end the scope later without worrying about late resolves or lifecycle issues.
 	}

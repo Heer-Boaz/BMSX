@@ -330,8 +330,8 @@ export class Game {
 		const viewportSize = worldConfig.viewportSize ?? { x: 256, y: 192 };
 		const gview = new GameView({
 			viewportSize,
-			canvasSize: worldConfig.viewCanvasSize,
-			offscreenSize: worldConfig.viewOffscreenSize,
+			// canvasSize: worldConfig.viewCanvasSize,
+			// offscreenSize: worldConfig.viewOffscreenSize,
 			host: resolvedViewHost,
 		});
 		this._view = gview;

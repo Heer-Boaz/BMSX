@@ -45,8 +45,6 @@ globalTarget.h406A = async (args: BootArgs): Promise<void> => {
 	const module = createLuaDemoWorldModule();
 	const worldConfiguration: WorldConfiguration = {
 		viewportSize: { x: 128, y: 128 },
-		viewCanvasSize: { x: 128, y: 128 },
-		viewOffscreenSize: { x: 128, y: 128 },
 		modules: [module],
 	};
 

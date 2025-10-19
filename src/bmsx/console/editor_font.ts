@@ -1,14 +1,9 @@
+import type { ConsoleGlyph } from './font';
+
 type GlyphSegment = {
 	x: number;
 	y: number;
 	length: number;
-};
-
-export type ConsoleGlyph = {
-	width: number;
-	height: number;
-	advance: number;
-	segments: GlyphSegment[];
 };
 
 type GlyphPattern = {
@@ -16,10 +11,10 @@ type GlyphPattern = {
 	pattern: string[];
 };
 
-const BASE_ADVANCE_PADDING: number = 1;
-const GLYPH_HEIGHT: number = 6;
+const BASE_ADVANCE_PADDING = 0;
+const GLYPH_HEIGHT = 6;
 
-const GLYPH_DATA: GlyphPattern[] = [
+const SOURCE_GLYPH_DATA: GlyphPattern[] = [
 	{ chars: [' '], pattern: ['00000', '00000', '00000', '00000', '00000', '00000'] },
 	{ chars: ['0'], pattern: ['01110', '10101', '10101', '10001', '01110', '00000'] },
 	{ chars: ['1'], pattern: ['00100', '01100', '00100', '00100', '01110', '00000'] },
@@ -91,7 +86,16 @@ const GLYPH_DATA: GlyphPattern[] = [
 	{ chars: ['@'], pattern: ['01110', '10001', '10111', '10101', '01110', '00000'] },
 ];
 
-export class ConsoleFont {
+function shrinkPattern(pattern: string[]): string[] {
+	return pattern.map((row) => row.length <= 4 ? row : row.slice(0, 4));
+}
+
+const GLYPH_DATA: GlyphPattern[] = SOURCE_GLYPH_DATA.map((entry) => ({
+	chars: entry.chars,
+	pattern: shrinkPattern(entry.pattern),
+}));
+
+export class ConsoleEditorFont {
 	private readonly glyphs: Map<string, ConsoleGlyph> = new Map();
 	private readonly fallback: ConsoleGlyph;
 	private readonly lineHeightValue: number;
@@ -115,18 +119,14 @@ export class ConsoleFont {
 		}
 		const question = this.glyphs.get('?');
 		if (!question) {
-			throw new Error('[ConsoleFont] Missing fallback glyph for "?".');
+			throw new Error('[ConsoleEditorFont] Missing fallback glyph for "?".');
 		}
 		this.fallback = question;
-		this.lineHeightValue = GLYPH_HEIGHT + BASE_ADVANCE_PADDING + 1;
+		this.lineHeightValue = GLYPH_HEIGHT + 1;
 	}
 
 	public getGlyph(char: string): ConsoleGlyph {
-		const glyph = this.glyphs.get(char);
-		if (!glyph) {
-			return this.fallback;
-		}
-		return glyph;
+		return this.glyphs.get(char) ?? this.fallback;
 	}
 
 	public lineHeight(): number {
@@ -135,12 +135,12 @@ export class ConsoleFont {
 
 	private compile(pattern: string[]): ConsoleGlyph {
 		if (pattern.length !== GLYPH_HEIGHT) {
-			throw new Error(`[ConsoleFont] Expected pattern height ${GLYPH_HEIGHT}, received ${pattern.length}.`);
+			throw new Error(`[ConsoleEditorFont] Expected pattern height ${GLYPH_HEIGHT}, received ${pattern.length}.`);
 		}
 		const width = pattern[0].length;
 		for (const row of pattern) {
 			if (row.length !== width) {
-				throw new Error('[ConsoleFont] Inconsistent row width in glyph pattern.');
+				throw new Error('[ConsoleEditorFont] Inconsistent row width in glyph pattern.');
 			}
 		}
 		const segments: GlyphSegment[] = [];

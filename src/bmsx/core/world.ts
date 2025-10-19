@@ -61,8 +61,8 @@ export type WorldModule = {
 
 export type WorldConfiguration = {
 	viewportSize?: vec2;
-	viewCanvasSize?: vec2;
-	viewOffscreenSize?: vec2;
+	// viewCanvasSize?: vec2;
+	// viewOffscreenSize?: vec2;
 	collisionService?: TileCollisionService;
 	modules?: Array<WorldModule>;
 	fsmId?: string;

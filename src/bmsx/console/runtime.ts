@@ -1,5 +1,6 @@
 import type { StorageService } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
+import { ConsoleCartEditor } from './editor';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
@@ -27,7 +28,10 @@ export class BmsxConsoleRuntime {
 	private readonly colliders: ConsoleColliderManager;
 	private readonly physics: Physics2DManager;
 	private readonly apiFunctionNames = new Set<string>();
-	private readonly luaProgram: BmsxConsoleLuaProgram | null;
+	private luaProgram: BmsxConsoleLuaProgram | null;
+	private readonly playerIndex: number;
+	private editor: ConsoleCartEditor | null = null;
+	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter: LuaInterpreter | null = null;
 	private luaInitFunction: LuaFunctionValue | null = null;
 	private luaUpdateFunction: LuaFunctionValue | null = null;
@@ -37,6 +41,7 @@ export class BmsxConsoleRuntime {
 
 	constructor(options: BmsxConsoleRuntimeOptions) {
 		this.cart = options.cart;
+		this.playerIndex = options.playerIndex;
 		this.input = new BmsxConsoleInput(options.playerIndex);
 		this.storage = new BmsxConsoleStorage(options.storage, options.cart.meta.persistentId);
 		this.colliders = new ConsoleColliderManager();
@@ -49,9 +54,11 @@ export class BmsxConsoleRuntime {
 			physics: this.physics,
 		});
 		this.luaProgram = this.cart.luaProgram ?? null;
+		this.initializeEditor();
 	}
 
 	public boot(): void {
+		this.frameCounter = 0;
 		this.physics.clear();
 		this.api.cartdata(this.cart.meta.persistentId);
 		this.api.colliderClear();
@@ -68,7 +75,16 @@ export class BmsxConsoleRuntime {
 		}
 		const deltaSeconds = deltaMilliseconds / 1000;
 		this.input.beginFrame(this.frameCounter);
+		const editor = this.editor;
+		if (editor) {
+			editor.update(deltaSeconds);
+		}
 		this.api.beginFrame(this.frameCounter, deltaSeconds);
+		if (editor && editor.isActive()) {
+			editor.draw(this.api);
+			this.frameCounter += 1;
+			return;
+		}
 		if (this.hasLuaProgram()) {
 			if (this.luaUpdateFunction !== null) {
 				this.invokeLuaFunction(this.luaUpdateFunction, [deltaSeconds]);
@@ -85,15 +101,48 @@ export class BmsxConsoleRuntime {
 		this.frameCounter += 1;
 	}
 
+	public dispose(): void {
+		if (this.editor) {
+			this.editor.shutdown();
+			this.editor = null;
+		}
+	}
+
 	private hasLuaProgram(): boolean {
 		return this.luaProgram !== null;
+	}
+
+	private initializeEditor(): void {
+		if (!this.hasLuaProgram()) {
+			if (this.editor) {
+				this.editor.shutdown();
+			}
+			this.editor = null;
+			return;
+		}
+		const viewport = { width: this.api.displayWidth, height: this.api.displayHeight };
+		this.editor = new ConsoleCartEditor({
+			playerIndex: this.playerIndex,
+			metadata: this.cart.meta,
+			viewport,
+			loadSource: () => this.getEditorSource(),
+			reloadSource: (source: string) => { this.reloadLuaProgram(source); },
+		});
+	}
+
+	private getEditorSource(): string {
+		const program = this.luaProgram;
+		if (!program) {
+			return '';
+		}
+		return this.getLuaProgramSource(program);
 	}
 
 	private bootLuaProgram(): void {
 		const program = this.luaProgram;
 		if (!program) return;
 
-		const source = this.resolveLuaProgramSource(program);
+		const source = this.getLuaProgramSource(program);
 		const chunkName = this.resolveLuaProgramChunkName(program);
 
 		this.luaInterpreter = createLuaInterpreter();
@@ -113,6 +162,54 @@ export class BmsxConsoleRuntime {
 
 		if (this.luaInitFunction !== null) {
 			this.invokeLuaFunction(this.luaInitFunction, []);
+		}
+	}
+
+	public reloadLuaProgram(source: string): void {
+		if (!this.hasLuaProgram()) {
+			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
+		}
+		if (typeof source !== 'string') {
+			throw new Error('[BmsxConsoleRuntime] Lua source must be a string.');
+		}
+		if (source.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Lua source cannot be empty.');
+		}
+		const program = this.luaProgram;
+		if (!program) {
+			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
+		}
+		const chunkName = this.resolveLuaProgramChunkName(program);
+		this.validateLuaSource(source, chunkName);
+		const previousOverride = this.luaProgramSourceOverride;
+		this.luaProgramSourceOverride = source;
+		try {
+			this.boot();
+			this.applyProgramSourceToCartridge(source, chunkName);
+		}
+		catch (error) {
+			this.luaProgramSourceOverride = previousOverride;
+			try {
+				this.boot();
+			}
+			catch (_restoreError) {
+				// Preserve original error; restoration failure is secondary.
+			}
+			throw error;
+		}
+	}
+
+	private validateLuaSource(source: string, chunkName: string): void {
+		const previousChunk = this.luaChunkName;
+		this.luaChunkName = chunkName;
+		try {
+			const interpreter = createLuaInterpreter();
+			this.registerApiBuiltins(interpreter);
+			interpreter.setReservedIdentifiers(this.apiFunctionNames);
+			interpreter.execute(source, chunkName);
+		}
+		finally {
+			this.luaChunkName = previousChunk;
 		}
 	}
 
@@ -357,6 +454,13 @@ export class BmsxConsoleRuntime {
 		return null;
 	}
 
+	private getLuaProgramSource(program: BmsxConsoleLuaProgram): string {
+		if (this.luaProgramSourceOverride !== null) {
+			return this.luaProgramSourceOverride;
+		}
+		return this.resolveLuaProgramSource(program);
+	}
+
 	private resolveLuaProgramSource(program: BmsxConsoleLuaProgram): string {
 		if ('source' in program && program.source) {
 			return program.source;
@@ -373,6 +477,25 @@ export class BmsxConsoleRuntime {
 			return source;
 		}
 		throw new Error('[BmsxConsoleRuntime] Lua program requires either an inline source or an asset id.');
+	}
+
+	private applyProgramSourceToCartridge(source: string, chunkName: string): void {
+		const program = this.luaProgram;
+		if (!program) return;
+		if ('source' in program) {
+			const mutable = program as { source: string; chunkName?: string };
+			mutable.source = source;
+			mutable.chunkName = chunkName;
+			return;
+		}
+		const cartridge = this.cart as { luaProgram?: BmsxConsoleLuaProgram };
+		const updated: BmsxConsoleLuaProgram = {
+			source,
+			chunkName,
+			entry: program.entry,
+		};
+		cartridge.luaProgram = updated;
+		this.luaProgram = updated;
 	}
 
 	private resolveLuaProgramChunkName(program: BmsxConsoleLuaProgram): string {

@@ -379,6 +379,8 @@ export class Input implements RegisterablePersistent {
 	private debugPointerLastOffset: { x: number; y: number } | null = null;
 	private debugPointerModifiers: InputModifiers = { ctrl: false, shift: false, alt: false };
 	private debugPointerButtonModifiers: { [button: number]: InputModifiers } = {};
+	private debugHotkeysPaused = false;
+	private readonly additionalCaptureKeys: Set<string> = new Set();
 
 	private readonly handleSpaceChanged = (_event: string, _emitter: Identifiable, _payload?: unknown): void => {
 		for (const player of this.playerInputs) {
@@ -573,7 +575,25 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public shouldCaptureKey(code: string): boolean {
-		return this.debugHotkeysEnabled && Input.DEBUG_CAPTURE_KEYS.has(code);
+		if (this.additionalCaptureKeys.has(code)) {
+			return true;
+		}
+		return this.debugHotkeysEnabled && !this.debugHotkeysPaused && Input.DEBUG_CAPTURE_KEYS.has(code);
+	}
+
+	public setDebugHotkeysPaused(paused: boolean): void {
+		this.debugHotkeysPaused = paused;
+	}
+
+	public setKeyboardCapture(code: string, enabled: boolean): void {
+		if (!code) {
+			throw new Error('[Input] Keyboard capture code must be a non-empty string.');
+		}
+		if (enabled) {
+			this.additionalCaptureKeys.add(code);
+		} else {
+			this.additionalCaptureKeys.delete(code);
+		}
 	}
 
 	/**
@@ -604,6 +624,8 @@ export class Input implements RegisterablePersistent {
 		// Remove the input instance
 		Input._instance = undefined;
 		this.debugHotkeysEnabled = false;
+		this.debugHotkeysPaused = false;
+		this.additionalCaptureKeys.clear();
 		this.debugPointerSurface = null;
 		this.debugPointerInside = false;
 		this.debugPointerLastOffset = null;
@@ -881,7 +903,7 @@ export class Input implements RegisterablePersistent {
 	}
 
 	private processDebugHotkeys(player: PlayerInput): void {
-		if (!this.debugHotkeysEnabled) return;
+		if (!this.debugHotkeysEnabled || this.debugHotkeysPaused) return;
 		if (player.playerIndex !== Input.DEFAULT_KEYBOARD_PLAYER_INDEX) return;
 		this.processDebugPointerGestures(player);
 		const keyboardHandler = player.inputHandlers['keyboard'];
