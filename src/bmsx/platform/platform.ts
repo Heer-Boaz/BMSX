@@ -172,6 +172,8 @@ export interface ClipboardService {
 	getWritePermissionState(): ClipboardPermissionState;
 	requestReadPermission(): Promise<ClipboardPermissionState>;
 	requestWritePermission(): Promise<ClipboardPermissionState>;
+	beginMonitoring(): void;
+	endMonitoring(): void;
 }
 
 export interface PlatformHIDDeviceFilter {

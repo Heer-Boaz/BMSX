@@ -108,6 +108,10 @@ class HeadlessClipboardService implements ClipboardService {
 	async requestWritePermission(): Promise<ClipboardPermissionState> {
 		return this.writeState;
 	}
+
+	beginMonitoring(): void { }
+
+	endMonitoring(): void { }
 }
 
 class UnsupportedHID implements HIDService {

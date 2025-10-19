@@ -13,7 +13,7 @@
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
 				"--remote-debugging-port=9222",
-				"--app=file://${workspaceFolder}/dist/game_debug.html"
+				// "--app=file://${workspaceFolder}/dist/game_debug.html"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,

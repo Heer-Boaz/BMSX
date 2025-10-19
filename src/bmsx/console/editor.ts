@@ -218,6 +218,7 @@ export class ConsoleCartEditor {
 		this.applyInputOverrides(false);
 		this.active = false;
 		this.repeatState.clear();
+		this.getClipboardService().endMonitoring();
 	}
 
 	private getKeyboard(): KeyboardInput | null {
@@ -256,24 +257,26 @@ export class ConsoleCartEditor {
 			this.lines.push('');
 		}
 		this.cursorRow = 0;
-	this.cursorColumn = 0;
-	this.scrollRow = 0;
-	this.scrollColumn = 0;
-	this.dirty = false;
-	this.cursorVisible = true;
-	this.blinkTimer = 0;
-	this.active = true;
-	this.message.visible = false;
-	this.repeatState.clear();
-	this.updateDesiredColumn();
-	this.selectionAnchor = null;
-}
+		this.cursorColumn = 0;
+		this.scrollRow = 0;
+		this.scrollColumn = 0;
+		this.dirty = false;
+		this.cursorVisible = true;
+		this.blinkTimer = 0;
+		this.active = true;
+		this.message.visible = false;
+		this.repeatState.clear();
+		this.updateDesiredColumn();
+		this.selectionAnchor = null;
+		this.getClipboardService().beginMonitoring();
+	}
 
 	private deactivate(): void {
 		this.active = false;
 		this.repeatState.clear();
 		this.applyInputOverrides(false);
 		this.selectionAnchor = null;
+		this.getClipboardService().endMonitoring();
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -312,7 +315,7 @@ export class ConsoleCartEditor {
 			void this.cutSelectionToClipboard();
 			return;
 		}
-		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyV')) {
+		if ((ctrlDown || altDown) && this.isKeyJustPressed(keyboard, 'KeyV')) {
 			this.consumeKey(keyboard, 'KeyV');
 			void this.pasteFromClipboard();
 			return;
@@ -973,28 +976,22 @@ private insertTab(): void {
 		return parts.join('\n');
 	}
 
-	private getClipboardService(): ClipboardService | null {
-		const clipboard = $.platform.clipboard;
-		if (!clipboard.isSupported()) {
-			return null;
-		}
-		return clipboard;
-	}
-
 	private async copySelectionToClipboard(): Promise<void> {
 		const text = this.getSelectionText();
 		if (text === null) {
+			this.showMessage('Nothing selected to copy.', COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		await this.writeClipboard(text);
+		await this.writeClipboard(text, 'Copied selection to clipboard.');
 	}
 
 	private async cutSelectionToClipboard(): Promise<void> {
 		const text = this.getSelectionText();
 		if (text === null) {
+			this.showMessage('Nothing selected to cut.', COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		await this.writeClipboard(text);
+		await this.writeClipboard(text, 'Cut selection to clipboard.');
 		this.replaceSelectionWith('');
 	}
 
@@ -1003,51 +1000,66 @@ private insertTab(): void {
 		if (text === null) {
 			return;
 		}
-		this.replaceSelectionWith(text);
+		this.insertClipboardText(text);
 	}
 
-	private async writeClipboard(text: string): Promise<void> {
+	private insertClipboardText(text: string): void {
+		if (text.length === 0) {
+			this.showMessage('Clipboard is empty.', COLOR_STATUS_WARNING, 2.0);
+			return;
+		}
+		this.replaceSelectionWith(text);
+		this.ensureCursorVisible();
+		const normalized = text.replace(/\s+/g, ' ').trim();
+		const preview = normalized.length > 24 ? `${normalized.slice(0, 24)}…` : normalized;
+		const label = preview.length > 0 ? `Pasted: ${preview}` : 'Pasted from clipboard.';
+		this.showMessage(label, COLOR_STATUS_SUCCESS, 1.5);
+	}
+
+	private async writeClipboard(text: string, successMessage: string): Promise<void> {
 		this.clipboardFallback = text;
 		const clipboard = this.getClipboardService();
-		if (!clipboard) {
+		if (!clipboard.isSupported()) {
+			this.showMessage('Clipboard is unavailable; cached selection internally.', COLOR_STATUS_WARNING, 3.5);
 			return;
 		}
 		try {
-			let state = clipboard.getWritePermissionState();
-			if (state === 'unknown' || state === 'prompt') {
-				state = await clipboard.requestWritePermission();
-			}
-			if (state === 'denied') {
-				throw new Error('[ConsoleCartEditor] Clipboard write permission denied.');
-			}
 			await clipboard.writeText(text);
+			this.showMessage(successMessage, COLOR_STATUS_SUCCESS, 1.5);
 		}
 		catch (error) {
-			console.warn('[ConsoleCartEditor] Clipboard write failed:', error);
+			const message = error instanceof Error ? error.message : 'Clipboard write failed.';
+			this.showMessage(message, COLOR_STATUS_WARNING, 3.5);
 		}
 	}
 
 	private async readClipboard(): Promise<string | null> {
 		const clipboard = this.getClipboardService();
-		if (!clipboard) {
+		if (!clipboard.isSupported()) {
+			if (this.clipboardFallback.length === 0) {
+				this.showMessage('Clipboard is unavailable and no cached copy exists.', COLOR_STATUS_WARNING, 3.5);
+				return null;
+			}
+			this.showMessage('Clipboard is unavailable; using cached copy.', COLOR_STATUS_WARNING, 2.5);
 			return this.clipboardFallback;
 		}
 		try {
-			let state = clipboard.getReadPermissionState();
-			if (state === 'unknown' || state === 'prompt') {
-				state = await clipboard.requestReadPermission();
-			}
-			if (state === 'denied') {
-				throw new Error('[ConsoleCartEditor] Clipboard read permission denied.');
-			}
 			const text = await clipboard.readText();
+			if (text.length === 0) {
+				this.showMessage('Clipboard is empty.', COLOR_STATUS_WARNING, 2.0);
+				return null;
+			}
 			this.clipboardFallback = text;
 			return text;
 		}
 		catch (error) {
-			console.warn('[ConsoleCartEditor] Clipboard read failed:', error);
-			return this.clipboardFallback;
+			const message = error instanceof Error ? error.message : 'Clipboard read failed.';
+			this.showMessage(message, COLOR_STATUS_WARNING, 3.5);
+			if (this.clipboardFallback.length > 0) {
+				return this.clipboardFallback;
+			}
 		}
+		return null;
 	}
 
 	private moveSelectionLines(delta: number): void {
@@ -1609,4 +1621,9 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		}
 		return total;
 	}
+
+	private getClipboardService(): ClipboardService {
+		return $.platform.clipboard;
+	}
+
 }
