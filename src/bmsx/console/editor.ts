@@ -72,6 +72,8 @@ export type ConsoleEditorOptions = {
 	reloadSource: (source: string) => void;
 };
 
+type Position = { row: number; column: number };
+
 type MessageState = {
 	text: string;
 	color: number;
@@ -103,6 +105,7 @@ const COLOR_COMMENT = 3;
 const COLOR_OPERATOR = 12;
 const COLOR_CODE_DIM = 6;
 const HIGHLIGHT_OVERLAY = { r: 1, g: 0.6, b: 0.2, a: 0.35 };
+const SELECTION_OVERLAY = { r: 0.2, g: 0.6, b: 1, a: 0.35 };
 const CARET_COLOR = { r: 1, g: 1, b: 1, a: 1 };
 const COLOR_STATUS_BACKGROUND = 8;
 const COLOR_STATUS_TEXT = 15;
@@ -157,6 +160,8 @@ export class ConsoleCartEditor {
 	private blinkTimer = 0;
 	private cursorVisible = true;
 	private desiredColumn = 0;
+	private selectionAnchor: Position | null = null;
+	private clipboardFallback: string = '';
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -260,12 +265,14 @@ export class ConsoleCartEditor {
 	this.message.visible = false;
 	this.repeatState.clear();
 	this.updateDesiredColumn();
-	}
+	this.selectionAnchor = null;
+}
 
 	private deactivate(): void {
 		this.active = false;
 		this.repeatState.clear();
 		this.applyInputOverrides(false);
+		this.selectionAnchor = null;
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -294,8 +301,23 @@ export class ConsoleCartEditor {
 			this.save();
 			return;
 		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyC')) {
+			this.consumeKey(keyboard, 'KeyC');
+			void this.copySelectionToClipboard();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyX')) {
+			this.consumeKey(keyboard, 'KeyX');
+			void this.cutSelectionToClipboard();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyV')) {
+			this.consumeKey(keyboard, 'KeyV');
+			void this.pasteFromClipboard();
+			return;
+		}
 
-		this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown);
+		this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
 		if (ctrlDown || altDown) {
 			return;
 		}
@@ -307,7 +329,28 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean): void {
+	private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, altDown: boolean): void {
+		if (altDown) {
+			if (this.isKeyJustPressed(keyboard, 'ArrowUp')) {
+				this.consumeKey(keyboard, 'ArrowUp');
+				this.moveSelectionLines(-1);
+				return;
+			}
+			if (this.isKeyJustPressed(keyboard, 'ArrowDown')) {
+				this.consumeKey(keyboard, 'ArrowDown');
+				this.moveSelectionLines(1);
+				return;
+			}
+		}
+
+		const previousPosition: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (shiftDown) {
+			this.ensureSelectionAnchor(previousPosition);
+		}
+		else {
+			this.clearSelection();
+		}
+
 		if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
 			this.moveCursorVertical(-1);
 			this.consumeKey(keyboard, 'ArrowUp');
@@ -334,6 +377,11 @@ export class ConsoleCartEditor {
 			if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
 				this.moveCursorHorizontal(1);
 				this.consumeKey(keyboard, 'ArrowRight');
+			}
+		}
+		if (shiftDown) {
+			if (!this.hasSelection()) {
+				this.clearSelection();
 			}
 		}
 		if (this.isKeyJustPressed(keyboard, 'Home')) {
@@ -578,17 +626,22 @@ private insertTab(): void {
 		if (text.length === 0) {
 			return;
 		}
+		if (this.deleteSelectionIfPresent()) {
+			// Selection replaced; proceed to insert at new caret.
+		}
 		const line = this.currentLine();
 		const before = line.slice(0, this.cursorColumn);
 		const after = line.slice(this.cursorColumn);
-	this.lines[this.cursorRow] = before + text + after;
-	this.cursorColumn += text.length;
-	this.dirty = true;
-	this.resetBlink();
-	this.updateDesiredColumn();
+		this.lines[this.cursorRow] = before + text + after;
+		this.cursorColumn += text.length;
+		this.dirty = true;
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.clearSelection();
 }
 
 	private insertLineBreak(): void {
+		this.deleteSelectionIfPresent();
 		const line = this.currentLine();
 		const before = line.slice(0, this.cursorColumn);
 		const after = line.slice(this.cursorColumn);
@@ -601,7 +654,8 @@ private insertTab(): void {
 		this.dirty = true;
 		this.resetBlink();
 		this.updateDesiredColumn();
-	}
+		this.clearSelection();
+}
 
 	private extractIndentation(value: string): string {
 		let result = '';
@@ -617,6 +671,9 @@ private insertTab(): void {
 	}
 
 	private backspace(): void {
+		if (this.deleteSelectionIfPresent()) {
+			return;
+		}
 		if (this.cursorColumn > 0) {
 			const line = this.currentLine();
 			const before = line.slice(0, this.cursorColumn - 1);
@@ -643,6 +700,9 @@ private insertTab(): void {
 	}
 
 	private deleteForward(): void {
+		if (this.deleteSelectionIfPresent()) {
+			return;
+		}
 		const line = this.currentLine();
 		if (this.cursorColumn < line.length) {
 			const before = line.slice(0, this.cursorColumn);
@@ -662,33 +722,33 @@ private insertTab(): void {
 		this.updateDesiredColumn();
 	}
 
-private unindentCurrentLine(): void {
-	const line = this.currentLine();
-	const indentMatch = line.match(/^[\t ]+/);
-	if (!indentMatch) {
-		return;
+	private unindentCurrentLine(): void {
+		const line = this.currentLine();
+		const indentMatch = line.match(/^[\t ]+/);
+		if (!indentMatch) {
+			return;
+		}
+		const indent = indentMatch[0];
+		const first = indent.charAt(0);
+		let removeCount = 0;
+		if (first === '\t') {
+			removeCount = 1;
+		}
+		else {
+			removeCount = Math.min(TAB_SPACES, indent.length);
+		}
+		if (removeCount === 0) {
+			return;
+		}
+		const remainingIndent = indent.slice(removeCount);
+		const rest = line.slice(indent.length);
+		this.lines[this.cursorRow] = remainingIndent + rest;
+		const delta = removeCount;
+		this.cursorColumn = Math.max(0, this.cursorColumn - delta);
+		this.dirty = true;
+		this.resetBlink();
+		this.updateDesiredColumn();
 	}
-	const indent = indentMatch[0];
-	const first = indent.charAt(0);
-	let removeCount = 0;
-	if (first === '\t') {
-		removeCount = 1;
-	}
-	else {
-		removeCount = Math.min(TAB_SPACES, indent.length);
-	}
-	if (removeCount === 0) {
-		return;
-	}
-	const remainingIndent = indent.slice(removeCount);
-	const rest = line.slice(indent.length);
-	this.lines[this.cursorRow] = remainingIndent + rest;
-	const delta = removeCount;
-	this.cursorColumn = Math.max(0, this.cursorColumn - delta);
-	this.dirty = true;
-	this.resetBlink();
-	this.updateDesiredColumn();
-}
 
 	private save(): void {
 		const source = this.lines.join('\n');
@@ -764,6 +824,185 @@ private unindentCurrentLine(): void {
 			|| ch === '_';
 	}
 
+	private hasSelection(): boolean {
+		return this.getSelectionRange() !== null;
+	}
+
+	private ensureSelectionAnchor(anchor: Position): void {
+		if (!this.selectionAnchor) {
+			this.selectionAnchor = { row: anchor.row, column: anchor.column };
+		}
+	}
+
+	private clearSelection(): void {
+		this.selectionAnchor = null;
+	}
+
+	private comparePositions(a: Position, b: Position): number {
+		if (a.row !== b.row) {
+			return a.row - b.row;
+		}
+		return a.column - b.column;
+	}
+
+	private getSelectionRange(): { start: Position; end: Position } | null {
+		const anchor = this.selectionAnchor;
+		if (!anchor) {
+			return null;
+		}
+		const cursor: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (anchor.row === cursor.row && anchor.column === cursor.column) {
+			return null;
+		}
+		if (this.comparePositions(cursor, anchor) < 0) {
+			return { start: cursor, end: anchor };
+		}
+		return { start: anchor, end: cursor };
+	}
+
+	private deleteSelectionIfPresent(): boolean {
+		if (!this.hasSelection()) {
+			return false;
+		}
+		this.replaceSelectionWith('');
+		return true;
+	}
+
+	private replaceSelectionWith(text: string): void {
+		const range = this.getSelectionRange();
+		if (!range) {
+			return;
+		}
+		const { start, end } = range;
+		const startLine = this.lines[start.row];
+		const endLine = this.lines[end.row];
+		const leading = startLine.slice(0, start.column);
+		const trailing = endLine.slice(end.column);
+		const fragments = text.split('\n');
+		if (fragments.length === 1) {
+			const combined = leading + fragments[0] + trailing;
+			this.lines.splice(start.row, end.row - start.row + 1, combined);
+			this.cursorRow = start.row;
+			this.cursorColumn = leading.length + fragments[0].length;
+		}
+		else {
+			const firstLine = leading + fragments[0];
+			const lastFragment = fragments[fragments.length - 1];
+			const lastLine = lastFragment + trailing;
+			const middle = fragments.slice(1, -1);
+			this.lines.splice(start.row, end.row - start.row + 1, firstLine, ...middle, lastLine);
+			this.cursorRow = start.row + fragments.length - 1;
+			this.cursorColumn = lastFragment.length;
+		}
+		this.selectionAnchor = null;
+		this.dirty = true;
+		this.resetBlink();
+		this.updateDesiredColumn();
+	}
+
+	private getSelectionText(): string | null {
+		const range = this.getSelectionRange();
+		if (!range) {
+			return null;
+		}
+		const { start, end } = range;
+		if (start.row === end.row) {
+			return this.lines[start.row].slice(start.column, end.column);
+		}
+		const parts: string[] = [];
+		parts.push(this.lines[start.row].slice(start.column));
+		for (let row = start.row + 1; row < end.row; row++) {
+			parts.push(this.lines[row]);
+		}
+		parts.push(this.lines[end.row].slice(0, end.column));
+		return parts.join('\n');
+	}
+
+	private async copySelectionToClipboard(): Promise<void> {
+		const text = this.getSelectionText();
+		if (text === null) {
+			return;
+		}
+		await this.writeClipboard(text);
+	}
+
+	private async cutSelectionToClipboard(): Promise<void> {
+		const text = this.getSelectionText();
+		if (text === null) {
+			return;
+		}
+		await this.writeClipboard(text);
+		this.replaceSelectionWith('');
+	}
+
+	private async pasteFromClipboard(): Promise<void> {
+		const text = await this.readClipboard();
+		if (text === null) {
+			return;
+		}
+		this.replaceSelectionWith(text);
+	}
+
+	private async writeClipboard(text: string): Promise<void> {
+		this.clipboardFallback = text;
+		if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.writeText) {
+			return;
+		}
+		try {
+			await navigator.clipboard.writeText(text);
+		}
+		catch (error) {
+			console.warn('[ConsoleCartEditor] Clipboard write failed:', error);
+		}
+	}
+
+	private async readClipboard(): Promise<string | null> {
+		if (typeof navigator === 'undefined' || !navigator.clipboard || !navigator.clipboard.readText) {
+			return this.clipboardFallback;
+		}
+		try {
+			const text = await navigator.clipboard.readText();
+			if (text !== undefined && text !== null) {
+				this.clipboardFallback = text;
+				return text;
+			}
+		}
+		catch (error) {
+			console.warn('[ConsoleCartEditor] Clipboard read failed:', error);
+		}
+		return this.clipboardFallback;
+	}
+
+	private moveSelectionLines(delta: number): void {
+		if (delta === 0) return;
+		const range = this.getLineRangeForMovement();
+		if (delta < 0 && range.startRow === 0) return;
+		if (delta > 0 && range.endRow >= this.lines.length - 1) return;
+		const count = range.endRow - range.startRow + 1;
+		const block = this.lines.splice(range.startRow, count);
+		const targetIndex = range.startRow + delta;
+		this.lines.splice(targetIndex, 0, ...block);
+		this.cursorRow += delta;
+		if (this.selectionAnchor) {
+			this.selectionAnchor = { row: this.selectionAnchor.row + delta, column: this.selectionAnchor.column };
+		}
+		this.dirty = true;
+		this.resetBlink();
+		this.updateDesiredColumn();
+	}
+
+	private getLineRangeForMovement(): { startRow: number; endRow: number } {
+		const range = this.getSelectionRange();
+		if (!range) {
+			return { startRow: this.cursorRow, endRow: this.cursorRow };
+		}
+		let endRow = range.end.row;
+		if (range.end.column === 0 && endRow > range.start.row) {
+			endRow -= 1;
+		}
+		return { startRow: range.start.row, endRow };
+	}
+
 	private drawTopBar(api: BmsxConsoleApi): void {
 		const primaryBarHeight = this.lineHeight + 3;
 		api.rectfill(0, 0, this.viewportWidth, primaryBarHeight, COLOR_TOP_BAR);
@@ -804,6 +1043,12 @@ private unindentCurrentLine(): void {
 				const line = this.lines[lineIndex];
 				const highlight = this.highlightLine(line);
 				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
+				const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
+				if (selectionSlice) {
+					const selectionStartX = gutterRight + 2 + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.startDisplay);
+					const selectionEndX = gutterRight + 2 + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.endDisplay);
+					api.rectfillColor(selectionStartX, rowY, selectionEndX, rowY + this.lineHeight, SELECTION_OVERLAY);
+				}
 				this.drawColoredText(api, slice.text, slice.colors, gutterRight + 2, rowY);
 				if (lineIndex === this.cursorRow) {
 					cursorHighlight = highlight;
@@ -896,6 +1141,33 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		return width;
 	}
 
+	private computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
+		const range = this.getSelectionRange();
+		if (!range) {
+			return null;
+		}
+		const { start, end } = range;
+		if (lineIndex < start.row || lineIndex > end.row) {
+			return null;
+		}
+		let selectionStartColumn = lineIndex === start.row ? start.column : 0;
+		let selectionEndColumn = lineIndex === end.row ? end.column : this.lines[lineIndex].length;
+		if (lineIndex === end.row && end.column === 0 && end.row > start.row) {
+			selectionEndColumn = 0;
+		}
+		if (selectionStartColumn === selectionEndColumn) {
+			return null;
+		}
+		const startDisplay = this.columnToDisplay(highlight, selectionStartColumn);
+		const endDisplay = this.columnToDisplay(highlight, selectionEndColumn);
+		const visibleStart = Math.max(sliceStart, startDisplay);
+		const visibleEnd = Math.min(sliceEnd, endDisplay);
+		if (visibleEnd <= visibleStart) {
+			return null;
+		}
+		return { startDisplay: visibleStart, endDisplay: visibleEnd };
+	}
+
 	private drawStatusBar(api: BmsxConsoleApi): void {
 		const statusTop = this.viewportHeight - this.bottomMargin;
 		const statusBottom = this.viewportHeight;
@@ -984,6 +1256,16 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		}
 		columnToDisplay.push(chars.length);
 		return { chars, colors, columnToDisplay };
+	}
+
+	private columnToDisplay(highlight: HighlightLine, column: number): number {
+		if (column <= 0) {
+			return 0;
+		}
+		if (column >= highlight.columnToDisplay.length) {
+			return highlight.chars.length;
+		}
+		return highlight.columnToDisplay[column];
 	}
 
 	private isNumberStart(line: string, index: number): boolean {
