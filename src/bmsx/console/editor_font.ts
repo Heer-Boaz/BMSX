@@ -11,7 +11,7 @@ type GlyphPattern = {
 	pattern: string[];
 };
 
-const BASE_ADVANCE_PADDING = 0;
+const BASE_ADVANCE_PADDING = 1;
 const GLYPH_HEIGHT = 6;
 
 const SOURCE_GLYPH_DATA: GlyphPattern[] = [
@@ -87,7 +87,7 @@ const SOURCE_GLYPH_DATA: GlyphPattern[] = [
 ];
 
 function shrinkPattern(pattern: string[]): string[] {
-	return pattern.map((row) => row.length <= 4 ? row : row.slice(0, 4));
+    return pattern.map((row) => row.length <= 5 ? row : row.slice(0, 5));
 }
 
 const GLYPH_DATA: GlyphPattern[] = SOURCE_GLYPH_DATA.map((entry) => ({

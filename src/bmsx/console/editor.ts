@@ -86,7 +86,6 @@ const CURSOR_BLINK_INTERVAL = 0.45;
 
 const COLOR_FRAME = 0;
 const COLOR_TOP_BAR = 13;
-const COLOR_TOP_BAR_DARK = 8;
 const COLOR_TOP_BAR_TEXT = 15;
 const COLOR_CODE_BACKGROUND = 4;
 const COLOR_GUTTER_BACKGROUND = 1;
@@ -157,7 +156,7 @@ export class ConsoleCartEditor {
 		this.spaceAdvance = this.font.getGlyph(' ').advance;
 		this.gutterWidth = 2;
 		const primaryBarHeight = this.lineHeight + 4;
-		this.headerHeight = primaryBarHeight + this.lineHeight + 3;
+		this.headerHeight = primaryBarHeight;
 		this.topMargin = this.headerHeight + 2;
 		this.bottomMargin = this.lineHeight + 6;
 		this.desiredColumn = this.cursorColumn;
@@ -759,7 +758,6 @@ private insertTab(): void {
 	private drawTopBar(api: BmsxConsoleApi): void {
 		const primaryBarHeight = this.lineHeight + 3;
 		api.rectfill(0, 0, this.viewportWidth, primaryBarHeight, COLOR_TOP_BAR);
-		api.rectfill(0, primaryBarHeight, this.viewportWidth, this.headerHeight, COLOR_TOP_BAR_DARK);
 
 		this.drawText(api, 'O  +  []', 4, 2, COLOR_TOP_BAR_TEXT);
 
