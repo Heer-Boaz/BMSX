@@ -2,7 +2,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PNG } from 'pngjs';
 
-type GlyphSpec = { suffix: string; code: number };
+type GlyphOrder = 'codepoint' | 'sequential';
+
+type GlyphSpec = { suffix: string; tile: number };
 
 type CliConfig = {
 	sheetPath: string;
@@ -15,46 +17,62 @@ type CliConfig = {
 	offsetX: number;
 	offsetY: number;
 	overwrite: boolean;
+	order: GlyphOrder;
+	inspect: boolean;
 };
 
 type RawArgs = { [key: string]: string };
 
-type MapEntry = { suffix: string; code?: number; char?: string };
+type MapEntry = { suffix: string; tile?: number; code?: number; char?: string };
 
-function buildDefaultGlyphs(): GlyphSpec[] {
-	const list: GlyphSpec[] = [];
+type BaseGlyph = { suffix: string; code: number };
+
+function baseGlyphs(): BaseGlyph[] {
+	const glyphs: BaseGlyph[] = [];
 	for (let i = 0; i < 10; i += 1) {
-		list.push({ suffix: String(i), code: 48 + i });
+		glyphs.push({ suffix: String(i), code: 48 + i });
 	}
 	const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 	for (let i = 0; i < upper.length; i += 1) {
-		list.push({ suffix: upper[i], code: upper.charCodeAt(i) });
+		glyphs.push({ suffix: upper[i], code: upper.charCodeAt(i) });
 	}
-	list.push({ suffix: 'Apostroph', code: 39 });
-	list.push({ suffix: 'Colon', code: 58 });
-	list.push({ suffix: 'Comma', code: 44 });
-	list.push({ suffix: 'Continue', code: 16 });
-	list.push({ suffix: 'Dot', code: 46 });
-	list.push({ suffix: 'Exclamation', code: 33 });
+	glyphs.push({ suffix: 'Apostroph', code: 39 });
+	glyphs.push({ suffix: 'Colon', code: 58 });
+	glyphs.push({ suffix: 'Comma', code: 44 });
+	glyphs.push({ suffix: 'Continue', code: 16 });
+	glyphs.push({ suffix: 'Dot', code: 46 });
+	glyphs.push({ suffix: 'Exclamation', code: 33 });
 	const ijCodePoint = '\u00A1'.codePointAt(0);
 	if (ijCodePoint === undefined) {
 		throw new Error('Failed to resolve code point for IJ glyph');
 	}
-	list.push({ suffix: 'IJ', code: ijCodePoint });
-	list.push({ suffix: 'Line', code: 196 });
-	list.push({ suffix: 'Percent', code: 37 });
-	list.push({ suffix: 'Question', code: 63 });
-	list.push({ suffix: 'Slash', code: 47 });
-	list.push({ suffix: 'Space', code: 32 });
-	list.push({ suffix: 'SpeakEnd', code: 93 });
-	list.push({ suffix: 'SpeakStart', code: 91 });
-	list.push({ suffix: 'Streep', code: 45 });
+	glyphs.push({ suffix: 'IJ', code: ijCodePoint });
+	glyphs.push({ suffix: 'Line', code: 196 });
+	glyphs.push({ suffix: 'Percent', code: 37 });
+	glyphs.push({ suffix: 'Question', code: 63 });
+	glyphs.push({ suffix: 'Slash', code: 47 });
+	glyphs.push({ suffix: 'Space', code: 32 });
+	glyphs.push({ suffix: 'SpeakEnd', code: 93 });
+	glyphs.push({ suffix: 'SpeakStart', code: 91 });
+	glyphs.push({ suffix: 'Streep', code: 45 });
+	return glyphs;
+}
+
+function buildDefaultGlyphs(order: GlyphOrder): GlyphSpec[] {
+	const base = baseGlyphs();
+	const list: GlyphSpec[] = [];
+	for (let i = 0; i < base.length; i += 1) {
+		const tile = order === 'sequential' ? i : base[i].code;
+		list.push({ suffix: base[i].suffix, tile });
+	}
 	return list;
 }
 
 function parseCli(argv: string[]): CliConfig {
 	const raw: RawArgs = {};
 	let overwrite = false;
+	let order: GlyphOrder = 'codepoint';
+	let inspect = false;
 	for (let i = 0; i < argv.length; i += 1) {
 		const token = argv[i];
 		if (token.startsWith('--') === false) {
@@ -63,6 +81,22 @@ function parseCli(argv: string[]): CliConfig {
 		const key = token.slice(2);
 		if (key === 'overwrite') {
 			overwrite = true;
+			continue;
+		}
+		if (key === 'inspect') {
+			inspect = true;
+			continue;
+		}
+		if (key === 'order') {
+			if (i + 1 >= argv.length) {
+				throw new Error('Missing value for --order');
+			}
+			const value = argv[i + 1];
+			if (value !== 'codepoint' && value !== 'sequential') {
+				throw new Error(`Unsupported order value: ${value}`);
+			}
+			order = value;
+			i += 1;
 			continue;
 		}
 		if (i + 1 >= argv.length) {
@@ -116,6 +150,8 @@ function parseCli(argv: string[]): CliConfig {
 		offsetX,
 		offsetY,
 		overwrite,
+		order,
+		inspect,
 	};
 }
 
@@ -127,9 +163,9 @@ function parseNumber(value: string, flagName: string): number {
 	return parsed;
 }
 
-function loadGlyphSpecs(mapPath: string | null): GlyphSpec[] {
+function loadGlyphSpecs(mapPath: string | null, order: GlyphOrder): GlyphSpec[] {
 	if (!mapPath) {
-		return buildDefaultGlyphs();
+		return buildDefaultGlyphs(order);
 	}
 	const resolved = resolve(process.cwd(), mapPath);
 	if (existsSync(resolved) === false) {
@@ -149,9 +185,11 @@ function loadGlyphSpecs(mapPath: string | null): GlyphSpec[] {
 		if (!entry.suffix) {
 			throw new Error(`Glyph map entry at index ${i} is missing a suffix`);
 		}
-		let code = 0;
-		if (typeof entry.code === 'number') {
-			code = entry.code;
+		let tile = -1;
+		if (typeof entry.tile === 'number') {
+			tile = entry.tile;
+		} else if (typeof entry.code === 'number') {
+			tile = entry.code;
 		} else if (typeof entry.char === 'string') {
 			if (entry.char.length === 0) {
 				throw new Error(`Glyph map entry at index ${i} has an empty char value`);
@@ -160,11 +198,11 @@ function loadGlyphSpecs(mapPath: string | null): GlyphSpec[] {
 			if (point === undefined) {
 				throw new Error(`Unable to derive code point for glyph ${entry.suffix}`);
 			}
-			code = point;
+			tile = point;
 		} else {
-			throw new Error(`Glyph map entry at index ${i} must provide either code or char`);
+			throw new Error(`Glyph map entry at index ${i} must provide tile, code, or char`);
 		}
-		specs.push({ suffix: entry.suffix, code });
+		specs.push({ suffix: entry.suffix, tile });
 	}
 	return specs;
 }
@@ -179,6 +217,35 @@ function cropGlyph(sheet: PNG, x: number, y: number, width: number, height: numb
 		glyph.data.set(slice, destStart);
 	}
 	return glyph;
+}
+
+function glyphPreview(glyph: PNG): string {
+	const lines: string[] = [];
+	for (let y = 0; y < glyph.height; y += 1) {
+		let line = '';
+		for (let x = 0; x < glyph.width; x += 1) {
+			const idx = (y * glyph.width + x) << 2;
+			const alpha = glyph.data[idx + 3];
+			line += alpha > 127 ? '#' : ' ';
+		}
+		lines.push(line);
+	}
+	return lines.join('\n');
+}
+
+function dumpTilePreviews(sheet: PNG, columns: number, rows: number, tileWidth: number, tileHeight: number, offsetX: number, offsetY: number): void {
+	const totalTiles = columns * rows;
+	for (let tile = 0; tile < totalTiles; tile += 1) {
+		const col = tile % columns;
+		const row = Math.trunc(tile / columns);
+		const x = offsetX + col * tileWidth;
+		const y = offsetY + row * tileHeight;
+		const glyph = cropGlyph(sheet, x, y, tileWidth, tileHeight);
+		const preview = glyphPreview(glyph);
+		console.log(`Tile ${tile}`);
+		console.log(preview);
+		console.log('');
+	}
 }
 
 function ensureUniqueSuffixes(glyphs: GlyphSpec[]): void {
@@ -241,17 +308,20 @@ function run(): void {
 	if (requiredHeight > sheet.height) {
 		throw new Error('Configured rows exceed sprite sheet height');
 	}
-	const glyphs = loadGlyphSpecs(cli.mapPath);
+	const glyphs = loadGlyphSpecs(cli.mapPath, cli.order);
 	ensureUniqueSuffixes(glyphs);
 	const totalTiles = columns * rows;
+	if (cli.inspect) {
+		dumpTilePreviews(sheet, columns, rows, tileWidth, tileHeight, cli.offsetX, cli.offsetY);
+	}
 	mkdirSync(outputDir, { recursive: true });
 	for (let i = 0; i < glyphs.length; i += 1) {
 		const spec = glyphs[i];
-		if (spec.code < 0 || spec.code >= totalTiles) {
-			throw new Error(`Glyph ${spec.suffix} references code ${spec.code} outside the sheet grid`);
+		if (spec.tile < 0 || spec.tile >= totalTiles) {
+			throw new Error(`Glyph ${spec.suffix} references tile ${spec.tile} outside the sheet grid`);
 		}
-		const col = spec.code % columns;
-		const row = Math.trunc(spec.code / columns);
+		const col = spec.tile % columns;
+		const row = Math.trunc(spec.tile / columns);
 		const x = cli.offsetX + col * tileWidth;
 		const y = cli.offsetY + row * tileHeight;
 		if (x + tileWidth > sheet.width || y + tileHeight > sheet.height) {

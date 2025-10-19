@@ -155,7 +155,7 @@ export class Physics2DManager {
 		if (!(deltaSeconds > 0) || !Number.isFinite(deltaSeconds)) return;
 		const bodies = Array.from(this.bodies.values());
 		if (bodies.length === 0) return;
- 		Collision2DSystem.rebuildIndex($.world);
+		 Collision2DSystem.rebuildIndex($.world);
 		// Temporary debug logging for movement investigation
 		// if (bodies.length && !this.debugPrinted) {
 		// 	console.log('[Physics2D] step', deltaSeconds, bodies[0]);

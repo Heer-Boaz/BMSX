@@ -46,6 +46,34 @@ export const enum BmsxConsoleButton {
 
 export const BmsxConsoleButtonCount: number = 6;
 
+export const enum BmsxConsolePointerButton {
+	Primary = 0,
+	Secondary = 1,
+	Auxiliary = 2,
+	Back = 3,
+	Forward = 4,
+}
+
+export const BmsxConsolePointerButtonCount: number = 5;
+
+export type ConsolePointerVector = {
+	x: number;
+	y: number;
+	valid: boolean;
+};
+
+export type ConsolePointerViewport = {
+	x: number;
+	y: number;
+	valid: boolean;
+	inside: boolean;
+};
+
+export type ConsolePointerWheel = {
+	value: number;
+	valid: boolean;
+};
+
 export type ConsoleViewport = {
 	width: number;
 	height: number;

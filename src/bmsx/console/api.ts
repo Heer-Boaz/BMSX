@@ -6,7 +6,7 @@ import { ConsoleFont } from './font';
 import type { ConsoleGlyph } from './font';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
-import { BmsxConsoleButton } from './types';
+import { BmsxConsoleButton, BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
 import { ConsoleSpriteRegistry, ConsoleTilemap, type SpriteColliderConfig, type SpriteDefinition, type SpritePhysicsConfig } from './sprites';
 import { ConsoleColliderManager, type ColliderCreateOptions, type ColliderContactInfo } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
@@ -133,6 +133,73 @@ export class BmsxConsoleApi {
 
 	public btnp(button: BmsxConsoleButton): boolean {
 		return this.input.btnp(button);
+	}
+
+	public mousebtn(button: BmsxConsolePointerButton): boolean {
+		return this.input.pointerButton(button);
+	}
+
+	public mousebtnp(button: BmsxConsolePointerButton): boolean {
+		return this.input.pointerButtonPressed(button);
+	}
+
+	public mousebtnr(button: BmsxConsolePointerButton): boolean {
+		return this.input.pointerButtonReleased(button);
+	}
+
+	public mousepos(): ConsolePointerViewport {
+		return this.pointerViewportPosition();
+	}
+
+	public pointerScreenPosition(): ConsolePointerVector {
+		return this.input.pointerPosition();
+	}
+
+	public pointerDelta(): ConsolePointerVector {
+		return this.input.pointerDelta();
+	}
+
+	public pointerViewportPosition(): ConsolePointerViewport {
+		return this.pointerViewportPositionInternal();
+	}
+
+	public mousewheel(): ConsolePointerWheel {
+		return this.input.pointerWheel();
+	}
+
+	public stat(index: number): number {
+		if (!Number.isFinite(index)) {
+			throw new Error('[BmsxConsoleApi] stat index must be finite.');
+		}
+		const value = Math.trunc(index);
+		switch (value) {
+			case 32: {
+				const viewport = this.pointerViewportPositionInternal();
+				if (!viewport.valid) {
+					return 0;
+				}
+				return Math.floor(viewport.x);
+			}
+			case 33: {
+				const viewport = this.pointerViewportPositionInternal();
+				if (!viewport.valid) {
+					return 0;
+				}
+				return Math.floor(viewport.y);
+			}
+			case 34: {
+				return this.computePointerButtonMask();
+			}
+			case 36: {
+				const wheel = this.input.pointerWheel();
+				if (!wheel.valid) {
+					return 0;
+				}
+				return Math.floor(wheel.value);
+			}
+			default:
+				return 0;
+		}
 	}
 
 	public cls(colorIndex: number = 0): void {
@@ -534,6 +601,49 @@ export class BmsxConsoleApi {
 				this.renderSprite(command);
 				return;
 		}
+	}
+
+	private pointerViewportPositionInternal(): ConsolePointerViewport {
+		const screen = this.input.pointerPosition();
+		if (!screen.valid) {
+			return { x: 0, y: 0, valid: false, inside: false };
+		}
+		const view = $.view;
+		if (!view) {
+			throw new Error('[BmsxConsoleApi] Game view not initialised.');
+		}
+		const rect = view.surface.measureDisplay();
+		const width = rect.width;
+		const height = rect.height;
+		if (width <= 0 || height <= 0) {
+			return { x: 0, y: 0, valid: false, inside: false };
+		}
+		const relativeX = screen.x - rect.left;
+		const relativeY = screen.y - rect.top;
+		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
+		const viewportX = (relativeX / width) * this.displayWidth;
+		const viewportY = (relativeY / height) * this.displayHeight;
+		return { x: viewportX, y: viewportY, valid: true, inside };
+	}
+
+	private computePointerButtonMask(): number {
+		let mask = 0;
+		if (this.input.pointerButton(BmsxConsolePointerButton.Primary)) {
+			mask |= 1;
+		}
+		if (this.input.pointerButton(BmsxConsolePointerButton.Secondary)) {
+			mask |= 2;
+		}
+		if (this.input.pointerButton(BmsxConsolePointerButton.Auxiliary)) {
+			mask |= 4;
+		}
+		if (this.input.pointerButton(BmsxConsolePointerButton.Back)) {
+			mask |= 8;
+		}
+		if (this.input.pointerButton(BmsxConsolePointerButton.Forward)) {
+			mask |= 16;
+		}
+		return mask;
 	}
 
 	private renderSprite(command: SpriteCommand): void {

@@ -462,7 +462,7 @@ export class BoundingBoxExtractor {
 		return tris;
 	}
 
-    static decomposeConcaveToConvex(poly: Polygon[], res: ImageResource): Polygon[] {
+	static decomposeConcaveToConvex(poly: Polygon[], res: ImageResource): Polygon[] {
 		const convexes: Polygon[] = [];
 		const rings = poly
 			.map(p => this.sanitizePolygon(p))

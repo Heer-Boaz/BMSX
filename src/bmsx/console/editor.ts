@@ -99,6 +99,14 @@ type EditorSnapshot = {
 	dirty: boolean;
 };
 
+type PointerSnapshot = {
+	viewportX: number;
+	viewportY: number;
+	insideViewport: boolean;
+	valid: boolean;
+	primaryPressed: boolean;
+};
+
 const TAB_SPACES = 2;
 const INITIAL_REPEAT_DELAY = 0.28;
 const REPEAT_INTERVAL = 0.05;
@@ -182,6 +190,8 @@ export class ConsoleCartEditor {
 	private redoStack: EditorSnapshot[] = [];
 	private lastHistoryKey: string | null = null;
 	private lastHistoryTimestamp = 0;
+	private pointerSelecting = false;
+	private pointerPrimaryWasPressed = false;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -219,6 +229,7 @@ export class ConsoleCartEditor {
 			return;
 		}
 		this.updateBlink(deltaSeconds);
+		this.handlePointerInput(deltaSeconds);
 		this.handleEditorInput(keyboard, deltaSeconds);
 		this.ensureCursorVisible();
 	}
@@ -237,6 +248,8 @@ export class ConsoleCartEditor {
 		this.applyInputOverrides(false);
 		this.active = false;
 		this.repeatState.clear();
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
 	}
 
 	private getKeyboard(): KeyboardInput | null {
@@ -283,6 +296,8 @@ export class ConsoleCartEditor {
 		this.blinkTimer = 0;
 		this.active = true;
 		this.message.visible = false;
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
 		this.repeatState.clear();
 		this.updateDesiredColumn();
 		this.selectionAnchor = null;
@@ -297,6 +312,8 @@ export class ConsoleCartEditor {
 		this.repeatState.clear();
 		this.applyInputOverrides(false);
 		this.selectionAnchor = null;
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
 		this.undoStack = [];
 		this.redoStack = [];
 		this.lastHistoryKey = null;
@@ -512,6 +529,242 @@ export class ConsoleCartEditor {
 			this.insertLineBreak();
 			this.consumeKey(keyboard, 'Enter');
 		}
+	}
+
+	private handlePointerInput(_deltaSeconds: number): void {
+		const snapshot = this.readPointerSnapshot();
+		if (!snapshot) {
+			this.pointerPrimaryWasPressed = false;
+			return;
+		}
+		const wasPressed = this.pointerPrimaryWasPressed;
+		const justPressed = snapshot.primaryPressed && !wasPressed;
+		const justReleased = !snapshot.primaryPressed && wasPressed;
+		if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
+			this.pointerSelecting = false;
+		}
+		if (!snapshot.valid) {
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
+		}
+		const bounds = this.getCodeAreaBounds();
+		const insideVertical = snapshot.viewportY >= bounds.codeTop && snapshot.viewportY < bounds.codeBottom;
+		if (justPressed && insideVertical) {
+			const targetRow = this.resolvePointerRow(snapshot.viewportY);
+			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
+			this.selectionAnchor = { row: targetRow, column: targetColumn };
+			this.setCursorPosition(targetRow, targetColumn);
+			this.pointerSelecting = true;
+		}
+		if (this.pointerSelecting && snapshot.primaryPressed) {
+			this.handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY);
+			const targetRow = this.resolvePointerRow(snapshot.viewportY);
+			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
+			if (!this.selectionAnchor) {
+				this.selectionAnchor = { row: targetRow, column: targetColumn };
+			}
+			this.setCursorPosition(targetRow, targetColumn);
+		}
+		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	}
+
+	private readPointerSnapshot(): PointerSnapshot | null {
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+		if (!playerInput) {
+			return null;
+		}
+		const pointerHandler = playerInput.inputHandlers['pointer'];
+		if (!pointerHandler) {
+			const fallback = playerInput.getActionState('pointer_primary');
+			return {
+				viewportX: 0,
+				viewportY: 0,
+				insideViewport: false,
+				valid: false,
+				primaryPressed: fallback.pressed,
+			};
+		}
+		const primaryState = pointerHandler.getButtonState('pointer_primary');
+		const positionState = pointerHandler.getButtonState('pointer_position');
+		const coords = positionState.value2d;
+		if (!coords) {
+			return {
+				viewportX: 0,
+				viewportY: 0,
+				insideViewport: false,
+				valid: false,
+				primaryPressed: primaryState.pressed,
+			};
+		}
+		const mapped = this.mapScreenPointToViewport(coords[0], coords[1]);
+		return {
+			viewportX: mapped.x,
+			viewportY: mapped.y,
+			insideViewport: mapped.inside,
+			valid: mapped.valid,
+			primaryPressed: primaryState.pressed,
+		};
+	}
+
+	private mapScreenPointToViewport(screenX: number, screenY: number): { x: number; y: number; inside: boolean; valid: boolean } {
+		const view = $.view;
+		if (!view) {
+			return { x: 0, y: 0, inside: false, valid: false };
+		}
+		const rect = view.surface.measureDisplay();
+		const width = rect.width;
+		const height = rect.height;
+		if (width <= 0 || height <= 0) {
+			return { x: 0, y: 0, inside: false, valid: false };
+		}
+		const relativeX = screenX - rect.left;
+		const relativeY = screenY - rect.top;
+		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
+		const viewportX = (relativeX / width) * this.viewportWidth;
+		const viewportY = (relativeY / height) * this.viewportHeight;
+		return { x: viewportX, y: viewportY, inside, valid: true };
+	}
+
+	private getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeRight: number; textLeft: number; } {
+		const codeTop = this.topMargin;
+		const codeBottom = this.viewportHeight - this.bottomMargin;
+		const codeRight = this.viewportWidth;
+		const textLeft = this.gutterWidth + 2;
+		return { codeTop, codeBottom, codeRight, textLeft };
+	}
+
+	private resolvePointerRow(viewportY: number): number {
+		const bounds = this.getCodeAreaBounds();
+		const relativeY = viewportY - bounds.codeTop;
+		const lineOffset = Math.floor(relativeY / this.lineHeight);
+		let row = this.scrollRow + lineOffset;
+		if (row < 0) {
+			row = 0;
+		}
+		const lastRow = this.lines.length - 1;
+		if (row > lastRow) {
+			row = lastRow;
+		}
+		if (row < 0) {
+			row = 0;
+		}
+		return row;
+	}
+
+	private resolvePointerColumn(row: number, viewportX: number): number {
+		const bounds = this.getCodeAreaBounds();
+		const textLeft = bounds.textLeft;
+		const line = this.lines[row];
+		if (line.length === 0) {
+			return 0;
+		}
+		const effectiveStartColumn = this.scrollColumn < line.length ? this.scrollColumn : line.length;
+		const highlight = this.highlightLine(line);
+		const startDisplay = this.columnToDisplay(highlight, effectiveStartColumn);
+		let displayIndex = startDisplay;
+		let accumulated = 0;
+		const offset = viewportX - textLeft;
+		if (offset <= 0) {
+			return effectiveStartColumn;
+		}
+		for (let column = effectiveStartColumn; column < line.length; column++) {
+			const nextDisplay = this.columnToDisplay(highlight, column + 1);
+			let columnWidth = 0;
+			for (let i = displayIndex; i < nextDisplay; i++) {
+				const glyph = this.font.getGlyph(highlight.chars[i]);
+				columnWidth += glyph.advance;
+			}
+			if (columnWidth > 0) {
+				const boundary = accumulated + columnWidth;
+				if (offset < boundary) {
+					const midpoint = accumulated + columnWidth * 0.5;
+					if (offset < midpoint) {
+						return column;
+					}
+					return column + 1;
+				}
+			}
+			accumulated += columnWidth;
+			displayIndex = nextDisplay;
+		}
+		return line.length;
+	}
+
+	private handlePointerAutoScroll(viewportX: number, viewportY: number): void {
+		if (!this.pointerSelecting) {
+			return;
+		}
+		const bounds = this.getCodeAreaBounds();
+		if (viewportY < bounds.codeTop) {
+			if (this.scrollRow > 0) {
+				this.scrollRow -= 1;
+			}
+		}
+		else if (viewportY >= bounds.codeBottom) {
+			const lastRow = this.lines.length - 1;
+			if (this.scrollRow < lastRow) {
+				this.scrollRow += 1;
+			}
+		}
+		const maxScrollColumn = this.computeMaximumScrollColumn();
+		if (viewportX < bounds.textLeft) {
+			if (this.scrollColumn > 0) {
+				this.scrollColumn -= 1;
+			}
+		}
+		else if (viewportX >= bounds.codeRight) {
+			if (this.scrollColumn < maxScrollColumn) {
+				this.scrollColumn += 1;
+			}
+		}
+		if (this.scrollRow < 0) {
+			this.scrollRow = 0;
+		}
+		if (this.scrollColumn < 0) {
+			this.scrollColumn = 0;
+		}
+		if (this.scrollColumn > maxScrollColumn) {
+			this.scrollColumn = maxScrollColumn;
+		}
+	}
+
+	private computeMaximumScrollColumn(): number {
+		let maxLength = 0;
+		for (let i = 0; i < this.lines.length; i++) {
+			const length = this.lines[i].length;
+			if (length > maxLength) {
+				maxLength = length;
+			}
+		}
+		const visible = this.visibleColumnCount();
+		const limit = maxLength - visible;
+		if (limit <= 0) {
+			return 0;
+		}
+		return limit;
+	}
+
+	private setCursorPosition(row: number, column: number): void {
+		let targetRow = row;
+		if (targetRow < 0) {
+			targetRow = 0;
+		}
+		const lastRow = this.lines.length - 1;
+		if (targetRow > lastRow) {
+			targetRow = lastRow >= 0 ? lastRow : 0;
+		}
+		let targetColumn = column;
+		if (targetColumn < 0) {
+			targetColumn = 0;
+		}
+		const lineLength = this.lines[targetRow].length;
+		if (targetColumn > lineLength) {
+			targetColumn = lineLength;
+		}
+		this.cursorRow = targetRow;
+		this.cursorColumn = targetColumn;
+		this.updateDesiredColumn();
+		this.resetBlink();
 	}
 
 private moveCursorVertical(delta: number): void {

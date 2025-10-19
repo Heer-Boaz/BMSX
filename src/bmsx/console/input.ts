@@ -1,7 +1,9 @@
 import { $ } from '../core/game';
-import type { ActionState } from '../input/inputtypes';
-import type { BmsxConsoleButton } from './types';
-import { BmsxConsoleButtonCount } from './types';
+import type { ActionState, ButtonState } from '../input/inputtypes';
+import { PointerInput } from '../input/pointerinput';
+import { Input } from '../input/input';
+import type { BmsxConsoleButton, BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerWheel } from './types';
+import { BmsxConsoleButtonCount, BmsxConsolePointerButtonCount } from './types';
 
 const BUTTON_ACTIONS: string[] = [
 	'console_left',
@@ -12,6 +14,13 @@ const BUTTON_ACTIONS: string[] = [
 	'console_x',
 ];
 
+const POINTER_CODES: readonly string[] = [
+	'pointer_primary',
+	'pointer_secondary',
+	'pointer_aux',
+	'pointer_back',
+	'pointer_forward',
+] as const;
 type RepeatStateEntry = {
 	active: boolean;
 	repeatCount: number;
@@ -28,6 +37,9 @@ export class BmsxConsoleInput {
 	private readonly playerIndex: number;
 	private currentFrame: number = 0;
 	private readonly repeatState: RepeatStateEntry[] = [];
+	private readonly pointerPressed: boolean[] = new Array(BmsxConsolePointerButtonCount).fill(false);
+	private readonly pointerJustPressed: boolean[] = new Array(BmsxConsolePointerButtonCount).fill(false);
+	private readonly pointerJustReleased: boolean[] = new Array(BmsxConsolePointerButtonCount).fill(false);
 
 	constructor(playerIndex: number) {
 		this.playerIndex = playerIndex;
@@ -35,6 +47,7 @@ export class BmsxConsoleInput {
 
 	public beginFrame(frame: number): void {
 		this.currentFrame = frame;
+		this.updatePointerButtonStates();
 	}
 
 	public btn(button: BmsxConsoleButton): boolean {
@@ -91,6 +104,66 @@ export class BmsxConsoleInput {
 		return result;
 	}
 
+	public pointerButton(button: BmsxConsolePointerButton): boolean {
+		if (button < 0 || button >= BmsxConsolePointerButtonCount) {
+			return false;
+		}
+		return this.pointerPressed[button] === true;
+	}
+
+	public pointerButtonPressed(button: BmsxConsolePointerButton): boolean {
+		if (button < 0 || button >= BmsxConsolePointerButtonCount) {
+			return false;
+		}
+		return this.pointerJustPressed[button] === true;
+	}
+
+	public pointerButtonReleased(button: BmsxConsolePointerButton): boolean {
+		if (button < 0 || button >= BmsxConsolePointerButtonCount) {
+			return false;
+		}
+		return this.pointerJustReleased[button] === true;
+	}
+
+	public pointerPosition(): ConsolePointerVector {
+		const handler = this.getPointerHandler();
+		if (!handler) {
+			return { x: 0, y: 0, valid: false };
+		}
+		const state = handler.getButtonState('pointer_position');
+		const coords = state.value2d;
+		if (!coords) {
+			return { x: 0, y: 0, valid: false };
+		}
+		return { x: coords[0], y: coords[1], valid: true };
+	}
+
+	public pointerDelta(): ConsolePointerVector {
+		const handler = this.getPointerHandler();
+		if (!handler) {
+			return { x: 0, y: 0, valid: false };
+		}
+		const state = handler.getButtonState('pointer_delta');
+		const delta = state.value2d;
+		if (!delta) {
+			return { x: 0, y: 0, valid: false };
+		}
+		return { x: delta[0], y: delta[1], valid: true };
+	}
+
+	public pointerWheel(): ConsolePointerWheel {
+		const handler = this.getPointerHandler();
+		if (!handler) {
+			return { value: 0, valid: false };
+		}
+		const state = handler.getButtonState('pointer_wheel');
+		const raw = state.value;
+		if (typeof raw === 'number') {
+			return { value: raw, valid: true };
+		}
+		return { value: 0, valid: false };
+	}
+
 	private ensureRepeatState(button: BmsxConsoleButton): RepeatStateEntry {
 		const idx = button as number;
 		let entry = this.repeatState[idx];
@@ -126,5 +199,35 @@ export class BmsxConsoleInput {
 		const actionName = BUTTON_ACTIONS[button];
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		return playerInput.getActionState(actionName);
+	}
+
+	private getPointerHandler(): PointerInput | null {
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+		let handler = playerInput.inputHandlers['pointer'] as PointerInput | null;
+		if (handler) {
+			return handler;
+		}
+		const fallbackPlayer = $.input.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX);
+		const fallback = fallbackPlayer?.inputHandlers['pointer'] as PointerInput | null;
+		if (fallback) {
+			playerInput.inputHandlers['pointer'] = fallback;
+			return fallback;
+		}
+		return null;
+	}
+
+	private updatePointerButtonStates(): void {
+		const handler = this.getPointerHandler();
+		for (let i = 0; i < BmsxConsolePointerButtonCount; i++) {
+			const previousPressed = this.pointerPressed[i] === true;
+			let pressed = false;
+			if (handler) {
+				const state = handler.getButtonState(POINTER_CODES[i]);
+				pressed = state.pressed === true;
+			}
+			this.pointerJustPressed[i] = pressed && !previousPressed;
+			this.pointerJustReleased[i] = !pressed && previousPressed;
+			this.pointerPressed[i] = pressed;
+		}
 	}
 }

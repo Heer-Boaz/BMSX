@@ -115,10 +115,10 @@ type LabelScope = {
 };
 
 export class LuaInterpreter {
- 	private readonly globals: LuaEnvironment;
- 	private currentChunk: string;
- 	private randomSeedValue: number;
- 	private reservedIdentifiers: Set<string> = new Set<string>();
+	 private readonly globals: LuaEnvironment;
+	 private currentChunk: string;
+	 private randomSeedValue: number;
+	 private reservedIdentifiers: Set<string> = new Set<string>();
 
 	constructor(globals: LuaEnvironment | null) {
 		if (globals === null) {
