@@ -113,6 +113,7 @@ const REPEAT_INTERVAL = 0.05;
 const CURSOR_BLINK_INTERVAL = 0.45;
 const UNDO_HISTORY_LIMIT = 512;
 const UNDO_COALESCE_INTERVAL_MS = 550;
+const WHEEL_SCROLL_STEP = 40;
 
 const COLOR_FRAME = 0;
 const COLOR_TOP_BAR = 13;
@@ -192,6 +193,7 @@ export class ConsoleCartEditor {
 	private lastHistoryTimestamp = 0;
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
+	private cursorRevealSuspended = false;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -229,9 +231,12 @@ export class ConsoleCartEditor {
 			return;
 		}
 		this.updateBlink(deltaSeconds);
+		this.handlePointerWheel();
 		this.handlePointerInput(deltaSeconds);
 		this.handleEditorInput(keyboard, deltaSeconds);
-		this.ensureCursorVisible();
+		if (!this.cursorRevealSuspended) {
+			this.ensureCursorVisible();
+		}
 	}
 
 	public draw(api: BmsxConsoleApi): void {
@@ -298,6 +303,7 @@ export class ConsoleCartEditor {
 		this.message.visible = false;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.cursorRevealSuspended = false;
 		this.repeatState.clear();
 		this.updateDesiredColumn();
 		this.selectionAnchor = null;
@@ -305,6 +311,7 @@ export class ConsoleCartEditor {
 		this.redoStack = [];
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
+		this.ensureCursorVisible();
 	}
 
 	private deactivate(): void {
@@ -314,6 +321,7 @@ export class ConsoleCartEditor {
 		this.selectionAnchor = null;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.cursorRevealSuspended = false;
 		this.undoStack = [];
 		this.redoStack = [];
 		this.lastHistoryKey = null;
@@ -504,6 +512,7 @@ export class ConsoleCartEditor {
 		}
 		if (moved) {
 			this.breakUndoSequence();
+			this.revealCursor();
 		}
 
 		if (shiftDown && this.isKeyJustPressed(keyboard, 'Tab')) {
@@ -566,6 +575,32 @@ export class ConsoleCartEditor {
 			this.setCursorPosition(targetRow, targetColumn);
 		}
 		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	}
+
+	private handlePointerWheel(): void {
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+		if (!playerInput) {
+			return;
+		}
+		const wheelAction = playerInput.getActionState('pointer_wheel');
+		if (wheelAction.consumed === true) {
+			return;
+		}
+		const delta = typeof wheelAction.value === 'number' ? wheelAction.value : 0;
+		if (!Number.isFinite(delta) || delta === 0) {
+			return;
+		}
+		const magnitude = Math.abs(delta);
+		const steps = Math.max(1, Math.round(magnitude / WHEEL_SCROLL_STEP));
+		const direction = delta > 0 ? 1 : -1;
+		this.scrollRows(direction * steps);
+		this.cursorRevealSuspended = true;
+		playerInput.consumeAction('pointer_wheel');
+	}
+
+	private revealCursor(): void {
+		this.cursorRevealSuspended = false;
+		this.ensureCursorVisible();
 	}
 
 	private readPointerSnapshot(): PointerSnapshot | null {
@@ -723,6 +758,21 @@ export class ConsoleCartEditor {
 		}
 	}
 
+	private scrollRows(deltaRows: number): void {
+		if (deltaRows === 0) {
+			return;
+		}
+		const maxScrollRow = Math.max(0, this.lines.length - this.visibleRowCount());
+		let targetRow = this.scrollRow + deltaRows;
+		if (targetRow < 0) {
+			targetRow = 0;
+		}
+		else if (targetRow > maxScrollRow) {
+			targetRow = maxScrollRow;
+		}
+		this.scrollRow = targetRow;
+	}
+
 	private computeMaximumScrollColumn(): number {
 		let maxLength = 0;
 		for (let i = 0; i < this.lines.length; i++) {
@@ -760,6 +810,7 @@ export class ConsoleCartEditor {
 		this.cursorColumn = targetColumn;
 		this.updateDesiredColumn();
 		this.resetBlink();
+		this.revealCursor();
 	}
 
 private moveCursorVertical(delta: number): void {
@@ -774,6 +825,7 @@ private moveCursorVertical(delta: number): void {
 	const targetColumn = Math.max(0, Math.min(lineLength, Math.floor(this.desiredColumn)));
 	this.cursorColumn = targetColumn;
 	this.resetBlink();
+	this.revealCursor();
 }
 
 private moveCursorHorizontal(delta: number): void {
@@ -796,6 +848,7 @@ private moveCursorHorizontal(delta: number): void {
 	}
 	this.resetBlink();
 	this.updateDesiredColumn();
+	this.revealCursor();
 }
 
 private moveWordLeft(): void {
@@ -845,6 +898,7 @@ private moveWordLeft(): void {
 	this.cursorColumn = column;
 	this.updateDesiredColumn();
 	this.resetBlink();
+	this.revealCursor();
 }
 
 private moveWordRight(): void {
@@ -912,6 +966,7 @@ private moveWordRight(): void {
 	this.cursorColumn = column;
 	this.updateDesiredColumn();
 	this.resetBlink();
+	this.revealCursor();
 }
 
 	private handleCharacterInput(keyboard: KeyboardInput, shiftDown: boolean): void {
@@ -963,7 +1018,8 @@ private insertTab(): void {
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.clearSelection();
-}
+		this.revealCursor();
+	}
 
 	private insertLineBreak(): void {
 		this.prepareUndo('insert-line-break', false);
@@ -981,7 +1037,8 @@ private insertTab(): void {
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.clearSelection();
-}
+		this.revealCursor();
+	}
 
 	private extractIndentation(value: string): string {
 		let result = '';
@@ -1013,6 +1070,7 @@ private insertTab(): void {
 			this.dirty = true;
 			this.resetBlink();
 			this.updateDesiredColumn();
+			this.revealCursor();
 			return;
 		}
 		if (this.cursorRow === 0) {
@@ -1027,6 +1085,7 @@ private insertTab(): void {
 		this.dirty = true;
 		this.resetBlink();
 		this.updateDesiredColumn();
+		this.revealCursor();
 	}
 
 	private deleteForward(): void {
@@ -1045,6 +1104,7 @@ private insertTab(): void {
 			this.lines[this.cursorRow] = before + after;
 			this.dirty = true;
 			this.updateDesiredColumn();
+			this.revealCursor();
 			return;
 		}
 		if (this.cursorRow >= this.lines.length - 1) {
@@ -1055,6 +1115,7 @@ private insertTab(): void {
 		this.lines.splice(this.cursorRow + 1, 1);
 		this.dirty = true;
 		this.updateDesiredColumn();
+		this.revealCursor();
 	}
 
 	private unindentCurrentLine(): void {
@@ -1084,6 +1145,7 @@ private insertTab(): void {
 		this.dirty = true;
 		this.resetBlink();
 		this.updateDesiredColumn();
+		this.revealCursor();
 	}
 
 	private save(): void {
@@ -1091,7 +1153,7 @@ private insertTab(): void {
 		try {
 			this.reloadSourceFn(source);
 			this.dirty = false;
-			this.showMessage('Lua cart reloaded.', COLOR_STATUS_SUCCESS, 2.5);
+			this.showMessage('Lua cart reloaded', COLOR_STATUS_SUCCESS, 2.5);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.showMessage(message, COLOR_STATUS_WARNING, 4.0);
@@ -1207,6 +1269,7 @@ private insertTab(): void {
 		this.selectionAnchor = null;
 		this.updateDesiredColumn();
 		this.resetBlink();
+		this.revealCursor();
 	}
 
 	private collapseSelectionOnNavigation(keyboard: KeyboardInput): boolean {
@@ -1274,11 +1337,12 @@ private insertTab(): void {
 			this.cursorRow = start.row + fragments.length - 1;
 			this.cursorColumn = lastFragment.length;
 		}
-		this.selectionAnchor = null;
-		this.dirty = true;
-		this.resetBlink();
-		this.updateDesiredColumn();
-	}
+	this.selectionAnchor = null;
+	this.dirty = true;
+	this.resetBlink();
+	this.updateDesiredColumn();
+	this.revealCursor();
+}
 
 	private getSelectionText(): string | null {
 		const range = this.getSelectionRange();
@@ -1301,33 +1365,33 @@ private insertTab(): void {
 	private async copySelectionToClipboard(): Promise<void> {
 		const text = this.getSelectionText();
 		if (text === null) {
-			this.showMessage('Nothing selected to copy.', COLOR_STATUS_WARNING, 1.5);
+			this.showMessage('Nothing selected to copy', COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
-		await this.writeClipboard(text, 'Copied selection to clipboard.');
+		await this.writeClipboard(text, 'Copied selection to clipboard');
 	}
 
 	private async cutSelectionToClipboard(): Promise<void> {
 		const text = this.getSelectionText();
 		if (text === null) {
-			this.showMessage('Nothing selected to cut.', COLOR_STATUS_WARNING, 1.5);
+			this.showMessage('Nothing selected to cut', COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
 		this.prepareUndo('cut', false);
-		await this.writeClipboard(text, 'Cut selection to clipboard.');
+		await this.writeClipboard(text, 'Cut selection to clipboard');
 		this.replaceSelectionWith('');
 	}
 
 	private pasteFromClipboard(): void {
 		const text = ConsoleCartEditor.customClipboard;
 		if (text === null || text.length === 0) {
-			this.showMessage('Editor clipboard is empty.', COLOR_STATUS_WARNING, 1.5);
+			this.showMessage('Editor clipboard is empty', COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
 		this.prepareUndo('paste', false);
 		this.deleteSelectionIfPresent();
 		this.insertClipboardText(text);
-		this.showMessage('Pasted from editor clipboard.', COLOR_STATUS_SUCCESS, 1.5);
+		this.showMessage('Pasted from editor clipboard', COLOR_STATUS_SUCCESS, 1.5);
 	}
 
 	private async writeClipboard(text: string, successMessage: string): Promise<void> {
@@ -1376,6 +1440,7 @@ private insertTab(): void {
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.clearSelection();
+		this.revealCursor();
 	}
 
 	private captureSnapshot(): EditorSnapshot {
@@ -1409,6 +1474,7 @@ private insertTab(): void {
 		this.dirty = snapshot.dirty;
 		this.updateDesiredColumn();
 		this.resetBlink();
+		this.cursorRevealSuspended = false;
 		this.ensureCursorVisible();
 	}
 
@@ -1492,6 +1558,7 @@ private insertTab(): void {
 		this.dirty = true;
 		this.resetBlink();
 		this.updateDesiredColumn();
+		this.revealCursor();
 	}
 
 	private getLineRangeForMovement(): { startRow: number; endRow: number } {

@@ -41,6 +41,7 @@ export class PointerInput implements InputHandler {
 	private lastPosition = { x: 0, y: 0 };
 	private lastPositionValid = false;
 	private lastDeltaTimestamp = 0;
+	private lastWheelTimestamp = 0;
 
 	constructor(public readonly deviceId: string = 'pointer:0') {
 		this.reset();
@@ -77,7 +78,17 @@ export class PointerInput implements InputHandler {
 					this.lastDeltaTimestamp = ts;
 				}
 			} else if (key === 'pointer_wheel') {
-				state.value = 0;
+				const ts = state.timestamp ?? 0;
+				if (ts === this.lastWheelTimestamp) {
+					const wasPressed = state.pressed === true;
+					state.value = 0;
+					state.pressed = false;
+					state.justpressed = false;
+					state.justreleased = wasPressed;
+				} else {
+					this.lastWheelTimestamp = ts;
+					state.justreleased = false;
+				}
 			}
 			state.waspressed = state.waspressed || state.pressed;
 			state.wasreleased = state.wasreleased || (!state.pressed);
@@ -126,12 +137,31 @@ export class PointerInput implements InputHandler {
 		const current = this.buttonStates[code] ?? makeButtonState();
 		current.value = x;
 		current.timestamp = timestamp;
+		if (code === 'pointer_wheel') {
+			const hasDelta = x !== 0;
+			if (hasDelta) {
+				current.pressed = true;
+				current.justpressed = true;
+				current.justreleased = false;
+				current.waspressed = true;
+				current.consumed = false;
+				current.pressedAtMs = current.timestamp;
+				current.pressId = this.nextPressId++;
+			}
+		}
 		this.buttonStates[code] = current;
 	}
 
 	public consumeButton(button: string): void {
 		const state = this.buttonStates[button];
-		if (state) state.consumed = true;
+		if (state) {
+			state.consumed = true;
+			if (button === 'pointer_wheel') {
+				state.pressed = false;
+				state.justpressed = false;
+				state.justreleased = false;
+			}
+		}
 	}
 
 	public reset(except?: string[]): void {
@@ -143,6 +173,7 @@ export class PointerInput implements InputHandler {
 			this.lastPosition = { x: 0, y: 0 };
 			this.lastPositionValid = false;
 			this.lastDeltaTimestamp = 0;
+			this.lastWheelTimestamp = 0;
 			return;
 		}
 		resetObject(this.buttonStates, except);
