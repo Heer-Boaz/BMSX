@@ -166,14 +166,9 @@ export type ClipboardPermissionState = 'unknown' | 'prompt' | 'granted' | 'denie
 
 export interface ClipboardService {
 	isSupported(): boolean;
-	readText(): Promise<string>;
 	writeText(text: string): Promise<void>;
-	getReadPermissionState(): ClipboardPermissionState;
 	getWritePermissionState(): ClipboardPermissionState;
-	requestReadPermission(): Promise<ClipboardPermissionState>;
 	requestWritePermission(): Promise<ClipboardPermissionState>;
-	beginMonitoring(): void;
-	endMonitoring(): void;
 }
 
 export interface PlatformHIDDeviceFilter {

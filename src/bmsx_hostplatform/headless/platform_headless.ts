@@ -78,40 +78,23 @@ class MemoryStorage implements StorageService {
 
 class HeadlessClipboardService implements ClipboardService {
 	private buffer = '';
-	private readonly readState: ClipboardPermissionState = 'granted';
 	private readonly writeState: ClipboardPermissionState = 'granted';
 
 	isSupported(): boolean {
 		return true;
 	}
 
-	async readText(): Promise<string> {
-		return this.buffer;
-	}
-
 	async writeText(text: string): Promise<void> {
 		this.buffer = text;
-	}
-
-	getReadPermissionState(): ClipboardPermissionState {
-		return this.readState;
 	}
 
 	getWritePermissionState(): ClipboardPermissionState {
 		return this.writeState;
 	}
 
-	async requestReadPermission(): Promise<ClipboardPermissionState> {
-		return this.readState;
-	}
-
 	async requestWritePermission(): Promise<ClipboardPermissionState> {
 		return this.writeState;
 	}
-
-	beginMonitoring(): void { }
-
-	endMonitoring(): void { }
 }
 
 class UnsupportedHID implements HIDService {

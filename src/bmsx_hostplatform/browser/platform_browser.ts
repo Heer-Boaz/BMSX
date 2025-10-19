@@ -151,129 +151,24 @@ class BrowserStorage implements StorageService {
 	}
 }
 
-type ClipboardPermissionName = 'clipboard-read' | 'clipboard-write';
+type ClipboardPermissionName = 'clipboard-write';
 
 type ClipboardAvailability = 'unknown' | 'allowed' | 'blocked';
 
-
 class BrowserClipboardService implements ClipboardService {
-	private readonly focusReturnTarget: HTMLElement | null;
-	private readStatus: ClipboardAvailability = 'unknown';
 	private writeStatus: ClipboardAvailability = 'unknown';
-	private fallback = '';
-	private monitorDepth = 0;
-	private pendingPasteWaiters: Array<{ resolve(value: boolean): void; timeout: number | null; }> = [];
-	private lastPasteSequence = 0;
-	private consumedPasteSequence = 0;
-	private scratchInput: HTMLTextAreaElement | null = null;
-	private scratchRefocusTimer: number | null = null;
-	private readonly handlePasteEvent = (event: ClipboardEvent): void => {
-		if (this.monitorDepth === 0) {
-			return;
-		}
-		const text = this.extractClipboardText(event);
-		if (text !== null) {
-			this.storeFallback(text, true);
-		} else {
-			this.notifyPasteWaiters(false);
-		}
-		if (this.scratchInput) {
-			this.scratchInput.value = '';
-			this.scheduleScratchRefocus();
-		}
-		if (event && typeof event.preventDefault === 'function') {
-			event.preventDefault();
-		}
-	};
-	private readonly handleScratchKeyDown = (): void => {
-		if (this.scratchInput) {
-			this.scratchInput.value = '';
-		}
-	};
-	private readonly handleScratchBlur = (): void => {
-		if (this.monitorDepth > 0) {
-			this.scheduleScratchRefocus();
-		}
-	};
 
-	constructor(focusTarget?: HTMLElement) {
-		this.focusReturnTarget = focusTarget ?? null;
-		if (typeof window !== 'undefined') {
-			window.addEventListener('paste', this.handlePasteEvent, { capture: true });
-		}
-	}
+	constructor(_focusTarget?: HTMLElement) { }
 
 	isSupported(): boolean {
-		if (this.systemClipboard() !== null) {
-			return true;
-		}
-		return this.fallback.length > 0;
-	}
-
-	async readText(): Promise<string> {
-		const cached = this.consumePendingFallback();
-		if (cached !== null) {
-			return cached;
-		}
-		const monitoring = this.monitorDepth > 0;
-		const clipboard = this.systemClipboard();
-		let lastError: Error | null = null;
-		if (!monitoring && clipboard && typeof clipboard.readText === 'function' && this.readStatus !== 'blocked') {
-			try {
-				const text = await clipboard.readText();
-				this.readStatus = 'allowed';
-				if (typeof text === 'string' && text.length > 0) {
-					return text;
-				}
-			}
-			catch (error) {
-				lastError = this.normalizeClipboardError(error, 'read');
-			}
-		}
-		if (monitoring) {
-			const observed = await this.waitForPaste();
-			if (observed) {
-				const consumed = this.consumePendingFallback();
-				if (consumed !== null) {
-					return consumed;
-				}
-			}
-			if ((!observed || !this.hasUnconsumedPaste()) && clipboard && typeof clipboard.readText === 'function' && this.readStatus !== 'blocked') {
-				try {
-					const text = await clipboard.readText();
-					this.readStatus = 'allowed';
-					if (typeof text === 'string' && text.length > 0) {
-						this.storeFallback(text, false);
-						const consumed = this.consumePendingFallback();
-						if (consumed !== null) {
-							return consumed;
-						}
-						return text;
-					}
-				}
-				catch (error) {
-					lastError = this.normalizeClipboardError(error, 'read');
-				}
-			}
-		}
-		const fallback = this.consumePendingFallback();
-		if (fallback !== null) {
-			return fallback;
-		}
-		if (this.fallback.length > 0) {
-			return this.fallback;
-		}
-		if (lastError) {
-			throw lastError;
-		}
-		throw new Error('[BrowserClipboardService] Clipboard read is unavailable in this context.');
+		return this.systemClipboard() !== null;
 	}
 
 	async writeText(text: string): Promise<void> {
-		this.storeFallback(text, false);
 		const clipboard = this.systemClipboard();
 		if (!clipboard || typeof clipboard.writeText !== 'function') {
-			return;
+			this.writeStatus = 'blocked';
+			throw new Error('[BrowserClipboardService] Clipboard write is unavailable in this context.');
 		}
 		try {
 			await clipboard.writeText(text);
@@ -281,51 +176,24 @@ class BrowserClipboardService implements ClipboardService {
 		}
 		catch (error) {
 			this.writeStatus = 'blocked';
-			throw this.normalizeClipboardError(error, 'write');
+			if (this.detectClipboardBlock(error)) {
+				throw new Error('[BrowserClipboardService] Clipboard write was blocked by the browser.');
+			}
+			if (error instanceof Error) {
+				throw error;
+			}
+			throw new Error(String(error));
 		}
-	}
-
-	getReadPermissionState(): ClipboardPermissionState {
-		return this.toPermissionState(this.readStatus);
 	}
 
 	getWritePermissionState(): ClipboardPermissionState {
 		return this.toPermissionState(this.writeStatus);
 	}
 
-	async requestReadPermission(): Promise<ClipboardPermissionState> {
-		const permission = await this.queryPermission('clipboard-read');
-		this.readStatus = this.fromPermissionState(permission, this.readStatus);
-		return this.toPermissionState(this.readStatus);
-	}
-
 	async requestWritePermission(): Promise<ClipboardPermissionState> {
 		const permission = await this.queryPermission('clipboard-write');
 		this.writeStatus = this.fromPermissionState(permission, this.writeStatus);
 		return this.toPermissionState(this.writeStatus);
-	}
-
-	beginMonitoring(): void {
-		this.monitorDepth += 1;
-		if (this.monitorDepth === 1) {
-			const scratch = this.ensureScratchInput();
-			this.attachScratchHandlers(scratch);
-			this.focusScratchInput(scratch);
-		}
-	}
-
-	endMonitoring(): void {
-		if (this.monitorDepth === 0) {
-			return;
-		}
-		this.monitorDepth -= 1;
-		if (this.monitorDepth === 0) {
-			this.clearScratchRefocusTimer();
-			this.detachScratchHandlers();
-			this.removeScratchInput();
-			this.restoreFocusTarget();
-			this.pendingPasteWaiters = [];
-		}
 	}
 
 	private systemClipboard(): Clipboard | null {
@@ -338,166 +206,16 @@ class BrowserClipboardService implements ClipboardService {
 		return navigator.clipboard;
 	}
 
-	private ensureScratchInput(): HTMLTextAreaElement {
-		if (typeof document === 'undefined') {
-			throw new Error('[BrowserClipboardService] Document is unavailable for clipboard monitoring.');
-		}
-		const body = document.body;
-		if (!body) {
-			throw new Error('[BrowserClipboardService] Unable to access document.body for clipboard monitoring.');
-		}
-		let scratch = this.scratchInput;
-		if (!scratch || !body.contains(scratch)) {
-			scratch = document.createElement('textarea');
-			scratch.setAttribute('aria-hidden', 'true');
-			scratch.setAttribute('tabindex', '-1');
-			scratch.setAttribute('autocomplete', 'off');
-			scratch.setAttribute('autocorrect', 'off');
-			scratch.setAttribute('autocapitalize', 'off');
-			scratch.setAttribute('spellcheck', 'false');
-			scratch.style.position = 'fixed';
-			scratch.style.opacity = '0';
-			scratch.style.pointerEvents = 'none';
-			scratch.style.left = '-1000px';
-			scratch.style.top = '0';
-			scratch.style.width = '1px';
-			scratch.style.height = '1px';
-			body.appendChild(scratch);
-			this.scratchInput = scratch;
-		}
-		scratch.value = '';
-		return scratch;
-	}
-
-	private attachScratchHandlers(input: HTMLTextAreaElement): void {
-		input.addEventListener('keydown', this.handleScratchKeyDown, { capture: true });
-		input.addEventListener('blur', this.handleScratchBlur, { capture: true });
-	}
-
-	private detachScratchHandlers(): void {
-		if (!this.scratchInput) {
-			return;
-		}
-		this.scratchInput.removeEventListener('keydown', this.handleScratchKeyDown, true);
-		this.scratchInput.removeEventListener('blur', this.handleScratchBlur, true);
-	}
-
-	private removeScratchInput(): void {
-		if (!this.scratchInput) {
-			return;
-		}
-		const node = this.scratchInput;
-		this.scratchInput = null;
-		if (node.parentNode) {
-			node.parentNode.removeChild(node);
-		}
-	}
-
-	private focusScratchInput(input: HTMLTextAreaElement): void {
-		try {
-			input.focus();
-			input.select();
-		} catch (_error) {
-			// ignore focus errors
-		}
-	}
-
-	private scheduleScratchRefocus(): void {
-		if (typeof window === 'undefined') {
-			return;
-		}
-		this.clearScratchRefocusTimer();
-		this.scratchRefocusTimer = window.setTimeout(() => {
-			this.scratchRefocusTimer = null;
-			if (this.monitorDepth > 0 && this.scratchInput) {
-				this.focusScratchInput(this.scratchInput);
-			}
-		}, 0);
-	}
-
-	private clearScratchRefocusTimer(): void {
-		if (this.scratchRefocusTimer !== null && typeof window !== 'undefined') {
-			window.clearTimeout(this.scratchRefocusTimer);
-		}
-		this.scratchRefocusTimer = null;
-	}
-
-	private restoreFocusTarget(): void {
-		if (this.focusReturnTarget && typeof this.focusReturnTarget.focus === 'function') {
-			try {
-				this.focusReturnTarget.focus();
-			} catch (_error) {
-				// ignore focus errors
-			}
-		}
-	}
-
-	private extractClipboardText(event: ClipboardEvent | null): string | null {
-		if (!event) {
-			return null;
-		}
-		const data = event.clipboardData;
-		if (!data) {
-			return null;
-		}
-		if (data.types && data.types.indexOf('text/plain') !== -1) {
-			const plain = data.getData('text/plain');
-			return plain;
-		}
-		if (data.types && data.types.indexOf('text') !== -1) {
-			const generic = data.getData('text');
-			return generic;
-		}
-		return null;
-	}
-
-	private storeFallback(value: string, notify: boolean): void {
-		this.fallback = value;
-		this.lastPasteSequence = (this.lastPasteSequence + 1) >>> 0;
-		if (this.lastPasteSequence === 0) {
-			this.lastPasteSequence = 1;
-		}
-		if (notify) {
-			this.notifyPasteWaiters(true);
-		}
-	}
-
-	private hasUnconsumedPaste(): boolean {
-		return this.lastPasteSequence !== this.consumedPasteSequence;
-	}
-
-	private consumePendingFallback(): string | null {
-		if (!this.hasUnconsumedPaste()) {
-			return null;
-		}
-		this.consumedPasteSequence = this.lastPasteSequence;
-		return this.fallback;
-	}
-
-	private notifyPasteWaiters(success: boolean): void {
-		if (this.pendingPasteWaiters.length === 0) {
-			return;
-		}
-		const waiters = this.pendingPasteWaiters.splice(0, this.pendingPasteWaiters.length);
-		for (let i = 0; i < waiters.length; i++) {
-			const entry = waiters[i];
-			if (entry.timeout !== null && typeof window !== 'undefined') {
-				window.clearTimeout(entry.timeout);
-				entry.timeout = null;
-			}
-			entry.resolve(success);
-		}
-	}
-
-	private queryPermission(name: ClipboardPermissionName): Promise<ClipboardPermissionState> {
+	private async queryPermission(name: ClipboardPermissionName): Promise<ClipboardPermissionState> {
 		if (typeof navigator === 'undefined') {
-			return Promise.resolve('unknown');
+			return 'unknown';
 		}
 		const permissions = (navigator as Navigator & { permissions?: Permissions }).permissions;
 		if (!permissions || typeof permissions.query !== 'function') {
-			return Promise.resolve('unknown');
+			return 'unknown';
 		}
-		return permissions.query({ name: name as PermissionName }).then((status) => {
+		try {
+			const status = await permissions.query({ name: name as PermissionName });
 			if (status.state === 'granted') {
 				return 'granted';
 			}
@@ -505,22 +223,13 @@ class BrowserClipboardService implements ClipboardService {
 				return 'denied';
 			}
 			return 'prompt';
-		}).catch(() => 'unknown');
-	}
-
-	private normalizeClipboardError(error: unknown, mode: 'read' | 'write'): Error {
-		if (this.detectClipboardBlock(error)) {
-			if (mode === 'read') {
-				this.readStatus = 'blocked';
-			} else {
-				this.writeStatus = 'blocked';
+		}
+		catch (error) {
+			if (this.detectClipboardBlock(error)) {
+				return 'denied';
 			}
-			return new Error(`[BrowserClipboardService] Clipboard ${mode} was blocked by the browser.`);
+			return 'unknown';
 		}
-		if (error instanceof Error) {
-			return error;
-		}
-		return new Error(String(error));
 	}
 
 	private detectClipboardBlock(error: unknown): boolean {

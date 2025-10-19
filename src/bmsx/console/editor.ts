@@ -162,7 +162,6 @@ export class ConsoleCartEditor {
 	private cursorVisible = true;
 	private desiredColumn = 0;
 	private selectionAnchor: Position | null = null;
-	private clipboardFallback: string = '';
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -218,7 +217,6 @@ export class ConsoleCartEditor {
 		this.applyInputOverrides(false);
 		this.active = false;
 		this.repeatState.clear();
-		this.getClipboardService().endMonitoring();
 	}
 
 	private getKeyboard(): KeyboardInput | null {
@@ -268,7 +266,6 @@ export class ConsoleCartEditor {
 		this.repeatState.clear();
 		this.updateDesiredColumn();
 		this.selectionAnchor = null;
-		this.getClipboardService().beginMonitoring();
 	}
 
 	private deactivate(): void {
@@ -276,7 +273,6 @@ export class ConsoleCartEditor {
 		this.repeatState.clear();
 		this.applyInputOverrides(false);
 		this.selectionAnchor = null;
-		this.getClipboardService().endMonitoring();
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -298,6 +294,7 @@ export class ConsoleCartEditor {
 	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
 		const shiftDown = this.isModifierPressed(keyboard, 'ShiftLeft') || this.isModifierPressed(keyboard, 'ShiftRight');
+		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
 		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
 
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
@@ -315,14 +312,8 @@ export class ConsoleCartEditor {
 			void this.cutSelectionToClipboard();
 			return;
 		}
-		if ((ctrlDown || altDown) && this.isKeyJustPressed(keyboard, 'KeyV')) {
-			this.consumeKey(keyboard, 'KeyV');
-			void this.pasteFromClipboard();
-			return;
-		}
-
 		this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
-		if (ctrlDown || altDown) {
+		if (ctrlDown || metaDown || altDown) {
 			return;
 		}
 		this.handleEditingKeys(keyboard, deltaSeconds, shiftDown);
@@ -995,32 +986,10 @@ private insertTab(): void {
 		this.replaceSelectionWith('');
 	}
 
-	private async pasteFromClipboard(): Promise<void> {
-		const text = await this.readClipboard();
-		if (text === null) {
-			return;
-		}
-		this.insertClipboardText(text);
-	}
-
-	private insertClipboardText(text: string): void {
-		if (text.length === 0) {
-			this.showMessage('Clipboard is empty.', COLOR_STATUS_WARNING, 2.0);
-			return;
-		}
-		this.replaceSelectionWith(text);
-		this.ensureCursorVisible();
-		const normalized = text.replace(/\s+/g, ' ').trim();
-		const preview = normalized.length > 24 ? `${normalized.slice(0, 24)}…` : normalized;
-		const label = preview.length > 0 ? `Pasted: ${preview}` : 'Pasted from clipboard.';
-		this.showMessage(label, COLOR_STATUS_SUCCESS, 1.5);
-	}
-
 	private async writeClipboard(text: string, successMessage: string): Promise<void> {
-		this.clipboardFallback = text;
 		const clipboard = this.getClipboardService();
 		if (!clipboard.isSupported()) {
-			this.showMessage('Clipboard is unavailable; cached selection internally.', COLOR_STATUS_WARNING, 3.5);
+			this.showMessage('Clipboard is unavailable.', COLOR_STATUS_WARNING, 3.5);
 			return;
 		}
 		try {
@@ -1031,35 +1000,6 @@ private insertTab(): void {
 			const message = error instanceof Error ? error.message : 'Clipboard write failed.';
 			this.showMessage(message, COLOR_STATUS_WARNING, 3.5);
 		}
-	}
-
-	private async readClipboard(): Promise<string | null> {
-		const clipboard = this.getClipboardService();
-		if (!clipboard.isSupported()) {
-			if (this.clipboardFallback.length === 0) {
-				this.showMessage('Clipboard is unavailable and no cached copy exists.', COLOR_STATUS_WARNING, 3.5);
-				return null;
-			}
-			this.showMessage('Clipboard is unavailable; using cached copy.', COLOR_STATUS_WARNING, 2.5);
-			return this.clipboardFallback;
-		}
-		try {
-			const text = await clipboard.readText();
-			if (text.length === 0) {
-				this.showMessage('Clipboard is empty.', COLOR_STATUS_WARNING, 2.0);
-				return null;
-			}
-			this.clipboardFallback = text;
-			return text;
-		}
-		catch (error) {
-			const message = error instanceof Error ? error.message : 'Clipboard read failed.';
-			this.showMessage(message, COLOR_STATUS_WARNING, 3.5);
-			if (this.clipboardFallback.length > 0) {
-				return this.clipboardFallback;
-			}
-		}
-		return null;
 	}
 
 	private moveSelectionLines(delta: number): void {
