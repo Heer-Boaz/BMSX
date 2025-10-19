@@ -573,27 +573,18 @@ export class ConsoleCartEditor {
 		if (!playerInput) {
 			return null;
 		}
-		const pointerHandler = playerInput.inputHandlers['pointer'];
-		if (!pointerHandler) {
-			const fallback = playerInput.getActionState('pointer_primary');
-			return {
-				viewportX: 0,
-				viewportY: 0,
-				insideViewport: false,
-				valid: false,
-				primaryPressed: fallback.pressed,
-			};
-		}
-		const primaryState = pointerHandler.getButtonState('pointer_primary');
-		const positionState = pointerHandler.getButtonState('pointer_position');
-		const coords = positionState.value2d;
+		const primaryAction = playerInput.getActionState('pointer_primary');
+		const primaryPressed = primaryAction.pressed === true && primaryAction.consumed !== true;
+
+		const positionAction = playerInput.getActionState('pointer_position');
+		const coords = positionAction.value2d;
 		if (!coords) {
 			return {
 				viewportX: 0,
 				viewportY: 0,
 				insideViewport: false,
 				valid: false,
-				primaryPressed: primaryState.pressed,
+				primaryPressed,
 			};
 		}
 		const mapped = this.mapScreenPointToViewport(coords[0], coords[1]);
@@ -602,7 +593,7 @@ export class ConsoleCartEditor {
 			viewportY: mapped.y,
 			insideViewport: mapped.inside,
 			valid: mapped.valid,
-			primaryPressed: primaryState.pressed,
+			primaryPressed,
 		};
 	}
 
@@ -722,6 +713,10 @@ export class ConsoleCartEditor {
 		}
 		if (this.scrollColumn < 0) {
 			this.scrollColumn = 0;
+		}
+		const maxScrollRow = Math.max(0, this.lines.length - this.visibleRowCount());
+		if (this.scrollRow > maxScrollRow) {
+			this.scrollRow = maxScrollRow;
 		}
 		if (this.scrollColumn > maxScrollColumn) {
 			this.scrollColumn = maxScrollColumn;
