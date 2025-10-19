@@ -17,6 +17,8 @@ type RepeatStateEntry = {
 	repeatCount: number;
 	lastFrameEvaluated: number;
 	lastResult: boolean;
+	hasDispatchedThisCycle: boolean;
+	pressStartFrame: number;
 };
 
 export class BmsxConsoleInput {
@@ -50,21 +52,37 @@ export class BmsxConsoleInput {
 		if (state.justpressed) {
 			repeat.active = true;
 			repeat.repeatCount = 0;
+			repeat.hasDispatchedThisCycle = true;
+			repeat.pressStartFrame = this.currentFrame;
+			result = true;
+		} else if (!state.pressed && state.justreleased && !repeat.hasDispatchedThisCycle) {
+			repeat.active = false;
+			repeat.repeatCount = 0;
+			repeat.hasDispatchedThisCycle = true;
+			repeat.pressStartFrame = -1;
 			result = true;
 		} else if (!state.pressed) {
-			this.resetRepeatState(button, repeat);
+			repeat.active = false;
+			repeat.repeatCount = 0;
+			repeat.hasDispatchedThisCycle = false;
+			repeat.pressStartFrame = -1;
 		} else {
 			if (!repeat.active) {
 				repeat.active = true;
 				repeat.repeatCount = 0;
+				repeat.pressStartFrame = this.currentFrame;
 			}
-			const presstime = state.presstime;
-			if (presstime == null) {
-				throw new Error(`[BmsxConsoleInput] Action state for button ${button} missing presstime while pressed.`);
+			if (repeat.pressStartFrame < 0) {
+				throw new Error(`[BmsxConsoleInput] Press start frame not set for button ${button}.`);
 			}
-			const repeatsElapsed = this.computeRepeatCount(presstime);
+			const heldFrames = this.currentFrame - repeat.pressStartFrame;
+			if (heldFrames < 0) {
+				throw new Error(`[BmsxConsoleInput] Negative held frame count detected for button ${button}.`);
+			}
+			const repeatsElapsed = this.computeRepeatCount(heldFrames);
 			if (repeatsElapsed > repeat.repeatCount) {
 				repeat.repeatCount = repeatsElapsed;
+				repeat.hasDispatchedThisCycle = true;
 				result = true;
 			}
 		}
@@ -77,36 +95,28 @@ export class BmsxConsoleInput {
 		const idx = button as number;
 		let entry = this.repeatState[idx];
 		if (!entry) {
-			entry = { active: false, repeatCount: 0, lastFrameEvaluated: -1, lastResult: false };
+			entry = {
+				active: false,
+				repeatCount: 0,
+				lastFrameEvaluated: -1,
+				lastResult: false,
+				hasDispatchedThisCycle: false,
+				pressStartFrame: -1,
+			};
 			this.repeatState[idx] = entry;
 		}
 		return entry;
 	}
 
-	private resetRepeatState(button: BmsxConsoleButton, entry?: RepeatStateEntry): void {
-		const repeat = entry ?? this.ensureRepeatState(button);
-		repeat.active = false;
-		repeat.repeatCount = 0;
-		repeat.lastResult = false;
-		repeat.lastFrameEvaluated = this.currentFrame;
-	}
-
-	private computeRepeatCount(presstimeMs: number): number {
-		const fps = $.targetFPS;
-		if (!Number.isFinite(fps) || fps <= 0) {
-			throw new Error(`[BmsxConsoleInput] Invalid target FPS ${fps}.`);
+	private computeRepeatCount(heldFrames: number): number {
+		if (heldFrames < 0) {
+			throw new Error('[BmsxConsoleInput] Held frame count cannot be negative.');
 		}
-		const frameDurationMs = 1000 / fps;
-		const repeatDelayMs = BmsxConsoleInput.INITIAL_REPEAT_DELAY_FRAMES * frameDurationMs;
-		if (presstimeMs < repeatDelayMs) {
+		if (heldFrames < BmsxConsoleInput.INITIAL_REPEAT_DELAY_FRAMES) {
 			return 0;
 		}
-		const repeatIntervalMs = BmsxConsoleInput.REPEAT_INTERVAL_FRAMES * frameDurationMs;
-		if (repeatIntervalMs <= 0) {
-			throw new Error('[BmsxConsoleInput] Repeat interval must be greater than zero.');
-		}
-		const elapsedSinceDelay = presstimeMs - repeatDelayMs;
-		return Math.floor(elapsedSinceDelay / repeatIntervalMs) + 1;
+		const elapsedSinceDelay = heldFrames - BmsxConsoleInput.INITIAL_REPEAT_DELAY_FRAMES;
+		return Math.floor(elapsedSinceDelay / BmsxConsoleInput.REPEAT_INTERVAL_FRAMES) + 1;
 	}
 
 	private getState(button: BmsxConsoleButton): ActionState {
@@ -115,10 +125,6 @@ export class BmsxConsoleInput {
 		}
 		const actionName = BUTTON_ACTIONS[button];
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
-		const state = playerInput.getActionState(actionName);
-		if (!state.pressed) {
-			this.resetRepeatState(button);
-		}
-		return state;
+		return playerInput.getActionState(actionName);
 	}
 }

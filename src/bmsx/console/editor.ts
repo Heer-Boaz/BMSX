@@ -5,6 +5,7 @@ import type { ClipboardService } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
 import type { BmsxConsoleMetadata, ConsoleViewport } from './types';
 import { ConsoleEditorFont } from './editor_font';
+import { Msx1Colors } from '../systems/msx';
 
 type CharacterMapEntry = {
 	normal: string;
@@ -106,7 +107,7 @@ const COLOR_COMMENT = 3;
 const COLOR_OPERATOR = 12;
 const COLOR_CODE_DIM = 6;
 const HIGHLIGHT_OVERLAY = { r: 1, g: 0.6, b: 0.2, a: 0.35 };
-const SELECTION_OVERLAY = { r: 0.2, g: 0.6, b: 1, a: 0.35 };
+const SELECTION_OVERLAY = Msx1Colors[6];
 const CARET_COLOR = { r: 1, g: 1, b: 1, a: 1 };
 const COLOR_STATUS_BACKGROUND = 8;
 const COLOR_STATUS_TEXT = 15;
