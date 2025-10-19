@@ -432,14 +432,30 @@ export class ConsoleCartEditor {
 		}
 
 		if (this.isKeyJustPressed(keyboard, 'Home')) {
-			this.cursorColumn = 0;
+			if (ctrlDown) {
+				this.cursorRow = 0;
+				this.cursorColumn = 0;
+			} else {
+				this.cursorColumn = 0;
+			}
 			this.updateDesiredColumn();
 			this.resetBlink();
 			this.consumeKey(keyboard, 'Home');
 			moved = true;
 		}
 		if (this.isKeyJustPressed(keyboard, 'End')) {
-			this.cursorColumn = this.currentLine().length;
+			if (ctrlDown) {
+				const lastRow = this.lines.length - 1;
+				if (lastRow < 0) {
+					this.cursorRow = 0;
+					this.cursorColumn = 0;
+				} else {
+					this.cursorRow = lastRow;
+					this.cursorColumn = this.lines[lastRow].length;
+				}
+			} else {
+				this.cursorColumn = this.currentLine().length;
+			}
 			this.updateDesiredColumn();
 			this.resetBlink();
 			this.consumeKey(keyboard, 'End');
