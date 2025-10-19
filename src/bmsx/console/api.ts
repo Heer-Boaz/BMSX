@@ -174,6 +174,19 @@ export class BmsxConsoleApi {
 		this.recordCommand(command);
 	}
 
+	public rectfillColor(x0: number, y0: number, x1: number, y1: number, colorValue: color): void {
+		const command: RectCommand = {
+			kind: 'fill',
+			x0,
+			y0,
+			x1,
+			y1,
+			color: colorValue,
+			layer: DRAW_LAYER,
+		};
+		this.recordCommand(command);
+	}
+
 	public print(text: string, x: number, y: number, colorIndex: number): void {
 		const command: PrintCommand = {
 			kind: 'print',

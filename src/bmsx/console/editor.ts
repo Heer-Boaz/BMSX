@@ -103,7 +103,7 @@ const COLOR_COMMENT = 3;
 const COLOR_OPERATOR = 12;
 const COLOR_CODE_DIM = 6;
 const COLOR_CURSOR = 7;
-const COLOR_HIGHLIGHT = 12;
+const HIGHLIGHT_OVERLAY = { r: 1, g: 0.6, b: 0.2, a: 0.35 };
 const COLOR_STATUS_BACKGROUND = 8;
 const COLOR_STATUS_TEXT = 15;
 const COLOR_STATUS_WARNING = 9;
@@ -803,7 +803,7 @@ private insertTab(): void {
 			const lineIndex = this.scrollRow + i;
 			const rowY = codeTop + i * this.lineHeight;
 			if (lineIndex === this.cursorRow) {
-				api.rectfill(gutterRight, rowY, this.viewportWidth, rowY + this.lineHeight, COLOR_HIGHLIGHT);
+				api.rectfillColor(gutterRight, rowY, this.viewportWidth, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
 			}
 
 			if (lineIndex < this.lines.length) {
