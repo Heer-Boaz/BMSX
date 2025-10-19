@@ -79,6 +79,12 @@ type MessageState = {
 	visible: boolean;
 };
 
+type HighlightLine = {
+	chars: string[];
+	colors: number[];
+	columnToDisplay: number[];
+};
+
 const TAB_SPACES = 2;
 const INITIAL_REPEAT_DELAY = 0.28;
 const REPEAT_INTERVAL = 0.05;
@@ -90,6 +96,11 @@ const COLOR_TOP_BAR_TEXT = 15;
 const COLOR_CODE_BACKGROUND = 4;
 const COLOR_GUTTER_BACKGROUND = 1;
 const COLOR_CODE_TEXT = 14;
+const COLOR_KEYWORD = 11;
+const COLOR_STRING = 13;
+const COLOR_NUMBER = 10;
+const COLOR_COMMENT = 3;
+const COLOR_OPERATOR = 12;
 const COLOR_CODE_DIM = 6;
 const COLOR_CURSOR = 7;
 const COLOR_HIGHLIGHT = 12;
@@ -131,6 +142,10 @@ export class ConsoleCartEditor {
 		'Space',
 		'Tab',
 	];
+
+	private static readonly KEYWORDS = new Set([
+		'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
+	]);
 
 	private active = false;
 	private lines: string[] = [''];
@@ -781,6 +796,8 @@ private insertTab(): void {
 
 		const rowCount = this.visibleRowCount();
 		const columnCount = this.visibleColumnCount();
+		let cursorHighlight: HighlightLine | null = null;
+		let cursorSliceStart = 0;
 
 		for (let i = 0; i < rowCount; i++) {
 			const lineIndex = this.scrollRow + i;
@@ -791,40 +808,90 @@ private insertTab(): void {
 
 			if (lineIndex < this.lines.length) {
 				const line = this.lines[lineIndex];
-				const display = this.renderLineSegment(line, this.scrollColumn, columnCount + 2);
-				this.drawText(api, display, gutterRight + 2, rowY, COLOR_CODE_TEXT);
+				const highlight = this.highlightLine(line);
+				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
+				this.drawColoredText(api, slice.text, slice.colors, gutterRight + 2, rowY);
+				if (lineIndex === this.cursorRow) {
+					cursorHighlight = highlight;
+					cursorSliceStart = slice.startDisplay;
+				}
 			} else {
-				this.drawText(api, '~', gutterRight + 2, rowY, COLOR_CODE_DIM);
+				this.drawColoredText(api, '~', [COLOR_CODE_DIM], gutterRight + 2, rowY);
 			}
 		}
 
-		if (this.cursorVisible) {
-			this.drawCursor(api, gutterRight + 2, codeTop);
+		if (this.cursorVisible && cursorHighlight) {
+			this.drawCursor(api, gutterRight + 2, codeTop, cursorHighlight, cursorSliceStart);
 		}
 	}
 
-	private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number): void {
-		const line = this.currentLine();
+	private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highlight: HighlightLine, sliceStartDisplay: number): void {
 		const relativeRow = this.cursorRow - this.scrollRow;
-		if (relativeRow < 0) {
+		if (relativeRow < 0 || relativeRow >= this.visibleRowCount()) {
 			return;
 		}
-		if (relativeRow >= this.visibleRowCount()) {
-			return;
-		}
-		const visiblePrefix = this.renderLineSegment(line, this.scrollColumn, this.cursorColumn - this.scrollColumn);
-		const offset = this.measureText(visiblePrefix);
-		const cursorX = textX + offset;
+		const columnToDisplay = highlight.columnToDisplay;
+		const clampedColumn = Math.min(this.cursorColumn, columnToDisplay.length - 1);
+		const cursorDisplayIndex = columnToDisplay[clampedColumn];
+		const cursorX = textX + this.measureHighlightRange(highlight, sliceStartDisplay, cursorDisplayIndex);
 		const cursorY = codeTop + relativeRow * this.lineHeight;
-		const glyphChar = line.charAt(this.cursorColumn);
-		const cursorWidth = glyphChar === '\t'
-			? this.spaceAdvance * TAB_SPACES
-			: this.font.getGlyph(glyphChar || ' ').advance;
-		api.rectfill(cursorX, cursorY, cursorX + cursorWidth, cursorY + this.lineHeight, COLOR_CURSOR);
-		const displayChar = this.renderLineSegment(line, this.cursorColumn, 1);
-		if (displayChar.length > 0) {
-			this.drawText(api, displayChar, cursorX, cursorY, COLOR_CODE_TEXT);
+		let baseChar = ' ';
+		let baseColor = COLOR_CODE_TEXT;
+		let cursorWidth = this.charAdvance;
+		if (cursorDisplayIndex < highlight.chars.length) {
+			baseChar = highlight.chars[cursorDisplayIndex];
+			baseColor = highlight.colors[cursorDisplayIndex];
+			cursorWidth = this.font.getGlyph(baseChar).advance;
 		}
+		api.rectfill(cursorX, cursorY, cursorX + cursorWidth, cursorY + this.lineHeight, COLOR_CURSOR);
+		this.drawColoredText(api, baseChar, [baseColor], cursorX, cursorY);
+	}
+
+	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
+		if (highlight.chars.length === 0) {
+			return { text: '', colors: [], startDisplay: 0, endDisplay: 0 };
+		}
+		const columnToDisplay = highlight.columnToDisplay;
+		const clampedStart = Math.min(columnStart, columnToDisplay.length - 1);
+		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
+		const startDisplay = columnToDisplay[clampedStart];
+		const endDisplay = columnToDisplay[clampedEndColumn];
+		const sliceChars = highlight.chars.slice(startDisplay, endDisplay);
+		const sliceColors = highlight.colors.slice(startDisplay, endDisplay);
+		return {
+			text: sliceChars.join(''),
+			colors: sliceColors,
+			startDisplay,
+			endDisplay,
+		};
+	}
+
+	private drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], originX: number, originY: number): void {
+		let cursorX = Math.floor(originX);
+		const cursorY = Math.floor(originY);
+		for (let i = 0; i < text.length; i++) {
+			const ch = text.charAt(i);
+			const color = colors[i] ?? COLOR_CODE_TEXT;
+			const glyph = this.font.getGlyph(ch);
+			for (let s = 0; s < glyph.segments.length; s++) {
+				const segment = glyph.segments[s];
+				const x0 = cursorX + segment.x;
+				const x1 = x0 + segment.length;
+				const y0 = cursorY + segment.y;
+				api.rectfill(x0, y0, x1, y0 + 1, color);
+			}
+			cursorX += glyph.advance;
+		}
+	}
+
+	private measureHighlightRange(highlight: HighlightLine, startDisplay: number, endDisplay: number): number {
+		let width = 0;
+		const boundedEnd = Math.min(endDisplay, highlight.chars.length);
+		for (let i = startDisplay; i < boundedEnd; i++) {
+			const ch = highlight.chars[i];
+			width += this.font.getGlyph(ch).advance;
+		}
+		return width;
 	}
 
 	private drawStatusBar(api: BmsxConsoleApi): void {
@@ -841,6 +908,143 @@ private insertTab(): void {
 			const msgX = Math.max(4, Math.floor((this.viewportWidth - this.measureText(this.message.text)) / 2));
 			this.drawText(api, this.message.text, msgX, statusTop + this.lineHeight + 1, this.message.color);
 		}
+	}
+
+	private highlightLine(line: string): HighlightLine {
+		const length = line.length;
+		const columnColors: number[] = new Array(length).fill(COLOR_CODE_TEXT);
+		let i = 0;
+		while (i < length) {
+			const ch = line.charAt(i);
+			if (ch === '"' || ch === '\'') {
+				const delimiter = ch;
+				columnColors[i] = COLOR_STRING;
+				i += 1;
+				while (i < length) {
+					columnColors[i] = COLOR_STRING;
+					const current = line.charAt(i);
+					if (current === '\\' && i + 1 < length) {
+						columnColors[i + 1] = COLOR_STRING;
+						i += 2;
+						continue;
+					}
+					if (current === delimiter) {
+						i += 1;
+						break;
+					}
+					i += 1;
+				}
+				continue;
+			}
+			if (line.startsWith('--', i)) {
+				for (let j = i; j < length; j++) columnColors[j] = COLOR_COMMENT;
+				break;
+			}
+			if (this.isNumberStart(line, i)) {
+				const end = this.readNumber(line, i);
+				for (let j = i; j < end; j++) columnColors[j] = COLOR_NUMBER;
+				i = end;
+				continue;
+			}
+			if (this.isIdentifierStart(ch)) {
+				const end = this.readIdentifier(line, i);
+				const word = line.slice(i, end);
+				const color = ConsoleCartEditor.KEYWORDS.has(word.toLowerCase()) ? COLOR_KEYWORD : COLOR_CODE_TEXT;
+				if (color !== COLOR_CODE_TEXT) {
+					for (let j = i; j < end; j++) columnColors[j] = color;
+				}
+				i = end;
+				continue;
+			}
+			if (this.isOperatorChar(ch)) {
+				columnColors[i] = COLOR_OPERATOR;
+			}
+			i += 1;
+		}
+
+		const chars: string[] = [];
+		const colors: number[] = [];
+		const columnToDisplay: number[] = [];
+		for (let column = 0; column < length; column++) {
+			columnToDisplay.push(chars.length);
+			const ch = line.charAt(column);
+			const color = columnColors[column];
+			if (ch === '\t') {
+				for (let j = 0; j < TAB_SPACES; j++) {
+					chars.push(' ');
+					colors.push(color);
+				}
+			}
+			else {
+				chars.push(ch);
+				colors.push(color);
+			}
+		}
+		columnToDisplay.push(chars.length);
+		return { chars, colors, columnToDisplay };
+	}
+
+	private isNumberStart(line: string, index: number): boolean {
+		const ch = line.charAt(index);
+		if (ch >= '0' && ch <= '9') {
+			return true;
+		}
+		if (ch === '.' && index + 1 < line.length) {
+			const next = line.charAt(index + 1);
+			return next >= '0' && next <= '9';
+		}
+		return false;
+	}
+
+	private readNumber(line: string, start: number): number {
+		let index = start;
+		const length = line.length;
+		if (line.startsWith('0x', index) || line.startsWith('0X', index)) {
+			index += 2;
+			while (index < length && this.isHexDigit(line.charAt(index))) index += 1;
+			return index;
+		}
+		while (index < length && this.isDigit(line.charAt(index))) index += 1;
+		if (index < length && line.charAt(index) === '.') {
+			index += 1;
+			while (index < length && this.isDigit(line.charAt(index))) index += 1;
+		}
+		if (index < length && (line.charAt(index) === 'e' || line.charAt(index) === 'E')) {
+			index += 1;
+			if (index < length && (line.charAt(index) === '+' || line.charAt(index) === '-')) {
+				index += 1;
+			}
+			while (index < length && this.isDigit(line.charAt(index))) index += 1;
+		}
+		return index;
+	}
+
+	private readIdentifier(line: string, start: number): number {
+		let index = start;
+		while (index < line.length && this.isIdentifierPart(line.charAt(index))) {
+			index += 1;
+		}
+		return index;
+	}
+
+	private isIdentifierStart(ch: string): boolean {
+		return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch === '_';
+	}
+
+	private isIdentifierPart(ch: string): boolean {
+		return this.isIdentifierStart(ch) || this.isDigit(ch);
+	}
+
+	private isDigit(ch: string): boolean {
+		return ch >= '0' && ch <= '9';
+	}
+
+	private isHexDigit(ch: string): boolean {
+		return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f');
+	}
+
+	private isOperatorChar(ch: string): boolean {
+		return '+-*/%<>=#(){}[]:,.;'.includes(ch);
 	}
 
 	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {
@@ -883,15 +1087,6 @@ private insertTab(): void {
 			width += this.font.getGlyph(ch).advance;
 		}
 		return width;
-	}
-
-	private renderLineSegment(line: string, start: number, columns: number): string {
-		const slice = line.slice(start, start + columns);
-		return this.expandTabs(slice);
-	}
-
-	private expandTabs(value: string): string {
-		return value.replace(/\t/g, '  ');
 	}
 
 	private ensureCursorVisible(): void {
