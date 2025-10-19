@@ -12,7 +12,8 @@
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--remote-debugging-port=9222"
+				"--remote-debugging-port=9222",
+				"--app=file://${workspaceFolder}/dist/game_debug.html"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -25,28 +26,6 @@
 			"showAsyncStacks": true,
 			"smartStep": true,
 			"disableNetworkCache": true,
-		},
-		{
-			"type": "msedge",
-			"request": "launch",
-			"name": "Debug the MSXSOUND!",
-			"url": "${workspaceFolder}/src/bmsx/bla.html",
-			"runtimeArgs": [
-				"--nolazy",
-				"--allow-file-access-from-files",
-				"--disable-session-crashed-bubble",
-				"-inprivate",
-				"--remote-debugging-port=9222"
-			],
-			"sourceMaps": true,
-			"showAsyncStacks": true,
-			"smartStep": true,
-			"disableNetworkCache": true,
-			"presentation": {
-				"hidden": false,
-				"group": "",
-				"order": 3
-			}
 		},
 		{
 			"type": "msedge",
@@ -83,31 +62,6 @@
 		},
 		{
 			"type": "msedge",
-			"name": "a:/src/ASCII-art.html",
-			"request": "launch",
-			"url": "a:/src/ASCII-art.html",
-			"showAsyncStacks": true,
-			"smartStep": true,
-			"disableNetworkCache": true,
-			"runtimeArgs": [
-				"--nolazy",
-				"--allow-file-access-from-files",
-				"--disable-session-crashed-bubble",
-				"-inprivate",
-				"--remote-debugging-port=9222"
-			]
-		},
-		{
-			"type": "msedge",
-			"name": "http://127.0.0.1:3000/scripts/ascii_shader.html",
-			"request": "launch",
-			"url": "http://127.0.0.1:3000/scripts/ascii_shader.html",
-			"runtimeArgs": [
-				"--remote-debugging-port=9222"
-			]
-		},
-		{
-			"type": "msedge",
 			"request": "launch",
 			"name": "Debug the game! (WSL)",
 			"url": "file:////wsl$/Ubuntu/home/boaz/BMSX/dist/game_debug.html",
@@ -117,7 +71,8 @@
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process,web-security",
-				"--remote-debugging-port=9222"
+				"--remote-debugging-port=9222",
+				"--app=file:////wsl$/Ubuntu/home/boaz/BMSX/dist/game_debug.html"
 			],
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
@@ -131,13 +86,4 @@
 			"disableNetworkCache": true
 		}
 	],
-	// "compounds": [
-	// 	{
-	// 		"name": "Launch Edge and attach DevTools",
-	// 		"configurations": [
-	// 			"Debug the game!",
-	// 			"Open Edge DevTools"
-	// 		]
-	// 	}
-	// ],
 }
