@@ -2130,9 +2130,12 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		this.cursorVisible = true;
 	}
 
-	private getButtonState(keyboard: KeyboardInput, code: string): ButtonState | null {
-		const state = keyboard.gamepadButtonStates[code];
-		return state ?? null;
+	private getButtonState(_keyboard: KeyboardInput, code: string): ButtonState | null {
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+		if (!playerInput) {
+			return null;
+		}
+		return playerInput.getButtonState(code, 'keyboard');
 	}
 
 	private isKeyJustPressed(keyboard: KeyboardInput, code: string): boolean {
