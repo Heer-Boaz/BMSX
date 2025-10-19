@@ -255,6 +255,7 @@ export class ConsoleCartEditor {
 		this.repeatState.clear();
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.cursorRevealSuspended = false;
 	}
 
 	private getKeyboard(): KeyboardInput | null {
@@ -382,6 +383,16 @@ export class ConsoleCartEditor {
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyV')) {
 			this.consumeKey(keyboard, 'KeyV');
 			this.pasteFromClipboard();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'BracketRight')) {
+			this.consumeKey(keyboard, 'BracketRight');
+			this.indentSelectionOrLine();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'BracketLeft')) {
+			this.consumeKey(keyboard, 'BracketLeft');
+			this.unindentSelectionOrLine();
 			return;
 		}
 		this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
@@ -596,6 +607,90 @@ export class ConsoleCartEditor {
 		this.scrollRows(direction * steps);
 		this.cursorRevealSuspended = true;
 		playerInput.consumeAction('pointer_wheel');
+	}
+
+	private indentSelectionOrLine(): void {
+		const range = this.getLineRangeForMovement();
+		this.adjustIndentationRange(range.startRow, range.endRow, 'increase');
+	}
+
+	private unindentSelectionOrLine(): void {
+		const range = this.getLineRangeForMovement();
+		this.adjustIndentationRange(range.startRow, range.endRow, 'decrease');
+	}
+
+	private adjustIndentationRange(startRow: number, endRow: number, direction: 'increase' | 'decrease'): void {
+		if (startRow < 0 || endRow < startRow || this.lines.length === 0) {
+			return;
+		}
+		if (direction === 'decrease') {
+			let canDeindent = false;
+			for (let row = startRow; row <= endRow; row++) {
+				const indentMatch = this.lines[row].match(/^[\t ]+/);
+				if (indentMatch && indentMatch[0].length > 0) {
+					canDeindent = true;
+					break;
+				}
+			}
+			if (!canDeindent) {
+				return;
+			}
+		}
+		const undoKey = direction === 'increase' ? 'indent-lines' : 'unindent-lines';
+		this.prepareUndo(undoKey, false);
+		let changed = false;
+		for (let row = startRow; row <= endRow; row++) {
+			const line = this.lines[row];
+			if (direction === 'increase') {
+				this.lines[row] = '\t' + line;
+				if (this.cursorRow === row) {
+					this.cursorColumn += 1;
+				}
+				if (this.selectionAnchor && this.selectionAnchor.row === row) {
+					this.selectionAnchor.column += 1;
+				}
+				changed = true;
+				continue;
+			}
+			const indentMatch = line.match(/^[\t ]+/);
+			if (!indentMatch) {
+				continue;
+			}
+			const indent = indentMatch[0];
+			if (indent.length === 0) {
+				continue;
+			}
+			const removal = indent.charAt(0) === '\t' ? 1 : Math.min(TAB_SPACES, indent.length);
+			if (removal <= 0) {
+				continue;
+			}
+			this.lines[row] = line.slice(removal);
+			if (this.cursorRow === row) {
+				this.cursorColumn = Math.max(0, this.cursorColumn - removal);
+			}
+			if (this.selectionAnchor && this.selectionAnchor.row === row) {
+				this.selectionAnchor.column = Math.max(0, this.selectionAnchor.column - removal);
+			}
+			changed = true;
+		}
+		if (!changed) {
+			return;
+		}
+		this.clampCursorColumn();
+		if (this.selectionAnchor) {
+			if (this.selectionAnchor.row < 0 || this.selectionAnchor.row >= this.lines.length) {
+				this.selectionAnchor = null;
+			} else {
+				const anchorLineLength = this.lines[this.selectionAnchor.row].length;
+				if (this.selectionAnchor.column > anchorLineLength) {
+					this.selectionAnchor.column = anchorLineLength;
+				}
+			}
+		}
+		this.dirty = true;
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.revealCursor();
 	}
 
 	private revealCursor(): void {
