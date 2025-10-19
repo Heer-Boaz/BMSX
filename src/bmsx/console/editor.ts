@@ -102,8 +102,8 @@ const COLOR_NUMBER = 10;
 const COLOR_COMMENT = 3;
 const COLOR_OPERATOR = 12;
 const COLOR_CODE_DIM = 6;
-const COLOR_CURSOR = 7;
 const HIGHLIGHT_OVERLAY = { r: 1, g: 0.6, b: 0.2, a: 0.35 };
+const CARET_COLOR = { r: 1, g: 1, b: 1, a: 1 };
 const COLOR_STATUS_BACKGROUND = 8;
 const COLOR_STATUS_TEXT = 15;
 const COLOR_STATUS_WARNING = 9;
@@ -662,39 +662,33 @@ private insertTab(): void {
 		this.updateDesiredColumn();
 	}
 
-	private unindentCurrentLine(): void {
-		const line = this.currentLine();
-		let newColumn = this.cursorColumn;
-		let removed = false;
-		while (newColumn > 0) {
-			const ch = line.charAt(newColumn - 1);
-			if (ch === '\t') {
-				newColumn -= 1;
-				removed = true;
-				break;
-			}
-			if (ch === ' ') {
-				let spacesRemoved = 0;
-				while (spacesRemoved < TAB_SPACES && newColumn > 0 && line.charAt(newColumn - 1) === ' ') {
-					newColumn -= 1;
-					spacesRemoved += 1;
-					removed = true;
-				}
-				break;
-			}
-			break;
-		}
-		if (!removed) {
-			return;
-		}
-		const before = line.slice(0, newColumn);
-		const after = line.slice(this.cursorColumn);
-		this.lines[this.cursorRow] = before + after;
-		this.cursorColumn = newColumn;
-		this.dirty = true;
-		this.resetBlink();
-		this.updateDesiredColumn();
+private unindentCurrentLine(): void {
+	const line = this.currentLine();
+	const indentMatch = line.match(/^[\t ]+/);
+	if (!indentMatch) {
+		return;
 	}
+	const indent = indentMatch[0];
+	const first = indent.charAt(0);
+	let removeCount = 0;
+	if (first === '\t') {
+		removeCount = 1;
+	}
+	else {
+		removeCount = Math.min(TAB_SPACES, indent.length);
+	}
+	if (removeCount === 0) {
+		return;
+	}
+	const remainingIndent = indent.slice(removeCount);
+	const rest = line.slice(indent.length);
+	this.lines[this.cursorRow] = remainingIndent + rest;
+	const delta = removeCount;
+	this.cursorColumn = Math.max(0, this.cursorColumn - delta);
+	this.dirty = true;
+	this.resetBlink();
+	this.updateDesiredColumn();
+}
 
 	private save(): void {
 		const source = this.lines.join('\n');
@@ -825,27 +819,35 @@ private insertTab(): void {
 		}
 	}
 
-	private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highlight: HighlightLine, sliceStartDisplay: number): void {
-		const relativeRow = this.cursorRow - this.scrollRow;
-		if (relativeRow < 0 || relativeRow >= this.visibleRowCount()) {
-			return;
-		}
-		const columnToDisplay = highlight.columnToDisplay;
-		const clampedColumn = Math.min(this.cursorColumn, columnToDisplay.length - 1);
-		const cursorDisplayIndex = columnToDisplay[clampedColumn];
-		const cursorX = textX + this.measureHighlightRange(highlight, sliceStartDisplay, cursorDisplayIndex);
-		const cursorY = codeTop + relativeRow * this.lineHeight;
-		let baseChar = ' ';
-		let baseColor = COLOR_CODE_TEXT;
-		let cursorWidth = this.charAdvance;
-		if (cursorDisplayIndex < highlight.chars.length) {
-			baseChar = highlight.chars[cursorDisplayIndex];
-			baseColor = highlight.colors[cursorDisplayIndex];
-			cursorWidth = this.font.getGlyph(baseChar).advance;
-		}
-		api.rectfill(cursorX, cursorY, cursorX + cursorWidth, cursorY + this.lineHeight, COLOR_CURSOR);
-		this.drawColoredText(api, baseChar, [baseColor], cursorX, cursorY);
+private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highlight: HighlightLine, sliceStartDisplay: number): void {
+	const relativeRow = this.cursorRow - this.scrollRow;
+	if (relativeRow < 0 || relativeRow >= this.visibleRowCount()) {
+		return;
 	}
+	const line = this.currentLine();
+	const columnToDisplay = highlight.columnToDisplay;
+	const clampedColumn = Math.min(this.cursorColumn, columnToDisplay.length - 1);
+	const cursorDisplayIndex = columnToDisplay[clampedColumn];
+	const cursorX = textX + this.measureHighlightRange(highlight, sliceStartDisplay, cursorDisplayIndex);
+	const cursorY = codeTop + relativeRow * this.lineHeight;
+	let baseChar = ' ';
+	let baseColor = COLOR_CODE_TEXT;
+	let cursorWidth = this.charAdvance;
+	if (cursorDisplayIndex < highlight.chars.length) {
+		baseChar = highlight.chars[cursorDisplayIndex];
+		baseColor = highlight.colors[cursorDisplayIndex];
+		cursorWidth = this.font.getGlyph(baseChar).advance;
+	}
+	const originalChar = line.charAt(this.cursorColumn);
+	if (originalChar === '\t') {
+		cursorWidth = this.spaceAdvance * TAB_SPACES;
+	}
+	const caretLeft = Math.max(textX, cursorX - 1);
+	const caretRight = cursorX + cursorWidth;
+	api.rectfillColor(caretLeft, cursorY, caretRight, cursorY + this.lineHeight, CARET_COLOR);
+	const inverted = this.invertColorIndex(baseColor);
+	this.drawColoredText(api, baseChar, [inverted], cursorX, cursorY);
+}
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 		if (highlight.chars.length === 0) {
@@ -1045,6 +1047,11 @@ private insertTab(): void {
 
 	private isOperatorChar(ch: string): boolean {
 		return '+-*/%<>=#(){}[]:,.;'.includes(ch);
+	}
+
+	private invertColorIndex(color: number): number {
+		if (color === 0) return COLOR_CODE_TEXT;
+		return 0;
 	}
 
 	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {
