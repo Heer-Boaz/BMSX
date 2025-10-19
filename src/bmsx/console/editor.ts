@@ -89,10 +89,22 @@ type HighlightLine = {
 	columnToDisplay: number[];
 };
 
+type EditorSnapshot = {
+	lines: string[];
+	cursorRow: number;
+	cursorColumn: number;
+	scrollRow: number;
+	scrollColumn: number;
+	selectionAnchor: Position | null;
+	dirty: boolean;
+};
+
 const TAB_SPACES = 2;
 const INITIAL_REPEAT_DELAY = 0.28;
 const REPEAT_INTERVAL = 0.05;
 const CURSOR_BLINK_INTERVAL = 0.45;
+const UNDO_HISTORY_LIMIT = 512;
+const UNDO_COALESCE_INTERVAL_MS = 550;
 
 const COLOR_FRAME = 0;
 const COLOR_TOP_BAR = 13;
@@ -164,6 +176,9 @@ export class ConsoleCartEditor {
 	private cursorVisible = true;
 	private desiredColumn = 0;
 	private selectionAnchor: Position | null = null;
+	private undoStack: EditorSnapshot[] = [];
+	private lastHistoryKey: string | null = null;
+	private lastHistoryTimestamp = 0;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -268,6 +283,9 @@ export class ConsoleCartEditor {
 		this.repeatState.clear();
 		this.updateDesiredColumn();
 		this.selectionAnchor = null;
+		this.undoStack = [];
+		this.lastHistoryKey = null;
+		this.lastHistoryTimestamp = 0;
 	}
 
 	private deactivate(): void {
@@ -275,6 +293,9 @@ export class ConsoleCartEditor {
 		this.repeatState.clear();
 		this.applyInputOverrides(false);
 		this.selectionAnchor = null;
+		this.undoStack = [];
+		this.lastHistoryKey = null;
+		this.lastHistoryTimestamp = 0;
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -299,6 +320,11 @@ export class ConsoleCartEditor {
 		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
 		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
 
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyZ')) {
+			this.consumeKey(keyboard, 'KeyZ');
+			this.undo();
+			return;
+		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
 			this.consumeKey(keyboard, 'KeyS');
 			this.save();
@@ -428,6 +454,9 @@ export class ConsoleCartEditor {
 
 		if (!shiftDown && moved) {
 			this.clearSelection();
+		}
+		if (moved) {
+			this.breakUndoSequence();
 		}
 
 		if (shiftDown && this.isKeyJustPressed(keyboard, 'Tab')) {
@@ -642,6 +671,8 @@ private insertTab(): void {
 		if (text.length === 0) {
 			return;
 		}
+		const coalesce = text.length === 1;
+		this.prepareUndo('insert-text', coalesce);
 		if (this.deleteSelectionIfPresent()) {
 			// Selection replaced; proceed to insert at new caret.
 		}
@@ -657,6 +688,7 @@ private insertTab(): void {
 }
 
 	private insertLineBreak(): void {
+		this.prepareUndo('insert-line-break', false);
 		this.deleteSelectionIfPresent();
 		const line = this.currentLine();
 		const before = line.slice(0, this.cursorColumn);
@@ -687,6 +719,10 @@ private insertTab(): void {
 	}
 
 	private backspace(): void {
+		if (!this.hasSelection() && this.cursorColumn === 0 && this.cursorRow === 0) {
+			return;
+		}
+		this.prepareUndo('backspace', true);
 		if (this.deleteSelectionIfPresent()) {
 			return;
 		}
@@ -716,13 +752,18 @@ private insertTab(): void {
 	}
 
 	private deleteForward(): void {
+		const line = this.currentLine();
+		if (!this.hasSelection() && this.cursorColumn >= line.length && this.cursorRow >= this.lines.length - 1) {
+			return;
+		}
+		this.prepareUndo('delete-forward', true);
 		if (this.deleteSelectionIfPresent()) {
 			return;
 		}
-		const line = this.currentLine();
-		if (this.cursorColumn < line.length) {
-			const before = line.slice(0, this.cursorColumn);
-			const after = line.slice(this.cursorColumn + 1);
+		const updatedLine = this.currentLine();
+		if (this.cursorColumn < updatedLine.length) {
+			const before = updatedLine.slice(0, this.cursorColumn);
+			const after = updatedLine.slice(this.cursorColumn + 1);
 			this.lines[this.cursorRow] = before + after;
 			this.dirty = true;
 			this.updateDesiredColumn();
@@ -732,7 +773,7 @@ private insertTab(): void {
 			return;
 		}
 		const nextLine = this.lines[this.cursorRow + 1];
-		this.lines[this.cursorRow] = line + nextLine;
+		this.lines[this.cursorRow] = updatedLine + nextLine;
 		this.lines.splice(this.cursorRow + 1, 1);
 		this.dirty = true;
 		this.updateDesiredColumn();
@@ -756,6 +797,7 @@ private insertTab(): void {
 		if (removeCount === 0) {
 			return;
 		}
+		this.prepareUndo('unindent', false);
 		const remainingIndent = indent.slice(removeCount);
 		const rest = line.slice(indent.length);
 		this.lines[this.cursorRow] = remainingIndent + rest;
@@ -896,21 +938,25 @@ private insertTab(): void {
 		if (this.isKeyJustPressed(keyboard, 'ArrowLeft')) {
 			this.consumeKey(keyboard, 'ArrowLeft');
 			this.collapseSelectionTo('start');
+			this.breakUndoSequence();
 			return true;
 		}
 		if (this.isKeyJustPressed(keyboard, 'ArrowUp')) {
 			this.consumeKey(keyboard, 'ArrowUp');
 			this.collapseSelectionTo('start');
+			this.breakUndoSequence();
 			return true;
 		}
 		if (this.isKeyJustPressed(keyboard, 'ArrowRight')) {
 			this.consumeKey(keyboard, 'ArrowRight');
 			this.collapseSelectionTo('end');
+			this.breakUndoSequence();
 			return true;
 		}
 		if (this.isKeyJustPressed(keyboard, 'ArrowDown')) {
 			this.consumeKey(keyboard, 'ArrowDown');
 			this.collapseSelectionTo('end');
+			this.breakUndoSequence();
 			return true;
 		}
 		return false;
@@ -989,6 +1035,7 @@ private insertTab(): void {
 			this.showMessage('Nothing selected to cut.', COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
+		this.prepareUndo('cut', false);
 		await this.writeClipboard(text, 'Cut selection to clipboard.');
 		this.replaceSelectionWith('');
 	}
@@ -999,6 +1046,7 @@ private insertTab(): void {
 			this.showMessage('Editor clipboard is empty.', COLOR_STATUS_WARNING, 1.5);
 			return;
 		}
+		this.prepareUndo('paste', false);
 		this.deleteSelectionIfPresent();
 		this.insertClipboardText(text);
 		this.showMessage('Pasted from editor clipboard.', COLOR_STATUS_SUCCESS, 1.5);
@@ -1052,11 +1100,85 @@ private insertTab(): void {
 		this.clearSelection();
 	}
 
+	private captureSnapshot(): EditorSnapshot {
+		const linesCopy = this.lines.slice();
+		let selectionCopy: Position | null = null;
+		if (this.selectionAnchor) {
+			selectionCopy = { row: this.selectionAnchor.row, column: this.selectionAnchor.column };
+		}
+		return {
+			lines: linesCopy,
+			cursorRow: this.cursorRow,
+			cursorColumn: this.cursorColumn,
+			scrollRow: this.scrollRow,
+			scrollColumn: this.scrollColumn,
+			selectionAnchor: selectionCopy,
+			dirty: this.dirty,
+		};
+	}
+
+	private restoreSnapshot(snapshot: EditorSnapshot): void {
+		this.lines = snapshot.lines.slice();
+		this.cursorRow = snapshot.cursorRow;
+		this.cursorColumn = snapshot.cursorColumn;
+		this.scrollRow = snapshot.scrollRow;
+		this.scrollColumn = snapshot.scrollColumn;
+		if (snapshot.selectionAnchor) {
+			this.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
+		} else {
+			this.selectionAnchor = null;
+		}
+		this.dirty = snapshot.dirty;
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.ensureCursorVisible();
+	}
+
+	private prepareUndo(key: string, allowMerge: boolean): void {
+		const now = Date.now();
+		const shouldMerge = allowMerge
+			&& this.lastHistoryKey === key
+			&& now - this.lastHistoryTimestamp <= UNDO_COALESCE_INTERVAL_MS;
+		if (shouldMerge) {
+			this.lastHistoryTimestamp = now;
+			return;
+		}
+		const snapshot = this.captureSnapshot();
+		if (this.undoStack.length >= UNDO_HISTORY_LIMIT) {
+			this.undoStack.shift();
+		}
+		this.undoStack.push(snapshot);
+		this.lastHistoryTimestamp = now;
+		if (allowMerge) {
+			this.lastHistoryKey = key;
+		} else {
+			this.lastHistoryKey = null;
+		}
+	}
+
+	private undo(): void {
+		if (this.undoStack.length === 0) {
+			return;
+		}
+		const snapshot = this.undoStack.pop();
+		if (!snapshot) {
+			return;
+		}
+		this.restoreSnapshot(snapshot);
+		this.breakUndoSequence();
+	}
+
+	private breakUndoSequence(): void {
+		this.lastHistoryKey = null;
+		this.lastHistoryTimestamp = 0;
+	}
+
 	private moveSelectionLines(delta: number): void {
 		if (delta === 0) return;
 		const range = this.getLineRangeForMovement();
 		if (delta < 0 && range.startRow === 0) return;
 		if (delta > 0 && range.endRow >= this.lines.length - 1) return;
+		this.prepareUndo('move-lines', false);
 		const count = range.endRow - range.startRow + 1;
 		const block = this.lines.splice(range.startRow, count);
 		const targetIndex = range.startRow + delta;
