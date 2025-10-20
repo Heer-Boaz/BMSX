@@ -32,6 +32,8 @@ export interface BmsxConsoleCartridge {
 	init(api: BmsxConsoleApi): void;
 	update(api: BmsxConsoleApi, deltaSeconds: number): void;
 	draw(api: BmsxConsoleApi): void;
+	captureState?(api: BmsxConsoleApi): unknown;
+	restoreState?(api: BmsxConsoleApi, state: unknown): void;
 	readonly luaProgram?: BmsxConsoleLuaProgram;
 }
 

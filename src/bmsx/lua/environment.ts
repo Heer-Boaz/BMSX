@@ -55,6 +55,10 @@ export class LuaEnvironment {
 		return null;
 	}
 
+	public entries(): Array<[string, LuaValue]> {
+		return Array.from(this.values.entries());
+	}
+
 	public getParent(): LuaEnvironment | null {
 		return this.parent;
 	}

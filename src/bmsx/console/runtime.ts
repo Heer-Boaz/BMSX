@@ -4,7 +4,7 @@ import { ConsoleCartEditor } from './editor';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
-import { Physics2DManager } from '../physics/physics2d';
+import { Physics2DManager, type Physics2DSerializedState } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram } from './types';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
@@ -21,6 +21,51 @@ export type BmsxConsoleRuntimeOptions = {
 	cart: BmsxConsoleCartridge;
 	playerIndex: number;
 	storage?: StorageService;
+};
+
+type BmsxConsoleRuntimeSnapshot = {
+	frameCounter: number;
+	luaRuntimeFailed: boolean;
+	luaProgramSourceOverride: string | null;
+	luaChunkName: string | null;
+	luaState?: SerializedLuaState | null;
+	cartState?: unknown;
+	storage?: { namespace: string; entries: Array<{ index: number; value: number }> };
+	physics?: Physics2DSerializedState;
+};
+
+type SerializedLuaKey =
+	| { kind: 'string'; value: string }
+	| { kind: 'number'; value: number }
+	| { kind: 'boolean'; value: boolean };
+
+type SerializedLuaValue =
+	| { kind: 'nil' }
+	| { kind: 'boolean'; value: boolean }
+	| { kind: 'number'; value: number }
+	| { kind: 'string'; value: string }
+	| { kind: 'table'; id: number };
+
+type SerializedLuaTableEntry = {
+	key: SerializedLuaKey;
+	value: SerializedLuaValue;
+};
+
+type SerializedLuaTable = {
+	id: number;
+	entries: SerializedLuaTableEntry[];
+};
+
+type SerializedLuaState = {
+	tables: SerializedLuaTable[];
+	globals: Array<{ name: string; value: SerializedLuaValue }>;
+	randomSeed: number;
+	nextHandleId: number;
+};
+
+type LuaSerializationContext = {
+	tableIds: Map<LuaTable, number>;
+	tables: SerializedLuaTable[];
 };
 
 export class BmsxConsoleRuntime extends Service {
@@ -76,8 +121,6 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly presentationFrameHandler: (event_name: string, emitter: Identifiable, payload?: EventPayload) => void;
 	private frameListenerAttached = false;
 	private editorPipelineActive = false;
-	private audioSuspended = false;
-	private preEditorPauseState: boolean | null = null;
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
@@ -156,28 +199,10 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.editorPipelineActive = active;
 		if (active) {
-			if (this.preEditorPauseState === null) {
-				this.preEditorPauseState = $.paused;
-			}
-			if ($.paused) {
-				$.paused = false;
-			}
-			if (!this.audioSuspended) {
-				$.sndmaster.pause();
-				this.audioSuspended = true;
-			}
 			$.setPipelineOverride(consoleEditorSpec());
 			return;
 		}
 		$.setPipelineOverride(null);
-		if (this.audioSuspended) {
-			$.sndmaster.resume();
-			this.audioSuspended = false;
-		}
-		if (this.preEditorPauseState !== null) {
-			$.paused = this.preEditorPauseState;
-			this.preEditorPauseState = null;
-		}
 	}
 
 	public boot(): void {
@@ -214,17 +239,25 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const editorActive = editor?.isActive() === true;
 		this.setEditorPipelineActive(editorActive);
-		this.api.beginFrame(this.frameCounter, deltaSeconds);
+		const paused = $.paused === true;
+		const frameDelta = paused ? 0 : deltaSeconds;
+		this.api.beginFrame(this.frameCounter, frameDelta);
+		if (paused) {
+			if (editorActive && editor) {
+				editor.draw(this.api);
+			}
+			return;
+		}
 		if (editorActive && editor) {
 			editor.draw(this.api);
 			this.frameCounter += 1;
 			return;
 		}
 		if (this.hasLuaProgram()) {
-				if (this.luaRuntimeFailed) {
-					if (editorActive && editor) {
-						editor.draw(this.api);
-					}
+			if (this.luaRuntimeFailed) {
+				if (editorActive && editor) {
+					editor.draw(this.api);
+				}
 				this.frameCounter += 1;
 				return;
 			}
@@ -291,12 +324,216 @@ export class BmsxConsoleRuntime extends Service {
 		});
 	}
 
+	public override getState(): BmsxConsoleRuntimeSnapshot | undefined {
+		const storageState = this.storage.dump();
+		const physicsState = this.physics.snapshot();
+		const luaState = this.hasLuaProgram() ? this.captureLuaState() : null;
+		const cartState = (!this.hasLuaProgram() && typeof this.cart.captureState === 'function')
+			? this.cart.captureState(this.api)
+			: undefined;
+		return {
+			frameCounter: this.frameCounter,
+			luaRuntimeFailed: this.luaRuntimeFailed,
+			luaProgramSourceOverride: this.luaProgramSourceOverride,
+			luaChunkName: this.luaChunkName,
+			luaState,
+			cartState,
+			storage: storageState,
+			physics: physicsState,
+		};
+	}
+
+	public override setState(state: unknown): void {
+		if (!state || typeof state !== 'object') {
+			this.boot();
+			return;
+		}
+		const snapshot = state as BmsxConsoleRuntimeSnapshot;
+		if (snapshot.storage) {
+			this.storage.restore(snapshot.storage);
+		}
+		if (snapshot.luaProgramSourceOverride !== undefined) {
+			this.luaProgramSourceOverride = snapshot.luaProgramSourceOverride;
+		}
+		if (snapshot.luaChunkName !== undefined) {
+			this.luaChunkName = snapshot.luaChunkName;
+		}
+		this.boot();
+		this.frameCounter = snapshot.frameCounter ?? 0;
+		this.luaRuntimeFailed = snapshot.luaRuntimeFailed ?? false;
+		if (snapshot.physics) {
+			this.physics.restore(snapshot.physics);
+		}
+		if (this.hasLuaProgram() && snapshot.luaState) {
+			this.restoreLuaState(snapshot.luaState);
+		}
+		if (!this.hasLuaProgram() && snapshot.cartState !== undefined && typeof this.cart.restoreState === 'function') {
+			this.cart.restoreState(this.api, snapshot.cartState);
+		}
+		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
+	}
+
 	private getEditorSource(): string {
 		const program = this.luaProgram;
 		if (!program) {
 			return '';
 		}
 		return this.getLuaProgramSource(program);
+	}
+
+	private captureLuaState(): SerializedLuaState | null {
+		const interpreter = this.luaInterpreter;
+		if (!interpreter) return null;
+		const ctx: LuaSerializationContext = { tableIds: new Map<LuaTable, number>(), tables: [] };
+		const globals: Array<{ name: string; value: SerializedLuaValue }> = [];
+		for (const [name, value] of interpreter.enumerateGlobalEntries()) {
+			const serialized = this.serializeLuaValue(value, ctx);
+			if (!serialized) continue;
+			globals.push({ name, value: serialized });
+		}
+		return {
+			tables: ctx.tables,
+			globals,
+			randomSeed: interpreter.getRandomSeed(),
+			nextHandleId: this.nextLuaHandleId,
+		};
+	}
+
+	private restoreLuaState(state: SerializedLuaState): void {
+		const interpreter = this.luaInterpreter;
+		if (!interpreter) return;
+		const tableInstances: LuaTable[] = state.tables.map(() => new LuaTable());
+		for (const tableData of state.tables) {
+			const target = tableInstances[tableData.id];
+			if (!target) continue;
+			for (const entry of tableData.entries) {
+				const key = this.deserializeLuaKey(entry.key);
+				if (key === null) continue;
+				const value = this.deserializeLuaValue(entry.value, tableInstances);
+				if (value === undefined) continue;
+				target.set(key, value);
+			}
+		}
+		for (const global of state.globals) {
+			const value = this.deserializeLuaValue(global.value, tableInstances);
+			if (value === undefined) continue;
+			interpreter.setGlobal(global.name, value);
+		}
+		if (Number.isFinite(state.randomSeed)) {
+			interpreter.setRandomSeed(state.randomSeed);
+		}
+		if (Number.isFinite(state.nextHandleId)) {
+			this.nextLuaHandleId = Math.max(this.nextLuaHandleId, state.nextHandleId);
+		}
+	}
+
+	private serializeLuaValue(value: LuaValue, ctx: LuaSerializationContext): SerializedLuaValue | null {
+		if (value === null) {
+			return { kind: 'nil' };
+		}
+		const valueType = typeof value;
+		if (valueType === 'boolean') {
+			return { kind: 'boolean', value: value as boolean };
+		}
+		if (valueType === 'number') {
+			const numeric = value as number;
+			if (!Number.isFinite(numeric)) return null;
+			return { kind: 'number', value: numeric };
+		}
+		if (valueType === 'string') {
+			return { kind: 'string', value: value as string };
+		}
+		if (value instanceof LuaTable) {
+			return this.serializeLuaTable(value, ctx);
+		}
+		return null;
+	}
+
+	private serializeLuaTable(table: LuaTable, ctx: LuaSerializationContext): SerializedLuaValue | null {
+		if (this.isLuaHandleTable(table)) {
+			return null;
+		}
+		const existing = ctx.tableIds.get(table);
+		if (existing !== undefined) {
+			return { kind: 'table', id: existing };
+		}
+		const id = ctx.tables.length;
+		ctx.tableIds.set(table, id);
+		const placeholder: SerializedLuaTable = { id, entries: [] };
+		ctx.tables.push(placeholder);
+		for (const [rawKey, rawValue] of table.entriesArray()) {
+			const key = this.serializeLuaKey(rawKey);
+			if (!key) {
+				ctx.tableIds.delete(table);
+				ctx.tables.pop();
+				return null;
+			}
+			const value = this.serializeLuaValue(rawValue, ctx);
+			if (!value) {
+				ctx.tableIds.delete(table);
+				ctx.tables.pop();
+				return null;
+			}
+			placeholder.entries.push({ key, value });
+		}
+		return { kind: 'table', id };
+	}
+
+	private serializeLuaKey(value: LuaValue): SerializedLuaKey | null {
+		if (typeof value === 'string') {
+			return { kind: 'string', value };
+		}
+		if (typeof value === 'number') {
+			if (!Number.isFinite(value)) return null;
+			return { kind: 'number', value };
+		}
+		if (typeof value === 'boolean') {
+			return { kind: 'boolean', value };
+		}
+		return null;
+	}
+
+	private deserializeLuaValue(value: SerializedLuaValue, tables: LuaTable[]): LuaValue | undefined {
+		switch (value.kind) {
+			case 'nil':
+				return null;
+			case 'boolean':
+				return value.value;
+			case 'number':
+				return value.value;
+			case 'string':
+				return value.value;
+			case 'table': {
+				const table = tables[value.id];
+				if (!table) return undefined;
+				return table;
+			}
+			default:
+				return undefined;
+		}
+	}
+
+	private deserializeLuaKey(key: SerializedLuaKey): LuaValue | null {
+		switch (key.kind) {
+			case 'string':
+				return key.value;
+			case 'number':
+				return key.value;
+			case 'boolean':
+				return key.value;
+			default:
+				return null;
+		}
+	}
+
+	private isLuaHandleTable(table: LuaTable): boolean {
+		if (table.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD) !== null) {
+			return true;
+		}
+		if (table.get(BmsxConsoleRuntime.LUA_TYPE_FIELD) !== null) {
+			return true;
+		}
+		return false;
 	}
 
 	private bootLuaProgram(): void {

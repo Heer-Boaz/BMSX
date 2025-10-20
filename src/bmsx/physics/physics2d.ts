@@ -29,6 +29,22 @@ type ColliderState = {
 	height: number;
 };
 
+export type Physics2DBodyStateSnapshot = {
+	id: string;
+	vx: number;
+	vy: number;
+	invMass: number;
+	restitution: number;
+	gravityScale: number;
+	maxSpeed: number | null;
+	isStatic: boolean;
+};
+
+export type Physics2DSerializedState = {
+	gravity: number;
+	bodies: Physics2DBodyStateSnapshot[];
+};
+
 export type Physics2DColliderContact = {
 	normalX: number;
 	normalY: number;
@@ -332,6 +348,50 @@ export class Physics2DManager {
 		if (lengthSq <= 0) return null;
 		const invLen = 1 / Math.sqrt(lengthSq);
 		return { x: dx * invLen, y: dy * invLen };
+	}
+
+	public snapshot(): Physics2DSerializedState {
+		const bodies: Physics2DBodyStateSnapshot[] = [];
+		for (const body of this.bodies.values()) {
+			bodies.push({
+				id: body.id,
+				vx: body.vx,
+				vy: body.vy,
+				invMass: body.invMass,
+				restitution: body.restitution,
+				gravityScale: body.gravityScale,
+				maxSpeed: body.maxSpeed ?? null,
+				isStatic: body.isStatic,
+			});
+		}
+		return { gravity: this.gravity, bodies };
+	}
+
+	public restore(state: Physics2DSerializedState | undefined): void {
+		this.bodies.clear();
+		this.staticIds.clear();
+		if (!state) {
+			return;
+		}
+		if (Number.isFinite(state.gravity)) {
+			this.gravity = state.gravity;
+		}
+		for (const body of state.bodies) {
+			const entry: PhysicsBodyState = {
+				id: body.id,
+				vx: body.vx,
+				vy: body.vy,
+				invMass: body.invMass,
+				restitution: body.restitution,
+				gravityScale: body.gravityScale,
+				maxSpeed: body.maxSpeed ?? null,
+				isStatic: body.isStatic,
+			};
+			this.bodies.set(body.id, entry);
+			if (body.isStatic) {
+				this.staticIds.add(body.id);
+			}
+		}
 	}
 }
 

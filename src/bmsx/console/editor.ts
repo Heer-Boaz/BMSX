@@ -74,9 +74,9 @@ export type ConsoleEditorOptions = {
 	saveSource: (source: string) => void;
 };
 
-type Position = { row: number; column: number };
+export type Position = { row: number; column: number };
 
-type MessageState = {
+export type MessageState = {
 	text: string;
 	color: number;
 	timer: number;
@@ -89,13 +89,13 @@ type HighlightLine = {
 	columnToDisplay: number[];
 };
 
-type SearchMatch = {
+export type SearchMatch = {
 	row: number;
 	start: number;
 	end: number;
 };
 
-type EditorSnapshot = {
+export type EditorSnapshot = {
 	lines: string[];
 	cursorRow: number;
 	cursorColumn: number;
@@ -103,6 +103,21 @@ type EditorSnapshot = {
 	scrollColumn: number;
 	selectionAnchor: Position | null;
 	dirty: boolean;
+};
+
+export type ConsoleEditorSerializedState = {
+	active: boolean;
+	snapshot: EditorSnapshot;
+	searchQuery: string;
+	searchMatches: SearchMatch[];
+	searchCurrentIndex: number;
+	searchActive: boolean;
+	searchVisible: boolean;
+	lineJumpValue: string;
+	lineJumpActive: boolean;
+	lineJumpVisible: boolean;
+	message: MessageState;
+	runtimeErrorOverlay: RuntimeErrorOverlay | null;
 };
 
 type PointerSnapshot = {
@@ -118,7 +133,7 @@ type KeyPressRecord = {
 	lastPressedAtMs: number;
 };
 
-type RuntimeErrorOverlay = {
+export type RuntimeErrorOverlay = {
 	row: number;
 	column: number;
 	lines: string[];
@@ -431,6 +446,74 @@ export class ConsoleCartEditor {
 		this.drawLineJumpBar(api);
 		this.drawCodeArea(api);
 		this.drawStatusBar(api);
+	}
+
+	public serializeState(): ConsoleEditorSerializedState {
+		const snapshot = this.captureSnapshot();
+		const message: MessageState = {
+			text: this.message.text,
+			color: this.message.color,
+			timer: this.message.timer,
+			visible: this.message.visible,
+		};
+		const overlay = this.runtimeErrorOverlay
+			? {
+				row: this.runtimeErrorOverlay.row,
+				column: this.runtimeErrorOverlay.column,
+				lines: this.runtimeErrorOverlay.lines.slice(),
+				timer: this.runtimeErrorOverlay.timer,
+			}
+			: null;
+		return {
+			active: this.active,
+			snapshot,
+			searchQuery: this.searchQuery,
+			searchMatches: this.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
+			searchCurrentIndex: this.searchCurrentIndex,
+			searchActive: this.searchActive,
+			searchVisible: this.searchVisible,
+			lineJumpValue: this.lineJumpValue,
+			lineJumpActive: this.lineJumpActive,
+			lineJumpVisible: this.lineJumpVisible,
+			message,
+			runtimeErrorOverlay: overlay,
+		};
+	}
+
+	public restoreState(state: ConsoleEditorSerializedState): void {
+		if (!state) return;
+		this.applyInputOverrides(false);
+		this.active = state.active;
+		if (this.active) {
+			this.applyInputOverrides(true);
+		}
+		this.restoreSnapshot(state.snapshot);
+		this.searchQuery = state.searchQuery;
+		this.searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
+		this.searchCurrentIndex = state.searchCurrentIndex;
+		this.searchActive = state.searchActive;
+		this.searchVisible = state.searchVisible;
+		this.lineJumpValue = state.lineJumpValue;
+		this.lineJumpActive = state.lineJumpActive;
+		this.lineJumpVisible = state.lineJumpVisible;
+		this.message.text = state.message.text;
+		this.message.color = state.message.color;
+		this.message.timer = state.message.timer;
+		this.message.visible = state.message.visible;
+		this.runtimeErrorOverlay = state.runtimeErrorOverlay
+			? {
+				row: state.runtimeErrorOverlay.row,
+				column: state.runtimeErrorOverlay.column,
+				lines: state.runtimeErrorOverlay.lines.slice(),
+				timer: state.runtimeErrorOverlay.timer,
+			}
+			: null;
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
+		this.cursorRevealSuspended = false;
+		this.repeatState.clear();
+		this.resetKeyPressGuards();
+		this.breakUndoSequence();
 	}
 
 	public shutdown(): void {

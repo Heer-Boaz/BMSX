@@ -85,6 +85,13 @@ type DemoBall = {
 	colliderId: string;
 };
 
+type CharacterManagerCartState = {
+	mode: Mode;
+	selection: number;
+	character: Character;
+	demoBalls: DemoBall[];
+};
+
 const DEMO_BOUNDS: DemoBounds = { x: 68, y: 108, width: 56, height: 18 };
 const WALL_IDS = ['console_wall_left', 'console_wall_right', 'console_wall_top', 'console_wall_bottom'] as const;
 const DEMO_RESTITUTION = 0.95;
@@ -193,6 +200,38 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		this.drawBallDemo(api);
 	}
 
+	public captureState(_api: BmsxConsoleApi): CharacterManagerCartState {
+		return {
+			mode: this.mode,
+			selection: this.selection,
+			character: this.cloneCharacterState(this.character),
+			demoBalls: this.demoBalls.map(ball => ({ ...ball })),
+		};
+	}
+
+	public restoreState(api: BmsxConsoleApi, state: unknown): void {
+		if (!state || typeof state !== 'object') {
+			return;
+		}
+		const snapshot = state as Partial<CharacterManagerCartState>;
+		if (!snapshot.character || !snapshot.demoBalls) {
+			return;
+		}
+		if (snapshot.mode === 'track' || snapshot.mode === 'status' || snapshot.mode === 'edit') {
+			this.mode = snapshot.mode;
+		}
+		if (typeof snapshot.selection === 'number' && Number.isFinite(snapshot.selection)) {
+			this.selection = clamp(Math.floor(snapshot.selection), 1, 7);
+		}
+		this.character = this.cloneCharacterState(snapshot.character as Character);
+		this.clampAll();
+		this.demoBalls = (snapshot.demoBalls as DemoBall[]).map(ball => ({ ...ball }));
+		for (const ball of this.demoBalls) {
+			api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
+			api.spriteSetVelocity(ball.colliderId, ball.vx, ball.vy);
+		}
+	}
+
 	private createCharacter(): Character {
 		return {
 			name: 'HERO',
@@ -204,6 +243,20 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 			ipmax: 3,
 			base: { dex: 8, ins: 8, mig: 8, wlp: 8 },
 			smask: 0,
+		};
+	}
+
+	private cloneCharacterState(source: Character): Character {
+		return {
+			name: source.name,
+			hp: source.hp,
+			hpmax: source.hpmax,
+			mp: source.mp,
+			mpmax: source.mpmax,
+			ip: source.ip,
+			ipmax: source.ipmax,
+			base: { ...source.base },
+			smask: source.smask,
 		};
 	}
 

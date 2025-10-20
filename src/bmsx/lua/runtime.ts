@@ -156,6 +156,24 @@ export class LuaInterpreter {
 		return this.globals;
 	}
 
+	public enumerateGlobalEntries(): ReadonlyArray<[string, LuaValue]> {
+		return this.globals.entries();
+	}
+
+	public setGlobal(name: string, value: LuaValue): void {
+		this.globals.set(name, value);
+	}
+
+	public getRandomSeed(): number {
+		return this.randomSeedValue;
+	}
+
+	public setRandomSeed(seed: number): void {
+		if (Number.isFinite(seed)) {
+			this.randomSeedValue = seed;
+		}
+	}
+
 	protected executeChunk(chunk: LuaChunk): LuaValue[] {
 		this.currentChunk = chunk.range.chunkName;
 		const chunkScope = LuaEnvironment.createChild(this.globals);
