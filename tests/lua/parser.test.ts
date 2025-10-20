@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LuaLexer } from '../../src/bmsx/lua/lexer.ts';
 import { LuaParser } from '../../src/bmsx/lua/parser.ts';
-import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator } from '../../src/bmsx/lua/ast.ts';
+import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator, LuaUnaryOperator } from '../../src/bmsx/lua/ast.ts';
 import type {
 	LuaChunk,
 	LuaCallStatement,
@@ -16,6 +16,8 @@ import type {
 	LuaBinaryExpression,
 	LuaGotoStatement,
 	LuaLabelStatement,
+	LuaReturnStatement,
+	LuaIdentifierExpression,
 } from '../../src/bmsx/lua/ast.ts';
 
 function parseChunk(source: string): LuaChunk {
@@ -140,4 +142,43 @@ test('parses goto and label statements', () => {
 	const gotoStatement = chunk.body[1] as LuaGotoStatement;
 	assert.equal(gotoStatement.kind, LuaSyntaxKind.GotoStatement);
 	assert.equal(gotoStatement.label, 'loop');
+});
+
+test('parses floor division operator', () => {
+	const chunk = parseChunk('return a // b');
+	assert.equal(chunk.body.length, 1);
+	const statement = chunk.body[0] as LuaReturnStatement;
+	assert.equal(statement.kind, LuaSyntaxKind.ReturnStatement);
+	assert.equal(statement.expressions.length, 1);
+	const binary = statement.expressions[0] as LuaBinaryExpression;
+	assert.equal(binary.operator, LuaBinaryOperator.FloorDivide);
+});
+
+test('parses bitwise operator precedence', () => {
+	const chunk = parseChunk('return a | b ~ c & d');
+	const statement = chunk.body[0] as LuaReturnStatement;
+	const root = statement.expressions[0] as LuaBinaryExpression;
+	assert.equal(root.operator, LuaBinaryOperator.BitwiseOr);
+	const left = root.left as LuaIdentifierExpression;
+	assert.equal(left.name, 'a');
+	const xorExpression = root.right as LuaBinaryExpression;
+	assert.equal(xorExpression.operator, LuaBinaryOperator.BitwiseXor);
+	const andExpression = xorExpression.right as LuaBinaryExpression;
+	assert.equal(andExpression.operator, LuaBinaryOperator.BitwiseAnd);
+});
+
+test('parses shift operators as left associative', () => {
+	const chunk = parseChunk('return a << b >> c');
+	const statement = chunk.body[0] as LuaReturnStatement;
+	const root = statement.expressions[0] as LuaBinaryExpression;
+	assert.equal(root.operator, LuaBinaryOperator.ShiftRight);
+	const left = root.left as LuaBinaryExpression;
+	assert.equal(left.operator, LuaBinaryOperator.ShiftLeft);
+});
+
+test('parses unary bitwise not', () => {
+	const chunk = parseChunk('return ~value');
+	const statement = chunk.body[0] as LuaReturnStatement;
+	const unary = statement.expressions[0] as LuaUnaryExpression;
+	assert.equal(unary.operator, LuaUnaryOperator.BitwiseNot);
 });

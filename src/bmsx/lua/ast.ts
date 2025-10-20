@@ -277,11 +277,17 @@ export const enum LuaBinaryOperator {
 	LessEqual,
 	GreaterThan,
 	GreaterEqual,
+	BitwiseOr,
+	BitwiseXor,
+	BitwiseAnd,
+	ShiftLeft,
+	ShiftRight,
 	Concat,
 	Add,
 	Subtract,
 	Multiply,
 	Divide,
+	FloorDivide,
 	Modulus,
 	Exponent,
 }
@@ -297,6 +303,7 @@ export const enum LuaUnaryOperator {
 	Negate,
 	Not,
 	Length,
+	BitwiseNot,
 }
 
 export type LuaUnaryExpression = LuaNode & {

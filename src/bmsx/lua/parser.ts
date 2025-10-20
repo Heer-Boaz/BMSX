@@ -558,36 +558,81 @@ export class LuaParser {
 	}
 
 	private parseComparisonExpression(): LuaExpression {
-		let expression = this.parseConcatenationExpression();
+		let expression = this.parseBitwiseOrExpression();
 		while (true) {
 			if (this.match(LuaTokenType.EqualEqual)) {
-				const right = this.parseConcatenationExpression();
+				const right = this.parseBitwiseOrExpression();
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Equal);
 				continue;
 			}
 			if (this.match(LuaTokenType.TildeEqual)) {
-				const right = this.parseConcatenationExpression();
+				const right = this.parseBitwiseOrExpression();
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.NotEqual);
 				continue;
 			}
 			if (this.match(LuaTokenType.Less)) {
-				const right = this.parseConcatenationExpression();
+				const right = this.parseBitwiseOrExpression();
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.LessThan);
 				continue;
 			}
 			if (this.match(LuaTokenType.LessEqual)) {
-				const right = this.parseConcatenationExpression();
+				const right = this.parseBitwiseOrExpression();
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.LessEqual);
 				continue;
 			}
 			if (this.match(LuaTokenType.Greater)) {
-				const right = this.parseConcatenationExpression();
+				const right = this.parseBitwiseOrExpression();
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.GreaterThan);
 				continue;
 			}
 			if (this.match(LuaTokenType.GreaterEqual)) {
-				const right = this.parseConcatenationExpression();
+				const right = this.parseBitwiseOrExpression();
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.GreaterEqual);
+				continue;
+			}
+			break;
+		}
+		return expression;
+	}
+
+	private parseBitwiseOrExpression(): LuaExpression {
+		let expression = this.parseBitwiseXorExpression();
+		while (this.match(LuaTokenType.Pipe)) {
+			const right = this.parseBitwiseXorExpression();
+			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.BitwiseOr);
+		}
+		return expression;
+	}
+
+	private parseBitwiseXorExpression(): LuaExpression {
+		let expression = this.parseBitwiseAndExpression();
+		while (this.match(LuaTokenType.Tilde)) {
+			const right = this.parseBitwiseAndExpression();
+			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.BitwiseXor);
+		}
+		return expression;
+	}
+
+	private parseBitwiseAndExpression(): LuaExpression {
+		let expression = this.parseShiftExpression();
+		while (this.match(LuaTokenType.Ampersand)) {
+			const right = this.parseShiftExpression();
+			expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.BitwiseAnd);
+		}
+		return expression;
+	}
+
+	private parseShiftExpression(): LuaExpression {
+		let expression = this.parseConcatenationExpression();
+		while (true) {
+			if (this.match(LuaTokenType.ShiftLeft)) {
+				const right = this.parseConcatenationExpression();
+				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.ShiftLeft);
+				continue;
+			}
+			if (this.match(LuaTokenType.ShiftRight)) {
+				const right = this.parseConcatenationExpression();
+				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.ShiftRight);
 				continue;
 			}
 			break;
@@ -635,6 +680,11 @@ export class LuaParser {
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Divide);
 				continue;
 			}
+			if (this.match(LuaTokenType.FloorDivide)) {
+				const right = this.parseUnaryExpression();
+				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.FloorDivide);
+				continue;
+			}
 			if (this.match(LuaTokenType.Percent)) {
 				const right = this.parseUnaryExpression();
 				expression = this.createBinaryExpression(expression, right, LuaBinaryOperator.Modulus);
@@ -660,6 +710,11 @@ export class LuaParser {
 			const operatorToken = this.previous();
 			const operand = this.parseUnaryExpression();
 			return this.createUnaryExpression(operatorToken, operand, LuaUnaryOperator.Length);
+		}
+		if (this.match(LuaTokenType.Tilde)) {
+			const operatorToken = this.previous();
+			const operand = this.parseUnaryExpression();
+			return this.createUnaryExpression(operatorToken, operand, LuaUnaryOperator.BitwiseNot);
 		}
 		return this.parseExponentExpression();
 	}

@@ -619,31 +619,43 @@ export class LuaInterpreter {
 				return this.evaluateSingleExpression(expression.right, environment, varargs);
 			}
 			case LuaBinaryOperator.Equal:
-				return this.evaluateSingleExpression(expression.left, environment, varargs) === this.evaluateSingleExpression(expression.right, environment, varargs);
+				return this.evaluateEqualityExpression(expression, environment, varargs);
 			case LuaBinaryOperator.NotEqual:
-				return this.evaluateSingleExpression(expression.left, environment, varargs) !== this.evaluateSingleExpression(expression.right, environment, varargs);
+				return !this.evaluateEqualityExpression(expression, environment, varargs);
 			case LuaBinaryOperator.LessThan:
-				return this.compareNumbers(expression, environment, varargs, (a, b) => a < b);
+				return this.evaluateRelationalExpression(expression, environment, varargs, '__lt', (a, b) => a < b, 'Less-than comparison requires numbers, strings, or __lt metamethod.', false);
 			case LuaBinaryOperator.LessEqual:
-				return this.compareNumbers(expression, environment, varargs, (a, b) => a <= b);
+				return this.evaluateRelationalExpression(expression, environment, varargs, '__le', (a, b) => a <= b, 'Less-equal comparison requires numbers, strings, or __le metamethod.', false);
 			case LuaBinaryOperator.GreaterThan:
-				return this.compareNumbers(expression, environment, varargs, (a, b) => a > b);
+				return this.evaluateRelationalExpression(expression, environment, varargs, '__lt', (a, b) => a > b, 'Greater-than comparison requires numbers, strings, or __lt metamethod.', true);
 			case LuaBinaryOperator.GreaterEqual:
-				return this.compareNumbers(expression, environment, varargs, (a, b) => a >= b);
+				return this.evaluateRelationalExpression(expression, environment, varargs, '__le', (a, b) => a >= b, 'Greater-equal comparison requires numbers, strings, or __le metamethod.', true);
+			case LuaBinaryOperator.BitwiseOr:
+				return this.evaluateBitwiseExpression(expression, environment, varargs, '__bor', (a, b) => (a | b), 'Bitwise OR operands must be numbers or define __bor metamethod.');
+			case LuaBinaryOperator.BitwiseXor:
+				return this.evaluateBitwiseExpression(expression, environment, varargs, '__bxor', (a, b) => (a ^ b), 'Bitwise XOR operands must be numbers or define __bxor metamethod.');
+			case LuaBinaryOperator.BitwiseAnd:
+				return this.evaluateBitwiseExpression(expression, environment, varargs, '__band', (a, b) => (a & b), 'Bitwise AND operands must be numbers or define __band metamethod.');
+			case LuaBinaryOperator.ShiftLeft:
+				return this.evaluateBitwiseExpression(expression, environment, varargs, '__shl', (a, b) => (a << (b & 31)), 'Shift operands must be numbers or define __shl metamethod.');
+			case LuaBinaryOperator.ShiftRight:
+				return this.evaluateBitwiseExpression(expression, environment, varargs, '__shr', (a, b) => (a >> (b & 31)), 'Shift operands must be numbers or define __shr metamethod.');
 			case LuaBinaryOperator.Concat:
-				return this.toLuaString(this.evaluateSingleExpression(expression.left, environment, varargs)) + this.toLuaString(this.evaluateSingleExpression(expression.right, environment, varargs));
+				return this.evaluateConcatenationExpression(expression, environment, varargs);
 			case LuaBinaryOperator.Add:
-				return this.applyNumericBinary(expression, environment, varargs, (a, b) => a + b);
+				return this.evaluateArithmeticExpression(expression, environment, varargs, '__add', (a, b) => a + b, 'Addition operands must be numbers or define __add metamethod.');
 			case LuaBinaryOperator.Subtract:
-				return this.applyNumericBinary(expression, environment, varargs, (a, b) => a - b);
+				return this.evaluateArithmeticExpression(expression, environment, varargs, '__sub', (a, b) => a - b, 'Subtraction operands must be numbers or define __sub metamethod.');
 			case LuaBinaryOperator.Multiply:
-				return this.applyNumericBinary(expression, environment, varargs, (a, b) => a * b);
+				return this.evaluateArithmeticExpression(expression, environment, varargs, '__mul', (a, b) => a * b, 'Multiplication operands must be numbers or define __mul metamethod.');
 			case LuaBinaryOperator.Divide:
-				return this.applyNumericBinary(expression, environment, varargs, (a, b) => a / b);
+				return this.evaluateArithmeticExpression(expression, environment, varargs, '__div', (a, b) => a / b, 'Division operands must be numbers or define __div metamethod.');
+			case LuaBinaryOperator.FloorDivide:
+				return this.evaluateFloorDivision(expression, environment, varargs);
 			case LuaBinaryOperator.Modulus:
-				return this.applyNumericBinary(expression, environment, varargs, (a, b) => a % b);
+				return this.evaluateArithmeticExpression(expression, environment, varargs, '__mod', (a, b) => a % b, 'Modulus operands must be numbers or define __mod metamethod.');
 			case LuaBinaryOperator.Exponent:
-				return this.applyNumericBinary(expression, environment, varargs, (a, b) => Math.pow(a, b));
+				return this.evaluateArithmeticExpression(expression, environment, varargs, '__pow', (a, b) => Math.pow(a, b), 'Exponent operands must be numbers or define __pow metamethod.');
 			default:
 				throw this.runtimeErrorAt(expression.range, 'Unsupported binary operator.');
 		}
@@ -653,7 +665,16 @@ export class LuaInterpreter {
 		const operand = this.evaluateSingleExpression(expression.operand, environment, varargs);
 		switch (expression.operator) {
 			case LuaUnaryOperator.Negate:
-				return -this.expectNumber(operand, 'Unary minus operand must be a number.', expression.range);
+				if (typeof operand === 'number') {
+					return -operand;
+				}
+				{
+					const metamethodResult = this.invokeUnaryMetamethod(operand, '__unm', expression.range);
+					if (metamethodResult !== null) {
+						return metamethodResult;
+					}
+				}
+				throw this.runtimeErrorAt(expression.range, 'Unary minus operand must be a number or define __unm metamethod.');
 			case LuaUnaryOperator.Not:
 				return !this.isTruthy(operand);
 			case LuaUnaryOperator.Length:
@@ -669,6 +690,17 @@ export class LuaInterpreter {
 					return operand.numericLength();
 				}
 				throw this.runtimeErrorAt(expression.range, 'Length operator expects a string or table.');
+			case LuaUnaryOperator.BitwiseNot:
+				if (typeof operand === 'number') {
+					return this.bitwiseNot(operand);
+				}
+				{
+					const metamethodResult = this.invokeUnaryMetamethod(operand, '__bnot', expression.range);
+					if (metamethodResult !== null) {
+						return metamethodResult;
+					}
+				}
+				throw this.runtimeErrorAt(expression.range, 'Bitwise not operand must be a number or define __bnot metamethod.');
 			default:
 				throw this.runtimeErrorAt(expression.range, 'Unsupported unary operator.');
 		}
@@ -684,6 +716,13 @@ export class LuaInterpreter {
 			const functionValue = this.expectFunction(methodValue, `Method '${expression.methodName}' not found on table.`, expression.range);
 			const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
 			return functionValue.call(args);
+		}
+		if (calleeValue instanceof LuaTable) {
+			const callMetamethod = this.extractMetamethodFunction(calleeValue, '__call', expression.range);
+			if (callMetamethod !== null) {
+				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
+				return callMetamethod.call(args);
+			}
 		}
 		const functionValue = this.expectFunction(calleeValue, 'Attempted to call a non-function value.', expression.range);
 		const args = this.buildCallArguments(expression, environment, varargs, null);
@@ -886,26 +925,49 @@ export class LuaInterpreter {
 	private applyAugmentedAssignment(operator: LuaAssignmentOperator, current: LuaValue, operand: LuaValue, range: LuaSourceRange): LuaValue {
 		switch (operator) {
 			case LuaAssignmentOperator.AddAssign:
-				return this.applyAugmentedNumericOperation(current, operand, 'Addition assignment requires numeric operands.', range, (a, b) => a + b);
+				return this.applyAugmentedArithmetic(current, operand, '__add', 'Addition assignment requires numeric operands or __add metamethod.', range, (a, b) => a + b);
 			case LuaAssignmentOperator.SubtractAssign:
-				return this.applyAugmentedNumericOperation(current, operand, 'Subtraction assignment requires numeric operands.', range, (a, b) => a - b);
+				return this.applyAugmentedArithmetic(current, operand, '__sub', 'Subtraction assignment requires numeric operands or __sub metamethod.', range, (a, b) => a - b);
 			case LuaAssignmentOperator.MultiplyAssign:
-				return this.applyAugmentedNumericOperation(current, operand, 'Multiplication assignment requires numeric operands.', range, (a, b) => a * b);
+				return this.applyAugmentedArithmetic(current, operand, '__mul', 'Multiplication assignment requires numeric operands or __mul metamethod.', range, (a, b) => a * b);
 			case LuaAssignmentOperator.DivideAssign:
-				return this.applyAugmentedNumericOperation(current, operand, 'Division assignment requires numeric operands.', range, (a, b) => a / b);
+				return this.applyAugmentedArithmetic(current, operand, '__div', 'Division assignment requires numeric operands or __div metamethod.', range, (a, b) => a / b);
 			case LuaAssignmentOperator.ModulusAssign:
-				return this.applyAugmentedNumericOperation(current, operand, 'Modulo assignment requires numeric operands.', range, (a, b) => a % b);
+				return this.applyAugmentedArithmetic(current, operand, '__mod', 'Modulo assignment requires numeric operands or __mod metamethod.', range, (a, b) => a % b);
 			case LuaAssignmentOperator.ExponentAssign:
-				return this.applyAugmentedNumericOperation(current, operand, 'Exponent assignment requires numeric operands.', range, (a, b) => Math.pow(a, b));
+				return this.applyAugmentedArithmetic(current, operand, '__pow', 'Exponent assignment requires numeric operands or __pow metamethod.', range, (a, b) => Math.pow(a, b));
 			default:
 				throw this.runtimeErrorAt(range, 'Unsupported augmented assignment operator.');
 		}
 	}
 
-	private applyAugmentedNumericOperation(current: LuaValue, operand: LuaValue, message: string, range: LuaSourceRange, operation: (left: number, right: number) => number): number {
-		const left = this.expectNumber(current, message, range);
-		const right = this.expectNumber(operand, message, range);
-		return operation(left, right);
+	private applyAugmentedArithmetic(
+		current: LuaValue,
+		operand: LuaValue,
+		metamethodName: string,
+		message: string,
+		range: LuaSourceRange,
+		operation: (left: number, right: number) => number
+	): LuaValue {
+		if (typeof current === 'number' && typeof operand === 'number') {
+			return operation(current, operand);
+		}
+		const metamethodResult = this.invokeBinaryMetamethod(current, operand, metamethodName, range);
+		if (metamethodResult !== null) {
+			return metamethodResult;
+		}
+		throw this.runtimeErrorAt(range, message);
+	}
+
+	private bitwiseNot(value: number): number {
+		return ~this.coerceToBitwiseInteger(value);
+	}
+
+	private coerceToBitwiseInteger(value: number): number {
+		if (!Number.isFinite(value)) {
+			throw this.runtimeError('Bitwise operations require finite numeric operands.');
+		}
+		return value | 0;
 	}
 
 	private invokeMetamethod(table: LuaTable, name: string, args: ReadonlyArray<LuaValue>): LuaValue[] | null {
@@ -1040,16 +1102,174 @@ export class LuaInterpreter {
 		return this.globals.get(name);
 	}
 
-	private compareNumbers(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, comparator: (left: number, right: number) => boolean): boolean {
-		const left = this.expectNumber(this.evaluateSingleExpression(expression.left, environment, varargs), 'Comparison operands must be numbers.', expression.range);
-		const right = this.expectNumber(this.evaluateSingleExpression(expression.right, environment, varargs), 'Comparison operands must be numbers.', expression.range);
-		return comparator(left, right);
+	private evaluateArithmeticExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, metamethodName: string, operator: (left: number, right: number) => number, message: string): LuaValue {
+		const left = this.evaluateSingleExpression(expression.left, environment, varargs);
+		const right = this.evaluateSingleExpression(expression.right, environment, varargs);
+		if (typeof left === 'number' && typeof right === 'number') {
+			return operator(left, right);
+		}
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, metamethodName, expression.range);
+		if (metamethodResult !== null) {
+			return metamethodResult;
+		}
+		throw this.runtimeErrorAt(expression.range, message);
 	}
 
-	private applyNumericBinary(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, operator: (left: number, right: number) => number): number {
-		const left = this.expectNumber(this.evaluateSingleExpression(expression.left, environment, varargs), 'Arithmetic operands must be numbers.', expression.range);
-		const right = this.expectNumber(this.evaluateSingleExpression(expression.right, environment, varargs), 'Arithmetic operands must be numbers.', expression.range);
-		return operator(left, right);
+	private evaluateBitwiseExpression(
+		expression: LuaBinaryExpression,
+		environment: LuaEnvironment,
+		varargs: ReadonlyArray<LuaValue>,
+		metamethodName: string,
+		operator: (left: number, right: number) => number,
+		message: string
+	): LuaValue {
+		const left = this.evaluateSingleExpression(expression.left, environment, varargs);
+		const right = this.evaluateSingleExpression(expression.right, environment, varargs);
+		if (typeof left === 'number' && typeof right === 'number') {
+			const leftInt = this.coerceToBitwiseInteger(left);
+			const rightInt = this.coerceToBitwiseInteger(right);
+			return operator(leftInt, rightInt);
+		}
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, metamethodName, expression.range);
+		if (metamethodResult !== null) {
+			return metamethodResult;
+		}
+		throw this.runtimeErrorAt(expression.range, message);
+	}
+
+	private evaluateFloorDivision(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
+		const left = this.evaluateSingleExpression(expression.left, environment, varargs);
+		const right = this.evaluateSingleExpression(expression.right, environment, varargs);
+		if (typeof left === 'number' && typeof right === 'number') {
+			if (right === 0) {
+				throw this.runtimeErrorAt(expression.range, 'Division by zero.');
+			}
+			return Math.floor(left / right);
+		}
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, '__idiv', expression.range);
+		if (metamethodResult !== null) {
+			return metamethodResult;
+		}
+		throw this.runtimeErrorAt(expression.range, 'Floor division operands must be numbers or define __idiv metamethod.');
+	}
+
+	private evaluateConcatenationExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
+		const left = this.evaluateSingleExpression(expression.left, environment, varargs);
+		const right = this.evaluateSingleExpression(expression.right, environment, varargs);
+		if ((typeof left === 'string' || typeof left === 'number') && (typeof right === 'string' || typeof right === 'number')) {
+			return this.toLuaString(left) + this.toLuaString(right);
+		}
+		const metamethodResult = this.invokeBinaryMetamethod(left, right, '__concat', expression.range);
+		if (metamethodResult !== null) {
+			return metamethodResult;
+		}
+		throw this.runtimeErrorAt(expression.range, 'Concatenation operands must be strings/numbers or define __concat metamethod.');
+	}
+
+	private evaluateEqualityExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): boolean {
+		const left = this.evaluateSingleExpression(expression.left, environment, varargs);
+		const right = this.evaluateSingleExpression(expression.right, environment, varargs);
+		if (left === right) {
+			return true;
+		}
+		const handler = this.extractSharedMetamethodFunction(left, right, '__eq', expression.range);
+		if (handler !== null) {
+			const result = handler.call([left, right]);
+			const first = result.length > 0 ? result[0] : null;
+			return this.expectBoolean(first, '__eq metamethod must return a boolean.', expression.range);
+		}
+		return false;
+	}
+
+	private evaluateRelationalExpression(
+		expression: LuaBinaryExpression,
+		environment: LuaEnvironment,
+		varargs: ReadonlyArray<LuaValue>,
+		metamethodName: string,
+		comparator: (left: number | string, right: number | string) => boolean,
+		message: string,
+		swapForMetamethod: boolean
+	): boolean {
+		const left = this.evaluateSingleExpression(expression.left, environment, varargs);
+		const right = this.evaluateSingleExpression(expression.right, environment, varargs);
+		if (typeof left === 'number' && typeof right === 'number') {
+			return comparator(left, right);
+		}
+		if (typeof left === 'string' && typeof right === 'string') {
+			return comparator(left, right);
+		}
+		const metaLeft = swapForMetamethod ? right : left;
+		const metaRight = swapForMetamethod ? left : right;
+		const handler = this.extractSharedMetamethodFunction(metaLeft, metaRight, metamethodName, expression.range);
+		if (handler !== null) {
+			const result = handler.call([metaLeft, metaRight]);
+			const first = result.length > 0 ? result[0] : null;
+			return this.expectBoolean(first, `${metamethodName} metamethod must return a boolean.`, expression.range);
+		}
+		throw this.runtimeErrorAt(expression.range, message);
+	}
+
+	private invokeUnaryMetamethod(operand: LuaValue, name: string, range: LuaSourceRange): LuaValue | null {
+		const handler = this.extractMetamethodFunction(operand, name, range);
+		if (handler === null) {
+			return null;
+		}
+		const result = handler.call([operand]);
+		if (result.length === 0) {
+			return null;
+		}
+		return result[0];
+	}
+
+	private invokeBinaryMetamethod(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaValue | null {
+		const leftHandler = this.extractMetamethodFunction(left, name, range);
+		if (leftHandler !== null) {
+			const result = leftHandler.call([left, right]);
+			if (result.length === 0) {
+				return null;
+			}
+			return result[0];
+		}
+		const rightHandler = this.extractMetamethodFunction(right, name, range);
+		if (rightHandler !== null) {
+			const result = rightHandler.call([left, right]);
+			if (result.length === 0) {
+				return null;
+			}
+			return result[0];
+		}
+		return null;
+	}
+
+	private extractMetamethodFunction(value: LuaValue, name: string, range: LuaSourceRange | null): LuaFunctionValue | null {
+		if (!(value instanceof LuaTable)) {
+			return null;
+		}
+		const metatable = value.getMetatable();
+		if (metatable === null) {
+			return null;
+		}
+		const handler = metatable.get(name);
+		if (handler === null) {
+			return null;
+		}
+		return this.expectFunction(handler, `Metamethod ${name} must be a function.`, range);
+	}
+
+	private extractSharedMetamethodFunction(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaFunctionValue | null {
+		if (!(left instanceof LuaTable) || !(right instanceof LuaTable)) {
+			return null;
+		}
+		const leftMetatable = left.getMetatable();
+		const rightMetatable = right.getMetatable();
+		if (leftMetatable === null || rightMetatable === null || leftMetatable !== rightMetatable) {
+			return null;
+		}
+		const handler = leftMetatable.get(name);
+		if (handler === null) {
+			return null;
+		}
+		return this.expectFunction(handler, `Metamethod ${name} must be a function.`, range);
 	}
 
 	private isTruthy(value: LuaValue): boolean {
@@ -1064,6 +1284,16 @@ export class LuaInterpreter {
 
 	private expectNumber(value: LuaValue, message: string, range: LuaSourceRange | null): number {
 		if (typeof value === 'number') {
+			return value;
+		}
+		if (range !== null) {
+			throw this.runtimeErrorAt(range, message);
+		}
+		throw this.runtimeError(message);
+	}
+
+	private expectBoolean(value: LuaValue, message: string, range: LuaSourceRange | null): boolean {
+		if (typeof value === 'boolean') {
 			return value;
 		}
 		if (range !== null) {
@@ -1547,6 +1777,14 @@ export class LuaInterpreter {
 			if (!(table instanceof LuaTable)) {
 				throw interpreter.runtimeError('pairs expects a table argument.');
 			}
+			const pairsMetamethod = this.extractMetamethodFunction(table, '__pairs', null);
+			if (pairsMetamethod !== null) {
+				const result = pairsMetamethod.call([table]);
+				if (result.length < 2) {
+					throw this.runtimeError('__pairs metamethod must return at least two values.');
+				}
+				return Array.from(result);
+			}
 			const state: IteratorState = {
 				entries: table.entriesArray(),
 			};
@@ -1579,6 +1817,14 @@ export class LuaInterpreter {
 			const table = args[0];
 			if (!(table instanceof LuaTable)) {
 				throw interpreter.runtimeError('ipairs expects a table argument.');
+			}
+			const ipairsMetamethod = this.extractMetamethodFunction(table, '__ipairs', null);
+			if (ipairsMetamethod !== null) {
+				const result = ipairsMetamethod.call([table]);
+				if (result.length < 2) {
+					throw this.runtimeError('__ipairs metamethod must return at least two values.');
+				}
+				return Array.from(result);
 			}
 			const iterator = new LuaNativeFunction('ipairs_iterator', interpreter, (_selfInterpreter, iteratorArgs) => {
 				const tableArg = iteratorArgs.length > 0 ? iteratorArgs[0] : null;

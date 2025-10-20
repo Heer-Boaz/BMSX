@@ -131,3 +131,94 @@ return data.value, restored.value
 	assert.equal(result[0], 12);
 	assert.equal(result[1], 12);
 });
+
+test('respects arithmetic, comparison, concatenation, and call metamethods', () => {
+	const result = run(`
+local meta = {}
+function meta.__add(a, b)
+	local av = type(a) == 'table' and a.value or a
+	local bv = type(b) == 'table' and b.value or b
+	return setmetatable({ value = av + bv }, meta)
+end
+function meta.__eq(a, b)
+	return a.value == b.value
+end
+function meta.__lt(a, b)
+	return a.value < b.value
+end
+function meta.__concat(a, b)
+	local av = type(a) == 'table' and a.value or a
+	local bv = type(b) == 'table' and b.value or b
+	return tostring(av) .. tostring(bv)
+end
+function meta.__call(self, amount)
+	self.value = self.value + amount
+	return self.value
+end
+
+local left = setmetatable({ value = 3 }, meta)
+local right = setmetatable({ value = 4 }, meta)
+local sum = left + right
+left += 1
+local equality = left == right
+left += 1
+local comparison = right < left
+local concatResult = left .. right
+local invoked = left(5)
+
+return sum.value, left.value, equality, comparison, concatResult, invoked
+`);
+	assert.equal(result.length, 6);
+	assert.equal(result[0], 7);
+	assert.equal(result[1], 10);
+	assert.equal(result[2], true);
+	assert.equal(result[3], true);
+	assert.equal(result[4], '54');
+	assert.equal(result[5], 10);
+});
+
+test('supports bitwise and floor division operators', () => {
+	const result = run('return 0xFF & 0x0F, 0x10 | 0x03, 0x7 ~ 0x4, 8 << 2, -8 >> 1, 7 // 2, ~0');
+	assert.equal(result.length, 7);
+	assert.equal(result[0], 15);
+	assert.equal(result[1], 19);
+	assert.equal(result[2], 3);
+	assert.equal(result[3], 32);
+	assert.equal(result[4], -4);
+	assert.equal(result[5], 3);
+	assert.equal(result[6], -1);
+});
+
+test('__pairs metamethod overrides iteration', () => {
+	const result = run(`
+local container = setmetatable({}, {
+	__pairs = function(tbl)
+		local items = {
+			{ 'x', 1 },
+			{ 'y', 2 },
+		}
+		local index = 0
+		local function iterator(_, _)
+			index = index + 1
+			local entry = items[index]
+			if entry == nil then
+				return nil
+			end
+			return entry[1], entry[2]
+		end
+		return iterator, tbl, nil
+	end
+})
+
+local keyConcat = ''
+local valueSum = 0
+for key, value in pairs(container) do
+	keyConcat = keyConcat .. key
+	valueSum = valueSum + value
+end
+return keyConcat, valueSum
+`);
+	assert.equal(result.length, 2);
+	assert.equal(result[0], 'xy');
+	assert.equal(result[1], 3);
+});

@@ -125,3 +125,50 @@ test('throws on unexpected characters', () => {
 		lex('@');
 	}, LuaSyntaxError);
 });
+
+test('lexes bitwise and floor-division operators', () => {
+	const tokens = lex('& | ~ << >> //');
+	const types = tokens.filter((token) => token.type !== LuaTokenType.Eof).map((token) => token.type);
+	const expected = [
+		LuaTokenType.Ampersand,
+		LuaTokenType.Pipe,
+		LuaTokenType.Tilde,
+		LuaTokenType.ShiftLeft,
+		LuaTokenType.ShiftRight,
+		LuaTokenType.FloorDivide,
+	];
+	assert.deepEqual(types, expected);
+});
+
+test('parses hexadecimal numeric literals', () => {
+	const tokens = lex('0xFF 0x1.8p+1');
+	const numbers = tokens.filter((token) => token.type === LuaTokenType.Number);
+	assert.equal(numbers.length, 2);
+	assert.equal(requireNumberLiteral(numbers[0]), 255);
+	assert.ok(Math.abs(requireNumberLiteral(numbers[1]) - 3) < 1e-12);
+});
+
+test('parses long bracket strings', () => {
+	const tokens = lex('local text = [[Line1\nLine2]]');
+	const types = tokens.map((token) => token.type);
+	assert.equal(types[0], LuaTokenType.Local);
+	assert.equal(types[1], LuaTokenType.Identifier);
+	assert.equal(types[2], LuaTokenType.Equal);
+	assert.equal(types[3], LuaTokenType.String);
+	assert.equal(requireStringLiteral(tokens[3]), 'Line1\nLine2');
+});
+
+test('parses advanced escape sequences', () => {
+	const tokens = lex('return "\\x41\\048\\z  \\n"');
+	assert.equal(tokens[0].type, LuaTokenType.Return);
+	assert.equal(tokens[1].type, LuaTokenType.String);
+	assert.equal(requireStringLiteral(tokens[1]), 'A0\n');
+});
+
+test('skips long comments with equals', () => {
+	const tokens = lex('--[=[\nblock\n]=]\nreturn 1');
+	const filtered = tokens.filter((token) => token.type !== LuaTokenType.Eof);
+	assert.equal(filtered.length, 2);
+	assert.equal(filtered[0].type, LuaTokenType.Return);
+	assert.equal(filtered[1].type, LuaTokenType.Number);
+});
