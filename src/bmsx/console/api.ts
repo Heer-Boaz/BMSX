@@ -1,4 +1,4 @@
-import { $, $rompack } from '../core/game';
+import { $, $rompack, runGate } from '../core/game';
 import type { color, RectRenderSubmission, RenderLayer } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
 import { new_area3d } from '../utils/utils';
@@ -11,7 +11,18 @@ import { ConsoleSpriteRegistry, ConsoleTilemap, type SpriteColliderConfig, type 
 import { ConsoleColliderManager, type ColliderCreateOptions, type ColliderContactInfo } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta } from '../rompack/rompack';
+import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta, Identifier, Registerable, RomPack } from '../rompack/rompack';
+import type { World } from '../core/world';
+import type { Registry } from '../core/registry';
+import { Service } from '../core/service';
+import type { EventEmitter, EventPayload } from '../core/eventemitter';
+import { EventTimeline } from '../core/eventtimeline';
+import type { WorldObject } from '../core/object/worldobject';
+import type { Game } from '../core/game';
+import type { StateMachineBlueprint } from '../fsm/fsmtypes';
+import { taskGate, GateGroup } from '../core/taskgate';
+import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
+import { setupFSMlibrary } from '../fsm/fsmlibrary';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -433,6 +444,120 @@ export class BmsxConsoleApi {
 		$.sndmaster.resume();
 	}
 
+	public world(): World {
+		return $.world;
+	}
+
+	public worldObject(id: Identifier): WorldObject | null {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error('[BmsxConsoleApi] worldObject id must be a non-empty string.');
+		}
+		return $.world.getFromCurrentSpace(id);
+	}
+
+	public worldObjects(): WorldObject[] {
+		return $.world.allObjectsFromSpaces;
+	}
+
+	public registry(): Registry {
+		return $.registry;
+	}
+
+	public registryIds(): Identifier[] {
+		return $.registry.getRegisteredEntityIds();
+	}
+
+	public registryGet(id: Identifier): Registerable | null {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error('[BmsxConsoleApi] registryGet id must be a non-empty string.');
+		}
+		return $.registry.get(id);
+	}
+
+	public services(): Service[] {
+		return Array.from($.registry.iterate(Service));
+	}
+
+	public service(id: Identifier): Service | null {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error('[BmsxConsoleApi] service id must be a non-empty string.');
+		}
+		return $.registry.get<Service>(id);
+	}
+
+	public game(): Game {
+		return $;
+	}
+
+	public rompack(): RomPack | undefined {
+		return $rompack;
+	}
+
+	public events(): EventEmitter {
+		return $.event_emitter;
+	}
+
+	public emit(eventName: string, payload?: EventPayload, emitterId?: Identifier): void {
+		if (typeof eventName !== 'string' || eventName.length === 0) {
+			throw new Error('[BmsxConsoleApi] emit requires a non-empty event name.');
+		}
+		let emitter: Registerable | null = null;
+		if (typeof emitterId === 'string' && emitterId.length > 0) {
+			emitter = $.registry.get(emitterId);
+		}
+		$.emit(eventName, (emitter as any) ?? null, payload);
+	}
+
+	public emitGameplay(eventName: string, emitterId: Identifier, payload?: EventPayload): void {
+		if (typeof eventName !== 'string' || eventName.length === 0) {
+			throw new Error('[BmsxConsoleApi] emitGameplay requires a non-empty event name.');
+		}
+		if (typeof emitterId !== 'string' || emitterId.length === 0) {
+			throw new Error('[BmsxConsoleApi] emitGameplay requires a non-empty emitter id.');
+		}
+		const emitter = $.registry.get(emitterId);
+		if (!emitter) {
+			throw new Error(`[BmsxConsoleApi] Emitter '${emitterId}' not found.`);
+		}
+		$.emitGameplay(eventName, emitter as any, payload);
+	}
+
+	public emitPresentation(eventName: string, emitterId: Identifier | null, payload?: EventPayload): void {
+		if (typeof eventName !== 'string' || eventName.length === 0) {
+			throw new Error('[BmsxConsoleApi] emitPresentation requires a non-empty event name.');
+		}
+		const emitter = emitterId ? $.registry.get(emitterId) : null;
+		$.emitPresentation(eventName, (emitter as any) ?? null, payload);
+	}
+
+	public timelines(): EventTimeline[] {
+		return Array.from($.registry.iterate(EventTimeline));
+	}
+
+	public taskgate(name: string): GateGroup {
+		if (typeof name !== 'string' || name.length === 0) {
+			throw new Error('[BmsxConsoleApi] taskgate requires a non-empty group name.');
+		}
+		return taskGate.group(name);
+	}
+
+	public runGate(): GateGroup {
+		return runGate;
+	}
+
+	public registerFsm(id: string, blueprint: Record<string, unknown>): void {
+		const trimmed = typeof id === 'string' ? id.trim() : '';
+		if (trimmed.length === 0) {
+			throw new Error('[BmsxConsoleApi] registerFsm id must be a non-empty string.');
+		}
+		if (typeof blueprint !== 'object' || blueprint === null) {
+			throw new Error('[BmsxConsoleApi] registerFsm blueprint must be a table/object.');
+		}
+		const clone = this.cloneStateMachineBlueprint(blueprint);
+		StateDefinitionBuilders[trimmed] = () => clone;
+		setupFSMlibrary();
+	}
+
 	public defineSprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: number; collider?: SpriteColliderConfig | null; physics?: SpritePhysicsConfig | null }): void {
 		this.spriteRegistry.defineSprite(index, bitmapId, opts);
 	}
@@ -473,6 +598,10 @@ export class BmsxConsoleApi {
 
 	public getTileDimensions(): { width: number; height: number; } {
 		return { width: this.tilemap.tileWidthPixels, height: this.tilemap.tileHeightPixels };
+	}
+
+	private cloneStateMachineBlueprint(source: Record<string, unknown>): StateMachineBlueprint {
+		return JSON.parse(JSON.stringify(source)) as StateMachineBlueprint;
 	}
 
 	private recordCommand(command: DrawCommand): void {

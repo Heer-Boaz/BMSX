@@ -38,6 +38,14 @@ export class BmsxConsoleRuntime {
 	private luaDrawFunction: LuaFunctionValue | null = null;
 	private luaChunkName: string | null = null;
 	private frameCounter = 0;
+	private readonly luaHandleToObject = new Map<number, unknown>();
+	private readonly luaObjectToHandle = new WeakMap<object, number>();
+	private nextLuaHandleId = 1;
+	private wrapDepth = 0;
+	private static readonly MAX_WRAP_DEPTH = 4;
+
+	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
+	private static readonly LUA_TYPE_FIELD = '__js_type__';
 
 	constructor(options: BmsxConsoleRuntimeOptions) {
 		this.cart = options.cart;
@@ -224,7 +232,11 @@ export class BmsxConsoleRuntime {
 	}
 
 	private invokeLuaFunction(fn: LuaFunctionValue, args: unknown[]): LuaValue[] {
-		const luaArgs = args.map((value) => this.jsToLua(value));
+		const interpreter = this.luaInterpreter;
+		if (interpreter === null) {
+			throw new Error('[BmsxConsoleRuntime] Lua interpreter is not available.');
+		}
+		const luaArgs = args.map((value) => this.jsToLua(value, interpreter));
 		return fn.call(luaArgs);
 	}
 
@@ -243,42 +255,42 @@ export class BmsxConsoleRuntime {
 				if (typeof methodDescriptor.value !== 'function') {
 					continue;
 				}
-				const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
-					const jsArgs = Array.from(args, (arg) => this.luaValueToJs(arg));
-					try {
-						const target = this.api as unknown as Record<string, unknown>;
-						const candidate = target[name];
-						if (typeof candidate !== 'function') {
-							throw new Error(`Method '${name}' is not callable.`);
-						}
-						const result = candidate.apply(this.api, jsArgs);
-						return this.wrapResultValue(result);
-					}
-					catch (error) {
-						if (error instanceof LuaRuntimeError) {
-							throw error;
-						}
-						const message = error instanceof Error ? error.message : String(error);
-						throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
-					}
-				});
-				env.set(name, native);
-				apiTable.set(name, native);
-				this.apiFunctionNames.add(name);
-				continue;
+		const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
+			const jsArgs = Array.from(args, (arg) => this.luaValueToJs(arg));
+			try {
+				const target = this.api as unknown as Record<string, unknown>;
+				const candidate = target[name];
+				if (typeof candidate !== 'function') {
+					throw new Error(`Method '${name}' is not callable.`);
+				}
+				const result = candidate.apply(this.api, jsArgs);
+				return this.wrapResultValue(result, interpreter);
+			}
+			catch (error) {
+				if (error instanceof LuaRuntimeError) {
+					throw error;
+				}
+				const message = error instanceof Error ? error.message : String(error);
+				throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
+			}
+		});
+		env.set(name, native);
+		apiTable.set(name, native);
+		this.apiFunctionNames.add(name);
+		continue;
 			}
 
 			if (descriptor.get) {
 				const getter = descriptor.get;
-				const native = createLuaNativeFunction(`api.${name}`, interpreter, () => {
-					try {
-						const value = getter.call(this.api);
-						return this.wrapResultValue(value);
+			const native = createLuaNativeFunction(`api.${name}`, interpreter, () => {
+				try {
+					const value = getter.call(this.api);
+					return this.wrapResultValue(value, interpreter);
+				}
+				catch (error) {
+					if (error instanceof LuaRuntimeError) {
+						throw error;
 					}
-					catch (error) {
-						if (error instanceof LuaRuntimeError) {
-							throw error;
-						}
 						const message = error instanceof Error ? error.message : String(error);
 						throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
 					}
@@ -289,6 +301,8 @@ export class BmsxConsoleRuntime {
 			}
 		}
 		env.set('api', apiTable);
+
+		this.exposeEngineObjects(env, interpreter);
 
 		this.registerLuaTableLibrary(env, interpreter);
 	}
@@ -365,17 +379,187 @@ export class BmsxConsoleRuntime {
 		return Array.from(map.entries(), ([name, value]) => ({ name, kind: value.kind, descriptor: value.descriptor }));
 	}
 
-	private wrapResultValue(value: unknown): ReadonlyArray<LuaValue> {
+	private exposeEngineObjects(env: LuaEnvironment, interpreter: LuaInterpreter): void {
+		const entries: Array<[string, unknown]> = [
+			['world', $.world],
+			['game', $],
+			['registry', $.registry],
+			['events', $.event_emitter],
+		];
+		for (const [name, object] of entries) {
+			if (object === undefined || object === null) {
+				continue;
+			}
+			const luaValue = this.jsToLua(object, interpreter);
+			env.set(name, luaValue);
+			this.apiFunctionNames.add(name);
+		}
+	}
+
+	private ensureInterpreter(interpreter: LuaInterpreter | null): LuaInterpreter {
+		if (interpreter) {
+			return interpreter;
+		}
+		if (this.luaInterpreter) {
+			return this.luaInterpreter;
+		}
+		throw new Error('[BmsxConsoleRuntime] Lua interpreter is not available.');
+	}
+
+	private isPlainObject(value: unknown): value is Record<string, unknown> {
+		if (value === null || typeof value !== 'object') {
+			return false;
+		}
+		const proto = Object.getPrototypeOf(value);
+		return proto === Object.prototype || proto === null;
+	}
+
+	private getOrCreateHandle(value: object): number {
+		const existing = this.luaObjectToHandle.get(value);
+		if (existing !== undefined) {
+			return existing;
+		}
+		const handle = this.nextLuaHandleId++;
+		this.luaObjectToHandle.set(value, handle);
+		this.luaHandleToObject.set(handle, value);
+		return handle;
+	}
+
+	private wrapEngineObject(value: object, interpreter: LuaInterpreter): LuaTable {
+		const handle = this.getOrCreateHandle(value);
+		const table = new LuaTable();
+		table.set(BmsxConsoleRuntime.LUA_HANDLE_FIELD, handle);
+		const typeName = value.constructor?.name ?? 'Object';
+		table.set(BmsxConsoleRuntime.LUA_TYPE_FIELD, typeName);
+
+		this.populateObjectProperties(table, value, interpreter);
+		this.populateObjectMethods(table, value, handle, interpreter, typeName);
+
+		return table;
+	}
+
+	private populateObjectProperties(table: LuaTable, value: object, interpreter: LuaInterpreter): void {
+		if (this.wrapDepth > BmsxConsoleRuntime.MAX_WRAP_DEPTH) {
+			return;
+		}
+		this.wrapDepth += 1;
+		for (const key of Object.keys(value as Record<string, unknown>)) {
+			if (key === BmsxConsoleRuntime.LUA_HANDLE_FIELD || key === BmsxConsoleRuntime.LUA_TYPE_FIELD) {
+				continue;
+			}
+			if (table.has(key)) {
+				continue;
+			}
+			try {
+				const descriptor = Object.getOwnPropertyDescriptor(value, key);
+				if (descriptor) {
+					if (typeof descriptor.value === 'function') {
+						continue;
+					}
+					if (typeof descriptor.get === 'function' && descriptor.value === undefined) {
+						continue;
+					}
+				}
+				const propertyValue = (value as Record<string, unknown>)[key];
+				table.set(key, this.jsToLua(propertyValue, interpreter));
+			}
+			catch (error) {
+				if ($ && $.debug) {
+					console.warn(`[BmsxConsoleRuntime] Failed to expose property '${key}':`, error);
+				}
+			}
+		}
+		if (value instanceof LuaTable) {
+			this.wrapDepth -= 1;
+			return;
+		}
+		// Common identifiers
+		if ('id' in (value as Record<string, unknown>) && !table.has('id')) {
+			table.set('id', this.jsToLua((value as Record<string, unknown>).id, interpreter));
+		}
+		if ('name' in (value as Record<string, unknown>) && !table.has('name')) {
+			table.set('name', this.jsToLua((value as Record<string, unknown>).name, interpreter));
+		}
+		this.wrapDepth -= 1;
+	}
+
+	private populateObjectMethods(table: LuaTable, value: object, handle: number, interpreter: LuaInterpreter, typeName: string): void {
+		const seen = new Set<string>();
+		for (const ownName of Object.getOwnPropertyNames(value)) {
+			if (ownName === 'constructor') continue;
+			if (seen.has(ownName)) continue;
+			const descriptor = Object.getOwnPropertyDescriptor(value, ownName);
+			if (descriptor && typeof descriptor.value === 'function') {
+				if (!table.has(ownName)) {
+					const fn = this.createHandleMethod(handle, ownName, typeName, interpreter);
+					table.set(ownName, fn);
+				}
+				seen.add(ownName);
+			}
+		}
+		let prototype: unknown = Object.getPrototypeOf(value);
+		while (prototype && prototype !== Object.prototype) {
+			for (const name of Object.getOwnPropertyNames(prototype as object)) {
+				if (name === 'constructor' || seen.has(name) || table.has(name)) {
+					continue;
+				}
+				const descriptor = Object.getOwnPropertyDescriptor(prototype as object, name);
+				if (descriptor && typeof descriptor.value === 'function') {
+					const fn = this.createHandleMethod(handle, name, typeName, interpreter);
+					table.set(name, fn);
+					seen.add(name);
+				}
+			}
+			prototype = Object.getPrototypeOf(prototype);
+		}
+	}
+
+	private createHandleMethod(handle: number, methodName: string, typeName: string, interpreter: LuaInterpreter): LuaFunctionValue {
+		return createLuaNativeFunction(`${typeName}.${methodName}`, interpreter, (_lua, args) => {
+			const instance = this.luaHandleToObject.get(handle);
+			if (!instance) {
+				throw new LuaRuntimeError(`[${typeName}.${methodName}] Object handle is no longer valid.`, this.luaChunkName ?? 'lua', 0, 0);
+			}
+			const jsArgs: unknown[] = [];
+			if (args.length > 0) {
+				const maybeSelf = this.luaValueToJs(args[0]);
+				let start = 0;
+				if (maybeSelf === instance) {
+					start = 1;
+				}
+				for (let index = start; index < args.length; index += 1) {
+					jsArgs.push(this.luaValueToJs(args[index]));
+				}
+			}
+			try {
+				const method = (instance as Record<string, unknown>)[methodName];
+				if (typeof method !== 'function') {
+					throw new Error(`Property '${methodName}' is not callable.`);
+				}
+				const result = Reflect.apply(method as Function, instance, jsArgs);
+				return this.wrapResultValue(result, interpreter);
+			}
+			catch (error) {
+				if (error instanceof LuaRuntimeError) {
+					throw error;
+				}
+				const message = error instanceof Error ? error.message : String(error);
+				throw new LuaRuntimeError(`[${typeName}.${methodName}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
+			}
+		});
+	}
+
+	private wrapResultValue(value: unknown, interpreter: LuaInterpreter): ReadonlyArray<LuaValue> {
 		if (Array.isArray(value)) {
 			if (value.every((entry) => this.isLuaValue(entry))) {
 				return value as LuaValue[];
 			}
-			return value.map((entry) => this.jsToLua(entry));
+			return value.map((entry) => this.jsToLua(entry, interpreter));
 		}
 		if (value === undefined) {
 			return [];
 		}
-		const luaValue = this.jsToLua(value);
+		const luaValue = this.jsToLua(value, interpreter);
 		return [luaValue];
 	}
 
@@ -398,6 +582,13 @@ export class BmsxConsoleRuntime {
 			return value;
 		}
 		if (value instanceof LuaTable) {
+			const handleValue = value.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
+			if (typeof handleValue === 'number') {
+				const instance = this.luaHandleToObject.get(handleValue);
+				if (instance !== undefined) {
+					return instance;
+				}
+			}
 			const entries = value.entriesArray();
 			if (entries.length === 0) {
 				return {};
@@ -405,7 +596,12 @@ export class BmsxConsoleRuntime {
 			const arrayValues: unknown[] = [];
 			const objectValues: Record<string, unknown> = {};
 			let sequentialCount = 0;
+			let processedEntries = 0;
 			for (const [key, entryValue] of entries) {
+				if (key === BmsxConsoleRuntime.LUA_HANDLE_FIELD || key === BmsxConsoleRuntime.LUA_TYPE_FIELD) {
+					continue;
+				}
+				processedEntries += 1;
 				const converted = this.luaValueToJs(entryValue);
 				if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
 					arrayValues[key - 1] = converted;
@@ -414,7 +610,10 @@ export class BmsxConsoleRuntime {
 					objectValues[String(key)] = converted;
 				}
 			}
-			if (sequentialCount === entries.length) {
+			if (processedEntries === 0) {
+				return {};
+			}
+			if (sequentialCount === processedEntries) {
 				return arrayValues;
 			}
 			for (const [index, entryValue] of arrayValues.entries()) {
@@ -427,7 +626,7 @@ export class BmsxConsoleRuntime {
 		return null;
 	}
 
-	private jsToLua(value: unknown): LuaValue {
+	private jsToLua(value: unknown, interpreter: LuaInterpreter | null = this.luaInterpreter): LuaValue {
 		if (value === undefined || value === null) {
 			return null;
 		}
@@ -438,18 +637,28 @@ export class BmsxConsoleRuntime {
 			return value;
 		}
 		if (Array.isArray(value)) {
+			const ensured = this.ensureInterpreter(interpreter);
 			const table = new LuaTable();
 			for (let index = 0; index < value.length; index += 1) {
-				table.set(index + 1, this.jsToLua(value[index]));
+				table.set(index + 1, this.jsToLua(value[index], ensured));
 			}
 			return table;
 		}
 		if (typeof value === 'object') {
-			const table = new LuaTable();
-			for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
-				table.set(key, this.jsToLua(entryValue));
+			const ensured = this.ensureInterpreter(interpreter);
+			if (this.isPlainObject(value)) {
+				const table = new LuaTable();
+				for (const key of Object.keys(value as Record<string, unknown>)) {
+					const descriptor = Object.getOwnPropertyDescriptor(value, key);
+					if (descriptor && typeof descriptor.get === 'function' && descriptor.value === undefined) {
+						continue;
+					}
+					const entryValue = (value as Record<string, unknown>)[key];
+					table.set(key, this.jsToLua(entryValue, ensured));
+				}
+				return table;
 			}
-			return table;
+			return this.wrapEngineObject(value as object, ensured);
 		}
 		return null;
 	}
