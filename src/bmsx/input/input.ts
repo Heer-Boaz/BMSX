@@ -165,13 +165,18 @@ export class InputStateManager {
 	 * @param event - The input event to be added.
 	 */
 	addInputEvent(event: InputEvent): void {
-		this.inputBuffer.push(event);
 		let state = this.buttonStates.get(event.identifier);
 		if (!state) {
 			state = makeButtonState();
 			this.buttonStates.set(event.identifier, state);
 		}
 		if (event.eventType === 'press') {
+			if (state.pressed === true) {
+				// Ignore duplicate press edge, but track latest timestamp for bookkeeping.
+				state.timestamp = event.timestamp;
+				return;
+			}
+			this.inputBuffer.push(event);
 			state.pressed = true;
 			state.justpressed = true;
 			state.justreleased = false;
@@ -183,6 +188,7 @@ export class InputStateManager {
 			state.value = state.value ?? 1;
 			state.consumed = event.consumed ?? false;
 		} else {
+			this.inputBuffer.push(event);
 			state.pressed = false;
 			state.justpressed = false;
 			state.justreleased = true;
