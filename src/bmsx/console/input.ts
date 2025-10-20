@@ -28,6 +28,15 @@ type RepeatStateEntry = {
 	pressStartFrame: number;
 };
 
+type ActionPressRecord = {
+	lastAcceptedAtMs: number;
+	lastObservedTimestamp: number;
+	lastResultAccepted: boolean;
+};
+
+const ACTION_GUARD_MIN_MS = 24;
+const ACTION_GUARD_MAX_MS = 120;
+
 export class BmsxConsoleInput {
 	private static readonly INITIAL_REPEAT_DELAY_FRAMES = 15;
 	private static readonly REPEAT_INTERVAL_FRAMES = 4;
@@ -35,16 +44,20 @@ export class BmsxConsoleInput {
 	private readonly playerIndex: number;
 	private currentFrame: number = 0;
 	private readonly repeatState: RepeatStateEntry[] = [];
+	private readonly actionPressRecords: Map<string, ActionPressRecord> = new Map();
+	private lastDeltaMilliseconds: number = ACTION_GUARD_MIN_MS;
 	private readonly pointerPressed: boolean[] = new Array(BmsxConsolePointerButtonCount).fill(false);
 	private readonly pointerJustPressed: boolean[] = new Array(BmsxConsolePointerButtonCount).fill(false);
 	private readonly pointerJustReleased: boolean[] = new Array(BmsxConsolePointerButtonCount).fill(false);
 
 	constructor(playerIndex: number) {
 		this.playerIndex = playerIndex;
+		this.resetActionPressGuards();
 	}
 
-	public beginFrame(frame: number): void {
+	public beginFrame(frame: number, deltaSeconds: number): void {
 		this.currentFrame = frame;
+		this.updateGuardWindowFromDelta(deltaSeconds);
 		this.updatePointerButtonStates();
 	}
 
@@ -181,15 +194,6 @@ export class BmsxConsoleInput {
 		return Math.floor(elapsedSinceDelay / BmsxConsoleInput.REPEAT_INTERVAL_FRAMES) + 1;
 	}
 
-	private getState(button: BmsxConsoleButton): ActionState {
-		if (button < 0 || button >= BmsxConsoleButtonCount) {
-			throw new Error(`[BmsxConsoleInput] Button index ${button} outside supported range 0-${BmsxConsoleButtonCount - 1}.`);
-		}
-		const actionName = BUTTON_ACTIONS[button];
-		const playerInput = $.input.getPlayerInput(this.playerIndex);
-		return playerInput.getActionState(actionName);
-	}
-
 	private updatePointerButtonStates(): void {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
@@ -198,16 +202,102 @@ export class BmsxConsoleInput {
 				this.pointerJustReleased[i] = this.pointerPressed[i] === true;
 				this.pointerPressed[i] = false;
 			}
+			this.resetActionPressGuards();
 			return;
 		}
 		for (let i = 0; i < BmsxConsolePointerButtonCount; i++) {
 			const previousPressed = this.pointerPressed[i] === true;
 			const actionName = POINTER_CODES[i];
-			const actionState = playerInput.getActionState(actionName);
+			const actionState = this.sanitizeActionState(actionName, playerInput.getActionState(actionName));
 			const pressed = actionState.pressed === true && actionState.consumed !== true;
 			this.pointerJustPressed[i] = pressed && !previousPressed;
 			this.pointerJustReleased[i] = !pressed && previousPressed;
 			this.pointerPressed[i] = pressed;
 		}
+	}
+
+	private sanitizeActionState(actionName: string, state: ActionState): ActionState {
+		if (state.justpressed === true) {
+			const accepted = this.shouldAcceptActionPress(actionName, state);
+			if (!accepted) {
+				state.justpressed = false;
+				state.alljustpressed = false;
+			}
+		}
+		return state;
+	}
+
+	private shouldAcceptActionPress(actionName: string, state: ActionState): boolean {
+		if (state.justpressed !== true) {
+			return true;
+		}
+		const timestamp = this.resolveActionPressTimestamp(state);
+		const existing = this.actionPressRecords.get(actionName);
+		if (existing && existing.lastObservedTimestamp === timestamp) {
+			return existing.lastResultAccepted;
+		}
+		const guardMs = this.actionPressGuardMs();
+		let accepted = true;
+		const previousAcceptedAt = existing && Number.isFinite(existing.lastAcceptedAtMs)
+			? existing.lastAcceptedAtMs
+			: null;
+		if (previousAcceptedAt !== null) {
+			const delta = timestamp - previousAcceptedAt;
+			if (Number.isFinite(delta) && delta <= guardMs) {
+				accepted = false;
+			}
+		}
+		const nextRecord: ActionPressRecord = {
+			lastAcceptedAtMs: accepted
+				? timestamp
+				: (previousAcceptedAt ?? timestamp),
+			lastObservedTimestamp: timestamp,
+			lastResultAccepted: accepted,
+		};
+		this.actionPressRecords.set(actionName, nextRecord);
+		return accepted;
+	}
+
+	private resolveActionPressTimestamp(state: ActionState): number {
+		if (typeof state.timestamp === 'number' && Number.isFinite(state.timestamp)) {
+			return state.timestamp;
+		}
+		return $.platform.clock.now();
+	}
+
+	private actionPressGuardMs(): number {
+		if (!Number.isFinite(this.lastDeltaMilliseconds)) {
+			return ACTION_GUARD_MIN_MS;
+		}
+		if (this.lastDeltaMilliseconds < ACTION_GUARD_MIN_MS) {
+			return ACTION_GUARD_MIN_MS;
+		}
+		if (this.lastDeltaMilliseconds > ACTION_GUARD_MAX_MS) {
+			return ACTION_GUARD_MAX_MS;
+		}
+		return this.lastDeltaMilliseconds;
+	}
+
+	private updateGuardWindowFromDelta(deltaSeconds: number): void {
+		if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+			return;
+		}
+		const deltaMs = deltaSeconds * 1000;
+		const clamped = Math.max(ACTION_GUARD_MIN_MS, Math.min(ACTION_GUARD_MAX_MS, deltaMs));
+		this.lastDeltaMilliseconds = clamped;
+	}
+
+	private resetActionPressGuards(): void {
+		this.actionPressRecords.clear();
+		this.lastDeltaMilliseconds = ACTION_GUARD_MIN_MS;
+	}
+
+	private getState(button: BmsxConsoleButton): ActionState {
+		if (button < 0 || button >= BmsxConsoleButtonCount) {
+			throw new Error(`[BmsxConsoleInput] Button index ${button} outside supported range 0-${BmsxConsoleButtonCount - 1}.`);
+		}
+		const actionName = BUTTON_ACTIONS[button];
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+		return this.sanitizeActionState(actionName, playerInput.getActionState(actionName));
 	}
 }

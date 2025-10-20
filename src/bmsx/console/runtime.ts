@@ -74,7 +74,7 @@ export class BmsxConsoleRuntime {
 			throw new Error('[BmsxConsoleRuntime] Delta time must be a finite non-negative number.');
 		}
 		const deltaSeconds = deltaMilliseconds / 1000;
-		this.input.beginFrame(this.frameCounter);
+		this.input.beginFrame(this.frameCounter, deltaSeconds);
 		const editor = this.editor;
 		if (editor) {
 			editor.update(deltaSeconds);
