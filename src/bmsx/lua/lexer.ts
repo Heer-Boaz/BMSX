@@ -73,6 +73,10 @@ export class LuaLexer {
 				this.pushToken(tokens, LuaTokenType.Semicolon, null);
 				return;
 			case '+':
+				if (this.match('=')) {
+					this.pushToken(tokens, LuaTokenType.PlusEqual, null);
+					return;
+				}
 				this.pushToken(tokens, LuaTokenType.Plus, null);
 				return;
 			case '-':
@@ -80,18 +84,38 @@ export class LuaLexer {
 					this.skipComment();
 					return;
 				}
+				if (this.match('=')) {
+					this.pushToken(tokens, LuaTokenType.MinusEqual, null);
+					return;
+				}
 				this.pushToken(tokens, LuaTokenType.Minus, null);
 				return;
 			case '*':
+				if (this.match('=')) {
+					this.pushToken(tokens, LuaTokenType.StarEqual, null);
+					return;
+				}
 				this.pushToken(tokens, LuaTokenType.Star, null);
 				return;
 			case '/':
+				if (this.match('=')) {
+					this.pushToken(tokens, LuaTokenType.SlashEqual, null);
+					return;
+				}
 				this.pushToken(tokens, LuaTokenType.Slash, null);
 				return;
 			case '%':
+				if (this.match('=')) {
+					this.pushToken(tokens, LuaTokenType.PercentEqual, null);
+					return;
+				}
 				this.pushToken(tokens, LuaTokenType.Percent, null);
 				return;
 			case '^':
+				if (this.match('=')) {
+					this.pushToken(tokens, LuaTokenType.CaretEqual, null);
+					return;
+				}
 				this.pushToken(tokens, LuaTokenType.Caret, null);
 				return;
 			case '#':

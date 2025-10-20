@@ -6,6 +6,7 @@ import {
 	LuaBinaryOperator,
 	LuaUnaryOperator,
 	LuaTableFieldKind,
+	LuaAssignmentOperator,
 } from './ast';
 import type {
 	LuaAssignableExpression,
@@ -439,7 +440,7 @@ export class LuaParser {
 
 	private parseAssignmentOrCall(): LuaStatement {
 		const expression = this.parsePrefixExpression();
-		if (this.check(LuaTokenType.Comma) || this.check(LuaTokenType.Equal)) {
+		if (this.check(LuaTokenType.Comma) || this.isAssignmentOperator(this.current().type)) {
 			return this.parseAssignment(expression);
 		}
 		if (expression.kind === LuaSyntaxKind.CallExpression) {
@@ -455,8 +456,26 @@ export class LuaParser {
 			const next = this.parsePrefixExpression();
 			targets.push(this.requireAssignable(next));
 		}
-		this.consume(LuaTokenType.Equal, 'Expected "=" in assignment.');
-		const values = this.parseExpressionList();
+		const operatorToken = this.current();
+		if (!this.isAssignmentOperator(operatorToken.type)) {
+			throw this.error(operatorToken, 'Expected assignment operator.');
+		}
+		const operator = this.resolveAssignmentOperator(operatorToken.type);
+		this.advance();
+		let values: LuaExpression[] = [];
+		if (operator === LuaAssignmentOperator.Assign) {
+			values = this.parseExpressionList();
+		}
+		else {
+			if (targets.length !== 1) {
+				throw this.error(operatorToken, 'Augmented assignment requires exactly one target.');
+			}
+			const expression = this.parseExpression();
+			if (this.check(LuaTokenType.Comma)) {
+				throw this.error(this.current(), 'Augmented assignment accepts only one expression.');
+			}
+			values = [expression];
+		}
 		const startPosition = targets[0].range.start;
 		const endPosition = values.length > 0 ? values[values.length - 1].range.end : this.positionFromToken(this.previous());
 		return {
@@ -468,6 +487,7 @@ export class LuaParser {
 			},
 			left: targets,
 			right: values,
+			operator,
 		};
 	}
 
@@ -477,6 +497,42 @@ export class LuaParser {
 			range: expression.range,
 			expression,
 		};
+	}
+
+	private isAssignmentOperator(tokenType: LuaTokenType): boolean {
+		switch (tokenType) {
+			case LuaTokenType.Equal:
+			case LuaTokenType.PlusEqual:
+			case LuaTokenType.MinusEqual:
+			case LuaTokenType.StarEqual:
+			case LuaTokenType.SlashEqual:
+			case LuaTokenType.PercentEqual:
+			case LuaTokenType.CaretEqual:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	private resolveAssignmentOperator(tokenType: LuaTokenType): LuaAssignmentOperator {
+		switch (tokenType) {
+			case LuaTokenType.Equal:
+				return LuaAssignmentOperator.Assign;
+			case LuaTokenType.PlusEqual:
+				return LuaAssignmentOperator.AddAssign;
+			case LuaTokenType.MinusEqual:
+				return LuaAssignmentOperator.SubtractAssign;
+			case LuaTokenType.StarEqual:
+				return LuaAssignmentOperator.MultiplyAssign;
+			case LuaTokenType.SlashEqual:
+				return LuaAssignmentOperator.DivideAssign;
+			case LuaTokenType.PercentEqual:
+				return LuaAssignmentOperator.ModulusAssign;
+			case LuaTokenType.CaretEqual:
+				return LuaAssignmentOperator.ExponentAssign;
+			default:
+				throw this.error(this.current(), 'Unsupported assignment operator.');
+		}
 	}
 
 	private parseExpression(): LuaExpression {

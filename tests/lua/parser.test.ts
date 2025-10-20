@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LuaLexer } from '../../src/bmsx/lua/lexer';
 import { LuaParser } from '../../src/bmsx/lua/parser';
-import { LuaSyntaxKind, LuaBinaryOperator } from '../../src/bmsx/lua/ast';
+import { LuaSyntaxKind, LuaBinaryOperator, LuaAssignmentOperator } from '../../src/bmsx/lua/ast';
 import type {
 	LuaChunk,
 	LuaCallStatement,
@@ -100,10 +100,21 @@ test('parses table assignment and preserves call statement', () => {
 	const assignmentStatement = assignment as LuaAssignmentStatement;
 	assert.equal(assignmentStatement.left.length, 1);
 	assert.equal(assignmentStatement.right.length, 1);
+	assert.equal(assignmentStatement.operator, LuaAssignmentOperator.Assign);
 	const callStatement = chunk.body[1];
 	assert.equal(callStatement.kind, LuaSyntaxKind.CallStatement);
 	const call = callStatement as LuaCallStatement;
 	assert.equal(call.expression.kind, LuaSyntaxKind.CallExpression);
+});
+
+test('parses augmented assignment statement', () => {
+	const chunk = parseChunk('value += 1');
+	assert.equal(chunk.body.length, 1);
+	const statement = chunk.body[0] as LuaAssignmentStatement;
+	assert.equal(statement.kind, LuaSyntaxKind.AssignmentStatement);
+	assert.equal(statement.left.length, 1);
+	assert.equal(statement.right.length, 1);
+	assert.equal(statement.operator, LuaAssignmentOperator.AddAssign);
 });
 
 test('parses unary minus with exponent precedence', () => {

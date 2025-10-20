@@ -89,10 +89,21 @@ export type LuaBlock = LuaNode & {
 	readonly body: ReadonlyArray<LuaStatement>;
 };
 
+export const enum LuaAssignmentOperator {
+	Assign,
+	AddAssign,
+	SubtractAssign,
+	MultiplyAssign,
+	DivideAssign,
+	ModulusAssign,
+	ExponentAssign,
+}
+
 export type LuaAssignmentStatement = LuaNode & {
 	readonly kind: LuaSyntaxKind.AssignmentStatement;
 	readonly left: ReadonlyArray<LuaAssignableExpression>;
 	readonly right: ReadonlyArray<LuaExpression>;
+	readonly operator: LuaAssignmentOperator;
 };
 
 export type LuaLocalAssignmentStatement = LuaNode & {

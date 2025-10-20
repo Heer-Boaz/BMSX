@@ -3,6 +3,7 @@ import {
 	LuaBinaryOperator,
 	LuaUnaryOperator,
 	LuaTableFieldKind,
+	LuaAssignmentOperator,
 } from './ast';
 import type {
 	LuaAssignableExpression,
@@ -324,12 +325,28 @@ export class LuaInterpreter {
 
 	private executeAssignment(statement: LuaAssignmentStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): void {
 		const resolvedTargets = statement.left.map((target) => this.resolveAssignmentTarget(target, environment, varargs));
-		const values = this.evaluateExpressionList(statement.right, environment, varargs);
-		for (let index = 0; index < resolvedTargets.length; index += 1) {
-			const resolved = resolvedTargets[index];
-			const value = index < values.length ? values[index] : null;
-			this.assignResolvedTarget(resolved, value);
+		if (statement.operator === LuaAssignmentOperator.Assign) {
+			const values = this.evaluateExpressionList(statement.right, environment, varargs);
+			for (let index = 0; index < resolvedTargets.length; index += 1) {
+				const resolved = resolvedTargets[index];
+				const value = index < values.length ? values[index] : null;
+				const targetRange = statement.left[index].range;
+				this.assignResolvedTarget(resolved, value, targetRange);
+			}
+			return;
 		}
+		if (statement.left.length !== 1) {
+			throw this.runtimeErrorAt(statement.range, 'Augmented assignment requires exactly one target.');
+		}
+		if (statement.right.length !== 1) {
+			throw this.runtimeErrorAt(statement.range, 'Augmented assignment requires exactly one expression.');
+		}
+		const resolvedTarget = resolvedTargets[0];
+		const targetExpression = statement.left[0];
+		const incrementValue = this.evaluateSingleExpression(statement.right[0], environment, varargs);
+		const currentValue = this.getResolvedTargetValue(resolvedTarget, targetExpression.range, environment);
+		const resultValue = this.applyAugmentedAssignment(statement.operator, currentValue, incrementValue, targetExpression.range);
+		this.assignResolvedTarget(resolvedTarget, resultValue, targetExpression.range);
 	}
 
 	private executeReturn(statement: LuaReturnStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): ExecutionSignal {
@@ -572,7 +589,7 @@ export class LuaInterpreter {
 		if (!(baseValue instanceof LuaTable)) {
 			throw this.runtimeErrorAt(expression.range, 'Attempted to index field on a non-table value.');
 		}
-		return baseValue.get(expression.identifier);
+		return this.getTableValueWithMetamethod(baseValue, expression.identifier, expression.range);
 	}
 
 	private evaluateIndexExpression(expression: LuaIndexExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
@@ -582,7 +599,7 @@ export class LuaInterpreter {
 		}
 		const indexValues = this.evaluateExpression(expression.index, environment, varargs);
 		const indexValue = indexValues.length > 0 ? indexValues[0] : null;
-		return baseValue.get(indexValue);
+		return this.getTableValueWithMetamethod(baseValue, indexValue, expression.range);
 	}
 
 	private evaluateBinaryExpression(expression: LuaBinaryExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
@@ -663,7 +680,7 @@ export class LuaInterpreter {
 			if (!(calleeValue instanceof LuaTable)) {
 				throw this.runtimeErrorAt(expression.range, 'Method call requires a table instance.');
 			}
-			const methodValue = calleeValue.get(expression.methodName);
+			const methodValue = this.getTableValueWithMetamethod(calleeValue, expression.methodName, expression.range);
 			const functionValue = this.expectFunction(methodValue, `Method '${expression.methodName}' not found on table.`, expression.range);
 			const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
 			return functionValue.call(args);
@@ -761,7 +778,7 @@ export class LuaInterpreter {
 		throw this.runtimeError('Unsupported assignment target.');
 	}
 
-	private assignResolvedTarget(target: ResolvedAssignmentTarget, value: LuaValue): void {
+	private assignResolvedTarget(target: ResolvedAssignmentTarget, value: LuaValue, range: LuaSourceRange): void {
 		if (target.kind === 'identifier') {
 			if (target.environment !== null) {
 				target.environment.set(target.name, value);
@@ -772,14 +789,123 @@ export class LuaInterpreter {
 			return;
 		}
 		if (target.kind === 'member') {
-			target.table.set(target.key, value);
+			this.setTableValueWithMetamethod(target.table, target.key, value, range);
 			return;
 		}
 		if (target.kind === 'index') {
-			target.table.set(target.index, value);
+			this.setTableValueWithMetamethod(target.table, target.index, value, range);
 			return;
 		}
 		throw this.runtimeError('Unsupported assignment target kind.');
+	}
+
+	private getResolvedTargetValue(target: ResolvedAssignmentTarget, range: LuaSourceRange, environment: LuaEnvironment): LuaValue {
+		if (target.kind === 'identifier') {
+			const value = this.lookupIdentifier(target.name, environment);
+			return value;
+		}
+		if (target.kind === 'member') {
+			return this.getTableValueWithMetamethod(target.table, target.key, range);
+		}
+		if (target.kind === 'index') {
+			return this.getTableValueWithMetamethod(target.table, target.index, range);
+		}
+		throw this.runtimeError('Unsupported assignment target kind.');
+	}
+
+	private getTableValueWithMetamethod(table: LuaTable, key: LuaValue, range: LuaSourceRange): LuaValue {
+		return this.getTableValueWithMetamethodInternal(table, key, range, new Set<LuaTable>());
+	}
+
+	private getTableValueWithMetamethodInternal(table: LuaTable, key: LuaValue, range: LuaSourceRange, visited: Set<LuaTable>): LuaValue {
+		if (visited.has(table)) {
+			throw this.runtimeErrorAt(range, 'Metatable __index loop detected.');
+		}
+		visited.add(table);
+		const direct = table.get(key);
+		if (direct !== null) {
+			visited.delete(table);
+			return direct;
+		}
+		const metatable = table.getMetatable();
+		if (metatable === null) {
+			visited.delete(table);
+			return null;
+		}
+		const handler = metatable.get('__index');
+		if (handler === null) {
+			visited.delete(table);
+			return null;
+		}
+		if (handler instanceof LuaTable) {
+			const result = this.getTableValueWithMetamethodInternal(handler, key, range, visited);
+			visited.delete(table);
+			return result;
+		}
+		const functionValue = this.expectFunction(handler, '__index metamethod must be a function or table.', range);
+		const values = functionValue.call([table, key]);
+		const first = values.length > 0 ? values[0] : null;
+		visited.delete(table);
+		return first;
+	}
+
+	private setTableValueWithMetamethod(table: LuaTable, key: LuaValue, value: LuaValue, range: LuaSourceRange): void {
+		this.setTableValueWithMetamethodInternal(table, key, value, range, new Set<LuaTable>());
+	}
+
+	private setTableValueWithMetamethodInternal(table: LuaTable, key: LuaValue, value: LuaValue, range: LuaSourceRange, visited: Set<LuaTable>): void {
+		if (table.has(key)) {
+			table.set(key, value);
+			return;
+		}
+		const metatable = table.getMetatable();
+		if (metatable === null) {
+			table.set(key, value);
+			return;
+		}
+		if (visited.has(table)) {
+			throw this.runtimeErrorAt(range, 'Metatable __newindex loop detected.');
+		}
+		visited.add(table);
+		const handler = metatable.get('__newindex');
+		if (handler === null) {
+			table.set(key, value);
+			visited.delete(table);
+			return;
+		}
+		if (handler instanceof LuaTable) {
+			this.setTableValueWithMetamethodInternal(handler, key, value, range, visited);
+			visited.delete(table);
+			return;
+		}
+		const functionValue = this.expectFunction(handler, '__newindex metamethod must be a function or table.', range);
+		functionValue.call([table, key, value]);
+		visited.delete(table);
+	}
+
+	private applyAugmentedAssignment(operator: LuaAssignmentOperator, current: LuaValue, operand: LuaValue, range: LuaSourceRange): LuaValue {
+		switch (operator) {
+			case LuaAssignmentOperator.AddAssign:
+				return this.applyAugmentedNumericOperation(current, operand, 'Addition assignment requires numeric operands.', range, (a, b) => a + b);
+			case LuaAssignmentOperator.SubtractAssign:
+				return this.applyAugmentedNumericOperation(current, operand, 'Subtraction assignment requires numeric operands.', range, (a, b) => a - b);
+			case LuaAssignmentOperator.MultiplyAssign:
+				return this.applyAugmentedNumericOperation(current, operand, 'Multiplication assignment requires numeric operands.', range, (a, b) => a * b);
+			case LuaAssignmentOperator.DivideAssign:
+				return this.applyAugmentedNumericOperation(current, operand, 'Division assignment requires numeric operands.', range, (a, b) => a / b);
+			case LuaAssignmentOperator.ModulusAssign:
+				return this.applyAugmentedNumericOperation(current, operand, 'Modulo assignment requires numeric operands.', range, (a, b) => a % b);
+			case LuaAssignmentOperator.ExponentAssign:
+				return this.applyAugmentedNumericOperation(current, operand, 'Exponent assignment requires numeric operands.', range, (a, b) => Math.pow(a, b));
+			default:
+				throw this.runtimeErrorAt(range, 'Unsupported augmented assignment operator.');
+		}
+	}
+
+	private applyAugmentedNumericOperation(current: LuaValue, operand: LuaValue, message: string, range: LuaSourceRange, operation: (left: number, right: number) => number): number {
+		const left = this.expectNumber(current, message, range);
+		const right = this.expectNumber(operand, message, range);
+		return operation(left, right);
 	}
 
 	private invokeMetamethod(table: LuaTable, name: string, args: ReadonlyArray<LuaValue>): LuaValue[] | null {
