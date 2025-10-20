@@ -731,7 +731,7 @@ export class ConsoleCartEditor {
 			}
 			return;
 		}
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyZ')) {
+		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
 			this.consumeKey(keyboard, 'KeyZ');
 			if (shiftDown) {
 				this.redo();
@@ -740,7 +740,7 @@ export class ConsoleCartEditor {
 			}
 			return;
 		}
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyY')) {
+		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
 			this.consumeKey(keyboard, 'KeyY');
 			this.redo();
 			return;
@@ -798,7 +798,7 @@ export class ConsoleCartEditor {
 			this.openSearch(false);
 			return;
 		}
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyZ')) {
+		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyZ', deltaSeconds)) {
 			this.consumeKey(keyboard, 'KeyZ');
 			if (shiftDown) {
 				this.redo();
@@ -807,7 +807,7 @@ export class ConsoleCartEditor {
 			}
 			return;
 		}
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyY')) {
+		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
 			this.consumeKey(keyboard, 'KeyY');
 			this.redo();
 			return;
@@ -1172,22 +1172,26 @@ export class ConsoleCartEditor {
 	}
 
 	private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, altDown: boolean): void {
-		if (altDown) {
-			if (this.isKeyJustPressed(keyboard, 'ArrowUp')) {
-				this.consumeKey(keyboard, 'ArrowUp');
-				this.moveSelectionLines(-1);
-				return;
-			}
-			if (this.isKeyJustPressed(keyboard, 'ArrowDown')) {
-				this.consumeKey(keyboard, 'ArrowDown');
-				this.moveSelectionLines(1);
-				return;
-			}
-		}
-
 		const previousPosition: Position = { row: this.cursorRow, column: this.cursorColumn };
 		if (shiftDown) {
 			this.ensureSelectionAnchor(previousPosition);
+		}
+
+		if (altDown) {
+			let movedAlt = false;
+			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+				this.consumeKey(keyboard, 'ArrowUp');
+				this.moveSelectionLines(-1);
+				movedAlt = true;
+			}
+			if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+				this.consumeKey(keyboard, 'ArrowDown');
+				this.moveSelectionLines(1);
+				movedAlt = true;
+			}
+			if (movedAlt) {
+				return;
+			}
 		}
 
 		if (!shiftDown && this.collapseSelectionOnNavigation(keyboard)) {
@@ -1231,7 +1235,7 @@ export class ConsoleCartEditor {
 			}
 		}
 
-		if (this.isKeyJustPressed(keyboard, 'Home')) {
+		if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
 			if (ctrlDown) {
 				this.cursorRow = 0;
 				this.cursorColumn = 0;
@@ -1243,7 +1247,7 @@ export class ConsoleCartEditor {
 			this.consumeKey(keyboard, 'Home');
 			moved = true;
 		}
-		if (this.isKeyJustPressed(keyboard, 'End')) {
+		if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
 			if (ctrlDown) {
 				const lastRow = this.lines.length - 1;
 				if (lastRow < 0) {
@@ -1261,7 +1265,7 @@ export class ConsoleCartEditor {
 			this.consumeKey(keyboard, 'End');
 			moved = true;
 		}
-		if (this.isKeyJustPressed(keyboard, 'PageUp')) {
+		if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
 			const rows = this.visibleRowCount();
 			this.cursorRow = Math.max(0, this.cursorRow - rows);
 			const lineLength = this.currentLine().length;
@@ -1271,7 +1275,7 @@ export class ConsoleCartEditor {
 			this.consumeKey(keyboard, 'PageUp');
 			moved = true;
 		}
-		if (this.isKeyJustPressed(keyboard, 'PageDown')) {
+		if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
 			const rows = this.visibleRowCount();
 			this.cursorRow = Math.min(this.lines.length - 1, this.cursorRow + rows);
 			const lineLength = this.currentLine().length;
@@ -1754,6 +1758,9 @@ private moveCursorHorizontal(delta: number): void {
 	}
 
 	private findWordLeft(row: number, column: number): { row: number; column: number } {
+		if (this.lines.length === 0) {
+			return { row: 0, column: 0 };
+		}
 		let currentRow = row;
 		let currentColumn = column;
 		let step = this.stepLeft(currentRow, currentColumn);
@@ -2438,17 +2445,24 @@ private insertTab(): void {
 		};
 	}
 
-	private restoreSnapshot(snapshot: EditorSnapshot): void {
+	private restoreSnapshot(snapshot: EditorSnapshot, preserveSelection: boolean = false): void {
+		const preservedSelection = preserveSelection && this.selectionAnchor
+			? { row: this.selectionAnchor.row, column: this.selectionAnchor.column }
+			: null;
 		this.lines = snapshot.lines.slice();
 		this.invalidateAllHighlights();
 		this.cursorRow = snapshot.cursorRow;
 		this.cursorColumn = snapshot.cursorColumn;
 		this.scrollRow = snapshot.scrollRow;
 		this.scrollColumn = snapshot.scrollColumn;
-		if (snapshot.selectionAnchor) {
-			this.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
+		if (!preserveSelection) {
+			if (snapshot.selectionAnchor) {
+				this.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
+			} else {
+				this.selectionAnchor = null;
+			}
 		} else {
-			this.selectionAnchor = null;
+			this.selectionAnchor = this.clampSelectionPosition(preservedSelection);
 		}
 		this.dirty = snapshot.dirty;
 		this.bumpTextVersion();
@@ -2485,35 +2499,35 @@ private insertTab(): void {
 		if (this.undoStack.length === 0) {
 			return;
 		}
-		const snapshot = this.undoStack.pop();
-		if (!snapshot) {
-			return;
-		}
-		const current = this.captureSnapshot();
-		if (this.redoStack.length >= UNDO_HISTORY_LIMIT) {
-			this.redoStack.shift();
-		}
-		this.redoStack.push(current);
-		this.restoreSnapshot(snapshot);
-		this.breakUndoSequence();
+	const snapshot = this.undoStack.pop();
+	if (!snapshot) {
+		return;
 	}
+	const current = this.captureSnapshot();
+	if (this.redoStack.length >= UNDO_HISTORY_LIMIT) {
+		this.redoStack.shift();
+	}
+	this.redoStack.push(current);
+	this.restoreSnapshot(snapshot, true);
+	this.breakUndoSequence();
+}
 
 	private redo(): void {
 		if (this.redoStack.length === 0) {
 			return;
 		}
-		const snapshot = this.redoStack.pop();
-		if (!snapshot) {
-			return;
-		}
-		const current = this.captureSnapshot();
-		if (this.undoStack.length >= UNDO_HISTORY_LIMIT) {
-			this.undoStack.shift();
-		}
-		this.undoStack.push(current);
-		this.restoreSnapshot(snapshot);
-		this.breakUndoSequence();
+	const snapshot = this.redoStack.pop();
+	if (!snapshot) {
+		return;
 	}
+	const current = this.captureSnapshot();
+	if (this.undoStack.length >= UNDO_HISTORY_LIMIT) {
+		this.undoStack.shift();
+	}
+	this.undoStack.push(current);
+	this.restoreSnapshot(snapshot, true);
+	this.breakUndoSequence();
+}
 
 	private breakUndoSequence(): void {
 		this.lastHistoryKey = null;
@@ -3429,6 +3443,26 @@ private insertTab(): void {
 		if (this.cursorColumn > length) {
 			this.cursorColumn = length;
 		}
+	}
+
+	private clampSelectionPosition(position: Position | null): Position | null {
+		if (!position || this.lines.length === 0) {
+			return null;
+		}
+		let row = position.row;
+		if (row < 0) {
+			row = 0;
+		} else if (row >= this.lines.length) {
+			row = this.lines.length - 1;
+		}
+		const line = this.lines[row] ?? '';
+		let column = position.column;
+		if (column < 0) {
+			column = 0;
+		} else if (column > line.length) {
+			column = line.length;
+		}
+		return { row, column };
 	}
 
 	private resetBlink(): void {
