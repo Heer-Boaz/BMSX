@@ -23,49 +23,15 @@ export type BmsxConsoleRuntimeOptions = {
 	storage?: StorageService;
 };
 
-type BmsxConsoleRuntimeSnapshot = {
+export type BmsxConsoleState = {
 	frameCounter: number;
 	luaRuntimeFailed: boolean;
 	luaProgramSourceOverride: string | null;
 	luaChunkName: string | null;
-	luaState?: SerializedLuaState | null;
+	luaSnapshot?: unknown;
 	cartState?: unknown;
 	storage?: { namespace: string; entries: Array<{ index: number; value: number }> };
 	physics?: Physics2DSerializedState;
-};
-
-type SerializedLuaKey =
-	| { kind: 'string'; value: string }
-	| { kind: 'number'; value: number }
-	| { kind: 'boolean'; value: boolean };
-
-type SerializedLuaValue =
-	| { kind: 'nil' }
-	| { kind: 'boolean'; value: boolean }
-	| { kind: 'number'; value: number }
-	| { kind: 'string'; value: string }
-	| { kind: 'table'; id: number };
-
-type SerializedLuaTableEntry = {
-	key: SerializedLuaKey;
-	value: SerializedLuaValue;
-};
-
-type SerializedLuaTable = {
-	id: number;
-	entries: SerializedLuaTableEntry[];
-};
-
-type SerializedLuaState = {
-	tables: SerializedLuaTable[];
-	globals: Array<{ name: string; value: SerializedLuaValue }>;
-	randomSeed: number;
-	nextHandleId: number;
-};
-
-type LuaSerializationContext = {
-	tableIds: Map<LuaTable, number>;
-	tables: SerializedLuaTable[];
 };
 
 export class BmsxConsoleRuntime extends Service {
@@ -116,6 +82,8 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaObjectToHandle = new WeakMap<object, number>();
 	private nextLuaHandleId = 1;
 	private wrapDepth = 0;
+	private luaSnapshotSave: LuaFunctionValue | null = null;
+	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
 	private lastFrameTimestampMs = 0;
 	private readonly presentationFrameHandler: (event_name: string, emitter: Identifiable, payload?: EventPayload) => void;
@@ -240,14 +208,14 @@ export class BmsxConsoleRuntime extends Service {
 		const editorActive = editor?.isActive() === true;
 		this.setEditorPipelineActive(editorActive);
 		const paused = $.paused === true;
-		const frameDelta = paused ? 0 : deltaSeconds;
-		this.api.beginFrame(this.frameCounter, frameDelta);
 		if (paused) {
+			this.api.beginPausedFrame(this.frameCounter);
 			if (editorActive && editor) {
 				editor.draw(this.api);
 			}
 			return;
 		}
+		this.api.beginFrame(this.frameCounter, deltaSeconds);
 		if (editorActive && editor) {
 			editor.draw(this.api);
 			this.frameCounter += 1;
@@ -324,10 +292,10 @@ export class BmsxConsoleRuntime extends Service {
 		});
 	}
 
-	public override getState(): BmsxConsoleRuntimeSnapshot | undefined {
+	public override getState(): BmsxConsoleState | undefined {
 		const storageState = this.storage.dump();
 		const physicsState = this.physics.snapshot();
-		const luaState = this.hasLuaProgram() ? this.captureLuaState() : null;
+		const luaSnapshot = this.captureLuaSnapshot();
 		const cartState = (!this.hasLuaProgram() && typeof this.cart.captureState === 'function')
 			? this.cart.captureState(this.api)
 			: undefined;
@@ -336,7 +304,7 @@ export class BmsxConsoleRuntime extends Service {
 			luaRuntimeFailed: this.luaRuntimeFailed,
 			luaProgramSourceOverride: this.luaProgramSourceOverride,
 			luaChunkName: this.luaChunkName,
-			luaState,
+			luaSnapshot,
 			cartState,
 			storage: storageState,
 			physics: physicsState,
@@ -348,7 +316,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.boot();
 			return;
 		}
-		const snapshot = state as BmsxConsoleRuntimeSnapshot;
+		const snapshot = state as BmsxConsoleState;
 		if (snapshot.storage) {
 			this.storage.restore(snapshot.storage);
 		}
@@ -364,13 +332,34 @@ export class BmsxConsoleRuntime extends Service {
 		if (snapshot.physics) {
 			this.physics.restore(snapshot.physics);
 		}
-		if (this.hasLuaProgram() && snapshot.luaState) {
-			this.restoreLuaState(snapshot.luaState);
+		if (this.hasLuaProgram() && snapshot.luaSnapshot !== undefined) {
+			this.applyLuaSnapshot(snapshot.luaSnapshot);
 		}
 		if (!this.hasLuaProgram() && snapshot.cartState !== undefined && typeof this.cart.restoreState === 'function') {
 			this.cart.restoreState(this.api, snapshot.cartState);
 		}
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
+		this.redrawAfterStateRestore();
+	}
+
+	private redrawAfterStateRestore(): void {
+		if (this.hasLuaProgram()) {
+			if (this.luaRuntimeFailed) {
+				return;
+			}
+			this.api.beginFrame(this.frameCounter, 0);
+			if (this.luaDrawFunction !== null) {
+				try {
+					this.invokeLuaFunction(this.luaDrawFunction, []);
+				}
+				catch (error) {
+					this.handleLuaError(error);
+				}
+			}
+			return;
+		}
+		this.api.beginFrame(this.frameCounter, 0);
+		this.cart.draw(this.api);
 	}
 
 	private getEditorSource(): string {
@@ -381,159 +370,31 @@ export class BmsxConsoleRuntime extends Service {
 		return this.getLuaProgramSource(program);
 	}
 
-	private captureLuaState(): SerializedLuaState | null {
-		const interpreter = this.luaInterpreter;
-		if (!interpreter) return null;
-		const ctx: LuaSerializationContext = { tableIds: new Map<LuaTable, number>(), tables: [] };
-		const globals: Array<{ name: string; value: SerializedLuaValue }> = [];
-		for (const [name, value] of interpreter.enumerateGlobalEntries()) {
-			const serialized = this.serializeLuaValue(value, ctx);
-			if (!serialized) continue;
-			globals.push({ name, value: serialized });
+	private captureLuaSnapshot(): unknown {
+		if (!this.luaSnapshotSave || this.luaRuntimeFailed) {
+			return undefined;
 		}
-		return {
-			tables: ctx.tables,
-			globals,
-			randomSeed: interpreter.getRandomSeed(),
-			nextHandleId: this.nextLuaHandleId,
-		};
-	}
-
-	private restoreLuaState(state: SerializedLuaState): void {
-		const interpreter = this.luaInterpreter;
-		if (!interpreter) return;
-		const tableInstances: LuaTable[] = state.tables.map(() => new LuaTable());
-		for (const tableData of state.tables) {
-			const target = tableInstances[tableData.id];
-			if (!target) continue;
-			for (const entry of tableData.entries) {
-				const key = this.deserializeLuaKey(entry.key);
-				if (key === null) continue;
-				const value = this.deserializeLuaValue(entry.value, tableInstances);
-				if (value === undefined) continue;
-				target.set(key, value);
-			}
+		try {
+			const results = this.invokeLuaFunction(this.luaSnapshotSave, []);
+			if (!results || results.length === 0) return undefined;
+			return this.luaValueToJs(results[0]);
 		}
-		for (const global of state.globals) {
-			const value = this.deserializeLuaValue(global.value, tableInstances);
-			if (value === undefined) continue;
-			interpreter.setGlobal(global.name, value);
-		}
-		if (Number.isFinite(state.randomSeed)) {
-			interpreter.setRandomSeed(state.randomSeed);
-		}
-		if (Number.isFinite(state.nextHandleId)) {
-			this.nextLuaHandleId = Math.max(this.nextLuaHandleId, state.nextHandleId);
+		catch (error) {
+			console.error('[BmsxConsoleRuntime] Failed to capture Lua snapshot:', error);
+			return undefined;
 		}
 	}
 
-	private serializeLuaValue(value: LuaValue, ctx: LuaSerializationContext): SerializedLuaValue | null {
-		if (value === null) {
-			return { kind: 'nil' };
+	private applyLuaSnapshot(snapshot: unknown): void {
+		if (!this.luaSnapshotLoad || snapshot === undefined) {
+			return;
 		}
-		const valueType = typeof value;
-		if (valueType === 'boolean') {
-			return { kind: 'boolean', value: value as boolean };
+		try {
+			this.invokeLuaFunction(this.luaSnapshotLoad, [snapshot]);
 		}
-		if (valueType === 'number') {
-			const numeric = value as number;
-			if (!Number.isFinite(numeric)) return null;
-			return { kind: 'number', value: numeric };
+		catch (error) {
+			console.error('[BmsxConsoleRuntime] Failed to restore Lua snapshot:', error);
 		}
-		if (valueType === 'string') {
-			return { kind: 'string', value: value as string };
-		}
-		if (value instanceof LuaTable) {
-			return this.serializeLuaTable(value, ctx);
-		}
-		return null;
-	}
-
-	private serializeLuaTable(table: LuaTable, ctx: LuaSerializationContext): SerializedLuaValue | null {
-		if (this.isLuaHandleTable(table)) {
-			return null;
-		}
-		const existing = ctx.tableIds.get(table);
-		if (existing !== undefined) {
-			return { kind: 'table', id: existing };
-		}
-		const id = ctx.tables.length;
-		ctx.tableIds.set(table, id);
-		const placeholder: SerializedLuaTable = { id, entries: [] };
-		ctx.tables.push(placeholder);
-		for (const [rawKey, rawValue] of table.entriesArray()) {
-			const key = this.serializeLuaKey(rawKey);
-			if (!key) {
-				ctx.tableIds.delete(table);
-				ctx.tables.pop();
-				return null;
-			}
-			const value = this.serializeLuaValue(rawValue, ctx);
-			if (!value) {
-				ctx.tableIds.delete(table);
-				ctx.tables.pop();
-				return null;
-			}
-			placeholder.entries.push({ key, value });
-		}
-		return { kind: 'table', id };
-	}
-
-	private serializeLuaKey(value: LuaValue): SerializedLuaKey | null {
-		if (typeof value === 'string') {
-			return { kind: 'string', value };
-		}
-		if (typeof value === 'number') {
-			if (!Number.isFinite(value)) return null;
-			return { kind: 'number', value };
-		}
-		if (typeof value === 'boolean') {
-			return { kind: 'boolean', value };
-		}
-		return null;
-	}
-
-	private deserializeLuaValue(value: SerializedLuaValue, tables: LuaTable[]): LuaValue | undefined {
-		switch (value.kind) {
-			case 'nil':
-				return null;
-			case 'boolean':
-				return value.value;
-			case 'number':
-				return value.value;
-			case 'string':
-				return value.value;
-			case 'table': {
-				const table = tables[value.id];
-				if (!table) return undefined;
-				return table;
-			}
-			default:
-				return undefined;
-		}
-	}
-
-	private deserializeLuaKey(key: SerializedLuaKey): LuaValue | null {
-		switch (key.kind) {
-			case 'string':
-				return key.value;
-			case 'number':
-				return key.value;
-			case 'boolean':
-				return key.value;
-			default:
-				return null;
-		}
-	}
-
-	private isLuaHandleTable(table: LuaTable): boolean {
-		if (table.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD) !== null) {
-			return true;
-		}
-		if (table.get(BmsxConsoleRuntime.LUA_TYPE_FIELD) !== null) {
-			return true;
-		}
-		return false;
 	}
 
 	private bootLuaProgram(): void {
@@ -543,6 +404,8 @@ export class BmsxConsoleRuntime extends Service {
 		const source = this.getLuaProgramSource(program);
 		const chunkName = this.resolveLuaProgramChunkName(program);
 
+		this.luaSnapshotSave = null;
+		this.luaSnapshotLoad = null;
 		this.luaInterpreter = createLuaInterpreter();
 		this.luaInitFunction = null;
 		this.luaUpdateFunction = null;
@@ -565,6 +428,8 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaInitFunction = this.resolveLuaFunction(env.get(program.entry?.init ?? 'init'));
 		this.luaUpdateFunction = this.resolveLuaFunction(env.get(program.entry?.update ?? 'update'));
 		this.luaDrawFunction = this.resolveLuaFunction(env.get(program.entry?.draw ?? 'draw'));
+		this.luaSnapshotSave = this.resolveLuaFunction(env.get('__bmsx_snapshot_save'));
+		this.luaSnapshotLoad = this.resolveLuaFunction(env.get('__bmsx_snapshot_load'));
 
 		if (this.luaInitFunction !== null) {
 			try {

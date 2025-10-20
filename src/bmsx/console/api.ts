@@ -717,6 +717,12 @@ export class BmsxConsoleApi {
 		}
 	}
 
+	public beginPausedFrame(frame: number): void {
+		this.frameIndex = frame;
+		this.deltaSecondsValue = 0;
+		this.replayCommands();
+	}
+
 	private executeCommand(command: DrawCommand): void {
 		switch (command.kind) {
 			case 'rect':

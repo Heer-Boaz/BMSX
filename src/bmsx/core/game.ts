@@ -28,6 +28,7 @@ import { registerBuiltinECS } from "../ecs/builtin_pipeline";
 import type { NodeSpec } from "../ecs/pipeline";
 import { collectEcsPipelineExtensions } from "../ecs/extensions";
 import { gameplaySpec } from './pipelines/gameplay';
+import { BmsxConsoleRuntime } from '../console/runtime';
 import type { GPUBackend } from '../render/backend/pipeline_interfaces';
 // No direct space helpers needed here; Spaces are revived as part of the world.
 
@@ -618,6 +619,10 @@ export class Game {
 		}
 		if (Object.keys(servicesState).length > 0) sg.servicesState = servicesState;
 
+		const consoleRuntime = BmsxConsoleRuntime.instance;
+		if (consoleRuntime) {
+			sg.bmsxConsoleState = consoleRuntime.getState();
+		}
 		const serialized = Serializer.serialize(sg) as Uint8Array;
 		return compress ? BinaryCompressor.compressBinary(serialized) : serialized;
 	}
@@ -663,6 +668,10 @@ export class Game {
 			for (const [id, dto] of Object.entries(services)) {
 				const svc = this.registry.get(id) as Service | undefined;
 				svc?.setState?.(dto);
+			}
+			const consoleRuntime = BmsxConsoleRuntime.instance;
+			if (consoleRuntime) {
+				consoleRuntime.setState(sg.bmsxConsoleState ?? null);
 			}
 		} catch (e) {
 			console.error(`Error loading game state: ${e}`);

@@ -14,6 +14,7 @@
 import { type ModulationParams } from "../audio/soundmaster";
 import { Space } from '../core/space';
 import { $ } from '../core/game';
+import type { BmsxConsoleState } from '../console/runtime';
 import { Registry } from "../core/registry";
 import { GameView, SkyboxImageIds } from '../render/gameview';
 import { decodeBinary, encodeBinary } from "./binencoder";
@@ -528,6 +529,7 @@ export class Savegame {
 	SMState: SoundMasterState;
 	viewState: ViewState;
 	timestamp: number;
+	bmsxConsoleState?: BmsxConsoleState;
 
 	constructor(_opts?: RevivableObjectArgs) {
 		this.timestamp = Date.now();
