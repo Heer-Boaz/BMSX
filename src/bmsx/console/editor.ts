@@ -61,6 +61,7 @@ const CHARACTER_MAP: { [code: string]: CharacterMapEntry } = {
 	Slash: { normal: '/', shift: '?' },
 	Backquote: { normal: '`', shift: '~' },
 };
+const CHARACTER_CODES = Object.keys(CHARACTER_MAP);
 
 type RepeatEntry = {
 	cooldown: number;
@@ -206,6 +207,7 @@ export class ConsoleCartEditor {
 	private readonly spaceAdvance: number;
 	private readonly glyphCache: Map<string, ReturnType<ConsoleEditorFont['getGlyph']>> = new Map();
 	private readonly highlightCache: Map<number, CachedHighlight> = new Map();
+	private readonly maxHighlightCache = 2048;
 	private readonly gutterWidth: number;
 	private readonly headerHeight: number;
 	private readonly topMargin: number;
@@ -695,6 +697,18 @@ export class ConsoleCartEditor {
 			this.openSearch(true);
 			return;
 		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyA')) {
+			this.consumeKey(keyboard, 'KeyA');
+			this.selectionAnchor = { row: 0, column: 0 };
+			const lastRowIndex = this.lines.length > 0 ? this.lines.length - 1 : 0;
+			const lastColumn = this.lines.length > 0 ? this.lines[lastRowIndex].length : 0;
+			this.cursorRow = lastRowIndex;
+			this.cursorColumn = lastColumn;
+			this.updateDesiredColumn();
+			this.resetBlink();
+			this.revealCursor();
+			return;
+		}
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyL')) {
 			this.consumeKey(keyboard, 'KeyL');
 			this.openLineJump();
@@ -743,7 +757,11 @@ export class ConsoleCartEditor {
 		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyX')) {
 			this.consumeKey(keyboard, 'KeyX');
-			void this.cutSelectionToClipboard();
+			if (this.hasSelection()) {
+				void this.cutSelectionToClipboard();
+			} else {
+				void this.cutLineToClipboard();
+			}
 			return;
 		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyV')) {
@@ -762,10 +780,10 @@ export class ConsoleCartEditor {
 			return;
 		}
 		this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
+		this.handleEditingKeys(keyboard, deltaSeconds, shiftDown, ctrlDown);
 		if (ctrlDown || metaDown || altDown) {
 			return;
 		}
-		this.handleEditingKeys(keyboard, deltaSeconds, shiftDown);
 		this.handleCharacterInput(keyboard, shiftDown);
 		if (this.isKeyJustPressed(keyboard, 'Space')) {
 			this.insertText(' ');
@@ -854,9 +872,8 @@ export class ConsoleCartEditor {
 			this.appendToSearchQuery(' ');
 			return;
 		}
-		const codes = Object.keys(CHARACTER_MAP);
-		for (let i = 0; i < codes.length; i++) {
-			const code = codes[i];
+		for (let i = 0; i < CHARACTER_CODES.length; i++) {
+			const code = CHARACTER_CODES[i];
 			if (!this.isKeyTyped(keyboard, code)) {
 				continue;
 			}
@@ -1274,14 +1291,18 @@ export class ConsoleCartEditor {
 		}
 
 		if (shiftDown && this.isKeyJustPressed(keyboard, 'Tab')) {
-			this.unindentCurrentLine();
+			this.unindentSelectionOrLine();
 			this.consumeKey(keyboard, 'Tab');
 		}
 	}
 
-	private handleEditingKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean): void {
+	private handleEditingKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean): void {
 		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
-			this.backspace();
+			if (ctrlDown) {
+				this.deleteWordBackward();
+			} else {
+				this.backspace();
+			}
 			this.consumeKey(keyboard, 'Backspace');
 		}
 		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
@@ -1723,128 +1744,115 @@ private moveCursorHorizontal(delta: number): void {
 	this.revealCursor();
 }
 
-private moveWordLeft(): void {
-	let row = this.cursorRow;
-	let column = this.cursorColumn;
-	let step = this.stepLeft(row, column);
-	if (!step) {
-		this.cursorRow = 0;
-		this.cursorColumn = 0;
+	private moveWordLeft(): void {
+		const destination = this.findWordLeft(this.cursorRow, this.cursorColumn);
+		this.cursorRow = destination.row;
+		this.cursorColumn = destination.column;
 		this.updateDesiredColumn();
 		this.resetBlink();
-		return;
+		this.revealCursor();
 	}
-	row = step.row;
-	column = step.column;
-	let currentChar = this.charAt(row, column);
-	while (this.isWhitespace(currentChar)) {
-		const previous = this.stepLeft(row, column);
-		if (!previous) {
-			this.cursorRow = row;
-			this.cursorColumn = column;
-			this.updateDesiredColumn();
-			this.resetBlink();
-			return;
-		}
-		row = previous.row;
-		column = previous.column;
-		currentChar = this.charAt(row, column);
-	}
-	const word = this.isWordChar(currentChar);
-	while (true) {
-		const previous = this.stepLeft(row, column);
-		if (!previous) {
-			break;
-		}
-		const previousChar = this.charAt(previous.row, previous.column);
-		if (this.isWhitespace(previousChar)) {
-			break;
-		}
-		if (this.isWordChar(previousChar) !== word) {
-			break;
-		}
-		row = previous.row;
-		column = previous.column;
-	}
-	this.cursorRow = row;
-	this.cursorColumn = column;
-	this.updateDesiredColumn();
-	this.resetBlink();
-	this.revealCursor();
-}
 
-private moveWordRight(): void {
-	let row = this.cursorRow;
-	let column = this.cursorColumn;
-	let step = this.stepRight(row, column);
-	if (!step) {
-		this.cursorRow = this.lines.length - 1;
-		this.cursorColumn = this.lines[this.lines.length - 1].length;
+	private findWordLeft(row: number, column: number): { row: number; column: number } {
+		let currentRow = row;
+		let currentColumn = column;
+		let step = this.stepLeft(currentRow, currentColumn);
+		if (!step) {
+			return { row: 0, column: 0 };
+		}
+		currentRow = step.row;
+		currentColumn = step.column;
+		let currentChar = this.charAt(currentRow, currentColumn);
+		while (this.isWhitespace(currentChar)) {
+			const previous = this.stepLeft(currentRow, currentColumn);
+			if (!previous) {
+				return { row: currentRow, column: currentColumn };
+			}
+			currentRow = previous.row;
+			currentColumn = previous.column;
+			currentChar = this.charAt(currentRow, currentColumn);
+		}
+		const word = this.isWordChar(currentChar);
+		while (true) {
+			const previous = this.stepLeft(currentRow, currentColumn);
+			if (!previous) {
+				break;
+			}
+			const previousChar = this.charAt(previous.row, previous.column);
+			if (this.isWhitespace(previousChar) || this.isWordChar(previousChar) !== word) {
+				break;
+			}
+			currentRow = previous.row;
+			currentColumn = previous.column;
+		}
+		return { row: currentRow, column: currentColumn };
+	}
+
+	private findWordRight(row: number, column: number): { row: number; column: number } {
+		let currentRow = row;
+		let currentColumn = column;
+		let step = this.stepRight(currentRow, currentColumn);
+		if (!step) {
+			const lastRow = this.lines.length - 1;
+			return { row: lastRow, column: this.lines[lastRow].length };
+		}
+		currentRow = step.row;
+		currentColumn = step.column;
+		let currentChar = this.charAt(currentRow, currentColumn);
+		while (this.isWhitespace(currentChar)) {
+			const next = this.stepRight(currentRow, currentColumn);
+			if (!next) {
+				const lastRow = this.lines.length - 1;
+				return { row: lastRow, column: this.lines[lastRow].length };
+			}
+			currentRow = next.row;
+			currentColumn = next.column;
+			currentChar = this.charAt(currentRow, currentColumn);
+		}
+		const word = this.isWordChar(currentChar);
+		while (true) {
+			const next = this.stepRight(currentRow, currentColumn);
+			if (!next) {
+				const lastRow = this.lines.length - 1;
+				currentRow = lastRow;
+				currentColumn = this.lines[lastRow].length;
+				break;
+			}
+			const nextChar = this.charAt(next.row, next.column);
+			if (this.isWhitespace(nextChar) || this.isWordChar(nextChar) !== word) {
+				currentRow = next.row;
+				currentColumn = next.column;
+				break;
+			}
+			currentRow = next.row;
+			currentColumn = next.column;
+		}
+		while (this.isWhitespace(this.charAt(currentRow, currentColumn))) {
+			const next = this.stepRight(currentRow, currentColumn);
+			if (!next) {
+				const lastRow = this.lines.length - 1;
+				currentRow = lastRow;
+				currentColumn = this.lines[lastRow].length;
+				break;
+			}
+			currentRow = next.row;
+			currentColumn = next.column;
+		}
+		return { row: currentRow, column: currentColumn };
+	}
+
+	private moveWordRight(): void {
+		const destination = this.findWordRight(this.cursorRow, this.cursorColumn);
+		this.cursorRow = destination.row;
+		this.cursorColumn = destination.column;
 		this.updateDesiredColumn();
 		this.resetBlink();
-		return;
+		this.revealCursor();
 	}
-	row = step.row;
-	column = step.column;
-	let currentChar = this.charAt(row, column);
-	while (this.isWhitespace(currentChar)) {
-		const next = this.stepRight(row, column);
-		if (!next) {
-			row = this.lines.length - 1;
-			column = this.lines[row].length;
-			this.cursorRow = row;
-			this.cursorColumn = column;
-			this.updateDesiredColumn();
-			this.resetBlink();
-			return;
-		}
-		row = next.row;
-		column = next.column;
-		currentChar = this.charAt(row, column);
-	}
-	const word = this.isWordChar(currentChar);
-	while (true) {
-		const next = this.stepRight(row, column);
-		if (!next) {
-			row = this.lines.length - 1;
-			column = this.lines[row].length;
-			break;
-		}
-		const nextChar = this.charAt(next.row, next.column);
-		if (this.isWhitespace(nextChar)) {
-			row = next.row;
-			column = next.column;
-			break;
-		}
-		if (this.isWordChar(nextChar) !== word) {
-			row = next.row;
-			column = next.column;
-			break;
-		}
-		row = next.row;
-		column = next.column;
-	}
-	while (this.isWhitespace(this.charAt(row, column))) {
-		const next = this.stepRight(row, column);
-		if (!next) {
-			row = this.lines.length - 1;
-			column = this.lines[row].length;
-			break;
-		}
-		row = next.row;
-		column = next.column;
-	}
-	this.cursorRow = row;
-	this.cursorColumn = column;
-	this.updateDesiredColumn();
-	this.resetBlink();
-	this.revealCursor();
-}
 
 	private handleCharacterInput(keyboard: KeyboardInput, shiftDown: boolean): void {
-		const codes = Object.keys(CHARACTER_MAP);
-		for (let i = 0; i < codes.length; i++) {
-			const code = codes[i];
+		for (let i = 0; i < CHARACTER_CODES.length; i++) {
+			const code = CHARACTER_CODES[i];
 			if (!this.isKeyTyped(keyboard, code)) {
 				continue;
 			}
@@ -2051,35 +2059,20 @@ private insertTab(): void {
 		this.revealCursor();
 	}
 
-	private unindentCurrentLine(): void {
-		const line = this.currentLine();
-		const indentMatch = line.match(/^[\t ]+/);
-		if (!indentMatch) {
+	private deleteWordBackward(): void {
+		this.prepareUndo('delete-word-backward', false);
+		if (this.deleteSelectionIfPresent()) {
 			return;
 		}
-		const indent = indentMatch[0];
-		const first = indent.charAt(0);
-		let removeCount = 0;
-		if (first === '\t') {
-			removeCount = 1;
-		}
-		else {
-			removeCount = Math.min(TAB_SPACES, indent.length);
-		}
-		if (removeCount === 0) {
+		if (this.cursorRow === 0 && this.cursorColumn === 0) {
 			return;
 		}
-		this.prepareUndo('unindent', false);
-		const remainingIndent = indent.slice(removeCount);
-		const rest = line.slice(indent.length);
-		this.lines[this.cursorRow] = remainingIndent + rest;
-		this.invalidateLine(this.cursorRow);
-		const delta = removeCount;
-		this.cursorColumn = Math.max(0, this.cursorColumn - delta);
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.revealCursor();
+		const target = this.findWordLeft(this.cursorRow, this.cursorColumn);
+		if (target.row === this.cursorRow && target.column === this.cursorColumn) {
+			return;
+		}
+		this.selectionAnchor = { row: target.row, column: target.column };
+		this.replaceSelectionWith('');
 	}
 
 	private save(): void {
@@ -2334,6 +2327,37 @@ private insertTab(): void {
 		this.replaceSelectionWith('');
 	}
 
+	private async cutLineToClipboard(): Promise<void> {
+		if (this.lines.length === 0) {
+			this.showMessage('Nothing selected to cut', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		const currentLine = this.currentLine();
+		const isLastLine = this.cursorRow >= this.lines.length - 1;
+		const text = isLastLine ? currentLine : currentLine + '\n';
+		this.prepareUndo('cut-line', false);
+		await this.writeClipboard(text, 'Cut line to clipboard');
+		if (this.lines.length === 1) {
+			this.lines[0] = '';
+			this.cursorColumn = 0;
+		} else {
+			this.lines.splice(this.cursorRow, 1);
+			if (this.cursorRow >= this.lines.length) {
+				this.cursorRow = this.lines.length - 1;
+			}
+			const newLength = this.lines[this.cursorRow].length;
+			if (this.cursorColumn > newLength) {
+				this.cursorColumn = newLength;
+			}
+		}
+		this.invalidateAllHighlights();
+		this.selectionAnchor = null;
+		this.markTextMutated();
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.revealCursor();
+	}
+
 	private pasteFromClipboard(): void {
 		const text = ConsoleCartEditor.customClipboard;
 		if (text === null || text.length === 0) {
@@ -2421,18 +2445,18 @@ private insertTab(): void {
 		this.cursorColumn = snapshot.cursorColumn;
 		this.scrollRow = snapshot.scrollRow;
 		this.scrollColumn = snapshot.scrollColumn;
-	if (snapshot.selectionAnchor) {
-		this.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
-	} else {
-		this.selectionAnchor = null;
+		if (snapshot.selectionAnchor) {
+			this.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
+		} else {
+			this.selectionAnchor = null;
+		}
+		this.dirty = snapshot.dirty;
+		this.bumpTextVersion();
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.cursorRevealSuspended = false;
+		this.ensureCursorVisible();
 	}
-	this.dirty = snapshot.dirty;
-	this.bumpTextVersion();
-	this.updateDesiredColumn();
-	this.resetBlink();
-	this.cursorRevealSuspended = false;
-	this.ensureCursorVisible();
-}
 
 	private prepareUndo(key: string, allowMerge: boolean): void {
 		const now = Date.now();
@@ -2570,7 +2594,9 @@ private insertTab(): void {
 		this.drawText(api, queryText, queryX, labelY, queryColor);
 
 		const caretX = queryX + this.measureText(this.searchQuery);
-		const caretWidth = this.charAdvance;
+		const caretGlyphSource = this.searchQuery.length > 0 ? this.searchQuery.charAt(this.searchQuery.length - 1) : ' ';
+		const caretGlyph = this.getGlyph(caretGlyphSource);
+		const caretWidth = caretGlyph.advance > 0 ? caretGlyph.advance : this.charAdvance;
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
 		const caretTop = Math.floor(labelY);
@@ -2752,7 +2778,7 @@ private insertTab(): void {
 	const entry = this.getCachedHighlight(overlay.row);
 		const highlight = entry.hi;
 		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 4);
-		const anchorDisplay = this.columnToDisplay(highlight, Math.min(overlay.column, highlight.columnToDisplay.length - 1));
+		const anchorDisplay = this.columnToDisplay(highlight, overlay.column);
 		const clampedAnchorDisplay = Math.max(slice.startDisplay, Math.min(anchorDisplay, slice.endDisplay));
 		const anchorX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedAnchorDisplay);
 		const rowTop = codeTop + relativeRow * this.lineHeight;
@@ -2924,22 +2950,15 @@ private insertTab(): void {
 			return cached;
 		}
 		const highlight = this.highlightLine(source);
-		const displayToColumn: number[] = new Array(highlight.chars.length + 1);
-		if (highlight.chars.length === 0) {
-			displayToColumn[0] = source.length;
-		} else {
-			for (let column = 0; column < source.length; column++) {
-				const startDisplay = highlight.columnToDisplay[column];
-				const endDisplay = highlight.columnToDisplay[column + 1];
-				for (let display = startDisplay; display < endDisplay; display++) {
-					displayToColumn[display] = column;
-				}
+		const displayToColumn = new Array<number>(highlight.chars.length + 1).fill(0);
+		for (let column = 0; column < source.length; column++) {
+			const startDisplay = highlight.columnToDisplay[column];
+			const endDisplay = highlight.columnToDisplay[column + 1];
+			for (let display = startDisplay; display < endDisplay; display++) {
+				displayToColumn[display] = column;
 			}
-			displayToColumn[highlight.chars.length] = source.length;
 		}
-		if (displayToColumn[0] === undefined) {
-			displayToColumn[0] = source.length;
-		}
+		displayToColumn[highlight.chars.length] = source.length;
 		const advancePrefix: number[] = new Array(highlight.chars.length + 1);
 		advancePrefix[0] = 0;
 		for (let i = 0; i < highlight.chars.length; i++) {
@@ -2952,6 +2971,13 @@ private insertTab(): void {
 			advancePrefix,
 		};
 		this.highlightCache.set(row, entry);
+		while (this.highlightCache.size > this.maxHighlightCache) {
+			const firstKey = this.highlightCache.keys().next().value as number | undefined;
+			if (firstKey === undefined) {
+				break;
+			}
+			this.highlightCache.delete(firstKey);
+		}
 		return entry;
 	}
 
@@ -3055,6 +3081,27 @@ private insertTab(): void {
 		let i = 0;
 		while (i < length) {
 			const ch = line.charAt(i);
+			if (line.startsWith('--[[', i)) {
+				const closeIndex = line.indexOf(']]', i + 4);
+				const end = closeIndex !== -1 ? closeIndex + 2 : length;
+				for (let j = i; j < end; j++) {
+					columnColors[j] = COLOR_COMMENT;
+				}
+				i = end;
+				continue;
+			}
+			const longStringMatch = line.slice(i).match(/^\[=*\[/);
+			if (longStringMatch) {
+				const equalsCount = longStringMatch[0].length - 2;
+				const terminator = ']' + '='.repeat(equalsCount) + ']';
+				const closeIndex = line.indexOf(terminator, i + longStringMatch[0].length);
+				const end = closeIndex !== -1 ? closeIndex + terminator.length : length;
+				for (let j = i; j < end; j++) {
+					columnColors[j] = COLOR_STRING;
+				}
+				i = end;
+				continue;
+			}
 			if (ch === '"' || ch === '\'') {
 				const delimiter = ch;
 				columnColors[i] = COLOR_STRING;
@@ -3078,6 +3125,22 @@ private insertTab(): void {
 			if (line.startsWith('--', i)) {
 				for (let j = i; j < length; j++) columnColors[j] = COLOR_COMMENT;
 				break;
+			}
+			if (i + 2 <= length && line.slice(i, i + 3) === '...') {
+				columnColors[i] = COLOR_OPERATOR;
+				columnColors[i + 1] = COLOR_OPERATOR;
+				columnColors[i + 2] = COLOR_OPERATOR;
+				i += 3;
+				continue;
+			}
+			if (i + 1 < length) {
+				const pair = line.slice(i, i + 2);
+				if (pair === '==' || pair === '~=' || pair === '<=' || pair === '>=' || pair === '..') {
+					columnColors[i] = COLOR_OPERATOR;
+					columnColors[i + 1] = COLOR_OPERATOR;
+					i += 2;
+					continue;
+				}
 			}
 			if (this.isNumberStart(line, i)) {
 				const end = this.readNumber(line, i);
@@ -3196,9 +3259,13 @@ private insertTab(): void {
 		return '+-*/%<>=#(){}[]:,.;'.includes(ch);
 	}
 
-	private invertColorIndex(color: number): number {
-		if (color === 0) return COLOR_CODE_TEXT;
-		return 0;
+	private invertColorIndex(colorIndex: number): number {
+		const color = Msx1Colors[colorIndex];
+		if (!color) {
+			return COLOR_CODE_TEXT;
+		}
+		const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+		return luminance > 0.5 ? 0 : 15;
 	}
 
 	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {
