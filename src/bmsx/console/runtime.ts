@@ -10,7 +10,7 @@ import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '.
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue } from '../lua/value.ts';
 import { LuaTable } from '../lua/value.ts';
-import { LuaRuntimeError } from '../lua/errors.ts';
+import { LuaRuntimeError, LuaError } from '../lua/errors.ts';
 import { $ } from '../core/game';
 
 export type BmsxConsoleRuntimeOptions = {
@@ -43,6 +43,7 @@ export class BmsxConsoleRuntime {
 	private nextLuaHandleId = 1;
 	private wrapDepth = 0;
 	private static readonly MAX_WRAP_DEPTH = 4;
+	private luaRuntimeFailed = false;
 
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
@@ -67,6 +68,10 @@ export class BmsxConsoleRuntime {
 
 	public boot(): void {
 		this.frameCounter = 0;
+		this.luaRuntimeFailed = false;
+		if (this.editor) {
+			this.editor.clearRuntimeErrorOverlay();
+		}
 		this.physics.clear();
 		this.api.cartdata(this.cart.meta.persistentId);
 		this.api.colliderClear();
@@ -94,11 +99,29 @@ export class BmsxConsoleRuntime {
 			return;
 		}
 		if (this.hasLuaProgram()) {
-			if (this.luaUpdateFunction !== null) {
-				this.invokeLuaFunction(this.luaUpdateFunction, [deltaSeconds]);
+			if (this.luaRuntimeFailed) {
+				if (editor && editor.isActive()) {
+					editor.draw(this.api);
+				}
+				this.frameCounter += 1;
+				return;
 			}
-			if (this.luaDrawFunction !== null) {
-				this.invokeLuaFunction(this.luaDrawFunction, []);
+			try {
+				if (this.luaUpdateFunction !== null) {
+					this.invokeLuaFunction(this.luaUpdateFunction, [deltaSeconds]);
+				}
+				if (this.luaDrawFunction !== null) {
+					this.invokeLuaFunction(this.luaDrawFunction, []);
+				}
+			}
+			catch (error) {
+				this.handleLuaError(error);
+				const activeEditor = this.editor;
+				if (activeEditor && activeEditor.isActive()) {
+					activeEditor.draw(this.api);
+				}
+				this.frameCounter += 1;
+				return;
 			}
 		}
 		else {
@@ -158,18 +181,31 @@ export class BmsxConsoleRuntime {
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
 		this.luaChunkName = chunkName;
+		this.luaRuntimeFailed = false;
 
-		this.registerApiBuiltins(this.luaInterpreter);
-		this.luaInterpreter.setReservedIdentifiers(this.apiFunctionNames);
-		this.luaInterpreter.execute(source, chunkName);
+		const interpreter = this.luaInterpreter;
+		try {
+			this.registerApiBuiltins(interpreter);
+			interpreter.setReservedIdentifiers(this.apiFunctionNames);
+			interpreter.execute(source, chunkName);
+		}
+		catch (error) {
+			this.handleLuaError(error);
+			return;
+		}
 
-		const env = this.luaInterpreter.getGlobalEnvironment();
+		const env = interpreter.getGlobalEnvironment();
 		this.luaInitFunction = this.resolveLuaFunction(env.get(program.entry?.init ?? 'init'));
 		this.luaUpdateFunction = this.resolveLuaFunction(env.get(program.entry?.update ?? 'update'));
 		this.luaDrawFunction = this.resolveLuaFunction(env.get(program.entry?.draw ?? 'draw'));
 
 		if (this.luaInitFunction !== null) {
-			this.invokeLuaFunction(this.luaInitFunction, []);
+			try {
+				this.invokeLuaFunction(this.luaInitFunction, []);
+			}
+			catch (error) {
+				this.handleLuaError(error);
+			}
 		}
 	}
 
@@ -240,6 +276,45 @@ export class BmsxConsoleRuntime {
 		return fn.call(luaArgs);
 	}
 
+	private handleLuaError(error: unknown): void {
+		this.luaRuntimeFailed = true;
+		let message: string;
+		if (error instanceof Error) {
+			message = error.message;
+		}
+		else {
+			message = String(error);
+		}
+		let line = 1;
+		let column = 1;
+		if (error instanceof LuaError) {
+			if (Number.isFinite(error.line) && error.line > 0) {
+				line = error.line;
+			}
+			if (Number.isFinite(error.column) && error.column > 0) {
+				column = error.column;
+			}
+			if (error.chunkName && error.chunkName.length > 0) {
+				message = `${error.chunkName}: ${message}`;
+			}
+		}
+		if (!this.editor && this.hasLuaProgram()) {
+			this.initializeEditor();
+		}
+		if (this.editor) {
+			this.editor.showRuntimeError(line, column, message);
+		}
+		console.error('[BmsxConsoleRuntime] Lua runtime error:', error);
+	}
+
+	private createApiRuntimeError(interpreter: LuaInterpreter, message: string): LuaRuntimeError {
+		const range = interpreter.getCurrentCallRange();
+		const chunkName = range ? range.chunkName : (this.luaChunkName ?? 'lua');
+		const line = range ? range.start.line : 0;
+		const column = range ? range.start.column : 0;
+		return new LuaRuntimeError(message, chunkName, line, column);
+	}
+
 	private registerApiBuiltins(interpreter: LuaInterpreter): void {
 		this.apiFunctionNames.clear();
 
@@ -255,44 +330,44 @@ export class BmsxConsoleRuntime {
 				if (typeof methodDescriptor.value !== 'function') {
 					continue;
 				}
-		const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
-			const jsArgs = Array.from(args, (arg) => this.luaValueToJs(arg));
-			try {
-				const target = this.api as unknown as Record<string, unknown>;
-				const candidate = target[name];
-				if (typeof candidate !== 'function') {
-					throw new Error(`Method '${name}' is not callable.`);
-				}
-				const result = candidate.apply(this.api, jsArgs);
-				return this.wrapResultValue(result, interpreter);
-			}
-			catch (error) {
-				if (error instanceof LuaRuntimeError) {
-					throw error;
-				}
-				const message = error instanceof Error ? error.message : String(error);
-				throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
-			}
-		});
-		env.set(name, native);
-		apiTable.set(name, native);
-		this.apiFunctionNames.add(name);
-		continue;
+				const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
+					const jsArgs = Array.from(args, (arg) => this.luaValueToJs(arg));
+					try {
+						const target = this.api as unknown as Record<string, unknown>;
+						const candidate = target[name];
+						if (typeof candidate !== 'function') {
+							throw new Error(`Method '${name}' is not callable.`);
+						}
+						const result = candidate.apply(this.api, jsArgs);
+						return this.wrapResultValue(result, interpreter);
+					}
+					catch (error) {
+						if (error instanceof LuaRuntimeError) {
+							throw error;
+						}
+						const message = error instanceof Error ? error.message : String(error);
+						throw this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
+					}
+				});
+				env.set(name, native);
+				apiTable.set(name, native);
+				this.apiFunctionNames.add(name);
+				continue;
 			}
 
 			if (descriptor.get) {
 				const getter = descriptor.get;
-			const native = createLuaNativeFunction(`api.${name}`, interpreter, () => {
-				try {
-					const value = getter.call(this.api);
-					return this.wrapResultValue(value, interpreter);
-				}
-				catch (error) {
-					if (error instanceof LuaRuntimeError) {
-						throw error;
+				const native = createLuaNativeFunction(`api.${name}`, interpreter, () => {
+					try {
+						const value = getter.call(this.api);
+						return this.wrapResultValue(value, interpreter);
 					}
+					catch (error) {
+						if (error instanceof LuaRuntimeError) {
+							throw error;
+						}
 						const message = error instanceof Error ? error.message : String(error);
-						throw new LuaRuntimeError(`[api.${name}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
+						throw this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
 					}
 				});
 				env.set(name, native);
@@ -312,11 +387,11 @@ export class BmsxConsoleRuntime {
 
 		tableLibrary.set('insert', createLuaNativeFunction('table.insert', interpreter, (_lua, args) => {
 			if (args.length < 2) {
-				throw new LuaRuntimeError('[table.insert] requires at least 2 arguments.', this.luaChunkName ?? 'lua', 0, 0);
+				throw this.createApiRuntimeError(interpreter, '[table.insert] requires at least 2 arguments.');
 			}
 			const target = args[0];
 			if (!(target instanceof LuaTable)) {
-				throw new LuaRuntimeError('[table.insert] target must be a table.', this.luaChunkName ?? 'lua', 0, 0);
+				throw this.createApiRuntimeError(interpreter, '[table.insert] target must be a table.');
 			}
 			let position: number | null = null;
 			let value: LuaValue;
@@ -326,7 +401,7 @@ export class BmsxConsoleRuntime {
 			else {
 				const positionValue = args[1];
 				if (typeof positionValue !== 'number' || !Number.isInteger(positionValue)) {
-					throw new LuaRuntimeError('[table.insert] position must be an integer.', this.luaChunkName ?? 'lua', 0, 0);
+					throw this.createApiRuntimeError(interpreter, '[table.insert] position must be an integer.');
 				}
 				position = positionValue;
 				value = args[2];
@@ -337,17 +412,17 @@ export class BmsxConsoleRuntime {
 
 		tableLibrary.set('remove', createLuaNativeFunction('table.remove', interpreter, (_lua, args) => {
 			if (args.length === 0) {
-				throw new LuaRuntimeError('[table.remove] requires a table argument.', this.luaChunkName ?? 'lua', 0, 0);
+				throw this.createApiRuntimeError(interpreter, '[table.remove] requires a table argument.');
 			}
 			const target = args[0];
 			if (!(target instanceof LuaTable)) {
-				throw new LuaRuntimeError('[table.remove] target must be a table.', this.luaChunkName ?? 'lua', 0, 0);
+				throw this.createApiRuntimeError(interpreter, '[table.remove] target must be a table.');
 			}
 			let position: number | null = null;
 			if (args.length >= 2) {
 				const positionValue = args[1];
 				if (typeof positionValue !== 'number' || !Number.isInteger(positionValue)) {
-					throw new LuaRuntimeError('[table.remove] position must be an integer.', this.luaChunkName ?? 'lua', 0, 0);
+					throw this.createApiRuntimeError(interpreter, '[table.remove] position must be an integer.');
 				}
 				position = positionValue;
 			}
@@ -518,7 +593,7 @@ export class BmsxConsoleRuntime {
 		return createLuaNativeFunction(`${typeName}.${methodName}`, interpreter, (_lua, args) => {
 			const instance = this.luaHandleToObject.get(handle);
 			if (!instance) {
-				throw new LuaRuntimeError(`[${typeName}.${methodName}] Object handle is no longer valid.`, this.luaChunkName ?? 'lua', 0, 0);
+				throw this.createApiRuntimeError(interpreter, `[${typeName}.${methodName}] Object handle is no longer valid.`);
 			}
 			const jsArgs: unknown[] = [];
 			if (args.length > 0) {
@@ -544,7 +619,7 @@ export class BmsxConsoleRuntime {
 					throw error;
 				}
 				const message = error instanceof Error ? error.message : String(error);
-				throw new LuaRuntimeError(`[${typeName}.${methodName}] ${message}`, this.luaChunkName ?? 'lua', 0, 0);
+				throw this.createApiRuntimeError(interpreter, `[${typeName}.${methodName}] ${message}`);
 			}
 		});
 	}

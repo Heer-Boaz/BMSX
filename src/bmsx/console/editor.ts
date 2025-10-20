@@ -118,6 +118,13 @@ type KeyPressRecord = {
 	lastPressedAtMs: number;
 };
 
+type RuntimeErrorOverlay = {
+	row: number;
+	column: number;
+	lines: string[];
+	timer: number;
+};
+
 const TAB_SPACES = 2;
 const INITIAL_REPEAT_DELAY = 0.28;
 const REPEAT_INTERVAL = 0.05;
@@ -158,6 +165,10 @@ const COLOR_LINE_JUMP_BACKGROUND = COLOR_SEARCH_BACKGROUND;
 const COLOR_LINE_JUMP_TEXT = COLOR_SEARCH_TEXT;
 const COLOR_LINE_JUMP_PLACEHOLDER = COLOR_CODE_DIM;
 const COLOR_LINE_JUMP_OUTLINE = COLOR_SEARCH_OUTLINE;
+const ERROR_OVERLAY_BACKGROUND = { r: 0.6, g: 0, b: 0, a: 1 };
+const ERROR_OVERLAY_PADDING_X = 4;
+const ERROR_OVERLAY_PADDING_Y = 2;
+const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
 const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 
 export class ConsoleCartEditor {
@@ -178,6 +189,7 @@ export class ConsoleCartEditor {
 	private readonly repeatState: Map<string, RepeatEntry> = new Map();
 	private readonly keyPressRecords: Map<string, KeyPressRecord> = new Map();
 	private readonly message: MessageState = { text: '', color: COLOR_STATUS_TEXT, timer: 0, visible: false };
+	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private readonly captureKeys: string[] = [
 		'ArrowUp',
 		'ArrowDown',
@@ -256,6 +268,136 @@ export class ConsoleCartEditor {
 		return this.active;
 	}
 
+	public showRuntimeError(line: number, column: number, message: string): void {
+		if (!this.active) {
+			this.activate();
+		}
+		const hasLocation = Number.isFinite(line) && line >= 1;
+		const processedLine = hasLocation ? Math.max(1, Math.floor(line)) : null;
+		const baseColumn = Number.isFinite(column) ? Math.max(0, Math.floor(column) - 1) : null;
+		let targetRow = this.cursorRow;
+		if (processedLine !== null) {
+			targetRow = Math.max(0, Math.min(this.lines.length - 1, processedLine - 1));
+			this.cursorRow = targetRow;
+		}
+		const currentLine = this.lines[targetRow] ?? '';
+		let targetColumn = this.cursorColumn;
+		if (baseColumn !== null) {
+			targetColumn = Math.max(0, Math.min(currentLine.length, baseColumn));
+			this.cursorColumn = targetColumn;
+		}
+		this.clampCursorColumn();
+		targetColumn = this.cursorColumn;
+		this.selectionAnchor = null;
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
+		this.cursorRevealSuspended = false;
+		this.centerCursorVertically();
+		this.updateDesiredColumn();
+		this.revealCursor();
+		this.resetBlink();
+		const normalizedMessage = (message && message.length > 0) ? message.trim() : 'Runtime error';
+		const overlayMessage = processedLine !== null ? `Line ${processedLine}: ${normalizedMessage}` : normalizedMessage;
+		const overlayLines = this.buildRuntimeErrorLines(overlayMessage);
+		this.runtimeErrorOverlay = {
+			row: targetRow,
+			column: targetColumn,
+			lines: overlayLines,
+			timer: Number.POSITIVE_INFINITY,
+		};
+		const statusLine = overlayLines.length > 0 ? overlayLines[0] : 'Runtime error';
+		this.showMessage(statusLine, COLOR_STATUS_WARNING, 8.0);
+	}
+
+	public clearRuntimeErrorOverlay(): void {
+		this.runtimeErrorOverlay = null;
+	}
+
+	private buildRuntimeErrorLines(message: string): string[] {
+		const sanitized = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+		const rawLines = sanitized.split('\n');
+		const maxWidth = this.runtimeErrorOverlayMaxTextWidth();
+		const result: string[] = [];
+		for (let i = 0; i < rawLines.length; i++) {
+			const segments = this.wrapRuntimeErrorLine(rawLines[i], maxWidth);
+			if (segments.length === 0) {
+				result.push('');
+				continue;
+			}
+			for (let s = 0; s < segments.length; s++) {
+				result.push(segments[s]);
+			}
+		}
+		if (result.length === 0) {
+			result.push('');
+		}
+		return result;
+	}
+
+	private wrapRuntimeErrorLine(line: string, maxWidth: number): string[] {
+		if (line.length === 0) {
+			return [''];
+		}
+		const segments: string[] = [];
+		let current = '';
+		for (let index = 0; index < line.length; index++) {
+			const ch = line.charAt(index);
+			const candidate = current + ch;
+			const candidateWidth = this.measureText(candidate);
+			if (current.length > 0 && candidateWidth > maxWidth) {
+				segments.push(current);
+				current = ch;
+				if (this.measureText(current) > maxWidth) {
+					segments.push(current);
+					current = '';
+				}
+				continue;
+			}
+			if (current.length === 0 && candidateWidth > maxWidth) {
+				segments.push(ch);
+				current = '';
+				continue;
+			}
+			current = candidate;
+		}
+		if (current.length > 0) {
+			segments.push(current);
+		}
+		if (segments.length === 0) {
+			segments.push('');
+		}
+		return segments;
+	}
+
+	private runtimeErrorOverlayMaxTextWidth(): number {
+		const horizontalMargin = this.gutterWidth + ERROR_OVERLAY_CONNECTOR_OFFSET + ERROR_OVERLAY_PADDING_X * 2 + 2;
+		const available = this.viewportWidth - horizontalMargin;
+		if (available <= this.charAdvance) {
+			return this.charAdvance;
+		}
+		return available;
+	}
+
+	private tryShowLuaErrorOverlay(error: unknown): boolean {
+		if (!error || typeof error !== 'object') {
+			return false;
+		}
+		const candidate = error as { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
+		const lineValue = typeof candidate.line === 'number' && Number.isFinite(candidate.line) ? Math.floor(candidate.line) : null;
+		const columnValue = typeof candidate.column === 'number' && Number.isFinite(candidate.column) ? Math.floor(candidate.column) : null;
+		const chunkName = typeof candidate.chunkName === 'string' && candidate.chunkName.length > 0 ? candidate.chunkName : null;
+		const messageText = typeof candidate.message === 'string' && candidate.message.length > 0 ? candidate.message : null;
+		if (lineValue === null && columnValue === null && messageText === null) {
+			return false;
+		}
+		const safeLine = lineValue !== null && lineValue > 0 ? lineValue : 1;
+		const safeColumn = columnValue !== null && columnValue > 0 ? columnValue : 1;
+		const baseMessage = messageText ?? 'Lua error';
+		const overlayMessage = chunkName ? `${chunkName}: ${baseMessage}` : baseMessage;
+		this.showRuntimeError(safeLine, safeColumn, overlayMessage);
+		return true;
+	}
+
 	public update(deltaSeconds: number): void {
 		this.updateGuardWindowFromDelta(deltaSeconds);
 		const keyboard = this.getKeyboard();
@@ -263,6 +405,7 @@ export class ConsoleCartEditor {
 			return;
 		}
 		this.updateMessage(deltaSeconds);
+		this.updateRuntimeErrorOverlay(deltaSeconds);
 		if (this.handleToggleRequest(keyboard)) {
 			return;
 		}
@@ -324,6 +467,11 @@ export class ConsoleCartEditor {
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
 			this.consumeKey(keyboard, 'Escape');
+			if (this.runtimeErrorOverlay) {
+				this.clearRuntimeErrorOverlay();
+				this.message.visible = false;
+				return true;
+			}
 			if (this.lineJumpActive || this.lineJumpVisible) {
 				this.closeLineJump(false);
 				return true;
@@ -374,6 +522,7 @@ export class ConsoleCartEditor {
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
+		this.runtimeErrorOverlay = null;
 		if (this.searchQuery.length === 0) {
 			this.searchMatches = [];
 			this.searchCurrentIndex = -1;
@@ -403,6 +552,7 @@ export class ConsoleCartEditor {
 		this.searchVisible = false;
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
+		this.runtimeErrorOverlay = null;
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -1816,6 +1966,9 @@ private insertTab(): void {
 			this.dirty = false;
 			this.showMessage('Lua cart reloaded', COLOR_STATUS_SUCCESS, 2.5);
 		} catch (error) {
+			if (this.tryShowLuaErrorOverlay(error)) {
+				return;
+			}
 			const message = error instanceof Error ? error.message : String(error);
 			this.showMessage(message, COLOR_STATUS_WARNING, 4.0);
 		}
@@ -1835,6 +1988,20 @@ private insertTab(): void {
 		this.message.timer -= deltaSeconds;
 		if (this.message.timer <= 0) {
 			this.message.visible = false;
+		}
+	}
+
+	private updateRuntimeErrorOverlay(deltaSeconds: number): void {
+		const overlay = this.runtimeErrorOverlay;
+		if (!overlay) {
+			return;
+		}
+		if (!Number.isFinite(overlay.timer)) {
+			return;
+		}
+		overlay.timer -= deltaSeconds;
+		if (overlay.timer <= 0) {
+			this.runtimeErrorOverlay = null;
 		}
 	}
 
@@ -2396,6 +2563,7 @@ private insertTab(): void {
 		const codeTop = this.codeViewportTop();
 		const codeBottom = this.viewportHeight - this.bottomMargin;
 		const gutterRight = this.gutterWidth;
+		const textLeft = gutterRight + 2;
 
 		api.rectfill(0, codeTop, this.viewportWidth, codeBottom, COLOR_CODE_BACKGROUND);
 		if (gutterRight > 0) {
@@ -2414,29 +2582,102 @@ private insertTab(): void {
 				api.rectfillColor(gutterRight, rowY, this.viewportWidth, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
 			}
 
-			if (lineIndex < this.lines.length) {
-				const line = this.lines[lineIndex];
-				const highlight = this.highlightLine(line);
-				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
-				this.drawSearchHighlightsForRow(api, lineIndex, highlight, gutterRight + 2, rowY, slice.startDisplay, slice.endDisplay);
-				const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
-				if (selectionSlice) {
-					const selectionStartX = gutterRight + 2 + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.startDisplay);
-					const selectionEndX = gutterRight + 2 + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.endDisplay);
-					api.rectfillColor(selectionStartX, rowY, selectionEndX, rowY + this.lineHeight, SELECTION_OVERLAY);
+				if (lineIndex < this.lines.length) {
+					const line = this.lines[lineIndex];
+					const highlight = this.highlightLine(line);
+					const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
+					this.drawSearchHighlightsForRow(api, lineIndex, highlight, textLeft, rowY, slice.startDisplay, slice.endDisplay);
+					const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
+					if (selectionSlice) {
+						const selectionStartX = textLeft + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.startDisplay);
+						const selectionEndX = textLeft + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.endDisplay);
+						api.rectfillColor(selectionStartX, rowY, selectionEndX, rowY + this.lineHeight, SELECTION_OVERLAY);
+					}
+					this.drawColoredText(api, slice.text, slice.colors, textLeft, rowY);
+					if (lineIndex === this.cursorRow) {
+						cursorHighlight = highlight;
+						cursorSliceStart = slice.startDisplay;
+					}
+				} else {
+					this.drawColoredText(api, '~', [COLOR_CODE_DIM], textLeft, rowY);
 				}
-				this.drawColoredText(api, slice.text, slice.colors, gutterRight + 2, rowY);
-				if (lineIndex === this.cursorRow) {
-					cursorHighlight = highlight;
-					cursorSliceStart = slice.startDisplay;
-				}
-			} else {
-				this.drawColoredText(api, '~', [COLOR_CODE_DIM], gutterRight + 2, rowY);
+			}
+
+			this.drawRuntimeErrorOverlay(api, codeTop, textLeft);
+
+			if (this.cursorVisible && cursorHighlight) {
+				this.drawCursor(api, textLeft, codeTop, cursorHighlight, cursorSliceStart);
 			}
 		}
 
-		if (this.cursorVisible && cursorHighlight) {
-			this.drawCursor(api, gutterRight + 2, codeTop, cursorHighlight, cursorSliceStart);
+	private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, textLeft: number): void {
+		const overlay = this.runtimeErrorOverlay;
+		if (!overlay) {
+			return;
+		}
+		const visibleRows = this.visibleRowCount();
+		const relativeRow = overlay.row - this.scrollRow;
+		if (relativeRow < 0 || relativeRow >= visibleRows) {
+			return;
+		}
+		const line = this.lines[overlay.row] ?? '';
+		const highlight = this.highlightLine(line);
+		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 4);
+		const anchorDisplay = this.columnToDisplay(highlight, Math.min(overlay.column, highlight.columnToDisplay.length - 1));
+		const clampedAnchorDisplay = Math.max(slice.startDisplay, Math.min(anchorDisplay, slice.endDisplay));
+		const anchorX = textLeft + this.measureHighlightRange(highlight, slice.startDisplay, clampedAnchorDisplay);
+		const rowTop = codeTop + relativeRow * this.lineHeight;
+		const lines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
+		let maxLineWidth = 0;
+		for (let i = 0; i < lines.length; i++) {
+			const width = this.measureText(lines[i]);
+			if (width > maxLineWidth) {
+				maxLineWidth = width;
+			}
+		}
+		const bubbleWidth = maxLineWidth + ERROR_OVERLAY_PADDING_X * 2;
+		const bubbleHeight = lines.length * this.lineHeight + ERROR_OVERLAY_PADDING_Y * 2;
+		let bubbleLeft = anchorX + ERROR_OVERLAY_CONNECTOR_OFFSET;
+		if (bubbleLeft + bubbleWidth > this.viewportWidth - 1) {
+			bubbleLeft = Math.max(textLeft, this.viewportWidth - 1 - bubbleWidth);
+		}
+		const availableBottom = this.viewportHeight - this.bottomMargin;
+		const belowTop = rowTop + this.lineHeight + 2;
+		let bubbleTop = belowTop;
+		if (bubbleTop + bubbleHeight > availableBottom) {
+			let aboveTop = rowTop - bubbleHeight - 2;
+			if (aboveTop < codeTop) {
+				aboveTop = Math.max(codeTop, availableBottom - bubbleHeight);
+			}
+			bubbleTop = aboveTop;
+		}
+		if (bubbleTop + bubbleHeight > availableBottom) {
+			bubbleTop = Math.max(codeTop, availableBottom - bubbleHeight);
+		}
+		if (bubbleTop < codeTop) {
+			bubbleTop = codeTop;
+		}
+		const placedBelow = bubbleTop >= belowTop - 1;
+		const bubbleRight = bubbleLeft + bubbleWidth;
+		const bubbleBottom = bubbleTop + bubbleHeight;
+		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, ERROR_OVERLAY_BACKGROUND);
+		for (let i = 0; i < lines.length; i++) {
+			const lineY = bubbleTop + ERROR_OVERLAY_PADDING_Y + i * this.lineHeight;
+			this.drawText(api, lines[i], bubbleLeft + ERROR_OVERLAY_PADDING_X, lineY, COLOR_STATUS_WARNING);
+		}
+		const connectorLeft = Math.max(textLeft, anchorX);
+		const connectorRight = Math.min(bubbleLeft, connectorLeft + 3);
+		if (connectorRight > connectorLeft) {
+			if (placedBelow) {
+				const connectorStartY = rowTop + this.lineHeight;
+				if (bubbleTop > connectorStartY) {
+					api.rectfillColor(connectorLeft, connectorStartY, connectorRight, bubbleTop, ERROR_OVERLAY_BACKGROUND);
+				}
+			} else {
+				if (bubbleBottom < rowTop) {
+					api.rectfillColor(connectorLeft, bubbleBottom, connectorRight, rowTop, ERROR_OVERLAY_BACKGROUND);
+				}
+			}
 		}
 	}
 
@@ -2799,6 +3040,23 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 			width += this.font.getGlyph(ch).advance;
 		}
 		return width;
+	}
+
+	private centerCursorVertically(): void {
+		const rows = this.visibleRowCount();
+		const maxScroll = Math.max(0, this.lines.length - rows);
+		if (rows <= 1) {
+			this.scrollRow = Math.max(0, Math.min(this.cursorRow, maxScroll));
+			return;
+		}
+		let target = this.cursorRow - Math.floor(rows / 2);
+		if (target < 0) {
+			target = 0;
+		}
+		if (target > maxScroll) {
+			target = maxScroll;
+		}
+		this.scrollRow = target;
 	}
 
 	private ensureCursorVisible(): void {

@@ -120,6 +120,7 @@ export class LuaInterpreter {
 	 private currentChunk: string;
 	 private randomSeedValue: number;
 	 private reservedIdentifiers: Set<string> = new Set<string>();
+	 private currentCallRange: LuaSourceRange | null = null;
 
 	constructor(globals: LuaEnvironment | null) {
 		if (globals === null) {
@@ -715,18 +716,18 @@ export class LuaInterpreter {
 			const methodValue = this.getTableValueWithMetamethod(calleeValue, expression.methodName, expression.range);
 			const functionValue = this.expectFunction(methodValue, `Method '${expression.methodName}' not found on table.`, expression.range);
 			const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
-			return functionValue.call(args);
+			return this.invokeFunction(functionValue, args, expression.range);
 		}
 		if (calleeValue instanceof LuaTable) {
 			const callMetamethod = this.extractMetamethodFunction(calleeValue, '__call', expression.range);
 			if (callMetamethod !== null) {
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
-				return callMetamethod.call(args);
+				return this.invokeFunction(callMetamethod, args, expression.range);
 			}
 		}
 		const functionValue = this.expectFunction(calleeValue, 'Attempted to call a non-function value.', expression.range);
 		const args = this.buildCallArguments(expression, environment, varargs, null);
-		return functionValue.call(args);
+		return this.invokeFunction(functionValue, args, expression.range);
 	}
 
 	private buildCallArguments(expression: LuaCallExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, selfValue: LuaValue | null): LuaValue[] {
@@ -1348,6 +1349,25 @@ export class LuaInterpreter {
 
 	private createScriptFunction(expression: LuaFunctionExpression, environment: LuaEnvironment, name: string, implicitSelfName: string | null): LuaScriptFunction {
 		return new LuaScriptFunction(name, this, expression, environment, implicitSelfName);
+	}
+
+	private invokeFunction(functionValue: LuaFunctionValue, args: ReadonlyArray<LuaValue>, range: LuaSourceRange): LuaValue[] {
+		return this.withCurrentCallRange(range, () => functionValue.call(args));
+	}
+
+	private withCurrentCallRange<T>(range: LuaSourceRange, callback: () => T): T {
+		const previous = this.currentCallRange;
+		this.currentCallRange = range;
+		try {
+			return callback();
+		}
+		finally {
+			this.currentCallRange = previous;
+		}
+	}
+
+	public getCurrentCallRange(): LuaSourceRange | null {
+		return this.currentCallRange;
 	}
 
 	public invokeScriptFunction(expression: LuaFunctionExpression, closure: LuaEnvironment, name: string, args: ReadonlyArray<LuaValue>, implicitSelfName: string | null): LuaValue[] {
