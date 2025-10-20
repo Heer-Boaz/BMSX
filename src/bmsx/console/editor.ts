@@ -180,6 +180,7 @@ export class ConsoleCartEditor {
 		'KeyZ',
 		'PageDown',
 		'PageUp',
+		'KeyF',
 		'F3',
 		'Space',
 		'Tab',
@@ -209,6 +210,7 @@ export class ConsoleCartEditor {
 	private pointerPrimaryWasPressed = false;
 	private cursorRevealSuspended = false;
 	private searchActive = false;
+	private searchVisible = false;
 	private searchQuery = '';
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
@@ -296,8 +298,8 @@ export class ConsoleCartEditor {
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
 			this.consumeKey(keyboard, 'Escape');
-			if (this.searchActive) {
-				this.closeSearch();
+			if (this.searchActive || this.searchVisible) {
+				this.closeSearch(false);
 				return true;
 			}
 			if (this.active) {
@@ -337,6 +339,7 @@ export class ConsoleCartEditor {
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
 		this.searchActive = false;
+		this.searchVisible = false;
 		if (this.searchQuery.length === 0) {
 			this.searchMatches = [];
 			this.searchCurrentIndex = -1;
@@ -362,6 +365,7 @@ export class ConsoleCartEditor {
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
 		this.searchActive = false;
+		this.searchVisible = false;
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -389,6 +393,7 @@ export class ConsoleCartEditor {
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyF')) {
 			this.consumeKey(keyboard, 'KeyF');
 			this.openSearch(true);
+			return;
 		}
 		if (this.searchActive) {
 			this.handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
@@ -460,6 +465,12 @@ export class ConsoleCartEditor {
 	}
 
 	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyF')) {
+			this.consumeKey(keyboard, 'KeyF');
+			this.openSearch(false);
+			return;
+		}
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyZ')) {
 			this.consumeKey(keyboard, 'KeyZ');
 			if (shiftDown) {
@@ -512,6 +523,9 @@ export class ConsoleCartEditor {
 			}
 			return;
 		}
+		if (ctrlDown || metaDown || altDown) {
+			return;
+		}
 		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
 			this.consumeKey(keyboard, 'Backspace');
 			if (this.searchQuery.length > 0) {
@@ -546,6 +560,7 @@ export class ConsoleCartEditor {
 	}
 
 	private openSearch(useSelection: boolean): void {
+		this.searchVisible = true;
 		this.searchActive = true;
 		let appliedSelection = false;
 		if (useSelection) {
@@ -564,10 +579,27 @@ export class ConsoleCartEditor {
 			this.searchCurrentIndex = -1;
 		}
 		this.onSearchQueryChanged();
+		this.resetBlink();
 	}
 
-	private closeSearch(): void {
+	private closeSearch(clearQuery: boolean): void {
 		this.searchActive = false;
+		this.searchVisible = false;
+		if (clearQuery) {
+			this.searchQuery = '';
+			this.searchMatches = [];
+			this.searchCurrentIndex = -1;
+			this.selectionAnchor = null;
+		}
+		this.resetBlink();
+	}
+
+	private focusEditorFromSearch(): void {
+		if (!this.searchActive) {
+			return;
+		}
+		this.searchActive = false;
+		this.resetBlink();
 	}
 
 	private appendToSearchQuery(value: string): void {
@@ -852,9 +884,20 @@ export class ConsoleCartEditor {
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
+		const searchBounds = this.getSearchBarBounds();
+		if (justPressed && searchBounds && snapshot.viewportY >= searchBounds.top && snapshot.viewportY < searchBounds.bottom) {
+			this.searchVisible = true;
+			this.searchActive = true;
+			this.resetBlink();
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
+		}
+
 		const bounds = this.getCodeAreaBounds();
 		const insideVertical = snapshot.viewportY >= bounds.codeTop && snapshot.viewportY < bounds.codeBottom;
 		if (justPressed && insideVertical) {
+			this.focusEditorFromSearch();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
 			this.selectionAnchor = { row: targetRow, column: targetColumn };
@@ -1985,18 +2028,25 @@ private insertTab(): void {
 
 		let queryText = this.searchQuery;
 		let queryColor = COLOR_SEARCH_TEXT;
-		if (queryText.length === 0) {
+		if (queryText.length === 0 && !this.searchActive) {
 			queryText = 'TYPE TO SEARCH';
 			queryColor = COLOR_SEARCH_PLACEHOLDER;
 		}
 		const queryX = labelX + this.measureText(label + ' ');
 		this.drawText(api, queryText, queryX, labelY, queryColor);
 
-		if (this.searchActive && this.cursorVisible) {
-			const caretX = queryX + this.measureText(this.searchQuery);
-			const caretTop = labelY;
-			const caretBottom = caretTop + this.lineHeight;
-			api.rectfill(caretX, caretTop, caretX + 1, caretBottom, COLOR_SEARCH_TEXT);
+		const caretX = queryX + this.measureText(this.searchQuery);
+		const caretWidth = this.charAdvance;
+		const caretLeft = Math.floor(caretX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
+		const caretTop = Math.floor(labelY);
+		const caretBottom = caretTop + this.lineHeight;
+		if (this.cursorVisible) {
+			if (this.searchActive) {
+				api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			} else {
+				this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			}
 		}
 
 		if (this.searchQuery.length > 0) {
@@ -2021,7 +2071,21 @@ private insertTab(): void {
 	}
 
 	private isSearchVisible(): boolean {
-		return this.searchActive || this.searchQuery.length > 0;
+		return this.searchVisible;
+	}
+
+	private getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+		const height = this.getSearchBarHeight();
+		if (height <= 0) {
+			return null;
+		}
+		const top = this.headerHeight;
+		return {
+			top,
+			bottom: top + height,
+			left: 0,
+			right: this.viewportWidth,
+		};
 	}
 
 	private drawCodeArea(api: BmsxConsoleApi): void {
@@ -2118,11 +2182,25 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 	if (originalChar === '\t') {
 		cursorWidth = this.spaceAdvance * TAB_SPACES;
 	}
-	const caretLeft = Math.max(textX, cursorX - 1);
-	const caretRight = cursorX + cursorWidth;
-	api.rectfillColor(caretLeft, cursorY, caretRight, cursorY + this.lineHeight, CARET_COLOR);
-	const inverted = this.invertColorIndex(baseColor);
-	this.drawColoredText(api, baseChar, [inverted], cursorX, cursorY);
+	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
+	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + cursorWidth));
+	const caretTop = Math.floor(cursorY);
+	const caretBottom = caretTop + this.lineHeight;
+	if (this.searchActive) {
+		const innerLeft = caretLeft + 1;
+		const innerRight = caretRight - 1;
+		const innerTop = caretTop + 1;
+		const innerBottom = caretBottom - 1;
+		if (innerRight > innerLeft && innerBottom > innerTop) {
+			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, COLOR_CODE_BACKGROUND);
+		}
+		this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+		this.drawColoredText(api, baseChar, [baseColor], cursorX, cursorY);
+	} else {
+		api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+		const inverted = this.invertColorIndex(baseColor);
+		this.drawColoredText(api, baseChar, [inverted], cursorX, cursorY);
+	}
 }
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
@@ -2160,6 +2238,16 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 			}
 			cursorX += glyph.advance;
 		}
+	}
+
+	private drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
+		if (right <= left || bottom <= top) {
+			return;
+		}
+		api.rectfillColor(left, top, right, top + 1, color);
+		api.rectfillColor(left, bottom - 1, right, bottom, color);
+		api.rectfillColor(left, top, left + 1, bottom, color);
+		api.rectfillColor(right - 1, top, right, bottom, color);
 	}
 
 	private measureHighlightRange(highlight: HighlightLine, startDisplay: number, endDisplay: number): number {
