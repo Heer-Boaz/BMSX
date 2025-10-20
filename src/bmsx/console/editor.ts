@@ -147,6 +147,11 @@ const COLOR_SEARCH_OUTLINE = 0;
 const SEARCH_MATCH_OVERLAY = { r: 0.9, g: 0.35, b: 0.35, a: 0.38 };
 const SEARCH_MATCH_ACTIVE_OVERLAY = { r: 1, g: 0.85, b: 0.25, a: 0.6 };
 const SEARCH_BAR_MARGIN_Y = 2;
+const COLOR_LINE_JUMP_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+const COLOR_LINE_JUMP_TEXT = COLOR_SEARCH_TEXT;
+const COLOR_LINE_JUMP_PLACEHOLDER = COLOR_CODE_DIM;
+const COLOR_LINE_JUMP_OUTLINE = COLOR_SEARCH_OUTLINE;
+const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -181,6 +186,7 @@ export class ConsoleCartEditor {
 		'PageDown',
 		'PageUp',
 		'KeyF',
+		'KeyL',
 		'F3',
 		'Space',
 		'Tab',
@@ -212,6 +218,9 @@ export class ConsoleCartEditor {
 	private searchActive = false;
 	private searchVisible = false;
 	private searchQuery = '';
+	private lineJumpActive = false;
+	private lineJumpVisible = false;
+	private lineJumpValue = '';
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
 
@@ -266,6 +275,7 @@ export class ConsoleCartEditor {
 		api.cls(COLOR_FRAME);
 		this.drawTopBar(api);
 		this.drawSearchBar(api);
+		this.drawLineJumpBar(api);
 		this.drawCodeArea(api);
 		this.drawStatusBar(api);
 	}
@@ -277,6 +287,11 @@ export class ConsoleCartEditor {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.cursorRevealSuspended = false;
+		this.searchActive = false;
+		this.searchVisible = false;
+		this.lineJumpActive = false;
+		this.lineJumpVisible = false;
+		this.lineJumpValue = '';
 	}
 
 	private getKeyboard(): KeyboardInput | null {
@@ -298,6 +313,10 @@ export class ConsoleCartEditor {
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
 			this.consumeKey(keyboard, 'Escape');
+			if (this.lineJumpActive || this.lineJumpVisible) {
+				this.closeLineJump(false);
+				return true;
+			}
 			if (this.searchActive || this.searchVisible) {
 				this.closeSearch(false);
 				return true;
@@ -340,6 +359,9 @@ export class ConsoleCartEditor {
 		this.lastHistoryTimestamp = 0;
 		this.searchActive = false;
 		this.searchVisible = false;
+		this.lineJumpActive = false;
+		this.lineJumpVisible = false;
+		this.lineJumpValue = '';
 		if (this.searchQuery.length === 0) {
 			this.searchMatches = [];
 			this.searchCurrentIndex = -1;
@@ -366,6 +388,8 @@ export class ConsoleCartEditor {
 		this.lastHistoryTimestamp = 0;
 		this.searchActive = false;
 		this.searchVisible = false;
+		this.lineJumpActive = false;
+		this.lineJumpVisible = false;
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -393,6 +417,15 @@ export class ConsoleCartEditor {
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyF')) {
 			this.consumeKey(keyboard, 'KeyF');
 			this.openSearch(true);
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyL')) {
+			this.consumeKey(keyboard, 'KeyL');
+			this.openLineJump();
+			return;
+		}
+		if (this.lineJumpActive) {
+			this.handleLineJumpInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
 		if (this.searchActive) {
@@ -559,7 +592,61 @@ export class ConsoleCartEditor {
 		}
 	}
 
+	private handleLineJumpInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyL')) {
+			this.consumeKey(keyboard, 'KeyL');
+			this.openLineJump();
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Enter')) {
+			this.consumeKey(keyboard, 'Enter');
+			this.applyLineJump();
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Escape')) {
+			this.consumeKey(keyboard, 'Escape');
+			this.closeLineJump(false);
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Backspace');
+			this.removeLineJumpDigit();
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Delete');
+			this.removeLineJumpDigit();
+			return;
+		}
+		if (ctrlDown || metaDown) {
+			return;
+		}
+		for (let digit = 0; digit <= 9; digit++) {
+			const code = `Digit${digit}`;
+			if (!this.isKeyTyped(keyboard, code)) {
+				continue;
+			}
+			this.appendLineJumpDigit(String(digit));
+			this.consumeKey(keyboard, code);
+			return;
+		}
+		for (let digit = 0; digit <= 9; digit++) {
+			const code = `Numpad${digit}`;
+			if (!this.isKeyTyped(keyboard, code)) {
+				continue;
+			}
+			this.appendLineJumpDigit(String(digit));
+			this.consumeKey(keyboard, code);
+			return;
+		}
+		if (!shiftDown && this.isKeyJustPressed(keyboard, 'NumpadEnter')) {
+			this.consumeKey(keyboard, 'NumpadEnter');
+			this.applyLineJump();
+		}
+	}
+
 	private openSearch(useSelection: boolean): void {
+		this.closeLineJump(false);
 		this.searchVisible = true;
 		this.searchActive = true;
 		let appliedSelection = false;
@@ -600,6 +687,71 @@ export class ConsoleCartEditor {
 		}
 		this.searchActive = false;
 		this.resetBlink();
+	}
+
+	private openLineJump(): void {
+		this.closeSearch(false);
+		this.lineJumpVisible = true;
+		this.lineJumpActive = true;
+		this.lineJumpValue = '';
+		this.resetBlink();
+	}
+
+	private closeLineJump(clearValue: boolean): void {
+		this.lineJumpActive = false;
+		this.lineJumpVisible = false;
+		if (clearValue) {
+			this.lineJumpValue = '';
+		}
+		this.resetBlink();
+	}
+
+	private focusEditorFromLineJump(): void {
+		if (!this.lineJumpActive && !this.lineJumpVisible) {
+			return;
+		}
+		this.lineJumpActive = false;
+		this.lineJumpVisible = false;
+		this.resetBlink();
+	}
+
+	private appendLineJumpDigit(digit: string): void {
+		if (digit.length !== 1 || digit < '0' || digit > '9') {
+			return;
+		}
+		if (this.lineJumpValue.length >= 6) {
+			return;
+		}
+		if (this.lineJumpValue === '0') {
+			this.lineJumpValue = digit;
+			return;
+		}
+		this.lineJumpValue += digit;
+	}
+
+	private removeLineJumpDigit(): void {
+		if (this.lineJumpValue.length === 0) {
+			return;
+		}
+		this.lineJumpValue = this.lineJumpValue.slice(0, -1);
+	}
+
+	private applyLineJump(): void {
+		if (this.lineJumpValue.length === 0) {
+			this.showMessage('Enter a line number', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		const target = Number.parseInt(this.lineJumpValue, 10);
+		if (!Number.isFinite(target) || target < 1 || target > this.lines.length) {
+			const limit = this.lines.length <= 0 ? 1 : this.lines.length;
+			this.showMessage(`Line must be between 1 and ${limit}`, COLOR_STATUS_WARNING, 1.8);
+			return;
+		}
+		this.setCursorPosition(target - 1, 0);
+		this.clearSelection();
+		this.breakUndoSequence();
+		this.closeLineJump(true);
+		this.showMessage(`Jumped to line ${target}`, COLOR_STATUS_SUCCESS, 1.5);
 	}
 
 	private appendToSearchQuery(value: string): void {
@@ -884,8 +1036,19 @@ export class ConsoleCartEditor {
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
+		const lineJumpBounds = this.getLineJumpBarBounds();
+		if (justPressed && lineJumpBounds && snapshot.viewportY >= lineJumpBounds.top && snapshot.viewportY < lineJumpBounds.bottom) {
+			this.closeSearch(false);
+			this.lineJumpVisible = true;
+			this.lineJumpActive = true;
+			this.resetBlink();
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
+		}
 		const searchBounds = this.getSearchBarBounds();
 		if (justPressed && searchBounds && snapshot.viewportY >= searchBounds.top && snapshot.viewportY < searchBounds.bottom) {
+			this.closeLineJump(false);
 			this.searchVisible = true;
 			this.searchActive = true;
 			this.resetBlink();
@@ -897,6 +1060,7 @@ export class ConsoleCartEditor {
 		const bounds = this.getCodeAreaBounds();
 		const insideVertical = snapshot.viewportY >= bounds.codeTop && snapshot.viewportY < bounds.codeBottom;
 		if (justPressed && insideVertical) {
+			this.focusEditorFromLineJump();
 			this.focusEditorFromSearch();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
@@ -2059,8 +2223,49 @@ private insertTab(): void {
 		}
 	}
 
+	private drawLineJumpBar(api: BmsxConsoleApi): void {
+		const height = this.getLineJumpBarHeight();
+		if (height <= 0) {
+			return;
+		}
+		const offset = this.getSearchBarHeight();
+		const barTop = this.headerHeight + offset;
+		const barBottom = barTop + height;
+		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_LINE_JUMP_BACKGROUND);
+		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_LINE_JUMP_OUTLINE);
+		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_LINE_JUMP_OUTLINE);
+
+		const label = 'LINE #:';
+		const labelX = 4;
+		const labelY = barTop + LINE_JUMP_BAR_MARGIN_Y;
+		this.drawText(api, label, labelX, labelY, COLOR_LINE_JUMP_TEXT);
+
+		let valueText = this.lineJumpValue;
+		let valueColor = COLOR_LINE_JUMP_TEXT;
+		if (valueText.length === 0 && !this.lineJumpActive) {
+			valueText = 'ENTER LINE NUMBER';
+			valueColor = COLOR_LINE_JUMP_PLACEHOLDER;
+		}
+		const valueX = labelX + this.measureText(label + ' ');
+		this.drawText(api, valueText, valueX, labelY, valueColor);
+
+		const caretX = valueX + this.measureText(this.lineJumpValue);
+		const caretWidth = this.charAdvance;
+		const caretLeft = Math.floor(caretX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
+		const caretTop = Math.floor(labelY);
+		const caretBottom = caretTop + this.lineHeight;
+		if (this.cursorVisible) {
+			if (this.lineJumpActive) {
+				api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			} else {
+				this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			}
+		}
+	}
+
 	private codeViewportTop(): number {
-		return this.topMargin + this.getSearchBarHeight();
+		return this.topMargin + this.getSearchBarHeight() + this.getLineJumpBarHeight();
 	}
 
 	private getSearchBarHeight(): number {
@@ -2074,12 +2279,37 @@ private insertTab(): void {
 		return this.searchVisible;
 	}
 
+	private getLineJumpBarHeight(): number {
+		if (!this.isLineJumpVisible()) {
+			return 0;
+		}
+		return this.lineHeight + LINE_JUMP_BAR_MARGIN_Y * 2;
+	}
+
+	private isLineJumpVisible(): boolean {
+		return this.lineJumpVisible;
+	}
+
 	private getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getSearchBarHeight();
 		if (height <= 0) {
 			return null;
 		}
 		const top = this.headerHeight;
+		return {
+			top,
+			bottom: top + height,
+			left: 0,
+			right: this.viewportWidth,
+		};
+	}
+
+	private getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+		const height = this.getLineJumpBarHeight();
+		if (height <= 0) {
+			return null;
+		}
+		const top = this.headerHeight + this.getSearchBarHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -2186,7 +2416,7 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + cursorWidth));
 	const caretTop = Math.floor(cursorY);
 	const caretBottom = caretTop + this.lineHeight;
-	if (this.searchActive) {
+	if (this.searchActive || this.lineJumpActive) {
 		const innerLeft = caretLeft + 1;
 		const innerRight = caretRight - 1;
 		const innerTop = caretTop + 1;
