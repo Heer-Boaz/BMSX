@@ -89,6 +89,13 @@ type HighlightLine = {
 	columnToDisplay: number[];
 };
 
+type CachedHighlight = {
+	src: string;
+	hi: HighlightLine;
+	displayToColumn: number[];
+	advancePrefix: number[];
+};
+
 export type SearchMatch = {
 	row: number;
 	start: number;
@@ -197,6 +204,8 @@ export class ConsoleCartEditor {
 	private readonly lineHeight: number;
 	private readonly charAdvance: number;
 	private readonly spaceAdvance: number;
+	private readonly glyphCache: Map<string, ReturnType<ConsoleEditorFont['getGlyph']>> = new Map();
+	private readonly highlightCache: Map<number, CachedHighlight> = new Map();
 	private readonly gutterWidth: number;
 	private readonly headerHeight: number;
 	private readonly topMargin: number;
@@ -206,6 +215,7 @@ export class ConsoleCartEditor {
 	private readonly message: MessageState = { text: '', color: COLOR_STATUS_TEXT, timer: 0, visible: false };
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private readonly captureKeys: string[] = [
+		'Escape',
 		'ArrowUp',
 		'ArrowDown',
 		'ArrowLeft',
@@ -213,18 +223,25 @@ export class ConsoleCartEditor {
 		'Backspace',
 		'Delete',
 		'Enter',
+		'NumpadEnter',
 		'End',
 		'Home',
+		'PageDown',
+		'PageUp',
+		'Space',
+		'Tab',
+		'KeyA',
+		'KeyC',
+		'KeyX',
+		'KeyV',
 		'KeyS',
 		'KeyY',
 		'KeyZ',
-		'PageDown',
-		'PageUp',
 		'KeyF',
 		'KeyL',
+		'BracketLeft',
+		'BracketRight',
 		'F3',
-		'Space',
-		'Tab',
 	];
 
 	private static readonly KEYWORDS = new Set([
@@ -244,6 +261,7 @@ export class ConsoleCartEditor {
 	private cursorVisible = true;
 	private desiredColumn = 0;
 	private selectionAnchor: Position | null = null;
+	private warnNonMonospace = false;
 	private undoStack: EditorSnapshot[] = [];
 	private redoStack: EditorSnapshot[] = [];
 	private lastHistoryKey: string | null = null;
@@ -259,6 +277,8 @@ export class ConsoleCartEditor {
 	private lineJumpValue = '';
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
+	private textVersion = 0;
+	private lastSearchVersion = 0;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -269,14 +289,15 @@ export class ConsoleCartEditor {
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
 		this.lineHeight = this.font.lineHeight();
-		this.charAdvance = this.font.getGlyph('M').advance;
-		this.spaceAdvance = this.font.getGlyph(' ').advance;
+		this.charAdvance = this.getGlyph('M').advance;
+		this.spaceAdvance = this.getGlyph(' ').advance;
 		this.gutterWidth = 2;
 		const primaryBarHeight = this.lineHeight + 4;
 		this.headerHeight = primaryBarHeight;
 		this.topMargin = this.headerHeight + 2;
 		this.bottomMargin = this.lineHeight + 6;
 		this.desiredColumn = this.cursorColumn;
+		this.assertMonospace();
 	}
 
 	public isActive(): boolean {
@@ -431,10 +452,16 @@ export class ConsoleCartEditor {
 		this.handlePointerWheel();
 		this.handlePointerInput(deltaSeconds);
 		this.handleEditorInput(keyboard, deltaSeconds);
+		if (this.searchQuery.length === 0) {
+			this.lastSearchVersion = this.textVersion;
+		} else if (this.textVersion !== this.lastSearchVersion) {
+			this.updateSearchMatches();
+			this.lastSearchVersion = this.textVersion;
+		}
 		if (!this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
-	}
+}
 
 	public draw(api: BmsxConsoleApi): void {
 		if (!this.active) {
@@ -500,15 +527,16 @@ export class ConsoleCartEditor {
 		this.message.color = state.message.color;
 		this.message.timer = state.message.timer;
 		this.message.visible = state.message.visible;
-		this.runtimeErrorOverlay = state.runtimeErrorOverlay
-			? {
-				row: state.runtimeErrorOverlay.row,
-				column: state.runtimeErrorOverlay.column,
-				lines: state.runtimeErrorOverlay.lines.slice(),
-				timer: state.runtimeErrorOverlay.timer,
-			}
-			: null;
-		this.pointerSelecting = false;
+	this.runtimeErrorOverlay = state.runtimeErrorOverlay
+		? {
+			row: state.runtimeErrorOverlay.row,
+			column: state.runtimeErrorOverlay.column,
+			lines: state.runtimeErrorOverlay.lines.slice(),
+			timer: state.runtimeErrorOverlay.timer,
+		}
+		: null;
+	this.lastSearchVersion = this.textVersion;
+	this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.cursorRevealSuspended = false;
 		this.repeatState.clear();
@@ -580,6 +608,8 @@ export class ConsoleCartEditor {
 		if (this.lines.length === 0) {
 			this.lines.push('');
 		}
+		this.invalidateAllHighlights();
+		this.bumpTextVersion();
 		this.cursorRow = 0;
 		this.cursorColumn = 0;
 		this.scrollRow = 0;
@@ -1048,6 +1078,7 @@ export class ConsoleCartEditor {
 		this.searchMatches = [];
 		this.searchCurrentIndex = -1;
 		if (this.searchQuery.length === 0) {
+			this.lastSearchVersion = this.textVersion;
 			return;
 		}
 		const needle = this.searchQuery.toLowerCase();
@@ -1075,6 +1106,7 @@ export class ConsoleCartEditor {
 		if (this.searchCurrentIndex === -1 && this.searchMatches.length > 0) {
 			this.searchCurrentIndex = 0;
 		}
+		this.lastSearchVersion = this.textVersion;
 	}
 
 	private focusSearchResult(index: number): void {
@@ -1381,6 +1413,7 @@ export class ConsoleCartEditor {
 			const line = this.lines[row];
 			if (direction === 'increase') {
 				this.lines[row] = '\t' + line;
+				this.invalidateLine(row);
 				if (this.cursorRow === row) {
 					this.cursorColumn += 1;
 				}
@@ -1403,6 +1436,7 @@ export class ConsoleCartEditor {
 				continue;
 			}
 			this.lines[row] = line.slice(removal);
+			this.invalidateLine(row);
 			if (this.cursorRow === row) {
 				this.cursorColumn = Math.max(0, this.cursorColumn - removal);
 			}
@@ -1425,7 +1459,7 @@ export class ConsoleCartEditor {
 				}
 			}
 		}
-		this.dirty = true;
+		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.revealCursor();
@@ -1513,40 +1547,45 @@ export class ConsoleCartEditor {
 	private resolvePointerColumn(row: number, viewportX: number): number {
 		const bounds = this.getCodeAreaBounds();
 		const textLeft = bounds.textLeft;
-		const line = this.lines[row];
+		const line = this.lines[row] ?? '';
 		if (line.length === 0) {
 			return 0;
 		}
-		const effectiveStartColumn = this.scrollColumn < line.length ? this.scrollColumn : line.length;
-		const highlight = this.highlightLine(line);
+		const entry = this.getCachedHighlight(row);
+		const highlight = entry.hi;
+		const effectiveStartColumn = Math.min(this.scrollColumn, line.length);
 		const startDisplay = this.columnToDisplay(highlight, effectiveStartColumn);
-		let displayIndex = startDisplay;
-		let accumulated = 0;
 		const offset = viewportX - textLeft;
 		if (offset <= 0) {
 			return effectiveStartColumn;
 		}
-		for (let column = effectiveStartColumn; column < line.length; column++) {
-			const nextDisplay = this.columnToDisplay(highlight, column + 1);
-			let columnWidth = 0;
-			for (let i = displayIndex; i < nextDisplay; i++) {
-				const glyph = this.font.getGlyph(highlight.chars[i]);
-				columnWidth += glyph.advance;
-			}
-			if (columnWidth > 0) {
-				const boundary = accumulated + columnWidth;
-				if (offset < boundary) {
-					const midpoint = accumulated + columnWidth * 0.5;
-					if (offset < midpoint) {
-						return column;
-					}
-					return column + 1;
-				}
-			}
-			accumulated += columnWidth;
-			displayIndex = nextDisplay;
+		const baseAdvance = entry.advancePrefix[startDisplay] ?? 0;
+		const target = baseAdvance + offset;
+		const lower = this.lowerBound(entry.advancePrefix, target, startDisplay + 1, entry.advancePrefix.length);
+		let displayIndex = lower - 1;
+		if (displayIndex < startDisplay) {
+			displayIndex = startDisplay;
 		}
-		return line.length;
+		if (displayIndex >= highlight.chars.length) {
+			return line.length;
+		}
+		const left = entry.advancePrefix[displayIndex];
+		const right = entry.advancePrefix[displayIndex + 1];
+		const midpoint = left + (right - left) * 0.5;
+		let column = entry.displayToColumn[displayIndex];
+		if (column === undefined) {
+			column = line.length;
+		}
+		if (target >= midpoint) {
+			column += 1;
+		}
+		if (column > line.length) {
+			column = line.length;
+		}
+		if (column < effectiveStartColumn) {
+			column = effectiveStartColumn;
+		}
+		return column;
 	}
 
 	private handlePointerAutoScroll(viewportX: number, viewportY: number): void {
@@ -1843,13 +1882,7 @@ private moveWordRight(): void {
 		return this.lastDeltaMilliseconds;
 	}
 
-	private resolvePressedAtMs(state: ButtonState): number {
-		if (typeof state.pressedAtMs === 'number' && Number.isFinite(state.pressedAtMs)) {
-			return state.pressedAtMs;
-		}
-		if (typeof state.timestamp === 'number' && Number.isFinite(state.timestamp)) {
-			return state.timestamp;
-		}
+	private resolvePressedAtMs(_state: ButtonState): number {
 		return $.platform.clock.now();
 	}
 
@@ -1907,8 +1940,9 @@ private insertTab(): void {
 		const before = line.slice(0, this.cursorColumn);
 		const after = line.slice(this.cursorColumn);
 		this.lines[this.cursorRow] = before + text + after;
+		this.invalidateLine(this.cursorRow);
 		this.cursorColumn += text.length;
-		this.dirty = true;
+		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.clearSelection();
@@ -1925,9 +1959,10 @@ private insertTab(): void {
 		const indentation = this.extractIndentation(before);
 		const newLine = indentation + after;
 		this.lines.splice(this.cursorRow + 1, 0, newLine);
+		this.invalidateAllHighlights();
 		this.cursorRow += 1;
 		this.cursorColumn = indentation.length;
-		this.dirty = true;
+		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.clearSelection();
@@ -1960,8 +1995,9 @@ private insertTab(): void {
 			const before = line.slice(0, this.cursorColumn - 1);
 			const after = line.slice(this.cursorColumn);
 			this.lines[this.cursorRow] = before + after;
+			this.invalidateLine(this.cursorRow);
 			this.cursorColumn -= 1;
-			this.dirty = true;
+			this.markTextMutated();
 			this.resetBlink();
 			this.updateDesiredColumn();
 			this.revealCursor();
@@ -1974,9 +2010,10 @@ private insertTab(): void {
 		const current = this.currentLine();
 		this.lines[this.cursorRow - 1] = previousLine + current;
 		this.lines.splice(this.cursorRow, 1);
+		this.invalidateAllHighlights();
 		this.cursorRow -= 1;
 		this.cursorColumn = previousLine.length;
-		this.dirty = true;
+		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.revealCursor();
@@ -1996,7 +2033,8 @@ private insertTab(): void {
 			const before = updatedLine.slice(0, this.cursorColumn);
 			const after = updatedLine.slice(this.cursorColumn + 1);
 			this.lines[this.cursorRow] = before + after;
-			this.dirty = true;
+			this.invalidateLine(this.cursorRow);
+			this.markTextMutated();
 			this.updateDesiredColumn();
 			this.revealCursor();
 			return;
@@ -2007,7 +2045,8 @@ private insertTab(): void {
 		const nextLine = this.lines[this.cursorRow + 1];
 		this.lines[this.cursorRow] = updatedLine + nextLine;
 		this.lines.splice(this.cursorRow + 1, 1);
-		this.dirty = true;
+		this.invalidateAllHighlights();
+		this.markTextMutated();
 		this.updateDesiredColumn();
 		this.revealCursor();
 	}
@@ -2034,9 +2073,10 @@ private insertTab(): void {
 		const remainingIndent = indent.slice(removeCount);
 		const rest = line.slice(indent.length);
 		this.lines[this.cursorRow] = remainingIndent + rest;
+		this.invalidateLine(this.cursorRow);
 		const delta = removeCount;
 		this.cursorColumn = Math.max(0, this.cursorColumn - delta);
-		this.dirty = true;
+		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.revealCursor();
@@ -2248,12 +2288,13 @@ private insertTab(): void {
 			this.cursorRow = start.row + fragments.length - 1;
 			this.cursorColumn = lastFragment.length;
 		}
-	this.selectionAnchor = null;
-	this.dirty = true;
-	this.resetBlink();
-	this.updateDesiredColumn();
-	this.revealCursor();
-}
+		this.invalidateAllHighlights();
+		this.selectionAnchor = null;
+		this.markTextMutated();
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.revealCursor();
+	}
 
 	private getSelectionText(): string | null {
 		const range = this.getSelectionRange();
@@ -2331,6 +2372,7 @@ private insertTab(): void {
 		if (fragments.length === 1) {
 			const fragment = fragments[0];
 			this.lines[this.cursorRow] = before + fragment + after;
+			this.invalidateLine(this.cursorRow);
 			this.cursorColumn = before.length + fragment.length;
 		} else {
 			const firstLine = before + fragments[0];
@@ -2344,10 +2386,11 @@ private insertTab(): void {
 			newLines.push(lastFragment + after);
 			const insertionRow = this.cursorRow;
 			this.lines.splice(insertionRow, 1, ...newLines);
+			this.invalidateAllHighlights();
 			this.cursorRow = insertionRow + lastIndex;
 			this.cursorColumn = lastFragment.length;
 		}
-		this.dirty = true;
+		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.clearSelection();
@@ -2373,21 +2416,23 @@ private insertTab(): void {
 
 	private restoreSnapshot(snapshot: EditorSnapshot): void {
 		this.lines = snapshot.lines.slice();
+		this.invalidateAllHighlights();
 		this.cursorRow = snapshot.cursorRow;
 		this.cursorColumn = snapshot.cursorColumn;
 		this.scrollRow = snapshot.scrollRow;
 		this.scrollColumn = snapshot.scrollColumn;
-		if (snapshot.selectionAnchor) {
-			this.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
-		} else {
-			this.selectionAnchor = null;
-		}
-		this.dirty = snapshot.dirty;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.cursorRevealSuspended = false;
-		this.ensureCursorVisible();
+	if (snapshot.selectionAnchor) {
+		this.selectionAnchor = { row: snapshot.selectionAnchor.row, column: snapshot.selectionAnchor.column };
+	} else {
+		this.selectionAnchor = null;
 	}
+	this.dirty = snapshot.dirty;
+	this.bumpTextVersion();
+	this.updateDesiredColumn();
+	this.resetBlink();
+	this.cursorRevealSuspended = false;
+	this.ensureCursorVisible();
+}
 
 	private prepareUndo(key: string, allowMerge: boolean): void {
 		const now = Date.now();
@@ -2461,12 +2506,13 @@ private insertTab(): void {
 		const block = this.lines.splice(range.startRow, count);
 		const targetIndex = range.startRow + delta;
 		this.lines.splice(targetIndex, 0, ...block);
+		this.invalidateAllHighlights();
 		this.cursorRow += delta;
 		if (this.selectionAnchor) {
 			this.selectionAnchor = { row: this.selectionAnchor.row + delta, column: this.selectionAnchor.column };
 		}
 		this.clampCursorColumn();
-		this.dirty = true;
+		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.revealCursor();
@@ -2655,7 +2701,7 @@ private insertTab(): void {
 
 		const rowCount = this.visibleRowCount();
 		const columnCount = this.visibleColumnCount();
-		let cursorHighlight: HighlightLine | null = null;
+		let cursorEntry: CachedHighlight | null = null;
 		let cursorSliceStart = 0;
 
 		for (let i = 0; i < rowCount; i++) {
@@ -2665,33 +2711,33 @@ private insertTab(): void {
 				api.rectfillColor(gutterRight, rowY, this.viewportWidth, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
 			}
 
-				if (lineIndex < this.lines.length) {
-					const line = this.lines[lineIndex];
-					const highlight = this.highlightLine(line);
-					const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
-					this.drawSearchHighlightsForRow(api, lineIndex, highlight, textLeft, rowY, slice.startDisplay, slice.endDisplay);
-					const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
-					if (selectionSlice) {
-						const selectionStartX = textLeft + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.startDisplay);
-						const selectionEndX = textLeft + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.endDisplay);
-						api.rectfillColor(selectionStartX, rowY, selectionEndX, rowY + this.lineHeight, SELECTION_OVERLAY);
-					}
-					this.drawColoredText(api, slice.text, slice.colors, textLeft, rowY);
-					if (lineIndex === this.cursorRow) {
-						cursorHighlight = highlight;
-						cursorSliceStart = slice.startDisplay;
-					}
-				} else {
-					this.drawColoredText(api, '~', [COLOR_CODE_DIM], textLeft, rowY);
+		if (lineIndex < this.lines.length) {
+			const entry = this.getCachedHighlight(lineIndex);
+				const highlight = entry.hi;
+				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
+				this.drawSearchHighlightsForRow(api, lineIndex, entry, textLeft, rowY, slice.startDisplay, slice.endDisplay);
+				const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
+				if (selectionSlice) {
+					const selectionStartX = textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.startDisplay);
+					const selectionEndX = textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.endDisplay);
+					api.rectfillColor(selectionStartX, rowY, selectionEndX, rowY + this.lineHeight, SELECTION_OVERLAY);
 				}
-			}
-
-			this.drawRuntimeErrorOverlay(api, codeTop, textLeft);
-
-			if (this.cursorVisible && cursorHighlight) {
-				this.drawCursor(api, textLeft, codeTop, cursorHighlight, cursorSliceStart);
+				this.drawColoredText(api, slice.text, slice.colors, textLeft, rowY);
+				if (lineIndex === this.cursorRow) {
+					cursorEntry = entry;
+					cursorSliceStart = slice.startDisplay;
+				}
+			} else {
+				this.drawColoredText(api, '~', [COLOR_CODE_DIM], textLeft, rowY);
 			}
 		}
+
+		this.drawRuntimeErrorOverlay(api, codeTop, textLeft);
+
+		if (this.cursorVisible && cursorEntry) {
+			this.drawCursor(api, textLeft, codeTop, cursorEntry, cursorSliceStart);
+		}
+	}
 
 	private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, textLeft: number): void {
 		const overlay = this.runtimeErrorOverlay;
@@ -2703,12 +2749,12 @@ private insertTab(): void {
 		if (relativeRow < 0 || relativeRow >= visibleRows) {
 			return;
 		}
-		const line = this.lines[overlay.row] ?? '';
-		const highlight = this.highlightLine(line);
+	const entry = this.getCachedHighlight(overlay.row);
+		const highlight = entry.hi;
 		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 4);
 		const anchorDisplay = this.columnToDisplay(highlight, Math.min(overlay.column, highlight.columnToDisplay.length - 1));
 		const clampedAnchorDisplay = Math.max(slice.startDisplay, Math.min(anchorDisplay, slice.endDisplay));
-		const anchorX = textLeft + this.measureHighlightRange(highlight, slice.startDisplay, clampedAnchorDisplay);
+		const anchorX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedAnchorDisplay);
 		const rowTop = codeTop + relativeRow * this.lineHeight;
 		const lines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
 		let maxLineWidth = 0;
@@ -2764,10 +2810,11 @@ private insertTab(): void {
 		}
 	}
 
-	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, highlight: HighlightLine, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
 		if (this.searchMatches.length === 0 || this.searchQuery.length === 0) {
 			return;
 		}
+		const highlight = entry.hi;
 		for (let i = 0; i < this.searchMatches.length; i++) {
 			const match = this.searchMatches[i];
 			if (match.row !== rowIndex) {
@@ -2780,56 +2827,58 @@ private insertTab(): void {
 			if (visibleEnd <= visibleStart) {
 				continue;
 			}
-			const startX = originX + this.measureHighlightRange(highlight, sliceStartDisplay, visibleStart);
-			const endX = originX + this.measureHighlightRange(highlight, sliceStartDisplay, visibleEnd);
+			const startX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleStart);
+			const endX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 			const overlay = i === this.searchCurrentIndex ? SEARCH_MATCH_ACTIVE_OVERLAY : SEARCH_MATCH_OVERLAY;
 			api.rectfillColor(startX, originY, endX, originY + this.lineHeight, overlay);
 		}
 	}
 
-private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highlight: HighlightLine, sliceStartDisplay: number): void {
-	const relativeRow = this.cursorRow - this.scrollRow;
-	if (relativeRow < 0 || relativeRow >= this.visibleRowCount()) {
-		return;
-	}
-	const line = this.currentLine();
-	const columnToDisplay = highlight.columnToDisplay;
-	const clampedColumn = Math.min(this.cursorColumn, columnToDisplay.length - 1);
-	const cursorDisplayIndex = columnToDisplay[clampedColumn];
-	const cursorX = textX + this.measureHighlightRange(highlight, sliceStartDisplay, cursorDisplayIndex);
-	const cursorY = codeTop + relativeRow * this.lineHeight;
-	let baseChar = ' ';
-	let baseColor = COLOR_CODE_TEXT;
-	let cursorWidth = this.charAdvance;
-	if (cursorDisplayIndex < highlight.chars.length) {
-		baseChar = highlight.chars[cursorDisplayIndex];
-		baseColor = highlight.colors[cursorDisplayIndex];
-		cursorWidth = this.font.getGlyph(baseChar).advance;
-	}
-	const originalChar = line.charAt(this.cursorColumn);
-	if (originalChar === '\t') {
-		cursorWidth = this.spaceAdvance * TAB_SPACES;
-	}
-	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
-	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + cursorWidth));
-	const caretTop = Math.floor(cursorY);
-	const caretBottom = caretTop + this.lineHeight;
-	if (this.searchActive || this.lineJumpActive) {
-		const innerLeft = caretLeft + 1;
-		const innerRight = caretRight - 1;
-		const innerTop = caretTop + 1;
-		const innerBottom = caretBottom - 1;
-		if (innerRight > innerLeft && innerBottom > innerTop) {
-			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, COLOR_CODE_BACKGROUND);
+	private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, entry: CachedHighlight, sliceStartDisplay: number): void {
+		const relativeRow = this.cursorRow - this.scrollRow;
+		if (relativeRow < 0 || relativeRow >= this.visibleRowCount()) {
+			return;
 		}
-		this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-		this.drawColoredText(api, baseChar, [baseColor], cursorX, cursorY);
-	} else {
-		api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-		const inverted = this.invertColorIndex(baseColor);
-		this.drawColoredText(api, baseChar, [inverted], cursorX, cursorY);
+		const line = this.currentLine();
+		const highlight = entry.hi;
+		const columnToDisplay = highlight.columnToDisplay;
+		const clampedColumn = Math.min(this.cursorColumn, columnToDisplay.length - 1);
+		const cursorDisplayIndex = columnToDisplay[clampedColumn];
+		const cursorX = textX + this.measureRangeFast(entry, sliceStartDisplay, cursorDisplayIndex);
+		const cursorY = codeTop + relativeRow * this.lineHeight;
+		let baseChar = ' ';
+		let baseColor = COLOR_CODE_TEXT;
+		let cursorWidth = this.charAdvance;
+		if (cursorDisplayIndex < highlight.chars.length) {
+			baseChar = highlight.chars[cursorDisplayIndex];
+			baseColor = highlight.colors[cursorDisplayIndex];
+			const widthValue = entry.advancePrefix[cursorDisplayIndex + 1] - entry.advancePrefix[cursorDisplayIndex];
+			cursorWidth = widthValue > 0 ? widthValue : this.getGlyph(baseChar).advance;
+		}
+		const originalChar = line.charAt(this.cursorColumn);
+		if (originalChar === '\t') {
+			cursorWidth = this.spaceAdvance * TAB_SPACES;
+		}
+		const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
+		const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + cursorWidth));
+		const caretTop = Math.floor(cursorY);
+		const caretBottom = caretTop + this.lineHeight;
+		if (this.searchActive || this.lineJumpActive) {
+			const innerLeft = caretLeft + 1;
+			const innerRight = caretRight - 1;
+			const innerTop = caretTop + 1;
+			const innerBottom = caretBottom - 1;
+			if (innerRight > innerLeft && innerBottom > innerTop) {
+				api.rectfill(innerLeft, innerTop, innerRight, innerBottom, COLOR_CODE_BACKGROUND);
+			}
+			this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			this.drawColoredText(api, baseChar, [baseColor], cursorX, cursorY);
+		} else {
+			api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			const inverted = this.invertColorIndex(baseColor);
+			this.drawColoredText(api, baseChar, [inverted], cursorX, cursorY);
+		}
 	}
-}
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 		if (highlight.chars.length === 0) {
@@ -2856,7 +2905,7 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		for (let i = 0; i < text.length; i++) {
 			const ch = text.charAt(i);
 			const color = colors[i] ?? COLOR_CODE_TEXT;
-			const glyph = this.font.getGlyph(ch);
+			const glyph = this.getGlyph(ch);
 			for (let s = 0; s < glyph.segments.length; s++) {
 				const segment = glyph.segments[s];
 				const x0 = cursorX + segment.x;
@@ -2868,6 +2917,85 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		}
 	}
 
+	private getCachedHighlight(row: number): CachedHighlight {
+		const source = this.lines[row] ?? '';
+		const cached = this.highlightCache.get(row);
+		if (cached && cached.src === source) {
+			return cached;
+		}
+		const highlight = this.highlightLine(source);
+		const displayToColumn: number[] = new Array(highlight.chars.length + 1);
+		if (highlight.chars.length === 0) {
+			displayToColumn[0] = source.length;
+		} else {
+			for (let column = 0; column < source.length; column++) {
+				const startDisplay = highlight.columnToDisplay[column];
+				const endDisplay = highlight.columnToDisplay[column + 1];
+				for (let display = startDisplay; display < endDisplay; display++) {
+					displayToColumn[display] = column;
+				}
+			}
+			displayToColumn[highlight.chars.length] = source.length;
+		}
+		if (displayToColumn[0] === undefined) {
+			displayToColumn[0] = source.length;
+		}
+		const advancePrefix: number[] = new Array(highlight.chars.length + 1);
+		advancePrefix[0] = 0;
+		for (let i = 0; i < highlight.chars.length; i++) {
+			advancePrefix[i + 1] = advancePrefix[i] + this.getGlyph(highlight.chars[i]).advance;
+		}
+		const entry: CachedHighlight = {
+			src: source,
+			hi: highlight,
+			displayToColumn,
+			advancePrefix,
+		};
+		this.highlightCache.set(row, entry);
+		return entry;
+	}
+
+	private invalidateLine(row: number): void {
+		this.highlightCache.delete(row);
+	}
+
+	private invalidateAllHighlights(): void {
+		this.highlightCache.clear();
+	}
+
+	private measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
+		const length = entry.hi.chars.length;
+		if (length === 0) {
+			return 0;
+		}
+		const clampedStart = Math.max(0, Math.min(startDisplay, length));
+		const clampedEnd = Math.max(clampedStart, Math.min(endDisplay, length));
+		return entry.advancePrefix[clampedEnd] - entry.advancePrefix[clampedStart];
+	}
+
+	private lowerBound(values: number[], target: number, lo = 0, hi = values.length): number {
+		let left = lo;
+		let right = hi;
+		while (left < right) {
+			const mid = (left + right) >>> 1;
+			if (values[mid] < target) {
+				left = mid + 1;
+			} else {
+				right = mid;
+			}
+		}
+		return left;
+	}
+
+	private bumpTextVersion(): void {
+		this.textVersion += 1;
+	}
+
+	private markTextMutated(): void {
+		this.dirty = true;
+		this.bumpTextVersion();
+	}
+
 	private drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
 		if (right <= left || bottom <= top) {
 			return;
@@ -2876,16 +3004,6 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		api.rectfillColor(left, bottom - 1, right, bottom, color);
 		api.rectfillColor(left, top, left + 1, bottom, color);
 		api.rectfillColor(right - 1, top, right, bottom, color);
-	}
-
-	private measureHighlightRange(highlight: HighlightLine, startDisplay: number, endDisplay: number): number {
-		let width = 0;
-		const boundedEnd = Math.min(endDisplay, highlight.chars.length);
-		for (let i = startDisplay; i < boundedEnd; i++) {
-			const ch = highlight.chars[i];
-			width += this.font.getGlyph(ch).advance;
-		}
-		return width;
 	}
 
 	private computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
@@ -3097,7 +3215,7 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 				cursorX += this.spaceAdvance * TAB_SPACES;
 				continue;
 			}
-			const glyph = this.font.getGlyph(ch);
+			const glyph = this.getGlyph(ch);
 			for (let s = 0; s < glyph.segments.length; s++) {
 				const segment = glyph.segments[s];
 				const x0 = cursorX + segment.x;
@@ -3120,9 +3238,30 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 			if (ch === '\n') {
 				continue;
 			}
-			width += this.font.getGlyph(ch).advance;
+			width += this.getGlyph(ch).advance;
 		}
 		return width;
+	}
+
+	private getGlyph(char: string): ReturnType<ConsoleEditorFont['getGlyph']> {
+		let glyph = this.glyphCache.get(char);
+		if (!glyph) {
+			glyph = this.font.getGlyph(char);
+			this.glyphCache.set(char, glyph);
+		}
+		return glyph;
+	}
+
+	private assertMonospace(): void {
+		const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
+		const reference = this.getGlyph('M').advance;
+		for (let i = 0; i < sample.length; i++) {
+			const candidate = this.getGlyph(sample.charAt(i)).advance;
+			if (candidate !== reference) {
+				this.warnNonMonospace = true;
+				break;
+			}
+		}
 	}
 
 	private centerCursorVertically(): void {
@@ -3192,7 +3331,8 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		if (available <= 0) {
 			return 1;
 		}
-		const columns = Math.floor(available / this.charAdvance);
+		const advance = this.warnNonMonospace ? this.spaceAdvance : this.charAdvance;
+		const columns = Math.floor(available / advance);
 		return columns > 0 ? columns : 1;
 	}
 
