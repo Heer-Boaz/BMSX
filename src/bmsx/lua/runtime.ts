@@ -121,18 +121,19 @@ export class LuaInterpreter {
 	 private randomSeedValue: number;
 	 private reservedIdentifiers: Set<string> = new Set<string>();
 	 private currentCallRange: LuaSourceRange | null = null;
+	 private chunkEnvironment: LuaEnvironment | null = null;
 
-	constructor(globals: LuaEnvironment | null) {
-		if (globals === null) {
-			this.globals = LuaEnvironment.createRoot();
-		}
-		else {
-			this.globals = globals;
-		}
-		this.currentChunk = '<chunk>';
-		this.randomSeedValue = Date.now();
-		this.initializeBuiltins();
-	}
+	 constructor(globals: LuaEnvironment | null) {
+	 	 if (globals === null) {
+	 	 	 this.globals = LuaEnvironment.createRoot();
+	 	 }
+	 	 else {
+	 	 	 this.globals = globals;
+	 	 }
+	 	 this.currentChunk = '<chunk>';
+	 	 this.randomSeedValue = Date.now();
+	 	 this.initializeBuiltins();
+	 }
 
 	public execute(source: string, chunkName: string): LuaValue[] {
 		const lexer = new LuaLexer(source, chunkName);
@@ -177,6 +178,7 @@ export class LuaInterpreter {
 	protected executeChunk(chunk: LuaChunk): LuaValue[] {
 		this.currentChunk = chunk.range.chunkName;
 		const chunkScope = LuaEnvironment.createChild(this.globals);
+		this.chunkEnvironment = chunkScope;
 		const signal = this.executeStatements(chunk.body, chunkScope, [], null);
 		if (signal.kind === 'return') {
 			return Array.from(signal.values);
@@ -189,6 +191,31 @@ export class LuaInterpreter {
 			throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
 		}
 		return [];
+	}
+
+	public enumerateChunkEntries(): ReadonlyArray<[string, LuaValue]> {
+		if (!this.chunkEnvironment) {
+			return [];
+		}
+		return this.chunkEnvironment.entries();
+	}
+
+	public hasChunkBinding(name: string): boolean {
+		if (!this.chunkEnvironment) {
+			return false;
+		}
+		return this.chunkEnvironment.resolve(name) !== null;
+	}
+
+	public assignChunkValue(name: string, value: LuaValue): void {
+		if (!this.chunkEnvironment) {
+			throw this.runtimeError('Chunk environment not initialised.');
+		}
+		const target = this.chunkEnvironment.resolve(name);
+		if (target === null) {
+			throw this.runtimeError(`Chunk variable '${name}' is not defined.`);
+		}
+		target.assignExisting(name, value);
 	}
 
 	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope | null): ExecutionSignal {

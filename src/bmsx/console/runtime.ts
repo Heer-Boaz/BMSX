@@ -4,7 +4,7 @@ import { ConsoleCartEditor } from './editor';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
-import { Physics2DManager, type Physics2DSerializedState } from '../physics/physics2d';
+import { Physics2DManager } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram } from './types';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
@@ -31,7 +31,9 @@ export type BmsxConsoleState = {
 	luaSnapshot?: unknown;
 	cartState?: unknown;
 	storage?: { namespace: string; entries: Array<{ index: number; value: number }> };
-	physics?: Physics2DSerializedState;
+	luaGlobals?: Record<string, unknown>;
+	luaLocals?: Record<string, unknown>;
+	luaRandomSeed?: number;
 };
 
 export class BmsxConsoleRuntime extends Service {
@@ -40,6 +42,24 @@ export class BmsxConsoleRuntime extends Service {
 	private static readonly MAX_FRAME_DELTA_MS = 250;
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
+	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
+		'print',
+		'type',
+		'tostring',
+		'tonumber',
+		'setmetatable',
+		'getmetatable',
+		'pairs',
+		'ipairs',
+		'serialize',
+		'deserialize',
+		'math',
+		'string',
+		'os',
+		'table',
+		'coroutine',
+		'debug',
+	]);
 
 	public static ensure(options: BmsxConsoleRuntimeOptions): BmsxConsoleRuntime {
 		if (!BmsxConsoleRuntime._instance) {
@@ -183,7 +203,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.api.cartdata(this.cart.meta.persistentId);
 		this.api.colliderClear();
 		if (this.hasLuaProgram()) {
-			this.bootLuaProgram();
+			this.bootLuaProgram(true);
 		}
 		else {
 			this.cart.init(this.api);
@@ -294,12 +314,12 @@ export class BmsxConsoleRuntime extends Service {
 
 	public override getState(): BmsxConsoleState | undefined {
 		const storageState = this.storage.dump();
-		const physicsState = this.physics.snapshot();
 		const luaSnapshot = this.captureLuaSnapshot();
 		const cartState = (!this.hasLuaProgram() && typeof this.cart.captureState === 'function')
 			? this.cart.captureState(this.api)
 			: undefined;
-		return {
+		const fallbackLuaState = luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
+		const state: BmsxConsoleState = {
 			frameCounter: this.frameCounter,
 			luaRuntimeFailed: this.luaRuntimeFailed,
 			luaProgramSourceOverride: this.luaProgramSourceOverride,
@@ -307,39 +327,97 @@ export class BmsxConsoleRuntime extends Service {
 			luaSnapshot,
 			cartState,
 			storage: storageState,
-			physics: physicsState,
 		};
+		if (fallbackLuaState) {
+			if (fallbackLuaState.globals) {
+				state.luaGlobals = fallbackLuaState.globals;
+			}
+			if (fallbackLuaState.locals) {
+				state.luaLocals = fallbackLuaState.locals;
+			}
+			if (fallbackLuaState.randomSeed !== undefined) {
+				state.luaRandomSeed = fallbackLuaState.randomSeed;
+			}
+		}
+		return state;
 	}
 
 	public override setState(state: unknown): void {
 		if (!state || typeof state !== 'object') {
-			this.boot();
+			this.resetRuntimeToFreshState();
 			return;
 		}
-		const snapshot = state as BmsxConsoleState;
-		if (snapshot.storage) {
-			this.storage.restore(snapshot.storage);
-		}
-		if (snapshot.luaProgramSourceOverride !== undefined) {
-			this.luaProgramSourceOverride = snapshot.luaProgramSourceOverride;
-		}
-		if (snapshot.luaChunkName !== undefined) {
-			this.luaChunkName = snapshot.luaChunkName;
+		this.restoreFromStateSnapshot(state as BmsxConsoleState);
+	}
+
+	private resetRuntimeToFreshState(): void {
+		const program = this.luaProgram;
+		if (program) {
+			this.luaProgramSourceOverride = null;
+			this.luaChunkName = this.resolveLuaProgramChunkName(program);
+		} else {
+			this.luaProgramSourceOverride = null;
+			this.luaChunkName = null;
 		}
 		this.boot();
-		this.frameCounter = snapshot.frameCounter ?? 0;
-		this.luaRuntimeFailed = snapshot.luaRuntimeFailed ?? false;
-		if (snapshot.physics) {
-			this.physics.restore(snapshot.physics);
+	}
+
+	private restoreFromStateSnapshot(snapshot: BmsxConsoleState): void {
+		const savedFrameCounter = snapshot.frameCounter ?? 0;
+		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
+
+		this.api.cartdata(this.cart.meta.persistentId);
+		if (snapshot.storage !== undefined) {
+			this.storage.restore(snapshot.storage);
 		}
-		if (this.hasLuaProgram() && snapshot.luaSnapshot !== undefined) {
-			this.applyLuaSnapshot(snapshot.luaSnapshot);
+		if (this.editor) {
+			this.editor.clearRuntimeErrorOverlay();
 		}
-		if (!this.hasLuaProgram() && snapshot.cartState !== undefined && typeof this.cart.restoreState === 'function') {
+		this.api.colliderClear();
+		this.frameCounter = savedFrameCounter;
+
+		if (this.hasLuaProgram()) {
+			this.reinitializeLuaProgramForState(snapshot, !savedRuntimeFailed);
+			if (!savedRuntimeFailed && snapshot.luaSnapshot !== undefined) {
+				this.applyLuaSnapshot(snapshot.luaSnapshot);
+			}
+			else {
+				this.restoreFallbackLuaState(snapshot);
+			}
+			this.frameCounter = savedFrameCounter;
+		} else if (snapshot.cartState !== undefined && typeof this.cart.restoreState === 'function') {
 			this.cart.restoreState(this.api, snapshot.cartState);
 		}
+
+		if (savedRuntimeFailed) {
+			this.luaRuntimeFailed = true;
+		}
+		this.lastFrameTimestampMs = $.platform.clock.now();
 		this.setEditorPipelineActive(this.editor?.isActive() === true, true);
 		this.redrawAfterStateRestore();
+	}
+
+	private reinitializeLuaProgramForState(snapshot: BmsxConsoleState, runInit: boolean): void {
+		const program = this.luaProgram;
+		if (!program) {
+			return;
+		}
+		const targetChunkName = snapshot.luaChunkName ?? this.resolveLuaProgramChunkName(program);
+		const override = snapshot.luaProgramSourceOverride ?? null;
+		const source = override !== null ? override : this.resolveLuaProgramSource(program);
+
+		this.applyProgramSourceToCartridge(source, targetChunkName);
+		this.luaProgramSourceOverride = override;
+		this.luaChunkName = targetChunkName;
+
+		this.luaSnapshotSave = null;
+		this.luaSnapshotLoad = null;
+		this.luaInterpreter = null;
+		this.luaInitFunction = null;
+		this.luaUpdateFunction = null;
+		this.luaDrawFunction = null;
+
+		this.bootLuaProgram(runInit);
 	}
 
 	private redrawAfterStateRestore(): void {
@@ -370,6 +448,156 @@ export class BmsxConsoleRuntime extends Service {
 		return this.getLuaProgramSource(program);
 	}
 
+	private captureFallbackLuaState(): { globals?: Record<string, unknown>; locals?: Record<string, unknown>; randomSeed?: number } | null {
+		const interpreter = this.luaInterpreter;
+		if (interpreter === null) {
+			return null;
+		}
+		const globals = this.captureLuaEntryCollection(interpreter.enumerateGlobalEntries());
+		const locals = this.captureLuaEntryCollection(interpreter.enumerateChunkEntries());
+		const randomSeed = interpreter.getRandomSeed();
+		return {
+			globals: globals ?? undefined,
+			locals: locals ?? undefined,
+			randomSeed: Number.isFinite(randomSeed) ? randomSeed : undefined,
+		};
+	}
+
+	private captureLuaEntryCollection(entries: ReadonlyArray<[string, LuaValue]>): Record<string, unknown> | null {
+		if (!entries || entries.length === 0) {
+			return null;
+		}
+		const snapshot: Record<string, unknown> = {};
+		let count = 0;
+		for (const [name, value] of entries) {
+			if (this.shouldSkipLuaSnapshotEntry(name, value)) {
+				continue;
+			}
+			try {
+				const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
+				snapshot[name] = serialized;
+				count += 1;
+			}
+			catch (error) {
+				if ($ && $.debug) {
+					console.warn(`[BmsxConsoleRuntime] Skipped Lua snapshot entry '${name}':`, error);
+				}
+			}
+		}
+		return count > 0 ? snapshot : null;
+	}
+
+	private shouldSkipLuaSnapshotEntry(name: string, value: LuaValue): boolean {
+		if (!name || this.apiFunctionNames.has(name)) {
+			return true;
+		}
+		if (BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
+			return true;
+		}
+		if (this.isLuaFunctionValue(value)) {
+			return true;
+		}
+		if (value instanceof LuaTable) {
+			const handle = value.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
+			if (typeof handle === 'number') {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private isLuaFunctionValue(value: LuaValue): value is LuaFunctionValue {
+		if (value === null || typeof value !== 'object') {
+			return false;
+		}
+		const candidate = value as { call?: unknown };
+		return typeof candidate.call === 'function';
+	}
+
+	private serializeLuaValueForSnapshot(value: LuaValue, visited: Set<LuaTable>): unknown {
+		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
+			return value;
+		}
+		if (value instanceof LuaTable) {
+			if (visited.has(value)) {
+				throw new Error('Cyclic Lua table structures are not supported by the console snapshot.');
+			}
+			const handle = value.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
+			if (typeof handle === 'number') {
+				throw new Error('Cannot serialize engine object handles inside Lua tables.');
+			}
+			visited.add(value);
+			try {
+				const entries = value.entriesArray();
+				if (entries.length === 0) {
+					return {};
+				}
+				const numericEntries = new Map<number, unknown>();
+				const objectEntries: Record<string, unknown> = {};
+				let hasStringKey = false;
+				let maxNumericIndex = 0;
+				for (const [key, entryValue] of entries) {
+					if (key === BmsxConsoleRuntime.LUA_HANDLE_FIELD || key === BmsxConsoleRuntime.LUA_TYPE_FIELD) {
+						continue;
+					}
+					if (this.isLuaFunctionValue(entryValue)) {
+						continue;
+					}
+					if (entryValue instanceof LuaTable) {
+						const nestedHandle = entryValue.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
+						if (typeof nestedHandle === 'number') {
+							if ($ && $.debug) {
+								console.warn('[BmsxConsoleRuntime] Skipping engine-backed Lua table entry during snapshot.');
+							}
+							continue;
+						}
+					}
+					let serializedEntry: unknown;
+					try {
+						serializedEntry = this.serializeLuaValueForSnapshot(entryValue, visited);
+					}
+					catch (error) {
+						if ($ && $.debug) {
+							console.warn(`[BmsxConsoleRuntime] Skipping Lua table entry '${String(key)}' during snapshot:`, error);
+						}
+						continue;
+					}
+					if (typeof key === 'number' && Number.isInteger(key) && key >= 1) {
+						numericEntries.set(key, serializedEntry);
+						if (key > maxNumericIndex) {
+							maxNumericIndex = key;
+						}
+						continue;
+					}
+					if (typeof key === 'string') {
+						hasStringKey = true;
+						objectEntries[key] = serializedEntry;
+						continue;
+					}
+					throw new Error('Unsupported Lua table key type during snapshot serialization.');
+				}
+				const numericCount = numericEntries.size;
+				const isSequential = numericCount > 0 && !hasStringKey && numericCount === maxNumericIndex;
+				if (isSequential) {
+					const result: unknown[] = new Array(maxNumericIndex);
+					for (let index = 1; index <= maxNumericIndex; index += 1) {
+						const entry = numericEntries.get(index);
+						result[index - 1] = entry === undefined ? null : entry;
+					}
+					return result;
+				}
+				for (const [numericKey, numericValue] of numericEntries.entries()) {
+					objectEntries[String(numericKey)] = numericValue;
+				}
+				return objectEntries;
+			}
+			finally {
+				visited.delete(value);
+			}
+		}
+		throw new Error('Unsupported Lua value encountered during snapshot serialization.');
+	}
+
 	private captureLuaSnapshot(): unknown {
 		if (!this.luaSnapshotSave || this.luaRuntimeFailed) {
 			return undefined;
@@ -397,7 +625,65 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	private bootLuaProgram(): void {
+	private restoreFallbackLuaState(snapshot: BmsxConsoleState): void {
+		const interpreter = this.luaInterpreter;
+		if (interpreter === null) {
+			return;
+		}
+		if (snapshot.luaRandomSeed !== undefined && Number.isFinite(snapshot.luaRandomSeed)) {
+			interpreter.setRandomSeed(snapshot.luaRandomSeed);
+		}
+		if (snapshot.luaGlobals) {
+			this.restoreLuaGlobals(snapshot.luaGlobals);
+		}
+		if (snapshot.luaLocals) {
+			this.restoreLuaLocals(snapshot.luaLocals);
+		}
+	}
+
+	private restoreLuaGlobals(globals: Record<string, unknown>): void {
+		const interpreter = this.luaInterpreter;
+		if (interpreter === null) {
+			return;
+		}
+		for (const [name, value] of Object.entries(globals)) {
+			if (!name || this.apiFunctionNames.has(name) || BmsxConsoleRuntime.LUA_SNAPSHOT_EXCLUDED_GLOBALS.has(name)) {
+				continue;
+			}
+			try {
+				const luaValue = this.jsToLua(value, interpreter);
+				interpreter.setGlobal(name, luaValue);
+			}
+			catch (error) {
+				if ($ && $.debug) {
+					console.warn(`[BmsxConsoleRuntime] Failed to restore Lua global '${name}':`, error);
+				}
+			}
+		}
+	}
+
+	private restoreLuaLocals(locals: Record<string, unknown>): void {
+		const interpreter = this.luaInterpreter;
+		if (interpreter === null) {
+			return;
+		}
+		for (const [name, value] of Object.entries(locals)) {
+			if (!name || !interpreter.hasChunkBinding(name)) {
+				continue;
+			}
+			try {
+				const luaValue = this.jsToLua(value, interpreter);
+				interpreter.assignChunkValue(name, luaValue);
+			}
+			catch (error) {
+				if ($ && $.debug) {
+					console.warn(`[BmsxConsoleRuntime] Failed to restore Lua local '${name}':`, error);
+				}
+			}
+		}
+	}
+
+	private bootLuaProgram(runInit: boolean): void {
 		const program = this.luaProgram;
 		if (!program) return;
 
@@ -431,7 +717,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaSnapshotSave = this.resolveLuaFunction(env.get('__bmsx_snapshot_save'));
 		this.luaSnapshotLoad = this.resolveLuaFunction(env.get('__bmsx_snapshot_load'));
 
-		if (this.luaInitFunction !== null) {
+		if (runInit && this.luaInitFunction !== null) {
 			try {
 				this.invokeLuaFunction(this.luaInitFunction, []);
 			}

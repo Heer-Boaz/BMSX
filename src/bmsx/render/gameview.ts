@@ -252,7 +252,6 @@ export class GameView implements RegisterablePersistent, RenderContext {
 							this.renderer.submit.glyphs(o);
 							return;
 					}
-					throw new Error(`[GameView] Unsupported render submission type '${(o as { type: string }).type}'.`);
 				},
 				particle: (o: ParticleRenderSubmission) => { ParticlesPipeline.submitParticle({ ...o }); },
 				sprite: (o: ImgRenderSubmission) => { SpritesPipeline.drawImg(o); },

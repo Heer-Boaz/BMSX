@@ -11,7 +11,7 @@ import { ConsoleSpriteRegistry, ConsoleTilemap, type SpriteColliderConfig, type 
 import { ConsoleColliderManager, type ColliderCreateOptions, type ColliderContactInfo } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta, Identifier, Registerable, RomPack } from '../rompack/rompack';
+import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta, Identifier, Registerable, RomPack, vec3arr } from '../rompack/rompack';
 import type { World } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
@@ -1032,10 +1032,23 @@ export class BmsxConsoleApi {
 	private renderGlyph(glyph: ConsoleGlyph, originX: number, originY: number, colorRef: color): void {
 		for (let i = 0; i < glyph.segments.length; i++) {
 			const segment = glyph.segments[i];
-			const px = originX + segment.x;
-			const py = originY + segment.y;
-			this.submitRectangle(px, py, px + segment.length, py + 1, colorRef, 'fill', DRAW_LAYER);
+			const baseX = originX + segment.x;
+			const baseY = originY + segment.y;
+			for (let dx = 0; dx < segment.length; dx++) {
+				this.submitParticlePixel(baseX + dx, baseY, colorRef);
+			}
 		}
+	}
+
+	private submitParticlePixel(x: number, y: number, color: color): void {
+		const centerX = Math.floor(x) + 0.5;
+		const centerY = Math.floor(y) + 0.5;
+		const position: vec3arr = [centerX, centerY, 0];
+		$.view.renderer.submit.particle({
+			position,
+			size: 1,
+			color,
+		});
 	}
 
 	private submitRectangle(x0: number, y0: number, x1: number, y1: number, color: number | color, kind: 'rect' | 'fill', layer?: RenderLayer): void {

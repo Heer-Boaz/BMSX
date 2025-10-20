@@ -6,6 +6,7 @@ import type { PassEncoder, RenderContext, TextureHandle } from '../backend/pipel
 import { ParticlePipelineState, RenderPassLibrary } from '../backend/renderpasslib';
 import { TEXTURE_UNIT_PARTICLE } from '../backend/webgl/webgl.constants';
 import { WebGLBackend } from '../backend/webgl/webgl_backend';
+import type { Camera } from './camera3d';
 import { M4 } from './math3d';
 import {
 	beginParticleQueue,
@@ -32,6 +33,65 @@ const BYTES_PER_FLOAT = 4;
 const INSTANCE_BYTES = INSTANCE_FLOATS * BYTES_PER_FLOAT;
 let particleProgram: WebGLProgram; let vao: WebGLVertexArrayObject; let quadBuffer: WebGLBuffer; let instanceBuffers: WebGLBuffer[] = []; let viewProjLocation: WebGLUniformLocation; let cameraRightLocation: WebGLUniformLocation; let cameraUpLocation: WebGLUniformLocation; let textureLocation: WebGLUniformLocation; let ambientModeLocation: WebGLUniformLocation; let ambientFactorLocation: WebGLUniformLocation; let defaultTexture: TextureHandle; const instanceData = new Float32Array(MAX_PARTICLES * INSTANCE_FLOATS);
 let framePage = 0;
+
+const fallbackParticleState: ParticlePipelineState = {
+	width: 0,
+	height: 0,
+	viewProj: new Float32Array(16),
+	camRight: new Float32Array([1, 0, 0]),
+	camUp: new Float32Array([0, -1, 0]),
+};
+
+const cameraParticleState: ParticlePipelineState = {
+	width: 0,
+	height: 0,
+	viewProj: new Float32Array(16),
+	camRight: new Float32Array(3),
+	camUp: new Float32Array(3),
+};
+
+function safeDimension(value: number, fallback: number): number {
+	if (Number.isFinite(value) && value > 0) {
+		return value;
+	}
+	return fallback > 0 ? fallback : 1;
+}
+
+function updateOrthographicParticleState(width: number, height: number): ParticlePipelineState {
+	const safeWidth = safeDimension(width, fallbackParticleState.width);
+	const safeHeight = safeDimension(height, fallbackParticleState.height);
+	fallbackParticleState.width = safeWidth;
+	fallbackParticleState.height = safeHeight;
+	M4.orthographicInto(fallbackParticleState.viewProj, 0, safeWidth, safeHeight, 0, -1, 1);
+	fallbackParticleState.camRight[0] = 1;
+	fallbackParticleState.camRight[1] = 0;
+	fallbackParticleState.camRight[2] = 0;
+	fallbackParticleState.camUp[0] = 0;
+	fallbackParticleState.camUp[1] = -1;
+	fallbackParticleState.camUp[2] = 0;
+	return fallbackParticleState;
+}
+
+function updateCameraParticleState(width: number, height: number, cam: Camera): ParticlePipelineState {
+	cameraParticleState.width = safeDimension(width, cameraParticleState.width);
+	cameraParticleState.height = safeDimension(height, cameraParticleState.height);
+	cameraParticleState.viewProj = cam.viewProjection;
+	M4.viewRightUpInto(cam.view, cameraParticleState.camRight, cameraParticleState.camUp);
+	return cameraParticleState;
+}
+
+function resolveParticleState(state: ParticlePipelineState | undefined, context: RenderContext): ParticlePipelineState {
+	if (!state) {
+		return updateOrthographicParticleState(context.offscreenCanvasSize.x, context.offscreenCanvasSize.y);
+	}
+	const width = safeDimension(state.width, context.offscreenCanvasSize.x);
+	const height = safeDimension(state.height, context.offscreenCanvasSize.y);
+	if (state.width !== width || state.height !== height) {
+		return updateOrthographicParticleState(width, height);
+	}
+	return state;
+}
+
 export function init(backend: WebGLBackend): void {
 	const gl = backend.gl;
 	vao = backend.createVertexArray() as WebGLVertexArrayObject;
@@ -83,12 +143,13 @@ interface ParticleRuntime {
 	context: RenderContext;
 }
 
-export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState): void {
+export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGLFramebuffer, state: ParticlePipelineState | undefined): void {
 	const { backend, gl, context } = runtime;
 	const pending = beginParticleQueue();
 	if (pending === 0) return;
-	camRight.set(state.camRight);
-	camUp.set(state.camUp);
+	const resolvedState = resolveParticleState(state, context);
+	camRight.set(resolvedState.camRight);
+	camUp.set(resolvedState.camUp);
 	const batches = new Map<TextureHandle, Map<string, ParticleRenderSubmission[]>>();
 	forEachParticleQueue((p) => {
 		if (!p) return;
@@ -102,11 +163,13 @@ export function renderParticleBatch(runtime: ParticleRuntime, framebuffer: WebGL
 		if (!arr) { arr = []; byAmbient.set(key, arr); }
 		arr.push({ ...p, ambientMode: mode as 0 | 1, ambientFactor: factor, texture: tex });
 	});
-	backend.setViewport({ x: 0, y: 0, w: state.width, h: state.height });
+	const viewportWidth = safeDimension(resolvedState.width, context.offscreenCanvasSize.x);
+	const viewportHeight = safeDimension(resolvedState.height, context.offscreenCanvasSize.y);
+	backend.setViewport({ x: 0, y: 0, w: viewportWidth, h: viewportHeight });
 	gl.enable(gl.BLEND);
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 	gl.depthMask(false);
-	gl.uniformMatrix4fv(viewProjLocation, false, state.viewProj);
+	gl.uniformMatrix4fv(viewProjLocation, false, resolvedState.viewProj);
 	gl.uniform3fv(cameraRightLocation, camRight);
 	gl.uniform3fv(cameraUpLocation, camUp);
 	gl.uniform1i(textureLocation, TEXTURE_UNIT_PARTICLE);
@@ -177,16 +240,17 @@ export function registerParticlesPass_WebGL(registry: RenderPassLibrary): void {
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: ParticleRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
-			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState);
+			renderParticleBatch(runtime, fbo as WebGLFramebuffer, s as ParticlePipelineState | undefined);
 		},
 		prepare: (_backend, _state) => {
 			const gv = $.view;
 			const width = gv.offscreenCanvasSize.x; const height = gv.offscreenCanvasSize.y;
 			const cam = $.world.activeCamera3D;
-			if (!cam) return;
-
-			M4.viewRightUpInto(cam.view, camRight, camUp);
-			registry.setState('particles', { width, height, viewProj: cam.viewProjection, camRight: camRight.slice() as Float32Array, camUp: camUp.slice() as Float32Array });
+			if (!cam) {
+				registry.setState('particles', updateOrthographicParticleState(width, height));
+				return;
+			}
+			registry.setState('particles', updateCameraParticleState(width, height, cam));
 		},
 	});
 }
