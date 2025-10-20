@@ -89,6 +89,12 @@ type HighlightLine = {
 	columnToDisplay: number[];
 };
 
+type SearchMatch = {
+	row: number;
+	start: number;
+	end: number;
+};
+
 type EditorSnapshot = {
 	lines: string[];
 	cursorRow: number;
@@ -134,6 +140,13 @@ const COLOR_STATUS_BACKGROUND = 8;
 const COLOR_STATUS_TEXT = 15;
 const COLOR_STATUS_WARNING = 9;
 const COLOR_STATUS_SUCCESS = 10;
+const COLOR_SEARCH_BACKGROUND = 7;
+const COLOR_SEARCH_TEXT = 0;
+const COLOR_SEARCH_PLACEHOLDER = COLOR_CODE_DIM;
+const COLOR_SEARCH_OUTLINE = 0;
+const SEARCH_MATCH_OVERLAY = { r: 0.9, g: 0.35, b: 0.35, a: 0.38 };
+const SEARCH_MATCH_ACTIVE_OVERLAY = { r: 1, g: 0.85, b: 0.25, a: 0.6 };
+const SEARCH_BAR_MARGIN_Y = 2;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -167,6 +180,7 @@ export class ConsoleCartEditor {
 		'KeyZ',
 		'PageDown',
 		'PageUp',
+		'F3',
 		'Space',
 		'Tab',
 	];
@@ -194,6 +208,10 @@ export class ConsoleCartEditor {
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
 	private cursorRevealSuspended = false;
+	private searchActive = false;
+	private searchQuery = '';
+	private searchMatches: SearchMatch[] = [];
+	private searchCurrentIndex = -1;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -245,6 +263,7 @@ export class ConsoleCartEditor {
 		}
 		api.cls(COLOR_FRAME);
 		this.drawTopBar(api);
+		this.drawSearchBar(api);
 		this.drawCodeArea(api);
 		this.drawStatusBar(api);
 	}
@@ -276,6 +295,11 @@ export class ConsoleCartEditor {
 
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
+			this.consumeKey(keyboard, 'Escape');
+			if (this.searchActive) {
+				this.closeSearch();
+				return true;
+			}
 			if (this.active) {
 				this.deactivate();
 			} else {
@@ -312,6 +336,16 @@ export class ConsoleCartEditor {
 		this.redoStack = [];
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
+		this.searchActive = false;
+		if (this.searchQuery.length === 0) {
+			this.searchMatches = [];
+			this.searchCurrentIndex = -1;
+		} else {
+			this.updateSearchMatches();
+			if (this.searchMatches.length > 0) {
+				this.focusSearchResult(this.searchCurrentIndex);
+			}
+		}
 		this.ensureCursorVisible();
 	}
 
@@ -327,6 +361,7 @@ export class ConsoleCartEditor {
 		this.redoStack = [];
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
+		this.searchActive = false;
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -351,6 +386,23 @@ export class ConsoleCartEditor {
 		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
 		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
 
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyF')) {
+			this.consumeKey(keyboard, 'KeyF');
+			this.openSearch(true);
+		}
+		if (this.searchActive) {
+			this.handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
+			return;
+		}
+		if (this.searchQuery.length > 0 && this.isKeyJustPressed(keyboard, 'F3')) {
+			this.consumeKey(keyboard, 'F3');
+			if (shiftDown) {
+				this.jumpToPreviousMatch();
+			} else {
+				this.jumpToNextMatch();
+			}
+			return;
+		}
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyZ')) {
 			this.consumeKey(keyboard, 'KeyZ');
 			if (shiftDown) {
@@ -405,6 +457,239 @@ export class ConsoleCartEditor {
 			this.insertText(' ');
 			this.consumeKey(keyboard, 'Space');
 		}
+	}
+
+	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyZ')) {
+			this.consumeKey(keyboard, 'KeyZ');
+			if (shiftDown) {
+				this.redo();
+			} else {
+				this.undo();
+			}
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyY')) {
+			this.consumeKey(keyboard, 'KeyY');
+			this.redo();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
+			this.consumeKey(keyboard, 'KeyS');
+			this.save();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyC')) {
+			this.consumeKey(keyboard, 'KeyC');
+			void this.copySelectionToClipboard();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyX')) {
+			this.consumeKey(keyboard, 'KeyX');
+			void this.cutSelectionToClipboard();
+			return;
+		}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyV')) {
+			this.consumeKey(keyboard, 'KeyV');
+			this.pasteIntoSearch();
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Enter')) {
+			this.consumeKey(keyboard, 'Enter');
+			if (shiftDown) {
+				this.jumpToPreviousMatch();
+			} else {
+				this.jumpToNextMatch();
+			}
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'F3')) {
+			this.consumeKey(keyboard, 'F3');
+			if (shiftDown) {
+				this.jumpToPreviousMatch();
+			} else {
+				this.jumpToNextMatch();
+			}
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Backspace');
+			if (this.searchQuery.length > 0) {
+				this.removeSearchCharacter();
+			}
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Delete');
+			if (this.searchQuery.length > 0) {
+				this.removeSearchCharacter();
+			}
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Space', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Space');
+			this.appendToSearchQuery(' ');
+			return;
+		}
+		const codes = Object.keys(CHARACTER_MAP);
+		for (let i = 0; i < codes.length; i++) {
+			const code = codes[i];
+			if (!this.isKeyTyped(keyboard, code)) {
+				continue;
+			}
+			const entry = CHARACTER_MAP[code];
+			const value = shiftDown ? entry.shift : entry.normal;
+			this.appendToSearchQuery(value);
+			this.consumeKey(keyboard, code);
+			return;
+		}
+	}
+
+	private openSearch(useSelection: boolean): void {
+		this.searchActive = true;
+		let appliedSelection = false;
+		if (useSelection) {
+			const range = this.getSelectionRange();
+			const selected = this.getSelectionText();
+			if (range && selected !== null && selected.length > 0 && selected.indexOf('\n') === -1) {
+				if (this.searchQuery !== selected) {
+					this.searchQuery = selected;
+				}
+				this.cursorRow = range.start.row;
+				this.cursorColumn = range.start.column;
+				appliedSelection = true;
+			}
+		}
+		if (!appliedSelection && this.searchQuery.length === 0) {
+			this.searchCurrentIndex = -1;
+		}
+		this.onSearchQueryChanged();
+	}
+
+	private closeSearch(): void {
+		this.searchActive = false;
+	}
+
+	private appendToSearchQuery(value: string): void {
+		if (value.length === 0) {
+			return;
+		}
+		this.searchQuery += value;
+		this.onSearchQueryChanged();
+	}
+
+	private removeSearchCharacter(): void {
+		if (this.searchQuery.length === 0) {
+			return;
+		}
+		this.searchQuery = this.searchQuery.slice(0, -1);
+		this.onSearchQueryChanged();
+	}
+
+	private pasteIntoSearch(): void {
+		const source = ConsoleCartEditor.customClipboard;
+		if (source === null || source.length === 0) {
+			this.showMessage('Editor clipboard is empty', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		const normalized = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+		const merged = normalized.split('\n').join(' ');
+		if (merged.length === 0) {
+			return;
+		}
+		this.searchQuery += merged;
+		this.onSearchQueryChanged();
+	}
+
+	private onSearchQueryChanged(): void {
+		this.updateSearchMatches();
+		if (this.searchMatches.length === 0) {
+			this.selectionAnchor = null;
+			this.searchCurrentIndex = -1;
+			return;
+		}
+		if (this.searchCurrentIndex < 0 || this.searchCurrentIndex >= this.searchMatches.length) {
+			this.searchCurrentIndex = 0;
+		}
+		this.focusSearchResult(this.searchCurrentIndex);
+	}
+
+	private updateSearchMatches(): void {
+		this.searchMatches = [];
+		this.searchCurrentIndex = -1;
+		if (this.searchQuery.length === 0) {
+			return;
+		}
+		const needle = this.searchQuery.toLowerCase();
+		for (let row = 0; row < this.lines.length; row++) {
+			const line = this.lines[row];
+			if (line.length === 0) {
+				continue;
+			}
+			const lower = line.toLowerCase();
+			let start = 0;
+			while (start <= lower.length - needle.length) {
+				const index = lower.indexOf(needle, start);
+				if (index === -1) {
+					break;
+				}
+				this.searchMatches.push({ row, start: index, end: index + needle.length });
+				if (this.searchCurrentIndex === -1) {
+					if (row > this.cursorRow || (row === this.cursorRow && index >= this.cursorColumn)) {
+						this.searchCurrentIndex = this.searchMatches.length - 1;
+					}
+				}
+				start = index + needle.length;
+			}
+		}
+		if (this.searchCurrentIndex === -1 && this.searchMatches.length > 0) {
+			this.searchCurrentIndex = 0;
+		}
+	}
+
+	private focusSearchResult(index: number): void {
+		if (index < 0 || index >= this.searchMatches.length) {
+			return;
+		}
+		const match = this.searchMatches[index];
+		this.cursorRow = match.row;
+		this.cursorColumn = match.start;
+		this.selectionAnchor = { row: match.row, column: match.end };
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.revealCursor();
+	}
+
+	private jumpToNextMatch(): void {
+		if (this.searchMatches.length === 0) {
+			this.showMessage('No matches found', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		if (this.searchCurrentIndex < 0) {
+			this.searchCurrentIndex = 0;
+		} else {
+			this.searchCurrentIndex += 1;
+			if (this.searchCurrentIndex >= this.searchMatches.length) {
+				this.searchCurrentIndex = 0;
+			}
+		}
+		this.focusSearchResult(this.searchCurrentIndex);
+	}
+
+	private jumpToPreviousMatch(): void {
+		if (this.searchMatches.length === 0) {
+			this.showMessage('No matches found', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		if (this.searchCurrentIndex < 0) {
+			this.searchCurrentIndex = this.searchMatches.length - 1;
+		} else {
+			this.searchCurrentIndex -= 1;
+			if (this.searchCurrentIndex < 0) {
+				this.searchCurrentIndex = this.searchMatches.length - 1;
+			}
+		}
+		this.focusSearchResult(this.searchCurrentIndex);
 	}
 
 	private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, altDown: boolean): void {
@@ -747,7 +1032,7 @@ export class ConsoleCartEditor {
 	}
 
 	private getCodeAreaBounds(): { codeTop: number; codeBottom: number; codeRight: number; textLeft: number; } {
-		const codeTop = this.topMargin;
+		const codeTop = this.codeViewportTop();
 		const codeBottom = this.viewportHeight - this.bottomMargin;
 		const codeRight = this.viewportWidth;
 		const textLeft = this.gutterWidth + 2;
@@ -1682,8 +1967,65 @@ private insertTab(): void {
 		this.drawText(api, version, this.viewportWidth - this.measureText(version) - 4, titleY, COLOR_TOP_BAR_TEXT);
 	}
 
+	private drawSearchBar(api: BmsxConsoleApi): void {
+		const height = this.getSearchBarHeight();
+		if (height <= 0) {
+			return;
+		}
+		const barTop = this.headerHeight;
+		const barBottom = barTop + height;
+		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_SEARCH_BACKGROUND);
+		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_SEARCH_OUTLINE);
+		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_SEARCH_OUTLINE);
+
+		const label = 'SEARCH:';
+		const labelX = 4;
+		const labelY = barTop + SEARCH_BAR_MARGIN_Y;
+		this.drawText(api, label, labelX, labelY, COLOR_SEARCH_TEXT);
+
+		let queryText = this.searchQuery;
+		let queryColor = COLOR_SEARCH_TEXT;
+		if (queryText.length === 0) {
+			queryText = 'TYPE TO SEARCH';
+			queryColor = COLOR_SEARCH_PLACEHOLDER;
+		}
+		const queryX = labelX + this.measureText(label + ' ');
+		this.drawText(api, queryText, queryX, labelY, queryColor);
+
+		if (this.searchActive && this.cursorVisible) {
+			const caretX = queryX + this.measureText(this.searchQuery);
+			const caretTop = labelY;
+			const caretBottom = caretTop + this.lineHeight;
+			api.rectfill(caretX, caretTop, caretX + 1, caretBottom, COLOR_SEARCH_TEXT);
+		}
+
+		if (this.searchQuery.length > 0) {
+			const total = this.searchMatches.length;
+			const current = this.searchCurrentIndex >= 0 ? this.searchCurrentIndex + 1 : 0;
+			const infoText = total === 0 ? '0/0' : `${current}/${total}`;
+			const infoColor = total === 0 ? COLOR_STATUS_WARNING : COLOR_SEARCH_TEXT;
+			const infoWidth = this.measureText(infoText);
+			this.drawText(api, infoText, this.viewportWidth - infoWidth - 4, labelY, infoColor);
+		}
+	}
+
+	private codeViewportTop(): number {
+		return this.topMargin + this.getSearchBarHeight();
+	}
+
+	private getSearchBarHeight(): number {
+		if (!this.isSearchVisible()) {
+			return 0;
+		}
+		return this.lineHeight + SEARCH_BAR_MARGIN_Y * 2;
+	}
+
+	private isSearchVisible(): boolean {
+		return this.searchActive || this.searchQuery.length > 0;
+	}
+
 	private drawCodeArea(api: BmsxConsoleApi): void {
-		const codeTop = this.topMargin;
+		const codeTop = this.codeViewportTop();
 		const codeBottom = this.viewportHeight - this.bottomMargin;
 		const gutterRight = this.gutterWidth;
 
@@ -1708,6 +2050,7 @@ private insertTab(): void {
 				const line = this.lines[lineIndex];
 				const highlight = this.highlightLine(line);
 				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
+				this.drawSearchHighlightsForRow(api, lineIndex, highlight, gutterRight + 2, rowY, slice.startDisplay, slice.endDisplay);
 				const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
 				if (selectionSlice) {
 					const selectionStartX = gutterRight + 2 + this.measureHighlightRange(highlight, slice.startDisplay, selectionSlice.startDisplay);
@@ -1726,6 +2069,29 @@ private insertTab(): void {
 
 		if (this.cursorVisible && cursorHighlight) {
 			this.drawCursor(api, gutterRight + 2, codeTop, cursorHighlight, cursorSliceStart);
+		}
+	}
+
+	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, highlight: HighlightLine, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+		if (this.searchMatches.length === 0 || this.searchQuery.length === 0) {
+			return;
+		}
+		for (let i = 0; i < this.searchMatches.length; i++) {
+			const match = this.searchMatches[i];
+			if (match.row !== rowIndex) {
+				continue;
+			}
+			const startDisplay = this.columnToDisplay(highlight, match.start);
+			const endDisplay = this.columnToDisplay(highlight, match.end);
+			const visibleStart = Math.max(sliceStartDisplay, startDisplay);
+			const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
+			if (visibleEnd <= visibleStart) {
+				continue;
+			}
+			const startX = originX + this.measureHighlightRange(highlight, sliceStartDisplay, visibleStart);
+			const endX = originX + this.measureHighlightRange(highlight, sliceStartDisplay, visibleEnd);
+			const overlay = i === this.searchCurrentIndex ? SEARCH_MATCH_ACTIVE_OVERLAY : SEARCH_MATCH_OVERLAY;
+			api.rectfillColor(startX, originY, endX, originY + this.lineHeight, overlay);
 		}
 	}
 
@@ -2080,7 +2446,7 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 	}
 
 	private visibleRowCount(): number {
-		const available = this.viewportHeight - this.topMargin - this.bottomMargin;
+		const available = this.viewportHeight - this.codeViewportTop() - this.bottomMargin;
 		if (available <= 0) {
 			return 1;
 		}
