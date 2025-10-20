@@ -12,24 +12,53 @@ import type { LuaFunctionValue, LuaValue } from '../lua/value.ts';
 import { LuaTable } from '../lua/value.ts';
 import { LuaRuntimeError, LuaError } from '../lua/errors.ts';
 import { $ } from '../core/game';
+import { Service } from '../core/service';
+import { EventEmitter, type EventPayload } from '../core/eventemitter';
+import type { Identifiable } from '../rompack/rompack';
+import { consoleEditorSpec } from '../core/pipelines/console_editor';
 
 export type BmsxConsoleRuntimeOptions = {
 	cart: BmsxConsoleCartridge;
-	storage: StorageService;
 	playerIndex: number;
-	physics: Physics2DManager;
+	storage?: StorageService;
 };
 
-export class BmsxConsoleRuntime {
-	private readonly cart: BmsxConsoleCartridge;
+export class BmsxConsoleRuntime extends Service {
+	private static _instance: BmsxConsoleRuntime | null = null;
+	private static readonly MAX_WRAP_DEPTH = 4;
+	private static readonly MAX_FRAME_DELTA_MS = 250;
+	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
+	private static readonly LUA_TYPE_FIELD = '__js_type__';
+
+	public static ensure(options: BmsxConsoleRuntimeOptions): BmsxConsoleRuntime {
+		if (!BmsxConsoleRuntime._instance) {
+			BmsxConsoleRuntime._instance = new BmsxConsoleRuntime(options);
+			return BmsxConsoleRuntime._instance;
+		}
+		BmsxConsoleRuntime._instance.assertCompatibleOptions(options);
+		return BmsxConsoleRuntime._instance;
+	}
+
+	public static get instance(): BmsxConsoleRuntime | null {
+		return BmsxConsoleRuntime._instance;
+	}
+
+	public static destroy(): void {
+		if (!BmsxConsoleRuntime._instance) return;
+		BmsxConsoleRuntime._instance.dispose();
+		BmsxConsoleRuntime._instance = null;
+	}
+
+	private cart: BmsxConsoleCartridge;
 	private readonly api: BmsxConsoleApi;
-	private readonly input: BmsxConsoleInput;
+	private input: BmsxConsoleInput;
 	private readonly storage: BmsxConsoleStorage;
+	private readonly storageService: StorageService;
 	private readonly colliders: ConsoleColliderManager;
 	private readonly physics: Physics2DManager;
 	private readonly apiFunctionNames = new Set<string>();
 	private luaProgram: BmsxConsoleLuaProgram | null;
-	private readonly playerIndex: number;
+	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
 	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter: LuaInterpreter | null = null;
@@ -42,20 +71,25 @@ export class BmsxConsoleRuntime {
 	private readonly luaObjectToHandle = new WeakMap<object, number>();
 	private nextLuaHandleId = 1;
 	private wrapDepth = 0;
-	private static readonly MAX_WRAP_DEPTH = 4;
 	private luaRuntimeFailed = false;
+	private lastFrameTimestampMs = 0;
+	private readonly presentationFrameHandler: (event_name: string, emitter: Identifiable, payload?: EventPayload) => void;
+	private frameListenerAttached = false;
+	private editorPipelineActive = false;
+	private audioSuspended = false;
+	private preEditorPauseState: boolean | null = null;
 
-	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
-	private static readonly LUA_TYPE_FIELD = '__js_type__';
-
-	constructor(options: BmsxConsoleRuntimeOptions) {
+	private constructor(options: BmsxConsoleRuntimeOptions) {
+		super({ id: 'bmsx_console_runtime' });
+		this.enableEvents();
+		this.presentationFrameHandler = this.handlePresentationFrame.bind(this);
 		this.cart = options.cart;
 		this.playerIndex = options.playerIndex;
 		this.input = new BmsxConsoleInput(options.playerIndex);
-		this.storage = new BmsxConsoleStorage(options.storage, options.cart.meta.persistentId);
+		this.storageService = options.storage ?? $.platform.storage;
+		this.storage = new BmsxConsoleStorage(this.storageService, options.cart.meta.persistentId);
 		this.colliders = new ConsoleColliderManager();
-		this.physics = options.physics;
-		this.physics.clear();
+		this.physics = new Physics2DManager();
 		this.api = new BmsxConsoleApi({
 			input: this.input,
 			storage: this.storage,
@@ -64,6 +98,86 @@ export class BmsxConsoleRuntime {
 		});
 		this.luaProgram = this.cart.luaProgram ?? null;
 		this.initializeEditor();
+		this.attachFrameListener();
+		this.boot();
+	}
+
+	private assertCompatibleOptions(options: BmsxConsoleRuntimeOptions): void {
+		if (options.cart !== this.cart) {
+			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a cart. Destroy the existing instance before swapping carts.');
+		}
+		if (options.playerIndex !== this.playerIndex) {
+			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different player index.');
+		}
+		if (options.storage && options.storage !== this.storageService) {
+			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different storage service.');
+		}
+	}
+
+	private attachFrameListener(): void {
+		if (this.frameListenerAttached) return;
+		EventEmitter.instance.on('frameend', this.presentationFrameHandler, this, { lane: 'presentation', persistent: true });
+		this.frameListenerAttached = true;
+	}
+
+	private detachFrameListener(): void {
+		if (!this.frameListenerAttached) return;
+		EventEmitter.instance.off('frameend', this.presentationFrameHandler);
+		this.frameListenerAttached = false;
+	}
+
+	private handlePresentationFrame(_event: string, _emitter: Identifiable, _payload?: EventPayload): void {
+		if (!this.tickEnabled) return;
+		const now = $.platform.clock.now();
+		let deltaMs = now - this.lastFrameTimestampMs;
+		if (!Number.isFinite(deltaMs) || deltaMs < 0) {
+			deltaMs = 0;
+		}
+		else if (deltaMs > BmsxConsoleRuntime.MAX_FRAME_DELTA_MS) {
+			deltaMs = BmsxConsoleRuntime.MAX_FRAME_DELTA_MS;
+		}
+		this.lastFrameTimestampMs = now;
+		this.frame(deltaMs);
+		if ($.paused && this.shouldRequestPausedFrame()) {
+			$.requestPausedFrame();
+		}
+	}
+
+	private shouldRequestPausedFrame(): boolean {
+		if (!this.editor) {
+			return false;
+		}
+		return this.editor.isActive();
+	}
+
+	private setEditorPipelineActive(active: boolean, force = false): void {
+		if (!force && active === this.editorPipelineActive) {
+			return;
+		}
+		this.editorPipelineActive = active;
+		if (active) {
+			if (this.preEditorPauseState === null) {
+				this.preEditorPauseState = $.paused;
+			}
+			if ($.paused) {
+				$.paused = false;
+			}
+			if (!this.audioSuspended) {
+				$.sndmaster.pause();
+				this.audioSuspended = true;
+			}
+			$.setPipelineOverride(consoleEditorSpec());
+			return;
+		}
+		$.setPipelineOverride(null);
+		if (this.audioSuspended) {
+			$.sndmaster.resume();
+			this.audioSuspended = false;
+		}
+		if (this.preEditorPauseState !== null) {
+			$.paused = this.preEditorPauseState;
+			this.preEditorPauseState = null;
+		}
 	}
 
 	public boot(): void {
@@ -77,9 +191,15 @@ export class BmsxConsoleRuntime {
 		this.api.colliderClear();
 		if (this.hasLuaProgram()) {
 			this.bootLuaProgram();
-			return;
 		}
-		this.cart.init(this.api);
+		else {
+			this.cart.init(this.api);
+		}
+		this.lastFrameTimestampMs = $.platform.clock.now();
+		this.frame(0);
+		if ($.paused && this.shouldRequestPausedFrame()) {
+			$.requestPausedFrame();
+		}
 	}
 
 	public frame(deltaMilliseconds: number): void {
@@ -92,17 +212,19 @@ export class BmsxConsoleRuntime {
 		if (editor) {
 			editor.update(deltaSeconds);
 		}
+		const editorActive = editor?.isActive() === true;
+		this.setEditorPipelineActive(editorActive);
 		this.api.beginFrame(this.frameCounter, deltaSeconds);
-		if (editor && editor.isActive()) {
+		if (editorActive && editor) {
 			editor.draw(this.api);
 			this.frameCounter += 1;
 			return;
 		}
 		if (this.hasLuaProgram()) {
-			if (this.luaRuntimeFailed) {
-				if (editor && editor.isActive()) {
-					editor.draw(this.api);
-				}
+				if (this.luaRuntimeFailed) {
+					if (editorActive && editor) {
+						editor.draw(this.api);
+					}
 				this.frameCounter += 1;
 				return;
 			}
@@ -132,10 +254,18 @@ export class BmsxConsoleRuntime {
 		this.frameCounter += 1;
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
+		this.setEditorPipelineActive(false, true);
+		this.detachFrameListener();
 		if (this.editor) {
 			this.editor.shutdown();
 			this.editor = null;
+		}
+		this.colliders.clear();
+		this.luaInterpreter = null;
+		super.dispose();
+		if (BmsxConsoleRuntime._instance === this) {
+			BmsxConsoleRuntime._instance = null;
 		}
 	}
 
@@ -157,7 +287,7 @@ export class BmsxConsoleRuntime {
 			metadata: this.cart.meta,
 			viewport,
 			loadSource: () => this.getEditorSource(),
-			reloadSource: (source: string) => { this.reloadLuaProgram(source); },
+			saveSource: (source: string) => { this.saveLuaProgram(source); },
 		});
 	}
 
@@ -209,6 +339,41 @@ export class BmsxConsoleRuntime {
 		}
 	}
 
+	public saveLuaProgram(source: string): void {
+		if (!this.hasLuaProgram()) {
+			throw new Error('[BmsxConsoleRuntime] Cannot save Lua program when no Lua program is active.');
+		}
+		if (typeof source !== 'string') {
+			throw new Error('[BmsxConsoleRuntime] Lua source must be a string.');
+		}
+		if (source.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Lua source cannot be empty.');
+		}
+		const program = this.luaProgram;
+		if (!program) {
+			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
+		}
+		const previousOverride = this.luaProgramSourceOverride;
+		const previousChunkName = this.resolveLuaProgramChunkName(program);
+		const previousSource = this.getLuaProgramSource(program);
+		const targetChunkName = previousChunkName;
+		this.validateLuaSource(source, targetChunkName);
+		try {
+			this.luaProgramSourceOverride = source;
+			this.applyProgramSourceToCartridge(source, targetChunkName);
+		}
+		catch (error) {
+			this.luaProgramSourceOverride = previousOverride;
+			try {
+				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+			}
+			catch {
+				// Restoration best-effort; ignore secondary failure.
+			}
+			throw error;
+		}
+	}
+
 	public reloadLuaProgram(source: string): void {
 		if (!this.hasLuaProgram()) {
 			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
@@ -223,21 +388,21 @@ export class BmsxConsoleRuntime {
 		if (!program) {
 			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
 		}
-		const chunkName = this.resolveLuaProgramChunkName(program);
-		this.validateLuaSource(source, chunkName);
 		const previousOverride = this.luaProgramSourceOverride;
-		this.luaProgramSourceOverride = source;
+		const previousChunkName = this.resolveLuaProgramChunkName(program);
+		const previousSource = this.getLuaProgramSource(program);
 		try {
+			this.saveLuaProgram(source);
 			this.boot();
-			this.applyProgramSourceToCartridge(source, chunkName);
 		}
 		catch (error) {
 			this.luaProgramSourceOverride = previousOverride;
 			try {
+				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
 				this.boot();
 			}
-			catch (_restoreError) {
-				// Preserve original error; restoration failure is secondary.
+			catch {
+				// Ignore restoration errors; original error takes precedence.
 			}
 			throw error;
 		}

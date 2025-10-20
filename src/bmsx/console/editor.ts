@@ -71,7 +71,7 @@ export type ConsoleEditorOptions = {
 	viewport: ConsoleViewport;
 	metadata: BmsxConsoleMetadata;
 	loadSource: () => string;
-	reloadSource: (source: string) => void;
+	saveSource: (source: string) => void;
 };
 
 type Position = { row: number; column: number };
@@ -175,7 +175,7 @@ export class ConsoleCartEditor {
 	private readonly playerIndex: number;
 	private readonly metadata: BmsxConsoleMetadata;
 	private readonly loadSourceFn: () => string;
-	private readonly reloadSourceFn: (source: string) => void;
+	private readonly saveSourceFn: (source: string) => void;
 	private readonly viewportWidth: number;
 	private readonly viewportHeight: number;
 	private readonly font: ConsoleEditorFont;
@@ -249,7 +249,7 @@ export class ConsoleCartEditor {
 		this.playerIndex = options.playerIndex;
 		this.metadata = options.metadata;
 		this.loadSourceFn = options.loadSource;
-		this.reloadSourceFn = options.reloadSource;
+		this.saveSourceFn = options.saveSource;
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
@@ -1962,9 +1962,9 @@ private insertTab(): void {
 	private save(): void {
 		const source = this.lines.join('\n');
 		try {
-			this.reloadSourceFn(source);
+			this.saveSourceFn(source);
 			this.dirty = false;
-			this.showMessage('Lua cart reloaded', COLOR_STATUS_SUCCESS, 2.5);
+			this.showMessage('Lua cart saved (restart pending)', COLOR_STATUS_SUCCESS, 2.5);
 		} catch (error) {
 			if (this.tryShowLuaErrorOverlay(error)) {
 				return;

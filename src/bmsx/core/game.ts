@@ -152,6 +152,8 @@ export class Game {
 	// When paused, this flag requests a single safe render frame via the main loop
 	private _pausedOneShotRenderPending: boolean = false;
 	private removeWillExit: (() => void) | null = null;
+	private _gameplayPipelineSpec: NodeSpec[] = [];
+	private _pipelineOverride: NodeSpec[] | null = null;
 
 	/**
 	 * Request one single render while the game is paused. The render is executed
@@ -399,12 +401,9 @@ export class Game {
 		const baseSpec: NodeSpec[] = Array.isArray(ecsPipeline)
 			? ecsPipeline
 			: gameplaySpec();
-		const extensions = collectEcsPipelineExtensions({ world: this.world, registry: DefaultECSPipelineRegistry });
-		const finalSpec = baseSpec.concat(extensions);
-		const diag = DefaultECSPipelineRegistry.build(this.world, finalSpec);
-		if (diag.cyclesDetected) {
-			throw new Error(`[ECS] Cannot initialize ECS pipeline with cycles! Final order: ${diag.finalOrder.join(' -> ')}; Detected cycles: ${diag.cycleGroups.join(', ')}`);
-		}
+		this._gameplayPipelineSpec = baseSpec.map(node => this.cloneNodeSpec(node));
+		this._pipelineOverride = null;
+		this.rebuildPipeline();
 
 		// Activation: services begin play here (objects already activated in onspawn)
 		this.registry.getRegisteredEntitiesByType(Service).forEach(service => service.activate());
@@ -428,6 +427,51 @@ export class Game {
 		e.preventDefault();
 		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
+
+	private cloneNodeSpec(node: NodeSpec): NodeSpec {
+		return {
+			ref: node.ref,
+			group: node.group,
+			priority: node.priority,
+			before: node.before ? [...node.before] : undefined,
+			after: node.after ? [...node.after] : undefined,
+			when: node.when,
+		};
+	}
+
+	private rebuildPipeline(): void {
+		if (!this.world) {
+			throw new Error('[Game] Cannot rebuild pipeline before world initialization.');
+		}
+		if (this._gameplayPipelineSpec.length === 0 && !this._pipelineOverride) {
+			throw new Error('[Game] Gameplay pipeline spec has not been initialized.');
+		}
+		const sourceSpec = this._pipelineOverride ?? this._gameplayPipelineSpec;
+		const spec: NodeSpec[] = sourceSpec.map(node => this.cloneNodeSpec(node));
+		if (this._pipelineOverride === null) {
+			const extensions = collectEcsPipelineExtensions({ world: this.world, registry: DefaultECSPipelineRegistry });
+			for (const node of extensions) {
+				spec.push(this.cloneNodeSpec(node));
+			}
+		}
+		const diag = DefaultECSPipelineRegistry.build(this.world, spec);
+		if (diag.cyclesDetected) {
+			const cycleDetails = diag.cycleGroups?.map(group => group.refs.join(' -> ')) ?? [];
+			const cycles = cycleDetails.length > 0 ? cycleDetails.join(', ') : 'unknown';
+			throw new Error(`[ECS] Cannot initialize ECS pipeline with cycles! Final order: ${diag.finalOrder.join(' -> ')}; Detected cycles: ${cycles}`);
+		}
+	}
+
+	public setPipelineOverride(spec: NodeSpec[] | null): void {
+		if (spec) {
+			this._pipelineOverride = spec.map(node => this.cloneNodeSpec(node));
+		} else {
+			this._pipelineOverride = null;
+		}
+		if (this.initialized) {
+			this.rebuildPipeline();
+		}
+	}
 
 	/**
 	 * Gets the current turn counter value.

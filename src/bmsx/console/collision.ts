@@ -4,6 +4,7 @@ import { new_vec3 } from '../utils/utils';
 import { $ } from '../core/game';
 import { Collision2DSystem } from '../service/collision2d_service';
 import type { Area, Polygon } from '../rompack/rompack';
+import { excludeclassfromsavegame } from '../serializer/serializationhooks';
 
 type ColliderShape =
 	| { kind: 'circle'; radius: number }
@@ -23,6 +24,7 @@ export type ColliderContactInfo = {
 };
 
 
+@excludeclassfromsavegame
 class ConsoleColliderObject extends WorldObject {
 	private readonly component: Collider2DComponent;
 	private shape: ColliderShape;
