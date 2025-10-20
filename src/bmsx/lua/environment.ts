@@ -1,5 +1,5 @@
-import { LuaRuntimeError } from './errors';
-import type { LuaValue } from './value';
+import { LuaRuntimeError } from './errors.ts';
+import type { LuaValue } from './value.ts';
 
 export class LuaEnvironment {
 	private readonly parent: LuaEnvironment | null;

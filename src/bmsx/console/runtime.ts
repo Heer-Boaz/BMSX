@@ -6,11 +6,11 @@ import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram } from './types';
-import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime';
-import { LuaEnvironment } from '../lua/environment';
-import type { LuaFunctionValue, LuaValue } from '../lua/value';
-import { LuaTable } from '../lua/value';
-import { LuaRuntimeError } from '../lua/errors';
+import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
+import { LuaEnvironment } from '../lua/environment.ts';
+import type { LuaFunctionValue, LuaValue } from '../lua/value.ts';
+import { LuaTable } from '../lua/value.ts';
+import { LuaRuntimeError } from '../lua/errors.ts';
 import { $ } from '../core/game';
 
 export type BmsxConsoleRuntimeOptions = {

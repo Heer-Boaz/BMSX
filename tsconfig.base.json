@@ -51,6 +51,7 @@
 		"experimentalDecorators": false,
 		"emitDecoratorMetadata": false,
 		"allowArbitraryExtensions": true, // For importing `.glsl` files, but I have not tested whether that works
+		"allowImportingTsExtensions": true,
 		"baseUrl": ".",
 		"paths": {
 			"bmsx": ["src/bmsx/index.ts"],

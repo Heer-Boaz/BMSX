@@ -4,7 +4,7 @@ import {
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from './ast';
+} from './ast.ts';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -43,13 +43,13 @@ import type {
 	LuaVarargExpression,
 	LuaWhileStatement,
 	LuaSourceRange,
-} from './ast';
-import { LuaEnvironment } from './environment';
-import { LuaRuntimeError, LuaSyntaxError } from './errors';
-import { LuaLexer } from './lexer';
-import { LuaParser } from './parser';
-import type { LuaFunctionValue, LuaValue } from './value';
-import { LuaTable } from './value';
+} from './ast.ts';
+import { LuaEnvironment } from './environment.ts';
+import { LuaRuntimeError, LuaSyntaxError } from './errors.ts';
+import { LuaLexer } from './lexer.ts';
+import { LuaParser } from './parser.ts';
+import type { LuaFunctionValue, LuaValue } from './value.ts';
+import { LuaTable } from './value.ts';
 
 type ExecutionSignal =
 	| { readonly kind: 'normal' }

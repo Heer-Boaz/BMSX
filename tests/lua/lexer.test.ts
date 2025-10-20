@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LuaLexer } from '../../src/bmsx/lua/lexer';
-import { LuaSyntaxError } from '../../src/bmsx/lua/errors';
-import { LuaTokenType, type LuaToken } from '../../src/bmsx/lua/token';
+import { LuaLexer } from '../../src/bmsx/lua/lexer.ts';
+import { LuaSyntaxError } from '../../src/bmsx/lua/errors.ts';
+import { LuaTokenType, type LuaToken } from '../../src/bmsx/lua/token.ts';
 
 function lex(source: string): LuaToken[] {
 	const lexer = new LuaLexer(source, 'chunk');
@@ -24,7 +24,7 @@ function requireStringLiteral(token: LuaToken): string {
 }
 
 test('lexes punctuation and operators', () => {
-	const tokens = lex('()+-*/%#^=<>~=::.,.. ...');
+	const tokens = lex('()+-*/%#^ =<>~=::.,.. ...');
 	const types = tokens.map((token) => token.type);
 	const expected = [
 		LuaTokenType.LeftParen,

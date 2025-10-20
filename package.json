@@ -58,6 +58,7 @@
   },
   "scripts": {
 	"headless:game": "node scripts/headless-run.js",
+	"test:lua": "npx tsx --test tests/lua/*.ts",
 	"validate:engine:scripts": "npm run validate:engine && (test -f tsconfig.scripts.json && npm run validate:scripts || true)",
 	"validate:engine": "npx tsc --build ./src/bmsx",
 	"build:game": "npx tsx scripts/rompacker/rompacker.ts --nodeploy --usepkgtsconfig --debug -romname ",

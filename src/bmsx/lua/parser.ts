@@ -1,13 +1,13 @@
-import { LuaSyntaxError } from './errors';
-import type { LuaToken } from './token';
-import { LuaTokenType } from './token';
+import { LuaSyntaxError } from './errors.ts';
+import type { LuaToken } from './token.ts';
+import { LuaTokenType } from './token.ts';
 import {
 	LuaSyntaxKind,
 	LuaBinaryOperator,
 	LuaUnaryOperator,
 	LuaTableFieldKind,
 	LuaAssignmentOperator,
-} from './ast';
+} from './ast.ts';
 import type {
 	LuaAssignableExpression,
 	LuaAssignmentStatement,
@@ -51,7 +51,7 @@ import type {
 	LuaUnaryExpression,
 	LuaVarargExpression,
 	LuaWhileStatement,
-} from './ast';
+} from './ast.ts';
 
 type ParsedArguments = {
 	readonly arguments: ReadonlyArray<LuaExpression>;
