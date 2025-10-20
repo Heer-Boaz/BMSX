@@ -113,6 +113,11 @@ type PointerSnapshot = {
 	primaryPressed: boolean;
 };
 
+type KeyPressRecord = {
+	lastPressId: number | null;
+	lastPressedAtMs: number;
+};
+
 const TAB_SPACES = 2;
 const INITIAL_REPEAT_DELAY = 0.28;
 const REPEAT_INTERVAL = 0.05;
@@ -120,6 +125,8 @@ const CURSOR_BLINK_INTERVAL = 0.45;
 const UNDO_HISTORY_LIMIT = 512;
 const UNDO_COALESCE_INTERVAL_MS = 550;
 const WHEEL_SCROLL_STEP = 40;
+const KEY_GUARD_MIN_MS = 24;
+const KEY_GUARD_MAX_MS = 120;
 
 const COLOR_FRAME = 0;
 const COLOR_TOP_BAR = 13;
@@ -169,6 +176,7 @@ export class ConsoleCartEditor {
 	private readonly topMargin: number;
 	private readonly bottomMargin: number;
 	private readonly repeatState: Map<string, RepeatEntry> = new Map();
+	private readonly keyPressRecords: Map<string, KeyPressRecord> = new Map();
 	private readonly message: MessageState = { text: '', color: COLOR_STATUS_TEXT, timer: 0, visible: false };
 	private readonly captureKeys: string[] = [
 		'ArrowUp',
@@ -198,6 +206,7 @@ export class ConsoleCartEditor {
 	private static customClipboard: string | null = null;
 
 	private active = false;
+	private lastDeltaMilliseconds = KEY_GUARD_MIN_MS;
 	private lines: string[] = [''];
 	private cursorRow = 0;
 	private cursorColumn = 0;
@@ -248,6 +257,7 @@ export class ConsoleCartEditor {
 	}
 
 	public update(deltaSeconds: number): void {
+		this.updateGuardWindowFromDelta(deltaSeconds);
 		const keyboard = this.getKeyboard();
 		if (!keyboard) {
 			return;
@@ -284,6 +294,7 @@ export class ConsoleCartEditor {
 		this.applyInputOverrides(false);
 		this.active = false;
 		this.repeatState.clear();
+		this.resetKeyPressGuards();
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.cursorRevealSuspended = false;
@@ -351,6 +362,7 @@ export class ConsoleCartEditor {
 		this.pointerPrimaryWasPressed = false;
 		this.cursorRevealSuspended = false;
 		this.repeatState.clear();
+		this.resetKeyPressGuards();
 		this.updateDesiredColumn();
 		this.selectionAnchor = null;
 		this.undoStack = [];
@@ -377,6 +389,7 @@ export class ConsoleCartEditor {
 	private deactivate(): void {
 		this.active = false;
 		this.repeatState.clear();
+		this.resetKeyPressGuards();
 		this.applyInputOverrides(false);
 		this.selectionAnchor = null;
 		this.pointerSelecting = false;
@@ -1570,6 +1583,64 @@ private moveWordRight(): void {
 		}
 	}
 
+	private resetKeyPressGuards(): void {
+		this.keyPressRecords.clear();
+		this.lastDeltaMilliseconds = KEY_GUARD_MIN_MS;
+	}
+
+	private updateGuardWindowFromDelta(deltaSeconds: number): void {
+		if (deltaSeconds <= 0) {
+			return;
+		}
+		const deltaMs = deltaSeconds * 1000;
+		const clamped = Math.max(KEY_GUARD_MIN_MS, Math.min(KEY_GUARD_MAX_MS, deltaMs));
+		this.lastDeltaMilliseconds = clamped;
+	}
+
+	private keyBounceGuardMs(): number {
+		if (!Number.isFinite(this.lastDeltaMilliseconds)) {
+			return KEY_GUARD_MIN_MS;
+		}
+		if (this.lastDeltaMilliseconds < KEY_GUARD_MIN_MS) {
+			return KEY_GUARD_MIN_MS;
+		}
+		if (this.lastDeltaMilliseconds > KEY_GUARD_MAX_MS) {
+			return KEY_GUARD_MAX_MS;
+		}
+		return this.lastDeltaMilliseconds;
+	}
+
+	private resolvePressedAtMs(state: ButtonState): number {
+		if (typeof state.pressedAtMs === 'number' && Number.isFinite(state.pressedAtMs)) {
+			return state.pressedAtMs;
+		}
+		if (typeof state.timestamp === 'number' && Number.isFinite(state.timestamp)) {
+			return state.timestamp;
+		}
+		return $.platform.clock.now();
+	}
+
+	private shouldAcceptJustPressed(code: string, state: ButtonState): boolean {
+		if (state.justpressed !== true || state.consumed === true) {
+			return false;
+		}
+		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
+		const pressedAt = this.resolvePressedAtMs(state);
+		const existing = this.keyPressRecords.get(code);
+		if (existing) {
+			if (pressId !== null && existing.lastPressId === pressId) {
+				return false;
+			}
+			const delta = pressedAt - existing.lastPressedAtMs;
+			if (Number.isFinite(delta) && delta <= this.keyBounceGuardMs()) {
+				this.keyPressRecords.set(code, { lastPressId: pressId, lastPressedAtMs: pressedAt });
+				return false;
+			}
+		}
+		this.keyPressRecords.set(code, { lastPressId: pressId, lastPressedAtMs: pressedAt });
+		return true;
+	}
+
 private consumeKey(keyboard: KeyboardInput, code: string): void {
 	keyboard.consumeButton(code);
 }
@@ -1580,7 +1651,10 @@ private updateDesiredColumn(): void {
 
 private isKeyTyped(keyboard: KeyboardInput, code: string): boolean {
 	const state = this.getButtonState(keyboard, code);
-	return !!state && state.justpressed === true;
+	if (!state) {
+		return false;
+	}
+	return this.shouldAcceptJustPressed(code, state);
 }
 
 private insertTab(): void {
@@ -2827,7 +2901,7 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		if (!state) {
 			return false;
 		}
-		return state.justpressed === true;
+		return this.shouldAcceptJustPressed(code, state);
 	}
 
 	private isModifierPressed(keyboard: KeyboardInput, code: string): boolean {
@@ -2840,7 +2914,7 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 
 	private shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
 		const state = this.getButtonState(keyboard, code);
-		if (!state || !state.pressed) {
+		if (!state || state.pressed !== true) {
 			this.repeatState.delete(code);
 			return false;
 		}
@@ -2848,20 +2922,17 @@ private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, highligh
 		if (!entry) {
 			entry = { cooldown: INITIAL_REPEAT_DELAY };
 			this.repeatState.set(code, entry);
-			if (state.justpressed) {
-				return true;
-			}
-			return false;
 		}
 		if (state.justpressed) {
+			if (!this.shouldAcceptJustPressed(code, state)) {
+				return false;
+			}
 			entry.cooldown = INITIAL_REPEAT_DELAY;
-			this.repeatState.set(code, entry);
 			return true;
 		}
 		entry.cooldown -= deltaSeconds;
 		if (entry.cooldown <= 0) {
 			entry.cooldown = REPEAT_INTERVAL;
-			this.repeatState.set(code, entry);
 			return true;
 		}
 		this.repeatState.set(code, entry);
