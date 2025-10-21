@@ -72,7 +72,7 @@ export type ConsoleEditorOptions = {
 	viewport: ConsoleViewport;
 	metadata: BmsxConsoleMetadata;
 	loadSource: () => string;
-	saveSource: (source: string) => void;
+	saveSource: (source: string) => Promise<void>;
 };
 
 export type Position = { row: number; column: number };
@@ -128,7 +128,7 @@ type ConsoleRuntimeBridge = {
 	getState(): unknown;
 	setState(state: unknown): void;
 	boot(): void;
-	reloadLuaProgram(source: string): void;
+	reloadLuaProgram(source: string): Promise<void>;
 };
 
 export type ConsoleEditorSerializedState = {
@@ -232,7 +232,7 @@ export class ConsoleCartEditor {
 	private readonly playerIndex: number;
 	private readonly metadata: BmsxConsoleMetadata;
 	private readonly loadSourceFn: () => string;
-	private readonly saveSourceFn: (source: string) => void;
+	private readonly saveSourceFn: (source: string) => Promise<void>;
 	private viewportWidth: number;
 	private viewportHeight: number;
 	private readonly font: ConsoleEditorFont;
@@ -793,11 +793,11 @@ export class ConsoleCartEditor {
 			this.resetActionPromptState();
 			return;
 		}
-		if (this.isKeyJustPressed(keyboard, 'Enter')) {
-			this.consumeKey(keyboard, 'Enter');
-			this.handleActionPromptSelection('save-continue');
-		}
+	if (this.isKeyJustPressed(keyboard, 'Enter')) {
+		this.consumeKey(keyboard, 'Enter');
+		void this.handleActionPromptSelection('save-continue');
 	}
+}
 
 	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
@@ -858,11 +858,11 @@ export class ConsoleCartEditor {
 			this.redo();
 			return;
 		}
-		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
-			this.consumeKey(keyboard, 'KeyS');
-			this.save();
-			return;
-		}
+	if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
+		this.consumeKey(keyboard, 'KeyS');
+		void this.save();
+		return;
+	}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyC')) {
 			this.consumeKey(keyboard, 'KeyC');
 			void this.copySelectionToClipboard();
@@ -925,11 +925,11 @@ export class ConsoleCartEditor {
 			this.redo();
 			return;
 		}
-		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
-			this.consumeKey(keyboard, 'KeyS');
-			this.save();
-			return;
-		}
+	if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
+		this.consumeKey(keyboard, 'KeyS');
+		void this.save();
+		return;
+	}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyC')) {
 			this.consumeKey(keyboard, 'KeyC');
 			void this.copySelectionToClipboard();
@@ -1517,19 +1517,19 @@ export class ConsoleCartEditor {
 		}
 		const x = snapshot.viewportX;
 		const y = snapshot.viewportY;
-		const saveBounds = this.actionPromptButtons.saveAndContinue;
-		if (saveBounds && this.pointInRect(x, y, saveBounds)) {
-			this.handleActionPromptSelection('save-continue');
-			return;
-		}
-		if (this.pointInRect(x, y, this.actionPromptButtons.continue)) {
-			this.handleActionPromptSelection('continue');
-			return;
-		}
-		if (this.pointInRect(x, y, this.actionPromptButtons.cancel)) {
-			this.handleActionPromptSelection('cancel');
-		}
+	const saveBounds = this.actionPromptButtons.saveAndContinue;
+	if (saveBounds && this.pointInRect(x, y, saveBounds)) {
+		void this.handleActionPromptSelection('save-continue');
+		return;
 	}
+	if (this.pointInRect(x, y, this.actionPromptButtons.continue)) {
+		void this.handleActionPromptSelection('continue');
+		return;
+	}
+	if (this.pointInRect(x, y, this.actionPromptButtons.cancel)) {
+		void this.handleActionPromptSelection('cancel');
+	}
+}
 
 	private handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 		const y = snapshot.viewportY;
@@ -1574,13 +1574,13 @@ export class ConsoleCartEditor {
 	}
 
 	private handleTopBarButtonPress(button: 'resume' | 'reboot' | 'save'): void {
-		if (button === 'save') {
-			if (!this.dirty) {
-				return;
-			}
-			this.save();
+	if (button === 'save') {
+		if (!this.dirty) {
 			return;
 		}
+		void this.save();
+		return;
+	}
 		if (this.dirty) {
 			this.openActionPrompt(button);
 			return;
@@ -1600,7 +1600,7 @@ export class ConsoleCartEditor {
 		this.pointerPrimaryWasPressed = false;
 	}
 
-	private handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): void {
+	private async handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): Promise<void> {
 		if (!this.pendingActionPrompt) {
 			return;
 		}
@@ -1609,7 +1609,8 @@ export class ConsoleCartEditor {
 			return;
 		}
 		if (choice === 'save-continue') {
-			if (!this.attemptPromptSave()) {
+			const saved = await this.attemptPromptSave();
+			if (!saved) {
 				return;
 			}
 		}
@@ -1619,8 +1620,8 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private attemptPromptSave(): boolean {
-		this.save();
+	private async attemptPromptSave(): Promise<boolean> {
+		await this.save();
 		return this.dirty === false;
 	}
 
@@ -1683,15 +1684,15 @@ export class ConsoleCartEditor {
 		const savedSource = requiresReload ? (this.lastSavedSource.length > 0 ? this.lastSavedSource : this.lines.join('\n')) : null;
 		const targetGeneration = this.saveGeneration;
 		this.deactivate();
-		this.scheduleRuntimeTask(() => {
-			if (requiresReload && savedSource !== null) {
-				runtime.reloadLuaProgram(savedSource);
-			} else {
-				runtime.boot();
-			}
-			this.appliedGeneration = targetGeneration;
-			$.paused = false;
-		}, (error) => {
+	this.scheduleRuntimeTask(async () => {
+		if (requiresReload && savedSource !== null) {
+			await runtime.reloadLuaProgram(savedSource);
+		} else {
+			runtime.boot();
+		}
+		this.appliedGeneration = targetGeneration;
+		$.paused = false;
+	}, (error) => {
 			this.handleRuntimeTaskError(error, 'Failed to reboot game');
 		});
 		return true;
@@ -2375,10 +2376,10 @@ private insertTab(): void {
 		this.replaceSelectionWith('');
 	}
 
-	private save(): void {
+	private async save(): Promise<void> {
 		const source = this.lines.join('\n');
 		try {
-			this.saveSourceFn(source);
+			await this.saveSourceFn(source);
 			this.dirty = false;
 			this.saveGeneration = this.saveGeneration + 1;
 			this.lastSavedSource = source;
@@ -3732,7 +3733,7 @@ private insertTab(): void {
 		return sanitized;
 	}
 
-	private scheduleRuntimeTask(task: () => void, onError: (error: unknown) => void): void {
+	private scheduleRuntimeTask(task: () => void | Promise<void>, onError: (error: unknown) => void): void {
 		const invoke = (fn: () => void): void => {
 			if (typeof queueMicrotask === 'function') {
 				queueMicrotask(fn);
@@ -3742,7 +3743,10 @@ private insertTab(): void {
 		};
 		invoke(() => {
 			try {
-				task();
+				const result = task();
+				if (result && typeof (result as Promise<void>).then === 'function') {
+					(result as Promise<void>).catch(onError);
+				}
 			} catch (error) {
 				onError(error);
 			}

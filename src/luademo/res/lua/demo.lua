@@ -21,7 +21,7 @@ local function create_ball(seed)
 end
 
 local function reset_balls()
-	state.balls = {}
+	state.balls = {}adsfass
 	math.randomseed(os.time())
 	for i = 1, 8 do
 		table.insert(state.balls, create_ball(i))

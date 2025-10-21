@@ -222,11 +222,12 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		audio: {},
 		model: {},
 		data: {},
-		fsm: {},
-		code: null,
-		audioevents: {},
-		lua: {}
-	};
+	fsm: {},
+	code: null,
+	audioevents: {},
+	lua: {},
+	luaSourcePaths: {}
+};
 
 	const assetList = await loadAssetList(rom);
 	await Promise.all(assetList.map(a => load(rom, a, result, opts)));
@@ -517,7 +518,11 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		case 'lua':
 			try {
 				const sliced = new Uint8Array(rom, res.start, res.end - res.start);
-				romResult.lua[res.resid] = decodeuint8arr(sliced);
+				const source = decodeuint8arr(sliced);
+				romResult.lua[res.resid] = source;
+				if (res.sourcePath && res.sourcePath.length > 0) {
+					romResult.luaSourcePaths[res.resid] = res.sourcePath;
+				}
 			} catch (err: any) {
 				throw new Error(`Failed to load 'lua' from rom: ${err.message}.`);
 			}

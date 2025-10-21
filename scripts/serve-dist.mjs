@@ -3,7 +3,7 @@
 // Usage: node scripts/serve-dist.mjs [--dir dist] [--port 8080] [--host 0.0.0.0] [--spa] [--cache <seconds|no-store>]
 
 import { createServer } from 'node:http';
-import { stat, access } from 'node:fs/promises';
+import { stat, access, readFile, writeFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -65,6 +65,101 @@ const MIME = new Map(Object.entries({
 	'.woff2':'font/woff2'
 }));
 
+const projectRoot = process.cwd();
+
+function resolveWorkspacePath(relativePath) {
+	const trimmed = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+	const target = path.resolve(projectRoot, trimmed);
+	if (target === projectRoot) {
+		return target;
+	}
+	const boundary = projectRoot.endsWith(path.sep) ? projectRoot : projectRoot + path.sep;
+	if (!target.startsWith(boundary)) {
+		throw new Error(`Path "${relativePath}" is outside of the workspace.`);
+	}
+	return target;
+}
+
+async function readRequestBody(req) {
+	return await new Promise((resolveBody, rejectBody) => {
+		const chunks = [];
+		req.on('data', chunk => {
+			chunks.push(chunk);
+		});
+		req.on('end', () => {
+			const buffer = chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
+			resolveBody(buffer.toString('utf8'));
+		});
+		req.on('error', rejectBody);
+	});
+}
+
+async function handleLuaApi(req, res, url) {
+	if (url.pathname !== '/__bmsx__/lua') {
+		return false;
+	}
+	if (req.method === 'OPTIONS') {
+		res.writeHead(204, {
+			'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+			'Access-Control-Allow-Headers': 'Content-Type',
+		}).end();
+		return true;
+	}
+	if (req.method === 'GET') {
+		const targetPath = url.searchParams.get('path');
+		if (!targetPath) {
+			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Missing "path" query parameter.' }));
+			return true;
+		}
+		let absolutePath;
+		try {
+			absolutePath = resolveWorkspacePath(targetPath);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
+			return true;
+		}
+		let contents;
+		try {
+			contents = await readFile(absolutePath, 'utf8');
+		} catch {
+			res.writeHead(404, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: `File not found: ${targetPath}` }));
+			return true;
+		}
+		res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ path: targetPath, contents }));
+		return true;
+	}
+	if (req.method === 'POST') {
+		const rawBody = await readRequestBody(req);
+		let payload;
+		try {
+			payload = JSON.parse(rawBody);
+		} catch {
+			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Request body must be valid JSON.' }));
+			return true;
+		}
+		const targetPath = payload && typeof payload.path === 'string' ? payload.path : '';
+		const contents = payload && typeof payload.contents === 'string' ? payload.contents : null;
+		if (!targetPath || contents === null) {
+			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: 'Both "path" (string) and "contents" (string) are required.' }));
+			return true;
+		}
+		let absolutePath;
+		try {
+			absolutePath = resolveWorkspacePath(targetPath);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			res.writeHead(400, { 'Content-Type': 'application/json' }).end(JSON.stringify({ error: message }));
+			return true;
+		}
+		await writeFile(absolutePath, contents, 'utf8');
+		res.writeHead(204).end();
+		return true;
+	}
+	res.writeHead(405, { 'Allow': 'GET,POST,OPTIONS' }).end();
+	return true;
+}
+
 function getType(p) {
 	const ext = path.extname(p).toLowerCase();
 	return MIME.get(ext) || 'application/octet-stream';
@@ -105,7 +200,11 @@ for (const c of defaultCandidates) {
 
 const server = createServer(async (req, res) => {
 	try {
-    const urlPath = new URL(req.url || '/', 'http://x').pathname;
+    const requestUrl = new URL(req.url || '/', 'http://x');
+    if (await handleLuaApi(req, res, requestUrl)) {
+        return;
+    }
+    const urlPath = requestUrl.pathname;
 
     // Redirect root to preferred default file if available
     if (urlPath === '/' || urlPath === '') {

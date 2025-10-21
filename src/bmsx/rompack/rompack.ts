@@ -14,6 +14,7 @@ export interface RomPack {
 	fsm: id2fsm; // Reference to the loaded FSM assets in the ROM pack, including metadata.
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata.
 	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack.
+	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
 }
 
 export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem' | 'lua';
@@ -35,6 +36,7 @@ export interface RomAsset {
 	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
 	texture_start?: number; // Start offset of the texture buffer within the ROM
 	texture_end?: number;   // End offset of the texture buffer within the ROM
+	sourcePath?: string; // Relative filesystem path for the asset when applicable (e.g., Lua source files).
 }
 
 export interface RomImgAsset extends RomAsset {

@@ -11,7 +11,7 @@ const { build } = require('esbuild');
 // @ts-ignore
 const { spawnSync } = require('child_process');
 // @ts-ignore
-const { join, parse } = require('path');
+const { join, parse, relative, resolve, sep } = require('path');
 
 // @ts-ignore
 const { access, mkdir, readdir, readFile, stat, writeFile, unlink } = require('fs/promises');
@@ -99,6 +99,13 @@ declare global {
 */
 export function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): void {
 	arrayOfFiles.push(join(dirPath, "/", filePath));
+}
+
+function toWorkspaceRelativePath(filepath: string): string {
+	const absolutePath = resolve(filepath);
+	const projectRoot = process.cwd();
+	const relativePath = relative(projectRoot, absolutePath);
+	return relativePath.split(sep).join('/');
 }
 
 const RESOURCE_SCAN_EXCLUDE = new Set<string>([
@@ -985,9 +992,14 @@ export async function generateRomAssets(resources: Resource[]) {
 			resid = resid.replace('.min', '');
 			romAssets.push({ resid, type, buffer });
 			break;
-		case 'lua':
-			romAssets.push({ resid, type, buffer });
+		case 'lua': {
+			if (!res.filepath || res.filepath.length === 0) {
+				throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
+			}
+			const sourcePath = toWorkspaceRelativePath(res.filepath);
+			romAssets.push({ resid, type, buffer, sourcePath });
 			break;
+		}
 		case 'data':
 		case 'fsm':
 		case 'aem':

@@ -43,6 +43,14 @@ enum BmsxLuaValidationStrategy {
 	FullExecution = 'full_execution',
 }
 
+type HttpResponse = {
+	ok: boolean;
+	status: number;
+	statusText: string;
+	text(): Promise<string>;
+	json(): Promise<unknown>;
+};
+
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
 	private static readonly MAX_FRAME_DELTA_MS = 250;
@@ -140,6 +148,7 @@ export class BmsxConsoleRuntime extends Service {
 		this.initializeEditor();
 		this.attachFrameListener();
 		this.boot();
+		void this.prefetchLuaSourceFromFilesystem();
 	}
 
 	private assertCompatibleOptions(options: BmsxConsoleRuntimeOptions): void {
@@ -344,7 +353,7 @@ export class BmsxConsoleRuntime extends Service {
 			metadata: this.cart.meta,
 			viewport,
 			loadSource: () => this.getEditorSource(),
-			saveSource: (source: string) => { this.saveLuaProgram(source); },
+			saveSource: (source: string) => this.saveLuaProgram(source),
 		});
 	}
 
@@ -790,7 +799,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
-	public saveLuaProgram(source: string): void {
+	public async saveLuaProgram(source: string): Promise<void> {
 		if (!this.hasLuaProgram()) {
 			throw new Error('[BmsxConsoleRuntime] Cannot save Lua program when no Lua program is active.');
 		}
@@ -803,6 +812,13 @@ export class BmsxConsoleRuntime extends Service {
 		const program = this.luaProgram;
 		if (!program) {
 			throw new Error('[BmsxConsoleRuntime] Lua program reference unavailable.');
+		}
+		const savePath = this.resolveLuaSourcePath(program);
+		if (!savePath) {
+			if ('assetId' in program && program.assetId) {
+				throw new Error(`[BmsxConsoleRuntime] Lua source path unavailable for asset '${program.assetId}'. Rebuild the rompack with filesystem metadata to enable saving.`);
+			}
+			throw new Error('[BmsxConsoleRuntime] Lua program does not reference a filesystem source.');
 		}
 		const previousOverride = this.luaProgramSourceOverride;
 		const previousChunkName = this.resolveLuaProgramChunkName(program);
@@ -829,9 +845,20 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			throw error;
 		}
+		try {
+			await this.persistLuaSourceToFilesystem(savePath, source);
+		} catch (error) {
+			this.luaProgramSourceOverride = previousOverride;
+			try {
+				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+			} catch {
+				// Restoration best-effort; ignore secondary failure.
+			}
+			throw error;
+		}
 	}
 
-	public reloadLuaProgram(source: string): void {
+	public async reloadLuaProgram(source: string): Promise<void> {
 		if (!this.hasLuaProgram()) {
 			throw new Error('[BmsxConsoleRuntime] Cannot reload Lua program when no Lua program is active.');
 		}
@@ -849,7 +876,7 @@ export class BmsxConsoleRuntime extends Service {
 		const previousChunkName = this.resolveLuaProgramChunkName(program);
 		const previousSource = this.getLuaProgramSource(program);
 		try {
-			this.saveLuaProgram(source);
+			await this.saveLuaProgram(source);
 			this.boot();
 		}
 		catch (error) {
@@ -1422,6 +1449,184 @@ export class BmsxConsoleRuntime extends Service {
 			return this.luaProgramSourceOverride;
 		}
 		return this.resolveLuaProgramSource(program);
+	}
+
+	private resolveLuaSourcePath(program: BmsxConsoleLuaProgram): string | null {
+		if ('assetId' in program && typeof program.assetId === 'string' && program.assetId.length > 0) {
+			const rompack = $.rompack;
+			if (!rompack) {
+				throw new Error('[BmsxConsoleRuntime] Rompack not loaded while resolving Lua source path.');
+			}
+			const mappings = rompack.luaSourcePaths;
+			if (!mappings) {
+				return null;
+			}
+			const mapped = mappings[program.assetId];
+			if (typeof mapped === 'string' && mapped.length > 0) {
+				return mapped;
+			}
+			return null;
+		}
+		return null;
+	}
+
+	private async persistLuaSourceToFilesystem(path: string, source: string): Promise<void> {
+		if (typeof fetch !== 'function') {
+			throw new Error('[BmsxConsoleRuntime] Fetch API unavailable; cannot persist Lua source.');
+		}
+		let response: HttpResponse;
+		try {
+			response = await fetch('/__bmsx__/lua', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ path, contents: source }),
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`[BmsxConsoleRuntime] Failed to reach Lua save endpoint: ${message}`);
+		}
+		if (!response.ok) {
+			let detail = '';
+			try {
+				detail = await response.text();
+			} catch {
+				detail = '';
+			}
+			let finalDetail = response.statusText;
+			if (detail && detail.length > 0) {
+				let parsed: unknown;
+				try {
+					parsed = JSON.parse(detail);
+				} catch {
+					parsed = null;
+				}
+				if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+					const record = parsed as { error?: unknown };
+					if (typeof record.error === 'string' && record.error.length > 0) {
+						finalDetail = record.error;
+					} else {
+						finalDetail = detail;
+					}
+				} else {
+					finalDetail = detail;
+				}
+			}
+			throw new Error(`[BmsxConsoleRuntime] Save rejected for '${path}': ${finalDetail}`);
+		}
+	}
+
+	private async fetchLuaSourceFromFilesystem(path: string): Promise<string | null> {
+		if (typeof fetch !== 'function') {
+			return null;
+		}
+		let response: HttpResponse;
+		const url = `/__bmsx__/lua?path=${encodeURIComponent(path)}`;
+		try {
+			response = await fetch(url, { method: 'GET', cache: 'no-store' });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`[BmsxConsoleRuntime] Failed to load Lua source from filesystem: ${message}`);
+		}
+		if (response.status === 404) {
+			return null;
+		}
+		if (!response.ok) {
+			let detail = '';
+			try {
+				detail = await response.text();
+			} catch {
+				detail = '';
+			}
+			let finalDetail = response.statusText;
+			if (detail && detail.length > 0) {
+				let parsed: unknown;
+				try {
+					parsed = JSON.parse(detail);
+				} catch {
+					parsed = null;
+				}
+				if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+					const record = parsed as { error?: unknown };
+					if (typeof record.error === 'string' && record.error.length > 0) {
+						finalDetail = record.error;
+					} else {
+						finalDetail = detail;
+					}
+				} else {
+					finalDetail = detail;
+				}
+			}
+			throw new Error(`[BmsxConsoleRuntime] Failed to load Lua source from '${path}': ${finalDetail}`);
+		}
+		let payload: unknown;
+		try {
+			payload = await response.json();
+		} catch {
+			throw new Error(`[BmsxConsoleRuntime] Invalid response while loading Lua source from '${path}'.`);
+		}
+		if (!payload || typeof payload !== 'object') {
+			throw new Error(`[BmsxConsoleRuntime] Response for '${path}' missing Lua contents.`);
+		}
+		const record = payload as { contents?: unknown };
+		if (typeof record.contents !== 'string') {
+			throw new Error(`[BmsxConsoleRuntime] Response for '${path}' missing Lua contents.`);
+		}
+		return record.contents;
+	}
+
+	private async prefetchLuaSourceFromFilesystem(): Promise<void> {
+		if (!this.hasLuaProgram()) {
+			return;
+		}
+		const program = this.luaProgram;
+		if (!program) {
+			return;
+		}
+		let path: string | null;
+		try {
+			path = this.resolveLuaSourcePath(program);
+		} catch (error) {
+			if ($ && $.debug) {
+				console.warn('[BmsxConsoleRuntime] Failed to resolve Lua source path during prefetch:', error);
+			}
+			return;
+		}
+		if (!path) {
+			return;
+		}
+		let fetched: string | null;
+		try {
+			fetched = await this.fetchLuaSourceFromFilesystem(path);
+		} catch (error) {
+			if ($ && $.debug) {
+				console.warn(`[BmsxConsoleRuntime] Prefetch of Lua source '${path}' failed:`, error);
+			}
+			return;
+		}
+		if (fetched === null) {
+			return;
+		}
+		const currentSource = this.getLuaProgramSource(program);
+		if (currentSource === fetched) {
+			return;
+		}
+		const chunkName = this.resolveLuaProgramChunkName(program);
+		const previousOverride = this.luaProgramSourceOverride;
+		try {
+			this.luaProgramSourceOverride = fetched;
+			this.applyProgramSourceToCartridge(fetched, chunkName);
+			this.boot();
+		} catch (error) {
+			this.luaProgramSourceOverride = previousOverride;
+			try {
+				this.applyProgramSourceToCartridge(currentSource, chunkName);
+			} catch {
+				// ignore restoration errors
+			}
+			if ($ && $.debug) {
+				console.warn(`[BmsxConsoleRuntime] Failed to apply prefetched Lua source '${path}':`, error);
+			}
+		}
 	}
 
 	private resolveLuaProgramSource(program: BmsxConsoleLuaProgram): string {
