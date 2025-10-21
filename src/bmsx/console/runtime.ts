@@ -38,9 +38,13 @@ export type BmsxConsoleState = {
 	luaRandomSeed?: number;
 };
 
+enum BmsxLuaValidationStrategy {
+	TrustRealRun = 'trust_real_run',
+	FullExecution = 'full_execution',
+}
+
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
-	private static readonly MAX_WRAP_DEPTH = 4;
 	private static readonly MAX_FRAME_DELTA_MS = 250;
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
@@ -94,6 +98,7 @@ export class BmsxConsoleRuntime extends Service {
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
 	private readonly editorRenderBackend = new EditorConsoleRenderBackend();
+	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter: LuaInterpreter | null = null;
 	private luaInitFunction: LuaFunctionValue | null = null;
@@ -101,10 +106,11 @@ export class BmsxConsoleRuntime extends Service {
 	private luaDrawFunction: LuaFunctionValue | null = null;
 	private luaChunkName: string | null = null;
 	private frameCounter = 0;
-	private readonly luaHandleToObject = new Map<number, unknown>();
-	private readonly luaObjectToHandle = new WeakMap<object, number>();
+	private luaHandleToObject = new Map<number, unknown>();
+	private luaObjectToHandle = new WeakMap<object, number>();
+	private luaObjectWrapperCache: WeakMap<object, LuaTable> = new WeakMap<object, LuaTable>();
+	private handleMethodCache = new Map<number, Map<string, LuaFunctionValue>>();
 	private nextLuaHandleId = 1;
-	private wrapDepth = 0;
 	private luaSnapshotSave: LuaFunctionValue | null = null;
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
@@ -713,6 +719,14 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	private resetLuaInteroperabilityState(): void {
+		this.luaHandleToObject.clear();
+		this.handleMethodCache.clear();
+		this.luaObjectToHandle = new WeakMap<object, number>();
+		this.luaObjectWrapperCache = new WeakMap<object, LuaTable>();
+		this.nextLuaHandleId = 1;
+	}
+
 	private bootLuaProgram(runInit: boolean): void {
 		const program = this.luaProgram;
 		if (!program) return;
@@ -720,6 +734,12 @@ export class BmsxConsoleRuntime extends Service {
 		const source = this.getLuaProgramSource(program);
 		const chunkName = this.resolveLuaProgramChunkName(program);
 
+		const debugTiming = $ && $.debug === true;
+		let bootStartMs = 0;
+		if (debugTiming) {
+			bootStartMs = $.platform.clock.now();
+		}
+		this.resetLuaInteroperabilityState();
 		this.luaSnapshotSave = null;
 		this.luaSnapshotLoad = null;
 		this.luaInterpreter = createLuaInterpreter();
@@ -736,6 +756,10 @@ export class BmsxConsoleRuntime extends Service {
 			interpreter.execute(source, chunkName);
 		}
 		catch (error) {
+			if (debugTiming) {
+				const elapsedMs = $.platform.clock.now() - bootStartMs;
+				console.info(`[BmsxConsoleRuntime] Lua boot '${chunkName}' failed after ${elapsedMs.toFixed(2)}ms.`);
+			}
 			this.handleLuaError(error);
 			return;
 		}
@@ -752,8 +776,17 @@ export class BmsxConsoleRuntime extends Service {
 				this.invokeLuaFunction(this.luaInitFunction, []);
 			}
 			catch (error) {
+				if (debugTiming) {
+					const elapsedMs = $.platform.clock.now() - bootStartMs;
+					console.info(`[BmsxConsoleRuntime] Lua init for '${chunkName}' failed after ${elapsedMs.toFixed(2)}ms.`);
+				}
 				this.handleLuaError(error);
+				return;
 			}
+		}
+		if (debugTiming) {
+			const elapsedMs = $.platform.clock.now() - bootStartMs;
+			console.info(`[BmsxConsoleRuntime] Lua boot '${chunkName}' completed in ${elapsedMs.toFixed(2)}ms.`);
 		}
 	}
 
@@ -775,7 +808,13 @@ export class BmsxConsoleRuntime extends Service {
 		const previousChunkName = this.resolveLuaProgramChunkName(program);
 		const previousSource = this.getLuaProgramSource(program);
 		const targetChunkName = previousChunkName;
-		this.validateLuaSource(source, targetChunkName);
+		const shouldValidate = this.shouldValidateLuaSource();
+		if (!shouldValidate && $ && $.debug) {
+			console.info(`[BmsxConsoleRuntime] Skipping pre-boot validation for '${targetChunkName}'. Trusting the real run.`);
+		}
+		if (shouldValidate) {
+			this.validateLuaSource(source, targetChunkName);
+		}
 		try {
 			this.luaProgramSourceOverride = source;
 			this.applyProgramSourceToCartridge(source, targetChunkName);
@@ -824,6 +863,10 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			throw error;
 		}
+	}
+
+	private shouldValidateLuaSource(): boolean {
+		return this.validationStrategy === BmsxLuaValidationStrategy.FullExecution;
 	}
 
 	private validateLuaSource(source: string, chunkName: string): void {
@@ -1083,101 +1126,154 @@ export class BmsxConsoleRuntime extends Service {
 		return handle;
 	}
 
+	private getCachedHandleMethod(handle: number, methodName: string): LuaFunctionValue | null {
+		const cache = this.handleMethodCache.get(handle);
+		if (!cache) {
+			return null;
+		}
+		const entry = cache.get(methodName);
+		if (entry === undefined) {
+			return null;
+		}
+		return entry;
+	}
+
+	private storeHandleMethod(handle: number, methodName: string, fn: LuaFunctionValue): void {
+		let cache = this.handleMethodCache.get(handle);
+		if (!cache) {
+			cache = new Map<string, LuaFunctionValue>();
+			this.handleMethodCache.set(handle, cache);
+		}
+		cache.set(methodName, fn);
+	}
+
+	private evictCachedHandleMethod(handle: number, methodName: string): void {
+		const cache = this.handleMethodCache.get(handle);
+		if (!cache) {
+			return;
+		}
+		cache.delete(methodName);
+		if (cache.size === 0) {
+			this.handleMethodCache.delete(handle);
+		}
+	}
+
+	private resolveObjectTypeName(value: object): string {
+		const descriptor = (value as { constructor?: unknown }).constructor;
+		if (typeof descriptor === 'function') {
+			const constructorFunction = descriptor as { name?: unknown };
+			if (constructorFunction && typeof constructorFunction.name === 'string' && constructorFunction.name.length > 0) {
+				return constructorFunction.name;
+			}
+		}
+		return 'Object';
+	}
+
+	private expectHandleObject(handle: number, typeName: string, member: string, interpreter: LuaInterpreter): object {
+		const instance = this.luaHandleToObject.get(handle);
+		if (instance === undefined) {
+			throw this.createApiRuntimeError(interpreter, `[${typeName}.${member}] Object handle is no longer valid.`);
+		}
+		if (typeof instance !== 'object' || instance === null) {
+			throw this.createApiRuntimeError(interpreter, `[${typeName}.${member}] Object handle resolved to an invalid target.`);
+		}
+		return instance as object;
+	}
+
+	private attachHandleMetatable(table: LuaTable, handle: number, typeName: string, interpreter: LuaInterpreter): void {
+		const indexFn = createLuaNativeFunction(`${typeName}.__index`, interpreter, (_lua, args) => {
+			if (args.length < 2) {
+				throw this.createApiRuntimeError(interpreter, `[${typeName}.__index] requires a table and key.`);
+			}
+			const keyValue = args[1];
+			if (typeof keyValue !== 'string' && typeof keyValue !== 'number') {
+				return [null];
+			}
+			const propertyName = typeof keyValue === 'number' ? String(keyValue) : keyValue;
+			const cached = this.getCachedHandleMethod(handle, propertyName);
+			if (cached !== null) {
+				return [cached];
+			}
+			const instance = this.expectHandleObject(handle, typeName, propertyName, interpreter);
+			const target = instance as Record<string, unknown>;
+			if (!(propertyName in target)) {
+				return [null];
+			}
+			let property: unknown;
+			try {
+				property = Reflect.get(target, propertyName);
+			}
+			catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				throw this.createApiRuntimeError(interpreter, `[${typeName}.${propertyName}] ${message}`);
+			}
+			if (typeof property === 'function') {
+				const fn = this.createHandleMethod(handle, propertyName, typeName, interpreter);
+				this.storeHandleMethod(handle, propertyName, fn);
+				table.set(propertyName, fn);
+				return [fn];
+			}
+			if (property === undefined) {
+				return [null];
+			}
+			const luaValue = this.jsToLua(property, interpreter);
+			return [luaValue];
+		});
+
+		const newIndexFn = createLuaNativeFunction(`${typeName}.__newindex`, interpreter, (_lua, args) => {
+			if (args.length < 3) {
+				throw this.createApiRuntimeError(interpreter, `[${typeName}.__newindex] requires table, key, and value.`);
+			}
+			const keyValue = args[1];
+			if (typeof keyValue !== 'string' && typeof keyValue !== 'number') {
+				const targetTable = args[0];
+				if (targetTable instanceof LuaTable) {
+					targetTable.set(keyValue, args[2]);
+				}
+				return [];
+			}
+			const propertyName = typeof keyValue === 'number' ? String(keyValue) : keyValue;
+			const instance = this.expectHandleObject(handle, typeName, propertyName, interpreter);
+			const jsValue = this.luaValueToJs(args[2]);
+			try {
+				Reflect.set(instance as Record<string, unknown>, propertyName, jsValue);
+			}
+			catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				throw this.createApiRuntimeError(interpreter, `[${typeName}.${propertyName}] ${message}`);
+			}
+			this.evictCachedHandleMethod(handle, propertyName);
+			const targetTable = args[0];
+			if (targetTable instanceof LuaTable) {
+				targetTable.delete(propertyName);
+			}
+			return [];
+		});
+
+		const metatable = new LuaTable();
+		metatable.set('__index', indexFn);
+		metatable.set('__newindex', newIndexFn);
+		table.setMetatable(metatable);
+	}
+
 	private wrapEngineObject(value: object, interpreter: LuaInterpreter): LuaTable {
+		const cached = this.luaObjectWrapperCache.get(value);
+		if (cached !== undefined) {
+			return cached;
+		}
 		const handle = this.getOrCreateHandle(value);
 		const table = new LuaTable();
 		table.set(BmsxConsoleRuntime.LUA_HANDLE_FIELD, handle);
-		const typeName = value.constructor?.name ?? 'Object';
+		const typeName = this.resolveObjectTypeName(value);
 		table.set(BmsxConsoleRuntime.LUA_TYPE_FIELD, typeName);
-
-		this.populateObjectProperties(table, value, interpreter);
-		this.populateObjectMethods(table, value, handle, interpreter, typeName);
-
+		this.attachHandleMetatable(table, handle, typeName, interpreter);
+		this.luaObjectWrapperCache.set(value, table);
 		return table;
-	}
-
-	private populateObjectProperties(table: LuaTable, value: object, interpreter: LuaInterpreter): void {
-		if (this.wrapDepth > BmsxConsoleRuntime.MAX_WRAP_DEPTH) {
-			return;
-		}
-		this.wrapDepth += 1;
-		for (const key of Object.keys(value as Record<string, unknown>)) {
-			if (key === BmsxConsoleRuntime.LUA_HANDLE_FIELD || key === BmsxConsoleRuntime.LUA_TYPE_FIELD) {
-				continue;
-			}
-			if (table.has(key)) {
-				continue;
-			}
-			try {
-				const descriptor = Object.getOwnPropertyDescriptor(value, key);
-				if (descriptor) {
-					if (typeof descriptor.value === 'function') {
-						continue;
-					}
-					if (typeof descriptor.get === 'function' && descriptor.value === undefined) {
-						continue;
-					}
-				}
-				const propertyValue = (value as Record<string, unknown>)[key];
-				table.set(key, this.jsToLua(propertyValue, interpreter));
-			}
-			catch (error) {
-				if ($ && $.debug) {
-					console.warn(`[BmsxConsoleRuntime] Failed to expose property '${key}':`, error);
-				}
-			}
-		}
-		if (value instanceof LuaTable) {
-			this.wrapDepth -= 1;
-			return;
-		}
-		// Common identifiers
-		if ('id' in (value as Record<string, unknown>) && !table.has('id')) {
-			table.set('id', this.jsToLua((value as Record<string, unknown>).id, interpreter));
-		}
-		if ('name' in (value as Record<string, unknown>) && !table.has('name')) {
-			table.set('name', this.jsToLua((value as Record<string, unknown>).name, interpreter));
-		}
-		this.wrapDepth -= 1;
-	}
-
-	private populateObjectMethods(table: LuaTable, value: object, handle: number, interpreter: LuaInterpreter, typeName: string): void {
-		const seen = new Set<string>();
-		for (const ownName of Object.getOwnPropertyNames(value)) {
-			if (ownName === 'constructor') continue;
-			if (seen.has(ownName)) continue;
-			const descriptor = Object.getOwnPropertyDescriptor(value, ownName);
-			if (descriptor && typeof descriptor.value === 'function') {
-				if (!table.has(ownName)) {
-					const fn = this.createHandleMethod(handle, ownName, typeName, interpreter);
-					table.set(ownName, fn);
-				}
-				seen.add(ownName);
-			}
-		}
-		let prototype: unknown = Object.getPrototypeOf(value);
-		while (prototype && prototype !== Object.prototype) {
-			for (const name of Object.getOwnPropertyNames(prototype as object)) {
-				if (name === 'constructor' || seen.has(name) || table.has(name)) {
-					continue;
-				}
-				const descriptor = Object.getOwnPropertyDescriptor(prototype as object, name);
-				if (descriptor && typeof descriptor.value === 'function') {
-					const fn = this.createHandleMethod(handle, name, typeName, interpreter);
-					table.set(name, fn);
-					seen.add(name);
-				}
-			}
-			prototype = Object.getPrototypeOf(prototype);
-		}
 	}
 
 	private createHandleMethod(handle: number, methodName: string, typeName: string, interpreter: LuaInterpreter): LuaFunctionValue {
 		return createLuaNativeFunction(`${typeName}.${methodName}`, interpreter, (_lua, args) => {
-			const instance = this.luaHandleToObject.get(handle);
-			if (!instance) {
-				throw this.createApiRuntimeError(interpreter, `[${typeName}.${methodName}] Object handle is no longer valid.`);
-			}
+			const instance = this.expectHandleObject(handle, typeName, methodName, interpreter);
 			const jsArgs: unknown[] = [];
 			if (args.length > 0) {
 				const maybeSelf = this.luaValueToJs(args[0]);
