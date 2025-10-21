@@ -1,174 +1,160 @@
-type GlyphSegment = {
-	x: number;
-	y: number;
-	length: number;
-};
+import { BFont } from '../core/font';
+import { $rompack } from '../core/game';
 
 export type ConsoleGlyph = {
+	imgId: string;
 	width: number;
 	height: number;
 	advance: number;
-	segments: GlyphSegment[];
 };
 
-type GlyphPattern = {
-	chars: string[];
-	pattern: string[];
-};
+type CharMap = Record<string, string>;
 
-const BASE_ADVANCE_PADDING: number = 1;
-const GLYPH_HEIGHT: number = 6;
+const ADVANCE_PADDING: number = 0;
+const LINE_SPACING: number = 0;
+const TAB_SPACES: number = 2;
 
-const GLYPH_DATA: GlyphPattern[] = [
-	{ chars: [' '], pattern: ['00000', '00000', '00000', '00000', '00000', '00000'] },
-	{ chars: ['0'], pattern: ['01110', '10101', '10101', '10001', '01110', '00000'] },
-	{ chars: ['1'], pattern: ['00100', '01100', '00100', '00100', '01110', '00000'] },
-	{ chars: ['2'], pattern: ['01110', '10001', '00010', '00100', '11111', '00000'] },
-	{ chars: ['3'], pattern: ['11110', '00001', '00110', '00001', '11110', '00000'] },
-	{ chars: ['4'], pattern: ['00010', '00110', '01010', '11111', '00010', '00000'] },
-	{ chars: ['5'], pattern: ['11111', '10000', '11110', '00001', '11110', '00000'] },
-	{ chars: ['6'], pattern: ['01110', '10000', '11110', '10001', '01110', '00000'] },
-	{ chars: ['7'], pattern: ['11111', '00010', '00100', '01000', '10000', '00000'] },
-	{ chars: ['8'], pattern: ['01110', '10001', '01110', '10001', '01110', '00000'] },
-	{ chars: ['9'], pattern: ['01110', '10001', '01111', '00001', '01110', '00000'] },
-	{ chars: ['A', 'a'], pattern: ['01110', '10001', '11111', '10001', '10001', '00000'] },
-	{ chars: ['B', 'b'], pattern: ['11110', '10001', '11110', '10001', '11110', '00000'] },
-	{ chars: ['C', 'c'], pattern: ['01111', '10000', '10000', '10000', '01111', '00000'] },
-	{ chars: ['D', 'd'], pattern: ['11110', '10001', '10001', '10001', '11110', '00000'] },
-	{ chars: ['E', 'e'], pattern: ['11111', '10000', '11110', '10000', '11111', '00000'] },
-	{ chars: ['F', 'f'], pattern: ['11111', '10000', '11110', '10000', '10000', '00000'] },
-	{ chars: ['G', 'g'], pattern: ['01111', '10000', '10111', '10001', '01110', '00000'] },
-	{ chars: ['H', 'h'], pattern: ['10001', '10001', '11111', '10001', '10001', '00000'] },
-	{ chars: ['I', 'i'], pattern: ['01110', '00100', '00100', '00100', '01110', '00000'] },
-	{ chars: ['J', 'j'], pattern: ['00001', '00001', '00001', '10001', '01110', '00000'] },
-	{ chars: ['K', 'k'], pattern: ['10001', '10010', '11100', '10010', '10001', '00000'] },
-	{ chars: ['L', 'l'], pattern: ['10000', '10000', '10000', '10000', '11111', '00000'] },
-	{ chars: ['M', 'm'], pattern: ['10001', '11011', '10101', '10001', '10001', '00000'] },
-	{ chars: ['N', 'n'], pattern: ['10001', '11001', '10101', '10011', '10001', '00000'] },
-	{ chars: ['O', 'o'], pattern: ['01110', '10001', '10001', '10001', '01110', '00000'] },
-	{ chars: ['P', 'p'], pattern: ['11110', '10001', '11110', '10000', '10000', '00000'] },
-	{ chars: ['Q', 'q'], pattern: ['01110', '10001', '10001', '10011', '01111', '00001'] },
-	{ chars: ['R', 'r'], pattern: ['11110', '10001', '11110', '10010', '10001', '00000'] },
-	{ chars: ['S', 's'], pattern: ['01111', '10000', '01110', '00001', '11110', '00000'] },
-	{ chars: ['T', 't'], pattern: ['11111', '00100', '00100', '00100', '00100', '00000'] },
-	{ chars: ['U', 'u'], pattern: ['10001', '10001', '10001', '10001', '01110', '00000'] },
-	{ chars: ['V', 'v'], pattern: ['10001', '10001', '10001', '01010', '00100', '00000'] },
-	{ chars: ['W', 'w'], pattern: ['10001', '10001', '10101', '11011', '10001', '00000'] },
-	{ chars: ['X', 'x'], pattern: ['10001', '01010', '00100', '01010', '10001', '00000'] },
-	{ chars: ['Y', 'y'], pattern: ['10001', '01010', '00100', '00100', '00100', '00000'] },
-	{ chars: ['Z', 'z'], pattern: ['11111', '00010', '00100', '01000', '11111', '00000'] },
-	{ chars: ['-'], pattern: ['00000', '00000', '11111', '00000', '00000', '00000'] },
-	{ chars: ['+'], pattern: ['00100', '00100', '11111', '00100', '00100', '00000'] },
-	{ chars: [':'], pattern: ['00000', '00100', '00000', '00100', '00000', '00000'] },
-	{ chars: ['/'], pattern: ['00001', '00010', '00100', '01000', '10000', '00000'] },
-	{ chars: ['('], pattern: ['00110', '01000', '01000', '01000', '00110', '00000'] },
-	{ chars: [')'], pattern: ['01100', '00010', '00010', '00010', '01100', '00000'] },
-	{ chars: ['['], pattern: ['01110', '01000', '01000', '01000', '01110', '00000'] },
-	{ chars: [']'], pattern: ['01110', '00010', '00010', '00010', '01110', '00000'] },
-	{ chars: ['!'], pattern: ['00100', '00100', '00100', '00000', '00100', '00000'] },
-	{ chars: ['.'], pattern: ['00000', '00000', '00000', '00100', '00100', '00000'] },
-	{ chars: ['?'], pattern: ['01110', '10001', '00010', '00100', '00100', '00000'] },
-	{ chars: ['<'], pattern: ['00001', '00010', '00100', '01000', '10000', '00000'] },
-	{ chars: ['>'], pattern: ['10000', '01000', '00100', '00010', '00001', '00000'] },
-	{ chars: ['='], pattern: ['00000', '11111', '00000', '11111', '00000', '00000'] },
-	{ chars: [','], pattern: ['00000', '00000', '00000', '00100', '00100', '01000'] },
-	{ chars: ['\''], pattern: ['00100', '00100', '00000', '00000', '00000', '00000'] },
-	{ chars: ['"'], pattern: ['01010', '01010', '00000', '00000', '00000', '00000'] },
-	{ chars: ['_'], pattern: ['00000', '00000', '00000', '00000', '11111', '00000'] },
-	{ chars: ['#'], pattern: ['01010', '11111', '01010', '11111', '01010', '00000'] },
-	{ chars: [';'], pattern: ['00000', '00000', '00100', '00000', '00100', '01000'] },
-	{ chars: ['*'], pattern: ['00100', '10101', '01110', '10101', '00100', '00000'] },
-	{ chars: ['%'], pattern: ['11001', '11010', '00100', '01011', '10011', '00000'] },
-	{ chars: ['^'], pattern: ['00100', '01010', '10001', '00000', '00000', '00000'] },
-	{ chars: ['~'], pattern: ['00000', '00000', '01101', '10110', '00000', '00000'] },
-	{ chars: ['$'], pattern: ['00100', '01110', '10100', '01110', '00101', '01110'] },
-	{ chars: ['&'], pattern: ['01100', '10010', '01100', '10101', '01010', '00000'] },
-	{ chars: ['{'], pattern: ['00110', '00100', '01100', '00100', '00110', '00000'] },
-	{ chars: ['}'], pattern: ['01100', '00100', '00110', '00100', '01100', '00000'] },
-	{ chars: ['`'], pattern: ['01000', '00100', '00000', '00000', '00000', '00000'] },
-	{ chars: ['\\'], pattern: ['10000', '01000', '00100', '00010', '00001', '00000'] },
-	{ chars: ['|'], pattern: ['00100', '00100', '00100', '00100', '00100', '00000'] },
-	{ chars: ['@'], pattern: ['01110', '10001', '10111', '10101', '01110', '00000'] },
-];
+function buildCharMap(): CharMap {
+	const map: CharMap = {
+		' ': 'letter_space',
+		'!': 'letter_exclamation',
+		'"': 'letter_code_0x22',
+		'#': 'letter_code_0x23',
+		'$': 'letter_code_0x24',
+		'%': 'letter_percent',
+		'&': 'letter_code_0x26',
+		'\'': 'letter_apostroph',
+		'(': 'letter_code_0x28',
+		')': 'letter_code_0x29',
+		'*': 'letter_code_0x2a',
+		'+': 'letter_code_0x2b',
+		',': 'letter_comma',
+		'-': 'letter_streep',
+		'.': 'letter_dot',
+		'/': 'letter_slash',
+		':': 'letter_colon',
+		';': 'letter_code_0x3b',
+		'<': 'letter_code_0x3c',
+		'=': 'letter_code_0x3d',
+		'>': 'letter_code_0x3e',
+		'?': 'letter_question',
+		'@': 'letter_code_0x40',
+		'[': 'letter_code_0x5b',
+		'\\': 'letter_code_0x5c',
+		']': 'letter_code_0x5d',
+		'^': 'letter_code_0x5e',
+		'_': 'letter_line',
+		'`': 'letter_code_0x60',
+		'{': 'letter_code_0x7b',
+		'|': 'letter_code_0x7c',
+		'}': 'letter_code_0x7d',
+		'~': 'letter_code_0x7e',
+	};
+	for (let i = 0; i < 10; i++) {
+		const digit = String.fromCharCode(48 + i);
+		map[digit] = `letter_${digit}`;
+	}
+	const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+	for (let i = 0; i < lowercase.length; i++) {
+		const ch = lowercase.charAt(i);
+		map[ch] = `letter_low_${ch}`;
+	}
+	const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+	for (let i = 0; i < uppercase.length; i++) {
+		const upper = uppercase.charAt(i);
+		const lower = upper.toLowerCase();
+		map[upper] = `letter_${lower}`;
+	}
+	return map;
+}
 
-export class ConsoleFont {
+export class ConsoleFont extends BFont {
 	private readonly glyphs: Map<string, ConsoleGlyph> = new Map();
-	private readonly fallback: ConsoleGlyph;
+	private readonly advancePadding: number;
 	private readonly lineHeightValue: number;
+	private readonly spaceAdvanceValue: number;
 
 	constructor() {
-		for (const entry of GLYPH_DATA) {
-			const compiled = this.compile(entry.pattern);
-			for (const label of entry.chars) {
-				this.glyphs.set(label, compiled);
-			}
-		}
-		for (const entry of GLYPH_DATA) {
-			for (const label of entry.chars) {
-				if (label.length === 1) {
-					const lower = label.toLowerCase();
-					if (!this.glyphs.has(lower)) {
-						this.glyphs.set(lower, this.glyphs.get(label)!);
-					}
-				}
-			}
-		}
-		const question = this.glyphs.get('?');
-		if (!question) {
-			throw new Error('[ConsoleFont] Missing fallback glyph for "?".');
-		}
-		this.fallback = question;
-		this.lineHeightValue = GLYPH_HEIGHT + BASE_ADVANCE_PADDING + 1;
+		super({});
+		this.advancePadding = ADVANCE_PADDING;
+		this.resetLetterMap();
+		this.spaceAdvanceValue = this.advance(' ');
+		this.lineHeightValue = this.computeLineHeight();
+	}
+
+	public override char_width(letter: string): number {
+		return this.getGlyph(letter).width;
+	}
+
+	public override char_height(letter: string): number {
+		return this.getGlyph(letter).height;
 	}
 
 	public getGlyph(char: string): ConsoleGlyph {
-		const glyph = this.glyphs.get(char);
-		if (!glyph) {
-			return this.fallback;
+		let glyph = this.glyphs.get(char);
+		if (glyph) {
+			return glyph;
 		}
-		return glyph;
+		const imgId = this.char_to_img(char);
+		const entry = $rompack.img[imgId];
+		if (!entry || !entry.imgmeta) {
+			throw new Error(`[ConsoleFont] Glyph asset "${imgId}" for character "${char}" not found in rompack.`);
+		}
+		const width = entry.imgmeta.width;
+		const height = entry.imgmeta.height;
+		const computed: ConsoleGlyph = {
+			imgId,
+			width,
+			height,
+			advance: width + this.advancePadding,
+		};
+		this.glyphs.set(char, computed);
+		return computed;
+	}
+
+	public advance(char: string): number {
+		return this.getGlyph(char).advance;
 	}
 
 	public lineHeight(): number {
 		return this.lineHeightValue;
 	}
 
-	private compile(pattern: string[]): ConsoleGlyph {
-		if (pattern.length !== GLYPH_HEIGHT) {
-			throw new Error(`[ConsoleFont] Expected pattern height ${GLYPH_HEIGHT}, received ${pattern.length}.`);
-		}
-		const width = pattern[0].length;
-		for (const row of pattern) {
-			if (row.length !== width) {
-				throw new Error('[ConsoleFont] Inconsistent row width in glyph pattern.');
+	public measure(text: string): number {
+		let width = 0;
+		for (let i = 0; i < text.length; i++) {
+			const ch = text.charAt(i);
+			if (ch === '\t') {
+				width += this.spaceAdvanceValue * TAB_SPACES;
+				continue;
 			}
-		}
-		const segments: GlyphSegment[] = [];
-		for (let y = 0; y < pattern.length; y++) {
-			const row = pattern[y];
-			let runStart = -1;
-			for (let x = 0; x < width; x++) {
-				const filled = row.charAt(x) === '1';
-				if (filled) {
-					if (runStart === -1) {
-						runStart = x;
-					}
-				} else if (runStart !== -1) {
-					const length = x - runStart;
-					segments.push({ x: runStart, y, length });
-					runStart = -1;
-				}
+			if (ch === '\n') {
+				continue;
 			}
-			if (runStart !== -1) {
-				const length = width - runStart;
-				segments.push({ x: runStart, y, length });
-			}
+			width += this.advance(ch);
 		}
-		return {
-			width,
-			height: pattern.length,
-			advance: width + BASE_ADVANCE_PADDING,
-			segments,
-		};
+		return width;
 	}
+
+	private computeLineHeight(): number {
+		const reference = this.getGlyph('A');
+		return reference.height + this.advancePadding + LINE_SPACING;
+	}
+
+	private resetLetterMap(): void {
+		const target = this.letter_to_img as Record<string, string>;
+		const keys = Object.keys(target);
+		for (let i = 0; i < keys.length; i++) {
+			delete target[keys[i]];
+		}
+		const map = buildCharMap();
+		const entries = Object.keys(map);
+		for (let i = 0; i < entries.length; i++) {
+			const ch = entries[i];
+			target[ch] = map[ch];
+		}
+		target['?'] = 'letter_question';
+		target['¡'] = 'letter_code_0x80';
+	}
+
 }

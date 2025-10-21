@@ -3,7 +3,6 @@ import type { color, RectRenderSubmission, RenderLayer } from '../render/shared/
 import { Msx1Colors } from '../systems/msx';
 import { new_area3d } from '../utils/utils';
 import { ConsoleFont } from './font';
-import type { ConsoleGlyph } from './font';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { BmsxConsoleButton, BmsxConsolePointerButton, ConsolePointerVector, ConsolePointerViewport, ConsolePointerWheel } from './types';
@@ -11,7 +10,7 @@ import { ConsoleSpriteRegistry, ConsoleTilemap, type SpriteColliderConfig, type 
 import { ConsoleColliderManager, type ColliderCreateOptions, type ColliderContactInfo } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
-import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta, Identifier, Registerable, RomPack, vec3arr } from '../rompack/rompack';
+import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta, Identifier, Registerable, RomPack } from '../rompack/rompack';
 import type { World } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
@@ -34,6 +33,7 @@ export type BmsxConsoleApiOptions = {
 };
 
 const DRAW_LAYER: RectRenderSubmission['layer'] = 'ui';
+const CONSOLE_TAB_SPACES = 2;
 
 type RectCommand = {
 	kind: 'rect' | 'fill';
@@ -1014,41 +1014,47 @@ export class BmsxConsoleApi {
 	}
 
 	private renderText(text: string, originX: number, originY: number, colorRef: color): void {
-		let cursorX = Math.floor(originX);
+		const view = $.view;
+		if (!view) {
+			throw new Error('[BmsxConsoleApi] Game view not initialised.');
+		}
+		const baseX = Math.floor(originX);
 		let cursorY = Math.floor(originY);
+		const lines = text.split('\n');
+		for (let i = 0; i < lines.length; i++) {
+			const expanded = this.expandTabs(lines[i]);
+			if (expanded.length > 0) {
+				view.renderer.submit.glyphs({
+					x: baseX,
+					y: cursorY,
+					glyphs: expanded,
+					color: colorRef,
+					font: this.font,
+					layer: DRAW_LAYER,
+				});
+			}
+			if (i < lines.length - 1) {
+				cursorY += this.font.lineHeight();
+			}
+		}
+	}
+
+	private expandTabs(text: string): string {
+		if (text.indexOf('\t') === -1) {
+			return text;
+		}
+		let result = '';
 		for (let i = 0; i < text.length; i++) {
 			const ch = text.charAt(i);
-			if (ch === '\n') {
-				cursorX = Math.floor(originX);
-				cursorY += this.font.lineHeight();
-				continue;
-			}
-			const glyph = this.font.getGlyph(ch);
-			this.renderGlyph(glyph, cursorX, cursorY, colorRef);
-			cursorX += glyph.advance;
-		}
-	}
-
-	private renderGlyph(glyph: ConsoleGlyph, originX: number, originY: number, colorRef: color): void {
-		for (let i = 0; i < glyph.segments.length; i++) {
-			const segment = glyph.segments[i];
-			const baseX = originX + segment.x;
-			const baseY = originY + segment.y;
-			for (let dx = 0; dx < segment.length; dx++) {
-				this.submitParticlePixel(baseX + dx, baseY, colorRef);
+			if (ch === '\t') {
+				for (let j = 0; j < CONSOLE_TAB_SPACES; j++) {
+					result += ' ';
+				}
+			} else {
+				result += ch;
 			}
 		}
-	}
-
-	private submitParticlePixel(x: number, y: number, color: color): void {
-		const centerX = Math.floor(x) + 0.5;
-		const centerY = Math.floor(y) + 0.5;
-		const position: vec3arr = [centerX, centerY, 0];
-		$.view.renderer.submit.particle({
-			position,
-			size: 1,
-			color,
-		});
+		return result;
 	}
 
 	private submitRectangle(x0: number, y0: number, x1: number, y1: number, color: number | color, kind: 'rect' | 'fill', layer?: RenderLayer): void {

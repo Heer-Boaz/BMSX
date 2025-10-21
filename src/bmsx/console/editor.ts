@@ -205,7 +205,6 @@ export class ConsoleCartEditor {
 	private readonly lineHeight: number;
 	private readonly charAdvance: number;
 	private readonly spaceAdvance: number;
-	private readonly glyphCache: Map<string, ReturnType<ConsoleEditorFont['getGlyph']>> = new Map();
 	private readonly highlightCache: Map<number, CachedHighlight> = new Map();
 	private readonly maxHighlightCache = 2048;
 	private readonly gutterWidth: number;
@@ -291,8 +290,8 @@ export class ConsoleCartEditor {
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
 		this.lineHeight = this.font.lineHeight();
-		this.charAdvance = this.getGlyph('M').advance;
-		this.spaceAdvance = this.getGlyph(' ').advance;
+		this.charAdvance = this.font.advance('M');
+		this.spaceAdvance = this.font.advance(' ');
 		this.gutterWidth = 2;
 		const primaryBarHeight = this.lineHeight + 4;
 		this.headerHeight = primaryBarHeight;
@@ -2609,8 +2608,8 @@ private insertTab(): void {
 
 		const caretX = queryX + this.measureText(this.searchQuery);
 		const caretGlyphSource = this.searchQuery.length > 0 ? this.searchQuery.charAt(this.searchQuery.length - 1) : ' ';
-		const caretGlyph = this.getGlyph(caretGlyphSource);
-		const caretWidth = caretGlyph.advance > 0 ? caretGlyph.advance : this.charAdvance;
+		const caretAdvance = this.font.advance(caretGlyphSource);
+		const caretWidth = caretAdvance > 0 ? caretAdvance : this.charAdvance;
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
 		const caretTop = Math.floor(labelY);
@@ -2893,7 +2892,7 @@ private insertTab(): void {
 			baseChar = highlight.chars[cursorDisplayIndex];
 			baseColor = highlight.colors[cursorDisplayIndex];
 			const widthValue = entry.advancePrefix[cursorDisplayIndex + 1] - entry.advancePrefix[cursorDisplayIndex];
-			cursorWidth = widthValue > 0 ? widthValue : this.getGlyph(baseChar).advance;
+			cursorWidth = widthValue > 0 ? widthValue : this.font.advance(baseChar);
 		}
 		const originalChar = line.charAt(this.cursorColumn);
 		if (originalChar === '\t') {
@@ -2942,18 +2941,23 @@ private insertTab(): void {
 	private drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], originX: number, originY: number): void {
 		let cursorX = Math.floor(originX);
 		const cursorY = Math.floor(originY);
-		for (let i = 0; i < text.length; i++) {
-			const ch = text.charAt(i);
-			const color = colors[i] ?? COLOR_CODE_TEXT;
-			const glyph = this.getGlyph(ch);
-			for (let s = 0; s < glyph.segments.length; s++) {
-				const segment = glyph.segments[s];
-				const x0 = cursorX + segment.x;
-				const x1 = x0 + segment.length;
-				const y0 = cursorY + segment.y;
-				api.rectfill(x0, y0, x1, y0 + 1, color);
+		let index = 0;
+		while (index < text.length) {
+			const colorIndex = colors[index] ?? COLOR_CODE_TEXT;
+			let end = index + 1;
+			while (end < text.length) {
+				const nextColor = colors[end] ?? COLOR_CODE_TEXT;
+				if (nextColor !== colorIndex) {
+					break;
+				}
+				end++;
 			}
-			cursorX += glyph.advance;
+			const segment = text.slice(index, end);
+			if (segment.length > 0) {
+				api.print(segment, cursorX, cursorY, colorIndex);
+				cursorX += this.font.measure(segment);
+			}
+			index = end;
 		}
 	}
 
@@ -2976,7 +2980,7 @@ private insertTab(): void {
 		const advancePrefix: number[] = new Array(highlight.chars.length + 1);
 		advancePrefix[0] = 0;
 		for (let i = 0; i < highlight.chars.length; i++) {
-			advancePrefix[i + 1] = advancePrefix[i] + this.getGlyph(highlight.chars[i]).advance;
+			advancePrefix[i + 1] = advancePrefix[i] + this.font.advance(highlight.chars[i]);
 		}
 		const entry: CachedHighlight = {
 			src: source,
@@ -3283,29 +3287,36 @@ private insertTab(): void {
 	}
 
 	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {
-		let cursorX = Math.floor(originX);
+		const baseX = Math.floor(originX);
 		let cursorY = Math.floor(originY);
-		for (let i = 0; i < text.length; i++) {
-			const ch = text.charAt(i);
-			if (ch === '\n') {
-				cursorX = Math.floor(originX);
+		const lines = text.split('\n');
+		for (let i = 0; i < lines.length; i++) {
+			const expanded = this.expandTabs(lines[i]);
+			if (expanded.length > 0) {
+				api.print(expanded, baseX, cursorY, color);
+			}
+			if (i < lines.length - 1) {
 				cursorY += this.lineHeight;
-				continue;
 			}
-			if (ch === '\t') {
-				cursorX += this.spaceAdvance * TAB_SPACES;
-				continue;
-			}
-			const glyph = this.getGlyph(ch);
-			for (let s = 0; s < glyph.segments.length; s++) {
-				const segment = glyph.segments[s];
-				const x0 = cursorX + segment.x;
-				const x1 = x0 + segment.length;
-				const y0 = cursorY + segment.y;
-				api.rectfill(x0, y0, x1, y0 + 1, color);
-			}
-			cursorX += glyph.advance;
 		}
+	}
+
+	private expandTabs(source: string): string {
+		if (source.indexOf('\t') === -1) {
+			return source;
+		}
+		let result = '';
+		for (let i = 0; i < source.length; i++) {
+			const ch = source.charAt(i);
+			if (ch === '\t') {
+				for (let j = 0; j < TAB_SPACES; j++) {
+					result += ' ';
+				}
+			} else {
+				result += ch;
+			}
+		}
+		return result;
 	}
 
 	private measureText(text: string): number {
@@ -3319,25 +3330,16 @@ private insertTab(): void {
 			if (ch === '\n') {
 				continue;
 			}
-			width += this.getGlyph(ch).advance;
+			width += this.font.advance(ch);
 		}
 		return width;
 	}
 
-	private getGlyph(char: string): ReturnType<ConsoleEditorFont['getGlyph']> {
-		let glyph = this.glyphCache.get(char);
-		if (!glyph) {
-			glyph = this.font.getGlyph(char);
-			this.glyphCache.set(char, glyph);
-		}
-		return glyph;
-	}
-
 	private assertMonospace(): void {
 		const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-*/%<>=#(){}[]:,.;\'"`~!@^&|\\?_ ';
-		const reference = this.getGlyph('M').advance;
+		const reference = this.font.advance('M');
 		for (let i = 0; i < sample.length; i++) {
-			const candidate = this.getGlyph(sample.charAt(i)).advance;
+			const candidate = this.font.advance(sample.charAt(i));
 			if (candidate !== reference) {
 				this.warnNonMonospace = true;
 				break;
