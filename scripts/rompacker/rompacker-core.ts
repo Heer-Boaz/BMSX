@@ -964,21 +964,22 @@ export async function generateRomAssets(resources: Resource[]) {
 
 	for (const res of resources) {
 		const type = res.type;
+		const sourcePath = res.filepath && res.filepath.length > 0 ? toWorkspaceRelativePath(res.filepath) : undefined;
 		let resid = res.name;
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
 		switch (type) {
 			case 'romlabel':
 				romlabel_buffer = res.buffer;
-				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer });
+				romAssets.push({ resid, type, imgmeta: undefined, buffer: romlabel_buffer, sourcePath });
 				break;
 			case 'image': {
 				const imgmeta = buildImgMeta(res);
 				let baseAsset: RomAsset;
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-					baseAsset = { resid, type, imgmeta, buffer: undefined, };
+					baseAsset = { resid, type, imgmeta, buffer: undefined, sourcePath };
 				} else {
-					baseAsset = { resid, type, imgmeta, buffer };
+					baseAsset = { resid, type, imgmeta, buffer, sourcePath };
 				}
 				romAssets.push({ ...baseAsset, });
 			}
@@ -986,18 +987,18 @@ export async function generateRomAssets(resources: Resource[]) {
 			case 'audio':
 				// Note that the name has already been sanitized in the `getResMetaList` function
 				const { audiometa } = parseAudioMeta(res.filepath);
-				romAssets.push({ resid, type, audiometa, buffer });
+				romAssets.push({ resid, type, audiometa, buffer, sourcePath });
 				break;
 		case 'code':
 			resid = resid.replace('.min', '');
-			romAssets.push({ resid, type, buffer });
+			romAssets.push({ resid, type, buffer, sourcePath });
 			break;
 		case 'lua': {
 			if (!res.filepath || res.filepath.length === 0) {
 				throw new Error(`[RomPacker] Lua resource "${resid}" is missing its source file path.`);
 			}
-			const sourcePath = toWorkspaceRelativePath(res.filepath);
-			romAssets.push({ resid, type, buffer, sourcePath });
+			const luaSourcePath = toWorkspaceRelativePath(res.filepath);
+			romAssets.push({ resid, type, buffer, sourcePath: luaSourcePath });
 			break;
 		}
 		case 'data':
@@ -1030,12 +1031,12 @@ export async function generateRomAssets(resources: Resource[]) {
 					default:
 						throw new Error(`Unknown data type "${res.datatype}" for resource "${resid}"`);
 				}
-				romAssets.push({ resid, type, buffer });
-				break;
-			case 'model': {
-				const pathInfo = parse(res.filepath);
-				const dir = pathInfo.dir;
-				const ext = (pathInfo.ext || '').toLowerCase();
+			romAssets.push({ resid, type, buffer, sourcePath });
+			break;
+		case 'model': {
+			const pathInfo = parse(res.filepath);
+			const dir = pathInfo.dir;
+			const ext = (pathInfo.ext || '').toLowerCase();
 				let gltfSource: string | ArrayBuffer;
 				if (ext === '.glb') {
 					const bufView = res.buffer;
@@ -1090,23 +1091,24 @@ export async function generateRomAssets(resources: Resource[]) {
 				buffer = Buffer.from(encodedObj);
 				// @ts-ignore
 				const texture_buffer = Buffer.concat(texBuffers);
-				romAssets.push({ resid, type, buffer, texture_buffer });
-			}
-				break;
-			case 'atlas': {
-				// Atlas resources are handled similarly to images but with a twist
-				const imgmeta = buildImgMetaForAtlas(res);
-				const baseAsset = { resid, type, imgmeta, buffer };
-				romAssets.push({ ...baseAsset, });
-			}
-				break;
-			case 'rommanifest':
-				break;
-			default:
-				// Skip unknown resource types without failing
-				break;
+			romAssets.push({ resid, type, buffer, texture_buffer, sourcePath });
 		}
-	}
+			break;
+		case 'atlas': {
+			const imgmeta = buildImgMetaForAtlas(res);
+			romAssets.push({ resid, type, imgmeta, buffer, sourcePath });
+			break;
+		}
+		case 'romlabel':
+			romAssets.push({ resid, type, buffer, sourcePath });
+			break;
+		case 'rommanifest':
+			break;
+		default:
+			// Skip unknown resource types without failing
+			break;
+		}
+ 	}
 	return romAssets;
 }
 

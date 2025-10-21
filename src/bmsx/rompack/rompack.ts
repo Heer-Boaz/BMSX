@@ -15,10 +15,17 @@ export interface RomPack {
 	audioevents: id2audioevent; // Reference to the loaded audio event assets in the ROM pack, including metadata.
 	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack.
 	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
+	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources.
 }
 
 export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem' | 'lua';
 export type asset_id = string;
+
+export interface RomResourcePath {
+	path: string;
+	type: asset_type | 'rommanifest';
+	assetId: asset_id;
+}
 
 /**
  * Represents an asset in a ROM pack.

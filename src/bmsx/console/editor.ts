@@ -3,7 +3,7 @@ import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
 import type { ClipboardService } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
-import type { BmsxConsoleMetadata, ConsoleViewport } from './types';
+import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
 
@@ -73,6 +73,7 @@ export type ConsoleEditorOptions = {
 	metadata: BmsxConsoleMetadata;
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;
+	listResources: () => ConsoleResourceDescriptor[];
 };
 
 export type Position = { row: number; column: number };
@@ -119,6 +120,8 @@ type RectBounds = {
 	right: number;
 	bottom: number;
 };
+
+type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 
 type PendingActionPrompt = {
 	action: 'resume' | 'reboot';
@@ -197,6 +200,7 @@ const COLOR_STATUS_BACKGROUND = 8;
 const COLOR_STATUS_TEXT = 15;
 const COLOR_STATUS_WARNING = 9;
 const COLOR_STATUS_SUCCESS = 10;
+const COLOR_STATUS_ERROR = 2;
 const COLOR_SEARCH_BACKGROUND = 7;
 const COLOR_SEARCH_TEXT = 0;
 const COLOR_SEARCH_PLACEHOLDER = COLOR_CODE_DIM;
@@ -221,6 +225,8 @@ const COLOR_HEADER_BUTTON_BORDER = COLOR_TOP_BAR_TEXT;
 const COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = COLOR_GUTTER_BACKGROUND;
 const COLOR_HEADER_BUTTON_TEXT = COLOR_TOP_BAR_TEXT;
 const COLOR_HEADER_BUTTON_TEXT_DISABLED = COLOR_CODE_DIM;
+const COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND = COLOR_STATUS_WARNING;
+const COLOR_HEADER_BUTTON_ACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
 const ACTION_OVERLAY_COLOR = { r: 0, g: 0, b: 0, a: 0.65 };
 const ACTION_DIALOG_BACKGROUND_COLOR = COLOR_SEARCH_BACKGROUND;
 const ACTION_DIALOG_BORDER_COLOR = COLOR_SEARCH_OUTLINE;
@@ -233,6 +239,7 @@ export class ConsoleCartEditor {
 	private readonly metadata: BmsxConsoleMetadata;
 	private readonly loadSourceFn: () => string;
 	private readonly saveSourceFn: (source: string) => Promise<void>;
+	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
 	private viewportWidth: number;
 	private viewportHeight: number;
 	private readonly font: ConsoleEditorFont;
@@ -248,6 +255,7 @@ export class ConsoleCartEditor {
 	private readonly repeatState: Map<string, RepeatEntry> = new Map();
 	private readonly keyPressRecords: Map<string, KeyPressRecord> = new Map();
 	private readonly message: MessageState = { text: '', color: COLOR_STATUS_TEXT, timer: 0, visible: false };
+	private deferredMessageDuration: number | null = null;
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private readonly captureKeys: string[] = [
 		'Escape',
@@ -284,10 +292,11 @@ export class ConsoleCartEditor {
 	]);
 	private static customClipboard: string | null = null;
 
-	private readonly topBarButtonBounds: Record<'resume' | 'reboot' | 'save', RectBounds> = {
+	private readonly topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
 		resume: { left: 0, top: 0, right: 0, bottom: 0 },
 		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
+		resources: { left: 0, top: 0, right: 0, bottom: 0 },
 	};
 	private readonly actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
 		saveAndContinue: null,
@@ -328,12 +337,16 @@ export class ConsoleCartEditor {
 	private saveGeneration = 0;
 	private appliedGeneration = 0;
 	private lastSavedSource = '';
+	private resourceBrowserVisible = false;
+	private resourceBrowserLines: string[] = [];
+	private resourceBrowserScroll = 0;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
 		this.metadata = options.metadata;
 		this.loadSourceFn = options.loadSource;
 		this.saveSourceFn = options.saveSource;
+		this.listResourcesFn = options.listResources;
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
@@ -356,6 +369,16 @@ export class ConsoleCartEditor {
 
 	public isActive(): boolean {
 		return this.active;
+	}
+
+	public showWarningBanner(text: string, durationSeconds = 4.0): void {
+		this.showMessage(text, COLOR_STATUS_WARNING, durationSeconds);
+		if (!this.active) {
+			this.message.timer = Number.POSITIVE_INFINITY;
+			this.deferredMessageDuration = durationSeconds;
+		} else {
+			this.deferredMessageDuration = null;
+		}
 	}
 
 	public showRuntimeError(line: number, column: number, message: string): void {
@@ -396,7 +419,7 @@ export class ConsoleCartEditor {
 			timer: Number.POSITIVE_INFINITY,
 		};
 		const statusLine = overlayLines.length > 0 ? overlayLines[0] : 'Runtime error';
-		this.showMessage(statusLine, COLOR_STATUS_WARNING, 8.0);
+		this.showMessage(statusLine, COLOR_STATUS_ERROR, 8.0);
 	}
 
 	public clearRuntimeErrorOverlay(): void {
@@ -469,19 +492,29 @@ export class ConsoleCartEditor {
 	}
 
 	private tryShowLuaErrorOverlay(error: unknown): boolean {
-		if (!error || typeof error !== 'object') {
-			return false;
+		let candidate: { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
+		if (typeof error === 'string') {
+			candidate = { message: error };
+		} else if (error && typeof error === 'object') {
+			candidate = error as { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
+		} else {
+			throw new Error('[ConsoleCartEditor] Lua error payload is neither an object nor a string.');
 		}
-		const candidate = error as { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
-		const lineValue = typeof candidate.line === 'number' && Number.isFinite(candidate.line) ? Math.floor(candidate.line) : null;
-		const columnValue = typeof candidate.column === 'number' && Number.isFinite(candidate.column) ? Math.floor(candidate.column) : null;
+		const rawLine = typeof candidate.line === 'number' && Number.isFinite(candidate.line) ? candidate.line : null;
+		const rawColumn = typeof candidate.column === 'number' && Number.isFinite(candidate.column) ? candidate.column : null;
 		const chunkName = typeof candidate.chunkName === 'string' && candidate.chunkName.length > 0 ? candidate.chunkName : null;
 		const messageText = typeof candidate.message === 'string' && candidate.message.length > 0 ? candidate.message : null;
-		if (lineValue === null && columnValue === null && messageText === null) {
+		const hasLine = rawLine !== null && rawLine > 0;
+		const hasColumn = rawColumn !== null && rawColumn > 0;
+		if (!hasLine && !hasColumn) {
+			if (messageText) {
+				this.showMessage(messageText, COLOR_STATUS_ERROR, 4.0);
+				return true;
+			}
 			return false;
 		}
-		const safeLine = lineValue !== null && lineValue > 0 ? lineValue : 1;
-		const safeColumn = columnValue !== null && columnValue > 0 ? columnValue : 1;
+		const safeLine = hasLine ? Math.max(1, Math.floor(rawLine!)) : 0;
+		const safeColumn = hasColumn ? Math.max(1, Math.floor(rawColumn!)) : 0;
 		const baseMessage = messageText ?? 'Lua error';
 		const overlayMessage = chunkName ? `${chunkName}: ${baseMessage}` : baseMessage;
 		this.showRuntimeError(safeLine, safeColumn, overlayMessage);
@@ -492,9 +525,6 @@ export class ConsoleCartEditor {
 		this.refreshViewportDimensions();
 		this.updateGuardWindowFromDelta(deltaSeconds);
 		const keyboard = this.getKeyboard();
-		if (!keyboard) {
-			return;
-		}
 		this.updateMessage(deltaSeconds);
 		this.updateRuntimeErrorOverlay(deltaSeconds);
 		if (this.handleToggleRequest(keyboard)) {
@@ -520,7 +550,7 @@ export class ConsoleCartEditor {
 		if (!this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
-}
+	}
 
 	public draw(api: BmsxConsoleApi): void {
 		this.refreshViewportDimensions();
@@ -529,11 +559,14 @@ export class ConsoleCartEditor {
 		}
 		const frameColor = Msx1Colors[COLOR_FRAME];
 		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
-		this.drawTopBar(api);
-		this.drawSearchBar(api);
-		this.drawLineJumpBar(api);
-		this.drawCodeArea(api);
-		this.drawStatusBar(api);
+	this.drawTopBar(api);
+	this.drawSearchBar(api);
+	this.drawLineJumpBar(api);
+	this.drawCodeArea(api);
+	if (this.resourceBrowserVisible) {
+		this.drawResourceBrowser(api);
+	}
+	this.drawStatusBar(api);
 		if (this.pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
 		}
@@ -557,7 +590,7 @@ export class ConsoleCartEditor {
 		this.viewportHeight = height;
 	}
 
-	public serializeState(): ConsoleEditorSerializedState {
+	public serializeState(): ConsoleEditorSerializedState { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		const snapshot = this.captureSnapshot();
 		const message: MessageState = {
 			text: this.message.text,
@@ -591,7 +624,7 @@ export class ConsoleCartEditor {
 		};
 	}
 
-	public restoreState(state: ConsoleEditorSerializedState): void {
+	public restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		if (!state) return;
 		this.applyInputOverrides(false);
 		this.active = state.active;
@@ -650,22 +683,23 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
 		this.resetActionPromptState();
+		this.hideResourceBrowser();
 	}
 
-	private getKeyboard(): KeyboardInput | null {
+	private getKeyboard(): KeyboardInput {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
-			return null;
+			throw new Error(`[ConsoleCartEditor] Player input ${this.playerIndex} unavailable.`);
 		}
 		const handler = playerInput.inputHandlers['keyboard'];
 		if (!handler) {
-			return null;
+			throw new Error(`[ConsoleCartEditor] Keyboard handler missing for player ${this.playerIndex}.`);
 		}
 		const candidate = handler as KeyboardInput;
-		if (typeof (candidate as { keydown?: unknown }).keydown === 'function') {
-			return candidate;
+		if (typeof candidate.keydown !== 'function') {
+			throw new Error(`[ConsoleCartEditor] Keyboard handler for player ${this.playerIndex} is invalid.`);
 		}
-		return null;
+		return candidate;
 	}
 
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
@@ -716,7 +750,6 @@ export class ConsoleCartEditor {
 		this.cursorVisible = true;
 		this.blinkTimer = 0;
 		this.active = true;
-		this.message.visible = false;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.cursorRevealSuspended = false;
@@ -745,6 +778,10 @@ export class ConsoleCartEditor {
 			}
 		}
 		this.ensureCursorVisible();
+		if (this.message.visible && !Number.isFinite(this.message.timer) && this.deferredMessageDuration !== null) {
+			this.message.timer = this.deferredMessageDuration;
+		}
+		this.deferredMessageDuration = null;
 	}
 
 	private deactivate(): void {
@@ -766,6 +803,7 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.runtimeErrorOverlay = null;
 		this.resetActionPromptState();
+		this.hideResourceBrowser();
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -793,13 +831,17 @@ export class ConsoleCartEditor {
 			this.resetActionPromptState();
 			return;
 		}
-	if (this.isKeyJustPressed(keyboard, 'Enter')) {
-		this.consumeKey(keyboard, 'Enter');
-		void this.handleActionPromptSelection('save-continue');
+		if (this.isKeyJustPressed(keyboard, 'Enter')) {
+			this.consumeKey(keyboard, 'Enter');
+			void this.handleActionPromptSelection('save-continue');
+		}
 	}
-}
 
 	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
+		if (this.resourceBrowserVisible) {
+			this.handleResourceBrowserKeyboard(keyboard, deltaSeconds);
+			return;
+		}
 		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
 		const shiftDown = this.isModifierPressed(keyboard, 'ShiftLeft') || this.isModifierPressed(keyboard, 'ShiftRight');
 		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
@@ -858,11 +900,11 @@ export class ConsoleCartEditor {
 			this.redo();
 			return;
 		}
-	if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
-		this.consumeKey(keyboard, 'KeyS');
-		void this.save();
-		return;
-	}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
+			this.consumeKey(keyboard, 'KeyS');
+			void this.save();
+			return;
+		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyC')) {
 			this.consumeKey(keyboard, 'KeyC');
 			void this.copySelectionToClipboard();
@@ -925,11 +967,11 @@ export class ConsoleCartEditor {
 			this.redo();
 			return;
 		}
-	if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
-		this.consumeKey(keyboard, 'KeyS');
-		void this.save();
-		return;
-	}
+		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
+			this.consumeKey(keyboard, 'KeyS');
+			void this.save();
+			return;
+		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyC')) {
 			this.consumeKey(keyboard, 'KeyC');
 			void this.copySelectionToClipboard();
@@ -1442,17 +1484,25 @@ export class ConsoleCartEditor {
 			this.pointerPrimaryWasPressed = false;
 			return;
 		}
-		const wasPressed = this.pointerPrimaryWasPressed;
-		const justPressed = snapshot.primaryPressed && !wasPressed;
-		const justReleased = !snapshot.primaryPressed && wasPressed;
-		if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
-			this.pointerSelecting = false;
+	const wasPressed = this.pointerPrimaryWasPressed;
+	const justPressed = snapshot.primaryPressed && !wasPressed;
+	const justReleased = !snapshot.primaryPressed && wasPressed;
+	if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
+		this.pointerSelecting = false;
+	}
+	if (!snapshot.valid) {
+		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		return;
+	}
+	if (this.resourceBrowserVisible) {
+		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
+			this.handleTopBarPointer(snapshot);
 		}
-		if (!snapshot.valid) {
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			return;
-		}
-		if (this.pendingActionPrompt) {
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		return;
+	}
+	if (this.pendingActionPrompt) {
 			if (justPressed) {
 				this.handleActionPromptPointer(snapshot);
 			}
@@ -1517,19 +1567,19 @@ export class ConsoleCartEditor {
 		}
 		const x = snapshot.viewportX;
 		const y = snapshot.viewportY;
-	const saveBounds = this.actionPromptButtons.saveAndContinue;
-	if (saveBounds && this.pointInRect(x, y, saveBounds)) {
-		void this.handleActionPromptSelection('save-continue');
-		return;
+		const saveBounds = this.actionPromptButtons.saveAndContinue;
+		if (saveBounds && this.pointInRect(x, y, saveBounds)) {
+			void this.handleActionPromptSelection('save-continue');
+			return;
+		}
+		if (this.pointInRect(x, y, this.actionPromptButtons.continue)) {
+			void this.handleActionPromptSelection('continue');
+			return;
+		}
+		if (this.pointInRect(x, y, this.actionPromptButtons.cancel)) {
+			void this.handleActionPromptSelection('cancel');
+		}
 	}
-	if (this.pointInRect(x, y, this.actionPromptButtons.continue)) {
-		void this.handleActionPromptSelection('continue');
-		return;
-	}
-	if (this.pointInRect(x, y, this.actionPromptButtons.cancel)) {
-		void this.handleActionPromptSelection('cancel');
-	}
-}
 
 	private handleTopBarPointer(snapshot: PointerSnapshot): boolean {
 		const y = snapshot.viewportY;
@@ -1547,6 +1597,10 @@ export class ConsoleCartEditor {
 		}
 		if (this.dirty && this.pointInRect(x, y, this.topBarButtonBounds.save)) {
 			this.handleTopBarButtonPress('save');
+			return true;
+		}
+		if (this.pointInRect(x, y, this.topBarButtonBounds.resources)) {
+			this.handleTopBarButtonPress('resources');
 			return true;
 		}
 		return false;
@@ -1568,19 +1622,29 @@ export class ConsoleCartEditor {
 		const magnitude = Math.abs(delta);
 		const steps = Math.max(1, Math.round(magnitude / WHEEL_SCROLL_STEP));
 		const direction = delta > 0 ? 1 : -1;
+		if (this.resourceBrowserVisible) {
+			this.scrollResourceBrowser(direction * steps);
+			playerInput.consumeAction('pointer_wheel');
+			return;
+		}
 		this.scrollRows(direction * steps);
 		this.cursorRevealSuspended = true;
 		playerInput.consumeAction('pointer_wheel');
 	}
 
-	private handleTopBarButtonPress(button: 'resume' | 'reboot' | 'save'): void {
-	if (button === 'save') {
-		if (!this.dirty) {
+	private handleTopBarButtonPress(button: TopBarButtonId): void {
+		if (button === 'resources') {
+			this.toggleResourceBrowser();
 			return;
 		}
-		void this.save();
-		return;
-	}
+		if (button === 'save') {
+			if (!this.dirty) {
+				return;
+			}
+			void this.save();
+			return;
+		}
+		this.hideResourceBrowser();
 		if (this.dirty) {
 			this.openActionPrompt(button);
 			return;
@@ -1592,6 +1656,7 @@ export class ConsoleCartEditor {
 	}
 
 	private openActionPrompt(action: 'resume' | 'reboot'): void {
+		this.hideResourceBrowser();
 		this.pendingActionPrompt = { action };
 		this.actionPromptButtons.saveAndContinue = null;
 		this.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -1643,7 +1708,7 @@ export class ConsoleCartEditor {
 	private performResume(): boolean {
 		const runtime = this.getConsoleRuntime();
 		if (!runtime) {
-			this.showMessage('Console runtime unavailable.', COLOR_STATUS_WARNING, 4.0);
+			this.showMessage('Console runtime unavailable.', COLOR_STATUS_ERROR, 4.0);
 			return false;
 		}
 		let snapshot: unknown = null;
@@ -1651,12 +1716,12 @@ export class ConsoleCartEditor {
 			snapshot = runtime.getState();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			this.showMessage(`Failed to capture runtime state: ${message}`, COLOR_STATUS_WARNING, 4.0);
+			this.showMessage(`Failed to capture runtime state: ${message}`, COLOR_STATUS_ERROR, 4.0);
 			return false;
 		}
 		const sanitizedSnapshot = this.prepareRuntimeSnapshotForResume(snapshot);
 		if (!sanitizedSnapshot) {
-			this.showMessage('Runtime state unavailable.', COLOR_STATUS_WARNING, 4.0);
+			this.showMessage('Runtime state unavailable.', COLOR_STATUS_ERROR, 4.0);
 			return false;
 		}
 		const targetGeneration = this.saveGeneration;
@@ -1677,22 +1742,22 @@ export class ConsoleCartEditor {
 	private performReboot(): boolean {
 		const runtime = this.getConsoleRuntime();
 		if (!runtime) {
-			this.showMessage('Console runtime unavailable.', COLOR_STATUS_WARNING, 4.0);
+			this.showMessage('Console runtime unavailable.', COLOR_STATUS_ERROR, 4.0);
 			return false;
 		}
 		const requiresReload = this.hasPendingRuntimeReload();
 		const savedSource = requiresReload ? (this.lastSavedSource.length > 0 ? this.lastSavedSource : this.lines.join('\n')) : null;
 		const targetGeneration = this.saveGeneration;
 		this.deactivate();
-	this.scheduleRuntimeTask(async () => {
-		if (requiresReload && savedSource !== null) {
-			await runtime.reloadLuaProgram(savedSource);
-		} else {
-			runtime.boot();
-		}
-		this.appliedGeneration = targetGeneration;
-		$.paused = false;
-	}, (error) => {
+		this.scheduleRuntimeTask(async () => {
+			if (requiresReload && savedSource !== null) {
+				await runtime.reloadLuaProgram(savedSource);
+			} else {
+				runtime.boot();
+			}
+			this.appliedGeneration = targetGeneration;
+			$.paused = false;
+		}, (error) => {
 			this.handleRuntimeTaskError(error, 'Failed to reboot game');
 		});
 		return true;
@@ -2004,43 +2069,43 @@ export class ConsoleCartEditor {
 		this.revealCursor();
 	}
 
-private moveCursorVertical(delta: number): void {
-	this.cursorRow += delta;
-	if (this.cursorRow < 0) {
-		this.cursorRow = 0;
+	private moveCursorVertical(delta: number): void {
+		this.cursorRow += delta;
+		if (this.cursorRow < 0) {
+			this.cursorRow = 0;
+		}
+		if (this.cursorRow >= this.lines.length) {
+			this.cursorRow = this.lines.length - 1;
+		}
+		const lineLength = this.currentLine().length;
+		const targetColumn = Math.max(0, Math.min(lineLength, Math.floor(this.desiredColumn)));
+		this.cursorColumn = targetColumn;
+		this.resetBlink();
+		this.revealCursor();
 	}
-	if (this.cursorRow >= this.lines.length) {
-		this.cursorRow = this.lines.length - 1;
-	}
-	const lineLength = this.currentLine().length;
-	const targetColumn = Math.max(0, Math.min(lineLength, Math.floor(this.desiredColumn)));
-	this.cursorColumn = targetColumn;
-	this.resetBlink();
-	this.revealCursor();
-}
 
-private moveCursorHorizontal(delta: number): void {
-	if (delta < 0) {
-		if (this.cursorColumn > 0) {
-			this.cursorColumn -= 1;
-		} else if (this.cursorRow > 0) {
-			this.cursorRow -= 1;
-			this.cursorColumn = this.currentLine().length;
+	private moveCursorHorizontal(delta: number): void {
+		if (delta < 0) {
+			if (this.cursorColumn > 0) {
+				this.cursorColumn -= 1;
+			} else if (this.cursorRow > 0) {
+				this.cursorRow -= 1;
+				this.cursorColumn = this.currentLine().length;
+			}
 		}
-	}
-	else if (delta > 0) {
-		const line = this.currentLine();
-		if (this.cursorColumn < line.length) {
-			this.cursorColumn += 1;
-		} else if (this.cursorRow < this.lines.length - 1) {
-			this.cursorRow += 1;
-			this.cursorColumn = 0;
+		else if (delta > 0) {
+			const line = this.currentLine();
+			if (this.cursorColumn < line.length) {
+				this.cursorColumn += 1;
+			} else if (this.cursorRow < this.lines.length - 1) {
+				this.cursorRow += 1;
+				this.cursorColumn = 0;
+			}
 		}
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.revealCursor();
 	}
-	this.resetBlink();
-	this.updateDesiredColumn();
-	this.revealCursor();
-}
 
 	private moveWordLeft(): void {
 		const destination = this.findWordLeft(this.cursorRow, this.cursorColumn);
@@ -2216,25 +2281,25 @@ private moveCursorHorizontal(delta: number): void {
 		return true;
 	}
 
-private consumeKey(keyboard: KeyboardInput, code: string): void {
-	keyboard.consumeButton(code);
-}
-
-private updateDesiredColumn(): void {
-	this.desiredColumn = this.cursorColumn;
-}
-
-private isKeyTyped(keyboard: KeyboardInput, code: string): boolean {
-	const state = this.getButtonState(keyboard, code);
-	if (!state) {
-		return false;
+	private consumeKey(keyboard: KeyboardInput, code: string): void {
+		keyboard.consumeButton(code);
 	}
-	return this.shouldAcceptJustPressed(code, state);
-}
 
-private insertTab(): void {
-	this.insertText('\t');
-}
+	private updateDesiredColumn(): void {
+		this.desiredColumn = this.cursorColumn;
+	}
+
+	private isKeyTyped(keyboard: KeyboardInput, code: string): boolean {
+		const state = this.getButtonState(keyboard, code);
+		if (!state) {
+			return false;
+		}
+		return this.shouldAcceptJustPressed(code, state);
+	}
+
+	private insertTab(): void {
+		this.insertText('\t');
+	}
 
 	private insertText(text: string): void {
 		if (text.length === 0) {
@@ -2389,7 +2454,7 @@ private insertTab(): void {
 				return;
 			}
 			const message = error instanceof Error ? error.message : String(error);
-			this.showMessage(message, COLOR_STATUS_WARNING, 4.0);
+			this.showMessage(message, COLOR_STATUS_ERROR, 4.0);
 		}
 	}
 
@@ -2795,35 +2860,35 @@ private insertTab(): void {
 		if (this.undoStack.length === 0) {
 			return;
 		}
-	const snapshot = this.undoStack.pop();
-	if (!snapshot) {
-		return;
+		const snapshot = this.undoStack.pop();
+		if (!snapshot) {
+			return;
+		}
+		const current = this.captureSnapshot();
+		if (this.redoStack.length >= UNDO_HISTORY_LIMIT) {
+			this.redoStack.shift();
+		}
+		this.redoStack.push(current);
+		this.restoreSnapshot(snapshot, true);
+		this.breakUndoSequence();
 	}
-	const current = this.captureSnapshot();
-	if (this.redoStack.length >= UNDO_HISTORY_LIMIT) {
-		this.redoStack.shift();
-	}
-	this.redoStack.push(current);
-	this.restoreSnapshot(snapshot, true);
-	this.breakUndoSequence();
-}
 
 	private redo(): void {
 		if (this.redoStack.length === 0) {
 			return;
 		}
-	const snapshot = this.redoStack.pop();
-	if (!snapshot) {
-		return;
+		const snapshot = this.redoStack.pop();
+		if (!snapshot) {
+			return;
+		}
+		const current = this.captureSnapshot();
+		if (this.undoStack.length >= UNDO_HISTORY_LIMIT) {
+			this.undoStack.shift();
+		}
+		this.undoStack.push(current);
+		this.restoreSnapshot(snapshot, true);
+		this.breakUndoSequence();
 	}
-	const current = this.captureSnapshot();
-	if (this.undoStack.length >= UNDO_HISTORY_LIMIT) {
-		this.undoStack.shift();
-	}
-	this.undoStack.push(current);
-	this.restoreSnapshot(snapshot, true);
-	this.breakUndoSequence();
-}
 
 	private breakUndoSequence(): void {
 		this.lastHistoryKey = null;
@@ -2871,21 +2936,27 @@ private insertTab(): void {
 		const buttonTop = 1;
 		const buttonHeight = this.lineHeight + HEADER_BUTTON_PADDING_Y * 2;
 		let buttonX = 4;
-		const buttonEntries: Array<{ id: 'resume' | 'reboot' | 'save'; label: string; disabled: boolean }> = [
-			{ id: 'resume', label: 'RESUME', disabled: false },
-			{ id: 'reboot', label: 'REBOOT', disabled: false },
-			{ id: 'save', label: 'SAVE', disabled: !this.dirty },
-		];
+	const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
+		{ id: 'resume', label: 'RESUME', disabled: false },
+		{ id: 'reboot', label: 'REBOOT', disabled: false },
+		{ id: 'save', label: 'SAVE', disabled: !this.dirty },
+		{ id: 'resources', label: 'FILES', disabled: false, active: this.resourceBrowserVisible },
+	];
 		for (let i = 0; i < buttonEntries.length; i++) {
 			const entry = buttonEntries[i];
 			const textWidth = this.measureText(entry.label);
 			const buttonWidth = textWidth + HEADER_BUTTON_PADDING_X * 2;
 			const right = buttonX + buttonWidth;
 			const bottom = buttonTop + buttonHeight;
-			const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
-			this.topBarButtonBounds[entry.id] = bounds;
-			const fillColor = entry.disabled ? COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : COLOR_HEADER_BUTTON_BACKGROUND;
-			const textColor = entry.disabled ? COLOR_HEADER_BUTTON_TEXT_DISABLED : COLOR_HEADER_BUTTON_TEXT;
+		const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
+		this.topBarButtonBounds[entry.id] = bounds;
+		const isActive = entry.active === true;
+		const fillColor = isActive
+			? COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
+			: (entry.disabled ? COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : COLOR_HEADER_BUTTON_BACKGROUND);
+		const textColor = isActive
+			? COLOR_HEADER_BUTTON_ACTIVE_TEXT
+			: (entry.disabled ? COLOR_HEADER_BUTTON_TEXT_DISABLED : COLOR_HEADER_BUTTON_TEXT);
 			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
 			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_HEADER_BUTTON_BORDER);
 			this.drawText(api, entry.label, bounds.left + HEADER_BUTTON_PADDING_X, bounds.top + HEADER_BUTTON_PADDING_Y, textColor);
@@ -3069,8 +3140,8 @@ private insertTab(): void {
 				api.rectfillColor(gutterRight, rowY, this.viewportWidth, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
 			}
 
-		if (lineIndex < this.lines.length) {
-			const entry = this.getCachedHighlight(lineIndex);
+			if (lineIndex < this.lines.length) {
+				const entry = this.getCachedHighlight(lineIndex);
 				const highlight = entry.hi;
 				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
 				this.drawSearchHighlightsForRow(api, lineIndex, entry, textLeft, rowY, slice.startDisplay, slice.endDisplay);
@@ -3107,7 +3178,7 @@ private insertTab(): void {
 		if (relativeRow < 0 || relativeRow >= visibleRows) {
 			return;
 		}
-	const entry = this.getCachedHighlight(overlay.row);
+		const entry = this.getCachedHighlight(overlay.row);
 		const highlight = entry.hi;
 		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 4);
 		const anchorDisplay = this.columnToDisplay(highlight, overlay.column);
@@ -3150,7 +3221,7 @@ private insertTab(): void {
 		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, ERROR_OVERLAY_BACKGROUND);
 		for (let i = 0; i < lines.length; i++) {
 			const lineY = bubbleTop + ERROR_OVERLAY_PADDING_Y + i * this.lineHeight;
-			this.drawText(api, lines[i], bubbleLeft + ERROR_OVERLAY_PADDING_X, lineY, COLOR_STATUS_WARNING);
+			this.drawText(api, lines[i], bubbleLeft + ERROR_OVERLAY_PADDING_X, lineY, COLOR_STATUS_ERROR);
 		}
 		const connectorLeft = Math.max(textLeft, anchorX);
 		const connectorRight = Math.min(bubbleLeft, connectorLeft + 3);
@@ -3165,6 +3236,196 @@ private insertTab(): void {
 					api.rectfillColor(connectorLeft, bubbleBottom, connectorRight, rowTop, ERROR_OVERLAY_BACKGROUND);
 				}
 			}
+		}
+	}
+
+	private showResourceBrowser(): void {
+		let descriptors: ConsoleResourceDescriptor[];
+		try {
+			descriptors = this.listResourcesFn();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showWarningBanner(`Failed to enumerate resources: ${message}`);
+			this.resourceBrowserLines = [`<failed to load resources: ${message}>`];
+			this.resourceBrowserScroll = 0;
+			this.resourceBrowserVisible = true;
+			return;
+		}
+		this.resourceBrowserLines = this.buildResourceBrowserLines(descriptors);
+		this.resourceBrowserScroll = 0;
+		this.resourceBrowserVisible = true;
+	}
+
+	private hideResourceBrowser(): void {
+		this.resourceBrowserVisible = false;
+		this.resourceBrowserLines = [];
+		this.resourceBrowserScroll = 0;
+	}
+
+	private toggleResourceBrowser(): void {
+		if (this.resourceBrowserVisible) {
+			this.hideResourceBrowser();
+		} else {
+			this.showResourceBrowser();
+		}
+	}
+
+	private buildResourceBrowserLines(entries: ConsoleResourceDescriptor[]): string[] {
+		if (!entries || entries.length === 0) {
+			return ['<no resources>'];
+		}
+		type ResourceTreeDirectory = {
+			name: string;
+			children: Map<string, ResourceTreeDirectory>;
+			files: ResourceTreeFile[];
+		};
+		type ResourceTreeFile = {
+			name: string;
+			descriptor: ConsoleResourceDescriptor;
+		};
+		const root: ResourceTreeDirectory = { name: '.', children: new Map(), files: [] };
+		for (const entry of entries) {
+			const normalized = entry.path.replace(/\\\\/g, '/');
+			const parts = normalized.split('/').filter(part => part.length > 0 && part !== '.');
+			if (parts.length === 0) {
+				root.files.push({ name: entry.path || entry.assetId, descriptor: entry });
+				continue;
+			}
+			let current = root;
+			for (let index = 0; index < parts.length; index++) {
+				const part = parts[index];
+				const isLeaf = index === parts.length - 1;
+				if (isLeaf) {
+					current.files.push({ name: part, descriptor: entry });
+				} else {
+					let child = current.children.get(part);
+					if (!child) {
+						child = { name: part, children: new Map(), files: [] };
+						current.children.set(part, child);
+					}
+					current = child;
+				}
+			}
+		}
+		const lines: string[] = ['./'];
+		const traverse = (directory: ResourceTreeDirectory, prefix: string) => {
+			const childDirs = Array.from(directory.children.values()).sort((a, b) => a.name.localeCompare(b.name));
+			const files = directory.files.slice().sort((a, b) => a.name.localeCompare(b.name));
+			const combined: Array<{ kind: 'dir'; node: ResourceTreeDirectory } | { kind: 'file'; node: ResourceTreeFile }> = [];
+			for (const dir of childDirs) {
+				combined.push({ kind: 'dir', node: dir });
+			}
+			for (const file of files) {
+				combined.push({ kind: 'file', node: file });
+			}
+			for (let index = 0; index < combined.length; index++) {
+				const entry = combined[index];
+				const isLast = index === combined.length - 1;
+				const connector = prefix.length === 0 ? (isLast ? '`-- ' : '|-- ') : (isLast ? '`-- ' : '|-- ');
+				const linePrefix = prefix + connector;
+				const nextPrefix = prefix + (isLast ? '    ' : '|   ');
+				if (entry.kind === 'dir') {
+					lines.push(`${linePrefix}${entry.node.name}/`);
+					traverse(entry.node, nextPrefix);
+				} else {
+					const descriptor = entry.node.descriptor;
+					const summary = `${descriptor.type}:${descriptor.assetId}`;
+					lines.push(`${linePrefix}${entry.node.name} [${summary}]`);
+				}
+			}
+		};
+		traverse(root, '');
+		return lines;
+	}
+
+	private resourceBrowserVisibleLineCapacity(): number {
+		const overlayTop = this.codeViewportTop();
+		const overlayBottom = this.viewportHeight - this.bottomMargin;
+		const headerHeight = this.lineHeight + 4;
+		const contentHeight = Math.max(0, overlayBottom - (overlayTop + headerHeight) - 4);
+		return Math.max(1, Math.floor(contentHeight / this.lineHeight));
+	}
+
+	private scrollResourceBrowser(amount: number): void {
+		if (!this.resourceBrowserVisible) {
+			return;
+		}
+		const capacity = this.resourceBrowserVisibleLineCapacity();
+		const maxScroll = Math.max(0, this.resourceBrowserLines.length - capacity);
+		this.resourceBrowserScroll = Math.max(0, Math.min(this.resourceBrowserScroll + amount, maxScroll));
+	}
+
+	private handleResourceBrowserKeyboard(keyboard: KeyboardInput, deltaSeconds: number): void {
+		if (this.isKeyJustPressed(keyboard, 'Escape')) {
+			this.consumeKey(keyboard, 'Escape');
+			this.hideResourceBrowser();
+			return;
+		}
+		if (this.resourceBrowserLines.length === 0) {
+			return;
+		}
+	const scrollAmounts: Array<{ code: string; delta: number }> = [
+		{ code: 'ArrowUp', delta: -1 },
+		{ code: 'ArrowDown', delta: 1 },
+		{ code: 'PageUp', delta: -this.resourceBrowserVisibleLineCapacity() },
+		{ code: 'PageDown', delta: this.resourceBrowserVisibleLineCapacity() },
+		{ code: 'Home', delta: Number.NEGATIVE_INFINITY },
+		{ code: 'End', delta: Number.POSITIVE_INFINITY },
+	];
+	for (const entry of scrollAmounts) {
+		if (entry.code === 'Home') {
+			if (this.isKeyJustPressed(keyboard, entry.code)) {
+				this.consumeKey(keyboard, entry.code);
+				this.resourceBrowserScroll = 0;
+				return;
+			}
+			continue;
+		}
+		if (entry.code === 'End') {
+			if (this.isKeyJustPressed(keyboard, entry.code)) {
+				this.consumeKey(keyboard, entry.code);
+				const capacity = this.resourceBrowserVisibleLineCapacity();
+				this.resourceBrowserScroll = Math.max(0, this.resourceBrowserLines.length - capacity);
+				return;
+			}
+			continue;
+		}
+		if (this.resourceBrowserLines.length === 0) {
+			continue;
+		}
+		const triggered = this.isKeyJustPressed(keyboard, entry.code) || this.shouldFireRepeat(keyboard, entry.code, deltaSeconds);
+		if (triggered) {
+			this.consumeKey(keyboard, entry.code);
+			this.scrollResourceBrowser(entry.delta);
+			return;
+		}
+	}
+}
+
+	private drawResourceBrowser(api: BmsxConsoleApi): void {
+		if (!this.resourceBrowserVisible) {
+			return;
+		}
+		const codeTop = this.codeViewportTop();
+		const codeBottom = this.viewportHeight - this.bottomMargin;
+		const paddingX = 4;
+		api.rectfillColor(0, codeTop, this.viewportWidth, codeBottom, ACTION_OVERLAY_COLOR);
+		const header = `FILES (${this.resourceBrowserLines.length})  ESC to close`;
+		this.drawText(api, header, paddingX, codeTop + 2, COLOR_STATUS_TEXT);
+	const instruction = 'Use Arrow Keys / PageUp / PageDown';
+	const instructionX = Math.max(paddingX, this.viewportWidth - this.measureText(instruction) - paddingX);
+		this.drawText(api, instruction, instructionX, codeTop + 2, COLOR_STATUS_TEXT);
+		const contentTop = codeTop + this.lineHeight + 4;
+		const capacity = this.resourceBrowserVisibleLineCapacity();
+		const adjustedScroll = Math.max(0, Math.min(this.resourceBrowserScroll, Math.max(0, this.resourceBrowserLines.length - capacity)));
+		const end = Math.min(this.resourceBrowserLines.length, adjustedScroll + capacity);
+		for (let lineIndex = adjustedScroll, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+			const y = contentTop + drawIndex * this.lineHeight;
+			this.drawText(api, this.resourceBrowserLines[lineIndex], paddingX, y, COLOR_STATUS_TEXT);
+		}
+		if (this.resourceBrowserLines.length > capacity) {
+			const footer = `${adjustedScroll + 1}-${end} of ${this.resourceBrowserLines.length}`;
+			this.drawText(api, footer, paddingX, codeBottom - this.lineHeight - 1, COLOR_STATUS_TEXT);
 		}
 	}
 
@@ -3757,7 +4018,7 @@ private insertTab(): void {
 		const message = error instanceof Error ? error.message : String(error);
 		$.paused = true;
 		this.activate();
-		this.showMessage(`${fallbackMessage}: ${message}`, COLOR_STATUS_WARNING, 4.0);
+		this.showMessage(`${fallbackMessage}: ${message}`, COLOR_STATUS_ERROR, 4.0);
 	}
 
 	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {

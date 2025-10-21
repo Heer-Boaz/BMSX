@@ -21,6 +21,7 @@ type BmsxConsoleLuaInlineProgram = {
 type BmsxConsoleLuaAssetProgram = {
 	readonly chunkName?: string;
 	readonly assetId: string;
+	readonly overrideSource?: string;
 };
 
 export type BmsxConsoleLuaProgram = (BmsxConsoleLuaInlineProgram | BmsxConsoleLuaAssetProgram) & {
@@ -88,3 +89,9 @@ export type ConsoleModuleOptions = {
 };
 
 export type Vector2 = vec2;
+
+export type ConsoleResourceDescriptor = {
+	path: string;
+	type: string;
+	assetId: string;
+};

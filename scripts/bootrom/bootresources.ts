@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, TextureSource, color_arr } from '../../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, GLTFMaterial, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, RomResourcePath, TextureSource, color_arr } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary, decodeuint8arr, toF32, typedArrayFromBytes } from '../../src/bmsx/serializer/binencoder';
 
 export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
@@ -226,11 +226,13 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 	code: null,
 	audioevents: {},
 	lua: {},
-	luaSourcePaths: {}
+	luaSourcePaths: {},
+	resourcePaths: [],
 };
+	const seenResourcePaths = new Set<string>();
 
 	const assetList = await loadAssetList(rom);
-	await Promise.all(assetList.map(a => load(rom, a, result, opts)));
+	await Promise.all(assetList.map(a => load(rom, a, result, opts, seenResourcePaths)));
 	return Promise.resolve<RomPack>(result);
 }
 
@@ -461,12 +463,11 @@ async function fromAsset(romImgAsset: RomImgAsset, rompack: RomPack, options?: {
 	return source;
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, _loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }, seenPaths?: Set<string>, _loadFSMFromBuffer?: (buffer: ArrayBuffer) => Promise<any>): Promise<void> {
 	switch (res.type) {
 		case 'image':
-		case 'atlas':
+		case 'atlas': {
 			let img: TextureSource | undefined = undefined;
-			// Non-atlassed images can be loaded directly from their buffer
 			if (!res.imgmeta?.atlassed) {
 				if (opts && opts.loadImageFromBuffer) {
 					img = await opts.loadImageFromBuffer(rom.slice(res.start, res.end));
@@ -474,24 +475,20 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					img = await getImageFromBuffer(rom.slice(res.start, res.end));
 				}
 			}
-			// Create the RomImgAsset object, with a getter for the imgbin property
-			// that will extract the image from the atlas when required.
-			// Note that the _imgbin property will be populated with the TextureSource
 			const imgAsset: RomImgAsset = {
 				...res,
-				_imgbin: img, // The Image Source of the image asset or undefined if not available. Note that this will be populated with an TextureSource when `get imgbin()` is called! In other words, it also acts as a cache when required.
+				_imgbin: img,
 				_imgbinYFlipped: undefined,
-				// ** THAT'S WHY YOU SHOULD USE THE `atlassed`-PROPERTY TO DETERMINE WHETHER AN IMAGE ASSET IS ATLASSED OR NOT! **
-				// Getter for imgbin property, compatible with RomImgAsset interface
 				get imgbin() {
-					return fromAsset(this, romResult); // This will populate the _imgbin property if required
+					return fromAsset(this, romResult);
 				},
 				get imgbinYFlipped() {
-					return fromAsset(this, romResult, { flipY: true }); // This will populate the _imgbinYFlipped property if required
+					return fromAsset(this, romResult, { flipY: true });
 				},
 			};
 			romResult.img[res.resid] = imgAsset;
 			break;
+		}
 		case 'audio':
 			try {
 				if (opts && opts.loadAudioFromBuffer) {
@@ -512,14 +509,13 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					romResult.code = decodeuint8arr(sliced);
 				}
 			} catch (err: any) {
-				throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
+				throw new Error(`Failed to load 'code' from rom: ${err.message}.`);
 			}
 			break;
 		case 'lua':
 			try {
 				const sliced = new Uint8Array(rom, res.start, res.end - res.start);
-				const source = decodeuint8arr(sliced);
-				romResult.lua[res.resid] = source;
+				romResult.lua[res.resid] = decodeuint8arr(sliced);
 				if (res.sourcePath && res.sourcePath.length > 0) {
 					romResult.luaSourcePaths[res.resid] = res.sourcePath;
 				}
@@ -575,9 +571,20 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			}
 			break;
 		}
-
+		case 'romlabel':
+		case 'rommanifest':
+			// No additional handling required; buffer already present if needed.
+			break;
 		default:
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
+	}
+	if (res.sourcePath && res.sourcePath.length > 0 && seenPaths) {
+		const key = res.sourcePath;
+		if (!seenPaths.has(key)) {
+			seenPaths.add(key);
+			const entry: RomResourcePath = { path: res.sourcePath, type: res.type, assetId: res.resid };
+			romResult.resourcePaths.push(entry);
+		}
 	}
 }
 

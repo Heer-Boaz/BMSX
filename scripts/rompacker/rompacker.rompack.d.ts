@@ -46,6 +46,7 @@ interface BaseResource<TType extends resourcetype> {
 	ext?: string;
 	id?: number;
 	buffer?: Buffer;
+	sourcePath?: string;
 }
 
 export interface ImageResource extends BaseResource<'image'> {
