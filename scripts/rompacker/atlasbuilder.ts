@@ -342,12 +342,30 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 export function createOptimizedAtlas(imageResources: ImageResource[]): Canvas {
 	const rects = imageResources.map(img_resource => ({ x: undefined as number, y: undefined as number, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
-	const maxrect_result = maximalRectanglesPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
-	const binpack_result = shelfBinPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
-	const imagepacker_result = tprfPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
+	const results: Array<{ items: { item: Rect, x: number, y: number; }[], width: number, height: number; }> = [];
+	const packers: Array<{ name: string; fn: (rectangles: Rect[], width: number, height: number) => { items: { item: Rect, x: number, y: number; }[], width: number, height: number; }; }> = [
+		{ name: 'maximalRectanglesPacker', fn: maximalRectanglesPacker },
+		{ name: 'shelfBinPacker', fn: shelfBinPacker },
+		{ name: 'tprfPacker', fn: tprfPacker },
+	];
+
+	for (const packer of packers) {
+		try {
+			const clonedRects = rects.map(rect => ({ width: rect.width as number, height: rect.height as number, id: rect.id }));
+			const packed = packer.fn(clonedRects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
+			results.push(packed);
+		}
+		catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.warn(`[AtlasBuilder] ${packer.name} failed: ${message}`);
+		}
+	}
+
+	if (results.length === 0) {
+		throw new Error('All atlas packing algorithms failed to fit the provided images within the configured atlas dimensions.');
+	}
 
 	// Determine the smallest result
-	const results = [maxrect_result, binpack_result, imagepacker_result];
 	const smallest_result = results.reduce((smallest, current) => {
 		const smallestArea = smallest.width * smallest.height;
 		const currentArea = current.width * current.height;
