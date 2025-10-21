@@ -651,6 +651,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 
 	const result: Array<Resource> = [];
 	const targetAtlasIdSet = new Set<number>();
+	const imageNameRegistry = new Map<string, { filepath?: string }>();
 
 	let imgid = 1;
 	let sndid = 1;
@@ -670,11 +671,25 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 			case 'image':
 				const imgMeta = parseImageMeta(name);
 				name = imgMeta.sanitizedName; // Remove metadata from the name
+				const existingImage = imageNameRegistry.get(name);
+				if (existingImage && existingImage.filepath) {
+					const existingParsed = parse(existingImage.filepath);
+					const currentParsed = parse(filepath);
+					const sameDirectory = existingParsed.dir === currentParsed.dir;
+					const sameBaseLower = existingParsed.name.toLowerCase() === currentParsed.name.toLowerCase();
+					const casingDiffers = existingParsed.name !== currentParsed.name;
+					if (sameDirectory && sameBaseLower && casingDiffers) {
+						console.warn(`[RomPacker] Skipping case-variant image "${filepath}" (using "${existingImage.filepath}" as "${name}").`);
+						break;
+					}
+					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
+				}
 				// If we are generating and using texture atlases, we need to add the image to the atlas
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					if (imgMeta.targetAtlas !== undefined) targetAtlasIdSet.add(imgMeta.targetAtlas);
 				}
 				result.push({ filepath, name, ext, type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas });
+				imageNameRegistry.set(name, { filepath });
 				++imgid;
 				break;
 			case 'audio':
