@@ -51,7 +51,7 @@ export class Sinterklaas extends Fighter {
 		}
 	}
 
-	protected override getAttackOpponent(): Fighter | null {
+	public override getAttackOpponent(): Fighter | null {
 		return $.get<EilaEventService>('eila_events')?.theOtherFighter(this) ?? null;
 	}
 
