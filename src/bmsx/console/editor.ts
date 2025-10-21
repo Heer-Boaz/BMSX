@@ -123,6 +123,8 @@ type RectBounds = {
 
 type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 
+type EditorTabId = 'code' | 'resources';
+
 type PendingActionPrompt = {
 	action: 'resume' | 'reboot';
 };
@@ -136,6 +138,7 @@ type ConsoleRuntimeBridge = {
 
 export type ConsoleEditorSerializedState = {
 	active: boolean;
+	activeTab: EditorTabId;
 	snapshot: EditorSnapshot;
 	searchQuery: string;
 	searchMatches: SearchMatch[];
@@ -233,6 +236,15 @@ const ACTION_DIALOG_BORDER_COLOR = COLOR_SEARCH_OUTLINE;
 const ACTION_DIALOG_TEXT_COLOR = COLOR_SEARCH_TEXT;
 const ACTION_BUTTON_BACKGROUND = COLOR_STATUS_BACKGROUND;
 const ACTION_BUTTON_TEXT = COLOR_STATUS_TEXT;
+const TAB_BUTTON_PADDING_X = 4;
+const TAB_BUTTON_PADDING_Y = 1;
+const TAB_BUTTON_SPACING = 3;
+const COLOR_TAB_BAR_BACKGROUND = COLOR_STATUS_BACKGROUND;
+const COLOR_TAB_BORDER = COLOR_TOP_BAR_TEXT;
+const COLOR_TAB_INACTIVE_BACKGROUND = COLOR_STATUS_BACKGROUND;
+const COLOR_TAB_ACTIVE_BACKGROUND = COLOR_CODE_BACKGROUND;
+const COLOR_TAB_INACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
+const COLOR_TAB_ACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -250,6 +262,7 @@ export class ConsoleCartEditor {
 	private readonly maxHighlightCache = 2048;
 	private readonly gutterWidth: number;
 	private readonly headerHeight: number;
+	private readonly tabBarHeight: number;
 	private readonly topMargin: number;
 	private readonly bottomMargin: number;
 	private readonly repeatState: Map<string, RepeatEntry> = new Map();
@@ -298,6 +311,10 @@ export class ConsoleCartEditor {
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },
 	};
+	private readonly tabButtonBounds: Record<EditorTabId, RectBounds> = {
+		code: { left: 0, top: 0, right: 0, bottom: 0 },
+		resources: { left: 0, top: 0, right: 0, bottom: 0 },
+	};
 	private readonly actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
 		saveAndContinue: null,
 		continue: { left: 0, top: 0, right: 0, bottom: 0 },
@@ -337,7 +354,7 @@ export class ConsoleCartEditor {
 	private saveGeneration = 0;
 	private appliedGeneration = 0;
 	private lastSavedSource = '';
-	private resourceBrowserVisible = false;
+	private activeTab: EditorTabId = 'code';
 	private resourceBrowserLines: string[] = [];
 	private resourceBrowserScroll = 0;
 
@@ -356,7 +373,8 @@ export class ConsoleCartEditor {
 		this.gutterWidth = 2;
 		const primaryBarHeight = this.lineHeight + 4;
 		this.headerHeight = primaryBarHeight;
-		this.topMargin = this.headerHeight + 2;
+		this.tabBarHeight = this.lineHeight + 3;
+		this.topMargin = this.headerHeight + this.tabBarHeight + 2;
 		this.bottomMargin = this.lineHeight + 6;
 		this.desiredColumn = this.cursorColumn;
 		this.assertMonospace();
@@ -547,7 +565,7 @@ export class ConsoleCartEditor {
 			this.updateSearchMatches();
 			this.lastSearchVersion = this.textVersion;
 		}
-		if (!this.cursorRevealSuspended) {
+		if (this.isCodeTabActive() && !this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
 	}
@@ -559,16 +577,55 @@ export class ConsoleCartEditor {
 		}
 		const frameColor = Msx1Colors[COLOR_FRAME];
 		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
-	this.drawTopBar(api);
-	this.drawSearchBar(api);
-	this.drawLineJumpBar(api);
-	this.drawCodeArea(api);
-	if (this.resourceBrowserVisible) {
-		this.drawResourceBrowser(api);
-	}
-	this.drawStatusBar(api);
+		this.drawTopBar(api);
+		this.drawTabBar(api);
+		if (this.isResourcesTabActive()) {
+			this.drawResourceBrowser(api);
+		} else {
+			this.drawSearchBar(api);
+			this.drawLineJumpBar(api);
+			this.drawCodeArea(api);
+		}
+		this.drawStatusBar(api);
 		if (this.pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
+		}
+	}
+
+	private drawTabBar(api: BmsxConsoleApi): void {
+		const barTop = this.headerHeight;
+		const barBottom = barTop + this.tabBarHeight;
+		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_TAB_BAR_BACKGROUND);
+		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_TAB_BORDER);
+		const tabs: Array<{ id: EditorTabId; label: string }> = [
+			{ id: 'code', label: 'CODE' },
+			{ id: 'resources', label: 'FILES' },
+		];
+		let tabX = 4;
+		for (let index = 0; index < tabs.length; index += 1) {
+			const entry = tabs[index];
+			const textWidth = this.measureText(entry.label);
+			const tabWidth = textWidth + TAB_BUTTON_PADDING_X * 2;
+			const left = tabX;
+			const right = left + tabWidth;
+			const top = barTop + 1;
+			const bottom = barBottom - 1;
+			const bounds: RectBounds = { left, top, right, bottom };
+			this.tabButtonBounds[entry.id] = bounds;
+			const active = this.activeTab === entry.id;
+			const fillColor = active ? COLOR_TAB_ACTIVE_BACKGROUND : COLOR_TAB_INACTIVE_BACKGROUND;
+			const textColor = active ? COLOR_TAB_ACTIVE_TEXT : COLOR_TAB_INACTIVE_TEXT;
+			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
+			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_TAB_BORDER);
+			this.drawText(api, entry.label, bounds.left + TAB_BUTTON_PADDING_X, bounds.top + TAB_BUTTON_PADDING_Y, textColor);
+			if (active) {
+				api.rectfill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, fillColor);
+			}
+			tabX = right + TAB_BUTTON_SPACING;
+		}
+		const tabBottomLineTop = barBottom - 1;
+		if (tabX < this.viewportWidth) {
+			api.rectfill(tabX, tabBottomLineTop, this.viewportWidth, barBottom, COLOR_TAB_BAR_BACKGROUND);
 		}
 	}
 
@@ -608,6 +665,7 @@ export class ConsoleCartEditor {
 			: null;
 		return {
 			active: this.active,
+			activeTab: this.activeTab,
 			snapshot,
 			searchQuery: this.searchQuery,
 			searchMatches: this.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
@@ -628,6 +686,8 @@ export class ConsoleCartEditor {
 		if (!state) return;
 		this.applyInputOverrides(false);
 		this.active = state.active;
+		const restoredTab = state.activeTab ?? 'code';
+		this.setActiveTab(restoredTab);
 		if (this.active) {
 			this.applyInputOverrides(true);
 		}
@@ -683,7 +743,7 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
 		this.resetActionPromptState();
-		this.hideResourceBrowser();
+		this.activateCodeTab();
 	}
 
 	private getKeyboard(): KeyboardInput {
@@ -803,7 +863,7 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.runtimeErrorOverlay = null;
 		this.resetActionPromptState();
-		this.hideResourceBrowser();
+		this.activateCodeTab();
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -838,7 +898,7 @@ export class ConsoleCartEditor {
 	}
 
 	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
-		if (this.resourceBrowserVisible) {
+		if (this.isResourcesTabActive()) {
 			this.handleResourceBrowserKeyboard(keyboard, deltaSeconds);
 			return;
 		}
@@ -1484,29 +1544,13 @@ export class ConsoleCartEditor {
 			this.pointerPrimaryWasPressed = false;
 			return;
 		}
-	const wasPressed = this.pointerPrimaryWasPressed;
-	const justPressed = snapshot.primaryPressed && !wasPressed;
-	const justReleased = !snapshot.primaryPressed && wasPressed;
-	if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
-		this.pointerSelecting = false;
-	}
-	if (!snapshot.valid) {
-		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		return;
-	}
-	if (this.resourceBrowserVisible) {
-		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
-			this.handleTopBarPointer(snapshot);
-		}
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		return;
-	}
-	if (this.pendingActionPrompt) {
-			if (justPressed) {
-				this.handleActionPromptPointer(snapshot);
-			}
+		const wasPressed = this.pointerPrimaryWasPressed;
+		const justPressed = snapshot.primaryPressed && !wasPressed;
+		const justReleased = !snapshot.primaryPressed && wasPressed;
+		if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
 			this.pointerSelecting = false;
+		}
+		if (!snapshot.valid) {
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
@@ -1516,6 +1560,28 @@ export class ConsoleCartEditor {
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				return;
 			}
+		}
+		const tabTop = this.headerHeight;
+		const tabBottom = tabTop + this.tabBarHeight;
+		if (justPressed && snapshot.viewportY >= tabTop && snapshot.viewportY < tabBottom) {
+			if (this.handleTabBarPointer(snapshot)) {
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				return;
+			}
+		}
+		if (this.isResourcesTabActive()) {
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
+		}
+		if (this.pendingActionPrompt) {
+			if (justPressed) {
+				this.handleActionPromptPointer(snapshot);
+			}
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
 		}
 		const lineJumpBounds = this.getLineJumpBarBounds();
 		if (justPressed && lineJumpBounds && snapshot.viewportY >= lineJumpBounds.top && snapshot.viewportY < lineJumpBounds.bottom) {
@@ -1606,6 +1672,25 @@ export class ConsoleCartEditor {
 		return false;
 	}
 
+	private handleTabBarPointer(snapshot: PointerSnapshot): boolean {
+		const tabTop = this.headerHeight;
+		const tabBottom = tabTop + this.tabBarHeight;
+		const y = snapshot.viewportY;
+		if (y < tabTop || y >= tabBottom) {
+			return false;
+		}
+		const x = snapshot.viewportX;
+		if (this.pointInRect(x, y, this.tabButtonBounds.code)) {
+			this.activateCodeTab();
+			return true;
+		}
+		if (this.pointInRect(x, y, this.tabButtonBounds.resources)) {
+			this.activateResourceTab();
+			return true;
+		}
+		return false;
+	}
+
 	private handlePointerWheel(): void {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
@@ -1622,7 +1707,7 @@ export class ConsoleCartEditor {
 		const magnitude = Math.abs(delta);
 		const steps = Math.max(1, Math.round(magnitude / WHEEL_SCROLL_STEP));
 		const direction = delta > 0 ? 1 : -1;
-		if (this.resourceBrowserVisible) {
+		if (this.isResourcesTabActive()) {
 			this.scrollResourceBrowser(direction * steps);
 			playerInput.consumeAction('pointer_wheel');
 			return;
@@ -1634,7 +1719,7 @@ export class ConsoleCartEditor {
 
 	private handleTopBarButtonPress(button: TopBarButtonId): void {
 		if (button === 'resources') {
-			this.toggleResourceBrowser();
+			this.toggleResourceTab();
 			return;
 		}
 		if (button === 'save') {
@@ -1644,7 +1729,7 @@ export class ConsoleCartEditor {
 			void this.save();
 			return;
 		}
-		this.hideResourceBrowser();
+		this.activateCodeTab();
 		if (this.dirty) {
 			this.openActionPrompt(button);
 			return;
@@ -1656,7 +1741,7 @@ export class ConsoleCartEditor {
 	}
 
 	private openActionPrompt(action: 'resume' | 'reboot'): void {
-		this.hideResourceBrowser();
+		this.activateCodeTab();
 		this.pendingActionPrompt = { action };
 		this.actionPromptButtons.saveAndContinue = null;
 		this.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -2930,18 +3015,18 @@ export class ConsoleCartEditor {
 	}
 
 	private drawTopBar(api: BmsxConsoleApi): void {
-		const primaryBarHeight = this.lineHeight + 3;
+		const primaryBarHeight = this.headerHeight;
 		api.rectfill(0, 0, this.viewportWidth, primaryBarHeight, COLOR_TOP_BAR);
 
 		const buttonTop = 1;
 		const buttonHeight = this.lineHeight + HEADER_BUTTON_PADDING_Y * 2;
 		let buttonX = 4;
-	const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
-		{ id: 'resume', label: 'RESUME', disabled: false },
-		{ id: 'reboot', label: 'REBOOT', disabled: false },
-		{ id: 'save', label: 'SAVE', disabled: !this.dirty },
-		{ id: 'resources', label: 'FILES', disabled: false, active: this.resourceBrowserVisible },
-	];
+		const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
+			{ id: 'resume', label: 'RESUME', disabled: false },
+			{ id: 'reboot', label: 'REBOOT', disabled: false },
+			{ id: 'save', label: 'SAVE', disabled: !this.dirty },
+			{ id: 'resources', label: 'FILES', disabled: false, active: this.isResourcesTabActive() },
+		];
 		for (let i = 0; i < buttonEntries.length; i++) {
 			const entry = buttonEntries[i];
 			const textWidth = this.measureText(entry.label);
@@ -3028,7 +3113,7 @@ export class ConsoleCartEditor {
 			return;
 		}
 		const offset = this.getSearchBarHeight();
-		const barTop = this.headerHeight + offset;
+		const barTop = this.headerHeight + this.tabBarHeight + offset;
 		const barBottom = barTop + height;
 		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_LINE_JUMP_BACKGROUND);
 		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_LINE_JUMP_OUTLINE);
@@ -3094,7 +3179,7 @@ export class ConsoleCartEditor {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight;
+		const top = this.headerHeight + this.tabBarHeight;
 		return {
 			top,
 			bottom: top + height,
@@ -3108,7 +3193,7 @@ export class ConsoleCartEditor {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getSearchBarHeight();
+		const top = this.headerHeight + this.tabBarHeight + this.getSearchBarHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -3239,7 +3324,26 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private showResourceBrowser(): void {
+	private isResourcesTabActive(): boolean {
+		return this.activeTab === 'resources';
+	}
+
+	private isCodeTabActive(): boolean {
+		return this.activeTab === 'code';
+	}
+
+	private setActiveTab(tab: EditorTabId): void {
+		if (tab === 'resources') {
+			this.openResourcesTab();
+			return;
+		}
+		this.openCodeTab();
+	}
+
+	private openResourcesTab(): void {
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.cursorRevealSuspended = false;
 		let descriptors: ConsoleResourceDescriptor[];
 		try {
 			descriptors = this.listResourcesFn();
@@ -3248,26 +3352,34 @@ export class ConsoleCartEditor {
 			this.showWarningBanner(`Failed to enumerate resources: ${message}`);
 			this.resourceBrowserLines = [`<failed to load resources: ${message}>`];
 			this.resourceBrowserScroll = 0;
-			this.resourceBrowserVisible = true;
+			this.activeTab = 'resources';
 			return;
 		}
 		this.resourceBrowserLines = this.buildResourceBrowserLines(descriptors);
 		this.resourceBrowserScroll = 0;
-		this.resourceBrowserVisible = true;
+		this.activeTab = 'resources';
 	}
 
-	private hideResourceBrowser(): void {
-		this.resourceBrowserVisible = false;
+	private openCodeTab(): void {
+		this.activeTab = 'code';
 		this.resourceBrowserLines = [];
 		this.resourceBrowserScroll = 0;
 	}
 
-	private toggleResourceBrowser(): void {
-		if (this.resourceBrowserVisible) {
-			this.hideResourceBrowser();
-		} else {
-			this.showResourceBrowser();
+	private activateResourceTab(): void {
+		this.setActiveTab('resources');
+	}
+
+	private activateCodeTab(): void {
+		this.setActiveTab('code');
+	}
+
+	private toggleResourceTab(): void {
+		if (this.isResourcesTabActive()) {
+			this.activateCodeTab();
+			return;
 		}
+		this.activateResourceTab();
 	}
 
 	private buildResourceBrowserLines(entries: ConsoleResourceDescriptor[]): string[] {
@@ -3338,19 +3450,19 @@ export class ConsoleCartEditor {
 		return lines;
 	}
 
-	private resourceBrowserVisibleLineCapacity(): number {
+	private resourceTabLineCapacity(): number {
 		const overlayTop = this.codeViewportTop();
 		const overlayBottom = this.viewportHeight - this.bottomMargin;
-		const headerHeight = this.lineHeight + 4;
+		const headerHeight = this.lineHeight + 6;
 		const contentHeight = Math.max(0, overlayBottom - (overlayTop + headerHeight) - 4);
 		return Math.max(1, Math.floor(contentHeight / this.lineHeight));
 	}
 
 	private scrollResourceBrowser(amount: number): void {
-		if (!this.resourceBrowserVisible) {
+		if (!this.isResourcesTabActive()) {
 			return;
 		}
-		const capacity = this.resourceBrowserVisibleLineCapacity();
+		const capacity = this.resourceTabLineCapacity();
 		const maxScroll = Math.max(0, this.resourceBrowserLines.length - capacity);
 		this.resourceBrowserScroll = Math.max(0, Math.min(this.resourceBrowserScroll + amount, maxScroll));
 	}
@@ -3358,7 +3470,12 @@ export class ConsoleCartEditor {
 	private handleResourceBrowserKeyboard(keyboard: KeyboardInput, deltaSeconds: number): void {
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
 			this.consumeKey(keyboard, 'Escape');
-			this.hideResourceBrowser();
+			this.activateCodeTab();
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Tab')) {
+			this.consumeKey(keyboard, 'Tab');
+			this.activateCodeTab();
 			return;
 		}
 		if (this.resourceBrowserLines.length === 0) {
@@ -3367,8 +3484,8 @@ export class ConsoleCartEditor {
 	const scrollAmounts: Array<{ code: string; delta: number }> = [
 		{ code: 'ArrowUp', delta: -1 },
 		{ code: 'ArrowDown', delta: 1 },
-		{ code: 'PageUp', delta: -this.resourceBrowserVisibleLineCapacity() },
-		{ code: 'PageDown', delta: this.resourceBrowserVisibleLineCapacity() },
+		{ code: 'PageUp', delta: -this.resourceTabLineCapacity() },
+		{ code: 'PageDown', delta: this.resourceTabLineCapacity() },
 		{ code: 'Home', delta: Number.NEGATIVE_INFINITY },
 		{ code: 'End', delta: Number.POSITIVE_INFINITY },
 	];
@@ -3384,7 +3501,7 @@ export class ConsoleCartEditor {
 		if (entry.code === 'End') {
 			if (this.isKeyJustPressed(keyboard, entry.code)) {
 				this.consumeKey(keyboard, entry.code);
-				const capacity = this.resourceBrowserVisibleLineCapacity();
+				const capacity = this.resourceTabLineCapacity();
 				this.resourceBrowserScroll = Math.max(0, this.resourceBrowserLines.length - capacity);
 				return;
 			}
@@ -3403,20 +3520,24 @@ export class ConsoleCartEditor {
 }
 
 	private drawResourceBrowser(api: BmsxConsoleApi): void {
-		if (!this.resourceBrowserVisible) {
+		if (!this.isResourcesTabActive()) {
 			return;
 		}
 		const codeTop = this.codeViewportTop();
 		const codeBottom = this.viewportHeight - this.bottomMargin;
 		const paddingX = 4;
-		api.rectfillColor(0, codeTop, this.viewportWidth, codeBottom, ACTION_OVERLAY_COLOR);
-		const header = `FILES (${this.resourceBrowserLines.length})  ESC to close`;
+		api.rectfill(0, codeTop, this.viewportWidth, codeBottom, COLOR_CODE_BACKGROUND);
+		const header = `FILES (${this.resourceBrowserLines.length})`;
 		this.drawText(api, header, paddingX, codeTop + 2, COLOR_STATUS_TEXT);
-	const instruction = 'Use Arrow Keys / PageUp / PageDown';
-	const instructionX = Math.max(paddingX, this.viewportWidth - this.measureText(instruction) - paddingX);
+		const instruction = 'ESC or TAB to return';
+		const instructionX = Math.max(paddingX, this.viewportWidth - this.measureText(instruction) - paddingX);
 		this.drawText(api, instruction, instructionX, codeTop + 2, COLOR_STATUS_TEXT);
-		const contentTop = codeTop + this.lineHeight + 4;
-		const capacity = this.resourceBrowserVisibleLineCapacity();
+		const navigationHint = 'Use Arrow Keys / PageUp / PageDown';
+		const hintX = paddingX;
+		const hintY = codeTop + this.lineHeight + 2;
+		this.drawText(api, navigationHint, hintX, hintY, COLOR_STATUS_TEXT);
+		const contentTop = codeTop + this.lineHeight + 6;
+		const capacity = this.resourceTabLineCapacity();
 		const adjustedScroll = Math.max(0, Math.min(this.resourceBrowserScroll, Math.max(0, this.resourceBrowserLines.length - capacity)));
 		const end = Math.min(this.resourceBrowserLines.length, adjustedScroll + capacity);
 		for (let lineIndex = adjustedScroll, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
@@ -3662,10 +3783,18 @@ export class ConsoleCartEditor {
 		const statusBottom = this.viewportHeight;
 		api.rectfill(0, statusTop, this.viewportWidth, statusBottom, COLOR_STATUS_BACKGROUND);
 
-		const lineInfo = `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
-		const filenameInfo = `${this.metadata.title || 'UNTITLED'}.lua`;
-		this.drawText(api, lineInfo, 4, statusTop + 2, COLOR_STATUS_TEXT);
-		this.drawText(api, filenameInfo, this.viewportWidth - this.measureText(filenameInfo) - 4, statusTop + 2, COLOR_STATUS_TEXT);
+		if (this.isResourcesTabActive()) {
+			const totalEntries = this.resourceBrowserLines.length;
+			const fileInfo = `FILES ${totalEntries}`;
+			const hint = 'SCROLL WHEEL/ARROWS';
+			this.drawText(api, fileInfo, 4, statusTop + 2, COLOR_STATUS_TEXT);
+			this.drawText(api, hint, this.viewportWidth - this.measureText(hint) - 4, statusTop + 2, COLOR_STATUS_TEXT);
+		} else {
+			const lineInfo = `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
+			const filenameInfo = `${this.metadata.title || 'UNTITLED'}.lua`;
+			this.drawText(api, lineInfo, 4, statusTop + 2, COLOR_STATUS_TEXT);
+			this.drawText(api, filenameInfo, this.viewportWidth - this.measureText(filenameInfo) - 4, statusTop + 2, COLOR_STATUS_TEXT);
+		}
 
 		if (this.message.visible) {
 			const msgX = Math.max(4, Math.floor((this.viewportWidth - this.measureText(this.message.text)) / 2));
