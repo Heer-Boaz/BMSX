@@ -1645,28 +1645,27 @@ export class ConsoleCartEditor {
 			this.showMessage('Console runtime unavailable.', COLOR_STATUS_WARNING, 4.0);
 			return false;
 		}
-		const requiresReload = this.hasPendingRuntimeReload();
 		let snapshot: unknown = null;
-		if (requiresReload) {
-			try {
-				snapshot = runtime.getState();
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				this.showMessage(`Failed to capture runtime state: ${message}`, COLOR_STATUS_WARNING, 4.0);
-				return false;
-			}
-			if (snapshot === undefined || snapshot === null) {
-				this.showMessage('Runtime state unavailable.', COLOR_STATUS_WARNING, 4.0);
-				return false;
-			}
+		try {
+			snapshot = runtime.getState();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showMessage(`Failed to capture runtime state: ${message}`, COLOR_STATUS_WARNING, 4.0);
+			return false;
+		}
+		const sanitizedSnapshot = this.prepareRuntimeSnapshotForResume(snapshot);
+		if (!sanitizedSnapshot) {
+			this.showMessage('Runtime state unavailable.', COLOR_STATUS_WARNING, 4.0);
+			return false;
 		}
 		const targetGeneration = this.saveGeneration;
+		const shouldUpdateGeneration = this.hasPendingRuntimeReload();
 		this.deactivate();
 		this.scheduleRuntimeTask(() => {
-			if (requiresReload && snapshot !== null) {
-				runtime.setState(snapshot);
+			runtime.setState(sanitizedSnapshot);
+			if (shouldUpdateGeneration) {
+				this.appliedGeneration = targetGeneration;
 			}
-			this.appliedGeneration = targetGeneration;
 			$.paused = false;
 		}, (error) => {
 			this.handleRuntimeTaskError(error, 'Failed to resume game');
@@ -3717,6 +3716,20 @@ private insertTab(): void {
 			return null;
 		}
 		return runtime;
+	}
+
+	private prepareRuntimeSnapshotForResume(snapshot: unknown): Record<string, unknown> | null {
+		if (!snapshot || typeof snapshot !== 'object') {
+			return null;
+		}
+		const base = snapshot as Record<string, unknown>;
+		const sanitized: Record<string, unknown> = { ...base };
+		if (sanitized.luaRuntimeFailed === true) {
+			sanitized.luaRuntimeFailed = false;
+		} else {
+			sanitized.luaRuntimeFailed = sanitized.luaRuntimeFailed ?? false;
+		}
+		return sanitized;
 	}
 
 	private scheduleRuntimeTask(task: () => void, onError: (error: unknown) => void): void {
