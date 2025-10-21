@@ -113,6 +113,24 @@ export type EditorSnapshot = {
 	dirty: boolean;
 };
 
+type RectBounds = {
+	left: number;
+	top: number;
+	right: number;
+	bottom: number;
+};
+
+type PendingActionPrompt = {
+	action: 'resume' | 'reboot';
+};
+
+type ConsoleRuntimeBridge = {
+	getState(): unknown;
+	setState(state: unknown): void;
+	boot(): void;
+	reloadLuaProgram(source: string): void;
+};
+
 export type ConsoleEditorSerializedState = {
 	active: boolean;
 	snapshot: EditorSnapshot;
@@ -126,6 +144,8 @@ export type ConsoleEditorSerializedState = {
 	lineJumpVisible: boolean;
 	message: MessageState;
 	runtimeErrorOverlay: RuntimeErrorOverlay | null;
+	saveGeneration: number;
+	appliedGeneration: number;
 };
 
 type PointerSnapshot = {
@@ -193,6 +213,20 @@ const ERROR_OVERLAY_PADDING_X = 4;
 const ERROR_OVERLAY_PADDING_Y = 2;
 const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
 const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
+const HEADER_BUTTON_PADDING_X = 5;
+const HEADER_BUTTON_PADDING_Y = 1;
+const HEADER_BUTTON_SPACING = 4;
+const COLOR_HEADER_BUTTON_BACKGROUND = COLOR_STATUS_BACKGROUND;
+const COLOR_HEADER_BUTTON_BORDER = COLOR_TOP_BAR_TEXT;
+const COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = COLOR_GUTTER_BACKGROUND;
+const COLOR_HEADER_BUTTON_TEXT = COLOR_TOP_BAR_TEXT;
+const COLOR_HEADER_BUTTON_TEXT_DISABLED = COLOR_CODE_DIM;
+const ACTION_OVERLAY_COLOR = { r: 0, g: 0, b: 0, a: 0.65 };
+const ACTION_DIALOG_BACKGROUND_COLOR = COLOR_SEARCH_BACKGROUND;
+const ACTION_DIALOG_BORDER_COLOR = COLOR_SEARCH_OUTLINE;
+const ACTION_DIALOG_TEXT_COLOR = COLOR_SEARCH_TEXT;
+const ACTION_BUTTON_BACKGROUND = COLOR_STATUS_BACKGROUND;
+const ACTION_BUTTON_TEXT = COLOR_STATUS_TEXT;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -250,6 +284,17 @@ export class ConsoleCartEditor {
 	]);
 	private static customClipboard: string | null = null;
 
+	private readonly topBarButtonBounds: Record<'resume' | 'reboot' | 'save', RectBounds> = {
+		resume: { left: 0, top: 0, right: 0, bottom: 0 },
+		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
+		save: { left: 0, top: 0, right: 0, bottom: 0 },
+	};
+	private readonly actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
+		saveAndContinue: null,
+		continue: { left: 0, top: 0, right: 0, bottom: 0 },
+		cancel: { left: 0, top: 0, right: 0, bottom: 0 },
+	};
+	private pendingActionPrompt: PendingActionPrompt | null = null;
 	private active = false;
 	private lastDeltaMilliseconds = KEY_GUARD_MIN_MS;
 	private lines: string[] = [''];
@@ -280,6 +325,9 @@ export class ConsoleCartEditor {
 	private searchCurrentIndex = -1;
 	private textVersion = 0;
 	private lastSearchVersion = 0;
+	private saveGeneration = 0;
+	private appliedGeneration = 0;
+	private lastSavedSource = '';
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -299,6 +347,11 @@ export class ConsoleCartEditor {
 		this.bottomMargin = this.lineHeight + 6;
 		this.desiredColumn = this.cursorColumn;
 		this.assertMonospace();
+		try {
+			this.lastSavedSource = this.loadSource();
+		} catch {
+			this.lastSavedSource = '';
+		}
 	}
 
 	public isActive(): boolean {
@@ -453,6 +506,10 @@ export class ConsoleCartEditor {
 		this.updateBlink(deltaSeconds);
 		this.handlePointerWheel();
 		this.handlePointerInput(deltaSeconds);
+		if (this.pendingActionPrompt) {
+			this.handleActionPromptInput(keyboard);
+			return;
+		}
 		this.handleEditorInput(keyboard, deltaSeconds);
 		if (this.searchQuery.length === 0) {
 			this.lastSearchVersion = this.textVersion;
@@ -477,6 +534,9 @@ export class ConsoleCartEditor {
 		this.drawLineJumpBar(api);
 		this.drawCodeArea(api);
 		this.drawStatusBar(api);
+		if (this.pendingActionPrompt) {
+			this.drawActionPromptOverlay(api);
+		}
 	}
 
 	private refreshViewportDimensions(): void {
@@ -526,6 +586,8 @@ export class ConsoleCartEditor {
 			lineJumpVisible: this.lineJumpVisible,
 			message,
 			runtimeErrorOverlay: overlay,
+			saveGeneration: this.saveGeneration,
+			appliedGeneration: this.appliedGeneration,
 		};
 	}
 
@@ -549,21 +611,29 @@ export class ConsoleCartEditor {
 		this.message.color = state.message.color;
 		this.message.timer = state.message.timer;
 		this.message.visible = state.message.visible;
-	this.runtimeErrorOverlay = state.runtimeErrorOverlay
-		? {
-			row: state.runtimeErrorOverlay.row,
-			column: state.runtimeErrorOverlay.column,
-			lines: state.runtimeErrorOverlay.lines.slice(),
-			timer: state.runtimeErrorOverlay.timer,
-		}
-		: null;
-	this.lastSearchVersion = this.textVersion;
-	this.pointerSelecting = false;
+		this.runtimeErrorOverlay = state.runtimeErrorOverlay
+			? {
+				row: state.runtimeErrorOverlay.row,
+				column: state.runtimeErrorOverlay.column,
+				lines: state.runtimeErrorOverlay.lines.slice(),
+				timer: state.runtimeErrorOverlay.timer,
+			}
+			: null;
+		this.lastSearchVersion = this.textVersion;
+		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.cursorRevealSuspended = false;
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
 		this.breakUndoSequence();
+		this.saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
+		this.appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
+		this.resetActionPromptState();
+		try {
+			this.lastSavedSource = this.loadSource();
+		} catch {
+			this.lastSavedSource = '';
+		}
 	}
 
 	public shutdown(): void {
@@ -579,6 +649,7 @@ export class ConsoleCartEditor {
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
+		this.resetActionPromptState();
 	}
 
 	private getKeyboard(): KeyboardInput | null {
@@ -600,6 +671,10 @@ export class ConsoleCartEditor {
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
 			this.consumeKey(keyboard, 'Escape');
+			if (this.pendingActionPrompt) {
+				this.resetActionPromptState();
+				return true;
+			}
 			if (this.runtimeErrorOverlay) {
 				this.clearRuntimeErrorOverlay();
 				this.message.visible = false;
@@ -626,6 +701,7 @@ export class ConsoleCartEditor {
 	private activate(): void {
 		this.applyInputOverrides(true);
 		const source = this.loadSource();
+		this.lastSavedSource = source;
 		this.lines = this.splitLines(source);
 		if (this.lines.length === 0) {
 			this.lines.push('');
@@ -658,6 +734,7 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
 		this.runtimeErrorOverlay = null;
+		this.resetActionPromptState();
 		if (this.searchQuery.length === 0) {
 			this.searchMatches = [];
 			this.searchCurrentIndex = -1;
@@ -688,6 +765,7 @@ export class ConsoleCartEditor {
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
 		this.runtimeErrorOverlay = null;
+		this.resetActionPromptState();
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -704,6 +782,21 @@ export class ConsoleCartEditor {
 
 	private splitLines(source: string): string[] {
 		return source.split(/\r?\n/);
+	}
+
+	private handleActionPromptInput(keyboard: KeyboardInput): void {
+		if (!this.pendingActionPrompt) {
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Escape')) {
+			this.consumeKey(keyboard, 'Escape');
+			this.resetActionPromptState();
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Enter')) {
+			this.consumeKey(keyboard, 'Enter');
+			this.handleActionPromptSelection('save-continue');
+		}
 	}
 
 	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
@@ -1359,6 +1452,21 @@ export class ConsoleCartEditor {
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
+		if (this.pendingActionPrompt) {
+			if (justPressed) {
+				this.handleActionPromptPointer(snapshot);
+			}
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
+		}
+		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
+			if (this.handleTopBarPointer(snapshot)) {
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				return;
+			}
+		}
 		const lineJumpBounds = this.getLineJumpBarBounds();
 		if (justPressed && lineJumpBounds && snapshot.viewportY >= lineJumpBounds.top && snapshot.viewportY < lineJumpBounds.bottom) {
 			this.closeSearch(false);
@@ -1403,6 +1511,47 @@ export class ConsoleCartEditor {
 		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 	}
 
+	private handleActionPromptPointer(snapshot: PointerSnapshot): void {
+		if (!this.pendingActionPrompt) {
+			return;
+		}
+		const x = snapshot.viewportX;
+		const y = snapshot.viewportY;
+		const saveBounds = this.actionPromptButtons.saveAndContinue;
+		if (saveBounds && this.pointInRect(x, y, saveBounds)) {
+			this.handleActionPromptSelection('save-continue');
+			return;
+		}
+		if (this.pointInRect(x, y, this.actionPromptButtons.continue)) {
+			this.handleActionPromptSelection('continue');
+			return;
+		}
+		if (this.pointInRect(x, y, this.actionPromptButtons.cancel)) {
+			this.handleActionPromptSelection('cancel');
+		}
+	}
+
+	private handleTopBarPointer(snapshot: PointerSnapshot): boolean {
+		const y = snapshot.viewportY;
+		if (y < 0 || y >= this.headerHeight) {
+			return false;
+		}
+		const x = snapshot.viewportX;
+		if (this.pointInRect(x, y, this.topBarButtonBounds.resume)) {
+			this.handleTopBarButtonPress('resume');
+			return true;
+		}
+		if (this.pointInRect(x, y, this.topBarButtonBounds.reboot)) {
+			this.handleTopBarButtonPress('reboot');
+			return true;
+		}
+		if (this.dirty && this.pointInRect(x, y, this.topBarButtonBounds.save)) {
+			this.handleTopBarButtonPress('save');
+			return true;
+		}
+		return false;
+	}
+
 	private handlePointerWheel(): void {
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
 		if (!playerInput) {
@@ -1422,6 +1571,131 @@ export class ConsoleCartEditor {
 		this.scrollRows(direction * steps);
 		this.cursorRevealSuspended = true;
 		playerInput.consumeAction('pointer_wheel');
+	}
+
+	private handleTopBarButtonPress(button: 'resume' | 'reboot' | 'save'): void {
+		if (button === 'save') {
+			if (!this.dirty) {
+				return;
+			}
+			this.save();
+			return;
+		}
+		if (this.dirty) {
+			this.openActionPrompt(button);
+			return;
+		}
+		const success = this.performAction(button);
+		if (!success) {
+			return;
+		}
+	}
+
+	private openActionPrompt(action: 'resume' | 'reboot'): void {
+		this.pendingActionPrompt = { action };
+		this.actionPromptButtons.saveAndContinue = null;
+		this.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
+		this.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
+	}
+
+	private handleActionPromptSelection(choice: 'save-continue' | 'continue' | 'cancel'): void {
+		if (!this.pendingActionPrompt) {
+			return;
+		}
+		if (choice === 'cancel') {
+			this.resetActionPromptState();
+			return;
+		}
+		if (choice === 'save-continue') {
+			if (!this.attemptPromptSave()) {
+				return;
+			}
+		}
+		const success = this.executePendingAction();
+		if (success) {
+			this.resetActionPromptState();
+		}
+	}
+
+	private attemptPromptSave(): boolean {
+		this.save();
+		return this.dirty === false;
+	}
+
+	private executePendingAction(): boolean {
+		const prompt = this.pendingActionPrompt;
+		if (!prompt) {
+			return false;
+		}
+		return this.performAction(prompt.action);
+	}
+
+	private performAction(action: 'resume' | 'reboot'): boolean {
+		if (action === 'resume') {
+			return this.performResume();
+		}
+		return this.performReboot();
+	}
+
+	private performResume(): boolean {
+		const runtime = this.getConsoleRuntime();
+		if (!runtime) {
+			this.showMessage('Console runtime unavailable.', COLOR_STATUS_WARNING, 4.0);
+			return false;
+		}
+		const requiresReload = this.hasPendingRuntimeReload();
+		let snapshot: unknown = null;
+		if (requiresReload) {
+			try {
+				snapshot = runtime.getState();
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.showMessage(`Failed to capture runtime state: ${message}`, COLOR_STATUS_WARNING, 4.0);
+				return false;
+			}
+			if (snapshot === undefined || snapshot === null) {
+				this.showMessage('Runtime state unavailable.', COLOR_STATUS_WARNING, 4.0);
+				return false;
+			}
+		}
+		const targetGeneration = this.saveGeneration;
+		this.deactivate();
+		this.scheduleRuntimeTask(() => {
+			if (requiresReload && snapshot !== null) {
+				runtime.setState(snapshot);
+			}
+			this.appliedGeneration = targetGeneration;
+			$.paused = false;
+		}, (error) => {
+			this.handleRuntimeTaskError(error, 'Failed to resume game');
+		});
+		return true;
+	}
+
+	private performReboot(): boolean {
+		const runtime = this.getConsoleRuntime();
+		if (!runtime) {
+			this.showMessage('Console runtime unavailable.', COLOR_STATUS_WARNING, 4.0);
+			return false;
+		}
+		const requiresReload = this.hasPendingRuntimeReload();
+		const savedSource = requiresReload ? (this.lastSavedSource.length > 0 ? this.lastSavedSource : this.lines.join('\n')) : null;
+		const targetGeneration = this.saveGeneration;
+		this.deactivate();
+		this.scheduleRuntimeTask(() => {
+			if (requiresReload && savedSource !== null) {
+				runtime.reloadLuaProgram(savedSource);
+			} else {
+				runtime.boot();
+			}
+			this.appliedGeneration = targetGeneration;
+			$.paused = false;
+		}, (error) => {
+			this.handleRuntimeTaskError(error, 'Failed to reboot game');
+		});
+		return true;
 	}
 
 	private indentSelectionOrLine(): void {
@@ -2107,6 +2381,8 @@ private insertTab(): void {
 		try {
 			this.saveSourceFn(source);
 			this.dirty = false;
+			this.saveGeneration = this.saveGeneration + 1;
+			this.lastSavedSource = source;
 			this.showMessage('Lua cart saved (restart pending)', COLOR_STATUS_SUCCESS, 2.5);
 		} catch (error) {
 			if (this.tryShowLuaErrorOverlay(error)) {
@@ -2592,7 +2868,29 @@ private insertTab(): void {
 		const primaryBarHeight = this.lineHeight + 3;
 		api.rectfill(0, 0, this.viewportWidth, primaryBarHeight, COLOR_TOP_BAR);
 
-		this.drawText(api, 'O  +  []', 4, 2, COLOR_TOP_BAR_TEXT);
+		const buttonTop = 1;
+		const buttonHeight = this.lineHeight + HEADER_BUTTON_PADDING_Y * 2;
+		let buttonX = 4;
+		const buttonEntries: Array<{ id: 'resume' | 'reboot' | 'save'; label: string; disabled: boolean }> = [
+			{ id: 'resume', label: 'RESUME', disabled: false },
+			{ id: 'reboot', label: 'REBOOT', disabled: false },
+			{ id: 'save', label: 'SAVE', disabled: !this.dirty },
+		];
+		for (let i = 0; i < buttonEntries.length; i++) {
+			const entry = buttonEntries[i];
+			const textWidth = this.measureText(entry.label);
+			const buttonWidth = textWidth + HEADER_BUTTON_PADDING_X * 2;
+			const right = buttonX + buttonWidth;
+			const bottom = buttonTop + buttonHeight;
+			const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
+			this.topBarButtonBounds[entry.id] = bounds;
+			const fillColor = entry.disabled ? COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : COLOR_HEADER_BUTTON_BACKGROUND;
+			const textColor = entry.disabled ? COLOR_HEADER_BUTTON_TEXT_DISABLED : COLOR_HEADER_BUTTON_TEXT;
+			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
+			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_HEADER_BUTTON_BORDER);
+			this.drawText(api, entry.label, bounds.left + HEADER_BUTTON_PADDING_X, bounds.top + HEADER_BUTTON_PADDING_Y, textColor);
+			buttonX = right + HEADER_BUTTON_SPACING;
+		}
 
 		const titleY = primaryBarHeight + 1;
 		const title = this.metadata.title.toUpperCase();
@@ -3114,6 +3412,77 @@ private insertTab(): void {
 		}
 	}
 
+	private drawActionPromptOverlay(api: BmsxConsoleApi): void {
+		const prompt = this.pendingActionPrompt;
+		if (!prompt) {
+			return;
+		}
+		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, ACTION_OVERLAY_COLOR);
+
+		const actionLabel = prompt.action === 'resume' ? 'RESUME' : 'REBOOT';
+		const messageLines = [
+			'UNSAVED CHANGES DETECTED.',
+			`SAVE BEFORE ${actionLabel} TO APPLY CODE UPDATES?`,
+		];
+		let maxMessageWidth = 0;
+		for (let i = 0; i < messageLines.length; i++) {
+			const width = this.measureText(messageLines[i]);
+			if (width > maxMessageWidth) {
+				maxMessageWidth = width;
+			}
+		}
+		const primaryLabel = prompt.action === 'resume' ? 'SAVE & RESUME' : 'SAVE & REBOOT';
+		const secondaryLabel = prompt.action === 'resume' ? 'RESUME WITHOUT SAVING' : 'REBOOT WITHOUT SAVING';
+		const cancelLabel = 'CANCEL';
+		const primaryWidth = this.measureText(primaryLabel) + HEADER_BUTTON_PADDING_X * 2;
+		const secondaryWidth = this.measureText(secondaryLabel) + HEADER_BUTTON_PADDING_X * 2;
+		const cancelWidth = this.measureText(cancelLabel) + HEADER_BUTTON_PADDING_X * 2;
+		const buttonSpacing = HEADER_BUTTON_SPACING;
+		const buttonRowWidth = primaryWidth + secondaryWidth + cancelWidth + buttonSpacing * 2;
+		const paddingX = 12;
+		const paddingY = 12;
+		const buttonHeight = this.lineHeight + HEADER_BUTTON_PADDING_Y * 2;
+		const messageSpacing = this.lineHeight + 2;
+		const dialogWidth = Math.max(maxMessageWidth + paddingX * 2, buttonRowWidth + paddingX * 2);
+		const dialogHeight = paddingY * 2 + messageLines.length * messageSpacing + 6 + buttonHeight;
+		const left = Math.max(4, Math.floor((this.viewportWidth - dialogWidth) / 2));
+		const top = Math.max(4, Math.floor((this.viewportHeight - dialogHeight) / 2));
+		const right = left + dialogWidth;
+		const bottom = top + dialogHeight;
+
+		api.rectfill(left, top, right, bottom, ACTION_DIALOG_BACKGROUND_COLOR);
+		api.rect(left, top, right, bottom, ACTION_DIALOG_BORDER_COLOR);
+
+		let textY = top + paddingY;
+		const textX = left + paddingX;
+		for (let i = 0; i < messageLines.length; i++) {
+			this.drawText(api, messageLines[i], textX, textY, ACTION_DIALOG_TEXT_COLOR);
+			textY += messageSpacing;
+		}
+
+		const buttonY = bottom - paddingY - buttonHeight;
+		let buttonX = left + paddingX;
+		const saveBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + primaryWidth, bottom: buttonY + buttonHeight };
+		api.rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, ACTION_BUTTON_BACKGROUND);
+		api.rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, ACTION_DIALOG_BORDER_COLOR);
+		this.drawText(api, primaryLabel, saveBounds.left + HEADER_BUTTON_PADDING_X, saveBounds.top + HEADER_BUTTON_PADDING_Y, ACTION_BUTTON_TEXT);
+		this.actionPromptButtons.saveAndContinue = saveBounds;
+		buttonX = saveBounds.right + buttonSpacing;
+
+		const continueBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + secondaryWidth, bottom: buttonY + buttonHeight };
+		api.rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, ACTION_BUTTON_BACKGROUND);
+		api.rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, ACTION_DIALOG_BORDER_COLOR);
+		this.drawText(api, secondaryLabel, continueBounds.left + HEADER_BUTTON_PADDING_X, continueBounds.top + HEADER_BUTTON_PADDING_Y, ACTION_BUTTON_TEXT);
+		this.actionPromptButtons.continue = continueBounds;
+		buttonX = continueBounds.right + buttonSpacing;
+
+		const cancelBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + cancelWidth, bottom: buttonY + buttonHeight };
+		api.rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
+		api.rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, ACTION_DIALOG_BORDER_COLOR);
+		this.drawText(api, cancelLabel, cancelBounds.left + HEADER_BUTTON_PADDING_X, cancelBounds.top + HEADER_BUTTON_PADDING_Y, COLOR_HEADER_BUTTON_TEXT);
+		this.actionPromptButtons.cancel = cancelBounds;
+	}
+
 	private highlightLine(line: string): HighlightLine {
 		const length = line.length;
 		const columnColors: number[] = new Array(length).fill(COLOR_CODE_TEXT);
@@ -3305,6 +3674,73 @@ private insertTab(): void {
 		}
 		const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
 		return luminance > 0.5 ? 0 : 15;
+	}
+
+	private resetActionPromptState(): void {
+		this.pendingActionPrompt = null;
+		this.actionPromptButtons.saveAndContinue = null;
+		this.actionPromptButtons.continue = { left: 0, top: 0, right: 0, bottom: 0 };
+		this.actionPromptButtons.cancel = { left: 0, top: 0, right: 0, bottom: 0 };
+	}
+
+	private pointInRect(x: number, y: number, rect: RectBounds | null): boolean {
+		if (!rect) {
+			return false;
+		}
+		return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+	}
+
+	private hasPendingRuntimeReload(): boolean {
+		return this.saveGeneration > this.appliedGeneration;
+	}
+
+	private getConsoleRuntime(): ConsoleRuntimeBridge | null {
+		const registry = $.registry;
+		if (!registry) {
+			return null;
+		}
+		const instance = registry.get('bmsx_console_runtime') as unknown;
+		if (!instance || typeof instance !== 'object') {
+			return null;
+		}
+		const runtime = instance as ConsoleRuntimeBridge;
+		if (typeof runtime.getState !== 'function') {
+			return null;
+		}
+		if (typeof runtime.setState !== 'function') {
+			return null;
+		}
+		if (typeof runtime.boot !== 'function') {
+			return null;
+		}
+		if (typeof runtime.reloadLuaProgram !== 'function') {
+			return null;
+		}
+		return runtime;
+	}
+
+	private scheduleRuntimeTask(task: () => void, onError: (error: unknown) => void): void {
+		const invoke = (fn: () => void): void => {
+			if (typeof queueMicrotask === 'function') {
+				queueMicrotask(fn);
+				return;
+			}
+			void Promise.resolve().then(fn);
+		};
+		invoke(() => {
+			try {
+				task();
+			} catch (error) {
+				onError(error);
+			}
+		});
+	}
+
+	private handleRuntimeTaskError(error: unknown, fallbackMessage: string): void {
+		const message = error instanceof Error ? error.message : String(error);
+		$.paused = true;
+		this.activate();
+		this.showMessage(`${fallbackMessage}: ${message}`, COLOR_STATUS_WARNING, 4.0);
 	}
 
 	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {
