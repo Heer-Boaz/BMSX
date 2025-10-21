@@ -324,7 +324,15 @@ export class BmsxConsoleRuntime extends Service {
 			this.editor = null;
 			return;
 		}
-		const viewport = { width: this.api.displayWidth, height: this.api.displayHeight };
+		const view = $.view;
+		if (!view) {
+			throw new Error('[BmsxConsoleRuntime] Game view unavailable during editor initialization.');
+		}
+		const offscreen = view.offscreenCanvasSize;
+		if (!Number.isFinite(offscreen.x) || !Number.isFinite(offscreen.y) || offscreen.x <= 0 || offscreen.y <= 0) {
+			throw new Error('[BmsxConsoleRuntime] Invalid offscreen dimensions during editor initialization.');
+		}
+		const viewport = { width: offscreen.x, height: offscreen.y };
 		this.editor = new ConsoleCartEditor({
 			playerIndex: this.playerIndex,
 			metadata: this.cart.meta,

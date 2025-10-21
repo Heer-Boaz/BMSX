@@ -199,8 +199,8 @@ export class ConsoleCartEditor {
 	private readonly metadata: BmsxConsoleMetadata;
 	private readonly loadSourceFn: () => string;
 	private readonly saveSourceFn: (source: string) => void;
-	private readonly viewportWidth: number;
-	private readonly viewportHeight: number;
+	private viewportWidth: number;
+	private viewportHeight: number;
 	private readonly font: ConsoleEditorFont;
 	private readonly lineHeight: number;
 	private readonly charAdvance: number;
@@ -436,6 +436,7 @@ export class ConsoleCartEditor {
 	}
 
 	public update(deltaSeconds: number): void {
+		this.refreshViewportDimensions();
 		this.updateGuardWindowFromDelta(deltaSeconds);
 		const keyboard = this.getKeyboard();
 		if (!keyboard) {
@@ -465,15 +466,35 @@ export class ConsoleCartEditor {
 }
 
 	public draw(api: BmsxConsoleApi): void {
+		this.refreshViewportDimensions();
 		if (!this.active) {
 			return;
 		}
-		api.cls(COLOR_FRAME);
+		const frameColor = Msx1Colors[COLOR_FRAME];
+		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 		this.drawTopBar(api);
 		this.drawSearchBar(api);
 		this.drawLineJumpBar(api);
 		this.drawCodeArea(api);
 		this.drawStatusBar(api);
+	}
+
+	private refreshViewportDimensions(): void {
+		const view = $.view;
+		if (!view) {
+			throw new Error('[ConsoleCartEditor] Game view unavailable during editor frame.');
+		}
+		const renderSize = view.offscreenCanvasSize;
+		if (!Number.isFinite(renderSize.x) || !Number.isFinite(renderSize.y) || renderSize.x <= 0 || renderSize.y <= 0) {
+			throw new Error('[ConsoleCartEditor] Invalid offscreen dimensions.');
+		}
+		const width = renderSize.x;
+		const height = renderSize.y;
+		if (width === this.viewportWidth && height === this.viewportHeight) {
+			return;
+		}
+		this.viewportWidth = width;
+		this.viewportHeight = height;
 	}
 
 	public serializeState(): ConsoleEditorSerializedState {

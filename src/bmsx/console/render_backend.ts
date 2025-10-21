@@ -92,12 +92,20 @@ export class DirectConsoleRenderBackend implements ConsoleRenderBackend {
 
 export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 	private readonly commands: OverlayCommand[] = [];
+	private frameWidth = 0;
+	private frameHeight = 0;
 
 	public beginFrame(): void {
 		const view = $.view;
 		if (!view) {
 			throw new Error('[EditorConsoleRenderBackend] Game view unavailable during editor overlay capture.');
 		}
+		const offscreen = view.offscreenCanvasSize;
+		if (!Number.isFinite(offscreen.x) || !Number.isFinite(offscreen.y) || offscreen.x <= 0 || offscreen.y <= 0) {
+			throw new Error('[EditorConsoleRenderBackend] Invalid offscreen dimensions.');
+		}
+		this.frameWidth = offscreen.x;
+		this.frameHeight = offscreen.y;
 		this.commands.length = 0;
 	}
 
@@ -161,8 +169,8 @@ export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 			return;
 		}
 		const frame: EditorOverlayFrame = {
-			width: $.view.offscreenCanvasSize.x,
-			height: $.view.offscreenCanvasSize.y,
+			width: this.frameWidth,
+			height: this.frameHeight,
 			commands: this.commands.map(cmd => {
 				if (cmd.type === 'rect') {
 					return { ...cmd, color: { ...cmd.color } };
