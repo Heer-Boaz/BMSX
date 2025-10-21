@@ -266,6 +266,23 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 	// Initialize the free nodes list
 	const freeNodes: Node[] = [initialNode];
 
+	function sanitizeFreeNodes(): void {
+		for (let i = freeNodes.length - 1; i >= 0; --i) {
+			const node = freeNodes[i];
+			if (node.width <= 0 || node.height <= 0) {
+				freeNodes.splice(i, 1);
+				continue;
+			}
+			for (let j = 0; j < freeNodes.length; ++j) {
+				if (i === j) continue;
+				if (isContained(freeNodes[i] as unknown as Bin, freeNodes[j] as unknown as Bin)) {
+					freeNodes.splice(i, 1);
+					break;
+				}
+			}
+		}
+	}
+
 	// Calculate the touching perimeter of a rectangle placed at a node
 	function touchingPerimeter(rect: Rect, node: Node): number {
 		let perimeter = 0;
@@ -323,12 +340,29 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 		usedBins.push({ item: rect, x: bestNode.x, y: bestNode.y });
 
 		// Update the free nodes list
-		freeNodes.push({ x: bestNode.x + rect.width, y: bestNode.y, width: bestNode.width - rect.width, height: rect.height });
-		freeNodes.push({ x: bestNode.x, y: bestNode.y + rect.height, width: rect.width, height: bestNode.height - rect.height });
+		const rightNodeWidth = bestNode.width - rect.width;
+		if (rightNodeWidth > 0) {
+			freeNodes.push({
+				x: bestNode.x + rect.width,
+				y: bestNode.y,
+				width: rightNodeWidth,
+				height: bestNode.height,
+			});
+		}
+		const bottomNodeHeight = bestNode.height - rect.height;
+		if (bottomNodeHeight > 0) {
+			freeNodes.push({
+				x: bestNode.x,
+				y: bestNode.y + rect.height,
+				width: rect.width,
+				height: bottomNodeHeight,
+			});
+		}
 
 		// Remove the used node from the free nodes list
 		const nodeIndex = freeNodes.indexOf(bestNode);
 		freeNodes.splice(nodeIndex, 1);
+		sanitizeFreeNodes();
 	}
 
 	// Return the packed bins and the dimensions of the texture atlas
