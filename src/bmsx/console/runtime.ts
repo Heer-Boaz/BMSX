@@ -16,6 +16,8 @@ import { Service } from '../core/service';
 import { EventEmitter, type EventPayload } from '../core/eventemitter';
 import type { Identifiable } from '../rompack/rompack';
 import { consoleEditorSpec } from '../core/pipelines/console_editor';
+import { EditorConsoleRenderBackend } from './render_backend';
+import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 
 export type BmsxConsoleRuntimeOptions = {
 	cart: BmsxConsoleCartridge;
@@ -91,6 +93,7 @@ export class BmsxConsoleRuntime extends Service {
 	private luaProgram: BmsxConsoleLuaProgram | null;
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
+	private readonly editorRenderBackend = new EditorConsoleRenderBackend();
 	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter: LuaInterpreter | null = null;
 	private luaInitFunction: LuaFunctionValue | null = null;
@@ -181,16 +184,30 @@ export class BmsxConsoleRuntime extends Service {
 		return this.editor.isActive();
 	}
 
+	private endFrameAndFlush(editorActive: boolean): void {
+		this.api.endFrame();
+		this.flushEditorOverlayFrame(editorActive);
+	}
+
+	private flushEditorOverlayFrame(editorActive: boolean): void {
+		if (!editorActive) {
+			publishOverlayFrame(null);
+		}
+	}
+
 	private setEditorPipelineActive(active: boolean, force = false): void {
 		if (!force && active === this.editorPipelineActive) {
 			return;
 		}
 		this.editorPipelineActive = active;
 		if (active) {
+			this.api.setRenderBackend(this.editorRenderBackend);
 			$.setPipelineOverride(consoleEditorSpec());
 			return;
 		}
+		this.api.setRenderBackend(null);
 		$.setPipelineOverride(null);
+		publishOverlayFrame(null);
 	}
 
 	public boot(): void {
@@ -233,11 +250,13 @@ export class BmsxConsoleRuntime extends Service {
 			if (editorActive && editor) {
 				editor.draw(this.api);
 			}
+			this.endFrameAndFlush(editorActive);
 			return;
 		}
 		this.api.beginFrame(this.frameCounter, deltaSeconds);
 		if (editorActive && editor) {
 			editor.draw(this.api);
+			this.endFrameAndFlush(editorActive);
 			this.frameCounter += 1;
 			return;
 		}
@@ -246,6 +265,7 @@ export class BmsxConsoleRuntime extends Service {
 				if (editorActive && editor) {
 					editor.draw(this.api);
 				}
+				this.endFrameAndFlush(editorActive);
 				this.frameCounter += 1;
 				return;
 			}
@@ -263,6 +283,7 @@ export class BmsxConsoleRuntime extends Service {
 				if (activeEditor && activeEditor.isActive()) {
 					activeEditor.draw(this.api);
 				}
+				this.endFrameAndFlush(editorActive);
 				this.frameCounter += 1;
 				return;
 			}
@@ -271,6 +292,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.cart.update(this.api, deltaSeconds);
 			this.cart.draw(this.api);
 		}
+		this.endFrameAndFlush(editorActive);
 		this.physics.step(deltaSeconds);
 		this.frameCounter += 1;
 	}

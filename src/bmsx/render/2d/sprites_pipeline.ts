@@ -7,6 +7,7 @@ import spriteVS from '../2d/shaders/2d.vert.glsl';
 import * as GLR from '../backend/webgl/gl_resources';
 import type { GPUBackend, RenderContext } from '../backend/pipeline_interfaces';
 import { RenderPassLibrary, SpritesPipelineState } from '../backend/renderpasslib';
+import { updateAndBindFrameUniforms } from '../backend/frame_uniforms';
 import {
 	ATLAS_ID_BUFFER_OFFSET_MULTIPLIER,
 	ATLAS_ID_COMPONENTS,
@@ -35,6 +36,7 @@ import { $ } from '../../core/game';
 import { bvec } from './vertexutils2d';
 import type { WebGLBackend } from '../backend/webgl/webgl_backend';
 import { makePipelineBuildDesc, shaderModule } from '../backend/shader_module';
+import { drainOverlayFrameIntoSpriteQueue } from '../editor/editor_overlay_submit';
 import {
 	beginSpriteQueue,
 	forEachSpriteQueue,
@@ -192,9 +194,14 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 		context.bind2DTex(state.atlasDynamicTex);
 	}
 	const q = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
+	const layerWeight = (layer?: RenderLayer) => {
+		if (layer === 'editor') return 2;
+		if (layer === 'ui') return 1;
+		return 0;
+	};
 	sortSpriteBatch((a, b) => {
-		const la = a.options.layer === 'ui' ? 1 : 0;
-		const lb = b.options.layer === 'ui' ? 1 : 0;
+		const la = layerWeight(a.options.layer);
+		const lb = layerWeight(b.options.layer);
 		if (la !== lb) return la - lb;
 		const za = a.options.pos.z ?? 0; const zb = b.options.pos.z ?? 0;
 		if (za !== zb) return za - zb;
@@ -224,8 +231,8 @@ export function renderSpriteBatch(runtime: SpriteRuntime, fbo: unknown, state: S
 	const ambientDefaultEnabled = state.ambientEnabledDefault ? 1 : 0;
 	forEachSpriteBatch(({ options, imgmeta }) => {
 		const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
-		const layerIsUI = options.layer === 'ui';
-		const ambE = layerIsUI ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : ambientDefaultEnabled);
+		const layerIsOverlay = options.layer === 'ui' || options.layer === 'editor';
+		const ambE = layerIsOverlay ? 0 : (options.ambientAffected != null ? (options.ambientAffected ? 1 : 0) : ambientDefaultEnabled);
 		const ambF = q(options.ambientFactor != null ? options.ambientFactor : state.ambientFactorDefault);
 		if (currentAmbientEnabled === null) { currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
 		else if (ambE !== currentAmbientEnabled || Math.abs(ambF - currentAmbientFactor) > 1e-3) { flush(); currentAmbientEnabled = ambE; currentAmbientFactor = ambF; }
@@ -372,10 +379,16 @@ export function registerSpritesPass_WebGL(registry: RenderPassLibrary): void {
 			setupSpriteLocations(webglBackend);
 		},
 		writesDepth: true,
-		shouldExecute: () => !!getQueuedSpriteCount(),
+		shouldExecute: () => true,
 		exec: (backend, fbo, s) => {
 			const webglBackend = backend as WebGLBackend;
 			const runtime: SpriteRuntime = { backend: webglBackend, gl: webglBackend.gl as WebGL2RenderingContext, context: $.view };
+			const state = s as SpritesPipelineState;
+			drainOverlayFrameIntoSpriteQueue(state.width, state.height, state.baseWidth, state.baseHeight);
+			updateAndBindFrameUniforms(webglBackend, {
+				offscreen: { x: state.width, y: state.height },
+				logical: { x: $.view.viewportSize.x, y: $.view.viewportSize.y },
+			});
 			renderSpriteBatch(runtime, fbo, s as SpritesPipelineState);
 		},
 		prepare: (backend, _state) => {

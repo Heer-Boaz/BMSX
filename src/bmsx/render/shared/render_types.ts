@@ -15,7 +15,7 @@ export type FlipOptions = {
 	flip_v: boolean;
 };
 
-export type RenderLayer = 'background' | 'world' | 'ui' | 'overlay';
+export type RenderLayer = 'background' | 'world' | 'ui' | 'overlay' | 'editor';
 
 export type RectRenderSubmission = {
 	kind: 'rect' | 'fill';
@@ -83,4 +83,3 @@ export type SkyboxImageIds = {
 	posZ: string;
 	negZ: string;
 };
-

@@ -1,7 +1,6 @@
 import { $, $rompack, runGate } from '../core/game';
 import type { color, RectRenderSubmission, RenderLayer } from '../render/shared/render_types';
 import { Msx1Colors } from '../systems/msx';
-import { new_area3d } from '../utils/utils';
 import { ConsoleFont } from './font';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
@@ -22,6 +21,7 @@ import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
+import { DirectConsoleRenderBackend, type ConsoleRenderBackend, type SpriteCommand } from './render_backend';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -35,46 +35,6 @@ export type BmsxConsoleApiOptions = {
 const DRAW_LAYER: RectRenderSubmission['layer'] = 'ui';
 const CONSOLE_TAB_SPACES = 2;
 
-type RectCommand = {
-	kind: 'rect' | 'fill';
-	x0: number;
-	y0: number;
-	x1: number;
-	y1: number;
-	color: color;
-	layer?: RenderLayer;
-};
-
-type PrintCommand = {
-	kind: 'print';
-	text: string;
-	x: number;
-	y: number;
-	color: color;
-};
-
-type SpriteCommand = {
-	kind: 'sprite';
-	imgId: string;
-	spriteIndex: number | null;
-	x: number;
-	y: number;
-	drawX: number;
-	drawY: number;
-	scale: number;
-	layer?: RenderLayer;
-	flipH: boolean;
-	flipV: boolean;
-	spriteId: string | null;
-	instanceId: string;
-	colliderId: string;
-	width: number;
-	height: number;
-	positionDirty: boolean;
-};
-
-type DrawCommand = RectCommand | PrintCommand | SpriteCommand;
-
 export class BmsxConsoleApi {
 	private readonly input: BmsxConsoleInput;
 	private readonly storage: BmsxConsoleStorage;
@@ -83,14 +43,13 @@ export class BmsxConsoleApi {
 	private readonly tilemap: ConsoleTilemap;
 	private readonly colliders: ConsoleColliderManager;
 	private readonly physics: Physics2DManager;
-	private readonly commands: DrawCommand[] = [];
 	private readonly spriteCommandsById = new Map<string, SpriteCommand>();
 	private readonly pendingVelocities = new Map<string, { vx: number; vy: number }>();
 	private readonly pendingPositions = new Map<string, { x: number; y: number }>();
-	private writeCursor = 0;
 	private frameIndex: number = 0;
 	private deltaSecondsValue: number = 0;
 	private spriteInstanceSerial = 0;
+private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 
 	constructor(options: BmsxConsoleApiOptions) {
 		const view = $.view;
@@ -111,15 +70,27 @@ export class BmsxConsoleApi {
 		this.physics.bindColliders(this.colliders);
 	}
 
+	public setRenderBackend(backend: ConsoleRenderBackend | null): void {
+		this.renderBackend = backend ?? new DirectConsoleRenderBackend();
+	}
+
 	public beginFrame(frame: number, deltaSeconds: number): void {
 		if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) {
 			throw new Error('[BmsxConsoleApi] Delta seconds must be a finite non-negative number.');
 		}
-		this.truncateCommandTail();
 		this.frameIndex = frame;
 		this.deltaSecondsValue = deltaSeconds;
-		this.writeCursor = 0;
-		this.replayCommands();
+		this.renderBackend.beginFrame();
+	}
+
+	public beginPausedFrame(frame: number): void {
+		this.frameIndex = frame;
+		this.deltaSecondsValue = 0;
+		this.renderBackend.beginFrame();
+	}
+
+	public endFrame(): void {
+		this.renderBackend.endFrame();
 	}
 
 	public frameNumber(): number {
@@ -214,66 +185,44 @@ export class BmsxConsoleApi {
 	}
 
 	public cls(colorIndex: number = 0): void {
-		const command: RectCommand = {
+		const color = this.paletteColor(colorIndex);
+		this.renderBackend.drawRect({
 			kind: 'fill',
 			x0: 0,
 			y0: 0,
 			x1: this.displayWidth,
 			y1: this.displayHeight,
-			color: this.paletteColor(colorIndex),
+			color,
 			layer: DRAW_LAYER,
-		};
-		this.recordCommand(command);
+		});
 	}
 
 	public rect(x0: number, y0: number, x1: number, y1: number, colorIndex: number): void {
-		const command: RectCommand = {
-			kind: 'rect',
-			x0,
-			y0,
-			x1,
-			y1,
-			color: this.paletteColor(colorIndex),
-			layer: DRAW_LAYER,
-		};
-		this.recordCommand(command);
+		this.renderBackend.drawRect({ kind: 'rect', x0, y0, x1, y1, color: this.paletteColor(colorIndex), layer: DRAW_LAYER });
 	}
 
 	public rectfill(x0: number, y0: number, x1: number, y1: number, colorIndex: number): void {
-		const command: RectCommand = {
-			kind: 'fill',
-			x0,
-			y0,
-			x1,
-			y1,
-			color: this.paletteColor(colorIndex),
-			layer: DRAW_LAYER,
-		};
-		this.recordCommand(command);
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.paletteColor(colorIndex), layer: DRAW_LAYER });
 	}
 
 	public rectfillColor(x0: number, y0: number, x1: number, y1: number, colorValue: color): void {
-		const command: RectCommand = {
-			kind: 'fill',
-			x0,
-			y0,
-			x1,
-			y1,
-			color: colorValue,
-			layer: DRAW_LAYER,
-		};
-		this.recordCommand(command);
+		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: colorValue, layer: DRAW_LAYER });
 	}
 
 	public print(text: string, x: number, y: number, colorIndex: number): void {
-		const command: PrintCommand = {
-			kind: 'print',
-			text,
-			x,
-			y,
-			color: this.paletteColor(colorIndex),
-		};
-		this.recordCommand(command);
+		const color = this.paletteColor(colorIndex);
+		const baseX = Math.floor(x);
+		let cursorY = Math.floor(y);
+		const lines = text.split('\n');
+		for (let i = 0; i < lines.length; i++) {
+			const expanded = this.expandTabs(lines[i]);
+			if (expanded.length > 0) {
+				this.renderBackend.drawText({ kind: 'print', text: expanded, x: baseX, y: cursorY, color }, this.font);
+			}
+			if (i < lines.length - 1) {
+				cursorY += this.font.lineHeight();
+			}
+		}
 	}
 
 	public spr(sprite: number | string, x: number, y: number, options?: { id?: string; scale?: number; layer?: RenderLayer; flipH?: boolean; flipV?: boolean }): void {
@@ -282,14 +231,19 @@ export class BmsxConsoleApi {
 		const flipV = options?.flipV ?? false;
 		const layer = options?.layer ?? DRAW_LAYER;
 		const spriteId = options?.id ?? null;
+		let command: SpriteCommand;
 		if (typeof sprite === 'number') {
 			const def = this.spriteRegistry.require(sprite);
-			const command: SpriteCommand = {
+			const baseX = x - def.originX * scale;
+			const baseY = y - def.originY * scale;
+			command = {
 				kind: 'sprite',
 				imgId: def.bitmapId,
 				spriteIndex: sprite,
-				x: x - def.originX * scale,
-				y: y - def.originY * scale,
+				originX: def.originX,
+				originY: def.originY,
+				baseX,
+				baseY,
 				drawX: x,
 				drawY: y,
 				scale,
@@ -302,30 +256,37 @@ export class BmsxConsoleApi {
 				width: 0,
 				height: 0,
 				positionDirty: false,
+				colorize: undefined,
 			};
-			this.recordCommand(command);
-			return;
+		} else {
+			const baseX = x;
+			const baseY = y;
+			command = {
+				kind: 'sprite',
+				imgId: sprite,
+				spriteIndex: null,
+				originX: 0,
+				originY: 0,
+				baseX,
+				baseY,
+				drawX: x,
+				drawY: y,
+				scale,
+				layer,
+				flipH,
+				flipV,
+				spriteId,
+				instanceId: '',
+				colliderId: '',
+				width: 0,
+				height: 0,
+				positionDirty: false,
+				colorize: undefined,
+			};
 		}
-		const command: SpriteCommand = {
-			kind: 'sprite',
-			imgId: sprite,
-			spriteIndex: null,
-			x,
-			y,
-			drawX: x,
-			drawY: y,
-			scale,
-			layer,
-			flipH,
-			flipV,
-			spriteId,
-			instanceId: '',
-			colliderId: '',
-			width: 0,
-			height: 0,
-			positionDirty: false,
-		};
-		this.recordCommand(command);
+		this.submitSpriteCommand(command);
+		this.renderBackend.drawSprite(command);
+		this.syncSpriteCollider(command);
 	}
 
 	public spriteExists(id: string): boolean {
@@ -604,80 +565,26 @@ export class BmsxConsoleApi {
 		return JSON.parse(JSON.stringify(source)) as StateMachineBlueprint;
 	}
 
-	private recordCommand(command: DrawCommand): void {
-		const existing = this.writeCursor < this.commands.length ? this.commands[this.writeCursor] : null;
-		if (existing && existing.kind === 'sprite') {
-			if (command.kind === 'sprite') {
-				this.prepareSpriteReplacement(existing, command);
-			} else {
-				this.disposeSpriteCommand(existing);
-			}
-		}
-		if (this.writeCursor < this.commands.length) {
-			this.commands[this.writeCursor] = command;
-		} else {
-			this.commands.push(command);
-		}
-		this.writeCursor++;
-		if (command.kind === 'sprite') {
-			this.registerSpriteCommand(command);
-		}
-		this.executeCommand(command);
-	}
-
-	private prepareSpriteReplacement(existing: SpriteCommand, replacement: SpriteCommand): void {
-		this.unregisterSpriteCommand(existing);
-	if (this.canReuseSpriteCollider(existing, replacement)) {
-		replacement.instanceId = existing.instanceId;
-		replacement.colliderId = existing.colliderId;
-		replacement.positionDirty = existing.positionDirty;
-		return;
-	}
-		this.releaseSpriteCollider(existing);
-		replacement.instanceId = this.allocateSpriteInstanceId();
-		replacement.colliderId = this.generateSpriteColliderId(replacement);
-	}
-
-	private disposeSpriteCommand(command: SpriteCommand): void {
-		this.unregisterSpriteCommand(command);
-		this.releaseSpriteCollider(command);
-		if (command.spriteId !== null) {
-			this.pendingPositions.delete(command.spriteId);
-		}
-	}
-
-	private registerSpriteCommand(command: SpriteCommand): void {
+	private submitSpriteCommand(command: SpriteCommand): void {
 		if (command.instanceId === '') {
 			command.instanceId = this.allocateSpriteInstanceId();
 		}
 		if (command.colliderId === '') {
 			command.colliderId = this.generateSpriteColliderId(command);
 		}
-	if (command.spriteId !== null) {
-		this.spriteCommandsById.set(command.spriteId, command);
-	}
-	const pending = command.spriteId !== null ? this.pendingPositions.get(command.spriteId) : undefined;
-	if (pending && command.spriteIndex !== null) {
-		this.setCommandPosition(command, pending.x, pending.y);
-		command.positionDirty = true;
-		this.pendingPositions.delete(command.spriteId!);
-	}
-	}
-
-	private unregisterSpriteCommand(command: SpriteCommand): void {
-		if (command.spriteId === null) return;
-		const mapped = this.spriteCommandsById.get(command.spriteId);
-		if (mapped === command) {
-			this.spriteCommandsById.delete(command.spriteId);
+		if (command.spriteId !== null) {
+			const existing = this.spriteCommandsById.get(command.spriteId);
+			if (existing) {
+				this.releaseSpriteCollider(existing);
+			}
+			this.spriteCommandsById.set(command.spriteId, command);
+			const pending = this.pendingPositions.get(command.spriteId);
+			if (pending && command.spriteIndex !== null) {
+				this.setCommandPosition(command, pending.x, pending.y);
+				command.positionDirty = true;
+				this.pendingPositions.delete(command.spriteId);
+			}
 		}
-	}
-
-	private canReuseSpriteCollider(existing: SpriteCommand, replacement: SpriteCommand): boolean {
-		const existingId = existing.spriteId;
-		const replacementId = replacement.spriteId;
-		if (existingId === null && replacementId === null) return true;
-		if (existingId !== null && replacementId !== null && existingId === replacementId) return true;
-		return false;
 	}
 
 	private generateSpriteColliderId(command: SpriteCommand): string {
@@ -697,45 +604,6 @@ export class BmsxConsoleApi {
 			this.colliders.remove(command.colliderId);
 		}
 		command.colliderId = '';
-	}
-
-	private truncateCommandTail(): void {
-		if (this.commands.length <= this.writeCursor) return;
-		for (let i = this.writeCursor; i < this.commands.length; i++) {
-			const command = this.commands[i];
-			if (command.kind === 'sprite') {
-				this.disposeSpriteCommand(command);
-			}
-		}
-		this.commands.length = this.writeCursor;
-	}
-
-	private replayCommands(): void {
-		if (this.commands.length === 0) return;
-		for (const command of this.commands) {
-			this.executeCommand(command);
-		}
-	}
-
-	public beginPausedFrame(frame: number): void {
-		this.frameIndex = frame;
-		this.deltaSecondsValue = 0;
-		this.replayCommands();
-	}
-
-	private executeCommand(command: DrawCommand): void {
-		switch (command.kind) {
-			case 'rect':
-			case 'fill':
-				this.submitRectangle(command.x0, command.y0, command.x1, command.y1, command.color, command.kind, command.layer);
-				return;
-			case 'print':
-				this.renderText(command.text, command.x, command.y, command.color);
-				return;
-			case 'sprite':
-				this.renderSprite(command);
-				return;
-		}
 	}
 
 	private pointerViewportPositionInternal(): ConsolePointerViewport {
@@ -781,22 +649,6 @@ export class BmsxConsoleApi {
 		return mask;
 	}
 
-	private renderSprite(command: SpriteCommand): void {
-		const spriteDef = command.spriteIndex !== null ? this.spriteRegistry.get(command.spriteIndex) : null;
-		const offsetX = spriteDef ? spriteDef.originX * command.scale : 0;
-		const offsetY = spriteDef ? spriteDef.originY * command.scale : 0;
-		const renderX = Math.floor(command.drawX - offsetX);
-		const renderY = Math.floor(command.drawY - offsetY);
-		$.view.renderer.submit.sprite({
-			imgid: command.imgId,
-			pos: { x: renderX, y: renderY, z: 0 },
-			scale: { x: command.scale, y: command.scale },
-			flip: command.flipH || command.flipV ? { flip_h: command.flipH, flip_v: command.flipV } : undefined,
-			layer: command.layer ?? DRAW_LAYER,
-		});
-		this.syncSpriteCollider(command);
-	}
-
 	private syncSpriteCollider(command: SpriteCommand): void {
 		if (command.spriteIndex === null) {
 			if (command.colliderId.length !== 0) {
@@ -828,13 +680,13 @@ export class BmsxConsoleApi {
 	const existing = command.positionDirty ? null : this.colliders.get(command.colliderId);
 	if (existing) {
 		const state = this.colliders.getState(command.colliderId);
-		command.x = state.centerX - build.width / 2;
-		command.y = state.centerY - build.height / 2;
-		command.drawX = command.x + definition.originX * command.scale;
-		command.drawY = command.y + definition.originY * command.scale;
+		command.baseX = state.centerX - build.width / 2;
+		command.baseY = state.centerY - build.height / 2;
+		command.drawX = command.baseX + command.originX * command.scale;
+		command.drawY = command.baseY + command.originY * command.scale;
 	}
-	const centerX = command.x + build.width / 2;
-	const centerY = command.y + build.height / 2;
+	const centerX = command.baseX + build.width / 2;
+	const centerY = command.baseY + build.height / 2;
 	this.colliders.setPosition(command.colliderId, centerX, centerY);
 	command.positionDirty = false;
 	this.configurePhysicsBody(command, definition);
@@ -920,15 +772,10 @@ export class BmsxConsoleApi {
 	private setCommandPosition(command: SpriteCommand, x: number, y: number): void {
 		command.drawX = x;
 		command.drawY = y;
-		if (command.spriteIndex === null) {
-			command.x = x;
-			command.y = y;
-			return;
-		}
-		const definition = this.spriteRegistry.require(command.spriteIndex);
-		const scale = command.scale;
-		command.x = x - definition.originX * scale;
-		command.y = y - definition.originY * scale;
+		const originX = command.originX;
+		const originY = command.originY;
+		command.baseX = x - originX * command.scale;
+		command.baseY = y - originY * command.scale;
 	}
 
 	private configurePhysicsBody(command: SpriteCommand, definition: SpriteDefinition): void {
@@ -1013,33 +860,7 @@ export class BmsxConsoleApi {
 		});
 	}
 
-	private renderText(text: string, originX: number, originY: number, colorRef: color): void {
-		const view = $.view;
-		if (!view) {
-			throw new Error('[BmsxConsoleApi] Game view not initialised.');
-		}
-		const baseX = Math.floor(originX);
-		let cursorY = Math.floor(originY);
-		const lines = text.split('\n');
-		for (let i = 0; i < lines.length; i++) {
-			const expanded = this.expandTabs(lines[i]);
-			if (expanded.length > 0) {
-				view.renderer.submit.glyphs({
-					x: baseX,
-					y: cursorY,
-					glyphs: expanded,
-					color: colorRef,
-					font: this.font,
-					layer: DRAW_LAYER,
-				});
-			}
-			if (i < lines.length - 1) {
-				cursorY += this.font.lineHeight();
-			}
-		}
-	}
-
-	private expandTabs(text: string): string {
+private expandTabs(text: string): string {
 		if (text.indexOf('\t') === -1) {
 			return text;
 		}
@@ -1057,24 +878,6 @@ export class BmsxConsoleApi {
 		return result;
 	}
 
-	private submitRectangle(x0: number, y0: number, x1: number, y1: number, color: number | color, kind: 'rect' | 'fill', layer?: RenderLayer): void {
-		const colorObj: color = typeof color === 'number' ? this.paletteColor(color) : color;
-		const sx = Math.floor(x0);
-		const sy = Math.floor(y0);
-		const ex = Math.floor(x1);
-		const ey = Math.floor(y1);
-		const minX = Math.min(sx, ex);
-		const maxX = Math.max(sx, ex);
-		const minY = Math.min(sy, ey);
-		const maxY = Math.max(sy, ey);
-		const width = maxX - minX;
-		const height = maxY - minY;
-		if (width === 0 || height === 0) {
-			throw new Error('[BmsxConsoleApi] Rectangles must span at least one pixel in width and height.');
-		}
-		const area = new_area3d(minX, minY, 0, maxX, maxY, 0);
-		$.view.renderer.submit.rect({ kind, area, color: colorObj, layer: layer ?? DRAW_LAYER });
-	}
 
 	private paletteColor(index: number): color {
 		if (!Number.isInteger(index)) {
