@@ -35,7 +35,7 @@ return {
 			entering_state = onIdleEnter,
 			tick = onIdleTick,
 			on = {
-				start = { to = '../running' },
+				start = { to = '../running', scope = 'self' },
 			},
 		},
 		running = {
@@ -43,7 +43,7 @@ return {
 			entering_state = onRunningEnter,
 			tick = onRunningTick,
 			on = {
-				stop = { to = '../idle' },
+				stop = { to = '../idle', scope = 'self' },
 			},
 		},
 	},
