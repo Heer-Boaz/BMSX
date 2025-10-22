@@ -10,18 +10,23 @@ import { ConsoleColliderManager, type ColliderCreateOptions, type ColliderContac
 import { Physics2DManager } from '../physics/physics2d';
 import type { RandomModulationParams, ModulationParams, SoundMasterPlayRequest } from '../audio/soundmaster';
 import type { Area, BoundingBoxPrecalc, HitPolygonsPrecalc, Polygon, ImgMeta, Identifier, Registerable, RomPack } from '../rompack/rompack';
-import type { World } from '../core/world';
+import type { World, SpawnReason } from '../core/world';
 import type { Registry } from '../core/registry';
 import { Service } from '../core/service';
 import type { EventEmitter, EventPayload } from '../core/eventemitter';
 import { EventTimeline } from '../core/eventtimeline';
-import type { WorldObject } from '../core/object/worldobject';
+import { WorldObject } from '../core/object/worldobject';
 import type { Game } from '../core/game';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import { taskGate, GateGroup } from '../core/taskgate';
 import { StateDefinitionBuilders } from '../fsm/fsmdecorators';
 import { setupFSMlibrary } from '../fsm/fsmlibrary';
 import { DirectConsoleRenderBackend, type ConsoleRenderBackend, type SpriteCommand } from './render_backend';
+import { new_vec3 } from '../utils/utils';
+import { id_to_space_symbol, type Space } from '../core/space';
+import { Reviver } from '../serializer/gameserializer';
+import type { RevivableObjectArgs } from '../serializer/serializationhooks';
+import { Component } from '../component/basecomponent';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -34,6 +39,22 @@ export type BmsxConsoleApiOptions = {
 
 const DRAW_LAYER: RectRenderSubmission['layer'] = 'ui';
 const CONSOLE_TAB_SPACES = 2;
+
+type ConsoleComponentDescriptor = {
+	className: string;
+	options: Record<string, unknown>;
+};
+
+type NormalizedSpawnOptions = {
+	id?: string;
+	fsmId?: string;
+	space?: string;
+	reason?: SpawnReason;
+	position: { x: number; y: number; z: number } | null;
+	orientation: { x: number; y: number; z: number } | null;
+	scale: { x: number; y: number; z: number } | null;
+	components: ConsoleComponentDescriptor[];
+};
 
 export class BmsxConsoleApi {
 	private readonly input: BmsxConsoleInput;
@@ -420,6 +441,73 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 		return $.world.allObjectsFromSpaces;
 	}
 
+	public spawnWorldObject(classRef: string, options?: Record<string, unknown>): string {
+		const ctor = this.resolveWorldObjectConstructor(classRef);
+		const rawOptions = options ? this.cloneStateMachineData(options) : {};
+		if (rawOptions && !this.isPlainObject(rawOptions)) {
+			throw new Error('[BmsxConsoleApi] spawnWorldObject options must be a table/object.');
+		}
+		const normalized = this.normalizeSpawnOptions(rawOptions as Record<string, unknown>);
+		if (normalized.id && $.world.exists(normalized.id)) {
+			throw new Error(`[BmsxConsoleApi] World object '${normalized.id}' already exists.`);
+		}
+		const ctorOptions: RevivableObjectArgs & { id?: string; fsm_id?: string } = {};
+		if (normalized.id) ctorOptions.id = normalized.id;
+		if (normalized.fsmId) ctorOptions.fsm_id = normalized.fsmId;
+		const instance = new ctor(ctorOptions);
+		this.applySpawnOrientation(instance, normalized);
+		const spawnPos = normalized.position ? new_vec3(normalized.position.x, normalized.position.y, normalized.position.z) : undefined;
+		if (normalized.space) {
+			const space = this.lookupSpace(normalized.space);
+			const reasonOpts = normalized.reason ? { reason: normalized.reason } : undefined;
+			space.spawn(instance, spawnPos, reasonOpts);
+		} else {
+			const reasonOpts = normalized.reason ? { reason: normalized.reason } : undefined;
+			$.world.spawn(instance, spawnPos, reasonOpts);
+		}
+		this.attachSpawnComponents(instance, normalized.components);
+		return instance.id;
+	}
+
+	public despawnWorldObject(id: Identifier, options?: { dispose?: boolean }): void {
+		const object = this.requireWorldObject(id, 'despawnWorldObject');
+		$.exile(object);
+		if (options && options.dispose === true) {
+			object.dispose();
+		}
+	}
+
+	public attachFsm(objectId: Identifier, machineId: Identifier): void {
+		const object = this.requireWorldObject(objectId, 'attachFsm');
+		object.sc.ensureStatemachine(machineId, object.id);
+	}
+
+	public addComponent(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {
+		const object = this.requireWorldObject(objectId, 'addComponent');
+		const rawOptions = options ? this.cloneStateMachineData(options) : {};
+		if (rawOptions && !this.isPlainObject(rawOptions)) {
+			throw new Error('[BmsxConsoleApi] addComponent options must be a table/object.');
+		}
+		const descriptor: ConsoleComponentDescriptor = {
+			className: componentRef,
+			options: rawOptions as Record<string, unknown>,
+		};
+		const component = this.attachComponentByDescriptor(object, descriptor);
+		return component.id;
+	}
+
+	public removeComponent(objectId: Identifier, componentId: string): void {
+		if (typeof componentId !== 'string' || componentId.length === 0) {
+			throw new Error('[BmsxConsoleApi] removeComponent componentId must be a non-empty string.');
+		}
+		const object = this.requireWorldObject(objectId, 'removeComponent');
+		const component = object.getComponentById(componentId);
+		if (!component) {
+			throw new Error(`[BmsxConsoleApi] Component '${componentId}' not found on object '${objectId}'.`);
+		}
+		component.dispose();
+	}
+
 	public registry(): Registry {
 		return $.registry;
 	}
@@ -577,6 +665,248 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 	private setFsmBlueprintFactory(id: string, blueprint: StateMachineBlueprint): void {
 		const snapshot = this.cloneStateMachineData(blueprint);
 		StateDefinitionBuilders[id] = () => this.cloneStateMachineData(snapshot);
+	}
+
+	private resolveWorldObjectConstructor(classRef: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
+	if (typeof classRef !== 'string' || classRef.trim().length === 0) {
+		throw new Error('[BmsxConsoleApi] spawnWorldObject requires a non-empty class reference.');
+	}
+	if (classRef === 'WorldObject') {
+		return WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
+	}
+	const ctorUnknown = this.resolveConstructor(classRef.trim());
+		if (typeof ctorUnknown !== 'function') {
+			throw new Error(`[BmsxConsoleApi] World object constructor '${classRef}' not found.`);
+		}
+		const ctor = ctorUnknown as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
+		if (!(ctor.prototype instanceof WorldObject)) {
+			throw new Error(`[BmsxConsoleApi] Constructor '${classRef}' does not extend WorldObject.`);
+		}
+		return ctor;
+	}
+
+	private resolveComponentConstructor(classRef: string): new (opts: Record<string, unknown>) => Component {
+		if (typeof classRef !== 'string' || classRef.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] Component reference must be a non-empty string.');
+		}
+		const ctorUnknown = this.resolveConstructor(classRef.trim());
+		if (typeof ctorUnknown !== 'function') {
+			throw new Error(`[BmsxConsoleApi] Component constructor '${classRef}' not found.`);
+		}
+		const ctor = ctorUnknown as new (opts: Record<string, unknown>) => Component;
+		if (!(ctor.prototype instanceof Component)) {
+			throw new Error(`[BmsxConsoleApi] Constructor '${classRef}' does not extend Component.`);
+		}
+		return ctor;
+	}
+
+	private resolveConstructor(ref: string): unknown {
+		if (!ref) return undefined;
+		const map = Reviver.constructors;
+		if (map && map[ref]) {
+			return map[ref];
+		}
+		const globalScope = globalThis as Record<string, unknown>;
+		if (globalScope && typeof globalScope[ref] === 'function') {
+			return globalScope[ref];
+		}
+		return undefined;
+	}
+
+	private normalizeSpawnOptions(raw: Record<string, unknown>): NormalizedSpawnOptions {
+		const normalized: NormalizedSpawnOptions = {
+			id: undefined,
+			fsmId: undefined,
+			space: undefined,
+			reason: undefined,
+			position: null,
+			orientation: null,
+			scale: null,
+			components: [],
+		};
+		if (typeof raw.id === 'string') {
+			const trimmed = raw.id.trim();
+			if (trimmed.length === 0) {
+				throw new Error('[BmsxConsoleApi] spawnWorldObject options.id must be a non-empty string.');
+			}
+			normalized.id = trimmed;
+		}
+		const fsmCandidate = raw.fsmId !== undefined ? raw.fsmId : raw.fsm_id;
+		if (typeof fsmCandidate === 'string') {
+			const trimmedFsm = fsmCandidate.trim();
+			if (trimmedFsm.length === 0) {
+				throw new Error('[BmsxConsoleApi] spawnWorldObject options.fsmId must be a non-empty string when provided.');
+			}
+			normalized.fsmId = trimmedFsm;
+		}
+		if (raw.space !== undefined) {
+			if (typeof raw.space !== 'string' || raw.space.trim().length === 0) {
+				throw new Error('[BmsxConsoleApi] spawnWorldObject options.space must be a non-empty string when provided.');
+			}
+			normalized.space = raw.space.trim();
+		}
+		if (raw.reason !== undefined) {
+			if (typeof raw.reason !== 'string' || raw.reason.trim().length === 0) {
+				throw new Error('[BmsxConsoleApi] spawnWorldObject options.reason must be a non-empty string when provided.');
+			}
+			const reason = raw.reason.trim();
+			if (reason !== 'fresh' && reason !== 'transfer' && reason !== 'revive') {
+				throw new Error('[BmsxConsoleApi] spawnWorldObject options.reason must be one of fresh, transfer, or revive.');
+			}
+			normalized.reason = reason as SpawnReason;
+		}
+		if (raw.position !== undefined) {
+			normalized.position = this.normalizeVector3(raw.position, 'spawnWorldObject options.position', false, 0);
+		}
+		const orientationSource = raw.rotation !== undefined ? raw.rotation : raw.orientation;
+		if (orientationSource !== undefined) {
+			normalized.orientation = this.normalizeVector3(orientationSource, 'spawnWorldObject options.orientation', true, 0);
+		}
+		if (raw.scale !== undefined) {
+			normalized.scale = this.normalizeVector3(raw.scale, 'spawnWorldObject options.scale', true, 1);
+		}
+		if (raw.components !== undefined) {
+			if (!Array.isArray(raw.components)) {
+				throw new Error('[BmsxConsoleApi] spawnWorldObject options.components must be an array.');
+			}
+			const entries = raw.components;
+			for (let index = 0; index < entries.length; index += 1) {
+				const entry = entries[index];
+				if (typeof entry === 'string') {
+					const trimmed = entry.trim();
+					if (trimmed.length === 0) {
+						throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}] must be a non-empty string.`);
+					}
+					normalized.components.push({ className: trimmed, options: {} });
+					continue;
+				}
+				if (this.isPlainObject(entry)) {
+					const descriptor = entry as Record<string, unknown>;
+					const classCandidate = descriptor.class !== undefined ? descriptor.class
+						: descriptor.className !== undefined ? descriptor.className
+							: descriptor.type !== undefined ? descriptor.type
+								: descriptor.name;
+					if (typeof classCandidate !== 'string' || classCandidate.trim().length === 0) {
+						throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}] requires a non-empty 'class' field.`);
+					}
+					let optionsObject: Record<string, unknown>;
+					if (descriptor.options !== undefined) {
+						if (!this.isPlainObject(descriptor.options)) {
+							throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}].options must be a table/object.`);
+						}
+						optionsObject = this.cloneStateMachineData(descriptor.options as Record<string, unknown>);
+					} else {
+						const clone = this.cloneStateMachineData(descriptor);
+						delete clone.class;
+						delete clone.className;
+						delete clone.type;
+						delete clone.name;
+						delete clone.options;
+						optionsObject = clone;
+					}
+					normalized.components.push({ className: classCandidate.trim(), options: optionsObject });
+					continue;
+				}
+				throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}] must be a string or table/object.`);
+			}
+		}
+		return normalized;
+	}
+
+	private normalizeVector3(source: unknown, context: string, allowPartial: boolean, defaultValue: number): { x: number; y: number; z: number } {
+		if (!this.isPlainObject(source)) {
+			throw new Error(`[BmsxConsoleApi] ${context} must be a table/object.`);
+		}
+		const table = source as Record<string, unknown>;
+		const hasX = table.x !== undefined;
+		const hasY = table.y !== undefined;
+		const result = { x: defaultValue, y: defaultValue, z: defaultValue };
+		if (!allowPartial && (!hasX || !hasY)) {
+			throw new Error(`[BmsxConsoleApi] ${context} requires at least x and y values.`);
+		}
+		if (hasX) {
+			result.x = this.expectFiniteNumber(table.x, `${context}.x`);
+		}
+		if (hasY) {
+			result.y = this.expectFiniteNumber(table.y, `${context}.y`);
+		}
+		if (table.z !== undefined) {
+			result.z = this.expectFiniteNumber(table.z, `${context}.z`);
+		} else {
+			result.z = defaultValue;
+		}
+		return result;
+	}
+
+	private applySpawnOrientation(instance: WorldObject, options: NormalizedSpawnOptions): void {
+		if (options.orientation) {
+			instance.orientation = new_vec3(options.orientation.x, options.orientation.y, options.orientation.z);
+		}
+		if (options.scale) {
+			instance.sx = options.scale.x;
+			instance.sy = options.scale.y;
+			instance.sz = options.scale.z;
+		}
+	}
+
+	private attachSpawnComponents(object: WorldObject, descriptors: ConsoleComponentDescriptor[]): void {
+		for (let index = 0; index < descriptors.length; index += 1) {
+			this.attachComponentByDescriptor(object, descriptors[index]);
+		}
+	}
+
+	private attachComponentByDescriptor(object: WorldObject, descriptor: ConsoleComponentDescriptor): Component {
+		const ctor = this.resolveComponentConstructor(descriptor.className);
+		const optionsClone = this.cloneStateMachineData(descriptor.options);
+		if (optionsClone && !this.isPlainObject(optionsClone)) {
+			throw new Error('[BmsxConsoleApi] Component options must be a table/object.');
+		}
+		const prepared = optionsClone ? { ...optionsClone } : {};
+		const parentField = (prepared as { parentid?: string }).parentid;
+		if (parentField !== undefined && parentField !== object.id) {
+			throw new Error('[BmsxConsoleApi] Component options cannot override parentid.');
+		}
+		(prepared as { parentid: string }).parentid = object.id;
+		const component = new ctor(prepared);
+		object.addComponent(component);
+		return component;
+	}
+
+	private lookupSpace(spaceId: string): Space {
+		const spaces = $.world[id_to_space_symbol];
+		if (!spaces) {
+			throw new Error('[BmsxConsoleApi] World spaces are not initialised.');
+		}
+		const space = spaces[spaceId];
+		if (!space) {
+			throw new Error(`[BmsxConsoleApi] Space '${spaceId}' not found.`);
+		}
+		return space;
+	}
+
+	private requireWorldObject(id: Identifier, context: string): WorldObject {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error(`[BmsxConsoleApi] ${context} requires a non-empty object id.`);
+		}
+		const object = $.world.getWorldObject<WorldObject>(id);
+		if (!object) {
+			throw new Error(`[BmsxConsoleApi] World object '${id}' not found.`);
+		}
+		return object;
+	}
+
+	private expectFiniteNumber(value: unknown, context: string): number {
+		if (typeof value !== 'number' || !Number.isFinite(value)) {
+			throw new Error(`[BmsxConsoleApi] ${context} must be a finite number.`);
+		}
+		return value;
+	}
+
+	private isPlainObject(value: unknown): value is Record<string, unknown> {
+		if (value === null) return false;
+		if (typeof value !== 'object') return false;
+		const proto = Object.getPrototypeOf(value);
+		return proto === Object.prototype || proto === null;
 	}
 
 	private cloneStateMachineData<T>(source: T): T {

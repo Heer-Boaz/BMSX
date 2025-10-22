@@ -67,12 +67,64 @@ export class StateMachineController {
 	 * Note that this method is called automatically in the constructor and on bind() (after deserialization).
 	 */
 	private updateActiveMachinesCache(): void {
-		for (let id in this.statemachines) {
-			const activeStateMachinesWithSameId = ActiveStateMachines.get(id) ?? [];
-			if (!activeStateMachinesWithSameId.includes(this.statemachines[id])) {
-				ActiveStateMachines.set(id, [...activeStateMachinesWithSameId, this.statemachines[id]]); // Track active machines by fsm_id
-			}
+		for (const id in this.statemachines) {
+			this.registerActiveMachine(this.statemachines[id]);
 		}
+	}
+
+	private registerActiveMachine(machine: State): void {
+		const machineId = machine.localdef_id;
+		const existing = ActiveStateMachines.get(machineId) ?? [];
+		if (!existing.includes(machine)) {
+			ActiveStateMachines.set(machineId, [...existing, machine]);
+		}
+	}
+
+	private bindMachine(machine: State): void {
+		const events = machine.definition.event_list;
+		if (!events || events.length === 0) {
+			return;
+		}
+		for (const event of events) {
+			let scope = event.scope;
+			switch (scope) {
+				case 'self':
+					scope = machine.target.id;
+					break;
+				case 'all':
+				default:
+					scope = undefined;
+					break;
+			}
+			const key = `${event.name}-${scope ?? 'global'}-${event.lane ?? 'any'}`;
+			if (this._subscribedCache.has(key)) {
+				continue;
+			}
+			const lane = event.lane ?? 'any';
+			EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, { emitter: scope, persistent: true, lane });
+			this._subscribedCache.add(key);
+		}
+	}
+
+	public ensureStatemachine(id: Identifier, targetId: Identifier): State {
+		if (typeof id !== 'string' || id.length === 0) {
+			throw new Error('[StateMachineController] ensureStatemachine requires a non-empty machine id.');
+		}
+		if (typeof targetId !== 'string' || targetId.length === 0) {
+			throw new Error('[StateMachineController] ensureStatemachine requires a non-empty target id.');
+		}
+		const existing = this.statemachines[id];
+		if (existing) {
+			return existing;
+		}
+		const machine = State.create(id, targetId);
+		this.statemachines[id] = machine;
+		this.registerActiveMachine(machine);
+		if (this._started) {
+			this.bindMachine(machine);
+			machine.start();
+		}
+		return machine;
 	}
 
 	/**
@@ -133,29 +185,8 @@ export class StateMachineController {
 	public bind(): void {
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
-			const events = machine.definition.event_list;
-			if (events && events.length > 0) {
-				events.forEach(event => {
-					let scope = event.scope;
-					switch (scope) {
-						case 'self':
-							scope = machine.target.id; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
-							break;
-						case 'all':
-						default:
-							scope = undefined; // If the scope is 'all' or undefined, subscribe to the event with the given name and scope and dispatch it to the machine with the given id and global scope, meaning that the event will be dispatched to all machines
-							break;
-					}
-					const key = `${event.name}-${scope || 'global'}`;
-					const lane = event.lane ?? 'any';
-					if (!this._subscribedCache.has(key)) {
-						// EventEmitter.on() is idempotent per (listener, subscriber, scope), so safe across rehydrates.
-						EventEmitter.instance.on(event.name, this.auto_dispatch, machine.target, { emitter: scope, persistent: true, lane });
-						this._subscribedCache.add(key);
-					}
-				});
-			}
-			this.updateActiveMachinesCache();
+			this.bindMachine(machine);
+			this.registerActiveMachine(machine);
 		}
 	}
 
@@ -294,12 +325,7 @@ export class StateMachineController {
 	 * @param target_id - The ID of the target machine.
 	 */
 	add_statemachine(id: Identifier, target_id: Identifier): void {
-		this.statemachines[id] = State.create(id, target_id);
-		// Preserve the very first machine as the controller focus. This ensures that
-		// auto-created machines (from the WorldObject constructor or decorators)
-		// define the initial update order, while later dynamic additions only join
-		// the set.
-		// if (!this.current_machine_id) this.current_machine_id = id;
+		this.ensureStatemachine(id, target_id);
 	}
 
 	/**

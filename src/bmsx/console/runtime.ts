@@ -146,6 +146,8 @@ export class BmsxConsoleRuntime extends Service {
 	private editorPipelineActive = false;
 	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
+	private readonly luaChunkResourceMap: Map<string, { assetId: string | null; path?: string | null }> = new Map();
+	private readonly resourcePathCache: Map<string, string | null> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
@@ -310,6 +312,8 @@ export class BmsxConsoleRuntime extends Service {
 	public boot(): void {
 		this.frameCounter = 0;
 		this.luaRuntimeFailed = false;
+		this.luaChunkResourceMap.clear();
+		this.resourcePathCache.clear();
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
@@ -884,6 +888,7 @@ export class BmsxConsoleRuntime extends Service {
 
 		const interpreter = this.luaInterpreter;
 		try {
+			this.registerProgramChunk(program, chunkName);
 			this.registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
 			this.loadLuaStateMachineScripts(interpreter);
@@ -1038,6 +1043,10 @@ export class BmsxConsoleRuntime extends Service {
 	private validateLuaSource(source: string, chunkName: string): void {
 		const previousChunk = this.luaChunkName;
 		this.luaChunkName = chunkName;
+		const currentProgram = this.luaProgram;
+		if (currentProgram) {
+			this.registerProgramChunk(currentProgram, chunkName);
+		}
 		try {
 			const interpreter = createLuaInterpreter();
 			this.registerApiBuiltins(interpreter);
@@ -1079,6 +1088,7 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		let line = 1;
 		let column = 1;
+		let chunkName: string | null = null;
 		if (error instanceof LuaError) {
 			if (Number.isFinite(error.line) && error.line > 0) {
 				line = error.line;
@@ -1086,17 +1096,23 @@ export class BmsxConsoleRuntime extends Service {
 			if (Number.isFinite(error.column) && error.column > 0) {
 				column = error.column;
 			}
-			if (error.chunkName && error.chunkName.length > 0) {
-				message = `${error.chunkName}: ${message}`;
+			if (typeof error.chunkName === 'string' && error.chunkName.length > 0) {
+				chunkName = error.chunkName;
 			}
 		}
 		if (!this.editor && this.hasLuaProgram()) {
 			this.initializeEditor();
 		}
 		if (this.editor) {
-			this.editor.showRuntimeError(line, column, message);
+			const hint = this.lookupChunkResourceInfoNullable(chunkName);
+			if (hint) {
+				this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, hint);
+			} else {
+				this.editor.showRuntimeErrorInChunk(chunkName, line, column, message);
+			}
 		}
-		console.error('[BmsxConsoleRuntime] Lua runtime error:', error);
+		const logMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
+		console.error('[BmsxConsoleRuntime] Lua runtime error:', logMessage, error);
 	}
 
 	private createApiRuntimeError(interpreter: LuaInterpreter, message: string): LuaRuntimeError {
@@ -1254,7 +1270,21 @@ export class BmsxConsoleRuntime extends Service {
 				throw new Error(`[BmsxConsoleRuntime] FSM Lua asset '${assetId}' is not a string source.`);
 			}
 			const sourcePathRaw = sourcePaths[assetId];
+			let pathHint: string | null = null;
+			if (typeof sourcePathRaw === 'string' && sourcePathRaw.length > 0) {
+				pathHint = sourcePathRaw;
+			} else {
+				const resolvedPath = this.resolveResourcePath(assetId);
+				if (resolvedPath) {
+					pathHint = resolvedPath;
+				}
+			}
 			const chunkName = this.resolveLuaFsmChunkName(assetId, typeof sourcePathRaw === 'string' ? sourcePathRaw : null);
+			const fsmInfo: { assetId: string | null; path?: string | null } = { assetId };
+			if (pathHint) {
+				fsmInfo.path = pathHint;
+			}
+			this.registerLuaChunkResource(chunkName, fsmInfo);
 			let results: LuaValue[];
 			try {
 				results = interpreter.execute(source, chunkName);
@@ -1348,8 +1378,21 @@ export class BmsxConsoleRuntime extends Service {
 			results = this.callLuaFunctionWithInterpreter(fn, callArgs, interpreter);
 		}
 		catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`[BmsxConsoleRuntime] Lua FSM handler '${handlerId}' failed: ${message}`);
+			const baseMessage = error instanceof Error ? error.message : String(error);
+			const prefix = `[BmsxConsoleRuntime] Lua FSM handler '${handlerId}' failed: `;
+			if (error instanceof LuaRuntimeError) {
+				const wrapped = new LuaRuntimeError(prefix + baseMessage, error.chunkName, error.line, error.column);
+				// @ts-ignore - retain original error details for debugging where supported
+				wrapped.cause = error;
+				throw wrapped;
+			}
+			if (error instanceof LuaError) {
+				const wrapped = new LuaRuntimeError(prefix + baseMessage, error.chunkName, error.line, error.column);
+				// @ts-ignore - retain original error details for debugging where supported
+				wrapped.cause = error;
+				throw wrapped;
+			}
+			throw new Error(prefix + baseMessage);
 		}
 		return results.length > 0 ? results[0] : undefined;
 	}
@@ -2032,6 +2075,7 @@ export class BmsxConsoleRuntime extends Service {
 			const mutable = program as { source: string; chunkName?: string };
 			mutable.source = source;
 			mutable.chunkName = chunkName;
+			this.registerProgramChunk(mutable, chunkName);
 			return;
 		}
 		if ('assetId' in program && program.assetId) {
@@ -2044,6 +2088,7 @@ export class BmsxConsoleRuntime extends Service {
 			};
 			cartridge.luaProgram = updated;
 			this.luaProgram = updated;
+			this.registerProgramChunk(updated, chunkName);
 			return;
 		}
 		const cartridge = this.cart as { luaProgram?: BmsxConsoleLuaProgram };
@@ -2054,6 +2099,7 @@ export class BmsxConsoleRuntime extends Service {
 		};
 		cartridge.luaProgram = updated;
 		this.luaProgram = updated;
+		this.registerProgramChunk(updated, chunkName);
 	}
 
 	private resolveLuaProgramChunkName(program: BmsxConsoleLuaProgram): string {
@@ -2064,6 +2110,104 @@ export class BmsxConsoleRuntime extends Service {
 			return program.assetId;
 		}
 		return 'bmsx-lua';
+	}
+
+	private registerProgramChunk(program: BmsxConsoleLuaProgram, chunkName: string): void {
+		let assetId: string | null = null;
+		let resolvedPath: string | null = null;
+		if ('assetId' in program && program.assetId) {
+			assetId = program.assetId;
+			resolvedPath = this.resolveResourcePath(program.assetId);
+		}
+		const info: { assetId: string | null; path?: string | null } = { assetId };
+		if (resolvedPath && resolvedPath.length > 0) {
+			info.path = resolvedPath;
+		}
+		this.registerLuaChunkResource(chunkName, info);
+	}
+
+	private normalizeChunkName(name: string): string {
+		let normalized = name.trim();
+		if (normalized.startsWith('@')) {
+			normalized = normalized.slice(1);
+		}
+		return normalized.replace(/\\/g, '/');
+	}
+
+	private registerLuaChunkResource(chunkName: string, info: { assetId: string | null; path?: string | null }): void {
+		if (!chunkName) return;
+		const key = this.normalizeChunkName(chunkName);
+		this.luaChunkResourceMap.set(key, info);
+	}
+
+	private lookupChunkResourceInfo(chunkName: string): { assetId: string | null; path?: string | null } | null {
+		const key = this.normalizeChunkName(chunkName);
+		if (!this.luaChunkResourceMap.has(key)) {
+			return null;
+		}
+		const existing = this.luaChunkResourceMap.get(key);
+		if (!existing) {
+			return null;
+		}
+		if (existing.path) {
+			return existing;
+		}
+		if (existing.assetId) {
+			const resolved = this.resolveResourcePath(existing.assetId);
+			if (resolved && resolved.length > 0) {
+				const updated = { ...existing, path: resolved };
+				this.luaChunkResourceMap.set(key, updated);
+				return updated;
+			}
+		}
+		return existing;
+	}
+
+	private lookupChunkResourceInfoNullable(chunkName: string | null): { assetId: string | null; path?: string | null } | null {
+		if (!chunkName) return null;
+		return this.lookupChunkResourceInfo(chunkName);
+	}
+
+	private resolveResourcePath(assetId: string): string | null {
+		if (!assetId) {
+			return null;
+		}
+		if (this.resourcePathCache.has(assetId)) {
+			const cached = this.resourcePathCache.get(assetId);
+			if (cached === null || cached === undefined) {
+				return null;
+			}
+			return cached;
+		}
+		const rompack = $.rompack;
+		if (!rompack) {
+			this.resourcePathCache.set(assetId, null);
+			return null;
+		}
+		let luaSources: Record<string, string>;
+		if (rompack.luaSourcePaths) {
+			luaSources = rompack.luaSourcePaths;
+		} else {
+			luaSources = {};
+		}
+		const luaSource = luaSources[assetId];
+		if (typeof luaSource === 'string' && luaSource.length > 0) {
+			const normalizedLuaPath = luaSource.replace(/\\/g, '/');
+			this.resourcePathCache.set(assetId, normalizedLuaPath);
+			return normalizedLuaPath;
+		}
+		if (!Array.isArray(rompack.resourcePaths)) {
+			this.resourcePathCache.set(assetId, null);
+			return null;
+		}
+		const entry = rompack.resourcePaths.find(candidate => candidate.assetId === assetId);
+		if (!entry || typeof entry.path !== 'string' || entry.path.length === 0) {
+			this.resourcePathCache.set(assetId, null);
+			return null;
+		}
+		const normalizedPath = entry.path.replace(/\\/g, '/');
+		this.resourcePathCache.set(assetId, normalizedPath);
+		return normalizedPath;
 	}
 
 	private luaTableInsert(table: LuaTable, value: LuaValue, position: number | null): void {

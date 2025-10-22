@@ -674,6 +674,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 		const type = meta.type;
 		let name = meta.name;
 		const ext = meta.ext;
+		const sourcePath = filepath ? toWorkspaceRelativePath(filepath) : undefined;
 		switch (type) {
 			case 'image':
 				const imgMeta = parseImageMeta(name);
@@ -695,44 +696,44 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					if (imgMeta.targetAtlas !== undefined) targetAtlasIdSet.add(imgMeta.targetAtlas);
 				}
-				result.push({ filepath, name, ext, type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas });
+				result.push({ filepath, name, ext, type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas, sourcePath });
 				imageNameRegistry.set(name, { filepath });
 				++imgid;
 				break;
 			case 'audio':
 				const parsedMeta = parseAudioMeta(name);
 				name = parsedMeta.sanitizedName; // Remove metadata from the name
-				result.push({ filepath, name, ext, type, id: sndid });
+				result.push({ filepath, name, ext, type, id: sndid, sourcePath });
 				++sndid;
 				break;
 			case 'romlabel':
-				result.push({ filepath, name, ext, type, id: undefined });
+				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
 				break;
 			case 'rommanifest':
-				result.push({ filepath, name, ext, type, id: undefined });
+				result.push({ filepath, name, ext, type, id: undefined, sourcePath });
 				break;
 			case 'code':
 				codeFileCount += 1;
 				break;
-		case 'data':
-		case 'aem': // AEM files are added to the data asset list
-			// For data files, we use the name as is
-			result.push({ filepath, name, ext, type, id: dataid, datatype: meta.datatype });
-			++dataid;
-			break;
-		case 'lua':
-			result.push({ filepath, name, ext, type, id: luaid });
-			++luaid;
-			break;
+			case 'data':
+			case 'aem': // AEM files are added to the data asset list
+				// For data files, we use the name as is
+				result.push({ filepath, name, ext, type, id: dataid, datatype: meta.datatype, sourcePath });
+				++dataid;
+				break;
+			case 'lua':
+				result.push({ filepath, name, ext, type, id: luaid, sourcePath });
+				++luaid;
+				break;
 			case 'model':
-				result.push({ filepath, name, ext, type, id: modelid, datatype: meta.datatype });
+				result.push({ filepath, name, ext, type, id: modelid, datatype: meta.datatype, sourcePath });
 				++modelid;
 				break;
 			case 'atlas':
 				// Atlas files are not real files, but we add them to the resource list in the next step
 				break;
 			case 'fsm':
-				result.push({ filepath, name, ext, type, id: fsmid, datatype: meta.datatype });
+				result.push({ filepath, name, ext, type, id: fsmid, datatype: meta.datatype, sourcePath });
 				++fsmid;
 				break;
 		}
@@ -964,7 +965,14 @@ export async function generateRomAssets(resources: Resource[]) {
 
 	for (const res of resources) {
 		const type = res.type;
-		const sourcePath = res.filepath && res.filepath.length > 0 ? toWorkspaceRelativePath(res.filepath) : undefined;
+		let sourcePath: string | undefined;
+		if (res.sourcePath && res.sourcePath.length > 0) {
+			sourcePath = res.sourcePath;
+		} else if (res.filepath && res.filepath.length > 0) {
+			sourcePath = toWorkspaceRelativePath(res.filepath);
+		} else {
+			sourcePath = undefined;
+		}
 		let resid = res.name;
 		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 

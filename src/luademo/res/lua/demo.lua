@@ -2,6 +2,10 @@ local state = {
 	frame = 0,
 	paletteIndex = 1,
 	balls = {},
+	engineActorId = nil,
+	fsmTimer = 0,
+	fsmState = 'idle',
+	engineMessage = nil,
 }
 
 local palette = { 6, 8, 10, 12, 14 }
@@ -28,11 +32,47 @@ local function reset_balls()
 	end
 end
 
+local function ensure_engine_actor()
+	if state.engineActorId ~= nil then
+		return
+	end
+	state.engineMessage = nil
+	local spawnFunction = nil
+	if type(spawnWorldObject) == 'function' then
+		spawnFunction = spawnWorldObject
+	elseif type(api) == 'table' and type(api.spawnWorldObject) == 'function' then
+		spawnFunction = api.spawnWorldObject
+	end
+	if spawnFunction == nil then
+		state.engineMessage = 'spawnWorldObject unavailable'
+		return
+	end
+	local actorId = spawnFunction('WorldObject', {
+		id = 'lua_demo_actor',
+		position = { x = 48, y = 48, z = 0 },
+	})
+	state.engineActorId = actorId
+	state.fsmState = 'idle'
+	state.fsmTimer = 0
+	local attachFunction = nil
+	if type(attachFsm) == 'function' then
+		attachFunction = attachFsm
+	elseif type(api) == 'table' and type(api.attachFsm) == 'function' then
+		attachFunction = api.attachFsm
+	end
+	if attachFunction == nil then
+		state.engineMessage = 'attachFsm unavailable'
+		return
+	end
+	attachFunction(state.engineActorId, 'console_testmachine')
+end
+
 function init()
 	math.randomseed(os.time())
 	state.frame = 0
 	state.paletteIndex = 1
 	reset_balls()
+	ensure_engine_actor()
 	cartdata('lua-demo')
 end
 
@@ -60,8 +100,26 @@ end
 function update(delta)
 	state.frame = state.frame + 1
 
+	if state.engineActorId == nil then
+		ensure_engine_actor()
+	end
+
 	for _, ball in ipairs(state.balls) do
 		update_ball(ball, delta)
+	end
+
+	if state.engineActorId ~= nil then
+		state.fsmTimer = state.fsmTimer + delta
+		if state.fsmTimer >= 2 then
+			state.fsmTimer = 0
+			if state.fsmState == 'idle' then
+				emit('start', nil, state.engineActorId)
+				state.fsmState = 'running'
+			else
+				emit('stop', nil, state.engineActorId)
+				state.fsmState = 'idle'
+			end
+		end
 	end
 
 	if btnp(4) then
@@ -86,6 +144,15 @@ function draw()
 	print('O: cycle colors', 16, 24, 7)
 	print('X: shuffle balls', 16, 32, 7)
 	print('Frame: ' .. state.frame, 12, 46, 10)
+	if state.engineActorId ~= nil then
+		print('Actor: ' .. state.engineActorId, 16, 56, 11)
+		print('FSM state: ' .. state.fsmState, 16, 64, 11)
+	else
+		print('Actor spawn failed', 16, 56, 2)
+	end
+	if state.engineMessage ~= nil then
+		print('Engine: ' .. state.engineMessage, 16, 72, 2)
+	end
 
 	for index, ball in ipairs(state.balls) do
 		local color = palette[((state.paletteIndex + index - 2) % #palette) + 1]

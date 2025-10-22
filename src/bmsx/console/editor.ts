@@ -419,6 +419,14 @@ export class ConsoleCartEditor {
 		this.listResourcesFn = options.listResources;
 		this.loadLuaResourceFn = options.loadLuaResource;
 		this.saveLuaResourceFn = options.saveLuaResource;
+		if ($ && $.debug) {
+			try {
+				const resources = this.listResourcesFn();
+				console.info('[ConsoleCartEditor] Initial resource list:', resources);
+			} catch (error) {
+				console.warn('[ConsoleCartEditor] Failed to enumerate resources during init:', error);
+			}
+		}
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
@@ -457,6 +465,12 @@ export class ConsoleCartEditor {
 		} else {
 			this.deferredMessageDuration = null;
 		}
+	}
+
+	public showRuntimeErrorInChunk(chunkName: string | null, line: number, column: number, message: string, hint?: { assetId: string | null; path?: string | null }): void {
+		this.focusChunkSource(chunkName, hint);
+		const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
+		this.showRuntimeError(line, column, overlayMessage);
 	}
 
 	public showRuntimeError(line: number, column: number, message: string): void {
@@ -498,6 +512,98 @@ export class ConsoleCartEditor {
 		};
 		const statusLine = overlayLines.length > 0 ? overlayLines[0] : 'Runtime error';
 		this.showMessage(statusLine, COLOR_STATUS_ERROR, 8.0);
+	}
+
+	private focusChunkSource(chunkName: string | null, hint?: { assetId: string | null; path?: string | null }): void {
+		if (!this.active) {
+			this.activate();
+		}
+		if (hint && typeof hint.assetId === 'string' && hint.assetId.length > 0) {
+			const preferredPath = (typeof hint.path === 'string' && hint.path.length > 0) ? hint.path : null;
+			this.focusResourceByAsset(hint.assetId, preferredPath);
+			return;
+		}
+		if (hint && hint.assetId === null) {
+			this.activateCodeTab();
+			return;
+		}
+		const normalizedChunk = this.normalizeChunkName(chunkName);
+		const descriptor = this.findResourceDescriptorForChunk(normalizedChunk);
+		this.openResourceDescriptor(descriptor);
+	}
+
+	private focusResourceByAsset(assetId: string, preferredPath?: string | null): void {
+		if (typeof assetId !== 'string' || assetId.length === 0) {
+			throw new Error('[ConsoleCartEditor] Invalid asset id for runtime error highlight.');
+		}
+		const descriptors = this.listResourcesStrict();
+		const match = descriptors.find(entry => entry.assetId === assetId);
+		const normalizedPreferred = this.normalizeResourcePath(preferredPath);
+		if (match) {
+			const effectivePath = normalizedPreferred ? normalizedPreferred : match.path;
+			this.openResourceDescriptor({ ...match, path: effectivePath });
+			return;
+		}
+		if (!normalizedPreferred) {
+			throw new Error(`[ConsoleCartEditor] No resource found for asset '${assetId}'.`);
+		}
+		this.openResourceDescriptor({ path: normalizedPreferred, type: 'lua', assetId });
+	}
+
+	private normalizeChunkName(name: string | null): string {
+		if (typeof name !== 'string' || name.trim().length === 0) {
+			throw new Error('[ConsoleCartEditor] Chunk name unavailable for runtime error.');
+		}
+		let normalized = name.trim();
+		if (normalized.startsWith('@')) {
+			normalized = normalized.slice(1);
+		}
+		normalized = normalized.replace(/\\/g, '/');
+		if (normalized.length === 0) {
+			throw new Error('[ConsoleCartEditor] Normalized chunk name is empty.');
+		}
+		return normalized;
+	}
+
+	private normalizeResourcePath(path?: string | null): string | undefined {
+		if (path === null || path === undefined) {
+			return undefined;
+		}
+		const normalized = path.replace(/\\/g, '/');
+		return normalized.length > 0 ? normalized : undefined;
+	}
+
+	private listResourcesStrict(): ConsoleResourceDescriptor[] {
+		const descriptors = this.listResourcesFn();
+		if (!Array.isArray(descriptors)) {
+			throw new Error('[ConsoleCartEditor] Resource enumeration returned an invalid result.');
+		}
+		return descriptors;
+	}
+
+	private findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor {
+		const descriptors = this.listResourcesStrict();
+		const normalizedTarget = chunkPath.replace(/\\/g, '/');
+		const exact = descriptors.find(entry => entry.path.replace(/\\/g, '/') === normalizedTarget);
+		if (exact) {
+			return exact;
+		}
+		const segments = normalizedTarget.split('/');
+		const basename = segments.length > 0 ? segments[segments.length - 1] : normalizedTarget;
+		const withoutExt = basename.endsWith('.lua') ? basename.slice(0, -4) : basename;
+		const byAssetId = descriptors.find(entry => entry.assetId === basename || entry.assetId === withoutExt);
+		if (byAssetId) {
+			return byAssetId;
+		}
+		throw new Error(`[ConsoleCartEditor] Unable to resolve chunk '${normalizedTarget}' to a resource.`);
+	}
+
+	private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
+		if (descriptor.type === 'lua') {
+			this.openLuaCodeTab(descriptor);
+			return;
+		}
+		this.openResourceViewerTab(descriptor);
 	}
 
 	public clearRuntimeErrorOverlay(): void {
@@ -594,8 +700,7 @@ export class ConsoleCartEditor {
 		const safeLine = hasLine ? Math.max(1, Math.floor(rawLine!)) : 0;
 		const safeColumn = hasColumn ? Math.max(1, Math.floor(rawColumn!)) : 0;
 		const baseMessage = messageText ?? 'Lua error';
-		const overlayMessage = chunkName ? `${chunkName}: ${baseMessage}` : baseMessage;
-		this.showRuntimeError(safeLine, safeColumn, overlayMessage);
+		this.showRuntimeErrorInChunk(chunkName, safeLine, safeColumn, baseMessage);
 		return true;
 	}
 
@@ -3574,14 +3679,6 @@ export class ConsoleCartEditor {
 		this.tabs.unshift(newCodeTab);
 		this.setActiveTab(newCodeTab.id);
 	}
-
-private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
-	if (descriptor.type === 'lua') {
-		this.openLuaCodeTab(descriptor);
-		return;
-	}
-	this.openResourceViewerTab(descriptor);
-}
 
 private openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 	const tabId: EditorTabId = `lua:${descriptor.assetId}`;
