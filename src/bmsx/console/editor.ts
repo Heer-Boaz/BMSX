@@ -131,19 +131,18 @@ type EditorTabId = 'code' | 'resources' | `resource:${string}` | `lua:${string}`
 type EditorTabKind = 'code' | 'resources' | 'resource_view' | 'lua_editor';
 
 type CodeHoverTooltip = {
-	 expression: string;
-	 contentLines: string[];
-	 valueType: string;
-	 scope: ConsoleLuaHoverScope;
-	 state: ConsoleLuaHoverValueState;
-	 assetId: string | null;
-	 viewportX: number;
-	 viewportY: number;
-	 row: number;
-	 column: number;
-	 scrollOffset: number;
-	 visibleLineCount: number;
-	 bubbleBounds: RectBounds | null;
+	expression: string;
+	contentLines: string[];
+	valueType: string;
+	scope: ConsoleLuaHoverScope;
+	state: ConsoleLuaHoverValueState;
+	assetId: string | null;
+	row: number;
+	startColumn: number;
+	endColumn: number;
+	scrollOffset: number;
+	visibleLineCount: number;
+	bubbleBounds: RectBounds | null;
 };
 
 type ResourceViewerState = {
@@ -452,8 +451,7 @@ export class ConsoleCartEditor {
 		this.primaryAssetId = options.primaryAssetId;
 		if ($ && $.debug) {
 			try {
-				const resources = this.listResourcesFn();
-				console.info('[ConsoleCartEditor] Initial resource list:', resources);
+				this.listResourcesFn();
 			} catch (error) {
 				console.warn('[ConsoleCartEditor] Failed to enumerate resources during init:', error);
 			}
@@ -489,56 +487,69 @@ export class ConsoleCartEditor {
 		if (!tooltip) {
 			return;
 		}
-		if (tooltip.viewportY < codeTop || tooltip.viewportY >= codeBottom) {
-			return;
-		}
 		const content = tooltip.contentLines;
 		if (!content || content.length === 0) {
+			tooltip.bubbleBounds = null;
 			return;
 		}
+		const visibleRows = this.visibleRowCount();
+		const relativeRow = tooltip.row - this.scrollRow;
+		if (relativeRow < 0 || relativeRow >= visibleRows) {
+			tooltip.bubbleBounds = null;
+			return;
+		}
+		const rowTop = codeTop + relativeRow * this.lineHeight;
+		const entry = this.getCachedHighlight(tooltip.row);
+		const highlight = entry.hi;
+		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 8);
+		const startDisplay = this.columnToDisplay(highlight, tooltip.startColumn);
+		const endDisplay = this.columnToDisplay(highlight, tooltip.endColumn);
+		const clampedStartDisplay = Math.max(slice.startDisplay, Math.min(startDisplay, slice.endDisplay));
+		const clampedEndDisplay = Math.max(clampedStartDisplay, Math.min(endDisplay, highlight.chars.length));
+		const expressionStartX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedStartDisplay);
+		const expressionEndX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedEndDisplay);
 		const maxVisible = Math.max(1, Math.min(HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
-		const currentVisible = tooltip.visibleLineCount > 0 ? tooltip.visibleLineCount : maxVisible;
-		const scrollOffset = Math.max(0, Math.min(tooltip.scrollOffset, Math.max(0, content.length - currentVisible)));
-		tooltip.scrollOffset = scrollOffset;
-		const visibleCount = Math.max(1, Math.min(maxVisible, content.length - scrollOffset));
+		const maxOffset = Math.max(0, content.length - maxVisible);
+		tooltip.scrollOffset = Math.max(0, Math.min(tooltip.scrollOffset, maxOffset));
+		const visibleCount = Math.max(1, Math.min(maxVisible, content.length - tooltip.scrollOffset));
 		tooltip.visibleLineCount = visibleCount;
-		const visibleLines = content.slice(scrollOffset, scrollOffset + visibleCount);
+		const visibleLines = content.slice(tooltip.scrollOffset, tooltip.scrollOffset + visibleCount);
 		let maxLineWidth = 0;
-		for (let i = 0; i < visibleLines.length; i += 1) {
-			const width = this.measureText(visibleLines[i]);
+		for (const line of visibleLines) {
+			const width = this.measureText(line);
 			if (width > maxLineWidth) {
 				maxLineWidth = width;
 			}
 		}
 		const bubbleWidth = maxLineWidth + HOVER_TOOLTIP_PADDING_X * 2;
 		const bubbleHeight = visibleLines.length * this.lineHeight + HOVER_TOOLTIP_PADDING_Y * 2;
-		let bubbleLeft = tooltip.viewportX + 12;
-		if (bubbleLeft + bubbleWidth > this.viewportWidth - 1) {
-			bubbleLeft = Math.max(textLeft, this.viewportWidth - 1 - bubbleWidth);
+		const viewportRight = this.viewportWidth - 1;
+		let bubbleLeft = expressionEndX + this.spaceAdvance;
+		if (bubbleLeft + bubbleWidth > viewportRight) {
+			bubbleLeft = viewportRight - bubbleWidth;
+		}
+		if (bubbleLeft <= expressionEndX) {
+			const leftCandidate = expressionStartX - bubbleWidth - this.spaceAdvance;
+			if (leftCandidate >= textLeft) {
+				bubbleLeft = leftCandidate;
+			} else {
+				bubbleLeft = Math.max(textLeft, bubbleLeft);
+			}
 		}
 		if (bubbleLeft < textLeft) {
 			bubbleLeft = textLeft;
 		}
-		let bubbleTop = tooltip.viewportY + 12;
-		const maxBottom = codeBottom - 1;
-		if (bubbleTop + bubbleHeight > maxBottom) {
-			bubbleTop = tooltip.viewportY - bubbleHeight - 12;
+		let bubbleTop = rowTop;
+		if (bubbleTop + bubbleHeight > codeBottom) {
+			bubbleTop = Math.max(codeTop, codeBottom - bubbleHeight);
 		}
-		if (bubbleTop + bubbleHeight > maxBottom) {
-			bubbleTop = maxBottom - bubbleHeight;
-		}
-		if (bubbleTop < codeTop) {
-			bubbleTop = codeTop;
-		}
-		const bubbleRight = bubbleLeft + bubbleWidth;
-		const bubbleBottom = bubbleTop + bubbleHeight;
-		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, HOVER_TOOLTIP_BACKGROUND);
-		api.rect(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, HOVER_TOOLTIP_BORDER);
+		api.rectfillColor(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, HOVER_TOOLTIP_BACKGROUND);
+		api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, HOVER_TOOLTIP_BORDER);
 		for (let i = 0; i < visibleLines.length; i += 1) {
 			const lineY = bubbleTop + HOVER_TOOLTIP_PADDING_Y + i * this.lineHeight;
 			this.drawText(api, visibleLines[i], bubbleLeft + HOVER_TOOLTIP_PADDING_X, lineY, COLOR_STATUS_TEXT);
 		}
-		tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleRight, bottom: bubbleBottom };
+		tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 	}
 
 	public isActive(): boolean {
@@ -1990,7 +2001,9 @@ export class ConsoleCartEditor {
 			this.setCursorPosition(targetRow, targetColumn);
 		}
 		if (this.isCodeTabActive()) {
-			if (!snapshot.primaryPressed && !this.pointerSelecting && insideVertical) {
+			const keyboard = this.getKeyboard();
+			const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
+			if (!snapshot.primaryPressed && !this.pointerSelecting && insideVertical && altDown) {
 				this.updateHoverTooltip(snapshot);
 			} else {
 				this.clearHoverTooltip();
@@ -1999,7 +2012,7 @@ export class ConsoleCartEditor {
 			this.clearHoverTooltip();
 		}
 		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-	}
+ 	}
 
 	private updateHoverTooltip(snapshot: PointerSnapshot): void {
 		const context = this.getActiveCodeTabContext();
@@ -2011,7 +2024,6 @@ export class ConsoleCartEditor {
 			this.clearHoverTooltip();
 			return;
 		}
-		const existing = this.hoverTooltip;
 		const request: ConsoleLuaHoverRequest = {
 			assetId,
 			expression: token.expression,
@@ -2027,26 +2039,21 @@ export class ConsoleCartEditor {
 			this.clearHoverTooltip();
 			return;
 		}
-		const header = `${inspection.expression} :: ${inspection.valueType.toUpperCase()} [${inspection.scope}]`;
-		const body = inspection.lines.length > 0 ? inspection.lines : [''];
-		const contentLines: string[] = [this.truncateHoverLine(header)];
-		for (let i = 0; i < body.length; i += 1) {
-			contentLines.push(this.truncateHoverLine(body[i]));
-		}
-		const expressionChanged = !previousInspection || previousInspection.expression !== inspection.expression;
+		const contentLines = this.buildHoverContentLines(inspection);
+		const existing = this.hoverTooltip;
 		if (existing && existing.expression === inspection.expression && existing.assetId === assetId) {
 			existing.contentLines = contentLines;
 			existing.valueType = inspection.valueType;
 			existing.scope = inspection.scope;
 			existing.state = inspection.state;
-			existing.viewportX = snapshot.viewportX;
-			existing.viewportY = snapshot.viewportY;
-			existing.row = row;
-			existing.column = column;
 			existing.assetId = assetId;
+			existing.row = row;
+			existing.startColumn = token.startColumn;
+			existing.endColumn = token.endColumn;
 			existing.bubbleBounds = null;
-			if (expressionChanged) {
+			if (!previousInspection || previousInspection.expression !== inspection.expression) {
 				existing.scrollOffset = 0;
+				existing.visibleLineCount = 0;
 			}
 			const maxOffset = Math.max(0, contentLines.length - Math.max(1, existing.visibleLineCount));
 			if (existing.scrollOffset > maxOffset) {
@@ -2061,14 +2068,36 @@ export class ConsoleCartEditor {
 			scope: inspection.scope,
 			state: inspection.state,
 			assetId,
-			viewportX: snapshot.viewportX,
-			viewportY: snapshot.viewportY,
 			row,
-			column,
+			startColumn: token.startColumn,
+			endColumn: token.endColumn,
 			scrollOffset: 0,
 			visibleLineCount: 0,
 			bubbleBounds: null,
 		};
+	}
+
+	private buildHoverContentLines(result: ConsoleLuaHoverResult): string[] {
+		const lines: string[] = [];
+		const push = (value: string) => {
+			lines.push(this.truncateHoverLine(value));
+		};
+		if (result.state === 'not_defined') {
+			push(`${result.expression} = not defined`);
+			return lines;
+		}
+		const valueLines = result.lines.length > 0 ? result.lines : [''];
+		if (valueLines.length === 1) {
+			const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
+			push(`${result.expression} = ${valueLines[0]}${suffix}`);
+			return lines;
+		}
+		const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
+		push(`${result.expression}${suffix}`);
+		for (const line of valueLines) {
+			push(`  ${line}`);
+		}
+		return lines;
 	}
 
 	private truncateHoverLine(text: string): string {
@@ -2080,6 +2109,7 @@ export class ConsoleCartEditor {
 
 	private clearHoverTooltip(): void {
 		this.hoverTooltip = null;
+		this.lastInspectorResult = null;
 	}
 
 	private adjustHoverTooltipScroll(stepCount: number): boolean {
@@ -2116,6 +2146,22 @@ export class ConsoleCartEditor {
 			return false;
 		}
 		return this.pointInRect(x, y, tooltip.bubbleBounds);
+	}
+
+	private pointerHitsHoverTarget(snapshot: PointerSnapshot, tooltip: CodeHoverTooltip): boolean {
+		if (!snapshot.valid || !snapshot.insideViewport) {
+			return false;
+		}
+		const bounds = this.getCodeAreaBounds();
+		if (snapshot.viewportY < bounds.codeTop || snapshot.viewportY >= bounds.codeBottom) {
+			return false;
+		}
+		const row = this.resolvePointerRow(snapshot.viewportY);
+		if (row !== tooltip.row) {
+			return false;
+		}
+		const column = this.resolvePointerColumn(row, snapshot.viewportX);
+		return column >= tooltip.startColumn && column <= tooltip.endColumn;
 	}
 
 	private resolveHoverAssetId(context: CodeTabContext | null): string | null {
@@ -2344,8 +2390,16 @@ export class ConsoleCartEditor {
 		const steps = Math.max(1, Math.round(magnitude / WHEEL_SCROLL_STEP));
 		const direction = delta > 0 ? 1 : -1;
 		const pointer = this.lastPointerSnapshot;
-		if (pointer && this.hoverTooltip && this.isPointInHoverTooltip(pointer.viewportX, pointer.viewportY)) {
-			if (this.adjustHoverTooltipScroll(direction * steps)) {
+		if (this.hoverTooltip) {
+			let canScrollTooltip = false;
+			if (!pointer) {
+				canScrollTooltip = true;
+			} else if (pointer.valid && pointer.insideViewport) {
+				if (this.isPointInHoverTooltip(pointer.viewportX, pointer.viewportY) || this.pointerHitsHoverTarget(pointer, this.hoverTooltip)) {
+					canScrollTooltip = true;
+				}
+			}
+			if (canScrollTooltip && this.adjustHoverTooltipScroll(direction * steps)) {
 				playerInput.consumeAction('pointer_wheel');
 				return;
 			}
