@@ -488,7 +488,7 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 			throw new Error('[BmsxConsoleApi] emitPresentation requires a non-empty event name.');
 		}
 		const emitter = emitterId ? $.registry.get(emitterId) : null;
-		$.emitPresentation(eventName, (emitter as any) ?? null, payload);
+		$.emitPresentation(eventName, emitter, payload);
 	}
 
 	public timelines(): EventTimeline[] {
@@ -514,9 +514,22 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 		if (typeof blueprint !== 'object' || blueprint === null) {
 			throw new Error('[BmsxConsoleApi] registerFsm blueprint must be a table/object.');
 		}
-		const clone = this.cloneStateMachineBlueprint(blueprint);
-		StateDefinitionBuilders[trimmed] = () => clone;
-		setupFSMlibrary();
+		const prepared = this.cloneStateMachineData(blueprint);
+		this.registerPreparedFsm(trimmed, prepared);
+	}
+
+	public registerPreparedFsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
+		const trimmed = typeof id === 'string' ? id.trim() : '';
+		if (trimmed.length === 0) {
+			throw new Error('[BmsxConsoleApi] registerPreparedFsm id must be a non-empty string.');
+		}
+		if (typeof blueprint !== 'object' || blueprint === null) {
+			throw new Error('[BmsxConsoleApi] registerPreparedFsm blueprint must be an object.');
+		}
+		this.setFsmBlueprintFactory(trimmed, blueprint);
+		if (!options || options.setup !== false) {
+			setupFSMlibrary();
+		}
 	}
 
 	public defineSprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: number; collider?: SpriteColliderConfig | null; physics?: SpritePhysicsConfig | null }): void {
@@ -561,8 +574,13 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 		return { width: this.tilemap.tileWidthPixels, height: this.tilemap.tileHeightPixels };
 	}
 
-	private cloneStateMachineBlueprint(source: Record<string, unknown>): StateMachineBlueprint {
-		return JSON.parse(JSON.stringify(source)) as StateMachineBlueprint;
+	private setFsmBlueprintFactory(id: string, blueprint: StateMachineBlueprint): void {
+		const snapshot = this.cloneStateMachineData(blueprint);
+		StateDefinitionBuilders[id] = () => this.cloneStateMachineData(snapshot);
+	}
+
+	private cloneStateMachineData<T>(source: T): T {
+		return JSON.parse(JSON.stringify(source)) as T;
 	}
 
 	private submitSpriteCommand(command: SpriteCommand): void {

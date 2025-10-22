@@ -18,6 +18,8 @@ import type { Identifiable } from '../rompack/rompack';
 import { consoleEditorSpec } from '../core/pipelines/console_editor';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
+import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
+import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -124,6 +126,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly validationStrategy: BmsxLuaValidationStrategy = BmsxLuaValidationStrategy.TrustRealRun;
 	private luaProgramSourceOverride: string | null = null;
 	private luaInterpreter: LuaInterpreter | null = null;
+	private fsmLuaInterpreter: LuaInterpreter | null = null;
 	private luaInitFunction: LuaFunctionValue | null = null;
 	private luaUpdateFunction: LuaFunctionValue | null = null;
 	private luaDrawFunction: LuaFunctionValue | null = null;
@@ -143,6 +146,7 @@ export class BmsxConsoleRuntime extends Service {
 	private editorPipelineActive = false;
 	private readonly luaFailurePolicy: LuaPersistenceFailurePolicy;
 	private pendingLuaWarnings: string[] = [];
+	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
@@ -316,6 +320,10 @@ export class BmsxConsoleRuntime extends Service {
 			this.bootLuaProgram(true);
 		}
 		else {
+			this.resetLuaInteroperabilityState();
+			this.fsmLuaInterpreter = null;
+			const fsmInterpreter = this.ensureFsmLuaInterpreter();
+			this.loadLuaStateMachineScripts(fsmInterpreter);
 			this.cart.init(this.api);
 		}
 		this.lastFrameTimestampMs = $.platform.clock.now();
@@ -399,6 +407,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.colliders.clear();
 		this.luaInterpreter = null;
+		this.fsmLuaInterpreter = null;
+		this.luaFsmMachineIds.clear();
 		super.dispose();
 		if (BmsxConsoleRuntime._instance === this) {
 			BmsxConsoleRuntime._instance = null;
@@ -666,12 +676,11 @@ export class BmsxConsoleRuntime extends Service {
 		return false;
 	}
 
-	private isLuaFunctionValue(value: LuaValue): value is LuaFunctionValue {
-		if (value === null || typeof value !== 'object') {
+	private isLuaFunctionValue(value: unknown): value is LuaFunctionValue {
+		if (!value || typeof value !== 'object') {
 			return false;
 		}
-		const candidate = value as { call?: unknown };
-		return typeof candidate.call === 'function';
+		return typeof (value as { call?: unknown }).call === 'function';
 	}
 
 	private serializeLuaValueForSnapshot(value: LuaValue, visited: Set<LuaTable>): unknown {
@@ -877,6 +886,7 @@ export class BmsxConsoleRuntime extends Service {
 		try {
 			this.registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
+			this.loadLuaStateMachineScripts(interpreter);
 			interpreter.execute(source, chunkName);
 		}
 		catch (error) {
@@ -1216,6 +1226,168 @@ export class BmsxConsoleRuntime extends Service {
 		this.apiFunctionNames.add('table');
 	}
 
+	private ensureFsmLuaInterpreter(): LuaInterpreter {
+		if (this.fsmLuaInterpreter) {
+			return this.fsmLuaInterpreter;
+		}
+		const interpreter = createLuaInterpreter();
+		this.registerApiBuiltins(interpreter);
+		this.fsmLuaInterpreter = interpreter;
+		return interpreter;
+	}
+
+	private loadLuaStateMachineScripts(interpreter: LuaInterpreter): void {
+		const rompack = this.api.rompack();
+		if (!rompack || !rompack.lua) {
+			return;
+		}
+		this.luaFsmMachineIds.clear();
+		const luaSources = rompack.lua;
+		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+		const loadedMachines: string[] = [];
+		for (const assetId of Object.keys(luaSources)) {
+			if (!this.assetIdRepresentsFsm(assetId)) {
+				continue;
+			}
+			const source = luaSources[assetId];
+			if (typeof source !== 'string') {
+				throw new Error(`[BmsxConsoleRuntime] FSM Lua asset '${assetId}' is not a string source.`);
+			}
+			const sourcePathRaw = sourcePaths[assetId];
+			const chunkName = this.resolveLuaFsmChunkName(assetId, typeof sourcePathRaw === 'string' ? sourcePathRaw : null);
+			let results: LuaValue[];
+			try {
+				results = interpreter.execute(source, chunkName);
+			}
+			catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(`[BmsxConsoleRuntime] Failed to execute FSM Lua script '${assetId}': ${message}`);
+			}
+			const value = results.length > 0 ? results[0] : null;
+			if (value === null) {
+				throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' returned nil.`);
+			}
+			const blueprintValue = this.luaValueToJs(value);
+			if (!this.isPlainObject(blueprintValue)) {
+				throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' must return a table.`);
+			}
+			const machineIdRaw = blueprintValue.id;
+			if (typeof machineIdRaw !== 'string' || machineIdRaw.trim().length === 0) {
+				throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' returned a blueprint without a valid 'id'.`);
+			}
+			const machineId = machineIdRaw.trim();
+			const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
+			this.api.registerPreparedFsm(machineId, prepared, { setup: false });
+			this.luaFsmMachineIds.add(machineId);
+			loadedMachines.push(machineId);
+		}
+		if (loadedMachines.length > 0) {
+			setupFSMlibrary();
+		}
+	}
+
+	private assetIdRepresentsFsm(assetId: string): boolean {
+		if (!assetId) {
+			return false;
+		}
+		return assetId.indexOf('.fsm') !== -1;
+	}
+
+	private resolveLuaFsmChunkName(assetId: string, sourcePath: string | null): string {
+		if (sourcePath && sourcePath.length > 0) {
+			return `@${sourcePath}`;
+		}
+		return `@fsm/${assetId}`;
+	}
+
+	private prepareLuaStateMachineBlueprint(machineId: string, blueprint: Record<string, unknown>, interpreter: LuaInterpreter): StateMachineBlueprint {
+		const sanitized = this.cloneLuaBlueprintValue(machineId, [], blueprint, interpreter);
+		return sanitized as StateMachineBlueprint;
+	}
+
+	private cloneLuaBlueprintValue(machineId: string, path: string[], value: unknown, interpreter: LuaInterpreter): unknown {
+		if (this.isLuaFunctionValue(value)) {
+			return this.registerLuaStateMachineHandler(machineId, path, value, interpreter);
+		}
+		if (Array.isArray(value)) {
+			const out: unknown[] = [];
+			for (let index = 0; index < value.length; index += 1) {
+				const nextPath = path.concat(String(index));
+				out.push(this.cloneLuaBlueprintValue(machineId, nextPath, value[index], interpreter));
+			}
+			return out;
+		}
+		if (this.isPlainObject(value)) {
+			const out: Record<string, unknown> = {};
+			for (const [key, entry] of Object.entries(value)) {
+				const nextPath = path.concat(key);
+				out[key] = this.cloneLuaBlueprintValue(machineId, nextPath, entry, interpreter);
+			}
+			return out;
+		}
+		return value;
+	}
+
+	private registerLuaStateMachineHandler(machineId: string, path: string[], fn: LuaFunctionValue, interpreter: LuaInterpreter): string {
+		const handlerId = this.makeLuaHandlerId(machineId, path);
+		const runtime = this;
+		const handler = function (this: Stateful, ...args: unknown[]) {
+			return runtime.executeLuaStateMachineHandler(handlerId, fn, interpreter, this, args);
+		};
+		HandlerRegistry.instance.register(handlerId, handler);
+		return handlerId;
+	}
+
+	private executeLuaStateMachineHandler(handlerId: string, fn: LuaFunctionValue, interpreter: LuaInterpreter, self: Stateful, args: unknown[]): unknown {
+		const callArgs: unknown[] = [self];
+		for (let index = 0; index < args.length; index += 1) {
+			callArgs.push(args[index]);
+		}
+		let results: unknown[];
+		try {
+			results = this.callLuaFunctionWithInterpreter(fn, callArgs, interpreter);
+		}
+		catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`[BmsxConsoleRuntime] Lua FSM handler '${handlerId}' failed: ${message}`);
+		}
+		return results.length > 0 ? results[0] : undefined;
+	}
+
+	private callLuaFunctionWithInterpreter(fn: LuaFunctionValue, args: unknown[], interpreter: LuaInterpreter): unknown[] {
+		const luaArgs: LuaValue[] = [];
+		for (let index = 0; index < args.length; index += 1) {
+			luaArgs.push(this.jsToLua(args[index], interpreter));
+		}
+		const results = fn.call(luaArgs);
+		const output: unknown[] = [];
+		for (let i = 0; i < results.length; i += 1) {
+			output.push(this.luaValueToJs(results[i]));
+		}
+		return output;
+	}
+
+	private makeLuaHandlerId(machineId: string, path: string[]): string {
+		const segments: string[] = [];
+		for (let index = 0; index < path.length; index += 1) {
+			segments.push(this.sanitizeHandlerSegment(path[index]));
+		}
+		const suffix = segments.join('.');
+		return `lua.handlers.${machineId}.${suffix}`;
+	}
+
+	private sanitizeHandlerSegment(segment: string): string {
+		if (segment.length === 0) {
+			return 'slot';
+		}
+		let text = segment;
+		if (/^\d+$/.test(segment)) {
+			text = `i${segment}`;
+		}
+		const cleaned = text.replace(/[^a-zA-Z0-9]+/g, '_');
+		return cleaned.length > 0 ? cleaned : 'slot';
+	}
+
 	private collectApiMembers(): Array<{ name: string; kind: 'method' | 'getter'; descriptor: PropertyDescriptor | undefined }> {
 		const map = new Map<string, { kind: 'method' | 'getter'; descriptor: PropertyDescriptor | undefined }>();
 		let prototype: object | null = Object.getPrototypeOf(this.api);
@@ -1532,6 +1704,12 @@ export class BmsxConsoleRuntime extends Service {
 				}
 			}
 			return objectValues;
+		}
+		if (typeof value === 'object' && value !== null) {
+			const candidate = value as { call?: unknown };
+			if (typeof candidate.call === 'function') {
+				return value;
+			}
 		}
 		return null;
 	}
