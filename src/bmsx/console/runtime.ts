@@ -433,6 +433,8 @@ export class BmsxConsoleRuntime extends Service {
 		loadSource: () => this.getEditorSource(),
 		saveSource: (source: string) => this.saveLuaProgram(source),
 		listResources: () => this.getResourceDescriptors(),
+		loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
+		saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
 	});
 	this.flushLuaWarnings();
 }
@@ -571,6 +573,39 @@ export class BmsxConsoleRuntime extends Service {
 			return '';
 		}
 		return this.getLuaProgramSource(program);
+	}
+
+	private getLuaResourceSource(assetId: string): string {
+		const rompack = $.rompack;
+		if (!rompack) {
+			throw new Error('[BmsxConsoleRuntime] Rompack not loaded while retrieving Lua resource source.');
+		}
+		const source = rompack.lua?.[assetId];
+		if (typeof source === 'string') {
+			return source;
+		}
+		throw new Error(`[BmsxConsoleRuntime] Lua asset '${assetId}' not found.`);
+	}
+
+	private async saveLuaResourceSource(assetId: string, source: string): Promise<void> {
+		if (typeof source !== 'string') {
+			throw new Error('[BmsxConsoleRuntime] Lua resource source must be a string.');
+		}
+		if (source.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Lua resource source cannot be empty.');
+		}
+		const path = this.resolveLuaResourcePath(assetId);
+		if (!path) {
+			throw new Error(`[BmsxConsoleRuntime] Lua source path unavailable for asset '${assetId}'. Rebuild the rompack with filesystem metadata to enable saving.`);
+		}
+		await this.persistLuaSourceToFilesystem(path, source);
+		const rompack = $.rompack;
+		if (rompack) {
+			if (!rompack.lua) {
+				rompack.lua = {};
+			}
+			rompack.lua[assetId] = source;
+		}
 	}
 
 	private captureFallbackLuaState(): { globals?: Record<string, unknown>; locals?: Record<string, unknown>; randomSeed?: number } | null {
@@ -1560,6 +1595,22 @@ export class BmsxConsoleRuntime extends Service {
 				return mapped;
 			}
 			return null;
+		}
+		return null;
+	}
+
+	private resolveLuaResourcePath(assetId: string): string | null {
+		const rompack = $.rompack;
+		if (!rompack) {
+			throw new Error('[BmsxConsoleRuntime] Rompack not loaded while resolving Lua resource path.');
+		}
+		const mappings = rompack.luaSourcePaths;
+		if (!mappings) {
+			return null;
+		}
+		const mapped = mappings[assetId];
+		if (typeof mapped === 'string' && mapped.length > 0) {
+			return mapped;
 		}
 		return null;
 	}

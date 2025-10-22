@@ -74,6 +74,8 @@ export type ConsoleEditorOptions = {
 	loadSource: () => string;
 	saveSource: (source: string) => Promise<void>;
 	listResources: () => ConsoleResourceDescriptor[];
+	loadLuaResource: (assetId: string) => string;
+	saveLuaResource: (assetId: string, source: string) => Promise<void>;
 };
 
 export type Position = { row: number; column: number };
@@ -123,8 +125,8 @@ type RectBounds = {
 
 type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 
-type EditorTabId = 'code' | 'resources' | `resource:${string}`;
-type EditorTabKind = 'code' | 'resources' | 'resource_view';
+type EditorTabId = 'code' | 'resources' | `resource:${string}` | `lua:${string}`;
+type EditorTabKind = 'code' | 'resources' | 'resource_view' | 'lua_editor';
 
 type ResourceViewerState = {
 	descriptor: ConsoleResourceDescriptor;
@@ -132,6 +134,13 @@ type ResourceViewerState = {
 	error: string | null;
 	title: string;
 	scroll: number;
+	image?: {
+		assetId: string;
+		width: number;
+		height: number;
+		atlassed: boolean;
+		atlasId?: number;
+	};
 };
 
 type EditorTabDescriptor = {
@@ -146,6 +155,18 @@ type ResourceBrowserItem = {
 	line: string;
 	contentStartColumn: number;
 	descriptor: ConsoleResourceDescriptor | null;
+};
+
+type CodeTabContext = {
+	id: string;
+	title: string;
+	descriptor: ConsoleResourceDescriptor | null;
+	load: () => string;
+	save: (source: string) => Promise<void>;
+	snapshot: EditorSnapshot | null;
+	lastSavedSource: string;
+	saveGeneration: number;
+	appliedGeneration: number;
 };
 
 type PendingActionPrompt = {
@@ -278,6 +299,8 @@ export class ConsoleCartEditor {
 	private readonly metadata: BmsxConsoleMetadata;
 	private readonly loadSourceFn: () => string;
 	private readonly saveSourceFn: (source: string) => Promise<void>;
+	private readonly loadLuaResourceFn: (assetId: string) => string;
+	private readonly saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
 	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
 	private viewportWidth: number;
 	private viewportHeight: number;
@@ -297,6 +320,8 @@ export class ConsoleCartEditor {
 	private readonly message: MessageState = { text: '', color: COLOR_STATUS_TEXT, timer: 0, visible: false };
 	private deferredMessageDuration: number | null = null;
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
+	private readonly codeTabContexts: Map<string, CodeTabContext> = new Map();
+	private activeCodeTabContextId: string = 'code';
 	private readonly captureKeys: string[] = [
 		'Escape',
 		'ArrowUp',
@@ -392,6 +417,8 @@ export class ConsoleCartEditor {
 		this.loadSourceFn = options.loadSource;
 		this.saveSourceFn = options.saveSource;
 		this.listResourcesFn = options.listResources;
+		this.loadLuaResourceFn = options.loadLuaResource;
+		this.saveLuaResourceFn = options.saveLuaResource;
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
@@ -404,8 +431,11 @@ export class ConsoleCartEditor {
 		this.tabBarHeight = this.lineHeight + 3;
 		this.topMargin = this.headerHeight + this.tabBarHeight + 2;
 		this.bottomMargin = this.lineHeight + 6;
+		const mainContext = this.createMainCodeTabContext();
+		this.codeTabContexts.set(mainContext.id, mainContext);
 		this.initializeTabs();
 		this.resetResourceTabState();
+		this.activateCodeEditorTab(mainContext.id);
 		this.desiredColumn = this.cursorColumn;
 		this.assertMonospace();
 		try {
@@ -827,6 +857,7 @@ export class ConsoleCartEditor {
 	}
 
 	public shutdown(): void {
+		this.storeActiveCodeTabContext();
 		this.applyInputOverrides(false);
 		this.active = false;
 		this.repeatState.clear();
@@ -892,19 +923,9 @@ export class ConsoleCartEditor {
 
 	private activate(): void {
 		this.applyInputOverrides(true);
-		const source = this.loadSource();
-		this.lastSavedSource = source;
-		this.lines = this.splitLines(source);
-		if (this.lines.length === 0) {
-			this.lines.push('');
-		}
-		this.invalidateAllHighlights();
+		const targetContextId = this.activeCodeTabContextId ?? 'code';
+		this.activateCodeEditorTab(targetContextId);
 		this.bumpTextVersion();
-		this.cursorRow = 0;
-		this.cursorColumn = 0;
-		this.scrollRow = 0;
-		this.scrollColumn = 0;
-		this.dirty = false;
 		this.cursorVisible = true;
 		this.blinkTimer = 0;
 		this.active = true;
@@ -943,6 +964,7 @@ export class ConsoleCartEditor {
 	}
 
 	private deactivate(): void {
+		this.storeActiveCodeTabContext();
 		this.active = false;
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
@@ -961,7 +983,6 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.runtimeErrorOverlay = null;
 		this.resetActionPromptState();
-		this.activateCodeTab();
 	}
 
 	private updateBlink(deltaSeconds: number): void {
@@ -1674,14 +1695,26 @@ export class ConsoleCartEditor {
 			}
 		}
 		if (this.isResourcesTabActive()) {
+			const codeTop = this.codeViewportTop();
+			const codeBottom = this.viewportHeight - this.bottomMargin;
+			const margin = Math.max(4, this.lineHeight);
+			if (snapshot.viewportY < codeTop + margin) {
+				this.scrollResourceBrowser(-1);
+			} else if (snapshot.viewportY >= codeBottom - margin) {
+				this.scrollResourceBrowser(1);
+			}
 			const hoverIndex = this.resourceBrowserIndexAtPosition(snapshot.viewportY);
 			this.resourceBrowserHoverIndex = hoverIndex;
-			if (justPressed && hoverIndex >= 0) {
-				this.resourceBrowserSelectionIndex = hoverIndex;
-				this.resourceBrowserEnsureSelectionVisible();
-				const item = this.resourceBrowserItems[hoverIndex];
-				if (item && item.descriptor) {
-					this.openResourceViewerTab(item.descriptor);
+			if (hoverIndex >= 0) {
+				if (hoverIndex !== this.resourceBrowserSelectionIndex) {
+					this.resourceBrowserSelectionIndex = hoverIndex;
+					this.resourceBrowserEnsureSelectionVisible();
+				}
+				if (justPressed) {
+					const item = this.resourceBrowserItems[hoverIndex];
+					if (item && item.descriptor) {
+						this.openResourceDescriptor(item.descriptor);
+					}
 				}
 			}
 			if (!snapshot.primaryPressed && hoverIndex === -1) {
@@ -1961,8 +1994,8 @@ export class ConsoleCartEditor {
 			this.showMessage('Console runtime unavailable.', COLOR_STATUS_ERROR, 4.0);
 			return false;
 		}
-		const requiresReload = this.hasPendingRuntimeReload();
-		const savedSource = requiresReload ? (this.lastSavedSource.length > 0 ? this.lastSavedSource : this.lines.join('\n')) : null;
+	const requiresReload = this.hasPendingRuntimeReload();
+	const savedSource = requiresReload ? this.getMainProgramSourceForReload() : null;
 		const targetGeneration = this.saveGeneration;
 		this.deactivate();
 		this.scheduleRuntimeTask(async () => {
@@ -2658,13 +2691,24 @@ export class ConsoleCartEditor {
 	}
 
 	private async save(): Promise<void> {
+		const context = this.getActiveCodeTabContext();
+		if (!context) {
+			return;
+		}
 		const source = this.lines.join('\n');
 		try {
-			await this.saveSourceFn(source);
+			await context.save(source);
 			this.dirty = false;
 			this.saveGeneration = this.saveGeneration + 1;
-			this.lastSavedSource = source;
-			this.showMessage('Lua cart saved (restart pending)', COLOR_STATUS_SUCCESS, 2.5);
+			context.lastSavedSource = source;
+			context.saveGeneration = this.saveGeneration;
+			const isMainContext = context.id === 'code';
+			if (isMainContext) {
+				this.lastSavedSource = source;
+			}
+			context.snapshot = this.captureSnapshot();
+			const message = isMainContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
+			this.showMessage(message, COLOR_STATUS_SUCCESS, 2.5);
 		} catch (error) {
 			if (this.tryShowLuaErrorOverlay(error)) {
 				return;
@@ -3460,7 +3504,8 @@ export class ConsoleCartEditor {
 	}
 
 	private isCodeTabActive(): boolean {
-		return this.getActiveTabKind() === 'code';
+		const kind = this.getActiveTabKind();
+		return kind === 'code' || kind === 'lua_editor';
 	}
 
 	private isResourceViewActive(): boolean {
@@ -3472,11 +3517,17 @@ export class ConsoleCartEditor {
 		if (!tab) {
 			return;
 		}
+		const previousKind = this.getActiveTabKind();
+		if (previousKind === 'code' || previousKind === 'lua_editor') {
+			this.storeActiveCodeTabContext();
+		}
 		if (this.activeTabId === tabId) {
 			if (tab.kind === 'resources') {
 				this.enterResourcesTab();
 			} else if (tab.kind === 'resource_view') {
 				this.enterResourceViewer(tab);
+			} else if (tab.kind === 'code' || tab.kind === 'lua_editor') {
+				this.activateCodeEditorTab(tab.id);
 			}
 			return;
 		}
@@ -3485,6 +3536,8 @@ export class ConsoleCartEditor {
 			this.enterResourcesTab();
 		} else if (tab.kind === 'resource_view') {
 			this.enterResourceViewer(tab);
+		} else if (tab.kind === 'code' || tab.kind === 'lua_editor') {
+			this.activateCodeEditorTab(tab.id);
 		} else {
 			this.enterCodeTab();
 		}
@@ -3522,7 +3575,37 @@ export class ConsoleCartEditor {
 		this.setActiveTab(newCodeTab.id);
 	}
 
-	private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
+private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
+	if (descriptor.type === 'lua') {
+		this.openLuaCodeTab(descriptor);
+		return;
+	}
+	this.openResourceViewerTab(descriptor);
+}
+
+private openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
+	const tabId: EditorTabId = `lua:${descriptor.assetId}`;
+	let tab = this.tabs.find(candidate => candidate.id === tabId);
+	if (!this.codeTabContexts.has(tabId)) {
+		const context = this.createLuaCodeTabContext(descriptor);
+		this.codeTabContexts.set(tabId, context);
+	}
+	if (!tab) {
+		tab = {
+			id: tabId,
+			kind: 'lua_editor',
+			title: this.computeResourceTabTitle(descriptor),
+			closable: true,
+			resource: undefined,
+		};
+		this.tabs.push(tab);
+	} else {
+		tab.title = this.computeResourceTabTitle(descriptor);
+	}
+	this.setActiveTab(tabId);
+}
+
+private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		const tabId: EditorTabId = `resource:${descriptor.assetId}`;
 		let tab = this.tabs.find(candidate => candidate.id === tabId);
 		const state = this.buildResourceViewerState(descriptor);
@@ -3556,6 +3639,11 @@ export class ConsoleCartEditor {
 		this.tabs.splice(index, 1);
 		if (tab.kind === 'resources') {
 			this.resetResourceTabState();
+		} else if (tab.kind === 'lua_editor') {
+			this.codeTabContexts.delete(tab.id);
+			if (this.activeCodeTabContextId === tab.id) {
+				this.activeCodeTabContextId = 'code';
+			}
 		}
 		if (this.activeTabId === tabId) {
 			const fallback = this.tabs[index - 1] ?? this.tabs[0];
@@ -3591,7 +3679,18 @@ export class ConsoleCartEditor {
 			this.resourceBrowserSelectionIndex = 0;
 			return;
 		}
-		this.resourceBrowserItems = this.buildResourceBrowserItems(descriptors);
+		const augmented = descriptors.slice();
+		const rompack = $.rompack;
+		if (rompack && rompack.img) {
+			const atlasKeys = Object.keys(rompack.img).filter(key => key === '_atlas' || key.startsWith('atlas'));
+			for (const key of atlasKeys) {
+				if (augmented.some(entry => entry.assetId === key)) {
+					continue;
+				}
+				augmented.push({ path: `atlas/${key}`, type: 'atlas', assetId: key });
+			}
+		}
+		this.resourceBrowserItems = this.buildResourceBrowserItems(augmented);
 		this.resourceBrowserScroll = 0;
 		this.resourceBrowserSelectionIndex = this.resourceBrowserItems.length > 0 ? 0 : -1;
 		this.resourceBrowserHoverIndex = -1;
@@ -3613,16 +3712,16 @@ export class ConsoleCartEditor {
 		this.resetResourceTabState();
 	}
 
-	private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): ResourceBrowserItem[] {
-		const items: ResourceBrowserItem[] = [];
-		if (!entries || entries.length === 0) {
-			items.push({
-				line: '<no resources>',
-				contentStartColumn: 0,
-				descriptor: null,
-			});
-			return items;
-		}
+private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): ResourceBrowserItem[] {
+	const items: ResourceBrowserItem[] = [];
+	if (!entries || entries.length === 0) {
+		items.push({
+			line: '<no resources>',
+			contentStartColumn: 0,
+			descriptor: null,
+		});
+		return items;
+	}
 		type ResourceTreeDirectory = {
 			name: string;
 			children: Map<string, ResourceTreeDirectory>;
@@ -3694,8 +3793,126 @@ export class ConsoleCartEditor {
 			}
 		};
 		traverse(root, '');
-		return items;
+	return items;
+}
+
+private createMainCodeTabContext(): CodeTabContext {
+	return {
+		id: 'code',
+		title: 'CODE',
+		descriptor: null,
+		load: () => this.loadSourceFn(),
+		save: (source: string) => this.saveSourceFn(source),
+		snapshot: null,
+		lastSavedSource: '',
+		saveGeneration: 0,
+		appliedGeneration: 0,
+	};
+}
+
+private createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext {
+	const title = this.computeResourceTabTitle(descriptor);
+	return {
+		id: `lua:${descriptor.assetId}`,
+		title,
+		descriptor,
+		load: () => this.loadLuaResourceFn(descriptor.assetId),
+		save: (source: string) => this.saveLuaResourceFn(descriptor.assetId, source),
+		snapshot: null,
+		lastSavedSource: '',
+		saveGeneration: 0,
+		appliedGeneration: 0,
+	};
+}
+
+private getActiveCodeTabContext(): CodeTabContext | null {
+	if (!this.activeCodeTabContextId) {
+		return null;
 	}
+	return this.codeTabContexts.get(this.activeCodeTabContextId) ?? null;
+}
+
+private storeActiveCodeTabContext(): void {
+	const context = this.getActiveCodeTabContext();
+	if (!context) {
+		return;
+	}
+	context.snapshot = this.captureSnapshot();
+	if (context.id === 'code') {
+		context.lastSavedSource = this.lastSavedSource;
+	}
+	context.saveGeneration = this.saveGeneration;
+	context.appliedGeneration = this.appliedGeneration;
+}
+
+private activateCodeEditorTab(tabId: string): void {
+	let context = this.codeTabContexts.get(tabId);
+	if (!context) {
+		if (tabId === 'code') {
+			context = this.createMainCodeTabContext();
+			this.codeTabContexts.set(tabId, context);
+		} else {
+			return;
+		}
+	}
+	this.activeCodeTabContextId = tabId;
+	const isMain = context.id === 'code';
+	if (context.snapshot) {
+		this.restoreSnapshot(context.snapshot);
+		this.saveGeneration = context.saveGeneration;
+		this.appliedGeneration = context.appliedGeneration;
+		if (isMain) {
+			this.lastSavedSource = context.lastSavedSource;
+		}
+		this.invalidateAllHighlights();
+		this.updateDesiredColumn();
+		this.ensureCursorVisible();
+		return;
+	}
+	const source = context.load();
+	context.lastSavedSource = source;
+	this.lines = this.splitLines(source);
+	if (this.lines.length === 0) {
+		this.lines.push('');
+	}
+	this.invalidateAllHighlights();
+	this.cursorRow = 0;
+	this.cursorColumn = 0;
+	this.scrollRow = 0;
+	this.scrollColumn = 0;
+	this.selectionAnchor = null;
+	this.dirty = false;
+	this.saveGeneration = context.saveGeneration;
+	this.appliedGeneration = context.appliedGeneration;
+	if (isMain) {
+		this.lastSavedSource = context.lastSavedSource;
+	}
+	this.updateDesiredColumn();
+	this.resetBlink();
+	this.pointerSelecting = false;
+	this.pointerPrimaryWasPressed = false;
+}
+
+private getMainProgramSourceForReload(): string {
+	const context = this.codeTabContexts.get('code');
+	if (!context) {
+		return this.loadSourceFn();
+	}
+	if (context.id === this.activeCodeTabContextId) {
+		return this.lines.join('\n');
+	}
+	if (context.snapshot) {
+		return context.snapshot.lines.join('\n');
+	}
+	if (context.lastSavedSource.length > 0) {
+		return context.lastSavedSource;
+	}
+	try {
+		return context.load();
+	} catch {
+		return this.loadSourceFn();
+	}
+}
 
 	private buildResourceViewerState(descriptor: ConsoleResourceDescriptor): ResourceViewerState {
 		const title = this.computeResourceTabTitle(descriptor);
@@ -3704,6 +3921,13 @@ export class ConsoleCartEditor {
 			`Type: ${descriptor.type}`,
 			`Asset ID: ${descriptor.assetId}`,
 		];
+	const state: ResourceViewerState = {
+		descriptor,
+		lines,
+		error: null,
+		title,
+		scroll: 0,
+	};
 		let error: string | null = null;
 		const rompack = $.rompack;
 		if (!rompack) {
@@ -3771,6 +3995,15 @@ export class ConsoleCartEditor {
 					const height = (meta as { height?: number }).height;
 					const atlasId = (meta as { atlasid?: number }).atlasid;
 					const atlassed = (meta as { atlassed?: boolean }).atlassed;
+					if (Number.isFinite(width) && Number.isFinite(height)) {
+						state.image = {
+							assetId: descriptor.assetId,
+							width: Math.max(1, Math.floor(width as number)),
+							height: Math.max(1, Math.floor(height as number)),
+							atlassed: Boolean(atlassed),
+							atlasId: atlasId,
+						};
+					}
 					this.appendResourceViewerLines(lines, ['-- Image Metadata --']);
 					if (Number.isFinite(width) && Number.isFinite(height)) {
 						this.appendResourceViewerLines(lines, [`Dimensions: ${width}x${height}`]);
@@ -3860,7 +4093,8 @@ export class ConsoleCartEditor {
 			lines.push('<empty>');
 		}
 		this.trimResourceViewerLines(lines);
-		return { descriptor, lines, error, title, scroll: 0 };
+		state.error = error;
+		return state;
 	}
 
 	private computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): string {
@@ -3935,13 +4169,6 @@ export class ConsoleCartEditor {
 		return Math.max(1, Math.floor(contentHeight / this.lineHeight));
 	}
 
-	private resourceViewerLineCapacity(): number {
-		const overlayTop = this.codeViewportTop();
-		const overlayBottom = this.viewportHeight - this.bottomMargin;
-		const contentHeight = Math.max(0, overlayBottom - overlayTop);
-		return Math.max(1, Math.floor(contentHeight / this.lineHeight));
-	}
-
 	private scrollResourceBrowser(amount: number): void {
 		if (!this.isResourcesTabActive()) {
 			return;
@@ -3978,8 +4205,62 @@ export class ConsoleCartEditor {
 		}
 	}
 
+	private resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
+		const info = viewer.image;
+		if (!info) {
+			return null;
+		}
+		const width = Math.max(1, info.width);
+		const height = Math.max(1, info.height);
+		const codeTop = this.codeViewportTop();
+		const codeBottom = this.viewportHeight - this.bottomMargin;
+		const totalHeight = Math.max(0, codeBottom - codeTop);
+		if (totalHeight <= 0) {
+			return null;
+		}
+		const paddingX = 4;
+		const contentTop = codeTop + 2;
+		const availableWidth = Math.max(1, this.viewportWidth - paddingX * 2);
+		const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
+		const reservedTextHeight = Math.min(totalHeight * 0.45, this.lineHeight * estimatedTextLines);
+		const maxImageHeight = Math.max(this.lineHeight * 2, totalHeight - reservedTextHeight);
+		let scale = Math.min(availableWidth / width, maxImageHeight / height);
+		if (!Number.isFinite(scale) || scale <= 0) {
+			scale = Math.min(availableWidth / width, totalHeight / height);
+			if (!Number.isFinite(scale) || scale <= 0) {
+				return null;
+			}
+		}
+		const drawWidth = width * scale;
+		const drawHeight = height * scale;
+		const left = Math.max(paddingX, Math.floor((this.viewportWidth - drawWidth) * 0.5));
+		const top = contentTop;
+		const bottom = top + drawHeight;
+		return { left, top, width: drawWidth, height: drawHeight, bottom, scale };
+	}
+
+	private resourceViewerTextCapacity(viewer: ResourceViewerState): number {
+		const codeTop = this.codeViewportTop();
+		const codeBottom = this.viewportHeight - this.bottomMargin;
+		const contentTop = codeTop + 2;
+		const layout = this.resourceViewerImageLayout(viewer);
+		let textTop = contentTop;
+		if (layout) {
+			textTop = Math.floor(layout.bottom + this.lineHeight);
+		}
+		if (textTop >= codeBottom) {
+			return 0;
+		}
+		const availableHeight = Math.max(0, codeBottom - textTop);
+		return Math.max(0, Math.floor(availableHeight / this.lineHeight));
+	}
+
 	private resourceViewerClampScroll(viewer: ResourceViewerState): void {
-		const capacity = this.resourceViewerLineCapacity();
+		const capacity = this.resourceViewerTextCapacity(viewer);
+		if (capacity <= 0) {
+			viewer.scroll = 0;
+			return;
+		}
 		const maxScroll = Math.max(0, viewer.lines.length - capacity);
 		if (!Number.isFinite(viewer.scroll) || viewer.scroll < 0) {
 			viewer.scroll = 0;
@@ -4020,7 +4301,11 @@ export class ConsoleCartEditor {
 		if (!viewer) {
 			return;
 		}
-		const capacity = this.resourceViewerLineCapacity();
+		const capacity = this.resourceViewerTextCapacity(viewer);
+		if (capacity <= 0) {
+			viewer.scroll = 0;
+			return;
+		}
 		const maxScroll = Math.max(0, viewer.lines.length - capacity);
 		const next = Math.max(0, Math.min(viewer.scroll + amount, maxScroll));
 		viewer.scroll = next;
@@ -4049,7 +4334,7 @@ export class ConsoleCartEditor {
 		if (!item.descriptor) {
 			return;
 		}
-		this.openResourceViewerTab(item.descriptor);
+		this.openResourceDescriptor(item.descriptor);
 	}
 
 	private handleResourceBrowserKeyboard(keyboard: KeyboardInput, deltaSeconds: number): void {
@@ -4112,12 +4397,13 @@ export class ConsoleCartEditor {
 		if (!viewer) {
 			return;
 		}
-		const capacity = this.resourceViewerLineCapacity();
+		const capacity = this.resourceViewerTextCapacity(viewer);
+		const page = Math.max(1, capacity);
 		const moves: Array<{ code: string; delta: number }> = [
 			{ code: 'ArrowUp', delta: -1 },
 			{ code: 'ArrowDown', delta: 1 },
-			{ code: 'PageUp', delta: -capacity },
-			{ code: 'PageDown', delta: capacity },
+			{ code: 'PageUp', delta: -page },
+			{ code: 'PageDown', delta: page },
 			{ code: 'Home', delta: Number.NEGATIVE_INFINITY },
 			{ code: 'End', delta: Number.POSITIVE_INFINITY },
 		];
@@ -4175,13 +4461,13 @@ private drawResourceBrowser(api: BmsxConsoleApi): void {
 					this.drawColoredText(api, contentText, colors, contentX, y);
 				}
 			}
-		if (!isHighlighted || contentText.length === 0) {
-			this.drawText(api, contentText, contentX, y, COLOR_STATUS_TEXT);
+			if (!isHighlighted || contentText.length === 0) {
+				this.drawText(api, contentText, contentX, y, COLOR_STATUS_TEXT);
+			}
 		}
 	}
-}
 
-private drawResourceViewer(api: BmsxConsoleApi): void {
+	private drawResourceViewer(api: BmsxConsoleApi): void {
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
@@ -4192,17 +4478,33 @@ private drawResourceViewer(api: BmsxConsoleApi): void {
 		const paddingX = 4;
 		api.rectfill(0, codeTop, this.viewportWidth, codeBottom, COLOR_CODE_BACKGROUND);
 		const contentTop = codeTop + 2;
-		const capacity = this.resourceViewerLineCapacity();
+	const layout = this.resourceViewerImageLayout(viewer);
+	let textTop = contentTop;
+	if (layout) {
+		api.spr(viewer.image!.assetId, layout.left, layout.top, { scale: layout.scale });
+		textTop = Math.floor(layout.bottom + this.lineHeight);
+	}
+		const capacity = this.resourceViewerTextCapacity(viewer);
+		if (capacity <= 0) {
+			if (viewer.lines.length > 0) {
+				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, viewer.scroll))] ?? '';
+				const fallbackY = Math.min(textTop, codeBottom - this.lineHeight);
+				this.drawText(api, line, paddingX, fallbackY, COLOR_STATUS_TEXT);
+			} else {
+				this.drawText(api, '<empty>', paddingX, textTop, COLOR_STATUS_TEXT);
+			}
+			return;
+		}
 		const maxScroll = Math.max(0, viewer.lines.length - capacity);
 		viewer.scroll = Math.max(0, Math.min(viewer.scroll, maxScroll));
 		const end = Math.min(viewer.lines.length, viewer.scroll + capacity);
 		if (viewer.lines.length === 0) {
-			this.drawText(api, '<empty>', paddingX, contentTop, COLOR_STATUS_TEXT);
+			this.drawText(api, '<empty>', paddingX, textTop, COLOR_STATUS_TEXT);
 			return;
 		}
 		for (let lineIndex = viewer.scroll, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 			const line = viewer.lines[lineIndex] ?? '';
-			const y = contentTop + drawIndex * this.lineHeight;
+			const y = textTop + drawIndex * this.lineHeight;
 			this.drawText(api, line, paddingX, y, COLOR_STATUS_TEXT);
 		}
 	}
