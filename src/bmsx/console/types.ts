@@ -98,6 +98,8 @@ export type ConsoleResourceDescriptor = {
 
 export type ConsoleLuaHoverScope = 'global' | 'chunk';
 
+export type ConsoleLuaHoverValueState = 'value' | 'not_defined';
+
 export type ConsoleLuaHoverRequest = {
 	assetId: string | null;
 	expression: string;
@@ -108,4 +110,8 @@ export type ConsoleLuaHoverResult = {
 	lines: string[];
 	valueType: string;
 	scope: ConsoleLuaHoverScope;
+	state: ConsoleLuaHoverValueState;
+	isFunction: boolean;
+	isLocalFunction: boolean;
+	isBuiltin: boolean;
 };

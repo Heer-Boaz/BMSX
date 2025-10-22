@@ -3,7 +3,7 @@ import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
 import type { ClipboardService } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
-import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope } from './types';
+import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
 
@@ -131,15 +131,19 @@ type EditorTabId = 'code' | 'resources' | `resource:${string}` | `lua:${string}`
 type EditorTabKind = 'code' | 'resources' | 'resource_view' | 'lua_editor';
 
 type CodeHoverTooltip = {
-	expression: string;
-	lines: string[];
-	valueType: string;
-	scope: ConsoleLuaHoverScope;
-	assetId: string | null;
-	viewportX: number;
-	viewportY: number;
-	row: number;
-	column: number;
+	 expression: string;
+	 contentLines: string[];
+	 valueType: string;
+	 scope: ConsoleLuaHoverScope;
+	 state: ConsoleLuaHoverValueState;
+	 assetId: string | null;
+	 viewportX: number;
+	 viewportY: number;
+	 row: number;
+	 column: number;
+	 scrollOffset: number;
+	 visibleLineCount: number;
+	 bubbleBounds: RectBounds | null;
 };
 
 type ResourceViewerState = {
@@ -281,7 +285,7 @@ const HOVER_TOOLTIP_PADDING_X = 4;
 const HOVER_TOOLTIP_PADDING_Y = 2;
 const HOVER_TOOLTIP_BACKGROUND = { r: 0.1, g: 0.1, b: 0.1, a: 0.9 };
 const HOVER_TOOLTIP_BORDER = COLOR_TOP_BAR_TEXT;
-const HOVER_TOOLTIP_MAX_LINES = 10;
+const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 const HOVER_TOOLTIP_MAX_LINE_LENGTH = 160;
 const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 const HEADER_BUTTON_PADDING_X = 5;
@@ -325,6 +329,8 @@ export class ConsoleCartEditor {
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	private readonly primaryAssetId: string | null;
 	private hoverTooltip: CodeHoverTooltip | null = null;
+	private lastPointerSnapshot: PointerSnapshot | null = null;
+	private lastInspectorResult: ConsoleLuaHoverResult | null = null;
 	private viewportWidth: number;
 	private viewportHeight: number;
 	private readonly font: ConsoleEditorFont;
@@ -486,19 +492,26 @@ export class ConsoleCartEditor {
 		if (tooltip.viewportY < codeTop || tooltip.viewportY >= codeBottom) {
 			return;
 		}
-		const lines = tooltip.lines;
-		if (!lines || lines.length === 0) {
+		const content = tooltip.contentLines;
+		if (!content || content.length === 0) {
 			return;
 		}
+		const maxVisible = Math.max(1, Math.min(HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
+		const currentVisible = tooltip.visibleLineCount > 0 ? tooltip.visibleLineCount : maxVisible;
+		const scrollOffset = Math.max(0, Math.min(tooltip.scrollOffset, Math.max(0, content.length - currentVisible)));
+		tooltip.scrollOffset = scrollOffset;
+		const visibleCount = Math.max(1, Math.min(maxVisible, content.length - scrollOffset));
+		tooltip.visibleLineCount = visibleCount;
+		const visibleLines = content.slice(scrollOffset, scrollOffset + visibleCount);
 		let maxLineWidth = 0;
-		for (let i = 0; i < lines.length; i += 1) {
-			const width = this.measureText(lines[i]);
+		for (let i = 0; i < visibleLines.length; i += 1) {
+			const width = this.measureText(visibleLines[i]);
 			if (width > maxLineWidth) {
 				maxLineWidth = width;
 			}
 		}
 		const bubbleWidth = maxLineWidth + HOVER_TOOLTIP_PADDING_X * 2;
-		const bubbleHeight = lines.length * this.lineHeight + HOVER_TOOLTIP_PADDING_Y * 2;
+		const bubbleHeight = visibleLines.length * this.lineHeight + HOVER_TOOLTIP_PADDING_Y * 2;
 		let bubbleLeft = tooltip.viewportX + 12;
 		if (bubbleLeft + bubbleWidth > this.viewportWidth - 1) {
 			bubbleLeft = Math.max(textLeft, this.viewportWidth - 1 - bubbleWidth);
@@ -521,10 +534,11 @@ export class ConsoleCartEditor {
 		const bubbleBottom = bubbleTop + bubbleHeight;
 		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, HOVER_TOOLTIP_BACKGROUND);
 		api.rect(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, HOVER_TOOLTIP_BORDER);
-		for (let i = 0; i < lines.length; i += 1) {
+		for (let i = 0; i < visibleLines.length; i += 1) {
 			const lineY = bubbleTop + HOVER_TOOLTIP_PADDING_Y + i * this.lineHeight;
-			this.drawText(api, lines[i], bubbleLeft + HOVER_TOOLTIP_PADDING_X, lineY, COLOR_STATUS_TEXT);
+			this.drawText(api, visibleLines[i], bubbleLeft + HOVER_TOOLTIP_PADDING_X, lineY, COLOR_STATUS_TEXT);
 		}
+		tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleRight, bottom: bubbleBottom };
 	}
 
 	public isActive(): boolean {
@@ -1852,6 +1866,7 @@ export class ConsoleCartEditor {
 
 	private handlePointerInput(_deltaSeconds: number): void {
 		const snapshot = this.readPointerSnapshot();
+		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
 		if (!snapshot) {
 			this.pointerPrimaryWasPressed = false;
 			this.clearHoverTooltip();
@@ -1997,43 +2012,62 @@ export class ConsoleCartEditor {
 			return;
 		}
 		const existing = this.hoverTooltip;
-		if (existing && existing.expression === token.expression && existing.assetId === assetId) {
-			existing.viewportX = snapshot.viewportX;
-			existing.viewportY = snapshot.viewportY;
-			existing.row = row;
-			existing.column = column;
-			return;
-		}
 		const request: ConsoleLuaHoverRequest = {
 			assetId,
 			expression: token.expression,
 		};
 		const inspection = this.inspectLuaExpressionFn(request);
+		const previousInspection = this.lastInspectorResult;
+		this.lastInspectorResult = inspection;
 		if (!inspection) {
 			this.clearHoverTooltip();
 			return;
 		}
-		const displayLines: string[] = [];
-		const header = `${inspection.expression} :: ${inspection.valueType.toUpperCase()} [${inspection.scope}]`;
-		displayLines.push(this.truncateHoverLine(header));
-		const rawLines = inspection.lines;
-		const limit = HOVER_TOOLTIP_MAX_LINES - 1;
-		for (let i = 0; i < rawLines.length && i < limit; i += 1) {
-			displayLines.push(this.truncateHoverLine(rawLines[i]));
+		if (inspection.isFunction && (inspection.isLocalFunction || inspection.isBuiltin)) {
+			this.clearHoverTooltip();
+			return;
 		}
-		if (rawLines.length > limit) {
-			displayLines.push('...');
+		const header = `${inspection.expression} :: ${inspection.valueType.toUpperCase()} [${inspection.scope}]`;
+		const body = inspection.lines.length > 0 ? inspection.lines : [''];
+		const contentLines: string[] = [this.truncateHoverLine(header)];
+		for (let i = 0; i < body.length; i += 1) {
+			contentLines.push(this.truncateHoverLine(body[i]));
+		}
+		const expressionChanged = !previousInspection || previousInspection.expression !== inspection.expression;
+		if (existing && existing.expression === inspection.expression && existing.assetId === assetId) {
+			existing.contentLines = contentLines;
+			existing.valueType = inspection.valueType;
+			existing.scope = inspection.scope;
+			existing.state = inspection.state;
+			existing.viewportX = snapshot.viewportX;
+			existing.viewportY = snapshot.viewportY;
+			existing.row = row;
+			existing.column = column;
+			existing.assetId = assetId;
+			existing.bubbleBounds = null;
+			if (expressionChanged) {
+				existing.scrollOffset = 0;
+			}
+			const maxOffset = Math.max(0, contentLines.length - Math.max(1, existing.visibleLineCount));
+			if (existing.scrollOffset > maxOffset) {
+				existing.scrollOffset = maxOffset;
+			}
+			return;
 		}
 		this.hoverTooltip = {
 			expression: inspection.expression,
-			lines: displayLines,
+			contentLines,
 			valueType: inspection.valueType,
 			scope: inspection.scope,
+			state: inspection.state,
 			assetId,
 			viewportX: snapshot.viewportX,
 			viewportY: snapshot.viewportY,
 			row,
 			column,
+			scrollOffset: 0,
+			visibleLineCount: 0,
+			bubbleBounds: null,
 		};
 	}
 
@@ -2046,6 +2080,42 @@ export class ConsoleCartEditor {
 
 	private clearHoverTooltip(): void {
 		this.hoverTooltip = null;
+	}
+
+	private adjustHoverTooltipScroll(stepCount: number): boolean {
+		if (!this.hoverTooltip) {
+			return false;
+		}
+		if (stepCount === 0) {
+			return false;
+		}
+		const tooltip = this.hoverTooltip;
+		const totalLines = tooltip.contentLines.length;
+		if (totalLines <= tooltip.visibleLineCount || tooltip.visibleLineCount <= 0) {
+			const maxVisible = Math.max(1, Math.min(HOVER_TOOLTIP_MAX_VISIBLE_LINES, totalLines));
+			if (totalLines <= maxVisible) {
+				return false;
+			}
+			tooltip.visibleLineCount = maxVisible;
+		}
+		const maxOffset = Math.max(0, totalLines - tooltip.visibleLineCount);
+		if (maxOffset === 0) {
+			return false;
+		}
+		const nextOffset = Math.max(0, Math.min(maxOffset, tooltip.scrollOffset + stepCount));
+		if (nextOffset === tooltip.scrollOffset) {
+			return false;
+		}
+		tooltip.scrollOffset = nextOffset;
+		return true;
+	}
+
+	private isPointInHoverTooltip(x: number, y: number): boolean {
+		const tooltip = this.hoverTooltip;
+		if (!tooltip || !tooltip.bubbleBounds) {
+			return false;
+		}
+		return this.pointInRect(x, y, tooltip.bubbleBounds);
 	}
 
 	private resolveHoverAssetId(context: CodeTabContext | null): string | null {
@@ -2063,36 +2133,32 @@ export class ConsoleCartEditor {
 		if (line.length === 0) {
 			return null;
 		}
-		let index = column;
-		const lastIndex = line.length - 1;
-		if (lastIndex < 0) {
-			return null;
-		}
-		if (index > lastIndex) {
-			index = lastIndex;
-		}
-		if (index < 0) {
-			return null;
-		}
-		if (!this.isIdentifierChar(line.charCodeAt(index))) {
-			if (index > 0 && this.isIdentifierChar(line.charCodeAt(index - 1))) {
-				index -= 1;
-			} else {
+		const clampedColumn = Math.min(Math.max(column, 0), Math.max(0, line.length - 1));
+		let probe = clampedColumn;
+		if (!this.isIdentifierChar(line.charCodeAt(probe))) {
+			if (line.charCodeAt(probe) === 46 && probe > 0) {
+				probe -= 1;
+			}
+			else if (probe > 0 && this.isIdentifierChar(line.charCodeAt(probe - 1))) {
+				probe -= 1;
+			}
+			else {
 				return null;
 			}
 		}
-		let start = index;
-		while (start > 0 && this.isIdentifierChar(line.charCodeAt(start - 1))) {
-			start -= 1;
+		let expressionStart = probe;
+		while (expressionStart > 0 && this.isIdentifierChar(line.charCodeAt(expressionStart - 1))) {
+			expressionStart -= 1;
 		}
-		if (!this.isIdentifierStartChar(line.charCodeAt(start))) {
+		if (!this.isIdentifierStartChar(line.charCodeAt(expressionStart))) {
 			return null;
 		}
-		let end = index + 1;
-		while (end < line.length && this.isIdentifierChar(line.charCodeAt(end))) {
-			end += 1;
+		let expressionEnd = probe + 1;
+		while (expressionEnd < line.length && this.isIdentifierChar(line.charCodeAt(expressionEnd))) {
+			expressionEnd += 1;
 		}
-		let left = start;
+		// extend to include preceding segments (left of initial segment)
+		let left = expressionStart;
 		while (left > 0) {
 			const dotIndex = left - 1;
 			if (line.charCodeAt(dotIndex) !== 46) {
@@ -2111,8 +2177,8 @@ export class ConsoleCartEditor {
 			}
 			left = segmentStart;
 		}
-		start = left;
-		let right = end;
+		expressionStart = left;
+		let right = expressionEnd;
 		while (right < line.length) {
 			if (line.charCodeAt(right) !== 46) {
 				break;
@@ -2130,33 +2196,49 @@ export class ConsoleCartEditor {
 			}
 			right = identifierEnd;
 		}
-		end = right;
-		if (end <= start) {
+		expressionEnd = right;
+		if (expressionEnd <= expressionStart) {
 			return null;
 		}
-		const expression = line.slice(start, end);
+		const segments: Array<{ text: string; start: number; end: number }> = [];
+		let segmentStart = expressionStart;
+		while (segmentStart < expressionEnd) {
+			let segmentEnd = segmentStart;
+			while (segmentEnd < expressionEnd && line.charCodeAt(segmentEnd) !== 46) {
+				segmentEnd += 1;
+			}
+			if (segmentEnd > segmentStart) {
+				segments.push({ text: line.slice(segmentStart, segmentEnd), start: segmentStart, end: segmentEnd });
+			}
+			segmentStart = segmentEnd + 1;
+		}
+		if (segments.length === 0) {
+			return null;
+		}
+		let pointerColumn = Math.min(column, expressionEnd - 1);
+		if (pointerColumn < expressionStart) {
+			pointerColumn = expressionStart;
+		}
+		if (line.charCodeAt(pointerColumn) === 46 && pointerColumn > expressionStart) {
+			pointerColumn -= 1;
+		}
+		let segmentIndex = -1;
+		for (let i = 0; i < segments.length; i += 1) {
+			const seg = segments[i];
+			if (pointerColumn >= seg.start && pointerColumn < seg.end) {
+				segmentIndex = i;
+				break;
+			}
+		}
+		if (segmentIndex === -1) {
+			segmentIndex = segments.length - 1;
+		}
+		const expression = segments.slice(0, segmentIndex + 1).map(segment => segment.text).join('.');
 		if (expression.length === 0) {
 			return null;
 		}
-		const parts = expression.split('.');
-		if (parts.length === 0) {
-			return null;
-		}
-		for (let i = 0; i < parts.length; i += 1) {
-			const part = parts[i];
-			if (part.length === 0) {
-				return null;
-			}
-			if (!this.isIdentifierStartChar(part.charCodeAt(0))) {
-				return null;
-			}
-			for (let j = 1; j < part.length; j += 1) {
-				if (!this.isIdentifierChar(part.charCodeAt(j))) {
-					return null;
-				}
-			}
-		}
-		return { expression, startColumn: start, endColumn: end };
+		const targetSegment = segments[segmentIndex];
+		return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
 	}
 
 	private isIdentifierStartChar(code: number): boolean {
@@ -2261,6 +2343,13 @@ export class ConsoleCartEditor {
 		const magnitude = Math.abs(delta);
 		const steps = Math.max(1, Math.round(magnitude / WHEEL_SCROLL_STEP));
 		const direction = delta > 0 ? 1 : -1;
+		const pointer = this.lastPointerSnapshot;
+		if (pointer && this.hoverTooltip && this.isPointInHoverTooltip(pointer.viewportX, pointer.viewportY)) {
+			if (this.adjustHoverTooltipScroll(direction * steps)) {
+				playerInput.consumeAction('pointer_wheel');
+				return;
+			}
+		}
 		if (this.isResourcesTabActive()) {
 			this.scrollResourceBrowser(direction * steps);
 			playerInput.consumeAction('pointer_wheel');
@@ -2270,6 +2359,13 @@ export class ConsoleCartEditor {
 			this.scrollResourceViewer(direction * steps);
 			playerInput.consumeAction('pointer_wheel');
 			return;
+		}
+		if (this.isCodeTabActive() && pointer) {
+			const bounds = this.getCodeAreaBounds();
+			if (!pointer.valid || !pointer.insideViewport || pointer.viewportY < bounds.codeTop || pointer.viewportY >= bounds.codeBottom) {
+				playerInput.consumeAction('pointer_wheel');
+				return;
+			}
 		}
 		this.scrollRows(direction * steps);
 		this.cursorRevealSuspended = true;

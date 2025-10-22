@@ -71,8 +71,13 @@ type HttpResponse = {
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
 	private static readonly MAX_FRAME_DELTA_MS = 250;
-	private static readonly HOVER_VALUE_MAX_LINES = 12;
 	private static readonly HOVER_VALUE_MAX_LINE_LENGTH = 160;
+	private static readonly HOVER_VALUE_MAX_SERIALIZED_LINES = 200;
+	private static readonly LUA_BUILTIN_FUNCTIONS = new Set<string>([
+		'assert', 'collectgarbage', 'dofile', 'error', 'getmetatable', 'ipairs', 'load',
+		'next', 'pairs', 'pcall', 'print', 'rawequal', 'rawget', 'rawset', 'require',
+		'select', 'setmetatable', 'tonumber', 'tostring', 'type', 'xpcall'
+	]);
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
@@ -2264,12 +2269,31 @@ export class BmsxConsoleRuntime extends Service {
 		if (!resolved) {
 			return null;
 		}
+		if (resolved.kind === 'not_defined') {
+			return {
+				expression: trimmed,
+				lines: ['not defined'],
+				valueType: 'undefined',
+				scope: resolved.scope,
+				state: 'not_defined',
+				isFunction: false,
+				isLocalFunction: false,
+				isBuiltin: false,
+			};
+		}
 		const formatted = this.describeLuaValueForInspector(resolved.value);
+		const isFunction = formatted.isFunction;
+		const isLocalFunction = isFunction && resolved.scope === 'chunk';
+		const isBuiltin = isFunction && chain.length === 1 && this.isLuaBuiltinFunctionName(chain[0]);
 		return {
 			expression: trimmed,
 			lines: formatted.lines,
 			valueType: formatted.valueType,
 			scope: resolved.scope,
+			state: 'value',
+			isFunction,
+			isLocalFunction,
+			isBuiltin,
 		};
 	}
 
@@ -2298,7 +2322,7 @@ export class BmsxConsoleRuntime extends Service {
 		return parts;
 	}
 
-	private resolveLuaChainValue(parts: string[], assetId: string | null): { value: LuaValue; scope: ConsoleLuaHoverScope } | null {
+	private resolveLuaChainValue(parts: string[], assetId: string | null): ({ kind: 'value'; value: LuaValue; scope: ConsoleLuaHoverScope } | { kind: 'not_defined'; scope: ConsoleLuaHoverScope }) | null {
 		if (!parts || parts.length === 0) {
 			return null;
 		}
@@ -2348,37 +2372,34 @@ export class BmsxConsoleRuntime extends Service {
 		for (let index = 1; index < parts.length; index += 1) {
 			const part = parts[index];
 			if (!(current instanceof LuaTable)) {
-				return null;
+				return { kind: 'not_defined', scope };
 			}
 			const nextValue = current.get(part);
 			if (nextValue === null) {
-				if (index < parts.length - 1) {
-					return null;
-				}
-				current = null;
-				break;
+				return { kind: 'not_defined', scope };
 			}
 			current = nextValue;
 		}
-		return { value: current, scope };
+		return { kind: 'value', value: current, scope };
 	}
 
-	private describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string } {
+	private describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
 		if (value === null) {
-			return { lines: ['nil'], valueType: 'nil' };
+			return { lines: ['Nil'], valueType: 'nil', isFunction: false };
 		}
 		if (typeof value === 'boolean') {
-			return { lines: [value ? 'true' : 'false'], valueType: 'boolean' };
+			return { lines: [value ? 'true' : 'false'], valueType: 'boolean', isFunction: false };
 		}
 		if (typeof value === 'number') {
-			return { lines: [Number.isFinite(value) ? String(value) : 'nan'], valueType: 'number' };
+			const numeric = Number.isFinite(value) ? String(value) : 'nan';
+			return { lines: [numeric], valueType: 'number', isFunction: false };
 		}
 		if (typeof value === 'string') {
-			return { lines: [JSON.stringify(value)], valueType: 'string' };
+			return { lines: [this.truncateInspectorLine(JSON.stringify(value))], valueType: 'string', isFunction: false };
 		}
 		if (this.isLuaFunctionValue(value)) {
 			const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
-			return { lines: [`<function ${fnName}>`], valueType: 'function' };
+			return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
 		}
 		if (value instanceof LuaTable) {
 			try {
@@ -2386,19 +2407,18 @@ export class BmsxConsoleRuntime extends Service {
 				const json = JSON.stringify(serialized, null, 2) ?? 'null';
 				const rawLines = json.split('\n');
 				const lines: string[] = [];
-				const limit = BmsxConsoleRuntime.HOVER_VALUE_MAX_LINES;
-				for (let i = 0; i < rawLines.length && i < limit; i += 1) {
+				for (let i = 0; i < rawLines.length && i < BmsxConsoleRuntime.HOVER_VALUE_MAX_SERIALIZED_LINES; i += 1) {
 					lines.push(this.truncateInspectorLine(rawLines[i]));
 				}
-				if (rawLines.length > limit) {
+				if (rawLines.length > BmsxConsoleRuntime.HOVER_VALUE_MAX_SERIALIZED_LINES) {
 					lines.push('...');
 				}
-				return { lines, valueType: 'table' };
+				return { lines, valueType: 'table', isFunction: false };
 			} catch (_error) {
-				return { lines: ['<table>'], valueType: 'table' };
+				return { lines: ['<table>'], valueType: 'table', isFunction: false };
 			}
 		}
-		return { lines: ['<unknown>'], valueType: 'unknown' };
+		return { lines: ['<unknown>'], valueType: 'unknown', isFunction: false };
 	}
 
 	private truncateInspectorLine(value: string): string {
@@ -2423,6 +2443,13 @@ export class BmsxConsoleRuntime extends Service {
 			return true;
 		}
 		return code >= 48 && code <= 57;
+	}
+
+	private isLuaBuiltinFunctionName(name: string): boolean {
+		if (!name || name.length === 0) {
+			return false;
+		}
+		return BmsxConsoleRuntime.LUA_BUILTIN_FUNCTIONS.has(name);
 	}
 
 	private luaTableInsert(table: LuaTable, value: LuaValue, position: number | null): void {
