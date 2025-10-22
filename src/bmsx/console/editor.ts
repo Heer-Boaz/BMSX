@@ -2249,9 +2249,6 @@ export class ConsoleCartEditor {
 			const originalLine = this.lines[row];
 			const insertIndex = this.firstNonWhitespaceIndex(originalLine);
 			const hasContent = insertIndex < originalLine.length;
-			if (hasContent && originalLine.startsWith('--', insertIndex)) {
-				continue;
-			}
 			let insertion = '--';
 			if (hasContent) {
 				const nextChar = originalLine.charAt(insertIndex);
