@@ -1214,20 +1214,12 @@ export class ConsoleCartEditor {
 		}
 		if ((ctrlDown || metaDown) && !altDown && this.isKeyJustPressed(keyboard, 'Slash')) {
 			this.consumeKey(keyboard, 'Slash');
-			if (shiftDown) {
-				this.removeLineComments();
-			} else {
-				this.addLineComments();
-			}
+			this.toggleLineComments();
 			return;
 		}
 		if ((ctrlDown || metaDown) && !altDown && this.isKeyJustPressed(keyboard, 'NumpadDivide')) {
 			this.consumeKey(keyboard, 'NumpadDivide');
-			if (shiftDown) {
-				this.removeLineComments();
-			} else {
-				this.addLineComments();
-			}
+			this.toggleLineComments();
 			return;
 		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'BracketRight')) {
@@ -2221,14 +2213,39 @@ export class ConsoleCartEditor {
 		this.revealCursor();
 	}
 
-	private addLineComments(): void {
+	private toggleLineComments(): void {
 		const range = this.getLineRangeForMovement();
 		if (range.startRow < 0 || range.endRow < range.startRow) {
 			return;
 		}
+		let allCommented = true;
+		for (let row = range.startRow; row <= range.endRow; row++) {
+			const line = this.lines[row];
+			const commentIndex = this.firstNonWhitespaceIndex(line);
+			if (commentIndex >= line.length) {
+				allCommented = false;
+				break;
+			}
+			if (!line.startsWith('--', commentIndex)) {
+				allCommented = false;
+				break;
+			}
+		}
+		if (allCommented) {
+			this.removeLineComments(range);
+		} else {
+			this.addLineComments(range);
+		}
+	}
+
+	private addLineComments(range?: { startRow: number; endRow: number }): void {
+		const target = range ?? this.getLineRangeForMovement();
+		if (target.startRow < 0 || target.endRow < target.startRow) {
+			return;
+		}
 		this.prepareUndo('comment-lines', false);
 		let changed = false;
-		for (let row = range.startRow; row <= range.endRow; row++) {
+		for (let row = target.startRow; row <= target.endRow; row++) {
 			const originalLine = this.lines[row];
 			const insertIndex = this.firstNonWhitespaceIndex(originalLine);
 			const hasContent = insertIndex < originalLine.length;
@@ -2259,14 +2276,14 @@ export class ConsoleCartEditor {
 		this.revealCursor();
 	}
 
-	private removeLineComments(): void {
-		const range = this.getLineRangeForMovement();
-		if (range.startRow < 0 || range.endRow < range.startRow) {
+	private removeLineComments(range?: { startRow: number; endRow: number }): void {
+		const target = range ?? this.getLineRangeForMovement();
+		if (target.startRow < 0 || target.endRow < target.startRow) {
 			return;
 		}
 		this.prepareUndo('uncomment-lines', false);
 		let changed = false;
-		for (let row = range.startRow; row <= range.endRow; row++) {
+		for (let row = target.startRow; row <= target.endRow; row++) {
 			const originalLine = this.lines[row];
 			const commentIndex = this.firstNonWhitespaceIndex(originalLine);
 			if (commentIndex >= originalLine.length) {
