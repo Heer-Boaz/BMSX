@@ -200,6 +200,10 @@ export class LuaInterpreter {
 		return this.chunkEnvironment.entries();
 	}
 
+	public getChunkEnvironment(): LuaEnvironment | null {
+		return this.chunkEnvironment;
+	}
+
 	public hasChunkBinding(name: string): boolean {
 		if (!this.chunkEnvironment) {
 			return false;

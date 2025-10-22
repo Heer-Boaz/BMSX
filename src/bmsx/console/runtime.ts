@@ -5,7 +5,7 @@ import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope } from './types';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue } from '../lua/value.ts';
@@ -71,6 +71,8 @@ type HttpResponse = {
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
 	private static readonly MAX_FRAME_DELTA_MS = 250;
+	private static readonly HOVER_VALUE_MAX_LINES = 12;
+	private static readonly HOVER_VALUE_MAX_LINE_LENGTH = 160;
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
@@ -148,6 +150,8 @@ export class BmsxConsoleRuntime extends Service {
 	private pendingLuaWarnings: string[] = [];
 	private readonly luaChunkResourceMap: Map<string, { assetId: string | null; path?: string | null }> = new Map();
 	private readonly resourcePathCache: Map<string, string | null> = new Map();
+	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
+	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
@@ -314,6 +318,8 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaRuntimeFailed = false;
 		this.luaChunkResourceMap.clear();
 		this.resourcePathCache.clear();
+		this.luaChunkEnvironmentsByAssetId.clear();
+		this.luaChunkEnvironmentsByChunkName.clear();
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
@@ -440,18 +446,23 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] Invalid offscreen dimensions during editor initialization.');
 		}
 		const viewport = { width: offscreen.x, height: offscreen.y };
-	this.editor = new ConsoleCartEditor({
-		playerIndex: this.playerIndex,
-		metadata: this.cart.meta,
-		viewport,
-		loadSource: () => this.getEditorSource(),
-		saveSource: (source: string) => this.saveLuaProgram(source),
-		listResources: () => this.getResourceDescriptors(),
-		loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
-		saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
-	});
-	this.flushLuaWarnings();
-}
+		const primaryAssetId = (this.luaProgram && 'assetId' in this.luaProgram)
+			? (typeof this.luaProgram.assetId === 'string' ? this.luaProgram.assetId : null)
+			: null;
+		this.editor = new ConsoleCartEditor({
+			playerIndex: this.playerIndex,
+			metadata: this.cart.meta,
+			viewport,
+			loadSource: () => this.getEditorSource(),
+			saveSource: (source: string) => this.saveLuaProgram(source),
+			listResources: () => this.getResourceDescriptors(),
+			loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
+			saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
+			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
+			primaryAssetId,
+		});
+		this.flushLuaWarnings();
+	}
 
 	public override getState(): BmsxConsoleState | undefined {
 		const storageState = this.storage.dump();
@@ -893,6 +904,11 @@ export class BmsxConsoleRuntime extends Service {
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
 			this.loadLuaStateMachineScripts(interpreter);
 			interpreter.execute(source, chunkName);
+			let programAssetId: string | null = null;
+			if ('assetId' in program && typeof program.assetId === 'string' && program.assetId.length > 0) {
+				programAssetId = program.assetId;
+			}
+			this.cacheCurrentChunkEnvironment(chunkName, programAssetId);
 		}
 		catch (error) {
 			if (debugTiming) {
@@ -1288,6 +1304,7 @@ export class BmsxConsoleRuntime extends Service {
 			let results: LuaValue[];
 			try {
 				results = interpreter.execute(source, chunkName);
+				this.cacheCurrentChunkEnvironment(chunkName, assetId);
 			}
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -2140,6 +2157,22 @@ export class BmsxConsoleRuntime extends Service {
 		this.luaChunkResourceMap.set(key, info);
 	}
 
+	private cacheCurrentChunkEnvironment(chunkName: string, assetId: string | null): void {
+		const interpreter = this.luaInterpreter;
+		if (!interpreter) {
+			return;
+		}
+		const environment = interpreter.getChunkEnvironment();
+		if (!environment) {
+			return;
+		}
+		const normalizedChunk = this.normalizeChunkName(chunkName);
+		this.luaChunkEnvironmentsByChunkName.set(normalizedChunk, environment);
+		if (assetId && assetId.length > 0) {
+			this.luaChunkEnvironmentsByAssetId.set(assetId, environment);
+		}
+	}
+
 	private lookupChunkResourceInfo(chunkName: string): { assetId: string | null; path?: string | null } | null {
 		const key = this.normalizeChunkName(chunkName);
 		if (!this.luaChunkResourceMap.has(key)) {
@@ -2205,9 +2238,191 @@ export class BmsxConsoleRuntime extends Service {
 			this.resourcePathCache.set(assetId, null);
 			return null;
 		}
-		const normalizedPath = entry.path.replace(/\\/g, '/');
-		this.resourcePathCache.set(assetId, normalizedPath);
-		return normalizedPath;
+	const normalizedPath = entry.path.replace(/\\/g, '/');
+	this.resourcePathCache.set(assetId, normalizedPath);
+	return normalizedPath;
+}
+
+	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
+		if (!request) {
+			return null;
+		}
+		const expressionRaw = request.expression;
+		if (typeof expressionRaw !== 'string') {
+			return null;
+		}
+		const trimmed = expressionRaw.trim();
+		if (trimmed.length === 0) {
+			return null;
+		}
+		const chain = this.parseLuaIdentifierChain(trimmed);
+		if (!chain) {
+			return null;
+		}
+		const assetId = request.assetId && request.assetId.length > 0 ? request.assetId : null;
+		const resolved = this.resolveLuaChainValue(chain, assetId);
+		if (!resolved) {
+			return null;
+		}
+		const formatted = this.describeLuaValueForInspector(resolved.value);
+		return {
+			expression: trimmed,
+			lines: formatted.lines,
+			valueType: formatted.valueType,
+			scope: resolved.scope,
+		};
+	}
+
+	private parseLuaIdentifierChain(expression: string): string[] | null {
+		if (!expression) {
+			return null;
+		}
+		const parts = expression.split('.');
+		if (parts.length === 0) {
+			return null;
+		}
+		for (let i = 0; i < parts.length; i += 1) {
+			const part = parts[i];
+			if (part.length === 0) {
+				return null;
+			}
+			if (!this.isLuaIdentifierStartChar(part.charCodeAt(0))) {
+				return null;
+			}
+			for (let j = 1; j < part.length; j += 1) {
+				if (!this.isLuaIdentifierChar(part.charCodeAt(j))) {
+					return null;
+				}
+			}
+		}
+		return parts;
+	}
+
+	private resolveLuaChainValue(parts: string[], assetId: string | null): { value: LuaValue; scope: ConsoleLuaHoverScope } | null {
+		if (!parts || parts.length === 0) {
+			return null;
+		}
+		const interpreter = this.luaInterpreter;
+		if (interpreter === null) {
+			return null;
+		}
+		const root = parts[0];
+		let value: LuaValue | null = null;
+		let scope: ConsoleLuaHoverScope = 'global';
+		let found = false;
+		if (assetId) {
+			const env = this.luaChunkEnvironmentsByAssetId.get(assetId) ?? null;
+			if (env && env.hasLocal(root)) {
+				value = env.get(root);
+				scope = 'chunk';
+				found = true;
+			}
+		}
+		if (!found) {
+			const chunkName = this.luaChunkName;
+			if (chunkName) {
+				const normalized = this.normalizeChunkName(chunkName);
+				const envByChunk = this.luaChunkEnvironmentsByChunkName.get(normalized) ?? null;
+				if (envByChunk && envByChunk.hasLocal(root)) {
+					value = envByChunk.get(root);
+					scope = 'chunk';
+					found = true;
+				}
+			}
+		}
+		if (!found) {
+			const globals = interpreter.getGlobalEnvironment();
+			if (globals.hasLocal(root)) {
+				value = globals.get(root);
+				scope = 'global';
+				found = true;
+			}
+		}
+		if (!found) {
+			return null;
+		}
+		if (value === undefined) {
+			return null;
+		}
+		let current: LuaValue = value;
+		for (let index = 1; index < parts.length; index += 1) {
+			const part = parts[index];
+			if (!(current instanceof LuaTable)) {
+				return null;
+			}
+			const nextValue = current.get(part);
+			if (nextValue === null) {
+				if (index < parts.length - 1) {
+					return null;
+				}
+				current = null;
+				break;
+			}
+			current = nextValue;
+		}
+		return { value: current, scope };
+	}
+
+	private describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string } {
+		if (value === null) {
+			return { lines: ['nil'], valueType: 'nil' };
+		}
+		if (typeof value === 'boolean') {
+			return { lines: [value ? 'true' : 'false'], valueType: 'boolean' };
+		}
+		if (typeof value === 'number') {
+			return { lines: [Number.isFinite(value) ? String(value) : 'nan'], valueType: 'number' };
+		}
+		if (typeof value === 'string') {
+			return { lines: [JSON.stringify(value)], valueType: 'string' };
+		}
+		if (this.isLuaFunctionValue(value)) {
+			const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
+			return { lines: [`<function ${fnName}>`], valueType: 'function' };
+		}
+		if (value instanceof LuaTable) {
+			try {
+				const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
+				const json = JSON.stringify(serialized, null, 2) ?? 'null';
+				const rawLines = json.split('\n');
+				const lines: string[] = [];
+				const limit = BmsxConsoleRuntime.HOVER_VALUE_MAX_LINES;
+				for (let i = 0; i < rawLines.length && i < limit; i += 1) {
+					lines.push(this.truncateInspectorLine(rawLines[i]));
+				}
+				if (rawLines.length > limit) {
+					lines.push('...');
+				}
+				return { lines, valueType: 'table' };
+			} catch (_error) {
+				return { lines: ['<table>'], valueType: 'table' };
+			}
+		}
+		return { lines: ['<unknown>'], valueType: 'unknown' };
+	}
+
+	private truncateInspectorLine(value: string): string {
+		if (value.length <= BmsxConsoleRuntime.HOVER_VALUE_MAX_LINE_LENGTH) {
+			return value;
+		}
+		return value.slice(0, BmsxConsoleRuntime.HOVER_VALUE_MAX_LINE_LENGTH - 3) + '...';
+	}
+
+	private isLuaIdentifierStartChar(code: number): boolean {
+		if (code >= 65 && code <= 90) {
+			return true;
+		}
+		if (code >= 97 && code <= 122) {
+			return true;
+		}
+		return code === 95;
+	}
+
+	private isLuaIdentifierChar(code: number): boolean {
+		if (this.isLuaIdentifierStartChar(code)) {
+			return true;
+		}
+		return code >= 48 && code <= 57;
 	}
 
 	private luaTableInsert(table: LuaTable, value: LuaValue, position: number | null): void {

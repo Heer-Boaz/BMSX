@@ -95,3 +95,17 @@ export type ConsoleResourceDescriptor = {
 	type: string;
 	assetId: string;
 };
+
+export type ConsoleLuaHoverScope = 'global' | 'chunk';
+
+export type ConsoleLuaHoverRequest = {
+	assetId: string | null;
+	expression: string;
+};
+
+export type ConsoleLuaHoverResult = {
+	expression: string;
+	lines: string[];
+	valueType: string;
+	scope: ConsoleLuaHoverScope;
+};

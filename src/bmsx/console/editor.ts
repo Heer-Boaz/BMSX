@@ -3,7 +3,7 @@ import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
 import type { ClipboardService } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
-import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor } from './types';
+import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
 
@@ -76,6 +76,8 @@ export type ConsoleEditorOptions = {
 	listResources: () => ConsoleResourceDescriptor[];
 	loadLuaResource: (assetId: string) => string;
 	saveLuaResource: (assetId: string, source: string) => Promise<void>;
+	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+	primaryAssetId: string | null;
 };
 
 export type Position = { row: number; column: number };
@@ -127,6 +129,18 @@ type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 
 type EditorTabId = 'code' | 'resources' | `resource:${string}` | `lua:${string}`;
 type EditorTabKind = 'code' | 'resources' | 'resource_view' | 'lua_editor';
+
+type CodeHoverTooltip = {
+	expression: string;
+	lines: string[];
+	valueType: string;
+	scope: ConsoleLuaHoverScope;
+	assetId: string | null;
+	viewportX: number;
+	viewportY: number;
+	row: number;
+	column: number;
+};
 
 type ResourceViewerState = {
 	descriptor: ConsoleResourceDescriptor;
@@ -263,6 +277,12 @@ const ERROR_OVERLAY_BACKGROUND = { r: 0.6, g: 0, b: 0, a: 1 };
 const ERROR_OVERLAY_PADDING_X = 4;
 const ERROR_OVERLAY_PADDING_Y = 2;
 const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
+const HOVER_TOOLTIP_PADDING_X = 4;
+const HOVER_TOOLTIP_PADDING_Y = 2;
+const HOVER_TOOLTIP_BACKGROUND = { r: 0.1, g: 0.1, b: 0.1, a: 0.9 };
+const HOVER_TOOLTIP_BORDER = COLOR_TOP_BAR_TEXT;
+const HOVER_TOOLTIP_MAX_LINES = 10;
+const HOVER_TOOLTIP_MAX_LINE_LENGTH = 160;
 const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 const HEADER_BUTTON_PADDING_X = 5;
 const HEADER_BUTTON_PADDING_Y = 1;
@@ -302,6 +322,9 @@ export class ConsoleCartEditor {
 	private readonly loadLuaResourceFn: (assetId: string) => string;
 	private readonly saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
 	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
+	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+	private readonly primaryAssetId: string | null;
+	private hoverTooltip: CodeHoverTooltip | null = null;
 	private viewportWidth: number;
 	private viewportHeight: number;
 	private readonly font: ConsoleEditorFont;
@@ -419,6 +442,8 @@ export class ConsoleCartEditor {
 		this.listResourcesFn = options.listResources;
 		this.loadLuaResourceFn = options.loadLuaResource;
 		this.saveLuaResourceFn = options.saveLuaResource;
+		this.inspectLuaExpressionFn = options.inspectLuaExpression;
+		this.primaryAssetId = options.primaryAssetId;
 		if ($ && $.debug) {
 			try {
 				const resources = this.listResourcesFn();
@@ -450,6 +475,55 @@ export class ConsoleCartEditor {
 			this.lastSavedSource = this.loadSource();
 		} catch {
 			this.lastSavedSource = '';
+		}
+	}
+
+	private drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
+		const tooltip = this.hoverTooltip;
+		if (!tooltip) {
+			return;
+		}
+		if (tooltip.viewportY < codeTop || tooltip.viewportY >= codeBottom) {
+			return;
+		}
+		const lines = tooltip.lines;
+		if (!lines || lines.length === 0) {
+			return;
+		}
+		let maxLineWidth = 0;
+		for (let i = 0; i < lines.length; i += 1) {
+			const width = this.measureText(lines[i]);
+			if (width > maxLineWidth) {
+				maxLineWidth = width;
+			}
+		}
+		const bubbleWidth = maxLineWidth + HOVER_TOOLTIP_PADDING_X * 2;
+		const bubbleHeight = lines.length * this.lineHeight + HOVER_TOOLTIP_PADDING_Y * 2;
+		let bubbleLeft = tooltip.viewportX + 12;
+		if (bubbleLeft + bubbleWidth > this.viewportWidth - 1) {
+			bubbleLeft = Math.max(textLeft, this.viewportWidth - 1 - bubbleWidth);
+		}
+		if (bubbleLeft < textLeft) {
+			bubbleLeft = textLeft;
+		}
+		let bubbleTop = tooltip.viewportY + 12;
+		const maxBottom = codeBottom - 1;
+		if (bubbleTop + bubbleHeight > maxBottom) {
+			bubbleTop = tooltip.viewportY - bubbleHeight - 12;
+		}
+		if (bubbleTop + bubbleHeight > maxBottom) {
+			bubbleTop = maxBottom - bubbleHeight;
+		}
+		if (bubbleTop < codeTop) {
+			bubbleTop = codeTop;
+		}
+		const bubbleRight = bubbleLeft + bubbleWidth;
+		const bubbleBottom = bubbleTop + bubbleHeight;
+		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, HOVER_TOOLTIP_BACKGROUND);
+		api.rect(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, HOVER_TOOLTIP_BORDER);
+		for (let i = 0; i < lines.length; i += 1) {
+			const lineY = bubbleTop + HOVER_TOOLTIP_PADDING_Y + i * this.lineHeight;
+			this.drawText(api, lines[i], bubbleLeft + HOVER_TOOLTIP_PADDING_X, lineY, COLOR_STATUS_TEXT);
 		}
 	}
 
@@ -1780,6 +1854,7 @@ export class ConsoleCartEditor {
 		const snapshot = this.readPointerSnapshot();
 		if (!snapshot) {
 			this.pointerPrimaryWasPressed = false;
+			this.clearHoverTooltip();
 			return;
 		}
 		const wasPressed = this.pointerPrimaryWasPressed;
@@ -1791,6 +1866,7 @@ export class ConsoleCartEditor {
 		if (!snapshot.valid) {
 			this.resourceBrowserHoverIndex = -1;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearHoverTooltip();
 			return;
 		}
 		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
@@ -1810,6 +1886,7 @@ export class ConsoleCartEditor {
 			}
 		}
 		if (this.isResourcesTabActive()) {
+			this.clearHoverTooltip();
 			const codeTop = this.codeViewportTop();
 			const codeBottom = this.viewportHeight - this.bottomMargin;
 			const margin = Math.max(4, this.lineHeight);
@@ -1842,6 +1919,7 @@ export class ConsoleCartEditor {
 		if (this.isResourceViewActive()) {
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearHoverTooltip();
 			return;
 		}
 		if (this.pendingActionPrompt) {
@@ -1850,6 +1928,7 @@ export class ConsoleCartEditor {
 			}
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearHoverTooltip();
 			return;
 		}
 		const lineJumpBounds = this.getLineJumpBarBounds();
@@ -1860,6 +1939,7 @@ export class ConsoleCartEditor {
 			this.resetBlink();
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearHoverTooltip();
 			return;
 		}
 		const searchBounds = this.getSearchBarBounds();
@@ -1870,6 +1950,7 @@ export class ConsoleCartEditor {
 			this.resetBlink();
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearHoverTooltip();
 			return;
 		}
 
@@ -1893,7 +1974,206 @@ export class ConsoleCartEditor {
 			}
 			this.setCursorPosition(targetRow, targetColumn);
 		}
+		if (this.isCodeTabActive()) {
+			if (!snapshot.primaryPressed && !this.pointerSelecting && insideVertical) {
+				this.updateHoverTooltip(snapshot);
+			} else {
+				this.clearHoverTooltip();
+			}
+		} else {
+			this.clearHoverTooltip();
+		}
 		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+	}
+
+	private updateHoverTooltip(snapshot: PointerSnapshot): void {
+		const context = this.getActiveCodeTabContext();
+		const assetId = this.resolveHoverAssetId(context);
+		const row = this.resolvePointerRow(snapshot.viewportY);
+		const column = this.resolvePointerColumn(row, snapshot.viewportX);
+		const token = this.extractHoverExpression(row, column);
+		if (!token) {
+			this.clearHoverTooltip();
+			return;
+		}
+		const existing = this.hoverTooltip;
+		if (existing && existing.expression === token.expression && existing.assetId === assetId) {
+			existing.viewportX = snapshot.viewportX;
+			existing.viewportY = snapshot.viewportY;
+			existing.row = row;
+			existing.column = column;
+			return;
+		}
+		const request: ConsoleLuaHoverRequest = {
+			assetId,
+			expression: token.expression,
+		};
+		const inspection = this.inspectLuaExpressionFn(request);
+		if (!inspection) {
+			this.clearHoverTooltip();
+			return;
+		}
+		const displayLines: string[] = [];
+		const header = `${inspection.expression} :: ${inspection.valueType.toUpperCase()} [${inspection.scope}]`;
+		displayLines.push(this.truncateHoverLine(header));
+		const rawLines = inspection.lines;
+		const limit = HOVER_TOOLTIP_MAX_LINES - 1;
+		for (let i = 0; i < rawLines.length && i < limit; i += 1) {
+			displayLines.push(this.truncateHoverLine(rawLines[i]));
+		}
+		if (rawLines.length > limit) {
+			displayLines.push('...');
+		}
+		this.hoverTooltip = {
+			expression: inspection.expression,
+			lines: displayLines,
+			valueType: inspection.valueType,
+			scope: inspection.scope,
+			assetId,
+			viewportX: snapshot.viewportX,
+			viewportY: snapshot.viewportY,
+			row,
+			column,
+		};
+	}
+
+	private truncateHoverLine(text: string): string {
+		if (text.length <= HOVER_TOOLTIP_MAX_LINE_LENGTH) {
+			return text;
+		}
+		return text.slice(0, HOVER_TOOLTIP_MAX_LINE_LENGTH - 3) + '...';
+	}
+
+	private clearHoverTooltip(): void {
+		this.hoverTooltip = null;
+	}
+
+	private resolveHoverAssetId(context: CodeTabContext | null): string | null {
+		if (context && context.descriptor) {
+			return context.descriptor.assetId;
+		}
+		return this.primaryAssetId;
+	}
+
+	private extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
+		if (row < 0 || row >= this.lines.length) {
+			return null;
+		}
+		const line = this.lines[row] ?? '';
+		if (line.length === 0) {
+			return null;
+		}
+		let index = column;
+		const lastIndex = line.length - 1;
+		if (lastIndex < 0) {
+			return null;
+		}
+		if (index > lastIndex) {
+			index = lastIndex;
+		}
+		if (index < 0) {
+			return null;
+		}
+		if (!this.isIdentifierChar(line.charCodeAt(index))) {
+			if (index > 0 && this.isIdentifierChar(line.charCodeAt(index - 1))) {
+				index -= 1;
+			} else {
+				return null;
+			}
+		}
+		let start = index;
+		while (start > 0 && this.isIdentifierChar(line.charCodeAt(start - 1))) {
+			start -= 1;
+		}
+		if (!this.isIdentifierStartChar(line.charCodeAt(start))) {
+			return null;
+		}
+		let end = index + 1;
+		while (end < line.length && this.isIdentifierChar(line.charCodeAt(end))) {
+			end += 1;
+		}
+		let left = start;
+		while (left > 0) {
+			const dotIndex = left - 1;
+			if (line.charCodeAt(dotIndex) !== 46) {
+				break;
+			}
+			let segmentStart = dotIndex - 1;
+			while (segmentStart >= 0 && this.isIdentifierChar(line.charCodeAt(segmentStart))) {
+				segmentStart -= 1;
+			}
+			segmentStart += 1;
+			if (segmentStart >= dotIndex) {
+				break;
+			}
+			if (!this.isIdentifierStartChar(line.charCodeAt(segmentStart))) {
+				break;
+			}
+			left = segmentStart;
+		}
+		start = left;
+		let right = end;
+		while (right < line.length) {
+			if (line.charCodeAt(right) !== 46) {
+				break;
+			}
+			const identifierStart = right + 1;
+			if (identifierStart >= line.length) {
+				break;
+			}
+			if (!this.isIdentifierStartChar(line.charCodeAt(identifierStart))) {
+				break;
+			}
+			let identifierEnd = identifierStart + 1;
+			while (identifierEnd < line.length && this.isIdentifierChar(line.charCodeAt(identifierEnd))) {
+				identifierEnd += 1;
+			}
+			right = identifierEnd;
+		}
+		end = right;
+		if (end <= start) {
+			return null;
+		}
+		const expression = line.slice(start, end);
+		if (expression.length === 0) {
+			return null;
+		}
+		const parts = expression.split('.');
+		if (parts.length === 0) {
+			return null;
+		}
+		for (let i = 0; i < parts.length; i += 1) {
+			const part = parts[i];
+			if (part.length === 0) {
+				return null;
+			}
+			if (!this.isIdentifierStartChar(part.charCodeAt(0))) {
+				return null;
+			}
+			for (let j = 1; j < part.length; j += 1) {
+				if (!this.isIdentifierChar(part.charCodeAt(j))) {
+					return null;
+				}
+			}
+		}
+		return { expression, startColumn: start, endColumn: end };
+	}
+
+	private isIdentifierStartChar(code: number): boolean {
+		if (code >= 65 && code <= 90) {
+			return true;
+		}
+		if (code >= 97 && code <= 122) {
+			return true;
+		}
+		return code === 95;
+	}
+
+	private isIdentifierChar(code: number): boolean {
+		if (this.isIdentifierStartChar(code)) {
+			return true;
+		}
+		return code >= 48 && code <= 57;
 	}
 
 	private handleActionPromptPointer(snapshot: PointerSnapshot): void {
@@ -3679,6 +3959,7 @@ export class ConsoleCartEditor {
 		}
 
 		this.drawRuntimeErrorOverlay(api, codeTop, textLeft);
+		this.drawHoverTooltip(api, codeTop, codeBottom, textLeft);
 
 		if (this.cursorVisible && cursorEntry) {
 			this.drawCursor(api, textLeft, codeTop, cursorEntry, cursorSliceStart);
