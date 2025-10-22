@@ -244,6 +244,7 @@ const UNDO_COALESCE_INTERVAL_MS = 550;
 const WHEEL_SCROLL_STEP = 40;
 const KEY_GUARD_MIN_MS = 24;
 const KEY_GUARD_MAX_MS = 120;
+const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
 
 const COLOR_FRAME = 0;
 const COLOR_TOP_BAR = 13;
@@ -418,6 +419,9 @@ export class ConsoleCartEditor {
 	private lastHistoryTimestamp = 0;
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
+	private lastPointerClickTimeMs = 0;
+	private lastPointerClickRow = -1;
+	private lastPointerClickColumn = -1;
 	private cursorRevealSuspended = false;
 	private searchActive = false;
 	private searchVisible = false;
@@ -1899,6 +1903,7 @@ export class ConsoleCartEditor {
 			if (this.handleTopBarPointer(snapshot)) {
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.resetPointerClickTracking();
 				return;
 			}
 		}
@@ -1908,10 +1913,12 @@ export class ConsoleCartEditor {
 			if (this.handleTabBarPointer(snapshot)) {
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.resetPointerClickTracking();
 				return;
 			}
 		}
 		if (this.isResourcesTabActive()) {
+			this.resetPointerClickTracking();
 			this.clearHoverTooltip();
 			const codeTop = this.codeViewportTop();
 			const codeBottom = this.viewportHeight - this.bottomMargin;
@@ -1943,12 +1950,14 @@ export class ConsoleCartEditor {
 			return;
 		}
 		if (this.isResourceViewActive()) {
+			this.resetPointerClickTracking();
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
 			return;
 		}
 		if (this.pendingActionPrompt) {
+			this.resetPointerClickTracking();
 			if (justPressed) {
 				this.handleActionPromptPointer(snapshot);
 			}
@@ -1987,9 +1996,15 @@ export class ConsoleCartEditor {
 			this.focusEditorFromSearch();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
-			this.selectionAnchor = { row: targetRow, column: targetColumn };
-			this.setCursorPosition(targetRow, targetColumn);
-			this.pointerSelecting = true;
+			const doubleClick = this.registerPointerClick(targetRow, targetColumn);
+			if (doubleClick) {
+				this.selectWordAtPosition(targetRow, targetColumn);
+				this.pointerSelecting = false;
+			} else {
+				this.selectionAnchor = { row: targetRow, column: targetColumn };
+				this.setCursorPosition(targetRow, targetColumn);
+				this.pointerSelecting = true;
+			}
 		}
 		if (this.pointerSelecting && snapshot.primaryPressed) {
 			this.handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY);
@@ -2950,6 +2965,27 @@ export class ConsoleCartEditor {
 		}
 	}
 
+	private registerPointerClick(row: number, column: number): boolean {
+		const now = $.platform.clock.now();
+		const interval = now - this.lastPointerClickTimeMs;
+		const sameRow = row === this.lastPointerClickRow;
+		const columnDelta = Math.abs(column - this.lastPointerClickColumn);
+		const doubleClick = this.lastPointerClickTimeMs > 0
+			&& interval <= DOUBLE_CLICK_MAX_INTERVAL_MS
+			&& sameRow
+			&& columnDelta <= 2;
+		this.lastPointerClickTimeMs = now;
+		this.lastPointerClickRow = row;
+		this.lastPointerClickColumn = column;
+		return doubleClick;
+	}
+
+	private resetPointerClickTracking(): void {
+		this.lastPointerClickTimeMs = 0;
+		this.lastPointerClickRow = -1;
+		this.lastPointerClickColumn = -1;
+	}
+
 	private scrollRows(deltaRows: number): void {
 		if (deltaRows === 0) {
 			return;
@@ -3601,6 +3637,71 @@ export class ConsoleCartEditor {
 		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
+		this.revealCursor();
+	}
+
+	private selectWordAtPosition(row: number, column: number): void {
+		if (row < 0 || row >= this.lines.length) {
+			return;
+		}
+		const line = this.lines[row];
+		if (line.length === 0) {
+			this.selectionAnchor = null;
+			this.cursorRow = row;
+			this.cursorColumn = 0;
+			this.updateDesiredColumn();
+			this.resetBlink();
+			this.revealCursor();
+			return;
+		}
+		let index = column;
+		if (index >= line.length) {
+			index = line.length - 1;
+		}
+		if (index < 0) {
+			index = 0;
+		}
+		let start = index;
+		let end = index + 1;
+		const current = line.charAt(index);
+		if (this.isWordChar(current)) {
+			while (start > 0 && this.isWordChar(line.charAt(start - 1))) {
+				start -= 1;
+			}
+			while (end < line.length && this.isWordChar(line.charAt(end))) {
+				end += 1;
+			}
+		} else if (this.isWhitespace(current)) {
+			while (start > 0 && this.isWhitespace(line.charAt(start - 1))) {
+				start -= 1;
+			}
+			while (end < line.length && this.isWhitespace(line.charAt(end))) {
+				end += 1;
+			}
+		} else {
+			while (start > 0) {
+				const previous = line.charAt(start - 1);
+				if (this.isWordChar(previous) || this.isWhitespace(previous)) {
+					break;
+				}
+				start -= 1;
+			}
+			while (end < line.length) {
+				const next = line.charAt(end);
+				if (this.isWordChar(next) || this.isWhitespace(next)) {
+					break;
+				}
+				end += 1;
+			}
+		}
+		if (end < start) {
+			end = start;
+		}
+		this.selectionAnchor = { row, column: start };
+		this.cursorRow = row;
+		this.cursorColumn = end;
+		this.updateDesiredColumn();
+		this.resetBlink();
 		this.revealCursor();
 	}
 
