@@ -123,7 +123,30 @@ type RectBounds = {
 
 type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 
-type EditorTabId = 'code' | 'resources';
+type EditorTabId = 'code' | 'resources' | `resource:${string}`;
+type EditorTabKind = 'code' | 'resources' | 'resource_view';
+
+type ResourceViewerState = {
+	descriptor: ConsoleResourceDescriptor;
+	lines: string[];
+	error: string | null;
+	title: string;
+	scroll: number;
+};
+
+type EditorTabDescriptor = {
+	id: EditorTabId | string;
+	kind: EditorTabKind;
+	title: string;
+	closable: boolean;
+	resource?: ResourceViewerState;
+};
+
+type ResourceBrowserItem = {
+	line: string;
+	contentStartColumn: number;
+	descriptor: ConsoleResourceDescriptor | null;
+};
 
 type PendingActionPrompt = {
 	action: 'resume' | 'reboot';
@@ -138,7 +161,7 @@ type ConsoleRuntimeBridge = {
 
 export type ConsoleEditorSerializedState = {
 	active: boolean;
-	activeTab: EditorTabId;
+	activeTab: EditorTabKind;
 	snapshot: EditorSnapshot;
 	searchQuery: string;
 	searchMatches: SearchMatch[];
@@ -245,6 +268,10 @@ const COLOR_TAB_INACTIVE_BACKGROUND = COLOR_STATUS_BACKGROUND;
 const COLOR_TAB_ACTIVE_BACKGROUND = COLOR_CODE_BACKGROUND;
 const COLOR_TAB_INACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
 const COLOR_TAB_ACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
+const TAB_CLOSE_BUTTON_PADDING_X = 3;
+const TAB_CLOSE_BUTTON_PADDING_Y = 1;
+const TAB_CLOSE_BUTTON_SYMBOL = 'X';
+const RESOURCE_VIEWER_MAX_LINES = 512;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -311,10 +338,8 @@ export class ConsoleCartEditor {
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },
 	};
-	private readonly tabButtonBounds: Record<EditorTabId, RectBounds> = {
-		code: { left: 0, top: 0, right: 0, bottom: 0 },
-		resources: { left: 0, top: 0, right: 0, bottom: 0 },
-	};
+	private readonly tabButtonBounds: Map<string, RectBounds> = new Map();
+	private readonly tabCloseButtonBounds: Map<string, RectBounds> = new Map();
 	private readonly actionPromptButtons: { saveAndContinue: RectBounds | null; continue: RectBounds; cancel: RectBounds } = {
 		saveAndContinue: null,
 		continue: { left: 0, top: 0, right: 0, bottom: 0 },
@@ -354,9 +379,12 @@ export class ConsoleCartEditor {
 	private saveGeneration = 0;
 	private appliedGeneration = 0;
 	private lastSavedSource = '';
-	private activeTab: EditorTabId = 'code';
-	private resourceBrowserLines: string[] = [];
+	private tabs: EditorTabDescriptor[] = [];
+	private activeTabId: string = 'code';
+	private resourceBrowserItems: ResourceBrowserItem[] = [];
 	private resourceBrowserScroll = 0;
+	private resourceBrowserSelectionIndex = -1;
+	private resourceBrowserHoverIndex = -1;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -376,6 +404,8 @@ export class ConsoleCartEditor {
 		this.tabBarHeight = this.lineHeight + 3;
 		this.topMargin = this.headerHeight + this.tabBarHeight + 2;
 		this.bottomMargin = this.lineHeight + 6;
+		this.initializeTabs();
+		this.resetResourceTabState();
 		this.desiredColumn = this.cursorColumn;
 		this.assertMonospace();
 		try {
@@ -577,15 +607,17 @@ export class ConsoleCartEditor {
 		}
 		const frameColor = Msx1Colors[COLOR_FRAME];
 		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
-		this.drawTopBar(api);
-		this.drawTabBar(api);
-		if (this.isResourcesTabActive()) {
-			this.drawResourceBrowser(api);
-		} else {
-			this.drawSearchBar(api);
-			this.drawLineJumpBar(api);
-			this.drawCodeArea(api);
-		}
+	this.drawTopBar(api);
+	this.drawTabBar(api);
+	if (this.isResourcesTabActive()) {
+		this.drawResourceBrowser(api);
+	} else if (this.isResourceViewActive()) {
+		this.drawResourceViewer(api);
+	} else {
+		this.drawSearchBar(api);
+		this.drawLineJumpBar(api);
+		this.drawCodeArea(api);
+	}
 		this.drawStatusBar(api);
 		if (this.pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
@@ -597,35 +629,51 @@ export class ConsoleCartEditor {
 		const barBottom = barTop + this.tabBarHeight;
 		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_TAB_BAR_BACKGROUND);
 		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_TAB_BORDER);
-		const tabs: Array<{ id: EditorTabId; label: string }> = [
-			{ id: 'code', label: 'CODE' },
-			{ id: 'resources', label: 'FILES' },
-		];
+		this.tabButtonBounds.clear();
+		this.tabCloseButtonBounds.clear();
 		let tabX = 4;
-		for (let index = 0; index < tabs.length; index += 1) {
-			const entry = tabs[index];
-			const textWidth = this.measureText(entry.label);
-			const tabWidth = textWidth + TAB_BUTTON_PADDING_X * 2;
+		for (let index = 0; index < this.tabs.length; index += 1) {
+			const tab = this.tabs[index];
+			const textWidth = this.measureText(tab.title);
+			let closeWidth = 0;
+			if (tab.closable) {
+				closeWidth = this.measureText(TAB_CLOSE_BUTTON_SYMBOL) + TAB_CLOSE_BUTTON_PADDING_X * 2;
+			}
+			const tabWidth = textWidth + TAB_BUTTON_PADDING_X * 2 + closeWidth;
 			const left = tabX;
 			const right = left + tabWidth;
 			const top = barTop + 1;
 			const bottom = barBottom - 1;
 			const bounds: RectBounds = { left, top, right, bottom };
-			this.tabButtonBounds[entry.id] = bounds;
-			const active = this.activeTab === entry.id;
+			this.tabButtonBounds.set(tab.id, bounds);
+			const active = this.activeTabId === tab.id;
 			const fillColor = active ? COLOR_TAB_ACTIVE_BACKGROUND : COLOR_TAB_INACTIVE_BACKGROUND;
 			const textColor = active ? COLOR_TAB_ACTIVE_TEXT : COLOR_TAB_INACTIVE_TEXT;
 			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
 			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_TAB_BORDER);
-			this.drawText(api, entry.label, bounds.left + TAB_BUTTON_PADDING_X, bounds.top + TAB_BUTTON_PADDING_Y, textColor);
+			const textX = bounds.left + TAB_BUTTON_PADDING_X;
+			const textY = bounds.top + TAB_BUTTON_PADDING_Y;
+			this.drawText(api, tab.title, textX, textY, textColor);
+			if (tab.closable) {
+				const closeBounds: RectBounds = {
+					left: bounds.right - closeWidth,
+					top: bounds.top,
+					right: bounds.right,
+					bottom: bounds.bottom,
+				};
+				this.tabCloseButtonBounds.set(tab.id, closeBounds);
+				const closeX = closeBounds.left + TAB_CLOSE_BUTTON_PADDING_X;
+				const closeY = closeBounds.top + TAB_CLOSE_BUTTON_PADDING_Y;
+				this.drawText(api, TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
+			}
 			if (active) {
 				api.rectfill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, fillColor);
 			}
 			tabX = right + TAB_BUTTON_SPACING;
 		}
-		const tabBottomLineTop = barBottom - 1;
+		const remainingTop = barBottom - 1;
 		if (tabX < this.viewportWidth) {
-			api.rectfill(tabX, tabBottomLineTop, this.viewportWidth, barBottom, COLOR_TAB_BAR_BACKGROUND);
+			api.rectfill(tabX, remainingTop, this.viewportWidth, barBottom, COLOR_TAB_BAR_BACKGROUND);
 		}
 	}
 
@@ -647,6 +695,49 @@ export class ConsoleCartEditor {
 		this.viewportHeight = height;
 	}
 
+	private initializeTabs(): void {
+		this.tabs = [this.createCodeTabDescriptor()];
+		this.activeTabId = 'code';
+	}
+
+	private createCodeTabDescriptor(): EditorTabDescriptor {
+		return { id: 'code', kind: 'code', title: 'CODE', closable: false };
+	}
+
+	private createResourceTabDescriptor(): EditorTabDescriptor {
+		return { id: 'resources', kind: 'resources', title: 'FILES', closable: true };
+	}
+
+	private getActiveTabDescriptor(): EditorTabDescriptor {
+		const active = this.tabs.find(tab => tab.id === this.activeTabId);
+		if (active) {
+			return active;
+		}
+		if (this.tabs.length === 0) {
+			const codeTab = this.createCodeTabDescriptor();
+			this.tabs.push(codeTab);
+			this.activeTabId = codeTab.id;
+			return codeTab;
+		}
+		this.activeTabId = this.tabs[0].id;
+		return this.tabs[0];
+	}
+
+	private getActiveTabKind(): EditorTabKind {
+		return this.getActiveTabDescriptor().kind;
+	}
+
+	private getActiveResourceViewer(): ResourceViewerState | null {
+		const tab = this.tabs.find(candidate => candidate.id === this.activeTabId);
+		if (!tab) {
+			return null;
+		}
+		if (tab.kind !== 'resource_view' || !tab.resource) {
+			return null;
+		}
+		return tab.resource;
+	}
+
 	public serializeState(): ConsoleEditorSerializedState { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		const snapshot = this.captureSnapshot();
 		const message: MessageState = {
@@ -665,7 +756,7 @@ export class ConsoleCartEditor {
 			: null;
 		return {
 			active: this.active,
-			activeTab: this.activeTab,
+			activeTab: this.getActiveTabKind(),
 			snapshot,
 			searchQuery: this.searchQuery,
 			searchMatches: this.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end })),
@@ -685,9 +776,15 @@ export class ConsoleCartEditor {
 	public restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		if (!state) return;
 		this.applyInputOverrides(false);
+		this.initializeTabs();
+		this.resetResourceTabState();
 		this.active = state.active;
-		const restoredTab = state.activeTab ?? 'code';
-		this.setActiveTab(restoredTab);
+		const restoredKind = state.activeTab ?? 'code';
+		if (restoredKind === 'resources') {
+			this.ensureResourceTab();
+		} else {
+			this.activateCodeTab();
+		}
 		if (this.active) {
 			this.applyInputOverrides(true);
 		}
@@ -743,6 +840,7 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
 		this.resetActionPromptState();
+		this.closeResourceTab();
 		this.activateCodeTab();
 	}
 
@@ -900,6 +998,10 @@ export class ConsoleCartEditor {
 	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 		if (this.isResourcesTabActive()) {
 			this.handleResourceBrowserKeyboard(keyboard, deltaSeconds);
+			return;
+		}
+		if (this.isResourceViewActive()) {
+			this.handleResourceViewerInput(keyboard, deltaSeconds);
 			return;
 		}
 		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
@@ -1551,6 +1653,7 @@ export class ConsoleCartEditor {
 			this.pointerSelecting = false;
 		}
 		if (!snapshot.valid) {
+			this.resourceBrowserHoverIndex = -1;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
@@ -1571,6 +1674,24 @@ export class ConsoleCartEditor {
 			}
 		}
 		if (this.isResourcesTabActive()) {
+			const hoverIndex = this.resourceBrowserIndexAtPosition(snapshot.viewportY);
+			this.resourceBrowserHoverIndex = hoverIndex;
+			if (justPressed && hoverIndex >= 0) {
+				this.resourceBrowserSelectionIndex = hoverIndex;
+				this.resourceBrowserEnsureSelectionVisible();
+				const item = this.resourceBrowserItems[hoverIndex];
+				if (item && item.descriptor) {
+					this.openResourceViewerTab(item.descriptor);
+				}
+			}
+			if (!snapshot.primaryPressed && hoverIndex === -1) {
+				this.resourceBrowserHoverIndex = -1;
+			}
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
+		}
+		if (this.isResourceViewActive()) {
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
@@ -1680,13 +1801,18 @@ export class ConsoleCartEditor {
 			return false;
 		}
 		const x = snapshot.viewportX;
-		if (this.pointInRect(x, y, this.tabButtonBounds.code)) {
-			this.activateCodeTab();
-			return true;
-		}
-		if (this.pointInRect(x, y, this.tabButtonBounds.resources)) {
-			this.activateResourceTab();
-			return true;
+		for (let index = 0; index < this.tabs.length; index += 1) {
+			const tab = this.tabs[index];
+			const closeBounds = this.tabCloseButtonBounds.get(tab.id);
+			if (closeBounds && this.pointInRect(x, y, closeBounds)) {
+				this.closeTab(tab.id);
+				return true;
+			}
+			const tabBounds = this.tabButtonBounds.get(tab.id);
+			if (tabBounds && this.pointInRect(x, y, tabBounds)) {
+				this.setActiveTab(tab.id);
+				return true;
+			}
 		}
 		return false;
 	}
@@ -1712,6 +1838,11 @@ export class ConsoleCartEditor {
 			playerInput.consumeAction('pointer_wheel');
 			return;
 		}
+		if (this.isResourceViewActive()) {
+			this.scrollResourceViewer(direction * steps);
+			playerInput.consumeAction('pointer_wheel');
+			return;
+		}
 		this.scrollRows(direction * steps);
 		this.cursorRevealSuspended = true;
 		playerInput.consumeAction('pointer_wheel');
@@ -1719,7 +1850,7 @@ export class ConsoleCartEditor {
 
 	private handleTopBarButtonPress(button: TopBarButtonId): void {
 		if (button === 'resources') {
-			this.toggleResourceTab();
+			this.activateResourceTab();
 			return;
 		}
 		if (button === 'save') {
@@ -3325,22 +3456,123 @@ export class ConsoleCartEditor {
 	}
 
 	private isResourcesTabActive(): boolean {
-		return this.activeTab === 'resources';
+		return this.getActiveTabKind() === 'resources';
 	}
 
 	private isCodeTabActive(): boolean {
-		return this.activeTab === 'code';
+		return this.getActiveTabKind() === 'code';
 	}
 
-	private setActiveTab(tab: EditorTabId): void {
-		if (tab === 'resources') {
-			this.openResourcesTab();
+	private isResourceViewActive(): boolean {
+		return this.getActiveTabKind() === 'resource_view';
+	}
+
+	private setActiveTab(tabId: string): void {
+		const tab = this.tabs.find(candidate => candidate.id === tabId);
+		if (!tab) {
 			return;
 		}
-		this.openCodeTab();
+		if (this.activeTabId === tabId) {
+			if (tab.kind === 'resources') {
+				this.enterResourcesTab();
+			} else if (tab.kind === 'resource_view') {
+				this.enterResourceViewer(tab);
+			}
+			return;
+		}
+		this.activeTabId = tabId;
+		if (tab.kind === 'resources') {
+			this.enterResourcesTab();
+		} else if (tab.kind === 'resource_view') {
+			this.enterResourceViewer(tab);
+		} else {
+			this.enterCodeTab();
+		}
 	}
 
-	private openResourcesTab(): void {
+	private ensureResourceTab(): void {
+		let tab = this.tabs.find(candidate => candidate.kind === 'resources');
+		if (!tab) {
+			tab = this.createResourceTabDescriptor();
+			this.tabs.push(tab);
+		}
+		this.setActiveTab(tab.id);
+	}
+
+	private closeResourceTab(): void {
+		const tab = this.tabs.find(candidate => candidate.kind === 'resources');
+		if (!tab) {
+			return;
+		}
+		this.closeTab(tab.id);
+	}
+
+	private activateResourceTab(): void {
+		this.ensureResourceTab();
+	}
+
+	private activateCodeTab(): void {
+		const codeTab = this.tabs.find(candidate => candidate.kind === 'code');
+		if (codeTab) {
+			this.setActiveTab(codeTab.id);
+			return;
+		}
+		const newCodeTab = this.createCodeTabDescriptor();
+		this.tabs.unshift(newCodeTab);
+		this.setActiveTab(newCodeTab.id);
+	}
+
+	private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
+		const tabId: EditorTabId = `resource:${descriptor.assetId}`;
+		let tab = this.tabs.find(candidate => candidate.id === tabId);
+		const state = this.buildResourceViewerState(descriptor);
+		this.resourceViewerClampScroll(state);
+		if (tab) {
+			tab.title = state.title;
+			tab.resource = state;
+			this.setActiveTab(tabId);
+			return;
+		}
+		tab = {
+			id: tabId,
+			kind: 'resource_view',
+			title: state.title,
+			closable: true,
+			resource: state,
+		};
+		this.tabs.push(tab);
+		this.setActiveTab(tabId);
+	}
+
+	private closeTab(tabId: string): void {
+		const index = this.tabs.findIndex(tab => tab.id === tabId);
+		if (index === -1) {
+			return;
+		}
+		const tab = this.tabs[index];
+		if (!tab.closable) {
+			return;
+		}
+		this.tabs.splice(index, 1);
+		if (tab.kind === 'resources') {
+			this.resetResourceTabState();
+		}
+		if (this.activeTabId === tabId) {
+			const fallback = this.tabs[index - 1] ?? this.tabs[0];
+			if (fallback) {
+				this.setActiveTab(fallback.id);
+			}
+		}
+	}
+
+	private resetResourceTabState(): void {
+		this.resourceBrowserItems = [];
+		this.resourceBrowserScroll = 0;
+		this.resourceBrowserSelectionIndex = -1;
+		this.resourceBrowserHoverIndex = -1;
+	}
+
+	private enterResourcesTab(): void {
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.cursorRevealSuspended = false;
@@ -3350,41 +3582,46 @@ export class ConsoleCartEditor {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.showWarningBanner(`Failed to enumerate resources: ${message}`);
-			this.resourceBrowserLines = [`<failed to load resources: ${message}>`];
+			this.resourceBrowserItems = [{
+				line: `<failed to load resources: ${message}>`,
+				contentStartColumn: 0,
+				descriptor: null,
+			}];
 			this.resourceBrowserScroll = 0;
-			this.activeTab = 'resources';
+			this.resourceBrowserSelectionIndex = 0;
 			return;
 		}
-		this.resourceBrowserLines = this.buildResourceBrowserLines(descriptors);
+		this.resourceBrowserItems = this.buildResourceBrowserItems(descriptors);
 		this.resourceBrowserScroll = 0;
-		this.activeTab = 'resources';
+		this.resourceBrowserSelectionIndex = this.resourceBrowserItems.length > 0 ? 0 : -1;
+		this.resourceBrowserHoverIndex = -1;
+		this.resourceBrowserEnsureSelectionVisible();
 	}
 
-	private openCodeTab(): void {
-		this.activeTab = 'code';
-		this.resourceBrowserLines = [];
-		this.resourceBrowserScroll = 0;
-	}
-
-	private activateResourceTab(): void {
-		this.setActiveTab('resources');
-	}
-
-	private activateCodeTab(): void {
-		this.setActiveTab('code');
-	}
-
-	private toggleResourceTab(): void {
-		if (this.isResourcesTabActive()) {
-			this.activateCodeTab();
+	private enterResourceViewer(tab: EditorTabDescriptor): void {
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.cursorRevealSuspended = false;
+		this.resourceBrowserHoverIndex = -1;
+		if (!tab.resource) {
 			return;
 		}
-		this.activateResourceTab();
+		this.resourceViewerClampScroll(tab.resource);
 	}
 
-	private buildResourceBrowserLines(entries: ConsoleResourceDescriptor[]): string[] {
+	private enterCodeTab(): void {
+		this.resetResourceTabState();
+	}
+
+	private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): ResourceBrowserItem[] {
+		const items: ResourceBrowserItem[] = [];
 		if (!entries || entries.length === 0) {
-			return ['<no resources>'];
+			items.push({
+				line: '<no resources>',
+				contentStartColumn: 0,
+				descriptor: null,
+			});
+			return items;
 		}
 		type ResourceTreeDirectory = {
 			name: string;
@@ -3419,7 +3656,7 @@ export class ConsoleCartEditor {
 				}
 			}
 		}
-		const lines: string[] = ['./'];
+		items.push({ line: './', contentStartColumn: 0, descriptor: null });
 		const traverse = (directory: ResourceTreeDirectory, prefix: string) => {
 			const childDirs = Array.from(directory.children.values()).sort((a, b) => a.name.localeCompare(b.name));
 			const files = directory.files.slice().sort((a, b) => a.name.localeCompare(b.name));
@@ -3437,24 +3674,271 @@ export class ConsoleCartEditor {
 				const linePrefix = prefix + connector;
 				const nextPrefix = prefix + (isLast ? '    ' : '|   ');
 				if (entry.kind === 'dir') {
-					lines.push(`${linePrefix}${entry.node.name}/`);
+					const line = `${linePrefix}${entry.node.name}/`;
+					items.push({
+						line,
+						contentStartColumn: linePrefix.length,
+						descriptor: null,
+					});
 					traverse(entry.node, nextPrefix);
 				} else {
 					const descriptor = entry.node.descriptor;
 					const summary = `${descriptor.type}:${descriptor.assetId}`;
-					lines.push(`${linePrefix}${entry.node.name} [${summary}]`);
+					const line = `${linePrefix}${entry.node.name} [${summary}]`;
+					items.push({
+						line,
+						contentStartColumn: linePrefix.length,
+						descriptor,
+					});
 				}
 			}
 		};
 		traverse(root, '');
-		return lines;
+		return items;
+	}
+
+	private buildResourceViewerState(descriptor: ConsoleResourceDescriptor): ResourceViewerState {
+		const title = this.computeResourceTabTitle(descriptor);
+		const lines: string[] = [
+			`Path: ${descriptor.path || '<unknown>'}`,
+			`Type: ${descriptor.type}`,
+			`Asset ID: ${descriptor.assetId}`,
+		];
+		let error: string | null = null;
+		const rompack = $.rompack;
+		if (!rompack) {
+			error = 'Rompack unavailable.';
+		} else {
+			lines.push('');
+			switch (descriptor.type) {
+				case 'lua': {
+					const source = rompack.lua?.[descriptor.assetId];
+					if (typeof source === 'string') {
+						this.appendResourceViewerLines(lines, ['-- Lua Source --', '']);
+						this.appendResourceViewerLines(lines, source.split(/\r?\n/));
+					} else {
+						error = `Lua source '${descriptor.assetId}' unavailable.`;
+					}
+					break;
+				}
+				case 'code': {
+					const dataEntry = rompack.data?.[descriptor.assetId];
+					if (typeof dataEntry === 'string') {
+						this.appendResourceViewerLines(lines, ['-- Code --', '']);
+						this.appendResourceViewerLines(lines, dataEntry.split(/\r?\n/));
+					} else if (dataEntry !== undefined) {
+						const json = this.safeJsonStringify(dataEntry);
+						if (json !== null) {
+							this.appendResourceViewerLines(lines, ['-- Code --', '']);
+							this.appendResourceViewerLines(lines, json.split(/\r?\n/));
+						} else {
+							error = `Code asset '${descriptor.assetId}' is not serializable.`;
+						}
+					} else if (typeof rompack.code === 'string') {
+						this.appendResourceViewerLines(lines, ['-- Game Code --', '']);
+						this.appendResourceViewerLines(lines, rompack.code.split(/\r?\n/));
+					} else {
+						error = `Code asset '${descriptor.assetId}' unavailable.`;
+					}
+					break;
+				}
+				case 'data':
+				case 'rommanifest': {
+					const data = rompack.data?.[descriptor.assetId];
+					if (data !== undefined) {
+						const json = this.safeJsonStringify(data);
+						if (json !== null) {
+							this.appendResourceViewerLines(lines, ['-- Data --', '']);
+							this.appendResourceViewerLines(lines, json.split(/\r?\n/));
+						} else {
+							error = `Data asset '${descriptor.assetId}' is not serializable.`;
+						}
+					} else {
+						error = `Data asset '${descriptor.assetId}' not found.`;
+					}
+					break;
+				}
+				case 'image':
+				case 'atlas':
+				case 'romlabel': {
+					const image = rompack.img?.[descriptor.assetId];
+					if (!image) {
+						error = `Image asset '${descriptor.assetId}' not found.`;
+						break;
+					}
+					const meta = image.imgmeta ?? {};
+					const width = (meta as { width?: number }).width;
+					const height = (meta as { height?: number }).height;
+					const atlasId = (meta as { atlasid?: number }).atlasid;
+					const atlassed = (meta as { atlassed?: boolean }).atlassed;
+					this.appendResourceViewerLines(lines, ['-- Image Metadata --']);
+					if (Number.isFinite(width) && Number.isFinite(height)) {
+						this.appendResourceViewerLines(lines, [`Dimensions: ${width}x${height}`]);
+					}
+					if (typeof atlassed === 'boolean') {
+						this.appendResourceViewerLines(lines, [`Atlassed: ${atlassed ? 'yes' : 'no'}`]);
+					}
+					if (atlasId !== undefined) {
+						this.appendResourceViewerLines(lines, [`Atlas ID: ${atlasId}`]);
+					}
+					for (const [key, value] of Object.entries(meta)) {
+						if (['width', 'height', 'atlassed', 'atlasid'].includes(key)) {
+							continue;
+						}
+						this.appendResourceViewerLines(lines, [`${key}: ${this.describeMetadataValue(value)}`]);
+					}
+					break;
+				}
+				case 'audio': {
+					const audio = rompack.audio?.[descriptor.assetId];
+					if (!audio) {
+						error = `Audio asset '${descriptor.assetId}' not found.`;
+						break;
+					}
+					const meta = audio.audiometa ?? {};
+					this.appendResourceViewerLines(lines, ['-- Audio Metadata --']);
+					const bufferSize = (audio.buffer as { byteLength?: number } | undefined)?.byteLength;
+					if (typeof bufferSize === 'number') {
+						this.appendResourceViewerLines(lines, [`Buffer Size: ${bufferSize} bytes`]);
+					}
+					for (const [key, value] of Object.entries(meta)) {
+						this.appendResourceViewerLines(lines, [`${key}: ${this.describeMetadataValue(value)}`]);
+					}
+					break;
+				}
+				case 'model': {
+					const model = rompack.model?.[descriptor.assetId];
+					if (!model) {
+						error = `Model asset '${descriptor.assetId}' not found.`;
+						break;
+					}
+					const keys = Object.keys(model);
+					this.appendResourceViewerLines(lines, ['-- Model Metadata --', `Keys: ${keys.join(', ')}`]);
+					break;
+				}
+				case 'fsm': {
+					const fsm = rompack.fsm?.[descriptor.assetId];
+					if (!fsm) {
+						error = `FSM '${descriptor.assetId}' not found.`;
+						break;
+					}
+					const json = this.safeJsonStringify(fsm);
+					if (json !== null) {
+						this.appendResourceViewerLines(lines, ['-- FSM --', '']);
+						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
+					} else {
+						error = `FSM '${descriptor.assetId}' is not serializable.`;
+					}
+					break;
+				}
+				case 'aem': {
+					const events = rompack.audioevents?.[descriptor.assetId];
+					if (!events) {
+						error = `Audio event map '${descriptor.assetId}' not found.`;
+						break;
+					}
+					const json = this.safeJsonStringify(events);
+					if (json !== null) {
+						this.appendResourceViewerLines(lines, ['-- Audio Events --', '']);
+						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
+					} else {
+						error = `Audio event map '${descriptor.assetId}' is not serializable.`;
+					}
+					break;
+				}
+				default: {
+					this.appendResourceViewerLines(lines, ['<no preview available for this asset type>']);
+					break;
+				}
+			}
+		}
+		if (error) {
+			lines.push('');
+			lines.push(`Error: ${error}`);
+		}
+		if (lines.length === 0) {
+			lines.push('<empty>');
+		}
+		this.trimResourceViewerLines(lines);
+		return { descriptor, lines, error, title, scroll: 0 };
+	}
+
+	private computeResourceTabTitle(descriptor: ConsoleResourceDescriptor): string {
+		const normalized = descriptor.path.replace(/\\/g, '/');
+		const parts = normalized.split('/').filter(part => part.length > 0);
+		if (parts.length > 0) {
+			return parts[parts.length - 1];
+		}
+		if (descriptor.assetId && descriptor.assetId.length > 0) {
+			return descriptor.assetId;
+		}
+		return descriptor.type.toUpperCase();
+	}
+
+	private appendResourceViewerLines(target: string[], additions: Iterable<string>): void {
+		for (const entry of additions) {
+			if (target.length >= RESOURCE_VIEWER_MAX_LINES - 1) {
+				if (target.length === RESOURCE_VIEWER_MAX_LINES - 1) {
+					target.push('<content truncated>');
+				}
+				return;
+			}
+			target.push(entry);
+		}
+	}
+
+	private trimResourceViewerLines(lines: string[]): void {
+		if (lines.length > RESOURCE_VIEWER_MAX_LINES) {
+			lines.length = RESOURCE_VIEWER_MAX_LINES - 1;
+			lines.push('<content truncated>');
+		}
+	}
+
+	private safeJsonStringify(value: unknown, space = 2): string | null {
+		try {
+			return JSON.stringify(value, (_key, val) => {
+				if (typeof val === 'bigint') {
+					return Number(val);
+				}
+				return val;
+			}, space);
+		} catch {
+			return null;
+		}
+	}
+
+	private describeMetadataValue(value: unknown): string {
+		if (value === null || value === undefined) {
+			return '<none>';
+		}
+		if (typeof value === 'string') {
+			return value;
+		}
+		if (typeof value === 'number' || typeof value === 'boolean') {
+			return String(value);
+		}
+		if (Array.isArray(value)) {
+			const preview = value.slice(0, 4).map(entry => this.describeMetadataValue(entry)).join(', ');
+			return `[${preview}${value.length > 4 ? ', …' : ''}]`;
+		}
+		if (typeof value === 'object') {
+			const keys = Object.keys(value as Record<string, unknown>);
+			return `{${keys.join(', ')}}`;
+		}
+		return String(value);
 	}
 
 	private resourceTabLineCapacity(): number {
 		const overlayTop = this.codeViewportTop();
 		const overlayBottom = this.viewportHeight - this.bottomMargin;
-		const headerHeight = this.lineHeight + 6;
-		const contentHeight = Math.max(0, overlayBottom - (overlayTop + headerHeight) - 4);
+		const contentHeight = Math.max(0, overlayBottom - overlayTop);
+		return Math.max(1, Math.floor(contentHeight / this.lineHeight));
+	}
+
+	private resourceViewerLineCapacity(): number {
+		const overlayTop = this.codeViewportTop();
+		const overlayBottom = this.viewportHeight - this.bottomMargin;
+		const contentHeight = Math.max(0, overlayBottom - overlayTop);
 		return Math.max(1, Math.floor(contentHeight / this.lineHeight));
 	}
 
@@ -3463,63 +3947,199 @@ export class ConsoleCartEditor {
 			return;
 		}
 		const capacity = this.resourceTabLineCapacity();
-		const maxScroll = Math.max(0, this.resourceBrowserLines.length - capacity);
-		this.resourceBrowserScroll = Math.max(0, Math.min(this.resourceBrowserScroll + amount, maxScroll));
+		const itemCount = this.resourceBrowserItems.length;
+		const maxScroll = Math.max(0, itemCount - capacity);
+		const next = Math.max(0, Math.min(this.resourceBrowserScroll + amount, maxScroll));
+		if (next === this.resourceBrowserScroll) {
+			return;
+		}
+		this.resourceBrowserScroll = next;
+		this.resourceBrowserEnsureSelectionVisible();
+	}
+
+	private resourceBrowserEnsureSelectionVisible(): void {
+		const index = this.resourceBrowserSelectionIndex;
+		if (index < 0) {
+			return;
+		}
+		const capacity = this.resourceTabLineCapacity();
+		if (capacity <= 0) {
+			this.resourceBrowserScroll = 0;
+			return;
+		}
+		const maxScroll = Math.max(0, this.resourceBrowserItems.length - capacity);
+		if (index < this.resourceBrowserScroll) {
+			this.resourceBrowserScroll = index;
+			return;
+		}
+		const overflow = index - (this.resourceBrowserScroll + capacity - 1);
+		if (overflow > 0) {
+			this.resourceBrowserScroll = Math.min(this.resourceBrowserScroll + overflow, maxScroll);
+		}
+	}
+
+	private resourceViewerClampScroll(viewer: ResourceViewerState): void {
+		const capacity = this.resourceViewerLineCapacity();
+		const maxScroll = Math.max(0, viewer.lines.length - capacity);
+		if (!Number.isFinite(viewer.scroll) || viewer.scroll < 0) {
+			viewer.scroll = 0;
+			return;
+		}
+		if (viewer.scroll > maxScroll) {
+			viewer.scroll = maxScroll;
+		}
+	}
+
+	private resourceBrowserMoveSelection(delta: number): void {
+		const count = this.resourceBrowserItems.length;
+		if (count === 0) {
+			this.resourceBrowserSelectionIndex = -1;
+			return;
+		}
+		let next: number;
+		if (delta === Number.NEGATIVE_INFINITY) {
+			next = 0;
+		} else if (delta === Number.POSITIVE_INFINITY) {
+			next = count - 1;
+		} else {
+			const current = this.resourceBrowserSelectionIndex >= 0 ? this.resourceBrowserSelectionIndex : 0;
+			const step = Math.trunc(delta);
+			next = current + step;
+		}
+		next = Math.max(0, Math.min(count - 1, next));
+		if (next === this.resourceBrowserSelectionIndex) {
+			return;
+		}
+		this.resourceBrowserSelectionIndex = next;
+		this.resourceBrowserHoverIndex = -1;
+		this.resourceBrowserEnsureSelectionVisible();
+	}
+
+	private scrollResourceViewer(amount: number): void {
+		const viewer = this.getActiveResourceViewer();
+		if (!viewer) {
+			return;
+		}
+		const capacity = this.resourceViewerLineCapacity();
+		const maxScroll = Math.max(0, viewer.lines.length - capacity);
+		const next = Math.max(0, Math.min(viewer.scroll + amount, maxScroll));
+		viewer.scroll = next;
+		this.resourceViewerClampScroll(viewer);
+	}
+
+	private resourceBrowserIndexAtPosition(y: number): number {
+		const codeTop = this.codeViewportTop();
+		const contentTop = codeTop + 2;
+		const relativeY = y - contentTop;
+		if (relativeY < 0) {
+			return -1;
+		}
+		const index = this.resourceBrowserScroll + Math.floor(relativeY / this.lineHeight);
+		if (index < 0 || index >= this.resourceBrowserItems.length) {
+			return -1;
+		}
+		return index;
+	}
+
+	private openSelectedResourceItem(): void {
+		if (this.resourceBrowserSelectionIndex < 0 || this.resourceBrowserSelectionIndex >= this.resourceBrowserItems.length) {
+			return;
+		}
+		const item = this.resourceBrowserItems[this.resourceBrowserSelectionIndex];
+		if (!item.descriptor) {
+			return;
+		}
+		this.openResourceViewerTab(item.descriptor);
 	}
 
 	private handleResourceBrowserKeyboard(keyboard: KeyboardInput, deltaSeconds: number): void {
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
 			this.consumeKey(keyboard, 'Escape');
-			this.activateCodeTab();
+			this.closeResourceTab();
 			return;
 		}
 		if (this.isKeyJustPressed(keyboard, 'Tab')) {
 			this.consumeKey(keyboard, 'Tab');
-			this.activateCodeTab();
+			this.closeResourceTab();
 			return;
 		}
-		if (this.resourceBrowserLines.length === 0) {
+		if (this.resourceBrowserItems.length === 0) {
 			return;
 		}
-	const scrollAmounts: Array<{ code: string; delta: number }> = [
-		{ code: 'ArrowUp', delta: -1 },
-		{ code: 'ArrowDown', delta: 1 },
-		{ code: 'PageUp', delta: -this.resourceTabLineCapacity() },
-		{ code: 'PageDown', delta: this.resourceTabLineCapacity() },
-		{ code: 'Home', delta: Number.NEGATIVE_INFINITY },
-		{ code: 'End', delta: Number.POSITIVE_INFINITY },
-	];
-	for (const entry of scrollAmounts) {
-		if (entry.code === 'Home') {
-			if (this.isKeyJustPressed(keyboard, entry.code)) {
+		if (this.isKeyJustPressed(keyboard, 'Enter')) {
+			this.consumeKey(keyboard, 'Enter');
+			this.openSelectedResourceItem();
+			return;
+		}
+		const moves: Array<{ code: string; action: () => void }> = [
+			{
+				code: 'ArrowUp',
+				action: () => this.resourceBrowserMoveSelection(-1),
+			},
+			{
+				code: 'ArrowDown',
+				action: () => this.resourceBrowserMoveSelection(1),
+			},
+			{
+				code: 'PageUp',
+				action: () => this.resourceBrowserMoveSelection(-this.resourceTabLineCapacity()),
+			},
+			{
+				code: 'PageDown',
+				action: () => this.resourceBrowserMoveSelection(this.resourceTabLineCapacity()),
+			},
+			{
+				code: 'Home',
+				action: () => this.resourceBrowserMoveSelection(Number.NEGATIVE_INFINITY),
+			},
+			{
+				code: 'End',
+				action: () => this.resourceBrowserMoveSelection(Number.POSITIVE_INFINITY),
+			},
+		];
+		for (const entry of moves) {
+			const triggered = this.isKeyJustPressed(keyboard, entry.code) || this.shouldFireRepeat(keyboard, entry.code, deltaSeconds);
+			if (triggered) {
 				this.consumeKey(keyboard, entry.code);
-				this.resourceBrowserScroll = 0;
+				entry.action();
 				return;
 			}
-			continue;
 		}
-		if (entry.code === 'End') {
-			if (this.isKeyJustPressed(keyboard, entry.code)) {
-				this.consumeKey(keyboard, entry.code);
-				const capacity = this.resourceTabLineCapacity();
-				this.resourceBrowserScroll = Math.max(0, this.resourceBrowserLines.length - capacity);
-				return;
+	}
+
+	private handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds: number): void {
+		const viewer = this.getActiveResourceViewer();
+		if (!viewer) {
+			return;
+		}
+		const capacity = this.resourceViewerLineCapacity();
+		const moves: Array<{ code: string; delta: number }> = [
+			{ code: 'ArrowUp', delta: -1 },
+			{ code: 'ArrowDown', delta: 1 },
+			{ code: 'PageUp', delta: -capacity },
+			{ code: 'PageDown', delta: capacity },
+			{ code: 'Home', delta: Number.NEGATIVE_INFINITY },
+			{ code: 'End', delta: Number.POSITIVE_INFINITY },
+		];
+		for (const entry of moves) {
+			const triggered = this.isKeyJustPressed(keyboard, entry.code) || this.shouldFireRepeat(keyboard, entry.code, deltaSeconds);
+			if (!triggered) {
+				continue;
 			}
-			continue;
-		}
-		if (this.resourceBrowserLines.length === 0) {
-			continue;
-		}
-		const triggered = this.isKeyJustPressed(keyboard, entry.code) || this.shouldFireRepeat(keyboard, entry.code, deltaSeconds);
-		if (triggered) {
 			this.consumeKey(keyboard, entry.code);
-			this.scrollResourceBrowser(entry.delta);
+			if (entry.delta === Number.NEGATIVE_INFINITY) {
+				viewer.scroll = 0;
+			} else if (entry.delta === Number.POSITIVE_INFINITY) {
+				viewer.scroll = Math.max(0, viewer.lines.length - capacity);
+			} else {
+				this.scrollResourceViewer(entry.delta);
+			}
+			this.resourceViewerClampScroll(viewer);
 			return;
 		}
 	}
-}
 
-	private drawResourceBrowser(api: BmsxConsoleApi): void {
+private drawResourceBrowser(api: BmsxConsoleApi): void {
 		if (!this.isResourcesTabActive()) {
 			return;
 		}
@@ -3527,26 +4147,63 @@ export class ConsoleCartEditor {
 		const codeBottom = this.viewportHeight - this.bottomMargin;
 		const paddingX = 4;
 		api.rectfill(0, codeTop, this.viewportWidth, codeBottom, COLOR_CODE_BACKGROUND);
-		const header = `FILES (${this.resourceBrowserLines.length})`;
-		this.drawText(api, header, paddingX, codeTop + 2, COLOR_STATUS_TEXT);
-		const instruction = 'ESC or TAB to return';
-		const instructionX = Math.max(paddingX, this.viewportWidth - this.measureText(instruction) - paddingX);
-		this.drawText(api, instruction, instructionX, codeTop + 2, COLOR_STATUS_TEXT);
-		const navigationHint = 'Use Arrow Keys / PageUp / PageDown';
-		const hintX = paddingX;
-		const hintY = codeTop + this.lineHeight + 2;
-		this.drawText(api, navigationHint, hintX, hintY, COLOR_STATUS_TEXT);
-		const contentTop = codeTop + this.lineHeight + 6;
+		const contentTop = codeTop + 2;
 		const capacity = this.resourceTabLineCapacity();
-		const adjustedScroll = Math.max(0, Math.min(this.resourceBrowserScroll, Math.max(0, this.resourceBrowserLines.length - capacity)));
-		const end = Math.min(this.resourceBrowserLines.length, adjustedScroll + capacity);
-		for (let lineIndex = adjustedScroll, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+		const itemCount = this.resourceBrowserItems.length;
+		const maxScroll = Math.max(0, itemCount - capacity);
+		const scroll = Math.max(0, Math.min(this.resourceBrowserScroll, maxScroll));
+		const end = Math.min(itemCount, scroll + capacity);
+		const highlightIndex = this.resourceBrowserHoverIndex >= 0 ? this.resourceBrowserHoverIndex : this.resourceBrowserSelectionIndex;
+		for (let itemIndex = scroll, drawIndex = 0; itemIndex < end; itemIndex += 1, drawIndex += 1) {
+			const item = this.resourceBrowserItems[itemIndex];
 			const y = contentTop + drawIndex * this.lineHeight;
-			this.drawText(api, this.resourceBrowserLines[lineIndex], paddingX, y, COLOR_STATUS_TEXT);
+			const indentText = item.line.slice(0, item.contentStartColumn);
+			const contentText = item.line.slice(item.contentStartColumn);
+			this.drawText(api, indentText, paddingX, y, COLOR_STATUS_TEXT);
+			const contentX = paddingX + this.measureText(indentText);
+			const isHighlighted = itemIndex === highlightIndex;
+			if (isHighlighted) {
+				const highlightWidth = this.measureText(contentText);
+				const caretLeft = Math.floor(contentX);
+				const caretRight = Math.max(caretLeft + 1, Math.floor(contentX + highlightWidth));
+				const caretTop = Math.floor(y);
+				const caretBottom = caretTop + this.lineHeight;
+				api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+				const invertedColor = this.invertColorIndex(COLOR_STATUS_TEXT);
+				const colors = new Array<number>(contentText.length).fill(invertedColor);
+				if (contentText.length > 0) {
+					this.drawColoredText(api, contentText, colors, contentX, y);
+				}
+			}
+		if (!isHighlighted || contentText.length === 0) {
+			this.drawText(api, contentText, contentX, y, COLOR_STATUS_TEXT);
 		}
-		if (this.resourceBrowserLines.length > capacity) {
-			const footer = `${adjustedScroll + 1}-${end} of ${this.resourceBrowserLines.length}`;
-			this.drawText(api, footer, paddingX, codeBottom - this.lineHeight - 1, COLOR_STATUS_TEXT);
+	}
+}
+
+private drawResourceViewer(api: BmsxConsoleApi): void {
+		const viewer = this.getActiveResourceViewer();
+		if (!viewer) {
+			return;
+		}
+		this.resourceViewerClampScroll(viewer);
+		const codeTop = this.codeViewportTop();
+		const codeBottom = this.viewportHeight - this.bottomMargin;
+		const paddingX = 4;
+		api.rectfill(0, codeTop, this.viewportWidth, codeBottom, COLOR_CODE_BACKGROUND);
+		const contentTop = codeTop + 2;
+		const capacity = this.resourceViewerLineCapacity();
+		const maxScroll = Math.max(0, viewer.lines.length - capacity);
+		viewer.scroll = Math.max(0, Math.min(viewer.scroll, maxScroll));
+		const end = Math.min(viewer.lines.length, viewer.scroll + capacity);
+		if (viewer.lines.length === 0) {
+			this.drawText(api, '<empty>', paddingX, contentTop, COLOR_STATUS_TEXT);
+			return;
+		}
+		for (let lineIndex = viewer.scroll, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+			const line = viewer.lines[lineIndex] ?? '';
+			const y = contentTop + drawIndex * this.lineHeight;
+			this.drawText(api, line, paddingX, y, COLOR_STATUS_TEXT);
 		}
 	}
 
@@ -3784,11 +4441,19 @@ export class ConsoleCartEditor {
 		api.rectfill(0, statusTop, this.viewportWidth, statusBottom, COLOR_STATUS_BACKGROUND);
 
 		if (this.isResourcesTabActive()) {
-			const totalEntries = this.resourceBrowserLines.length;
+			const totalEntries = this.resourceBrowserItems.length;
 			const fileInfo = `FILES ${totalEntries}`;
 			const hint = 'SCROLL WHEEL/ARROWS';
 			this.drawText(api, fileInfo, 4, statusTop + 2, COLOR_STATUS_TEXT);
 			this.drawText(api, hint, this.viewportWidth - this.measureText(hint) - 4, statusTop + 2, COLOR_STATUS_TEXT);
+		} else if (this.isResourceViewActive()) {
+			const viewer = this.getActiveResourceViewer();
+			const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.assetId}` : 'RESOURCE';
+			const detail = viewer ? viewer.descriptor.path : '';
+			this.drawText(api, info, 4, statusTop + 2, COLOR_STATUS_TEXT);
+			if (detail.length > 0) {
+				this.drawText(api, detail, this.viewportWidth - this.measureText(detail) - 4, statusTop + 2, COLOR_STATUS_TEXT);
+			}
 		} else {
 			const lineInfo = `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
 			const filenameInfo = `${this.metadata.title || 'UNTITLED'}.lua`;
