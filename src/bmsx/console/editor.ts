@@ -1212,6 +1212,24 @@ export class ConsoleCartEditor {
 			this.pasteFromClipboard();
 			return;
 		}
+		if ((ctrlDown || metaDown) && !altDown && this.isKeyJustPressed(keyboard, 'Slash')) {
+			this.consumeKey(keyboard, 'Slash');
+			if (shiftDown) {
+				this.removeLineComments();
+			} else {
+				this.addLineComments();
+			}
+			return;
+		}
+		if ((ctrlDown || metaDown) && !altDown && this.isKeyJustPressed(keyboard, 'NumpadDivide')) {
+			this.consumeKey(keyboard, 'NumpadDivide');
+			if (shiftDown) {
+				this.removeLineComments();
+			} else {
+				this.addLineComments();
+			}
+			return;
+		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'BracketRight')) {
 			this.consumeKey(keyboard, 'BracketRight');
 			this.indentSelectionOrLine();
@@ -2201,6 +2219,126 @@ export class ConsoleCartEditor {
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.revealCursor();
+	}
+
+	private addLineComments(): void {
+		const range = this.getLineRangeForMovement();
+		if (range.startRow < 0 || range.endRow < range.startRow) {
+			return;
+		}
+		this.prepareUndo('comment-lines', false);
+		let changed = false;
+		for (let row = range.startRow; row <= range.endRow; row++) {
+			const originalLine = this.lines[row];
+			const insertIndex = this.firstNonWhitespaceIndex(originalLine);
+			const hasContent = insertIndex < originalLine.length;
+			if (hasContent && originalLine.startsWith('--', insertIndex)) {
+				continue;
+			}
+			let insertion = '--';
+			if (hasContent) {
+				const nextChar = originalLine.charAt(insertIndex);
+				if (nextChar !== ' ' && nextChar !== '\t') {
+					insertion = '-- ';
+				}
+			}
+			const updatedLine = originalLine.slice(0, insertIndex) + insertion + originalLine.slice(insertIndex);
+			this.lines[row] = updatedLine;
+			this.invalidateLine(row);
+			this.shiftPositionsForInsertion(row, insertIndex, insertion.length);
+			changed = true;
+		}
+		if (!changed) {
+			return;
+		}
+		this.clampCursorColumn();
+		this.selectionAnchor = this.clampSelectionPosition(this.selectionAnchor);
+		this.markTextMutated();
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.revealCursor();
+	}
+
+	private removeLineComments(): void {
+		const range = this.getLineRangeForMovement();
+		if (range.startRow < 0 || range.endRow < range.startRow) {
+			return;
+		}
+		this.prepareUndo('uncomment-lines', false);
+		let changed = false;
+		for (let row = range.startRow; row <= range.endRow; row++) {
+			const originalLine = this.lines[row];
+			const commentIndex = this.firstNonWhitespaceIndex(originalLine);
+			if (commentIndex >= originalLine.length) {
+				continue;
+			}
+			if (!originalLine.startsWith('--', commentIndex)) {
+				continue;
+			}
+			let removal = 2;
+			if (commentIndex + 2 < originalLine.length) {
+				const trailing = originalLine.charAt(commentIndex + 2);
+				if (trailing === ' ') {
+					removal = 3;
+				}
+			}
+			const updatedLine = originalLine.slice(0, commentIndex) + originalLine.slice(commentIndex + removal);
+			this.lines[row] = updatedLine;
+			this.invalidateLine(row);
+			this.shiftPositionsForRemoval(row, commentIndex, removal);
+			changed = true;
+		}
+		if (!changed) {
+			return;
+		}
+		this.clampCursorColumn();
+		this.selectionAnchor = this.clampSelectionPosition(this.selectionAnchor);
+		this.markTextMutated();
+		this.resetBlink();
+		this.updateDesiredColumn();
+		this.revealCursor();
+	}
+
+	private firstNonWhitespaceIndex(value: string): number {
+		for (let index = 0; index < value.length; index++) {
+			const ch = value.charAt(index);
+			if (ch !== ' ' && ch !== '\t') {
+				return index;
+			}
+		}
+		return value.length;
+	}
+
+	private shiftPositionsForInsertion(row: number, column: number, length: number): void {
+		if (length <= 0) {
+			return;
+		}
+		if (this.cursorRow === row && this.cursorColumn >= column) {
+			this.cursorColumn += length;
+		}
+		if (this.selectionAnchor && this.selectionAnchor.row === row && this.selectionAnchor.column >= column) {
+			this.selectionAnchor.column += length;
+		}
+	}
+
+	private shiftPositionsForRemoval(row: number, column: number, length: number): void {
+		if (length <= 0) {
+			return;
+		}
+		if (this.cursorRow === row && this.cursorColumn > column) {
+			if (this.cursorColumn <= column + length) {
+				this.cursorColumn = column;
+			} else {
+				this.cursorColumn -= length;
+			}
+		}
+		if (this.selectionAnchor && this.selectionAnchor.row === row && this.selectionAnchor.column > column) {
+			if (this.selectionAnchor.column <= column + length) {
+				this.selectionAnchor.column = column;
+			} else {
+				this.selectionAnchor.column -= length;
+			}
+		}
 	}
 
 	private revealCursor(): void {
