@@ -419,6 +419,7 @@ export class ConsoleCartEditor {
 	private lastHistoryTimestamp = 0;
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
+	private pointerAuxWasPressed = false;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
@@ -1072,6 +1073,7 @@ export class ConsoleCartEditor {
 		this.resetKeyPressGuards();
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.pointerAuxWasPressed = false;
 		this.cursorRevealSuspended = false;
 		this.searchActive = false;
 		this.searchVisible = false;
@@ -1180,6 +1182,7 @@ export class ConsoleCartEditor {
 		this.selectionAnchor = null;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.pointerAuxWasPressed = false;
 		this.cursorRevealSuspended = false;
 		this.undoStack = [];
 		this.redoStack = [];
@@ -1887,6 +1890,20 @@ export class ConsoleCartEditor {
 			this.clearHoverTooltip();
 			return;
 		}
+		let pointerAuxJustPressed = false;
+		let pointerAuxPressed = false;
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+		if (playerInput) {
+			const auxAction = playerInput.getActionState('pointer_aux');
+			if (auxAction && auxAction.justpressed === true && auxAction.consumed !== true) {
+				pointerAuxJustPressed = true;
+				pointerAuxPressed = true;
+			} else if (auxAction && auxAction.pressed === true && auxAction.consumed !== true) {
+				pointerAuxPressed = true;
+				pointerAuxJustPressed = !this.pointerAuxWasPressed;
+			}
+		}
+		this.pointerAuxWasPressed = pointerAuxPressed;
 		const wasPressed = this.pointerPrimaryWasPressed;
 		const justPressed = snapshot.primaryPressed && !wasPressed;
 		const justReleased = !snapshot.primaryPressed && wasPressed;
@@ -1909,6 +1926,15 @@ export class ConsoleCartEditor {
 		}
 		const tabTop = this.headerHeight;
 		const tabBottom = tabTop + this.tabBarHeight;
+		if (pointerAuxJustPressed && this.handleTabBarMiddleClick(snapshot)) {
+			if (playerInput) {
+				playerInput.consumeAction('pointer_aux');
+			}
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.resetPointerClickTracking();
+			return;
+		}
 		if (justPressed && snapshot.viewportY >= tabTop && snapshot.viewportY < tabBottom) {
 			if (this.handleTabBarPointer(snapshot)) {
 				this.pointerSelecting = false;
@@ -2382,6 +2408,31 @@ export class ConsoleCartEditor {
 			const tabBounds = this.tabButtonBounds.get(tab.id);
 			if (tabBounds && this.pointInRect(x, y, tabBounds)) {
 				this.setActiveTab(tab.id);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
+		const tabTop = this.headerHeight;
+		const tabBottom = tabTop + this.tabBarHeight;
+		const y = snapshot.viewportY;
+		if (y < tabTop || y >= tabBottom) {
+			return false;
+		}
+		const x = snapshot.viewportX;
+		for (let index = 0; index < this.tabs.length; index += 1) {
+			const tab = this.tabs[index];
+			if (!tab.closable) {
+				continue;
+			}
+			const bounds = this.tabButtonBounds.get(tab.id);
+			if (!bounds) {
+				continue;
+			}
+			if (this.pointInRect(x, y, bounds)) {
+				this.closeTab(tab.id);
 				return true;
 			}
 		}
