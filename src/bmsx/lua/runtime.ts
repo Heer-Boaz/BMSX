@@ -299,18 +299,18 @@ export class LuaInterpreter {
 	}
 
 	private executeLocalAssignment(statement: LuaLocalAssignmentStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): void {
-		const values = this.evaluateExpressionList(statement.values, environment, varargs);
-		for (let index = 0; index < statement.names.length; index += 1) {
-			const identifier = statement.names[index];
-			const value = index < values.length ? values[index] : null;
-			environment.set(identifier.name, value);
-		}
+	const values = this.evaluateExpressionList(statement.values, environment, varargs);
+	for (let index = 0; index < statement.names.length; index += 1) {
+		const identifier = statement.names[index];
+		const value = index < values.length ? values[index] : null;
+		environment.set(identifier.name, value, identifier.range);
 	}
+}
 
-	private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: LuaEnvironment): void {
-		const functionValue = this.createScriptFunction(statement.functionExpression, environment, statement.name.name, null);
-		environment.set(statement.name.name, functionValue);
-	}
+private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: LuaEnvironment): void {
+	const functionValue = this.createScriptFunction(statement.functionExpression, environment, statement.name.name, null);
+	environment.set(statement.name.name, functionValue, statement.name.range);
+}
 
 	private executeFunctionDeclaration(statement: LuaFunctionDeclarationStatement, environment: LuaEnvironment): void {
 		const functionNameParts = statement.name.identifiers;
@@ -327,15 +327,15 @@ export class LuaInterpreter {
 			return;
 		}
 
-		if (functionNameParts.length === 1) {
-			const resolvedEnv = environment.resolve(functionNameParts[0]);
-			if (resolvedEnv !== null) {
-				resolvedEnv.set(functionNameParts[0], functionValue);
-				return;
-			}
-			this.globals.set(functionNameParts[0], functionValue);
+	if (functionNameParts.length === 1) {
+		const resolvedEnv = environment.resolve(functionNameParts[0]);
+		if (resolvedEnv !== null) {
+			resolvedEnv.set(functionNameParts[0], functionValue, statement.range);
 			return;
 		}
+		this.globals.set(functionNameParts[0], functionValue, statement.range);
+		return;
+	}
 
 		const containerParts: string[] = [];
 		for (let index = 0; index < functionNameParts.length - 1; index += 1) {
@@ -466,8 +466,8 @@ export class LuaInterpreter {
 		if (statement.step !== null) {
 			stepValue = this.expectNumber(this.evaluateSingleExpression(statement.step, environment, varargs), 'Numeric for loop step must be a number.', statement.step.range);
 		}
-		const loopEnvironment = LuaEnvironment.createChild(environment);
-		loopEnvironment.set(statement.variable.name, startValue);
+	const loopEnvironment = LuaEnvironment.createChild(environment);
+	loopEnvironment.set(statement.variable.name, startValue, statement.variable.range);
 		let current = startValue;
 		const ascending = stepValue >= 0;
 		while ((ascending && current <= limitValue) || (!ascending && current >= limitValue)) {
@@ -496,10 +496,10 @@ export class LuaInterpreter {
 		const state = iteratorValues.length > 1 ? iteratorValues[1] : null;
 		let control = iteratorValues.length > 2 ? iteratorValues[2] : null;
 
-		const loopEnvironment = LuaEnvironment.createChild(environment);
-		for (const variable of statement.variables) {
-			loopEnvironment.set(variable.name, null);
-		}
+	const loopEnvironment = LuaEnvironment.createChild(environment);
+	for (const variable of statement.variables) {
+		loopEnvironment.set(variable.name, null, variable.range);
+	}
 
 		while (true) {
 			const callArgs: LuaValue[] = [state, control];
@@ -874,15 +874,15 @@ export class LuaInterpreter {
 	}
 
 	private assignResolvedTarget(target: ResolvedAssignmentTarget, value: LuaValue, range: LuaSourceRange): void {
-		if (target.kind === 'identifier') {
-			if (target.environment !== null) {
-				target.environment.set(target.name, value);
-			}
-			else {
-				this.globals.set(target.name, value);
-			}
-			return;
+	if (target.kind === 'identifier') {
+		if (target.environment !== null) {
+			target.environment.set(target.name, value, range);
 		}
+		else {
+			this.globals.set(target.name, value, range);
+		}
+		return;
+	}
 		if (target.kind === 'member') {
 			this.setTableValueWithMetamethod(target.table, target.key, value, range);
 			return;
@@ -1436,7 +1436,7 @@ export class LuaInterpreter {
 		}
 		for (const parameter of parameters) {
 			const value = argumentIndex < args.length ? args[argumentIndex] : null;
-			activationEnvironment.set(parameter.name, value);
+			activationEnvironment.set(parameter.name, value, parameter.range);
 			argumentIndex += 1;
 		}
 		let varargValues: LuaValue[] = [];

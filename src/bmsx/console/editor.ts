@@ -3305,19 +3305,9 @@ export class ConsoleCartEditor {
 		const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
 		const startLine = this.lines[startRow] ?? '';
 		const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
-		let endRow = clamp(range.endLine - 1, 0, lastRowIndex);
-		const endLineRaw = this.lines[endRow] ?? '';
-		let endColumn = clamp(range.endColumn - 1, 0, endLineRaw.length);
-		if (endRow === startRow && endColumn <= startColumn) {
-			endColumn = Math.min(startLine.length, startColumn + 1);
-		}
 		this.cursorRow = startRow;
 		this.cursorColumn = startColumn;
-		if (endRow !== startRow || endColumn !== startColumn) {
-			this.selectionAnchor = { row: endRow, column: endColumn };
-		} else {
-			this.selectionAnchor = null;
-		}
+		this.selectionAnchor = null;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.pointerAuxWasPressed = false;
