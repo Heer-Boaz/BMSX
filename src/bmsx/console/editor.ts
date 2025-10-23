@@ -295,26 +295,44 @@ const COLOR_CREATE_RESOURCE_BACKGROUND = COLOR_SEARCH_BACKGROUND;
 const COLOR_CREATE_RESOURCE_TEXT = COLOR_SEARCH_TEXT;
 const COLOR_CREATE_RESOURCE_PLACEHOLDER = COLOR_SEARCH_PLACEHOLDER;
 const COLOR_CREATE_RESOURCE_OUTLINE = COLOR_SEARCH_OUTLINE;
-const COLOR_CREATE_RESOURCE_ERROR = COLOR_STATUS_ERROR;
+const COLOR_CREATE_RESOURCE_ERROR = COLOR_STATUS_WARNING;
 const CREATE_RESOURCE_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 const CREATE_RESOURCE_MAX_PATH_LENGTH = 256;
 const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '-- New Lua resource\n';
 const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
-\tid = 'new_fsm',
+\tid = '<MACHINE_ID>',
+\tenable_tape_autotick = true,
+\tticks2advance_tape = 50,
 \tstates = {
-\t\tidle = {
-\t\t\ton_enter = function(self, params)
+\t\t_idle = { -- '_'-prefix to make it the initial state
+\t\t\tentering_state = function(self, state, payload)
 \t\t\tend,
-\t\t\ton_update = function(self, deltaSeconds)
+\t\t\ttick = function(self, state, payload)
 \t\t\tend,
-\t\t\ton_exit = function(self)
+\t\t\ttapemove = function(self, state, payload)
+\t\t\t\treturn '../running'
 \t\t\tend,
-\t\t\ttransitions = {
-\t\t\t\t-- { event = 'example', target = 'idle' },
-\t\t\t},
+\t\t\ton = {
+\t\t\t\t['$start'] = '../running' -- '$'-prefix to denote self-scoped event
+\t\t\t}
 \t\t},
-\t},
-}\n`;
+\t\tenable_tape_autotick = true,
+\t\tticks2advance_tape = 100,
+\t\trunning = {
+\t\t\tentering_state = function(self, state, payload)
+\t\t\tend,
+\t\t\ttick = function(self, state, payload)
+\t\t\tend,
+\t\t\ttapemove = function(self, state, payload)
+\t\t\t\treturn '../_idle'
+\t\t\tend,
+\t\t\ton = {
+\t\t\t\t['$stop'] = '../idle' -- '$'-prefix to denote self-scoped event
+\t\t\t}
+\t\t}
+\t}
+}
+`;
 const HEADER_BUTTON_PADDING_X = 5;
 const HEADER_BUTTON_PADDING_Y = 1;
 const HEADER_BUTTON_SPACING = 4;
@@ -1697,12 +1715,13 @@ export class ConsoleCartEditor {
 				this.refreshResourcePanelContents();
 			}
 			this.openLuaCodeTab(descriptor);
-			this.showMessage(`Created ${descriptor.path}`, COLOR_STATUS_SUCCESS, 2.0);
+			this.showMessage(`Created ${descriptor.path} (asset ${descriptor.assetId})`, COLOR_STATUS_SUCCESS, 2.5);
 			this.closeCreateResourcePrompt(false);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			this.createResourceError = message;
-			this.showMessage(`Failed to create Lua resource: ${message}`, COLOR_STATUS_ERROR, 4.0);
+			const simplified = this.simplifyRuntimeErrorMessage(message);
+			this.createResourceError = simplified;
+			this.showMessage(`Failed to create resource: ${simplified}`, COLOR_STATUS_WARNING, 4.0);
 		} finally {
 			this.createResourceWorking = false;
 			this.resetBlink();
@@ -1818,9 +1837,6 @@ export class ConsoleCartEditor {
 		if (baseName.length === 0) {
 			throw new Error('Asset id cannot be empty.');
 		}
-		if (!/^[A-Za-z0-9_]+$/.test(baseName)) {
-			throw new Error('Asset id must contain only letters, digits, or underscores.');
-		}
 		return { path: candidate, assetId: baseName, directory: this.ensureDirectorySuffix(directory) };
 	}
 
@@ -1876,13 +1892,7 @@ export class ConsoleCartEditor {
 	}
 
 	private sanitizeFsmBlueprintId(assetId: string): string {
-		if (!assetId || assetId.length === 0) {
-			return 'new_fsm';
-		}
 		let id = assetId.replace(/\.lua$/i, '').replace(/\.fsm$/i, '');
-		if (id.length === 0) {
-			id = assetId;
-		}
 		id = id.replace(/[^A-Za-z0-9_]/g, '_');
 		if (id.length === 0) {
 			return 'new_fsm';
@@ -4785,12 +4795,7 @@ export class ConsoleCartEditor {
 			const statusX = Math.max(pathX + this.measureText(displayPath) + this.spaceAdvance, this.viewportWidth - statusWidth - 4);
 			this.drawText(api, status, statusX, labelY, COLOR_CREATE_RESOURCE_TEXT);
 		} else if (this.createResourceError && this.createResourceError.length > 0) {
-			const errorText = this.createResourceError;
-			const errorWidth = this.measureText(errorText);
-			const preferredX = this.viewportWidth - errorWidth - 4;
-			const fallbackX = pathX + this.measureText(displayPath) + this.spaceAdvance;
-			const errorX = preferredX > fallbackX ? preferredX : fallbackX;
-			this.drawText(api, errorText, errorX, labelY, COLOR_CREATE_RESOURCE_ERROR);
+			this.drawCreateResourceErrorDialog(api, this.createResourceError);
 		}
 	}
 
@@ -4873,6 +4878,45 @@ export class ConsoleCartEditor {
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
 		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.lineJumpActive);
+	}
+
+	private drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
+		const maxDialogWidth = Math.min(this.viewportWidth - 16, 360);
+		const wrapWidth = Math.max(this.charAdvance, maxDialogWidth - (ERROR_OVERLAY_PADDING_X * 2 + 12));
+		const segments = message.split(/\r?\n/);
+		const lines: string[] = [];
+		for (let i = 0; i < segments.length; i += 1) {
+			const segment = segments[i].trim();
+			const wrapped = this.wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth);
+			for (let j = 0; j < wrapped.length; j += 1) {
+				lines.push(wrapped[j]);
+			}
+		}
+		if (lines.length === 0) {
+			lines.push('');
+		}
+		let contentWidth = 0;
+		for (let i = 0; i < lines.length; i += 1) {
+			contentWidth = Math.max(contentWidth, this.measureText(lines[i]));
+		}
+		const dialogWidth = Math.min(this.viewportWidth - 16, Math.max(180, contentWidth + ERROR_OVERLAY_PADDING_X * 2 + 12));
+		const dialogHeight = Math.min(this.viewportHeight - 16, lines.length * this.lineHeight + ERROR_OVERLAY_PADDING_Y * 2 + 16);
+		const left = Math.max(8, Math.floor((this.viewportWidth - dialogWidth) / 2));
+		const top = Math.max(8, Math.floor((this.viewportHeight - dialogHeight) / 2));
+		const right = left + dialogWidth;
+		const bottom = top + dialogHeight;
+		api.rectfill(left, top, right, bottom, COLOR_STATUS_BACKGROUND);
+		api.rect(left, top, right, bottom, COLOR_CREATE_RESOURCE_ERROR);
+		let textY = top + ERROR_OVERLAY_PADDING_Y + 6;
+		for (let i = 0; i < lines.length; i += 1) {
+			const textX = left + ERROR_OVERLAY_PADDING_X + 6;
+			this.drawText(api, lines[i], textX, textY, COLOR_STATUS_TEXT);
+			textY += this.lineHeight;
+		}
+	}
+
+	private simplifyRuntimeErrorMessage(message: string): string {
+		return message.replace(/^\[BmsxConsoleRuntime\]\s*/, '');
 	}
 
 	private codeViewportTop(): number {

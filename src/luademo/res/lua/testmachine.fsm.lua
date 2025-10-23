@@ -1,44 +1,33 @@
-local MACHINE_ID = 'console_testmachine'
-
-local IDLE_TO_RUNNING_TICKS = 120
-local RUNNING_TO_IDLE_TICKS = 60
-
-local function onRunningTick(_actor, state)
-	state.data.elapsed = state.data.elapsed + 1
-	if state.data.elapsed >= RUNNING_TO_IDLE_TICKS then
-		return '../idle'
-	end
-end
-
 return {
-	id = MACHINE_ID,
-	initial = 'idle',
-	states = {
-		idle = {
-			data = { tickCounter = 0 },
-			entering_state = function(_actor, state)
-				state.data.tickCounter = 0
-			end,
-			tick = function(_actor, state)
-				state.data.tickCounter = state.data.tickCounter + 1
-				if state.data.tickCounter >= IDLE_TO_RUNNING_TICKS then
-					return '../running'
-				end
-			end,
-			on = {
-				start = { to = '../running', scope = 'self' },
-			},
-		},
-		running = {
-			data = { elapsed = 0 },
-			entering_state = function(_actor, state)
-				state.data.elapsed = 0
-				print('[testmachine] running state entered')
-			end,
-			tick = onRunningTick,
-			on = {
-				stop = { to = '../idle', scope = 'self' },
-			},
-		},
-	},
+    id = '<MACHINE_ID>',
+    enable_tape_autotick = true,
+    ticks2advance_tape = 50,
+    states = {
+        _idle = { -- '_'-prefix to make it the initial state
+            entering_state = function(self, state, payload)
+            end,
+            tick = function(self, state, payload)
+            end,
+            tapemove = function(self, state, payload)
+                return '../running'
+            end,
+            on = {
+                ['$start'] = '../running' -- '$'-prefix to denote self-scoped event
+            }
+        },
+		enable_tape_autotick = true,
+		ticks2advance_tape = 100,
+        running = {
+            entering_state = function(self, state, payload)
+            end,
+            tick = function(self, state, payload)
+            end,
+            tapemove = function(self, state, payload)
+                return '../_idle'
+            end,
+            on = {
+                ['$stop'] = '../idle' -- '$'-prefix to denote self-scoped event
+            }
+        }
+    }
 }

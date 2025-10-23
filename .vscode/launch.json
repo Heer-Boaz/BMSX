@@ -84,6 +84,31 @@
 			"showAsyncStacks": true,
 			"smartStep": true,
 			"disableNetworkCache": true
+		},
+		{
+			"type": "msedge",
+			"request": "launch",
+			"name": "Debug the game from WSL Server!",
+			"url": "http://localhost:8080/game_debug.html",
+			"userDataDir": "${workspaceFolder}/.vscode/edge-profile-wsl",
+			"runtimeArgs": [
+				"--nolazy",
+				"--allow-file-access-from-files",
+				"--disable-session-crashed-bubble",
+				"--disable-features=IsolateOrigins,site-per-process,web-security",
+				"--remote-debugging-port=9222",
+				"--app=http://localhost:8080/game_debug.html"
+			],
+			"webRoot": "${workspaceFolder}",
+			"sourceMaps": true,
+			"sourceMapPathOverrides": {
+				"file:///home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
+				"/home/boaz/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
+				"*": "${workspaceFolder}/src/*"
+			},
+			"showAsyncStacks": true,
+			"smartStep": true,
+			"disableNetworkCache": true
 		}
 	],
 }

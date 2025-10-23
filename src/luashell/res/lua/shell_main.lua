@@ -10,6 +10,7 @@ local instructions = {
 }
 
 function init()
+	
 end
 
 function update(_dt)

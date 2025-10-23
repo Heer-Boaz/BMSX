@@ -703,20 +703,15 @@ export class BmsxConsoleRuntime extends Service {
 			throw new Error('[BmsxConsoleRuntime] Lua resource file name cannot be empty.');
 		}
 		const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
-		let assetIdCandidate = '';
-		if (typeof request.assetId === 'string') {
-			assetIdCandidate = request.assetId.trim();
+		let assetId = '';
+		if (typeof request.assetId === 'string' && request.assetId.trim().length > 0) {
+			assetId = request.assetId.trim();
+		} else {
+			assetId = baseName;
 		}
-		if (assetIdCandidate.length === 0) {
-			assetIdCandidate = baseName;
-		}
-		if (assetIdCandidate.length === 0) {
+		if (assetId.length === 0) {
 			throw new Error('[BmsxConsoleRuntime] Unable to infer Lua asset id for new resource.');
 		}
-		if (!/^[A-Za-z0-9_]+$/.test(assetIdCandidate)) {
-			throw new Error(`[BmsxConsoleRuntime] Lua asset id '${assetIdCandidate}' must only contain letters, digits, or underscores.`);
-		}
-		const assetId = assetIdCandidate;
 		if (rompack.lua && Object.prototype.hasOwnProperty.call(rompack.lua, assetId)) {
 			throw new Error(`[BmsxConsoleRuntime] Lua asset '${assetId}' already exists.`);
 		}
