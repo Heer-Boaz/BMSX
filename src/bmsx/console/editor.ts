@@ -704,11 +704,7 @@ export class ConsoleCartEditor {
 		this.inspectLuaExpressionFn = options.inspectLuaExpression;
 		this.primaryAssetId = options.primaryAssetId;
 		if ($ && $.debug) {
-			try {
-				this.listResourcesFn();
-			} catch (error) {
-				console.warn('[ConsoleCartEditor] Failed to enumerate resources during init:', error);
-			}
+			this.listResourcesFn();
 		}
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
@@ -6778,11 +6774,7 @@ export class ConsoleCartEditor {
 		if (context.lastSavedSource.length > 0) {
 			return context.lastSavedSource;
 		}
-		try {
-			return context.load();
-		} catch {
-			return this.loadSourceFn();
-		}
+		return context.load();
 	}
 
 	private buildResourceViewerState(descriptor: ConsoleResourceDescriptor): ResourceViewerState {
@@ -6823,12 +6815,8 @@ export class ConsoleCartEditor {
 						this.appendResourceViewerLines(lines, dataEntry.split(/\r?\n/));
 					} else if (dataEntry !== undefined) {
 						const json = this.safeJsonStringify(dataEntry);
-						if (json !== null) {
-							this.appendResourceViewerLines(lines, ['-- Code --', '']);
-							this.appendResourceViewerLines(lines, json.split(/\r?\n/));
-						} else {
-							error = `Code asset '${descriptor.assetId}' is not serializable.`;
-						}
+						this.appendResourceViewerLines(lines, ['-- Code --', '']);
+						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
 					} else if (typeof rompack.code === 'string') {
 						this.appendResourceViewerLines(lines, ['-- Game Code --', '']);
 						this.appendResourceViewerLines(lines, rompack.code.split(/\r?\n/));
@@ -6842,12 +6830,8 @@ export class ConsoleCartEditor {
 					const data = rompack.data?.[descriptor.assetId];
 					if (data !== undefined) {
 						const json = this.safeJsonStringify(data);
-						if (json !== null) {
-							this.appendResourceViewerLines(lines, ['-- Data --', '']);
-							this.appendResourceViewerLines(lines, json.split(/\r?\n/));
-						} else {
-							error = `Data asset '${descriptor.assetId}' is not serializable.`;
-						}
+						this.appendResourceViewerLines(lines, ['-- Data --', '']);
+						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
 					} else {
 						error = `Data asset '${descriptor.assetId}' not found.`;
 					}
@@ -6924,12 +6908,8 @@ export class ConsoleCartEditor {
 					const fsm = rompack.fsm?.[descriptor.assetId];
 					if (fsm) {
 						const json = this.safeJsonStringify(fsm);
-						if (json !== null) {
-							this.appendResourceViewerLines(lines, ['-- FSM --', '']);
-							this.appendResourceViewerLines(lines, json.split(/\r?\n/));
-						} else {
-							error = `FSM '${descriptor.assetId}' is not serializable.`;
-						}
+						this.appendResourceViewerLines(lines, ['-- FSM --', '']);
+						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
 						break;
 					}
 					const source = rompack.lua?.[descriptor.assetId];
@@ -6948,12 +6928,8 @@ export class ConsoleCartEditor {
 						break;
 					}
 					const json = this.safeJsonStringify(events);
-					if (json !== null) {
-						this.appendResourceViewerLines(lines, ['-- Audio Events --', '']);
-						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
-					} else {
-						error = `Audio event map '${descriptor.assetId}' is not serializable.`;
-					}
+					this.appendResourceViewerLines(lines, ['-- Audio Events --', '']);
+					this.appendResourceViewerLines(lines, json.split(/\r?\n/));
 					break;
 				}
 				default: {
@@ -7005,17 +6981,13 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private safeJsonStringify(value: unknown, space = 2): string | null {
-		try {
-			return JSON.stringify(value, (_key, val) => {
-				if (typeof val === 'bigint') {
-					return Number(val);
-				}
-				return val;
-			}, space);
-		} catch {
-			return null;
-		}
+	private safeJsonStringify(value: unknown, space = 2): string {
+		return JSON.stringify(value, (_key, val) => {
+			if (typeof val === 'bigint') {
+				return Number(val);
+			}
+			return val;
+		}, space);
 	}
 
 	private describeMetadataValue(value: unknown): string {

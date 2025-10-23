@@ -188,6 +188,14 @@ export class BmsxConsoleRuntime extends Service {
 		void this.prefetchLuaSourceFromFilesystem();
 	}
 
+	private requireLuaInterpreter(): LuaInterpreter {
+		const interpreter = this.luaInterpreter;
+		if (!interpreter) {
+			throw new Error('[BmsxConsoleRuntime] Lua interpreter unavailable.');
+		}
+		return interpreter;
+	}
+
 	private assertCompatibleOptions(options: BmsxConsoleRuntimeOptions): void {
 		if (options.cart !== this.cart) {
 			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a cart. Destroy the existing instance before swapping carts.');
@@ -2572,10 +2580,7 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private getStaticDefinitions(assetId: string | null, preferredChunk: string | null): ReadonlyArray<LuaDefinitionInfo> | null {
-		const interpreter = this.luaInterpreter;
-		if (!interpreter) {
-			return null;
-		}
+		const interpreter = this.requireLuaInterpreter();
 		const matches: LuaDefinitionInfo[] = [];
 		const normalizedPreferred = preferredChunk ? this.normalizeChunkName(preferredChunk) : null;
 		const normalizedPreferredPath = preferredChunk ? preferredChunk.replace(/\\/g, '/') : null;
@@ -2636,10 +2641,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!parts || parts.length === 0) {
 			return null;
 		}
-		const interpreter = this.luaInterpreter;
-		if (interpreter === null) {
-			return null;
-		}
+		const interpreter = this.requireLuaInterpreter();
 		const root = parts[0];
 		let value: LuaValue | null = null;
 		let scope: ConsoleLuaHoverScope = 'global';
