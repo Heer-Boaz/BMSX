@@ -997,8 +997,110 @@ export class LuaParser {
 
 	private buildDefinitionIndex(rootBlock: LuaBlock): LuaDefinitionInfo[] {
 		const definitions: LuaDefinitionInfo[] = [];
-		const pushDefinition = (name: string, definitionRange: LuaSourceRange, scopeRange: LuaSourceRange): void => {
-			definitions.push({ name, definition: definitionRange, scope: scopeRange });
+		const pushDefinition = (path: ReadonlyArray<string>, definitionRange: LuaSourceRange, scopeRange: LuaSourceRange): void => {
+			if (!path || path.length === 0) {
+				return;
+			}
+			const name = path[path.length - 1];
+			definitions.push({ name, namePath: Array.from(path), definition: definitionRange, scope: scopeRange });
+		};
+		const extractTableKeyFromExpression = (expression: LuaExpression): string | null => {
+			switch (expression.kind) {
+				case LuaSyntaxKind.StringLiteralExpression:
+					return (expression as LuaStringLiteralExpression).value;
+				case LuaSyntaxKind.IdentifierExpression:
+					return (expression as LuaIdentifierExpression).name;
+				default:
+					return null;
+			}
+		};
+		const extractPathFromExpression = (expression: LuaExpression): string[] | null => {
+			switch (expression.kind) {
+				case LuaSyntaxKind.IdentifierExpression:
+					return [(expression as LuaIdentifierExpression).name];
+				case LuaSyntaxKind.MemberExpression: {
+					const member = expression as LuaMemberExpression;
+					const basePath = extractPathFromExpression(member.base);
+					if (!basePath) {
+						return null;
+					}
+					const extended = basePath.slice();
+					extended.push(member.identifier);
+					return extended;
+				}
+				case LuaSyntaxKind.IndexExpression: {
+					const indexExpression = expression as LuaIndexExpression;
+					const basePath = extractPathFromExpression(indexExpression.base);
+					if (!basePath) {
+						return null;
+					}
+					const key = extractTableKeyFromExpression(indexExpression.index);
+					if (!key) {
+						return null;
+					}
+					const extended = basePath.slice();
+					extended.push(key);
+					return extended;
+				}
+				default:
+					return null;
+			}
+		};
+		const mapAssignmentValues = (targetCount: number, values: ReadonlyArray<LuaExpression>): Array<LuaExpression | null> => {
+			const mapped: Array<LuaExpression | null> = [];
+			if (targetCount <= 0) {
+				return mapped;
+			}
+			for (let index = 0; index < targetCount; index += 1) {
+				if (index < values.length) {
+					mapped.push(values[index]);
+				} else {
+					mapped.push(null);
+				}
+			}
+			return mapped;
+		};
+		const recordTableFields = (tableExpression: LuaTableConstructorExpression, basePath: ReadonlyArray<string>, scope: LuaSourceRange): void => {
+			for (const field of tableExpression.fields) {
+				if (field.kind === LuaTableFieldKind.Array) {
+					const arrayField = field as LuaTableArrayField;
+					visitExpression(arrayField.value);
+					continue;
+				}
+				if (field.kind === LuaTableFieldKind.IdentifierKey) {
+					const identifierField = field as LuaTableIdentifierField;
+					const fieldPath = [...basePath, identifierField.name];
+					pushDefinition(fieldPath, identifierField.range, scope);
+					if (identifierField.value.kind === LuaSyntaxKind.TableConstructorExpression) {
+						recordTableFields(identifierField.value as LuaTableConstructorExpression, fieldPath, scope);
+					} else {
+						visitExpression(identifierField.value);
+					}
+					continue;
+				}
+				const expressionField = field as LuaTableExpressionField;
+				const key = extractTableKeyFromExpression(expressionField.key);
+				if (key !== null) {
+					const fieldPath = [...basePath, key];
+					pushDefinition(fieldPath, expressionField.range, scope);
+					if (expressionField.value.kind === LuaSyntaxKind.TableConstructorExpression) {
+						recordTableFields(expressionField.value as LuaTableConstructorExpression, fieldPath, scope);
+					} else {
+						visitExpression(expressionField.value);
+					}
+				} else {
+					visitExpression(expressionField.key);
+					visitExpression(expressionField.value);
+				}
+			}
+		};
+		const recordAssignmentValue = (path: ReadonlyArray<string>, value: LuaExpression | null, scope: LuaSourceRange): void => {
+			if (!value) {
+				return;
+			}
+			if (value.kind === LuaSyntaxKind.TableConstructorExpression) {
+				recordTableFields(value as LuaTableConstructorExpression, path, scope);
+			}
 		};
 		const visitExpression = (expression: LuaExpression): void => {
 			switch (expression.kind) {
@@ -1026,14 +1128,14 @@ export class LuaParser {
 					visitExpression((expression as LuaMemberExpression).base);
 					break;
 				case LuaSyntaxKind.IndexExpression: {
-					const index = expression as LuaIndexExpression;
-					visitExpression(index.base);
-					visitExpression(index.index);
+					const indexExpression = expression as LuaIndexExpression;
+					visitExpression(indexExpression.base);
+					visitExpression(indexExpression.index);
 					break;
 				}
 				case LuaSyntaxKind.TableConstructorExpression: {
-					const table = expression as LuaTableConstructorExpression;
-					for (const field of table.fields) {
+					const tableExpression = expression as LuaTableConstructorExpression;
+					for (const field of tableExpression.fields) {
 						if (field.kind === LuaTableFieldKind.Array) {
 							visitExpression((field as LuaTableArrayField).value);
 						} else if (field.kind === LuaTableFieldKind.IdentifierKey) {
@@ -1053,7 +1155,7 @@ export class LuaParser {
 		const visitFunctionExpression = (expression: LuaFunctionExpression): void => {
 			const scope = expression.body.range;
 			for (const parameter of expression.parameters) {
-				pushDefinition(parameter.name, parameter.range, scope);
+				pushDefinition([parameter.name], parameter.range, scope);
 			}
 			visitBlock(expression.body, scope);
 		};
@@ -1061,8 +1163,12 @@ export class LuaParser {
 			switch (statement.kind) {
 				case LuaSyntaxKind.LocalAssignmentStatement: {
 					const localAssignment = statement as LuaLocalAssignmentStatement;
-					for (const identifier of localAssignment.names) {
-						pushDefinition(identifier.name, identifier.range, currentScope);
+					const mappedValues = mapAssignmentValues(localAssignment.names.length, localAssignment.values);
+					for (let index = 0; index < localAssignment.names.length; index += 1) {
+						const identifier = localAssignment.names[index];
+						const path = [identifier.name];
+						pushDefinition(path, identifier.range, currentScope);
+						recordAssignmentValue(path, mappedValues[index], currentScope);
 					}
 					for (const value of localAssignment.values) {
 						visitExpression(value);
@@ -1071,7 +1177,7 @@ export class LuaParser {
 				}
 				case LuaSyntaxKind.LocalFunctionStatement: {
 					const localFunction = statement as LuaLocalFunctionStatement;
-					pushDefinition(localFunction.name.name, localFunction.name.range, currentScope);
+					pushDefinition([localFunction.name.name], localFunction.name.range, currentScope);
 					visitFunctionExpression(localFunction.functionExpression);
 					break;
 				}
@@ -1084,6 +1190,16 @@ export class LuaParser {
 					const assignment = statement as LuaAssignmentStatement;
 					for (const expression of assignment.right) {
 						visitExpression(expression);
+					}
+					const mappedValues = mapAssignmentValues(assignment.left.length, assignment.right);
+					for (let index = 0; index < assignment.left.length; index += 1) {
+						const target = assignment.left[index];
+						const path = extractPathFromExpression(target);
+						if (!path) {
+							continue;
+						}
+						pushDefinition(path, target.range, currentScope);
+						recordAssignmentValue(path, mappedValues[index], currentScope);
 					}
 					break;
 				}
@@ -1123,7 +1239,7 @@ export class LuaParser {
 				}
 				case LuaSyntaxKind.ForNumericStatement: {
 					const forNumeric = statement as LuaForNumericStatement;
-					pushDefinition(forNumeric.variable.name, forNumeric.variable.range, forNumeric.block.range);
+					pushDefinition([forNumeric.variable.name], forNumeric.variable.range, forNumeric.block.range);
 					visitExpression(forNumeric.start);
 					visitExpression(forNumeric.limit);
 					if (forNumeric.step) {
@@ -1135,7 +1251,7 @@ export class LuaParser {
 				case LuaSyntaxKind.ForGenericStatement: {
 					const forGeneric = statement as LuaForGenericStatement;
 					for (const variable of forGeneric.variables) {
-						pushDefinition(variable.name, variable.range, forGeneric.block.range);
+						pushDefinition([variable.name], variable.range, forGeneric.block.range);
 					}
 					for (const iterator of forGeneric.iterators) {
 						visitExpression(iterator);

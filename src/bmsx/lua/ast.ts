@@ -49,6 +49,7 @@ export type LuaNode = {
 
 export type LuaDefinitionInfo = {
 	readonly name: string;
+	readonly namePath: ReadonlyArray<string>;
 	readonly definition: LuaSourceRange;
 	readonly scope: LuaSourceRange;
 };
