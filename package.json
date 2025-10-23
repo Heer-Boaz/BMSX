@@ -8,7 +8,8 @@
 	"src/testrom",
 	"src/ella2023",
 	"src/sint2024",
-	"src/luademo"
+	"src/luademo",
+	"src/luashell"
   ],
   "dependencies": {
 	"blob": "*",

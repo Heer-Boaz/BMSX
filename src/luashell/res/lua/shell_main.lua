@@ -1,0 +1,23 @@
+local background_color = 1
+local text_color = 15
+
+local instructions = {
+	'BMSX LUA SHELL READY.',
+	'',
+	'Press ESC to toggle the console editor.',
+	'Edit this file to execute ad-hoc Lua code.',
+	'Choose REBOOT/RESUME to run your changes.',
+}
+
+function init()
+end
+
+function update(_dt)
+end
+
+function draw()
+	cls(background_color)
+	for index = 1, #instructions do
+		print(instructions[index], 8, 8 + (index - 1) * 16, text_color)
+	end
+end

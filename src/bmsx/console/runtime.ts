@@ -469,6 +469,21 @@ export class BmsxConsoleRuntime extends Service {
 		this.flushLuaWarnings();
 	}
 
+	public ensureEditorActive(): void {
+		if (!this.hasLuaProgram()) {
+			throw new Error('[BmsxConsoleRuntime] Cannot activate console editor when no Lua program is active.');
+		}
+		const editor = this.editor;
+		if (!editor) {
+			throw new Error('[BmsxConsoleRuntime] Console editor unavailable.');
+		}
+		if (!editor.isActive()) {
+			const activator = editor as unknown as { activate(): void };
+			activator.activate();
+		}
+		this.setEditorPipelineActive(true, true);
+	}
+
 	public override getState(): BmsxConsoleState | undefined {
 		const storageState = this.storage.dump();
 		const luaSnapshot = this.captureLuaSnapshot();

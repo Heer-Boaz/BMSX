@@ -320,6 +320,7 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
+				"luashell",
 				"luademo",
 				"bmsxconsole",
 				"sint2024",
@@ -330,7 +331,7 @@
 				"marlies2020",
 				"sintervania",
 			],
-			"default": "luademo"
+			"default": "luashell"
 		}
 	]
 }
