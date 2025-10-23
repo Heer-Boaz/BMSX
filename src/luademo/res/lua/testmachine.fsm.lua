@@ -1,5 +1,5 @@
 return {
-    id = '<MACHINE_ID>',
+    id = 'console_testmachine',
     enable_tape_autotick = true,
     ticks2advance_tape = 50,
     states = {
