@@ -3,7 +3,7 @@ import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
 import type { ClipboardService, ViewportMetrics } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
-import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest } from './types';
+import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
 import { clamp } from '../utils/utils';
@@ -532,6 +532,7 @@ const COLOR_TAB_ACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
 const TAB_CLOSE_BUTTON_PADDING_X = 3;
 const TAB_CLOSE_BUTTON_PADDING_Y = 1;
 const TAB_CLOSE_BUTTON_SYMBOL = 'X';
+const COLOR_GOTO_UNDERLINE = COLOR_STATUS_WARNING;
 const RESOURCE_VIEWER_MAX_LINES = 512;
 const RESOURCE_PANEL_MIN_RATIO = 0.18;
 const RESOURCE_PANEL_MAX_RATIO = 0.6;
@@ -559,6 +560,7 @@ export class ConsoleCartEditor {
 	private hoverTooltip: CodeHoverTooltip | null = null;
 	private lastPointerSnapshot: PointerSnapshot | null = null;
 	private lastInspectorResult: ConsoleLuaHoverResult | null = null;
+	private gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null = null;
 	private viewportWidth: number;
 	private viewportHeight: number;
 	private readonly font: ConsoleEditorFont;
@@ -1448,6 +1450,7 @@ export class ConsoleCartEditor {
 		this.lastSearchVersion = this.textVersion;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.clearGotoHoverHighlight();
 		this.cursorRevealSuspended = false;
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
@@ -1481,6 +1484,7 @@ export class ConsoleCartEditor {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.pointerAuxWasPressed = false;
+		this.clearGotoHoverHighlight();
 		this.cursorRevealSuspended = false;
 		this.searchActive = false;
 		this.searchVisible = false;
@@ -1621,6 +1625,7 @@ export class ConsoleCartEditor {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.pointerAuxWasPressed = false;
+		this.clearGotoHoverHighlight();
 		this.activeScrollbarDrag = null;
 		this.cursorRevealSuspended = false;
 		this.undoStack = [];
@@ -2494,6 +2499,14 @@ export class ConsoleCartEditor {
 	}
 
 	private handlePointerInput(_deltaSeconds: number): void {
+		const keyboard = this.getKeyboard();
+		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
+		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
+		const gotoModifierActive = ctrlDown || metaDown;
+		if (!gotoModifierActive) {
+			this.clearGotoHoverHighlight();
+		}
+		const activeContext = this.getActiveCodeTabContext();
 		const snapshot = this.readPointerSnapshot();
 		this.updateTabHoverState(snapshot);
 		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
@@ -2501,10 +2514,12 @@ export class ConsoleCartEditor {
 			this.pointerPrimaryWasPressed = false;
 			this.activeScrollbarDrag = null;
 			this.clearHoverTooltip();
+			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (!snapshot.valid) {
 			this.activeScrollbarDrag = null;
+			this.clearGotoHoverHighlight();
 		} else if (this.activeScrollbarDrag && !snapshot.primaryPressed) {
 			this.activeScrollbarDrag = null;
 		} else if (this.activeScrollbarDrag && snapshot.primaryPressed) {
@@ -2543,18 +2558,21 @@ export class ConsoleCartEditor {
 		if (justPressed && this.tryStartScrollbarDrag(snapshot)) {
 			this.pointerSelecting = false;
 			this.clearHoverTooltip();
+			this.clearGotoHoverHighlight();
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			return;
 		}
 		if (this.resourcePanelResizing && !snapshot.valid) {
 			this.resourcePanelResizing = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (!snapshot.valid) {
 			this.resourceBrowserHoverIndex = -1;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
+			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (this.resourcePanelResizing) {
@@ -2579,6 +2597,7 @@ export class ConsoleCartEditor {
 				this.resetPointerClickTracking();
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			}
+			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
@@ -2586,20 +2605,22 @@ export class ConsoleCartEditor {
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.resetPointerClickTracking();
+				this.clearGotoHoverHighlight();
 				return;
 			}
 		}
-		if (this.resourcePanelVisible && justPressed && this.isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
-			if (this.getResourcePanelWidth() > 0) {
-				this.resourcePanelResizing = true;
-				this.resourcePanelFocused = true;
-				this.pointerSelecting = false;
-				this.resourceBrowserHoverIndex = -1;
-				this.resetPointerClickTracking();
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			}
-			return;
+	if (this.resourcePanelVisible && justPressed && this.isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+		if (this.getResourcePanelWidth() > 0) {
+			this.resourcePanelResizing = true;
+			this.resourcePanelFocused = true;
+			this.pointerSelecting = false;
+			this.resourceBrowserHoverIndex = -1;
+			this.resetPointerClickTracking();
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		}
+		this.clearGotoHoverHighlight();
+		return;
+	}
 		const tabTop = this.headerHeight;
 		const tabBottom = tabTop + this.tabBarHeight;
 		if (pointerAuxJustPressed && this.handleTabBarMiddleClick(snapshot)) {
@@ -2609,6 +2630,7 @@ export class ConsoleCartEditor {
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.resetPointerClickTracking();
+			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed && snapshot.viewportY >= tabTop && snapshot.viewportY < tabBottom) {
@@ -2616,6 +2638,7 @@ export class ConsoleCartEditor {
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.resetPointerClickTracking();
+				this.clearGotoHoverHighlight();
 				return;
 			}
 		}
@@ -2653,6 +2676,7 @@ export class ConsoleCartEditor {
 			}
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearGotoHoverHighlight();
 			return;
 		}
 		if (justPressed && !pointerInPanel) {
@@ -2666,18 +2690,20 @@ export class ConsoleCartEditor {
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
+			this.clearGotoHoverHighlight();
 			return;
 		}
-			if (this.pendingActionPrompt) {
-				this.resetPointerClickTracking();
-				if (justPressed) {
-					this.handleActionPromptPointer(snapshot);
-				}
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				this.clearHoverTooltip();
-				return;
+		if (this.pendingActionPrompt) {
+			this.resetPointerClickTracking();
+			if (justPressed) {
+				this.handleActionPromptPointer(snapshot);
 			}
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearHoverTooltip();
+			this.clearGotoHoverHighlight();
+			return;
+		}
 		const createResourceBounds = this.getCreateResourceBarBounds();
 		if (this.createResourceVisible && createResourceBounds) {
 			const insideCreateBar = this.pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
@@ -2695,6 +2721,7 @@ export class ConsoleCartEditor {
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
+				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
@@ -2717,6 +2744,7 @@ export class ConsoleCartEditor {
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
+				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
@@ -2742,6 +2770,7 @@ export class ConsoleCartEditor {
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
+				this.clearGotoHoverHighlight();
 				return;
 			}
 			if (justPressed) {
@@ -2760,6 +2789,12 @@ export class ConsoleCartEditor {
 			this.focusEditorFromSearch();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
+			if (gotoModifierActive && this.tryGotoDefinitionAt(targetRow, targetColumn)) {
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.resetPointerClickTracking();
+				return;
+			}
 			const doubleClick = this.registerPointerClick(targetRow, targetColumn);
 			if (doubleClick) {
 				this.selectWordAtPosition(targetRow, targetColumn);
@@ -2771,6 +2806,7 @@ export class ConsoleCartEditor {
 			}
 		}
 		if (this.pointerSelecting && snapshot.primaryPressed) {
+			this.clearGotoHoverHighlight();
 			this.handlePointerAutoScroll(snapshot.viewportX, snapshot.viewportY);
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
@@ -2779,8 +2815,14 @@ export class ConsoleCartEditor {
 			}
 			this.setCursorPosition(targetRow, targetColumn);
 		}
+		if (this.isCodeTabActive() && !snapshot.primaryPressed && !this.pointerSelecting && insideCodeArea && gotoModifierActive) {
+			const hoverRow = this.resolvePointerRow(snapshot.viewportY);
+			const hoverColumn = this.resolvePointerColumn(hoverRow, snapshot.viewportX);
+			this.refreshGotoHoverHighlight(hoverRow, hoverColumn, activeContext);
+		} else if (!gotoModifierActive || !insideCodeArea || snapshot.primaryPressed || this.pointerSelecting || !this.isCodeTabActive()) {
+			this.clearGotoHoverHighlight();
+		}
 		if (this.isCodeTabActive()) {
-			const keyboard = this.getKeyboard();
 			const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
 			if (!snapshot.primaryPressed && !this.pointerSelecting && insideCodeArea && altDown) {
 				this.updateHoverTooltip(snapshot);
@@ -3187,6 +3229,102 @@ export class ConsoleCartEditor {
 		}
 		const targetSegment = segments[segmentIndex];
 		return { expression, startColumn: targetSegment.start, endColumn: targetSegment.end };
+	}
+
+	private refreshGotoHoverHighlight(row: number, column: number, context: CodeTabContext | null): void {
+		const token = this.extractHoverExpression(row, column);
+		if (!token) {
+			this.clearGotoHoverHighlight();
+			return;
+		}
+		const existing = this.gotoHoverHighlight;
+		if (existing
+			&& existing.row === row
+			&& column >= existing.startColumn
+			&& column <= existing.endColumn
+			&& existing.expression === token.expression) {
+			return;
+		}
+		const assetId = this.resolveHoverAssetId(context);
+		const inspection = this.inspectLuaExpressionFn({ assetId, expression: token.expression });
+		if (!inspection || inspection.state !== 'value' || !inspection.definition) {
+			this.clearGotoHoverHighlight();
+			return;
+		}
+		this.gotoHoverHighlight = {
+			row,
+			startColumn: token.startColumn,
+			endColumn: token.endColumn,
+			expression: token.expression,
+		};
+	}
+
+	private clearGotoHoverHighlight(): void {
+		this.gotoHoverHighlight = null;
+	}
+
+	private tryGotoDefinitionAt(row: number, column: number): boolean {
+		const context = this.getActiveCodeTabContext();
+		const assetId = this.resolveHoverAssetId(context);
+		const token = this.extractHoverExpression(row, column);
+		if (!token) {
+			this.showMessage('Definition not found', COLOR_STATUS_WARNING, 1.6);
+			return false;
+		}
+		const inspection = this.inspectLuaExpressionFn({ assetId, expression: token.expression });
+		if (!inspection || inspection.state !== 'value' || !inspection.definition) {
+			this.showMessage(`Definition not found for ${token.expression}`, COLOR_STATUS_WARNING, 1.8);
+			return false;
+		}
+		this.navigateToLuaDefinition(inspection.definition);
+		return true;
+	}
+
+	private navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
+		const hint: { assetId: string | null; path?: string | null } = { assetId: definition.assetId };
+		if (definition.path !== undefined) {
+			hint.path = definition.path;
+		}
+		try {
+			this.focusChunkSource(definition.chunkName, hint);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showMessage(`Failed to open definition: ${message}`, COLOR_STATUS_ERROR, 3.2);
+			return;
+		}
+		this.activateCodeTab();
+		this.applyDefinitionSelection(definition.range);
+		this.cursorRevealSuspended = false;
+		this.clearHoverTooltip();
+		this.clearGotoHoverHighlight();
+		this.showMessage('Jumped to definition', COLOR_STATUS_SUCCESS, 1.6);
+	}
+
+	private applyDefinitionSelection(range: ConsoleLuaDefinitionLocation['range']): void {
+		const lastRowIndex = Math.max(0, this.lines.length - 1);
+		const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
+		const startLine = this.lines[startRow] ?? '';
+		const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
+		let endRow = clamp(range.endLine - 1, 0, lastRowIndex);
+		const endLineRaw = this.lines[endRow] ?? '';
+		let endColumn = clamp(range.endColumn - 1, 0, endLineRaw.length);
+		if (endRow === startRow && endColumn <= startColumn) {
+			endColumn = Math.min(startLine.length, startColumn + 1);
+		}
+		this.cursorRow = startRow;
+		this.cursorColumn = startColumn;
+		if (endRow !== startRow || endColumn !== startColumn) {
+			this.selectionAnchor = { row: endRow, column: endColumn };
+		} else {
+			this.selectionAnchor = null;
+		}
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
+		this.pointerAuxWasPressed = false;
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.ensureCursorVisible();
+		this.revealCursor();
 	}
 
 	private isIdentifierStartChar(code: number): boolean {
@@ -5831,6 +5969,8 @@ export class ConsoleCartEditor {
 			api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, COLOR_GUTTER_BACKGROUND);
 		}
 
+		const activeGotoHighlight = this.gotoHoverHighlight;
+		const gotoRow = activeGotoHighlight ? activeGotoHighlight.row : -1;
 		let cursorEntry: CachedHighlight | null = null;
 		let cursorSliceStart = 0;
 		const sliceWidth = columnCapacity + 2;
@@ -5861,6 +6001,27 @@ export class ConsoleCartEditor {
 					}
 				}
 				this.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);
+				if (activeGotoHighlight && gotoRow === lineIndex) {
+					const startDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.startColumn);
+					const endDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.endColumn);
+					const clampedStartDisplay = clamp(startDisplayFull, slice.startDisplay, slice.endDisplay);
+					const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, slice.endDisplay);
+					if (clampedEndDisplay > clampedStartDisplay) {
+						const underlineStartX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedStartDisplay);
+						const underlineEndX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedEndDisplay);
+						let drawLeft = Math.floor(underlineStartX);
+						let drawRight = Math.ceil(underlineEndX);
+						if (drawRight <= drawLeft) {
+							drawRight = drawLeft + Math.max(1, Math.floor(this.charAdvance));
+						}
+						if (drawRight > drawLeft) {
+							const underlineY = Math.min(contentBottom - 1, rowY + this.lineHeight - 1);
+							if (underlineY >= rowY && underlineY < contentBottom) {
+								api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, COLOR_GOTO_UNDERLINE);
+							}
+						}
+					}
+				}
 				if (lineIndex === this.cursorRow) {
 					cursorEntry = entry;
 					cursorSliceStart = slice.startDisplay;

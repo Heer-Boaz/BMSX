@@ -106,6 +106,20 @@ export type ConsoleLuaHoverScope = 'global' | 'chunk';
 
 export type ConsoleLuaHoverValueState = 'value' | 'not_defined';
 
+export type ConsoleLuaDefinitionRange = {
+	startLine: number;
+	startColumn: number;
+	endLine: number;
+	endColumn: number;
+};
+
+export type ConsoleLuaDefinitionLocation = {
+	chunkName: string;
+	assetId: string | null;
+	path?: string | null;
+	range: ConsoleLuaDefinitionRange;
+};
+
 export type ConsoleLuaHoverRequest = {
 	assetId: string | null;
 	expression: string;
@@ -120,4 +134,5 @@ export type ConsoleLuaHoverResult = {
 	isFunction: boolean;
 	isLocalFunction: boolean;
 	isBuiltin: boolean;
+	definition?: ConsoleLuaDefinitionLocation | null;
 };

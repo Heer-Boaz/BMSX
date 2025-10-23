@@ -5,7 +5,7 @@ import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
@@ -21,6 +21,7 @@ import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
+import type { LuaSourceRange } from '../lua/ast.ts';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -2421,12 +2422,14 @@ export class BmsxConsoleRuntime extends Service {
 				isFunction: false,
 				isLocalFunction: false,
 				isBuiltin: false,
+				definition: null,
 			};
 		}
 		const formatted = this.describeLuaValueForInspector(resolved.value);
 		const isFunction = formatted.isFunction;
 		const isLocalFunction = isFunction && resolved.scope === 'chunk';
 		const isBuiltin = isFunction && chain.length === 1 && this.isLuaBuiltinFunctionName(chain[0]);
+		const definition = isBuiltin ? null : this.resolveLuaDefinitionMetadata(resolved.value, assetId);
 		return {
 			expression: trimmed,
 			lines: formatted.lines,
@@ -2436,7 +2439,38 @@ export class BmsxConsoleRuntime extends Service {
 			isFunction,
 			isLocalFunction,
 			isBuiltin,
+			definition,
 		};
+	}
+
+	private resolveLuaDefinitionMetadata(value: LuaValue, fallbackAssetId: string | null): ConsoleLuaDefinitionLocation | null {
+		if (!value || typeof value !== 'object') {
+			return null;
+		}
+		const candidate = value as { getSourceRange?: () => LuaSourceRange };
+		if (typeof candidate.getSourceRange !== 'function') {
+			return null;
+		}
+		const range = candidate.getSourceRange();
+		if (!range) {
+			return null;
+		}
+		const normalizedChunk = this.normalizeChunkName(range.chunkName);
+		const chunkResource = this.lookupChunkResourceInfoNullable(range.chunkName);
+		const location: ConsoleLuaDefinitionLocation = {
+			chunkName: normalizedChunk,
+			assetId: chunkResource?.assetId ?? fallbackAssetId ?? null,
+			range: {
+				startLine: range.start.line,
+				startColumn: range.start.column,
+				endLine: range.end.line,
+				endColumn: range.end.column,
+			},
+		};
+		if (chunkResource?.path) {
+			location.path = chunkResource.path;
+		}
+		return location;
 	}
 
 	private parseLuaIdentifierChain(expression: string): string[] | null {

@@ -78,6 +78,7 @@ class LuaNativeFunction implements LuaFunctionValue {
 
 class LuaScriptFunction implements LuaFunctionValue {
 	public readonly name: string;
+	public readonly range: LuaSourceRange;
 	private readonly interpreter: LuaInterpreter;
 	private readonly expression: LuaFunctionExpression;
 	private readonly closure: LuaEnvironment;
@@ -89,10 +90,15 @@ class LuaScriptFunction implements LuaFunctionValue {
 		this.expression = expression;
 		this.closure = closure;
 		this.implicitSelfName = implicitSelfName;
+		this.range = expression.range;
 	}
 
 	public call(args: ReadonlyArray<LuaValue>): LuaValue[] {
 		return this.interpreter.invokeScriptFunction(this.expression, this.closure, this.name, args, this.implicitSelfName);
+	}
+
+	public getSourceRange(): LuaSourceRange {
+		return this.range;
 	}
 }
 
