@@ -426,6 +426,7 @@ export class ConsoleCartEditor {
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
+	private tabHoverId: string | null = null;
 	private readonly tabDirtyMarkerAssetId = 'msx_6b_font_ctrl_bel';
 	private tabDirtyMarkerWidth: number | null = null;
 	private tabDirtyMarkerHeight: number | null = null;
@@ -881,17 +882,22 @@ export class ConsoleCartEditor {
 			const tab = this.tabs[index];
 			const textWidth = this.measureText(tab.title);
 			const dirty = tab.dirty === true;
-			let markerWidth = 0;
+			const hovered = tab.id === this.tabHoverId;
 			let markerMetrics: { width: number; height: number } | null = null;
 			if (dirty) {
 				markerMetrics = this.getTabDirtyMarkerMetrics();
-				markerWidth = markerMetrics.width + TAB_DIRTY_MARKER_SPACING;
 			}
 			let closeWidth = 0;
 			if (tab.closable) {
 				closeWidth = this.measureText(TAB_CLOSE_BUTTON_SYMBOL) + TAB_CLOSE_BUTTON_PADDING_X * 2;
 			}
-			const tabWidth = textWidth + TAB_BUTTON_PADDING_X * 2 + closeWidth + markerWidth;
+			let indicatorWidth = 0;
+			if (tab.closable) {
+				indicatorWidth = closeWidth;
+			} else if (markerMetrics) {
+				indicatorWidth = markerMetrics.width + TAB_DIRTY_MARKER_SPACING;
+			}
+			const tabWidth = textWidth + TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
 			const left = tabX;
 			const right = left + tabWidth;
 			const top = barTop + 1;
@@ -903,14 +909,10 @@ export class ConsoleCartEditor {
 			const textColor = active ? COLOR_TAB_ACTIVE_TEXT : COLOR_TAB_INACTIVE_TEXT;
 			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
 			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_TAB_BORDER);
-			let textX = bounds.left + TAB_BUTTON_PADDING_X;
 			const textY = bounds.top + TAB_BUTTON_PADDING_Y;
-			if (markerMetrics) {
-				const markerX = textX;
-				const markerY = bounds.top + Math.floor(((bounds.bottom - bounds.top) - markerMetrics.height) / 2);
-				api.spr(this.tabDirtyMarkerAssetId, markerX, markerY);
-				textX += markerMetrics.width + TAB_DIRTY_MARKER_SPACING;
-			}
+			const showCloseButton = tab.closable && (hovered || (!dirty && active));
+			const indicatorLeft = bounds.right - indicatorWidth;
+			const textX = bounds.left + TAB_BUTTON_PADDING_X;
 			this.drawText(api, tab.title, textX, textY, textColor);
 			if (tab.closable) {
 				const closeBounds: RectBounds = {
@@ -919,10 +921,30 @@ export class ConsoleCartEditor {
 					right: bounds.right,
 					bottom: bounds.bottom,
 				};
-				this.tabCloseButtonBounds.set(tab.id, closeBounds);
-				const closeX = closeBounds.left + TAB_CLOSE_BUTTON_PADDING_X;
-				const closeY = closeBounds.top + TAB_CLOSE_BUTTON_PADDING_Y;
-				this.drawText(api, TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
+				if (showCloseButton) {
+					this.tabCloseButtonBounds.set(tab.id, closeBounds);
+					const closeX = closeBounds.left + TAB_CLOSE_BUTTON_PADDING_X;
+					const closeY = closeBounds.top + TAB_CLOSE_BUTTON_PADDING_Y;
+					this.drawText(api, TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
+				} else {
+					this.tabCloseButtonBounds.delete(tab.id);
+					if (dirty && markerMetrics) {
+						const markerX = closeBounds.left + Math.floor((closeWidth - markerMetrics.width) / 2);
+						const markerY = bounds.top + Math.floor(((bounds.bottom - bounds.top) - markerMetrics.height) / 2);
+						api.spr(this.tabDirtyMarkerAssetId, markerX, markerY);
+					}
+				}
+			} else {
+				this.tabCloseButtonBounds.delete(tab.id);
+				if (dirty && markerMetrics) {
+					const indicatorAreaWidth = indicatorWidth;
+					const spacing = Math.max(0, TAB_DIRTY_MARKER_SPACING);
+					const markerX = indicatorAreaWidth > 0
+						? indicatorLeft + Math.floor(Math.max(0, (indicatorAreaWidth - markerMetrics.width) / 2))
+						: bounds.right - markerMetrics.width - spacing;
+					const markerY = bounds.top + Math.floor(((bounds.bottom - bounds.top) - markerMetrics.height) / 2);
+					api.spr(this.tabDirtyMarkerAssetId, markerX, markerY);
+				}
 			}
 			if (active) {
 				api.rectfill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, fillColor);
@@ -1946,6 +1968,7 @@ export class ConsoleCartEditor {
 
 	private handlePointerInput(_deltaSeconds: number): void {
 		const snapshot = this.readPointerSnapshot();
+		this.updateTabHoverState(snapshot);
 		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
 		if (!snapshot) {
 			this.pointerPrimaryWasPressed = false;
@@ -2116,6 +2139,29 @@ export class ConsoleCartEditor {
 		}
 		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
  	}
+
+	private updateTabHoverState(snapshot: PointerSnapshot | null): void {
+		if (!snapshot || !snapshot.valid || !snapshot.insideViewport) {
+			this.tabHoverId = null;
+			return;
+		}
+		const tabTop = this.headerHeight;
+		const tabBottom = tabTop + this.tabBarHeight;
+		const y = snapshot.viewportY;
+		if (y < tabTop || y >= tabBottom) {
+			this.tabHoverId = null;
+			return;
+		}
+		const x = snapshot.viewportX;
+		let hovered: string | null = null;
+		for (const [tabId, bounds] of this.tabButtonBounds) {
+			if (this.pointInRect(x, y, bounds)) {
+				hovered = tabId;
+				break;
+			}
+		}
+		this.tabHoverId = hovered;
+	}
 
 	private updateHoverTooltip(snapshot: PointerSnapshot): void {
 		const context = this.getActiveCodeTabContext();
@@ -2465,6 +2511,7 @@ export class ConsoleCartEditor {
 			const closeBounds = this.tabCloseButtonBounds.get(tab.id);
 			if (closeBounds && this.pointInRect(x, y, closeBounds)) {
 				this.closeTab(tab.id);
+				this.tabHoverId = null;
 				return true;
 			}
 			const tabBounds = this.tabButtonBounds.get(tab.id);
