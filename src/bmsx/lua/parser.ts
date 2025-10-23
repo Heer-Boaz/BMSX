@@ -51,8 +51,8 @@ import type {
 	LuaUnaryExpression,
 	LuaVarargExpression,
 	LuaWhileStatement,
-	LuaDefinitionInfo,
-	LuaDefinitionKind,
+LuaDefinitionInfo,
+LuaDefinitionKind,
 } from './ast.ts';
 
 type ParsedArguments = {
