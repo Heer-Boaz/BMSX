@@ -325,6 +325,7 @@ const RESOURCE_PANEL_MAX_WIDTH = 240;
 const RESOURCE_PANEL_MIN_CODE_WIDTH = 192;
 const RESOURCE_PANEL_DIVIDER_COLOR = COLOR_TAB_BORDER;
 const RESOURCE_PANEL_PADDING_X = 4;
+const RESOURCE_PANEL_DIVIDER_DRAG_MARGIN = 4;
 const SCROLLBAR_WIDTH = 3;
 const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
 const SCROLLBAR_TRACK_COLOR = COLOR_STATUS_BACKGROUND;
@@ -463,6 +464,8 @@ export class ConsoleCartEditor {
 	private resourcePanelVisible = false;
 	private resourcePanelFocused = false;
 	private pendingResourceSelectionAssetId: string | null = null;
+	private resourcePanelWidth: number | null = null;
+	private resourcePanelResizing = false;
 	private resourceBrowserHorizontalScroll = 0;
 	private resourceBrowserMaxLineWidth = 0;
 
@@ -1015,14 +1018,24 @@ export class ConsoleCartEditor {
 		if (!Number.isFinite(renderSize.x) || !Number.isFinite(renderSize.y) || renderSize.x <= 0 || renderSize.y <= 0) {
 			throw new Error('[ConsoleCartEditor] Invalid offscreen dimensions.');
 		}
-		const width = renderSize.x;
-		const height = renderSize.y;
-		if (width === this.viewportWidth && height === this.viewportHeight) {
-			return;
-		}
-		this.viewportWidth = width;
-		this.viewportHeight = height;
+	const width = renderSize.x;
+	const height = renderSize.y;
+	if (width === this.viewportWidth && height === this.viewportHeight) {
+		return;
 	}
+	this.viewportWidth = width;
+	this.viewportHeight = height;
+	if (this.resourcePanelWidth !== null) {
+		this.resourcePanelWidth = this.clampResourcePanelWidth(this.resourcePanelWidth);
+		if (this.resourcePanelVisible && this.resourcePanelWidth <= 0) {
+			this.hideResourcePanel();
+		}
+	}
+	if (this.resourcePanelVisible) {
+		this.updateResourceBrowserMetrics();
+		this.resourceBrowserEnsureSelectionVisible();
+	}
+}
 
 	private initializeTabs(entryContext: CodeTabContext | null = null): void {
 		this.tabs = [];
@@ -2053,10 +2066,36 @@ export class ConsoleCartEditor {
 		if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
 			this.pointerSelecting = false;
 		}
+		if (this.resourcePanelResizing && !snapshot.valid) {
+			this.resourcePanelResizing = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
+		}
 		if (!snapshot.valid) {
 			this.resourceBrowserHoverIndex = -1;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
+			return;
+		}
+		if (this.resourcePanelResizing) {
+			if (!snapshot.primaryPressed) {
+				this.resourcePanelResizing = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			} else {
+				const newWidth = this.clampResourcePanelWidth(snapshot.viewportX);
+				if (newWidth > 0) {
+					this.resourcePanelWidth = newWidth;
+					this.clampResourceBrowserHorizontalScroll();
+					this.resourceBrowserEnsureSelectionVisible();
+				} else {
+					this.hideResourcePanel();
+				}
+				this.resourceBrowserHoverIndex = -1;
+				this.resourcePanelFocused = true;
+				this.pointerSelecting = false;
+				this.resetPointerClickTracking();
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			}
 			return;
 		}
 		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
@@ -2066,6 +2105,17 @@ export class ConsoleCartEditor {
 				this.resetPointerClickTracking();
 				return;
 			}
+		}
+		if (this.resourcePanelVisible && justPressed && this.isPointerOverResourcePanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+			if (this.getResourcePanelWidth() > 0) {
+				this.resourcePanelResizing = true;
+				this.resourcePanelFocused = true;
+				this.pointerSelecting = false;
+				this.resourceBrowserHoverIndex = -1;
+				this.resetPointerClickTracking();
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			}
+			return;
 		}
 		const tabTop = this.headerHeight;
 		const tabBottom = tabTop + this.tabBarHeight;
@@ -4600,14 +4650,15 @@ export class ConsoleCartEditor {
 	}
 
 	private showResourcePanel(): void {
-		this.resourcePanelVisible = true;
-		const width = this.getResourcePanelWidth();
-		if (width <= 0) {
-			this.resourcePanelVisible = false;
-			this.resourcePanelFocused = false;
+		const desiredWidth = this.resourcePanelWidth ?? this.defaultResourcePanelWidth();
+		const clampedWidth = this.clampResourcePanelWidth(desiredWidth);
+		if (clampedWidth <= 0) {
 			this.showMessage('Viewport too small for resource panel.', COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
+		this.resourcePanelWidth = clampedWidth;
+		this.resourcePanelVisible = true;
+		this.resourcePanelResizing = false;
 		this.resourcePanelFocused = true;
 		this.refreshResourcePanelContents();
 	}
@@ -4618,6 +4669,7 @@ export class ConsoleCartEditor {
 		}
 		this.resourcePanelVisible = false;
 		this.resourcePanelFocused = false;
+		this.resourcePanelResizing = false;
 		this.resetResourcePanelState();
 	}
 
@@ -4737,6 +4789,7 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		this.resourceBrowserHorizontalScroll = 0;
 		this.resourceBrowserMaxLineWidth = 0;
 		this.pendingResourceSelectionAssetId = null;
+		this.resourcePanelResizing = false;
 	}
 
 	private refreshResourcePanelContents(): void {
@@ -4772,7 +4825,8 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 				augmented.push({ path: `atlas/${key}`, type: 'atlas', assetId: key });
 			}
 		}
-		this.resourceBrowserItems = this.buildResourceBrowserItems(augmented);
+	this.resourceBrowserItems = this.buildResourceBrowserItems(augmented);
+	this.updateResourceBrowserMetrics();
 		const targetAssetId = this.pendingResourceSelectionAssetId ?? previousAssetId;
 		let selectionIndex = -1;
 		if (targetAssetId) {
@@ -5395,25 +5449,41 @@ private getMainProgramSourceForReload(): string {
 		return String(value);
 	}
 
+	private clampResourcePanelWidth(width: number): number {
+		const maxByViewport = Math.max(0, this.viewportWidth - RESOURCE_PANEL_MIN_CODE_WIDTH);
+		if (maxByViewport <= 0) {
+			return 0;
+		}
+		const maxWidth = Math.min(RESOURCE_PANEL_MAX_WIDTH, maxByViewport);
+		const minWidth = Math.min(RESOURCE_PANEL_MIN_WIDTH, maxWidth);
+		let clamped = Number.isFinite(width) ? width : minWidth;
+		if (clamped < minWidth) {
+			clamped = minWidth;
+		}
+		if (clamped > maxWidth) {
+			clamped = maxWidth;
+		}
+		return clamped;
+	}
+
+	private defaultResourcePanelWidth(): number {
+		const preferred = Math.floor(this.viewportWidth * 0.32);
+		return this.clampResourcePanelWidth(preferred);
+	}
+
 	private getResourcePanelWidth(): number {
 		if (!this.resourcePanelVisible) {
 			return 0;
 		}
-		const desired = Math.floor(this.viewportWidth * 0.32);
-		let width = desired;
-		if (width < RESOURCE_PANEL_MIN_WIDTH) {
-			width = RESOURCE_PANEL_MIN_WIDTH;
+		let width = this.resourcePanelWidth;
+		if (width === null) {
+			width = this.defaultResourcePanelWidth();
 		}
-		if (width > RESOURCE_PANEL_MAX_WIDTH) {
-			width = RESOURCE_PANEL_MAX_WIDTH;
-		}
-		const maxAllowed = Math.max(0, this.viewportWidth - RESOURCE_PANEL_MIN_CODE_WIDTH);
-		if (width > maxAllowed) {
-			width = maxAllowed;
-		}
-		if (width < 0) {
+		width = this.clampResourcePanelWidth(width);
+		if (width <= 0) {
 			return 0;
 		}
+		this.resourcePanelWidth = width;
 		return Math.floor(width);
 	}
 
@@ -5431,6 +5501,20 @@ private getMainProgramSourceForReload(): string {
 			return null;
 		}
 		return { left: 0, top, right: width, bottom };
+	}
+
+	private isPointerOverResourcePanelDivider(x: number, y: number): boolean {
+		if (!this.resourcePanelVisible) {
+			return false;
+		}
+		const bounds = this.getResourcePanelBounds();
+		if (!bounds) {
+			return false;
+		}
+		const margin = RESOURCE_PANEL_DIVIDER_DRAG_MARGIN;
+		const left = bounds.right - margin;
+		const right = bounds.right + margin;
+		return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
 	}
 
 	private resourcePanelLineCapacity(): number {
