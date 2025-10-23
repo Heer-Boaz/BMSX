@@ -1,7 +1,7 @@
 import { $ } from '../core/game';
 import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
-import type { ClipboardService } from '../platform/platform';
+import type { ClipboardService, ViewportMetrics } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
 import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState } from './types';
 import { ConsoleEditorFont } from './editor_font';
@@ -320,9 +320,10 @@ const TAB_CLOSE_BUTTON_PADDING_X = 3;
 const TAB_CLOSE_BUTTON_PADDING_Y = 1;
 const TAB_CLOSE_BUTTON_SYMBOL = 'X';
 const RESOURCE_VIEWER_MAX_LINES = 512;
-const RESOURCE_PANEL_MIN_WIDTH = 112;
-const RESOURCE_PANEL_MAX_WIDTH = 240;
-const RESOURCE_PANEL_MIN_CODE_WIDTH = 192;
+const RESOURCE_PANEL_MIN_RATIO = 0.18;
+const RESOURCE_PANEL_MAX_RATIO = 0.6;
+const RESOURCE_PANEL_DEFAULT_RATIO = 0.3;
+const RESOURCE_PANEL_MIN_EDITOR_RATIO = 0.35;
 const RESOURCE_PANEL_DIVIDER_COLOR = COLOR_TAB_BORDER;
 const RESOURCE_PANEL_PADDING_X = 4;
 const RESOURCE_PANEL_DIVIDER_DRAG_MARGIN = 4;
@@ -464,7 +465,7 @@ export class ConsoleCartEditor {
 	private resourcePanelVisible = false;
 	private resourcePanelFocused = false;
 	private pendingResourceSelectionAssetId: string | null = null;
-	private resourcePanelWidth: number | null = null;
+	private resourcePanelWidthRatio: number | null = null;
 	private resourcePanelResizing = false;
 	private resourceBrowserHorizontalScroll = 0;
 	private resourceBrowserMaxLineWidth = 0;
@@ -582,10 +583,6 @@ export class ConsoleCartEditor {
 			this.drawText(api, visibleLines[i], bubbleLeft + HOVER_TOOLTIP_PADDING_X, lineY, COLOR_STATUS_TEXT);
 		}
 		tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
-	}
-
-	public isActive(): boolean {
-		return this.active;
 	}
 
 	public showWarningBanner(text: string, durationSeconds = 4.0): void {
@@ -735,14 +732,15 @@ export class ConsoleCartEditor {
 		throw new Error(`[ConsoleCartEditor] Unable to resolve chunk '${normalizedTarget}' to a resource.`);
 	}
 
-	private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
-		this.selectResourceInPanel(descriptor);
-		if (descriptor.type === 'lua') {
-			this.openLuaCodeTab(descriptor);
-			return;
-		}
-		this.openResourceViewerTab(descriptor);
-	}
+ private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
+ 	this.selectResourceInPanel(descriptor);
+ 	if (descriptor.type === 'lua') {
+ 		this.openLuaCodeTab(descriptor);
+ 	} else {
+ 		this.openResourceViewerTab(descriptor);
+ 	}
+ 	this.focusEditorFromResourcePanel();
+ }
 
 	public clearRuntimeErrorOverlay(): void {
 		this.runtimeErrorOverlay = null;
@@ -871,6 +869,10 @@ export class ConsoleCartEditor {
 		if (this.isCodeTabActive() && !this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
+	}
+
+	public isActive(): boolean {
+		return this.active;
 	}
 
 	public draw(api: BmsxConsoleApi): void {
@@ -1025,9 +1027,9 @@ export class ConsoleCartEditor {
 	}
 	this.viewportWidth = width;
 	this.viewportHeight = height;
-	if (this.resourcePanelWidth !== null) {
-		this.resourcePanelWidth = this.clampResourcePanelWidth(this.resourcePanelWidth);
-		if (this.resourcePanelVisible && this.resourcePanelWidth <= 0) {
+	if (this.resourcePanelWidthRatio !== null) {
+		this.resourcePanelWidthRatio = this.clampResourcePanelRatio(this.resourcePanelWidthRatio);
+		if (this.resourcePanelVisible && this.computePanelPixelWidth(this.resourcePanelWidthRatio) <= 0) {
 			this.hideResourcePanel();
 		}
 	}
@@ -1722,6 +1724,14 @@ export class ConsoleCartEditor {
 		this.resetBlink();
 	}
 
+	private focusEditorFromResourcePanel(): void {
+		if (!this.resourcePanelFocused) {
+			return;
+		}
+		this.resourcePanelFocused = false;
+		this.resetBlink();
+	}
+
 	private appendLineJumpDigit(digit: string): void {
 		if (digit.length !== 1 || digit < '0' || digit > '9') {
 			return;
@@ -2082,13 +2092,16 @@ export class ConsoleCartEditor {
 				this.resourcePanelResizing = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			} else {
-				const newWidth = this.clampResourcePanelWidth(snapshot.viewportX);
-				if (newWidth > 0) {
-					this.resourcePanelWidth = newWidth;
+				const viewportWidth = this.viewportWidth > 0 ? this.viewportWidth : 1;
+				const requestedRatio = snapshot.viewportX / viewportWidth;
+				const clampedRatio = this.clampResourcePanelRatio(requestedRatio);
+				const pixelWidth = this.computePanelPixelWidth(clampedRatio);
+				if (pixelWidth <= 0) {
+					this.hideResourcePanel();
+				} else {
+					this.resourcePanelWidthRatio = clampedRatio;
 					this.clampResourceBrowserHorizontalScroll();
 					this.resourceBrowserEnsureSelectionVisible();
-				} else {
-					this.hideResourcePanel();
 				}
 				this.resourceBrowserHoverIndex = -1;
 				this.resourcePanelFocused = true;
@@ -4303,11 +4316,10 @@ export class ConsoleCartEditor {
 			const bottom = buttonTop + buttonHeight;
 		const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
 		this.topBarButtonBounds[entry.id] = bounds;
-		const isActive = entry.active === true;
-		const fillColor = isActive
+		const fillColor = entry.active
 			? COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
 			: (entry.disabled ? COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : COLOR_HEADER_BUTTON_BACKGROUND);
-		const textColor = isActive
+		const textColor = entry.active
 			? COLOR_HEADER_BUTTON_ACTIVE_TEXT
 			: (entry.disabled ? COLOR_HEADER_BUTTON_TEXT_DISABLED : COLOR_HEADER_BUTTON_TEXT);
 			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
@@ -4650,13 +4662,14 @@ export class ConsoleCartEditor {
 	}
 
 	private showResourcePanel(): void {
-		const desiredWidth = this.resourcePanelWidth ?? this.defaultResourcePanelWidth();
-		const clampedWidth = this.clampResourcePanelWidth(desiredWidth);
-		if (clampedWidth <= 0) {
+		const desiredRatio = this.resourcePanelWidthRatio ?? this.defaultResourcePanelRatio();
+		const clampedRatio = this.clampResourcePanelRatio(desiredRatio);
+		const widthPx = this.computePanelPixelWidth(clampedRatio);
+		if (clampedRatio <= 0 || widthPx <= 0) {
 			this.showMessage('Viewport too small for resource panel.', COLOR_STATUS_WARNING, 3.0);
 			return;
 		}
-		this.resourcePanelWidth = clampedWidth;
+		this.resourcePanelWidthRatio = clampedRatio;
 		this.resourcePanelVisible = true;
 		this.resourcePanelResizing = false;
 		this.resourcePanelFocused = true;
@@ -4777,8 +4790,29 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 			const fallback = this.tabs[index - 1] ?? this.tabs[0];
 			if (fallback) {
 				this.setActiveTab(fallback.id);
+			} else {
+				this.activeTabId = null;
+				this.activeCodeTabContextId = null;
+				this.resetEditorContent();
 			}
 		}
+	}
+
+	private resetEditorContent(): void {
+		this.lines = [''];
+		this.cursorRow = 0;
+		this.cursorColumn = 0;
+		this.scrollRow = 0;
+		this.scrollColumn = 0;
+		this.selectionAnchor = null;
+		this.lastSavedSource = '';
+		this.invalidateAllHighlights();
+		this.bumpTextVersion();
+		this.dirty = false;
+		this.updateActiveContextDirtyFlag();
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.ensureCursorVisible();
 	}
 
 	private resetResourcePanelState(): void {
@@ -4946,8 +4980,7 @@ private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): Resourc
 					traverse(entry.node, nextPrefix);
 				} else {
 					const descriptor = entry.node.descriptor;
-					const summary = `${descriptor.type}:${descriptor.assetId}`;
-					const line = `${linePrefix}${entry.node.name} [${summary}]`;
+					const line = `${linePrefix}${entry.node.name}`;
 					items.push({
 						line,
 						contentStartColumn: linePrefix.length,
@@ -5449,42 +5482,85 @@ private getMainProgramSourceForReload(): string {
 		return String(value);
 	}
 
-	private clampResourcePanelWidth(width: number): number {
-		const maxByViewport = Math.max(0, this.viewportWidth - RESOURCE_PANEL_MIN_CODE_WIDTH);
-		if (maxByViewport <= 0) {
-			return 0;
+	private getViewportMetrics(): ViewportMetrics {
+		const platform = $.platform;
+		if (!platform) {
+			throw new Error('[ConsoleCartEditor] Platform services unavailable while resolving viewport metrics.');
 		}
-		const maxWidth = Math.min(RESOURCE_PANEL_MAX_WIDTH, maxByViewport);
-		const minWidth = Math.min(RESOURCE_PANEL_MIN_WIDTH, maxWidth);
-		let clamped = Number.isFinite(width) ? width : minWidth;
-		if (clamped < minWidth) {
-			clamped = minWidth;
+		const host = platform.gameviewHost;
+		if (!host || typeof host.getCapability !== 'function') {
+			throw new Error('[ConsoleCartEditor] Game view host unavailable while resolving viewport metrics.');
 		}
-		if (clamped > maxWidth) {
-			clamped = maxWidth;
+		const provider = host.getCapability('viewport-metrics');
+		if (!provider) {
+			throw new Error('[ConsoleCartEditor] Viewport metrics capability unavailable on the current platform.');
 		}
-		return clamped;
+		const metrics = provider.getViewportMetrics();
+		if (!metrics) {
+			throw new Error('[ConsoleCartEditor] Viewport metrics provider returned no data.');
+		}
+		const { windowInner, screen } = metrics;
+		if (!windowInner || !Number.isFinite(windowInner.width) || windowInner.width <= 0) {
+			throw new Error('[ConsoleCartEditor] Viewport metrics reported an invalid inner window width.');
+		}
+		if (!screen || !Number.isFinite(screen.width) || screen.width <= 0) {
+			throw new Error('[ConsoleCartEditor] Viewport metrics reported an invalid screen width.');
+		}
+		return metrics;
 	}
 
-	private defaultResourcePanelWidth(): number {
-		const preferred = Math.floor(this.viewportWidth * 0.32);
-		return this.clampResourcePanelWidth(preferred);
+	private computePanelRatioBounds(): { min: number; max: number } {
+		const minRatio = RESOURCE_PANEL_MIN_RATIO;
+		const minEditorRatio = RESOURCE_PANEL_MIN_EDITOR_RATIO;
+		const availableForPanel = Math.max(0, 1 - minEditorRatio);
+		const maxRatio = Math.max(minRatio, Math.min(RESOURCE_PANEL_MAX_RATIO, availableForPanel));
+		return { min: minRatio, max: maxRatio };
+	}
+
+	private clampResourcePanelRatio(ratio: number | null): number {
+		const bounds = this.computePanelRatioBounds();
+		let resolved = ratio ?? this.defaultResourcePanelRatio();
+		if (!Number.isFinite(resolved)) {
+			resolved = RESOURCE_PANEL_DEFAULT_RATIO;
+		}
+		if (resolved < bounds.min) {
+			resolved = bounds.min;
+		}
+		if (resolved > bounds.max) {
+			resolved = bounds.max;
+		}
+		return resolved;
+	}
+
+	private defaultResourcePanelRatio(): number {
+		const metrics = this.getViewportMetrics();
+		const viewportWidth = metrics.windowInner.width;
+		const screenWidth = metrics.screen.width;
+		const relative = Math.min(1, viewportWidth / screenWidth);
+		const responsiveness = 1 - relative;
+		const ratio = RESOURCE_PANEL_DEFAULT_RATIO + responsiveness * (RESOURCE_PANEL_MAX_RATIO - RESOURCE_PANEL_DEFAULT_RATIO) * 0.6;
+		const bounds = this.computePanelRatioBounds();
+		return Math.max(bounds.min, Math.min(bounds.max, ratio));
+	}
+
+	private computePanelPixelWidth(ratio: number): number {
+		if (!Number.isFinite(ratio) || ratio <= 0 || this.viewportWidth <= 0) {
+			return 0;
+		}
+		return Math.floor(this.viewportWidth * ratio);
 	}
 
 	private getResourcePanelWidth(): number {
 		if (!this.resourcePanelVisible) {
 			return 0;
 		}
-		let width = this.resourcePanelWidth;
-		if (width === null) {
-			width = this.defaultResourcePanelWidth();
-		}
-		width = this.clampResourcePanelWidth(width);
+		const ratio = this.clampResourcePanelRatio(this.resourcePanelWidthRatio ?? this.defaultResourcePanelRatio());
+		const width = this.computePanelPixelWidth(ratio);
 		if (width <= 0) {
 			return 0;
 		}
-		this.resourcePanelWidth = width;
-		return Math.floor(width);
+		this.resourcePanelWidthRatio = ratio;
+		return width;
 	}
 
 	private getResourcePanelBounds(): RectBounds | null {
@@ -5824,8 +5900,6 @@ private getMainProgramSourceForReload(): string {
 		if (this.isKeyJustPressed(keyboard, 'Enter')) {
 			this.consumeKey(keyboard, 'Enter');
 			this.openSelectedResourceItem();
-			this.resourcePanelFocused = false;
-			this.activateCodeTab();
 			return;
 		}
 		const moves: Array<{ code: string; action: () => void }> = [
@@ -5926,6 +6000,7 @@ private getMainProgramSourceForReload(): string {
 		const scroll = Math.max(0, Math.min(this.resourceBrowserScroll, maxScroll));
 		const end = Math.min(itemCount, scroll + capacity);
 		const highlightIndex = this.resourceBrowserHoverIndex >= 0 ? this.resourceBrowserHoverIndex : this.resourceBrowserSelectionIndex;
+		const panelActive = this.resourcePanelFocused;
 		for (let itemIndex = scroll, drawIndex = 0; itemIndex < end; itemIndex += 1, drawIndex += 1) {
 			const item = this.resourceBrowserItems[itemIndex];
 			const y = contentTop + drawIndex * this.lineHeight;
@@ -5946,16 +6021,22 @@ private getMainProgramSourceForReload(): string {
 				const visibleRight = Math.min(caretRight, availableRight);
 				const caretTop = Math.floor(y);
 				const caretBottom = caretTop + this.lineHeight;
-				if (visibleRight > visibleLeft) {
-					api.rectfillColor(visibleLeft, caretTop, visibleRight, caretBottom, CARET_COLOR);
-				}
-				const invertedColor = this.invertColorIndex(COLOR_STATUS_TEXT);
-				const colors = new Array<number>(contentText.length).fill(invertedColor);
-				if (contentText.length > 0) {
-					this.drawColoredText(api, contentText, colors, contentX, y);
+				if (panelActive) {
+					if (visibleRight > visibleLeft) {
+						api.rectfillColor(visibleLeft, caretTop, visibleRight, caretBottom, CARET_COLOR);
+					}
+					const invertedColor = this.invertColorIndex(COLOR_STATUS_TEXT);
+					const colors = new Array<number>(contentText.length).fill(invertedColor);
+					if (contentText.length > 0) {
+						this.drawColoredText(api, contentText, colors, contentX, y);
+					}
+				} else {
+					if (visibleRight > visibleLeft) {
+						this.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, CARET_COLOR);
+					}
 				}
 			}
-			if (!isHighlighted || contentText.length === 0) {
+			if (!isHighlighted || contentText.length === 0 || !panelActive) {
 				this.drawText(api, contentText, contentX, y, COLOR_STATUS_TEXT);
 			}
 		}
@@ -6141,7 +6222,7 @@ private getMainProgramSourceForReload(): string {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + cursorWidth));
 		const caretTop = Math.floor(cursorY);
 		const caretBottom = caretTop + this.lineHeight;
-		if (this.searchActive || this.lineJumpActive) {
+		if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused) {
 			const innerLeft = caretLeft + 1;
 			const innerRight = caretRight - 1;
 			const innerTop = caretTop + 1;
