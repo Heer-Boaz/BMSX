@@ -2427,8 +2427,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const formatted = this.describeLuaValueForInspector(resolved.value);
 		const isFunction = formatted.isFunction;
-		const isLocalFunction = isFunction && resolved.scope === 'chunk';
-		const isBuiltin = isFunction && chain.length === 1 && this.isLuaBuiltinFunctionName(chain[0]);
+	const isLocalFunction = isFunction && resolved.scope === 'chunk';
+	const isBuiltin = isFunction && chain.length === 1 && this.isLuaBuiltinFunctionName(chain[0]);
 	const definition = isBuiltin ? null : this.resolveLuaDefinitionMetadata(resolved.value, assetId, resolved.definitionRange);
 		return {
 			expression: trimmed,
@@ -2443,34 +2443,34 @@ export class BmsxConsoleRuntime extends Service {
 		};
 	}
 
-private resolveLuaDefinitionMetadata(value: LuaValue, fallbackAssetId: string | null, definitionRange: LuaSourceRange | null): ConsoleLuaDefinitionLocation | null {
-	let range: LuaSourceRange | null = definitionRange ?? null;
-	if (!range && value && typeof value === 'object') {
-		const candidate = value as { getSourceRange?: () => LuaSourceRange };
-		if (typeof candidate.getSourceRange === 'function') {
-			range = candidate.getSourceRange() ?? null;
+	private resolveLuaDefinitionMetadata(value: LuaValue, fallbackAssetId: string | null, definitionRange: LuaSourceRange | null): ConsoleLuaDefinitionLocation | null {
+		let range: LuaSourceRange | null = definitionRange ?? null;
+		if (!range && value && typeof value === 'object') {
+			const candidate = value as { getSourceRange?: () => LuaSourceRange };
+			if (typeof candidate.getSourceRange === 'function') {
+				range = candidate.getSourceRange() ?? null;
+			}
 		}
+		if (!range) {
+			return null;
+		}
+		const normalizedChunk = this.normalizeChunkName(range.chunkName);
+		const chunkResource = this.lookupChunkResourceInfoNullable(range.chunkName);
+		const location: ConsoleLuaDefinitionLocation = {
+			chunkName: normalizedChunk,
+			assetId: chunkResource?.assetId ?? fallbackAssetId ?? null,
+			range: {
+				startLine: range.start.line,
+				startColumn: range.start.column,
+				endLine: range.end.line,
+				endColumn: range.end.column,
+			},
+		};
+		if (chunkResource?.path) {
+			location.path = chunkResource.path;
+		}
+		return location;
 	}
-	if (!range) {
-		return null;
-	}
-	const normalizedChunk = this.normalizeChunkName(range.chunkName);
-	const chunkResource = this.lookupChunkResourceInfoNullable(range.chunkName);
-	const location: ConsoleLuaDefinitionLocation = {
-		chunkName: normalizedChunk,
-		assetId: chunkResource?.assetId ?? fallbackAssetId ?? null,
-		range: {
-			startLine: range.start.line,
-			startColumn: range.start.column,
-			endLine: range.end.line,
-			endColumn: range.end.column,
-		},
-	};
-	if (chunkResource?.path) {
-		location.path = chunkResource.path;
-	}
-	return location;
-}
 
 	private parseLuaIdentifierChain(expression: string): string[] | null {
 		if (!expression) {
@@ -2497,62 +2497,62 @@ private resolveLuaDefinitionMetadata(value: LuaValue, fallbackAssetId: string | 
 		return parts;
 	}
 
-private resolveLuaChainValue(parts: string[], assetId: string | null): ({ kind: 'value'; value: LuaValue; scope: ConsoleLuaHoverScope; definitionRange: LuaSourceRange | null } | { kind: 'not_defined'; scope: ConsoleLuaHoverScope }) | null {
-	if (!parts || parts.length === 0) {
-		return null;
-	}
-	const interpreter = this.luaInterpreter;
-	if (interpreter === null) {
-		return null;
-	}
-	const root = parts[0];
-	let value: LuaValue | null = null;
-	let scope: ConsoleLuaHoverScope = 'global';
-	let found = false;
-	let definitionEnv: LuaEnvironment | null = null;
-	let definitionRange: LuaSourceRange | null = null;
-	if (assetId) {
-		const env = this.luaChunkEnvironmentsByAssetId.get(assetId) ?? null;
-		if (env && env.hasLocal(root)) {
-			value = env.get(root);
-			scope = 'chunk';
-			found = true;
-			definitionEnv = env;
+	private resolveLuaChainValue(parts: string[], assetId: string | null): ({ kind: 'value'; value: LuaValue; scope: ConsoleLuaHoverScope; definitionRange: LuaSourceRange | null } | { kind: 'not_defined'; scope: ConsoleLuaHoverScope }) | null {
+		if (!parts || parts.length === 0) {
+			return null;
 		}
-	}
-	if (!found) {
-		const chunkName = this.luaChunkName;
-		if (chunkName) {
-			const normalized = this.normalizeChunkName(chunkName);
-			const envByChunk = this.luaChunkEnvironmentsByChunkName.get(normalized) ?? null;
-			if (envByChunk && envByChunk.hasLocal(root)) {
-				value = envByChunk.get(root);
+		const interpreter = this.luaInterpreter;
+		if (interpreter === null) {
+			return null;
+		}
+		const root = parts[0];
+		let value: LuaValue | null = null;
+		let scope: ConsoleLuaHoverScope = 'global';
+		let found = false;
+		let definitionEnv: LuaEnvironment | null = null;
+		let definitionRange: LuaSourceRange | null = null;
+		if (assetId) {
+			const env = this.luaChunkEnvironmentsByAssetId.get(assetId) ?? null;
+			if (env && env.hasLocal(root)) {
+				value = env.get(root);
 				scope = 'chunk';
 				found = true;
-				definitionEnv = envByChunk;
+				definitionEnv = env;
 			}
 		}
-	}
-	if (!found) {
-		const globals = interpreter.getGlobalEnvironment();
-		if (globals.hasLocal(root)) {
-			value = globals.get(root);
-			scope = 'global';
-			found = true;
-			definitionEnv = globals;
+		if (!found) {
+			const chunkName = this.luaChunkName;
+			if (chunkName) {
+				const normalized = this.normalizeChunkName(chunkName);
+				const envByChunk = this.luaChunkEnvironmentsByChunkName.get(normalized) ?? null;
+				if (envByChunk && envByChunk.hasLocal(root)) {
+					value = envByChunk.get(root);
+					scope = 'chunk';
+					found = true;
+					definitionEnv = envByChunk;
+				}
+			}
 		}
-	}
-	if (!found) {
-		return null;
-	}
-	if (definitionEnv) {
-		definitionRange = definitionEnv.getDefinition(root);
-	}
-	if (value === undefined) {
-		return null;
-	}
-	let current: LuaValue = value;
-	for (let index = 1; index < parts.length; index += 1) {
+		if (!found) {
+			const globals = interpreter.getGlobalEnvironment();
+			if (globals.hasLocal(root)) {
+				value = globals.get(root);
+				scope = 'global';
+				found = true;
+				definitionEnv = globals;
+			}
+		}
+		if (!found) {
+			return null;
+		}
+		if (definitionEnv) {
+			definitionRange = definitionEnv.getDefinition(root);
+		}
+		if (value === undefined) {
+			return null;
+		}
+		let current: LuaValue = value;
+		for (let index = 1; index < parts.length; index += 1) {
 			const part = parts[index];
 			if (!(current instanceof LuaTable)) {
 				return { kind: 'not_defined', scope };
@@ -2563,8 +2563,8 @@ private resolveLuaChainValue(parts: string[], assetId: string | null): ({ kind: 
 			}
 			current = nextValue;
 		}
-	return { kind: 'value', value: current, scope, definitionRange };
-}
+		return { kind: 'value', value: current, scope, definitionRange };
+	}
 
 	private describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {
 		if (value === null) {

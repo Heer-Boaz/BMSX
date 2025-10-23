@@ -167,9 +167,9 @@ export class LuaInterpreter {
 		return this.globals.entries();
 	}
 
-	public setGlobal(name: string, value: LuaValue): void {
-		this.globals.set(name, value);
-	}
+public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): void {
+	this.globals.set(name, value, range);
+}
 
 	public getRandomSeed(): number {
 		return this.randomSeedValue;
