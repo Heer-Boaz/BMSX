@@ -2353,6 +2353,9 @@ export class ConsoleCartEditor {
 			if (movedAlt) {
 				return;
 			}
+			if (this.isKeyPressed(keyboard, 'ArrowUp') || this.isKeyPressed(keyboard, 'ArrowDown')) {
+				return;
+			}
 		}
 
 		if (!shiftDown && this.collapseSelectionOnNavigation(keyboard)) {
@@ -4114,6 +4117,11 @@ export class ConsoleCartEditor {
 
 	private consumeKey(keyboard: KeyboardInput, code: string): void {
 		keyboard.consumeButton(code);
+	}
+
+	private isKeyPressed(keyboard: KeyboardInput, code: string): boolean {
+		const state = this.getButtonState(keyboard, code);
+		return state ? state.pressed === true : false;
 	}
 
 	private updateDesiredColumn(): void {
