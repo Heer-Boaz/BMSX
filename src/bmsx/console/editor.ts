@@ -1708,6 +1708,7 @@ export class ConsoleCartEditor {
 
 	private openLineJump(): void {
 		this.closeSearch(false);
+		this.searchVisible = false;
 		this.lineJumpVisible = true;
 		this.lineJumpActive = true;
 		this.lineJumpValue = '';
@@ -2228,17 +2229,17 @@ export class ConsoleCartEditor {
 			return;
 		}
 		const searchBounds = this.getSearchBarBounds();
-		if (justPressed && searchBounds && snapshot.viewportY >= searchBounds.top && snapshot.viewportY < searchBounds.bottom) {
-			this.closeLineJump(false);
-			this.searchVisible = true;
-			this.searchActive = true;
-			this.resourcePanelFocused = false;
-			this.resetBlink();
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			this.clearHoverTooltip();
-			return;
-		}
+	if (justPressed && searchBounds && snapshot.viewportY >= searchBounds.top && snapshot.viewportY < searchBounds.bottom) {
+		this.closeLineJump(false);
+		this.searchVisible = true;
+		this.searchActive = true;
+		this.resourcePanelFocused = false;
+		this.resetBlink();
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+		this.clearHoverTooltip();
+		return;
+	}
 
 		const bounds = this.getCodeAreaBounds();
 		const insideCodeArea = snapshot.viewportY >= bounds.codeTop
@@ -4350,8 +4351,8 @@ export class ConsoleCartEditor {
 		if (height <= 0) {
 			return;
 		}
-		const barTop = this.headerHeight;
-		const barBottom = barTop + height;
+	const barTop = this.headerHeight + this.tabBarHeight;
+	const barBottom = barTop + height;
 		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_SEARCH_BACKGROUND);
 		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_SEARCH_OUTLINE);
 		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_SEARCH_OUTLINE);
