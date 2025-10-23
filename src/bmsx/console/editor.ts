@@ -151,16 +151,18 @@ class ConsoleScrollbar {
 		this.track = track;
 		this.contentSize = Math.max(0, contentSize);
 		this.viewportSize = Math.max(0, viewportSize);
-		if (this.contentSize <= 0 || this.viewportSize <= 0 || this.contentSize <= this.viewportSize) {
-			this.scrollValue = 0;
-			this.maxScrollValue = 0;
+		this.maxScrollValue = Math.max(0, this.contentSize - this.viewportSize);
+		this.scrollValue = clamp(scroll, 0, this.maxScrollValue);
+		this.updateThumb();
+	}
+
+	private updateThumb(): void {
+		if (!this.track || this.viewportSize <= 0 || this.contentSize <= this.viewportSize) {
 			this.thumb = null;
 			return;
 		}
-		this.maxScrollValue = Math.max(0, this.contentSize - this.viewportSize);
-		this.scrollValue = clamp(scroll, 0, this.maxScrollValue);
-		const trackStart = this.orientation === 'vertical' ? track.top : track.left;
-		const trackEnd = this.orientation === 'vertical' ? track.bottom : track.right;
+		const trackStart = this.orientation === 'vertical' ? this.track.top : this.track.left;
+		const trackEnd = this.orientation === 'vertical' ? this.track.bottom : this.track.right;
 		const trackLength = Math.max(0, trackEnd - trackStart);
 		if (trackLength <= 0) {
 			this.thumb = null;
@@ -171,14 +173,18 @@ class ConsoleScrollbar {
 		if (thumbLength > trackLength) {
 			thumbLength = trackLength;
 		}
+		if (thumbLength <= 0) {
+			this.thumb = null;
+			return;
+		}
 		const maxThumbTravel = Math.max(0, trackLength - thumbLength);
 		const normalized = this.maxScrollValue === 0 ? 0 : this.scrollValue / this.maxScrollValue;
 		const thumbStart = trackStart + normalized * maxThumbTravel;
 		const thumbEnd = thumbStart + thumbLength;
 		if (this.orientation === 'vertical') {
-			this.thumb = { left: track.left, top: thumbStart, right: track.right, bottom: thumbEnd };
+			this.thumb = { left: this.track.left, top: thumbStart, right: this.track.right, bottom: thumbEnd };
 		} else {
-			this.thumb = { left: thumbStart, top: track.top, right: thumbEnd, bottom: track.bottom };
+			this.thumb = { left: thumbStart, top: this.track.top, right: thumbEnd, bottom: this.track.bottom };
 		}
 	}
 
@@ -215,12 +221,37 @@ class ConsoleScrollbar {
 	}
 
 	public beginDrag(pointer: number): number | null {
+		if (!this.track || this.maxScrollValue <= 0) {
+			return null;
+		}
 		const thumbRect = this.thumb;
 		if (!thumbRect) {
 			return null;
 		}
+		const trackStart = this.orientation === 'vertical' ? this.track.top : this.track.left;
+		const trackEnd = this.orientation === 'vertical' ? this.track.bottom : this.track.right;
 		const thumbStart = this.orientation === 'vertical' ? thumbRect.top : thumbRect.left;
-		return pointer - thumbStart;
+		const thumbEnd = this.orientation === 'vertical' ? thumbRect.bottom : thumbRect.right;
+		const thumbLength = this.orientation === 'vertical'
+			? (thumbRect.bottom - thumbRect.top)
+			: (thumbRect.right - thumbRect.left);
+		if (pointer < trackStart || pointer > trackEnd) {
+			return null;
+		}
+		if (pointer < thumbStart || pointer > thumbEnd) {
+			const maxThumbTravel = Math.max(0, (trackEnd - trackStart) - thumbLength);
+			const target = clamp(pointer - thumbLength * 0.5, trackStart, trackEnd - thumbLength);
+			const normalized = maxThumbTravel === 0 ? 0 : (target - trackStart) / maxThumbTravel;
+			this.scrollValue = clamp(normalized * this.maxScrollValue, 0, this.maxScrollValue);
+			this.updateThumb();
+			const updatedThumb = this.thumb;
+			if (!updatedThumb) {
+				return null;
+			}
+			const updatedStart = this.orientation === 'vertical' ? updatedThumb.top : updatedThumb.left;
+			return clamp(pointer - updatedStart, 0, thumbLength);
+		}
+		return clamp(pointer - thumbStart, 0, thumbLength);
 	}
 
 	public drag(pointer: number, pointerOffset: number): number {
@@ -229,6 +260,7 @@ class ConsoleScrollbar {
 		}
 		if (this.maxScrollValue <= 0) {
 			this.scrollValue = 0;
+			this.updateThumb();
 			return this.scrollValue;
 		}
 		const trackStart = this.orientation === 'vertical' ? this.track.top : this.track.left;
@@ -239,11 +271,13 @@ class ConsoleScrollbar {
 		const maxThumbTravel = Math.max(0, (trackEnd - trackStart) - thumbLength);
 		if (maxThumbTravel <= 0) {
 			this.scrollValue = 0;
+			this.updateThumb();
 			return this.scrollValue;
 		}
 		const clampedPosition = clamp(pointer - pointerOffset, trackStart, trackEnd - thumbLength);
 		const normalized = (clampedPosition - trackStart) / maxThumbTravel;
 		this.scrollValue = clamp(normalized * this.maxScrollValue, 0, this.maxScrollValue);
+		this.updateThumb();
 		return this.scrollValue;
 	}
 }
@@ -525,7 +559,7 @@ export class ConsoleCartEditor {
 	private readonly codeTabContexts: Map<string, CodeTabContext> = new Map();
 	private activeCodeTabContextId: string | null = null;
 	private entryTabId: string | null = null;
-	private readonly captureKeys: string[] = [
+	private readonly captureKeys: string[] = [...new Set([
 		'Escape',
 		'ArrowUp',
 		'ArrowDown',
@@ -541,20 +575,10 @@ export class ConsoleCartEditor {
 		'PageUp',
 		'Space',
 		'Tab',
-		'KeyA',
-		'KeyC',
-		'KeyX',
-		'KeyV',
-		'KeyS',
-		'KeyY',
-		'KeyZ',
-		'KeyF',
-			'KeyL',
-			'KeyN',
-			'BracketLeft',
-		'BracketRight',
 		'F3',
-	];
+		'NumpadDivide',
+		...CHARACTER_CODES,
+	])];
 
 	private static readonly KEYWORDS = new Set([
 		'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
@@ -2990,21 +3014,34 @@ export class ConsoleCartEditor {
 		if (!snapshot.valid || !snapshot.primaryPressed) {
 			return false;
 		}
-		const order: ScrollbarKind[] = ['codeVertical', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
+		const order: ScrollbarKind[] = ['codeVertical', 'codeHorizontal', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
 		for (let i = 0; i < order.length; i += 1) {
 			const kind = order[i];
 			const scrollbar = this.scrollbars[kind];
-			if (!scrollbar.isVisible()) {
+			const track = scrollbar.getTrack();
+			if (!track) {
 				continue;
 			}
+			const pointerX = snapshot.viewportX;
+			const pointerY = snapshot.viewportY;
 			const thumb = scrollbar.getThumb();
-			if (!thumb || !this.pointInRect(snapshot.viewportX, snapshot.viewportY, thumb)) {
+			const pointerCoord = scrollbar.orientation === 'vertical' ? pointerY : pointerX;
+			const hitsThumb = thumb !== null && this.pointInRect(pointerX, pointerY, thumb);
+			const hitsTrack = this.pointInRect(pointerX, pointerY, track);
+			const extendedHorizontalHit = scrollbar.orientation === 'horizontal'
+				&& pointerX >= track.left
+				&& pointerX < track.right
+				&& pointerY >= track.top
+				&& pointerY < track.top + this.bottomMargin;
+			if (!hitsThumb && !hitsTrack && !extendedHorizontalHit) {
 				continue;
 			}
-			const pointerCoord = scrollbar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
 			const pointerOffset = scrollbar.beginDrag(pointerCoord);
 			if (pointerOffset === null) {
 				continue;
+			}
+			if (!hitsThumb) {
+				this.applyScrollbarScroll(kind, scrollbar.getScroll());
 			}
 			this.activeScrollbarDrag = { kind, pointerOffset };
 			return true;
@@ -3042,6 +3079,7 @@ export class ConsoleCartEditor {
 			case 'codeHorizontal': {
 				const maxScroll = this.computeMaximumScrollColumn();
 				this.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
+				this.cursorRevealSuspended = true;
 				break;
 			}
 			case 'resourceVertical': {
