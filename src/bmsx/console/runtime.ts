@@ -2534,7 +2534,24 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			return true;
 		};
+		const definitionPriority = (info: LuaDefinitionInfo): number => {
+			switch (info.kind) {
+				case 'table_field':
+					return 5;
+				case 'parameter':
+					return 4;
+				case 'function':
+					return 3;
+				case 'variable':
+					return 2;
+				case 'assignment':
+				default:
+					return 1;
+			}
+		};
 		const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo | null): LuaDefinitionInfo | null => {
+			const candidatePriority = definitionPriority(candidate);
+			const currentPriority = current ? definitionPriority(current) : -1;
 			if (usageRow !== null) {
 				if (!this.positionWithinRange(usageRow, usageColumn, candidate.scope)) {
 					return current;
@@ -2544,9 +2561,13 @@ export class BmsxConsoleRuntime extends Service {
 				}
 				if (
 					!current
-					|| candidate.definition.start.line > current.definition.start.line
-					|| (candidate.definition.start.line === current.definition.start.line
-						&& candidate.definition.start.column >= current.definition.start.column)
+					|| candidatePriority > currentPriority
+					|| (candidatePriority === currentPriority
+						&& (
+							candidate.definition.start.line > current.definition.start.line
+							|| (candidate.definition.start.line === current.definition.start.line
+								&& candidate.definition.start.column >= current.definition.start.column)
+						))
 				) {
 					return candidate;
 				}
@@ -2554,9 +2575,13 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			if (
 				!current
-				|| candidate.definition.start.line < current.definition.start.line
-				|| (candidate.definition.start.line === current.definition.start.line
-					&& candidate.definition.start.column < current.definition.start.column)
+				|| candidatePriority > currentPriority
+				|| (candidatePriority === currentPriority
+					&& (
+						candidate.definition.start.line < current.definition.start.line
+						|| (candidate.definition.start.line === current.definition.start.line
+							&& candidate.definition.start.column < current.definition.start.column)
+					))
 			) {
 				return candidate;
 			}

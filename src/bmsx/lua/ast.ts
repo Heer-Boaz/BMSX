@@ -52,7 +52,15 @@ export type LuaDefinitionInfo = {
 	readonly namePath: ReadonlyArray<string>;
 	readonly definition: LuaSourceRange;
 	readonly scope: LuaSourceRange;
+	readonly kind: LuaDefinitionKind;
 };
+
+export type LuaDefinitionKind =
+	| 'variable'
+	| 'function'
+	| 'table_field'
+	| 'parameter'
+	| 'assignment';
 
 export type LuaStatement =
 	| LuaAssignmentStatement

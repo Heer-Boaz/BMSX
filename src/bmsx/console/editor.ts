@@ -3426,7 +3426,8 @@ export class ConsoleCartEditor {
 		let targetVisible = rowVisible && columnVisible;
 		if (!rowVisible) {
 			const maxTopRow = Math.max(0, this.lines.length - rowSpan);
-			const centeredTop = clamp(startRow - Math.floor(rowSpan / 2), 0, maxTopRow);
+			const offset = Math.max(0, Math.floor(rowSpan / 2) - 1);
+			const centeredTop = clamp(startRow - offset, 0, maxTopRow);
 			this.scrollRow = centeredTop;
 			targetVisible = false;
 		}
