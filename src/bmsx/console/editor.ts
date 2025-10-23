@@ -3408,6 +3408,12 @@ export class ConsoleCartEditor {
 		const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
 		const startLine = this.lines[startRow] ?? '';
 		const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
+		const rowSpan = this.visibleRowCount();
+		const columnSpan = this.visibleColumnCount();
+		const currentTopRow = this.scrollRow;
+		const currentLeftColumn = this.scrollColumn;
+		const rowVisible = startRow >= currentTopRow && startRow < currentTopRow + rowSpan;
+		const columnVisible = startColumn >= currentLeftColumn && startColumn < currentLeftColumn + columnSpan;
 		this.cursorRow = startRow;
 		this.cursorColumn = startColumn;
 		this.selectionAnchor = null;
@@ -3416,8 +3422,23 @@ export class ConsoleCartEditor {
 		this.pointerAuxWasPressed = false;
 		this.updateDesiredColumn();
 		this.resetBlink();
-		this.ensureCursorVisible();
-		this.revealCursor();
+		this.cursorRevealSuspended = false;
+		let targetVisible = rowVisible && columnVisible;
+		if (!rowVisible) {
+			const maxTopRow = Math.max(0, this.lines.length - rowSpan);
+			const centeredTop = clamp(startRow - Math.floor(rowSpan / 2), 0, maxTopRow);
+			this.scrollRow = centeredTop;
+			targetVisible = false;
+		}
+		if (!columnVisible) {
+			const maxLeftColumn = Math.max(0, (startLine.length - columnSpan));
+			const centeredLeft = clamp(startColumn - Math.floor(columnSpan / 2), 0, maxLeftColumn);
+			this.scrollColumn = centeredLeft;
+			targetVisible = false;
+		}
+		if (!targetVisible) {
+			this.ensureCursorVisible();
+		}
 	}
 
 	private isIdentifierStartChar(code: number): boolean {

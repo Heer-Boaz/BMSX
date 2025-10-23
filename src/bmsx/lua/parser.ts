@@ -1070,7 +1070,20 @@ export class LuaParser {
 				if (field.kind === LuaTableFieldKind.IdentifierKey) {
 					const identifierField = field as LuaTableIdentifierField;
 					const fieldPath = [...basePath, identifierField.name];
-					pushDefinition(fieldPath, identifierField.range, scope);
+					const identifierStart = identifierField.range.start;
+					const identifierLength = identifierField.name.length;
+					const identifierEndColumn = identifierLength > 0
+						? identifierStart.column + Math.max(0, identifierLength - 1)
+						: identifierStart.column;
+					const identifierRange: LuaSourceRange = {
+						chunkName: this.chunkName,
+						start: identifierStart,
+						end: {
+							line: identifierStart.line,
+							column: identifierEndColumn,
+						},
+					};
+					pushDefinition(fieldPath, identifierRange, scope);
 					if (identifierField.value.kind === LuaSyntaxKind.TableConstructorExpression) {
 						recordTableFields(identifierField.value as LuaTableConstructorExpression, fieldPath, scope);
 					} else {
@@ -1082,7 +1095,7 @@ export class LuaParser {
 				const key = extractTableKeyFromExpression(expressionField.key);
 				if (key !== null) {
 					const fieldPath = [...basePath, key];
-					pushDefinition(fieldPath, expressionField.range, scope);
+					pushDefinition(fieldPath, expressionField.key.range, scope);
 					if (expressionField.value.kind === LuaSyntaxKind.TableConstructorExpression) {
 						recordTableFields(expressionField.value as LuaTableConstructorExpression, fieldPath, scope);
 					} else {

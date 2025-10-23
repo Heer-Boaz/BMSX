@@ -2786,6 +2786,7 @@ export class BmsxConsoleRuntime extends Service {
 				return { kind: 'not_defined', scope };
 			}
 			current = nextValue;
+			definitionRange = null;
 		}
 		return { kind: 'value', value: current, scope, definitionRange };
 	}
