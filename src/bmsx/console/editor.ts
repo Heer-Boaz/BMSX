@@ -81,6 +81,7 @@ export type ConsoleEditorOptions = {
 	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	primaryAssetId: string | null;
 	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 };
 
 export type Position = { row: number; column: number };
@@ -134,6 +135,7 @@ type SymbolCatalogEntry = {
 	searchKey: string;
 	line: number;
 	kindLabel: string;
+	sourceLabel: string | null;
 };
 
 type SymbolSearchResult = {
@@ -580,6 +582,7 @@ export class ConsoleCartEditor {
 	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
+	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
 	private readonly primaryAssetId: string | null;
 	private hoverTooltip: CodeHoverTooltip | null = null;
 	private lastPointerSnapshot: PointerSnapshot | null = null;
@@ -687,6 +690,7 @@ export class ConsoleCartEditor {
 	private lineJumpActive = false;
 	private symbolSearchActive = false;
 	private symbolSearchVisible = false;
+	private symbolSearchGlobal = false;
 	private lineJumpVisible = false;
 	private lineJumpValue = '';
 	private createResourceActive = false;
@@ -696,7 +700,7 @@ export class ConsoleCartEditor {
 	private createResourceWorking = false;
 	private lastCreateResourceDirectory: string | null = null;
 	private symbolCatalog: SymbolCatalogEntry[] = [];
-	private symbolCatalogContext: { assetId: string | null; chunkName: string | null } | null = null;
+	private symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
 	private symbolSearchMatches: SymbolSearchResult[] = [];
 	private symbolSearchSelectionIndex = -1;
 	private symbolSearchDisplayOffset = 0;
@@ -737,6 +741,7 @@ export class ConsoleCartEditor {
 		this.createLuaResourceFn = options.createLuaResource;
 		this.inspectLuaExpressionFn = options.inspectLuaExpression;
 		this.listLuaSymbolsFn = options.listLuaSymbols;
+		this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
 		this.primaryAssetId = options.primaryAssetId;
 		if ($ && $.debug) {
 			this.listResourcesFn();
@@ -1790,6 +1795,16 @@ export class ConsoleCartEditor {
 			this.openSymbolSearch();
 			return;
 		}
+		if ((ctrlDown && altDown) && this.isKeyJustPressed(keyboard, 'Comma')) {
+			this.consumeKey(keyboard, 'Comma');
+			this.openSymbolSearch();
+			return;
+		}
+		if (!ctrlDown && !metaDown && altDown && this.isKeyJustPressed(keyboard, 'Comma')) {
+			this.consumeKey(keyboard, 'Comma');
+			this.openGlobalSymbolSearch();
+			return;
+		}
 
 		if (this.createResourceActive) {
 			this.handleCreateResourceInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
@@ -2311,6 +2326,20 @@ export class ConsoleCartEditor {
 	private openSymbolSearch(): void {
 		this.closeSearch(false);
 		this.closeLineJump(false);
+		this.symbolSearchGlobal = false;
+		this.symbolSearchVisible = true;
+		this.symbolSearchActive = true;
+		this.applySymbolSearchFieldText('', true);
+		this.refreshSymbolCatalog(true);
+		this.updateSymbolSearchMatches();
+		this.symbolSearchHoverIndex = -1;
+		this.resetBlink();
+	}
+
+	private openGlobalSymbolSearch(): void {
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.symbolSearchGlobal = true;
 		this.symbolSearchVisible = true;
 		this.symbolSearchActive = true;
 		this.applySymbolSearchFieldText('', true);
@@ -2326,6 +2355,7 @@ export class ConsoleCartEditor {
 		}
 		this.symbolSearchActive = false;
 		this.symbolSearchVisible = false;
+		this.symbolSearchGlobal = false;
 		this.symbolSearchMatches = [];
 		this.symbolSearchSelectionIndex = -1;
 		this.symbolSearchDisplayOffset = 0;
@@ -2352,20 +2382,29 @@ export class ConsoleCartEditor {
 	}
 
 	private refreshSymbolCatalog(force: boolean): void {
-		const context = this.getActiveCodeTabContext();
-		const assetId = this.resolveHoverAssetId(context);
-		const chunkName = this.resolveHoverChunkName(context);
+		const scope: 'local' | 'global' = this.symbolSearchGlobal ? 'global' : 'local';
+		let assetId: string | null = null;
+		let chunkName: string | null = null;
+		if (scope === 'local') {
+			const context = this.getActiveCodeTabContext();
+			assetId = this.resolveHoverAssetId(context);
+			chunkName = this.resolveHoverChunkName(context);
+		}
 		const existing = this.symbolCatalogContext;
 		const unchanged = existing !== null
-			&& existing.assetId === assetId
-			&& existing.chunkName === chunkName;
+			&& existing.scope === scope
+			&& (scope === 'global'
+				|| (existing.assetId === assetId && existing.chunkName === chunkName));
 		if (!force && unchanged) {
 			return;
 		}
-		this.symbolCatalogContext = { assetId, chunkName };
 		let entries: ConsoleLuaSymbolEntry[] = [];
 		try {
-			entries = this.listLuaSymbolsFn(assetId, chunkName);
+			if (scope === 'global') {
+				entries = this.listGlobalLuaSymbolsFn();
+			} else {
+				entries = this.listLuaSymbolsFn(assetId, chunkName);
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.symbolCatalog = [];
@@ -2376,20 +2415,29 @@ export class ConsoleCartEditor {
 			this.showMessage(`Failed to list symbols: ${message}`, COLOR_STATUS_ERROR, 3.0);
 			return;
 		}
+		this.symbolCatalogContext = { scope, assetId, chunkName };
 		this.symbolCatalog = entries.map((entry) => {
 			const display = entry.path && entry.path.length > 0 ? entry.path : entry.name;
+			const sourceLabel = scope === 'global' ? this.symbolSourceLabel(entry) : null;
+			const combinedKey = (display + ' ' + (sourceLabel ?? '')).toLowerCase();
 			return {
 				symbol: entry,
 				displayName: display,
-				searchKey: display.toLowerCase(),
+				searchKey: combinedKey,
 				line: entry.location.range.startLine,
 				kindLabel: this.symbolKindLabel(entry.kind),
+				sourceLabel,
 			};
 		}).sort((a, b) => {
 			if (a.line !== b.line) {
 				return a.line - b.line;
 			}
-			return a.displayName.localeCompare(b.displayName);
+			if (a.displayName !== b.displayName) {
+				return a.displayName.localeCompare(b.displayName);
+			}
+			const aSource = a.sourceLabel ?? '';
+			const bSource = b.sourceLabel ?? '';
+			return aSource.localeCompare(bSource);
 		});
 	}
 
@@ -2423,6 +2471,19 @@ export class ConsoleCartEditor {
 			default:
 				return 'SET';
 		}
+	}
+
+	private symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
+		let label = entry.location.path ?? entry.location.assetId ?? entry.location.chunkName ?? null;
+		if (!label) {
+			return null;
+		}
+		label = label.replace(/\\/g, '/');
+		const lastSlash = label.lastIndexOf('/');
+		if (lastSlash !== -1 && lastSlash + 1 < label.length) {
+			label = label.slice(lastSlash + 1);
+		}
+		return label;
 	}
 
 	private updateSymbolSearchMatches(): void {
@@ -6384,9 +6445,16 @@ export class ConsoleCartEditor {
 				textX += this.measureText(kindText + ' ');
 			}
 			this.drawText(api, match.entry.displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
-			const lineText = `L${match.entry.line}`;
+			const lineText = `:${match.entry.line}`;
 			const lineWidth = this.measureText(lineText);
-			this.drawText(api, lineText, this.viewportWidth - lineWidth - SYMBOL_SEARCH_RESULT_PADDING_X, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+			let rightX = this.viewportWidth - lineWidth - SYMBOL_SEARCH_RESULT_PADDING_X;
+			this.drawText(api, lineText, rightX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+			if (match.entry.sourceLabel) {
+				const sourceWidth = this.measureText(match.entry.sourceLabel);
+				const sourceX = Math.max(textX, rightX - this.spaceAdvance - sourceWidth);
+				this.drawText(api, match.entry.sourceLabel, sourceX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
+				rightX = sourceX;
+			}
 		}
 	}
 

@@ -488,6 +488,7 @@ export class BmsxConsoleRuntime extends Service {
 			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
 			primaryAssetId,
 			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
+			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
 		});
 		this.flushLuaWarnings();
 	}
@@ -2561,6 +2562,65 @@ export class BmsxConsoleRuntime extends Service {
 			const bLine = b.location.range.startLine;
 			if (aLine !== bLine) {
 				return aLine - bLine;
+			}
+			return a.path.localeCompare(b.path);
+		});
+		return symbols;
+	}
+
+	public listAllLuaSymbols(): ConsoleLuaSymbolEntry[] {
+		const entries = new Map<string, { info: LuaDefinitionInfo; location: ConsoleLuaDefinitionLocation; priority: number }>();
+		for (const [chunkName, info] of this.luaChunkResourceMap) {
+			const assetId = info.assetId ?? null;
+			const definitions = this.getStaticDefinitions(assetId, chunkName);
+			if (!definitions || definitions.length === 0) {
+				continue;
+			}
+			for (const definition of definitions) {
+				const location = this.buildDefinitionLocationFromRange(definition.definition, assetId);
+				const path = definition.namePath.length > 0 ? definition.namePath.join('.') : definition.name;
+				const key = `${location.chunkName}::${path}@${definition.definition.start.line}:${definition.definition.start.column}`;
+				const priority = (() => {
+					switch (definition.kind) {
+						case 'table_field':
+							return 5;
+						case 'function':
+							return 4;
+						case 'parameter':
+							return 3;
+						case 'variable':
+							return 2;
+						case 'assignment':
+						default:
+							return 1;
+					}
+				})();
+				const existing = entries.get(key);
+				if (!existing || priority > existing.priority) {
+					entries.set(key, { info: definition, location, priority });
+				}
+			}
+		}
+		const symbols: ConsoleLuaSymbolEntry[] = [];
+		for (const { info, location } of entries.values()) {
+			const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
+			symbols.push({
+				name: info.name,
+				path,
+				kind: info.kind,
+				location,
+			});
+		}
+		symbols.sort((a, b) => {
+			const pathA = a.location.path ?? a.location.chunkName ?? '';
+			const pathB = b.location.path ?? b.location.chunkName ?? '';
+			if (pathA !== pathB) {
+				return pathA.localeCompare(pathB);
+			}
+			const lineA = a.location.range.startLine;
+			const lineB = b.location.range.startLine;
+			if (lineA !== lineB) {
+				return lineA - lineB;
 			}
 			return a.path.localeCompare(b.path);
 		});
