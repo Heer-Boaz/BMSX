@@ -16,15 +16,91 @@
 9. **Best-practices more important than backwards compatibility**: Feel free to make breaking changes if necessary, but document them clearly.
 10. **What would Unreal Engine or Unity do?**: When coding, consider how similar problems are solved in game development environments like Unreal Engine or Unity.
 11. **Coding Standards**:
-  - Only accept very strict, explicit coding practices. Keep things straightforward by providing code patches without optional chaining, type erasure, or any bug-concealing techniques. The goal is to design explicit interfaces, avoiding optional fields or dynamic checks, and ensuring compile-time correctness at all times. Follow this approach with minimalism.
+  - Prevent any bug-concealing techniques, silent failures and defensive coding. For example:
+	```typescript
+	private getViewportMetrics(): ViewportMetrics | null {
+		const platform = $.platform;
+		if (!platform) {
+			return null;
+		}
+		const host = platform.gameviewHost;
+		if (!host || typeof host.getCapability !== 'function') {
+			return null;
+		}
+		const provider = host.getCapability('viewport-metrics');
+		if (!provider) {
+			return null;
+		}
+		try {
+			return provider.getViewportMetrics();
+		} catch {
+			return null;
+		}
+	}
+	```
+
+	Instead, do this:
+	```typescript
+	private getViewportMetrics(): ViewportMetrics {
+		return $.platform.gameviewHost.getCapability('viewport-metrics').getViewportMetrics(); // Assume all properties and functions exist and work correctly if the code is designed that way. Only use defensive checks if there is a valid reason to believe that the property/function may not exist or work correctly.
+	}
+	```
+
+	Also, instead of this:
+	```typescript
+	private initializeSomething(): void {
+		if (this.isSomethingInitialized) { // Defensive check
+			return;
+		}
+		// ... initialization code ...
+		this.isSomethingInitialized = true; // Mark as initialized
+	}
+	```
+	Do this:
+	```typescript
+	private initializeSomething(): void { // Assume this method is only called once
+		// ... initialization code ...
+	}
+	```
+	Also avoid code like this:
+	```typescript
+	private doSomething(): void {
+		this?.someProperty?.doAction(); // Avoid optional chaining for properties that should always be defined
+	}
+	```
+	Instead, do this:
+	```typescript
+	interface SomeType {
+		doAction(): void;
+		doOptionalAction?(): void; // Optional method
+	}
+
+	private doSomething(): void {
+		this.someProperty.doAction(); // Assume someProperty is always defined, except if there is a valid reason to believe otherwise
+		this.someProperty.doOptionalAction?.(); // Use optional chaining only for optional methods/properties
+	}
+	```
+
+	Also avoid code like this:
+	```typescript
+	private foo(): void {
+		if (typeof this.bar === 'function') {
+			this.bar(); // Defensive check for function existence
+		}
+	}
+	```
+	Instead, do this:
+	```typescript
+	private foo(): void {
+		this.bar(); // Assume bar() always exists
+	}
+	```
+
+  - No defensive checks for function existence. If a function is expected to exist, it should be called directly. Thus, avoid code like `if (typeof this.onSomething === 'function') this.onSomething()`.
   - Don't introduce `as any` casts or `<any>` type assertions when not absolutely necessary.
-  - NO SILENT FAILURES!! If something is not supposed to be undefined, don't let it be undefined. Throw an error instead.
-  - Don't introduce `?.` or `??` or `if (x === undefined)` checks for properties that **should** always be populated! THESE ARE BUGS! Fix the root cause instead OR JUST LET IT CRASH!!
-  - Don't introduce code like `if (typeof this.onSomething === 'function') this.onSomething()`.
   - Don't introduce circular dependencies.
-  - Don't introduce unused variables.
-  - Don't code any utility without first checking if a similar utility already exists in the codebase. Look under `src/bmsx/utils` and `src/bmsx/core`!!
-  - Avoid direct references to WorldObjects or Components. Rather, use the `World`-class (e.g. `$.getGameObject` or `$.getFromCurrentSpace`, `$.get`).
+  - `clamp` is a utility function available in `utils.ts`; use it instead of writing your own.
+  - Scratch buffers are available in `scratchbuffer.ts`; use them for temporary data storage instead of allocating new arrays or buffers.
   - Don't use `require` in non-script code (e.g. `rompacker-core.ts` and `rominspector.ts` can have `require`, but core engine files or game source files cannot).
   - Ensure that registry persistent objects are not serialized.
   - Use the annotations provided in the codebase to maintain consistency, these include:
@@ -38,7 +114,6 @@
 	- `@excludefromsavegame`: Indicates that the decorated class is excluded from the serialized game state.
 	- `@excludepropfromsavegame`: Indicates that the decorated class-property is excluded from the serialized game state.
   - Don't introduce any game logic in `game.ts`, instead, place it in appropriate systems or components. High-level game logic should be invoked from `World.run`.
-  - Ensure that any new render logic is implemented in the rendering system, and not directly in the game logic files.
   - Ensure that any debugging UI or features are implemented in the debugging system (e.g. `bmsxdebugger.ts`).
   - When introducing new features, consider how they can be serialized and deserialized as part of the game state. Also consider that many objects/properties should be *excluded* from serialization.
   - Don't unnecessarily override methods.
