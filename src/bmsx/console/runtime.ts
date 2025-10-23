@@ -560,8 +560,12 @@ export class BmsxConsoleRuntime extends Service {
 		this.frameCounter = savedFrameCounter;
 
 		if (this.hasLuaProgram()) {
-			this.reinitializeLuaProgramForState(snapshot, !savedRuntimeFailed);
-			if (!savedRuntimeFailed && snapshot.luaSnapshot !== undefined) {
+			const hasStructuredSnapshot = snapshot.luaSnapshot !== undefined && snapshot.luaSnapshot !== null;
+			const hasFallbackState = snapshot.luaGlobals !== undefined || snapshot.luaLocals !== undefined || snapshot.luaRandomSeed !== undefined;
+			const shouldRunInit = !savedRuntimeFailed && !hasStructuredSnapshot && !hasFallbackState;
+
+			this.reinitializeLuaProgramForState(snapshot, shouldRunInit);
+			if (!savedRuntimeFailed && hasStructuredSnapshot) {
 				this.applyLuaSnapshot(snapshot.luaSnapshot);
 			}
 			else {
@@ -1245,11 +1249,22 @@ export class BmsxConsoleRuntime extends Service {
 			this.initializeEditor();
 		}
 		if (this.editor) {
-			const hint = this.lookupChunkResourceInfoNullable(chunkName);
-			if (hint) {
-				this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, hint);
-			} else {
-				this.editor.showRuntimeErrorInChunk(chunkName, line, column, message);
+			try {
+				const hint = this.lookupChunkResourceInfoNullable(chunkName);
+				if (hint) {
+					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message, hint);
+				} else {
+					this.editor.showRuntimeErrorInChunk(chunkName, line, column, message);
+				}
+			}
+			catch (editorError) {
+				const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
+				try {
+					this.editor.showRuntimeError(line, column, overlayMessage);
+				}
+				catch (secondaryError) {
+					console.warn('[BmsxConsoleRuntime] Failed to display Lua error in console editor.', editorError, secondaryError);
+				}
 			}
 		}
 		const logMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
