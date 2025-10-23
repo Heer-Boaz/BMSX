@@ -382,6 +382,27 @@ type KeyPressRecord = {
 	lastPressId: number | null;
 };
 
+type InlineTextField = {
+	text: string;
+	cursor: number;
+	selectionAnchor: number | null;
+	desiredColumn: number;
+	pointerSelecting: boolean;
+	lastPointerClickTimeMs: number;
+	lastPointerClickColumn: number;
+};
+
+type InlineInputOptions = {
+	ctrlDown: boolean;
+	metaDown: boolean;
+	shiftDown: boolean;
+	altDown: boolean;
+	deltaSeconds: number;
+	allowSpace: boolean;
+	characterFilter?: (value: string) => boolean;
+	maxLength?: number | null;
+};
+
 export type RuntimeErrorOverlay = {
 	row: number;
 	column: number;
@@ -618,6 +639,9 @@ export class ConsoleCartEditor {
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
 	private pointerAuxWasPressed = false;
+	private readonly searchField: InlineTextField;
+	private readonly lineJumpField: InlineTextField;
+	private readonly createResourceField: InlineTextField;
 	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	private activeScrollbarDrag: { kind: ScrollbarKind; pointerOffset: number } | null = null;
 	private lastPointerClickTimeMs = 0;
@@ -686,6 +710,12 @@ export class ConsoleCartEditor {
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
+		this.searchField = this.createInlineField();
+		this.lineJumpField = this.createInlineField();
+		this.createResourceField = this.createInlineField();
+		this.applySearchFieldText(this.searchQuery, true);
+		this.applyLineJumpFieldText(this.lineJumpValue, true);
+		this.applyCreateResourceFieldText(this.createResourcePath, true);
 		this.lineHeight = this.font.lineHeight();
 		this.charAdvance = this.font.advance('M');
 		this.spaceAdvance = this.font.advance(' ');
@@ -1393,12 +1423,12 @@ export class ConsoleCartEditor {
 			this.applyInputOverrides(true);
 		}
 		this.restoreSnapshot(state.snapshot);
-		this.searchQuery = state.searchQuery;
+		this.applySearchFieldText(state.searchQuery, true);
 		this.searchMatches = state.searchMatches.map(match => ({ row: match.row, start: match.start, end: match.end }));
 		this.searchCurrentIndex = state.searchCurrentIndex;
 		this.searchActive = state.searchActive;
 		this.searchVisible = state.searchVisible;
-		this.lineJumpValue = state.lineJumpValue;
+		this.applyLineJumpFieldText(state.lineJumpValue, true);
 		this.lineJumpActive = state.lineJumpActive;
 		this.lineJumpVisible = state.lineJumpVisible;
 		this.message.text = state.message.text;
@@ -1455,10 +1485,10 @@ export class ConsoleCartEditor {
 		this.searchVisible = false;
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
-		this.lineJumpValue = '';
+		this.applyLineJumpFieldText('', true);
 		this.createResourceActive = false;
 		this.createResourceVisible = false;
-		this.createResourcePath = '';
+		this.applyCreateResourceFieldText('', true);
 		this.createResourceError = null;
 		this.createResourceWorking = false;
 		this.resetActionPromptState();
@@ -1773,54 +1803,21 @@ export class ConsoleCartEditor {
 		if (this.createResourceWorking) {
 			return;
 		}
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyV')) {
-			this.consumeKey(keyboard, 'KeyV');
-			this.pasteIntoCreateResourcePath();
-			return;
+		const textChanged = this.handleInlineFieldEditing(this.createResourceField, keyboard, {
+			ctrlDown,
+			metaDown,
+			shiftDown,
+			altDown,
+			deltaSeconds,
+			allowSpace: true,
+			characterFilter: (value: string): boolean => this.isValidCreateResourceCharacter(value),
+			maxLength: CREATE_RESOURCE_MAX_PATH_LENGTH,
+		});
+		if (textChanged) {
+			this.createResourceError = null;
+			this.resetBlink();
 		}
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyC')) {
-			this.consumeKey(keyboard, 'KeyC');
-			this.copyCreateResourcePathToClipboard();
-			return;
-		}
-		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyX', deltaSeconds)) {
-			this.consumeKey(keyboard, 'KeyX');
-			if (this.createResourcePath.length > 0) {
-				ConsoleCartEditor.customClipboard = this.createResourcePath;
-				this.createResourcePath = '';
-				this.createResourceError = null;
-				this.resetBlink();
-			}
-			return;
-		}
-		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Backspace');
-			this.removeCreateResourceCharacter();
-			return;
-		}
-		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Delete');
-			this.removeCreateResourceCharacter();
-			return;
-		}
-		if (ctrlDown || metaDown || altDown) {
-			return;
-		}
-		if (this.shouldFireRepeat(keyboard, 'Space', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Space');
-			this.appendToCreateResourcePath(' ');
-			return;
-		}
-		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
-			const code = CHARACTER_CODES[i];
-			if (!this.isKeyTyped(keyboard, code)) {
-				continue;
-			}
-			const entry = CHARACTER_MAP[code];
-			const value = shiftDown ? entry.shift : entry.normal;
-			this.appendToCreateResourcePath(value);
-			this.consumeKey(keyboard, code);
-		}
+		this.createResourcePath = this.createResourceField.text;
 	}
 
 	private openCreateResourcePrompt(): void {
@@ -1834,7 +1831,7 @@ export class ConsoleCartEditor {
 		if (defaultPath.length > CREATE_RESOURCE_MAX_PATH_LENGTH) {
 			defaultPath = defaultPath.slice(defaultPath.length - CREATE_RESOURCE_MAX_PATH_LENGTH);
 		}
-		this.createResourcePath = defaultPath;
+		this.applyCreateResourceFieldText(defaultPath, true);
 		this.createResourceVisible = true;
 		this.createResourceActive = true;
 		this.createResourceError = null;
@@ -1850,7 +1847,7 @@ export class ConsoleCartEditor {
 			this.focusEditorFromSearch();
 			this.focusEditorFromLineJump();
 		}
-		this.createResourcePath = '';
+		this.applyCreateResourceFieldText('', true);
 		this.createResourceError = null;
 		this.resetBlink();
 	}
@@ -1871,7 +1868,7 @@ export class ConsoleCartEditor {
 			normalizedPath = result.path;
 			assetId = result.assetId;
 			directory = result.directory;
-			this.createResourcePath = normalizedPath;
+			this.applyCreateResourceFieldText(normalizedPath, true);
 			this.createResourceError = null;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -1904,30 +1901,6 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private appendToCreateResourcePath(value: string): void {
-		if (value.length === 0) {
-			return;
-		}
-		if (!this.isValidCreateResourceCharacter(value)) {
-			return;
-		}
-		if (this.createResourcePath.length >= CREATE_RESOURCE_MAX_PATH_LENGTH) {
-			return;
-		}
-		this.createResourcePath += value;
-		this.createResourceError = null;
-		this.resetBlink();
-	}
-
-	private removeCreateResourceCharacter(): void {
-		if (this.createResourcePath.length === 0) {
-			return;
-		}
-		this.createResourcePath = this.createResourcePath.slice(0, -1);
-		this.createResourceError = null;
-		this.resetBlink();
-	}
-
 	private isValidCreateResourceCharacter(value: string): boolean {
 		if (value.length !== 1) {
 			return false;
@@ -1943,36 +1916,6 @@ export class ConsoleCartEditor {
 			return true;
 		}
 		return value === '_' || value === '-' || value === '.' || value === '/';
-	}
-
-	private pasteIntoCreateResourcePath(): void {
-		const source = ConsoleCartEditor.customClipboard;
-		if (!source || source.length === 0) {
-			this.showMessage('Editor clipboard is empty', COLOR_STATUS_WARNING, 1.5);
-			return;
-		}
-		const normalized = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-		const merged = normalized.split('\n').join('');
-		if (merged.length === 0) {
-			return;
-		}
-		for (let i = 0; i < merged.length; i += 1) {
-			if (this.createResourcePath.length >= CREATE_RESOURCE_MAX_PATH_LENGTH) {
-				break;
-			}
-			const ch = merged.charAt(i);
-			if (!this.isValidCreateResourceCharacter(ch)) {
-				continue;
-			}
-			this.createResourcePath += ch;
-		}
-		this.createResourceError = null;
-		this.resetBlink();
-	}
-
-	private copyCreateResourcePathToClipboard(): void {
-		ConsoleCartEditor.customClipboard = this.createResourcePath;
-		this.showMessage('Path copied to editor clipboard', COLOR_STATUS_SUCCESS, 1.5);
 	}
 
 	private normalizeCreateResourceRequest(rawPath: string): { path: string; assetId: string; directory: string } {
@@ -2102,21 +2045,6 @@ export class ConsoleCartEditor {
 			void this.save();
 			return;
 		}
-		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyC')) {
-			this.consumeKey(keyboard, 'KeyC');
-			void this.copySelectionToClipboard();
-			return;
-		}
-		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyX')) {
-			this.consumeKey(keyboard, 'KeyX');
-			void this.cutSelectionToClipboard();
-			return;
-		}
-		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyV')) {
-			this.consumeKey(keyboard, 'KeyV');
-			this.pasteIntoSearch();
-			return;
-		}
 		if (this.isKeyJustPressed(keyboard, 'Enter')) {
 			this.consumeKey(keyboard, 'Enter');
 			if (shiftDown) {
@@ -2135,38 +2063,21 @@ export class ConsoleCartEditor {
 			}
 			return;
 		}
-		if (ctrlDown || metaDown || altDown) {
-			return;
-		}
-		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Backspace');
-			if (this.searchQuery.length > 0) {
-				this.removeSearchCharacter();
-			}
-			return;
-		}
-		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Delete');
-			if (this.searchQuery.length > 0) {
-				this.removeSearchCharacter();
-			}
-			return;
-		}
-		if (this.shouldFireRepeat(keyboard, 'Space', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Space');
-			this.appendToSearchQuery(' ');
-			return;
-		}
-		for (let i = 0; i < CHARACTER_CODES.length; i++) {
-			const code = CHARACTER_CODES[i];
-			if (!this.isKeyTyped(keyboard, code)) {
-				continue;
-			}
-			const entry = CHARACTER_MAP[code];
-			const value = shiftDown ? entry.shift : entry.normal;
-			this.appendToSearchQuery(value);
-			this.consumeKey(keyboard, code);
-			return;
+
+		const textChanged = this.handleInlineFieldEditing(this.searchField, keyboard, {
+			ctrlDown,
+			metaDown,
+			shiftDown,
+			altDown,
+			deltaSeconds,
+			allowSpace: true,
+			characterFilter: undefined,
+			maxLength: null,
+		});
+
+		this.searchQuery = this.searchField.text;
+		if (textChanged) {
+			this.onSearchQueryChanged();
 		}
 	}
 
@@ -2176,8 +2087,14 @@ export class ConsoleCartEditor {
 			this.openLineJump();
 			return;
 		}
+		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
 		if (this.isKeyJustPressed(keyboard, 'Enter')) {
 			this.consumeKey(keyboard, 'Enter');
+			this.applyLineJump();
+			return;
+		}
+		if (!shiftDown && this.isKeyJustPressed(keyboard, 'NumpadEnter')) {
+			this.consumeKey(keyboard, 'NumpadEnter');
 			this.applyLineJump();
 			return;
 		}
@@ -2186,40 +2103,21 @@ export class ConsoleCartEditor {
 			this.closeLineJump(false);
 			return;
 		}
-		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Backspace');
-			this.removeLineJumpDigit();
-			return;
-		}
-		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
-			this.consumeKey(keyboard, 'Delete');
-			this.removeLineJumpDigit();
-			return;
-		}
-		if (ctrlDown || metaDown) {
-			return;
-		}
-		for (let digit = 0; digit <= 9; digit++) {
-			const code = `Digit${digit}`;
-			if (!this.isKeyTyped(keyboard, code)) {
-				continue;
-			}
-			this.appendLineJumpDigit(String(digit));
-			this.consumeKey(keyboard, code);
-			return;
-		}
-		for (let digit = 0; digit <= 9; digit++) {
-			const code = `Numpad${digit}`;
-			if (!this.isKeyTyped(keyboard, code)) {
-				continue;
-			}
-			this.appendLineJumpDigit(String(digit));
-			this.consumeKey(keyboard, code);
-			return;
-		}
-		if (!shiftDown && this.isKeyJustPressed(keyboard, 'NumpadEnter')) {
-			this.consumeKey(keyboard, 'NumpadEnter');
-			this.applyLineJump();
+
+		const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
+		const textChanged = this.handleInlineFieldEditing(this.lineJumpField, keyboard, {
+			ctrlDown,
+			metaDown,
+			shiftDown,
+			altDown,
+			deltaSeconds,
+			allowSpace: false,
+			characterFilter: digitFilter,
+			maxLength: 6,
+		});
+		this.lineJumpValue = this.lineJumpField.text;
+		if (textChanged) {
+			// keep value in sync; no additional processing required
 		}
 	}
 
@@ -2227,22 +2125,22 @@ export class ConsoleCartEditor {
 		this.closeLineJump(false);
 		this.searchVisible = true;
 		this.searchActive = true;
+		this.applySearchFieldText(this.searchQuery, true);
 		let appliedSelection = false;
 		if (useSelection) {
 			const range = this.getSelectionRange();
 			const selected = this.getSelectionText();
 			if (range && selected !== null && selected.length > 0 && selected.indexOf('\n') === -1) {
-				if (this.searchQuery !== selected) {
-					this.searchQuery = selected;
-				}
+				this.applySearchFieldText(selected, true);
 				this.cursorRow = range.start.row;
 				this.cursorColumn = range.start.column;
 				appliedSelection = true;
 			}
 		}
-		if (!appliedSelection && this.searchQuery.length === 0) {
+		if (!appliedSelection && this.searchField.text.length === 0) {
 			this.searchCurrentIndex = -1;
 		}
+		this.searchQuery = this.searchField.text;
 		this.onSearchQueryChanged();
 		this.resetBlink();
 	}
@@ -2250,8 +2148,9 @@ export class ConsoleCartEditor {
 	private closeSearch(clearQuery: boolean): void {
 		this.searchActive = false;
 		if (clearQuery) {
-			this.searchQuery = '';
+			this.applySearchFieldText('', true);
 		}
+		this.searchQuery = this.searchField.text;
 		const shouldHide = clearQuery || this.searchQuery.length === 0;
 		this.searchVisible = shouldHide ? false : true;
 		this.searchMatches = [];
@@ -2271,6 +2170,8 @@ export class ConsoleCartEditor {
 		this.searchMatches = [];
 		this.searchCurrentIndex = -1;
 		this.selectionAnchor = null;
+		this.searchField.selectionAnchor = null;
+		this.searchField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
@@ -2279,7 +2180,7 @@ export class ConsoleCartEditor {
 		this.searchVisible = false;
 		this.lineJumpVisible = true;
 		this.lineJumpActive = true;
-		this.lineJumpValue = '';
+		this.applyLineJumpFieldText('', true);
 		this.resetBlink();
 	}
 
@@ -2287,8 +2188,10 @@ export class ConsoleCartEditor {
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
 		if (clearValue) {
-			this.lineJumpValue = '';
+			this.applyLineJumpFieldText('', true);
 		}
+		this.lineJumpField.selectionAnchor = null;
+		this.lineJumpField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
@@ -2298,6 +2201,8 @@ export class ConsoleCartEditor {
 		}
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
+		this.lineJumpField.selectionAnchor = null;
+		this.lineJumpField.pointerSelecting = false;
 		this.resetBlink();
 	}
 
@@ -2307,27 +2212,6 @@ export class ConsoleCartEditor {
 		}
 		this.resourcePanelFocused = false;
 		this.resetBlink();
-	}
-
-	private appendLineJumpDigit(digit: string): void {
-		if (digit.length !== 1 || digit < '0' || digit > '9') {
-			return;
-		}
-		if (this.lineJumpValue.length >= 6) {
-			return;
-		}
-		if (this.lineJumpValue === '0') {
-			this.lineJumpValue = digit;
-			return;
-		}
-		this.lineJumpValue += digit;
-	}
-
-	private removeLineJumpDigit(): void {
-		if (this.lineJumpValue.length === 0) {
-			return;
-		}
-		this.lineJumpValue = this.lineJumpValue.slice(0, -1);
 	}
 
 	private applyLineJump(): void {
@@ -2346,37 +2230,6 @@ export class ConsoleCartEditor {
 		this.breakUndoSequence();
 		this.closeLineJump(true);
 		this.showMessage(`Jumped to line ${target}`, COLOR_STATUS_SUCCESS, 1.5);
-	}
-
-	private appendToSearchQuery(value: string): void {
-		if (value.length === 0) {
-			return;
-		}
-		this.searchQuery += value;
-		this.onSearchQueryChanged();
-	}
-
-	private removeSearchCharacter(): void {
-		if (this.searchQuery.length === 0) {
-			return;
-		}
-		this.searchQuery = this.searchQuery.slice(0, -1);
-		this.onSearchQueryChanged();
-	}
-
-	private pasteIntoSearch(): void {
-		const source = ConsoleCartEditor.customClipboard;
-		if (source === null || source.length === 0) {
-			this.showMessage('Editor clipboard is empty', COLOR_STATUS_WARNING, 1.5);
-			return;
-		}
-		const normalized = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-		const merged = normalized.split('\n').join(' ');
-		if (merged.length === 0) {
-			return;
-		}
-		this.searchQuery += merged;
-		this.onSearchQueryChanged();
 	}
 
 	private onSearchQueryChanged(): void {
@@ -2647,6 +2500,11 @@ export class ConsoleCartEditor {
 				return;
 			}
 		}
+		if (!snapshot.primaryPressed) {
+			this.searchField.pointerSelecting = false;
+			this.lineJumpField.pointerSelecting = false;
+			this.createResourceField.pointerSelecting = false;
+		}
 		let pointerAuxJustPressed = false;
 		let pointerAuxPressed = false;
 		const playerInput = $.input.getPlayerInput(this.playerIndex);
@@ -2805,45 +2663,76 @@ export class ConsoleCartEditor {
 				this.clearHoverTooltip();
 				return;
 			}
-			const createResourceBounds = this.getCreateResourceBarBounds();
-			if (this.createResourceVisible && createResourceBounds) {
-				const insideCreateBar = this.pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
-				if (justPressed && insideCreateBar) {
+		const createResourceBounds = this.getCreateResourceBarBounds();
+		if (this.createResourceVisible && createResourceBounds) {
+			const insideCreateBar = this.pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
+			if (insideCreateBar) {
+				if (justPressed) {
 					this.createResourceActive = true;
 					this.cursorVisible = true;
 					this.resetBlink();
-					this.pointerSelecting = false;
-					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-					this.clearHoverTooltip();
-					return;
+					this.resourcePanelFocused = false;
 				}
-				if (justPressed && !insideCreateBar) {
-					this.createResourceActive = false;
-				}
+				const label = 'NEW FILE:';
+				const labelX = 4;
+				const textLeft = labelX + this.measureText(label + ' ');
+				this.handleInlineFieldPointer(this.createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearHoverTooltip();
+				return;
 			}
-			const lineJumpBounds = this.getLineJumpBarBounds();
-			if (justPressed && lineJumpBounds && snapshot.viewportY >= lineJumpBounds.top && snapshot.viewportY < lineJumpBounds.bottom) {
-				this.closeSearch(false);
-				this.lineJumpVisible = true;
-				this.lineJumpActive = true;
-			this.resetBlink();
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			this.clearHoverTooltip();
-			return;
+			if (justPressed) {
+				this.createResourceActive = false;
+			}
+		}
+		const lineJumpBounds = this.getLineJumpBarBounds();
+		if (this.lineJumpVisible && lineJumpBounds) {
+			const insideLineJump = this.pointInRect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
+			if (insideLineJump) {
+				if (justPressed) {
+					this.closeSearch(false);
+					this.lineJumpActive = true;
+					this.resetBlink();
+				}
+				const label = 'LINE #:';
+				const labelX = 4;
+				const textLeft = labelX + this.measureText(label + ' ');
+				this.handleInlineFieldPointer(this.lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearHoverTooltip();
+				return;
+			}
+			if (justPressed) {
+				this.lineJumpActive = false;
+			}
 		}
 		const searchBounds = this.getSearchBarBounds();
-	if (justPressed && searchBounds && snapshot.viewportY >= searchBounds.top && snapshot.viewportY < searchBounds.bottom) {
-		this.closeLineJump(false);
-		this.searchVisible = true;
-		this.searchActive = true;
-		this.resourcePanelFocused = false;
-		this.resetBlink();
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-		this.clearHoverTooltip();
-		return;
-	}
+		if (this.searchVisible && searchBounds) {
+			const insideSearch = this.pointInRect(snapshot.viewportX, snapshot.viewportY, searchBounds);
+			if (insideSearch) {
+				if (justPressed) {
+					this.closeLineJump(false);
+					this.searchVisible = true;
+					this.searchActive = true;
+					this.resourcePanelFocused = false;
+					this.cursorVisible = true;
+					this.resetBlink();
+				}
+				const label = 'SEARCH:';
+				const labelX = 4;
+				const textLeft = labelX + this.measureText(label + ' ');
+				this.handleInlineFieldPointer(this.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearHoverTooltip();
+				return;
+			}
+			if (justPressed) {
+				this.searchActive = false;
+			}
+		}
 
 		const bounds = this.getCodeAreaBounds();
 		const insideCodeArea = snapshot.viewportY >= bounds.codeTop
@@ -4250,6 +4139,585 @@ export class ConsoleCartEditor {
 		this.keyPressRecords.clear();
 	}
 
+	private createInlineField(): InlineTextField {
+		return {
+			text: '',
+			cursor: 0,
+			selectionAnchor: null,
+			desiredColumn: 0,
+			pointerSelecting: false,
+			lastPointerClickTimeMs: 0,
+			lastPointerClickColumn: -1,
+		};
+	}
+
+	private inlineFieldClampCursor(field: InlineTextField): void {
+		if (field.cursor < 0) {
+			field.cursor = 0;
+		}
+		const length = field.text.length;
+		if (field.cursor > length) {
+			field.cursor = length;
+		}
+	}
+
+	private inlineFieldSelectionRange(field: InlineTextField): { start: number; end: number } | null {
+		const anchor = field.selectionAnchor;
+		if (anchor === null) {
+			return null;
+		}
+		const cursor = field.cursor;
+		if (anchor === cursor) {
+			return null;
+		}
+		if (anchor < cursor) {
+			return { start: Math.max(0, anchor), end: Math.min(field.text.length, cursor) };
+		}
+		return { start: Math.max(0, cursor), end: Math.min(field.text.length, anchor) };
+	}
+
+	private inlineFieldClampSelectionAnchor(field: InlineTextField): void {
+		if (field.selectionAnchor === null) {
+			return;
+		}
+		const length = field.text.length;
+		if (field.selectionAnchor < 0) {
+			field.selectionAnchor = 0;
+			return;
+		}
+		if (field.selectionAnchor > length) {
+			field.selectionAnchor = length;
+		}
+	}
+
+	private inlineFieldDeleteSelection(field: InlineTextField): boolean {
+		const range = this.inlineFieldSelectionRange(field);
+		if (!range) {
+			return false;
+		}
+		const text = field.text;
+		field.text = text.slice(0, range.start) + text.slice(range.end);
+		field.cursor = range.start;
+		field.selectionAnchor = null;
+		field.desiredColumn = field.cursor;
+		return true;
+	}
+
+	private inlineFieldSelectionLength(field: InlineTextField): number {
+		const range = this.inlineFieldSelectionRange(field);
+		if (!range) {
+			return 0;
+		}
+		return range.end - range.start;
+	}
+
+	private inlineFieldInsert(field: InlineTextField, value: string): boolean {
+		if (value.length === 0) {
+			return false;
+		}
+		this.inlineFieldDeleteSelection(field);
+		const text = field.text;
+		const before = text.slice(0, field.cursor);
+		const after = text.slice(field.cursor);
+		field.text = before + value + after;
+		field.cursor += value.length;
+		field.desiredColumn = field.cursor;
+		return true;
+	}
+
+	private inlineFieldBackspace(field: InlineTextField): boolean {
+		if (this.inlineFieldDeleteSelection(field)) {
+			return true;
+		}
+		if (field.cursor === 0) {
+			return false;
+		}
+		const text = field.text;
+		field.text = text.slice(0, field.cursor - 1) + text.slice(field.cursor);
+		field.cursor -= 1;
+		field.desiredColumn = field.cursor;
+		return true;
+	}
+
+	private inlineFieldDeleteForward(field: InlineTextField): boolean {
+		if (this.inlineFieldDeleteSelection(field)) {
+			return true;
+		}
+		if (field.cursor >= field.text.length) {
+			return false;
+		}
+		const text = field.text;
+		field.text = text.slice(0, field.cursor) + text.slice(field.cursor + 1);
+		field.desiredColumn = field.cursor;
+		return true;
+	}
+
+	private inlineFieldDeleteWordBackward(field: InlineTextField): boolean {
+		if (this.inlineFieldDeleteSelection(field)) {
+			return true;
+		}
+		if (field.cursor === 0) {
+			return false;
+		}
+		const text = field.text;
+		let index = field.cursor;
+		while (index > 0 && this.isWhitespace(text.charAt(index - 1))) {
+			index -= 1;
+		}
+		while (index > 0 && !this.isWhitespace(text.charAt(index - 1)) && !this.isWordChar(text.charAt(index - 1))) {
+			index -= 1;
+		}
+		while (index > 0 && this.isWordChar(text.charAt(index - 1))) {
+			index -= 1;
+		}
+		if (index === field.cursor) {
+			return false;
+		}
+		field.text = text.slice(0, index) + text.slice(field.cursor);
+		field.cursor = index;
+		field.desiredColumn = field.cursor;
+		field.selectionAnchor = null;
+		return true;
+	}
+
+	private inlineFieldDeleteWordForward(field: InlineTextField): boolean {
+		if (this.inlineFieldDeleteSelection(field)) {
+			return true;
+		}
+		const length = field.text.length;
+		if (field.cursor >= length) {
+			return false;
+		}
+		const text = field.text;
+		let index = field.cursor;
+		while (index < length && this.isWhitespace(text.charAt(index))) {
+			index += 1;
+		}
+		while (index < length && !this.isWhitespace(text.charAt(index)) && !this.isWordChar(text.charAt(index))) {
+			index += 1;
+		}
+		while (index < length && this.isWordChar(text.charAt(index))) {
+			index += 1;
+		}
+		if (index === field.cursor) {
+			return false;
+		}
+		field.text = text.slice(0, field.cursor) + text.slice(index);
+		field.desiredColumn = field.cursor;
+		field.selectionAnchor = null;
+		return true;
+	}
+
+	private inlineFieldMoveCursor(field: InlineTextField, column: number, extendSelection: boolean): void {
+		const clamped = Math.max(0, Math.min(field.text.length, column));
+		if (extendSelection) {
+			if (field.selectionAnchor === null) {
+				field.selectionAnchor = field.cursor;
+			}
+		} else {
+			field.selectionAnchor = null;
+		}
+		field.cursor = clamped;
+		field.desiredColumn = clamped;
+	}
+
+	private inlineFieldMoveCursorRelative(field: InlineTextField, delta: number, extendSelection: boolean): void {
+		this.inlineFieldMoveCursor(field, field.cursor + delta, extendSelection);
+	}
+
+	private inlineFieldMoveWordLeft(field: InlineTextField, extendSelection: boolean): void {
+		if (field.cursor === 0) {
+			if (!extendSelection) {
+				field.selectionAnchor = null;
+			}
+			return;
+		}
+		const text = field.text;
+		let index = field.cursor;
+		while (index > 0 && this.isWhitespace(text.charAt(index - 1))) {
+			index -= 1;
+		}
+		while (index > 0 && !this.isWhitespace(text.charAt(index - 1)) && !this.isWordChar(text.charAt(index - 1))) {
+			index -= 1;
+		}
+		while (index > 0 && this.isWordChar(text.charAt(index - 1))) {
+			index -= 1;
+		}
+		this.inlineFieldMoveCursor(field, index, extendSelection);
+	}
+
+	private inlineFieldMoveWordRight(field: InlineTextField, extendSelection: boolean): void {
+		const length = field.text.length;
+		if (field.cursor >= length) {
+			if (!extendSelection) {
+				field.selectionAnchor = null;
+			}
+			return;
+		}
+		const text = field.text;
+		let index = field.cursor;
+		while (index < length && this.isWhitespace(text.charAt(index))) {
+			index += 1;
+		}
+		while (index < length && !this.isWhitespace(text.charAt(index)) && !this.isWordChar(text.charAt(index))) {
+			index += 1;
+		}
+		while (index < length && this.isWordChar(text.charAt(index))) {
+			index += 1;
+		}
+		this.inlineFieldMoveCursor(field, index, extendSelection);
+	}
+
+	private inlineFieldMoveToStart(field: InlineTextField, extendSelection: boolean): void {
+		this.inlineFieldMoveCursor(field, 0, extendSelection);
+	}
+
+	private inlineFieldMoveToEnd(field: InlineTextField, extendSelection: boolean): void {
+		this.inlineFieldMoveCursor(field, field.text.length, extendSelection);
+	}
+
+	private inlineFieldSelectAll(field: InlineTextField): void {
+		field.selectionAnchor = 0;
+		field.cursor = field.text.length;
+		field.desiredColumn = field.cursor;
+	}
+
+	private inlineFieldGetSelectedText(field: InlineTextField): string | null {
+		const range = this.inlineFieldSelectionRange(field);
+		if (!range) {
+			return null;
+		}
+		return field.text.slice(range.start, range.end);
+	}
+
+	private inlineFieldSelectWordAt(field: InlineTextField, column: number): void {
+		const text = field.text;
+		if (text.length === 0) {
+			field.selectionAnchor = null;
+			field.cursor = 0;
+			field.desiredColumn = 0;
+			return;
+		}
+		let index = column;
+		if (index >= text.length) {
+			index = text.length - 1;
+		}
+		if (index < 0) {
+			index = 0;
+		}
+		const ch = text.charAt(index);
+		let start = index;
+		let end = index + 1;
+		if (this.isWordChar(ch)) {
+			while (start > 0 && this.isWordChar(text.charAt(start - 1))) {
+				start -= 1;
+			}
+			while (end < text.length && this.isWordChar(text.charAt(end))) {
+				end += 1;
+			}
+		} else if (this.isWhitespace(ch)) {
+			while (start > 0 && this.isWhitespace(text.charAt(start - 1))) {
+				start -= 1;
+			}
+			while (end < text.length && this.isWhitespace(text.charAt(end))) {
+				end += 1;
+			}
+		} else {
+			while (start > 0) {
+				const previous = text.charAt(start - 1);
+				if (this.isWordChar(previous) || this.isWhitespace(previous)) {
+					break;
+				}
+				start -= 1;
+			}
+			while (end < text.length) {
+				const next = text.charAt(end);
+				if (this.isWordChar(next) || this.isWhitespace(next)) {
+					break;
+				}
+				end += 1;
+			}
+		}
+		field.selectionAnchor = start;
+		field.cursor = end;
+		field.desiredColumn = field.cursor;
+	}
+
+	private inlineFieldMeasureRange(field: InlineTextField, start: number, end: number): number {
+		const clampedStart = Math.max(0, Math.min(start, field.text.length));
+		const clampedEnd = Math.max(clampedStart, Math.min(end, field.text.length));
+		if (clampedEnd <= clampedStart) {
+			return 0;
+		}
+		const slice = field.text.slice(clampedStart, clampedEnd);
+		return this.measureText(slice);
+	}
+
+	private inlineFieldResolveColumn(field: InlineTextField, textLeft: number, pointerX: number): number {
+		const relative = pointerX - textLeft;
+		if (relative <= 0) {
+			return 0;
+		}
+		let advance = 0;
+		const length = field.text.length;
+		for (let index = 0; index < length; index += 1) {
+			const ch = field.text.charAt(index);
+			const width = ch === '\t' ? this.spaceAdvance * TAB_SPACES : this.font.advance(ch);
+			const midpoint = advance + width * 0.5;
+			if (relative < midpoint) {
+				return index;
+			}
+			advance += width;
+			if (relative < advance) {
+				return index + 1;
+			}
+		}
+		return length;
+	}
+
+	private inlineFieldCaretX(field: InlineTextField, textLeft: number): number {
+		if (field.cursor <= 0) {
+			return textLeft;
+		}
+		const slice = field.text.slice(0, field.cursor);
+		return textLeft + this.measureText(slice);
+	}
+
+	private inlineFieldRegisterPointerClick(field: InlineTextField, column: number): boolean {
+		const now = $.platform.clock.now();
+		const interval = now - field.lastPointerClickTimeMs;
+		const sameColumn = column === field.lastPointerClickColumn;
+		const isDouble = field.lastPointerClickTimeMs > 0
+			&& interval <= DOUBLE_CLICK_MAX_INTERVAL_MS
+			&& sameColumn;
+		field.lastPointerClickTimeMs = now;
+		field.lastPointerClickColumn = column;
+		return isDouble;
+	}
+
+	private setInlineFieldText(field: InlineTextField, value: string, moveCursorToEnd: boolean): void {
+		field.text = value;
+		if (moveCursorToEnd) {
+			field.cursor = value.length;
+		} else {
+			if (field.cursor > value.length) {
+				field.cursor = value.length;
+			}
+			if (field.cursor < 0) {
+				field.cursor = 0;
+			}
+		}
+	field.selectionAnchor = null;
+	field.desiredColumn = field.cursor;
+	field.pointerSelecting = false;
+	field.lastPointerClickTimeMs = 0;
+	field.lastPointerClickColumn = -1;
+}
+
+	private applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
+		this.searchQuery = value;
+		this.setInlineFieldText(this.searchField, value, moveCursorToEnd);
+	}
+
+	private applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
+		this.lineJumpValue = value;
+		this.setInlineFieldText(this.lineJumpField, value, moveCursorToEnd);
+	}
+
+	private applyCreateResourceFieldText(value: string, moveCursorToEnd: boolean): void {
+		this.createResourcePath = value;
+		this.setInlineFieldText(this.createResourceField, value, moveCursorToEnd);
+	}
+
+	private handleInlineFieldEditing(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean {
+		const { ctrlDown, metaDown, shiftDown, altDown, deltaSeconds, allowSpace } = options;
+		const characterFilter = options.characterFilter;
+		const maxLength = options.maxLength !== undefined ? options.maxLength : null;
+		const useCtrl = ctrlDown || metaDown;
+		const initialText = field.text;
+		const initialCursor = field.cursor;
+		const initialAnchor = field.selectionAnchor;
+
+		if (useCtrl && this.isKeyJustPressed(keyboard, 'KeyA')) {
+			this.consumeKey(keyboard, 'KeyA');
+			this.inlineFieldSelectAll(field);
+		}
+
+		if (useCtrl && this.isKeyJustPressed(keyboard, 'KeyC')) {
+			const selected = this.inlineFieldGetSelectedText(field);
+			const payload = selected && selected.length > 0 ? selected : field.text;
+			if (payload.length > 0) {
+				void this.writeClipboard(payload, 'Copied to editor clipboard');
+			}
+			this.consumeKey(keyboard, 'KeyC');
+		}
+
+		if (useCtrl && this.isKeyJustPressed(keyboard, 'KeyX')) {
+			const selected = this.inlineFieldGetSelectedText(field);
+			let payload = selected;
+			if (!payload || payload.length === 0) {
+				payload = field.text;
+				if (payload.length > 0) {
+					this.inlineFieldSelectAll(field);
+				}
+			}
+			if (payload && payload.length > 0) {
+				void this.writeClipboard(payload, 'Cut to editor clipboard');
+				this.inlineFieldDeleteSelection(field);
+			}
+			this.consumeKey(keyboard, 'KeyX');
+		}
+
+		if (useCtrl && this.isKeyJustPressed(keyboard, 'KeyV')) {
+			const clipboard = ConsoleCartEditor.customClipboard;
+			if (clipboard && clipboard.length > 0) {
+				const normalized = clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+				const merged = normalized.split('\n').join('');
+				if (merged.length > 0) {
+					const filtered = characterFilter ? merged.split('').filter(characterFilter).join('') : merged;
+					if (filtered.length > 0) {
+						let insertion = filtered;
+						if (maxLength !== null) {
+							const remaining = Math.max(0, maxLength - (field.text.length - this.inlineFieldSelectionLength(field)));
+							if (remaining <= 0) {
+								insertion = '';
+							} else if (insertion.length > remaining) {
+								insertion = insertion.slice(0, remaining);
+							}
+						}
+						if (insertion.length > 0) {
+							this.inlineFieldInsert(field, insertion);
+						}
+					}
+				}
+			} else {
+				this.showMessage('Editor clipboard is empty', COLOR_STATUS_WARNING, 1.5);
+			}
+			this.consumeKey(keyboard, 'KeyV');
+		}
+
+		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Backspace');
+			if (useCtrl) {
+				this.inlineFieldDeleteWordBackward(field);
+			} else {
+				this.inlineFieldBackspace(field);
+			}
+		}
+
+		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Delete');
+			if (useCtrl) {
+				this.inlineFieldDeleteWordForward(field);
+			} else {
+				this.inlineFieldDeleteForward(field);
+			}
+		}
+
+		if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
+			this.consumeKey(keyboard, 'ArrowLeft');
+			if (useCtrl) {
+				this.inlineFieldMoveWordLeft(field, shiftDown);
+			} else {
+				this.inlineFieldMoveCursorRelative(field, -1, shiftDown);
+			}
+		}
+
+		if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
+			this.consumeKey(keyboard, 'ArrowRight');
+			if (useCtrl) {
+				this.inlineFieldMoveWordRight(field, shiftDown);
+			} else {
+				this.inlineFieldMoveCursorRelative(field, 1, shiftDown);
+			}
+		}
+
+		if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Home');
+			this.inlineFieldMoveToStart(field, shiftDown);
+		}
+
+		if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+			this.consumeKey(keyboard, 'End');
+			this.inlineFieldMoveToEnd(field, shiftDown);
+		}
+
+		if (allowSpace && !useCtrl && !metaDown && !altDown && this.shouldFireRepeat(keyboard, 'Space', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Space');
+			const remaining = maxLength !== null
+				? Math.max(0, maxLength - (field.text.length - this.inlineFieldSelectionLength(field)))
+				: undefined;
+			if (remaining === undefined || remaining > 0) {
+				this.inlineFieldInsert(field, ' ');
+			}
+		}
+
+		if (!altDown) {
+			for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
+				const code = CHARACTER_CODES[i];
+				if (!this.isKeyTyped(keyboard, code)) {
+					continue;
+				}
+				const entry = CHARACTER_MAP[code];
+				const value = shiftDown ? entry.shift : entry.normal;
+				if (value.length === 0) {
+					this.consumeKey(keyboard, code);
+					continue;
+				}
+				if (characterFilter && !characterFilter(value)) {
+					this.consumeKey(keyboard, code);
+					continue;
+				}
+				if (maxLength !== null) {
+					const available = maxLength - (field.text.length - this.inlineFieldSelectionLength(field));
+					if (available <= 0) {
+						this.consumeKey(keyboard, code);
+						continue;
+					}
+				}
+				this.inlineFieldInsert(field, value);
+				this.consumeKey(keyboard, code);
+			}
+		}
+
+		this.inlineFieldClampCursor(field);
+		this.inlineFieldClampSelectionAnchor(field);
+		const textChanged = field.text !== initialText;
+		if (!textChanged && field.cursor === initialCursor && field.selectionAnchor === initialAnchor) {
+			return false;
+		}
+		return textChanged;
+	}
+
+	private handleInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
+		const column = this.inlineFieldResolveColumn(field, textLeft, pointerX);
+		if (justPressed) {
+			const isDouble = this.inlineFieldRegisterPointerClick(field, column);
+			if (isDouble) {
+				this.inlineFieldSelectWordAt(field, column);
+				field.pointerSelecting = false;
+			} else {
+				field.selectionAnchor = column;
+				field.cursor = column;
+				field.desiredColumn = column;
+				field.pointerSelecting = true;
+			}
+			this.inlineFieldClampCursor(field);
+			this.inlineFieldClampSelectionAnchor(field);
+			this.resetBlink();
+			return;
+		}
+		if (!pointerPressed) {
+			field.pointerSelecting = false;
+			return;
+		}
+		if (field.pointerSelecting) {
+			this.inlineFieldMoveCursor(field, column, true);
+			this.inlineFieldClampCursor(field);
+			this.inlineFieldClampSelectionAnchor(field);
+		}
+	}
+
 	private shouldAcceptKeyPress(code: string, state: ButtonState): boolean {
 		if (state.pressed !== true) {
 			this.keyPressRecords.delete(code);
@@ -5062,21 +5530,29 @@ export class ConsoleCartEditor {
 		const labelY = barTop + CREATE_RESOURCE_BAR_MARGIN_Y;
 		this.drawText(api, label, labelX, labelY, COLOR_CREATE_RESOURCE_TEXT);
 
+		const field = this.createResourceField;
 		const pathX = labelX + this.measureText(label + ' ');
-		let displayPath = this.createResourcePath;
+		let displayPath = field.text;
 		let pathColor = COLOR_CREATE_RESOURCE_TEXT;
 		if (displayPath.length === 0 && !this.createResourceActive) {
 			displayPath = 'ENTER LUA PATH';
 			pathColor = COLOR_CREATE_RESOURCE_PLACEHOLDER;
 		}
+
+		const selection = this.inlineFieldSelectionRange(field);
+		if (selection && field.text.length > 0) {
+			const selectionLeft = pathX + this.inlineFieldMeasureRange(field, 0, selection.start);
+			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			if (selectionWidth > 0) {
+				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, SELECTION_OVERLAY);
+			}
+		}
+
 		this.drawText(api, displayPath, pathX, labelY, pathColor);
 
-		const caretBaseX = pathX + this.measureText(this.createResourcePath);
-		const caretSource = this.createResourcePath.length > 0 ? this.createResourcePath.charAt(this.createResourcePath.length - 1) : ' ';
-		const caretAdvance = this.font.advance(caretSource);
-		const caretWidth = caretAdvance > 0 ? caretAdvance : this.charAdvance;
+		const caretBaseX = this.inlineFieldCaretX(field, pathX);
 		const caretLeft = Math.floor(caretBaseX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + caretWidth));
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
 		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.createResourceActive);
@@ -5103,26 +5579,34 @@ export class ConsoleCartEditor {
 		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_SEARCH_OUTLINE);
 		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_SEARCH_OUTLINE);
 
+		const field = this.searchField;
 		const label = 'SEARCH:';
 		const labelX = 4;
 		const labelY = barTop + SEARCH_BAR_MARGIN_Y;
 		this.drawText(api, label, labelX, labelY, COLOR_SEARCH_TEXT);
 
-		let queryText = this.searchQuery;
+		let queryText = field.text;
 		let queryColor = COLOR_SEARCH_TEXT;
 		if (queryText.length === 0 && !this.searchActive) {
 			queryText = 'TYPE TO SEARCH';
 			queryColor = COLOR_SEARCH_PLACEHOLDER;
 		}
 		const queryX = labelX + this.measureText(label + ' ');
+
+		const selection = this.inlineFieldSelectionRange(field);
+		if (selection && field.text.length > 0) {
+			const selectionLeft = queryX + this.inlineFieldMeasureRange(field, 0, selection.start);
+			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			if (selectionWidth > 0) {
+				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, SELECTION_OVERLAY);
+			}
+		}
+
 		this.drawText(api, queryText, queryX, labelY, queryColor);
 
-		const caretX = queryX + this.measureText(this.searchQuery);
-		const caretGlyphSource = this.searchQuery.length > 0 ? this.searchQuery.charAt(this.searchQuery.length - 1) : ' ';
-		const caretAdvance = this.font.advance(caretGlyphSource);
-		const caretWidth = caretAdvance > 0 ? caretAdvance : this.charAdvance;
+		const caretX = this.inlineFieldCaretX(field, queryX);
 		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
 		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.searchActive);
@@ -5154,19 +5638,29 @@ export class ConsoleCartEditor {
 		const labelY = barTop + LINE_JUMP_BAR_MARGIN_Y;
 		this.drawText(api, label, labelX, labelY, COLOR_LINE_JUMP_TEXT);
 
-		let valueText = this.lineJumpValue;
+		const field = this.lineJumpField;
+		let valueText = field.text;
 		let valueColor = COLOR_LINE_JUMP_TEXT;
 		if (valueText.length === 0 && !this.lineJumpActive) {
 			valueText = 'ENTER LINE NUMBER';
 			valueColor = COLOR_LINE_JUMP_PLACEHOLDER;
 		}
 		const valueX = labelX + this.measureText(label + ' ');
+
+		const selection = this.inlineFieldSelectionRange(field);
+		if (selection && field.text.length > 0) {
+			const selectionLeft = valueX + this.inlineFieldMeasureRange(field, 0, selection.start);
+			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			if (selectionWidth > 0) {
+				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, SELECTION_OVERLAY);
+			}
+		}
+
 		this.drawText(api, valueText, valueX, labelY, valueColor);
 
-		const caretX = valueX + this.measureText(this.lineJumpValue);
-		const caretWidth = this.charAdvance;
+		const caretX = this.inlineFieldCaretX(field, valueX);
 		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
 		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.lineJumpActive);
