@@ -127,8 +127,8 @@ type RectBounds = {
 
 type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 
-type EditorTabId = 'code' | 'resources' | `resource:${string}` | `lua:${string}`;
-type EditorTabKind = 'code' | 'resources' | 'resource_view' | 'lua_editor';
+type EditorTabId = 'resources' | `resource:${string}` | `lua:${string}`;
+type EditorTabKind = 'resources' | 'resource_view' | 'lua_editor';
 
 type CodeHoverTooltip = {
 	expression: string;
@@ -353,7 +353,8 @@ export class ConsoleCartEditor {
 	private deferredMessageDuration: number | null = null;
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private readonly codeTabContexts: Map<string, CodeTabContext> = new Map();
-	private activeCodeTabContextId: string = 'code';
+	private activeCodeTabContextId: string | null = null;
+	private entryTabId: string | null = null;
 	private readonly captureKeys: string[] = [
 		'Escape',
 		'ArrowUp',
@@ -445,7 +446,7 @@ export class ConsoleCartEditor {
 	private appliedGeneration = 0;
 	private lastSavedSource = '';
 	private tabs: EditorTabDescriptor[] = [];
-	private activeTabId: string = 'code';
+	private activeTabId: string | null = null;
 	private resourceBrowserItems: ResourceBrowserItem[] = [];
 	private resourceBrowserScroll = 0;
 	private resourceBrowserSelectionIndex = -1;
@@ -480,18 +481,20 @@ export class ConsoleCartEditor {
 		this.tabBarHeight = this.lineHeight + 3;
 		this.topMargin = this.headerHeight + this.tabBarHeight + 2;
 		this.bottomMargin = this.lineHeight + 6;
-		const mainContext = this.createMainCodeTabContext();
-		this.codeTabContexts.set(mainContext.id, mainContext);
-		this.initializeTabs();
+		const entryContext = this.createEntryTabContext();
+		if (entryContext) {
+			this.entryTabId = entryContext.id;
+			this.codeTabContexts.set(entryContext.id, entryContext);
+		}
+		this.initializeTabs(entryContext);
 		this.resetResourceTabState();
-		this.activateCodeEditorTab(mainContext.id);
+		if (entryContext) {
+			this.activateCodeEditorTab(entryContext.id);
+		}
 		this.desiredColumn = this.cursorColumn;
 		this.assertMonospace();
-		try {
-			this.lastSavedSource = this.loadSource();
-		} catch {
-			this.lastSavedSource = '';
-		}
+		const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
+		this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
 	}
 
 	private drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
@@ -690,6 +693,12 @@ export class ConsoleCartEditor {
 			throw new Error('[ConsoleCartEditor] Resource enumeration returned an invalid result.');
 		}
 		return descriptors;
+	}
+
+	private findResourceDescriptorByAssetId(assetId: string): ConsoleResourceDescriptor | null {
+		const descriptors = this.listResourcesStrict();
+		const match = descriptors.find(entry => entry.assetId === assetId);
+		return match ?? null;
 	}
 
 	private findResourceDescriptorForChunk(chunkPath: string): ConsoleResourceDescriptor {
@@ -910,7 +919,7 @@ export class ConsoleCartEditor {
 			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
 			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_TAB_BORDER);
 			const textY = bounds.top + TAB_BUTTON_PADDING_Y;
-			const showCloseButton = tab.closable && (hovered || (!dirty && active));
+			const showCloseButton = tab.closable && hovered;
 			const indicatorLeft = bounds.right - indicatorWidth;
 			const textX = bounds.left + TAB_BUTTON_PADDING_X;
 			this.drawText(api, tab.title, textX, textY, textColor);
@@ -1001,13 +1010,25 @@ export class ConsoleCartEditor {
 		this.viewportHeight = height;
 	}
 
-	private initializeTabs(): void {
-		this.tabs = [this.createCodeTabDescriptor()];
-		this.activeTabId = 'code';
-	}
-
-	private createCodeTabDescriptor(): EditorTabDescriptor {
-		return { id: 'code', kind: 'code', title: 'CODE', closable: false, dirty: false };
+	private initializeTabs(entryContext: CodeTabContext | null = null): void {
+		this.tabs = [];
+		this.tabHoverId = null;
+		this.tabButtonBounds.clear();
+		this.tabCloseButtonBounds.clear();
+		if (entryContext) {
+			this.tabs.push({
+				id: entryContext.id,
+				kind: 'lua_editor',
+				title: entryContext.title,
+				closable: true,
+				dirty: entryContext.dirty,
+			});
+			this.activeTabId = entryContext.id;
+			this.activeCodeTabContextId = entryContext.id;
+			return;
+		}
+		this.activeTabId = null;
+		this.activeCodeTabContextId = null;
 	}
 
 	private createResourceTabDescriptor(): EditorTabDescriptor {
@@ -1031,23 +1052,21 @@ export class ConsoleCartEditor {
 		this.setTabDirty(context.id, context.dirty);
 	}
 
-	private getActiveTabDescriptor(): EditorTabDescriptor {
+	private getActiveTabKind(): EditorTabKind {
+		if (!this.activeTabId) {
+			return 'resources';
+		}
 		const active = this.tabs.find(tab => tab.id === this.activeTabId);
 		if (active) {
-			return active;
+			return active.kind;
 		}
-		if (this.tabs.length === 0) {
-			const codeTab = this.createCodeTabDescriptor();
-			this.tabs.push(codeTab);
-			this.activeTabId = codeTab.id;
-			return codeTab;
+		if (this.tabs.length > 0) {
+			const first = this.tabs[0];
+			this.activeTabId = first.id;
+			return first.kind;
 		}
-		this.activeTabId = this.tabs[0].id;
-		return this.tabs[0];
-	}
-
-	private getActiveTabKind(): EditorTabKind {
-		return this.getActiveTabDescriptor().kind;
+		this.activeTabId = null;
+		return 'resources';
 	}
 
 	private getActiveResourceViewer(): ResourceViewerState | null {
@@ -1099,12 +1118,27 @@ export class ConsoleCartEditor {
 	public restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		if (!state) return;
 		this.applyInputOverrides(false);
-		this.initializeTabs();
+		this.codeTabContexts.clear();
+		const entryContext = this.createEntryTabContext();
+		if (entryContext) {
+			this.entryTabId = entryContext.id;
+			this.codeTabContexts.set(entryContext.id, entryContext);
+			this.activeCodeTabContextId = entryContext.id;
+		}
+		else {
+			this.activeCodeTabContextId = null;
+		}
+		this.initializeTabs(entryContext);
 		this.resetResourceTabState();
 		this.active = state.active;
-		const restoredKind = state.activeTab ?? 'code';
+		const restoredKind = state.activeTab ?? 'lua_editor';
 		if (restoredKind === 'resources') {
 			this.ensureResourceTab();
+		} else if (restoredKind === 'resource_view') {
+			const activeResourceTab = this.tabs.find(tab => tab.kind === 'resource_view');
+			if (activeResourceTab) {
+				this.setActiveTab(activeResourceTab.id);
+			}
 		} else {
 			this.activateCodeTab();
 		}
@@ -1142,9 +1176,19 @@ export class ConsoleCartEditor {
 		this.saveGeneration = Number.isFinite(state.saveGeneration) ? Math.max(0, Math.floor(state.saveGeneration)) : 0;
 		this.appliedGeneration = Number.isFinite(state.appliedGeneration) ? Math.max(0, Math.floor(state.appliedGeneration)) : 0;
 		this.resetActionPromptState();
-		try {
-			this.lastSavedSource = this.loadSource();
-		} catch {
+		const activeContext = this.getActiveCodeTabContext();
+		const entryContextRef = this.entryTabId ? this.codeTabContexts.get(this.entryTabId) ?? null : null;
+		if (activeContext) {
+			activeContext.lastSavedSource = this.lines.join('\n');
+			activeContext.dirty = this.dirty;
+			this.setTabDirty(activeContext.id, activeContext.dirty);
+		}
+		if (entryContextRef) {
+			if (activeContext && activeContext.id === entryContextRef.id) {
+				entryContextRef.lastSavedSource = this.lines.join('\n');
+			}
+			this.lastSavedSource = entryContextRef.lastSavedSource;
+		} else {
 			this.lastSavedSource = '';
 		}
 	}
@@ -1217,8 +1261,16 @@ export class ConsoleCartEditor {
 
 	private activate(): void {
 		this.applyInputOverrides(true);
-		const targetContextId = this.activeCodeTabContextId ?? 'code';
-		this.activateCodeEditorTab(targetContextId);
+	if (this.activeCodeTabContextId) {
+		const existingTab = this.tabs.find(candidate => candidate.id === this.activeCodeTabContextId);
+		if (existingTab) {
+			this.setActiveTab(this.activeCodeTabContextId);
+		} else {
+			this.activateCodeTab();
+		}
+	} else {
+		this.activateCodeTab();
+	}
 		this.bumpTextVersion();
 		this.cursorVisible = true;
 		this.blinkTimer = 0;
@@ -1286,10 +1338,6 @@ export class ConsoleCartEditor {
 			this.blinkTimer -= CURSOR_BLINK_INTERVAL;
 			this.cursorVisible = !this.cursorVisible;
 		}
-	}
-
-	private loadSource(): string {
-		return this.loadSourceFn();
 	}
 
 	private splitLines(source: string): string[] {
@@ -3585,13 +3633,13 @@ export class ConsoleCartEditor {
 			this.saveGeneration = this.saveGeneration + 1;
 			context.lastSavedSource = source;
 			context.saveGeneration = this.saveGeneration;
-			const isMainContext = context.id === 'code';
-			if (isMainContext) {
+			const isEntryContext = this.entryTabId !== null && context.id === this.entryTabId;
+			if (isEntryContext) {
 				this.lastSavedSource = source;
 			}
 			context.snapshot = this.captureSnapshot();
 			this.updateActiveContextDirtyFlag();
-			const message = isMainContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
+			const message = isEntryContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
 			this.showMessage(message, COLOR_STATUS_SUCCESS, 2.5);
 		} catch (error) {
 			if (this.tryShowLuaErrorOverlay(error)) {
@@ -4455,8 +4503,7 @@ export class ConsoleCartEditor {
 	}
 
 	private isCodeTabActive(): boolean {
-		const kind = this.getActiveTabKind();
-		return kind === 'code' || kind === 'lua_editor';
+		return this.getActiveTabKind() === 'lua_editor';
 	}
 
 	private isResourceViewActive(): boolean {
@@ -4468,30 +4515,30 @@ export class ConsoleCartEditor {
 		if (!tab) {
 			return;
 		}
-		const previousKind = this.getActiveTabKind();
-		if (previousKind === 'code' || previousKind === 'lua_editor') {
-			this.storeActiveCodeTabContext();
-		}
-		if (this.activeTabId === tabId) {
-			if (tab.kind === 'resources') {
-				this.enterResourcesTab();
-			} else if (tab.kind === 'resource_view') {
-				this.enterResourceViewer(tab);
-			} else if (tab.kind === 'code' || tab.kind === 'lua_editor') {
-				this.activateCodeEditorTab(tab.id);
-			}
-			return;
-		}
-		this.activeTabId = tabId;
+	const previousKind = this.getActiveTabKind();
+	if (previousKind === 'lua_editor') {
+		this.storeActiveCodeTabContext();
+	}
+	if (this.activeTabId === tabId) {
 		if (tab.kind === 'resources') {
 			this.enterResourcesTab();
 		} else if (tab.kind === 'resource_view') {
 			this.enterResourceViewer(tab);
-		} else if (tab.kind === 'code' || tab.kind === 'lua_editor') {
+		} else if (tab.kind === 'lua_editor') {
 			this.activateCodeEditorTab(tab.id);
-		} else {
-			this.enterCodeTab();
 		}
+		return;
+	}
+	this.activeTabId = tabId;
+	if (tab.kind === 'resources') {
+		this.enterResourcesTab();
+	} else if (tab.kind === 'resource_view') {
+		this.enterResourceViewer(tab);
+	} else if (tab.kind === 'lua_editor') {
+		this.activateCodeEditorTab(tab.id);
+	} else {
+		this.enterCodeTab();
+	}
 	}
 
 	private ensureResourceTab(): void {
@@ -4516,14 +4563,35 @@ export class ConsoleCartEditor {
 	}
 
 	private activateCodeTab(): void {
-		const codeTab = this.tabs.find(candidate => candidate.kind === 'code');
+		const codeTab = this.tabs.find(candidate => candidate.kind === 'lua_editor');
 		if (codeTab) {
 			this.setActiveTab(codeTab.id);
 			return;
 		}
-		const newCodeTab = this.createCodeTabDescriptor();
-		this.tabs.unshift(newCodeTab);
-		this.setActiveTab(newCodeTab.id);
+		if (this.entryTabId) {
+			let context = this.codeTabContexts.get(this.entryTabId);
+			if (!context) {
+				context = this.createEntryTabContext();
+				if (!context) {
+					return;
+				}
+				this.entryTabId = context.id;
+				this.codeTabContexts.set(context.id, context);
+			}
+			let entryTab = this.tabs.find(candidate => candidate.id === context.id);
+			if (!entryTab) {
+				entryTab = {
+					id: context.id,
+					kind: 'lua_editor',
+					title: context.title,
+					closable: true,
+					dirty: context.dirty,
+					resource: undefined,
+				};
+				this.tabs.unshift(entryTab);
+			}
+			this.setActiveTab(context.id);
+		}
 	}
 
 private openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
@@ -4593,7 +4661,7 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		} else if (tab.kind === 'lua_editor') {
 			this.codeTabContexts.delete(tab.id);
 			if (this.activeCodeTabContextId === tab.id) {
-				this.activeCodeTabContextId = 'code';
+				this.activeCodeTabContextId = null;
 			}
 		}
 		if (this.activeTabId === tabId) {
@@ -4748,20 +4816,35 @@ private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): Resourc
 	return items;
 }
 
-private createMainCodeTabContext(): CodeTabContext {
-	return {
-		id: 'code',
-		title: 'CODE',
-		descriptor: null,
-		load: () => this.loadSourceFn(),
-		save: (source: string) => this.saveSourceFn(source),
-		snapshot: null,
-		lastSavedSource: '',
-		saveGeneration: 0,
-		appliedGeneration: 0,
-		dirty: false,
-	};
-}
+	private createEntryTabContext(): CodeTabContext | null {
+		const assetId = (typeof this.primaryAssetId === 'string' && this.primaryAssetId.length > 0)
+			? this.primaryAssetId
+			: null;
+		const descriptor = assetId ? this.findResourceDescriptorByAssetId(assetId) : null;
+		const resolvedAssetId = descriptor ? descriptor.assetId : (assetId ?? '__entry__');
+		const tabId: string = `lua:${resolvedAssetId}`;
+		const title = descriptor
+			? this.computeResourceTabTitle(descriptor)
+			: (assetId ?? this.metadata.title ?? 'ENTRY').toUpperCase();
+		const load = descriptor
+			? () => this.loadLuaResourceFn(descriptor.assetId)
+			: () => this.loadSourceFn();
+		const save = descriptor
+			? (source: string) => this.saveLuaResourceFn(descriptor.assetId, source)
+			: (source: string) => this.saveSourceFn(source);
+		return {
+			id: tabId,
+			title,
+			descriptor: descriptor ?? null,
+			load,
+			save,
+			snapshot: null,
+			lastSavedSource: '',
+			saveGeneration: 0,
+			appliedGeneration: 0,
+			dirty: false,
+		};
+	}
 
 private createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext {
 	const title = this.computeResourceTabTitle(descriptor);
@@ -4792,7 +4875,7 @@ private storeActiveCodeTabContext(): void {
 		return;
 	}
 	context.snapshot = this.captureSnapshot();
-	if (context.id === 'code') {
+	if (this.entryTabId && context.id === this.entryTabId) {
 		context.lastSavedSource = this.lastSavedSource;
 	}
 	context.saveGeneration = this.saveGeneration;
@@ -4801,23 +4884,31 @@ private storeActiveCodeTabContext(): void {
 	this.setTabDirty(context.id, context.dirty);
 }
 
-private activateCodeEditorTab(tabId: string): void {
+private activateCodeEditorTab(tabId: string | null): void {
+	if (!tabId) {
+		return;
+	}
 	let context = this.codeTabContexts.get(tabId);
 	if (!context) {
-		if (tabId === 'code') {
-			context = this.createMainCodeTabContext();
+		if (this.entryTabId && tabId === this.entryTabId) {
+			const recreated = this.createEntryTabContext();
+			if (!recreated || recreated.id !== tabId) {
+				return;
+			}
+			context = recreated;
+			this.entryTabId = context.id;
 			this.codeTabContexts.set(tabId, context);
 		} else {
 			return;
 		}
 	}
 	this.activeCodeTabContextId = tabId;
-	const isMain = context.id === 'code';
+	const isEntry = this.entryTabId !== null && context.id === this.entryTabId;
 	if (context.snapshot) {
 		this.restoreSnapshot(context.snapshot);
 		this.saveGeneration = context.saveGeneration;
 		this.appliedGeneration = context.appliedGeneration;
-		if (isMain) {
+		if (isEntry) {
 			this.lastSavedSource = context.lastSavedSource;
 		}
 		context.dirty = this.dirty;
@@ -4843,7 +4934,7 @@ private activateCodeEditorTab(tabId: string): void {
 	context.dirty = false;
 	this.saveGeneration = context.saveGeneration;
 	this.appliedGeneration = context.appliedGeneration;
-	if (isMain) {
+	if (isEntry) {
 		this.lastSavedSource = context.lastSavedSource;
 	}
 	this.setTabDirty(context.id, context.dirty);
@@ -4854,7 +4945,11 @@ private activateCodeEditorTab(tabId: string): void {
 }
 
 private getMainProgramSourceForReload(): string {
-	const context = this.codeTabContexts.get('code');
+	const entryId = this.entryTabId;
+	if (!entryId) {
+		return this.loadSourceFn();
+	}
+	const context = this.codeTabContexts.get(entryId);
 	if (!context) {
 		return this.loadSourceFn();
 	}
