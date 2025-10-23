@@ -165,6 +165,7 @@ type EditorTabDescriptor = {
 	kind: EditorTabKind;
 	title: string;
 	closable: boolean;
+	dirty: boolean;
 	resource?: ResourceViewerState;
 };
 
@@ -184,6 +185,7 @@ type CodeTabContext = {
 	lastSavedSource: string;
 	saveGeneration: number;
 	appliedGeneration: number;
+	dirty: boolean;
 };
 
 type PendingActionPrompt = {
@@ -307,6 +309,7 @@ const ACTION_BUTTON_TEXT = COLOR_STATUS_TEXT;
 const TAB_BUTTON_PADDING_X = 4;
 const TAB_BUTTON_PADDING_Y = 1;
 const TAB_BUTTON_SPACING = 3;
+const TAB_DIRTY_MARKER_SPACING = 2;
 const COLOR_TAB_BAR_BACKGROUND = COLOR_STATUS_BACKGROUND;
 const COLOR_TAB_BORDER = COLOR_TOP_BAR_TEXT;
 const COLOR_TAB_INACTIVE_BACKGROUND = COLOR_STATUS_BACKGROUND;
@@ -423,6 +426,9 @@ export class ConsoleCartEditor {
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
+	private readonly tabDirtyMarkerAssetId = 'msx_6b_font_ctrl_bel';
+	private tabDirtyMarkerWidth: number | null = null;
+	private tabDirtyMarkerHeight: number | null = null;
 	private cursorRevealSuspended = false;
 	private searchActive = false;
 	private searchVisible = false;
@@ -874,11 +880,18 @@ export class ConsoleCartEditor {
 		for (let index = 0; index < this.tabs.length; index += 1) {
 			const tab = this.tabs[index];
 			const textWidth = this.measureText(tab.title);
+			const dirty = tab.dirty === true;
+			let markerWidth = 0;
+			let markerMetrics: { width: number; height: number } | null = null;
+			if (dirty) {
+				markerMetrics = this.getTabDirtyMarkerMetrics();
+				markerWidth = markerMetrics.width + TAB_DIRTY_MARKER_SPACING;
+			}
 			let closeWidth = 0;
 			if (tab.closable) {
 				closeWidth = this.measureText(TAB_CLOSE_BUTTON_SYMBOL) + TAB_CLOSE_BUTTON_PADDING_X * 2;
 			}
-			const tabWidth = textWidth + TAB_BUTTON_PADDING_X * 2 + closeWidth;
+			const tabWidth = textWidth + TAB_BUTTON_PADDING_X * 2 + closeWidth + markerWidth;
 			const left = tabX;
 			const right = left + tabWidth;
 			const top = barTop + 1;
@@ -890,8 +903,14 @@ export class ConsoleCartEditor {
 			const textColor = active ? COLOR_TAB_ACTIVE_TEXT : COLOR_TAB_INACTIVE_TEXT;
 			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
 			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_TAB_BORDER);
-			const textX = bounds.left + TAB_BUTTON_PADDING_X;
+			let textX = bounds.left + TAB_BUTTON_PADDING_X;
 			const textY = bounds.top + TAB_BUTTON_PADDING_Y;
+			if (markerMetrics) {
+				const markerX = textX;
+				const markerY = bounds.top + Math.floor(((bounds.bottom - bounds.top) - markerMetrics.height) / 2);
+				api.spr(this.tabDirtyMarkerAssetId, markerX, markerY);
+				textX += markerMetrics.width + TAB_DIRTY_MARKER_SPACING;
+			}
 			this.drawText(api, tab.title, textX, textY, textColor);
 			if (tab.closable) {
 				const closeBounds: RectBounds = {
@@ -914,6 +933,32 @@ export class ConsoleCartEditor {
 		if (tabX < this.viewportWidth) {
 			api.rectfill(tabX, remainingTop, this.viewportWidth, barBottom, COLOR_TAB_BAR_BACKGROUND);
 		}
+	}
+
+	private getTabDirtyMarkerMetrics(): { width: number; height: number } {
+		if (this.tabDirtyMarkerWidth === null || this.tabDirtyMarkerHeight === null) {
+			const rompack = $.rompack;
+			if (!rompack || !rompack.img) {
+				throw new Error('[ConsoleCartEditor] Rompack unavailable while resolving tab dirty marker.');
+			}
+			const entry = rompack.img[this.tabDirtyMarkerAssetId];
+			if (!entry || !entry.imgmeta) {
+				throw new Error(`[ConsoleCartEditor] Tab dirty marker asset '${this.tabDirtyMarkerAssetId}' unavailable.`);
+			}
+			const width = entry.imgmeta.width;
+			const height = entry.imgmeta.height;
+			if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+				throw new Error(`[ConsoleCartEditor] Tab dirty marker asset '${this.tabDirtyMarkerAssetId}' has invalid dimensions.`);
+			}
+			this.tabDirtyMarkerWidth = Math.max(1, Math.floor(width));
+			this.tabDirtyMarkerHeight = Math.max(1, Math.floor(height));
+		}
+		const width = this.tabDirtyMarkerWidth;
+		const height = this.tabDirtyMarkerHeight;
+		if (width === null || height === null) {
+			throw new Error('[ConsoleCartEditor] Failed to resolve tab dirty marker metrics.');
+		}
+		return { width, height };
 	}
 
 	private refreshViewportDimensions(): void {
@@ -940,11 +985,28 @@ export class ConsoleCartEditor {
 	}
 
 	private createCodeTabDescriptor(): EditorTabDescriptor {
-		return { id: 'code', kind: 'code', title: 'CODE', closable: false };
+		return { id: 'code', kind: 'code', title: 'CODE', closable: false, dirty: false };
 	}
 
 	private createResourceTabDescriptor(): EditorTabDescriptor {
-		return { id: 'resources', kind: 'resources', title: 'FILES', closable: true };
+		return { id: 'resources', kind: 'resources', title: 'FILES', closable: true, dirty: false };
+	}
+
+	private setTabDirty(tabId: string, dirty: boolean): void {
+		const tab = this.tabs.find(candidate => candidate.id === tabId);
+		if (!tab) {
+			return;
+		}
+		tab.dirty = dirty;
+	}
+
+	private updateActiveContextDirtyFlag(): void {
+		const context = this.getActiveCodeTabContext();
+		if (!context) {
+			return;
+		}
+		context.dirty = this.dirty;
+		this.setTabDirty(context.id, context.dirty);
 	}
 
 	private getActiveTabDescriptor(): EditorTabDescriptor {
@@ -3481,6 +3543,7 @@ export class ConsoleCartEditor {
 				this.lastSavedSource = source;
 			}
 			context.snapshot = this.captureSnapshot();
+			this.updateActiveContextDirtyFlag();
 			const message = isMainContext ? 'Lua cart saved (restart pending)' : `${context.title} saved (restart pending)`;
 			this.showMessage(message, COLOR_STATUS_SUCCESS, 2.5);
 		} catch (error) {
@@ -3924,13 +3987,14 @@ export class ConsoleCartEditor {
 		} else {
 			this.selectionAnchor = this.clampSelectionPosition(preservedSelection);
 		}
-		this.dirty = snapshot.dirty;
-		this.bumpTextVersion();
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.cursorRevealSuspended = false;
-		this.ensureCursorVisible();
-	}
+	this.dirty = snapshot.dirty;
+	this.bumpTextVersion();
+	this.updateDesiredColumn();
+	this.resetBlink();
+	this.cursorRevealSuspended = false;
+	this.updateActiveContextDirtyFlag();
+	this.ensureCursorVisible();
+}
 
 	private prepareUndo(key: string, allowMerge: boolean): void {
 		const now = Date.now();
@@ -4422,17 +4486,23 @@ private openLuaCodeTab(descriptor: ConsoleResourceDescriptor): void {
 		const context = this.createLuaCodeTabContext(descriptor);
 		this.codeTabContexts.set(tabId, context);
 	}
+	const context = this.codeTabContexts.get(tabId) ?? null;
 	if (!tab) {
+		const dirty = context ? context.dirty : false;
 		tab = {
 			id: tabId,
 			kind: 'lua_editor',
 			title: this.computeResourceTabTitle(descriptor),
 			closable: true,
+			dirty,
 			resource: undefined,
 		};
 		this.tabs.push(tab);
 	} else {
 		tab.title = this.computeResourceTabTitle(descriptor);
+		if (context) {
+			tab.dirty = context.dirty;
+		}
 	}
 	this.setActiveTab(tabId);
 }
@@ -4442,9 +4512,10 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		let tab = this.tabs.find(candidate => candidate.id === tabId);
 		const state = this.buildResourceViewerState(descriptor);
 		this.resourceViewerClampScroll(state);
-		if (tab) {
+	if (tab) {
 			tab.title = state.title;
 			tab.resource = state;
+			tab.dirty = false;
 			this.setActiveTab(tabId);
 			return;
 		}
@@ -4453,6 +4524,7 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 			kind: 'resource_view',
 			title: state.title,
 			closable: true,
+			dirty: false,
 			resource: state,
 		};
 		this.tabs.push(tab);
@@ -4533,6 +4605,7 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.cursorRevealSuspended = false;
+		tab.dirty = false;
 		this.resourceBrowserHoverIndex = -1;
 		if (!tab.resource) {
 			return;
@@ -4639,6 +4712,7 @@ private createMainCodeTabContext(): CodeTabContext {
 		lastSavedSource: '',
 		saveGeneration: 0,
 		appliedGeneration: 0,
+		dirty: false,
 	};
 }
 
@@ -4654,6 +4728,7 @@ private createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabC
 		lastSavedSource: '',
 		saveGeneration: 0,
 		appliedGeneration: 0,
+		dirty: false,
 	};
 }
 
@@ -4675,6 +4750,8 @@ private storeActiveCodeTabContext(): void {
 	}
 	context.saveGeneration = this.saveGeneration;
 	context.appliedGeneration = this.appliedGeneration;
+	context.dirty = this.dirty;
+	this.setTabDirty(context.id, context.dirty);
 }
 
 private activateCodeEditorTab(tabId: string): void {
@@ -4696,6 +4773,8 @@ private activateCodeEditorTab(tabId: string): void {
 		if (isMain) {
 			this.lastSavedSource = context.lastSavedSource;
 		}
+		context.dirty = this.dirty;
+		this.setTabDirty(context.id, context.dirty);
 		this.invalidateAllHighlights();
 		this.updateDesiredColumn();
 		this.ensureCursorVisible();
@@ -4714,11 +4793,13 @@ private activateCodeEditorTab(tabId: string): void {
 	this.scrollColumn = 0;
 	this.selectionAnchor = null;
 	this.dirty = false;
+	context.dirty = false;
 	this.saveGeneration = context.saveGeneration;
 	this.appliedGeneration = context.appliedGeneration;
 	if (isMain) {
 		this.lastSavedSource = context.lastSavedSource;
 	}
+	this.setTabDirty(context.id, context.dirty);
 	this.updateDesiredColumn();
 	this.resetBlink();
 	this.pointerSelecting = false;
@@ -5530,6 +5611,7 @@ private drawResourceBrowser(api: BmsxConsoleApi): void {
 	private markTextMutated(): void {
 		this.dirty = true;
 		this.bumpTextVersion();
+		this.updateActiveContextDirtyFlag();
 	}
 
 	private drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
