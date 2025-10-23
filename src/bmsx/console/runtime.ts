@@ -8,6 +8,8 @@ import { Physics2DManager } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
+import { LuaLexer } from '../lua/lexer.ts';
+import { LuaParser } from '../lua/parser.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue } from '../lua/value.ts';
 import { LuaTable } from '../lua/value.ts';
@@ -2581,9 +2583,9 @@ export class BmsxConsoleRuntime extends Service {
 
 	private getStaticDefinitions(assetId: string | null, preferredChunk: string | null): ReadonlyArray<LuaDefinitionInfo> | null {
 		const interpreter = this.requireLuaInterpreter();
-		const matches: LuaDefinitionInfo[] = [];
 		const normalizedPreferred = preferredChunk ? this.normalizeChunkName(preferredChunk) : null;
 		const normalizedPreferredPath = preferredChunk ? preferredChunk.replace(/\\/g, '/') : null;
+		const matchingChunks: Array<{ chunkName: string; info: { assetId: string | null; path?: string | null } }> = [];
 		for (const [chunkName, info] of this.luaChunkResourceMap) {
 			const matchesAsset = assetId !== null && info.assetId === assetId;
 			const matchesPath = normalizedPreferredPath !== null && info.path === normalizedPreferredPath;
@@ -2591,12 +2593,97 @@ export class BmsxConsoleRuntime extends Service {
 			if (!matchesAsset && !matchesPath && !matchesChunk) {
 				continue;
 			}
-			const chunkDefinitions = interpreter.getChunkDefinitions(chunkName);
+			matchingChunks.push({ chunkName, info });
+		}
+		if (matchingChunks.length === 0) {
+			return null;
+		}
+		const byKey = new Map<string, LuaDefinitionInfo>();
+		const recordDefinition = (definition: LuaDefinitionInfo) => {
+			const key = `${definition.namePath.join('.')}@${definition.definition.start.line}:${definition.definition.start.column}`;
+			if (!byKey.has(key)) {
+				byKey.set(key, definition);
+			}
+		};
+		for (const candidate of matchingChunks) {
+			const chunkDefinitions = interpreter.getChunkDefinitions(candidate.chunkName);
 			if (chunkDefinitions && chunkDefinitions.length > 0) {
-				matches.push(...chunkDefinitions);
+				for (const definition of chunkDefinitions) {
+					recordDefinition(definition);
+				}
 			}
 		}
-		return matches.length > 0 ? matches : null;
+		for (const candidate of matchingChunks) {
+			const parsedDefinitions = this.parseStaticDefinitionsForChunk(candidate.chunkName, candidate.info);
+			if (parsedDefinitions && parsedDefinitions.length > 0) {
+				for (const definition of parsedDefinitions) {
+					recordDefinition(definition);
+				}
+			}
+		}
+		if (byKey.size === 0) {
+			return null;
+		}
+		return Array.from(byKey.values());
+	}
+
+	private parseStaticDefinitionsForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): ReadonlyArray<LuaDefinitionInfo> | null {
+		const source = this.resolveSourceForChunk(chunkName, info);
+		if (!source) {
+			return null;
+		}
+		return this.parseDefinitionsFromSource(chunkName, source);
+	}
+
+	private resolveSourceForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): string | null {
+		if (this.editor) {
+			try {
+				return this.editor.getSourceForChunk(info.assetId, chunkName);
+			} catch {
+				// Fall back to rompack/program sources.
+			}
+		}
+		if (info.assetId) {
+			const rompackSource = this.resolveRompackLuaSource(info.assetId);
+			if (rompackSource) {
+				return rompackSource;
+			}
+		}
+		return this.resolveProgramSourceForChunk(chunkName);
+	}
+
+	private resolveRompackLuaSource(assetId: string): string | null {
+		const rompack = this.api.rompack();
+		if (!rompack || !rompack.lua) {
+			return null;
+		}
+		const source = rompack.lua[assetId];
+		return typeof source === 'string' ? source : null;
+	}
+
+	private resolveProgramSourceForChunk(chunkName: string): string | null {
+		if (!this.luaProgram) {
+			return null;
+		}
+		const programChunk = this.normalizeChunkName(this.resolveLuaProgramChunkName(this.luaProgram));
+		const normalizedChunk = this.normalizeChunkName(chunkName);
+		if (programChunk !== normalizedChunk) {
+			return null;
+		}
+		return this.getLuaProgramSource(this.luaProgram);
+	}
+
+	private parseDefinitionsFromSource(chunkName: string, source: string): ReadonlyArray<LuaDefinitionInfo> | null {
+		try {
+			const lexer = new LuaLexer(source, chunkName);
+			const tokens = lexer.scanTokens();
+			const parser = new LuaParser(tokens, chunkName, source);
+			const chunk = parser.parseChunk();
+			return chunk.definitions;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
+		}
 	}
 
 	private positionWithinRange(row: number, column: number | null, range: LuaSourceRange): boolean {

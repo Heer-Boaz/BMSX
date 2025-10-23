@@ -1094,6 +1094,36 @@ export class LuaParser {
 				}
 			}
 		};
+		const refineAssignmentDefinitionRange = (target: LuaAssignableExpression, baseRange: LuaSourceRange): LuaSourceRange => {
+			if (!target) {
+				return baseRange;
+			}
+			if (target.kind === LuaSyntaxKind.MemberExpression) {
+				const member = target as LuaMemberExpression;
+				const identifierLength = member.identifier.length;
+				const start = member.range.end;
+				const adjustedEndColumn = identifierLength > 0 ? start.column + Math.max(0, identifierLength - 1) : start.column;
+				return {
+					chunkName: baseRange.chunkName,
+					start,
+					end: {
+						line: start.line,
+						column: adjustedEndColumn,
+					},
+				};
+			}
+			if (target.kind === LuaSyntaxKind.IndexExpression) {
+				const indexExpression = target as LuaIndexExpression;
+				const start = indexExpression.index.range.start;
+				const end = indexExpression.index.range.end;
+				return {
+					chunkName: baseRange.chunkName,
+					start,
+					end,
+				};
+			}
+			return baseRange;
+		};
 		const recordAssignmentValue = (path: ReadonlyArray<string>, value: LuaExpression | null, scope: LuaSourceRange): void => {
 			if (!value) {
 				return;
@@ -1198,7 +1228,8 @@ export class LuaParser {
 						if (!path) {
 							continue;
 						}
-						pushDefinition(path, target.range, currentScope);
+						const refinedRange = refineAssignmentDefinitionRange(target, target.range);
+						pushDefinition(path, refinedRange, currentScope);
 						recordAssignmentValue(path, mappedValues[index], currentScope);
 					}
 					break;

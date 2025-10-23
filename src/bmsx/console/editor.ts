@@ -939,6 +939,55 @@ export class ConsoleCartEditor {
 		return normalized.length > 0 ? normalized : undefined;
 	}
 
+	private findCodeTabContext(assetId: string | null, chunkName: string | null): CodeTabContext | null {
+		const normalizedChunk = this.normalizeChunkReference(chunkName);
+		for (const context of this.codeTabContexts.values()) {
+			const descriptor = context.descriptor;
+			if (assetId && descriptor && descriptor.assetId === assetId) {
+				return context;
+			}
+			if (!assetId && normalizedChunk && descriptor) {
+				const descriptorPath = this.normalizeChunkReference(descriptor.path);
+				if (descriptorPath && descriptorPath === normalizedChunk) {
+					return context;
+				}
+			}
+		}
+		if (!this.entryTabId) {
+			return null;
+		}
+		const entryContext = this.codeTabContexts.get(this.entryTabId) ?? null;
+		if (!entryContext) {
+			return null;
+		}
+		if (assetId !== null) {
+			return null;
+		}
+		if (!normalizedChunk) {
+			return entryContext;
+		}
+		const entryDescriptor = entryContext.descriptor;
+		if (!entryDescriptor) {
+			return entryContext;
+		}
+		const entryPath = this.normalizeChunkReference(entryDescriptor.path);
+		if (entryPath && entryPath === normalizedChunk) {
+			return entryContext;
+		}
+		return null;
+	}
+
+	private normalizeChunkReference(reference: string | null): string | null {
+		if (!reference) {
+			return null;
+		}
+		let normalized = reference;
+		if (normalized.startsWith('@')) {
+			normalized = normalized.slice(1);
+		}
+		return normalized.replace(/\\/g, '/');
+	}
+
 
 	private listResourcesStrict(): ConsoleResourceDescriptor[] {
 		const descriptors = this.listResourcesFn();
@@ -1149,6 +1198,23 @@ export class ConsoleCartEditor {
 		if (this.pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
 		}
+	}
+
+	public getSourceForChunk(assetId: string | null, chunkName: string | null): string {
+		const context = this.findCodeTabContext(assetId, chunkName);
+		if (!context) {
+			throw new Error(`[ConsoleCartEditor] Unable to locate editor context for asset '${assetId ?? '<null>'}' and chunk '${chunkName ?? '<null>'}'.`);
+		}
+		if (context.id === this.activeCodeTabContextId) {
+			return this.lines.join('\n');
+		}
+		if (context.snapshot) {
+			return context.snapshot.lines.join('\n');
+		}
+		if (context.lastSavedSource.length > 0) {
+			return context.lastSavedSource;
+		}
+		return context.load();
 	}
 
 	private drawTabBar(api: BmsxConsoleApi): void {
@@ -3270,7 +3336,7 @@ export class ConsoleCartEditor {
 			row: row + 1,
 			column: token.startColumn + 1,
 		});
-		if (!inspection || inspection.state !== 'value' || !inspection.definition) {
+		if (!inspection || !inspection.definition) {
 			this.clearGotoHoverHighlight();
 			return;
 		}
@@ -3295,14 +3361,21 @@ export class ConsoleCartEditor {
 			return false;
 		}
 		const chunkName = this.resolveHoverChunkName(context);
-		const inspection = this.inspectLuaExpressionFn({
-			assetId,
-			expression: token.expression,
-			chunkName,
-			row: row + 1,
-			column: token.startColumn + 1,
-		});
-		if (!inspection || inspection.state !== 'value' || !inspection.definition) {
+		let inspection: ConsoleLuaHoverResult | null;
+		try {
+			inspection = this.inspectLuaExpressionFn({
+				assetId,
+				expression: token.expression,
+				chunkName,
+				row: row + 1,
+				column: token.startColumn + 1,
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showMessage(message, COLOR_STATUS_ERROR, 3.2);
+			return false;
+		}
+		if (!inspection || !inspection.definition) {
 			this.showMessage(`Definition not found for ${token.expression}`, COLOR_STATUS_WARNING, 1.8);
 			return false;
 		}
