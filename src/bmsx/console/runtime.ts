@@ -2365,10 +2365,10 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private resourcePathRepresentsFsm(path: string, assetId: string): boolean {
-		if (typeof path === 'string' && path.toLowerCase().indexOf('.fsm.') !== -1) {
+		if (path.toLowerCase().indexOf('.fsm.') !== -1) {
 			return true;
 		}
-		return typeof assetId === 'string' && assetId.toLowerCase().indexOf('.fsm') !== -1;
+		return assetId.toLowerCase().indexOf('.fsm') !== -1;
 	}
 
 	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {

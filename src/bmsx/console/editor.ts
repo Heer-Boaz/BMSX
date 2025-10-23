@@ -477,7 +477,7 @@ export class ConsoleCartEditor {
 	private lineJumpVisible = false;
 	private lineJumpValue = '';
 	private createResourceActive = false;
-	private createResourceVisible = true;
+	private createResourceVisible = false;
 	private createResourcePath = '';
 	private createResourceError: string | null = null;
 	private createResourceWorking = false;
@@ -1633,16 +1633,15 @@ export class ConsoleCartEditor {
 		if (this.createResourceWorking) {
 			return;
 		}
-		this.closeSearch(false);
-		this.closeLineJump(false);
 		this.resourcePanelFocused = false;
-		if (this.createResourcePath.length === 0) {
-			let defaultPath = this.determineCreateResourceDefaultPath();
-			if (defaultPath.length > CREATE_RESOURCE_MAX_PATH_LENGTH) {
-				defaultPath = defaultPath.slice(defaultPath.length - CREATE_RESOURCE_MAX_PATH_LENGTH);
-			}
-			this.createResourcePath = defaultPath;
+		let defaultPath = this.createResourcePath.length === 0
+			? this.determineCreateResourceDefaultPath()
+			: this.createResourcePath;
+		if (defaultPath.length > CREATE_RESOURCE_MAX_PATH_LENGTH) {
+			defaultPath = defaultPath.slice(defaultPath.length - CREATE_RESOURCE_MAX_PATH_LENGTH);
 		}
+		this.createResourcePath = defaultPath;
+		this.createResourceVisible = true;
 		this.createResourceActive = true;
 		this.createResourceError = null;
 		this.cursorVisible = true;
@@ -1651,14 +1650,13 @@ export class ConsoleCartEditor {
 
 	private closeCreateResourcePrompt(focusEditor: boolean): void {
 		this.createResourceActive = false;
+		this.createResourceVisible = false;
 		this.createResourceWorking = false;
 		if (focusEditor) {
 			this.focusEditorFromSearch();
 			this.focusEditorFromLineJump();
 		}
-		if (!focusEditor) {
-			this.createResourcePath = '';
-		}
+		this.createResourcePath = '';
 		this.createResourceError = null;
 		this.resetBlink();
 	}
@@ -1871,10 +1869,10 @@ export class ConsoleCartEditor {
 	}
 
 	private resourcePathRepresentsFsm(path: string, assetId: string): boolean {
-		if (typeof path === 'string' && path.toLowerCase().indexOf('.fsm.') !== -1) {
+		if (path.toLowerCase().indexOf('.fsm.') !== -1) {
 			return true;
 		}
-		return typeof assetId === 'string' && assetId.toLowerCase().indexOf('.fsm') !== -1;
+		return assetId.toLowerCase().indexOf('.fsm') !== -1;
 	}
 
 	private sanitizeFsmBlueprintId(assetId: string): string {
@@ -2602,12 +2600,20 @@ export class ConsoleCartEditor {
 				return;
 			}
 			const createResourceBounds = this.getCreateResourceBarBounds();
-			if (justPressed && createResourceBounds && snapshot.viewportY >= createResourceBounds.top && snapshot.viewportY < createResourceBounds.bottom) {
-				this.openCreateResourcePrompt();
-				this.pointerSelecting = false;
-				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-				this.clearHoverTooltip();
-				return;
+			if (this.createResourceVisible && createResourceBounds) {
+				const insideCreateBar = this.pointInRect(snapshot.viewportX, snapshot.viewportY, createResourceBounds);
+				if (justPressed && insideCreateBar) {
+					this.createResourceActive = true;
+					this.cursorVisible = true;
+					this.resetBlink();
+					this.pointerSelecting = false;
+					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.clearHoverTooltip();
+					return;
+				}
+				if (justPressed && !insideCreateBar) {
+					this.createResourceActive = false;
+				}
 			}
 			const lineJumpBounds = this.getLineJumpBarBounds();
 			if (justPressed && lineJumpBounds && snapshot.viewportY >= lineJumpBounds.top && snapshot.viewportY < lineJumpBounds.bottom) {
@@ -4771,13 +4777,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + caretWidth));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		if (this.cursorVisible) {
-			if (this.createResourceActive) {
-				api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			} else {
-				this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			}
-		}
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.createResourceActive);
 
 		if (this.createResourceWorking) {
 			const status = 'CREATING...';
@@ -4799,9 +4799,9 @@ export class ConsoleCartEditor {
 		if (height <= 0) {
 			return;
 		}
-	const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight();
-	const barTop = baseTop;
-	const barBottom = barTop + height;
+		const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight();
+		const barTop = baseTop;
+		const barBottom = barTop + height;
 		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_SEARCH_BACKGROUND);
 		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_SEARCH_OUTLINE);
 		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_SEARCH_OUTLINE);
@@ -4828,13 +4828,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		if (this.cursorVisible) {
-			if (this.searchActive) {
-				api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			} else {
-				this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			}
-		}
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.searchActive);
 
 		if (this.searchQuery.length > 0) {
 			const total = this.searchMatches.length;
@@ -4878,13 +4872,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + caretWidth));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		if (this.cursorVisible) {
-			if (this.lineJumpActive) {
-				api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			} else {
-				this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			}
-		}
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.lineJumpActive);
 	}
 
 	private codeViewportTop(): number {
@@ -6712,7 +6700,7 @@ private getMainProgramSourceForReload(): string {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + cursorWidth));
 		const caretTop = Math.floor(cursorY);
 		const caretBottom = caretTop + this.lineHeight;
-		if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused) {
+		if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive) {
 			const innerLeft = caretLeft + 1;
 			const innerRight = caretRight - 1;
 			const innerTop = caretTop + 1;
@@ -6849,6 +6837,17 @@ private getMainProgramSourceForReload(): string {
 		this.dirty = true;
 		this.bumpTextVersion();
 		this.updateActiveContextDirtyFlag();
+	}
+
+	private drawCaretShape(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, active: boolean): void {
+		if (!this.cursorVisible) {
+			return;
+		}
+		if (active) {
+			api.rectfillColor(left, top, right, bottom, CARET_COLOR);
+			return;
+		}
+		this.drawRectOutlineColor(api, left, top, right, bottom, CARET_COLOR);
 	}
 
 	private drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
