@@ -43,6 +43,7 @@ import type {
 	LuaVarargExpression,
 	LuaWhileStatement,
 	LuaSourceRange,
+	LuaDefinitionInfo,
 } from './ast.ts';
 import { LuaEnvironment } from './environment.ts';
 import { LuaRuntimeError, LuaSyntaxError } from './errors.ts';
@@ -128,6 +129,7 @@ export class LuaInterpreter {
 	 private reservedIdentifiers: Set<string> = new Set<string>();
 	 private currentCallRange: LuaSourceRange | null = null;
 	 private chunkEnvironment: LuaEnvironment | null = null;
+	 private readonly chunkDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
 
 	 constructor(globals: LuaEnvironment | null) {
 	 	 if (globals === null) {
@@ -147,6 +149,7 @@ export class LuaInterpreter {
 		const parser = new LuaParser(tokens, chunkName, source);
 		const chunk = parser.parseChunk();
 		this.validateReservedIdentifiers(chunk.body);
+		this.chunkDefinitions.set(this.normalizeChunkName(chunk.range.chunkName), chunk.definitions);
 		return this.executeChunk(chunk);
 	}
 
@@ -210,6 +213,11 @@ public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): 
 		return this.chunkEnvironment;
 	}
 
+	public getChunkDefinitions(chunkName: string): ReadonlyArray<LuaDefinitionInfo> | null {
+		const normalized = this.normalizeChunkName(chunkName);
+		return this.chunkDefinitions.get(normalized) ?? null;
+	}
+
 	public hasChunkBinding(name: string): boolean {
 		if (!this.chunkEnvironment) {
 			return false;
@@ -226,6 +234,14 @@ public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): 
 			throw this.runtimeError(`Chunk variable '${name}' is not defined.`);
 		}
 		target.assignExisting(name, value);
+	}
+
+	private normalizeChunkName(name: string): string {
+		let normalized = name.trim();
+		if (normalized.startsWith('@')) {
+			normalized = normalized.slice(1);
+		}
+		return normalized.replace(/\\/g, '/');
 	}
 
 	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope | null): ExecutionSignal {

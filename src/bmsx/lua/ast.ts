@@ -47,6 +47,12 @@ export type LuaNode = {
 	readonly range: LuaSourceRange;
 };
 
+export type LuaDefinitionInfo = {
+	readonly name: string;
+	readonly definition: LuaSourceRange;
+	readonly scope: LuaSourceRange;
+};
+
 export type LuaStatement =
 	| LuaAssignmentStatement
 	| LuaLocalAssignmentStatement
@@ -82,6 +88,7 @@ export type LuaExpression =
 export type LuaChunk = LuaNode & {
 	readonly kind: LuaSyntaxKind.Chunk;
 	readonly body: ReadonlyArray<LuaStatement>;
+	readonly definitions: ReadonlyArray<LuaDefinitionInfo>;
 };
 
 export type LuaBlock = LuaNode & {

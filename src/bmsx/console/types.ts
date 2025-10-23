@@ -123,6 +123,9 @@ export type ConsoleLuaDefinitionLocation = {
 export type ConsoleLuaHoverRequest = {
 	assetId: string | null;
 	expression: string;
+	chunkName: string | null;
+	row: number;
+	column: number;
 };
 
 export type ConsoleLuaHoverResult = {

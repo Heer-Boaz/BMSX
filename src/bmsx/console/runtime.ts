@@ -21,7 +21,7 @@ import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
-import type { LuaSourceRange } from '../lua/ast.ts';
+import type { LuaSourceRange, LuaDefinitionInfo } from '../lua/ast.ts';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -2427,9 +2427,16 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		const formatted = this.describeLuaValueForInspector(resolved.value);
 		const isFunction = formatted.isFunction;
-	const isLocalFunction = isFunction && resolved.scope === 'chunk';
-	const isBuiltin = isFunction && chain.length === 1 && this.isLuaBuiltinFunctionName(chain[0]);
-	const definition = isBuiltin ? null : this.resolveLuaDefinitionMetadata(resolved.value, assetId, resolved.definitionRange);
+		const isLocalFunction = isFunction && resolved.scope === 'chunk';
+		const isBuiltin = isFunction && chain.length === 1 && this.isLuaBuiltinFunctionName(chain[0]);
+		const usageRow = Number.isFinite(request.row) ? Math.max(1, Math.floor(request.row)) : null;
+		const usageColumn = Number.isFinite(request.column) ? Math.max(1, Math.floor(request.column)) : null;
+		const definition = isBuiltin
+			? null
+			: (
+				this.resolveLuaDefinitionMetadata(resolved.value, assetId, resolved.definitionRange)
+				?? this.findStaticDefinitionLocation(assetId, chain, usageRow, usageColumn, request.chunkName)
+			);
 		return {
 			expression: trimmed,
 			lines: formatted.lines,
@@ -2454,11 +2461,16 @@ export class BmsxConsoleRuntime extends Service {
 		if (!range) {
 			return null;
 		}
+		return this.buildDefinitionLocationFromRange(range, fallbackAssetId);
+	}
+
+	private buildDefinitionLocationFromRange(range: LuaSourceRange, fallbackAssetId: string | null): ConsoleLuaDefinitionLocation {
 		const normalizedChunk = this.normalizeChunkName(range.chunkName);
 		const chunkResource = this.lookupChunkResourceInfoNullable(range.chunkName);
+		const assetId = chunkResource?.assetId ?? fallbackAssetId ?? null;
 		const location: ConsoleLuaDefinitionLocation = {
 			chunkName: normalizedChunk,
-			assetId: chunkResource?.assetId ?? fallbackAssetId ?? null,
+			assetId,
 			range: {
 				startLine: range.start.line,
 				startColumn: range.start.column,
@@ -2468,8 +2480,93 @@ export class BmsxConsoleRuntime extends Service {
 		};
 		if (chunkResource?.path) {
 			location.path = chunkResource.path;
+		} else if (assetId) {
+			const resolvedPath = this.resolveResourcePath(assetId);
+			if (resolvedPath) {
+				location.path = resolvedPath;
+			}
 		}
 		return location;
+	}
+
+	private findStaticDefinitionLocation(assetId: string | null, chain: ReadonlyArray<string>, usageRow: number | null, usageColumn: number | null, preferredChunk: string | null): ConsoleLuaDefinitionLocation | null {
+		if (chain.length === 0) {
+			return null;
+		}
+		const definitions = this.getStaticDefinitions(assetId, preferredChunk);
+		if (!definitions) {
+			return null;
+		}
+		const identifier = chain[chain.length - 1];
+		let best: LuaDefinitionInfo | null = null;
+		for (const definition of definitions) {
+			if (definition.name !== identifier) {
+				continue;
+			}
+			if (usageRow !== null) {
+				if (!this.positionWithinRange(usageRow, usageColumn, definition.scope)) {
+					continue;
+				}
+				if (usageRow < definition.definition.start.line) {
+					continue;
+				}
+				if (
+					!best
+					|| definition.definition.start.line > best.definition.start.line
+					|| (definition.definition.start.line === best.definition.start.line
+						&& definition.definition.start.column >= best.definition.start.column)
+				) {
+					best = definition;
+				}
+			} else if (
+				!best
+				|| definition.definition.start.line < best.definition.start.line
+				|| (definition.definition.start.line === best.definition.start.line
+					&& definition.definition.start.column < best.definition.start.column)
+			) {
+				best = definition;
+			}
+		}
+		if (!best) {
+			return null;
+		}
+		return this.buildDefinitionLocationFromRange(best.definition, assetId);
+	}
+
+	private getStaticDefinitions(assetId: string | null, preferredChunk: string | null): ReadonlyArray<LuaDefinitionInfo> | null {
+		const interpreter = this.luaInterpreter;
+		if (!interpreter) {
+			return null;
+		}
+		const matches: LuaDefinitionInfo[] = [];
+		const normalizedPreferred = preferredChunk ? this.normalizeChunkName(preferredChunk) : null;
+		const normalizedPreferredPath = preferredChunk ? preferredChunk.replace(/\\/g, '/') : null;
+		for (const [chunkName, info] of this.luaChunkResourceMap) {
+			const matchesAsset = assetId !== null && info.assetId === assetId;
+			const matchesPath = normalizedPreferredPath !== null && info.path === normalizedPreferredPath;
+			const matchesChunk = normalizedPreferred !== null && this.normalizeChunkName(chunkName) === normalizedPreferred;
+			if (!matchesAsset && !matchesPath && !matchesChunk) {
+				continue;
+			}
+			const chunkDefinitions = interpreter.getChunkDefinitions(chunkName);
+			if (chunkDefinitions && chunkDefinitions.length > 0) {
+				matches.push(...chunkDefinitions);
+			}
+		}
+		return matches.length > 0 ? matches : null;
+	}
+
+	private positionWithinRange(row: number, column: number | null, range: LuaSourceRange): boolean {
+		if (row < range.start.line || row > range.end.line) {
+			return false;
+		}
+		if (row === range.start.line && column !== null && column < range.start.column) {
+			return false;
+		}
+		if (row === range.end.line && column !== null && column > range.end.column) {
+			return false;
+		}
+		return true;
 	}
 
 	private parseLuaIdentifierChain(expression: string): string[] | null {

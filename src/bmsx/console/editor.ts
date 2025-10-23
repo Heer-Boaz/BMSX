@@ -2868,9 +2868,13 @@ export class ConsoleCartEditor {
 			this.clearHoverTooltip();
 			return;
 		}
+		const chunkName = this.resolveHoverChunkName(context);
 		const request: ConsoleLuaHoverRequest = {
 			assetId,
 			expression: token.expression,
+			chunkName,
+			row: row + 1,
+			column: token.startColumn + 1,
 		};
 		const inspection = this.inspectLuaExpressionFn(request);
 		const previousInspection = this.lastInspectorResult;
@@ -3115,6 +3119,21 @@ export class ConsoleCartEditor {
 		return this.primaryAssetId;
 	}
 
+	private resolveHoverChunkName(context: CodeTabContext | null): string | null {
+		if (context && context.descriptor) {
+			if (context.descriptor.path && context.descriptor.path.length > 0) {
+				return context.descriptor.path;
+			}
+			if (context.descriptor.assetId && context.descriptor.assetId.length > 0) {
+				return context.descriptor.assetId;
+			}
+		}
+		if (this.primaryAssetId) {
+			return this.primaryAssetId;
+		}
+		return null;
+	}
+
 	private extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
 		if (row < 0 || row >= this.lines.length) {
 			return null;
@@ -3246,7 +3265,14 @@ export class ConsoleCartEditor {
 			return;
 		}
 		const assetId = this.resolveHoverAssetId(context);
-		const inspection = this.inspectLuaExpressionFn({ assetId, expression: token.expression });
+		const chunkName = this.resolveHoverChunkName(context);
+		const inspection = this.inspectLuaExpressionFn({
+			assetId,
+			expression: token.expression,
+			chunkName,
+			row: row + 1,
+			column: token.startColumn + 1,
+		});
 		if (!inspection || inspection.state !== 'value' || !inspection.definition) {
 			this.clearGotoHoverHighlight();
 			return;
@@ -3271,7 +3297,14 @@ export class ConsoleCartEditor {
 			this.showMessage('Definition not found', COLOR_STATUS_WARNING, 1.6);
 			return false;
 		}
-		const inspection = this.inspectLuaExpressionFn({ assetId, expression: token.expression });
+		const chunkName = this.resolveHoverChunkName(context);
+		const inspection = this.inspectLuaExpressionFn({
+			assetId,
+			expression: token.expression,
+			chunkName,
+			row: row + 1,
+			column: token.startColumn + 1,
+		});
 		if (!inspection || inspection.state !== 'value' || !inspection.definition) {
 			this.showMessage(`Definition not found for ${token.expression}`, COLOR_STATUS_WARNING, 1.8);
 			return false;
