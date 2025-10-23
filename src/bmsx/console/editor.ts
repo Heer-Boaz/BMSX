@@ -324,6 +324,10 @@ const RESOURCE_PANEL_MIN_WIDTH = 112;
 const RESOURCE_PANEL_MAX_WIDTH = 240;
 const RESOURCE_PANEL_MIN_CODE_WIDTH = 192;
 const RESOURCE_PANEL_DIVIDER_COLOR = COLOR_TAB_BORDER;
+const SCROLLBAR_WIDTH = 3;
+const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
+const SCROLLBAR_TRACK_COLOR = COLOR_STATUS_BACKGROUND;
+const SCROLLBAR_THUMB_COLOR = COLOR_STATUS_TEXT;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -457,6 +461,7 @@ export class ConsoleCartEditor {
 	private resourceBrowserHoverIndex = -1;
 	private resourcePanelVisible = false;
 	private resourcePanelFocused = false;
+	private pendingResourceSelectionAssetId: string | null = null;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -725,6 +730,7 @@ export class ConsoleCartEditor {
 	}
 
 	private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
+		this.selectResourceInPanel(descriptor);
 		if (descriptor.type === 'lua') {
 			this.openLuaCodeTab(descriptor);
 			return;
@@ -4412,14 +4418,16 @@ export class ConsoleCartEditor {
 		const gutterLeft = bounds.gutterLeft;
 		const gutterRight = bounds.gutterRight;
 		const textLeft = bounds.textLeft;
+		const rowCount = this.visibleRowCount();
+		const columnCount = this.visibleColumnCount();
+		const needsScrollbar = this.lines.length > rowCount;
+		const contentRight = needsScrollbar ? codeRight - SCROLLBAR_WIDTH : codeRight;
 
 		api.rectfill(codeLeft, codeTop, codeRight, codeBottom, COLOR_CODE_BACKGROUND);
 		if (gutterRight > gutterLeft) {
 			api.rectfill(gutterLeft, codeTop, gutterRight, codeBottom, COLOR_GUTTER_BACKGROUND);
 		}
 
-		const rowCount = this.visibleRowCount();
-		const columnCount = this.visibleColumnCount();
 		let cursorEntry: CachedHighlight | null = null;
 		let cursorSliceStart = 0;
 
@@ -4427,7 +4435,7 @@ export class ConsoleCartEditor {
 			const lineIndex = this.scrollRow + i;
 			const rowY = codeTop + i * this.lineHeight;
 			if (lineIndex === this.cursorRow) {
-				api.rectfillColor(gutterRight, rowY, codeRight, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
+				api.rectfillColor(gutterRight, rowY, contentRight, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
 			}
 
 			if (lineIndex < this.lines.length) {
@@ -4439,7 +4447,11 @@ export class ConsoleCartEditor {
 				if (selectionSlice) {
 					const selectionStartX = textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.startDisplay);
 					const selectionEndX = textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.endDisplay);
-					api.rectfillColor(selectionStartX, rowY, selectionEndX, rowY + this.lineHeight, SELECTION_OVERLAY);
+					const clampedEnd = Math.min(selectionEndX, contentRight);
+					const clampedStart = Math.min(selectionStartX, clampedEnd);
+					if (clampedEnd > clampedStart) {
+						api.rectfillColor(clampedStart, rowY, clampedEnd, rowY + this.lineHeight, SELECTION_OVERLAY);
+					}
 				}
 				this.drawColoredText(api, slice.text, slice.colors, textLeft, rowY);
 				if (lineIndex === this.cursorRow) {
@@ -4451,11 +4463,14 @@ export class ConsoleCartEditor {
 			}
 		}
 
-		this.drawRuntimeErrorOverlay(api, codeTop, bounds.codeRight, textLeft);
+		this.drawRuntimeErrorOverlay(api, codeTop, contentRight, textLeft);
 		this.drawHoverTooltip(api, codeTop, codeBottom, textLeft);
 
 		if (this.cursorVisible && cursorEntry) {
 			this.drawCursor(api, textLeft, codeTop, cursorEntry, cursorSliceStart);
+		}
+		if (needsScrollbar) {
+			this.drawVerticalScrollbar(api, contentRight, codeTop, codeBottom, this.lines.length, rowCount, this.scrollRow);
 		}
 	}
 
@@ -4712,6 +4727,10 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 
 	private refreshResourcePanelContents(): void {
 		this.resourceBrowserHoverIndex = -1;
+		const previousDescriptor = this.getSelectedResourceDescriptor();
+		const previousAssetId = previousDescriptor ? previousDescriptor.assetId : null;
+		const previousIndex = this.resourceBrowserSelectionIndex;
+		const previousScroll = this.resourceBrowserScroll;
 		let descriptors: ConsoleResourceDescriptor[];
 		try {
 			descriptors = this.listResourcesFn();
@@ -4725,6 +4744,7 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 			}];
 			this.resourceBrowserScroll = 0;
 			this.resourceBrowserSelectionIndex = 0;
+			this.pendingResourceSelectionAssetId = null;
 			return;
 		}
 		const augmented = descriptors.slice();
@@ -4739,10 +4759,38 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 			}
 		}
 		this.resourceBrowserItems = this.buildResourceBrowserItems(augmented);
-		this.resourceBrowserScroll = 0;
-		this.resourceBrowserSelectionIndex = this.resourceBrowserItems.length > 0 ? 0 : -1;
-		this.resourceBrowserHoverIndex = -1;
+		const targetAssetId = this.pendingResourceSelectionAssetId ?? previousAssetId;
+		let selectionIndex = -1;
+		if (targetAssetId) {
+			const resolved = this.findResourcePanelIndexByAssetId(targetAssetId);
+			if (resolved !== -1) {
+				selectionIndex = resolved;
+				if (this.pendingResourceSelectionAssetId === targetAssetId) {
+					this.pendingResourceSelectionAssetId = null;
+				}
+			}
+		}
+		if (selectionIndex === -1 && previousIndex >= 0 && previousIndex < this.resourceBrowserItems.length) {
+			selectionIndex = previousIndex;
+		}
+		if (selectionIndex === -1 && this.resourceBrowserItems.length > 0) {
+			selectionIndex = 0;
+		}
+		this.resourceBrowserSelectionIndex = selectionIndex;
+		if (selectionIndex < 0) {
+			this.resourceBrowserScroll = 0;
+			return;
+		}
+		const capacity = this.resourcePanelLineCapacity();
+		if (capacity <= 0) {
+			this.resourceBrowserScroll = 0;
+			return;
+		}
+		const maxScroll = Math.max(0, this.resourceBrowserItems.length - capacity);
+		const clampedScroll = Math.max(0, Math.min(previousScroll, maxScroll));
+		this.resourceBrowserScroll = clampedScroll;
 		this.resourceBrowserEnsureSelectionVisible();
+		this.applyPendingResourceSelection();
 	}
 
 	private enterResourceViewer(tab: EditorTabDescriptor): void {
@@ -4840,6 +4888,52 @@ private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): Resourc
 		traverse(root, '');
 	return items;
 }
+
+	private selectResourceInPanel(descriptor: ConsoleResourceDescriptor): void {
+		if (!descriptor.assetId || descriptor.assetId.length === 0) {
+			return;
+		}
+		this.pendingResourceSelectionAssetId = descriptor.assetId;
+		if (!this.resourcePanelVisible) {
+			return;
+		}
+		this.applyPendingResourceSelection();
+	}
+
+	private applyPendingResourceSelection(): void {
+		if (!this.resourcePanelVisible) {
+			return;
+		}
+		const assetId = this.pendingResourceSelectionAssetId;
+		if (!assetId) {
+			return;
+		}
+		const index = this.findResourcePanelIndexByAssetId(assetId);
+		if (index === -1) {
+			return;
+		}
+		this.resourceBrowserSelectionIndex = index;
+		this.resourceBrowserEnsureSelectionVisible();
+		this.pendingResourceSelectionAssetId = null;
+	}
+
+	private findResourcePanelIndexByAssetId(assetId: string): number {
+		for (let i = 0; i < this.resourceBrowserItems.length; i++) {
+			const descriptor = this.resourceBrowserItems[i].descriptor;
+			if (descriptor && descriptor.assetId === assetId) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private getSelectedResourceDescriptor(): ConsoleResourceDescriptor | null {
+		if (this.resourceBrowserSelectionIndex < 0 || this.resourceBrowserSelectionIndex >= this.resourceBrowserItems.length) {
+			return null;
+		}
+		const item = this.resourceBrowserItems[this.resourceBrowserSelectionIndex];
+		return item.descriptor ?? null;
+	}
 
 	private createEntryTabContext(): CodeTabContext | null {
 		const assetId = (typeof this.primaryAssetId === 'string' && this.primaryAssetId.length > 0)
@@ -5308,6 +5402,9 @@ private getMainProgramSourceForReload(): string {
 	}
 
 	private resourceBrowserEnsureSelectionVisible(): void {
+		if (!this.resourcePanelVisible) {
+			return;
+		}
 		const index = this.resourceBrowserSelectionIndex;
 		if (index < 0) {
 			return;
@@ -5576,13 +5673,14 @@ private getMainProgramSourceForReload(): string {
 		const paddingX = 4;
 		const contentLeft = bounds.left + paddingX;
 		const dividerLeft = bounds.right - 1;
-		api.rectfill(bounds.left, codeTop, bounds.right, codeBottom, COLOR_CODE_BACKGROUND);
-		if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
-			api.rectfill(dividerLeft, codeTop, bounds.right, codeBottom, RESOURCE_PANEL_DIVIDER_COLOR);
-		}
-		const contentTop = codeTop + 2;
 		const capacity = this.resourcePanelLineCapacity();
 		const itemCount = this.resourceBrowserItems.length;
+		const needsScrollbar = itemCount > capacity;
+		const scrollbarWidth = needsScrollbar ? SCROLLBAR_WIDTH : 0;
+		const trackLeft = dividerLeft - scrollbarWidth;
+		const availableRight = Math.max(contentLeft, trackLeft);
+		api.rectfill(bounds.left, codeTop, bounds.right, codeBottom, COLOR_CODE_BACKGROUND);
+		const contentTop = codeTop + 2;
 		const maxScroll = Math.max(0, itemCount - capacity);
 		const scroll = Math.max(0, Math.min(this.resourceBrowserScroll, maxScroll));
 		const end = Math.min(itemCount, scroll + capacity);
@@ -5597,7 +5695,7 @@ private getMainProgramSourceForReload(): string {
 			const isHighlighted = itemIndex === highlightIndex;
 			let displayContent = contentText;
 			if (displayContent.length > 0) {
-				const available = Math.max(0, bounds.right - 1 - Math.floor(contentX));
+				const available = Math.max(0, availableRight - Math.floor(contentX));
 				if (available <= 0) {
 					displayContent = '';
 				} else {
@@ -5616,7 +5714,7 @@ private getMainProgramSourceForReload(): string {
 				const highlightWidth = this.measureText(displayContent);
 				const caretLeft = Math.floor(contentX);
 				const caretRight = Math.max(caretLeft + 1, Math.floor(contentX + highlightWidth));
-				const clippedRight = Math.min(caretRight, bounds.right - 1);
+				const clippedRight = Math.min(caretRight, availableRight);
 				const caretTop = Math.floor(y);
 				const caretBottom = caretTop + this.lineHeight;
 				if (clippedRight > caretLeft) {
@@ -5632,6 +5730,12 @@ private getMainProgramSourceForReload(): string {
 				this.drawText(api, displayContent, contentX, y, COLOR_STATUS_TEXT);
 			}
 		}
+		if (needsScrollbar) {
+			this.drawVerticalScrollbar(api, trackLeft, codeTop, codeBottom, itemCount, capacity, scroll);
+		}
+		if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
+			api.rectfill(dividerLeft, codeTop, bounds.right, codeBottom, RESOURCE_PANEL_DIVIDER_COLOR);
+		}
 	}
 
 	private drawResourceViewer(api: BmsxConsoleApi): void {
@@ -5645,6 +5749,9 @@ private getMainProgramSourceForReload(): string {
 		const codeBottom = bounds.codeBottom;
 		const paddingX = 4;
 		const contentLeft = bounds.codeLeft + paddingX;
+		const capacity = this.resourceViewerTextCapacity(viewer);
+		const needsScrollbar = viewer.lines.length > capacity && capacity > 0;
+		const trackLeft = needsScrollbar ? bounds.codeRight - SCROLLBAR_WIDTH : bounds.codeRight;
 		api.rectfill(bounds.codeLeft, codeTop, bounds.codeRight, codeBottom, COLOR_CODE_BACKGROUND);
 		const contentTop = codeTop + 2;
 	const layout = this.resourceViewerImageLayout(viewer);
@@ -5653,7 +5760,6 @@ private getMainProgramSourceForReload(): string {
 		api.spr(viewer.image!.assetId, layout.left, layout.top, { scale: layout.scale });
 		textTop = Math.floor(layout.bottom + this.lineHeight);
 	}
-		const capacity = this.resourceViewerTextCapacity(viewer);
 		if (capacity <= 0) {
 			if (viewer.lines.length > 0) {
 				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, viewer.scroll))] ?? '';
@@ -5676,6 +5782,42 @@ private getMainProgramSourceForReload(): string {
 			const y = textTop + drawIndex * this.lineHeight;
 			this.drawText(api, line, contentLeft, y, COLOR_STATUS_TEXT);
 		}
+		if (needsScrollbar) {
+			this.drawVerticalScrollbar(api, trackLeft, codeTop, codeBottom, viewer.lines.length, capacity, viewer.scroll);
+		}
+	}
+
+	private drawVerticalScrollbar(api: BmsxConsoleApi, left: number, top: number, bottom: number, totalCount: number, visibleCount: number, startIndex: number): void {
+		if (totalCount <= 0 || visibleCount <= 0 || visibleCount >= totalCount) {
+			return;
+		}
+		if (bottom <= top) {
+			return;
+		}
+		const trackLeft = left;
+		const trackRight = trackLeft + SCROLLBAR_WIDTH;
+		api.rectfill(trackLeft, top, trackRight, bottom, SCROLLBAR_TRACK_COLOR);
+		const trackHeight = bottom - top;
+		if (trackHeight <= 0) {
+			return;
+		}
+		const range = totalCount - visibleCount;
+		const normalizedStart = Math.max(0, Math.min(startIndex, range));
+		let thumbHeight = Math.floor((visibleCount / totalCount) * trackHeight);
+		if (thumbHeight < SCROLLBAR_MIN_THUMB_HEIGHT) {
+			thumbHeight = SCROLLBAR_MIN_THUMB_HEIGHT;
+		}
+		if (thumbHeight > trackHeight) {
+			thumbHeight = trackHeight;
+		}
+		const maxThumbTravel = Math.max(0, trackHeight - thumbHeight);
+		const offset = range > 0 ? Math.floor((normalizedStart / range) * maxThumbTravel) : 0;
+		const thumbTop = top + offset;
+		const thumbBottom = Math.min(bottom, thumbTop + thumbHeight);
+		if (thumbBottom <= thumbTop) {
+			return;
+		}
+		api.rectfill(trackLeft, thumbTop, trackRight, thumbBottom, SCROLLBAR_THUMB_COLOR);
 	}
 
 	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
@@ -6412,7 +6554,10 @@ private getMainProgramSourceForReload(): string {
 
 	private visibleColumnCount(): number {
 		const bounds = this.getCodeAreaBounds();
-		const available = bounds.codeRight - bounds.textLeft;
+		const visibleRows = this.visibleRowCount();
+		const needsScrollbar = this.lines.length > visibleRows;
+		const scrollbarOffset = needsScrollbar ? SCROLLBAR_WIDTH : 0;
+		const available = bounds.codeRight - scrollbarOffset - bounds.textLeft;
 		if (available <= 0) {
 			return 1;
 		}
