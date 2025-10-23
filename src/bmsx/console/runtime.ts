@@ -5,7 +5,7 @@ import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
 import { LuaLexer } from '../lua/lexer.ts';
@@ -23,7 +23,7 @@ import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
-import type { LuaSourceRange, LuaDefinitionInfo } from '../lua/ast.ts';
+import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -487,6 +487,7 @@ export class BmsxConsoleRuntime extends Service {
 			createLuaResource: (request) => this.createLuaResource(request),
 			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
 			primaryAssetId,
+			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
 		});
 		this.flushLuaWarnings();
 	}
@@ -2512,6 +2513,58 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		}
 		return location;
+	}
+
+	public listLuaSymbols(assetId: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[] {
+		const definitions = this.getStaticDefinitions(assetId, chunkName);
+		if (!definitions || definitions.length === 0) {
+			return [];
+		}
+		const definitionPriority = (kind: LuaDefinitionKind): number => {
+			switch (kind) {
+				case 'table_field':
+					return 5;
+				case 'function':
+					return 4;
+				case 'parameter':
+					return 3;
+				case 'variable':
+					return 2;
+				case 'assignment':
+				default:
+					return 1;
+			}
+		};
+		const entries = new Map<string, { info: LuaDefinitionInfo; location: ConsoleLuaDefinitionLocation; priority: number }>();
+		for (const info of definitions) {
+			const location = this.buildDefinitionLocationFromRange(info.definition, assetId);
+			const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
+			const key = path.length > 0 ? path : info.name;
+			const priority = definitionPriority(info.kind);
+			const existing = entries.get(key);
+			if (!existing || priority > existing.priority || (priority === existing.priority && info.definition.start.line < existing.info.definition.start.line)) {
+				entries.set(key, { info, location, priority });
+			}
+		}
+		const symbols: ConsoleLuaSymbolEntry[] = [];
+		for (const { info, location } of entries.values()) {
+			const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
+			symbols.push({
+				name: info.name,
+				path,
+				kind: info.kind,
+				location,
+			});
+		}
+		symbols.sort((a, b) => {
+			const aLine = a.location.range.startLine;
+			const bLine = b.location.range.startLine;
+			if (aLine !== bLine) {
+				return aLine - bLine;
+			}
+			return a.path.localeCompare(b.path);
+		});
+		return symbols;
 	}
 
 	private findStaticDefinitionLocation(assetId: string | null, chain: ReadonlyArray<string>, usageRow: number | null, usageColumn: number | null, preferredChunk: string | null): ConsoleLuaDefinitionLocation | null {

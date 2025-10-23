@@ -3,7 +3,7 @@ import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
 import type { ClipboardService, ViewportMetrics } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
-import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation } from './types';
+import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
 import { clamp } from '../utils/utils';
@@ -80,6 +80,7 @@ export type ConsoleEditorOptions = {
 	createLuaResource: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	primaryAssetId: string | null;
+	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 };
 
 export type Position = { row: number; column: number };
@@ -125,6 +126,19 @@ type RectBounds = {
 	top: number;
 	right: number;
 	bottom: number;
+};
+
+type SymbolCatalogEntry = {
+	symbol: ConsoleLuaSymbolEntry;
+	displayName: string;
+	searchKey: string;
+	line: number;
+	kindLabel: string;
+};
+
+type SymbolSearchResult = {
+	entry: SymbolCatalogEntry;
+	matchIndex: number;
 };
 
 type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
@@ -545,6 +559,15 @@ const SCROLLBAR_WIDTH = 3;
 const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
 const SCROLLBAR_TRACK_COLOR = COLOR_STATUS_BACKGROUND;
 const SCROLLBAR_THUMB_COLOR = COLOR_STATUS_TEXT;
+const SYMBOL_SEARCH_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
+const SYMBOL_SEARCH_MAX_RESULTS = 8;
+const COLOR_SYMBOL_SEARCH_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+const COLOR_SYMBOL_SEARCH_TEXT = COLOR_SEARCH_TEXT;
+const COLOR_SYMBOL_SEARCH_PLACEHOLDER = COLOR_SEARCH_PLACEHOLDER;
+const COLOR_SYMBOL_SEARCH_OUTLINE = COLOR_SEARCH_OUTLINE;
+const COLOR_SYMBOL_SEARCH_KIND = COLOR_CODE_DIM;
+const SYMBOL_SEARCH_RESULT_PADDING_X = 4;
+const SYMBOL_SEARCH_RESULT_SPACING = 1;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -556,6 +579,7 @@ export class ConsoleCartEditor {
 	private readonly createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
+	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	private readonly primaryAssetId: string | null;
 	private hoverTooltip: CodeHoverTooltip | null = null;
 	private lastPointerSnapshot: PointerSnapshot | null = null;
@@ -642,6 +666,7 @@ export class ConsoleCartEditor {
 	private pointerPrimaryWasPressed = false;
 	private pointerAuxWasPressed = false;
 	private readonly searchField: InlineTextField;
+	private readonly symbolSearchField: InlineTextField;
 	private readonly lineJumpField: InlineTextField;
 	private readonly createResourceField: InlineTextField;
 	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
@@ -658,7 +683,10 @@ export class ConsoleCartEditor {
 	private searchActive = false;
 	private searchVisible = false;
 	private searchQuery = '';
+	private symbolSearchQuery = '';
 	private lineJumpActive = false;
+	private symbolSearchActive = false;
+	private symbolSearchVisible = false;
 	private lineJumpVisible = false;
 	private lineJumpValue = '';
 	private createResourceActive = false;
@@ -667,6 +695,12 @@ export class ConsoleCartEditor {
 	private createResourceError: string | null = null;
 	private createResourceWorking = false;
 	private lastCreateResourceDirectory: string | null = null;
+	private symbolCatalog: SymbolCatalogEntry[] = [];
+	private symbolCatalogContext: { assetId: string | null; chunkName: string | null } | null = null;
+	private symbolSearchMatches: SymbolSearchResult[] = [];
+	private symbolSearchSelectionIndex = -1;
+	private symbolSearchDisplayOffset = 0;
+	private symbolSearchHoverIndex = -1;
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
 	private textVersion = 0;
@@ -702,6 +736,7 @@ export class ConsoleCartEditor {
 		this.saveLuaResourceFn = options.saveLuaResource;
 		this.createLuaResourceFn = options.createLuaResource;
 		this.inspectLuaExpressionFn = options.inspectLuaExpression;
+		this.listLuaSymbolsFn = options.listLuaSymbols;
 		this.primaryAssetId = options.primaryAssetId;
 		if ($ && $.debug) {
 			this.listResourcesFn();
@@ -710,9 +745,11 @@ export class ConsoleCartEditor {
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
 		this.searchField = this.createInlineField();
+		this.symbolSearchField = this.createInlineField();
 		this.lineJumpField = this.createInlineField();
 		this.createResourceField = this.createInlineField();
 		this.applySearchFieldText(this.searchQuery, true);
+		this.applySymbolSearchFieldText(this.symbolSearchQuery, true);
 		this.applyLineJumpFieldText(this.lineJumpValue, true);
 		this.applyCreateResourceFieldText(this.createResourcePath, true);
 		this.lineHeight = this.font.lineHeight();
@@ -884,6 +921,7 @@ export class ConsoleCartEditor {
 		if (!this.active) {
 			this.activate();
 		}
+		this.closeSymbolSearch(true);
 		if (hint && typeof hint.assetId === 'string' && hint.assetId.length > 0) {
 			const preferredPath = (typeof hint.path === 'string' && hint.path.length > 0) ? hint.path : null;
 			this.focusResourceByAsset(hint.assetId, preferredPath);
@@ -1191,6 +1229,7 @@ export class ConsoleCartEditor {
 		} else {
 			this.drawCreateResourceBar(api);
 			this.drawSearchBar(api);
+			this.drawSymbolSearchBar(api);
 			this.drawLineJumpBar(api);
 			this.drawCodeArea(api);
 		}
@@ -1746,6 +1785,12 @@ export class ConsoleCartEditor {
 		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
 		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
 
+		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyO')) {
+			this.consumeKey(keyboard, 'KeyO');
+			this.openSymbolSearch();
+			return;
+		}
+
 		if (this.createResourceActive) {
 			this.handleCreateResourceInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
@@ -1762,7 +1807,7 @@ export class ConsoleCartEditor {
 			this.openSearch(true);
 			return;
 		}
-		const inlineFieldFocused = this.searchActive || this.lineJumpActive || this.createResourceActive;
+		const inlineFieldFocused = this.searchActive || this.symbolSearchActive || this.lineJumpActive || this.createResourceActive;
 		if ((ctrlDown || metaDown)
 			&& !inlineFieldFocused
 			&& !this.resourcePanelFocused
@@ -1782,6 +1827,10 @@ export class ConsoleCartEditor {
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyL')) {
 			this.consumeKey(keyboard, 'KeyL');
 			this.openLineJump();
+			return;
+		}
+		if (this.symbolSearchActive) {
+			this.handleSymbolSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
 		if (this.lineJumpActive) {
@@ -2205,6 +2254,7 @@ export class ConsoleCartEditor {
 	}
 
 	private openSearch(useSelection: boolean): void {
+		this.closeSymbolSearch(false);
 		this.closeLineJump(false);
 		this.searchVisible = true;
 		this.searchActive = true;
@@ -2258,7 +2308,301 @@ export class ConsoleCartEditor {
 		this.resetBlink();
 	}
 
+	private openSymbolSearch(): void {
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.symbolSearchVisible = true;
+		this.symbolSearchActive = true;
+		this.applySymbolSearchFieldText('', true);
+		this.refreshSymbolCatalog(true);
+		this.updateSymbolSearchMatches();
+		this.symbolSearchHoverIndex = -1;
+		this.resetBlink();
+	}
+
+	private closeSymbolSearch(clearQuery: boolean): void {
+		if (clearQuery) {
+			this.applySymbolSearchFieldText('', true);
+		}
+		this.symbolSearchActive = false;
+		this.symbolSearchVisible = false;
+		this.symbolSearchMatches = [];
+		this.symbolSearchSelectionIndex = -1;
+		this.symbolSearchDisplayOffset = 0;
+		this.symbolSearchHoverIndex = -1;
+		this.symbolSearchField.selectionAnchor = null;
+		this.symbolSearchField.pointerSelecting = false;
+		this.resetBlink();
+	}
+
+	private focusEditorFromSymbolSearch(): void {
+		if (!this.symbolSearchActive && !this.symbolSearchVisible) {
+			return;
+		}
+		this.symbolSearchActive = false;
+		if (this.symbolSearchQuery.length === 0) {
+			this.symbolSearchVisible = false;
+			this.symbolSearchMatches = [];
+			this.symbolSearchSelectionIndex = -1;
+			this.symbolSearchDisplayOffset = 0;
+		}
+		this.symbolSearchField.selectionAnchor = null;
+		this.symbolSearchField.pointerSelecting = false;
+		this.resetBlink();
+	}
+
+	private refreshSymbolCatalog(force: boolean): void {
+		const context = this.getActiveCodeTabContext();
+		const assetId = this.resolveHoverAssetId(context);
+		const chunkName = this.resolveHoverChunkName(context);
+		const existing = this.symbolCatalogContext;
+		const unchanged = existing !== null
+			&& existing.assetId === assetId
+			&& existing.chunkName === chunkName;
+		if (!force && unchanged) {
+			return;
+		}
+		this.symbolCatalogContext = { assetId, chunkName };
+		let entries: ConsoleLuaSymbolEntry[] = [];
+		try {
+			entries = this.listLuaSymbolsFn(assetId, chunkName);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.symbolCatalog = [];
+			this.symbolSearchMatches = [];
+			this.symbolSearchSelectionIndex = -1;
+			this.symbolSearchDisplayOffset = 0;
+			this.symbolSearchHoverIndex = -1;
+			this.showMessage(`Failed to list symbols: ${message}`, COLOR_STATUS_ERROR, 3.0);
+			return;
+		}
+		this.symbolCatalog = entries.map((entry) => {
+			const display = entry.path && entry.path.length > 0 ? entry.path : entry.name;
+			return {
+				symbol: entry,
+				displayName: display,
+				searchKey: display.toLowerCase(),
+				line: entry.location.range.startLine,
+				kindLabel: this.symbolKindLabel(entry.kind),
+			};
+		}).sort((a, b) => {
+			if (a.line !== b.line) {
+				return a.line - b.line;
+			}
+			return a.displayName.localeCompare(b.displayName);
+		});
+	}
+
+	private symbolPriority(kind: ConsoleLuaSymbolEntry['kind']): number {
+		switch (kind) {
+			case 'table_field':
+				return 5;
+			case 'function':
+				return 4;
+			case 'parameter':
+				return 3;
+			case 'variable':
+				return 2;
+			case 'assignment':
+			default:
+				return 1;
+		}
+	}
+
+	private symbolKindLabel(kind: ConsoleLuaSymbolEntry['kind']): string {
+		switch (kind) {
+			case 'function':
+				return 'FUNC';
+			case 'table_field':
+				return 'FIELD';
+			case 'parameter':
+				return 'PARAM';
+			case 'variable':
+				return 'VAR';
+			case 'assignment':
+			default:
+				return 'SET';
+		}
+	}
+
+	private updateSymbolSearchMatches(): void {
+		this.refreshSymbolCatalog(false);
+		this.symbolSearchMatches = [];
+		this.symbolSearchSelectionIndex = -1;
+		this.symbolSearchDisplayOffset = 0;
+		this.symbolSearchHoverIndex = -1;
+		if (this.symbolCatalog.length === 0) {
+			return;
+		}
+		const query = this.symbolSearchQuery.trim().toLowerCase();
+		if (query.length === 0) {
+			this.symbolSearchMatches = this.symbolCatalog.map(entry => ({ entry, matchIndex: 0 }));
+			if (this.symbolSearchMatches.length > 0) {
+				this.symbolSearchSelectionIndex = 0;
+			}
+			return;
+		}
+		const matches: SymbolSearchResult[] = [];
+		for (const entry of this.symbolCatalog) {
+			const idx = entry.searchKey.indexOf(query);
+			if (idx === -1) {
+				continue;
+			}
+			matches.push({ entry, matchIndex: idx });
+		}
+		if (matches.length === 0) {
+			this.symbolSearchMatches = [];
+			return;
+		}
+		matches.sort((a, b) => {
+			if (a.matchIndex !== b.matchIndex) {
+				return a.matchIndex - b.matchIndex;
+			}
+			const aPriority = this.symbolPriority(a.entry.symbol.kind);
+			const bPriority = this.symbolPriority(b.entry.symbol.kind);
+			if (aPriority !== bPriority) {
+				return bPriority - aPriority;
+			}
+			if (a.entry.searchKey.length !== b.entry.searchKey.length) {
+				return a.entry.searchKey.length - b.entry.searchKey.length;
+			}
+			if (a.entry.line !== b.entry.line) {
+				return a.entry.line - b.entry.line;
+			}
+			return a.entry.displayName.localeCompare(b.entry.displayName);
+		});
+		this.symbolSearchMatches = matches;
+		this.symbolSearchSelectionIndex = 0;
+		this.symbolSearchDisplayOffset = 0;
+	}
+
+	private symbolSearchVisibleResultCount(): number {
+		if (!this.symbolSearchVisible) {
+			return 0;
+		}
+		const remaining = Math.max(0, this.symbolSearchMatches.length - this.symbolSearchDisplayOffset);
+		return Math.min(remaining, SYMBOL_SEARCH_MAX_RESULTS);
+	}
+
+	private ensureSymbolSearchSelectionVisible(): void {
+		if (this.symbolSearchSelectionIndex < 0) {
+			this.symbolSearchDisplayOffset = 0;
+			return;
+		}
+		const maxVisible = SYMBOL_SEARCH_MAX_RESULTS;
+		if (this.symbolSearchSelectionIndex < this.symbolSearchDisplayOffset) {
+			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex;
+		}
+		if (this.symbolSearchSelectionIndex >= this.symbolSearchDisplayOffset + maxVisible) {
+			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex - maxVisible + 1;
+		}
+		if (this.symbolSearchDisplayOffset < 0) {
+			this.symbolSearchDisplayOffset = 0;
+		}
+		const maxOffset = Math.max(0, this.symbolSearchMatches.length - maxVisible);
+		if (this.symbolSearchDisplayOffset > maxOffset) {
+			this.symbolSearchDisplayOffset = maxOffset;
+		}
+	}
+
+	private moveSymbolSearchSelection(delta: number): void {
+		if (this.symbolSearchMatches.length === 0) {
+			return;
+		}
+		let next = this.symbolSearchSelectionIndex;
+		if (next === -1) {
+			next = delta > 0 ? 0 : this.symbolSearchMatches.length - 1;
+		} else {
+			next = clamp(next + delta, 0, this.symbolSearchMatches.length - 1);
+		}
+		if (next === this.symbolSearchSelectionIndex) {
+			return;
+		}
+		this.symbolSearchSelectionIndex = next;
+		this.ensureSymbolSearchSelectionVisible();
+		this.resetBlink();
+	}
+
+	private applySymbolSearchSelection(index: number): void {
+		if (index < 0 || index >= this.symbolSearchMatches.length) {
+			this.showMessage('Symbol not found', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		const match = this.symbolSearchMatches[index];
+		this.closeSymbolSearch(true);
+		this.navigateToLuaDefinition(match.entry.symbol.location);
+	}
+
+	private handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
+		if (this.isKeyJustPressed(keyboard, 'Enter')) {
+			this.consumeKey(keyboard, 'Enter');
+			if (shiftDown) {
+				this.moveSymbolSearchSelection(-1);
+				return;
+			}
+			if (this.symbolSearchSelectionIndex >= 0) {
+				this.applySymbolSearchSelection(this.symbolSearchSelectionIndex);
+			} else {
+				this.showMessage('No symbol selected', COLOR_STATUS_WARNING, 1.5);
+			}
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Escape')) {
+			this.consumeKey(keyboard, 'Escape');
+			this.closeSymbolSearch(true);
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+			this.consumeKey(keyboard, 'ArrowUp');
+			this.moveSymbolSearchSelection(-1);
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+			this.consumeKey(keyboard, 'ArrowDown');
+			this.moveSymbolSearchSelection(1);
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+			this.consumeKey(keyboard, 'PageUp');
+			this.moveSymbolSearchSelection(-SYMBOL_SEARCH_MAX_RESULTS);
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+			this.consumeKey(keyboard, 'PageDown');
+			this.moveSymbolSearchSelection(SYMBOL_SEARCH_MAX_RESULTS);
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'Home')) {
+			this.consumeKey(keyboard, 'Home');
+			this.symbolSearchSelectionIndex = this.symbolSearchMatches.length > 0 ? 0 : -1;
+			this.ensureSymbolSearchSelectionVisible();
+			return;
+		}
+		if (this.isKeyJustPressed(keyboard, 'End')) {
+			this.consumeKey(keyboard, 'End');
+			this.symbolSearchSelectionIndex = this.symbolSearchMatches.length > 0 ? this.symbolSearchMatches.length - 1 : -1;
+			this.ensureSymbolSearchSelectionVisible();
+			return;
+		}
+		const textChanged = this.handleInlineFieldEditing(this.symbolSearchField, keyboard, {
+			ctrlDown,
+			metaDown,
+			shiftDown,
+			altDown,
+			deltaSeconds,
+			allowSpace: true,
+			characterFilter: undefined,
+			maxLength: null,
+		});
+		this.symbolSearchQuery = this.symbolSearchField.text;
+		if (textChanged) {
+			this.updateSymbolSearchMatches();
+		}
+	}
+
 	private openLineJump(): void {
+		this.closeSymbolSearch(false);
 		this.closeSearch(false);
 		this.searchVisible = false;
 		this.lineJumpVisible = true;
@@ -2595,8 +2939,10 @@ export class ConsoleCartEditor {
 		}
 		if (!snapshot.primaryPressed) {
 			this.searchField.pointerSelecting = false;
+			this.symbolSearchField.pointerSelecting = false;
 			this.lineJumpField.pointerSelecting = false;
 			this.createResourceField.pointerSelecting = false;
+			this.symbolSearchHoverIndex = -1;
 		}
 		let pointerAuxJustPressed = false;
 		let pointerAuxPressed = false;
@@ -2791,6 +3137,67 @@ export class ConsoleCartEditor {
 				this.createResourceActive = false;
 			}
 		}
+		const symbolBounds = this.getSymbolSearchBarBounds();
+		if (this.symbolSearchVisible && symbolBounds) {
+			const insideSymbol = this.pointInRect(snapshot.viewportX, snapshot.viewportY, symbolBounds);
+			if (insideSymbol) {
+				const baseHeight = this.lineHeight + SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+				const fieldBottom = symbolBounds.top + baseHeight;
+				const resultsStart = fieldBottom + SYMBOL_SEARCH_RESULT_SPACING;
+				if (snapshot.viewportY < fieldBottom) {
+					if (justPressed) {
+						this.closeLineJump(false);
+						this.closeSearch(false);
+						this.symbolSearchVisible = true;
+						this.symbolSearchActive = true;
+						this.resourcePanelFocused = false;
+						this.cursorVisible = true;
+						this.resetBlink();
+					}
+					const label = 'SYMBOL @:';
+					const labelX = 4;
+					const textLeft = labelX + this.measureText(label + ' ');
+					this.handleInlineFieldPointer(this.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+					this.pointerSelecting = false;
+					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.clearHoverTooltip();
+					this.clearGotoHoverHighlight();
+					return;
+				}
+				const visibleCount = this.symbolSearchVisibleResultCount();
+				let hoverIndex = -1;
+				if (snapshot.viewportY >= resultsStart) {
+					const relative = snapshot.viewportY - resultsStart;
+					const indexWithin = Math.floor(relative / this.lineHeight);
+					if (indexWithin >= 0 && indexWithin < visibleCount) {
+						hoverIndex = this.symbolSearchDisplayOffset + indexWithin;
+					}
+				}
+				this.symbolSearchHoverIndex = hoverIndex;
+				if (hoverIndex >= 0 && justPressed) {
+					if (hoverIndex !== this.symbolSearchSelectionIndex) {
+						this.symbolSearchSelectionIndex = hoverIndex;
+						this.ensureSymbolSearchSelectionVisible();
+					}
+					this.applySymbolSearchSelection(hoverIndex);
+					this.pointerSelecting = false;
+					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.clearHoverTooltip();
+					this.clearGotoHoverHighlight();
+					return;
+				}
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearHoverTooltip();
+				this.clearGotoHoverHighlight();
+				return;
+			}
+			if (justPressed) {
+				this.symbolSearchActive = false;
+			}
+			this.symbolSearchHoverIndex = -1;
+		}
+
 		const lineJumpBounds = this.getLineJumpBarBounds();
 		if (this.lineJumpVisible && lineJumpBounds) {
 			const insideLineJump = this.pointInRect(snapshot.viewportX, snapshot.viewportY, lineJumpBounds);
@@ -2850,6 +3257,7 @@ export class ConsoleCartEditor {
 			this.resourcePanelFocused = false;
 			this.focusEditorFromLineJump();
 			this.focusEditorFromSearch();
+			this.focusEditorFromSymbolSearch();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
 			if (gotoModifierActive && this.tryGotoDefinitionAt(targetRow, targetColumn)) {
@@ -4798,6 +5206,11 @@ export class ConsoleCartEditor {
 		this.setInlineFieldText(this.searchField, value, moveCursorToEnd);
 	}
 
+	private applySymbolSearchFieldText(value: string, moveCursorToEnd: boolean): void {
+		this.symbolSearchQuery = value;
+		this.setInlineFieldText(this.symbolSearchField, value, moveCursorToEnd);
+	}
+
 	private applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
 		this.lineJumpValue = value;
 		this.setInlineFieldText(this.lineJumpField, value, moveCursorToEnd);
@@ -5900,6 +6313,83 @@ export class ConsoleCartEditor {
 		}
 	}
 
+	private drawSymbolSearchBar(api: BmsxConsoleApi): void {
+		const height = this.getSymbolSearchBarHeight();
+		if (height <= 0) {
+			return;
+		}
+		const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight() + this.getSearchBarHeight();
+		const barTop = baseTop;
+		const barBottom = barTop + height;
+		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_SYMBOL_SEARCH_BACKGROUND);
+		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_SYMBOL_SEARCH_OUTLINE);
+		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_SYMBOL_SEARCH_OUTLINE);
+
+		const field = this.symbolSearchField;
+		const label = 'SYMBOL @:';
+		const labelX = 4;
+		const labelY = barTop + SYMBOL_SEARCH_BAR_MARGIN_Y;
+		this.drawText(api, label, labelX, labelY, COLOR_SYMBOL_SEARCH_TEXT);
+
+		let queryText = field.text;
+		let queryColor = COLOR_SYMBOL_SEARCH_TEXT;
+		if (queryText.length === 0 && !this.symbolSearchActive) {
+			queryText = 'TYPE TO FILTER';
+			queryColor = COLOR_SYMBOL_SEARCH_PLACEHOLDER;
+		}
+		const queryX = labelX + this.measureText(label + ' ');
+
+		const selection = this.inlineFieldSelectionRange(field);
+		if (selection && field.text.length > 0) {
+			const selectionLeft = queryX + this.inlineFieldMeasureRange(field, 0, selection.start);
+			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			if (selectionWidth > 0) {
+				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, SELECTION_OVERLAY);
+			}
+		}
+
+		this.drawText(api, queryText, queryX, labelY, queryColor);
+
+		const caretX = this.inlineFieldCaretX(field, queryX);
+		const caretLeft = Math.floor(caretX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
+		const caretTop = Math.floor(labelY);
+		const caretBottom = caretTop + this.lineHeight;
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.symbolSearchActive);
+
+		const resultCount = this.symbolSearchVisibleResultCount();
+		if (resultCount <= 0) {
+			return;
+		}
+		const baseHeight = this.lineHeight + SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+		const separatorTop = barTop + baseHeight;
+		api.rectfill(0, separatorTop, this.viewportWidth, separatorTop + SYMBOL_SEARCH_RESULT_SPACING, COLOR_SYMBOL_SEARCH_OUTLINE);
+		const resultsTop = separatorTop + SYMBOL_SEARCH_RESULT_SPACING;
+		for (let i = 0; i < resultCount; i += 1) {
+			const matchIndex = this.symbolSearchDisplayOffset + i;
+			const match = this.symbolSearchMatches[matchIndex];
+			const rowTop = resultsTop + i * this.lineHeight;
+			const rowBottom = rowTop + this.lineHeight;
+			const isSelected = matchIndex === this.symbolSearchSelectionIndex;
+			const isHover = matchIndex === this.symbolSearchHoverIndex;
+			if (isSelected) {
+				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, HIGHLIGHT_OVERLAY);
+			} else if (isHover) {
+				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, SELECTION_OVERLAY);
+			}
+			let textX = SYMBOL_SEARCH_RESULT_PADDING_X;
+			const kindText = match.entry.kindLabel;
+			if (kindText.length > 0) {
+				this.drawText(api, kindText, textX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
+				textX += this.measureText(kindText + ' ');
+			}
+			this.drawText(api, match.entry.displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+			const lineText = `L${match.entry.line}`;
+			const lineWidth = this.measureText(lineText);
+			this.drawText(api, lineText, this.viewportWidth - lineWidth - SYMBOL_SEARCH_RESULT_PADDING_X, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+		}
+	}
+
 	private drawLineJumpBar(api: BmsxConsoleApi): void {
 		const height = this.getLineJumpBarHeight();
 		if (height <= 0) {
@@ -5985,7 +6475,11 @@ export class ConsoleCartEditor {
 	}
 
 	private codeViewportTop(): number {
-		return this.topMargin + this.getCreateResourceBarHeight() + this.getSearchBarHeight() + this.getLineJumpBarHeight();
+		return this.topMargin
+			+ this.getCreateResourceBarHeight()
+			+ this.getSearchBarHeight()
+			+ this.getSymbolSearchBarHeight()
+			+ this.getLineJumpBarHeight();
 	}
 
 	private getCreateResourceBarHeight(): number {
@@ -6008,6 +6502,22 @@ export class ConsoleCartEditor {
 
 	private isSearchVisible(): boolean {
 		return this.searchVisible;
+	}
+
+	private getSymbolSearchBarHeight(): number {
+		if (!this.isSymbolSearchVisible()) {
+			return 0;
+		}
+		const baseHeight = this.lineHeight + SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+		const visible = this.symbolSearchVisibleResultCount();
+		if (visible <= 0) {
+			return baseHeight;
+		}
+		return baseHeight + SYMBOL_SEARCH_RESULT_SPACING + visible * this.lineHeight;
+	}
+
+	private isSymbolSearchVisible(): boolean {
+		return this.symbolSearchVisible;
 	}
 
 	private getLineJumpBarHeight(): number {
@@ -6051,6 +6561,20 @@ export class ConsoleCartEditor {
 
 	private getLineJumpBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getLineJumpBarHeight();
+		if (height <= 0) {
+			return null;
+		}
+		const top = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight() + this.getSearchBarHeight() + this.getSymbolSearchBarHeight();
+		return {
+			top,
+			bottom: top + height,
+			left: 0,
+			right: this.viewportWidth,
+		};
+	}
+
+	private getSymbolSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+		const height = this.getSymbolSearchBarHeight();
 		if (height <= 0) {
 			return null;
 		}
@@ -6281,6 +6805,7 @@ export class ConsoleCartEditor {
 		if (!tab) {
 			return;
 		}
+		this.closeSymbolSearch(true);
 		const previousKind = this.getActiveTabKind();
 		if (previousKind === 'lua_editor') {
 			this.storeActiveCodeTabContext();

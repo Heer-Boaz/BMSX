@@ -120,6 +120,20 @@ export type ConsoleLuaDefinitionLocation = {
 	range: ConsoleLuaDefinitionRange;
 };
 
+export type ConsoleLuaSymbolKind =
+	| 'variable'
+	| 'function'
+	| 'table_field'
+	| 'parameter'
+	| 'assignment';
+
+export type ConsoleLuaSymbolEntry = {
+	name: string;
+	path: string;
+	kind: ConsoleLuaSymbolKind;
+	location: ConsoleLuaDefinitionLocation;
+};
+
 export type ConsoleLuaHoverRequest = {
 	assetId: string | null;
 	expression: string;
