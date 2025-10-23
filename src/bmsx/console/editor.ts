@@ -6,6 +6,7 @@ import type { BmsxConsoleApi } from './api';
 import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
+import { clamp } from '../utils/utils';
 
 type CharacterMapEntry = {
 	normal: string;
@@ -131,17 +132,121 @@ type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 type EditorTabId = `resource:${string}` | `lua:${string}`;
 type EditorTabKind = 'resource_view' | 'lua_editor';
 
-type ScrollbarKind = 'codeVertical' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
+type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
 
-type ScrollbarMetrics = {
-	orientation: 'vertical' | 'horizontal';
-	track: RectBounds;
-	thumb: RectBounds | null;
-	scroll: number;
-	maxScroll: number;
-	viewportSize: number;
-	contentSize: number;
-};
+class ConsoleScrollbar {
+	public readonly orientation: 'vertical' | 'horizontal';
+	private track: RectBounds | null = null;
+	private thumb: RectBounds | null = null;
+	private scrollValue = 0;
+	private maxScrollValue = 0;
+	private viewportSize = 0;
+	private contentSize = 0;
+
+	constructor(public readonly kind: ScrollbarKind, orientation: 'vertical' | 'horizontal') {
+		this.orientation = orientation;
+	}
+
+	public layout(track: RectBounds, contentSize: number, viewportSize: number, scroll: number): void {
+		this.track = track;
+		this.contentSize = Math.max(0, contentSize);
+		this.viewportSize = Math.max(0, viewportSize);
+		if (this.contentSize <= 0 || this.viewportSize <= 0 || this.contentSize <= this.viewportSize) {
+			this.scrollValue = 0;
+			this.maxScrollValue = 0;
+			this.thumb = null;
+			return;
+		}
+		this.maxScrollValue = Math.max(0, this.contentSize - this.viewportSize);
+		this.scrollValue = clamp(scroll, 0, this.maxScrollValue);
+		const trackStart = this.orientation === 'vertical' ? track.top : track.left;
+		const trackEnd = this.orientation === 'vertical' ? track.bottom : track.right;
+		const trackLength = Math.max(0, trackEnd - trackStart);
+		if (trackLength <= 0) {
+			this.thumb = null;
+			return;
+		}
+		const viewportRatio = clamp(this.viewportSize / this.contentSize, 0, 1);
+		let thumbLength = Math.max(SCROLLBAR_MIN_THUMB_HEIGHT, trackLength * viewportRatio);
+		if (thumbLength > trackLength) {
+			thumbLength = trackLength;
+		}
+		const maxThumbTravel = Math.max(0, trackLength - thumbLength);
+		const normalized = this.maxScrollValue === 0 ? 0 : this.scrollValue / this.maxScrollValue;
+		const thumbStart = trackStart + normalized * maxThumbTravel;
+		const thumbEnd = thumbStart + thumbLength;
+		if (this.orientation === 'vertical') {
+			this.thumb = { left: track.left, top: thumbStart, right: track.right, bottom: thumbEnd };
+		} else {
+			this.thumb = { left: thumbStart, top: track.top, right: thumbEnd, bottom: track.bottom };
+		}
+	}
+
+	public draw(api: BmsxConsoleApi, trackColor: number, thumbColor: number): void {
+		if (!this.track) {
+			return;
+		}
+		api.rectfill(this.track.left, this.track.top, this.track.right, this.track.bottom, trackColor);
+		const thumbRect = this.thumb;
+		if (!thumbRect) {
+			return;
+		}
+		api.rectfill(thumbRect.left, thumbRect.top, thumbRect.right, thumbRect.bottom, thumbColor);
+	}
+
+	public isVisible(): boolean {
+		return this.thumb !== null;
+	}
+
+	public getTrack(): RectBounds | null {
+		return this.track;
+	}
+
+	public getThumb(): RectBounds | null {
+		return this.thumb;
+	}
+
+	public getMaxScroll(): number {
+		return this.maxScrollValue;
+	}
+
+	public getScroll(): number {
+		return this.scrollValue;
+	}
+
+	public beginDrag(pointer: number): number | null {
+		const thumbRect = this.thumb;
+		if (!thumbRect) {
+			return null;
+		}
+		const thumbStart = this.orientation === 'vertical' ? thumbRect.top : thumbRect.left;
+		return pointer - thumbStart;
+	}
+
+	public drag(pointer: number, pointerOffset: number): number {
+		if (!this.track || !this.thumb) {
+			return this.scrollValue;
+		}
+		if (this.maxScrollValue <= 0) {
+			this.scrollValue = 0;
+			return this.scrollValue;
+		}
+		const trackStart = this.orientation === 'vertical' ? this.track.top : this.track.left;
+		const trackEnd = this.orientation === 'vertical' ? this.track.bottom : this.track.right;
+		const thumbLength = this.orientation === 'vertical'
+			? (this.thumb.bottom - this.thumb.top)
+			: (this.thumb.right - this.thumb.left);
+		const maxThumbTravel = Math.max(0, (trackEnd - trackStart) - thumbLength);
+		if (maxThumbTravel <= 0) {
+			this.scrollValue = 0;
+			return this.scrollValue;
+		}
+		const clampedPosition = clamp(pointer - pointerOffset, trackStart, trackEnd - thumbLength);
+		const normalized = (clampedPosition - trackStart) / maxThumbTravel;
+		this.scrollValue = clamp(normalized * this.maxScrollValue, 0, this.maxScrollValue);
+		return this.scrollValue;
+	}
+}
 
 type CodeHoverTooltip = {
 	expression: string;
@@ -489,7 +594,7 @@ export class ConsoleCartEditor {
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
 	private pointerAuxWasPressed = false;
-	private scrollbarMetrics: Partial<Record<ScrollbarKind, ScrollbarMetrics | null>> = {};
+	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	private activeScrollbarDrag: { kind: ScrollbarKind; pointerOffset: number } | null = null;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
@@ -531,6 +636,10 @@ export class ConsoleCartEditor {
 	private resourcePanelResizing = false;
 	private resourceBrowserHorizontalScroll = 0;
 	private resourceBrowserMaxLineWidth = 0;
+	private codeVerticalScrollbarVisible = false;
+	private codeHorizontalScrollbarVisible = false;
+	private cachedVisibleRowCount = 1;
+	private cachedVisibleColumnCount = 1;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -562,6 +671,17 @@ export class ConsoleCartEditor {
 		this.tabBarHeight = this.lineHeight + 3;
 		this.topMargin = this.headerHeight + this.tabBarHeight + 2;
 		this.bottomMargin = this.lineHeight + 6;
+		this.scrollbars = {
+			codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
+			codeHorizontal: new ConsoleScrollbar('codeHorizontal', 'horizontal'),
+			resourceVertical: new ConsoleScrollbar('resourceVertical', 'vertical'),
+			resourceHorizontal: new ConsoleScrollbar('resourceHorizontal', 'horizontal'),
+			viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
+		};
+		this.codeVerticalScrollbarVisible = false;
+		this.codeHorizontalScrollbarVisible = false;
+		this.cachedVisibleRowCount = 1;
+		this.cachedVisibleColumnCount = 1;
 		const entryContext = this.createEntryTabContext();
 		if (entryContext) {
 			this.entryTabId = entryContext.id;
@@ -600,13 +720,13 @@ export class ConsoleCartEditor {
 		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 8);
 		const startDisplay = this.columnToDisplay(highlight, tooltip.startColumn);
 		const endDisplay = this.columnToDisplay(highlight, tooltip.endColumn);
-		const clampedStartDisplay = Math.max(slice.startDisplay, Math.min(startDisplay, slice.endDisplay));
-		const clampedEndDisplay = Math.max(clampedStartDisplay, Math.min(endDisplay, highlight.chars.length));
+		const clampedStartDisplay = clamp(startDisplay, slice.startDisplay, slice.endDisplay);
+		const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, highlight.chars.length);
 		const expressionStartX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedStartDisplay);
 		const expressionEndX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedEndDisplay);
 		const maxVisible = Math.max(1, Math.min(HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
 		const maxOffset = Math.max(0, content.length - maxVisible);
-		tooltip.scrollOffset = Math.max(0, Math.min(tooltip.scrollOffset, maxOffset));
+		tooltip.scrollOffset = clamp(tooltip.scrollOffset, 0, maxOffset);
 		const visibleCount = Math.max(1, Math.min(maxVisible, content.length - tooltip.scrollOffset));
 		tooltip.visibleLineCount = visibleCount;
 		const visibleLines = content.slice(tooltip.scrollOffset, tooltip.scrollOffset + visibleCount);
@@ -670,16 +790,16 @@ export class ConsoleCartEditor {
 		}
 		const hasLocation = Number.isFinite(line) && line >= 1;
 		const processedLine = hasLocation ? Math.max(1, Math.floor(line)) : null;
-		const baseColumn = Number.isFinite(column) ? Math.max(0, Math.floor(column) - 1) : null;
+		const baseColumn = Number.isFinite(column) ? Math.floor(column) - 1 : null;
 		let targetRow = this.cursorRow;
 		if (processedLine !== null) {
-			targetRow = Math.max(0, Math.min(this.lines.length - 1, processedLine - 1));
+			targetRow = clamp(processedLine - 1, 0, this.lines.length - 1);
 			this.cursorRow = targetRow;
 		}
 		const currentLine = this.lines[targetRow] ?? '';
 		let targetColumn = this.cursorColumn;
 		if (baseColumn !== null) {
-			targetColumn = Math.max(0, Math.min(currentLine.length, baseColumn));
+			targetColumn = clamp(baseColumn, 0, currentLine.length);
 			this.cursorColumn = targetColumn;
 		}
 		this.clampCursorColumn();
@@ -688,7 +808,6 @@ export class ConsoleCartEditor {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.activeScrollbarDrag = null;
-		this.scrollbarMetrics = {};
 		this.cursorRevealSuspended = false;
 		this.centerCursorVertically();
 		this.updateDesiredColumn();
@@ -957,10 +1076,8 @@ export class ConsoleCartEditor {
 		if (!this.active) {
 			return;
 		}
-		this.scrollbarMetrics.codeVertical = null;
-		this.scrollbarMetrics.resourceVertical = null;
-		this.scrollbarMetrics.resourceHorizontal = null;
-		this.scrollbarMetrics.viewerVertical = null;
+		this.codeVerticalScrollbarVisible = false;
+		this.codeHorizontalScrollbarVisible = false;
 		const frameColor = Msx1Colors[COLOR_FRAME];
 		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 		this.drawTopBar(api);
@@ -1441,7 +1558,6 @@ export class ConsoleCartEditor {
 		this.pointerPrimaryWasPressed = false;
 		this.pointerAuxWasPressed = false;
 		this.activeScrollbarDrag = null;
-		this.scrollbarMetrics = {};
 		this.cursorRevealSuspended = false;
 		this.undoStack = [];
 		this.redoStack = [];
@@ -2433,8 +2549,7 @@ export class ConsoleCartEditor {
 			const rows = this.visibleRowCount();
 			this.cursorRow = Math.max(0, this.cursorRow - rows);
 			const lineLength = this.currentLine().length;
-			const targetColumn = Math.max(0, Math.min(lineLength, Math.floor(this.desiredColumn)));
-			this.cursorColumn = targetColumn;
+			this.cursorColumn = clamp(Math.floor(this.desiredColumn), 0, lineLength);
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageUp');
 			moved = true;
@@ -2443,8 +2558,7 @@ export class ConsoleCartEditor {
 			const rows = this.visibleRowCount();
 			this.cursorRow = Math.min(this.lines.length - 1, this.cursorRow + rows);
 			const lineLength = this.currentLine().length;
-			const targetColumn = Math.max(0, Math.min(lineLength, Math.floor(this.desiredColumn)));
-			this.cursorColumn = targetColumn;
+			this.cursorColumn = clamp(Math.floor(this.desiredColumn), 0, lineLength);
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageDown');
 			moved = true;
@@ -2879,16 +2993,20 @@ export class ConsoleCartEditor {
 		const order: ScrollbarKind[] = ['codeVertical', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
 		for (let i = 0; i < order.length; i += 1) {
 			const kind = order[i];
-			const metrics = this.scrollbarMetrics[kind];
-			if (!metrics || !metrics.thumb) {
+			const scrollbar = this.scrollbars[kind];
+			if (!scrollbar.isVisible()) {
 				continue;
 			}
-			if (!this.pointInRect(snapshot.viewportX, snapshot.viewportY, metrics.thumb)) {
+			const thumb = scrollbar.getThumb();
+			if (!thumb || !this.pointInRect(snapshot.viewportX, snapshot.viewportY, thumb)) {
 				continue;
 			}
-			const pointerCoord = metrics.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
-			const thumbStart = metrics.orientation === 'vertical' ? metrics.thumb.top : metrics.thumb.left;
-			this.activeScrollbarDrag = { kind, pointerOffset: pointerCoord - thumbStart };
+			const pointerCoord = scrollbar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+			const pointerOffset = scrollbar.beginDrag(pointerCoord);
+			if (pointerOffset === null) {
+				continue;
+			}
+			this.activeScrollbarDrag = { kind, pointerOffset };
 			return true;
 		}
 		return false;
@@ -2898,26 +3016,13 @@ export class ConsoleCartEditor {
 		if (!this.activeScrollbarDrag) {
 			return false;
 		}
-		const metrics = this.scrollbarMetrics[this.activeScrollbarDrag.kind];
-		if (!metrics || !metrics.thumb) {
+		const scrollbar = this.scrollbars[this.activeScrollbarDrag.kind];
+		if (!scrollbar.isVisible()) {
 			this.activeScrollbarDrag = null;
 			return false;
 		}
-		const pointerCoord = metrics.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
-		const trackStart = metrics.orientation === 'vertical' ? metrics.track.top : metrics.track.left;
-		const trackEnd = metrics.orientation === 'vertical' ? metrics.track.bottom : metrics.track.right;
-		const thumbSize = metrics.orientation === 'vertical'
-			? (metrics.thumb.bottom - metrics.thumb.top)
-			: (metrics.thumb.right - metrics.thumb.left);
-		const maxThumbTravel = Math.max(0, (trackEnd - trackStart) - thumbSize);
-		if (thumbSize <= 0 || maxThumbTravel <= 0 || metrics.maxScroll <= 0) {
-			this.activeScrollbarDrag = null;
-			return false;
-		}
-		const raw = pointerCoord - this.activeScrollbarDrag.pointerOffset;
-		const clampedPosition = Math.max(trackStart, Math.min(raw, trackEnd - thumbSize));
-		const normalized = (clampedPosition - trackStart) / maxThumbTravel;
-		const newScroll = normalized * metrics.maxScroll;
+		const pointerCoord = scrollbar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+		const newScroll = scrollbar.drag(pointerCoord, this.activeScrollbarDrag.pointerOffset);
 		this.applyScrollbarScroll(this.activeScrollbarDrag.kind, newScroll);
 		return true;
 	}
@@ -2930,24 +3035,26 @@ export class ConsoleCartEditor {
 			case 'codeVertical': {
 				const rowCount = this.visibleRowCount();
 				const maxScroll = Math.max(0, this.lines.length - rowCount);
-				const clamped = Math.max(0, Math.min(Math.round(scroll), maxScroll));
-				this.scrollRow = clamped;
+				this.scrollRow = clamp(Math.round(scroll), 0, maxScroll);
 				this.cursorRevealSuspended = true;
+				break;
+			}
+			case 'codeHorizontal': {
+				const maxScroll = this.computeMaximumScrollColumn();
+				this.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
 				break;
 			}
 			case 'resourceVertical': {
 				const capacity = this.resourcePanelLineCapacity();
 				const itemCount = this.resourceBrowserItems.length;
 				const maxScroll = Math.max(0, itemCount - capacity);
-				const clamped = Math.max(0, Math.min(Math.round(scroll), maxScroll));
-				this.resourceBrowserScroll = clamped;
+				this.resourceBrowserScroll = clamp(Math.round(scroll), 0, maxScroll);
 				this.resourcePanelFocused = true;
 				break;
 			}
 			case 'resourceHorizontal': {
 				const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
-				const clamped = Math.max(0, Math.min(scroll, maxScroll));
-				this.resourceBrowserHorizontalScroll = clamped;
+				this.resourceBrowserHorizontalScroll = clamp(scroll, 0, maxScroll);
 				this.clampResourceBrowserHorizontalScroll();
 				this.resourcePanelFocused = true;
 				break;
@@ -2959,8 +3066,7 @@ export class ConsoleCartEditor {
 				}
 				const capacity = this.resourceViewerTextCapacity(viewer);
 				const maxScroll = Math.max(0, viewer.lines.length - capacity);
-				const clamped = Math.max(0, Math.min(Math.round(scroll), maxScroll));
-				viewer.scroll = clamped;
+				viewer.scroll = clamp(Math.round(scroll), 0, maxScroll);
 				break;
 			}
 		}
@@ -2986,7 +3092,7 @@ export class ConsoleCartEditor {
 		if (maxOffset === 0) {
 			return false;
 		}
-		const nextOffset = Math.max(0, Math.min(maxOffset, tooltip.scrollOffset + stepCount));
+		const nextOffset = clamp(tooltip.scrollOffset + stepCount, 0, maxOffset);
 		if (nextOffset === tooltip.scrollOffset) {
 			return false;
 		}
@@ -3898,14 +4004,19 @@ export class ConsoleCartEditor {
 		this.scrollRow = targetRow;
 	}
 
-	private computeMaximumScrollColumn(): number {
+	private maximumLineLength(): number {
 		let maxLength = 0;
-		for (let i = 0; i < this.lines.length; i++) {
+		for (let i = 0; i < this.lines.length; i += 1) {
 			const length = this.lines[i].length;
 			if (length > maxLength) {
 				maxLength = length;
 			}
 		}
+		return maxLength;
+	}
+
+	private computeMaximumScrollColumn(): number {
+		const maxLength = this.maximumLineLength();
 		const visible = this.visibleColumnCount();
 		const limit = maxLength - visible;
 		if (limit <= 0) {
@@ -3947,8 +4058,7 @@ export class ConsoleCartEditor {
 			this.cursorRow = this.lines.length - 1;
 		}
 		const lineLength = this.currentLine().length;
-		const targetColumn = Math.max(0, Math.min(lineLength, Math.floor(this.desiredColumn)));
-		this.cursorColumn = targetColumn;
+		this.cursorColumn = clamp(Math.floor(this.desiredColumn), 0, lineLength);
 		this.resetBlink();
 		this.revealCursor();
 	}
@@ -5132,71 +5242,114 @@ export class ConsoleCartEditor {
 	}
 
 	private drawCodeArea(api: BmsxConsoleApi): void {
-		this.scrollbarMetrics.codeVertical = null;
 		const bounds = this.getCodeAreaBounds();
-		const codeTop = bounds.codeTop;
-		const codeBottom = bounds.codeBottom;
-		const codeLeft = bounds.codeLeft;
-		const codeRight = bounds.codeRight;
-		const gutterLeft = bounds.gutterLeft;
-		const gutterRight = bounds.gutterRight;
-		const textLeft = bounds.textLeft;
-		const rowCount = this.visibleRowCount();
-		const columnCount = this.visibleColumnCount();
-		const needsScrollbar = this.lines.length > rowCount;
-		const contentRight = needsScrollbar ? codeRight - SCROLLBAR_WIDTH : codeRight;
+		const gutterOffset = bounds.textLeft - bounds.codeLeft;
+		const advance = this.warnNonMonospace ? this.spaceAdvance : this.charAdvance;
 
-		api.rectfill(codeLeft, codeTop, codeRight, codeBottom, COLOR_CODE_BACKGROUND);
-		if (gutterRight > gutterLeft) {
-			api.rectfill(gutterLeft, codeTop, gutterRight, codeBottom, COLOR_GUTTER_BACKGROUND);
+		let horizontalVisible = this.codeHorizontalScrollbarVisible;
+		let verticalVisible = this.codeVerticalScrollbarVisible;
+		let rowCapacity = 1;
+		let columnCapacity = 1;
+		for (let i = 0; i < 3; i += 1) {
+			const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? SCROLLBAR_WIDTH : 0));
+			rowCapacity = Math.max(1, Math.floor(availableHeight / this.lineHeight));
+			verticalVisible = this.lines.length > rowCapacity;
+			const availableWidth = Math.max(0, (bounds.codeRight - bounds.codeLeft) - (verticalVisible ? SCROLLBAR_WIDTH : 0) - gutterOffset);
+			columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
+			const maxLength = this.maximumLineLength();
+			horizontalVisible = maxLength > columnCapacity;
+		}
+
+		this.codeVerticalScrollbarVisible = verticalVisible;
+		this.codeHorizontalScrollbarVisible = horizontalVisible;
+		this.cachedVisibleRowCount = rowCapacity;
+		this.cachedVisibleColumnCount = columnCapacity;
+
+		const contentRight = bounds.codeRight - (verticalVisible ? SCROLLBAR_WIDTH : 0);
+		const contentBottom = bounds.codeBottom - (horizontalVisible ? SCROLLBAR_WIDTH : 0);
+
+		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_CODE_BACKGROUND);
+		if (bounds.gutterRight > bounds.gutterLeft) {
+			api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, COLOR_GUTTER_BACKGROUND);
 		}
 
 		let cursorEntry: CachedHighlight | null = null;
 		let cursorSliceStart = 0;
+		const sliceWidth = columnCapacity + 2;
 
-		for (let i = 0; i < rowCount; i++) {
+		for (let i = 0; i < rowCapacity; i++) {
 			const lineIndex = this.scrollRow + i;
-			const rowY = codeTop + i * this.lineHeight;
+			const rowY = bounds.codeTop + i * this.lineHeight;
+			if (rowY >= contentBottom) {
+				break;
+			}
 			if (lineIndex === this.cursorRow) {
-				api.rectfillColor(gutterRight, rowY, contentRight, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
+				api.rectfillColor(bounds.gutterRight, rowY, contentRight, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
 			}
 
 			if (lineIndex < this.lines.length) {
 				const entry = this.getCachedHighlight(lineIndex);
 				const highlight = entry.hi;
-				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, columnCount + 2);
-				this.drawSearchHighlightsForRow(api, lineIndex, entry, textLeft, rowY, slice.startDisplay, slice.endDisplay);
+				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, sliceWidth);
+				this.drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, slice.startDisplay, slice.endDisplay);
 				const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
 				if (selectionSlice) {
-					const selectionStartX = textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.startDisplay);
-					const selectionEndX = textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.endDisplay);
-					const clampedEnd = Math.min(selectionEndX, contentRight);
-					const clampedStart = Math.min(selectionStartX, clampedEnd);
-					if (clampedEnd > clampedStart) {
-						api.rectfillColor(clampedStart, rowY, clampedEnd, rowY + this.lineHeight, SELECTION_OVERLAY);
+					const selectionStartX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.startDisplay);
+					const selectionEndX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.endDisplay);
+					const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
+					const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
+					if (clampedRight > clampedLeft) {
+						api.rectfillColor(clampedLeft, rowY, clampedRight, rowY + this.lineHeight, SELECTION_OVERLAY);
 					}
 				}
-				this.drawColoredText(api, slice.text, slice.colors, textLeft, rowY);
+				this.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);
 				if (lineIndex === this.cursorRow) {
 					cursorEntry = entry;
 					cursorSliceStart = slice.startDisplay;
 				}
 			} else {
-				this.drawColoredText(api, '~', [COLOR_CODE_DIM], textLeft, rowY);
+				this.drawColoredText(api, '~', [COLOR_CODE_DIM], bounds.textLeft, rowY);
 			}
 		}
 
-		this.drawRuntimeErrorOverlay(api, codeTop, contentRight, textLeft);
-		this.drawHoverTooltip(api, codeTop, codeBottom, textLeft);
+		const verticalTrack: RectBounds = {
+			left: contentRight,
+			top: bounds.codeTop,
+			right: contentRight + SCROLLBAR_WIDTH,
+			bottom: contentBottom,
+		};
+		const codeVerticalScrollbar = this.scrollbars.codeVertical;
+		codeVerticalScrollbar.layout(verticalTrack, this.lines.length, rowCapacity, this.scrollRow);
+
+		const maxColumns = columnCapacity + this.computeMaximumScrollColumn();
+		const horizontalTrack: RectBounds = {
+			left: bounds.codeLeft,
+			top: contentBottom,
+			right: contentRight,
+			bottom: contentBottom + SCROLLBAR_WIDTH,
+		};
+		const codeHorizontalScrollbar = this.scrollbars.codeHorizontal;
+		codeHorizontalScrollbar.layout(horizontalTrack, maxColumns, columnCapacity, this.scrollColumn);
+		this.scrollColumn = clamp(Math.round(codeHorizontalScrollbar.getScroll()), 0, this.computeMaximumScrollColumn());
+
+		this.drawRuntimeErrorOverlay(api, bounds.codeTop, contentRight, bounds.textLeft);
+		this.drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
 
 		if (this.cursorVisible && cursorEntry) {
-			this.drawCursor(api, textLeft, codeTop, cursorEntry, cursorSliceStart);
+			this.drawCursor(api, bounds.textLeft, bounds.codeTop, cursorEntry, cursorSliceStart);
 		}
-		let codeScrollbar: ScrollbarMetrics | null = null;
-		if (needsScrollbar) {
-			codeScrollbar = this.drawVerticalScrollbar(api, contentRight, codeTop, codeBottom, this.lines.length, rowCount, this.scrollRow);
+		if (codeVerticalScrollbar.isVisible()) {
+			codeVerticalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
+			this.codeVerticalScrollbarVisible = true;
+		} else {
+			this.codeVerticalScrollbarVisible = false;
 		}
-		this.scrollbarMetrics.codeVertical = codeScrollbar;
+		if (codeHorizontalScrollbar.isVisible()) {
+			codeHorizontalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
+			this.codeHorizontalScrollbarVisible = true;
+		} else {
+			this.codeHorizontalScrollbarVisible = false;
+		}
 	}
 
 	private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
@@ -5331,8 +5484,6 @@ export class ConsoleCartEditor {
 	}
 
 	private hideResourcePanel(): void {
-		this.scrollbarMetrics.resourceVertical = null;
-		this.scrollbarMetrics.resourceHorizontal = null;
 		if (!this.resourcePanelVisible) {
 			return;
 		}
@@ -5549,8 +5700,7 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		return;
 	}
 	const maxScroll = Math.max(0, this.resourceBrowserItems.length - capacity);
-	const clampedScroll = Math.max(0, Math.min(previousScroll, maxScroll));
-	this.resourceBrowserScroll = clampedScroll;
+	this.resourceBrowserScroll = clamp(previousScroll, 0, maxScroll);
 	this.resourceBrowserEnsureSelectionVisible();
 	this.applyPendingResourceSelection();
 	}
@@ -5728,14 +5878,9 @@ private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): Resourc
 	}
 
 	private clampResourceBrowserHorizontalScroll(): void {
-		if (!Number.isFinite(this.resourceBrowserHorizontalScroll) || this.resourceBrowserHorizontalScroll < 0) {
-			this.resourceBrowserHorizontalScroll = 0;
-			return;
-		}
 		const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
-		if (this.resourceBrowserHorizontalScroll > maxScroll) {
-			this.resourceBrowserHorizontalScroll = maxScroll;
-		}
+		const current = Number.isFinite(this.resourceBrowserHorizontalScroll) ? this.resourceBrowserHorizontalScroll : 0;
+		this.resourceBrowserHorizontalScroll = clamp(current, 0, maxScroll);
 	}
 
 	private createEntryTabContext(): CodeTabContext | null {
@@ -6293,9 +6438,9 @@ private getMainProgramSourceForReload(): string {
 			return;
 		}
 		const itemCount = this.resourceBrowserItems.length;
-		const maxScroll = Math.max(0, itemCount - capacity);
-		const next = Math.max(0, Math.min(this.resourceBrowserScroll + amount, maxScroll));
-		if (next === this.resourceBrowserScroll) {
+	const maxScroll = Math.max(0, itemCount - capacity);
+	const next = clamp(this.resourceBrowserScroll + amount, 0, maxScroll);
+	if (next === this.resourceBrowserScroll) {
 			return;
 		}
 		this.resourceBrowserScroll = next;
@@ -6310,13 +6455,13 @@ private getMainProgramSourceForReload(): string {
 		if (!Number.isFinite(amount) || amount === 0) {
 			return;
 		}
-		const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
-		if (maxScroll <= 0) {
-			this.resourceBrowserHorizontalScroll = 0;
-			return;
-		}
-		const next = Math.max(0, Math.min(this.resourceBrowserHorizontalScroll + amount, maxScroll));
-		if (next === this.resourceBrowserHorizontalScroll) {
+	const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
+	if (maxScroll <= 0) {
+		this.resourceBrowserHorizontalScroll = 0;
+		return;
+	}
+	const next = clamp(this.resourceBrowserHorizontalScroll + amount, 0, maxScroll);
+	if (next === this.resourceBrowserHorizontalScroll) {
 			return;
 		}
 		this.resourceBrowserHorizontalScroll = next;
@@ -6470,16 +6615,16 @@ private getMainProgramSourceForReload(): string {
 			return;
 		}
 		let next: number;
-		if (delta === Number.NEGATIVE_INFINITY) {
-			next = 0;
-		} else if (delta === Number.POSITIVE_INFINITY) {
-			next = count - 1;
-		} else {
-			const current = this.resourceBrowserSelectionIndex >= 0 ? this.resourceBrowserSelectionIndex : 0;
-			const step = Math.trunc(delta);
-			next = current + step;
-		}
-		next = Math.max(0, Math.min(count - 1, next));
+	if (delta === Number.NEGATIVE_INFINITY) {
+		next = 0;
+	} else if (delta === Number.POSITIVE_INFINITY) {
+		next = count - 1;
+	} else {
+		const current = this.resourceBrowserSelectionIndex >= 0 ? this.resourceBrowserSelectionIndex : 0;
+		const step = Math.trunc(delta);
+		next = current + step;
+	}
+	next = clamp(next, 0, count - 1);
 		if (next === this.resourceBrowserSelectionIndex) {
 			return;
 		}
@@ -6489,7 +6634,6 @@ private getMainProgramSourceForReload(): string {
 	}
 
 	private scrollResourceViewer(amount: number): void {
-		this.scrollbarMetrics.viewerVertical = null;
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
@@ -6500,8 +6644,7 @@ private getMainProgramSourceForReload(): string {
 			return;
 		}
 		const maxScroll = Math.max(0, viewer.lines.length - capacity);
-		const next = Math.max(0, Math.min(viewer.scroll + amount, maxScroll));
-		viewer.scroll = next;
+		viewer.scroll = clamp(viewer.scroll + amount, 0, maxScroll);
 		this.resourceViewerClampScroll(viewer);
 	}
 
@@ -6641,9 +6784,7 @@ private getMainProgramSourceForReload(): string {
 		}
 	}
 
-private drawResourcePanel(api: BmsxConsoleApi): void {
-		this.scrollbarMetrics.resourceVertical = null;
-		this.scrollbarMetrics.resourceHorizontal = null;
+	private drawResourcePanel(api: BmsxConsoleApi): void {
 		if (!this.resourcePanelVisible) {
 			return;
 		}
@@ -6651,31 +6792,56 @@ private drawResourcePanel(api: BmsxConsoleApi): void {
 		if (!bounds) {
 			return;
 		}
-		const codeTop = bounds.top;
-		const codeBottom = bounds.bottom;
 		const contentLeft = bounds.left + RESOURCE_PANEL_PADDING_X;
 		const dividerLeft = bounds.right - 1;
 		const capacity = this.resourcePanelLineCapacity();
 		const itemCount = this.resourceBrowserItems.length;
-		const needsVerticalScrollbar = itemCount > capacity;
-		const verticalScrollbarWidth = needsVerticalScrollbar ? SCROLLBAR_WIDTH : 0;
-		const trackLeft = dividerLeft - verticalScrollbarWidth;
-		const availableRight = Math.max(contentLeft, trackLeft);
-		const availableWidth = Math.max(0, availableRight - contentLeft);
-		const needsHorizontalScrollbar = this.resourceBrowserMaxLineWidth > availableWidth;
-		const effectiveBottom = needsHorizontalScrollbar ? codeBottom - SCROLLBAR_WIDTH : codeBottom;
+
+		const maxVerticalScroll = Math.max(0, itemCount - capacity);
+		this.resourceBrowserScroll = clamp(this.resourceBrowserScroll, 0, maxVerticalScroll);
 		this.clampResourceBrowserHorizontalScroll();
-		const scrollX = this.resourceBrowserHorizontalScroll;
-		api.rectfill(bounds.left, codeTop, bounds.right, codeBottom, COLOR_CODE_BACKGROUND);
-		const contentTop = codeTop + 2;
-		const maxScroll = Math.max(0, itemCount - capacity);
-		const scroll = Math.max(0, Math.min(this.resourceBrowserScroll, maxScroll));
-		const end = Math.min(itemCount, scroll + capacity);
+
+		const verticalTrack: RectBounds = {
+			left: dividerLeft - SCROLLBAR_WIDTH,
+			top: bounds.top,
+			right: dividerLeft,
+			bottom: bounds.bottom,
+		};
+		const verticalScrollbar = this.scrollbars.resourceVertical;
+		verticalScrollbar.layout(verticalTrack, itemCount, capacity, this.resourceBrowserScroll);
+		this.resourceBrowserScroll = Math.round(verticalScrollbar.getScroll());
+		const verticalVisible = verticalScrollbar.isVisible();
+		const contentRight = verticalVisible ? verticalTrack.left : bounds.right;
+
+		const availableWidth = Math.max(0, contentRight - contentLeft);
+		const horizontalTrack: RectBounds = {
+			left: contentLeft,
+			top: bounds.bottom - SCROLLBAR_WIDTH,
+			right: contentRight,
+			bottom: bounds.bottom,
+		};
+		const horizontalScrollbar = this.scrollbars.resourceHorizontal;
+		horizontalScrollbar.layout(horizontalTrack, Math.max(this.resourceBrowserMaxLineWidth, availableWidth), availableWidth, this.resourceBrowserHorizontalScroll);
+		const horizontalVisible = horizontalScrollbar.isVisible();
+		const effectiveBottom = horizontalVisible ? horizontalTrack.top : bounds.bottom;
+
+		this.resourceBrowserHorizontalScroll = horizontalScrollbar.getScroll();
+
+		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_CODE_BACKGROUND);
+
+		const contentTop = bounds.top + 2;
+		const scrollStart = Math.floor(this.resourceBrowserScroll);
+		const scrollEnd = Math.min(itemCount, scrollStart + capacity);
 		const highlightIndex = this.resourceBrowserHoverIndex >= 0 ? this.resourceBrowserHoverIndex : this.resourceBrowserSelectionIndex;
 		const panelActive = this.resourcePanelFocused;
-		for (let itemIndex = scroll, drawIndex = 0; itemIndex < end; itemIndex += 1, drawIndex += 1) {
+		const scrollX = this.resourceBrowserHorizontalScroll;
+
+		for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
 			const item = this.resourceBrowserItems[itemIndex];
 			const y = contentTop + drawIndex * this.lineHeight;
+			if (y >= effectiveBottom) {
+				break;
+			}
 			const indentText = item.line.slice(0, item.contentStartColumn);
 			const contentText = item.line.slice(item.contentStartColumn);
 			const indentX = contentLeft - scrollX;
@@ -6689,8 +6855,8 @@ private drawResourcePanel(api: BmsxConsoleApi): void {
 				const highlightWidth = this.measureText(contentText);
 				const caretLeft = Math.floor(contentX);
 				const caretRight = Math.max(caretLeft + 1, Math.floor(contentX + highlightWidth));
-				const visibleLeft = Math.max(caretLeft, contentLeft);
-				const visibleRight = Math.min(caretRight, availableRight);
+				const visibleLeft = clamp(caretLeft, contentLeft, contentRight);
+				const visibleRight = clamp(caretRight, visibleLeft, contentRight);
 				const caretTop = Math.floor(y);
 				const caretBottom = caretTop + this.lineHeight;
 				if (panelActive) {
@@ -6702,46 +6868,50 @@ private drawResourcePanel(api: BmsxConsoleApi): void {
 					if (contentText.length > 0) {
 						this.drawColoredText(api, contentText, colors, contentX, y);
 					}
-				} else {
-					if (visibleRight > visibleLeft) {
-						this.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, CARET_COLOR);
-					}
+				} else if (visibleRight > visibleLeft) {
+					this.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, CARET_COLOR);
 				}
 			}
 			if (!isHighlighted || contentText.length === 0 || !panelActive) {
 				this.drawText(api, contentText, contentX, y, COLOR_STATUS_TEXT);
 			}
 		}
-		const verticalMetrics = needsVerticalScrollbar
-			? this.drawVerticalScrollbar(api, trackLeft, codeTop, effectiveBottom, itemCount, capacity, scroll)
-			: null;
-		this.scrollbarMetrics.resourceVertical = verticalMetrics;
-		const horizontalMetrics = needsHorizontalScrollbar
-			? this.drawHorizontalScrollbar(api, contentLeft, availableRight, effectiveBottom, this.resourceBrowserMaxLineWidth, availableWidth, scrollX)
-			: null;
-		this.scrollbarMetrics.resourceHorizontal = horizontalMetrics;
+
+		if (verticalScrollbar.isVisible()) {
+			verticalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
+		}
+		if (horizontalScrollbar.isVisible()) {
+			horizontalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
+		}
 		if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
-			api.rectfill(dividerLeft, codeTop, bounds.right, codeBottom, RESOURCE_PANEL_DIVIDER_COLOR);
+			api.rectfill(dividerLeft, bounds.top, bounds.right, bounds.bottom, RESOURCE_PANEL_DIVIDER_COLOR);
 		}
 	}
 
 	private drawResourceViewer(api: BmsxConsoleApi): void {
-		this.scrollbarMetrics.viewerVertical = null;
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
 		}
 		this.resourceViewerClampScroll(viewer);
 		const bounds = this.getCodeAreaBounds();
-		const codeTop = bounds.codeTop;
-		const codeBottom = bounds.codeBottom;
 		const contentLeft = bounds.codeLeft + RESOURCE_PANEL_PADDING_X;
 		const capacity = this.resourceViewerTextCapacity(viewer);
-		const needsScrollbar = viewer.lines.length > capacity && capacity > 0;
-		const trackLeft = needsScrollbar ? bounds.codeRight - SCROLLBAR_WIDTH : bounds.codeRight;
-		const effectiveBottom = needsScrollbar ? codeBottom - SCROLLBAR_WIDTH : codeBottom;
-		api.rectfill(bounds.codeLeft, codeTop, bounds.codeRight, codeBottom, COLOR_CODE_BACKGROUND);
-		const contentTop = codeTop + 2;
+		const totalLines = viewer.lines.length;
+		const verticalScrollbar = this.scrollbars.viewerVertical;
+		const verticalTrack: RectBounds = {
+			left: bounds.codeRight - SCROLLBAR_WIDTH,
+			top: bounds.codeTop,
+			right: bounds.codeRight,
+			bottom: bounds.codeBottom,
+		};
+		verticalScrollbar.layout(verticalTrack, totalLines, Math.max(1, capacity), viewer.scroll);
+		const verticalVisible = verticalScrollbar.isVisible();
+	viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
+
+		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_CODE_BACKGROUND);
+
+		const contentTop = bounds.codeTop + 2;
 		const layout = this.resourceViewerImageLayout(viewer);
 		let textTop = contentTop;
 		if (layout) {
@@ -6750,138 +6920,35 @@ private drawResourcePanel(api: BmsxConsoleApi): void {
 		}
 		if (capacity <= 0) {
 			if (viewer.lines.length > 0) {
-				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, viewer.scroll))] ?? '';
-				const fallbackY = Math.min(textTop, effectiveBottom - this.lineHeight);
+				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
+				const fallbackY = Math.min(textTop, bounds.codeBottom - this.lineHeight);
 				this.drawText(api, line, contentLeft, fallbackY, COLOR_STATUS_TEXT);
 			} else {
 				this.drawText(api, '<empty>', contentLeft, textTop, COLOR_STATUS_TEXT);
 			}
+			if (verticalVisible) {
+				verticalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
+			}
 			return;
 		}
-		const maxScroll = Math.max(0, viewer.lines.length - capacity);
-		viewer.scroll = Math.max(0, Math.min(viewer.scroll, maxScroll));
-		const end = Math.min(viewer.lines.length, viewer.scroll + capacity);
+		const maxScroll = Math.max(0, totalLines - capacity);
+		viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
+		const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
 		if (viewer.lines.length === 0) {
 			this.drawText(api, '<empty>', contentLeft, textTop, COLOR_STATUS_TEXT);
-			return;
+		} else {
+			for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+				const line = viewer.lines[lineIndex] ?? '';
+				const y = textTop + drawIndex * this.lineHeight;
+				if (y >= bounds.codeBottom) {
+					break;
+				}
+				this.drawText(api, line, contentLeft, y, COLOR_STATUS_TEXT);
+			}
 		}
-		for (let lineIndex = viewer.scroll, drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
-			const line = viewer.lines[lineIndex] ?? '';
-			const y = textTop + drawIndex * this.lineHeight;
-			this.drawText(api, line, contentLeft, y, COLOR_STATUS_TEXT);
+		if (verticalVisible) {
+			verticalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
 		}
-		const verticalMetrics = needsScrollbar
-			? this.drawVerticalScrollbar(api, trackLeft, codeTop, effectiveBottom, viewer.lines.length, capacity, viewer.scroll)
-			: null;
-		this.scrollbarMetrics.viewerVertical = verticalMetrics;
-	}
-
-	private drawVerticalScrollbar(api: BmsxConsoleApi, left: number, top: number, bottom: number, totalCount: number, visibleCount: number, startIndex: number): ScrollbarMetrics | null {
-		if (totalCount <= 0 || visibleCount <= 0 || visibleCount >= totalCount) {
-			return null;
-		}
-		if (bottom <= top) {
-			return null;
-		}
-		const trackLeft = left;
-		const trackRight = trackLeft + SCROLLBAR_WIDTH;
-		const track: RectBounds = { left: trackLeft, top, right: trackRight, bottom };
-		api.rectfill(trackLeft, top, trackRight, bottom, SCROLLBAR_TRACK_COLOR);
-		const trackHeight = bottom - top;
-		if (trackHeight <= 0) {
-			return null;
-		}
-		const maxScroll = Math.max(0, totalCount - visibleCount);
-		const clampedStart = Math.max(0, Math.min(startIndex, maxScroll));
-		const normalizedStart = maxScroll > 0 ? clampedStart / maxScroll : 0;
-		let thumbHeight = Math.floor((visibleCount / totalCount) * trackHeight);
-		if (thumbHeight < SCROLLBAR_MIN_THUMB_HEIGHT) {
-			thumbHeight = SCROLLBAR_MIN_THUMB_HEIGHT;
-		}
-		if (thumbHeight > trackHeight) {
-			thumbHeight = trackHeight;
-		}
-		const maxThumbTravel = Math.max(0, trackHeight - thumbHeight);
-		const offset = Math.floor(normalizedStart * maxThumbTravel);
-		const thumbTop = top + offset;
-		const thumbBottom = Math.min(bottom, thumbTop + thumbHeight);
-		if (thumbBottom <= thumbTop) {
-			return {
-				orientation: 'vertical',
-				track,
-				thumb: null,
-				scroll: clampedStart,
-				maxScroll,
-				viewportSize: visibleCount,
-				contentSize: totalCount,
-			};
-		}
-		const thumb: RectBounds = { left: trackLeft, top: thumbTop, right: trackRight, bottom: thumbBottom };
-		api.rectfill(thumb.left, thumb.top, thumb.right, thumb.bottom, SCROLLBAR_THUMB_COLOR);
-		return {
-			orientation: 'vertical',
-			track,
-			thumb,
-			scroll: clampedStart,
-			maxScroll,
-			viewportSize: visibleCount,
-			contentSize: totalCount,
-		};
-	}
-
-	private drawHorizontalScrollbar(api: BmsxConsoleApi, left: number, right: number, top: number, totalWidth: number, visibleWidth: number, startOffset: number): ScrollbarMetrics | null {
-		if (totalWidth <= 0 || visibleWidth <= 0 || visibleWidth >= totalWidth) {
-			return null;
-		}
-		if (right <= left) {
-			return null;
-		}
-		const trackTop = top;
-		const trackBottom = trackTop + SCROLLBAR_WIDTH;
-		const track: RectBounds = { left, top: trackTop, right, bottom: trackBottom };
-		api.rectfill(left, trackTop, right, trackBottom, SCROLLBAR_TRACK_COLOR);
-		const trackWidth = right - left;
-		if (trackWidth <= 0) {
-			return null;
-		}
-		const maxScroll = Math.max(0, totalWidth - visibleWidth);
-		if (maxScroll <= 0) {
-			return null;
-		}
-		let thumbWidth = Math.floor((visibleWidth / totalWidth) * trackWidth);
-		if (thumbWidth < SCROLLBAR_MIN_THUMB_HEIGHT) {
-			thumbWidth = SCROLLBAR_MIN_THUMB_HEIGHT;
-		}
-		if (thumbWidth > trackWidth) {
-			thumbWidth = trackWidth;
-		}
-		const maxThumbTravel = Math.max(0, trackWidth - thumbWidth);
-		const clampedOffset = Math.max(0, Math.min(startOffset, maxScroll));
-		const offset = Math.floor((maxScroll > 0 ? clampedOffset / maxScroll : 0) * maxThumbTravel);
-		const thumbLeft = left + offset;
-		const thumbRight = Math.min(right, thumbLeft + thumbWidth);
-		if (thumbRight <= thumbLeft) {
-			return {
-				orientation: 'horizontal',
-				track,
-				thumb: null,
-				scroll: clampedOffset,
-				maxScroll,
-				viewportSize: visibleWidth,
-				contentSize: totalWidth,
-			};
-		}
-		const thumb: RectBounds = { left: thumbLeft, top: trackTop, right: thumbRight, bottom: trackBottom };
-		api.rectfill(thumb.left, thumb.top, thumb.right, thumb.bottom, SCROLLBAR_THUMB_COLOR);
-		return {
-			orientation: 'horizontal',
-			track,
-			thumb,
-			scroll: clampedOffset,
-			maxScroll,
-			viewportSize: visibleWidth,
-			contentSize: totalWidth,
-		};
 	}
 
 	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
@@ -7047,8 +7114,8 @@ private drawResourcePanel(api: BmsxConsoleApi): void {
 		if (length === 0) {
 			return 0;
 		}
-		const clampedStart = Math.max(0, Math.min(startDisplay, length));
-		const clampedEnd = Math.max(clampedStart, Math.min(endDisplay, length));
+	const clampedStart = clamp(startDisplay, 0, length);
+	const clampedEnd = clamp(endDisplay, clampedStart, length);
 		return entry.advancePrefix[clampedEnd] - entry.advancePrefix[clampedStart];
 	}
 
@@ -7589,12 +7656,12 @@ private drawResourcePanel(api: BmsxConsoleApi): void {
 	}
 
 	private centerCursorVertically(): void {
-		const rows = this.visibleRowCount();
-		const maxScroll = Math.max(0, this.lines.length - rows);
-		if (rows <= 1) {
-			this.scrollRow = Math.max(0, Math.min(this.cursorRow, maxScroll));
-			return;
-		}
+	const rows = this.visibleRowCount();
+	const maxScroll = Math.max(0, this.lines.length - rows);
+	if (rows <= 1) {
+		this.scrollRow = clamp(this.cursorRow, 0, maxScroll);
+		return;
+	}
 		let target = this.cursorRow - Math.floor(rows / 2);
 		if (target < 0) {
 			target = 0;
@@ -7642,26 +7709,11 @@ private drawResourcePanel(api: BmsxConsoleApi): void {
 	}
 
 	private visibleRowCount(): number {
-		const available = this.viewportHeight - this.codeViewportTop() - this.bottomMargin;
-		if (available <= 0) {
-			return 1;
-		}
-		const rows = Math.floor(available / this.lineHeight);
-		return rows > 0 ? rows : 1;
+		return this.cachedVisibleRowCount > 0 ? this.cachedVisibleRowCount : 1;
 	}
 
 	private visibleColumnCount(): number {
-		const bounds = this.getCodeAreaBounds();
-		const visibleRows = this.visibleRowCount();
-		const needsScrollbar = this.lines.length > visibleRows;
-		const scrollbarOffset = needsScrollbar ? SCROLLBAR_WIDTH : 0;
-		const available = bounds.codeRight - scrollbarOffset - bounds.textLeft;
-		if (available <= 0) {
-			return 1;
-		}
-		const advance = this.warnNonMonospace ? this.spaceAdvance : this.charAdvance;
-		const columns = Math.floor(available / advance);
-		return columns > 0 ? columns : 1;
+		return this.cachedVisibleColumnCount > 0 ? this.cachedVisibleColumnCount : 1;
 	}
 
 	private currentLine(): string {
