@@ -862,7 +862,7 @@ export class ConsoleCartEditor {
 		this.handleEditorInput(keyboard, deltaSeconds);
 		if (this.searchQuery.length === 0) {
 			this.lastSearchVersion = this.textVersion;
-		} else if (this.textVersion !== this.lastSearchVersion) {
+		} else if (this.searchActive && this.textVersion !== this.lastSearchVersion) {
 			this.updateSearchMatches();
 			this.lastSearchVersion = this.textVersion;
 		}
@@ -1271,6 +1271,7 @@ export class ConsoleCartEditor {
 			}
 			if (this.searchActive || this.searchVisible) {
 				this.closeSearch(false);
+				this.searchVisible = false;
 				return true;
 			}
 			if (this.active) {
@@ -1680,21 +1681,28 @@ export class ConsoleCartEditor {
 
 	private closeSearch(clearQuery: boolean): void {
 		this.searchActive = false;
-		this.searchVisible = false;
 		if (clearQuery) {
 			this.searchQuery = '';
-			this.searchMatches = [];
-			this.searchCurrentIndex = -1;
-			this.selectionAnchor = null;
 		}
+		const shouldHide = clearQuery || this.searchQuery.length === 0;
+		this.searchVisible = shouldHide ? false : true;
+		this.searchMatches = [];
+		this.searchCurrentIndex = -1;
+		this.selectionAnchor = null;
 		this.resetBlink();
 	}
 
 	private focusEditorFromSearch(): void {
-		if (!this.searchActive) {
+		if (!this.searchActive && !this.searchVisible) {
 			return;
 		}
 		this.searchActive = false;
+		if (this.searchQuery.length === 0) {
+			this.searchVisible = false;
+		}
+		this.searchMatches = [];
+		this.searchCurrentIndex = -1;
+		this.selectionAnchor = null;
 		this.resetBlink();
 	}
 
@@ -2224,6 +2232,7 @@ export class ConsoleCartEditor {
 			this.closeLineJump(false);
 			this.searchVisible = true;
 			this.searchActive = true;
+			this.resourcePanelFocused = false;
 			this.resetBlink();
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
