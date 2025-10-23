@@ -744,12 +744,13 @@ export class BmsxConsoleRuntime extends Service {
 		if (!Array.isArray(rompack.resourcePaths)) {
 			rompack.resourcePaths = [];
 		}
-		const resourceEntry: RomResourcePath = { path: normalizedPath, type: 'lua', assetId };
+		const resourceType: RomResourcePath['type'] = this.resourcePathRepresentsFsm(normalizedPath, assetId) ? 'fsm' : 'lua';
+		const resourceEntry: RomResourcePath = { path: normalizedPath, type: resourceType, assetId };
 		rompack.resourcePaths.push(resourceEntry);
 		rompack.resourcePaths.sort((left, right) => left.path.localeCompare(right.path));
 		this.resourcePathCache.set(assetId, normalizedPath);
 		this.registerLuaChunkResource(normalizedPath, { assetId, path: normalizedPath });
-		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: 'lua', assetId };
+		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: resourceType, assetId };
 		return descriptor;
 	}
 
@@ -2360,8 +2361,15 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	const normalizedPath = entry.path.replace(/\\/g, '/');
 	this.resourcePathCache.set(assetId, normalizedPath);
-	return normalizedPath;
-}
+		return normalizedPath;
+	}
+
+	private resourcePathRepresentsFsm(path: string, assetId: string): boolean {
+		if (typeof path === 'string' && path.toLowerCase().indexOf('.fsm.') !== -1) {
+			return true;
+		}
+		return typeof assetId === 'string' && assetId.toLowerCase().indexOf('.fsm') !== -1;
+	}
 
 	private inspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
 		if (!request) {

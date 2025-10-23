@@ -299,6 +299,22 @@ const COLOR_CREATE_RESOURCE_ERROR = COLOR_STATUS_ERROR;
 const CREATE_RESOURCE_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
 const CREATE_RESOURCE_MAX_PATH_LENGTH = 256;
 const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '-- New Lua resource\n';
+const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
+\tid = 'new_fsm',
+\tstates = {
+\t\tidle = {
+\t\t\ton_enter = function(self, params)
+\t\t\tend,
+\t\t\ton_update = function(self, deltaSeconds)
+\t\t\tend,
+\t\t\ton_exit = function(self)
+\t\t\tend,
+\t\t\ttransitions = {
+\t\t\t\t-- { event = 'example', target = 'idle' },
+\t\t\t},
+\t\t},
+\t},
+}\n`;
 const HEADER_BUTTON_PADDING_X = 5;
 const HEADER_BUTTON_PADDING_Y = 1;
 const HEADER_BUTTON_SPACING = 4;
@@ -461,7 +477,7 @@ export class ConsoleCartEditor {
 	private lineJumpVisible = false;
 	private lineJumpValue = '';
 	private createResourceActive = false;
-	private createResourceVisible = false;
+	private createResourceVisible = true;
 	private createResourcePath = '';
 	private createResourceError: string | null = null;
 	private createResourceWorking = false;
@@ -1620,13 +1636,12 @@ export class ConsoleCartEditor {
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.resourcePanelFocused = false;
-		if (!this.createResourceVisible) {
+		if (this.createResourcePath.length === 0) {
 			let defaultPath = this.determineCreateResourceDefaultPath();
 			if (defaultPath.length > CREATE_RESOURCE_MAX_PATH_LENGTH) {
 				defaultPath = defaultPath.slice(defaultPath.length - CREATE_RESOURCE_MAX_PATH_LENGTH);
 			}
 			this.createResourcePath = defaultPath;
-			this.createResourceVisible = true;
 		}
 		this.createResourceActive = true;
 		this.createResourceError = null;
@@ -1636,14 +1651,15 @@ export class ConsoleCartEditor {
 
 	private closeCreateResourcePrompt(focusEditor: boolean): void {
 		this.createResourceActive = false;
-		this.createResourceVisible = false;
-		this.createResourcePath = '';
-		this.createResourceError = null;
 		this.createResourceWorking = false;
 		if (focusEditor) {
 			this.focusEditorFromSearch();
 			this.focusEditorFromLineJump();
 		}
+		if (!focusEditor) {
+			this.createResourcePath = '';
+		}
+		this.createResourceError = null;
 		this.resetBlink();
 	}
 
@@ -1674,8 +1690,9 @@ export class ConsoleCartEditor {
 		}
 		this.createResourceWorking = true;
 		this.resetBlink();
+		const contents = this.buildDefaultResourceContents(normalizedPath, assetId);
 		try {
-			const descriptor = await this.createLuaResourceFn({ path: normalizedPath, assetId, contents: DEFAULT_NEW_LUA_RESOURCE_CONTENT });
+			const descriptor = await this.createLuaResourceFn({ path: normalizedPath, assetId, contents });
 			this.lastCreateResourceDirectory = directory;
 			this.pendingResourceSelectionAssetId = descriptor.assetId;
 			if (this.resourcePanelVisible) {
@@ -1840,6 +1857,39 @@ export class ConsoleCartEditor {
 			return '';
 		}
 		return normalized.slice(0, slashIndex + 1);
+	}
+
+	private buildDefaultResourceContents(path: string, assetId: string): string {
+		if (this.resourcePathRepresentsFsm(path, assetId)) {
+			const blueprintId = this.sanitizeFsmBlueprintId(assetId);
+			if (blueprintId === 'new_fsm') {
+				return DEFAULT_NEW_FSM_RESOURCE_CONTENT;
+			}
+			return DEFAULT_NEW_FSM_RESOURCE_CONTENT.replace('new_fsm', blueprintId);
+		}
+		return DEFAULT_NEW_LUA_RESOURCE_CONTENT;
+	}
+
+	private resourcePathRepresentsFsm(path: string, assetId: string): boolean {
+		if (typeof path === 'string' && path.toLowerCase().indexOf('.fsm.') !== -1) {
+			return true;
+		}
+		return typeof assetId === 'string' && assetId.toLowerCase().indexOf('.fsm') !== -1;
+	}
+
+	private sanitizeFsmBlueprintId(assetId: string): string {
+		if (!assetId || assetId.length === 0) {
+			return 'new_fsm';
+		}
+		let id = assetId.replace(/\.lua$/i, '').replace(/\.fsm$/i, '');
+		if (id.length === 0) {
+			id = assetId;
+		}
+		id = id.replace(/[^A-Za-z0-9_]/g, '_');
+		if (id.length === 0) {
+			return 'new_fsm';
+		}
+		return id;
 	}
 
 	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
@@ -5805,17 +5855,23 @@ private getMainProgramSourceForReload(): string {
 				}
 				case 'fsm': {
 					const fsm = rompack.fsm?.[descriptor.assetId];
-					if (!fsm) {
-						error = `FSM '${descriptor.assetId}' not found.`;
+					if (fsm) {
+						const json = this.safeJsonStringify(fsm);
+						if (json !== null) {
+							this.appendResourceViewerLines(lines, ['-- FSM --', '']);
+							this.appendResourceViewerLines(lines, json.split(/\r?\n/));
+						} else {
+							error = `FSM '${descriptor.assetId}' is not serializable.`;
+						}
 						break;
 					}
-					const json = this.safeJsonStringify(fsm);
-					if (json !== null) {
-						this.appendResourceViewerLines(lines, ['-- FSM --', '']);
-						this.appendResourceViewerLines(lines, json.split(/\r?\n/));
-					} else {
-						error = `FSM '${descriptor.assetId}' is not serializable.`;
+					const source = rompack.lua?.[descriptor.assetId];
+					if (typeof source === 'string') {
+						this.appendResourceViewerLines(lines, ['-- FSM Source --', '']);
+						this.appendResourceViewerLines(lines, source.split(/\r?\n/));
+						break;
 					}
+					error = `FSM '${descriptor.assetId}' not found.`;
 					break;
 				}
 				case 'aem': {
