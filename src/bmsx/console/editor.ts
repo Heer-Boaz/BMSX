@@ -131,6 +131,18 @@ type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
 type EditorTabId = `resource:${string}` | `lua:${string}`;
 type EditorTabKind = 'resource_view' | 'lua_editor';
 
+type ScrollbarKind = 'codeVertical' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
+
+type ScrollbarMetrics = {
+	orientation: 'vertical' | 'horizontal';
+	track: RectBounds;
+	thumb: RectBounds | null;
+	scroll: number;
+	maxScroll: number;
+	viewportSize: number;
+	contentSize: number;
+};
+
 type CodeHoverTooltip = {
 	expression: string;
 	contentLines: string[];
@@ -187,10 +199,11 @@ type CodeTabContext = {
 	saveGeneration: number;
 	appliedGeneration: number;
 	dirty: boolean;
+	runtimeErrorOverlay: RuntimeErrorOverlay | null;
 };
 
 type PendingActionPrompt = {
-	action: 'resume' | 'reboot';
+	action: 'resume' | 'reboot' | 'close';
 };
 
 type ConsoleRuntimeBridge = {
@@ -228,7 +241,6 @@ type PointerSnapshot = {
 
 type KeyPressRecord = {
 	lastPressId: number | null;
-	lastPressedAtMs: number;
 };
 
 export type RuntimeErrorOverlay = {
@@ -245,8 +257,6 @@ const CURSOR_BLINK_INTERVAL = 0.45;
 const UNDO_HISTORY_LIMIT = 512;
 const UNDO_COALESCE_INTERVAL_MS = 550;
 const WHEEL_SCROLL_STEP = 40;
-const KEY_GUARD_MIN_MS = 24;
-const KEY_GUARD_MAX_MS = 120;
 const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
 
 const COLOR_FRAME = 0;
@@ -461,7 +471,6 @@ export class ConsoleCartEditor {
 	};
 	private pendingActionPrompt: PendingActionPrompt | null = null;
 	private active = false;
-	private lastDeltaMilliseconds = KEY_GUARD_MIN_MS;
 	private lines: string[] = [''];
 	private cursorRow = 0;
 	private cursorColumn = 0;
@@ -480,6 +489,8 @@ export class ConsoleCartEditor {
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
 	private pointerAuxWasPressed = false;
+	private scrollbarMetrics: Partial<Record<ScrollbarKind, ScrollbarMetrics | null>> = {};
+	private activeScrollbarDrag: { kind: ScrollbarKind; pointerOffset: number } | null = null;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
@@ -676,6 +687,8 @@ export class ConsoleCartEditor {
 		this.selectionAnchor = null;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
+		this.activeScrollbarDrag = null;
+		this.scrollbarMetrics = {};
 		this.cursorRevealSuspended = false;
 		this.centerCursorVertically();
 		this.updateDesiredColumn();
@@ -684,12 +697,13 @@ export class ConsoleCartEditor {
 		const normalizedMessage = (message && message.length > 0) ? message.trim() : 'Runtime error';
 		const overlayMessage = processedLine !== null ? `Line ${processedLine}: ${normalizedMessage}` : normalizedMessage;
 		const overlayLines = this.buildRuntimeErrorLines(overlayMessage);
-		this.runtimeErrorOverlay = {
+		const overlay: RuntimeErrorOverlay = {
 			row: targetRow,
 			column: targetColumn,
 			lines: overlayLines,
 			timer: Number.POSITIVE_INFINITY,
 		};
+		this.setActiveRuntimeErrorOverlay(overlay);
 		const statusLine = overlayLines.length > 0 ? overlayLines[0] : 'Runtime error';
 		this.showMessage(statusLine, COLOR_STATUS_ERROR, 8.0);
 	}
@@ -795,7 +809,19 @@ export class ConsoleCartEditor {
  }
 
 	public clearRuntimeErrorOverlay(): void {
-		this.runtimeErrorOverlay = null;
+		this.setActiveRuntimeErrorOverlay(null);
+	}
+
+	private setActiveRuntimeErrorOverlay(overlay: RuntimeErrorOverlay | null): void {
+		this.runtimeErrorOverlay = overlay;
+		const context = this.getActiveCodeTabContext();
+		if (context) {
+			context.runtimeErrorOverlay = overlay;
+		}
+	}
+
+	private syncRuntimeErrorOverlayFromContext(context: CodeTabContext | null): void {
+		this.runtimeErrorOverlay = context ? context.runtimeErrorOverlay ?? null : null;
 	}
 
 	private buildRuntimeErrorLines(message: string): string[] {
@@ -894,7 +920,6 @@ export class ConsoleCartEditor {
 
 	public update(deltaSeconds: number): void {
 		this.refreshViewportDimensions();
-		this.updateGuardWindowFromDelta(deltaSeconds);
 		const keyboard = this.getKeyboard();
 		this.updateMessage(deltaSeconds);
 		this.updateRuntimeErrorOverlay(deltaSeconds);
@@ -932,6 +957,10 @@ export class ConsoleCartEditor {
 		if (!this.active) {
 			return;
 		}
+		this.scrollbarMetrics.codeVertical = null;
+		this.scrollbarMetrics.resourceVertical = null;
+		this.scrollbarMetrics.resourceHorizontal = null;
+		this.scrollbarMetrics.viewerVertical = null;
 		const frameColor = Msx1Colors[COLOR_FRAME];
 		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 		this.drawTopBar(api);
@@ -1235,7 +1264,7 @@ export class ConsoleCartEditor {
 		this.message.color = state.message.color;
 		this.message.timer = state.message.timer;
 		this.message.visible = state.message.visible;
-		this.runtimeErrorOverlay = state.runtimeErrorOverlay
+		const restoredOverlay = state.runtimeErrorOverlay
 			? {
 				row: state.runtimeErrorOverlay.row,
 				column: state.runtimeErrorOverlay.column,
@@ -1243,6 +1272,7 @@ export class ConsoleCartEditor {
 				timer: state.runtimeErrorOverlay.timer,
 			}
 			: null;
+		this.setActiveRuntimeErrorOverlay(restoredOverlay);
 		this.lastSearchVersion = this.textVersion;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
@@ -1337,7 +1367,11 @@ export class ConsoleCartEditor {
 				return true;
 			}
 			if (this.active) {
-				this.deactivate();
+				if (this.dirty) {
+					this.openActionPrompt('close');
+				} else {
+					this.deactivate();
+				}
 			} else {
 				this.activate();
 			}
@@ -1378,7 +1412,7 @@ export class ConsoleCartEditor {
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
-		this.runtimeErrorOverlay = null;
+		this.syncRuntimeErrorOverlayFromContext(this.getActiveCodeTabContext());
 		this.resetActionPromptState();
 		if (this.searchQuery.length === 0) {
 			this.searchMatches = [];
@@ -1406,6 +1440,8 @@ export class ConsoleCartEditor {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.pointerAuxWasPressed = false;
+		this.activeScrollbarDrag = null;
+		this.scrollbarMetrics = {};
 		this.cursorRevealSuspended = false;
 		this.undoStack = [];
 		this.redoStack = [];
@@ -2454,8 +2490,21 @@ export class ConsoleCartEditor {
 		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
 		if (!snapshot) {
 			this.pointerPrimaryWasPressed = false;
+			this.activeScrollbarDrag = null;
 			this.clearHoverTooltip();
 			return;
+		}
+		if (!snapshot.valid) {
+			this.activeScrollbarDrag = null;
+		} else if (this.activeScrollbarDrag && !snapshot.primaryPressed) {
+			this.activeScrollbarDrag = null;
+		} else if (this.activeScrollbarDrag && snapshot.primaryPressed) {
+			if (this.updateScrollbarDrag(snapshot)) {
+				this.pointerSelecting = false;
+				this.clearHoverTooltip();
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				return;
+			}
 		}
 		let pointerAuxJustPressed = false;
 		let pointerAuxPressed = false;
@@ -2476,6 +2525,12 @@ export class ConsoleCartEditor {
 		const justReleased = !snapshot.primaryPressed && wasPressed;
 		if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
 			this.pointerSelecting = false;
+		}
+		if (justPressed && this.tryStartScrollbarDrag(snapshot)) {
+			this.pointerSelecting = false;
+			this.clearHoverTooltip();
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			return;
 		}
 		if (this.resourcePanelResizing && !snapshot.valid) {
 			this.resourcePanelResizing = false;
@@ -2812,6 +2867,100 @@ export class ConsoleCartEditor {
 	private clearHoverTooltip(): void {
 		this.hoverTooltip = null;
 		this.lastInspectorResult = null;
+	}
+
+	private tryStartScrollbarDrag(snapshot: PointerSnapshot): boolean {
+		if (!snapshot.valid || !snapshot.primaryPressed) {
+			return false;
+		}
+		const order: ScrollbarKind[] = ['codeVertical', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
+		for (let i = 0; i < order.length; i += 1) {
+			const kind = order[i];
+			const metrics = this.scrollbarMetrics[kind];
+			if (!metrics || !metrics.thumb) {
+				continue;
+			}
+			if (!this.pointInRect(snapshot.viewportX, snapshot.viewportY, metrics.thumb)) {
+				continue;
+			}
+			const pointerCoord = metrics.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+			const thumbStart = metrics.orientation === 'vertical' ? metrics.thumb.top : metrics.thumb.left;
+			this.activeScrollbarDrag = { kind, pointerOffset: pointerCoord - thumbStart };
+			return true;
+		}
+		return false;
+	}
+
+	private updateScrollbarDrag(snapshot: PointerSnapshot): boolean {
+		if (!this.activeScrollbarDrag) {
+			return false;
+		}
+		const metrics = this.scrollbarMetrics[this.activeScrollbarDrag.kind];
+		if (!metrics || !metrics.thumb) {
+			this.activeScrollbarDrag = null;
+			return false;
+		}
+		const pointerCoord = metrics.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
+		const trackStart = metrics.orientation === 'vertical' ? metrics.track.top : metrics.track.left;
+		const trackEnd = metrics.orientation === 'vertical' ? metrics.track.bottom : metrics.track.right;
+		const thumbSize = metrics.orientation === 'vertical'
+			? (metrics.thumb.bottom - metrics.thumb.top)
+			: (metrics.thumb.right - metrics.thumb.left);
+		const maxThumbTravel = Math.max(0, (trackEnd - trackStart) - thumbSize);
+		if (thumbSize <= 0 || maxThumbTravel <= 0 || metrics.maxScroll <= 0) {
+			this.activeScrollbarDrag = null;
+			return false;
+		}
+		const raw = pointerCoord - this.activeScrollbarDrag.pointerOffset;
+		const clampedPosition = Math.max(trackStart, Math.min(raw, trackEnd - thumbSize));
+		const normalized = (clampedPosition - trackStart) / maxThumbTravel;
+		const newScroll = normalized * metrics.maxScroll;
+		this.applyScrollbarScroll(this.activeScrollbarDrag.kind, newScroll);
+		return true;
+	}
+
+	private applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
+		if (Number.isNaN(scroll)) {
+			return;
+		}
+		switch (kind) {
+			case 'codeVertical': {
+				const rowCount = this.visibleRowCount();
+				const maxScroll = Math.max(0, this.lines.length - rowCount);
+				const clamped = Math.max(0, Math.min(Math.round(scroll), maxScroll));
+				this.scrollRow = clamped;
+				this.cursorRevealSuspended = true;
+				break;
+			}
+			case 'resourceVertical': {
+				const capacity = this.resourcePanelLineCapacity();
+				const itemCount = this.resourceBrowserItems.length;
+				const maxScroll = Math.max(0, itemCount - capacity);
+				const clamped = Math.max(0, Math.min(Math.round(scroll), maxScroll));
+				this.resourceBrowserScroll = clamped;
+				this.resourcePanelFocused = true;
+				break;
+			}
+			case 'resourceHorizontal': {
+				const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
+				const clamped = Math.max(0, Math.min(scroll, maxScroll));
+				this.resourceBrowserHorizontalScroll = clamped;
+				this.clampResourceBrowserHorizontalScroll();
+				this.resourcePanelFocused = true;
+				break;
+			}
+			case 'viewerVertical': {
+				const viewer = this.getActiveResourceViewer();
+				if (!viewer) {
+					break;
+				}
+				const capacity = this.resourceViewerTextCapacity(viewer);
+				const maxScroll = Math.max(0, viewer.lines.length - capacity);
+				const clamped = Math.max(0, Math.min(Math.round(scroll), maxScroll));
+				viewer.scroll = clamped;
+				break;
+			}
+		}
 	}
 
 	private adjustHoverTooltipScroll(stepCount: number): boolean {
@@ -3192,7 +3341,7 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private openActionPrompt(action: 'resume' | 'reboot'): void {
+	private openActionPrompt(action: PendingActionPrompt['action']): void {
 		this.activateCodeTab();
 		this.pendingActionPrompt = { action };
 		this.actionPromptButtons.saveAndContinue = null;
@@ -3211,7 +3360,7 @@ export class ConsoleCartEditor {
 			return;
 		}
 		if (choice === 'save-continue') {
-			const saved = await this.attemptPromptSave();
+			const saved = await this.attemptPromptSave(this.pendingActionPrompt.action);
 			if (!saved) {
 				return;
 			}
@@ -3222,7 +3371,11 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private async attemptPromptSave(): Promise<boolean> {
+	private async attemptPromptSave(action: PendingActionPrompt['action']): Promise<boolean> {
+		if (action === 'close') {
+			await this.save();
+			return this.dirty === false;
+		}
 		await this.save();
 		return this.dirty === false;
 	}
@@ -3235,11 +3388,18 @@ export class ConsoleCartEditor {
 		return this.performAction(prompt.action);
 	}
 
-	private performAction(action: 'resume' | 'reboot'): boolean {
+	private performAction(action: PendingActionPrompt['action']): boolean {
 		if (action === 'resume') {
 			return this.performResume();
 		}
-		return this.performReboot();
+		if (action === 'reboot') {
+			return this.performReboot();
+		}
+		if (action === 'close') {
+			this.deactivate();
+			return true;
+		}
+		return false;
 	}
 
 	private performResume(): boolean {
@@ -3937,33 +4097,6 @@ export class ConsoleCartEditor {
 
 	private resetKeyPressGuards(): void {
 		this.keyPressRecords.clear();
-		this.lastDeltaMilliseconds = KEY_GUARD_MIN_MS;
-	}
-
-	private updateGuardWindowFromDelta(deltaSeconds: number): void {
-		if (deltaSeconds <= 0) {
-			return;
-		}
-		const deltaMs = deltaSeconds * 1000;
-		const clamped = Math.max(KEY_GUARD_MIN_MS, Math.min(KEY_GUARD_MAX_MS, deltaMs));
-		this.lastDeltaMilliseconds = clamped;
-	}
-
-	private keyBounceGuardMs(): number {
-		if (!Number.isFinite(this.lastDeltaMilliseconds)) {
-			return KEY_GUARD_MIN_MS;
-		}
-		if (this.lastDeltaMilliseconds < KEY_GUARD_MIN_MS) {
-			return KEY_GUARD_MIN_MS;
-		}
-		if (this.lastDeltaMilliseconds > KEY_GUARD_MAX_MS) {
-			return KEY_GUARD_MAX_MS;
-		}
-		return this.lastDeltaMilliseconds;
-	}
-
-	private resolvePressedAtMs(_state: ButtonState): number {
-		return $.platform.clock.now();
 	}
 
 	private shouldAcceptJustPressed(code: string, state: ButtonState): boolean {
@@ -3971,19 +4104,11 @@ export class ConsoleCartEditor {
 			return false;
 		}
 		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
-		const pressedAt = this.resolvePressedAtMs(state);
 		const existing = this.keyPressRecords.get(code);
-		if (existing) {
-			if (pressId !== null && existing.lastPressId === pressId) {
-				return false;
-			}
-			const delta = pressedAt - existing.lastPressedAtMs;
-			if (Number.isFinite(delta) && delta <= this.keyBounceGuardMs()) {
-				this.keyPressRecords.set(code, { lastPressId: pressId, lastPressedAtMs: pressedAt });
-				return false;
-			}
+		if (existing && pressId !== null && existing.lastPressId === pressId) {
+			return false;
 		}
-		this.keyPressRecords.set(code, { lastPressId: pressId, lastPressedAtMs: pressedAt });
+		this.keyPressRecords.set(code, { lastPressId: pressId });
 		return true;
 	}
 
@@ -4203,7 +4328,7 @@ export class ConsoleCartEditor {
 		}
 		overlay.timer -= deltaSeconds;
 		if (overlay.timer <= 0) {
-			this.runtimeErrorOverlay = null;
+			this.setActiveRuntimeErrorOverlay(null);
 		}
 	}
 
@@ -4999,6 +5124,7 @@ export class ConsoleCartEditor {
 	}
 
 	private drawCodeArea(api: BmsxConsoleApi): void {
+		this.scrollbarMetrics.codeVertical = null;
 		const bounds = this.getCodeAreaBounds();
 		const codeTop = bounds.codeTop;
 		const codeBottom = bounds.codeBottom;
@@ -5058,9 +5184,11 @@ export class ConsoleCartEditor {
 		if (this.cursorVisible && cursorEntry) {
 			this.drawCursor(api, textLeft, codeTop, cursorEntry, cursorSliceStart);
 		}
+		let codeScrollbar: ScrollbarMetrics | null = null;
 		if (needsScrollbar) {
-			this.drawVerticalScrollbar(api, contentRight, codeTop, codeBottom, this.lines.length, rowCount, this.scrollRow);
+			codeScrollbar = this.drawVerticalScrollbar(api, contentRight, codeTop, codeBottom, this.lines.length, rowCount, this.scrollRow);
 		}
+		this.scrollbarMetrics.codeVertical = codeScrollbar;
 	}
 
 	private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
@@ -5154,6 +5282,7 @@ export class ConsoleCartEditor {
 		if (this.activeTabId === tabId) {
 			if (tab.kind === 'resource_view') {
 				this.enterResourceViewer(tab);
+				this.runtimeErrorOverlay = null;
 			} else if (tab.kind === 'lua_editor') {
 				this.activateCodeEditorTab(tab.id);
 			}
@@ -5162,6 +5291,7 @@ export class ConsoleCartEditor {
 		this.activeTabId = tabId;
 		if (tab.kind === 'resource_view') {
 			this.enterResourceViewer(tab);
+			this.runtimeErrorOverlay = null;
 			return;
 		}
 		if (tab.kind === 'lua_editor') {
@@ -5193,6 +5323,8 @@ export class ConsoleCartEditor {
 	}
 
 	private hideResourcePanel(): void {
+		this.scrollbarMetrics.resourceVertical = null;
+		this.scrollbarMetrics.resourceHorizontal = null;
 		if (!this.resourcePanelVisible) {
 			return;
 		}
@@ -5326,6 +5458,7 @@ private openResourceViewerTab(descriptor: ConsoleResourceDescriptor): void {
 		this.bumpTextVersion();
 		this.dirty = false;
 		this.updateActiveContextDirtyFlag();
+		this.syncRuntimeErrorOverlayFromContext(null);
 		this.updateDesiredColumn();
 		this.resetBlink();
 		this.ensureCursorVisible();
@@ -5618,14 +5751,15 @@ private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): Resourc
 			title,
 			descriptor: descriptor ?? null,
 			load,
-			save,
-			snapshot: null,
-			lastSavedSource: '',
-			saveGeneration: 0,
-			appliedGeneration: 0,
-			dirty: false,
-		};
-	}
+		save,
+		snapshot: null,
+		lastSavedSource: '',
+		saveGeneration: 0,
+		appliedGeneration: 0,
+		dirty: false,
+		runtimeErrorOverlay: null,
+	};
+}
 
 private createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabContext {
 	const title = this.computeResourceTabTitle(descriptor);
@@ -5640,6 +5774,7 @@ private createLuaCodeTabContext(descriptor: ConsoleResourceDescriptor): CodeTabC
 		saveGeneration: 0,
 		appliedGeneration: 0,
 		dirty: false,
+		runtimeErrorOverlay: null,
 	};
 }
 
@@ -5662,6 +5797,7 @@ private storeActiveCodeTabContext(): void {
 	context.saveGeneration = this.saveGeneration;
 	context.appliedGeneration = this.appliedGeneration;
 	context.dirty = this.dirty;
+	context.runtimeErrorOverlay = this.runtimeErrorOverlay;
 	this.setTabDirty(context.id, context.dirty);
 }
 
@@ -5694,6 +5830,7 @@ private activateCodeEditorTab(tabId: string | null): void {
 		}
 		context.dirty = this.dirty;
 		this.setTabDirty(context.id, context.dirty);
+		this.syncRuntimeErrorOverlayFromContext(context);
 		this.invalidateAllHighlights();
 		this.updateDesiredColumn();
 		this.ensureCursorVisible();
@@ -5713,12 +5850,14 @@ private activateCodeEditorTab(tabId: string | null): void {
 	this.selectionAnchor = null;
 	this.dirty = false;
 	context.dirty = false;
+	context.runtimeErrorOverlay = null;
 	this.saveGeneration = context.saveGeneration;
 	this.appliedGeneration = context.appliedGeneration;
 	if (isEntry) {
 		this.lastSavedSource = context.lastSavedSource;
 	}
 	this.setTabDirty(context.id, context.dirty);
+	this.syncRuntimeErrorOverlayFromContext(context);
 	this.updateDesiredColumn();
 	this.resetBlink();
 	this.pointerSelecting = false;
@@ -6342,6 +6481,7 @@ private getMainProgramSourceForReload(): string {
 	}
 
 	private scrollResourceViewer(amount: number): void {
+		this.scrollbarMetrics.viewerVertical = null;
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
@@ -6493,7 +6633,9 @@ private getMainProgramSourceForReload(): string {
 		}
 	}
 
-	private drawResourcePanel(api: BmsxConsoleApi): void {
+private drawResourcePanel(api: BmsxConsoleApi): void {
+		this.scrollbarMetrics.resourceVertical = null;
+		this.scrollbarMetrics.resourceHorizontal = null;
 		if (!this.resourcePanelVisible) {
 			return;
 		}
@@ -6562,18 +6704,21 @@ private getMainProgramSourceForReload(): string {
 				this.drawText(api, contentText, contentX, y, COLOR_STATUS_TEXT);
 			}
 		}
-		if (needsVerticalScrollbar) {
-			this.drawVerticalScrollbar(api, trackLeft, codeTop, effectiveBottom, itemCount, capacity, scroll);
-		}
-		if (needsHorizontalScrollbar) {
-			this.drawHorizontalScrollbar(api, contentLeft, availableRight, effectiveBottom, this.resourceBrowserMaxLineWidth, availableWidth, scrollX);
-		}
+		const verticalMetrics = needsVerticalScrollbar
+			? this.drawVerticalScrollbar(api, trackLeft, codeTop, effectiveBottom, itemCount, capacity, scroll)
+			: null;
+		this.scrollbarMetrics.resourceVertical = verticalMetrics;
+		const horizontalMetrics = needsHorizontalScrollbar
+			? this.drawHorizontalScrollbar(api, contentLeft, availableRight, effectiveBottom, this.resourceBrowserMaxLineWidth, availableWidth, scrollX)
+			: null;
+		this.scrollbarMetrics.resourceHorizontal = horizontalMetrics;
 		if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
 			api.rectfill(dividerLeft, codeTop, bounds.right, codeBottom, RESOURCE_PANEL_DIVIDER_COLOR);
 		}
 	}
 
 	private drawResourceViewer(api: BmsxConsoleApi): void {
+		this.scrollbarMetrics.viewerVertical = null;
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
 			return;
@@ -6617,27 +6762,30 @@ private getMainProgramSourceForReload(): string {
 			const y = textTop + drawIndex * this.lineHeight;
 			this.drawText(api, line, contentLeft, y, COLOR_STATUS_TEXT);
 		}
-		if (needsScrollbar) {
-			this.drawVerticalScrollbar(api, trackLeft, codeTop, effectiveBottom, viewer.lines.length, capacity, viewer.scroll);
-		}
+		const verticalMetrics = needsScrollbar
+			? this.drawVerticalScrollbar(api, trackLeft, codeTop, effectiveBottom, viewer.lines.length, capacity, viewer.scroll)
+			: null;
+		this.scrollbarMetrics.viewerVertical = verticalMetrics;
 	}
 
-	private drawVerticalScrollbar(api: BmsxConsoleApi, left: number, top: number, bottom: number, totalCount: number, visibleCount: number, startIndex: number): void {
+	private drawVerticalScrollbar(api: BmsxConsoleApi, left: number, top: number, bottom: number, totalCount: number, visibleCount: number, startIndex: number): ScrollbarMetrics | null {
 		if (totalCount <= 0 || visibleCount <= 0 || visibleCount >= totalCount) {
-			return;
+			return null;
 		}
 		if (bottom <= top) {
-			return;
+			return null;
 		}
 		const trackLeft = left;
 		const trackRight = trackLeft + SCROLLBAR_WIDTH;
+		const track: RectBounds = { left: trackLeft, top, right: trackRight, bottom };
 		api.rectfill(trackLeft, top, trackRight, bottom, SCROLLBAR_TRACK_COLOR);
 		const trackHeight = bottom - top;
 		if (trackHeight <= 0) {
-			return;
+			return null;
 		}
-		const range = totalCount - visibleCount;
-		const normalizedStart = Math.max(0, Math.min(startIndex, range));
+		const maxScroll = Math.max(0, totalCount - visibleCount);
+		const clampedStart = Math.max(0, Math.min(startIndex, maxScroll));
+		const normalizedStart = maxScroll > 0 ? clampedStart / maxScroll : 0;
 		let thumbHeight = Math.floor((visibleCount / totalCount) * trackHeight);
 		if (thumbHeight < SCROLLBAR_MIN_THUMB_HEIGHT) {
 			thumbHeight = SCROLLBAR_MIN_THUMB_HEIGHT;
@@ -6646,32 +6794,51 @@ private getMainProgramSourceForReload(): string {
 			thumbHeight = trackHeight;
 		}
 		const maxThumbTravel = Math.max(0, trackHeight - thumbHeight);
-		const offset = range > 0 ? Math.floor((normalizedStart / range) * maxThumbTravel) : 0;
+		const offset = Math.floor(normalizedStart * maxThumbTravel);
 		const thumbTop = top + offset;
 		const thumbBottom = Math.min(bottom, thumbTop + thumbHeight);
 		if (thumbBottom <= thumbTop) {
-			return;
+			return {
+				orientation: 'vertical',
+				track,
+				thumb: null,
+				scroll: clampedStart,
+				maxScroll,
+				viewportSize: visibleCount,
+				contentSize: totalCount,
+			};
 		}
-		api.rectfill(trackLeft, thumbTop, trackRight, thumbBottom, SCROLLBAR_THUMB_COLOR);
+		const thumb: RectBounds = { left: trackLeft, top: thumbTop, right: trackRight, bottom: thumbBottom };
+		api.rectfill(thumb.left, thumb.top, thumb.right, thumb.bottom, SCROLLBAR_THUMB_COLOR);
+		return {
+			orientation: 'vertical',
+			track,
+			thumb,
+			scroll: clampedStart,
+			maxScroll,
+			viewportSize: visibleCount,
+			contentSize: totalCount,
+		};
 	}
 
-	private drawHorizontalScrollbar(api: BmsxConsoleApi, left: number, right: number, top: number, totalWidth: number, visibleWidth: number, startOffset: number): void {
+	private drawHorizontalScrollbar(api: BmsxConsoleApi, left: number, right: number, top: number, totalWidth: number, visibleWidth: number, startOffset: number): ScrollbarMetrics | null {
 		if (totalWidth <= 0 || visibleWidth <= 0 || visibleWidth >= totalWidth) {
-			return;
+			return null;
 		}
 		if (right <= left) {
-			return;
+			return null;
 		}
 		const trackTop = top;
 		const trackBottom = trackTop + SCROLLBAR_WIDTH;
+		const track: RectBounds = { left, top: trackTop, right, bottom: trackBottom };
 		api.rectfill(left, trackTop, right, trackBottom, SCROLLBAR_TRACK_COLOR);
 		const trackWidth = right - left;
 		if (trackWidth <= 0) {
-			return;
+			return null;
 		}
-		const maxScroll = totalWidth - visibleWidth;
+		const maxScroll = Math.max(0, totalWidth - visibleWidth);
 		if (maxScroll <= 0) {
-			return;
+			return null;
 		}
 		let thumbWidth = Math.floor((visibleWidth / totalWidth) * trackWidth);
 		if (thumbWidth < SCROLLBAR_MIN_THUMB_HEIGHT) {
@@ -6681,14 +6848,32 @@ private getMainProgramSourceForReload(): string {
 			thumbWidth = trackWidth;
 		}
 		const maxThumbTravel = Math.max(0, trackWidth - thumbWidth);
-		const normalizedOffset = Math.max(0, Math.min(startOffset, maxScroll));
-		const offset = maxScroll > 0 ? Math.floor((normalizedOffset / maxScroll) * maxThumbTravel) : 0;
+		const clampedOffset = Math.max(0, Math.min(startOffset, maxScroll));
+		const offset = Math.floor((maxScroll > 0 ? clampedOffset / maxScroll : 0) * maxThumbTravel);
 		const thumbLeft = left + offset;
 		const thumbRight = Math.min(right, thumbLeft + thumbWidth);
 		if (thumbRight <= thumbLeft) {
-			return;
+			return {
+				orientation: 'horizontal',
+				track,
+				thumb: null,
+				scroll: clampedOffset,
+				maxScroll,
+				viewportSize: visibleWidth,
+				contentSize: totalWidth,
+			};
 		}
-		api.rectfill(thumbLeft, trackTop, thumbRight, trackBottom, SCROLLBAR_THUMB_COLOR);
+		const thumb: RectBounds = { left: thumbLeft, top: trackTop, right: thumbRight, bottom: trackBottom };
+		api.rectfill(thumb.left, thumb.top, thumb.right, thumb.bottom, SCROLLBAR_THUMB_COLOR);
+		return {
+			orientation: 'horizontal',
+			track,
+			thumb,
+			scroll: clampedOffset,
+			maxScroll,
+			viewportSize: visibleWidth,
+			contentSize: totalWidth,
+		};
 	}
 
 	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
@@ -6970,11 +7155,36 @@ private getMainProgramSourceForReload(): string {
 		}
 		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, ACTION_OVERLAY_COLOR);
 
-		const actionLabel = prompt.action === 'resume' ? 'RESUME' : 'REBOOT';
-		const messageLines = [
-			'UNSAVED CHANGES DETECTED.',
-			`SAVE BEFORE ${actionLabel} TO APPLY CODE UPDATES?`,
-		];
+		let messageLines: string[];
+		let primaryLabel: string;
+		let secondaryLabel: string;
+		switch (prompt.action) {
+			case 'resume':
+				messageLines = [
+					'UNSAVED CHANGES DETECTED.',
+					'SAVE BEFORE RESUME TO APPLY CODE UPDATES?',
+				];
+				primaryLabel = 'SAVE & RESUME';
+				secondaryLabel = 'RESUME WITHOUT SAVING';
+				break;
+			case 'reboot':
+				messageLines = [
+					'UNSAVED CHANGES DETECTED.',
+					'SAVE BEFORE REBOOT TO APPLY CODE UPDATES?',
+				];
+				primaryLabel = 'SAVE & REBOOT';
+				secondaryLabel = 'REBOOT WITHOUT SAVING';
+				break;
+			case 'close':
+			default:
+				messageLines = [
+					'UNSAVED CHANGES DETECTED.',
+					'SAVE BEFORE HIDING THE EDITOR?',
+				];
+				primaryLabel = 'SAVE & HIDE';
+				secondaryLabel = 'HIDE WITHOUT SAVING';
+				break;
+		}
 		let maxMessageWidth = 0;
 		for (let i = 0; i < messageLines.length; i++) {
 			const width = this.measureText(messageLines[i]);
@@ -6982,8 +7192,6 @@ private getMainProgramSourceForReload(): string {
 				maxMessageWidth = width;
 			}
 		}
-		const primaryLabel = prompt.action === 'resume' ? 'SAVE & RESUME' : 'SAVE & REBOOT';
-		const secondaryLabel = prompt.action === 'resume' ? 'RESUME WITHOUT SAVING' : 'REBOOT WITHOUT SAVING';
 		const cancelLabel = 'CANCEL';
 		const primaryWidth = this.measureText(primaryLabel) + HEADER_BUTTON_PADDING_X * 2;
 		const secondaryWidth = this.measureText(secondaryLabel) + HEADER_BUTTON_PADDING_X * 2;
