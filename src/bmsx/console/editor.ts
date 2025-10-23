@@ -2416,10 +2416,15 @@ export class ConsoleCartEditor {
 			return;
 		}
 		this.symbolCatalogContext = { scope, assetId, chunkName };
-		this.symbolCatalog = entries.map((entry) => {
+		const filtered = scope === 'global'
+			? entries.filter(item => item.kind === 'function' || item.kind === 'table_field' || item.kind === 'variable')
+			: entries;
+		this.symbolCatalog = filtered.map((entry) => {
 			const display = entry.path && entry.path.length > 0 ? entry.path : entry.name;
 			const sourceLabel = scope === 'global' ? this.symbolSourceLabel(entry) : null;
-			const combinedKey = (display + ' ' + (sourceLabel ?? '')).toLowerCase();
+			const combinedKey = sourceLabel
+				? `${display} ${sourceLabel}`.toLowerCase()
+				: display.toLowerCase();
 			return {
 				symbol: entry,
 				displayName: display,
@@ -2591,8 +2596,11 @@ export class ConsoleCartEditor {
 		}
 		const match = this.symbolSearchMatches[index];
 		this.closeSymbolSearch(true);
-		this.navigateToLuaDefinition(match.entry.symbol.location);
-	}
+		const location = match.entry.symbol.location;
+		setTimeout(() => {
+			this.navigateToLuaDefinition(location);
+		}, 0);
+ 	}
 
 	private handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
@@ -6387,7 +6395,7 @@ export class ConsoleCartEditor {
 		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_SYMBOL_SEARCH_OUTLINE);
 
 		const field = this.symbolSearchField;
-		const label = 'SYMBOL @:';
+		const label = this.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 		const labelX = 4;
 		const labelY = barTop + SYMBOL_SEARCH_BAR_MARGIN_Y;
 		this.drawText(api, label, labelX, labelY, COLOR_SYMBOL_SEARCH_TEXT);
