@@ -96,6 +96,12 @@ export type ConsoleResourceDescriptor = {
 	assetId: string;
 };
 
+export type ConsoleLuaResourceCreationRequest = {
+	path: string;
+	assetId?: string | null;
+	contents: string;
+};
+
 export type ConsoleLuaHoverScope = 'global' | 'chunk';
 
 export type ConsoleLuaHoverValueState = 'value' | 'not_defined';

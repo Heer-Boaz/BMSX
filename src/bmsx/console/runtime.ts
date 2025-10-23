@@ -5,7 +5,8 @@ import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest } from './types';
+import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue } from '../lua/value.ts';
@@ -463,6 +464,7 @@ export class BmsxConsoleRuntime extends Service {
 			listResources: () => this.getResourceDescriptors(),
 			loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
 			saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
+			createLuaResource: (request) => this.createLuaResource(request),
 			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
 			primaryAssetId,
 		});
@@ -651,6 +653,104 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			rompack.lua[assetId] = source;
 		}
+	}
+
+	private async createLuaResource(request: ConsoleLuaResourceCreationRequest): Promise<ConsoleResourceDescriptor> {
+		if (!request || typeof request.path !== 'string') {
+			throw new Error('[BmsxConsoleRuntime] Path must be provided to create a Lua resource.');
+		}
+		const rompack = $.rompack;
+		if (!rompack) {
+			throw new Error('[BmsxConsoleRuntime] Rompack not loaded while creating Lua resource.');
+		}
+		const contents = typeof request.contents === 'string' ? request.contents : '';
+		if (contents.trim().length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Initial Lua resource contents must be a non-empty string.');
+		}
+		let normalizedPath = request.path.trim();
+		if (normalizedPath.length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Lua resource path cannot be empty.');
+		}
+		if (normalizedPath.indexOf('\n') !== -1 || normalizedPath.indexOf('\r') !== -1) {
+			throw new Error('[BmsxConsoleRuntime] Lua resource path cannot contain newline characters.');
+		}
+		normalizedPath = normalizedPath.replace(/\\/g, '/');
+		normalizedPath = normalizedPath.replace(/\/+/g, '/');
+		if (normalizedPath.startsWith('./')) {
+			normalizedPath = normalizedPath.slice(2);
+		}
+		while (normalizedPath.startsWith('/')) {
+			normalizedPath = normalizedPath.slice(1);
+		}
+		if (normalizedPath.length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Lua resource path cannot be empty.');
+		}
+		const segments = normalizedPath.split('/');
+		for (let i = 0; i < segments.length; i += 1) {
+			if (segments[i] === '..') {
+				throw new Error('[BmsxConsoleRuntime] Lua resource path cannot contain ".." segments.');
+			}
+		}
+		if (normalizedPath.endsWith('/')) {
+			throw new Error('[BmsxConsoleRuntime] Lua resource path must include a file name.');
+		}
+		if (!normalizedPath.endsWith('.lua')) {
+			normalizedPath += '.lua';
+		}
+		const slashIndex = normalizedPath.lastIndexOf('/');
+		const fileName = slashIndex === -1 ? normalizedPath : normalizedPath.slice(slashIndex + 1);
+		if (fileName.length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Lua resource file name cannot be empty.');
+		}
+		const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
+		let assetIdCandidate = '';
+		if (typeof request.assetId === 'string') {
+			assetIdCandidate = request.assetId.trim();
+		}
+		if (assetIdCandidate.length === 0) {
+			assetIdCandidate = baseName;
+		}
+		if (assetIdCandidate.length === 0) {
+			throw new Error('[BmsxConsoleRuntime] Unable to infer Lua asset id for new resource.');
+		}
+		if (!/^[A-Za-z0-9_]+$/.test(assetIdCandidate)) {
+			throw new Error(`[BmsxConsoleRuntime] Lua asset id '${assetIdCandidate}' must only contain letters, digits, or underscores.`);
+		}
+		const assetId = assetIdCandidate;
+		if (rompack.lua && Object.prototype.hasOwnProperty.call(rompack.lua, assetId)) {
+			throw new Error(`[BmsxConsoleRuntime] Lua asset '${assetId}' already exists.`);
+		}
+		if (Array.isArray(rompack.resourcePaths)) {
+			for (let i = 0; i < rompack.resourcePaths.length; i += 1) {
+				const entry = rompack.resourcePaths[i];
+				const entryPath = entry.path ? entry.path.replace(/\\/g, '/') : '';
+				if (entry.assetId === assetId) {
+					throw new Error(`[BmsxConsoleRuntime] Resource for asset '${assetId}' already exists.`);
+				}
+				if (entryPath === normalizedPath) {
+					throw new Error(`[BmsxConsoleRuntime] Resource at path '${normalizedPath}' already exists.`);
+				}
+			}
+		}
+		await this.persistLuaSourceToFilesystem(normalizedPath, contents);
+		if (!rompack.lua) {
+			rompack.lua = {};
+		}
+		rompack.lua[assetId] = contents;
+		if (!rompack.luaSourcePaths) {
+			rompack.luaSourcePaths = {};
+		}
+		rompack.luaSourcePaths[assetId] = normalizedPath;
+		if (!Array.isArray(rompack.resourcePaths)) {
+			rompack.resourcePaths = [];
+		}
+		const resourceEntry: RomResourcePath = { path: normalizedPath, type: 'lua', assetId };
+		rompack.resourcePaths.push(resourceEntry);
+		rompack.resourcePaths.sort((left, right) => left.path.localeCompare(right.path));
+		this.resourcePathCache.set(assetId, normalizedPath);
+		this.registerLuaChunkResource(normalizedPath, { assetId, path: normalizedPath });
+		const descriptor: ConsoleResourceDescriptor = { path: normalizedPath, type: 'lua', assetId };
+		return descriptor;
 	}
 
 	private captureFallbackLuaState(): { globals?: Record<string, unknown>; locals?: Record<string, unknown>; randomSeed?: number } | null {

@@ -3,7 +3,7 @@ import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState } from '../input/inputtypes';
 import type { ClipboardService, ViewportMetrics } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
-import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState } from './types';
+import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
 
@@ -76,6 +76,7 @@ export type ConsoleEditorOptions = {
 	listResources: () => ConsoleResourceDescriptor[];
 	loadLuaResource: (assetId: string) => string;
 	saveLuaResource: (assetId: string, source: string) => Promise<void>;
+	createLuaResource: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	inspectLuaExpression: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	primaryAssetId: string | null;
 };
@@ -290,6 +291,14 @@ const HOVER_TOOLTIP_BORDER = COLOR_TOP_BAR_TEXT;
 const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
 const HOVER_TOOLTIP_MAX_LINE_LENGTH = 160;
 const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
+const COLOR_CREATE_RESOURCE_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+const COLOR_CREATE_RESOURCE_TEXT = COLOR_SEARCH_TEXT;
+const COLOR_CREATE_RESOURCE_PLACEHOLDER = COLOR_SEARCH_PLACEHOLDER;
+const COLOR_CREATE_RESOURCE_OUTLINE = COLOR_SEARCH_OUTLINE;
+const COLOR_CREATE_RESOURCE_ERROR = COLOR_STATUS_ERROR;
+const CREATE_RESOURCE_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
+const CREATE_RESOURCE_MAX_PATH_LENGTH = 256;
+const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '-- New Lua resource\n';
 const HEADER_BUTTON_PADDING_X = 5;
 const HEADER_BUTTON_PADDING_Y = 1;
 const HEADER_BUTTON_SPACING = 4;
@@ -339,6 +348,7 @@ export class ConsoleCartEditor {
 	private readonly saveSourceFn: (source: string) => Promise<void>;
 	private readonly loadLuaResourceFn: (assetId: string) => string;
 	private readonly saveLuaResourceFn: (assetId: string, source: string) => Promise<void>;
+	private readonly createLuaResourceFn: (request: ConsoleLuaResourceCreationRequest) => Promise<ConsoleResourceDescriptor>;
 	private readonly listResourcesFn: () => ConsoleResourceDescriptor[];
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	private readonly primaryAssetId: string | null;
@@ -390,8 +400,9 @@ export class ConsoleCartEditor {
 		'KeyY',
 		'KeyZ',
 		'KeyF',
-		'KeyL',
-		'BracketLeft',
+			'KeyL',
+			'KeyN',
+			'BracketLeft',
 		'BracketRight',
 		'F3',
 	];
@@ -449,6 +460,12 @@ export class ConsoleCartEditor {
 	private lineJumpActive = false;
 	private lineJumpVisible = false;
 	private lineJumpValue = '';
+	private createResourceActive = false;
+	private createResourceVisible = false;
+	private createResourcePath = '';
+	private createResourceError: string | null = null;
+	private createResourceWorking = false;
+	private lastCreateResourceDirectory: string | null = null;
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
 	private textVersion = 0;
@@ -478,6 +495,7 @@ export class ConsoleCartEditor {
 		this.listResourcesFn = options.listResources;
 		this.loadLuaResourceFn = options.loadLuaResource;
 		this.saveLuaResourceFn = options.saveLuaResource;
+		this.createLuaResourceFn = options.createLuaResource;
 		this.inspectLuaExpressionFn = options.inspectLuaExpression;
 		this.primaryAssetId = options.primaryAssetId;
 		if ($ && $.debug) {
@@ -882,16 +900,17 @@ export class ConsoleCartEditor {
 		}
 		const frameColor = Msx1Colors[COLOR_FRAME];
 		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
-	this.drawTopBar(api);
-	this.drawTabBar(api);
-	this.drawResourcePanel(api);
-	if (this.isResourceViewActive()) {
-		this.drawResourceViewer(api);
-	} else {
-		this.drawSearchBar(api);
-		this.drawLineJumpBar(api);
-		this.drawCodeArea(api);
-	}
+		this.drawTopBar(api);
+		this.drawTabBar(api);
+		this.drawResourcePanel(api);
+		if (this.isResourceViewActive()) {
+			this.drawResourceViewer(api);
+		} else {
+			this.drawCreateResourceBar(api);
+			this.drawSearchBar(api);
+			this.drawLineJumpBar(api);
+			this.drawCodeArea(api);
+		}
 		this.drawStatusBar(api);
 		if (this.pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
@@ -1232,6 +1251,11 @@ export class ConsoleCartEditor {
 		this.lineJumpActive = false;
 		this.lineJumpVisible = false;
 		this.lineJumpValue = '';
+		this.createResourceActive = false;
+		this.createResourceVisible = false;
+		this.createResourcePath = '';
+		this.createResourceError = null;
+		this.createResourceWorking = false;
 		this.resetActionPromptState();
 		this.hideResourcePanel();
 		this.activateCodeTab();
@@ -1263,6 +1287,10 @@ export class ConsoleCartEditor {
 			if (this.runtimeErrorOverlay) {
 				this.clearRuntimeErrorOverlay();
 				this.message.visible = false;
+				return true;
+			}
+			if (this.createResourceVisible) {
+				this.closeCreateResourcePrompt(true);
 				return true;
 			}
 			if (this.lineJumpActive || this.lineJumpVisible) {
@@ -1355,6 +1383,7 @@ export class ConsoleCartEditor {
 		this.lineJumpVisible = false;
 		this.runtimeErrorOverlay = null;
 		this.resetActionPromptState();
+		this.closeCreateResourcePrompt(false);
 		this.hideResourcePanel();
 	}
 
@@ -1394,16 +1423,27 @@ export class ConsoleCartEditor {
 			this.handleResourceViewerInput(keyboard, deltaSeconds);
 			return;
 		}
-		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
-		const shiftDown = this.isModifierPressed(keyboard, 'ShiftLeft') || this.isModifierPressed(keyboard, 'ShiftRight');
-		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
-		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
+			const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
+			const shiftDown = this.isModifierPressed(keyboard, 'ShiftLeft') || this.isModifierPressed(keyboard, 'ShiftRight');
+			const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
+			const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
 
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyF')) {
-			this.consumeKey(keyboard, 'KeyF');
-			this.openSearch(true);
-			return;
-		}
+			if (this.createResourceActive) {
+				this.handleCreateResourceInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
+				return;
+			}
+
+			if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyN')) {
+				this.consumeKey(keyboard, 'KeyN');
+				this.openCreateResourcePrompt();
+				return;
+			}
+
+			if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyF')) {
+				this.consumeKey(keyboard, 'KeyF');
+				this.openSearch(true);
+				return;
+			}
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyA')) {
 			this.consumeKey(keyboard, 'KeyA');
 			this.selectionAnchor = { row: 0, column: 0 };
@@ -1506,6 +1546,300 @@ export class ConsoleCartEditor {
 			this.insertText(' ');
 			this.consumeKey(keyboard, 'Space');
 		}
+	}
+
+	private handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
+		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
+		if (this.isKeyJustPressed(keyboard, 'Escape')) {
+			this.consumeKey(keyboard, 'Escape');
+			this.cancelCreateResourcePrompt();
+			return;
+		}
+		if (!this.createResourceWorking && this.isKeyJustPressed(keyboard, 'Enter')) {
+			this.consumeKey(keyboard, 'Enter');
+			void this.confirmCreateResourcePrompt();
+			return;
+		}
+		if (this.createResourceWorking) {
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyV')) {
+			this.consumeKey(keyboard, 'KeyV');
+			this.pasteIntoCreateResourcePath();
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyC')) {
+			this.consumeKey(keyboard, 'KeyC');
+			this.copyCreateResourcePathToClipboard();
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyX', deltaSeconds)) {
+			this.consumeKey(keyboard, 'KeyX');
+			if (this.createResourcePath.length > 0) {
+				ConsoleCartEditor.customClipboard = this.createResourcePath;
+				this.createResourcePath = '';
+				this.createResourceError = null;
+				this.resetBlink();
+			}
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Backspace');
+			this.removeCreateResourceCharacter();
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Delete');
+			this.removeCreateResourceCharacter();
+			return;
+		}
+		if (ctrlDown || metaDown || altDown) {
+			return;
+		}
+		if (this.shouldFireRepeat(keyboard, 'Space', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Space');
+			this.appendToCreateResourcePath(' ');
+			return;
+		}
+		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
+			const code = CHARACTER_CODES[i];
+			if (!this.isKeyTyped(keyboard, code)) {
+				continue;
+			}
+			const entry = CHARACTER_MAP[code];
+			const value = shiftDown ? entry.shift : entry.normal;
+			this.appendToCreateResourcePath(value);
+			this.consumeKey(keyboard, code);
+		}
+	}
+
+	private openCreateResourcePrompt(): void {
+		if (this.createResourceWorking) {
+			return;
+		}
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.resourcePanelFocused = false;
+		if (!this.createResourceVisible) {
+			let defaultPath = this.determineCreateResourceDefaultPath();
+			if (defaultPath.length > CREATE_RESOURCE_MAX_PATH_LENGTH) {
+				defaultPath = defaultPath.slice(defaultPath.length - CREATE_RESOURCE_MAX_PATH_LENGTH);
+			}
+			this.createResourcePath = defaultPath;
+			this.createResourceVisible = true;
+		}
+		this.createResourceActive = true;
+		this.createResourceError = null;
+		this.cursorVisible = true;
+		this.resetBlink();
+	}
+
+	private closeCreateResourcePrompt(focusEditor: boolean): void {
+		this.createResourceActive = false;
+		this.createResourceVisible = false;
+		this.createResourcePath = '';
+		this.createResourceError = null;
+		this.createResourceWorking = false;
+		if (focusEditor) {
+			this.focusEditorFromSearch();
+			this.focusEditorFromLineJump();
+		}
+		this.resetBlink();
+	}
+
+	private cancelCreateResourcePrompt(): void {
+		this.closeCreateResourcePrompt(true);
+	}
+
+	private async confirmCreateResourcePrompt(): Promise<void> {
+		if (this.createResourceWorking) {
+			return;
+		}
+		let normalizedPath: string;
+		let assetId: string;
+		let directory: string;
+		try {
+			const result = this.normalizeCreateResourceRequest(this.createResourcePath);
+			normalizedPath = result.path;
+			assetId = result.assetId;
+			directory = result.directory;
+			this.createResourcePath = normalizedPath;
+			this.createResourceError = null;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.createResourceError = message;
+			this.showMessage(message, COLOR_STATUS_ERROR, 4.0);
+			this.resetBlink();
+			return;
+		}
+		this.createResourceWorking = true;
+		this.resetBlink();
+		try {
+			const descriptor = await this.createLuaResourceFn({ path: normalizedPath, assetId, contents: DEFAULT_NEW_LUA_RESOURCE_CONTENT });
+			this.lastCreateResourceDirectory = directory;
+			this.pendingResourceSelectionAssetId = descriptor.assetId;
+			if (this.resourcePanelVisible) {
+				this.refreshResourcePanelContents();
+			}
+			this.openLuaCodeTab(descriptor);
+			this.showMessage(`Created ${descriptor.path}`, COLOR_STATUS_SUCCESS, 2.0);
+			this.closeCreateResourcePrompt(false);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.createResourceError = message;
+			this.showMessage(`Failed to create Lua resource: ${message}`, COLOR_STATUS_ERROR, 4.0);
+		} finally {
+			this.createResourceWorking = false;
+			this.resetBlink();
+		}
+	}
+
+	private appendToCreateResourcePath(value: string): void {
+		if (value.length === 0) {
+			return;
+		}
+		if (!this.isValidCreateResourceCharacter(value)) {
+			return;
+		}
+		if (this.createResourcePath.length >= CREATE_RESOURCE_MAX_PATH_LENGTH) {
+			return;
+		}
+		this.createResourcePath += value;
+		this.createResourceError = null;
+		this.resetBlink();
+	}
+
+	private removeCreateResourceCharacter(): void {
+		if (this.createResourcePath.length === 0) {
+			return;
+		}
+		this.createResourcePath = this.createResourcePath.slice(0, -1);
+		this.createResourceError = null;
+		this.resetBlink();
+	}
+
+	private isValidCreateResourceCharacter(value: string): boolean {
+		if (value.length !== 1) {
+			return false;
+		}
+		const code = value.charCodeAt(0);
+		if (code >= 48 && code <= 57) {
+			return true;
+		}
+		if (code >= 65 && code <= 90) {
+			return true;
+		}
+		if (code >= 97 && code <= 122) {
+			return true;
+		}
+		return value === '_' || value === '-' || value === '.' || value === '/';
+	}
+
+	private pasteIntoCreateResourcePath(): void {
+		const source = ConsoleCartEditor.customClipboard;
+		if (!source || source.length === 0) {
+			this.showMessage('Editor clipboard is empty', COLOR_STATUS_WARNING, 1.5);
+			return;
+		}
+		const normalized = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+		const merged = normalized.split('\n').join('');
+		if (merged.length === 0) {
+			return;
+		}
+		for (let i = 0; i < merged.length; i += 1) {
+			if (this.createResourcePath.length >= CREATE_RESOURCE_MAX_PATH_LENGTH) {
+				break;
+			}
+			const ch = merged.charAt(i);
+			if (!this.isValidCreateResourceCharacter(ch)) {
+				continue;
+			}
+			this.createResourcePath += ch;
+		}
+		this.createResourceError = null;
+		this.resetBlink();
+	}
+
+	private copyCreateResourcePathToClipboard(): void {
+		ConsoleCartEditor.customClipboard = this.createResourcePath;
+		this.showMessage('Path copied to editor clipboard', COLOR_STATUS_SUCCESS, 1.5);
+	}
+
+	private normalizeCreateResourceRequest(rawPath: string): { path: string; assetId: string; directory: string } {
+		let candidate = rawPath.trim();
+		if (candidate.length === 0) {
+			throw new Error('Path must not be empty.');
+		}
+		if (candidate.indexOf('\n') !== -1 || candidate.indexOf('\r') !== -1) {
+			throw new Error('Path cannot contain newlines.');
+		}
+		candidate = candidate.replace(/\\/g, '/');
+		candidate = candidate.replace(/\/+/g, '/');
+		if (candidate.startsWith('./')) {
+			candidate = candidate.slice(2);
+		}
+		while (candidate.startsWith('/')) {
+			candidate = candidate.slice(1);
+		}
+		const segments = candidate.split('/');
+		for (let i = 0; i < segments.length; i += 1) {
+			if (segments[i] === '..') {
+				throw new Error('Path cannot contain ".." segments.');
+			}
+		}
+		if (candidate.endsWith('/')) {
+			throw new Error('Path must include a file name.');
+		}
+		if (!candidate.endsWith('.lua')) {
+			candidate += '.lua';
+		}
+		const slashIndex = candidate.lastIndexOf('/');
+		const directory = slashIndex === -1 ? '' : candidate.slice(0, slashIndex + 1);
+		const fileName = slashIndex === -1 ? candidate : candidate.slice(slashIndex + 1);
+		if (fileName.length === 0) {
+			throw new Error('File name cannot be empty.');
+		}
+		const baseName = fileName.endsWith('.lua') ? fileName.slice(0, -4) : fileName;
+		if (baseName.length === 0) {
+			throw new Error('Asset id cannot be empty.');
+		}
+		if (!/^[A-Za-z0-9_]+$/.test(baseName)) {
+			throw new Error('Asset id must contain only letters, digits, or underscores.');
+		}
+		return { path: candidate, assetId: baseName, directory: this.ensureDirectorySuffix(directory) };
+	}
+
+	private determineCreateResourceDefaultPath(): string {
+		if (this.lastCreateResourceDirectory && this.lastCreateResourceDirectory.length > 0) {
+			return this.lastCreateResourceDirectory;
+		}
+		const activeContext = this.getActiveCodeTabContext();
+		if (activeContext && activeContext.descriptor && typeof activeContext.descriptor.path === 'string' && activeContext.descriptor.path.length > 0) {
+			return this.ensureDirectorySuffix(activeContext.descriptor.path);
+		}
+		let descriptors: ConsoleResourceDescriptor[] = [];
+		try {
+			descriptors = this.listResourcesFn();
+		} catch (error) {
+			descriptors = [];
+		}
+		const firstLua = descriptors.find(entry => entry.type === 'lua' && typeof entry.path === 'string' && entry.path.length > 0);
+		if (firstLua && typeof firstLua.path === 'string') {
+			return this.ensureDirectorySuffix(firstLua.path);
+		}
+		return 'res/lua/';
+	}
+
+	private ensureDirectorySuffix(path: string): string {
+		if (!path || path.length === 0) {
+			return '';
+		}
+		const normalized = path.replace(/\\/g, '/');
+		const slashIndex = normalized.lastIndexOf('/');
+		if (slashIndex === -1) {
+			return '';
+		}
+		return normalized.slice(0, slashIndex + 1);
 	}
 
 	private handleSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
@@ -2207,21 +2541,29 @@ export class ConsoleCartEditor {
 			this.clearHoverTooltip();
 			return;
 		}
-		if (this.pendingActionPrompt) {
-			this.resetPointerClickTracking();
-			if (justPressed) {
-				this.handleActionPromptPointer(snapshot);
+			if (this.pendingActionPrompt) {
+				this.resetPointerClickTracking();
+				if (justPressed) {
+					this.handleActionPromptPointer(snapshot);
+				}
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearHoverTooltip();
+				return;
 			}
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
-			this.clearHoverTooltip();
-			return;
-		}
-		const lineJumpBounds = this.getLineJumpBarBounds();
-		if (justPressed && lineJumpBounds && snapshot.viewportY >= lineJumpBounds.top && snapshot.viewportY < lineJumpBounds.bottom) {
-			this.closeSearch(false);
-			this.lineJumpVisible = true;
-			this.lineJumpActive = true;
+			const createResourceBounds = this.getCreateResourceBarBounds();
+			if (justPressed && createResourceBounds && snapshot.viewportY >= createResourceBounds.top && snapshot.viewportY < createResourceBounds.bottom) {
+				this.openCreateResourcePrompt();
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearHoverTooltip();
+				return;
+			}
+			const lineJumpBounds = this.getLineJumpBarBounds();
+			if (justPressed && lineJumpBounds && snapshot.viewportY >= lineJumpBounds.top && snapshot.viewportY < lineJumpBounds.bottom) {
+				this.closeSearch(false);
+				this.lineJumpVisible = true;
+				this.lineJumpActive = true;
 			this.resetBlink();
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -4346,12 +4688,69 @@ export class ConsoleCartEditor {
 		this.drawText(api, version, this.viewportWidth - this.measureText(version) - 4, titleY, COLOR_TOP_BAR_TEXT);
 	}
 
+	private drawCreateResourceBar(api: BmsxConsoleApi): void {
+		const height = this.getCreateResourceBarHeight();
+		if (height <= 0) {
+			return;
+		}
+		const barTop = this.headerHeight + this.tabBarHeight;
+		const barBottom = barTop + height;
+		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_CREATE_RESOURCE_BACKGROUND);
+		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_CREATE_RESOURCE_OUTLINE);
+		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, COLOR_CREATE_RESOURCE_OUTLINE);
+
+		const label = 'NEW FILE:';
+		const labelX = 4;
+		const labelY = barTop + CREATE_RESOURCE_BAR_MARGIN_Y;
+		this.drawText(api, label, labelX, labelY, COLOR_CREATE_RESOURCE_TEXT);
+
+		const pathX = labelX + this.measureText(label + ' ');
+		let displayPath = this.createResourcePath;
+		let pathColor = COLOR_CREATE_RESOURCE_TEXT;
+		if (displayPath.length === 0 && !this.createResourceActive) {
+			displayPath = 'ENTER LUA PATH';
+			pathColor = COLOR_CREATE_RESOURCE_PLACEHOLDER;
+		}
+		this.drawText(api, displayPath, pathX, labelY, pathColor);
+
+		const caretBaseX = pathX + this.measureText(this.createResourcePath);
+		const caretSource = this.createResourcePath.length > 0 ? this.createResourcePath.charAt(this.createResourcePath.length - 1) : ' ';
+		const caretAdvance = this.font.advance(caretSource);
+		const caretWidth = caretAdvance > 0 ? caretAdvance : this.charAdvance;
+		const caretLeft = Math.floor(caretBaseX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + caretWidth));
+		const caretTop = Math.floor(labelY);
+		const caretBottom = caretTop + this.lineHeight;
+		if (this.cursorVisible) {
+			if (this.createResourceActive) {
+				api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			} else {
+				this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+			}
+		}
+
+		if (this.createResourceWorking) {
+			const status = 'CREATING...';
+			const statusWidth = this.measureText(status);
+			const statusX = Math.max(pathX + this.measureText(displayPath) + this.spaceAdvance, this.viewportWidth - statusWidth - 4);
+			this.drawText(api, status, statusX, labelY, COLOR_CREATE_RESOURCE_TEXT);
+		} else if (this.createResourceError && this.createResourceError.length > 0) {
+			const errorText = this.createResourceError;
+			const errorWidth = this.measureText(errorText);
+			const preferredX = this.viewportWidth - errorWidth - 4;
+			const fallbackX = pathX + this.measureText(displayPath) + this.spaceAdvance;
+			const errorX = preferredX > fallbackX ? preferredX : fallbackX;
+			this.drawText(api, errorText, errorX, labelY, COLOR_CREATE_RESOURCE_ERROR);
+		}
+	}
+
 	private drawSearchBar(api: BmsxConsoleApi): void {
 		const height = this.getSearchBarHeight();
 		if (height <= 0) {
 			return;
 		}
-	const barTop = this.headerHeight + this.tabBarHeight;
+	const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight();
+	const barTop = baseTop;
 	const barBottom = barTop + height;
 		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_SEARCH_BACKGROUND);
 		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_SEARCH_OUTLINE);
@@ -4402,8 +4801,8 @@ export class ConsoleCartEditor {
 		if (height <= 0) {
 			return;
 		}
-		const offset = this.getSearchBarHeight();
-		const barTop = this.headerHeight + this.tabBarHeight + offset;
+		const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight();
+		const barTop = baseTop + this.getSearchBarHeight();
 		const barBottom = barTop + height;
 		api.rectfill(0, barTop, this.viewportWidth, barBottom, COLOR_LINE_JUMP_BACKGROUND);
 		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, COLOR_LINE_JUMP_OUTLINE);
@@ -4439,7 +4838,18 @@ export class ConsoleCartEditor {
 	}
 
 	private codeViewportTop(): number {
-		return this.topMargin + this.getSearchBarHeight() + this.getLineJumpBarHeight();
+		return this.topMargin + this.getCreateResourceBarHeight() + this.getSearchBarHeight() + this.getLineJumpBarHeight();
+	}
+
+	private getCreateResourceBarHeight(): number {
+		if (!this.isCreateResourceVisible()) {
+			return 0;
+		}
+		return this.lineHeight + CREATE_RESOURCE_BAR_MARGIN_Y * 2;
+	}
+
+	private isCreateResourceVisible(): boolean {
+		return this.createResourceVisible;
 	}
 
 	private getSearchBarHeight(): number {
@@ -4464,12 +4874,26 @@ export class ConsoleCartEditor {
 		return this.lineJumpVisible;
 	}
 
+	private getCreateResourceBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+		const height = this.getCreateResourceBarHeight();
+		if (height <= 0) {
+			return null;
+		}
+		const top = this.headerHeight + this.tabBarHeight;
+		return {
+			top,
+			bottom: top + height,
+			left: 0,
+			right: this.viewportWidth,
+		};
+	}
+
 	private getSearchBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
 		const height = this.getSearchBarHeight();
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.tabBarHeight;
+		const top = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -4483,7 +4907,7 @@ export class ConsoleCartEditor {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.tabBarHeight + this.getSearchBarHeight();
+		const top = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight() + this.getSearchBarHeight();
 		return {
 			top,
 			bottom: top + height,
