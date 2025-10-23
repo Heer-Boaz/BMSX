@@ -4250,16 +4250,27 @@ export class ConsoleCartEditor {
 		this.keyPressRecords.clear();
 	}
 
-	private shouldAcceptJustPressed(code: string, state: ButtonState): boolean {
-		if (state.justpressed !== true || state.consumed === true) {
+	private shouldAcceptKeyPress(code: string, state: ButtonState): boolean {
+		if (state.pressed !== true) {
+			this.keyPressRecords.delete(code);
 			return false;
 		}
 		const pressId = typeof state.pressId === 'number' ? state.pressId : null;
 		const existing = this.keyPressRecords.get(code);
-		if (existing && pressId !== null && existing.lastPressId === pressId) {
+		if (pressId !== null) {
+			if (existing && existing.lastPressId === pressId) {
+				return false;
+			}
+			this.keyPressRecords.set(code, { lastPressId: pressId });
+			return true;
+		}
+		if (state.justpressed !== true) {
 			return false;
 		}
-		this.keyPressRecords.set(code, { lastPressId: pressId });
+		if (existing && existing.lastPressId === null) {
+			return false;
+		}
+		this.keyPressRecords.set(code, { lastPressId: null });
 		return true;
 	}
 
@@ -4281,7 +4292,7 @@ export class ConsoleCartEditor {
 		if (!state) {
 			return false;
 		}
-		return this.shouldAcceptJustPressed(code, state);
+		return this.shouldAcceptKeyPress(code, state);
 	}
 
 	private insertTab(): void {
@@ -7820,7 +7831,7 @@ private getMainProgramSourceForReload(): string {
 		if (!state) {
 			return false;
 		}
-		return this.shouldAcceptJustPressed(code, state);
+		return this.shouldAcceptKeyPress(code, state);
 	}
 
 	private isModifierPressed(keyboard: KeyboardInput, code: string): boolean {
@@ -7835,6 +7846,7 @@ private getMainProgramSourceForReload(): string {
 		const state = this.getButtonState(keyboard, code);
 		if (!state || state.pressed !== true) {
 			this.repeatState.delete(code);
+			this.keyPressRecords.delete(code);
 			return false;
 		}
 		let entry = this.repeatState.get(code);
@@ -7842,10 +7854,7 @@ private getMainProgramSourceForReload(): string {
 			entry = { cooldown: INITIAL_REPEAT_DELAY };
 			this.repeatState.set(code, entry);
 		}
-		if (state.justpressed) {
-			if (!this.shouldAcceptJustPressed(code, state)) {
-				return false;
-			}
+		if (this.shouldAcceptKeyPress(code, state)) {
 			entry.cooldown = INITIAL_REPEAT_DELAY;
 			return true;
 		}
