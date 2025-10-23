@@ -644,6 +644,7 @@ export class ConsoleCartEditor {
 	private readonly createResourceField: InlineTextField;
 	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	private activeScrollbarDrag: { kind: ScrollbarKind; pointerOffset: number } | null = null;
+	private escapeToggleLatch = false;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
@@ -1513,42 +1514,51 @@ export class ConsoleCartEditor {
 	}
 
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
-		if (this.isKeyJustPressed(keyboard, 'Escape')) {
-			this.consumeKey(keyboard, 'Escape');
-			if (this.pendingActionPrompt) {
-				this.resetActionPromptState();
-				return true;
-			}
-			if (this.runtimeErrorOverlay) {
-				this.clearRuntimeErrorOverlay();
-				this.message.visible = false;
-				return true;
-			}
-			if (this.createResourceVisible) {
-				this.closeCreateResourcePrompt(true);
-				return true;
-			}
-			if (this.lineJumpActive || this.lineJumpVisible) {
-				this.closeLineJump(false);
-				return true;
-			}
-			if (this.searchActive || this.searchVisible) {
-				this.closeSearch(false);
-				this.searchVisible = false;
-				return true;
-			}
-			if (this.active) {
-				if (this.dirty) {
-					this.openActionPrompt('close');
-				} else {
-					this.deactivate();
-				}
-			} else {
-				this.activate();
-			}
+		const escapeState = this.getButtonState(keyboard, 'Escape');
+		if (!escapeState || escapeState.pressed !== true) {
+			this.escapeToggleLatch = false;
+			return false;
+		}
+		if (this.escapeToggleLatch) {
+			return false;
+		}
+		if (!this.isKeyJustPressed(keyboard, 'Escape')) {
+			return false;
+		}
+		this.escapeToggleLatch = true;
+		this.consumeKey(keyboard, 'Escape');
+		if (this.pendingActionPrompt) {
+			this.resetActionPromptState();
 			return true;
 		}
-		return false;
+		if (this.runtimeErrorOverlay) {
+			this.clearRuntimeErrorOverlay();
+			this.message.visible = false;
+			return true;
+		}
+		if (this.createResourceVisible) {
+			this.closeCreateResourcePrompt(true);
+			return true;
+		}
+		if (this.lineJumpActive || this.lineJumpVisible) {
+			this.closeLineJump(false);
+			return true;
+		}
+		if (this.searchActive || this.searchVisible) {
+			this.closeSearch(false);
+			this.searchVisible = false;
+			return true;
+		}
+		if (this.active) {
+			if (this.dirty) {
+				this.openActionPrompt('close');
+			} else {
+				this.deactivate();
+			}
+		} else {
+			this.activate();
+		}
+		return true;
 	}
 
 	private activate(): void {
@@ -1684,7 +1694,12 @@ export class ConsoleCartEditor {
 				this.openSearch(true);
 				return;
 			}
-		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyA')) {
+		const inlineFieldFocused = this.searchActive || this.lineJumpActive || this.createResourceActive;
+		if ((ctrlDown || metaDown)
+			&& !inlineFieldFocused
+			&& !this.resourcePanelFocused
+			&& this.isCodeTabActive()
+			&& this.isKeyJustPressed(keyboard, 'KeyA')) {
 			this.consumeKey(keyboard, 'KeyA');
 			this.selectionAnchor = { row: 0, column: 0 };
 			const lastRowIndex = this.lines.length > 0 ? this.lines.length - 1 : 0;

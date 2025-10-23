@@ -159,6 +159,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
+	private hasBooted = false;
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
@@ -329,6 +330,9 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
+		if (this.hasBooted) {
+			this.resetWorldState();
+		}
 		this.physics.clear();
 		this.api.cartdata(this.cart.meta.persistentId);
 		this.api.colliderClear();
@@ -347,6 +351,11 @@ export class BmsxConsoleRuntime extends Service {
 		if ($.paused && this.shouldRequestPausedFrame()) {
 			$.requestPausedFrame();
 		}
+		this.hasBooted = true;
+	}
+
+	private resetWorldState(): void {
+		$.resetToFreshWorld({ preserveConsoleRuntime: true });
 	}
 
 	public frame(deltaMilliseconds: number): void {

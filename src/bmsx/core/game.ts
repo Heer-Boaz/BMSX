@@ -155,6 +155,7 @@ export class Game {
 	private removeWillExit: (() => void) | null = null;
 	private _gameplayPipelineSpec: NodeSpec[] = [];
 	private _pipelineOverride: NodeSpec[] | null = null;
+	private initialWorldConfigSnapshot: WorldConfiguration | null = null;
 
 	/**
 	 * Request one single render while the game is paused. The render is executed
@@ -393,6 +394,7 @@ export class Game {
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		if (!worldConfig) throw new Error('World configuration not passed to game init!');
+		this.initialWorldConfigSnapshot = this.cloneWorldConfig(worldConfig);
 		new World(worldConfig);
 		// Register built-in ECS systems; allow modules to register extensions on boot
 		registerBuiltinECS();
@@ -428,6 +430,17 @@ export class Game {
 		e.preventDefault();
 		e.setReturnMessage('Are you sure you want to exit this awesome game?');
 	};
+
+	private cloneWorldConfig(config: WorldConfiguration): WorldConfiguration {
+		const cloned: WorldConfiguration = { ...config };
+		if (config.viewportSize) {
+			cloned.viewportSize = { ...config.viewportSize };
+		}
+		if (config.modules) {
+			cloned.modules = [...config.modules];
+		}
+		return cloned;
+	}
 
 	private cloneNodeSpec(node: NodeSpec): NodeSpec {
 		return {
@@ -471,6 +484,58 @@ export class Game {
 		}
 		if (this.initialized) {
 			this.rebuildPipeline();
+		}
+	}
+
+	public resetToFreshWorld(options?: { preserveConsoleRuntime?: boolean }): void {
+		if (!this.initialized) {
+			throw new Error('[Game] Cannot reset world before initialization.');
+		}
+		const preserveConsole = options?.preserveConsoleRuntime === true;
+		const gateToken = renderGate.begin({ blocking: true, tag: preserveConsole ? 'console-reset' : 'world-reset' });
+		const runToken = runGate.begin({ blocking: true, tag: preserveConsole ? 'console-reset' : 'world-reset' });
+		try {
+			if (!preserveConsole) {
+				BmsxConsoleRuntime.destroy();
+			}
+			const existingWorld = this.registry.get<World>('world');
+			if (existingWorld) {
+				existingWorld.clearAllSpaces();
+				existingWorld.dispose();
+				this.registry.deregister(existingWorld, true);
+			}
+
+			this.event_emitter.clear();
+			this.registry.clear();
+			this.texmanager.clear();
+			this.view.reset();
+
+			const config = this.initialWorldConfigSnapshot;
+			if (!config) {
+				throw new Error('[Game] Initial world configuration unavailable during reset.');
+			}
+			const freshConfig = this.cloneWorldConfig(config);
+			const world = new World(freshConfig);
+			world.init_on_boot();
+
+			this.rebuildPipeline();
+
+			const services = this.registry.getRegisteredEntitiesByType(Service);
+			for (const service of services) {
+				service.bind();
+				if (!service.active) {
+					service.activate();
+				}
+			}
+
+			PhysicsWorld.rebuild();
+			void this.view.initializeDefaultTextures();
+		}
+		finally {
+			this.wasupdated = true;
+			renderGate.end(gateToken);
+			runGate.end(runToken);
+			this.requestPausedFrame();
 		}
 	}
 
