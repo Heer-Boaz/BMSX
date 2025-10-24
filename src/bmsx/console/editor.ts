@@ -337,6 +337,20 @@ type EditorTabDescriptor = {
 	resource?: ResourceViewerState;
 };
 
+type TabDragState = {
+	tabId: string;
+	pointerOffset: number;
+	startX: number;
+	hasDragged: boolean;
+};
+
+type CrtOptionsSnapshot = {
+	noiseIntensity: number;
+	colorBleed: [number, number, number];
+	blurIntensity: number;
+	glowColor: [number, number, number];
+};
+
 type ResourceBrowserItem = {
 	line: string;
 	contentStartColumn: number;
@@ -439,6 +453,7 @@ const COLOR_FRAME = 0;
 const COLOR_TOP_BAR = 13;
 const COLOR_TOP_BAR_TEXT = 15;
 const COLOR_CODE_BACKGROUND = 4;
+const COLOR_RESOURCE_BACKGROUND = 0;
 const COLOR_GUTTER_BACKGROUND = 1;
 const COLOR_CODE_TEXT = 14;
 const COLOR_KEYWORD = 11;
@@ -450,6 +465,7 @@ const COLOR_CODE_DIM = 6;
 const HIGHLIGHT_OVERLAY = { r: 1, g: 0.6, b: 0.2, a: 0.35 };
 const SELECTION_OVERLAY = Msx1Colors[6];
 const CARET_COLOR = { r: 1, g: 1, b: 1, a: 1 };
+const INLINE_CARET_COLOR = { r: 0, g: 0, b: 0, a: 1 };
 const COLOR_STATUS_BACKGROUND = 8;
 const COLOR_STATUS_TEXT = 15;
 const COLOR_STATUS_WARNING = 9;
@@ -538,6 +554,7 @@ const ACTION_BUTTON_TEXT = COLOR_STATUS_TEXT;
 const TAB_BUTTON_PADDING_X = 4;
 const TAB_BUTTON_PADDING_Y = 1;
 const TAB_BUTTON_SPACING = 3;
+const TAB_DRAG_ACTIVATION_THRESHOLD = 8;
 const TAB_DIRTY_MARKER_SPACING = 2;
 const COLOR_TAB_BAR_BACKGROUND = COLOR_STATUS_BACKGROUND;
 const COLOR_TAB_BORDER = COLOR_TOP_BAR_TEXT;
@@ -679,6 +696,8 @@ export class ConsoleCartEditor {
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
 	private tabHoverId: string | null = null;
+	private tabDragState: TabDragState | null = null;
+	private crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
 	private readonly tabDirtyMarkerAssetId = 'msx_6b_font_ctrl_bel';
 	private tabDirtyMarkerWidth: number | null = null;
 	private tabDirtyMarkerHeight: number | null = null;
@@ -1405,6 +1424,7 @@ export class ConsoleCartEditor {
 	private initializeTabs(entryContext: CodeTabContext | null = null): void {
 		this.tabs = [];
 		this.tabHoverId = null;
+		this.tabDragState = null;
 		this.tabButtonBounds.clear();
 		this.tabCloseButtonBounds.clear();
 		if (entryContext) {
@@ -1720,11 +1740,45 @@ export class ConsoleCartEditor {
 			this.message.timer = this.deferredMessageDuration;
 		}
 		this.deferredMessageDuration = null;
+		this.applyEditorCrtDimming();
+	}
+
+	private applyEditorCrtDimming(): void {
+		if (this.crtOptionsSnapshot) {
+			return;
+		}
+		const view = $.view;
+		const [bleedR, bleedG, bleedB] = view.colorBleed;
+		const [glowR, glowG, glowB] = view.glowColor;
+		this.crtOptionsSnapshot = {
+			noiseIntensity: view.noiseIntensity,
+			colorBleed: [bleedR, bleedG, bleedB] as [number, number, number],
+			blurIntensity: view.blurIntensity,
+			glowColor: [glowR, glowG, glowB] as [number, number, number],
+		};
+		view.noiseIntensity = view.noiseIntensity * 0.5;
+		view.colorBleed = [bleedR * 0.5, bleedG * 0.5, bleedB * 0.5] as [number, number, number];
+		view.blurIntensity = view.blurIntensity * 0.5;
+		view.glowColor = [glowR * 0.5, glowG * 0.5, glowB * 0.5] as [number, number, number];
+	}
+
+	private restoreCrtOptions(): void {
+		if (!this.crtOptionsSnapshot) {
+			return;
+		}
+		const snapshot = this.crtOptionsSnapshot;
+		this.crtOptionsSnapshot = null;
+		const view = $.view;
+		view.noiseIntensity = snapshot.noiseIntensity;
+		view.colorBleed = [snapshot.colorBleed[0], snapshot.colorBleed[1], snapshot.colorBleed[2]] as [number, number, number];
+		view.blurIntensity = snapshot.blurIntensity;
+		view.glowColor = [snapshot.glowColor[0], snapshot.glowColor[1], snapshot.glowColor[2]] as [number, number, number];
 	}
 
 	private deactivate(): void {
 		this.storeActiveCodeTabContext();
 		this.active = false;
+		this.restoreCrtOptions();
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
 		this.applyInputOverrides(false);
@@ -1732,6 +1786,7 @@ export class ConsoleCartEditor {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
 		this.pointerAuxWasPressed = false;
+		this.tabDragState = null;
 		this.clearGotoHoverHighlight();
 		this.activeScrollbarDrag = null;
 		this.cursorRevealSuspended = false;
@@ -1822,6 +1877,11 @@ export class ConsoleCartEditor {
 			this.openSearch(true);
 			return;
 		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'Tab')) {
+			this.consumeKey(keyboard, 'Tab');
+			this.cycleTab(shiftDown ? -1 : 1);
+			return;
+		}
 		const inlineFieldFocused = this.searchActive || this.symbolSearchActive || this.lineJumpActive || this.createResourceActive;
 		if ((ctrlDown || metaDown)
 			&& !inlineFieldFocused
@@ -1877,6 +1937,11 @@ export class ConsoleCartEditor {
 		if ((ctrlDown || metaDown) && this.shouldFireRepeat(keyboard, 'KeyY', deltaSeconds)) {
 			this.consumeKey(keyboard, 'KeyY');
 			this.redo();
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyW')) {
+			this.consumeKey(keyboard, 'KeyW');
+			this.closeActiveTab();
 			return;
 		}
 		if (ctrlDown && this.isKeyJustPressed(keyboard, 'KeyS')) {
@@ -3033,6 +3098,24 @@ export class ConsoleCartEditor {
 		if (justReleased || (!snapshot.primaryPressed && this.pointerSelecting)) {
 			this.pointerSelecting = false;
 		}
+		if (this.tabDragState) {
+			if (!snapshot.primaryPressed) {
+				this.endTabDrag();
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearGotoHoverHighlight();
+				this.clearHoverTooltip();
+				return;
+			}
+			if (snapshot.valid) {
+				this.updateTabDrag(snapshot.viewportX);
+			}
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			this.clearGotoHoverHighlight();
+			this.clearHoverTooltip();
+			return;
+		}
 		if (justPressed && this.tryStartScrollbarDrag(snapshot)) {
 			this.pointerSelecting = false;
 			this.clearHoverTooltip();
@@ -4013,12 +4096,14 @@ export class ConsoleCartEditor {
 			const tab = this.tabs[index];
 			const closeBounds = this.tabCloseButtonBounds.get(tab.id);
 			if (closeBounds && this.pointInRect(x, y, closeBounds)) {
+				this.endTabDrag();
 				this.closeTab(tab.id);
 				this.tabHoverId = null;
 				return true;
 			}
 			const tabBounds = this.tabButtonBounds.get(tab.id);
 			if (tabBounds && this.pointInRect(x, y, tabBounds)) {
+				this.beginTabDrag(tab.id, x);
 				this.setActiveTab(tab.id);
 				return true;
 			}
@@ -6325,7 +6410,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.createResourceActive);
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.createResourceActive, INLINE_CARET_COLOR);
 
 		if (this.createResourceWorking) {
 			const status = 'CREATING...';
@@ -6379,7 +6464,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.searchActive);
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.searchActive, INLINE_CARET_COLOR);
 
 		if (this.searchQuery.length > 0) {
 			const total = this.searchMatches.length;
@@ -6433,7 +6518,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.symbolSearchActive);
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.symbolSearchActive, INLINE_CARET_COLOR);
 
 		const resultCount = this.symbolSearchVisibleResultCount();
 		if (resultCount <= 0) {
@@ -6517,7 +6602,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.lineJumpActive);
+		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.lineJumpActive, INLINE_CARET_COLOR);
 	}
 
 	private drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
@@ -6699,7 +6784,7 @@ export class ConsoleCartEditor {
 		const contentRight = bounds.codeRight - (verticalVisible ? SCROLLBAR_WIDTH : 0);
 		const contentBottom = bounds.codeBottom - (horizontalVisible ? SCROLLBAR_WIDTH : 0);
 
-		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_CODE_BACKGROUND);
+		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_RESOURCE_BACKGROUND);
 		if (bounds.gutterRight > bounds.gutterLeft) {
 			api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, COLOR_GUTTER_BACKGROUND);
 		}
@@ -7032,10 +7117,20 @@ export class ConsoleCartEditor {
 		this.setActiveTab(tabId);
 	}
 
+	private closeActiveTab(): void {
+		if (!this.activeTabId) {
+			return;
+		}
+		this.closeTab(this.activeTabId);
+	}
+
 	private closeTab(tabId: string): void {
 		const index = this.tabs.findIndex(tab => tab.id === tabId);
 		if (index === -1) {
 			return;
+		}
+		if (this.tabDragState && this.tabDragState.tabId === tabId) {
+			this.endTabDrag();
 		}
 		const tab = this.tabs[index];
 		if (!tab.closable) {
@@ -7058,6 +7153,125 @@ export class ConsoleCartEditor {
 				this.resetEditorContent();
 			}
 		}
+	}
+
+	private cycleTab(direction: number): void {
+		if (this.tabs.length <= 1 || direction === 0) {
+			return;
+		}
+		const count = this.tabs.length;
+		let currentIndex = this.tabs.findIndex(tab => tab.id === this.activeTabId);
+		if (currentIndex === -1) {
+			const fallbackIndex = direction > 0 ? 0 : count - 1;
+			const fallback = this.tabs[fallbackIndex];
+			if (fallback) {
+				this.setActiveTab(fallback.id);
+			}
+			return;
+		}
+		let nextIndex = currentIndex + direction;
+		nextIndex = ((nextIndex % count) + count) % count;
+		if (nextIndex === currentIndex) {
+			return;
+		}
+		const target = this.tabs[nextIndex];
+		this.setActiveTab(target.id);
+	}
+
+	private measureTabWidth(tab: EditorTabDescriptor): number {
+		const textWidth = this.measureText(tab.title);
+		let indicatorWidth = 0;
+		if (tab.closable) {
+			indicatorWidth = this.measureText(TAB_CLOSE_BUTTON_SYMBOL) + TAB_CLOSE_BUTTON_PADDING_X * 2;
+		} else if (tab.dirty) {
+			const metrics = this.getTabDirtyMarkerMetrics();
+			indicatorWidth = metrics.width + TAB_DIRTY_MARKER_SPACING;
+		}
+		return textWidth + TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
+	}
+
+	private computeTabLayout(): Array<{ id: string; left: number; right: number; width: number }> {
+		const layout: Array<{ id: string; left: number; right: number; width: number }> = [];
+		let cursor = 4;
+		for (let index = 0; index < this.tabs.length; index += 1) {
+			const tab = this.tabs[index];
+			const width = this.measureTabWidth(tab);
+			const left = cursor;
+			const right = left + width;
+			layout.push({ id: tab.id, left, right, width });
+			cursor = right + TAB_BUTTON_SPACING;
+		}
+		return layout;
+	}
+
+	private beginTabDrag(tabId: string, pointerX: number): void {
+		if (this.tabs.length <= 1) {
+			this.tabDragState = null;
+			return;
+		}
+		const bounds = this.tabButtonBounds.get(tabId) ?? null;
+		const pointerOffset = bounds ? pointerX - bounds.left : 0;
+		this.tabDragState = {
+			tabId,
+			pointerOffset,
+			startX: pointerX,
+			hasDragged: false,
+		};
+	}
+
+	private updateTabDrag(pointerX: number): void {
+		const state = this.tabDragState;
+		if (!state) {
+			return;
+		}
+		const distance = Math.abs(pointerX - state.startX);
+		if (!state.hasDragged && distance < TAB_DRAG_ACTIVATION_THRESHOLD) {
+			return;
+		}
+		if (!state.hasDragged) {
+			state.hasDragged = true;
+			this.resetPointerClickTracking();
+		}
+		const layout = this.computeTabLayout();
+		const currentIndex = layout.findIndex(item => item.id === state.tabId);
+		if (currentIndex === -1) {
+			return;
+		}
+		const dragged = layout[currentIndex];
+		const pointerLeft = pointerX - state.pointerOffset;
+		const pointerCenter = pointerLeft + dragged.width * 0.5;
+		let desiredIndex = 0;
+		for (let i = 0; i < layout.length; i += 1) {
+			const item = layout[i];
+			const center = (item.left + item.right) * 0.5;
+			if (pointerCenter > center) {
+				desiredIndex = i + 1;
+			}
+		}
+		if (desiredIndex > currentIndex) {
+			desiredIndex -= 1;
+		}
+		if (desiredIndex === currentIndex) {
+			return;
+		}
+		const tabIndex = this.tabs.findIndex(entry => entry.id === state.tabId);
+		if (tabIndex === -1) {
+			return;
+		}
+		const removed = this.tabs.splice(tabIndex, 1);
+		const tab = removed[0];
+		if (!tab) {
+			return;
+		}
+		const targetIndex = clamp(desiredIndex, 0, this.tabs.length);
+		this.tabs.splice(targetIndex, 0, tab);
+	}
+
+	private endTabDrag(): void {
+		if (!this.tabDragState) {
+			return;
+		}
+		this.tabDragState = null;
 	}
 
 	private resetEditorContent(): void {
@@ -8340,7 +8554,7 @@ export class ConsoleCartEditor {
 		const verticalVisible = verticalScrollbar.isVisible();
 		viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
 
-		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_CODE_BACKGROUND);
+		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_RESOURCE_BACKGROUND);
 
 		const contentTop = bounds.codeTop + 2;
 		const layout = this.resourceViewerImageLayout(viewer);
@@ -8574,15 +8788,23 @@ export class ConsoleCartEditor {
 		this.updateActiveContextDirtyFlag();
 	}
 
-	private drawCaretShape(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, active: boolean): void {
+	private drawCaretShape(
+		api: BmsxConsoleApi,
+		left: number,
+		top: number,
+		right: number,
+		bottom: number,
+		active: boolean,
+		color: { r: number; g: number; b: number; a: number } = CARET_COLOR,
+	): void {
 		if (!this.cursorVisible) {
 			return;
 		}
 		if (active) {
-			api.rectfillColor(left, top, right, bottom, CARET_COLOR);
+			api.rectfillColor(left, top, right, bottom, color);
 			return;
 		}
-		this.drawRectOutlineColor(api, left, top, right, bottom, CARET_COLOR);
+		this.drawRectOutlineColor(api, left, top, right, bottom, color);
 	}
 
 	private drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
