@@ -4394,8 +4394,12 @@ export class ConsoleCartEditor {
 		}
 		const targetGeneration = this.saveGeneration;
 		const shouldUpdateGeneration = this.hasPendingRuntimeReload();
+		const pendingSource = shouldUpdateGeneration ? this.getMainProgramSourceForReload() : null;
 		this.deactivate();
-		this.scheduleRuntimeTask(() => {
+		this.scheduleRuntimeTask(async () => {
+			if (shouldUpdateGeneration && pendingSource !== null) {
+				await runtime.reloadLuaProgram(pendingSource);
+			}
 			runtime.setState(sanitizedSnapshot);
 			if (shouldUpdateGeneration) {
 				this.appliedGeneration = targetGeneration;
