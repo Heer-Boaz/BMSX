@@ -43,9 +43,9 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 	/**
 	 * Construct a new Service.
 	 * @param id Unique identifier. If omitted, defaults to the class name in lower_snake_case.
-	 * @param opts Optional flags for initial state.
+	 * @param opts Optional flags for initial state. Pass `deferBind: true` to delay registration until the subclass calls `bind()`.
 	 */
-	protected constructor(opts?: RevivableObjectArgs & { id?: Identifier }) {
+	protected constructor(opts?: RevivableObjectArgs & { id?: Identifier; deferBind?: boolean }) {
 		this.id = opts?.id ?? Service.deriveIdFromConstructor(this.constructor.name ?? 'service');
 
 		const fsmName = this.constructor.name;
@@ -53,7 +53,9 @@ export abstract class Service implements Stateful, Identifiable, RegisterablePer
 		this.sc = hasDef ? new StateMachineController({ ...opts, fsm_id: fsmName, id: this.id }) : new StateMachineController(opts);
 
 		// Register service in global registry
-		this.bind();
+		if (opts?.deferBind !== true) {
+			this.bind();
+		}
 	}
 
 	/**

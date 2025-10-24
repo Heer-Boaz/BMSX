@@ -1,6 +1,6 @@
 import { $ } from '../core/game';
 import type { KeyboardInput } from '../input/keyboardinput';
-import type { ButtonState } from '../input/inputtypes';
+import type { ButtonState, BGamepadButton } from '../input/inputtypes';
 import type { ClipboardService, ViewportMetrics } from '../platform/platform';
 import type { BmsxConsoleApi } from './api';
 import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry } from './types';
@@ -63,6 +63,9 @@ const CHARACTER_MAP: { [code: string]: CharacterMapEntry } = {
 	Backquote: { normal: '`', shift: '~' },
 };
 const CHARACTER_CODES = Object.keys(CHARACTER_MAP);
+
+const EDITOR_TOGGLE_KEY = 'Escape';
+const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
 
 type RepeatEntry = {
 	cooldown: number;
@@ -639,7 +642,7 @@ export class ConsoleCartEditor {
 	private activeCodeTabContextId: string | null = null;
 	private entryTabId: string | null = null;
 	private readonly captureKeys: string[] = [...new Set([
-		'Escape',
+		EDITOR_TOGGLE_KEY,
 		'ArrowUp',
 		'ArrowDown',
 		'ArrowLeft',
@@ -704,7 +707,7 @@ export class ConsoleCartEditor {
 	private readonly createResourceField: InlineTextField;
 	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	private activeScrollbarDrag: { kind: ScrollbarKind; pointerOffset: number } | null = null;
-	private escapeToggleLatch = false;
+	private toggleInputLatch = false;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
 	private lastPointerClickColumn = -1;
@@ -1704,19 +1707,42 @@ export class ConsoleCartEditor {
 	}
 
 	private handleToggleRequest(keyboard: KeyboardInput): boolean {
-		const escapeState = this.getButtonState(keyboard, 'Escape');
-		if (!escapeState || escapeState.pressed !== true) {
-			this.escapeToggleLatch = false;
+		const toggleKeyState = this.getButtonState(keyboard, EDITOR_TOGGLE_KEY);
+		const selectButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[0];
+		const startButton = EDITOR_TOGGLE_GAMEPAD_BUTTONS[1];
+		const playerInput = $.input.getPlayerInput(this.playerIndex);
+		const selectState = playerInput ? playerInput.getButtonState(selectButton, 'gamepad') : null;
+		const startState = playerInput ? playerInput.getButtonState(startButton, 'gamepad') : null;
+		const keyboardPressed = toggleKeyState ? toggleKeyState.pressed === true : false;
+		const selectPressed = selectState ? selectState.pressed === true : false;
+		const startPressed = startState ? startState.pressed === true : false;
+		const gamepadPressed = selectPressed && startPressed;
+		if (!keyboardPressed && !gamepadPressed) {
+			this.toggleInputLatch = false;
 			return false;
 		}
-		if (this.escapeToggleLatch) {
+		if (this.toggleInputLatch) {
 			return false;
 		}
-		if (!this.isKeyJustPressed(keyboard, 'Escape')) {
+		const keyboardAccepted = toggleKeyState ? this.shouldAcceptKeyPress(EDITOR_TOGGLE_KEY, toggleKeyState) : false;
+		let gamepadAccepted = false;
+		if (gamepadPressed) {
+			const selectAccepted = selectState ? this.shouldAcceptKeyPress(selectButton, selectState) : false;
+			const startAccepted = startState ? this.shouldAcceptKeyPress(startButton, startState) : false;
+			gamepadAccepted = selectAccepted || startAccepted;
+		}
+		if (!keyboardAccepted && !gamepadAccepted) {
 			return false;
 		}
-		this.escapeToggleLatch = true;
-		this.consumeKey(keyboard, 'Escape');
+		this.toggleInputLatch = true;
+		if (keyboardAccepted) {
+			this.consumeKey(keyboard, EDITOR_TOGGLE_KEY);
+		}
+		if (gamepadAccepted && playerInput && playerInput.inputHandlers['gamepad']) {
+			const handler = playerInput.inputHandlers['gamepad'];
+			handler.consumeButton(selectButton);
+			handler.consumeButton(startButton);
+		}
 		if (this.pendingActionPrompt) {
 			this.resetActionPromptState();
 			return true;
@@ -2636,23 +2662,6 @@ export class ConsoleCartEditor {
 		return label;
 	}
 
-	private symbolEntryLocationLabel(entry: SymbolCatalogEntry): string {
-		if (entry.sourceLabel && entry.sourceLabel.length > 0) {
-			return entry.sourceLabel;
-		}
-		const location = entry.symbol.location;
-		if (location.path && location.path.length > 0) {
-			return location.path.replace(/\\/g, '/');
-		}
-		if (location.assetId && location.assetId.length > 0) {
-			return location.assetId;
-		}
-		if (location.chunkName && location.chunkName.length > 0) {
-			return location.chunkName;
-		}
-		throw new Error('[ConsoleCartEditor] Symbol location metadata missing.');
-	}
-
 	private updateSymbolSearchMatches(): void {
 		this.refreshSymbolCatalog(false);
 		this.symbolSearchMatches = [];
@@ -2721,38 +2730,6 @@ export class ConsoleCartEditor {
 		return Math.min(remaining, maxResults);
 	}
 
-	private scrollSymbolSearch(amount: number): void {
-		if (!this.symbolSearchVisible || this.symbolSearchMatches.length === 0 || amount === 0) {
-			return;
-		}
-		const currentVisible = this.symbolSearchVisibleResultCount();
-		if (currentVisible <= 0) {
-			return;
-		}
-		const maxOffset = Math.max(0, this.symbolSearchMatches.length - currentVisible);
-		if (maxOffset === 0) {
-			return;
-		}
-		const nextOffset = clamp(this.symbolSearchDisplayOffset + amount, 0, maxOffset);
-		if (nextOffset === this.symbolSearchDisplayOffset) {
-			return;
-		}
-		this.symbolSearchDisplayOffset = nextOffset;
-		this.symbolSearchHoverIndex = -1;
-		if (this.symbolSearchSelectionIndex >= 0) {
-			const visibleAfterScroll = this.symbolSearchVisibleResultCount();
-			if (visibleAfterScroll <= 0) {
-				this.symbolSearchSelectionIndex = -1;
-				return;
-			}
-			const windowStart = this.symbolSearchDisplayOffset;
-			const windowEnd = windowStart + visibleAfterScroll;
-			if (this.symbolSearchSelectionIndex < windowStart || this.symbolSearchSelectionIndex >= windowEnd) {
-				this.symbolSearchSelectionIndex = windowStart;
-			}
-		}
-	}
-
 	private getActiveSymbolSearchMatch(): SymbolSearchResult | null {
 		if (!this.symbolSearchVisible || this.symbolSearchMatches.length === 0) {
 			return null;
@@ -2767,26 +2744,26 @@ export class ConsoleCartEditor {
 		return this.symbolSearchMatches[index];
 	}
 
-		private ensureSymbolSearchSelectionVisible(): void {
-			if (this.symbolSearchSelectionIndex < 0) {
-				this.symbolSearchDisplayOffset = 0;
-				return;
-			}
-			const maxVisible = this.isSymbolSearchCompactMode() ? SYMBOL_SEARCH_COMPACT_MAX_RESULTS : SYMBOL_SEARCH_MAX_RESULTS;
-			if (this.symbolSearchSelectionIndex < this.symbolSearchDisplayOffset) {
-				this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex;
-			}
-			if (this.symbolSearchSelectionIndex >= this.symbolSearchDisplayOffset + maxVisible) {
-				this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex - maxVisible + 1;
-			}
-			if (this.symbolSearchDisplayOffset < 0) {
-				this.symbolSearchDisplayOffset = 0;
-			}
-			const maxOffset = Math.max(0, this.symbolSearchMatches.length - maxVisible);
-			if (this.symbolSearchDisplayOffset > maxOffset) {
-				this.symbolSearchDisplayOffset = maxOffset;
-			}
+	private ensureSymbolSearchSelectionVisible(): void {
+		if (this.symbolSearchSelectionIndex < 0) {
+			this.symbolSearchDisplayOffset = 0;
+			return;
 		}
+		const maxVisible = SYMBOL_SEARCH_MAX_RESULTS;
+		if (this.symbolSearchSelectionIndex < this.symbolSearchDisplayOffset) {
+			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex;
+		}
+		if (this.symbolSearchSelectionIndex >= this.symbolSearchDisplayOffset + maxVisible) {
+			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex - maxVisible + 1;
+		}
+		if (this.symbolSearchDisplayOffset < 0) {
+			this.symbolSearchDisplayOffset = 0;
+		}
+		const maxOffset = Math.max(0, this.symbolSearchMatches.length - maxVisible);
+		if (this.symbolSearchDisplayOffset > maxOffset) {
+			this.symbolSearchDisplayOffset = maxOffset;
+		}
+	}
 
 	private moveSymbolSearchSelection(delta: number): void {
 		if (this.symbolSearchMatches.length === 0) {
@@ -3458,7 +3435,7 @@ export class ConsoleCartEditor {
 						this.cursorVisible = true;
 						this.resetBlink();
 					}
-					const label = this.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
+					const label = 'SYMBOL @:';
 					const labelX = 4;
 					const textLeft = labelX + this.measureText(label + ' ');
 					this.handleInlineFieldPointer(this.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
@@ -3468,12 +3445,11 @@ export class ConsoleCartEditor {
 					this.clearGotoHoverHighlight();
 					return;
 				}
-				const entryHeight = this.symbolSearchEntryHeight();
 				const visibleCount = this.symbolSearchVisibleResultCount();
 				let hoverIndex = -1;
 				if (snapshot.viewportY >= resultsStart) {
 					const relative = snapshot.viewportY - resultsStart;
-					const indexWithin = Math.floor(relative / entryHeight);
+					const indexWithin = Math.floor(relative / this.lineHeight);
 					if (indexWithin >= 0 && indexWithin < visibleCount) {
 						hoverIndex = this.symbolSearchDisplayOffset + indexWithin;
 					}
@@ -4321,22 +4297,6 @@ export class ConsoleCartEditor {
 				}
 			}
 			if (canScrollTooltip && this.adjustHoverTooltipScroll(direction * steps)) {
-				playerInput.consumeAction('pointer_wheel');
-				return;
-			}
-		}
-		const symbolBounds = this.getSymbolSearchBarBounds();
-		const pointerInSymbol = this.symbolSearchVisible
-			&& symbolBounds !== null
-			&& pointer
-			&& pointer.valid
-			&& pointer.insideViewport
-			&& this.pointInRect(pointer.viewportX, pointer.viewportY, symbolBounds);
-		if (pointerInSymbol && pointer && symbolBounds) {
-			const baseHeight = this.lineHeight + SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-			const resultsTop = symbolBounds.top + baseHeight + SYMBOL_SEARCH_RESULT_SPACING;
-			if (pointer.viewportY >= resultsTop) {
-				this.scrollSymbolSearch(direction * steps);
 				playerInput.consumeAction('pointer_wheel');
 				return;
 			}
@@ -6744,13 +6704,11 @@ export class ConsoleCartEditor {
 		const separatorTop = barTop + baseHeight;
 		api.rectfill(0, separatorTop, this.viewportWidth, separatorTop + SYMBOL_SEARCH_RESULT_SPACING, COLOR_SYMBOL_SEARCH_OUTLINE);
 		const resultsTop = separatorTop + SYMBOL_SEARCH_RESULT_SPACING;
-		const entryHeight = this.symbolSearchEntryHeight();
-		const compactMode = this.isSymbolSearchCompactMode();
 		for (let i = 0; i < resultCount; i += 1) {
 			const matchIndex = this.symbolSearchDisplayOffset + i;
 			const match = this.symbolSearchMatches[matchIndex];
-			const rowTop = resultsTop + i * entryHeight;
-			const rowBottom = rowTop + entryHeight;
+			const rowTop = resultsTop + i * this.lineHeight;
+			const rowBottom = rowTop + this.lineHeight;
 			const isSelected = matchIndex === this.symbolSearchSelectionIndex;
 			const isHover = matchIndex === this.symbolSearchHoverIndex;
 			if (isSelected) {
@@ -6764,32 +6722,16 @@ export class ConsoleCartEditor {
 				this.drawText(api, kindText, textX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
 				textX += this.measureText(kindText + ' ');
 			}
-			if (compactMode) {
-				const availableWidth = Math.max(0, this.viewportWidth - SYMBOL_SEARCH_RESULT_PADDING_X - textX);
-				const displayName = this.truncateTextToWidth(match.entry.displayName, availableWidth);
-				this.drawText(api, displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
-				const lineSuffix = `:${match.entry.line}`;
-				const suffixWidth = this.measureText(lineSuffix);
-				const suffixX = this.viewportWidth - SYMBOL_SEARCH_RESULT_PADDING_X - suffixWidth;
-				const secondLineY = rowTop + this.lineHeight;
-				const secondLineWidth = Math.max(0, suffixX - SYMBOL_SEARCH_RESULT_PADDING_X - textX);
-				const locationLabel = this.truncateTextToWidth(this.symbolEntryLocationLabel(match.entry), secondLineWidth);
-				this.drawText(api, locationLabel, textX, secondLineY, COLOR_SYMBOL_SEARCH_KIND);
-				this.drawText(api, lineSuffix, suffixX, secondLineY, COLOR_SYMBOL_SEARCH_TEXT);
-			} else {
-				const lineText = `:${match.entry.line}`;
-				const lineWidth = this.measureText(lineText);
-				const lineX = this.viewportWidth - lineWidth - SYMBOL_SEARCH_RESULT_PADDING_X;
-				this.drawText(api, lineText, lineX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
-				let availableWidth = Math.max(0, lineX - SYMBOL_SEARCH_RESULT_PADDING_X - textX);
-				if (match.entry.sourceLabel) {
-					const sourceWidth = this.measureText(match.entry.sourceLabel);
-					const sourceX = Math.max(textX, lineX - this.spaceAdvance - sourceWidth);
-					this.drawText(api, match.entry.sourceLabel, sourceX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
-					availableWidth = Math.max(0, sourceX - this.spaceAdvance - textX);
-				}
-				const displayName = this.truncateTextToWidth(match.entry.displayName, availableWidth);
-				this.drawText(api, displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+			this.drawText(api, match.entry.displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+			const lineText = `:${match.entry.line}`;
+			const lineWidth = this.measureText(lineText);
+			let rightX = this.viewportWidth - lineWidth - SYMBOL_SEARCH_RESULT_PADDING_X;
+			this.drawText(api, lineText, rightX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+			if (match.entry.sourceLabel) {
+				const sourceWidth = this.measureText(match.entry.sourceLabel);
+				const sourceX = Math.max(textX, rightX - this.spaceAdvance - sourceWidth);
+				this.drawText(api, match.entry.sourceLabel, sourceX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
+				rightX = sourceX;
 			}
 		}
 	}

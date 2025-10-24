@@ -3,8 +3,6 @@ local state = {
 	paletteIndex = 1,
 	balls = {},
 	engineActorId = nil,
-	fsmTimer = 0,
-	fsmState = 'idle',
 	engineMessage = nil,
 }
 
@@ -52,8 +50,7 @@ local function ensure_engine_actor()
 		position = { x = 48, y = 48, z = 0 },
 	})
 	state.engineActorId = actorId
-	state.fsmState = 'idle'
-	state.fsmTimer = 0
+	emit('lua_demo.engine_actor_spawned', { actorId = actorId })
 	local attachFunction = nil
 	if type(attachFsm) == 'function' then
 		attachFunction = attachFsm
@@ -109,17 +106,6 @@ function update(delta)
 	end
 
 	if state.engineActorId ~= nil then
-		state.fsmTimer = state.fsmTimer + delta
-		if state.fsmTimer >= 2 then
-			state.fsmTimer = 0
-			if state.fsmState == 'idle' then
-				emit('start', nil, state.engineActorId)
-				state.fsmState = 'running'
-			else
-				emit('stop', nil, state.engineActorId)
-				state.fsmState = 'idle'
-			end
-		end
 	end
 
 	if btnp(4) then
@@ -146,7 +132,7 @@ function draw()
 	print('Frame: ' .. state.frame, 12, 46, 10)
 	if state.engineActorId ~= nil then
 		print('Actor: ' .. state.engineActorId, 16, 56, 11)
-		print('FSM state: ' .. state.fsmState, 16, 64, 11)
+		print('FSM controlled by Lua service', 16, 64, 9)
 	else
 		print('Actor spawn failed', 16, 56, 2)
 	end
