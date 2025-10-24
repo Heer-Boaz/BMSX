@@ -596,6 +596,8 @@ const COLOR_SYMBOL_SEARCH_OUTLINE = COLOR_SEARCH_OUTLINE;
 const COLOR_SYMBOL_SEARCH_KIND = COLOR_CODE_DIM;
 const SYMBOL_SEARCH_RESULT_PADDING_X = 4;
 const SYMBOL_SEARCH_RESULT_SPACING = 1;
+const SYMBOL_SEARCH_COMPACT_MAX_RESULTS = 4;
+const SYMBOL_SEARCH_COMPACT_WIDTH = 320;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -2634,6 +2636,23 @@ export class ConsoleCartEditor {
 		return label;
 	}
 
+	private symbolEntryLocationLabel(entry: SymbolCatalogEntry): string {
+		if (entry.sourceLabel && entry.sourceLabel.length > 0) {
+			return entry.sourceLabel;
+		}
+		const location = entry.symbol.location;
+		if (location.path && location.path.length > 0) {
+			return location.path.replace(/\\/g, '/');
+		}
+		if (location.assetId && location.assetId.length > 0) {
+			return location.assetId;
+		}
+		if (location.chunkName && location.chunkName.length > 0) {
+			return location.chunkName;
+		}
+		throw new Error('[ConsoleCartEditor] Symbol location metadata missing.');
+	}
+
 	private updateSymbolSearchMatches(): void {
 		this.refreshSymbolCatalog(false);
 		this.symbolSearchMatches = [];
@@ -2685,12 +2704,53 @@ export class ConsoleCartEditor {
 		this.symbolSearchDisplayOffset = 0;
 	}
 
+	private isSymbolSearchCompactMode(): boolean {
+		return this.viewportWidth <= SYMBOL_SEARCH_COMPACT_WIDTH;
+	}
+
+	private symbolSearchEntryHeight(): number {
+		return this.isSymbolSearchCompactMode() ? this.lineHeight * 2 : this.lineHeight;
+	}
+
 	private symbolSearchVisibleResultCount(): number {
 		if (!this.symbolSearchVisible) {
 			return 0;
 		}
 		const remaining = Math.max(0, this.symbolSearchMatches.length - this.symbolSearchDisplayOffset);
-		return Math.min(remaining, SYMBOL_SEARCH_MAX_RESULTS);
+		const maxResults = this.isSymbolSearchCompactMode() ? SYMBOL_SEARCH_COMPACT_MAX_RESULTS : SYMBOL_SEARCH_MAX_RESULTS;
+		return Math.min(remaining, maxResults);
+	}
+
+	private scrollSymbolSearch(amount: number): void {
+		if (!this.symbolSearchVisible || this.symbolSearchMatches.length === 0 || amount === 0) {
+			return;
+		}
+		const currentVisible = this.symbolSearchVisibleResultCount();
+		if (currentVisible <= 0) {
+			return;
+		}
+		const maxOffset = Math.max(0, this.symbolSearchMatches.length - currentVisible);
+		if (maxOffset === 0) {
+			return;
+		}
+		const nextOffset = clamp(this.symbolSearchDisplayOffset + amount, 0, maxOffset);
+		if (nextOffset === this.symbolSearchDisplayOffset) {
+			return;
+		}
+		this.symbolSearchDisplayOffset = nextOffset;
+		this.symbolSearchHoverIndex = -1;
+		if (this.symbolSearchSelectionIndex >= 0) {
+			const visibleAfterScroll = this.symbolSearchVisibleResultCount();
+			if (visibleAfterScroll <= 0) {
+				this.symbolSearchSelectionIndex = -1;
+				return;
+			}
+			const windowStart = this.symbolSearchDisplayOffset;
+			const windowEnd = windowStart + visibleAfterScroll;
+			if (this.symbolSearchSelectionIndex < windowStart || this.symbolSearchSelectionIndex >= windowEnd) {
+				this.symbolSearchSelectionIndex = windowStart;
+			}
+		}
 	}
 
 	private getActiveSymbolSearchMatch(): SymbolSearchResult | null {
@@ -2707,26 +2767,26 @@ export class ConsoleCartEditor {
 		return this.symbolSearchMatches[index];
 	}
 
-	private ensureSymbolSearchSelectionVisible(): void {
-		if (this.symbolSearchSelectionIndex < 0) {
-			this.symbolSearchDisplayOffset = 0;
-			return;
+		private ensureSymbolSearchSelectionVisible(): void {
+			if (this.symbolSearchSelectionIndex < 0) {
+				this.symbolSearchDisplayOffset = 0;
+				return;
+			}
+			const maxVisible = this.isSymbolSearchCompactMode() ? SYMBOL_SEARCH_COMPACT_MAX_RESULTS : SYMBOL_SEARCH_MAX_RESULTS;
+			if (this.symbolSearchSelectionIndex < this.symbolSearchDisplayOffset) {
+				this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex;
+			}
+			if (this.symbolSearchSelectionIndex >= this.symbolSearchDisplayOffset + maxVisible) {
+				this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex - maxVisible + 1;
+			}
+			if (this.symbolSearchDisplayOffset < 0) {
+				this.symbolSearchDisplayOffset = 0;
+			}
+			const maxOffset = Math.max(0, this.symbolSearchMatches.length - maxVisible);
+			if (this.symbolSearchDisplayOffset > maxOffset) {
+				this.symbolSearchDisplayOffset = maxOffset;
+			}
 		}
-		const maxVisible = SYMBOL_SEARCH_MAX_RESULTS;
-		if (this.symbolSearchSelectionIndex < this.symbolSearchDisplayOffset) {
-			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex;
-		}
-		if (this.symbolSearchSelectionIndex >= this.symbolSearchDisplayOffset + maxVisible) {
-			this.symbolSearchDisplayOffset = this.symbolSearchSelectionIndex - maxVisible + 1;
-		}
-		if (this.symbolSearchDisplayOffset < 0) {
-			this.symbolSearchDisplayOffset = 0;
-		}
-		const maxOffset = Math.max(0, this.symbolSearchMatches.length - maxVisible);
-		if (this.symbolSearchDisplayOffset > maxOffset) {
-			this.symbolSearchDisplayOffset = maxOffset;
-		}
-	}
 
 	private moveSymbolSearchSelection(delta: number): void {
 		if (this.symbolSearchMatches.length === 0) {
@@ -3398,7 +3458,7 @@ export class ConsoleCartEditor {
 						this.cursorVisible = true;
 						this.resetBlink();
 					}
-					const label = 'SYMBOL @:';
+					const label = this.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 					const labelX = 4;
 					const textLeft = labelX + this.measureText(label + ' ');
 					this.handleInlineFieldPointer(this.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
@@ -3408,11 +3468,12 @@ export class ConsoleCartEditor {
 					this.clearGotoHoverHighlight();
 					return;
 				}
+				const entryHeight = this.symbolSearchEntryHeight();
 				const visibleCount = this.symbolSearchVisibleResultCount();
 				let hoverIndex = -1;
 				if (snapshot.viewportY >= resultsStart) {
 					const relative = snapshot.viewportY - resultsStart;
-					const indexWithin = Math.floor(relative / this.lineHeight);
+					const indexWithin = Math.floor(relative / entryHeight);
 					if (indexWithin >= 0 && indexWithin < visibleCount) {
 						hoverIndex = this.symbolSearchDisplayOffset + indexWithin;
 					}
@@ -4260,6 +4321,22 @@ export class ConsoleCartEditor {
 				}
 			}
 			if (canScrollTooltip && this.adjustHoverTooltipScroll(direction * steps)) {
+				playerInput.consumeAction('pointer_wheel');
+				return;
+			}
+		}
+		const symbolBounds = this.getSymbolSearchBarBounds();
+		const pointerInSymbol = this.symbolSearchVisible
+			&& symbolBounds !== null
+			&& pointer
+			&& pointer.valid
+			&& pointer.insideViewport
+			&& this.pointInRect(pointer.viewportX, pointer.viewportY, symbolBounds);
+		if (pointerInSymbol && pointer && symbolBounds) {
+			const baseHeight = this.lineHeight + SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+			const resultsTop = symbolBounds.top + baseHeight + SYMBOL_SEARCH_RESULT_SPACING;
+			if (pointer.viewportY >= resultsTop) {
+				this.scrollSymbolSearch(direction * steps);
 				playerInput.consumeAction('pointer_wheel');
 				return;
 			}
@@ -6667,11 +6744,13 @@ export class ConsoleCartEditor {
 		const separatorTop = barTop + baseHeight;
 		api.rectfill(0, separatorTop, this.viewportWidth, separatorTop + SYMBOL_SEARCH_RESULT_SPACING, COLOR_SYMBOL_SEARCH_OUTLINE);
 		const resultsTop = separatorTop + SYMBOL_SEARCH_RESULT_SPACING;
+		const entryHeight = this.symbolSearchEntryHeight();
+		const compactMode = this.isSymbolSearchCompactMode();
 		for (let i = 0; i < resultCount; i += 1) {
 			const matchIndex = this.symbolSearchDisplayOffset + i;
 			const match = this.symbolSearchMatches[matchIndex];
-			const rowTop = resultsTop + i * this.lineHeight;
-			const rowBottom = rowTop + this.lineHeight;
+			const rowTop = resultsTop + i * entryHeight;
+			const rowBottom = rowTop + entryHeight;
 			const isSelected = matchIndex === this.symbolSearchSelectionIndex;
 			const isHover = matchIndex === this.symbolSearchHoverIndex;
 			if (isSelected) {
@@ -6685,16 +6764,32 @@ export class ConsoleCartEditor {
 				this.drawText(api, kindText, textX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
 				textX += this.measureText(kindText + ' ');
 			}
-			this.drawText(api, match.entry.displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
-			const lineText = `:${match.entry.line}`;
-			const lineWidth = this.measureText(lineText);
-			let rightX = this.viewportWidth - lineWidth - SYMBOL_SEARCH_RESULT_PADDING_X;
-			this.drawText(api, lineText, rightX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
-			if (match.entry.sourceLabel) {
-				const sourceWidth = this.measureText(match.entry.sourceLabel);
-				const sourceX = Math.max(textX, rightX - this.spaceAdvance - sourceWidth);
-				this.drawText(api, match.entry.sourceLabel, sourceX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
-				rightX = sourceX;
+			if (compactMode) {
+				const availableWidth = Math.max(0, this.viewportWidth - SYMBOL_SEARCH_RESULT_PADDING_X - textX);
+				const displayName = this.truncateTextToWidth(match.entry.displayName, availableWidth);
+				this.drawText(api, displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+				const lineSuffix = `:${match.entry.line}`;
+				const suffixWidth = this.measureText(lineSuffix);
+				const suffixX = this.viewportWidth - SYMBOL_SEARCH_RESULT_PADDING_X - suffixWidth;
+				const secondLineY = rowTop + this.lineHeight;
+				const secondLineWidth = Math.max(0, suffixX - SYMBOL_SEARCH_RESULT_PADDING_X - textX);
+				const locationLabel = this.truncateTextToWidth(this.symbolEntryLocationLabel(match.entry), secondLineWidth);
+				this.drawText(api, locationLabel, textX, secondLineY, COLOR_SYMBOL_SEARCH_KIND);
+				this.drawText(api, lineSuffix, suffixX, secondLineY, COLOR_SYMBOL_SEARCH_TEXT);
+			} else {
+				const lineText = `:${match.entry.line}`;
+				const lineWidth = this.measureText(lineText);
+				const lineX = this.viewportWidth - lineWidth - SYMBOL_SEARCH_RESULT_PADDING_X;
+				this.drawText(api, lineText, lineX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
+				let availableWidth = Math.max(0, lineX - SYMBOL_SEARCH_RESULT_PADDING_X - textX);
+				if (match.entry.sourceLabel) {
+					const sourceWidth = this.measureText(match.entry.sourceLabel);
+					const sourceX = Math.max(textX, lineX - this.spaceAdvance - sourceWidth);
+					this.drawText(api, match.entry.sourceLabel, sourceX, rowTop, COLOR_SYMBOL_SEARCH_KIND);
+					availableWidth = Math.max(0, sourceX - this.spaceAdvance - textX);
+				}
+				const displayName = this.truncateTextToWidth(match.entry.displayName, availableWidth);
+				this.drawText(api, displayName, textX, rowTop, COLOR_SYMBOL_SEARCH_TEXT);
 			}
 		}
 	}
@@ -6822,7 +6917,7 @@ export class ConsoleCartEditor {
 		if (visible <= 0) {
 			return baseHeight;
 		}
-		return baseHeight + SYMBOL_SEARCH_RESULT_SPACING + visible * this.lineHeight;
+		return baseHeight + SYMBOL_SEARCH_RESULT_SPACING + visible * this.symbolSearchEntryHeight();
 	}
 
 	private isSymbolSearchVisible(): boolean {
