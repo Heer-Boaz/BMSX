@@ -274,6 +274,27 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	private findAssetIdForPath(path: string | null | undefined): string | null {
+		if (!path) {
+			return null;
+		}
+		const rompack = $.rompack;
+		if (!rompack || !rompack.luaSourcePaths) {
+			return null;
+		}
+		const normalized = path.replace(/\\/g, '/').toLowerCase();
+		for (const [assetId, sourcePath] of Object.entries(rompack.luaSourcePaths)) {
+			if (typeof sourcePath !== 'string') {
+				continue;
+			}
+			const candidate = sourcePath.replace(/\\/g, '/').toLowerCase();
+			if (candidate === normalized) {
+				return assetId;
+			}
+		}
+		return null;
+	}
+
 	private getResourceDescriptors(): ConsoleResourceDescriptor[] {
 		const rompack = $.rompack;
 		if (!rompack || !Array.isArray(rompack.resourcePaths)) {
@@ -2570,25 +2591,34 @@ export class BmsxConsoleRuntime extends Service {
 
 	public listAllLuaSymbols(): ConsoleLuaSymbolEntry[] {
 		const entries = new Map<string, { info: LuaDefinitionInfo; location: ConsoleLuaDefinitionLocation; priority: number }>();
-		for (const [chunkName, info] of this.luaChunkResourceMap) {
-			const assetId = info.assetId ?? null;
-			const definitions = this.getStaticDefinitions(assetId, chunkName);
-			if (!definitions || definitions.length === 0) {
-				continue;
+		const descriptors = this.getResourceDescriptors().filter(descriptor => {
+			if (descriptor.type === 'lua') {
+				return true;
+			}
+			const lowerPath = descriptor.path.toLowerCase();
+			return lowerPath.endsWith('.lua');
+		});
+		const processedChunks = new Set<string>();
+		const recordDefinitions = (info: { assetId: string | null; path?: string | null }, definitions: ReadonlyArray<LuaDefinitionInfo> | null) => {
+			if (!definitions) {
+				return;
 			}
 			for (const definition of definitions) {
-				const location = this.buildDefinitionLocationFromRange(definition.definition, assetId);
-				const path = definition.namePath.length > 0 ? definition.namePath.join('.') : definition.name;
-				const key = `${location.chunkName}::${path}@${definition.definition.start.line}:${definition.definition.start.column}`;
+				const location = this.buildDefinitionLocationFromRange(definition.definition, info.assetId);
+				if (info.path && !location.path) {
+					location.path = info.path;
+				}
+				const symbolPath = definition.namePath.length > 0 ? definition.namePath.join('.') : definition.name;
+				const key = `${location.chunkName}::${symbolPath}@${definition.definition.start.line}:${definition.definition.start.column}`;
 				const priority = (() => {
 					switch (definition.kind) {
 						case 'table_field':
 							return 5;
 						case 'function':
 							return 4;
-						case 'parameter':
-							return 3;
 						case 'variable':
+							return 3;
+						case 'parameter':
 							return 2;
 						case 'assignment':
 						default:
@@ -2600,7 +2630,50 @@ export class BmsxConsoleRuntime extends Service {
 					entries.set(key, { info: definition, location, priority });
 				}
 			}
+		};
+
+		const programAssetId = (() => {
+			const program = this.luaProgram;
+			if (!program) return null;
+			if ('assetId' in program && typeof program.assetId === 'string') {
+				return program.assetId;
+			}
+			return null;
+		})();
+
+		for (const descriptor of descriptors) {
+			let assetId = descriptor.assetId ?? null;
+			if (!assetId) {
+				assetId = this.findAssetIdForPath(descriptor.path);
+			}
+			if (assetId && programAssetId && assetId === programAssetId) {
+				continue;
+			}
+			const chunkName = descriptor.path ?? descriptor.assetId ?? 'lua_resource';
+			const info = { assetId, path: descriptor.path ?? null };
+			const chunkKey = `${info.assetId ?? ''}|${chunkName}`;
+			if (processedChunks.has(chunkKey)) {
+				continue;
+			}
+			const definitions = this.parseStaticDefinitionsForChunk(chunkName, info);
+			recordDefinitions(info, definitions);
+			processedChunks.add(chunkKey);
 		}
+
+		const program = this.luaProgram;
+		if (program) {
+			const programChunk = this.normalizeChunkName(this.resolveLuaProgramChunkName(program));
+			const programInfo: { assetId: string | null; path?: string | null } = 'assetId' in program && typeof program.assetId === 'string'
+				? { assetId: program.assetId, path: this.resolveResourcePath(program.assetId) ?? undefined }
+				: { assetId: null, path: programChunk };
+			const programKey = `${programInfo.assetId ?? ''}|${programChunk}`;
+			if (!processedChunks.has(programKey)) {
+				const programDefinitions = this.parseStaticDefinitionsForChunk(programChunk, programInfo);
+				recordDefinitions(programInfo, programDefinitions);
+				processedChunks.add(programKey);
+			}
+		}
+
 		const symbols: ConsoleLuaSymbolEntry[] = [];
 		for (const { info, location } of entries.values()) {
 			const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
