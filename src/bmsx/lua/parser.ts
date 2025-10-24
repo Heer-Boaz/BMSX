@@ -1251,6 +1251,11 @@ export class LuaParser {
 				case LuaSyntaxKind.ReturnStatement: {
 					const returnStatement = statement as LuaReturnStatement;
 					for (const expression of returnStatement.expressions) {
+						if (expression.kind === LuaSyntaxKind.TableConstructorExpression) {
+							const tableExpression = expression as LuaTableConstructorExpression;
+							recordTableFields(tableExpression, [], returnStatement.range);
+							continue;
+						}
 						visitExpression(expression);
 					}
 					break;
