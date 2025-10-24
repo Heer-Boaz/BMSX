@@ -673,50 +673,723 @@ function pointerButton(button: number): string {
 	return 'pointer_forward';
 }
 
-class BrowserOnscreenGamepadPlatformSession implements OnscreenGamepadPlatformSession {
-	constructor(private readonly controller: AbortController) { }
+interface Rect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+interface Vec2 {
+	x: number;
+	y: number;
+}
+
+interface ControlVisualState {
+	active: boolean;
+	hidden: boolean;
+}
+
+interface ActionButtonDefinition {
+	readonly id: string;
+	readonly label: string;
+	readonly baseX: number;
+	readonly baseY: number;
+	readonly radius: number;
+	readonly color: string;
+	readonly activeColor: string;
+}
+
+interface ActionButtonLayout {
+	center: Vec2;
+	radius: number;
+	label: string;
+	color: string;
+	activeColor: string;
+}
+
+const DPAD_BASE_SIZE = 100;
+const ACTION_BASE_WIDTH = 100;
+const ACTION_BASE_HEIGHT = 220;
+const MIN_OVERLAY_MARGIN = 12;
+
+const DPAD_SEGMENT_DEFINITIONS = [
+	{ id: 'd-pad-u', startDeg: 67.5, endDeg: 112.5 },
+	{ id: 'd-pad-ru', startDeg: 22.5, endDeg: 67.5 },
+	{ id: 'd-pad-r', startDeg: 337.5, endDeg: 382.5 },
+	{ id: 'd-pad-rd', startDeg: 292.5, endDeg: 337.5 },
+	{ id: 'd-pad-d', startDeg: 247.5, endDeg: 292.5 },
+	{ id: 'd-pad-ld', startDeg: 202.5, endDeg: 247.5 },
+	{ id: 'd-pad-l', startDeg: 157.5, endDeg: 202.5 },
+	{ id: 'd-pad-lu', startDeg: 112.5, endDeg: 157.5 },
+];
+
+const ACTION_BUTTON_DEFINITIONS: ActionButtonDefinition[] = [
+	{ id: 'start_knop', label: 'ST', baseX: 50, baseY: 200, radius: 20, color: '#00bfff', activeColor: '#1c9ed8' },
+	{ id: 'select_knop', label: 'SE', baseX: 20, baseY: 170, radius: 20, color: '#ffd200', activeColor: '#d6ad00' },
+	{ id: 'ls_knop', label: 'LS', baseX: 50, baseY: 20, radius: 20, color: '#ffa500', activeColor: '#e08c00' },
+	{ id: 'rs_knop', label: 'RS', baseX: 80, baseY: 50, radius: 20, color: '#8000ff', activeColor: '#661ad6' },
+	{ id: 'a_knop', label: 'A', baseX: 50, baseY: 140, radius: 20, color: '#0066ff', activeColor: '#1a84ff' },
+	{ id: 'b_knop', label: 'B', baseX: 80, baseY: 110, radius: 20, color: '#ff0000', activeColor: '#ff3333' },
+	{ id: 'x_knop', label: 'X', baseX: 20, baseY: 110, radius: 20, color: '#ff00ff', activeColor: '#ff33ff' },
+	{ id: 'y_knop', label: 'Y', baseX: 50, baseY: 80, radius: 20, color: '#00c000', activeColor: '#33d633' },
+	{ id: 'lt_knop', label: 'LT', baseX: 20, baseY: 50, radius: 18, color: '#555555', activeColor: '#787878' },
+	{ id: 'rt_knop', label: 'RT', baseX: 80, baseY: 20, radius: 18, color: '#444444', activeColor: '#676767' },
+];
+
+const DEFAULT_THEME = {
+	dpadBaseFill: '#1a1a1a',
+	dpadBaseStroke: '#2d2d2d',
+	dpadSegmentFill: '#323232',
+	dpadSegmentActiveFill: '#4a8dff',
+	dpadSegmentStroke: '#0f0f0f',
+	dpadRingActive: '#7dc9ff',
+	buttonStroke: '#0f0f0f',
+	buttonLabelColor: '#ffffff',
+	buttonFontFamily: "'Press Start 2P', sans-serif",
+};
+
+interface DpadLayout {
+	type: 'dpad';
+	width: number;
+	height: number;
+	center: Vec2;
+	outerRadius: number;
+	innerRadius: number;
+	strokeWidth: number;
+	bounds: Rect;
+	scale: number;
+	pixelRatio: number;
+}
+
+interface ActionLayout {
+	type: 'action';
+	width: number;
+	height: number;
+	strokeWidth: number;
+	fontSize: number;
+	buttons: Record<string, ActionButtonLayout>;
+	bounds: Rect;
+	scale: number;
+	pixelRatio: number;
+}
+
+type SurfaceLayout = DpadLayout | ActionLayout;
+
+interface SurfaceMetrics {
+	bounds: Rect;
+	scale: number;
+}
+
+function degToRad(value: number): number {
+	return value * Math.PI / 180;
+}
+
+function clampScale(scale: number, min: number, max: number): number {
+	if (scale < min) {
+		return min;
+	}
+	if (scale > max) {
+		return max;
+	}
+	return scale;
+}
+
+abstract class CanvasControl {
+	readonly id: string;
+	protected path = new Path2D();
+
+	protected constructor(id: string) {
+		this.id = id;
+	}
+
+	contains(ctx: CanvasRenderingContext2D, x: number, y: number): boolean {
+		return ctx.isPointInPath(this.path, x, y);
+	}
+}
+
+class DpadSegmentControl extends CanvasControl {
+	private readonly startDeg: number;
+	private readonly endDeg: number;
+	private startRad = 0;
+	private endRad = 0;
+
+	constructor(id: string, startDeg: number, endDeg: number) {
+		super(id);
+		this.startDeg = startDeg;
+		this.endDeg = endDeg;
+	}
+
+	configure(layout: DpadLayout): void {
+		let start = degToRad(this.startDeg);
+		let end = degToRad(this.endDeg);
+		if (end <= start) {
+			end += Math.PI * 2;
+		}
+		this.startRad = start;
+		this.endRad = end;
+		const path = new Path2D();
+		const center = layout.center;
+		const outer = layout.outerRadius;
+		const inner = layout.innerRadius;
+		path.moveTo(center.x + inner * Math.cos(start), center.y + inner * Math.sin(start));
+		path.lineTo(center.x + outer * Math.cos(start), center.y + outer * Math.sin(start));
+		path.arc(center.x, center.y, outer, start, end);
+		path.lineTo(center.x + inner * Math.cos(end), center.y + inner * Math.sin(end));
+		path.arc(center.x, center.y, inner, end, start, true);
+		path.closePath();
+		this.path = path;
+	}
+
+	render(ctx: CanvasRenderingContext2D, layout: DpadLayout, state: ControlVisualState): void {
+		ctx.save();
+		ctx.fillStyle = state.active ? DEFAULT_THEME.dpadSegmentActiveFill : DEFAULT_THEME.dpadSegmentFill;
+		ctx.strokeStyle = DEFAULT_THEME.dpadSegmentStroke;
+		ctx.lineWidth = layout.strokeWidth;
+		ctx.fill(this.path);
+		ctx.stroke(this.path);
+		ctx.restore();
+	}
+
+	getAngles(): { start: number; end: number } {
+		return { start: this.startRad, end: this.endRad };
+	}
+}
+
+class ActionButtonControl extends CanvasControl {
+	private readonly definition: ActionButtonDefinition;
+
+	constructor(definition: ActionButtonDefinition) {
+		super(definition.id);
+		this.definition = definition;
+	}
+
+	configure(layout: ActionLayout): void {
+		const config = layout.buttons[this.definition.id];
+		const path = new Path2D();
+		path.arc(config.center.x, config.center.y, config.radius, 0, Math.PI * 2);
+		this.path = path;
+	}
+
+	render(ctx: CanvasRenderingContext2D, layout: ActionLayout, state: ControlVisualState): void {
+		const config = layout.buttons[this.definition.id];
+		const fill = state.active ? config.activeColor : config.color;
+		ctx.save();
+		ctx.fillStyle = fill;
+		ctx.strokeStyle = DEFAULT_THEME.buttonStroke;
+		ctx.lineWidth = layout.strokeWidth;
+		ctx.fill(this.path);
+		ctx.stroke(this.path);
+		ctx.fillStyle = DEFAULT_THEME.buttonLabelColor;
+		ctx.font = `${layout.fontSize}px ${DEFAULT_THEME.buttonFontFamily}`;
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText(config.label, config.center.x, config.center.y);
+		ctx.restore();
+	}
+}
+
+class BrowserOnscreenGamepadSurface {
+	private readonly element: HTMLCanvasElement;
+	private readonly ctx: CanvasRenderingContext2D;
+	private readonly kind: OnscreenGamepadControlKind;
+	private readonly publishMetricsFn: (kind: OnscreenGamepadControlKind, metrics: SurfaceMetrics | null) => void;
+	private readonly controls = new Map<string, CanvasControl>();
+	private readonly states = new Map<string, ControlVisualState>();
+	private readonly supportedIds = new Set<string>();
+	private readonly dpadRing = new Set<string>();
+	private layout: SurfaceLayout | null = null;
+	private frameHandle = 0;
+	private drawPending = false;
+
+	constructor(doc: Document, id: string, kind: OnscreenGamepadControlKind, publishMetricsFn: (kind: OnscreenGamepadControlKind, metrics: SurfaceMetrics | null) => void) {
+		this.kind = kind;
+		this.publishMetricsFn = publishMetricsFn;
+		const existing = doc.getElementById(id);
+		if (!(existing instanceof HTMLCanvasElement)) {
+			throw new Error(`[BrowserOnscreenGamepadPlatform] Expected onscreen canvas '#${id}' to exist in the document.`);
+		}
+		const canvas = existing;
+		canvas.classList.add('onscreen-surface');
+		canvas.hidden = true;
+		if (kind === 'dpad') {
+			canvas.style.left = '0';
+			canvas.style.right = 'auto';
+		} else {
+			canvas.style.right = '0';
+			canvas.style.left = 'auto';
+		}
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			throw new Error('[BrowserOnscreenGamepadPlatform] Unable to initialize onscreen gamepad surface context.');
+		}
+		this.element = canvas;
+		this.ctx = ctx;
+		this.initializeControls();
+	}
+
+	attach(hooks: OnscreenGamepadPlatformHooks): CanvasSurfaceSession {
+		this.element.hidden = false;
+		this.element.removeAttribute('hidden');
+		this.updateLayout();
+		this.requestDraw();
+		return new CanvasSurfaceSession(this, hooks, this.kind);
+	}
+
+	dispose(): void {
+		this.cancelDraw();
+		this.element.hidden = true;
+		this.element.setAttribute('hidden', 'true');
+		this.layout = null;
+		this.publishMetricsFn(this.kind, null);
+	}
+
+	collectElementIds(clientX: number, clientY: number): string[] {
+		if (!this.layout) {
+			return [];
+		}
+		const rect = this.element.getBoundingClientRect();
+		const localX = clientX - rect.left;
+		const localY = clientY - rect.top;
+		const result: string[] = [];
+		for (const [id, control] of this.controls) {
+			const state = this.states.get(id);
+			if (!state || state.hidden) {
+				continue;
+			}
+			if (control.contains(this.ctx, localX, localY)) {
+				result.push(id);
+			}
+		}
+		return result;
+	}
+
+	setElementActive(id: string, active: boolean): void {
+		const state = this.states.get(id);
+		if (!state) {
+			throw new Error(`[BrowserOnscreenGamepadPlatform] Unknown control id '${id}'.`);
+		}
+		if (state.active === active) {
+			return;
+		}
+		state.active = active;
+		this.requestDraw();
+	}
+
+	resetElements(ids: string[]): void {
+		let changed = false;
+		for (let i = 0; i < ids.length; i++) {
+			const id = ids[i];
+			const state = this.states.get(id);
+			if (!state) {
+				continue;
+			}
+			if (state.hidden || state.active) {
+				state.hidden = false;
+				state.active = false;
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.requestDraw();
+		}
+	}
+
+	hideElements(ids: string[]): void {
+		let changed = false;
+		for (let i = 0; i < ids.length; i++) {
+			const id = ids[i];
+			const state = this.states.get(id);
+			if (!state) {
+				continue;
+			}
+			if (!state.hidden || state.active) {
+				state.hidden = true;
+				state.active = false;
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.requestDraw();
+		}
+	}
+
+	updateDpadRing(active: string[]): void {
+		if (this.kind !== 'dpad') {
+			return;
+		}
+		this.dpadRing.clear();
+		for (let i = 0; i < active.length; i++) {
+			if (this.states.has(active[i])) {
+				this.dpadRing.add(active[i]);
+			}
+		}
+		this.requestDraw();
+	}
+
+	makePointerEvent(event: PointerEvent): OnscreenPointerEvent {
+		const pointerId = event.pointerId;
+		return {
+			pointerId,
+			clientX: event.clientX,
+			clientY: event.clientY,
+			pressure: event.pressure,
+			buttons: event.buttons,
+			capture: () => {
+				try {
+					this.element.setPointerCapture(pointerId);
+				} catch {
+					/* ignore */
+				}
+			},
+			release: () => {
+				if (this.element.hasPointerCapture(pointerId)) {
+					this.element.releasePointerCapture(pointerId);
+				}
+			},
+		};
+	}
+
+	updateLayout(): void {
+		if (typeof window === 'undefined') {
+			return;
+		}
+		const viewportWidth = Math.max(1, window.innerWidth);
+		const viewportHeight = Math.max(1, window.innerHeight);
+		const pixelRatio = typeof window.devicePixelRatio === 'number' ? window.devicePixelRatio : 1;
+		const limitedDimension = Math.max(1, Math.min(viewportWidth, viewportHeight));
+		const margin = Math.max(MIN_OVERLAY_MARGIN, Math.round(limitedDimension * 0.05));
+		let scale: number;
+		let bounds: Rect;
+		if (this.kind === 'dpad') {
+			scale = clampScale(limitedDimension * 0.20 / DPAD_BASE_SIZE, 0.4, 4);
+			const width = DPAD_BASE_SIZE * scale;
+			const height = width;
+			const left = margin;
+			const bottom = margin;
+			this.element.style.left = `${left}px`;
+			this.element.style.right = 'auto';
+			this.element.style.bottom = `${bottom}px`;
+			this.element.style.width = `${width}px`;
+			this.element.style.height = `${height}px`;
+			this.resizeCanvas(width, height, pixelRatio);
+			bounds = {
+				x: left,
+				y: viewportHeight - bottom - height,
+				width,
+				height,
+			};
+			const layout: DpadLayout = {
+				type: 'dpad',
+				width,
+				height,
+				center: { x: width / 2, y: height / 2 },
+				outerRadius: width / 2,
+				innerRadius: width * 0.35,
+				strokeWidth: Math.max(1.5, scale * 1.2),
+				bounds,
+				scale,
+				pixelRatio,
+			};
+			this.layout = layout;
+			for (const control of this.controls.values()) {
+				(control as DpadSegmentControl).configure(layout);
+			}
+		} else {
+			scale = clampScale(limitedDimension * 0.20 / ACTION_BASE_WIDTH, 0.4, 4);
+			const width = ACTION_BASE_WIDTH * scale;
+			const height = ACTION_BASE_HEIGHT * scale;
+			const right = margin;
+			const bottom = margin;
+			const left = viewportWidth - width - right;
+			this.element.style.right = `${right}px`;
+			this.element.style.left = 'auto';
+			this.element.style.bottom = `${bottom}px`;
+			this.element.style.width = `${width}px`;
+			this.element.style.height = `${height}px`;
+			this.resizeCanvas(width, height, pixelRatio);
+			bounds = {
+				x: left,
+				y: viewportHeight - bottom - height,
+				width,
+				height,
+			};
+			const buttonLayouts = this.buildActionLayout(scale);
+			const layout: ActionLayout = {
+				type: 'action',
+				width,
+				height,
+				strokeWidth: Math.max(1.5, scale * 1.2),
+				fontSize: Math.max(8, scale * 7),
+				buttons: buttonLayouts,
+				bounds,
+				scale,
+				pixelRatio,
+			};
+			this.layout = layout;
+			for (const control of this.controls.values()) {
+				(control as ActionButtonControl).configure(layout);
+			}
+		}
+		this.publishMetricsFn(this.kind, { bounds, scale });
+		this.requestDraw();
+	}
+
+	getElement(): HTMLCanvasElement {
+		return this.element;
+	}
+
+	hasControl(id: string): boolean {
+		return this.supportedIds.has(id);
+	}
+
+	private resizeCanvas(width: number, height: number, pixelRatio: number): void {
+		this.element.width = Math.max(1, Math.round(width * pixelRatio));
+		this.element.height = Math.max(1, Math.round(height * pixelRatio));
+		this.ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+	}
+
+	private requestDraw(): void {
+		if (this.drawPending) {
+			return;
+		}
+		this.drawPending = true;
+		this.frameHandle = window.requestAnimationFrame(() => this.draw());
+	}
+
+	private cancelDraw(): void {
+		if (!this.drawPending) {
+			return;
+		}
+		window.cancelAnimationFrame(this.frameHandle);
+		this.frameHandle = 0;
+		this.drawPending = false;
+	}
+
+	private draw(): void {
+		this.drawPending = false;
+		if (!this.layout) {
+			return;
+		}
+		const layout = this.layout;
+		this.ctx.save();
+		this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+		this.ctx.clearRect(0, 0, this.element.width, this.element.height);
+		this.ctx.restore();
+		this.ctx.save();
+		this.ctx.setTransform(layout.pixelRatio, 0, 0, layout.pixelRatio, 0, 0);
+		if (layout.type === 'dpad') {
+			this.drawDpadBase(layout);
+			for (const [id, control] of this.controls) {
+				const state = this.states.get(id);
+				if (!state || state.hidden) {
+					continue;
+				}
+				(control as DpadSegmentControl).render(this.ctx, layout, state);
+			}
+			this.drawDpadRing(layout);
+		} else {
+			for (const [id, control] of this.controls) {
+				const state = this.states.get(id);
+				if (!state || state.hidden) {
+					continue;
+				}
+				(control as ActionButtonControl).render(this.ctx, layout, state);
+			}
+		}
+		this.ctx.restore();
+	}
+
+	private drawDpadBase(layout: DpadLayout): void {
+		this.ctx.save();
+		this.ctx.fillStyle = DEFAULT_THEME.dpadBaseFill;
+		this.ctx.strokeStyle = DEFAULT_THEME.dpadBaseStroke;
+		this.ctx.lineWidth = layout.strokeWidth;
+		this.ctx.beginPath();
+		this.ctx.arc(layout.center.x, layout.center.y, layout.outerRadius, 0, Math.PI * 2);
+		this.ctx.fill();
+		this.ctx.stroke();
+		this.ctx.restore();
+	}
+
+	private drawDpadRing(layout: DpadLayout): void {
+		if (this.dpadRing.size === 0) {
+			return;
+		}
+		this.ctx.save();
+		this.ctx.lineWidth = layout.strokeWidth * 1.6;
+		this.ctx.strokeStyle = DEFAULT_THEME.dpadRingActive;
+		const radius = layout.outerRadius - layout.strokeWidth * 0.6;
+		for (const id of this.dpadRing.values()) {
+			const control = this.controls.get(id);
+			if (!(control instanceof DpadSegmentControl)) {
+				continue;
+			}
+			const { start, end } = control.getAngles();
+			this.ctx.beginPath();
+			this.ctx.arc(layout.center.x, layout.center.y, radius, start, end);
+			this.ctx.stroke();
+		}
+		this.ctx.restore();
+	}
+
+	private initializeControls(): void {
+		if (this.kind === 'dpad') {
+			for (const def of DPAD_SEGMENT_DEFINITIONS) {
+				const control = new DpadSegmentControl(def.id, def.startDeg, def.endDeg);
+				this.controls.set(control.id, control);
+				this.states.set(control.id, { active: false, hidden: false });
+				this.supportedIds.add(control.id);
+			}
+		} else {
+			for (const def of ACTION_BUTTON_DEFINITIONS) {
+				const control = new ActionButtonControl(def);
+				this.controls.set(control.id, control);
+				this.states.set(control.id, { active: false, hidden: false });
+				this.supportedIds.add(control.id);
+			}
+		}
+	}
+
+	private buildActionLayout(scale: number): Record<string, ActionButtonLayout> {
+		const layout: Record<string, ActionButtonLayout> = {};
+		for (const def of ACTION_BUTTON_DEFINITIONS) {
+			layout[def.id] = {
+				center: {
+					x: def.baseX * scale,
+					y: def.baseY * scale,
+				},
+				radius: def.radius * scale,
+				label: def.label,
+				color: def.color,
+				activeColor: def.activeColor,
+			};
+		}
+		return layout;
+	}
+}
+
+class CanvasSurfaceSession implements OnscreenGamepadPlatformSession {
+	private readonly controller = new AbortController();
+	private readonly activePointers = new Set<number>();
+
+	constructor(private readonly surface: BrowserOnscreenGamepadSurface, private readonly hooks: OnscreenGamepadPlatformHooks, private readonly kind: OnscreenGamepadControlKind) {
+		const signal = this.controller.signal;
+		const element = this.surface.getElement();
+		const listenerOptions: AddEventListenerOptions = { signal, passive: false };
+		element.addEventListener('pointerdown', this.onPointerDown, listenerOptions);
+		element.addEventListener('pointermove', this.onPointerMove, listenerOptions);
+		element.addEventListener('pointerup', this.onPointerUp, listenerOptions);
+		element.addEventListener('pointercancel', this.onPointerCancel, listenerOptions);
+		element.addEventListener('lostpointercapture', this.onPointerCancel, { signal });
+		window.addEventListener('resize', this.onResize, { signal });
+		window.addEventListener('blur', this.onBlur, { signal });
+		window.addEventListener('focus', this.onFocus, { signal });
+	}
 
 	dispose(): void {
 		this.controller.abort();
+		this.activePointers.clear();
+		this.surface.dispose();
 	}
-}
 
-function makePointerEvent(event: PointerEvent, owner: HTMLElement): OnscreenPointerEvent {
-	const pointerId = event.pointerId;
-	return {
-		pointerId,
-		clientX: event.clientX,
-		clientY: event.clientY,
-		pressure: event.pressure,
-		buttons: event.buttons,
-		capture(): void {
-			owner.setPointerCapture(pointerId);
-		},
-		release(): void {
-			if (owner.hasPointerCapture(pointerId)) {
-				owner.releasePointerCapture(pointerId);
-			}
-		},
+	private readonly onPointerDown = (event: PointerEvent) => {
+		const ids = this.surface.collectElementIds(event.clientX, event.clientY);
+		if (ids.length === 0) {
+			return;
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const adapter = this.surface.makePointerEvent(event);
+		adapter.capture();
+		this.activePointers.add(event.pointerId);
+		this.hooks.pointerDown(this.kind, adapter);
+	};
+
+	private readonly onPointerMove = (event: PointerEvent) => {
+		if (!this.activePointers.has(event.pointerId)) {
+			return;
+		}
+		if (event.buttons === 0 && event.pressure === 0) {
+			return;
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const adapter = this.surface.makePointerEvent(event);
+		this.hooks.pointerMove(this.kind, adapter);
+	};
+
+	private readonly onPointerUp = (event: PointerEvent) => {
+		if (!this.activePointers.has(event.pointerId)) {
+			return;
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const adapter = this.surface.makePointerEvent(event);
+		adapter.release();
+		this.hooks.pointerUp(this.kind, adapter);
+		this.activePointers.delete(event.pointerId);
+	};
+
+	private readonly onPointerCancel = (event: PointerEvent) => {
+		if (!this.activePointers.has(event.pointerId)) {
+			return;
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		const adapter = this.surface.makePointerEvent(event);
+		adapter.release();
+		this.hooks.pointerUp(this.kind, adapter);
+		this.activePointers.delete(event.pointerId);
+	};
+
+	private readonly onResize = () => {
+		this.surface.updateLayout();
+	};
+
+	private readonly onBlur = () => {
+		this.activePointers.clear();
+		this.hooks.blur();
+	};
+
+	private readonly onFocus = () => {
+		this.activePointers.clear();
+		this.hooks.focus();
 	};
 }
 
-function removeDpadClasses(target: Element): void {
-	const removals: string[] = [];
-	for (let i = 0; i < target.classList.length; i++) {
-		const className = target.classList.item(i);
-		if (className && className.indexOf('d-pad-') === 0) {
-			removals.push(className);
+class CompositeGamepadSession implements OnscreenGamepadPlatformSession {
+	private readonly sessions: OnscreenGamepadPlatformSession[];
+
+	constructor(...sessions: OnscreenGamepadPlatformSession[]) {
+		this.sessions = sessions;
+	}
+
+	dispose(): void {
+		for (const session of this.sessions) {
+			session.dispose();
 		}
 	}
-	for (let i = 0; i < removals.length; i++) {
-		target.classList.remove(removals[i]);
-	}
+}
+
+interface GamepadOverlayMetrics {
+	dpad: SurfaceMetrics | null;
+	action: SurfaceMetrics | null;
 }
 
 export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	private readonly document: Document;
+	private readonly dpadSurface: BrowserOnscreenGamepadSurface;
+	private readonly actionSurface: BrowserOnscreenGamepadSurface;
 
 	constructor(doc?: Document) {
+		if (typeof window === 'undefined') {
+			throw new Error('[BrowserOnscreenGamepadPlatform] Global window is not available.');
+		}
 		if (doc) {
 			this.document = doc;
 		} else {
@@ -725,160 +1398,48 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 			}
 			this.document = document;
 		}
-		if (typeof window === 'undefined') {
-			throw new Error('[BrowserOnscreenGamepadPlatform] Global window is not available.');
-		}
+		this.dpadSurface = new BrowserOnscreenGamepadSurface(this.document, 'bmsx-dpad-canvas', 'dpad', (kind, metrics) => this.publishMetrics(kind, metrics));
+		this.actionSurface = new BrowserOnscreenGamepadSurface(this.document, 'bmsx-action-canvas', 'action', (kind, metrics) => this.publishMetrics(kind, metrics));
 	}
 
 	attach(hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession {
-		const controller = new AbortController();
-		const signal = controller.signal;
-		const dpadSurface = this.querySurface('d-pad-controls');
-		const actionSurface = this.querySurface('button-controls');
-		this.configureSurfaceBehaviour(dpadSurface);
-		this.configureSurfaceBehaviour(actionSurface);
-		const pointerOptions: AddEventListenerOptions = { passive: options.passive, once: options.once, signal };
-		this.bindSurfaceEvents(dpadSurface, 'dpad', hooks, pointerOptions);
-		this.bindSurfaceEvents(actionSurface, 'action', hooks, pointerOptions);
-		const blurHandler = () => hooks.blur();
-		const focusHandler = () => hooks.focus();
-		const outHandler = () => hooks.pointerOut();
-		window.addEventListener('blur', blurHandler, { signal });
-		window.addEventListener('focus', focusHandler, { signal });
-		window.addEventListener('mouseout', outHandler, { signal });
-		return new BrowserOnscreenGamepadPlatformSession(controller);
+		const dpadSession = this.dpadSurface.attach(hooks);
+		const actionSession = this.actionSurface.attach(hooks);
+		return new CompositeGamepadSession(dpadSession, actionSession);
 	}
 
 	hideElements(elementIds: string[]): void {
-		for (let i = 0; i < elementIds.length; i++) {
-			const id = elementIds[i];
-			const element = this.requireElement(id);
-			element.classList.add('hidden');
-			element.setAttribute('hidden', 'true');
-			const textElement = this.optionalElement(`${id}_text`);
-			if (textElement) {
-				textElement.classList.add('hidden');
-				textElement.setAttribute('hidden', 'true');
-			}
-		}
+		this.dpadSurface.hideElements(elementIds);
+		this.actionSurface.hideElements(elementIds);
 	}
 
-	collectElementIds(x: number, y: number, _kind: OnscreenGamepadControlKind): string[] {
-		const elements = this.document.elementsFromPoint(x, y);
-		const ids: string[] = [];
-		for (let i = 0; i < elements.length; i++) {
-			const elementId = elements[i].id;
-			if (elementId && elementId.length > 0) {
-				if (elementId === 'd-pad-controls' || elementId === 'button-controls') {
-					continue;
-				}
-				ids.push(elementId);
-			}
-		}
-		return ids;
+	collectElementIds(x: number, y: number, kind: OnscreenGamepadControlKind): string[] {
+		return kind === 'dpad' ? this.dpadSurface.collectElementIds(x, y) : this.actionSurface.collectElementIds(x, y);
 	}
 
 	setElementActive(elementId: string, active: boolean): void {
-		const element = this.requireElement(elementId);
-		if (element instanceof HTMLElement) {
-			element.hidden = false;
+		if (this.dpadSurface.hasControl(elementId)) {
+			this.dpadSurface.setElementActive(elementId, active);
+			return;
 		}
-		element.removeAttribute('hidden');
-		const container = this.findContainerForElement(elementId);
-		if (container) {
-			container.hidden = false;
-			container.setAttribute('aria-hidden', 'false');
-			container.classList.remove('hidden');
-			container.removeAttribute('hidden');
+		if (this.actionSurface.hasControl(elementId)) {
+			this.actionSurface.setElementActive(elementId, active);
+			return;
 		}
-		const isDpad = elementId.indexOf('d-pad-') === 0;
-		const textElement = isDpad ? null : this.optionalElement(`${elementId}_text`);
-		if (!isDpad && !textElement) {
-			throw new Error(`[BrowserOnscreenGamepadPlatform] Text element '#${elementId}_text' was not found.`);
-		}
-		if (active) {
-			element.classList.add('druk');
-			element.classList.remove('los');
-			element.setAttribute('data-touched', 'true');
-			if (textElement) {
-				textElement.classList.add('druk');
-				textElement.classList.remove('los');
-				textElement.setAttribute('data-touched', 'true');
-			}
-		} else {
-			element.classList.remove('druk');
-			element.classList.add('los');
-			element.setAttribute('data-touched', 'false');
-			if (textElement) {
-				textElement.classList.remove('druk');
-				textElement.classList.add('los');
-				textElement.setAttribute('data-touched', 'false');
-			}
-		}
+		throw new Error(`[BrowserOnscreenGamepadPlatform] Unknown control id '${elementId}'.`);
 	}
 
 	resetElements(elementIds: string[]): void {
-		for (let i = 0; i < elementIds.length; i++) {
-			const id = elementIds[i];
-			const element = this.requireElement(id);
-			if (element instanceof HTMLElement) {
-				element.hidden = false;
-			}
-			const container = this.findContainerForElement(id);
-		if (container) {
-			container.hidden = false;
-			container.setAttribute('aria-hidden', 'false');
-			container.classList.remove('hidden');
-			container.removeAttribute('hidden');
-		}
-			const isDpad = id.indexOf('d-pad-') === 0;
-			const textElement = isDpad ? null : this.optionalElement(`${id}_text`);
-			if (!isDpad && !textElement) {
-				throw new Error(`[BrowserOnscreenGamepadPlatform] Text element '#${id}_text' was not found.`);
-			}
-			element.classList.remove('druk');
-			element.classList.add('los');
-			element.classList.remove('hidden');
-			element.removeAttribute('hidden');
-			element.setAttribute('data-touched', 'false');
-			if (textElement) {
-				textElement.classList.remove('druk');
-				textElement.classList.add('los');
-				textElement.classList.remove('hidden');
-				textElement.removeAttribute('hidden');
-				textElement.setAttribute('data-touched', 'false');
-			}
-		}
-	}
-
-	private findContainerForElement(elementId: string): HTMLElement | null {
-		if (elementId === 'd-pad-controls' || elementId.indexOf('d-pad-') === 0) {
-			const target = this.document.getElementById('d-pad-controls');
-			return target instanceof HTMLElement ? target : null;
-		}
-		if (elementId === 'button-controls' || elementId.indexOf('_knop') !== -1) {
-			const target = this.document.getElementById('button-controls');
-			return target instanceof HTMLElement ? target : null;
-		}
-		return null;
+		this.dpadSurface.resetElements(elementIds);
+		this.actionSurface.resetElements(elementIds);
 	}
 
 	updateDpadRing(activeElementIds: string[]): void {
-		const ring = this.requireElement('d-pad-omheining');
-		removeDpadClasses(ring);
-		for (let i = 0; i < activeElementIds.length; i++) {
-			ring.classList.add(activeElementIds[i]);
-		}
+		this.dpadSurface.updateDpadRing(activeElementIds);
 	}
 
 	supportsVibration(): boolean {
-		if (typeof navigator === 'undefined') {
-			return false;
-		}
-		if (typeof navigator.vibrate !== 'function') {
-			return false;
-		}
-		return true;
+		return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
 	}
 
 	vibrate(durationMs: number): void {
@@ -888,70 +1449,17 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		navigator.vibrate(durationMs);
 	}
 
-	private bindSurfaceEvents(surface: HTMLElement, kind: OnscreenGamepadControlKind, hooks: OnscreenGamepadPlatformHooks, listenerOptions: AddEventListenerOptions): void {
-		const pointerDown = (event: PointerEvent) => {
-			event.preventDefault();
-			event.stopPropagation();
-			event.stopImmediatePropagation();
-			hooks.pointerDown(kind, makePointerEvent(event, surface));
-		};
-		const pointerMove = (event: PointerEvent) => {
-			if (event.buttons !== 0 || event.pressure !== 0) {
-				event.preventDefault();
-				event.stopPropagation();
-				event.stopImmediatePropagation();
-			}
-			hooks.pointerMove(kind, makePointerEvent(event, surface));
-		};
-		const pointerUp = (event: PointerEvent) => {
-			event.preventDefault();
-			event.stopPropagation();
-			event.stopImmediatePropagation();
-			hooks.pointerUp(kind, makePointerEvent(event, surface));
-		};
-		surface.addEventListener('pointerdown', pointerDown, listenerOptions);
-		surface.addEventListener('pointermove', pointerMove, listenerOptions);
-		surface.addEventListener('pointerup', pointerUp, listenerOptions);
-		surface.addEventListener('pointercancel', pointerUp, listenerOptions);
-		surface.addEventListener('lostpointercapture', pointerUp, listenerOptions);
-	}
-
-	private querySurface(id: string): HTMLElement {
-		const element = this.document.getElementById(id);
-		if (!(element instanceof HTMLElement)) {
-			throw new Error(`[BrowserOnscreenGamepadPlatform] Element '#${id}' was not found or is not an HTMLElement.`);
+	private publishMetrics(kind: OnscreenGamepadControlKind, metrics: SurfaceMetrics | null): void {
+		const holder = globalThis as { __bmsxOnscreenGamepadMetrics?: GamepadOverlayMetrics };
+		const current: GamepadOverlayMetrics = holder.__bmsxOnscreenGamepadMetrics ?? { dpad: null, action: null };
+		if (kind === 'dpad') {
+			current.dpad = metrics;
+		} else {
+			current.action = metrics;
 		}
-		return element;
-	}
-
-	private requireElement(id: string): Element {
-		const element = this.document.getElementById(id);
-		if (!element) {
-			throw new Error(`[BrowserOnscreenGamepadPlatform] Element '#${id}' was not found.`);
-		}
-		return element;
-	}
-
-	private optionalElement(id: string): Element | null {
-		return this.document.getElementById(id);
-	}
-
-	private configureSurfaceBehaviour(surface: HTMLElement): void {
-		surface.style.touchAction = 'none';
-		surface.style.pointerEvents = 'auto';
-		surface.style.userSelect = 'none';
-		surface.style.setProperty('-webkit-touch-callout', 'none');
-		surface.style.setProperty('-webkit-tap-highlight-color', 'transparent');
-		surface.style.setProperty('-ms-touch-action', 'none');
-		surface.setAttribute('aria-hidden', 'true');
-		surface.hidden = true;
+		holder.__bmsxOnscreenGamepadMetrics = current;
 	}
 }
-
-export const options: EventListenerOptions & { passive: boolean; once: boolean; } = {
-	passive: false,
-	once: false,
-};
 
 class BrowserGameViewCanvas implements GameViewCanvas {
 	public readonly handle: HTMLCanvasElement;
@@ -1010,6 +1518,37 @@ class BrowserGamepadControlHandle implements GamepadControlHandle {
 	}
 
 	public setScale(scale: number): void {
+		this.element.style.transform = `scale(${scale})`;
+	}
+}
+
+class CanvasGamepadControlHandle implements GamepadControlHandle {
+	public constructor(public readonly id: string, private readonly element: HTMLElement, private readonly metrics: SurfaceMetrics) { }
+
+	public getNumericAttribute(name: string): number | null {
+		if (name === 'width') {
+			return Math.round(this.metrics.bounds.width);
+		}
+		if (name === 'height') {
+			return Math.round(this.metrics.bounds.height);
+		}
+		return null;
+	}
+
+	public measure(): { width: number; height: number; } {
+		const rect = this.element.getBoundingClientRect();
+		if (rect.width > 0 && rect.height > 0) {
+			return { width: rect.width, height: rect.height };
+		}
+		return { width: this.metrics.bounds.width, height: this.metrics.bounds.height };
+	}
+
+	public setBottom(px: number): void {
+		this.element.style.bottom = `${px}px`;
+	}
+
+	public setScale(scale: number): void {
+		this.element.style.transformOrigin = 'center bottom';
 		this.element.style.transform = `scale(${scale})`;
 	}
 }
@@ -1145,14 +1684,19 @@ export class BrowserGameViewHost implements GameViewHost {
 	}
 
 	private resolveOnscreenGamepadHandles(): OnscreenGamepadHandles | null {
-		const dpad = document.querySelector<HTMLElement>('#d-pad-controls');
-		const actionButtons = document.querySelector<HTMLElement>('#button-controls');
-		if (!dpad || !actionButtons) {
+		const holder = globalThis as { __bmsxOnscreenGamepadMetrics?: GamepadOverlayMetrics };
+		const metrics = holder.__bmsxOnscreenGamepadMetrics;
+		if (!metrics || !metrics.dpad || !metrics.action) {
+			return null;
+		}
+		const dpadElement = document.querySelector<HTMLElement>('#bmsx-dpad-canvas');
+		const actionElement = document.querySelector<HTMLElement>('#bmsx-action-canvas');
+		if (!(dpadElement instanceof HTMLElement) || !(actionElement instanceof HTMLElement)) {
 			return null;
 		}
 		return {
-			dpad: new BrowserGamepadControlHandle('d-pad-svg', dpad),
-			actionButtons: new BrowserGamepadControlHandle('action-buttons-svg', actionButtons),
+			dpad: new CanvasGamepadControlHandle('d-pad-surface', dpadElement, metrics.dpad),
+			actionButtons: new CanvasGamepadControlHandle('action-surface', actionElement, metrics.action),
 		};
 	}
 

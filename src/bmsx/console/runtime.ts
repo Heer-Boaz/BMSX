@@ -16,15 +16,14 @@ import { LuaTable } from '../lua/value.ts';
 import { LuaRuntimeError, LuaError } from '../lua/errors.ts';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
-import { EventEmitter, type EventPayload } from '../core/eventemitter';
-import type { Identifiable } from '../rompack/rompack';
+import { EventEmitter, type EventHandler, type EventPayload } from '../core/eventemitter';
+import type { Identifier, Identifiable } from '../rompack/rompack';
 import { consoleEditorSpec } from '../core/pipelines/console_editor';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
-import { LuaServiceHost, buildLuaServiceDefinition } from './luaservice';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -73,6 +72,31 @@ type HttpResponse = {
 	json(): Promise<unknown>;
 };
 
+type LuaServiceHooks = {
+	boot?: LuaFunctionValue;
+	activate?: LuaFunctionValue;
+	deactivate?: LuaFunctionValue;
+	dispose?: LuaFunctionValue;
+	tick?: LuaFunctionValue;
+	getState?: LuaFunctionValue;
+	setState?: LuaFunctionValue;
+};
+
+type LuaServiceBinding = {
+	service: Service;
+	table: LuaTable;
+	interpreter: LuaInterpreter;
+	hooks: LuaServiceHooks;
+	events: Map<string, LuaFunctionValue>;
+	autoActivate: boolean;
+};
+
+class LuaScriptService extends Service {
+	constructor(id: Identifier) {
+		super({ id, deferBind: true });
+	}
+}
+
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
 	private static preservingWorldResetDepth = 0;
@@ -103,6 +127,7 @@ export class BmsxConsoleRuntime extends Service {
 		'table',
 		'coroutine',
 		'debug',
+		'api',
 	]);
 
 	public static ensure(options: BmsxConsoleRuntimeOptions): BmsxConsoleRuntime {
@@ -182,7 +207,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
-	private readonly luaServices: Map<string, LuaServiceHost> = new Map();
+	private readonly luaServices: Map<string, LuaServiceBinding> = new Map();
 	private hasBooted = false;
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
@@ -1594,20 +1619,172 @@ export class BmsxConsoleRuntime extends Service {
 			if (executionResults.length === 0) {
 				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' returned no value.`);
 			}
-			const returned = executionResults[0];
-			if (!(returned instanceof LuaTable)) {
+			const table = executionResults[0];
+			if (!(table instanceof LuaTable)) {
 				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a table.`);
 			}
-			const definition = buildLuaServiceDefinition({
-				table: returned,
-				interpreter,
-				interop: this,
-			});
-			if (this.luaServices.has(definition.id)) {
-				throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${definition.id}' detected.`);
+			const descriptorRaw = this.luaValueToJs(table);
+			if (!this.isPlainObject(descriptorRaw)) {
+				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a plain table.`);
 			}
-			const host = new LuaServiceHost({ interop: this, definition });
-			this.luaServices.set(definition.id, host);
+			const descriptor = descriptorRaw as Record<string, unknown>;
+			const idValue = descriptor.id;
+			if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' is missing a valid id.`);
+			}
+			const serviceId = idValue.trim() as Identifier;
+			if (this.luaServices.has(serviceId)) {
+				throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${serviceId}' detected.`);
+			}
+
+			let autoActivate = true;
+			if (typeof descriptor.auto_activate === 'boolean') {
+				autoActivate = descriptor.auto_activate;
+			} else if (typeof (descriptor as { autoActivate?: unknown }).autoActivate === 'boolean') {
+				autoActivate = (descriptor as { autoActivate: boolean }).autoActivate;
+			}
+
+			const hooks: LuaServiceHooks = {};
+			const bootCandidate = table.get('on_boot') ?? table.get('boot') ?? table.get('initialize');
+			if (bootCandidate !== undefined && bootCandidate !== null) {
+				if (!this.isLuaFunctionValue(bootCandidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_boot' must be a function.`);
+				}
+				hooks.boot = bootCandidate;
+			}
+			const activateCandidate = table.get('on_activate') ?? table.get('activate');
+			if (activateCandidate !== undefined && activateCandidate !== null) {
+				if (!this.isLuaFunctionValue(activateCandidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_activate' must be a function.`);
+				}
+				hooks.activate = activateCandidate;
+			}
+			const deactivateCandidate = table.get('on_deactivate') ?? table.get('deactivate');
+			if (deactivateCandidate !== undefined && deactivateCandidate !== null) {
+				if (!this.isLuaFunctionValue(deactivateCandidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_deactivate' must be a function.`);
+				}
+				hooks.deactivate = deactivateCandidate;
+			}
+			const disposeCandidate = table.get('on_dispose') ?? table.get('dispose');
+			if (disposeCandidate !== undefined && disposeCandidate !== null) {
+				if (!this.isLuaFunctionValue(disposeCandidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_dispose' must be a function.`);
+				}
+				hooks.dispose = disposeCandidate;
+			}
+			const tickCandidate = table.get('on_tick') ?? table.get('tick') ?? table.get('update');
+			if (tickCandidate !== undefined && tickCandidate !== null) {
+				if (!this.isLuaFunctionValue(tickCandidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_tick' must be a function.`);
+				}
+				hooks.tick = tickCandidate;
+			}
+			const getStateCandidate = table.get('get_state') ?? table.get('getState') ?? table.get('serialize');
+			if (getStateCandidate !== undefined && getStateCandidate !== null) {
+				if (!this.isLuaFunctionValue(getStateCandidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'get_state' must be a function.`);
+				}
+				hooks.getState = getStateCandidate;
+			}
+			const setStateCandidate = table.get('set_state') ?? table.get('setState') ?? table.get('deserialize');
+			if (setStateCandidate !== undefined && setStateCandidate !== null) {
+				if (!this.isLuaFunctionValue(setStateCandidate)) {
+					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'set_state' must be a function.`);
+				}
+				hooks.setState = setStateCandidate;
+			}
+
+			const events = new Map<string, LuaFunctionValue>();
+			const eventsValue = table.get('events');
+			if (eventsValue instanceof LuaTable) {
+				for (const [rawKey, handler] of eventsValue.entriesArray()) {
+					const eventName = typeof rawKey === 'string' ? rawKey.trim() : '';
+					if (eventName.length === 0) {
+						throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' events must use string keys.`);
+					}
+					if (!this.isLuaFunctionValue(handler)) {
+						throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' event '${eventName}' must be a function.`);
+					}
+					events.set(eventName, handler);
+				}
+			}
+
+			const machines: Identifier[] = [];
+			const machinesValue = descriptor.machines ?? descriptor.state_machines ?? descriptor.stateMachines;
+			if (Array.isArray(machinesValue)) {
+				for (let index = 0; index < machinesValue.length; index += 1) {
+					const value = machinesValue[index];
+					if (typeof value !== 'string' || value.trim().length === 0) {
+						throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' machines[${index}] must be a string.`);
+					}
+					machines.push(value.trim() as Identifier);
+				}
+			} else if (typeof machinesValue === 'string' && machinesValue.trim().length > 0) {
+				machines.push(machinesValue.trim() as Identifier);
+			}
+
+			const service = new LuaScriptService(serviceId);
+
+			const binding: LuaServiceBinding = {
+				service,
+				table,
+				interpreter,
+				hooks,
+				events,
+				autoActivate,
+			};
+
+			this.luaServices.set(serviceId, binding);
+
+			for (let index = 0; index < machines.length; index += 1) {
+				service.sc.add_statemachine(machines[index], serviceId);
+			}
+
+			if (hooks.getState) {
+				service.getState = () => this.invokeLuaServiceHook(binding, hooks.getState!);
+			}
+			if (hooks.setState) {
+				service.setState = (state: unknown) => { this.invokeLuaServiceHook(binding, hooks.setState!, state); };
+			}
+
+			const originalActivate = service.activate.bind(service);
+			service.activate = () => {
+				originalActivate();
+				if (hooks.activate) {
+					this.invokeLuaServiceHook(binding, hooks.activate);
+				}
+			};
+
+			const originalDeactivate = service.deactivate.bind(service);
+			service.deactivate = () => {
+				if (hooks.deactivate) {
+					this.invokeLuaServiceHook(binding, hooks.deactivate);
+				}
+				originalDeactivate();
+			};
+
+			const originalDispose = service.dispose.bind(service);
+			service.dispose = () => {
+				if (hooks.dispose) {
+					this.invokeLuaServiceHook(binding, hooks.dispose);
+				}
+				this.luaServices.delete(service.id);
+				originalDispose();
+			};
+
+			service.bind();
+			this.registerLuaServiceEvents(binding);
+
+			if (hooks.boot) {
+				this.invokeLuaServiceHook(binding, hooks.boot);
+			}
+
+			if (binding.autoActivate) {
+				service.activate();
+			} else if (events.size > 0) {
+				service.enableEvents();
+			}
 		}
 	}
 
@@ -1615,27 +1792,52 @@ export class BmsxConsoleRuntime extends Service {
 		if (this.luaServices.size === 0) {
 			return;
 		}
-		for (const host of this.luaServices.values()) {
-			try {
-				host.tick(deltaSeconds);
-			}
-			catch (error) {
-				this.handleLuaError(error);
+		for (const binding of this.luaServices.values()) {
+			if (!binding.hooks.tick) continue;
+			if (!binding.service.active || binding.service.tickEnabled === false) continue;
+			this.invokeLuaServiceHook(binding, binding.hooks.tick, deltaSeconds);
+			if (this.luaRuntimeFailed) {
 				break;
 			}
 		}
 	}
 
 	private disposeLuaServices(): void {
-		for (const host of this.luaServices.values()) {
+		if (this.luaServices.size === 0) {
+			return;
+		}
+		for (const binding of this.luaServices.values()) {
 			try {
-				host.dispose();
+				binding.service.dispose();
 			}
 			catch (error) {
 				this.handleLuaError(error);
 			}
 		}
 		this.luaServices.clear();
+	}
+
+	private registerLuaServiceEvents(binding: LuaServiceBinding): void {
+		if (binding.events.size === 0) {
+			return;
+		}
+		for (const [eventName, handler] of binding.events) {
+			const listener: EventHandler<EventPayload> = (event_name, emitter, payload) => {
+				this.invokeLuaServiceHook(binding, handler, event_name, emitter, payload);
+			};
+			EventEmitter.instance.on(eventName, listener, binding.service);
+		}
+	}
+
+	private invokeLuaServiceHook(binding: LuaServiceBinding, fn: LuaFunctionValue, ...args: unknown[]): unknown {
+		try {
+			const results = this.callLuaFunctionWithInterpreter(fn, [binding.table, ...args], binding.interpreter);
+			return results.length > 0 ? results[0] : undefined;
+		}
+		catch (error) {
+			this.handleLuaError(error);
+			return undefined;
+		}
 	}
 
 	private assetIdRepresentsFsm(assetId: string): boolean {
