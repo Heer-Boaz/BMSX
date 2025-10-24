@@ -461,11 +461,11 @@ const COLOR_CODE_TEXT = 15; // Grey
 const COLOR_KEYWORD = 11; // Yellow
 const COLOR_STRING = 9; // Light red
 const COLOR_NUMBER = 1; // Black
-const COLOR_COMMENT = 3; // Dark green
-const COLOR_OPERATOR = 2; // Light green
+const COLOR_COMMENT = 2; // Dark green
+const COLOR_OPERATOR = 3; // Light green
 const COLOR_CODE_DIM = 6; // Dark red
 const HIGHLIGHT_OVERLAY = Msx1Colors[4]; // NOTE: RIGHT NOW, SAME COLOR AS CODE BACKGROUND! SO KNOW THAT THIS OPTION ALSO EXISTS!
-const SELECTION_OVERLAY = Msx1Colors[6];
+const SELECTION_OVERLAY = Msx1Colors[13];
 const CARET_COLOR = Msx1Colors[15]; // White
 const INLINE_CARET_COLOR = Msx1Colors[1]; // Black
 const COLOR_STATUS_BACKGROUND = 14; // Grey
@@ -573,8 +573,8 @@ const COLOR_TAB_INACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
 const COLOR_TAB_ACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
 const TAB_CLOSE_BUTTON_PADDING_X = 3;
 const TAB_CLOSE_BUTTON_PADDING_Y = 1;
-const TAB_CLOSE_BUTTON_SYMBOL = 'X';
-const COLOR_GOTO_UNDERLINE = COLOR_STATUS_WARNING;
+const TAB_CLOSE_BUTTON_SYMBOL = 'x';
+const COLOR_GOTO_UNDERLINE = 14; // Grey
 const RESOURCE_VIEWER_MAX_LINES = 512;
 const RESOURCE_PANEL_MIN_RATIO = 0.18;
 const RESOURCE_PANEL_MAX_RATIO = 0.6;
@@ -6535,7 +6535,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.createResourceActive, INLINE_CARET_COLOR);
+		this.drawInlineCaret(api, this.createResourceField, caretLeft, caretTop, caretRight, caretBottom, caretBaseX, this.createResourceActive, INLINE_CARET_COLOR, pathColor);
 
 		if (this.createResourceWorking) {
 			const status = 'CREATING...';
@@ -6589,7 +6589,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.searchActive, INLINE_CARET_COLOR);
+		this.drawInlineCaret(api, this.searchField, caretLeft, caretTop, caretRight, caretBottom, caretX, this.searchActive, INLINE_CARET_COLOR, queryColor);
 
 		if (this.searchQuery.length > 0) {
 			const total = this.searchMatches.length;
@@ -6643,7 +6643,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.symbolSearchActive, INLINE_CARET_COLOR);
+		this.drawInlineCaret(api, this.symbolSearchField, caretLeft, caretTop, caretRight, caretBottom, caretX, this.symbolSearchActive, INLINE_CARET_COLOR, queryColor);
 
 		const resultCount = this.symbolSearchVisibleResultCount();
 		if (resultCount <= 0) {
@@ -6727,7 +6727,7 @@ export class ConsoleCartEditor {
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + this.lineHeight;
-		this.drawCaretShape(api, caretLeft, caretTop, caretRight, caretBottom, this.lineJumpActive, INLINE_CARET_COLOR);
+		this.drawInlineCaret(api, this.lineJumpField, caretLeft, caretTop, caretRight, caretBottom, caretX, this.lineJumpActive, INLINE_CARET_COLOR, valueColor);
 	}
 
 	private drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
@@ -8825,8 +8825,11 @@ export class ConsoleCartEditor {
 			this.drawColoredText(api, baseChar, [baseColor], cursorX, cursorY);
 		} else {
 			api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			const inverted = this.invertColorIndex(baseColor);
-			this.drawColoredText(api, baseChar, [inverted], cursorX, cursorY);
+			const caretPaletteIndex = this.resolvePaletteIndex(CARET_COLOR);
+			const caretInverseColor = caretPaletteIndex !== null
+				? this.invertColorIndex(caretPaletteIndex)
+				: this.invertColorIndex(baseColor);
+			this.drawColoredText(api, baseChar, [caretInverseColor], cursorX, cursorY);
 		}
 	}
 
@@ -8952,23 +8955,32 @@ export class ConsoleCartEditor {
 		this.updateActiveContextDirtyFlag();
 	}
 
-	private drawCaretShape(
+	private drawInlineCaret(
 		api: BmsxConsoleApi,
+		field: InlineTextField,
 		left: number,
 		top: number,
 		right: number,
 		bottom: number,
+		cursorX: number,
 		active: boolean,
-		color: { r: number; g: number; b: number; a: number } = CARET_COLOR,
+		caretColor: { r: number; g: number; b: number; a: number } = CARET_COLOR,
+		baseTextColor: number = COLOR_STATUS_TEXT,
 	): void {
 		if (!this.cursorVisible) {
 			return;
 		}
 		if (active) {
-			api.rectfillColor(left, top, right, bottom, color);
+			api.rectfillColor(left, top, right, bottom, caretColor);
+			const caretIndex = this.resolvePaletteIndex(caretColor);
+			const inverseColor = caretIndex !== null
+				? this.invertColorIndex(caretIndex)
+				: this.invertColorIndex(baseTextColor);
+			const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+			this.drawText(api, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
 			return;
 		}
-		this.drawRectOutlineColor(api, left, top, right, bottom, color);
+		this.drawRectOutlineColor(api, left, top, right, bottom, caretColor);
 	}
 
 	private drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void {
@@ -9322,6 +9334,11 @@ export class ConsoleCartEditor {
 
 	private isOperatorChar(ch: string): boolean {
 		return '+-*/%<>=#(){}[]:,.;'.includes(ch);
+	}
+
+	private resolvePaletteIndex(color: { r: number; g: number; b: number; a: number }): number | null {
+		const index = Msx1Colors.indexOf(color);
+		return index === -1 ? null : index;
 	}
 
 	private invertColorIndex(colorIndex: number): number {
