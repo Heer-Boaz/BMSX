@@ -3865,14 +3865,23 @@ export class ConsoleCartEditor {
 		if (definition.path !== undefined) {
 			hint.path = definition.path;
 		}
+		let targetContextId: string | null = null;
 		try {
 			this.focusChunkSource(definition.chunkName, hint);
+			const context = this.findCodeTabContext(definition.assetId ?? null, definition.chunkName ?? null);
+			if (context) {
+				targetContextId = context.id;
+			}
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.showMessage(`Failed to open definition: ${message}`, COLOR_STATUS_ERROR, 3.2);
 			return;
 		}
-		this.activateCodeTab();
+		if (targetContextId) {
+			this.setActiveTab(targetContextId);
+		} else {
+			this.activateCodeTab();
+		}
 		this.applyDefinitionSelection(definition.range);
 		this.cursorRevealSuspended = false;
 		this.clearHoverTooltip();
