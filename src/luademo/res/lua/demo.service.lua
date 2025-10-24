@@ -1,28 +1,24 @@
 return {
 	id = 'lua_demo_engine_service',
 	auto_activate = true,
-	tick_enabled = true,
 	on_boot = function(self)
 		self.engineActorId = nil
 		self.mode = 'idle'
 		self.timer = 0
 	end,
 	events = {
-		{
-			event = 'lua_demo.engine_actor_spawned',
-			handler = function(self, _event_name, _emitter, payload)
-				if not payload then
-					return
-				end
-				local actorId = payload.actorId
-				if not actorId then
-					return
-				end
-				self.engineActorId = actorId
-				self.mode = 'idle'
-				self.timer = 0
-			end,
-		},
+		['lua_demo.engine_actor_spawned'] = function(self, _event_name, _emitter, payload)
+			if not payload then
+				return
+			end
+			local actorId = payload.actorId
+			if not actorId then
+				return
+			end
+			self.engineActorId = actorId
+			self.mode = 'idle'
+			self.timer = 0
+		end,
 	},
 	on_tick = function(self, delta)
 		if not self.engineActorId then

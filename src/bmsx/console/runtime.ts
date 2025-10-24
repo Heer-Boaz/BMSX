@@ -24,7 +24,7 @@ import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
-import { LuaServiceHost, buildLuaServiceBlueprint, type LuaServiceBlueprint } from './luaservice';
+import { LuaServiceHost, buildLuaServiceDefinition } from './luaservice';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -182,8 +182,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
-	private readonly luaServiceBlueprints: Map<string, LuaServiceBlueprint> = new Map();
-	private readonly luaServiceHosts: Map<string, LuaServiceHost> = new Map();
+	private readonly luaServices: Map<string, LuaServiceHost> = new Map();
 	private hasBooted = false;
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
@@ -1552,15 +1551,13 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private loadLuaServiceScripts(interpreter: LuaInterpreter): void {
+		this.disposeLuaServices();
 		const rompack = this.api.rompack();
 		if (!rompack || !rompack.lua) {
-			this.luaServiceBlueprints.clear();
-			this.reconcileLuaServices(new Map());
 			return;
 		}
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		const collected = new Map<string, LuaServiceBlueprint>();
 		for (const assetId of Object.keys(luaSources)) {
 			if (!this.assetIdRepresentsService(assetId)) {
 				continue;
@@ -1597,68 +1594,48 @@ export class BmsxConsoleRuntime extends Service {
 			if (executionResults.length === 0) {
 				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' returned no value.`);
 			}
-			const rawValue = executionResults[0];
-			if (!(rawValue instanceof LuaTable)) {
+			const returned = executionResults[0];
+			if (!(returned instanceof LuaTable)) {
 				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a table.`);
 			}
-			const blueprint = buildLuaServiceBlueprint({
-				table: rawValue,
-				chunkName,
-				assetId,
-				path: pathHint ?? undefined,
+			const definition = buildLuaServiceDefinition({
+				table: returned,
 				interpreter,
 				interop: this,
 			});
-			if (collected.has(blueprint.id)) {
-				throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${blueprint.id}' detected.`);
+			if (this.luaServices.has(definition.id)) {
+				throw new Error(`[BmsxConsoleRuntime] Duplicate Lua service id '${definition.id}' detected.`);
 			}
-			collected.set(blueprint.id, blueprint);
-		}
-		this.luaServiceBlueprints.clear();
-		for (const [id, blueprint] of collected.entries()) {
-			this.luaServiceBlueprints.set(id, blueprint);
-		}
-		this.reconcileLuaServices(collected);
-	}
-
-	private reconcileLuaServices(blueprints: Map<string, LuaServiceBlueprint>): void {
-		const obsolete = new Set(this.luaServiceHosts.keys());
-		for (const [serviceId, blueprint] of blueprints.entries()) {
-			obsolete.delete(serviceId);
-			const existing = this.luaServiceHosts.get(serviceId);
-			if (existing) {
-				const preservedState = existing.getState();
-				existing.reconfigure(blueprint, preservedState);
-				continue;
-			}
-			const host = new LuaServiceHost({ blueprint, bridge: this });
-			this.luaServiceHosts.set(serviceId, host);
-		}
-		for (const obsoleteId of obsolete) {
-			const host = this.luaServiceHosts.get(obsoleteId);
-			if (!host) {
-				continue;
-			}
-			host.dispose();
-			this.luaServiceHosts.delete(obsoleteId);
+			const host = new LuaServiceHost({ interop: this, definition });
+			this.luaServices.set(definition.id, host);
 		}
 	}
 
 	private tickLuaServices(deltaSeconds: number): void {
-		if (this.luaServiceHosts.size === 0) {
+		if (this.luaServices.size === 0) {
 			return;
 		}
-		for (const host of this.luaServiceHosts.values()) {
-			host.tick(deltaSeconds);
+		for (const host of this.luaServices.values()) {
+			try {
+				host.tick(deltaSeconds);
+			}
+			catch (error) {
+				this.handleLuaError(error);
+				break;
+			}
 		}
 	}
 
 	private disposeLuaServices(): void {
-		for (const host of this.luaServiceHosts.values()) {
-			host.dispose();
+		for (const host of this.luaServices.values()) {
+			try {
+				host.dispose();
+			}
+			catch (error) {
+				this.handleLuaError(error);
+			}
 		}
-		this.luaServiceHosts.clear();
-		this.luaServiceBlueprints.clear();
+		this.luaServices.clear();
 	}
 
 	private assetIdRepresentsFsm(assetId: string): boolean {
