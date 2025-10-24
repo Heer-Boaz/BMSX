@@ -601,7 +601,9 @@ export class BmsxConsoleRuntime extends Service {
 		const cartState = (!this.hasLuaProgram() && typeof this.cart.captureState === 'function')
 			? this.cart.captureState(this.api)
 			: undefined;
-		const fallbackLuaState = luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
+		const fallbackLuaState = (!this.luaRuntimeFailed && luaSnapshot === undefined)
+			? this.captureFallbackLuaState()
+			: null;
 		const state: BmsxConsoleState = {
 			frameCounter: this.frameCounter,
 			luaRuntimeFailed: this.luaRuntimeFailed,
@@ -668,7 +670,7 @@ export class BmsxConsoleRuntime extends Service {
 			if (!savedRuntimeFailed && hasStructuredSnapshot) {
 				this.applyLuaSnapshot(snapshot.luaSnapshot);
 			}
-			else {
+			else if (!savedRuntimeFailed) {
 				this.restoreFallbackLuaState(snapshot);
 			}
 			this.frameCounter = savedFrameCounter;
