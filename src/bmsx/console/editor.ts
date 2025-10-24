@@ -1920,6 +1920,16 @@ export class ConsoleCartEditor {
 		}
 		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
 			this.consumeKey(keyboard, 'KeyR');
+			this.handleTopBarButtonPress('reboot');
+			return;
+		}
+		if ((ctrlDown || metaDown) && !shiftDown && !altDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
+			this.consumeKey(keyboard, 'KeyR');
+			this.handleTopBarButtonPress('resume');
+			return;
+		}
+		if ((ctrlDown || metaDown) && altDown && !shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
+			this.consumeKey(keyboard, 'KeyR');
 			this.toggleResolutionMode();
 			return;
 		}
@@ -2966,6 +2976,21 @@ export class ConsoleCartEditor {
 
 	private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, altDown: boolean): void {
 		const previousPosition: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (altDown && shiftDown) {
+			let duplicated = false;
+			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+				this.consumeKey(keyboard, 'ArrowUp');
+				this.duplicateSelectionLines(-1);
+				duplicated = true;
+			} else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+				this.consumeKey(keyboard, 'ArrowDown');
+				this.duplicateSelectionLines(1);
+				duplicated = true;
+			}
+			if (duplicated) {
+				return;
+			}
+		}
 		if (shiftDown) {
 			this.ensureSelectionAnchor(previousPosition);
 		}
@@ -6383,6 +6408,84 @@ export class ConsoleCartEditor {
 		this.lastHistoryTimestamp = 0;
 	}
 
+	private duplicateSelectionLines(direction: -1 | 1): void {
+		const range = this.getSelectionRange();
+		const undoKey = direction < 0 ? 'duplicate-up' : 'duplicate-down';
+		this.prepareUndo(undoKey, false);
+		if (range) {
+			const selectionText = this.getSelectionText();
+			if (!selectionText || selectionText.length === 0) {
+				return;
+			}
+			const normalized = selectionText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+			const insertionOrigin = direction < 0
+				? { row: range.start.row, column: range.start.column }
+				: { row: range.end.row, column: range.end.column };
+			const insertionStart = this.clampPosition(insertionOrigin);
+			const insertionEnd = this.insertTextAtPosition(insertionStart, normalized);
+			this.markTextMutated();
+			this.selectionAnchor = { row: insertionStart.row, column: insertionStart.column };
+			this.cursorRow = insertionEnd.row;
+			this.cursorColumn = insertionEnd.column;
+			this.pointerSelecting = false;
+			this.pointerPrimaryWasPressed = false;
+			this.updateDesiredColumn();
+			this.resetBlink();
+			this.revealCursor();
+			return;
+		}
+		this.duplicateCurrentLine(direction);
+	}
+
+	private duplicateCurrentLine(direction: -1 | 1): void {
+		if (this.lines.length === 0) {
+			return;
+		}
+		const sourceRow = this.cursorRow;
+		const lineText = this.lines[sourceRow];
+		const insertionIndex = direction < 0 ? sourceRow : sourceRow + 1;
+		this.lines.splice(insertionIndex, 0, lineText);
+		this.invalidateAllHighlights();
+		this.selectionAnchor = null;
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
+		const clampedColumn = Math.min(this.cursorColumn, lineText.length);
+		this.cursorRow = insertionIndex;
+		this.cursorColumn = clampedColumn;
+		this.markTextMutated();
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.revealCursor();
+	}
+
+	private insertTextAtPosition(position: Position, text: string): Position {
+		const clamped = this.clampPosition(position);
+		const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+		if (normalized.length === 0) {
+			return { row: clamped.row, column: clamped.column };
+		}
+		const fragments = normalized.split('\n');
+		const line = this.lines[clamped.row];
+		const before = line.slice(0, clamped.column);
+		const after = line.slice(clamped.column);
+		if (fragments.length === 1) {
+			this.lines[clamped.row] = before + fragments[0] + after;
+			this.invalidateLine(clamped.row);
+			const endColumn = before.length + fragments[0].length;
+			return { row: clamped.row, column: endColumn };
+		}
+		const firstLine = before + fragments[0];
+		const lastFragment = fragments[fragments.length - 1];
+		const middle = fragments.slice(1, -1);
+		const lastLine = lastFragment + after;
+		const newLines = [firstLine, ...middle, lastLine];
+		this.lines.splice(clamped.row, 1, ...newLines);
+		this.invalidateAllHighlights();
+		const endRow = clamped.row + newLines.length - 1;
+		const endColumn = lastFragment.length;
+		return { row: endRow, column: endColumn };
+	}
+
 	private moveSelectionLines(delta: number): void {
 		if (delta === 0) return;
 		const range = this.getLineRangeForMovement();
@@ -9606,6 +9709,14 @@ export class ConsoleCartEditor {
 			column = line.length;
 		}
 		return { row, column };
+	}
+
+	private clampPosition(position: Position): Position {
+		const clamped = this.clampSelectionPosition(position);
+		if (clamped) {
+			return { row: clamped.row, column: clamped.column };
+		}
+		return { row: 0, column: 0 };
 	}
 
 	private resetBlink(): void {
