@@ -493,9 +493,11 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		self.calculateSize();
 		const displayWidth = ~~(self.canvasSize.x * self.canvasScale);
 		const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
-		const displayLeft = ~~((self.windowSize.x - self.canvasSize.x * self.canvasScale) / 2);
-		const displayTop = isLandscape || !Input.instance.isOnscreenGamepadEnabled
-			? ~~((self.windowSize.y - self.canvasSize.y * self.canvasScale) / 2)
+		const layoutWidth = viewportWidth > 0 ? viewportWidth : self.windowSize.x;
+		const layoutHeight = viewportHeight > 0 ? viewportHeight : self.windowSize.y;
+		const displayLeft = Math.max(0, ~~((layoutWidth - displayWidth) / 2));
+		const displayTop = (isLandscape || !Input.instance.isOnscreenGamepadEnabled)
+			? Math.max(0, ~~((layoutHeight - displayHeight) / 2))
 			: 0;
 
 		this.surface.setDisplaySize(displayWidth, displayHeight);
@@ -513,14 +515,14 @@ export class GameView implements RegisterablePersistent, RenderContext {
 					const elementSize = control.measure();
 					let newBottom: number;
 					if (isLandscape) {
-						newBottom = (self.availableWindowSize.y - elementSize.height) / 2;
+						newBottom = (layoutHeight - elementSize.height) / 2;
 					} else if (isRightSide) {
 						newBottom = 0;
 					} else {
 						const rightSideHeight = actionButtons.measure().height;
 						newBottom = (rightSideHeight - elementSize.height) / 2;
 					}
-					control.setBottom(newBottom);
+					control.setBottom(newBottom < 0 ? 0 : newBottom);
 				};
 
 				const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
