@@ -370,7 +370,6 @@ export class Input implements RegisterablePersistent {
 	 * @see OnscreenGamepad
 	 */
 	private onscreenGamepad: OnscreenGamepad | null = null;
-	private onscreenGamepadFactory: (() => OnscreenGamepad) | null = null;
 
 	// Spawn-once guard for UI controller
 	private uiControllerSpawned = false;
@@ -568,15 +567,10 @@ export class Input implements RegisterablePersistent {
 	}
 
 	public enableOnscreenGamepad(): void {
-		if (!this.onscreenGamepadFactory) {
-			console.warn('[Input] Onscreen gamepad factory not provided. Skipping onscreen gamepad.');
-			return;
-		}
 		if (!this.onscreenGamepad) {
-			const instance = this.onscreenGamepadFactory();
-			instance.init();
-			this.onscreenGamepad = instance;
+			this.onscreenGamepad = new OnscreenGamepad($.platform.onscreenGamepad);
 		}
+		this.onscreenGamepad.init();
 		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
 	}
 
@@ -626,6 +620,10 @@ export class Input implements RegisterablePersistent {
 
 		// Remove all player inputs
 		this.playerInputs = [];
+		if (this.onscreenGamepad) {
+			this.onscreenGamepad.dispose();
+			this.onscreenGamepad = null;
+		}
 		this.unbind();
 		// Remove the input instance
 		Input._instance = undefined;
