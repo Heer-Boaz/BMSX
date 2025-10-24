@@ -604,6 +604,7 @@ export class ConsoleCartEditor {
 	private hoverTooltip: CodeHoverTooltip | null = null;
 	private lastPointerSnapshot: PointerSnapshot | null = null;
 	private lastInspectorResult: ConsoleLuaHoverResult | null = null;
+	private inspectorRequestFailed = false;
 	private gotoHoverHighlight: { row: number; startColumn: number; endColumn: number; expression: string } | null = null;
 	private viewportWidth: number;
 	private viewportHeight: number;
@@ -617,7 +618,7 @@ export class ConsoleCartEditor {
 	private readonly headerHeight: number;
 	private readonly tabBarHeight: number;
 	private readonly topMargin: number;
-	private readonly bottomMargin: number;
+	private readonly baseBottomMargin: number;
 	private readonly repeatState: Map<string, RepeatEntry> = new Map();
 	private readonly keyPressRecords: Map<string, KeyPressRecord> = new Map();
 	private readonly message: MessageState = { text: '', color: COLOR_STATUS_TEXT, timer: 0, visible: false };
@@ -784,7 +785,7 @@ export class ConsoleCartEditor {
 		this.headerHeight = primaryBarHeight;
 		this.tabBarHeight = this.lineHeight + 3;
 		this.topMargin = this.headerHeight + this.tabBarHeight + 2;
-		this.bottomMargin = this.lineHeight + 6;
+		this.baseBottomMargin = this.lineHeight + 6;
 		this.scrollbars = {
 			codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
 			codeHorizontal: new ConsoleScrollbar('codeHorizontal', 'horizontal'),
@@ -1173,6 +1174,13 @@ export class ConsoleCartEditor {
 		return available;
 	}
 
+	private get bottomMargin(): number {
+		if (!this.message.visible) {
+			return this.baseBottomMargin;
+		}
+		return this.baseBottomMargin + this.lineHeight + 4;
+	}
+
 	private tryShowLuaErrorOverlay(error: unknown): boolean {
 		let candidate: { line?: unknown; column?: unknown; chunkName?: unknown; message?: unknown };
 		if (typeof error === 'string') {
@@ -1200,6 +1208,21 @@ export class ConsoleCartEditor {
 		const baseMessage = messageText ?? 'Lua error';
 		this.showRuntimeErrorInChunk(chunkName, safeLine, safeColumn, baseMessage);
 		return true;
+	}
+
+	private safeInspectLuaExpression(request: ConsoleLuaHoverRequest): ConsoleLuaHoverResult | null {
+		this.inspectorRequestFailed = false;
+		try {
+			return this.inspectLuaExpressionFn(request);
+		} catch (error) {
+			this.inspectorRequestFailed = true;
+			const handled = this.tryShowLuaErrorOverlay(error);
+			if (!handled) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.showMessage(message, COLOR_STATUS_ERROR, 3.2);
+			}
+			return null;
+		}
 	}
 
 	public update(deltaSeconds: number): void {
@@ -3499,7 +3522,7 @@ export class ConsoleCartEditor {
 			row: row + 1,
 			column: token.startColumn + 1,
 		};
-		const inspection = this.inspectLuaExpressionFn(request);
+		const inspection = this.safeInspectLuaExpression(request);
 		const previousInspection = this.lastInspectorResult;
 		this.lastInspectorResult = inspection;
 		if (!inspection) {
@@ -3889,7 +3912,7 @@ export class ConsoleCartEditor {
 		}
 		const assetId = this.resolveHoverAssetId(context);
 		const chunkName = this.resolveHoverChunkName(context);
-		const inspection = this.inspectLuaExpressionFn({
+		const inspection = this.safeInspectLuaExpression({
 			assetId,
 			expression: token.expression,
 			chunkName,
@@ -3921,21 +3944,20 @@ export class ConsoleCartEditor {
 			return false;
 		}
 		const chunkName = this.resolveHoverChunkName(context);
-		let inspection: ConsoleLuaHoverResult | null;
-		try {
-			inspection = this.inspectLuaExpressionFn({
-				assetId,
-				expression: token.expression,
-				chunkName,
-				row: row + 1,
-				column: token.startColumn + 1,
-			});
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			this.showMessage(message, COLOR_STATUS_ERROR, 3.2);
+		const inspection = this.safeInspectLuaExpression({
+			assetId,
+			expression: token.expression,
+			chunkName,
+			row: row + 1,
+			column: token.startColumn + 1,
+		});
+		if (!inspection) {
+			if (!this.inspectorRequestFailed) {
+				this.showMessage(`Definition not found for ${token.expression}`, COLOR_STATUS_WARNING, 1.8);
+			}
 			return false;
 		}
-		if (!inspection || !inspection.definition) {
+		if (!inspection.definition) {
 			this.showMessage(`Definition not found for ${token.expression}`, COLOR_STATUS_WARNING, 1.8);
 			return false;
 		}
