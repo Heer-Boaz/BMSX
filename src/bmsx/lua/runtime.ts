@@ -796,7 +796,8 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				return this.invokeFunction(callMetamethod, args, expression.range);
 			}
 		}
-		const functionValue = this.expectFunction(calleeValue, 'Attempted to call a non-function value.', expression.range);
+		const message = this.buildCallErrorMessage(expression.callee, calleeValue);
+		const functionValue = this.expectFunction(calleeValue, message, expression.range);
 		const args = this.buildCallArguments(expression, environment, varargs, null);
 		return this.invokeFunction(functionValue, args, expression.range);
 	}
@@ -1364,6 +1365,41 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		throw this.runtimeError(message);
 	}
 
+	private describeNonFunctionValue(value: LuaValue): string {
+		if (value === null) {
+			return 'a nil value';
+		}
+		if (typeof value === 'boolean') {
+			return 'a boolean value';
+		}
+		if (typeof value === 'number') {
+			return 'a number value';
+		}
+		if (typeof value === 'string') {
+			return 'a string value';
+		}
+		if (value instanceof LuaTable) {
+			return 'a table value';
+		}
+		return 'a non-callable value';
+	}
+
+	private buildCallErrorMessage(callee: LuaExpression, value: LuaValue): string {
+		const description = this.describeNonFunctionValue(value);
+		if (callee.kind === LuaSyntaxKind.IdentifierExpression) {
+			const identifier = callee as LuaIdentifierExpression;
+			return `Attempted to call ${description} (global '${identifier.name}').`;
+		}
+		if (callee.kind === LuaSyntaxKind.MemberExpression) {
+			const member = callee as LuaMemberExpression;
+			return `Attempted to call ${description} (field '${member.identifier}').`;
+		}
+		if (callee.kind === LuaSyntaxKind.IndexExpression) {
+			return `Attempted to call ${description} (index result).`;
+		}
+		return `Attempted to call ${description}.`;
+	}
+
 	private expectBoolean(value: LuaValue, message: string, range: LuaSourceRange | null): boolean {
 		if (typeof value === 'boolean') {
 			return value;
@@ -1578,6 +1614,22 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				console.log(parts.join('\t'));
 			}
 			return [];
+		}));
+
+		this.globals.set('assert', new LuaNativeFunction('assert', this, (interpreter, args) => {
+			const condition = args.length > 0 ? args[0] : null;
+			if (interpreter.isTruthy(condition)) {
+				return Array.from(args);
+			}
+			const messageValue = args.length > 1 ? args[1] : 'assertion failed!';
+			const message = typeof messageValue === 'string' ? messageValue : interpreter.toLuaString(messageValue);
+			throw interpreter.runtimeError(message);
+		}));
+
+		this.globals.set('error', new LuaNativeFunction('error', this, (interpreter, args) => {
+			const value = args.length > 0 ? args[0] : 'nil';
+			const message = typeof value === 'string' ? value : interpreter.toLuaString(value);
+			throw interpreter.runtimeError(message);
 		}));
 
 		this.globals.set('type', new LuaNativeFunction('type', this, (_interpreter, args) => {
@@ -1966,6 +2018,10 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private runtimeError(message: string): LuaRuntimeError {
+		const range = this.currentCallRange;
+		if (range !== null) {
+			return new LuaRuntimeError(message, range.chunkName, range.start.line, range.start.column);
+		}
 		return new LuaRuntimeError(message, this.currentChunk, 0, 0);
 	}
 

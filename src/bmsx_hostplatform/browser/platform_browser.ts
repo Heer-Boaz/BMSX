@@ -951,17 +951,23 @@ class BrowserOnscreenGamepadSurface {
 		const rect = this.element.getBoundingClientRect();
 		const localX = clientX - rect.left;
 		const localY = clientY - rect.top;
-		const result: string[] = [];
-		for (const [id, control] of this.controls) {
-			const state = this.states.get(id);
-			if (!state || state.hidden) {
-				continue;
+		this.ctx.save();
+		this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+		try {
+			const result: string[] = [];
+			for (const [id, control] of this.controls) {
+				const state = this.states.get(id);
+				if (!state || state.hidden) {
+					continue;
+				}
+				if (control.contains(this.ctx, localX, localY)) {
+					result.push(id);
+				}
 			}
-			if (control.contains(this.ctx, localX, localY)) {
-				result.push(id);
-			}
+			return result;
+		} finally {
+			this.ctx.restore();
 		}
-		return result;
 	}
 
 	setElementActive(id: string, active: boolean): void {

@@ -314,15 +314,24 @@ export class OnscreenGamepad implements InputHandler {
 			normalized.add(base);
 		}
 		if (kind === 'action') {
+			const elements: string[] = [];
+			const buttons: string[] = [];
 			const iterator = normalized.values();
 			for (let current = iterator.next(); !current.done; current = iterator.next()) {
 				const id = current.value;
 				const entry = OnscreenGamepad.ACTION_BUTTON_MAP[id];
-				if (entry) {
-					return { elements: [id], buttons: entry.buttons };
+				if (!entry) {
+					continue;
+				}
+				elements.push(id);
+				for (let i = 0; i < entry.buttons.length; i++) {
+					const button = entry.buttons[i];
+					if (buttons.indexOf(button) === -1) {
+						buttons.push(button);
+					}
 				}
 			}
-			return { elements: [], buttons: [] };
+			return { elements, buttons };
 		}
 		const iterator = normalized.values();
 		for (let current = iterator.next(); !current.done; current = iterator.next()) {

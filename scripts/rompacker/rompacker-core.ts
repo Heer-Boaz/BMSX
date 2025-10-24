@@ -363,16 +363,7 @@ export function applyStringReplacements(str: string, replacements: { [key: strin
  */
 export async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string, debug: boolean): Promise<any> {
 	const IMAGE_PATHS = [
-		'./rom/bmsx.png',
-		'./rom/d-pad-neutral.png',
-		'./rom/d-pad-u.png',
-		'./rom/d-pad-ru.png',
-		'./rom/d-pad-r.png',
-		'./rom/d-pad-rd.png',
-		'./rom/d-pad-d.png',
-		'./rom/d-pad-ld.png',
-		'./rom/d-pad-l.png',
-		'./rom/d-pad-lu.png'
+		'./rom/bmsx.png'
 	];
 
 	/**
@@ -438,15 +429,6 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
 			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
 			'#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
 			'@@BMSX_LOGO@@': `${imgPrefix}${images['./rom/bmsx.png']}`,
-			'@@DPAD_D@@': `${imgPrefix}${images['./rom/d-pad-d.png']}`,
-			'@@DPAD_L@@': `${imgPrefix}${images['./rom/d-pad-l.png']}`,
-			'@@DPAD_LD@@': `${imgPrefix}${images['./rom/d-pad-ld.png']}`,
-			'@@DPAD_LU@@': `${imgPrefix}${images['./rom/d-pad-lu.png']}`,
-			'@@DPAD_NEUTRAL@@': `${imgPrefix}${images['./rom/d-pad-neutral.png']}`,
-			'@@DPAD_R@@': `${imgPrefix}${images['./rom/d-pad-r.png']}`,
-			'@@DPAD_RD@@': `${imgPrefix}${images['./rom/d-pad-rd.png']}`,
-			'@@DPAD_RU@@': `${imgPrefix}${images['./rom/d-pad-ru.png']}`,
-			'@@DPAD_U@@': `${imgPrefix}${images['./rom/d-pad-u.png']}`,
 		};
 
 		return applyStringReplacements(htmlToTransform, replacements);

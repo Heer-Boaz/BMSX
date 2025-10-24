@@ -27,120 +27,13 @@
 			<div id="hidor"></div>
 			<div id="loading" class="coloring">Loading...</div>
 			<div id="extra-message" class="coloring" hidden></div>
-			<button id="d-pad-controls" class="onscreen-button" type="button" aria-label="Directional pad" tabindex="-1" hidden data-width="100" data-height="100">
-				<svg id="d-pad-svg" class="d-pad" viewBox="0 0 100 100" width="100px" height="100px">
-					<g id="d-pad-buttons">
-						<path id="d-pad-u" class="dknop los"
-							d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 60 44 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
-							transform="rotate(-27 50 50)" />
-						<path id="d-pad-ru" class="dknop los"
-							d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 58 42 L 50 50 L 50 0 A 51 51, 0, 0, 1, 80 10"
-							transform="rotate(27 50 50)" />
-						<path id="d-pad-r" class="dknop los"
-							d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 60 44 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
-							transform="rotate(63 50 50)" />
-						<path id="d-pad-rd" class="dknop los"
-							d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 58 42 L 50 50 L 50 0 A 51 51, 0, 0, 1, 80 10"
-							transform="rotate(117 50 50)" />
-						<path id="d-pad-d" class="dknop los"
-							d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 60 44 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
-							transform="rotate(153 50 50)" />
-						<path id="d-pad-ld" class="dknop los"
-							d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 58 42 L 50 50 L 50 0 A 51 51, 0, 0, 1, 80 10"
-							transform="rotate(207 50 50)" />
-						<path id="d-pad-l" class="dknop los"
-							d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 60 44 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
-							transform="rotate(243 50 50)" />
-						<path id="d-pad-lu" class="dknop los"
-							d="M 50 50 L 50 38 A 11 11, 0, 0, 1, 50 50 L 50 50 L 50 0 A 52 52, 0, 0, 1, 82 12"
-							transform="rotate(297 50 50)" />
-					</g>
-					<g>
-						<circle id="d-pad-omheining" class="" cx="50" cy="50" r="50" />
-						<image id="svgimg-d-pad-neutral" class="d-pad-image d-pad-none" x="0" y="0" height="100"
-							width="100" href="@@DPAD_NEUTRAL@@" />
-						<image id="svgimg-d-pad-u" class="d-pad-image d-pad-u" x="0" y="0" height="100" width="100"
-							href="@@DPAD_U@@" />
-						<image id="svgimg-d-pad-ru" class="d-pad-image d-pad-ru" x="0" y="0" height="100" width="100"
-							href="@@DPAD_RU@@" />
-						<image id="svgimg-d-pad-r" class="d-pad-image d-pad-r" x="0" y="0" height="100" width="100"
-							href="@@DPAD_R@@" />
-						<image id="svgimg-d-pad-rd" class="d-pad-image d-pad-rd" x="0" y="0" height="100" width="100"
-							href="@@DPAD_RD@@" />
-						<image id="svgimg-d-pad-d" class="d-pad-image d-pad-d" x="0" y="0" height="100" width="100"
-							href="@@DPAD_D@@" />
-						<image id="svgimg-d-pad-ld" class="d-pad-image d-pad-ld" x="0" y="0" height="100" width="100"
-							href="@@DPAD_LD@@" />
-						<image id="svgimg-d-pad-l" class="d-pad-image d-pad-l" x="0" y="0" height="100" width="100"
-							href="@@DPAD_L@@" />
-						<image id="svgimg-d-pad-lu" class="d-pad-image d-pad-lu" x="0" y="0" height="100" width="100"
-							href="@@DPAD_LU@@" />
-					</g>
-				</svg>
-			</button>
-			<button id="button-controls" class="onscreen-button" type="button" aria-label="Action buttons" tabindex="-1" hidden data-width="100" data-height="220">
-				<svg id="action-buttons-svg" class="action-buttons" viewBox="0 0 100 220" width="100px" height="220px">
-					<defs>
-						<filter id="buttonFilter" x="-50%" y="-50%" width="200%" height="200%">
-							<feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
-							<feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
-								lighting-color="#AAAAAA" result="specOut">
-								<fePointLight x="-5000" y="-10000" z="20000" />
-							</feSpecularLighting>
-							<feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
-							<feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
-								k4="0" />
-						</filter>
-						<filter id="pressedButtonFilter" x="-50%" y="-50%" width="200%" height="200%">
-							<feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
-							<feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
-								lighting-color="#AAAAAA" result="specOut">
-								<fePointLight x="-5000" y="-10000" z="5000" />
-							</feSpecularLighting>
-							<feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
-							<feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
-								k4="0" />
-						</filter>
-					</defs>
-					<g class="buttons" id="action-buttons-container">
-						<circle id="start_knop" class="knop light-blue los" cx="50" cy="200" r="20"></circle>
-						<text id="start_knop_text" x="50" y="200" dominant-baseline="middle"
-							class="knop knoptext los">ST</text>
-
-						<circle id="select_knop" class="knop yellow los" cx="20" cy="170" r="20"></circle>
-						<text id="select_knop_text" x="20" y="170" dominant-baseline="middle"
-							class="knop knoptext los">SE</text>
-
-						<circle id="ls_knop" class="knop orange los" cx="50" cy="20" r="20"></circle>
-						<text id="ls_knop_text" x="50" y="20" dominant-baseline="middle"
-							class="knop knoptext los">LS</text>
-
-						<circle id="rs_knop" class="knop purple los" cx="80" cy="50" r="20"></circle>
-						<text id="rs_knop_text" x="80" y="50" dominant-baseline="middle"
-							class="knop knoptext los">RS</text>
-
-						<circle id="a_knop" class="knop blue los" cx="50" cy="140" r="20"></circle>
-						<text id="a_knop_text" x="50" y="140" dominant-baseline="middle"
-							class="knop knoptext los">A</text>
-
-						<circle id="b_knop" class="knop red los" cx="80" cy="110" r="20"></circle>
-						<text id="b_knop_text" x="80" y="110" dominant-baseline="middle"
-							class="knop knoptext los">B</text>
-
-						<circle id="x_knop" class="knop pink los" cx="20" cy="110" r="20"></circle>
-						<text id="x_knop_text" x="20" y="110" dominant-baseline="middle"
-							class="knop knoptext los">X</text>
-
-						<circle id="y_knop" class="knop green los" cx="50" cy="80" r="20"></circle>
-						<text id="y_knop_text" x="50" y="80" dominant-baseline="middle"
-							class="knop knoptext los">Y</text>
-					</g>
-				</svg>
-			</button>
+		
 			<div id="gameContainer">
 				<canvas id="gamescreen" hidden></canvas>
 			</div>
 		</div>
+		<canvas id="bmsx-dpad-canvas" class="onscreen-surface" hidden></canvas>
+		<canvas id="bmsx-action-canvas" class="onscreen-surface" hidden></canvas>
 		<script id="bootrom">//#bootromjs</script>
 		<script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
 		<script id="bload-script">

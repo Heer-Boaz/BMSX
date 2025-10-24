@@ -419,18 +419,16 @@ async function awaitPressedAnyKeyPromise(): Promise<void> {
 
 		const onuserinteraction = (e: UIEvent) => {
 			try {
-				if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
-					if (bootrom.debug) {
-						console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
-					}
-					return;
+			if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
+				if (bootrom.debug) {
+					console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
 				}
-				if (e.type == 'touchend') {
-					document.getElementById("d-pad-controls")!.hidden = false;
-					document.getElementById("button-controls")!.hidden = false;
-					document.documentElement.style.touchAction = 'none';
-					bootrom.enableOnscreenGamepad = true;
-				}
+				return;
+			}
+			if (e.type === 'touchend') {
+				document.documentElement.style.touchAction = 'none';
+				bootrom.enableOnscreenGamepad = true;
+			}
 				startGame();
 			}
 			catch (err) {

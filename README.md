@@ -263,8 +263,6 @@ The `game.html` file is the main entry point for running the game in a web brows
         <div id="hidor"></div>
         <div id="loading" class="coloring">Loading...</div>
         <div id="extra-message" class="coloring" hidden></div>
-        <div id="d-pad-controls" hidden> ... </div>
-        <div id="button-controls" hidden> ... </div>
         <div id="gameContainer">
             <canvas id="gamescreen" hidden></canvas>
         </div>
@@ -288,7 +286,7 @@ The `game.html` file is the main entry point for running the game in a web brows
 - `<img id="msx">`: Boot animation image, shown during loading.
 - `<div id="loading">`: Loading message and progress indicator.
 - `<div id="extra-message">`: Additional messages (e.g., PWA install prompt).
-- `<div id="d-pad-controls">, <div id="button-controls">`: On-screen gamepad and action buttons for touch devices, fully styled and interactive.
+- On-screen gamepad overlays: Dedicated canvases (`#bmsx-dpad-canvas` and `#bmsx-action-canvas`) that render touch controls for mobile devices.
 - `<canvas id="gamescreen">`: The main rendering surface for the game.
 - `<script id="bload-script">`: Bootstraps the game, loads the ROM, and starts execution.
 
@@ -302,7 +300,7 @@ The bootloader (bootrom.js) is responsible for:
   - Managing the boot animation and transition to the game screen.
 - Touch and On-Screen Controls:
   - The on-screen D-pad and action buttons are shown automatically on touch devices.
-  - SVG-based controls provide responsive, visually appealing input for mobile users.
+  - Dedicated canvas overlays (`#bmsx-dpad-canvas` and `#bmsx-action-canvas`) handle rendering and hit-testing for simultaneous touch interactions.
   - The controls are hidden on desktop unless triggered by touch events.
 - Responsive Layout:
   - The canvas and UI elements automatically scale to fit the window or device screen.
