@@ -780,7 +780,7 @@ export class ConsoleCartEditor {
 		this.listLuaSymbolsFn = options.listLuaSymbols;
 		this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
 		this.primaryAssetId = options.primaryAssetId;
-		if ($ && $.debug) {
+		if ($.debug) {
 			this.listResourcesFn();
 		}
 		this.viewportWidth = options.viewport.width;

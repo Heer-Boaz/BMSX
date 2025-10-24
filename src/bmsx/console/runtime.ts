@@ -601,9 +601,7 @@ export class BmsxConsoleRuntime extends Service {
 		const cartState = (!this.hasLuaProgram() && typeof this.cart.captureState === 'function')
 			? this.cart.captureState(this.api)
 			: undefined;
-		const fallbackLuaState = (!this.luaRuntimeFailed && luaSnapshot === undefined)
-			? this.captureFallbackLuaState()
-			: null;
+		const fallbackLuaState = luaSnapshot === undefined ? this.captureFallbackLuaState() : null;
 		const state: BmsxConsoleState = {
 			frameCounter: this.frameCounter,
 			luaRuntimeFailed: this.luaRuntimeFailed,
@@ -648,6 +646,14 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private restoreFromStateSnapshot(snapshot: BmsxConsoleState): void {
+		// The editor deliberately clears luaRuntimeFailed before calling setState when the
+		// user hits "Resume". That signal tells us to keep the script environment but otherwise
+		// treat the operation as a soft reboot: user code should rerun init/update hooks while
+		// engine state (world objects, physics, etc.) stays untouched unless the cart's own
+		// logic rebuilds it. The fallback snapshot populated above is only meant to reapply
+		// plain Lua globals/locals so the user's script logic can pick up right where it left
+		// off. It is not a save-state, and it intentionally skips anything that needs engine
+		// cooperation to restore.
 		const savedFrameCounter = snapshot.frameCounter ?? 0;
 		const savedRuntimeFailed = snapshot.luaRuntimeFailed === true;
 
@@ -880,6 +886,15 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private captureLuaEntryCollection(entries: ReadonlyArray<[string, LuaValue]>): Record<string, unknown> | null {
+		// The console editor uses this fallback snapshot when a cart does not expose
+		// __bmsx_snapshot_save/__bmsx_snapshot_load. It exists purely to let the editor
+		// "resume" after a runtime failure without rebooting the whole cart. Unlike a
+		// deterministic save-state we only grab plain Lua data that can be faithfully
+		// re-injected; anything that represents a live engine object gets silently skipped.
+		// (That includes tables that still reference __js_handle__ values returned by API
+		// calls or registry lookups.) We deliberately do not warn about those omissions,
+		// because they are expected for this best-effort workflow: the goal of resume is to
+		// recover user script state, not to clone world entities or engine internals.
 		if (!entries || entries.length === 0) {
 			return null;
 		}
@@ -895,7 +910,7 @@ export class BmsxConsoleRuntime extends Service {
 				count += 1;
 			}
 			catch (error) {
-				if ($ && $.debug) {
+				if ($.debug) {
 					console.warn(`[BmsxConsoleRuntime] Skipped Lua snapshot entry '${name}':`, error);
 				}
 			}
@@ -961,9 +976,11 @@ export class BmsxConsoleRuntime extends Service {
 					if (entryValue instanceof LuaTable) {
 						const nestedHandle = entryValue.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
 						if (typeof nestedHandle === 'number') {
-							if ($ && $.debug) {
-								console.warn('[BmsxConsoleRuntime] Skipping engine-backed Lua table entry during snapshot.');
-							}
+							// Resume ignores engine-backed objects; their lifetime is controlled
+							// by the host platform and rehydrating them would require rebuilding
+							// the entire engine state. Dropping them keeps the resume path fast
+							// and predictable while preserving the Lua-visible data the user
+							// actually authored.
 							continue;
 						}
 					}
@@ -972,7 +989,7 @@ export class BmsxConsoleRuntime extends Service {
 						serializedEntry = this.serializeLuaValueForSnapshot(entryValue, visited);
 					}
 					catch (error) {
-						if ($ && $.debug) {
+						if ($.debug) {
 							console.warn(`[BmsxConsoleRuntime] Skipping Lua table entry '${String(key)}' during snapshot:`, error);
 						}
 						continue;
@@ -1070,7 +1087,7 @@ export class BmsxConsoleRuntime extends Service {
 				interpreter.setGlobal(name, luaValue);
 			}
 			catch (error) {
-				if ($ && $.debug) {
+				if ($.debug) {
 					console.warn(`[BmsxConsoleRuntime] Failed to restore Lua global '${name}':`, error);
 				}
 			}
@@ -1091,7 +1108,7 @@ export class BmsxConsoleRuntime extends Service {
 				interpreter.assignChunkValue(name, luaValue);
 			}
 			catch (error) {
-				if ($ && $.debug) {
+				if ($.debug) {
 					console.warn(`[BmsxConsoleRuntime] Failed to restore Lua local '${name}':`, error);
 				}
 			}
