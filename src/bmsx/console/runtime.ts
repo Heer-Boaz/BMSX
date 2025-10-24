@@ -352,6 +352,18 @@ export class BmsxConsoleRuntime extends Service {
 		publishOverlayFrame(null);
 	}
 
+	public setEditorOverlayResolution(mode: 'offscreen' | 'viewport'): void {
+		const view = $.view;
+		if (!view) {
+			throw new Error('[BmsxConsoleRuntime] Game view unavailable while setting editor overlay resolution.');
+		}
+		if (mode === 'viewport') {
+			this.editorRenderBackend.setFrameOverride({ width: view.viewportSize.x, height: view.viewportSize.y });
+			return;
+		}
+		this.editorRenderBackend.setFrameOverride(null);
+	}
+
 	public boot(): void {
 		this.frameCounter = 0;
 		this.luaRuntimeFailed = false;

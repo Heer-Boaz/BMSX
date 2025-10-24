@@ -150,6 +150,8 @@ type EditorTabKind = 'resource_view' | 'lua_editor';
 
 type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal' | 'viewerVertical';
 
+type EditorResolutionMode = 'offscreen' | 'viewport';
+
 class ConsoleScrollbar {
 	public readonly orientation: 'vertical' | 'horizontal';
 	private track: RectBounds | null = null;
@@ -380,6 +382,7 @@ type ConsoleRuntimeBridge = {
 	setState(state: unknown): void;
 	boot(): void;
 	reloadLuaProgram(source: string): Promise<void>;
+	setEditorOverlayResolution(mode: EditorResolutionMode): void;
 };
 
 export type ConsoleEditorSerializedState = {
@@ -705,6 +708,7 @@ export class ConsoleCartEditor {
 	private tabHoverId: string | null = null;
 	private tabDragState: TabDragState | null = null;
 	private crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
+	private resolutionMode: EditorResolutionMode = 'offscreen';
 	private readonly tabDirtyMarkerAssetId = 'msx_6b_font_ctrl_bel';
 	private tabDirtyMarkerWidth: number | null = null;
 	private tabDirtyMarkerHeight: number | null = null;
@@ -1443,18 +1447,18 @@ export class ConsoleCartEditor {
 		return { width, height };
 	}
 
-	private refreshViewportDimensions(): void {
+	private refreshViewportDimensions(force = false): void {
 		const view = $.view;
 		if (!view) {
 			throw new Error('[ConsoleCartEditor] Game view unavailable during editor frame.');
 		}
-		const renderSize = view.offscreenCanvasSize;
+		const renderSize = this.resolutionMode === 'offscreen' ? view.offscreenCanvasSize : view.viewportSize;
 		if (!Number.isFinite(renderSize.x) || !Number.isFinite(renderSize.y) || renderSize.x <= 0 || renderSize.y <= 0) {
-			throw new Error('[ConsoleCartEditor] Invalid offscreen dimensions.');
+			throw new Error('[ConsoleCartEditor] Invalid render dimensions.');
 		}
 		const width = renderSize.x;
 		const height = renderSize.y;
-		if (width === this.viewportWidth && height === this.viewportHeight) {
+		if (!force && width === this.viewportWidth && height === this.viewportHeight) {
 			return;
 		}
 		this.viewportWidth = width;
@@ -1904,6 +1908,11 @@ export class ConsoleCartEditor {
 		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyO')) {
 			this.consumeKey(keyboard, 'KeyO');
 			this.openSymbolSearch();
+			return;
+		}
+		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
+			this.consumeKey(keyboard, 'KeyR');
+			this.toggleResolutionMode();
 			return;
 		}
 		if ((ctrlDown && altDown) && this.isKeyJustPressed(keyboard, 'Comma')) {
@@ -7068,6 +7077,19 @@ export class ConsoleCartEditor {
 		this.showResourcePanel();
 	}
 
+	private toggleResolutionMode(): void {
+		this.resolutionMode = this.resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
+		this.refreshViewportDimensions(true);
+		this.ensureCursorVisible();
+		this.cursorRevealSuspended = false;
+		const runtime = this.getConsoleRuntime();
+		if (runtime) {
+			runtime.setEditorOverlayResolution(this.resolutionMode);
+		}
+		const modeLabel = this.resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
+		this.showMessage(`Editor resolution: ${modeLabel}`, COLOR_STATUS_TEXT, 2.5);
+	}
+
 	private showResourcePanel(): void {
 		const desiredRatio = this.resourcePanelWidthRatio ?? this.defaultResourcePanelRatio();
 		const clampedRatio = this.clampResourcePanelRatio(desiredRatio);
@@ -8390,6 +8412,12 @@ export class ConsoleCartEditor {
 		}
 		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
 		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
+		const shiftDown = this.isModifierPressed(keyboard, 'ShiftLeft') || this.isModifierPressed(keyboard, 'ShiftRight');
+		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
+			this.consumeKey(keyboard, 'KeyR');
+			this.toggleResolutionMode();
+			return;
+		}
 		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyB')) {
 			this.consumeKey(keyboard, 'KeyB');
 			this.toggleResourcePanel();
@@ -8466,6 +8494,14 @@ export class ConsoleCartEditor {
 	private handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 		const viewer = this.getActiveResourceViewer();
 		if (!viewer) {
+			return;
+		}
+		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
+		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
+		const shiftDown = this.isModifierPressed(keyboard, 'ShiftLeft') || this.isModifierPressed(keyboard, 'ShiftRight');
+		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
+			this.consumeKey(keyboard, 'KeyR');
+			this.toggleResolutionMode();
 			return;
 		}
 		const capacity = this.resourceViewerTextCapacity(viewer);

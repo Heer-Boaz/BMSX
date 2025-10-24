@@ -94,6 +94,14 @@ export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 	private readonly commands: OverlayCommand[] = [];
 	private frameWidth = 0;
 	private frameHeight = 0;
+ 	private overrideSize: { width: number; height: number } | null = null;
+
+	public setFrameOverride(size: { width: number; height: number } | null): void {
+		if (size && (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0)) {
+			throw new Error('[EditorConsoleRenderBackend] Invalid frame override dimensions.');
+		}
+		this.overrideSize = size ? { width: size.width, height: size.height } : null;
+	}
 
 	public beginFrame(): void {
 		const view = $.view;
@@ -104,8 +112,13 @@ export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 		if (!Number.isFinite(offscreen.x) || !Number.isFinite(offscreen.y) || offscreen.x <= 0 || offscreen.y <= 0) {
 			throw new Error('[EditorConsoleRenderBackend] Invalid offscreen dimensions.');
 		}
-		this.frameWidth = offscreen.x;
-		this.frameHeight = offscreen.y;
+		if (this.overrideSize) {
+			this.frameWidth = this.overrideSize.width;
+			this.frameHeight = this.overrideSize.height;
+		} else {
+			this.frameWidth = offscreen.x;
+			this.frameHeight = offscreen.y;
+		}
 		this.commands.length = 0;
 	}
 
