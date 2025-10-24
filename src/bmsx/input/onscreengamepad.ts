@@ -4,6 +4,8 @@ import { ButtonState, InputHandler, KeyOrButtonId2ButtonState } from './inputtyp
 
 import type {
 	OnscreenGamepadControlKind,
+	OnscreenGamepadHandleProvider,
+	OnscreenGamepadHandles,
 	OnscreenGamepadPlatform,
 	OnscreenGamepadPlatformHooks,
 	OnscreenGamepadPlatformSession,
@@ -69,6 +71,7 @@ export class OnscreenGamepad implements InputHandler {
 	private pointer2Elements = new Map<number, Set<string>>();
 	private elementActiveCount = new Map<string, number>();
 	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
+	private handlesProvider: OnscreenGamepadHandleProvider | null = null;
 
 	constructor(platform: OnscreenGamepadPlatform) {
 		this.platform = platform;
@@ -472,5 +475,73 @@ export class OnscreenGamepad implements InputHandler {
 			this.session = null;
 		}
 		this.reset();
+		this.handlesProvider = null;
 	}
+
+	public getLayoutMargins(viewportWidth: number, viewportHeight: number): OnscreenGamepadLayout {
+		const handles = this.resolveHandles();
+		if (!handles) {
+			return OnscreenGamepad.EMPTY_LAYOUT;
+		}
+		const dpadRect = handles.dpad.measure();
+		const actionRect = handles.actionButtons.measure();
+		const hasDpad = dpadRect.width > 0 && dpadRect.height > 0;
+		const hasAction = actionRect.width > 0 && actionRect.height > 0;
+		if (!hasDpad && !hasAction) {
+			return OnscreenGamepad.EMPTY_LAYOUT;
+		}
+
+		const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+		const maxSvgScale = referenceDimension * 0.20 / 100;
+
+		const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
+		const actionWidthAttr = handles.actionButtons.getNumericAttribute('width');
+		let horizontal = 0;
+		if (dpadWidthAttr !== null && actionWidthAttr !== null) {
+			horizontal = (dpadWidthAttr + actionWidthAttr) * maxSvgScale;
+		} else {
+			horizontal = dpadRect.width + actionRect.width;
+		}
+
+		const dpadHeightAttr = handles.dpad.getNumericAttribute('height');
+		const actionHeightAttr = handles.actionButtons.getNumericAttribute('height');
+		let vertical = 0;
+		const estimatedHeight = Math.max(
+			dpadHeightAttr !== null ? dpadHeightAttr * maxSvgScale : dpadRect.height,
+			actionHeightAttr !== null ? actionHeightAttr * maxSvgScale : actionRect.height,
+		);
+		if (estimatedHeight > 0) {
+			vertical = estimatedHeight + 16;
+		}
+
+		return {
+			horizontal,
+			vertical,
+			visible: true,
+		};
+	}
+
+	private resolveHandles(): OnscreenGamepadHandles | null {
+		if (!this.handlesProvider) {
+			const host = $.platform.gameviewHost;
+			if (!host) {
+				return null;
+			}
+			const provider = host.getCapability('onscreen-gamepad');
+			this.handlesProvider = provider ?? null;
+		}
+		return this.handlesProvider?.getHandles() ?? null;
+	}
+
+	private static readonly EMPTY_LAYOUT: OnscreenGamepadLayout = Object.freeze({
+		horizontal: 0,
+		vertical: 0,
+		visible: false,
+	});
+}
+
+export interface OnscreenGamepadLayout {
+	horizontal: number;
+	vertical: number;
+	visible: boolean;
 }

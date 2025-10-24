@@ -12,6 +12,9 @@ import { controllerUnassignedToast } from '../ui/ui_toast';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState, PointerBinding, PointerInputMapping } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
+import type { OnscreenGamepadLayout } from './onscreengamepad';
+
+const NO_GAMEPAD_LAYOUT: OnscreenGamepadLayout = Object.freeze({ horizontal: 0, vertical: 0, visible: false }) as OnscreenGamepadLayout;
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
@@ -425,6 +428,13 @@ export class Input implements RegisterablePersistent {
 	 */
 	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
 		OnscreenGamepad.hideButtons(gamepad_button_ids);
+	}
+
+	public getOnscreenGamepadLayout(viewportWidth: number, viewportHeight: number): OnscreenGamepadLayout {
+		if (!this.onscreenGamepad) {
+			return NO_GAMEPAD_LAYOUT;
+		}
+		return this.onscreenGamepad.getLayoutMargins(viewportWidth, viewportHeight);
 	}
 
 	/**

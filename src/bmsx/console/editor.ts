@@ -1920,16 +1920,6 @@ export class ConsoleCartEditor {
 		}
 		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
 			this.consumeKey(keyboard, 'KeyR');
-			this.handleTopBarButtonPress('reboot');
-			return;
-		}
-		if ((ctrlDown || metaDown) && !shiftDown && !altDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
-			this.consumeKey(keyboard, 'KeyR');
-			this.handleTopBarButtonPress('resume');
-			return;
-		}
-		if ((ctrlDown || metaDown) && altDown && !shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
-			this.consumeKey(keyboard, 'KeyR');
 			this.toggleResolutionMode();
 			return;
 		}
@@ -2703,6 +2693,20 @@ export class ConsoleCartEditor {
 		return Math.min(remaining, SYMBOL_SEARCH_MAX_RESULTS);
 	}
 
+	private getActiveSymbolSearchMatch(): SymbolSearchResult | null {
+		if (!this.symbolSearchVisible || this.symbolSearchMatches.length === 0) {
+			return null;
+		}
+		let index = this.symbolSearchHoverIndex;
+		if (index < 0 || index >= this.symbolSearchMatches.length) {
+			index = this.symbolSearchSelectionIndex;
+		}
+		if (index < 0 || index >= this.symbolSearchMatches.length) {
+			return null;
+		}
+		return this.symbolSearchMatches[index];
+	}
+
 	private ensureSymbolSearchSelectionVisible(): void {
 		if (this.symbolSearchSelectionIndex < 0) {
 			this.symbolSearchDisplayOffset = 0;
@@ -2976,21 +2980,6 @@ export class ConsoleCartEditor {
 
 	private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, altDown: boolean): void {
 		const previousPosition: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (altDown && shiftDown) {
-			let duplicated = false;
-			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-				this.consumeKey(keyboard, 'ArrowUp');
-				this.duplicateSelectionLines(-1);
-				duplicated = true;
-			} else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-				this.consumeKey(keyboard, 'ArrowDown');
-				this.duplicateSelectionLines(1);
-				duplicated = true;
-			}
-			if (duplicated) {
-				return;
-			}
-		}
 		if (shiftDown) {
 			this.ensureSelectionAnchor(previousPosition);
 		}
@@ -4419,12 +4408,8 @@ export class ConsoleCartEditor {
 		}
 		const targetGeneration = this.saveGeneration;
 		const shouldUpdateGeneration = this.hasPendingRuntimeReload();
-		const pendingSource = shouldUpdateGeneration ? this.getMainProgramSourceForReload() : null;
 		this.deactivate();
-		this.scheduleRuntimeTask(async () => {
-			if (shouldUpdateGeneration && pendingSource !== null) {
-				await runtime.reloadLuaProgram(pendingSource);
-			}
+		this.scheduleRuntimeTask(() => {
 			runtime.setState(sanitizedSnapshot);
 			if (shouldUpdateGeneration) {
 				this.appliedGeneration = targetGeneration;
@@ -6406,84 +6391,6 @@ export class ConsoleCartEditor {
 	private breakUndoSequence(): void {
 		this.lastHistoryKey = null;
 		this.lastHistoryTimestamp = 0;
-	}
-
-	private duplicateSelectionLines(direction: -1 | 1): void {
-		const range = this.getSelectionRange();
-		const undoKey = direction < 0 ? 'duplicate-up' : 'duplicate-down';
-		this.prepareUndo(undoKey, false);
-		if (range) {
-			const selectionText = this.getSelectionText();
-			if (!selectionText || selectionText.length === 0) {
-				return;
-			}
-			const normalized = selectionText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-			const insertionOrigin = direction < 0
-				? { row: range.start.row, column: range.start.column }
-				: { row: range.end.row, column: range.end.column };
-			const insertionStart = this.clampPosition(insertionOrigin);
-			const insertionEnd = this.insertTextAtPosition(insertionStart, normalized);
-			this.markTextMutated();
-			this.selectionAnchor = { row: insertionStart.row, column: insertionStart.column };
-			this.cursorRow = insertionEnd.row;
-			this.cursorColumn = insertionEnd.column;
-			this.pointerSelecting = false;
-			this.pointerPrimaryWasPressed = false;
-			this.updateDesiredColumn();
-			this.resetBlink();
-			this.revealCursor();
-			return;
-		}
-		this.duplicateCurrentLine(direction);
-	}
-
-	private duplicateCurrentLine(direction: -1 | 1): void {
-		if (this.lines.length === 0) {
-			return;
-		}
-		const sourceRow = this.cursorRow;
-		const lineText = this.lines[sourceRow];
-		const insertionIndex = direction < 0 ? sourceRow : sourceRow + 1;
-		this.lines.splice(insertionIndex, 0, lineText);
-		this.invalidateAllHighlights();
-		this.selectionAnchor = null;
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		const clampedColumn = Math.min(this.cursorColumn, lineText.length);
-		this.cursorRow = insertionIndex;
-		this.cursorColumn = clampedColumn;
-		this.markTextMutated();
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.revealCursor();
-	}
-
-	private insertTextAtPosition(position: Position, text: string): Position {
-		const clamped = this.clampPosition(position);
-		const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-		if (normalized.length === 0) {
-			return { row: clamped.row, column: clamped.column };
-		}
-		const fragments = normalized.split('\n');
-		const line = this.lines[clamped.row];
-		const before = line.slice(0, clamped.column);
-		const after = line.slice(clamped.column);
-		if (fragments.length === 1) {
-			this.lines[clamped.row] = before + fragments[0] + after;
-			this.invalidateLine(clamped.row);
-			const endColumn = before.length + fragments[0].length;
-			return { row: clamped.row, column: endColumn };
-		}
-		const firstLine = before + fragments[0];
-		const lastFragment = fragments[fragments.length - 1];
-		const middle = fragments.slice(1, -1);
-		const lastLine = lastFragment + after;
-		const newLines = [firstLine, ...middle, lastLine];
-		this.lines.splice(clamped.row, 1, ...newLines);
-		this.invalidateAllHighlights();
-		const endRow = clamped.row + newLines.length - 1;
-		const endColumn = lastFragment.length;
-		return { row: endRow, column: endColumn };
 	}
 
 	private moveSelectionLines(delta: number): void {
@@ -9143,6 +9050,20 @@ export class ConsoleCartEditor {
 			return;
 		}
 
+		if (this.symbolSearchVisible) {
+			const match = this.getActiveSymbolSearchMatch();
+			if (!match) {
+				return;
+			}
+			const locationPath = match.entry.symbol.location.path;
+			if (!locationPath || locationPath.length === 0) {
+				throw new Error('[ConsoleCartEditor] Symbol location path unavailable.');
+			}
+			const pathText = this.truncateTextToWidth(locationPath, Math.max(0, this.viewportWidth - 8));
+			this.drawText(api, pathText, 4, statusTop + 2, COLOR_STATUS_TEXT);
+			return;
+		}
+
 		if (this.resourcePanelVisible) {
 			const totalEntries = this.resourceBrowserItems.length;
 			const fileInfo = `FILES ${totalEntries}`;
@@ -9574,6 +9495,34 @@ export class ConsoleCartEditor {
 		return result;
 	}
 
+	private truncateTextToWidth(text: string, maxWidth: number): string {
+		if (maxWidth <= 0) {
+			return '';
+		}
+		if (this.measureText(text) <= maxWidth) {
+			return text;
+		}
+		const ellipsis = '...';
+		const ellipsisWidth = this.measureText(ellipsis);
+		if (ellipsisWidth > maxWidth) {
+			return '';
+		}
+		let low = 0;
+		let high = text.length;
+		let best = '';
+		while (low <= high) {
+			const mid = Math.floor((low + high) / 2);
+			const candidate = text.slice(0, mid) + ellipsis;
+			if (this.measureText(candidate) <= maxWidth) {
+				best = candidate;
+				low = mid + 1;
+			} else {
+				high = mid - 1;
+			}
+		}
+		return best;
+	}
+
 	private measureText(text: string): number {
 		let width = 0;
 		for (let i = 0; i < text.length; i++) {
@@ -9709,14 +9658,6 @@ export class ConsoleCartEditor {
 			column = line.length;
 		}
 		return { row, column };
-	}
-
-	private clampPosition(position: Position): Position {
-		const clamped = this.clampSelectionPosition(position);
-		if (clamped) {
-			return { row: clamped.row, column: clamped.column };
-		}
-		return { row: 0, column: 0 };
 	}
 
 	private resetBlink(): void {

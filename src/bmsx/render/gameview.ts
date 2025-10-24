@@ -446,45 +446,21 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
 		const viewportIsLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
 
+		const layout = Input.instance.getOnscreenGamepadLayout(viewportWidth, viewportHeight);
+		const onscreenControlsVisible = Boolean(Input.instance.isOnscreenGamepadEnabled && layout.visible);
+
 		let adjustedWidth = effectiveWidth;
-		if (Input.instance.isOnscreenGamepadEnabled
+		if (onscreenControlsVisible
 			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
 			&& viewportIsLandscape) {
-			const handlesProvider = this.getOnscreenGamepadHandleProvider();
-			const handles = handlesProvider?.getHandles();
-			if (handles) {
-				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-				const maxSvgScale = referenceDimension * 0.20 / 100;
-				const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
-				const actionButtonsWidthAttr = handles.actionButtons.getNumericAttribute('width');
-				if (dpadWidthAttr !== null && actionButtonsWidthAttr !== null) {
-					const dpadWidth = dpadWidthAttr * maxSvgScale;
-					const actionButtonsWidth = actionButtonsWidthAttr * maxSvgScale;
-					const reduction = dpadWidth + actionButtonsWidth;
-					adjustedWidth = Math.max(0, adjustedWidth - reduction);
-				}
-			}
+			adjustedWidth = Math.max(0, adjustedWidth - layout.horizontal);
 		}
 
 		let adjustedHeight = effectiveHeight;
-		if (Input.instance.isOnscreenGamepadEnabled
+		if (onscreenControlsVisible
 			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
 			&& !viewportIsLandscape) {
-			const handlesProvider = this.getOnscreenGamepadHandleProvider();
-			const handles = handlesProvider?.getHandles();
-			if (handles) {
-				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-				const maxSvgScale = referenceDimension * 0.20 / 100;
-				const dpadHeightAttr = handles.dpad.getNumericAttribute('height');
-				const actionButtonsHeightAttr = handles.actionButtons.getNumericAttribute('height');
-				const dpadHeight = dpadHeightAttr !== null ? dpadHeightAttr * maxSvgScale : 0;
-				const actionButtonsHeight = actionButtonsHeightAttr !== null ? actionButtonsHeightAttr * maxSvgScale : 0;
-				const controlHeight = Math.max(dpadHeight, actionButtonsHeight);
-				if (controlHeight > 0) {
-					const paddedControlHeight = controlHeight + 16;
-					adjustedHeight = Math.max(0, adjustedHeight - paddedControlHeight);
-				}
-			}
+			adjustedHeight = Math.max(0, adjustedHeight - layout.vertical);
 		}
 
 		self.windowSize = { x: adjustedWidth, y: adjustedHeight };
@@ -514,12 +490,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		self.calculateSize();
 		const displayWidth = ~~(self.canvasSize.x * self.canvasScale);
 		const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
-		const layoutWidth = viewportWidth > 0 ? viewportWidth : self.windowSize.x;
-		const layoutHeight = viewportHeight > 0 ? viewportHeight : self.windowSize.y;
+		const layoutWidth = self.windowSize.x;
+		const layoutHeight = self.windowSize.y;
 		const displayLeft = Math.max(0, ~~((layoutWidth - displayWidth) / 2));
-		const displayTop = (isLandscape || !Input.instance.isOnscreenGamepadEnabled)
-			? Math.max(0, ~~((layoutHeight - displayHeight) / 2))
-			: 0;
+		const displayTop = Math.max(0, ~~((layoutHeight - displayHeight) / 2));
 
 		this.surface.setDisplaySize(displayWidth, displayHeight);
 		this.surface.setDisplayPosition(displayLeft, displayTop);
