@@ -6784,7 +6784,7 @@ export class ConsoleCartEditor {
 		const contentRight = bounds.codeRight - (verticalVisible ? SCROLLBAR_WIDTH : 0);
 		const contentBottom = bounds.codeBottom - (horizontalVisible ? SCROLLBAR_WIDTH : 0);
 
-		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_RESOURCE_BACKGROUND);
+		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_CODE_BACKGROUND);
 		if (bounds.gutterRight > bounds.gutterLeft) {
 			api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, COLOR_GUTTER_BACKGROUND);
 		}
