@@ -27,6 +27,10 @@ export type OverlayCommand = OverlayRectCommand | OverlaySpriteCommand;
 export type EditorOverlayFrame = {
 	width: number;
 	height: number;
+	logicalWidth: number;
+	logicalHeight: number;
+	renderWidth: number;
+	renderHeight: number;
 	commands: OverlayCommand[];
 };
 

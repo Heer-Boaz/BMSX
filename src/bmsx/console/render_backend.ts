@@ -92,8 +92,10 @@ export class DirectConsoleRenderBackend implements ConsoleRenderBackend {
 
 export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 	private readonly commands: OverlayCommand[] = [];
-	private frameWidth = 0;
-	private frameHeight = 0;
+	private frameLogicalWidth = 0;
+	private frameLogicalHeight = 0;
+	private frameRenderWidth = 0;
+	private frameRenderHeight = 0;
 	private overrideSize: { width: number; height: number } | null = null;
 
 	public setFrameOverride(size: { width: number; height: number } | null): void {
@@ -109,16 +111,19 @@ export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 			throw new Error('[EditorConsoleRenderBackend] Game view unavailable during editor overlay capture.');
 		}
 		const offscreen = view.offscreenCanvasSize;
+		const logical = view.viewportSize;
 		if (!Number.isFinite(offscreen.x) || !Number.isFinite(offscreen.y) || offscreen.x <= 0 || offscreen.y <= 0) {
 			throw new Error('[EditorConsoleRenderBackend] Invalid offscreen dimensions.');
 		}
-		if (this.overrideSize) {
-			this.frameWidth = this.overrideSize.width;
-			this.frameHeight = this.overrideSize.height;
-		} else {
-			this.frameWidth = offscreen.x;
-			this.frameHeight = offscreen.y;
+		if (!Number.isFinite(logical.x) || !Number.isFinite(logical.y) || logical.x <= 0 || logical.y <= 0) {
+			throw new Error('[EditorConsoleRenderBackend] Invalid logical dimensions.');
 		}
+		const renderWidth = this.overrideSize ? this.overrideSize.width : offscreen.x;
+		const renderHeight = this.overrideSize ? this.overrideSize.height : offscreen.y;
+		this.frameLogicalWidth = logical.x;
+		this.frameLogicalHeight = logical.y;
+		this.frameRenderWidth = renderWidth;
+		this.frameRenderHeight = renderHeight;
 		this.commands.length = 0;
 	}
 
@@ -182,8 +187,12 @@ export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 			return;
 		}
 		const frame: EditorOverlayFrame = {
-			width: this.frameWidth,
-			height: this.frameHeight,
+			width: this.frameRenderWidth,
+			height: this.frameRenderHeight,
+			logicalWidth: this.frameLogicalWidth,
+			logicalHeight: this.frameLogicalHeight,
+			renderWidth: this.frameRenderWidth,
+			renderHeight: this.frameRenderHeight,
 			commands: this.commands.map(cmd => {
 				if (cmd.type === 'rect') {
 					return { ...cmd, color: { ...cmd.color } };

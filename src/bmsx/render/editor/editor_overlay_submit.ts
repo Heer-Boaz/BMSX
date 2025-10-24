@@ -39,8 +39,10 @@ export function drainOverlayFrameIntoSpriteQueue(_renderWidth: number, _renderHe
 	if (!frame || frame.commands.length === 0) {
 		return;
 	}
-	const scaleX = frame.width > 0 ? logicalWidth / frame.width : 1;
-	const scaleY = frame.height > 0 ? logicalHeight / frame.height : 1;
+	const captureWidth = frame.width > 0 ? frame.width : logicalWidth;
+	const captureHeight = frame.height > 0 ? frame.height : logicalHeight;
+	const scaleX = captureWidth > 0 ? logicalWidth / captureWidth : 1;
+	const scaleY = captureHeight > 0 ? logicalHeight / captureHeight : 1;
 	for (const command of frame.commands) {
 		if (command.type === 'rect') {
 			submitRect(command, scaleX, scaleY);

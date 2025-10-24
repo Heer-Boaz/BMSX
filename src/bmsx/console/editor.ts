@@ -6466,19 +6466,27 @@ export class ConsoleCartEditor {
 		api.rectfill(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, resolutionFill);
 		api.rect(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, COLOR_HEADER_BUTTON_BORDER);
 		const iconPadding = Math.max(2, Math.floor(HEADER_BUTTON_PADDING_X * 0.75));
-		const iconLeft = resolutionLeft + iconPadding;
-		const iconRight = resolutionRight - iconPadding;
-		const iconTop = buttonTop + iconPadding;
-		const iconBottom = resolutionBottom - iconPadding;
+
+		const frameX = resolutionLeft + iconPadding;
+		const frameY = buttonTop + iconPadding;
+		const frameSize = resolutionButtonSize - iconPadding * 2;
+		api.rectfill(frameX, frameY, frameX + frameSize, frameY + frameSize, resolutionTextColor);
+		const innerMargin = Math.max(1, Math.floor(frameSize / 4));
+		api.rectfill(
+			frameX + innerMargin,
+			frameY + innerMargin,
+			frameX + frameSize - innerMargin,
+			frameY + frameSize - innerMargin,
+			COLOR_TOP_BAR,
+		);
+		const indicatorY = frameY + frameSize - innerMargin - 1;
+		const indicatorHeight = Math.max(1, Math.floor(frameSize / 5));
 		if (this.resolutionMode === 'viewport') {
-			api.rectfill(iconLeft, iconTop, iconRight, iconBottom, resolutionTextColor);
+			api.rectfill(frameX + innerMargin, indicatorY, frameX + frameSize - innerMargin, indicatorY + indicatorHeight, resolutionTextColor);
 		} else {
-			const midX = Math.floor((iconLeft + iconRight) * 0.5);
-			const midY = Math.floor((iconTop + iconBottom) * 0.5);
-			api.rectfill(iconLeft, iconTop, midX, midY, resolutionTextColor);
-			api.rectfill(midX + 1, iconTop, iconRight, midY, resolutionTextColor);
-			api.rectfill(iconLeft, midY + 1, midX, iconBottom, resolutionTextColor);
-			api.rectfill(midX + 1, midY + 1, iconRight, iconBottom, resolutionTextColor);
+			const segmentWidth = Math.max(1, Math.floor((frameSize - innerMargin * 2) / 2));
+			api.rectfill(frameX + innerMargin, indicatorY, frameX + innerMargin + segmentWidth, indicatorY + indicatorHeight, resolutionTextColor);
+			api.rectfill(frameX + frameSize - innerMargin - segmentWidth, indicatorY, frameX + frameSize - innerMargin, indicatorY + indicatorHeight, resolutionTextColor);
 		}
 		this.drawText(api, this.metadata.title.toUpperCase(), 4, primaryBarHeight + 1, COLOR_TOP_BAR_TEXT);
 		const versionSuffix = this.dirty ? '*' : '';
