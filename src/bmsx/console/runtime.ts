@@ -74,6 +74,7 @@ type HttpResponse = {
 
 export class BmsxConsoleRuntime extends Service {
 	private static _instance: BmsxConsoleRuntime | null = null;
+	private static preservingWorldResetDepth = 0;
 	private static readonly MAX_FRAME_DELTA_MS = 250;
 	private static readonly HOVER_VALUE_MAX_LINE_LENGTH = 160;
 	private static readonly HOVER_VALUE_MAX_SERIALIZED_LINES = 200;
@@ -116,9 +117,27 @@ export class BmsxConsoleRuntime extends Service {
 		return BmsxConsoleRuntime._instance;
 	}
 
+	public static beginPreservedWorldReset(): void {
+		BmsxConsoleRuntime.preservingWorldResetDepth = BmsxConsoleRuntime.preservingWorldResetDepth + 1;
+	}
+
+	public static endPreservedWorldReset(): void {
+		if (BmsxConsoleRuntime.preservingWorldResetDepth === 0) {
+			throw new Error('[BmsxConsoleRuntime] endPreservedWorldReset called without matching begin.');
+		}
+		BmsxConsoleRuntime.preservingWorldResetDepth = BmsxConsoleRuntime.preservingWorldResetDepth - 1;
+	}
+
 	public static destroy(): void {
-		if (!BmsxConsoleRuntime._instance) return;
-		BmsxConsoleRuntime._instance.dispose();
+		const instance = BmsxConsoleRuntime._instance;
+		if (!instance) {
+			return;
+		}
+		if (BmsxConsoleRuntime.preservingWorldResetDepth > 0) {
+			instance.prepareForPreservedWorldReset();
+			return;
+		}
+		instance.dispose();
 		BmsxConsoleRuntime._instance = null;
 	}
 
@@ -482,6 +501,10 @@ export class BmsxConsoleRuntime extends Service {
 		if (BmsxConsoleRuntime._instance === this) {
 			BmsxConsoleRuntime._instance = null;
 		}
+	}
+
+	private prepareForPreservedWorldReset(): void {
+		this.pendingLuaWarnings = [];
 	}
 
 	private hasLuaProgram(): boolean {

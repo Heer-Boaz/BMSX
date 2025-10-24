@@ -848,12 +848,23 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 
 	private bindSurfaceEvents(surface: HTMLElement, kind: OnscreenGamepadControlKind, hooks: OnscreenGamepadPlatformHooks, listenerOptions: AddEventListenerOptions): void {
 		const pointerDown = (event: PointerEvent) => {
+			event.preventDefault();
+			event.stopPropagation();
+			event.stopImmediatePropagation();
 			hooks.pointerDown(kind, makePointerEvent(event, surface));
 		};
 		const pointerMove = (event: PointerEvent) => {
+			if (event.buttons !== 0 || event.pressure !== 0) {
+				event.preventDefault();
+				event.stopPropagation();
+				event.stopImmediatePropagation();
+			}
 			hooks.pointerMove(kind, makePointerEvent(event, surface));
 		};
 		const pointerUp = (event: PointerEvent) => {
+			event.preventDefault();
+			event.stopPropagation();
+			event.stopImmediatePropagation();
 			hooks.pointerUp(kind, makePointerEvent(event, surface));
 		};
 		surface.addEventListener('pointerdown', pointerDown, listenerOptions);
@@ -885,6 +896,7 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 
 	private setTouchActionNone(surface: HTMLElement): void {
 		surface.style.touchAction = 'none';
+		surface.style.pointerEvents = 'auto';
 	}
 }
 

@@ -583,8 +583,18 @@ export class World implements Stateful, RegisterablePersistent {
 	 * Detaches all objects from their spaces first, then disposes unique objects.
 	 */
 	public clearAllSpaces(): void {
-		for (const o of this.objects({ scope: 'all' })) o.dispose();
-		for (const s of this.spaces) s.clear();
+		const disposed = new Set<WorldObject>();
+		for (const space of this.spaces) {
+			for (let index = space.objects.length - 1; index >= 0; index--) {
+				const object = space.objects[index]!;
+				space.despawn(object, false);
+				if (!disposed.has(object)) {
+					disposed.add(object);
+					object.dispose();
+				}
+			}
+		}
+		this.objToSpaceMap.clear();
 	}
 
 	public disposeAndRemoveAllSpaces(): void {

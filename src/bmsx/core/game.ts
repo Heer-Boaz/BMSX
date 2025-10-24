@@ -499,10 +499,22 @@ export class Game {
 				BmsxConsoleRuntime.destroy();
 			}
 			const existingWorld = this.registry.get<World>('world');
-			if (existingWorld) {
-				existingWorld.clearAllSpaces();
-				existingWorld.dispose();
-				this.registry.deregister(existingWorld, true);
+			let preservingRuntime = false;
+			if (preserveConsole && BmsxConsoleRuntime.instance !== null) {
+				BmsxConsoleRuntime.beginPreservedWorldReset();
+				preservingRuntime = true;
+			}
+			try {
+				if (existingWorld) {
+					existingWorld.clearAllSpaces();
+					existingWorld.dispose();
+					this.registry.deregister(existingWorld, true);
+				}
+			}
+			finally {
+				if (preservingRuntime) {
+					BmsxConsoleRuntime.endPreservedWorldReset();
+				}
 			}
 
 			this.event_emitter.clear();
