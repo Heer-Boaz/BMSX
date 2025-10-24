@@ -759,6 +759,7 @@ export class ConsoleCartEditor {
 	private codeHorizontalScrollbarVisible = false;
 	private cachedVisibleRowCount = 1;
 	private cachedVisibleColumnCount = 1;
+	private dimCrtInEditor: boolean = false; // Default value; can be changed via settings
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -1794,7 +1795,9 @@ export class ConsoleCartEditor {
 			this.message.timer = this.deferredMessageDuration;
 		}
 		this.deferredMessageDuration = null;
-		this.applyEditorCrtDimming();
+		if (this.dimCrtInEditor) {
+			this.applyEditorCrtDimming();
+		}
 	}
 
 	private applyEditorCrtDimming(): void {
@@ -1838,7 +1841,9 @@ export class ConsoleCartEditor {
 	private deactivate(): void {
 		this.storeActiveCodeTabContext();
 		this.active = false;
-		this.restoreCrtOptions();
+		if (this.dimCrtInEditor) {
+			this.restoreCrtOptions();
+		}
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
 		this.applyInputOverrides(false);
@@ -2735,7 +2740,7 @@ export class ConsoleCartEditor {
 		setTimeout(() => {
 			this.navigateToLuaDefinition(location);
 		}, 0);
- 	}
+	}
 
 	private handleSymbolSearchInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
 		const altDown = this.isModifierPressed(keyboard, 'AltLeft') || this.isModifierPressed(keyboard, 'AltRight');
