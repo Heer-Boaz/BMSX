@@ -1794,9 +1794,6 @@ export class ConsoleCartEditor {
 	}
 
 	private applyEditorCrtDimming(): void {
-		if (this.crtOptionsSnapshot) {
-			return;
-		}
 		const view = $.view;
 		const [bleedR, bleedG, bleedB] = view.colorBleed;
 		const [glowR, glowG, glowB] = view.glowColor;
@@ -1806,17 +1803,26 @@ export class ConsoleCartEditor {
 			blurIntensity: view.blurIntensity,
 			glowColor: [glowR, glowG, glowB] as [number, number, number],
 		};
-		view.noiseIntensity = view.noiseIntensity * 0.5;
-		view.colorBleed = [bleedR * 0.5, bleedG * 0.5, bleedB * 0.5] as [number, number, number];
-		view.blurIntensity = view.blurIntensity * 0.5;
-		view.glowColor = [glowR * 0.5, glowG * 0.5, glowB * 0.5] as [number, number, number];
+		let snapshot = this.crtOptionsSnapshot;
+		view.noiseIntensity = snapshot.noiseIntensity * 0.5;
+		view.colorBleed = [
+			snapshot.colorBleed[0] * 0.5,
+			snapshot.colorBleed[1] * 0.5,
+			snapshot.colorBleed[2] * 0.5,
+		] as [number, number, number];
+		view.blurIntensity = snapshot.blurIntensity * 0.5;
+		view.glowColor = [
+			snapshot.glowColor[0] * 0.5,
+			snapshot.glowColor[1] * 0.5,
+			snapshot.glowColor[2] * 0.5,
+		] as [number, number, number];
 	}
 
 	private restoreCrtOptions(): void {
-		if (!this.crtOptionsSnapshot) {
-			return;
-		}
 		const snapshot = this.crtOptionsSnapshot;
+		if (!snapshot) {
+			throw new Error('[ConsoleCartEditor] CRT options snapshot unavailable during restore.');
+		}
 		this.crtOptionsSnapshot = null;
 		const view = $.view;
 		view.noiseIntensity = snapshot.noiseIntensity;
@@ -1903,6 +1909,11 @@ export class ConsoleCartEditor {
 		if ((ctrlDown && altDown) && this.isKeyJustPressed(keyboard, 'Comma')) {
 			this.consumeKey(keyboard, 'Comma');
 			this.openSymbolSearch();
+			return;
+		}
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyB')) {
+			this.consumeKey(keyboard, 'KeyB');
+			this.toggleResourcePanel();
 			return;
 		}
 		if (!ctrlDown && !metaDown && altDown && this.isKeyJustPressed(keyboard, 'Comma')) {
@@ -8375,6 +8386,13 @@ export class ConsoleCartEditor {
 
 	private handleResourceBrowserKeyboard(keyboard: KeyboardInput, deltaSeconds: number): void {
 		if (!this.resourcePanelVisible) {
+			return;
+		}
+		const ctrlDown = this.isModifierPressed(keyboard, 'ControlLeft') || this.isModifierPressed(keyboard, 'ControlRight');
+		const metaDown = this.isModifierPressed(keyboard, 'MetaLeft') || this.isModifierPressed(keyboard, 'MetaRight');
+		if ((ctrlDown || metaDown) && this.isKeyJustPressed(keyboard, 'KeyB')) {
+			this.consumeKey(keyboard, 'KeyB');
+			this.toggleResourcePanel();
 			return;
 		}
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
