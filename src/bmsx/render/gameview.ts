@@ -466,8 +466,29 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			}
 		}
 
-		self.windowSize = { x: adjustedWidth, y: effectiveHeight };
-		self.availableWindowSize = { x: ~~adjustedWidth, y: ~~effectiveHeight };
+		let adjustedHeight = effectiveHeight;
+		if (Input.instance.isOnscreenGamepadEnabled
+			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
+			&& !viewportIsLandscape) {
+			const handlesProvider = this.getOnscreenGamepadHandleProvider();
+			const handles = handlesProvider?.getHandles();
+			if (handles) {
+				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+				const maxSvgScale = referenceDimension * 0.20 / 100;
+				const dpadHeightAttr = handles.dpad.getNumericAttribute('height');
+				const actionButtonsHeightAttr = handles.actionButtons.getNumericAttribute('height');
+				const dpadHeight = dpadHeightAttr !== null ? dpadHeightAttr * maxSvgScale : 0;
+				const actionButtonsHeight = actionButtonsHeightAttr !== null ? actionButtonsHeightAttr * maxSvgScale : 0;
+				const controlHeight = Math.max(dpadHeight, actionButtonsHeight);
+				if (controlHeight > 0) {
+					const paddedControlHeight = controlHeight + 16;
+					adjustedHeight = Math.max(0, adjustedHeight - paddedControlHeight);
+				}
+			}
+		}
+
+		self.windowSize = { x: adjustedWidth, y: adjustedHeight };
+		self.availableWindowSize = { x: ~~adjustedWidth, y: ~~adjustedHeight };
 		self.dx = self.availableWindowSize.x / self.viewportSize.x;
 		self.dy = self.availableWindowSize.y / self.viewportSize.y;
 		self.viewportScale = Math.min(self.dx, self.dy);

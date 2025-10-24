@@ -358,6 +358,19 @@
 	display: none;
 }
 
+.knop:not(.knoptext)[data-touched="true"] {
+	transform: translateY(2px);
+	filter: url(#pressedButtonFilter);
+}
+
+.knop.knoptext[data-touched="true"] {
+	filter: url(#pressedButtonFilter);
+}
+
+.dknop[data-touched="true"] {
+	opacity: 0.85;
+}
+
 #button-controls {
 	pointer-events: none;
 	touch-action: none;
