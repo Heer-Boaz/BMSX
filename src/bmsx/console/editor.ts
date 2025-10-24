@@ -143,7 +143,7 @@ type SymbolSearchResult = {
 	matchIndex: number;
 };
 
-type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources';
+type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'resolution';
 
 type EditorTabId = `resource:${string}` | `lua:${string}`;
 type EditorTabKind = 'resource_view' | 'lua_editor';
@@ -667,6 +667,7 @@ export class ConsoleCartEditor {
 		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },
+		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
 	};
 	private readonly tabButtonBounds: Map<string, RectBounds> = new Map();
 	private readonly tabCloseButtonBounds: Map<string, RectBounds> = new Map();
@@ -708,7 +709,7 @@ export class ConsoleCartEditor {
 	private tabHoverId: string | null = null;
 	private tabDragState: TabDragState | null = null;
 	private crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
-	private resolutionMode: EditorResolutionMode = 'offscreen';
+	private resolutionMode: EditorResolutionMode = 'viewport';
 	private readonly tabDirtyMarkerAssetId = 'msx_6b_font_ctrl_bel';
 	private tabDirtyMarkerWidth: number | null = null;
 	private tabDirtyMarkerHeight: number | null = null;
@@ -808,20 +809,21 @@ export class ConsoleCartEditor {
 		this.codeHorizontalScrollbarVisible = false;
 		this.cachedVisibleRowCount = 1;
 		this.cachedVisibleColumnCount = 1;
-		const entryContext = this.createEntryTabContext();
-		if (entryContext) {
-			this.entryTabId = entryContext.id;
-			this.codeTabContexts.set(entryContext.id, entryContext);
-		}
-		this.initializeTabs(entryContext);
-		this.resetResourcePanelState();
-		if (entryContext) {
-			this.activateCodeEditorTab(entryContext.id);
-		}
-		this.desiredColumn = this.cursorColumn;
-		this.assertMonospace();
-		const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
-		this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+	const entryContext = this.createEntryTabContext();
+	if (entryContext) {
+		this.entryTabId = entryContext.id;
+		this.codeTabContexts.set(entryContext.id, entryContext);
+	}
+	this.initializeTabs(entryContext);
+	this.resetResourcePanelState();
+	if (entryContext) {
+		this.activateCodeEditorTab(entryContext.id);
+	}
+	this.desiredColumn = this.cursorColumn;
+	this.assertMonospace();
+	const initialContext = entryContext ? this.codeTabContexts.get(entryContext.id) ?? null : null;
+	this.lastSavedSource = initialContext ? initialContext.lastSavedSource : '';
+	this.applyResolutionModeToRuntime();
 	}
 
 	private drawHoverTooltip(api: BmsxConsoleApi, codeTop: number, codeBottom: number, textLeft: number): void {
@@ -1749,6 +1751,7 @@ export class ConsoleCartEditor {
 
 	private activate(): void {
 		this.applyInputOverrides(true);
+		this.applyResolutionModeToRuntime();
 		if (this.activeCodeTabContextId) {
 			const existingTab = this.tabs.find(candidate => candidate.id === this.activeCodeTabContextId);
 			if (existingTab) {
@@ -4155,6 +4158,10 @@ export class ConsoleCartEditor {
 			this.handleTopBarButtonPress('resources');
 			return true;
 		}
+		if (this.pointInRect(x, y, this.topBarButtonBounds.resolution)) {
+			this.handleTopBarButtonPress('resolution');
+			return true;
+		}
 		return false;
 	}
 
@@ -4279,6 +4286,10 @@ export class ConsoleCartEditor {
 	}
 
 	private handleTopBarButtonPress(button: TopBarButtonId): void {
+		if (button === 'resolution') {
+			this.toggleResolutionMode();
+			return;
+		}
 		if (button === 'resources') {
 			this.toggleResourcePanel();
 			return;
@@ -6408,6 +6419,15 @@ export class ConsoleCartEditor {
 
 		const buttonTop = 1;
 		const buttonHeight = this.lineHeight + HEADER_BUTTON_PADDING_Y * 2;
+		const resolutionButtonSize = buttonHeight;
+		const resolutionRight = this.viewportWidth - 4;
+		const resolutionLeft = resolutionRight - resolutionButtonSize;
+		const resolutionBottom = buttonTop + buttonHeight;
+		this.topBarButtonBounds.resolution = { left: resolutionLeft, top: buttonTop, right: resolutionRight, bottom: resolutionBottom };
+		this.topBarButtonBounds.resume = { left: 0, top: 0, right: 0, bottom: 0 };
+		this.topBarButtonBounds.reboot = { left: 0, top: 0, right: 0, bottom: 0 };
+		this.topBarButtonBounds.save = { left: 0, top: 0, right: 0, bottom: 0 };
+		this.topBarButtonBounds.resources = { left: 0, top: 0, right: 0, bottom: 0 };
 		let buttonX = 4;
 		const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
 			{ id: 'resume', label: 'RESUME', disabled: false },
@@ -6415,11 +6435,16 @@ export class ConsoleCartEditor {
 			{ id: 'save', label: 'SAVE', disabled: !this.dirty },
 			{ id: 'resources', label: 'FILES', disabled: false, active: this.resourcePanelVisible },
 		];
+		const availableRight = resolutionLeft - HEADER_BUTTON_SPACING;
 		for (let i = 0; i < buttonEntries.length; i++) {
 			const entry = buttonEntries[i];
 			const textWidth = this.measureText(entry.label);
 			const buttonWidth = textWidth + HEADER_BUTTON_PADDING_X * 2;
 			const right = buttonX + buttonWidth;
+			if (right > availableRight) {
+				this.topBarButtonBounds[entry.id] = { left: 0, top: 0, right: 0, bottom: 0 };
+				break;
+			}
 			const bottom = buttonTop + buttonHeight;
 			const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
 			this.topBarButtonBounds[entry.id] = bounds;
@@ -6435,12 +6460,30 @@ export class ConsoleCartEditor {
 			buttonX = right + HEADER_BUTTON_SPACING;
 		}
 
-		const titleY = primaryBarHeight + 1;
-		const title = this.metadata.title.toUpperCase();
+		const resolutionActive = this.resolutionMode === 'viewport';
+		const resolutionFill = resolutionActive ? COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : COLOR_HEADER_BUTTON_BACKGROUND;
+		const resolutionTextColor = resolutionActive ? COLOR_HEADER_BUTTON_ACTIVE_TEXT : COLOR_HEADER_BUTTON_TEXT;
+		api.rectfill(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, resolutionFill);
+		api.rect(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, COLOR_HEADER_BUTTON_BORDER);
+		const iconPadding = Math.max(2, Math.floor(HEADER_BUTTON_PADDING_X * 0.75));
+		const iconLeft = resolutionLeft + iconPadding;
+		const iconRight = resolutionRight - iconPadding;
+		const iconTop = buttonTop + iconPadding;
+		const iconBottom = resolutionBottom - iconPadding;
+		if (this.resolutionMode === 'viewport') {
+			api.rectfill(iconLeft, iconTop, iconRight, iconBottom, resolutionTextColor);
+		} else {
+			const midX = Math.floor((iconLeft + iconRight) * 0.5);
+			const midY = Math.floor((iconTop + iconBottom) * 0.5);
+			api.rectfill(iconLeft, iconTop, midX, midY, resolutionTextColor);
+			api.rectfill(midX + 1, iconTop, iconRight, midY, resolutionTextColor);
+			api.rectfill(iconLeft, midY + 1, midX, iconBottom, resolutionTextColor);
+			api.rectfill(midX + 1, midY + 1, iconRight, iconBottom, resolutionTextColor);
+		}
+		this.drawText(api, this.metadata.title.toUpperCase(), 4, primaryBarHeight + 1, COLOR_TOP_BAR_TEXT);
 		const versionSuffix = this.dirty ? '*' : '';
 		const version = `v${this.metadata.version}${versionSuffix}`;
-		this.drawText(api, title, 4, titleY, COLOR_TOP_BAR_TEXT);
-		this.drawText(api, version, this.viewportWidth - this.measureText(version) - 4, titleY, COLOR_TOP_BAR_TEXT);
+		this.drawText(api, version, this.viewportWidth - this.measureText(version) - 4, primaryBarHeight + 1, COLOR_TOP_BAR_TEXT);
 	}
 
 	private drawCreateResourceBar(api: BmsxConsoleApi): void {
@@ -7087,12 +7130,17 @@ export class ConsoleCartEditor {
 		this.refreshViewportDimensions(true);
 		this.ensureCursorVisible();
 		this.cursorRevealSuspended = false;
-		const runtime = this.getConsoleRuntime();
-		if (runtime) {
-			runtime.setEditorOverlayResolution(this.resolutionMode);
-		}
+		this.applyResolutionModeToRuntime();
 		const modeLabel = this.resolutionMode === 'offscreen' ? 'OFFSCREEN' : 'NATIVE';
 		this.showMessage(`Editor resolution: ${modeLabel}`, COLOR_STATUS_TEXT, 2.5);
+	}
+
+	private applyResolutionModeToRuntime(): void {
+		const runtime = this.getConsoleRuntime();
+		if (!runtime) {
+			return;
+		}
+		runtime.setEditorOverlayResolution(this.resolutionMode);
 	}
 
 	private showResourcePanel(): void {

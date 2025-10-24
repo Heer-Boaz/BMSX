@@ -94,7 +94,7 @@ export class EditorConsoleRenderBackend implements ConsoleRenderBackend {
 	private readonly commands: OverlayCommand[] = [];
 	private frameWidth = 0;
 	private frameHeight = 0;
- 	private overrideSize: { width: number; height: number } | null = null;
+	private overrideSize: { width: number; height: number } | null = null;
 
 	public setFrameOverride(size: { width: number; height: number } | null): void {
 		if (size && (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width <= 0 || size.height <= 0)) {
