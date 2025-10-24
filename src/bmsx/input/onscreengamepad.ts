@@ -236,7 +236,6 @@ export class OnscreenGamepad implements InputHandler {
 	private static readonly ONSCREEN_BUTTON_ELEMENT_NAMES = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
 
 	public init(): void {
-		this.reset();
 		if (this.session !== null) {
 			this.session.dispose();
 			this.session = null;
@@ -250,6 +249,11 @@ export class OnscreenGamepad implements InputHandler {
 			pointerOut: () => this.reset(),
 		};
 		this.session = this.platform.attach(hooks);
+		this.reset();
+		const view = $.view;
+		if (view) {
+			view.handleResize();
+		}
 	}
 
 	private onPointerDown(kind: OnscreenGamepadControlKind, event: OnscreenPointerEvent): void {

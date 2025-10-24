@@ -735,8 +735,8 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		const signal = controller.signal;
 		const dpadSurface = this.querySurface('d-pad-controls');
 		const actionSurface = this.querySurface('button-controls');
-		this.setTouchActionNone(dpadSurface);
-		this.setTouchActionNone(actionSurface);
+		this.configureSurfaceBehaviour(dpadSurface);
+		this.configureSurfaceBehaviour(actionSurface);
 		const pointerOptions: AddEventListenerOptions = { passive: options.passive, once: options.once, signal };
 		this.bindSurfaceEvents(dpadSurface, 'dpad', hooks, pointerOptions);
 		this.bindSurfaceEvents(actionSurface, 'action', hooks, pointerOptions);
@@ -755,9 +755,11 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 			const element = this.requireElement(id);
 			element.classList.add('hidden');
 			element.setAttribute('hidden', 'true');
-			const textElement = this.requireElement(`${id}_text`);
-			textElement.classList.add('hidden');
-			textElement.setAttribute('hidden', 'true');
+			const textElement = this.optionalElement(`${id}_text`);
+			if (textElement) {
+				textElement.classList.add('hidden');
+				textElement.setAttribute('hidden', 'true');
+			}
 		}
 	}
 
@@ -767,6 +769,9 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		for (let i = 0; i < elements.length; i++) {
 			const elementId = elements[i].id;
 			if (elementId && elementId.length > 0) {
+				if (elementId === 'd-pad-controls' || elementId === 'button-controls') {
+					continue;
+				}
 				ids.push(elementId);
 			}
 		}
@@ -775,6 +780,17 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 
 	setElementActive(elementId: string, active: boolean): void {
 		const element = this.requireElement(elementId);
+		if (element instanceof HTMLElement) {
+			element.hidden = false;
+		}
+		element.removeAttribute('hidden');
+		const container = this.findContainerForElement(elementId);
+		if (container) {
+			container.hidden = false;
+			container.setAttribute('aria-hidden', 'false');
+			container.classList.remove('hidden');
+			container.removeAttribute('hidden');
+		}
 		const isDpad = elementId.indexOf('d-pad-') === 0;
 		const textElement = isDpad ? null : this.optionalElement(`${elementId}_text`);
 		if (!isDpad && !textElement) {
@@ -805,6 +821,16 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		for (let i = 0; i < elementIds.length; i++) {
 			const id = elementIds[i];
 			const element = this.requireElement(id);
+			if (element instanceof HTMLElement) {
+				element.hidden = false;
+			}
+			const container = this.findContainerForElement(id);
+		if (container) {
+			container.hidden = false;
+			container.setAttribute('aria-hidden', 'false');
+			container.classList.remove('hidden');
+			container.removeAttribute('hidden');
+		}
 			const isDpad = id.indexOf('d-pad-') === 0;
 			const textElement = isDpad ? null : this.optionalElement(`${id}_text`);
 			if (!isDpad && !textElement) {
@@ -812,13 +838,29 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 			}
 			element.classList.remove('druk');
 			element.classList.add('los');
+			element.classList.remove('hidden');
+			element.removeAttribute('hidden');
 			element.setAttribute('data-touched', 'false');
 			if (textElement) {
 				textElement.classList.remove('druk');
 				textElement.classList.add('los');
+				textElement.classList.remove('hidden');
+				textElement.removeAttribute('hidden');
 				textElement.setAttribute('data-touched', 'false');
 			}
 		}
+	}
+
+	private findContainerForElement(elementId: string): HTMLElement | null {
+		if (elementId === 'd-pad-controls' || elementId.indexOf('d-pad-') === 0) {
+			const target = this.document.getElementById('d-pad-controls');
+			return target instanceof HTMLElement ? target : null;
+		}
+		if (elementId === 'button-controls' || elementId.indexOf('_knop') !== -1) {
+			const target = this.document.getElementById('button-controls');
+			return target instanceof HTMLElement ? target : null;
+		}
+		return null;
 	}
 
 	updateDpadRing(activeElementIds: string[]): void {
@@ -894,9 +936,15 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		return this.document.getElementById(id);
 	}
 
-	private setTouchActionNone(surface: HTMLElement): void {
+	private configureSurfaceBehaviour(surface: HTMLElement): void {
 		surface.style.touchAction = 'none';
 		surface.style.pointerEvents = 'auto';
+		surface.style.userSelect = 'none';
+		surface.style.setProperty('-webkit-touch-callout', 'none');
+		surface.style.setProperty('-webkit-tap-highlight-color', 'transparent');
+		surface.style.setProperty('-ms-touch-action', 'none');
+		surface.setAttribute('aria-hidden', 'true');
+		surface.hidden = true;
 	}
 }
 
@@ -945,7 +993,10 @@ class BrowserGamepadControlHandle implements GamepadControlHandle {
 	public constructor(public readonly id: string, private readonly element: HTMLElement) { }
 
 	public getNumericAttribute(name: string): number | null {
-		const value = this.element.getAttribute(name);
+		let value = this.element.getAttribute(name);
+		if (!value) {
+			value = this.element.getAttribute(`data-${name}`);
+		}
 		return value ? parseInt(value, 10) : null;
 	}
 
@@ -1094,8 +1145,8 @@ export class BrowserGameViewHost implements GameViewHost {
 	}
 
 	private resolveOnscreenGamepadHandles(): OnscreenGamepadHandles | null {
-		const dpad = document.querySelector<HTMLElement>('#d-pad-svg');
-		const actionButtons = document.querySelector<HTMLElement>('#action-buttons-svg');
+		const dpad = document.querySelector<HTMLElement>('#d-pad-controls');
+		const actionButtons = document.querySelector<HTMLElement>('#button-controls');
 		if (!dpad || !actionButtons) {
 			return null;
 		}

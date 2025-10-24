@@ -27,7 +27,7 @@
 			<div id="hidor"></div>
 			<div id="loading" class="coloring">Loading...</div>
 			<div id="extra-message" class="coloring" hidden></div>
-			<div id="d-pad-controls" hidden>
+			<button id="d-pad-controls" class="onscreen-button" type="button" aria-label="Directional pad" tabindex="-1" hidden data-width="100" data-height="100">
 				<svg id="d-pad-svg" class="d-pad" viewBox="0 0 100 100" width="100px" height="100px">
 					<g id="d-pad-buttons">
 						<path id="d-pad-u" class="dknop los"
@@ -77,8 +77,8 @@
 							href="@@DPAD_LU@@" />
 					</g>
 				</svg>
-			</div>
-			<div id="button-controls" hidden>
+			</button>
+			<button id="button-controls" class="onscreen-button" type="button" aria-label="Action buttons" tabindex="-1" hidden data-width="100" data-height="220">
 				<svg id="action-buttons-svg" class="action-buttons" viewBox="0 0 100 220" width="100px" height="220px">
 					<defs>
 						<filter id="buttonFilter" x="-50%" y="-50%" width="200%" height="200%">
@@ -136,7 +136,7 @@
 							class="knop knoptext los">Y</text>
 					</g>
 				</svg>
-			</div>
+			</button>
 			<div id="gameContainer">
 				<canvas id="gamescreen" hidden></canvas>
 			</div>
