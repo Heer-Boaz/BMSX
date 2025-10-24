@@ -453,14 +453,14 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		if (onscreenControlsVisible
 			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
 			&& viewportIsLandscape) {
-			adjustedWidth = Math.max(0, adjustedWidth - layout.horizontal);
+			adjustedWidth = Math.max(0, adjustedWidth - (layout.left + layout.right));
 		}
 
 		let adjustedHeight = effectiveHeight;
 		if (onscreenControlsVisible
 			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'
 			&& !viewportIsLandscape) {
-			adjustedHeight = Math.max(0, adjustedHeight - layout.vertical);
+			adjustedHeight = Math.max(0, adjustedHeight - layout.bottom);
 		}
 
 		self.windowSize = { x: adjustedWidth, y: adjustedHeight };
@@ -492,59 +492,66 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
 		const layoutWidth = self.windowSize.x;
 		const layoutHeight = self.windowSize.y;
-		const displayLeft = Math.max(0, ~~((layoutWidth - displayWidth) / 2));
-		const displayTop = Math.max(0, ~~((layoutHeight - displayHeight) / 2));
+		const layout = Input.instance.getOnscreenGamepadLayout(viewportWidth, viewportHeight);
+		const onscreenControlsActive = Input.instance.isOnscreenGamepadEnabled
+			&& layout.visible
+			&& GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas';
+		const horizontalOffset = (onscreenControlsActive && isLandscape) ? layout.left : 0;
+		const displayLeft = Math.max(0, ~~((layoutWidth - displayWidth) / 2) + horizontalOffset);
+		const displayTop = (isLandscape || !onscreenControlsActive)
+			? Math.max(0, ~~((layoutHeight - displayHeight) / 2))
+			: 0;
 
 		this.surface.setDisplaySize(displayWidth, displayHeight);
 		this.surface.setDisplayPosition(displayLeft, displayTop);
 
 		if (Input.instance.isOnscreenGamepadEnabled) {
-			const handlesProvider = this.getOnscreenGamepadHandleProvider();
-			const handles = handlesProvider?.getHandles();
-			if (handles) {
-				const { dpad, actionButtons } = handles;
-				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-				const canvasRect = this.surface.measureDisplay();
+		const handlesProvider = this.getOnscreenGamepadHandleProvider();
+		const handles = handlesProvider?.getHandles();
+		if (handles) {
+			const { dpad, actionButtons } = handles;
+			const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+			const canvasRect = this.surface.measureDisplay();
 
-				const updateBottomPosition = (control: typeof dpad, isRightSide: boolean): void => {
-					const elementSize = control.measure();
-					let newBottom: number;
-					if (isLandscape) {
-						newBottom = (layoutHeight - elementSize.height) / 2;
-					} else if (isRightSide) {
-						newBottom = 0;
+			const updateBottomPosition = (control: typeof dpad, isRightSide: boolean): void => {
+				const elementSize = control.measure();
+				let newBottom: number;
+				if (isLandscape) {
+					newBottom = (viewportHeight - elementSize.height) / 2;
+				} else if (isRightSide) {
+					newBottom = 0;
+				} else {
+					const rightSideHeight = actionButtons.measure().height;
+					newBottom = (rightSideHeight - elementSize.height) / 2;
+				}
+				control.setBottom(newBottom < 0 ? 0 : newBottom);
+			};
+
+			const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
+				let newScale = referenceDimension * 0.20 / 100;
+				if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
+					let maxSvgWidth: number;
+					if (isRightSide) {
+						maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
 					} else {
-						const rightSideHeight = actionButtons.measure().height;
-						newBottom = (rightSideHeight - elementSize.height) / 2;
+						maxSvgWidth = canvasRect.left;
 					}
-					control.setBottom(newBottom < 0 ? 0 : newBottom);
-				};
-
-				const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
-					let newScale = referenceDimension * 0.20 / 100;
-					if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
-						let maxSvgWidth: number;
-						if (isRightSide) {
-							maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
-						} else {
-							maxSvgWidth = canvasRect.left;
-						}
-						if (maxSvgWidth < 0) {
-							maxSvgWidth = 0;
-						}
-						const widthAttr = control.getNumericAttribute('width');
-						if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
-							newScale = maxSvgWidth / widthAttr;
-						}
+					if (maxSvgWidth < 0) {
+						maxSvgWidth = 0;
 					}
-					control.setScale(newScale);
-				};
+					const widthAttr = control.getNumericAttribute('width');
+					if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
+						newScale = maxSvgWidth / widthAttr;
+					}
+				}
+				control.setScale(newScale);
+			};
 
-				updateScale(dpad, false);
-				updateScale(actionButtons, true);
-				updateBottomPosition(dpad, false);
-				updateBottomPosition(actionButtons, true);
-			}
+			updateScale(dpad, false);
+			updateScale(actionButtons, true);
+			updateBottomPosition(dpad, false);
+			updateBottomPosition(actionButtons, true);
+		}
 		}
 	}
 

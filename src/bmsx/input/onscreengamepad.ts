@@ -494,29 +494,33 @@ export class OnscreenGamepad implements InputHandler {
 		const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
 		const maxSvgScale = referenceDimension * 0.20 / 100;
 
-		const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
-		const actionWidthAttr = handles.actionButtons.getNumericAttribute('width');
-		let horizontal = 0;
-		if (dpadWidthAttr !== null && actionWidthAttr !== null) {
-			horizontal = (dpadWidthAttr + actionWidthAttr) * maxSvgScale;
-		} else {
-			horizontal = dpadRect.width + actionRect.width;
+		let left = 0;
+		if (hasDpad) {
+			const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
+			left = dpadWidthAttr !== null ? dpadWidthAttr * maxSvgScale : dpadRect.width;
+		}
+
+		let right = 0;
+		if (hasAction) {
+			const actionWidthAttr = handles.actionButtons.getNumericAttribute('width');
+			right = actionWidthAttr !== null ? actionWidthAttr * maxSvgScale : actionRect.width;
 		}
 
 		const dpadHeightAttr = handles.dpad.getNumericAttribute('height');
 		const actionHeightAttr = handles.actionButtons.getNumericAttribute('height');
-		let vertical = 0;
+		let bottom = 0;
 		const estimatedHeight = Math.max(
 			dpadHeightAttr !== null ? dpadHeightAttr * maxSvgScale : dpadRect.height,
 			actionHeightAttr !== null ? actionHeightAttr * maxSvgScale : actionRect.height,
 		);
 		if (estimatedHeight > 0) {
-			vertical = estimatedHeight + 16;
+			bottom = estimatedHeight + 16;
 		}
 
 		return {
-			horizontal,
-			vertical,
+			left,
+			right,
+			bottom,
 			visible: true,
 		};
 	}
@@ -534,14 +538,16 @@ export class OnscreenGamepad implements InputHandler {
 	}
 
 	private static readonly EMPTY_LAYOUT: OnscreenGamepadLayout = Object.freeze({
-		horizontal: 0,
-		vertical: 0,
+		left: 0,
+		right: 0,
+		bottom: 0,
 		visible: false,
 	});
 }
 
 export interface OnscreenGamepadLayout {
-	horizontal: number;
-	vertical: number;
+	left: number;
+	right: number;
+	bottom: number;
 	visible: boolean;
 }

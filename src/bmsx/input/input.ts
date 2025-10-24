@@ -14,7 +14,7 @@ import { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 import type { OnscreenGamepadLayout } from './onscreengamepad';
 
-const NO_GAMEPAD_LAYOUT: OnscreenGamepadLayout = Object.freeze({ horizontal: 0, vertical: 0, visible: false }) as OnscreenGamepadLayout;
+const NO_GAMEPAD_LAYOUT: OnscreenGamepadLayout = Object.freeze({ left: 0, right: 0, bottom: 0, visible: false }) as OnscreenGamepadLayout;
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { ControllerAssignmentUI } from '../ui/controller_assignment_ui';
 import { PlayerInput, InputSource } from './playerinput';
