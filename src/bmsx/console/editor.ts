@@ -449,12 +449,11 @@ const UNDO_COALESCE_INTERVAL_MS = 550;
 const WHEEL_SCROLL_STEP = 40;
 const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
 
-const COLOR_FRAME = 0;
-const COLOR_TOP_BAR = 13;
-const COLOR_TOP_BAR_TEXT = 15;
+const COLOR_FRAME = 15;
+const COLOR_TOP_BAR = 15;
+const COLOR_TOP_BAR_TEXT = 0;
 const COLOR_CODE_BACKGROUND = 4;
-const COLOR_RESOURCE_BACKGROUND = 0;
-const COLOR_GUTTER_BACKGROUND = 1;
+const COLOR_GUTTER_BACKGROUND = 15;
 const COLOR_CODE_TEXT = 14;
 const COLOR_KEYWORD = 11;
 const COLOR_STRING = 13;
@@ -466,11 +465,18 @@ const HIGHLIGHT_OVERLAY = { r: 1, g: 0.6, b: 0.2, a: 0.35 };
 const SELECTION_OVERLAY = Msx1Colors[6];
 const CARET_COLOR = { r: 1, g: 1, b: 1, a: 1 };
 const INLINE_CARET_COLOR = { r: 0, g: 0, b: 0, a: 1 };
-const COLOR_STATUS_BACKGROUND = 8;
-const COLOR_STATUS_TEXT = 15;
+const COLOR_STATUS_BACKGROUND = 15;
+const COLOR_STATUS_TEXT = 0;
 const COLOR_STATUS_WARNING = 9;
 const COLOR_STATUS_SUCCESS = 10;
 const COLOR_STATUS_ERROR = 2;
+const COLOR_STATUS_ALERT = 6;
+const COLOR_RESOURCE_PANEL_BACKGROUND = 15;
+const COLOR_RESOURCE_PANEL_TEXT = 0;
+const COLOR_RESOURCE_PANEL_HIGHLIGHT = 0;
+const COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT = 14;
+const COLOR_RESOURCE_VIEWER_BACKGROUND = 0;
+const COLOR_RESOURCE_VIEWER_TEXT = 14;
 const COLOR_SEARCH_BACKGROUND = 7;
 const COLOR_SEARCH_TEXT = 0;
 const COLOR_SEARCH_PLACEHOLDER = COLOR_CODE_DIM;
@@ -1178,7 +1184,28 @@ export class ConsoleCartEditor {
 		if (!this.message.visible) {
 			return this.baseBottomMargin;
 		}
-		return this.baseBottomMargin + this.lineHeight + 4;
+		const segments = this.getStatusMessageLines();
+		const lineCount = Math.max(1, segments.length);
+		return this.baseBottomMargin + lineCount * this.lineHeight + 4;
+	}
+
+	private getStatusMessageLines(): string[] {
+		if (!this.message.visible) {
+			return [];
+		}
+		const sanitized = this.message.text.length > 0
+			? this.message.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+			: '';
+		const rawLines = sanitized.length > 0 ? sanitized.split('\n') : [''];
+		const maxWidth = Math.max(this.viewportWidth - 8, this.charAdvance);
+		const lines: string[] = [];
+		for (let i = 0; i < rawLines.length; i += 1) {
+			const wrapped = this.wrapRuntimeErrorLine(rawLines[i], maxWidth);
+			for (let j = 0; j < wrapped.length; j += 1) {
+				lines.push(wrapped[j]);
+			}
+		}
+		return lines.length > 0 ? lines : [''];
 	}
 
 	private tryShowLuaErrorOverlay(error: unknown): boolean {
@@ -8494,7 +8521,7 @@ export class ConsoleCartEditor {
 
 		this.resourceBrowserHorizontalScroll = horizontalScrollbar.getScroll();
 
-		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_CODE_BACKGROUND);
+		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, COLOR_RESOURCE_PANEL_BACKGROUND);
 
 		const contentTop = bounds.top + 2;
 		const scrollStart = Math.floor(this.resourceBrowserScroll);
@@ -8502,6 +8529,7 @@ export class ConsoleCartEditor {
 		const highlightIndex = this.resourceBrowserHoverIndex >= 0 ? this.resourceBrowserHoverIndex : this.resourceBrowserSelectionIndex;
 		const panelActive = this.resourcePanelFocused;
 		const scrollX = this.resourceBrowserHorizontalScroll;
+		const highlightColor = Msx1Colors[COLOR_RESOURCE_PANEL_HIGHLIGHT];
 
 		for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
 			const item = this.resourceBrowserItems[itemIndex];
@@ -8513,7 +8541,7 @@ export class ConsoleCartEditor {
 			const contentText = item.line.slice(item.contentStartColumn);
 			const indentX = contentLeft - scrollX;
 			if (indentText.length > 0) {
-				this.drawText(api, indentText, indentX, y, COLOR_STATUS_TEXT);
+				this.drawText(api, indentText, indentX, y, COLOR_RESOURCE_PANEL_TEXT);
 			}
 			const indentWidth = this.measureText(indentText);
 			const contentX = indentX + indentWidth;
@@ -8528,19 +8556,18 @@ export class ConsoleCartEditor {
 				const caretBottom = caretTop + this.lineHeight;
 				if (panelActive) {
 					if (visibleRight > visibleLeft) {
-						api.rectfillColor(visibleLeft, caretTop, visibleRight, caretBottom, CARET_COLOR);
+						api.rectfillColor(visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
 					}
-					const invertedColor = this.invertColorIndex(COLOR_STATUS_TEXT);
-					const colors = new Array<number>(contentText.length).fill(invertedColor);
+					const colors = new Array<number>(contentText.length).fill(COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 					if (contentText.length > 0) {
 						this.drawColoredText(api, contentText, colors, contentX, y);
 					}
 				} else if (visibleRight > visibleLeft) {
-					this.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, CARET_COLOR);
+					this.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
 				}
 			}
 			if (!isHighlighted || contentText.length === 0 || !panelActive) {
-				this.drawText(api, contentText, contentX, y, COLOR_STATUS_TEXT);
+				this.drawText(api, contentText, contentX, y, COLOR_RESOURCE_PANEL_TEXT);
 			}
 		}
 
@@ -8576,7 +8603,7 @@ export class ConsoleCartEditor {
 		const verticalVisible = verticalScrollbar.isVisible();
 		viewer.scroll = clamp(verticalScrollbar.getScroll(), 0, Math.max(0, totalLines - capacity));
 
-		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_RESOURCE_BACKGROUND);
+		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_RESOURCE_VIEWER_BACKGROUND);
 
 		const contentTop = bounds.codeTop + 2;
 		const layout = this.resourceViewerImageLayout(viewer);
@@ -8589,9 +8616,9 @@ export class ConsoleCartEditor {
 			if (viewer.lines.length > 0) {
 				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
 				const fallbackY = Math.min(textTop, bounds.codeBottom - this.lineHeight);
-				this.drawText(api, line, contentLeft, fallbackY, COLOR_STATUS_TEXT);
+				this.drawText(api, line, contentLeft, fallbackY, COLOR_RESOURCE_VIEWER_TEXT);
 			} else {
-				this.drawText(api, '<empty>', contentLeft, textTop, COLOR_STATUS_TEXT);
+				this.drawText(api, '<empty>', contentLeft, textTop, COLOR_RESOURCE_VIEWER_TEXT);
 			}
 			if (verticalVisible) {
 				verticalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
@@ -8602,7 +8629,7 @@ export class ConsoleCartEditor {
 		viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
 		const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
 		if (viewer.lines.length === 0) {
-			this.drawText(api, '<empty>', contentLeft, textTop, COLOR_STATUS_TEXT);
+			this.drawText(api, '<empty>', contentLeft, textTop, COLOR_RESOURCE_VIEWER_TEXT);
 		} else {
 			for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
 				const line = viewer.lines[lineIndex] ?? '';
@@ -8610,7 +8637,7 @@ export class ConsoleCartEditor {
 				if (y >= bounds.codeBottom) {
 					break;
 				}
-				this.drawText(api, line, contentLeft, y, COLOR_STATUS_TEXT);
+				this.drawText(api, line, contentLeft, y, COLOR_RESOURCE_VIEWER_TEXT);
 			}
 		}
 		if (verticalVisible) {
@@ -8871,6 +8898,17 @@ export class ConsoleCartEditor {
 		const statusBottom = this.viewportHeight;
 		api.rectfill(0, statusTop, this.viewportWidth, statusBottom, COLOR_STATUS_BACKGROUND);
 
+		if (this.message.visible) {
+			const lines = this.getStatusMessageLines();
+			let textY = statusTop + 2;
+			const textX = 4;
+			for (let i = 0; i < lines.length; i += 1) {
+				this.drawText(api, lines[i], textX, textY, COLOR_STATUS_ALERT);
+				textY += this.lineHeight;
+			}
+			return;
+		}
+
 		if (this.resourcePanelVisible) {
 			const totalEntries = this.resourceBrowserItems.length;
 			const fileInfo = `FILES ${totalEntries}`;
@@ -8890,11 +8928,6 @@ export class ConsoleCartEditor {
 			const filenameInfo = `${this.metadata.title || 'UNTITLED'}.lua`;
 			this.drawText(api, lineInfo, 4, statusTop + 2, COLOR_STATUS_TEXT);
 			this.drawText(api, filenameInfo, this.viewportWidth - this.measureText(filenameInfo) - 4, statusTop + 2, COLOR_STATUS_TEXT);
-		}
-
-		if (this.message.visible) {
-			const msgX = Math.max(4, Math.floor((this.viewportWidth - this.measureText(this.message.text)) / 2));
-			this.drawText(api, this.message.text, msgX, statusTop + this.lineHeight + 1, this.message.color);
 		}
 	}
 
