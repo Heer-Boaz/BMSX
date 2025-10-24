@@ -2561,7 +2561,8 @@ export class BmsxConsoleRuntime extends Service {
 		for (const info of definitions) {
 			const location = this.buildDefinitionLocationFromRange(info.definition, assetId);
 			const path = info.namePath.length > 0 ? info.namePath.join('.') : info.name;
-			const key = path.length > 0 ? path : info.name;
+			const keyPath = path.length > 0 ? path : info.name;
+			const key = `${location.chunkName ?? ''}::${keyPath}@${location.range.startLine}:${location.range.startColumn}`;
 			const priority = definitionPriority(info.kind);
 			const existing = entries.get(key);
 			if (!existing || priority > existing.priority || (priority === existing.priority && info.definition.start.line < existing.info.definition.start.line)) {
@@ -2591,15 +2592,8 @@ export class BmsxConsoleRuntime extends Service {
 
 	public listAllLuaSymbols(): ConsoleLuaSymbolEntry[] {
 		const entries = new Map<string, { info: LuaDefinitionInfo; location: ConsoleLuaDefinitionLocation; priority: number }>();
-		const descriptors = this.getResourceDescriptors().filter(descriptor => {
-			if (descriptor.type === 'lua') {
-				return true;
-			}
-			const lowerPath = descriptor.path.toLowerCase();
-			return lowerPath.endsWith('.lua');
-		});
-		const processedChunks = new Set<string>();
-		const recordDefinitions = (info: { assetId: string | null; path?: string | null }, definitions: ReadonlyArray<LuaDefinitionInfo> | null) => {
+
+		const appendDefinitions = (info: { assetId: string | null; path?: string | null }, definitions: ReadonlyArray<LuaDefinitionInfo> | null) => {
 			if (!definitions) {
 				return;
 			}
@@ -2632,6 +2626,32 @@ export class BmsxConsoleRuntime extends Service {
 			}
 		};
 
+		const enqueuedChunks = new Set<string>();
+		const candidates: Array<{ chunkName: string; info: { assetId: string | null; path?: string | null } }> = [];
+		const enqueueCandidate = (chunkName: string | null | undefined, info: { assetId: string | null; path?: string | null }): void => {
+			if (!chunkName) {
+				return;
+			}
+			const normalizedChunk = this.normalizeChunkName(chunkName);
+			const key = `${info.assetId ?? ''}|${normalizedChunk}`;
+			if (enqueuedChunks.has(key)) {
+				return;
+			}
+			enqueuedChunks.add(key);
+			const candidateInfo: { assetId: string | null; path?: string | null } = { assetId: info.assetId ?? null };
+			if (info.path !== undefined) {
+				candidateInfo.path = info.path;
+			}
+			candidates.push({ chunkName: normalizedChunk, info: candidateInfo });
+		};
+
+		const descriptors = this.getResourceDescriptors().filter(descriptor => {
+			if (descriptor.type === 'lua') {
+				return true;
+			}
+			const lowerPath = descriptor.path.toLowerCase();
+			return lowerPath.endsWith('.lua');
+		});
 		const programAssetId = (() => {
 			const program = this.luaProgram;
 			if (!program) return null;
@@ -2651,13 +2671,17 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const chunkName = descriptor.path ?? descriptor.assetId ?? 'lua_resource';
 			const info = { assetId, path: descriptor.path ?? null };
-			const chunkKey = `${info.assetId ?? ''}|${chunkName}`;
-			if (processedChunks.has(chunkKey)) {
-				continue;
+			enqueueCandidate(chunkName, info);
+		}
+
+		for (const [chunkName, info] of this.luaChunkResourceMap) {
+			const candidateInfo: { assetId: string | null; path?: string | null } = {
+				assetId: info.assetId ?? null,
+			};
+			if (info.path !== undefined) {
+				candidateInfo.path = info.path;
 			}
-			const definitions = this.parseStaticDefinitionsForChunk(chunkName, info);
-			recordDefinitions(info, definitions);
-			processedChunks.add(chunkKey);
+			enqueueCandidate(chunkName, candidateInfo);
 		}
 
 		const program = this.luaProgram;
@@ -2666,12 +2690,12 @@ export class BmsxConsoleRuntime extends Service {
 			const programInfo: { assetId: string | null; path?: string | null } = 'assetId' in program && typeof program.assetId === 'string'
 				? { assetId: program.assetId, path: this.resolveResourcePath(program.assetId) ?? undefined }
 				: { assetId: null, path: programChunk };
-			const programKey = `${programInfo.assetId ?? ''}|${programChunk}`;
-			if (!processedChunks.has(programKey)) {
-				const programDefinitions = this.parseStaticDefinitionsForChunk(programChunk, programInfo);
-				recordDefinitions(programInfo, programDefinitions);
-				processedChunks.add(programKey);
-			}
+			enqueueCandidate(programChunk, programInfo);
+		}
+
+		for (const candidate of candidates) {
+			const definitions = this.parseStaticDefinitionsForChunk(candidate.chunkName, candidate.info);
+			appendDefinitions(candidate.info, definitions);
 		}
 
 		const symbols: ConsoleLuaSymbolEntry[] = [];
