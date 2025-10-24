@@ -714,14 +714,14 @@ const ACTION_BASE_HEIGHT = 220;
 const MIN_OVERLAY_MARGIN = 12;
 
 const DPAD_SEGMENT_DEFINITIONS = [
-	{ id: 'd-pad-u', startDeg: 67.5, endDeg: 112.5 },
-	{ id: 'd-pad-ru', startDeg: 22.5, endDeg: 67.5 },
+	{ id: 'd-pad-u', startDeg: 247.5, endDeg: 292.5 },
+	{ id: 'd-pad-ru', startDeg: 292.5, endDeg: 337.5 },
 	{ id: 'd-pad-r', startDeg: 337.5, endDeg: 382.5 },
-	{ id: 'd-pad-rd', startDeg: 292.5, endDeg: 337.5 },
-	{ id: 'd-pad-d', startDeg: 247.5, endDeg: 292.5 },
-	{ id: 'd-pad-ld', startDeg: 202.5, endDeg: 247.5 },
+	{ id: 'd-pad-rd', startDeg: 22.5, endDeg: 67.5 },
+	{ id: 'd-pad-d', startDeg: 67.5, endDeg: 112.5 },
+	{ id: 'd-pad-ld', startDeg: 112.5, endDeg: 157.5 },
 	{ id: 'd-pad-l', startDeg: 157.5, endDeg: 202.5 },
-	{ id: 'd-pad-lu', startDeg: 112.5, endDeg: 157.5 },
+	{ id: 'd-pad-lu', startDeg: 202.5, endDeg: 247.5 },
 ];
 
 const ACTION_BUTTON_DEFINITIONS: ActionButtonDefinition[] = [
@@ -803,9 +803,7 @@ abstract class CanvasControl {
 		this.id = id;
 	}
 
-	contains(ctx: CanvasRenderingContext2D, x: number, y: number): boolean {
-		return ctx.isPointInPath(this.path, x, y);
-	}
+	abstract contains(layout: SurfaceLayout, x: number, y: number): boolean;
 }
 
 class DpadSegmentControl extends CanvasControl {
@@ -854,6 +852,33 @@ class DpadSegmentControl extends CanvasControl {
 	getAngles(): { start: number; end: number } {
 		return { start: this.startRad, end: this.endRad };
 	}
+
+	contains(layout: SurfaceLayout, x: number, y: number): boolean {
+		if (layout.type !== 'dpad') {
+			return false;
+		}
+		const dx = x - layout.center.x;
+		const dy = y - layout.center.y;
+		const radiusSq = dx * dx + dy * dy;
+		const innerRadius = layout.innerRadius;
+		const outerRadius = layout.outerRadius;
+		if (radiusSq < innerRadius * innerRadius) {
+			return false;
+		}
+		if (radiusSq > outerRadius * outerRadius) {
+			return false;
+		}
+		let angle = Math.atan2(dy, dx);
+		if (angle < 0) {
+			angle += Math.PI * 2;
+		}
+		const start = this.startRad;
+		const end = this.endRad;
+		if (end > Math.PI * 2 && angle < start) {
+			angle += Math.PI * 2;
+		}
+		return angle >= start && angle <= end;
+	}
 }
 
 class ActionButtonControl extends CanvasControl {
@@ -886,6 +911,17 @@ class ActionButtonControl extends CanvasControl {
 		ctx.textBaseline = 'middle';
 		ctx.fillText(config.label, config.center.x, config.center.y);
 		ctx.restore();
+	}
+
+	contains(layout: SurfaceLayout, x: number, y: number): boolean {
+		if (layout.type !== 'action') {
+			return false;
+		}
+		const config = layout.buttons[this.definition.id];
+		const dx = x - config.center.x;
+		const dy = y - config.center.y;
+		const radius = config.radius;
+		return dx * dx + dy * dy <= radius * radius;
 	}
 }
 
@@ -945,29 +981,27 @@ class BrowserOnscreenGamepadSurface {
 	}
 
 	collectElementIds(clientX: number, clientY: number): string[] {
-		if (!this.layout) {
+		const layout = this.layout;
+		if (!layout) {
 			return [];
 		}
 		const rect = this.element.getBoundingClientRect();
-		const localX = clientX - rect.left;
-		const localY = clientY - rect.top;
-		this.ctx.save();
-		this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-		try {
-			const result: string[] = [];
-			for (const [id, control] of this.controls) {
-				const state = this.states.get(id);
-				if (!state || state.hidden) {
-					continue;
-				}
-				if (control.contains(this.ctx, localX, localY)) {
-					result.push(id);
-				}
-			}
-			return result;
-		} finally {
-			this.ctx.restore();
+		if (rect.width <= 0 || rect.height <= 0) {
+			return [];
 		}
+		const localX = (clientX - rect.left) / rect.width * layout.width;
+		const localY = (clientY - rect.top) / rect.height * layout.height;
+		const result: string[] = [];
+		for (const [id, control] of this.controls) {
+			const state = this.states.get(id);
+			if (!state || state.hidden) {
+				continue;
+			}
+			if (control.contains(layout, localX, localY)) {
+				result.push(id);
+			}
+		}
+		return result;
 	}
 
 	setElementActive(id: string, active: boolean): void {
@@ -1079,11 +1113,12 @@ class BrowserOnscreenGamepadSurface {
 			this.element.style.width = `${width}px`;
 			this.element.style.height = `${height}px`;
 			this.resizeCanvas(width, height, pixelRatio);
+			const rect = this.element.getBoundingClientRect();
 			bounds = {
-				x: left,
-				y: viewportHeight - bottom - height,
-				width,
-				height,
+				x: rect.left,
+				y: rect.top,
+				width: rect.width,
+				height: rect.height,
 			};
 			const layout: DpadLayout = {
 				type: 'dpad',
@@ -1114,11 +1149,12 @@ class BrowserOnscreenGamepadSurface {
 			this.element.style.width = `${width}px`;
 			this.element.style.height = `${height}px`;
 			this.resizeCanvas(width, height, pixelRatio);
+			const rect = this.element.getBoundingClientRect();
 			bounds = {
-				x: left,
-				y: viewportHeight - bottom - height,
-				width,
-				height,
+				x: rect.left,
+				y: rect.top,
+				width: rect.width,
+				height: rect.height,
 			};
 			const buttonLayouts = this.buildActionLayout(scale);
 			const layout: ActionLayout = {
@@ -1291,6 +1327,10 @@ class CanvasSurfaceSession implements OnscreenGamepadPlatformSession {
 		window.addEventListener('resize', this.onResize, { signal });
 		window.addEventListener('blur', this.onBlur, { signal });
 		window.addEventListener('focus', this.onFocus, { signal });
+		if (window.visualViewport) {
+			window.visualViewport.addEventListener('resize', this.onResize, { signal });
+			window.visualViewport.addEventListener('scroll', this.onResize, { signal });
+		}
 	}
 
 	dispose(): void {
@@ -1300,10 +1340,6 @@ class CanvasSurfaceSession implements OnscreenGamepadPlatformSession {
 	}
 
 	private readonly onPointerDown = (event: PointerEvent) => {
-		const ids = this.surface.collectElementIds(event.clientX, event.clientY);
-		if (ids.length === 0) {
-			return;
-		}
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
@@ -1315,9 +1351,6 @@ class CanvasSurfaceSession implements OnscreenGamepadPlatformSession {
 
 	private readonly onPointerMove = (event: PointerEvent) => {
 		if (!this.activePointers.has(event.pointerId)) {
-			return;
-		}
-		if (event.buttons === 0 && event.pressure === 0) {
 			return;
 		}
 		event.preventDefault();
@@ -1503,30 +1536,6 @@ class BrowserGameViewCanvas implements GameViewCanvas {
 		};
 	}
 }
-class BrowserGamepadControlHandle implements GamepadControlHandle {
-	public constructor(public readonly id: string, private readonly element: HTMLElement) { }
-
-	public getNumericAttribute(name: string): number | null {
-		let value = this.element.getAttribute(name);
-		if (!value) {
-			value = this.element.getAttribute(`data-${name}`);
-		}
-		return value ? parseInt(value, 10) : null;
-	}
-
-	public measure(): { width: number; height: number; } {
-		const rect = this.element.getBoundingClientRect();
-		return { width: rect.width, height: rect.height };
-	}
-
-	public setBottom(px: number): void {
-		this.element.style.bottom = `${px}px`;
-	}
-
-	public setScale(scale: number): void {
-		this.element.style.transform = `scale(${scale})`;
-	}
-}
 
 class CanvasGamepadControlHandle implements GamepadControlHandle {
 	public constructor(public readonly id: string, private readonly element: HTMLElement, private readonly metrics: SurfaceMetrics) { }
@@ -1556,6 +1565,16 @@ class CanvasGamepadControlHandle implements GamepadControlHandle {
 	public setScale(scale: number): void {
 		this.element.style.transformOrigin = 'center bottom';
 		this.element.style.transform = `scale(${scale})`;
+		this.metrics.scale = scale;
+		const rect = this.element.getBoundingClientRect();
+		if (rect.width > 0 && rect.height > 0) {
+			this.metrics.bounds = {
+				x: rect.left,
+				y: rect.top,
+				width: rect.width,
+				height: rect.height,
+			};
+		}
 	}
 }
 class BrowserOverlayHandle implements OverlayHandle {

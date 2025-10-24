@@ -199,6 +199,8 @@ export class OnscreenGamepad implements InputHandler {
 		'y_knop': { buttons: ['y' satisfies BGamepadButton] },
 		'ls_knop': { buttons: ['ls' satisfies BGamepadButton] },
 		'rs_knop': { buttons: ['rs' satisfies BGamepadButton] },
+		'lt_knop': { buttons: ['lt' satisfies BGamepadButton] },
+		'rt_knop': { buttons: ['rt' satisfies BGamepadButton] },
 		'select_knop': { buttons: ['select' satisfies BGamepadButton] },
 		'start_knop': { buttons: ['start' satisfies BGamepadButton] },
 	};
@@ -262,9 +264,6 @@ export class OnscreenGamepad implements InputHandler {
 	}
 
 	private onPointerMove(kind: OnscreenGamepadControlKind, event: OnscreenPointerEvent): void {
-		if (event.buttons === 0 && event.pressure === 0) {
-			return;
-		}
 		const hit = this.hitTest(kind, event.clientX, event.clientY);
 		this.updateForPointer(event.pointerId, hit.elements, hit.buttons, event);
 	}
