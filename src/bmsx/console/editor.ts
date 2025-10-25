@@ -2,7 +2,7 @@ import { $ } from '../core/game';
 import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState, BGamepadButton } from '../input/inputtypes';
 import type { ClipboardService, ViewportMetrics } from '../platform/platform';
-import type { BmsxConsoleApi } from './api';
+import { BmsxConsoleApi } from './api';
 import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
@@ -159,7 +159,91 @@ type ResourceSearchResult = {
 	matchIndex: number;
 };
 
-type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'resolution';
+type LuaCompletionKind = 'keyword' | 'local' | 'global' | 'api_method' | 'api_property';
+
+type LuaCompletionItem = {
+	label: string;
+	insertText: string;
+	sortKey: string;
+	kind: LuaCompletionKind;
+	detail: string | null;
+	parameters?: readonly string[];
+};
+
+type CompletionTrigger = 'manual' | 'typing' | 'punctuation';
+
+type CompletionContext =
+	| {
+		kind: 'global';
+		prefix: string;
+		row: number;
+		replaceFromColumn: number;
+		replaceToColumn: number;
+	}
+	| {
+		kind: 'member';
+		objectName: string;
+		operator: '.' | ':';
+		prefix: string;
+		row: number;
+		replaceFromColumn: number;
+		replaceToColumn: number;
+	};
+
+type CompletionSession = {
+	context: CompletionContext;
+	items: LuaCompletionItem[];
+	filteredItems: LuaCompletionItem[];
+	selectionIndex: number;
+	displayOffset: number;
+	anchorRow: number;
+	anchorColumn: number;
+	maxVisibleItems: number;
+};
+
+type CompletionCacheEntry = {
+	version: number;
+	items: LuaCompletionItem[];
+};
+
+type EditContext = {
+	kind: 'insert' | 'delete' | 'replace';
+	text: string;
+};
+
+type CursorScreenInfo = {
+	row: number;
+	column: number;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	baseChar: string;
+	baseColor: number;
+};
+
+type ParameterHintState = {
+	methodName: string;
+	params: string[];
+	signatureLabel: string;
+	anchorRow: number;
+	anchorColumn: number;
+	argumentIndex: number;
+};
+
+type ApiCompletionMetadata = {
+	params: string[];
+	signature: string;
+	kind: 'method' | 'getter';
+};
+
+type VisualLineSegment = {
+	row: number;
+	startColumn: number;
+	endColumn: number;
+};
+
+type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'resolution' | 'wrap';
 
 type EditorTabId = `resource:${string}` | `lua:${string}`;
 type EditorTabKind = 'resource_view' | 'lua_editor';
@@ -626,6 +710,23 @@ const COLOR_QUICK_OPEN_OUTLINE = COLOR_SEARCH_OUTLINE;
 const COLOR_QUICK_OPEN_KIND = COLOR_CODE_DIM;
 const QUICK_OPEN_MAX_RESULTS = SYMBOL_SEARCH_MAX_RESULTS;
 const QUICK_OPEN_COMPACT_MAX_RESULTS = SYMBOL_SEARCH_COMPACT_MAX_RESULTS;
+const COMPLETION_POPUP_PADDING_X = 4;
+const COMPLETION_POPUP_PADDING_Y = 2;
+const COMPLETION_POPUP_ITEM_SPACING = 1;
+const COMPLETION_POPUP_MAX_VISIBLE = 8;
+const COMPLETION_POPUP_MIN_WIDTH = 96;
+const COLOR_COMPLETION_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+const COLOR_COMPLETION_BORDER = COLOR_SEARCH_OUTLINE;
+const COLOR_COMPLETION_TEXT = COLOR_SEARCH_TEXT;
+const COLOR_COMPLETION_DETAIL = COLOR_CODE_DIM;
+const COLOR_COMPLETION_HIGHLIGHT = COLOR_TAB_ACTIVE_BACKGROUND;
+const COLOR_COMPLETION_HIGHLIGHT_TEXT = COLOR_TAB_ACTIVE_TEXT;
+const PARAMETER_HINT_PADDING_X = 4;
+const PARAMETER_HINT_PADDING_Y = 2;
+const COLOR_PARAMETER_HINT_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+const COLOR_PARAMETER_HINT_BORDER = COLOR_SEARCH_OUTLINE;
+const COLOR_PARAMETER_HINT_TEXT = COLOR_SEARCH_TEXT;
+const COLOR_PARAMETER_HINT_ACTIVE = COLOR_STATUS_WARNING;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -692,6 +793,8 @@ export class ConsoleCartEditor {
 		'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 	]);
 	private static customClipboard: string | null = null;
+	private static readonly KEYWORD_COMPLETIONS: LuaCompletionItem[] = ConsoleCartEditor.buildKeywordCompletions();
+	private static readonly API_COMPLETION_DATA: { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } = ConsoleCartEditor.initializeApiCompletionData();
 
 	private readonly topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
 		resume: { left: 0, top: 0, right: 0, bottom: 0 },
@@ -699,6 +802,7 @@ export class ConsoleCartEditor {
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },
 		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
+		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
 	};
 	private readonly tabButtonBounds: Map<string, RectBounds> = new Map();
 	private readonly tabCloseButtonBounds: Map<string, RectBounds> = new Map();
@@ -751,6 +855,12 @@ export class ConsoleCartEditor {
 	private searchQuery = '';
 	private symbolSearchQuery = '';
 	private resourceSearchQuery = '';
+	private completionSession: CompletionSession | null = null;
+	private readonly localCompletionCache: Map<string, CompletionCacheEntry> = new Map();
+	private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
+	private pendingEditContext: EditContext | null = null;
+	private cursorScreenInfo: CursorScreenInfo | null = null;
+	private parameterHint: ParameterHintState | null = null;
 	private lineJumpActive = false;
 	private symbolSearchActive = false;
 	private symbolSearchVisible = false;
@@ -801,6 +911,149 @@ export class ConsoleCartEditor {
 	private cachedVisibleRowCount = 1;
 	private cachedVisibleColumnCount = 1;
 	private dimCrtInEditor: boolean = false; // Default value; can be changed via settings
+	private wordWrapEnabled = false;
+	private visualLines: VisualLineSegment[] = [];
+	private rowToFirstVisualLine: number[] = [];
+	private visualLinesDirty = true;
+	private lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
+
+	private static buildKeywordCompletions(): LuaCompletionItem[] {
+		const sorted = Array.from(ConsoleCartEditor.KEYWORDS);
+		sorted.sort((a, b) => a.localeCompare(b));
+		const items: LuaCompletionItem[] = [];
+		for (let i = 0; i < sorted.length; i += 1) {
+			const keyword = sorted[i];
+			items.push({
+				label: keyword,
+				insertText: keyword,
+				sortKey: `keyword:${keyword}`,
+				kind: 'keyword',
+				detail: 'Lua keyword',
+			});
+		}
+		return items;
+	}
+
+	private static initializeApiCompletionData(): { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } {
+		const items: LuaCompletionItem[] = [];
+		const signatures: Map<string, ApiCompletionMetadata> = new Map();
+		const processed = new Set<string>();
+		let prototype: object | null = BmsxConsoleApi.prototype;
+		while (prototype && prototype !== Object.prototype) {
+			const propertyNames = Object.getOwnPropertyNames(prototype);
+			for (let index = 0; index < propertyNames.length; index += 1) {
+				const name = propertyNames[index];
+				if (name === 'constructor' || processed.has(name)) {
+					continue;
+				}
+				const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+				if (!descriptor) {
+					continue;
+				}
+				if (typeof descriptor.value === 'function') {
+					const params = ConsoleCartEditor.extractFunctionParameters(descriptor.value as (...args: unknown[]) => unknown);
+					const detail = params.length > 0
+						? `api.${name}(${params.join(', ')})`
+						: `api.${name}()`;
+					const item: LuaCompletionItem = {
+						label: name,
+						insertText: name,
+						sortKey: `api:${name}`,
+						kind: 'api_method',
+						detail,
+						parameters: params,
+					};
+					items.push(item);
+					signatures.set(name, { params: params.slice(), signature: detail, kind: 'method' });
+					processed.add(name);
+					continue;
+				}
+				if (descriptor.get) {
+					const detail = `api.${name}`;
+					const item: LuaCompletionItem = {
+						label: name,
+						insertText: name,
+						sortKey: `api:${name}`,
+						kind: 'api_property',
+						detail,
+					};
+					items.push(item);
+					signatures.set(name, { params: [], signature: detail, kind: 'getter' });
+					processed.add(name);
+				}
+			}
+			prototype = Object.getPrototypeOf(prototype);
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return { items, signatures };
+	}
+
+	private static extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
+		const source = Function.prototype.toString.call(fn);
+		const openIndex = source.indexOf('(');
+		if (openIndex === -1) {
+			return [];
+		}
+		let index = openIndex + 1;
+		let depth = 1;
+		let closeIndex = source.length;
+		while (index < source.length) {
+			const ch = source.charAt(index);
+			if (ch === '(') {
+				depth += 1;
+			} else if (ch === ')') {
+				depth -= 1;
+				if (depth === 0) {
+					closeIndex = index;
+					break;
+				}
+			}
+			index += 1;
+		}
+		if (depth !== 0 || closeIndex <= openIndex) {
+			return [];
+		}
+		const slice = source.slice(openIndex + 1, closeIndex);
+		const withoutBlockComments = slice.replace(/\/\*[\s\S]*?\*\//g, '');
+		const withoutLineComments = withoutBlockComments.replace(/\/\/.*$/gm, '');
+		const rawTokens = withoutLineComments.split(',');
+		const names: string[] = [];
+		for (let i = 0; i < rawTokens.length; i += 1) {
+			const token = rawTokens[i].trim();
+			if (token.length === 0) {
+				continue;
+			}
+			names.push(ConsoleCartEditor.sanitizeParameterName(token, i));
+		}
+		return names;
+	}
+
+	private static sanitizeParameterName(token: string, index: number): string {
+		let candidate = token.trim();
+		if (candidate.length === 0) {
+			return `arg${index + 1}`;
+		}
+		if (candidate.startsWith('...')) {
+			return '...';
+		}
+		const equalsIndex = candidate.indexOf('=');
+		if (equalsIndex >= 0) {
+			candidate = candidate.slice(0, equalsIndex).trim();
+		}
+		const colonIndex = candidate.indexOf(':');
+		if (colonIndex >= 0) {
+			candidate = candidate.slice(0, colonIndex).trim();
+		}
+		const bracketIndex = Math.max(candidate.indexOf('{'), candidate.indexOf('['));
+		if (bracketIndex !== -1) {
+			return `arg${index + 1}`;
+		}
+		const sanitized = candidate.replace(/[^A-Za-z0-9_]/g, '');
+		if (sanitized.length === 0) {
+			return `arg${index + 1}`;
+		}
+		return sanitized;
+	}
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -879,21 +1132,40 @@ export class ConsoleCartEditor {
 			return;
 		}
 		const visibleRows = this.visibleRowCount();
-		const relativeRow = tooltip.row - this.scrollRow;
+		this.ensureVisualLines();
+		const visualIndex = this.positionToVisualIndex(tooltip.row, tooltip.startColumn);
+		const relativeRow = visualIndex - this.scrollRow;
 		if (relativeRow < 0 || relativeRow >= visibleRows) {
 			tooltip.bubbleBounds = null;
 			return;
 		}
 		const rowTop = codeTop + relativeRow * this.lineHeight;
-		const entry = this.getCachedHighlight(tooltip.row);
+		const segment = this.visualIndexToSegment(visualIndex);
+		if (!segment) {
+			tooltip.bubbleBounds = null;
+			return;
+		}
+		const entry = this.getCachedHighlight(segment.row);
 		const highlight = entry.hi;
-		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 8);
+		let columnStart = this.wordWrapEnabled ? segment.startColumn : this.scrollColumn;
+		if (this.wordWrapEnabled) {
+			if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
+				columnStart = segment.startColumn;
+			}
+		}
+		const columnCount = this.wordWrapEnabled
+			? Math.max(0, segment.endColumn - columnStart)
+			: this.visibleColumnCount() + 8;
+		const slice = this.sliceHighlightedLine(highlight, columnStart, columnCount);
+		const sliceStartDisplay = slice.startDisplay;
+		const sliceEndLimit = this.wordWrapEnabled ? this.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+		const sliceEndDisplay = this.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
 		const startDisplay = this.columnToDisplay(highlight, tooltip.startColumn);
 		const endDisplay = this.columnToDisplay(highlight, tooltip.endColumn);
-		const clampedStartDisplay = clamp(startDisplay, slice.startDisplay, slice.endDisplay);
-		const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, highlight.chars.length);
-		const expressionStartX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedStartDisplay);
-		const expressionEndX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedEndDisplay);
+		const clampedStartDisplay = clamp(startDisplay, sliceStartDisplay, sliceEndDisplay);
+		const clampedEndDisplay = clamp(endDisplay, clampedStartDisplay, sliceEndDisplay);
+		const expressionStartX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
+		const expressionEndX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
 		const maxVisible = Math.max(1, Math.min(HOVER_TOOLTIP_MAX_VISIBLE_LINES, content.length));
 		const maxOffset = Math.max(0, content.length - maxVisible);
 		tooltip.scrollOffset = clamp(tooltip.scrollOffset, 0, maxOffset);
@@ -1554,6 +1826,7 @@ export class ConsoleCartEditor {
 		}
 		this.viewportWidth = width;
 		this.viewportHeight = height;
+		this.invalidateVisualLines();
 		if (this.resourcePanelWidthRatio !== null) {
 			this.resourcePanelWidthRatio = this.clampResourcePanelRatio(this.resourcePanelWidthRatio);
 			if (this.resourcePanelVisible && this.computePanelPixelWidth(this.resourcePanelWidthRatio) <= 0) {
@@ -1962,12 +2235,13 @@ export class ConsoleCartEditor {
 	}
 
 	private deactivate(): void {
-		this.storeActiveCodeTabContext();
-		this.active = false;
-		if (this.dimCrtInEditor) {
-			this.restoreCrtOptions();
-		}
-		this.repeatState.clear();
+	this.storeActiveCodeTabContext();
+	this.active = false;
+	if (this.dimCrtInEditor) {
+		this.restoreCrtOptions();
+	}
+	this.closeCompletionSession();
+	this.repeatState.clear();
 		this.resetKeyPressGuards();
 		this.applyInputOverrides(false);
 		this.selectionAnchor = null;
@@ -2195,16 +2469,29 @@ export class ConsoleCartEditor {
 			this.indentSelectionOrLine();
 			return;
 		}
-		if (ctrlDown && this.isKeyJustPressed(keyboard, 'BracketLeft')) {
-			this.consumeKey(keyboard, 'BracketLeft');
-			this.unindentSelectionOrLine();
-			return;
+	if (ctrlDown && this.isKeyJustPressed(keyboard, 'BracketLeft')) {
+		this.consumeKey(keyboard, 'BracketLeft');
+		this.unindentSelectionOrLine();
+		return;
+	}
+	if ((ctrlDown || metaDown) && !altDown && this.completionSession === null && this.isCodeTabActive() && this.isKeyJustPressed(keyboard, 'Space')) {
+		this.consumeKey(keyboard, 'Space');
+		const context = this.analyzeCompletionContext();
+		if (context) {
+			this.openCompletionSessionFromContext(context, 'manual');
+		} else {
+			this.closeCompletionSession();
 		}
-		this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
-		this.handleEditingKeys(keyboard, deltaSeconds, shiftDown, ctrlDown);
-		if (ctrlDown || metaDown || altDown) {
-			return;
-		}
+		return;
+	}
+	if (this.handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
+		return;
+	}
+	this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
+	this.handleEditingKeys(keyboard, deltaSeconds, shiftDown, ctrlDown);
+	if (ctrlDown || metaDown || altDown) {
+		return;
+	}
 		this.handleCharacterInput(keyboard, shiftDown);
 		if (this.isKeyJustPressed(keyboard, 'Space')) {
 			this.insertText(' ');
@@ -3553,18 +3840,22 @@ export class ConsoleCartEditor {
 		}
 		if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
 			const rows = this.visibleRowCount();
-			this.cursorRow = Math.max(0, this.cursorRow - rows);
-			const lineLength = this.currentLine().length;
-			this.cursorColumn = clamp(Math.floor(this.desiredColumn), 0, lineLength);
+			this.ensureVisualLines();
+			const visualCount = this.getVisualLineCount();
+			const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+			const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
+			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn);
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageUp');
 			moved = true;
 		}
 		if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
 			const rows = this.visibleRowCount();
-			this.cursorRow = Math.min(this.lines.length - 1, this.cursorRow + rows);
-			const lineLength = this.currentLine().length;
-			this.cursorColumn = clamp(Math.floor(this.desiredColumn), 0, lineLength);
+			this.ensureVisualLines();
+			const visualCount = this.getVisualLineCount();
+			const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+			const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
+			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn);
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageDown');
 			moved = true;
@@ -3623,17 +3914,19 @@ export class ConsoleCartEditor {
 		const snapshot = this.readPointerSnapshot();
 		this.updateTabHoverState(snapshot);
 		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
-		if (!snapshot) {
-			this.pointerPrimaryWasPressed = false;
-			this.activeScrollbarDrag = null;
-			this.clearHoverTooltip();
-			this.clearGotoHoverHighlight();
-			return;
-		}
-		if (!snapshot.valid) {
-			this.activeScrollbarDrag = null;
-			this.clearGotoHoverHighlight();
-		} else if (this.activeScrollbarDrag && !snapshot.primaryPressed) {
+	if (!snapshot) {
+		this.pointerPrimaryWasPressed = false;
+		this.activeScrollbarDrag = null;
+		this.lastPointerRowResolution = null;
+		this.clearHoverTooltip();
+		this.clearGotoHoverHighlight();
+		return;
+	}
+	if (!snapshot.valid) {
+		this.activeScrollbarDrag = null;
+		this.clearGotoHoverHighlight();
+		this.lastPointerRowResolution = null;
+	} else if (this.activeScrollbarDrag && !snapshot.primaryPressed) {
 			this.activeScrollbarDrag = null;
 		} else if (this.activeScrollbarDrag && snapshot.primaryPressed) {
 			if (this.updateScrollbarDrag(snapshot)) {
@@ -3723,6 +4016,7 @@ export class ConsoleCartEditor {
 					this.hideResourcePanel();
 				} else {
 					this.resourcePanelWidthRatio = clampedRatio;
+					this.invalidateVisualLines();
 					this.clampResourceBrowserHorizontalScroll();
 					this.resourceBrowserEnsureSelectionVisible();
 				}
@@ -4048,6 +4342,7 @@ export class ConsoleCartEditor {
 			this.focusEditorFromSearch();
 			this.focusEditorFromResourceSearch();
 			this.focusEditorFromSymbolSearch();
+			this.closeCompletionSession();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
 			if (gotoModifierActive && this.tryGotoDefinitionAt(targetRow, targetColumn)) {
@@ -4281,13 +4576,18 @@ export class ConsoleCartEditor {
 		}
 		switch (kind) {
 			case 'codeVertical': {
-				const rowCount = this.visibleRowCount();
-				const maxScroll = Math.max(0, this.lines.length - rowCount);
+				this.ensureVisualLines();
+				const rowCount = Math.max(1, this.cachedVisibleRowCount);
+				const maxScroll = Math.max(0, this.getVisualLineCount() - rowCount);
 				this.scrollRow = clamp(Math.round(scroll), 0, maxScroll);
 				this.cursorRevealSuspended = true;
 				break;
 			}
 			case 'codeHorizontal': {
+				if (this.wordWrapEnabled) {
+					this.scrollColumn = 0;
+					break;
+				}
 				const maxScroll = this.computeMaximumScrollColumn();
 				this.scrollColumn = clamp(Math.round(scroll), 0, maxScroll);
 				this.cursorRevealSuspended = true;
@@ -4614,50 +4914,17 @@ export class ConsoleCartEditor {
 		const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
 		const startLine = this.lines[startRow] ?? '';
 		const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
-		const bounds = this.getCodeAreaBounds();
-		const gutterOffset = bounds.textLeft - bounds.codeLeft;
-		const horizontalScrollbar = this.codeHorizontalScrollbarVisible ? SCROLLBAR_WIDTH : 0;
-		const verticalScrollbar = this.codeVerticalScrollbarVisible ? SCROLLBAR_WIDTH : 0;
-		const availableHeight = Math.max(1, (bounds.codeBottom - bounds.codeTop) - horizontalScrollbar);
-		const availableWidth = Math.max(1, (bounds.codeRight - bounds.codeLeft) - verticalScrollbar - gutterOffset);
-		const lineHeight = this.lineHeight;
-		const advance = this.warnNonMonospace ? this.spaceAdvance : this.charAdvance;
-		const safeAdvance = advance > 0 ? advance : 1;
-		const currentTopRow = this.scrollRow;
-		const currentLeftColumn = this.scrollColumn;
-		const rowOffsetPx = (startRow - currentTopRow) * lineHeight;
-		const columnOffsetPx = (startColumn - currentLeftColumn) * safeAdvance;
-		const rowVisible = rowOffsetPx >= 0 && rowOffsetPx + lineHeight <= availableHeight;
-		const columnVisible = columnOffsetPx >= 0 && columnOffsetPx + safeAdvance <= availableWidth;
-		const rowSpan = Math.max(1, Math.floor(availableHeight / lineHeight));
-		const columnSpan = Math.max(1, Math.floor(availableWidth / safeAdvance));
-		this.cursorRow = startRow;
-		this.cursorColumn = startColumn;
-		this.selectionAnchor = null;
-		this.pointerSelecting = false;
-		this.pointerPrimaryWasPressed = false;
-		this.pointerAuxWasPressed = false;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.cursorRevealSuspended = false;
-		let targetVisible = rowVisible && columnVisible;
-		if (!rowVisible) {
-			const maxTopRow = Math.max(0, this.lines.length - rowSpan);
-			const offset = Math.max(0, Math.floor(rowSpan / 2) - 1);
-			const centeredTop = clamp(startRow - offset, 0, maxTopRow);
-			this.scrollRow = centeredTop;
-			targetVisible = false;
-		}
-		if (!columnVisible) {
-			const maxLeftColumn = Math.max(0, (startLine.length - columnSpan));
-			const centeredLeft = clamp(startColumn - Math.floor(columnSpan / 2), 0, maxLeftColumn);
-			this.scrollColumn = centeredLeft;
-			targetVisible = false;
-		}
-		if (!targetVisible) {
-			this.ensureCursorVisible();
-		}
-	}
+	this.cursorRow = startRow;
+	this.cursorColumn = startColumn;
+	this.selectionAnchor = null;
+	this.pointerSelecting = false;
+	this.pointerPrimaryWasPressed = false;
+	this.pointerAuxWasPressed = false;
+	this.updateDesiredColumn();
+	this.resetBlink();
+	this.cursorRevealSuspended = false;
+	this.ensureCursorVisible();
+}
 
 	private isIdentifierStartChar(code: number): boolean {
 		if (code >= 65 && code <= 90) {
@@ -4716,6 +4983,10 @@ export class ConsoleCartEditor {
 		}
 		if (this.pointInRect(x, y, this.topBarButtonBounds.resources)) {
 			this.handleTopBarButtonPress('resources');
+			return true;
+		}
+		if (this.pointInRect(x, y, this.topBarButtonBounds.wrap)) {
+			this.handleTopBarButtonPress('wrap');
 			return true;
 		}
 		if (this.pointInRect(x, y, this.topBarButtonBounds.resolution)) {
@@ -4859,6 +5130,10 @@ export class ConsoleCartEditor {
 	}
 
 	private handleTopBarButtonPress(button: TopBarButtonId): void {
+		if (button === 'wrap') {
+			this.toggleWordWrap();
+			return;
+		}
 		if (button === 'resolution') {
 			this.toggleResolutionMode();
 			return;
@@ -5299,21 +5574,25 @@ export class ConsoleCartEditor {
 	}
 
 	private resolvePointerRow(viewportY: number): number {
+		this.ensureVisualLines();
 		const bounds = this.getCodeAreaBounds();
 		const relativeY = viewportY - bounds.codeTop;
 		const lineOffset = Math.floor(relativeY / this.lineHeight);
-		let row = this.scrollRow + lineOffset;
-		if (row < 0) {
-			row = 0;
+		let visualIndex = this.scrollRow + lineOffset;
+		const visualCount = this.getVisualLineCount();
+		if (visualIndex < 0) {
+			visualIndex = 0;
 		}
-		const lastRow = this.lines.length - 1;
-		if (row > lastRow) {
-			row = lastRow;
+		if (visualCount > 0 && visualIndex > visualCount - 1) {
+			visualIndex = visualCount - 1;
 		}
-		if (row < 0) {
-			row = 0;
+		const segment = this.visualIndexToSegment(visualIndex);
+		if (!segment) {
+			this.lastPointerRowResolution = null;
+			return clamp(visualIndex, 0, Math.max(0, this.lines.length - 1));
 		}
-		return row;
+		this.lastPointerRowResolution = { visualIndex, segment };
+		return segment.row;
 	}
 
 	private resolvePointerColumn(row: number, viewportX: number): number {
@@ -5325,7 +5604,25 @@ export class ConsoleCartEditor {
 		}
 		const entry = this.getCachedHighlight(row);
 		const highlight = entry.hi;
-		const effectiveStartColumn = Math.min(this.scrollColumn, line.length);
+		let segmentStartColumn = this.scrollColumn;
+		let segmentEndColumn = line.length;
+		const resolvedSegment = this.lastPointerRowResolution?.segment;
+		if (this.wordWrapEnabled && resolvedSegment && resolvedSegment.row === row) {
+			segmentStartColumn = resolvedSegment.startColumn;
+			segmentEndColumn = resolvedSegment.endColumn;
+		}
+		if (this.wordWrapEnabled) {
+			if (segmentStartColumn < 0) {
+				segmentStartColumn = 0;
+			}
+			if (segmentEndColumn < segmentStartColumn) {
+				segmentEndColumn = segmentStartColumn;
+			}
+		} else {
+			segmentStartColumn = Math.min(segmentStartColumn, line.length);
+			segmentEndColumn = line.length;
+		}
+		const effectiveStartColumn = clamp(segmentStartColumn, 0, line.length);
 		const startDisplay = this.columnToDisplay(highlight, effectiveStartColumn);
 		const offset = viewportX - textLeft;
 		if (offset <= 0) {
@@ -5339,7 +5636,7 @@ export class ConsoleCartEditor {
 			displayIndex = startDisplay;
 		}
 		if (displayIndex >= highlight.chars.length) {
-			return line.length;
+			return this.wordWrapEnabled ? Math.min(segmentEndColumn, line.length) : line.length;
 		}
 		const left = entry.advancePrefix[displayIndex];
 		const right = entry.advancePrefix[displayIndex + 1];
@@ -5351,8 +5648,18 @@ export class ConsoleCartEditor {
 		if (target >= midpoint) {
 			column += 1;
 		}
-		if (column > line.length) {
+		if (this.wordWrapEnabled) {
+			if (column > segmentEndColumn) {
+				column = segmentEndColumn;
+			}
+			if (column < segmentStartColumn) {
+				column = segmentStartColumn;
+			}
+		} else if (column > line.length) {
 			column = line.length;
+		}
+		if (column < 0) {
+			column = 0;
 		}
 		if (column < effectiveStartColumn) {
 			column = effectiveStartColumn;
@@ -5365,21 +5672,23 @@ export class ConsoleCartEditor {
 			return;
 		}
 		const bounds = this.getCodeAreaBounds();
+		this.ensureVisualLines();
 		if (viewportY < bounds.codeTop) {
 			if (this.scrollRow > 0) {
 				this.scrollRow -= 1;
 			}
 		}
 		else if (viewportY >= bounds.codeBottom) {
-			const lastRow = this.lines.length - 1;
+			const lastRow = this.getVisualLineCount() - 1;
 			if (this.scrollRow < lastRow) {
 				this.scrollRow += 1;
 			}
 		}
-		const maxScrollColumn = this.computeMaximumScrollColumn();
+	const maxScrollColumn = this.computeMaximumScrollColumn();
 		if (viewportX < bounds.gutterLeft) {
 			return;
 		}
+	if (!this.wordWrapEnabled) {
 		if (viewportX < bounds.textLeft) {
 			if (this.scrollColumn > 0) {
 				this.scrollColumn -= 1;
@@ -5390,19 +5699,23 @@ export class ConsoleCartEditor {
 				this.scrollColumn += 1;
 			}
 		}
+	}
 		if (this.scrollRow < 0) {
 			this.scrollRow = 0;
 		}
-		if (this.scrollColumn < 0) {
-			this.scrollColumn = 0;
-		}
-		const maxScrollRow = Math.max(0, this.lines.length - this.visibleRowCount());
-		if (this.scrollRow > maxScrollRow) {
-			this.scrollRow = maxScrollRow;
-		}
-		if (this.scrollColumn > maxScrollColumn) {
-			this.scrollColumn = maxScrollColumn;
-		}
+	if (this.scrollColumn < 0) {
+		this.scrollColumn = 0;
+	}
+	if (this.wordWrapEnabled) {
+		this.scrollColumn = 0;
+	}
+	const maxScrollRow = Math.max(0, this.getVisualLineCount() - this.visibleRowCount());
+	if (this.scrollRow > maxScrollRow) {
+		this.scrollRow = maxScrollRow;
+	}
+	if (!this.wordWrapEnabled && this.scrollColumn > maxScrollColumn) {
+		this.scrollColumn = maxScrollColumn;
+	}
 	}
 
 	private registerPointerClick(row: number, column: number): boolean {
@@ -5430,14 +5743,9 @@ export class ConsoleCartEditor {
 		if (deltaRows === 0) {
 			return;
 		}
-		const maxScrollRow = Math.max(0, this.lines.length - this.visibleRowCount());
-		let targetRow = this.scrollRow + deltaRows;
-		if (targetRow < 0) {
-			targetRow = 0;
-		}
-		else if (targetRow > maxScrollRow) {
-			targetRow = maxScrollRow;
-		}
+		this.ensureVisualLines();
+		const maxScrollRow = Math.max(0, this.getVisualLineCount() - this.visibleRowCount());
+		const targetRow = clamp(this.scrollRow + deltaRows, 0, maxScrollRow);
 		this.scrollRow = targetRow;
 	}
 
@@ -5484,43 +5792,86 @@ export class ConsoleCartEditor {
 		this.updateDesiredColumn();
 		this.resetBlink();
 		this.revealCursor();
+		this.onCursorMoved();
 	}
 
 	private moveCursorVertical(delta: number): void {
-		this.cursorRow += delta;
-		if (this.cursorRow < 0) {
-			this.cursorRow = 0;
+		this.ensureVisualLines();
+		const visualCount = this.getVisualLineCount();
+		if (visualCount === 0) {
+			return;
 		}
-		if (this.cursorRow >= this.lines.length) {
-			this.cursorRow = this.lines.length - 1;
-		}
-		const lineLength = this.currentLine().length;
-		this.cursorColumn = clamp(Math.floor(this.desiredColumn), 0, lineLength);
+		const currentIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+		const targetIndex = clamp(currentIndex + delta, 0, visualCount - 1);
+		const desired = this.desiredColumn;
+		this.setCursorFromVisualIndex(targetIndex, desired);
 		this.resetBlink();
 		this.revealCursor();
+		this.onCursorMoved();
 	}
 
 	private moveCursorHorizontal(delta: number): void {
-		if (delta < 0) {
-			if (this.cursorColumn > 0) {
-				this.cursorColumn -= 1;
-			} else if (this.cursorRow > 0) {
-				this.cursorRow -= 1;
-				this.cursorColumn = this.currentLine().length;
-			}
+		if (delta === 0) {
+			return;
 		}
-		else if (delta > 0) {
-			const line = this.currentLine();
-			if (this.cursorColumn < line.length) {
+		this.ensureVisualLines();
+		const visualCount = this.getVisualLineCount();
+		if (visualCount === 0) {
+			return;
+		}
+		const visualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+		const segment = this.visualIndexToSegment(visualIndex);
+		if (!segment) {
+			return;
+		}
+		const line = this.lines[segment.row] ?? '';
+		if (delta < 0) {
+			if (this.cursorColumn > segment.startColumn) {
+				this.cursorColumn -= 1;
+			} else {
+				let moved = false;
+				if (this.wordWrapEnabled && visualIndex > 0) {
+					const prevSegment = this.visualIndexToSegment(visualIndex - 1);
+					if (prevSegment && prevSegment.row === segment.row) {
+						this.cursorRow = prevSegment.row;
+						const prevLine = this.lines[prevSegment.row] ?? '';
+						const endColumn = Math.max(prevSegment.endColumn, prevSegment.startColumn);
+						this.cursorColumn = clamp(endColumn, 0, prevLine.length);
+						moved = true;
+					}
+				}
+				if (!moved) {
+					if (segment.row > 0) {
+						this.cursorRow = segment.row - 1;
+						this.cursorColumn = this.lines[this.cursorRow].length;
+					}
+				}
+			}
+		} else { // delta > 0
+			if (this.cursorColumn < segment.endColumn && this.cursorColumn < line.length) {
 				this.cursorColumn += 1;
-			} else if (this.cursorRow < this.lines.length - 1) {
-				this.cursorRow += 1;
-				this.cursorColumn = 0;
+			} else {
+				let moved = false;
+				if (this.wordWrapEnabled && visualIndex < visualCount - 1) {
+					const nextSegment = this.visualIndexToSegment(visualIndex + 1);
+					if (nextSegment && nextSegment.row === segment.row) {
+						this.cursorRow = nextSegment.row;
+						this.cursorColumn = clamp(nextSegment.startColumn, 0, (this.lines[nextSegment.row] ?? '').length);
+						moved = true;
+					}
+				}
+				if (!moved) {
+					if (segment.row < this.lines.length - 1) {
+						this.cursorRow = segment.row + 1;
+						this.cursorColumn = 0;
+					}
+				}
 			}
 		}
 		this.resetBlink();
 		this.updateDesiredColumn();
 		this.revealCursor();
+		this.onCursorMoved();
 	}
 
 	private moveWordLeft(): void {
@@ -5530,6 +5881,7 @@ export class ConsoleCartEditor {
 		this.updateDesiredColumn();
 		this.resetBlink();
 		this.revealCursor();
+		this.onCursorMoved();
 	}
 
 	private findWordLeft(row: number, column: number): { row: number; column: number } {
@@ -5630,6 +5982,7 @@ export class ConsoleCartEditor {
 		this.updateDesiredColumn();
 		this.resetBlink();
 		this.revealCursor();
+		this.onCursorMoved();
 	}
 
 	private handleCharacterInput(keyboard: KeyboardInput, shiftDown: boolean): void {
@@ -6301,6 +6654,7 @@ export class ConsoleCartEditor {
 		const after = line.slice(this.cursorColumn);
 		this.lines[this.cursorRow] = before + text + after;
 		this.invalidateLine(this.cursorRow);
+		this.recordEditContext('insert', text);
 		this.cursorColumn += text.length;
 		this.markTextMutated();
 		this.resetBlink();
@@ -6322,6 +6676,7 @@ export class ConsoleCartEditor {
 		this.invalidateAllHighlights();
 		this.cursorRow += 1;
 		this.cursorColumn = indentation.length;
+		this.recordEditContext('insert', '\n');
 		this.markTextMutated();
 		this.resetBlink();
 		this.updateDesiredColumn();
@@ -6352,11 +6707,13 @@ export class ConsoleCartEditor {
 		}
 		if (this.cursorColumn > 0) {
 			const line = this.currentLine();
+			const removedChar = line.charAt(this.cursorColumn - 1);
 			const before = line.slice(0, this.cursorColumn - 1);
 			const after = line.slice(this.cursorColumn);
 			this.lines[this.cursorRow] = before + after;
 			this.invalidateLine(this.cursorRow);
 			this.cursorColumn -= 1;
+			this.recordEditContext('delete', removedChar);
 			this.markTextMutated();
 			this.resetBlink();
 			this.updateDesiredColumn();
@@ -6371,6 +6728,7 @@ export class ConsoleCartEditor {
 		this.lines[this.cursorRow - 1] = previousLine + current;
 		this.lines.splice(this.cursorRow, 1);
 		this.invalidateAllHighlights();
+		this.recordEditContext('delete', '\n');
 		this.cursorRow -= 1;
 		this.cursorColumn = previousLine.length;
 		this.markTextMutated();
@@ -6420,8 +6778,10 @@ export class ConsoleCartEditor {
 		if (this.cursorColumn < updatedLine.length) {
 			const before = updatedLine.slice(0, this.cursorColumn);
 			const after = updatedLine.slice(this.cursorColumn + 1);
+			const removedChar = updatedLine.charAt(this.cursorColumn);
 			this.lines[this.cursorRow] = before + after;
 			this.invalidateLine(this.cursorRow);
+			this.recordEditContext('delete', removedChar);
 			this.markTextMutated();
 			this.updateDesiredColumn();
 			this.revealCursor();
@@ -6434,6 +6794,7 @@ export class ConsoleCartEditor {
 		this.lines[this.cursorRow] = updatedLine + nextLine;
 		this.lines.splice(this.cursorRow + 1, 1);
 		this.invalidateAllHighlights();
+		this.recordEditContext('delete', '\n');
 		this.markTextMutated();
 		this.updateDesiredColumn();
 		this.revealCursor();
@@ -6654,6 +7015,7 @@ export class ConsoleCartEditor {
 		if (!range) {
 			return;
 		}
+		this.recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
 		const { start, end } = range;
 		const startLine = this.lines[start.row];
 		const endLine = this.lines[end.row];
@@ -6857,6 +7219,7 @@ export class ConsoleCartEditor {
 			this.lines[this.cursorRow] = before + fragment + after;
 			this.invalidateLine(this.cursorRow);
 			this.cursorColumn = before.length + fragment.length;
+			this.recordEditContext('insert', fragment);
 		} else {
 			const firstLine = before + fragments[0];
 			const lastIndex = fragments.length - 1;
@@ -6872,6 +7235,7 @@ export class ConsoleCartEditor {
 			this.invalidateAllHighlights();
 			this.cursorRow = insertionRow + lastIndex;
 			this.cursorColumn = lastFragment.length;
+			this.recordEditContext('insert', normalized);
 		}
 		this.markTextMutated();
 		this.resetBlink();
@@ -6902,6 +7266,7 @@ export class ConsoleCartEditor {
 			? { row: this.selectionAnchor.row, column: this.selectionAnchor.column }
 			: null;
 		this.lines = snapshot.lines.slice();
+		this.invalidateVisualLines();
 		this.invalidateAllHighlights();
 		this.cursorRow = snapshot.cursorRow;
 		this.cursorColumn = snapshot.cursorColumn;
@@ -7027,11 +7392,14 @@ export class ConsoleCartEditor {
 
 		const buttonTop = 1;
 		const buttonHeight = this.lineHeight + HEADER_BUTTON_PADDING_Y * 2;
-		const resolutionButtonSize = buttonHeight;
+		const iconButtonSize = buttonHeight;
 		const resolutionRight = this.viewportWidth - 4;
-		const resolutionLeft = resolutionRight - resolutionButtonSize;
+		const resolutionLeft = resolutionRight - iconButtonSize;
 		const resolutionBottom = buttonTop + buttonHeight;
+		const wrapRight = resolutionLeft - HEADER_BUTTON_SPACING;
+		const wrapLeft = wrapRight - iconButtonSize;
 		this.topBarButtonBounds.resolution = { left: resolutionLeft, top: buttonTop, right: resolutionRight, bottom: resolutionBottom };
+		this.topBarButtonBounds.wrap = { left: wrapLeft, top: buttonTop, right: wrapRight, bottom: resolutionBottom };
 		this.topBarButtonBounds.resume = { left: 0, top: 0, right: 0, bottom: 0 };
 		this.topBarButtonBounds.reboot = { left: 0, top: 0, right: 0, bottom: 0 };
 		this.topBarButtonBounds.save = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -7043,7 +7411,7 @@ export class ConsoleCartEditor {
 			{ id: 'save', label: 'SAVE', disabled: !this.dirty },
 			{ id: 'resources', label: 'FILES', disabled: false, active: this.resourcePanelVisible },
 		];
-		const availableRight = resolutionLeft - HEADER_BUTTON_SPACING;
+		const availableRight = wrapLeft - HEADER_BUTTON_SPACING;
 		for (let i = 0; i < buttonEntries.length; i++) {
 			const entry = buttonEntries[i];
 			const textWidth = this.measureText(entry.label);
@@ -7068,6 +7436,18 @@ export class ConsoleCartEditor {
 			buttonX = right + HEADER_BUTTON_SPACING;
 		}
 
+		const wrapActive = this.wordWrapEnabled;
+		const wrapFill = wrapActive ? COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : COLOR_HEADER_BUTTON_BACKGROUND;
+		const wrapTextColor = wrapActive ? COLOR_HEADER_BUTTON_ACTIVE_TEXT : COLOR_HEADER_BUTTON_TEXT;
+		const wrapBounds = this.topBarButtonBounds.wrap;
+		api.rectfill(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, wrapFill);
+		api.rect(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, COLOR_HEADER_BUTTON_BORDER);
+		const wrapLabel = 'WW';
+		const wrapLabelWidth = this.measureText(wrapLabel);
+		const wrapLabelX = wrapBounds.left + Math.max(1, Math.floor((iconButtonSize - wrapLabelWidth) / 2));
+		const wrapLabelY = wrapBounds.top + HEADER_BUTTON_PADDING_Y;
+		this.drawText(api, wrapLabel, wrapLabelX, wrapLabelY, wrapTextColor);
+
 		const resolutionActive = this.resolutionMode === 'viewport';
 		const resolutionFill = resolutionActive ? COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : COLOR_HEADER_BUTTON_BACKGROUND;
 		const resolutionTextColor = resolutionActive ? COLOR_HEADER_BUTTON_ACTIVE_TEXT : COLOR_HEADER_BUTTON_TEXT;
@@ -7077,7 +7457,7 @@ export class ConsoleCartEditor {
 
 		const frameX = resolutionLeft + iconPadding;
 		const frameY = buttonTop + iconPadding;
-		const frameSize = resolutionButtonSize - iconPadding * 2;
+		const frameSize = iconButtonSize - iconPadding * 2;
 		api.rectfill(frameX, frameY, frameX + frameSize, frameY + frameSize, resolutionTextColor);
 		const innerMargin = Math.max(1, Math.floor(frameSize / 4));
 		api.rectfill(
@@ -7096,6 +7476,11 @@ export class ConsoleCartEditor {
 			api.rectfill(frameX + innerMargin, indicatorY, frameX + innerMargin + segmentWidth, indicatorY + indicatorHeight, resolutionTextColor);
 			api.rectfill(frameX + frameSize - innerMargin - segmentWidth, indicatorY, frameX + frameSize - innerMargin, indicatorY + indicatorHeight, resolutionTextColor);
 		}
+		const resolutionLabel = 'R';
+		const resolutionLabelX = resolutionLeft + Math.max(1, Math.floor((iconButtonSize - this.measureText(resolutionLabel)) / 2));
+		const resolutionLabelY = buttonTop + HEADER_BUTTON_PADDING_Y;
+		this.drawText(api, resolutionLabel, resolutionLabelX, resolutionLabelY, resolutionTextColor);
+
 		this.drawText(api, this.metadata.title.toUpperCase(), 4, primaryBarHeight + 1, COLOR_TOP_BAR_TEXT);
 		const versionSuffix = this.dirty ? '*' : '';
 		const version = `v${this.metadata.version}${versionSuffix}`;
@@ -7635,31 +8020,38 @@ export class ConsoleCartEditor {
 	}
 
 	private drawCodeArea(api: BmsxConsoleApi): void {
+		this.ensureVisualLines();
 		const bounds = this.getCodeAreaBounds();
 		const gutterOffset = bounds.textLeft - bounds.codeLeft;
 		const advance = this.warnNonMonospace ? this.spaceAdvance : this.charAdvance;
+		const wrapEnabled = this.wordWrapEnabled;
 
-		let horizontalVisible = this.codeHorizontalScrollbarVisible;
+		let horizontalVisible = !wrapEnabled && this.codeHorizontalScrollbarVisible;
 		let verticalVisible = this.codeVerticalScrollbarVisible;
 		let rowCapacity = 1;
 		let columnCapacity = 1;
+		const visualCount = this.getVisualLineCount();
+
 		for (let i = 0; i < 3; i += 1) {
 			const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? SCROLLBAR_WIDTH : 0));
 			rowCapacity = Math.max(1, Math.floor(availableHeight / this.lineHeight));
-			verticalVisible = this.lines.length > rowCapacity;
+			verticalVisible = visualCount > rowCapacity;
 			const availableWidth = Math.max(0, (bounds.codeRight - bounds.codeLeft) - (verticalVisible ? SCROLLBAR_WIDTH : 0) - gutterOffset);
 			columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
-			const maxLength = this.maximumLineLength();
-			horizontalVisible = maxLength > columnCapacity;
+			if (wrapEnabled) {
+				horizontalVisible = false;
+			} else {
+				horizontalVisible = this.maximumLineLength() > columnCapacity;
+			}
 		}
 
 		this.codeVerticalScrollbarVisible = verticalVisible;
-		this.codeHorizontalScrollbarVisible = horizontalVisible;
+		this.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
 		this.cachedVisibleRowCount = rowCapacity;
 		this.cachedVisibleColumnCount = columnCapacity;
 
-		const contentRight = bounds.codeRight - (verticalVisible ? SCROLLBAR_WIDTH : 0);
-		const contentBottom = bounds.codeBottom - (horizontalVisible ? SCROLLBAR_WIDTH : 0);
+		const contentRight = bounds.codeRight - (this.codeVerticalScrollbarVisible ? SCROLLBAR_WIDTH : 0);
+		const contentBottom = bounds.codeBottom - (this.codeHorizontalScrollbarVisible ? SCROLLBAR_WIDTH : 0);
 
 		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, COLOR_CODE_BACKGROUND);
 		if (bounds.gutterRight > bounds.gutterLeft) {
@@ -7667,131 +8059,172 @@ export class ConsoleCartEditor {
 		}
 
 		const activeGotoHighlight = this.gotoHoverHighlight;
-		const gotoRow = activeGotoHighlight ? activeGotoHighlight.row : -1;
-		let cursorEntry: CachedHighlight | null = null;
-		let cursorSliceStart = 0;
+		const gotoVisualIndex = activeGotoHighlight
+			? this.positionToVisualIndex(activeGotoHighlight.row, activeGotoHighlight.startColumn)
+			: null;
+		const cursorVisualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+	let cursorEntry: CachedHighlight | null = null;
+	let cursorInfo: CursorScreenInfo | null = null;
 		const sliceWidth = columnCapacity + 2;
 
-		for (let i = 0; i < rowCapacity; i++) {
-			const lineIndex = this.scrollRow + i;
+		for (let i = 0; i < rowCapacity; i += 1) {
+			const visualIndex = this.scrollRow + i;
 			const rowY = bounds.codeTop + i * this.lineHeight;
 			if (rowY >= contentBottom) {
 				break;
 			}
+			if (visualIndex >= visualCount) {
+				this.drawColoredText(api, '~', [COLOR_CODE_DIM], bounds.textLeft, rowY);
+				continue;
+			}
+			const segment = this.visualIndexToSegment(visualIndex);
+			if (!segment) {
+				this.drawColoredText(api, '~', [COLOR_CODE_DIM], bounds.textLeft, rowY);
+				continue;
+			}
+			const lineIndex = segment.row;
+			const entry = this.getCachedHighlight(lineIndex);
 			const isExecutionStopRow = this.executionStopRow !== null && lineIndex === this.executionStopRow;
+			const isCursorLine = lineIndex === this.cursorRow;
 			if (isExecutionStopRow) {
 				api.rectfillColor(bounds.gutterRight, rowY, contentRight, rowY + this.lineHeight, EXECUTION_STOP_OVERLAY);
-			}
-			if (lineIndex === this.cursorRow && !isExecutionStopRow) {
+			} else if (isCursorLine) {
 				api.rectfillColor(bounds.gutterRight, rowY, contentRight, rowY + this.lineHeight, HIGHLIGHT_OVERLAY);
 			}
-
-			if (lineIndex < this.lines.length) {
-				const entry = this.getCachedHighlight(lineIndex);
-				const highlight = entry.hi;
-				const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, sliceWidth);
-				this.drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, slice.startDisplay, slice.endDisplay);
-				const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, slice.startDisplay, slice.endDisplay);
-				if (selectionSlice) {
-					const selectionStartX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.startDisplay);
-					const selectionEndX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, selectionSlice.endDisplay);
-					const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
-					const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
-					if (clampedRight > clampedLeft) {
-						api.rectfillColor(clampedLeft, rowY, clampedRight, rowY + this.lineHeight, SELECTION_OVERLAY);
-					}
+			const highlight = entry.hi;
+			let columnStart = wrapEnabled ? segment.startColumn : this.scrollColumn;
+			if (wrapEnabled) {
+				if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
+					columnStart = segment.startColumn;
 				}
-				this.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);
-				if (activeGotoHighlight && gotoRow === lineIndex) {
-					const startDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.startColumn);
-					const endDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.endColumn);
-					const clampedStartDisplay = clamp(startDisplayFull, slice.startDisplay, slice.endDisplay);
-					const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, slice.endDisplay);
-					if (clampedEndDisplay > clampedStartDisplay) {
-						const underlineStartX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedStartDisplay);
-						const underlineEndX = bounds.textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedEndDisplay);
-						let drawLeft = Math.floor(underlineStartX);
-						let drawRight = Math.ceil(underlineEndX);
-						if (drawRight <= drawLeft) {
-							drawRight = drawLeft + Math.max(1, Math.floor(this.charAdvance));
-						}
-						if (drawRight > drawLeft) {
-							const underlineY = Math.min(contentBottom - 1, rowY + this.lineHeight - 1);
-							if (underlineY >= rowY && underlineY < contentBottom) {
-								api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, COLOR_GOTO_UNDERLINE);
-							}
-						}
-					}
-				}
-				if (lineIndex === this.cursorRow) {
-					cursorEntry = entry;
-					cursorSliceStart = slice.startDisplay;
-				}
-			} else {
-				this.drawColoredText(api, '~', [COLOR_CODE_DIM], bounds.textLeft, rowY);
 			}
+			const maxColumn = wrapEnabled ? segment.endColumn : this.lines[lineIndex].length;
+			const columnCount = wrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
+			const slice = this.sliceHighlightedLine(highlight, columnStart, columnCount);
+			const sliceStartDisplay = slice.startDisplay;
+			const sliceEndLimit = wrapEnabled ? this.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+			const sliceEndDisplay = wrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
+			this.drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+			const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
+			if (selectionSlice) {
+				const selectionStartX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, selectionSlice.startDisplay);
+				const selectionEndX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, selectionSlice.endDisplay);
+				const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
+				const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
+				if (clampedRight > clampedLeft) {
+					api.rectfillColor(clampedLeft, rowY, clampedRight, rowY + this.lineHeight, SELECTION_OVERLAY);
+				}
+			}
+			this.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);
+			if (activeGotoHighlight && gotoVisualIndex !== null && visualIndex === gotoVisualIndex && activeGotoHighlight.row === lineIndex) {
+				const startDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.startColumn);
+				const endDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.endColumn);
+				const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
+				const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
+				if (clampedEndDisplay > clampedStartDisplay) {
+					const underlineStartX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
+					const underlineEndX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+					let drawLeft = Math.floor(underlineStartX);
+					let drawRight = Math.ceil(underlineEndX);
+					if (drawRight <= drawLeft) {
+						drawRight = drawLeft + Math.max(1, Math.floor(this.charAdvance));
+					}
+					if (drawRight > drawLeft) {
+						const underlineY = Math.min(contentBottom - 1, rowY + this.lineHeight - 1);
+						if (underlineY >= rowY && underlineY < contentBottom) {
+							api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, COLOR_GOTO_UNDERLINE);
+						}
+					}
+				}
+			}
+		if (visualIndex === cursorVisualIndex) {
+			cursorEntry = entry;
+			cursorInfo = this.computeCursorScreenInfo(entry, bounds.textLeft, rowY, sliceStartDisplay);
 		}
+	}
 
-		const verticalTrack: RectBounds = {
-			left: contentRight,
-			top: bounds.codeTop,
-			right: contentRight + SCROLLBAR_WIDTH,
-			bottom: contentBottom,
-		};
-		const codeVerticalScrollbar = this.scrollbars.codeVertical;
-		codeVerticalScrollbar.layout(verticalTrack, this.lines.length, rowCapacity, this.scrollRow);
+	this.cursorScreenInfo = cursorInfo;
 
-		const maxColumns = columnCapacity + this.computeMaximumScrollColumn();
+	const verticalTrack: RectBounds = {
+		left: contentRight,
+		top: bounds.codeTop,
+		right: contentRight + SCROLLBAR_WIDTH,
+		bottom: contentBottom,
+	};
+	this.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, this.scrollRow);
+	this.scrollRow = clamp(Math.round(this.scrollbars.codeVertical.getScroll()), 0, Math.max(0, visualCount - rowCapacity));
+	this.codeVerticalScrollbarVisible = this.scrollbars.codeVertical.isVisible();
+
+	if (!wrapEnabled) {
 		const horizontalTrack: RectBounds = {
 			left: bounds.codeLeft,
 			top: contentBottom,
 			right: contentRight,
 			bottom: contentBottom + SCROLLBAR_WIDTH,
 		};
-		const codeHorizontalScrollbar = this.scrollbars.codeHorizontal;
-		codeHorizontalScrollbar.layout(horizontalTrack, maxColumns, columnCapacity, this.scrollColumn);
-		this.scrollColumn = clamp(Math.round(codeHorizontalScrollbar.getScroll()), 0, this.computeMaximumScrollColumn());
-
-		this.drawRuntimeErrorOverlay(api, bounds.codeTop, contentRight, bounds.textLeft);
-		this.drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
-
-		if (this.cursorVisible && cursorEntry) {
-			this.drawCursor(api, bounds.textLeft, bounds.codeTop, cursorEntry, cursorSliceStart);
-		}
-		if (codeVerticalScrollbar.isVisible()) {
-			codeVerticalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
-			this.codeVerticalScrollbarVisible = true;
-		} else {
-			this.codeVerticalScrollbarVisible = false;
-		}
-		if (codeHorizontalScrollbar.isVisible()) {
-			codeHorizontalScrollbar.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
-			this.codeHorizontalScrollbarVisible = true;
-		} else {
-			this.codeHorizontalScrollbarVisible = false;
-		}
+		const maxColumns = columnCapacity + this.computeMaximumScrollColumn();
+		this.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, this.scrollColumn);
+		this.scrollColumn = clamp(Math.round(this.scrollbars.codeHorizontal.getScroll()), 0, this.computeMaximumScrollColumn());
+		this.codeHorizontalScrollbarVisible = this.scrollbars.codeHorizontal.isVisible();
+	} else {
+		this.scrollColumn = 0;
+		this.codeHorizontalScrollbarVisible = false;
 	}
 
-	private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
+	this.drawRuntimeErrorOverlay(api, bounds.codeTop, contentRight, bounds.textLeft);
+	this.drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
+
+	if (this.cursorVisible && cursorEntry && cursorInfo) {
+		this.drawCursor(api, cursorInfo, bounds.textLeft);
+	}
+	this.drawCompletionPopup(api, bounds);
+	this.drawParameterHintOverlay(api, bounds);
+	if (this.codeVerticalScrollbarVisible) {
+		this.scrollbars.codeVertical.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
+	}
+	if (this.codeHorizontalScrollbarVisible) {
+		this.scrollbars.codeHorizontal.draw(api, SCROLLBAR_TRACK_COLOR, SCROLLBAR_THUMB_COLOR);
+	}
+}
+
+private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
 		const overlay = this.runtimeErrorOverlay;
 		if (!overlay) {
 			return;
 		}
+		this.ensureVisualLines();
+		const visualIndex = this.positionToVisualIndex(overlay.row, overlay.column);
 		const visibleRows = this.visibleRowCount();
-		const relativeRow = overlay.row - this.scrollRow;
+		const relativeRow = visualIndex - this.scrollRow;
 		if (relativeRow < 0 || relativeRow >= visibleRows) {
 			return;
 		}
-		const entry = this.getCachedHighlight(overlay.row);
+		const segment = this.visualIndexToSegment(visualIndex);
+		if (!segment) {
+			return;
+		}
+		const entry = this.getCachedHighlight(segment.row);
 		const highlight = entry.hi;
-		const slice = this.sliceHighlightedLine(highlight, this.scrollColumn, this.visibleColumnCount() + 4);
+		let columnStart = this.wordWrapEnabled ? segment.startColumn : this.scrollColumn;
+		if (this.wordWrapEnabled) {
+			if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
+				columnStart = segment.startColumn;
+			}
+		}
+		const columnCount = this.wordWrapEnabled
+			? Math.max(0, segment.endColumn - columnStart)
+			: this.visibleColumnCount() + 4;
+		const slice = this.sliceHighlightedLine(highlight, columnStart, columnCount);
+		const sliceStartDisplay = slice.startDisplay;
+		const sliceEndLimit = this.wordWrapEnabled ? this.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
+		const sliceEndDisplay = this.wordWrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
 		const anchorDisplay = this.columnToDisplay(highlight, overlay.column);
-		const clampedAnchorDisplay = Math.max(slice.startDisplay, Math.min(anchorDisplay, slice.endDisplay));
-		const anchorX = textLeft + this.measureRangeFast(entry, slice.startDisplay, clampedAnchorDisplay);
+		const clampedAnchorDisplay = clamp(anchorDisplay, sliceStartDisplay, sliceEndDisplay);
+		const anchorX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
 		const rowTop = codeTop + relativeRow * this.lineHeight;
 		const lines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
 		let maxLineWidth = 0;
-		for (let i = 0; i < lines.length; i++) {
+		for (let i = 0; i < lines.length; i += 1) {
 			const width = this.measureText(lines[i]);
 			if (width > maxLineWidth) {
 				maxLineWidth = width;
@@ -7823,7 +8256,7 @@ export class ConsoleCartEditor {
 		const bubbleRight = bubbleLeft + bubbleWidth;
 		const bubbleBottom = bubbleTop + bubbleHeight;
 		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, ERROR_OVERLAY_BACKGROUND);
-		for (let i = 0; i < lines.length; i++) {
+		for (let i = 0; i < lines.length; i += 1) {
 			const lineY = bubbleTop + ERROR_OVERLAY_PADDING_Y + i * this.lineHeight;
 			this.drawText(api, lines[i], bubbleLeft + ERROR_OVERLAY_PADDING_X, lineY, COLOR_STATUS_ERROR);
 		}
@@ -7899,6 +8332,18 @@ export class ConsoleCartEditor {
 		this.showMessage(`Editor resolution: ${modeLabel}`, COLOR_STATUS_TEXT, 2.5);
 	}
 
+	private toggleWordWrap(): void {
+		this.wordWrapEnabled = !this.wordWrapEnabled;
+		this.scrollColumn = 0;
+		this.cursorRevealSuspended = false;
+		this.invalidateVisualLines();
+		this.ensureVisualLines();
+		this.ensureCursorVisible();
+		this.lastPointerRowResolution = null;
+		const message = this.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
+		this.showMessage(message, COLOR_STATUS_TEXT, 2.5);
+	}
+
 	private applyResolutionModeToRuntime(): void {
 		const runtime = this.getConsoleRuntime();
 		if (!runtime) {
@@ -7920,6 +8365,7 @@ export class ConsoleCartEditor {
 		this.resourcePanelResizing = false;
 		this.resourcePanelFocused = true;
 		this.refreshResourcePanelContents();
+		this.invalidateVisualLines();
 	}
 
 	private hideResourcePanel(): void {
@@ -7930,6 +8376,7 @@ export class ConsoleCartEditor {
 		this.resourcePanelFocused = false;
 		this.resourcePanelResizing = false;
 		this.resetResourcePanelState();
+		this.invalidateVisualLines();
 	}
 
 	private activateCodeTab(): void {
@@ -8178,6 +8625,7 @@ export class ConsoleCartEditor {
 
 	private resetEditorContent(): void {
 		this.lines = [''];
+		this.invalidateVisualLines();
 		this.cursorRow = 0;
 		this.cursorColumn = 0;
 		this.scrollRow = 0;
@@ -8563,9 +9011,10 @@ export class ConsoleCartEditor {
 			this.ensureCursorVisible();
 			return;
 		}
-		const source = context.load();
-		context.lastSavedSource = source;
-		this.lines = this.splitLines(source);
+			const source = context.load();
+			context.lastSavedSource = source;
+			this.lines = this.splitLines(source);
+			this.invalidateVisualLines();
 		if (this.lines.length === 0) {
 			this.lines.push('');
 		}
@@ -9548,54 +9997,206 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private drawCursor(api: BmsxConsoleApi, textX: number, codeTop: number, entry: CachedHighlight, sliceStartDisplay: number): void {
-		const relativeRow = this.cursorRow - this.scrollRow;
-		if (relativeRow < 0 || relativeRow >= this.visibleRowCount()) {
-			return;
-		}
-		const line = this.currentLine();
-		const highlight = entry.hi;
-		const columnToDisplay = highlight.columnToDisplay;
-		const clampedColumn = Math.min(this.cursorColumn, columnToDisplay.length - 1);
-		const cursorDisplayIndex = columnToDisplay[clampedColumn];
-		const cursorX = textX + this.measureRangeFast(entry, sliceStartDisplay, cursorDisplayIndex);
-		const cursorY = codeTop + relativeRow * this.lineHeight;
-		let baseChar = ' ';
-		let baseColor = COLOR_CODE_TEXT;
-		let cursorWidth = this.charAdvance;
-		if (cursorDisplayIndex < highlight.chars.length) {
-			baseChar = highlight.chars[cursorDisplayIndex];
-			baseColor = highlight.colors[cursorDisplayIndex];
-			const widthValue = entry.advancePrefix[cursorDisplayIndex + 1] - entry.advancePrefix[cursorDisplayIndex];
-			cursorWidth = widthValue > 0 ? widthValue : this.font.advance(baseChar);
-		}
-		const originalChar = line.charAt(this.cursorColumn);
-		if (originalChar === '\t') {
-			cursorWidth = this.spaceAdvance * TAB_SPACES;
-		}
-		const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
-		const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + cursorWidth));
-		const caretTop = Math.floor(cursorY);
-		const caretBottom = caretTop + this.lineHeight;
-		if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive) {
-			const innerLeft = caretLeft + 1;
-			const innerRight = caretRight - 1;
-			const innerTop = caretTop + 1;
-			const innerBottom = caretBottom - 1;
-			if (innerRight > innerLeft && innerBottom > innerTop) {
-				api.rectfill(innerLeft, innerTop, innerRight, innerBottom, COLOR_CODE_BACKGROUND);
+private computeCursorScreenInfo(entry: CachedHighlight, textLeft: number, rowTop: number, sliceStartDisplay: number): CursorScreenInfo {
+	const highlight = entry.hi;
+	const columnToDisplay = highlight.columnToDisplay;
+	const clampedColumn = columnToDisplay.length > 0
+		? clamp(this.cursorColumn, 0, columnToDisplay.length - 1)
+		: 0;
+	const cursorDisplayIndex = columnToDisplay.length > 0 ? columnToDisplay[clampedColumn] : 0;
+	const limitedDisplayIndex = Math.max(sliceStartDisplay, cursorDisplayIndex);
+	const cursorX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, limitedDisplayIndex);
+	let cursorWidth = this.charAdvance;
+	let baseChar = ' ';
+	let baseColor = COLOR_CODE_TEXT;
+	if (cursorDisplayIndex < highlight.chars.length) {
+		baseChar = highlight.chars[cursorDisplayIndex];
+		baseColor = highlight.colors[cursorDisplayIndex];
+		const widthIndex = cursorDisplayIndex + 1;
+		if (widthIndex < entry.advancePrefix.length) {
+			const widthValue = entry.advancePrefix[widthIndex] - entry.advancePrefix[cursorDisplayIndex];
+			if (widthValue > 0) {
+				cursorWidth = widthValue;
+			} else {
+				cursorWidth = this.font.advance(baseChar);
 			}
-			this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			this.drawColoredText(api, baseChar, [baseColor], cursorX, cursorY);
-		} else {
-			api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
-			const caretPaletteIndex = this.resolvePaletteIndex(CARET_COLOR);
-			const caretInverseColor = caretPaletteIndex !== null
-				? this.invertColorIndex(caretPaletteIndex)
-				: this.invertColorIndex(baseColor);
-			this.drawColoredText(api, baseChar, [caretInverseColor], cursorX, cursorY);
 		}
 	}
+	const currentChar = this.currentLine().charAt(this.cursorColumn);
+	if (currentChar === '\t') {
+		cursorWidth = this.spaceAdvance * TAB_SPACES;
+	}
+	return {
+		row: this.cursorRow,
+		column: this.cursorColumn,
+		x: cursorX,
+		y: rowTop,
+		width: cursorWidth,
+		height: this.lineHeight,
+		baseChar,
+		baseColor,
+	};
+}
+
+private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): void {
+	const cursorX = info.x;
+	const cursorY = info.y;
+	const caretLeft = Math.floor(Math.max(textX, cursorX - 1));
+	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
+	const caretTop = Math.floor(cursorY);
+	const caretBottom = caretTop + info.height;
+	if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive) {
+		const innerLeft = caretLeft + 1;
+		const innerRight = caretRight - 1;
+		const innerTop = caretTop + 1;
+		const innerBottom = caretBottom - 1;
+		if (innerRight > innerLeft && innerBottom > innerTop) {
+			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, COLOR_CODE_BACKGROUND);
+		}
+		this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+		this.drawColoredText(api, info.baseChar, [info.baseColor], cursorX, cursorY);
+	} else {
+		api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, CARET_COLOR);
+		const caretPaletteIndex = this.resolvePaletteIndex(CARET_COLOR);
+		const caretInverseColor = caretPaletteIndex !== null
+			? this.invertColorIndex(caretPaletteIndex)
+			: this.invertColorIndex(info.baseColor);
+		this.drawColoredText(api, info.baseChar, [caretInverseColor], cursorX, cursorY);
+	}
+}
+
+private drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+	const session = this.completionSession;
+	const cursorInfo = this.cursorScreenInfo;
+	if (!session || !cursorInfo) {
+		return;
+	}
+	if (session.filteredItems.length === 0) {
+		return;
+	}
+	const startIndex = session.displayOffset;
+	const endIndex = Math.min(session.filteredItems.length, startIndex + session.maxVisibleItems);
+	const visibleCount = endIndex - startIndex;
+	if (visibleCount <= 0) {
+		return;
+	}
+	let maxLineWidth = COMPLETION_POPUP_MIN_WIDTH;
+	const detailSpacing = this.spaceAdvance;
+	for (let i = startIndex; i < endIndex; i += 1) {
+		const item = session.filteredItems[i];
+		const labelWidth = this.measureText(item.label);
+		const detailText = item.detail ?? '';
+		const detailWidth = detailText.length > 0 ? this.measureText(detailText) : 0;
+		const totalWidth = detailWidth > 0
+			? labelWidth + detailSpacing + detailWidth
+			: labelWidth;
+		if (totalWidth > maxLineWidth) {
+			maxLineWidth = totalWidth;
+		}
+	}
+	const popupWidth = Math.max(COMPLETION_POPUP_MIN_WIDTH, Math.floor(maxLineWidth + COMPLETION_POPUP_PADDING_X * 2));
+	const popupHeight = Math.floor(COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * this.lineHeight + Math.max(0, visibleCount - 1) * COMPLETION_POPUP_ITEM_SPACING);
+	let popupLeft = Math.floor(cursorInfo.x);
+	if (popupLeft + popupWidth > bounds.codeRight) {
+		popupLeft = bounds.codeRight - popupWidth;
+	}
+	if (popupLeft < bounds.textLeft) {
+		popupLeft = bounds.textLeft;
+	}
+	let popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
+	if (popupTop + popupHeight > bounds.codeBottom) {
+		popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
+	}
+	if (popupTop < bounds.codeTop) {
+		popupTop = bounds.codeTop;
+		if (popupTop + popupHeight > bounds.codeBottom) {
+			popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
+		}
+	}
+	const popupRight = popupLeft + popupWidth;
+	const popupBottom = popupTop + popupHeight;
+	api.rectfill(popupLeft, popupTop, popupRight, popupBottom, COLOR_COMPLETION_BACKGROUND);
+	api.rect(popupLeft, popupTop, popupRight, popupBottom, COLOR_COMPLETION_BORDER);
+	for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
+		const itemIndex = startIndex + drawIndex;
+		const item = session.filteredItems[itemIndex];
+		const lineTop = popupTop + COMPLETION_POPUP_PADDING_Y + drawIndex * (this.lineHeight + COMPLETION_POPUP_ITEM_SPACING);
+		const isSelected = itemIndex === session.selectionIndex;
+		const labelColor = isSelected ? COLOR_COMPLETION_HIGHLIGHT_TEXT : COLOR_COMPLETION_TEXT;
+		const detailColor = isSelected ? COLOR_COMPLETION_HIGHLIGHT_TEXT : COLOR_COMPLETION_DETAIL;
+		if (isSelected) {
+			const highlightTop = lineTop - 1;
+			const highlightBottom = highlightTop + this.lineHeight + 2;
+			api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, COLOR_COMPLETION_HIGHLIGHT);
+		}
+		let textX = popupLeft + COMPLETION_POPUP_PADDING_X;
+		const labelWidth = this.measureText(item.label);
+		this.drawText(api, item.label, textX, lineTop, labelColor);
+		textX += labelWidth + detailSpacing;
+		const detailText = item.detail ?? '';
+		if (detailText.length > 0) {
+			this.drawText(api, detailText, textX, lineTop, detailColor);
+		}
+	}
+}
+
+private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+	const hint = this.parameterHint;
+	const cursorInfo = this.cursorScreenInfo;
+	if (!hint || !cursorInfo) {
+		return;
+	}
+	const params = hint.params;
+	const baseColor = COLOR_PARAMETER_HINT_TEXT;
+	const segments: Array<{ text: string; color: number }> = [];
+	segments.push({ text: `api.${hint.methodName}(`, color: baseColor });
+	for (let i = 0; i < params.length; i += 1) {
+		if (i > 0) {
+			segments.push({ text: ', ', color: baseColor });
+		}
+		const color = i === hint.argumentIndex ? COLOR_PARAMETER_HINT_ACTIVE : baseColor;
+		segments.push({ text: params[i], color });
+	}
+	segments.push({ text: ')', color: baseColor });
+	let textWidth = 0;
+	for (let i = 0; i < segments.length; i += 1) {
+		const part = segments[i];
+		if (part.text.length === 0) {
+			continue;
+		}
+		textWidth += this.measureText(part.text);
+	}
+	const popupWidth = Math.floor(textWidth + PARAMETER_HINT_PADDING_X * 2);
+	const popupHeight = Math.floor(this.lineHeight + PARAMETER_HINT_PADDING_Y * 2);
+	let popupLeft = Math.floor(cursorInfo.x);
+	if (popupLeft + popupWidth > bounds.codeRight) {
+		popupLeft = bounds.codeRight - popupWidth;
+	}
+	if (popupLeft < bounds.textLeft) {
+		popupLeft = bounds.textLeft;
+	}
+	let popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
+	if (popupTop < bounds.codeTop) {
+		popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
+		if (popupTop + popupHeight > bounds.codeBottom) {
+			popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
+		}
+	}
+	const popupRight = popupLeft + popupWidth;
+	const popupBottom = popupTop + popupHeight;
+	api.rectfill(popupLeft, popupTop, popupRight, popupBottom, COLOR_PARAMETER_HINT_BACKGROUND);
+	api.rect(popupLeft, popupTop, popupRight, popupBottom, COLOR_PARAMETER_HINT_BORDER);
+	let textX = popupLeft + PARAMETER_HINT_PADDING_X;
+	const textY = popupTop + PARAMETER_HINT_PADDING_Y;
+	for (let i = 0; i < segments.length; i += 1) {
+		const part = segments[i];
+		if (part.text.length === 0) {
+			continue;
+		}
+		this.drawText(api, part.text, textX, textY, part.color);
+		textX += this.measureText(part.text);
+	}
+}
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 		if (highlight.chars.length === 0) {
@@ -9717,7 +10318,880 @@ export class ConsoleCartEditor {
 		this.dirty = true;
 		this.bumpTextVersion();
 		this.updateActiveContextDirtyFlag();
+		this.invalidateVisualLines();
+		this.handlePostEditMutation();
 	}
+
+	private recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
+		this.pendingEditContext = { kind, text };
+	}
+
+	private handlePostEditMutation(): void {
+	this.invalidateLocalCompletionCacheForActiveContext();
+	this.cachedGlobalCompletionItems = null;
+	this.updateCompletionSessionAfterMutation(this.pendingEditContext);
+		this.pendingEditContext = null;
+		this.refreshParameterHint();
+	}
+
+	private invalidateLocalCompletionCacheForActiveContext(): void {
+		const key = this.activeCompletionCacheKey();
+		if (!key) {
+			return;
+		}
+		this.localCompletionCache.delete(key);
+	}
+
+	private activeCompletionCacheKey(): string | null {
+		const context = this.getActiveCodeTabContext();
+		const assetId = this.resolveHoverAssetId(context);
+		const chunkName = this.resolveHoverChunkName(context);
+		if (!assetId && !chunkName) {
+			return null;
+		}
+		const safeAssetId = assetId ?? '';
+		const safeChunk = chunkName ?? '';
+		return `${safeAssetId}|${safeChunk}`;
+	}
+
+	private refreshParameterHint(): void {
+		const info = this.resolveParameterHintContext();
+		this.parameterHint = info;
+	}
+
+	private resolveParameterHintContext(): ParameterHintState | null {
+		if (!this.isCodeTabActive()) {
+			return null;
+		}
+		if (this.lines.length === 0) {
+			return null;
+		}
+		const safeRow = clamp(this.cursorRow, 0, this.lines.length - 1);
+		const line = this.lines[safeRow];
+		if (line.length === 0) {
+			return null;
+		}
+		const safeColumn = clamp(this.cursorColumn, 0, line.length);
+		let depth = 0;
+		let lastOpen = -1;
+		for (let index = 0; index < safeColumn; index += 1) {
+			const ch = line.charAt(index);
+			if (ch === '(') {
+				depth += 1;
+				lastOpen = index;
+			} else if (ch === ')') {
+				if (depth > 0) {
+					depth -= 1;
+					if (depth === 0) {
+						lastOpen = -1;
+					}
+				}
+			}
+		}
+		if (depth <= 0 || lastOpen < 0) {
+			return null;
+		}
+		const prefix = line.slice(0, lastOpen);
+		let scan = prefix.length - 1;
+		while (scan >= 0 && this.isWhitespace(prefix.charAt(scan))) {
+			scan -= 1;
+		}
+		if (scan < 0) {
+			return null;
+		}
+		let nameEnd = scan + 1;
+		while (scan >= 0 && this.isWordChar(prefix.charAt(scan))) {
+			scan -= 1;
+		}
+		const methodName = prefix.slice(scan + 1, nameEnd);
+		if (methodName.length === 0) {
+			return null;
+		}
+		let operatorIndex = scan;
+		while (operatorIndex >= 0 && this.isWhitespace(prefix.charAt(operatorIndex))) {
+			operatorIndex -= 1;
+		}
+		if (operatorIndex < 0) {
+			return null;
+		}
+		const operatorChar = prefix.charAt(operatorIndex);
+		if (operatorChar !== '.' && operatorChar !== ':') {
+			return null;
+		}
+		let objectEnd = operatorIndex;
+		let objectIndex = objectEnd - 1;
+		while (objectIndex >= 0 && this.isWhitespace(prefix.charAt(objectIndex))) {
+			objectIndex -= 1;
+		}
+		if (objectIndex < 0) {
+			return null;
+		}
+		let objectStart = objectIndex;
+		while (objectStart >= 0 && this.isWordChar(prefix.charAt(objectStart))) {
+			objectStart -= 1;
+		}
+	const objectName = prefix.slice(objectStart + 1, objectIndex + 1);
+	if (objectName.toLowerCase() !== 'api') {
+		return null;
+	}
+		const meta = ConsoleCartEditor.API_COMPLETION_DATA.signatures.get(methodName);
+		if (!meta) {
+			return null;
+		}
+		const inner = line.slice(lastOpen + 1, safeColumn);
+		let argumentIndex = 0;
+		let nested = 0;
+		for (let i = 0; i < inner.length; i += 1) {
+			const ch = inner.charAt(i);
+			if (ch === '(') {
+				nested += 1;
+			} else if (ch === ')') {
+				if (nested > 0) {
+					nested -= 1;
+				}
+			} else if (ch === ',' && nested === 0) {
+				argumentIndex += 1;
+			}
+		}
+		const params = meta.params.slice();
+		return {
+			methodName,
+			params,
+			signatureLabel: meta.signature,
+			anchorRow: safeRow,
+			anchorColumn: lastOpen,
+			argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+		};
+	}
+
+	private analyzeCompletionContext(): CompletionContext | null {
+		if (!this.isCodeTabActive()) {
+			return null;
+		}
+		if (this.lines.length === 0) {
+			return null;
+		}
+		const row = clamp(this.cursorRow, 0, this.lines.length - 1);
+		const line = this.lines[row];
+		const column = clamp(this.cursorColumn, 0, line.length);
+		let start = column;
+		while (start > 0 && this.isWordChar(line.charAt(start - 1))) {
+			start -= 1;
+		}
+		const prefix = line.slice(start, column);
+		const replaceFromColumn = start;
+		const replaceToColumn = column;
+		let probe = start - 1;
+		while (probe >= 0 && this.isWhitespace(line.charAt(probe))) {
+			probe -= 1;
+		}
+		if (probe >= 0) {
+			const operator = line.charAt(probe);
+			if (operator === '.' || operator === ':') {
+				let objectEnd = probe;
+				let objectProbe = objectEnd - 1;
+				while (objectProbe >= 0 && this.isWhitespace(line.charAt(objectProbe))) {
+					objectProbe -= 1;
+				}
+				if (objectProbe < 0) {
+					return null;
+				}
+				let objectStart = objectProbe;
+				while (objectStart >= 0 && this.isWordChar(line.charAt(objectStart))) {
+					objectStart -= 1;
+				}
+				const objectName = line.slice(objectStart + 1, objectProbe + 1);
+				if (objectName.length === 0) {
+					return null;
+				}
+				return {
+					kind: 'member',
+					objectName,
+					operator: operator as '.' | ':',
+					prefix,
+					row,
+					replaceFromColumn,
+					replaceToColumn,
+				};
+			}
+		}
+		return {
+			kind: 'global',
+			prefix,
+			row,
+			replaceFromColumn,
+			replaceToColumn,
+		};
+	}
+
+	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
+	if (context.kind === 'member') {
+		if (context.objectName.toLowerCase() === 'api') {
+			return ConsoleCartEditor.API_COMPLETION_DATA.items.slice();
+		}
+		return [];
+	}
+		const registry = new Map<string, LuaCompletionItem>();
+		const register = (item: LuaCompletionItem): void => {
+			if (!registry.has(item.sortKey)) {
+				registry.set(item.sortKey, item);
+			}
+		};
+		const keywordItems = ConsoleCartEditor.KEYWORD_COMPLETIONS;
+		for (let i = 0; i < keywordItems.length; i += 1) {
+			register(keywordItems[i]);
+		}
+		const localItems = this.getLocalCompletionItems();
+		for (let i = 0; i < localItems.length; i += 1) {
+			register(localItems[i]);
+		}
+		const globalItems = this.getGlobalCompletionItems();
+		for (let i = 0; i < globalItems.length; i += 1) {
+			register(globalItems[i]);
+		}
+		const combined = Array.from(registry.values());
+		combined.sort((a, b) => a.label.localeCompare(b.label));
+		return combined;
+	}
+
+	private getLocalCompletionItems(): LuaCompletionItem[] {
+		const key = this.activeCompletionCacheKey();
+		if (!key) {
+			return [];
+		}
+		const cached = this.localCompletionCache.get(key);
+		if (cached && cached.version === this.textVersion) {
+			return cached.items;
+		}
+		const context = this.getActiveCodeTabContext();
+		const assetId = this.resolveHoverAssetId(context);
+		const chunkName = this.resolveHoverChunkName(context);
+		let entries: ConsoleLuaSymbolEntry[] = [];
+		try {
+			entries = this.listLuaSymbolsFn(assetId, chunkName);
+		} catch {
+			this.localCompletionCache.delete(key);
+			return [];
+		}
+		const items = this.buildSymbolCompletionItems(entries, 'local');
+		this.localCompletionCache.set(key, { version: this.textVersion, items });
+		return items;
+	}
+
+	private getGlobalCompletionItems(): LuaCompletionItem[] {
+		if (this.cachedGlobalCompletionItems) {
+			return this.cachedGlobalCompletionItems;
+		}
+		let entries: ConsoleLuaSymbolEntry[] = [];
+		try {
+			entries = this.listGlobalLuaSymbolsFn();
+		} catch {
+			this.cachedGlobalCompletionItems = [];
+			return this.cachedGlobalCompletionItems;
+		}
+		const items = this.buildSymbolCompletionItems(entries, 'global');
+		const apiItem: LuaCompletionItem = {
+			label: 'api',
+			insertText: 'api',
+			sortKey: 'global:api',
+			kind: 'global',
+			detail: 'Console API root',
+		};
+		items.push(apiItem);
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		this.cachedGlobalCompletionItems = items;
+		return items;
+	}
+
+	private buildSymbolCompletionItems(entries: ConsoleLuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
+		if (entries.length === 0) {
+			return [];
+		}
+		const items: LuaCompletionItem[] = [];
+		for (let i = 0; i < entries.length; i += 1) {
+			const entry = entries[i];
+			const origin = (() => {
+				if (entry.location.path && entry.location.path.length > 0) {
+					return entry.location.path;
+				}
+				if (entry.location.assetId && entry.location.assetId.length > 0) {
+					return entry.location.assetId;
+				}
+				if (entry.location.chunkName && entry.location.chunkName.length > 0) {
+					return entry.location.chunkName;
+				}
+				return '';
+			})();
+			const kindLabel = this.formatSymbolKind(entry.kind);
+			const detail = origin.length > 0 ? `${kindLabel} • ${origin}` : kindLabel;
+			const sortKey = `${scope}:${origin}:${entry.path}:${entry.name}:${entry.kind}`;
+			items.push({
+				label: entry.name,
+				insertText: entry.name,
+				sortKey,
+				kind: scope,
+				detail,
+			});
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return items;
+	}
+
+	private formatSymbolKind(kind: ConsoleLuaSymbolEntry['kind']): string {
+		switch (kind) {
+			case 'function':
+				return 'function';
+			case 'variable':
+				return 'variable';
+			case 'parameter':
+				return 'parameter';
+			case 'table_field':
+				return 'table field';
+			case 'assignment':
+				return 'assignment';
+			default:
+				return kind;
+		}
+	}
+
+	private shouldAutoTriggerCompletion(text: string): boolean {
+		if (text.length !== 1) {
+			return false;
+		}
+		const ch = text;
+		if (ch === '.' || ch === ':') {
+			return true;
+		}
+		return this.isWordChar(ch);
+	}
+
+	private updateCompletionSessionAfterMutation(context: EditContext | null): void {
+		if (!this.isCodeTabActive()) {
+			this.closeCompletionSession();
+			return;
+		}
+		const analyzed = this.analyzeCompletionContext();
+	if (!this.completionSession) {
+		if (!context || !analyzed) {
+			return;
+		}
+		if (!this.shouldAutoTriggerCompletion(context.text)) {
+			return;
+		}
+		const trigger: CompletionTrigger = (context.text === '.' || context.text === ':') ? 'punctuation' : 'typing';
+		this.openCompletionSessionFromContext(analyzed, trigger);
+		return;
+	}
+	if (context && context.kind === 'insert' && !this.shouldAutoTriggerCompletion(context.text)) {
+		this.closeCompletionSession();
+		return;
+	}
+	if (!analyzed) {
+		this.closeCompletionSession();
+		return;
+	}
+	this.refreshCompletionSessionFromContext(analyzed);
+}
+
+	private openCompletionSessionFromContext(context: CompletionContext, _trigger: CompletionTrigger): void {
+		const items = this.collectCompletionItems(context);
+		if (items.length === 0) {
+			this.completionSession = null;
+			return;
+		}
+		const session: CompletionSession = {
+			context: context.kind === 'member'
+				? {
+					kind: 'member',
+					objectName: context.objectName,
+					operator: context.operator,
+					prefix: context.prefix,
+					row: context.row,
+					replaceFromColumn: context.replaceFromColumn,
+					replaceToColumn: context.replaceToColumn,
+				}
+				: {
+					kind: 'global',
+					prefix: context.prefix,
+					row: context.row,
+					replaceFromColumn: context.replaceFromColumn,
+					replaceToColumn: context.replaceToColumn,
+				},
+			items,
+			filteredItems: [],
+			selectionIndex: -1,
+			displayOffset: 0,
+			anchorRow: this.cursorRow,
+			anchorColumn: this.cursorColumn,
+			maxVisibleItems: COMPLETION_POPUP_MAX_VISIBLE,
+		};
+		this.completionSession = session;
+		this.applyCompletionFilter(session);
+	}
+
+	private refreshCompletionSessionFromContext(context: CompletionContext): void {
+		const session = this.completionSession;
+		if (!session) {
+			return;
+		}
+		const items = this.collectCompletionItems(context);
+		if (items.length === 0) {
+			this.closeCompletionSession();
+			return;
+		}
+		if (context.kind === 'member') {
+			session.context = {
+				kind: 'member',
+				objectName: context.objectName,
+				operator: context.operator,
+				prefix: context.prefix,
+				row: context.row,
+				replaceFromColumn: context.replaceFromColumn,
+				replaceToColumn: context.replaceToColumn,
+			};
+		} else {
+			session.context = {
+				kind: 'global',
+				prefix: context.prefix,
+				row: context.row,
+				replaceFromColumn: context.replaceFromColumn,
+				replaceToColumn: context.replaceToColumn,
+			};
+		}
+		session.items = items;
+		session.anchorRow = this.cursorRow;
+		session.anchorColumn = this.cursorColumn;
+		this.applyCompletionFilter(session);
+	}
+
+	private applyCompletionFilter(session: CompletionSession): void {
+		const prefix = session.context.prefix;
+		const filtered = this.filterCompletionItems(session.items, prefix);
+		if (filtered.length === 0) {
+			session.filteredItems = session.items.slice();
+		} else {
+			session.filteredItems = filtered;
+		}
+		if (session.filteredItems.length === 0) {
+			session.selectionIndex = -1;
+			session.displayOffset = 0;
+			return;
+		}
+		if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) {
+			session.selectionIndex = 0;
+		}
+		this.ensureCompletionSelectionVisible(session);
+	}
+
+	private filterCompletionItems(items: LuaCompletionItem[], prefix: string): LuaCompletionItem[] {
+		if (prefix.length === 0) {
+			return items.slice();
+		}
+		const lower = prefix.toLowerCase();
+		const matches: Array<{ item: LuaCompletionItem; score: number }> = [];
+		for (let i = 0; i < items.length; i += 1) {
+			const item = items[i];
+			const labelLower = item.label.toLowerCase();
+			const index = labelLower.indexOf(lower);
+			if (index === -1) {
+				continue;
+			}
+			matches.push({ item, score: index });
+		}
+		if (matches.length === 0) {
+			return [];
+		}
+		matches.sort((a, b) => {
+			if (a.score !== b.score) {
+				return a.score - b.score;
+			}
+			return a.item.label.localeCompare(b.item.label);
+		});
+		const filtered: LuaCompletionItem[] = [];
+		for (let i = 0; i < matches.length; i += 1) {
+			filtered.push(matches[i].item);
+		}
+		return filtered;
+	}
+
+private closeCompletionSession(): void {
+	this.completionSession = null;
+}
+
+private moveCompletionSelection(delta: number): void {
+	const session = this.completionSession;
+	if (!session) {
+		return;
+	}
+	const total = session.filteredItems.length;
+	if (total === 0) {
+		return;
+	}
+	let index = session.selectionIndex;
+	if (index < 0) {
+		index = delta > 0 ? 0 : total - 1;
+	} else {
+		index += delta;
+		index = ((index % total) + total) % total;
+	}
+	session.selectionIndex = index;
+	this.ensureCompletionSelectionVisible(session);
+}
+
+private ensureCompletionSelectionVisible(session: CompletionSession): void {
+	if (session.selectionIndex < 0) {
+		session.displayOffset = 0;
+		return;
+	}
+	const visible = session.maxVisibleItems;
+	let offset = session.displayOffset;
+	if (session.selectionIndex < offset) {
+		offset = session.selectionIndex;
+	}
+	const upperBound = offset + visible - 1;
+	if (session.selectionIndex > upperBound) {
+		offset = session.selectionIndex - visible + 1;
+	}
+	if (offset < 0) {
+		offset = 0;
+	}
+	const maxOffset = Math.max(0, session.filteredItems.length - visible);
+	if (offset > maxOffset) {
+		offset = maxOffset;
+	}
+	session.displayOffset = offset;
+}
+
+private acceptSelectedCompletion(): void {
+	const session = this.completionSession;
+	if (!session) {
+		return;
+	}
+	if (session.filteredItems.length === 0) {
+		this.closeCompletionSession();
+		return;
+	}
+	let index = session.selectionIndex;
+	if (index < 0 || index >= session.filteredItems.length) {
+		index = 0;
+	}
+	const item = session.filteredItems[index];
+	const addParentheses = item.kind === 'api_method';
+	this.applyCompletionItem(session, item, addParentheses);
+	this.closeCompletionSession();
+}
+
+private applyCompletionItem(session: CompletionSession, item: LuaCompletionItem, addParentheses: boolean): void {
+	const row = session.context.row;
+	if (row < 0 || row >= this.lines.length) {
+		return;
+	}
+	const replaceStart = session.context.replaceFromColumn;
+	const replaceEnd = session.context.replaceToColumn;
+	this.cursorRow = row;
+	this.cursorColumn = replaceEnd;
+	this.selectionAnchor = { row, column: replaceStart };
+	let insertion = item.insertText;
+	if (addParentheses) {
+		insertion = `${item.insertText}()`;
+	}
+	this.replaceSelectionWith(insertion);
+	if (addParentheses) {
+		this.cursorColumn = replaceStart + item.insertText.length + 1;
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.revealCursor();
+	}
+	this.onCursorMoved();
+}
+
+private handleCompletionKeybindings(
+	keyboard: KeyboardInput,
+	deltaSeconds: number,
+	shiftDown: boolean,
+	ctrlDown: boolean,
+	altDown: boolean,
+	metaDown: boolean,
+): boolean {
+	const session = this.completionSession;
+	if (!session) {
+		return false;
+	}
+	if (this.isKeyJustPressed(keyboard, 'Escape')) {
+		this.consumeKey(keyboard, 'Escape');
+		this.closeCompletionSession();
+		return true;
+	}
+	let handled = false;
+	if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+		this.consumeKey(keyboard, 'ArrowDown');
+		this.moveCompletionSelection(1);
+		handled = true;
+	}
+	if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+		this.consumeKey(keyboard, 'ArrowUp');
+		this.moveCompletionSelection(-1);
+		handled = true;
+	}
+	if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+		this.consumeKey(keyboard, 'PageDown');
+		this.moveCompletionSelection(session.maxVisibleItems);
+		handled = true;
+	}
+	if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+		this.consumeKey(keyboard, 'PageUp');
+		this.moveCompletionSelection(-session.maxVisibleItems);
+		handled = true;
+	}
+	if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+		this.consumeKey(keyboard, 'Home');
+		if (session.filteredItems.length > 0) {
+			session.selectionIndex = 0;
+			this.ensureCompletionSelectionVisible(session);
+		}
+		handled = true;
+	}
+	if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+		this.consumeKey(keyboard, 'End');
+		if (session.filteredItems.length > 0) {
+			session.selectionIndex = session.filteredItems.length - 1;
+			this.ensureCompletionSelectionVisible(session);
+		}
+		handled = true;
+	}
+	if (handled) {
+		return true;
+	}
+	const enterPressed = this.isKeyJustPressed(keyboard, 'Enter');
+	const numpadEnterPressed = this.isKeyJustPressed(keyboard, 'NumpadEnter');
+	if (enterPressed || numpadEnterPressed) {
+		if (enterPressed) {
+			this.consumeKey(keyboard, 'Enter');
+		} else {
+			this.consumeKey(keyboard, 'NumpadEnter');
+		}
+		this.acceptSelectedCompletion();
+		return true;
+	}
+	if (this.isKeyJustPressed(keyboard, 'Tab')) {
+		this.consumeKey(keyboard, 'Tab');
+		if (shiftDown) {
+			this.moveCompletionSelection(-1);
+		} else {
+			this.acceptSelectedCompletion();
+		}
+		return true;
+	}
+	if ((ctrlDown || metaDown) && !altDown && this.isKeyJustPressed(keyboard, 'Space')) {
+		this.consumeKey(keyboard, 'Space');
+		const context = this.analyzeCompletionContext();
+		if (context) {
+			this.openCompletionSessionFromContext(context, 'manual');
+		} else {
+			this.closeCompletionSession();
+		}
+		return true;
+	}
+	return false;
+}
+
+private onCursorMoved(): void {
+	if (this.completionSession) {
+		const context = this.analyzeCompletionContext();
+		if (!context) {
+			this.closeCompletionSession();
+			} else {
+				this.refreshCompletionSessionFromContext(context);
+			}
+		}
+		this.refreshParameterHint();
+	}
+
+	private invalidateVisualLines(): void {
+		this.visualLinesDirty = true;
+	}
+
+	private ensureVisualLines(): void {
+		if (!this.visualLinesDirty) {
+			return;
+		}
+		this.rebuildVisualLines();
+	}
+
+	private rebuildVisualLines(): void {
+		const wrapEnabled = this.wordWrapEnabled;
+		const lineCount = this.lines.length;
+		if (lineCount === 0) {
+			this.visualLines = [{
+				row: 0,
+				startColumn: 0,
+				endColumn: 0,
+			}];
+			this.rowToFirstVisualLine = [0];
+			this.visualLinesDirty = false;
+			this.scrollRow = 0;
+			return;
+		}
+		const segments: VisualLineSegment[] = [];
+		const rowIndexLookup: number[] = new Array(lineCount).fill(-1);
+		const wrapWidth = wrapEnabled ? this.computeWrapWidth() : Number.POSITIVE_INFINITY;
+		for (let row = 0; row < lineCount; row += 1) {
+			const line = this.lines[row];
+			const entry = this.getCachedHighlight(row);
+			const lineLength = line.length;
+			if (rowIndexLookup[row] === -1) {
+				rowIndexLookup[row] = segments.length;
+			}
+			if (lineLength === 0) {
+				segments.push({ row, startColumn: 0, endColumn: 0 });
+				continue;
+			}
+			let column = 0;
+			while (column < lineLength) {
+				const nextBreak = wrapEnabled
+					? this.findWrapBreak(row, entry, column, wrapWidth)
+					: lineLength;
+				const endColumn = Math.max(column + 1, Math.min(lineLength, nextBreak));
+				segments.push({ row, startColumn: column, endColumn });
+				column = endColumn;
+			}
+		}
+		if (segments.length === 0) {
+			segments.push({ row: 0, startColumn: 0, endColumn: 0 });
+		}
+		this.visualLines = segments;
+		this.rowToFirstVisualLine = rowIndexLookup;
+		this.visualLinesDirty = false;
+		const maxScrollRow = Math.max(0, this.visualLines.length - 1);
+		if (this.scrollRow > maxScrollRow) {
+			this.scrollRow = maxScrollRow;
+		}
+		if (this.scrollRow < 0) {
+			this.scrollRow = 0;
+		}
+	}
+
+	private computeWrapWidth(): number {
+		const resourceWidth = this.resourcePanelVisible ? this.getResourcePanelWidth() : 0;
+		const gutterSpace = this.gutterWidth + 2;
+		const verticalScrollbarSpace = 0;
+		const available = this.viewportWidth - resourceWidth - gutterSpace - verticalScrollbarSpace;
+		return Math.max(this.charAdvance, available - 2);
+	}
+
+	private findWrapBreak(row: number, entry: CachedHighlight, startColumn: number, wrapWidth: number): number {
+		const line = this.lines[row];
+		const lineLength = line.length;
+		if (wrapWidth === Number.POSITIVE_INFINITY) {
+			return lineLength;
+		}
+		let column = startColumn + 1;
+		let lastBreak = startColumn;
+		let lastBreakEnd = startColumn + 1;
+		while (column <= lineLength) {
+			const width = this.measureColumns(entry, startColumn, column);
+			if (width > wrapWidth) {
+				if (lastBreak > startColumn) {
+					return lastBreakEnd;
+				}
+				return column - 1;
+			}
+			if (column < lineLength) {
+				const ch = line.charAt(column);
+				if (ch === ' ' || ch === '\t' || ch === '-') {
+					lastBreak = column;
+					let skip = column + 1;
+					while (skip < lineLength && line.charAt(skip) === ' ') {
+						skip += 1;
+					}
+					lastBreakEnd = skip;
+				}
+			}
+			column += 1;
+		}
+		return lineLength;
+	}
+
+	private measureColumns(entry: CachedHighlight, startColumn: number, endColumn: number): number {
+		const highlight = entry.hi;
+		const startDisplay = this.columnToDisplay(highlight, startColumn);
+		const endDisplay = this.columnToDisplay(highlight, endColumn);
+		return this.measureRangeFast(entry, startDisplay, endDisplay);
+	}
+
+	private getVisualLineCount(): number {
+		this.ensureVisualLines();
+		return this.visualLines.length;
+	}
+
+	private visualIndexToSegment(index: number): VisualLineSegment | null {
+		this.ensureVisualLines();
+		if (index < 0 || index >= this.visualLines.length) {
+			return null;
+		}
+		return this.visualLines[index];
+	}
+
+	private positionToVisualIndex(row: number, column: number): number {
+		this.ensureVisualLines();
+		if (this.visualLines.length === 0) {
+			return 0;
+		}
+		const safeRow = clamp(row, 0, this.lines.length - 1);
+		const baseIndex = this.rowToFirstVisualLine[safeRow];
+		if (!Number.isFinite(baseIndex) || baseIndex === undefined || baseIndex === -1) {
+			return 0;
+		}
+		let index = baseIndex;
+		while (index < this.visualLines.length) {
+			const segment = this.visualLines[index];
+			if (segment.row !== safeRow) {
+				break;
+			}
+			if (column < segment.endColumn || segment.startColumn === segment.endColumn) {
+				return index;
+			}
+			index += 1;
+		}
+		return Math.min(this.visualLines.length - 1, index - 1);
+	}
+
+	private setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number): void {
+		this.ensureVisualLines();
+		if (this.visualLines.length === 0) {
+			this.cursorRow = 0;
+			this.cursorColumn = 0;
+			this.updateDesiredColumn();
+			return;
+		}
+		const clampedIndex = clamp(visualIndex, 0, this.visualLines.length - 1);
+		const segment = this.visualLines[clampedIndex];
+		if (!segment) {
+			return;
+		}
+		const line = this.lines[segment.row] ?? '';
+		let targetColumn = desiredColumnHint !== undefined ? desiredColumnHint : this.cursorColumn;
+		if (this.wordWrapEnabled) {
+			targetColumn = clamp(Math.round(targetColumn), segment.startColumn, Math.max(segment.endColumn, segment.startColumn));
+			if (targetColumn > line.length) {
+				targetColumn = line.length;
+			}
+		} else {
+			targetColumn = clamp(Math.round(targetColumn), 0, line.length);
+		}
+		this.cursorRow = segment.row;
+		this.cursorColumn = clamp(targetColumn, 0, line.length);
+		if (this.wordWrapEnabled) {
+			if (this.cursorColumn < segment.startColumn) {
+				this.cursorColumn = segment.startColumn;
+			}
+			if (segment.endColumn >= segment.startColumn && this.cursorColumn > segment.endColumn) {
+				this.cursorColumn = Math.min(segment.endColumn, line.length);
+			}
+		}
+		this.updateDesiredColumn();
+	}
+
 
 	private drawInlineCaret(
 		api: BmsxConsoleApi,
@@ -10302,13 +11776,16 @@ export class ConsoleCartEditor {
 	}
 
 	private centerCursorVertically(): void {
+		this.ensureVisualLines();
 		const rows = this.visibleRowCount();
-		const maxScroll = Math.max(0, this.lines.length - rows);
+		const totalVisual = this.getVisualLineCount();
+		const cursorVisualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+		const maxScroll = Math.max(0, totalVisual - rows);
 		if (rows <= 1) {
-			this.scrollRow = clamp(this.cursorRow, 0, maxScroll);
+			this.scrollRow = clamp(cursorVisualIndex, 0, maxScroll);
 			return;
 		}
-		let target = this.cursorRow - Math.floor(rows / 2);
+		let target = cursorVisualIndex - Math.floor(rows / 2);
 		if (target < 0) {
 			target = 0;
 		}
@@ -10322,16 +11799,23 @@ export class ConsoleCartEditor {
 		this.clampCursorRow();
 		this.clampCursorColumn();
 
+		this.ensureVisualLines();
 		const rows = this.visibleRowCount();
-		if (this.cursorRow < this.scrollRow) {
-			this.scrollRow = this.cursorRow;
+		const totalVisual = this.getVisualLineCount();
+		const cursorVisualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+
+		if (cursorVisualIndex < this.scrollRow) {
+			this.scrollRow = cursorVisualIndex;
 		}
-		const maxScrollRow = this.cursorRow - rows + 1;
-		if (maxScrollRow > this.scrollRow) {
-			this.scrollRow = maxScrollRow;
+		if (cursorVisualIndex >= this.scrollRow + rows) {
+			this.scrollRow = cursorVisualIndex - rows + 1;
 		}
-		if (this.scrollRow < 0) {
-			this.scrollRow = 0;
+		const maxScrollRow = Math.max(0, totalVisual - rows);
+		this.scrollRow = clamp(this.scrollRow, 0, maxScrollRow);
+
+		if (this.wordWrapEnabled) {
+			this.scrollColumn = 0;
+			return;
 		}
 
 		const columns = this.visibleColumnCount();
