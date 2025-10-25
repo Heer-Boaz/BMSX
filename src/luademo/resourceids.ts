@@ -21,4 +21,5 @@ export enum FsmId {
 export enum LuaId {
 	none = 'none',
 	demo = 'demo',
+	demoBehaviorTree = 'demo.behaviortree',
 }

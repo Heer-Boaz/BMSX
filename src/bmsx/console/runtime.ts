@@ -2068,15 +2068,19 @@ export class BmsxConsoleRuntime extends Service {
 				const wrapped = new LuaRuntimeError(prefix + baseMessage, error.chunkName, error.line, error.column);
 				// @ts-ignore - retain original error details for debugging where supported
 				wrapped.cause = error;
-				throw wrapped;
+				this.handleLuaError(wrapped);
+				return undefined;
 			}
 			if (error instanceof LuaError) {
 				const wrapped = new LuaRuntimeError(prefix + baseMessage, error.chunkName, error.line, error.column);
 				// @ts-ignore - retain original error details for debugging where supported
 				wrapped.cause = error;
-				throw wrapped;
+				this.handleLuaError(wrapped);
+				return undefined;
 			}
-			throw new Error(prefix + baseMessage);
+			const wrapped = new Error(prefix + baseMessage);
+			this.handleLuaError(wrapped);
+			return undefined;
 		}
 		return results.length > 0 ? results[0] : undefined;
 	}

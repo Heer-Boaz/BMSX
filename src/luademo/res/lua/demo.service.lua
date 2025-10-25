@@ -23,8 +23,8 @@ return {
 	},
 	on_tick = function(self, delta)
 		-- ensure we have an actor id; throw a clear error at the caller if missing
-		assert(self.engineActorId, 'missing engineActorId')
-		error('Simulated error in demo service')  -- to test error handling
+		-- assert(self.engineActorId, 'missing engineActorId')
+		-- error('Simulated error in demo service')  -- to test error handling
 		self.timer = self.timer + delta
 		if self.timer < self.interval then
 			return

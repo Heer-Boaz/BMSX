@@ -27,6 +27,7 @@ import { id_to_space_symbol, type Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Component } from '../component/basecomponent';
+import { BehaviorTrees, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -480,6 +481,33 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 	public attachFsm(objectId: Identifier, machineId: Identifier): void {
 		const object = this.requireWorldObject(objectId, 'attachFsm');
 		object.sc.ensureStatemachine(machineId, object.id);
+	}
+
+	public attachBehaviorTree(objectId: Identifier, treeId: BehaviorTreeID): void {
+		const trimmed = typeof treeId === 'string' ? treeId.trim() : '';
+		if (trimmed.length === 0) {
+			throw new Error('[BmsxConsoleApi] attachBehaviorTree requires a non-empty behavior tree id.');
+		}
+		const definition = BehaviorTrees[trimmed];
+		if (!definition) {
+			throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
+		}
+		const object = this.requireWorldObject(objectId, 'attachBehaviorTree');
+		const ctor = object.constructor as ConstructorWithBTProperty;
+		const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
+		if (!linked.has(trimmed)) {
+			const next = new Set(linked);
+			next.add(trimmed);
+			ctor.linkedBTs = next;
+		}
+		const contexts = (object as { btreecontexts?: Record<string, BehaviorTreeContext> }).btreecontexts;
+		if (contexts && !contexts[trimmed]) {
+			contexts[trimmed] = {
+				running: true,
+				root: definition,
+				blackboard: new Blackboard({ id: trimmed }),
+			};
+		}
 	}
 
 	public addComponent(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {

@@ -15,6 +15,9 @@ local state = {
 	lastServiceToggle = 0,
 	serviceFlash = 0,
 	servicePulse = 0,
+	luaActorId = nil,
+	nativeBehavior = nil,
+	luaBehavior = nil,
 }
 
 local palette = { 6, 8, 10, 12, 14 }
@@ -41,17 +44,142 @@ local function reset_balls()
 	end
 end
 
+local function update_actor_snapshot()
+	if not state.engineActorId then
+		state.nativeBehavior = nil
+		return
+	end
+	local actor = registry:get(state.engineActorId)
+	if not actor then
+		state.nativeBehavior = nil
+		return
+	end
+	state.nativeBehavior = actor.behavior
+end
+
+local function update_lua_actor_snapshot()
+	if not state.luaActorId then
+		state.luaBehavior = nil
+		return
+	end
+	local actor = registry:get(state.luaActorId)
+	if not actor then
+		state.luaBehavior = nil
+		return
+	end
+	state.luaBehavior = actor.behavior
+end
+
 local function ensure_engine_actor()
 	if state.engineActorId then
 		return
 	end
-	state.engineActorId = spawnWorldObject('WorldObject', {
+	state.engineActorId = spawnWorldObject('LuaDemoActor', {
 		id = 'lua_demo_actor',
 		position = { x = 48, y = 48, z = 0 },
 	})
 	attachFsm(state.engineActorId, 'console_testmachine')
 	local actor = registry:get(state.engineActorId)
 	events:emit('lua_demo.engine_actor_spawned', actor, { actorId = state.engineActorId })
+	update_actor_snapshot()
+end
+
+local function create_behavior_summary()
+	return {
+		mode = 'boot',
+		status = 'Priming behavior tree...',
+		pulse = 0,
+		iteration = 0,
+		hue = 9,
+		interval = 0,
+	}
+end
+
+local function attach_behavior_methods(actor)
+	actor.behavior = create_behavior_summary()
+
+	function actor:resetBehavior()
+		local summary = self.behavior
+		summary.mode = 'boot'
+		summary.status = 'Priming behavior tree...'
+		summary.pulse = 0
+		summary.iteration = 0
+		summary.hue = 9
+		summary.interval = 0
+	end
+
+	function actor:setMode(mode)
+		self.behavior.mode = mode
+	end
+
+	function actor:setBehaviorStatus(status)
+		self.behavior.status = status
+	end
+
+	local function clamp01(value)
+		if value < 0 then return 0 end
+		if value > 1 then return 1 end
+		return value
+	end
+
+	function actor:adjustPulse(delta)
+		local nextValue = clamp01((self.behavior.pulse or 0) + delta)
+		self.behavior.pulse = nextValue
+		return nextValue
+	end
+
+	function actor:setPulse(value)
+		local nextValue = value or 0
+		if nextValue < 0 then nextValue = 0 end
+		if nextValue > 1 then nextValue = 1 end
+		self.behavior.pulse = nextValue
+		return nextValue
+	end
+
+	function actor:setHue(hue)
+		local quantized = math.floor(hue or 0)
+		if quantized < 1 then
+			quantized = 1
+		elseif quantized > 15 then
+			quantized = 15
+		end
+		self.behavior.hue = quantized
+	end
+
+	function actor:incrementIteration()
+		local nextValue = (self.behavior.iteration or 0) + 1
+		self.behavior.iteration = nextValue
+		return nextValue
+	end
+
+	function actor:setCurrentInterval(frames)
+		local quantized = math.floor(frames or 0)
+		if quantized < 0 then
+			quantized = 0
+		end
+		self.behavior.interval = quantized
+	end
+end
+
+local function spawn_lua_actor()
+	local actorId = spawnWorldObject('WorldObject', {
+		id = 'lua_demo_actor_lua',
+		position = { x = 96, y = 64, z = 0 },
+	})
+	local actor = registry:get(actorId)
+	attach_behavior_methods(actor)
+	api.attachBehaviorTree(actorId, 'lua_demo_bt')
+	actor:resetBehavior()
+	actor.visible = false
+	return actorId
+end
+
+local function ensure_lua_actor()
+	if state.luaActorId then
+		return
+	end
+	state.luaActorId = spawn_lua_actor()
+	update_lua_actor_snapshot()
 end
 
 local function refresh_service_state()
@@ -82,6 +210,8 @@ local function update_service_feedback(delta)
 		state.serviceFlash = math.max(state.serviceFlash - delta, 0)
 	end
 	state.servicePulse = state.servicePulse + delta
+	update_actor_snapshot()
+	update_lua_actor_snapshot()
 end
 
 function init()
@@ -98,8 +228,12 @@ function init()
 	state.lastServiceToggle = 0
 	state.serviceFlash = 0
 	state.servicePulse = 0
+	state.luaActorId = nil
+	state.nativeBehavior = nil
+	state.luaBehavior = nil
 	reset_balls()
 	ensure_engine_actor()
+	ensure_lua_actor()
 	refresh_service_state()
 	cartdata('lua-demo')
 end
@@ -129,6 +263,7 @@ function update(delta)
 	state.frame = state.frame + 1
 
 	ensure_engine_actor()
+	ensure_lua_actor()
 	update_service_feedback(delta)
 
 	for _, ball in ipairs(state.balls) do
@@ -184,6 +319,25 @@ local function draw_service_info()
 	print('Service drives the engine actor automatically', 8, 108, 7)
 end
 
+local function draw_behavior_info(label, behavior, x, baseY)
+	if not behavior then
+		print(label .. ': booting...', x, baseY, 8)
+		return
+	end
+	local hue = behavior.hue or 10
+	print(label, x, baseY, hue)
+	print('Mode: ' .. (behavior.mode or 'unknown'), x, baseY + 8, hue)
+	local pulsePercent = math.floor((behavior.pulse or 0) * 100 + 0.5)
+	print('Pulse: ' .. pulsePercent .. '%', x, baseY + 16, 7)
+	print('Iterations: ' .. tostring(behavior.iteration or 0), x, baseY + 24, 7)
+	if behavior.interval and behavior.interval > 0 then
+		print('Next celebration in ~' .. tostring(behavior.interval) .. ' frames', x, baseY + 32, 6)
+	end
+	if behavior.status and #behavior.status > 0 then
+		print(behavior.status, x, baseY + 40, 10)
+	end
+end
+
 function draw()
 	cls(0)
 	print('Lua Demo', 38, 10, palette[state.paletteIndex])
@@ -193,12 +347,17 @@ function draw()
 
 	if state.engineActorId then
 		draw_service_info()
+		draw_behavior_info('BT (TypeScript actor)', state.nativeBehavior, 8, 120)
+		draw_behavior_info('BT (Lua actor)', state.luaBehavior, 80, 120)
 	else
 		print('Actor spawn pending...', 16, 56, 2)
 	end
 
 	local running = state.serviceState.mode == 'running'
-	local colorShift = running and math.floor((state.servicePulse * 4) % #palette) or 0
+	local behavior = state.nativeBehavior
+	local pulseShift = behavior and math.floor((behavior.pulse or 0) * (#palette - 1)) or 0
+	local colorShiftBase = running and math.floor((state.servicePulse * 4) % #palette) or 0
+	local colorShift = (colorShiftBase + pulseShift) % #palette
 
 	for index, ball in ipairs(state.balls) do
 		local paletteIndex = ((state.paletteIndex + index + colorShift - 2) % #palette) + 1
