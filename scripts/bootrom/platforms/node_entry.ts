@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 import { inflate } from 'pako';
-import { loadImage } from 'canvas';
+import { createCanvas, Image, loadImage } from 'canvas';
 
 import type { BootArgs, RomPack, TextureSource } from '../../../src/bmsx/rompack/rompack';
 import { getZippedRomAndRomLabelFromBlob, loadResources } from '../bootresources';
@@ -41,6 +41,96 @@ interface InputTimelineEntry {
 }
 
 let maxScheduledMs = 0;
+
+if (typeof (globalThis as any).Image === 'undefined') {
+	(globalThis as any).Image = Image;
+}
+
+if (typeof (globalThis as any).createImageBitmap !== 'function') {
+	(globalThis as any).createImageBitmap = async function polyfillCreateImageBitmap(
+		source: any,
+		...args: any[]
+	): Promise<any> {
+		const usingCrop = args.length >= 4 && typeof args[0] === 'number';
+		let sx = 0;
+		let sy = 0;
+		let sw: number | undefined;
+		let sh: number | undefined;
+		let options: any;
+		if (usingCrop) {
+			[sx, sy, sw, sh, options] = args as [number, number, number, number, any];
+		} else {
+			options = args[0];
+		}
+
+		const resolveImage = async (): Promise<any> => {
+			if (source && typeof source.getContext === 'function') {
+				return source;
+			}
+			if (source && typeof source.width === 'number' && typeof source.height === 'number') {
+				return source;
+			}
+			if (typeof Blob !== 'undefined' && source instanceof Blob) {
+				const arrayBuffer = await source.arrayBuffer();
+				return loadImage(Buffer.from(arrayBuffer));
+			}
+			if (source instanceof ArrayBuffer) {
+				return loadImage(Buffer.from(source));
+			}
+			if (ArrayBuffer.isView(source)) {
+				const view = source as ArrayBufferView;
+				const buffer = Buffer.from(view.buffer, view.byteOffset, view.byteLength);
+				return loadImage(buffer);
+			}
+			if (source instanceof Buffer) {
+				return loadImage(source);
+			}
+			throw new Error('[node_entry] Unsupported source for createImageBitmap polyfill.');
+		};
+
+		const image = await resolveImage();
+		const drawWidth = usingCrop ? (sw ?? image.width) : image.width;
+		const drawHeight = usingCrop ? (sh ?? image.height) : image.height;
+		const targetWidth = drawWidth;
+		const targetHeight = drawHeight;
+
+		const canvas = createCanvas(targetWidth, targetHeight);
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			throw new Error('[node_entry] Failed to obtain 2D context for createImageBitmap polyfill.');
+		}
+
+		if (options?.imageOrientation === 'flipY') {
+			ctx.translate(0, targetHeight);
+			ctx.scale(1, -1);
+		}
+
+		ctx.drawImage(
+			image,
+			usingCrop ? sx : 0,
+			usingCrop ? sy : 0,
+			drawWidth,
+			drawHeight,
+			0,
+			0,
+			targetWidth,
+			targetHeight,
+		);
+
+		return canvas as unknown as ImageBitmap;
+	};
+}
+
+if (typeof (globalThis as any).document === 'undefined') {
+	(globalThis as any).document = {
+		createElement: (tag: string) => {
+			if (tag.toLowerCase() !== 'canvas') {
+				throw new Error(`[node_entry] Unsupported element '${tag}' requested in headless environment.`);
+			}
+			return createCanvas(1, 1);
+		},
+	};
+}
 
 function printHelp(): void {
 	console.log('Run a packaged BMSX ROM in a Node environment.');
@@ -153,11 +243,11 @@ async function readRomFile(filePath: string): Promise<ArrayBuffer> {
 async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
 	const zipped = await getZippedRomAndRomLabelFromBlob(arrayBuffer);
 	const zippedView = new Uint8Array(zipped.zipped_rom);
-	const inflatedBytes = inflate(zippedView);
-	const romBuffer = inflatedBytes.buffer.slice(inflatedBytes.byteOffset, inflatedBytes.byteOffset + inflatedBytes.byteLength);
-	return loadResources(romBuffer, {
-		loadImageFromBuffer: async (buffer: ArrayBuffer): Promise<TextureSource> => {
-			const image = await loadImage(Buffer.from(buffer));
+const inflatedBytes = inflate(zippedView);
+const romBuffer = inflatedBytes.buffer.slice(inflatedBytes.byteOffset, inflatedBytes.byteOffset + inflatedBytes.byteLength);
+return loadResources(romBuffer, {
+	loadImageFromBuffer: async (buffer: ArrayBuffer): Promise<TextureSource> => {
+		const image = await loadImage(Buffer.from(buffer));
 			return image as TextureSource;
 		},
 	});

@@ -526,7 +526,12 @@ export function parseAudioMeta(filename: string) {
 }
 
 // --- Image filename collision-type suffix parser ---
-export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, collisionType: 'concave' | 'convex' | 'aabb', targetAtlas?: number } {
+export function parseImageMeta(filenameWithoutExt: string): {
+	sanitizedName: string,
+	collisionType: 'concave' | 'convex' | 'aabb',
+	targetAtlas?: number,
+	skipAtlas?: boolean,
+} {
 	// Match @cc or @cx for collision type, and @atlas=n for atlas assignment (order-insensitive)
 	const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
 	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
@@ -534,8 +539,9 @@ export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: str
 		const code = collisionMatch[1].toLowerCase();
 		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
 	}
+	const skipAtlas = /@noatlas/i.test(filenameWithoutExt);
 	let targetAtlas = undefined;
-	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+	if (!skipAtlas && GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 		const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
 		targetAtlas = atlasMatch ? parseInt(atlasMatch[1], 10) : undefined;
 		if (targetAtlas === undefined) {
@@ -547,9 +553,10 @@ export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: str
 	// Remove all @cc, @cx, and @atlas=n (in any order)
 	const sanitizedName = filenameWithoutExt
 		.replace(/@(cc|cx)/ig, '')
-		.replace(/@atlas=\d+/ig, '');
+		.replace(/@atlas=\d+/ig, '')
+		.replace(/@noatlas/ig, '');
 
-	return { sanitizedName, collisionType, targetAtlas };
+	return { sanitizedName, collisionType, targetAtlas, skipAtlas };
 }
 
 /**
@@ -693,10 +700,21 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 					throw new Error(`[RomPacker] Duplicate image resource "${name}" defined by "${existingImage.filepath}" and "${filepath}".`);
 				}
 				// If we are generating and using texture atlases, we need to add the image to the atlas
-				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS && !imgMeta.skipAtlas) {
 					if (imgMeta.targetAtlas !== undefined) targetAtlasIdSet.add(imgMeta.targetAtlas);
 				}
-				result.push({ filepath, name, ext, type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas, sourcePath });
+				const targetAtlasIndex = imgMeta.skipAtlas ? undefined : imgMeta.targetAtlas;
+				result.push({
+					filepath,
+					name,
+					ext,
+					type,
+					id: imgid,
+					collisionType: imgMeta.collisionType,
+					targetAtlasIndex,
+					sourcePath,
+					skipAtlas: imgMeta.skipAtlas,
+				});
 				imageNameRegistry.set(name, { filepath });
 				++imgid;
 				break;

@@ -412,13 +412,10 @@ export class TextureManager implements RegisterablePersistent {
 			const imgWidth = Math.max(1, Math.min(atlas.width - offsetX, Math.round((maxU - minU) * atlas.width)));
 			const imgHeight = Math.max(1, Math.min(atlas.height - offsetY, Math.round((maxV - minV) * atlas.height)));
 
-			const canvas = document.createElement('canvas');
-			canvas.width = imgWidth;
-			canvas.height = imgHeight;
-			const ctx = canvas.getContext('2d')!;
-			ctx.drawImage(atlas, offsetX, offsetY, imgWidth, imgHeight, 0, 0, imgWidth, imgHeight);
-			// Convert canvas to ImageBitmap asynchronously
-			source = createImageBitmap(canvas, {
+			if (typeof createImageBitmap !== 'function') {
+				throw new Error('[TextureManager] Atlas extraction requires browser createImageBitmap support.');
+			}
+			source = createImageBitmap(atlas, offsetX, offsetY, imgWidth, imgHeight, {
 				imageOrientation: options?.flipY ? 'flipY' : 'none',
 				premultiplyAlpha: 'none',
 				colorSpaceConversion: 'none',
@@ -471,4 +468,3 @@ export class TextureManager implements RegisterablePersistent {
 		Registry.instance.deregister(this, false);
 	}
 }
-

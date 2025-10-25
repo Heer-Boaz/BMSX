@@ -56,6 +56,7 @@ export interface ImageResource extends BaseResource<'image'> {
 	atlasid?: number;
 	img?: NodeCanvasImage;
 	atlasTexcoords?: AtlasTexcoords;
+	skipAtlas?: boolean;
 }
 
 export interface AtlasResource extends BaseResource<'atlas'> {
