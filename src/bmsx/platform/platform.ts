@@ -1,3 +1,17 @@
+/**
+ * Core platform contract.
+ *
+ * Every host environment (desktop shell, mobile wrapper, browser runtime, etc.) wires the engine
+ * to native services by implementing this interface. The properties deliberately mirror the systems
+ * the engine expects to exist at runtime: timing (`clock`/`frames`), persistence (`storage`), audio,
+ * human input, onscreen controls, and the high-level `gameviewHost` bridge that couples rendering
+ * to the platform's windowing model.
+ *
+ * The onscreen gamepad is treated as a first-class surface here: when it is enabled the engine
+ * expects the platform to expose a concrete implementation capable of delivering pointer events,
+ * tracking focus/blur transitions, and mapping host-specific hit testing to canonical control IDs.
+ * This is fundamental for layout — the renderer explicitly negotiates canvas space with these controls.
+ */
 export interface Platform {
 	clock: Clock;
 	frames: FrameLoop;
@@ -135,6 +149,14 @@ export interface OnscreenGamepadPlatformSession {
 	dispose(): void;
 }
 
+/**
+ * Platform responsibility for rendering and routing events to the virtual controls.
+ *
+ * When the onscreen gamepad feature flag is on, the engine relies on this bridge to negotiate layout
+ * and to keep pointer gestures synchronised with the gameplay input hub. The implementation is expected
+ * to back the controls with whatever UI primitives the host provides (HTML, native widgets, gamepad
+ * texture quads, etc.) while maintaining the canonical element IDs that the engine references.
+ */
 export interface OnscreenGamepadPlatform {
 	attach(hooks: OnscreenGamepadPlatformHooks): OnscreenGamepadPlatformSession;
 	hideElements(elementIds: string[]): void;
@@ -220,10 +242,29 @@ export interface ViewportDimensions {
 	height: number;
 }
 
+export interface VisibleViewportMetrics {
+	width: number;
+	height: number;
+	offsetTop: number;
+	offsetLeft: number;
+}
+
+/**
+ * Aggregated sizing data that the active platform reports to the renderer.
+ *
+ * The `document`, `windowInner`, and `screen` entries represent the platform's best knowledge of
+ * total available space. `visible` captures the interactive sub-rectangle that remains once transient
+ * chrome (virtual keyboards, system bars, gesture zones) reduces the actual presentation area.
+ *
+ * Implementations are free to approximate values when a concept does not exist natively (for instance,
+ * a headless renderer can alias all fields to the backing surface bounds). The renderer treats these
+ * numbers as authoritative when positioning the main canvas and the onscreen gamepad.
+ */
 export interface ViewportMetrics {
 	document: ViewportDimensions;
 	windowInner: ViewportDimensions;
 	screen: ViewportDimensions;
+	visible: VisibleViewportMetrics;
 }
 
 export type HostWindowEventType = 'resize' | 'orientationchange' | 'keyup' | 'keydown';
@@ -259,6 +300,11 @@ export interface GameViewCanvas {
 	measureDisplay(): SurfaceBounds;
 }
 
+/**
+ * Lightweight facade that lets the renderer manipulate the onscreen control visuals without coupling
+ * to platform-native widget APIs. Measurements and mutations are expressed in abstract units so the
+ * GameView can reason about scale and positioning uniformly across targets.
+ */
 export interface GamepadControlHandle {
 	readonly id: string;
 	getNumericAttribute(name: string): number | null;
@@ -267,6 +313,11 @@ export interface GamepadControlHandle {
 	setScale(scale: number): void;
 }
 
+/**
+ * Binds the two primary control clusters (directional and action) so the renderer can adjust them
+ * together. Additional clusters can be introduced in the future by extending this contract; the current
+ * implementation concentrates on the core gameplay experience where these two areas dominate the layout.
+ */
 export interface OnscreenGamepadHandles {
 	dpad: GamepadControlHandle;
 	actionButtons: GamepadControlHandle;
@@ -320,6 +371,14 @@ export interface GameViewHostCapabilityMap {
 	'onscreen-gamepad': OnscreenGamepadHandleProvider;
 }
 
+/**
+ * Platform-specific delegate that surfaces rendering and window-management affordances to the engine.
+ *
+ * The GameView queries this host for capabilities rather than accessing global APIs directly. That
+ * indirection keeps the renderer agnostic of how the host projects surfaces (DOM, native window, offscreen
+ * framebuffer) while still allowing us to lean on specialised behaviour, such as onscreen gamepad handles
+ * or fullscreen transitions, when the platform provides them.
+ */
 export interface GameViewHost {
 	readonly surface: GameViewCanvas;
 	createBackend(): Promise<unknown>;

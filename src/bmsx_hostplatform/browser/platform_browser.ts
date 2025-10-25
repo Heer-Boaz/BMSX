@@ -35,6 +35,15 @@ import {
 import { WebAudioService } from './web_audio';
 import type { GamepadControlHandle, GameViewCanvas, GameViewHost, HostEventListenerTarget, HostEventOptions, HostWindowEventType, OnscreenGamepadHandles, OverlayHandle, SurfaceBounds, ViewportDimensions } from '../platform';
 
+/**
+ * Platform wiring for the web-hosted runtime.
+ *
+ * This implementation maps the engine's abstract platform contract to DOM-powered services and
+ * provides the onscreen gamepad plumbing that the renderer relies on when the virtual controls are
+ * active. Even though the integration lives inside a browser, we deliberately describe capabilities
+ * in platform-neutral terms so higher layers can reason about clocks, storage, audio, and layout
+ * without caring about underlying APIs.
+ */
 export class BrowserPlatform implements Platform {
 	clock: Clock;
 	frames: FrameLoop;
@@ -713,6 +722,15 @@ function removeDpadClasses(target: Element): void {
 	}
 }
 
+/**
+ * Web-backed implementation of the onscreen gamepad platform.
+ *
+ * The engine treats this class as the authoritative bridge between gameplay code and whichever DOM
+ * nodes represent the virtual controls. It is responsible for normalising pointer input, preserving
+ * the canonical element identifiers, and ensuring the controls can be measured/scaled so the GameView
+ * can negotiate space for them. When the onscreen gamepad is visible, every layout calculation in the
+ * renderer assumes these handles are present and responsive.
+ */
 export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 	private readonly document: Document;
 
@@ -1055,6 +1073,15 @@ function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOpt
 	return options as AddEventListenerOptions;
 }
 
+/**
+ * GameViewHost bound to DOM primitives.
+ *
+ * Besides exposing the canvas handle, this bridge packages up auxiliary capabilities such as viewport
+ * metrics, overlay management, window events, display mode toggles, and onscreen gamepad handles.
+ * The GameView never queries the DOM directly; it relies on this host to supply consistent, platform-
+ * agnostic data about sizing and interactivity. That is especially important for the onscreen gamepad,
+ * whose handles are surfaced here so the renderer can scale and reposition them alongside the canvas.
+ */
 export class BrowserGameViewHost implements GameViewHost {
 	private static visualViewportForwardingInstalled = false;
 	private static viewportForwardingRafId: number | null = null;
@@ -1160,10 +1187,18 @@ export class BrowserGameViewHost implements GameViewHost {
 			width: window.screen.width,
 			height: window.screen.height,
 		};
+		const visual = window.visualViewport!;
+		const visible = {
+			width: visual.width,
+			height: visual.height,
+			offsetTop: visual.offsetTop,
+			offsetLeft: visual.offsetLeft,
+		};
 		return {
 			document: documentDimensions,
 			windowInner: windowDimensions,
 			screen: screenDimensions,
+			visible,
 		};
 	}
 

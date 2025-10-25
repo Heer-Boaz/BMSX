@@ -144,6 +144,7 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			document: { width: bounds.width, height: bounds.height },
 			windowInner: { width: bounds.width, height: bounds.height },
 			screen: { width: bounds.width, height: bounds.height },
+			visible: { width: bounds.width, height: bounds.height, offsetTop: 0, offsetLeft: 0 },
 		};
 	}
 
@@ -417,9 +418,42 @@ export class GameView implements RegisterablePersistent, RenderContext {
 	}
 
 	/**
-	 * Calculates the size of the canvas and the scale factor based on the current viewport size and window size.
-	 * The `dx` and `dy` properties represent the ratio of the window size to the viewport size in the x and y directions, respectively.
-	 * The `scale` property represents the minimum of `dx` and `dy`.
+	 * Comprehensive viewport sizing routine.
+	 *
+	 * This method gathers every dimension the host environment exposes (document, inner, screen, or any
+	 * custom source supplied by the active platform)
+	 * and derives two related concepts:
+	 *  - `windowSize`/`availableWindowSize`: how much real estate we believe we can inhabit,
+	 *    factoring in host shells that report a zero `innerWidth`/`innerHeight` while
+	 *    an onscreen keyboard is sliding in (observed on several mobile web views).
+	 *  - `viewportScale` and `canvasScale`: the ratio between that real estate and the
+	 *    logical render sizes (`viewportSize` for gameplay, `canvasSize` for the backing buffer).
+	 *
+	 * Historical context / pitfalls:
+	 *  - When the onscreen gamepad is enabled it becomes a first-class surface sharing the same
+	 *    presentation field as the main canvas. Ignoring its footprint leads to either the game
+	 *    canvas shrinking unpredictably or the controls falling off-screen. Every calculation in
+	 *    this method treats those controls as essential viewports, not optional chrome.
+	 *  - Prior to the onscreen-gamepad refactors we assumed the canvas could always consume
+	 *    the full width of the container. Once the onscreen controls started participating
+	 *    in normal flow (instead of being absolutely positioned), the gamepad effectively started
+	 *    negotiating for horizontal space with the canvas. The layout simulator in
+	 *    `tests/simulate_gamepad_positions_for_codex.js` captures how that shift collapses
+	 *    available width if we do not pre-allocate "Lebensraum" for the gamepad.
+	 *  - Fixed clamping to 20% of the larger screen dimension keeps the control overlays legible on
+	 *    phones yet avoids dwarfing the canvas on tablets/desktops.
+	 *  - We deliberately avoid defensive null checks here: the platform layer guarantees that
+	 *    viewport metrics exist and that `OnscreenGamepadHandleProvider` returns handles while
+	 *    the onscreen gamepad is enabled.
+	 *
+	 * The landscape branch further subtracts the horizontal footprint of both control clusters when
+	 * the canvas is configured to "own" the shared space (`canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas'`).
+	 * That mirrors how the static-flow layout squeezes the canvas; without this subtraction, the canvas
+	 * scale would be computed optimistically and the host flow would shove the controls off-screen.
+	 *
+	 * After all of the above, we convert to integers (via `~~`) to stabilise pixel snapping.
+	 * The downstream `handleResize` call relies on these invariant values when centering or
+	 * pinning the canvas.
 	 */
 	public calculateSize(): void {
 		const self = $.view || this;
@@ -454,12 +488,12 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			const handles = handlesProvider?.getHandles();
 			if (handles) {
 				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-				const maxSvgScale = referenceDimension * 0.20 / 100;
+				const maxControlScale = referenceDimension * 0.20 / 100;
 				const dpadWidthAttr = handles.dpad.getNumericAttribute('width');
 				const actionButtonsWidthAttr = handles.actionButtons.getNumericAttribute('width');
 				if (dpadWidthAttr !== null && actionButtonsWidthAttr !== null) {
-					const dpadWidth = dpadWidthAttr * maxSvgScale;
-					const actionButtonsWidth = actionButtonsWidthAttr * maxSvgScale;
+					const dpadWidth = dpadWidthAttr * maxControlScale;
+					const actionButtonsWidth = actionButtonsWidthAttr * maxControlScale;
 					const reduction = dpadWidth + actionButtonsWidth;
 					adjustedWidth = Math.max(0, adjustedWidth - reduction);
 				}
@@ -477,6 +511,45 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		self.canvasScale = Math.min(self.canvas_dx, self.canvas_dy);
 	}
 
+	/**
+	 * Canonical resize pipeline for the GameView canvas and onscreen gamepad.
+	 *
+	 * A high-level map of the steps involved:
+	 *  1. Guard: skip if the canvas is hidden (avoids pointless layout work when the view
+	 *     is minimised or running headless).
+	 *  2. Collect `visible` viewport data so we can react to runtime chrome intrusion (address bars,
+	 *     gesture navigation, virtual keyboards). The `viewportBottomInset` is the delta between the
+	 *     theoretical viewport and what is actually visible once those overlays are in place.
+	 *  3. Delegate to `calculateSize` which normalises our measurements, accounts for the gamepad
+	 *     "Lebensraum" subtraction, and populates the scaling fields.
+	 *  4. Derive the displayed canvas width/height by multiplying the logical canvas size by the
+	 *     computed scale. We centre those values within the **largest** container reported by either
+	 *     the host layout tree or the global viewport to avoid jolting the canvas when the outer box temporarily reports
+	 *     shrinking values (Safari tends to do this mid-resize).
+	 *  5. Apply the computed size/position to the host surface wrapper.
+	 *  6. If the onscreen gamepad is active, compute per-control scale and bottom offsets so that:
+	 *     - Each control cluster scales to roughly 20% of the dominant dimension unless constrained by the space
+	 *       left around the canvas (`GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad'`).
+	 *       The modern layout means the canvas occupies part of the flow, so we explicitly
+	 *       cap the control width by the leftover horizontal gutter to keep the controls visible instead
+	 *       of overflowing above/below the canvas.
+	 *     - Vertical positioning uses the **visible** viewport height from the metrics provider so that
+	 *       the controls remain docked even while the host chrome animates. The earlier absolute-layout
+	 *       approach ignored this and we saw negative "visual bottoms" in the simulator, effectively
+	 *       pushing the buttons off the bottom edge on mobile Safari.
+	 *
+	 * Implementation notes and known quirks:
+	 *  - The viewport metrics provider guarantees `visible` values, so we avoid optional chaining.
+	 *  - `setBottom` expects integer values; we round after adding the bottom inset to stay consistent
+	 *    with host pixel snapping and to keep the simulator's readings deterministic.
+	 *  - The centring logic intentionally uses `Math.max(viewportWidth, windowSize.x, displayWidth)`
+	 *    so that sporadic zero reports from `innerWidth` (observed while waking locked devices) do not
+	 *    yank the canvas toward the origin.
+	 *  - Landscape mode keeps both controls vertically centred against the `visible` span, whereas
+	 *    portrait mode leaves the d-pad "floating" above the action cluster so thumbs are not fighting
+	 *    for identical vertical real estate. These heuristics came out of multiple iteration passes,
+	 *    hence the `updateBottomPosition` branching.
+	 */
 	public handleResize(): void {
 		if (!this.surface.isVisible()) return;
 
@@ -487,9 +560,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const screenHeight = metrics.screen.height;
 		const viewportWidth = innerWidth > 0 ? innerWidth : screenWidth;
 		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
-		const visualViewport = window.visualViewport!;
-		const visibleViewportHeight = visualViewport.height;
-		const visibleViewportBottom = visualViewport.offsetTop + visibleViewportHeight;
+		const visibleViewportHeight = metrics.visible.height;
+		const visibleViewportBottom = metrics.visible.offsetTop + visibleViewportHeight;
 		const viewportBottomInset = Math.max(0, viewportHeight - visibleViewportBottom);
 
 		const self = $.view || this;
@@ -524,18 +596,18 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
 				let newScale = referenceDimension * 0.20 / 100;
 				if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
-					let maxSvgWidth: number;
+					let maxControlWidth: number;
 					if (isRightSide) {
-						maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
+						maxControlWidth = viewportWidth - (canvasRect.left + canvasRect.width);
 					} else {
-						maxSvgWidth = canvasRect.left;
+						maxControlWidth = canvasRect.left;
 					}
-					if (maxSvgWidth < 0) {
-						maxSvgWidth = 0;
+					if (maxControlWidth < 0) {
+						maxControlWidth = 0;
 					}
 					const widthAttr = control.getNumericAttribute('width');
-					if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
-						newScale = maxSvgWidth / widthAttr;
+					if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxControlWidth) {
+						newScale = maxControlWidth / widthAttr;
 					}
 				}
 				const heightAttr = control.getNumericAttribute('height');

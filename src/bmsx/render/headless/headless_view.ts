@@ -61,6 +61,7 @@ export class HeadlessGameViewHost implements GameViewHost {
 					document: { width: bounds.width, height: bounds.height },
 					windowInner: { width: bounds.width, height: bounds.height },
 					screen: { width: bounds.width, height: bounds.height },
+					visible: { width: bounds.width, height: bounds.height, offsetTop: 0, offsetLeft: 0 },
 				};
 			},
 		};

@@ -112,6 +112,7 @@ export class CLIGameViewHost implements GameViewHost {
 			document: { width, height },
 			windowInner: { width, height },
 			screen: { width, height },
+			visible: { width, height, offsetTop: 0, offsetLeft: 0 },
 		};
 	}
 }

@@ -13,6 +13,7 @@ function simulate({
   maxRightWidth = null,
   maxLeftWidth = null,
   respectGamepadLebensraum = false,
+  layoutMode = 'absolute', // 'absolute' = svg absolute positioned, 'static' = svg participates in flow
 }) {
   const visualViewport = { height: visualHeight, offsetTop };
   const visibleBottom = visualViewport.offsetTop + visualViewport.height;
@@ -64,13 +65,29 @@ function simulate({
   const dpadBottom = computeBottom(dpadHeight, false);
   const actionBottom = computeBottom(actionHeight, true);
 
+  const resolveVisualBottom = (computedBottom, baseHeight, scaledHeight) => {
+    if (layoutMode === 'absolute') {
+      const extraHeight = Math.max(0, scaledHeight - baseHeight);
+      return computedBottom - extraHeight;
+    }
+    return computedBottom;
+  };
+
+  const dpadVisualBottom = resolveVisualBottom(dpadBottom, dpadBaseHeight, dpadHeight);
+  const actionVisualBottom = resolveVisualBottom(actionBottom, actionBaseHeight, actionHeight);
+
+  const clampWithinViewport = value => Math.max(0, Math.min(innerHeight, value));
+
   return {
     label,
     viewportBottomInset,
     centeredSpan,
-    dpadBottom,
-    actionBottom,
-    actionTopFromBottom: innerHeight - actionBottom,
+    layoutMode,
+    dpadComputedBottom: dpadBottom,
+    actionComputedBottom: actionBottom,
+    dpadVisualBottom,
+    actionVisualBottom,
+    actionTopFromViewportBottom: clampWithinViewport(innerHeight - actionVisualBottom),
     actionHeight: Math.round(actionHeight),
     dpadHeight: Math.round(dpadHeight),
     visualHeight,
@@ -82,40 +99,74 @@ function simulate({
 
 const scenarios = [
   {
-    label: 'Landscape wide',
+    label: 'Landscape wide (svg absolute positioning)',
     innerWidth: 1280,
     innerHeight: 720,
     screenHeight: 720,
     visualHeight: 720,
     offsetTop: 0,
     isLandscape: true,
+    layoutMode: 'absolute',
   },
   {
-    label: 'Landscape with small visual viewport',
+    label: 'Landscape wide (static positioning)',
+    innerWidth: 1280,
+    innerHeight: 720,
+    screenHeight: 720,
+    visualHeight: 720,
+    offsetTop: 0,
+    isLandscape: true,
+    layoutMode: 'static',
+  },
+  {
+    label: 'Landscape with small visual viewport (svg absolute positioning)',
     innerWidth: 1280,
     innerHeight: 720,
     screenHeight: 720,
     visualHeight: 400,
     offsetTop: 0,
     isLandscape: true,
+    layoutMode: 'absolute',
   },
   {
-    label: 'Portrait tall',
+    label: 'Landscape with small visual viewport (static)',
+    innerWidth: 1280,
+    innerHeight: 720,
+    screenHeight: 720,
+    visualHeight: 400,
+    offsetTop: 0,
+    isLandscape: true,
+    layoutMode: 'static',
+  },
+  {
+    label: 'Portrait tall (static)',
     innerWidth: 768,
     innerHeight: 1024,
     screenHeight: 1024,
     visualHeight: 900,
     offsetTop: 0,
     isLandscape: false,
+    layoutMode: 'static',
   },
   {
-    label: 'Landscape device with inset and canvas smaller',
+    label: 'Landscape device with inset (svg absolute positioning)',
     innerWidth: 1334,
     innerHeight: 750,
     screenHeight: 750,
     visualHeight: 320,
     offsetTop: 0,
     isLandscape: true,
+    layoutMode: 'absolute',
+  },
+  {
+    label: 'Landscape device with inset (static)',
+    innerWidth: 1334,
+    innerHeight: 750,
+    screenHeight: 750,
+    visualHeight: 320,
+    offsetTop: 0,
+    isLandscape: true,
+    layoutMode: 'static',
   },
 ];
 
