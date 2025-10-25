@@ -943,8 +943,8 @@ export class BrowserOnscreenGamepadPlatform implements OnscreenGamepadPlatform {
 		surface.style.setProperty('-webkit-touch-callout', 'none');
 		surface.style.setProperty('-webkit-tap-highlight-color', 'transparent');
 		surface.style.setProperty('-ms-touch-action', 'none');
-		surface.setAttribute('aria-hidden', 'true');
-		surface.hidden = true;
+		surface.setAttribute('aria-hidden', 'false');
+		surface.removeAttribute('hidden');
 	}
 }
 
@@ -1057,8 +1057,19 @@ function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOpt
 
 export class BrowserGameViewHost implements GameViewHost {
 	private static visualViewportForwardingInstalled = false;
-	private static forwardViewportChange(): void {
+	private static viewportForwardingRafId: number | null = null;
+	private static dispatchViewportChange(): void {
 		window.dispatchEvent(new Event('resize'));
+		window.dispatchEvent(new Event('orientationchange'));
+	}
+	private static forwardViewportChange(): void {
+		BrowserGameViewHost.dispatchViewportChange();
+		if (BrowserGameViewHost.viewportForwardingRafId === null) {
+			BrowserGameViewHost.viewportForwardingRafId = window.requestAnimationFrame(() => {
+				BrowserGameViewHost.viewportForwardingRafId = null;
+				BrowserGameViewHost.dispatchViewportChange();
+			});
+		}
 	}
 	public readonly surface: BrowserGameViewCanvas;
 	private readonly overlays = new Map<string, BrowserOverlayHandle>();
@@ -1080,6 +1091,7 @@ export class BrowserGameViewHost implements GameViewHost {
 				const handler = BrowserGameViewHost.forwardViewportChange;
 				visualViewport.addEventListener('resize', handler);
 				visualViewport.addEventListener('scroll', handler);
+				visualViewport.addEventListener('geometrychange', handler as EventListener);
 				BrowserGameViewHost.visualViewportForwardingInstalled = true;
 			}
 		}

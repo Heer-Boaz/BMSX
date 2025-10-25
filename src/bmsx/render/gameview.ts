@@ -487,18 +487,22 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const screenHeight = metrics.screen.height;
 		const viewportWidth = innerWidth > 0 ? innerWidth : screenWidth;
 		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
-		const isLandscape = viewportWidth > viewportHeight && viewportWidth !== 0 && viewportHeight !== 0;
+		const visualViewport = typeof window !== 'undefined' ? window.visualViewport : undefined;
+		const viewportBottomInset = visualViewport && typeof visualViewport.height === 'number' && typeof visualViewport.offsetTop === 'number'
+			? Math.max(0, innerHeight - (visualViewport.height + visualViewport.offsetTop))
+			: 0;
 
 		const self = $.view || this;
 		self.calculateSize();
 		const displayWidth = ~~(self.canvasSize.x * self.canvasScale);
 		const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
-		const horizontalContainer = viewportWidth > 0 ? viewportWidth : self.windowSize.x;
-		const verticalContainer = viewportHeight > 0 ? viewportHeight : self.windowSize.y;
+		const horizontalContainer = Math.max(viewportWidth, self.windowSize.x, displayWidth);
+		const verticalContainer = Math.max(viewportHeight, self.windowSize.y, displayHeight);
 		let displayLeft = ~~((horizontalContainer - displayWidth) / 2);
 		if (displayLeft < 0) {
 			displayLeft = 0;
 		}
+		const isLandscape = self.availableWindowSize.x >= self.availableWindowSize.y;
 		const onscreenGamepadEnabled = Input.instance.isOnscreenGamepadEnabled;
 		let displayTop = isLandscape || !onscreenGamepadEnabled
 			? ~~((verticalContainer - displayHeight) / 2)
@@ -516,21 +520,22 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			if (handles) {
 				const { dpad, actionButtons } = handles;
 				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-				const verticalSpan = verticalContainer;
+				const bottomInset = viewportBottomInset;
 				const canvasRect = this.surface.measureDisplay();
+				const verticalSpan = Math.max(verticalContainer, canvasRect.height);
 
-				const updateBottomPosition = (control: typeof dpad, isRightSide: boolean): void => {
-					const elementSize = control.measure();
+				const clampBottom = (value: number): number => value > 0 ? Math.round(value) : 0;
+
+				const updateBottomPosition = (control: typeof dpad, size: { height: number; }, isRightSide: boolean, referenceActionSize: { height: number; }): void => {
 					let newBottom: number;
 					if (isLandscape) {
-						newBottom = (verticalSpan - elementSize.height) / 2;
+						newBottom = (verticalSpan - size.height) / 2;
 					} else if (isRightSide) {
-						newBottom = 0;
+						newBottom = bottomInset;
 					} else {
-						const rightSideHeight = actionButtons.measure().height;
-						newBottom = (rightSideHeight - elementSize.height) / 2;
+						newBottom = bottomInset + ((referenceActionSize.height - size.height) / 2);
 					}
-					control.setBottom(newBottom);
+					control.setBottom(clampBottom(newBottom));
 				};
 
 				const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
@@ -555,8 +560,10 @@ export class GameView implements RegisterablePersistent, RenderContext {
 
 				updateScale(dpad, false);
 				updateScale(actionButtons, true);
-				updateBottomPosition(dpad, false);
-				updateBottomPosition(actionButtons, true);
+				const dpadSize = dpad.measure();
+				const actionSize = actionButtons.measure();
+				updateBottomPosition(dpad, dpadSize, false, actionSize);
+				updateBottomPosition(actionButtons, actionSize, true, actionSize);
 			}
 		}
 	}
