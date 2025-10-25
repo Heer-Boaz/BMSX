@@ -1,0 +1,186 @@
+import { Msx1Colors } from '../../systems/msx';
+
+export const TAB_SPACES = 2;
+export const INITIAL_REPEAT_DELAY = 0.28;
+export const REPEAT_INTERVAL = 0.05;
+export const CURSOR_BLINK_INTERVAL = 0.45;
+export const UNDO_HISTORY_LIMIT = 512;
+export const UNDO_COALESCE_INTERVAL_MS = 550;
+export const WHEEL_SCROLL_STEP = 40;
+export const DOUBLE_CLICK_MAX_INTERVAL_MS = 320;
+
+export const COLOR_FRAME = 15; // White
+export const COLOR_TOP_BAR = 14; // Grey
+export const COLOR_TOP_BAR_TEXT = 1; // Black
+export const COLOR_CODE_BACKGROUND = 4; // Dark blue
+export const COLOR_GUTTER_BACKGROUND = 14; // Grey
+export const COLOR_CODE_TEXT = 15; // Grey
+export const COLOR_KEYWORD = 11; // Yellow
+export const COLOR_STRING = 9; // Light red
+export const COLOR_NUMBER = 1; // Black
+export const COLOR_COMMENT = 2; // Dark green
+export const COLOR_OPERATOR = 3; // Light green
+export const COLOR_CODE_DIM = 6; // Dark red
+export const HIGHLIGHT_OVERLAY = Msx1Colors[4];
+export const SELECTION_OVERLAY = Msx1Colors[13];
+export const CARET_COLOR = Msx1Colors[15]; // White
+export const INLINE_CARET_COLOR = Msx1Colors[1]; // Black
+export const COLOR_STATUS_BACKGROUND = 14; // Grey
+export const COLOR_STATUS_TEXT = 1; // Black
+export const COLOR_STATUS_WARNING = 9;
+export const COLOR_STATUS_SUCCESS = 10;
+export const COLOR_STATUS_ERROR = 2;
+export const COLOR_STATUS_ALERT = 6;
+export const COLOR_RESOURCE_PANEL_BACKGROUND = 14; // Grey
+export const COLOR_RESOURCE_PANEL_TEXT = 0;
+export const COLOR_RESOURCE_PANEL_HIGHLIGHT = 0;
+export const COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT = 15; // White
+export const COLOR_RESOURCE_VIEWER_BACKGROUND = 0;
+export const COLOR_RESOURCE_VIEWER_TEXT = 15; // White
+export const COLOR_SEARCH_BACKGROUND = 7; // Light green
+export const COLOR_SEARCH_TEXT = 1; // Black
+export const COLOR_SEARCH_PLACEHOLDER = COLOR_CODE_DIM;
+export const COLOR_SEARCH_OUTLINE = 1; // Black
+export const SEARCH_MATCH_OVERLAY = { r: 0.9, g: 0.35, b: 0.35, a: 0.38 };
+export const SEARCH_MATCH_ACTIVE_OVERLAY = { r: 1, g: 0.85, b: 0.25, a: 0.6 };
+export const SEARCH_BAR_MARGIN_Y = 2;
+export const COLOR_LINE_JUMP_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+export const COLOR_LINE_JUMP_TEXT = COLOR_SEARCH_TEXT;
+export const COLOR_LINE_JUMP_PLACEHOLDER = COLOR_CODE_DIM;
+export const COLOR_LINE_JUMP_OUTLINE = COLOR_SEARCH_OUTLINE;
+export const ERROR_OVERLAY_BACKGROUND = { r: 0.6, g: 0, b: 0, a: 1 };
+export const ERROR_OVERLAY_PADDING_X = 4;
+export const ERROR_OVERLAY_PADDING_Y = 2;
+export const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
+export const EXECUTION_STOP_OVERLAY = { r: 0.95, g: 0.45, b: 0.1, a: 0.45 };
+export const HOVER_TOOLTIP_PADDING_X = 4;
+export const HOVER_TOOLTIP_PADDING_Y = 2;
+export const HOVER_TOOLTIP_BACKGROUND = { r: 0.1, g: 0.1, b: 0.1, a: 0.9 };
+export const HOVER_TOOLTIP_BORDER = COLOR_TOP_BAR_TEXT;
+export const HOVER_TOOLTIP_MAX_VISIBLE_LINES = 10;
+export const HOVER_TOOLTIP_MAX_LINE_LENGTH = 160;
+export const LINE_JUMP_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
+export const COLOR_CREATE_RESOURCE_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+export const COLOR_CREATE_RESOURCE_TEXT = COLOR_SEARCH_TEXT;
+export const COLOR_CREATE_RESOURCE_PLACEHOLDER = COLOR_SEARCH_PLACEHOLDER;
+export const COLOR_CREATE_RESOURCE_OUTLINE = COLOR_SEARCH_OUTLINE;
+export const COLOR_CREATE_RESOURCE_ERROR = COLOR_STATUS_WARNING;
+export const CREATE_RESOURCE_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
+export const CREATE_RESOURCE_MAX_PATH_LENGTH = 1024;
+export const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '-- New Lua resource\n';
+export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
+\tid = '<MACHINE_ID>',
+\tenable_tape_autotick = true,
+\tticks2advance_tape = 50,
+\tstates = {
+\t\t_idle = { -- '_'-prefix to make it the initial state
+\t\t\tentering_state = function(self, state, payload)
+\t\t\tend,
+\t\t\ttick = function(self, state, payload)
+\t\t\tend,
+\t\t\ttapemove = function(self, state, payload)
+\t\t\t\treturn '../running'
+\t\t\tend,
+\t\t\ton = {
+\t\t\t\t['$start'] = '../running' -- '$'-prefix to denote self-scoped event
+\t\t\t}
+\t\t},
+\t\tenable_tape_autotick = true,
+\t\tticks2advance_tape = 100,
+\t\trunning = {
+\t\t\tentering_state = function(self, state, payload)
+\t\t\tend,
+\t\t\ttick = function(self, state, payload)
+\t\t\tend,
+\t\t\ttapemove = function(self, state, payload)
+\t\t\t\treturn '../_idle'
+\t\t\tend,
+\t\t\ton = {
+\t\t\t\t['$stop'] = '../idle' -- '$'-prefix to denote self-scoped event
+\t\t\t}
+\t\t}
+\t}
+}
+`;
+export const HEADER_BUTTON_PADDING_X = 5;
+export const HEADER_BUTTON_PADDING_Y = 1;
+export const HEADER_BUTTON_SPACING = 4;
+export const COLOR_HEADER_BUTTON_BACKGROUND = COLOR_STATUS_BACKGROUND;
+export const COLOR_HEADER_BUTTON_BORDER = COLOR_TOP_BAR_TEXT;
+export const COLOR_HEADER_BUTTON_DISABLED_BACKGROUND = COLOR_GUTTER_BACKGROUND;
+export const COLOR_HEADER_BUTTON_TEXT = COLOR_TOP_BAR_TEXT;
+export const COLOR_HEADER_BUTTON_TEXT_DISABLED = COLOR_CODE_DIM;
+export const COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND = COLOR_STATUS_WARNING;
+export const COLOR_HEADER_BUTTON_ACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
+export const ACTION_OVERLAY_COLOR = { r: 0, g: 0, b: 0, a: 0.65 };
+export const ACTION_DIALOG_BACKGROUND_COLOR = COLOR_SEARCH_BACKGROUND;
+export const ACTION_DIALOG_BORDER_COLOR = COLOR_SEARCH_OUTLINE;
+export const ACTION_DIALOG_TEXT_COLOR = COLOR_SEARCH_TEXT;
+export const ACTION_BUTTON_BACKGROUND = COLOR_STATUS_BACKGROUND;
+export const ACTION_BUTTON_TEXT = COLOR_STATUS_TEXT;
+export const TAB_BUTTON_PADDING_X = 4;
+export const TAB_BUTTON_PADDING_Y = 1;
+export const TAB_BUTTON_SPACING = 3;
+export const TAB_DRAG_ACTIVATION_THRESHOLD = 8;
+export const TAB_DIRTY_MARKER_SPACING = 2;
+export const COLOR_TAB_BAR_BACKGROUND = COLOR_STATUS_BACKGROUND;
+export const COLOR_TAB_BORDER = COLOR_TOP_BAR_TEXT;
+export const COLOR_TAB_INACTIVE_BACKGROUND = COLOR_STATUS_BACKGROUND;
+export const COLOR_TAB_ACTIVE_BACKGROUND = COLOR_CODE_BACKGROUND;
+export const COLOR_TAB_INACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
+export const COLOR_TAB_ACTIVE_TEXT = COLOR_TOP_BAR_TEXT;
+export const TAB_CLOSE_BUTTON_PADDING_X = 3;
+export const TAB_CLOSE_BUTTON_PADDING_Y = 1;
+export const TAB_CLOSE_BUTTON_SYMBOL = 'x';
+export const COLOR_GOTO_UNDERLINE = 14; // Grey
+export const RESOURCE_VIEWER_MAX_LINES = 512;
+export const RESOURCE_PANEL_MIN_RATIO = 0.18;
+export const RESOURCE_PANEL_MAX_RATIO = 0.6;
+export const RESOURCE_PANEL_DEFAULT_RATIO = 0.3;
+export const RESOURCE_PANEL_MIN_EDITOR_RATIO = 0.35;
+export const RESOURCE_PANEL_DIVIDER_COLOR = COLOR_TAB_BORDER;
+export const RESOURCE_PANEL_PADDING_X = 4;
+export const RESOURCE_PANEL_DIVIDER_DRAG_MARGIN = 4;
+export const SCROLLBAR_WIDTH = 3;
+export const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
+export const SCROLLBAR_TRACK_COLOR = COLOR_STATUS_BACKGROUND;
+export const SCROLLBAR_THUMB_COLOR = COLOR_STATUS_TEXT;
+export const SYMBOL_SEARCH_BAR_MARGIN_Y = SEARCH_BAR_MARGIN_Y;
+export const SYMBOL_SEARCH_MAX_RESULTS = 8;
+export const COLOR_SYMBOL_SEARCH_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+export const COLOR_SYMBOL_SEARCH_TEXT = COLOR_SEARCH_TEXT;
+export const COLOR_SYMBOL_SEARCH_PLACEHOLDER = COLOR_SEARCH_PLACEHOLDER;
+export const COLOR_SYMBOL_SEARCH_OUTLINE = COLOR_SEARCH_OUTLINE;
+export const COLOR_SYMBOL_SEARCH_KIND = COLOR_CODE_DIM;
+export const SYMBOL_SEARCH_RESULT_PADDING_X = 4;
+export const SYMBOL_SEARCH_RESULT_SPACING = 1;
+export const SYMBOL_SEARCH_COMPACT_MAX_RESULTS = 4;
+export const SYMBOL_SEARCH_COMPACT_WIDTH = 320;
+export const QUICK_OPEN_BAR_MARGIN_Y = SYMBOL_SEARCH_BAR_MARGIN_Y;
+export const QUICK_OPEN_RESULT_PADDING_X = SYMBOL_SEARCH_RESULT_PADDING_X;
+export const QUICK_OPEN_RESULT_SPACING = SYMBOL_SEARCH_RESULT_SPACING;
+export const COLOR_QUICK_OPEN_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+export const COLOR_QUICK_OPEN_TEXT = COLOR_SEARCH_TEXT;
+export const COLOR_QUICK_OPEN_PLACEHOLDER = COLOR_SEARCH_PLACEHOLDER;
+export const COLOR_QUICK_OPEN_OUTLINE = COLOR_SEARCH_OUTLINE;
+export const COLOR_QUICK_OPEN_KIND = COLOR_CODE_DIM;
+export const QUICK_OPEN_MAX_RESULTS = SYMBOL_SEARCH_MAX_RESULTS;
+export const QUICK_OPEN_COMPACT_MAX_RESULTS = SYMBOL_SEARCH_COMPACT_MAX_RESULTS;
+export const COMPLETION_POPUP_PADDING_X = 4;
+export const COMPLETION_POPUP_PADDING_Y = 2;
+export const COMPLETION_POPUP_ITEM_SPACING = 1;
+export const COMPLETION_POPUP_MAX_VISIBLE = 8;
+export const COMPLETION_POPUP_MIN_WIDTH = 96;
+export const COLOR_COMPLETION_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+export const COLOR_COMPLETION_BORDER = COLOR_SEARCH_OUTLINE;
+export const COLOR_COMPLETION_TEXT = COLOR_SEARCH_TEXT;
+export const COLOR_COMPLETION_DETAIL = COLOR_CODE_DIM;
+export const COLOR_COMPLETION_HIGHLIGHT = COLOR_TAB_ACTIVE_BACKGROUND;
+export const COLOR_COMPLETION_HIGHLIGHT_TEXT = COLOR_TAB_ACTIVE_TEXT;
+export const PARAMETER_HINT_PADDING_X = 4;
+export const PARAMETER_HINT_PADDING_Y = 2;
+export const COLOR_PARAMETER_HINT_BACKGROUND = COLOR_SEARCH_BACKGROUND;
+export const COLOR_PARAMETER_HINT_BORDER = COLOR_SEARCH_OUTLINE;
+export const COLOR_PARAMETER_HINT_TEXT = COLOR_SEARCH_TEXT;
+export const COLOR_PARAMETER_HINT_ACTIVE = COLOR_STATUS_WARNING;
+export const COMPLETION_AUTO_TRIGGER_DELAY_SECONDS = 0.16;
