@@ -34,6 +34,8 @@ import { highlightLine as highlightLineExternal } from './syntax_highlight';
 import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
 import { expandTabs as expandTabsExternal, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
 import { ConsoleScrollbar } from './scrollbar';
+import { renderTopBar } from './render_top_bar';
+import { renderStatusBar } from './render_status_bar';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -6065,114 +6067,21 @@ export class ConsoleCartEditor {
 	}
 
 	private drawTopBar(api: BmsxConsoleApi): void {
-		const primaryBarHeight = this.headerHeight;
-		api.rectfill(0, 0, this.viewportWidth, primaryBarHeight, constants.COLOR_TOP_BAR);
-
-		const buttonTop = 1;
-		const buttonHeight = this.lineHeight + constants.HEADER_BUTTON_PADDING_Y * 2;
-		const iconButtonSize = buttonHeight;
-		const resolutionRight = this.viewportWidth - 4;
-		const resolutionLeft = resolutionRight - iconButtonSize;
-		const resolutionBottom = buttonTop + buttonHeight;
-		const wrapRight = resolutionLeft - constants.HEADER_BUTTON_SPACING;
-		const wrapLeft = wrapRight - iconButtonSize;
-		this.topBarButtonBounds.resolution = { left: resolutionLeft, top: buttonTop, right: resolutionRight, bottom: resolutionBottom };
-		this.topBarButtonBounds.wrap = { left: wrapLeft, top: buttonTop, right: wrapRight, bottom: resolutionBottom };
-		this.topBarButtonBounds.resume = { left: 0, top: 0, right: 0, bottom: 0 };
-		this.topBarButtonBounds.reboot = { left: 0, top: 0, right: 0, bottom: 0 };
-		this.topBarButtonBounds.save = { left: 0, top: 0, right: 0, bottom: 0 };
-		this.topBarButtonBounds.resources = { left: 0, top: 0, right: 0, bottom: 0 };
-		this.topBarButtonBounds.filter = { left: 0, top: 0, right: 0, bottom: 0 };
-		let buttonX = 4;
-		const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
-			{ id: 'resume', label: 'RESUME', disabled: false },
-			{ id: 'reboot', label: 'REBOOT', disabled: false },
-			{ id: 'save', label: 'SAVE', disabled: !this.dirty },
-			{ id: 'resources', label: 'FILES', disabled: false, active: this.resourcePanelVisible },
-		];
-		if (this.resourcePanelVisible) {
-			const filterLabel = this.resourcePanelFilterMode === 'lua_only' ? 'LUA' : 'ALL';
-			buttonEntries.push({
-				id: 'filter',
-				label: filterLabel,
-				disabled: false,
-				active: this.resourcePanelFilterMode === 'lua_only',
-			});
-		}
-		const availableRight = wrapLeft - constants.HEADER_BUTTON_SPACING;
-		for (let i = 0; i < buttonEntries.length; i++) {
-			const entry = buttonEntries[i];
-			const textWidth = this.measureText(entry.label);
-			const buttonWidth = textWidth + constants.HEADER_BUTTON_PADDING_X * 2;
-			const right = buttonX + buttonWidth;
-			if (right > availableRight) {
-				this.topBarButtonBounds[entry.id] = { left: 0, top: 0, right: 0, bottom: 0 };
-				break;
-			}
-			const bottom = buttonTop + buttonHeight;
-			const bounds: RectBounds = { left: buttonX, top: buttonTop, right, bottom };
-			this.topBarButtonBounds[entry.id] = bounds;
-			const fillColor = entry.active
-				? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND
-				: (entry.disabled ? constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND);
-			const textColor = entry.active
-				? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT
-				: (entry.disabled ? constants.COLOR_HEADER_BUTTON_TEXT_DISABLED : constants.COLOR_HEADER_BUTTON_TEXT);
-			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
-			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_HEADER_BUTTON_BORDER);
-			this.drawText(api, entry.label, bounds.left + constants.HEADER_BUTTON_PADDING_X, bounds.top + constants.HEADER_BUTTON_PADDING_Y, textColor);
-			buttonX = right + constants.HEADER_BUTTON_SPACING;
-		}
-
-		const wrapActive = this.wordWrapEnabled;
-		const wrapFill = wrapActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
-		const wrapTextColor = wrapActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
-		const wrapBounds = this.topBarButtonBounds.wrap;
-		api.rectfill(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, wrapFill);
-		api.rect(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, constants.COLOR_HEADER_BUTTON_BORDER);
-		const wrapLabel = 'w';
-		const wrapLabelWidth = this.measureText(wrapLabel);
-		const wrapLabelX = wrapBounds.left + Math.max(1, Math.floor((iconButtonSize - wrapLabelWidth) / 2));
-		const wrapLabelY = wrapBounds.top + constants.HEADER_BUTTON_PADDING_Y;
-		this.drawText(api, wrapLabel, wrapLabelX, wrapLabelY, wrapTextColor);
-
-		const resolutionActive = this.resolutionMode === 'viewport';
-		const resolutionFill = resolutionActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND : constants.COLOR_HEADER_BUTTON_BACKGROUND;
-		const resolutionTextColor = resolutionActive ? constants.COLOR_HEADER_BUTTON_ACTIVE_TEXT : constants.COLOR_HEADER_BUTTON_TEXT;
-		api.rectfill(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, resolutionFill);
-		api.rect(resolutionLeft, buttonTop, resolutionRight, resolutionBottom, constants.COLOR_HEADER_BUTTON_BORDER);
-		const iconPadding = Math.max(2, Math.floor(constants.HEADER_BUTTON_PADDING_X * 0.75));
-
-		const frameX = resolutionLeft + iconPadding;
-		const frameY = buttonTop + iconPadding;
-		const frameSize = iconButtonSize - iconPadding * 2;
-		api.rectfill(frameX, frameY, frameX + frameSize, frameY + frameSize, resolutionTextColor);
-		const innerMargin = Math.max(1, Math.floor(frameSize / 4));
-		api.rectfill(
-			frameX + innerMargin,
-			frameY + innerMargin,
-			frameX + frameSize - innerMargin,
-			frameY + frameSize - innerMargin,
-			constants.COLOR_TOP_BAR,
-		);
-		const indicatorY = frameY + frameSize - innerMargin - 1;
-		const indicatorHeight = Math.max(1, Math.floor(frameSize / 5));
-		if (this.resolutionMode === 'viewport') {
-			api.rectfill(frameX + innerMargin, indicatorY, frameX + frameSize - innerMargin, indicatorY + indicatorHeight, resolutionTextColor);
-		} else {
-			const segmentWidth = Math.max(1, Math.floor((frameSize - innerMargin * 2) / 2));
-			api.rectfill(frameX + innerMargin, indicatorY, frameX + innerMargin + segmentWidth, indicatorY + indicatorHeight, resolutionTextColor);
-			api.rectfill(frameX + frameSize - innerMargin - segmentWidth, indicatorY, frameX + frameSize - innerMargin, indicatorY + indicatorHeight, resolutionTextColor);
-		}
-		const resolutionLabel = 'R';
-		const resolutionLabelX = resolutionLeft + Math.max(1, Math.floor((iconButtonSize - this.measureText(resolutionLabel)) / 2));
-		const resolutionLabelY = buttonTop + constants.HEADER_BUTTON_PADDING_Y;
-		this.drawText(api, resolutionLabel, resolutionLabelX, resolutionLabelY, resolutionTextColor);
-
-		this.drawText(api, this.metadata.title.toUpperCase(), 4, primaryBarHeight + 1, constants.COLOR_TOP_BAR_TEXT);
-		const versionSuffix = this.dirty ? '*' : '';
-		const version = `v${this.metadata.version}${versionSuffix}`;
-		this.drawText(api, version, this.viewportWidth - this.measureText(version) - 4, primaryBarHeight + 1, constants.COLOR_TOP_BAR_TEXT);
+		const host = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			lineHeight: this.lineHeight,
+			measureText: (text: string) => this.measureText(text),
+			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => this.drawText(api2, text, x, y, color),
+			wordWrapEnabled: this.wordWrapEnabled,
+			resolutionMode: this.resolutionMode,
+			metadata: this.metadata,
+			dirty: this.dirty,
+			resourcePanelVisible: this.resourcePanelVisible,
+			resourcePanelFilterMode: this.resourcePanelFilterMode,
+			topBarButtonBounds: this.topBarButtonBounds,
+		};
+		renderTopBar(api, host);
 	}
 
 	private drawCreateResourceBar(api: BmsxConsoleApi): void {
@@ -10235,55 +10144,27 @@ private handleCompletionKeybindings(
 	}
 
 	private drawStatusBar(api: BmsxConsoleApi): void {
-		const statusTop = this.viewportHeight - this.bottomMargin;
-		const statusBottom = this.viewportHeight;
-		api.rectfill(0, statusTop, this.viewportWidth, statusBottom, constants.COLOR_STATUS_BACKGROUND);
-
-		if (this.message.visible) {
-			const lines = this.getStatusMessageLines();
-			let textY = statusTop + 2;
-			const textX = 4;
-			for (let i = 0; i < lines.length; i += 1) {
-				this.drawText(api, lines[i], textX, textY, constants.COLOR_STATUS_ALERT);
-				textY += this.lineHeight;
-			}
-			return;
-		}
-
-		if (this.symbolSearchVisible) {
-			const match = this.getActiveSymbolSearchMatch();
-			if (!match) {
-				return;
-			}
-			const locationPath = match.entry.symbol.location.path;
-			if (!locationPath || locationPath.length === 0) {
-				throw new Error('[ConsoleCartEditor] Symbol location path unavailable.');
-			}
-			const pathText = this.truncateTextToWidth(locationPath, Math.max(0, this.viewportWidth - 8));
-			this.drawText(api, pathText, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-			return;
-		}
-
-		if (this.resourcePanelVisible) {
-			const filterLabel = this.resourcePanelFilterMode === 'lua_only' ? 'LUA' : 'ALL';
-			const fileInfo = `FILES ${this.resourcePanelResourceCount} (${filterLabel})`;
-			const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
-			this.drawText(api, fileInfo, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-			this.drawText(api, hint, this.viewportWidth - this.measureText(hint) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-		} else if (this.isResourceViewActive()) {
-			const viewer = this.getActiveResourceViewer();
-			const info = viewer ? `${viewer.descriptor.type.toUpperCase()} ${viewer.descriptor.assetId}` : 'RESOURCE';
-			const detail = viewer ? viewer.descriptor.path : '';
-			this.drawText(api, info, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-			if (detail.length > 0) {
-				this.drawText(api, detail, this.viewportWidth - this.measureText(detail) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-			}
-		} else {
-			const lineInfo = `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
-			const filenameInfo = `${this.metadata.title || 'UNTITLED'}.lua`;
-			this.drawText(api, lineInfo, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-			this.drawText(api, filenameInfo, this.viewportWidth - this.measureText(filenameInfo) - 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
-		}
+		const host = {
+			viewportWidth: this.viewportWidth,
+			viewportHeight: this.viewportHeight,
+			bottomMargin: this.bottomMargin,
+			lineHeight: this.lineHeight,
+			measureText: (text: string) => this.measureText(text),
+			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => this.drawText(api2, text, x, y, color),
+			truncateTextToWidth: (text: string, maxWidth: number) => this.truncateTextToWidth(text, maxWidth),
+			message: this.message,
+			getStatusMessageLines: () => this.getStatusMessageLines(),
+			symbolSearchVisible: this.symbolSearchVisible,
+			getActiveSymbolSearchMatch: () => this.getActiveSymbolSearchMatch(),
+			resourcePanelVisible: this.resourcePanelVisible,
+			resourcePanelFilterMode: this.resourcePanelFilterMode,
+			resourcePanelResourceCount: this.resourcePanelResourceCount,
+			isResourceViewActive: () => this.isResourceViewActive(),
+			getActiveResourceViewer: () => this.getActiveResourceViewer(),
+			metadata: this.metadata,
+			statusLeftInfo: `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`,
+		};
+		renderStatusBar(api, host);
 	}
 
 	private drawActionPromptOverlay(api: BmsxConsoleApi): void {
