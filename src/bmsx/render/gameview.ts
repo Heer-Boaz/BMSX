@@ -493,27 +493,37 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		self.calculateSize();
 		const displayWidth = ~~(self.canvasSize.x * self.canvasScale);
 		const displayHeight = ~~(self.canvasSize.y * self.canvasScale);
-		const displayLeft = ~~((self.windowSize.x - self.canvasSize.x * self.canvasScale) / 2);
-		const displayTop = isLandscape || !Input.instance.isOnscreenGamepadEnabled
-			? ~~((self.windowSize.y - self.canvasSize.y * self.canvasScale) / 2)
+		const horizontalContainer = viewportWidth > 0 ? viewportWidth : self.windowSize.x;
+		const verticalContainer = viewportHeight > 0 ? viewportHeight : self.windowSize.y;
+		let displayLeft = ~~((horizontalContainer - displayWidth) / 2);
+		if (displayLeft < 0) {
+			displayLeft = 0;
+		}
+		const onscreenGamepadEnabled = Input.instance.isOnscreenGamepadEnabled;
+		let displayTop = isLandscape || !onscreenGamepadEnabled
+			? ~~((verticalContainer - displayHeight) / 2)
 			: 0;
+		if (displayTop < 0) {
+			displayTop = 0;
+		}
 
 		this.surface.setDisplaySize(displayWidth, displayHeight);
 		this.surface.setDisplayPosition(displayLeft, displayTop);
 
-		if (Input.instance.isOnscreenGamepadEnabled) {
+		if (onscreenGamepadEnabled) {
 			const handlesProvider = this.getOnscreenGamepadHandleProvider();
 			const handles = handlesProvider?.getHandles();
 			if (handles) {
 				const { dpad, actionButtons } = handles;
 				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+				const verticalSpan = verticalContainer;
 				const canvasRect = this.surface.measureDisplay();
 
 				const updateBottomPosition = (control: typeof dpad, isRightSide: boolean): void => {
 					const elementSize = control.measure();
 					let newBottom: number;
 					if (isLandscape) {
-						newBottom = (self.availableWindowSize.y - elementSize.height) / 2;
+						newBottom = (verticalSpan - elementSize.height) / 2;
 					} else if (isRightSide) {
 						newBottom = 0;
 					} else {

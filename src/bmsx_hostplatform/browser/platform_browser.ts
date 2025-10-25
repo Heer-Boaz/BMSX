@@ -1056,6 +1056,10 @@ function toDomOptions(options?: HostEventOptions): boolean | AddEventListenerOpt
 }
 
 export class BrowserGameViewHost implements GameViewHost {
+	private static visualViewportForwardingInstalled = false;
+	private static forwardViewportChange(): void {
+		window.dispatchEvent(new Event('resize'));
+	}
 	public readonly surface: BrowserGameViewCanvas;
 	private readonly overlays = new Map<string, BrowserOverlayHandle>();
 	private readonly listenerCache = new WeakMap<HostEventListenerTarget, EventListenerOrEventListenerObject>();
@@ -1070,6 +1074,15 @@ export class BrowserGameViewHost implements GameViewHost {
 			throw new Error('[BrowserGameViewHost] Provided canvas element was not an HTMLCanvasElement.');
 		}
 		this.surface = new BrowserGameViewCanvas(canvas);
+		if (!BrowserGameViewHost.visualViewportForwardingInstalled) {
+			const visualViewport = window.visualViewport;
+			if (visualViewport) {
+				const handler = BrowserGameViewHost.forwardViewportChange;
+				visualViewport.addEventListener('resize', handler);
+				visualViewport.addEventListener('scroll', handler);
+				BrowserGameViewHost.visualViewportForwardingInstalled = true;
+			}
+		}
 		this.viewportCapability = {
 			getViewportMetrics: () => this.computeViewportMetrics(),
 		};
@@ -1125,13 +1138,18 @@ export class BrowserGameViewHost implements GameViewHost {
 
 	private computeViewportMetrics(): ViewportMetrics {
 		const documentElement = document.documentElement;
+		const visualViewport = window.visualViewport;
+		const visualWidth = visualViewport && typeof visualViewport.width === 'number' ? visualViewport.width : null;
+		const visualHeight = visualViewport && typeof visualViewport.height === 'number' ? visualViewport.height : null;
+		const innerWidth = typeof window.innerWidth === 'number' ? window.innerWidth : 0;
+		const innerHeight = typeof window.innerHeight === 'number' ? window.innerHeight : 0;
 		const documentDimensions: ViewportDimensions = {
 			width: documentElement ? documentElement.clientWidth : 0,
 			height: documentElement ? documentElement.clientHeight : 0,
 		};
 		const windowDimensions: ViewportDimensions = {
-			width: typeof window.innerWidth === 'number' ? window.innerWidth : 0,
-			height: typeof window.innerHeight === 'number' ? window.innerHeight : 0,
+			width: visualWidth !== null ? visualWidth : innerWidth,
+			height: visualHeight !== null ? visualHeight : innerHeight,
 		};
 		const screenDimensions: ViewportDimensions = {
 			width: typeof window.screen?.width === 'number' ? window.screen.width : 0,
