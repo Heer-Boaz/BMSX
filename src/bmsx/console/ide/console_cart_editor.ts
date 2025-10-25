@@ -21,6 +21,7 @@ import { CHARACTER_CODES } from './character_map';
 import * as constants from './constants';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
+import { ProblemsPanelController } from './problems_panel';
 import { computeLuaDiagnostics, getApiCompletionData, type LuaDiagnostic } from './intellisense';
 import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
@@ -133,6 +134,7 @@ export class ConsoleCartEditor {
 	private deferredMessageDuration: number | null = null;
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private executionStopRow: number | null = null;
+	private readonly problemsPanel: ProblemsPanelController;
 	private diagnostics: EditorDiagnostic[] = [];
 	private diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
 	private diagnosticsDirty = true;
@@ -168,6 +170,7 @@ export class ConsoleCartEditor {
 		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },
+		problems: { left: 0, top: 0, right: 0, bottom: 0 },
 		filter: { left: 0, top: 0, right: 0, bottom: 0 },
 		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
 		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
@@ -424,6 +427,13 @@ export class ConsoleCartEditor {
 			moveSelectionLines: (delta) => this.moveSelectionLines(delta),
 			indentSelectionOrLine: () => this.indentSelectionOrLine(),
 			unindentSelectionOrLine: () => this.unindentSelectionOrLine(),
+		});
+		this.problemsPanel = new ProblemsPanelController({
+			lineHeight: this.lineHeight,
+			measureText: (text) => this.measureText(text),
+			drawText: (api, text, x, y, color) => this.drawText(api, text, x, y, color),
+			truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
+			gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
 		});
 		this.codeVerticalScrollbarVisible = false;
 		this.codeHorizontalScrollbarVisible = false;
@@ -873,13 +883,33 @@ export class ConsoleCartEditor {
 		return available;
 	}
 
-	private get bottomMargin(): number {
+	private statusAreaHeight(): number {
 		if (!this.message.visible) {
 			return this.baseBottomMargin;
 		}
 		const segments = this.getStatusMessageLines();
 		const lineCount = Math.max(1, segments.length);
 		return this.baseBottomMargin + lineCount * this.lineHeight + 4;
+	}
+
+	private get bottomMargin(): number {
+		return this.statusAreaHeight() + this.getVisibleProblemsPanelHeight();
+	}
+
+	private getVisibleProblemsPanelHeight(): number {
+		if (!this.problemsPanel.isVisible()) {
+			return 0;
+		}
+		const planned = this.problemsPanel.getVisibleHeight();
+		if (planned <= 0) {
+			return 0;
+		}
+		const statusHeight = this.statusAreaHeight();
+		const maxAvailable = Math.max(0, this.viewportHeight - statusHeight - (this.headerHeight + this.tabBarHeight));
+		if (maxAvailable <= 0) {
+			return 0;
+		}
+		return Math.min(planned, maxAvailable);
 	}
 
 	private getStatusMessageLines(): string[] {
@@ -984,18 +1014,21 @@ export class ConsoleCartEditor {
 		if (!this.isCodeTabActive()) {
 			this.diagnostics = [];
 			this.diagnosticsByRow.clear();
+			this.problemsPanel.setDiagnostics(this.diagnostics);
 			return;
 		}
 		const context = this.getActiveCodeTabContext();
 		if (!context) {
 			this.diagnostics = [];
 			this.diagnosticsByRow.clear();
+			this.problemsPanel.setDiagnostics(this.diagnostics);
 			return;
 		}
 		const source = this.lines.join('\n');
 		if (source.length === 0) {
 			this.diagnostics = [];
 			this.diagnosticsByRow.clear();
+			this.problemsPanel.setDiagnostics(this.diagnostics);
 			return;
 		}
 		const assetId = this.resolveHoverAssetId(context);
@@ -1067,6 +1100,7 @@ export class ConsoleCartEditor {
 			}
 			bucket.push(editorDiagnostic);
 		}
+		this.problemsPanel.setDiagnostics(this.diagnostics);
 	}
 
 	private getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
@@ -1097,10 +1131,11 @@ export class ConsoleCartEditor {
 			this.drawSearchBar(api);
 			this.drawResourceSearchBar(api);
 			this.drawSymbolSearchBar(api);
-			this.drawLineJumpBar(api);
-			this.drawCodeArea(api);
-		}
-		this.drawStatusBar(api);
+		this.drawLineJumpBar(api);
+		this.drawCodeArea(api);
+	}
+	this.drawProblemsPanel(api);
+	this.drawStatusBar(api);
 		if (this.pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
 		}
@@ -1769,6 +1804,17 @@ export class ConsoleCartEditor {
 			this.toggleResourcePanel();
 			return;
 		}
+		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyM')) {
+			consumeKeyboardKey(keyboard, 'KeyM');
+			this.toggleProblemsPanel();
+			if (this.problemsPanel.isVisible()) {
+				this.problemsPanel.setFocused(true);
+				this.markDiagnosticsDirty();
+			} else {
+				this.focusEditorFromProblemsPanel();
+			}
+			return;
+		}
 		if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal(this.playerIndex, 'Comma')) {
 			consumeKeyboardKey(keyboard, 'Comma');
 			this.openGlobalSymbolSearch();
@@ -1833,6 +1879,39 @@ export class ConsoleCartEditor {
 		if (this.searchActive) {
 			this.handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
+		}
+		if (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()) {
+			let handled = false;
+			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'ArrowUp');
+				handled = this.problemsPanel.handleKeyboardCommand('up');
+			} else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'ArrowDown');
+				handled = this.problemsPanel.handleKeyboardCommand('down');
+			} else if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'PageUp');
+				handled = this.problemsPanel.handleKeyboardCommand('page-up');
+			} else if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'PageDown');
+				handled = this.problemsPanel.handleKeyboardCommand('page-down');
+			} else if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'Home');
+				handled = this.problemsPanel.handleKeyboardCommand('home');
+			} else if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+				consumeKeyboardKey(keyboard, 'End');
+				handled = this.problemsPanel.handleKeyboardCommand('end');
+			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Enter') || isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter')) {
+				if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+				handled = this.problemsPanel.handleKeyboardCommand('activate');
+			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
+				consumeKeyboardKey(keyboard, 'Escape');
+				this.hideProblemsPanel();
+				this.focusEditorFromProblemsPanel();
+				return;
+			}
+			if (handled) {
+				return;
+			}
 		}
 		if (this.searchQuery.length > 0 && isKeyJustPressedGlobal(this.playerIndex, 'F3')) {
 			consumeKeyboardKey(keyboard, 'F3');
@@ -3040,6 +3119,11 @@ export class ConsoleCartEditor {
 		this.resetBlink();
 	}
 
+	private focusEditorFromProblemsPanel(): void {
+		this.problemsPanel.setFocused(false);
+		this.resetBlink();
+	}
+
 	private focusEditorFromResourcePanel(): void {
 		if (!this.resourcePanelFocused) {
 			return;
@@ -3125,6 +3209,22 @@ export class ConsoleCartEditor {
 		this.updateDesiredColumn();
 		this.resetBlink();
 		this.revealCursor();
+	}
+
+	private gotoDiagnostic(diagnostic: EditorDiagnostic): void {
+		if (!this.isCodeTabActive()) {
+			this.activateCodeTab();
+		}
+		if (!this.isCodeTabActive()) {
+			return;
+		}
+		const targetRow = clamp(diagnostic.row, 0, Math.max(0, this.lines.length - 1));
+		const line = this.lines[targetRow] ?? '';
+		const targetColumn = clamp(diagnostic.startColumn, 0, line.length);
+		this.setCursorPosition(targetRow, targetColumn);
+		this.clearSelection();
+		this.cursorRevealSuspended = false;
+		this.ensureCursorVisible();
 	}
 
 	private jumpToNextMatch(): void {
@@ -3364,6 +3464,22 @@ export class ConsoleCartEditor {
 		}
 		if (this.resourcePanelVisible && !snapshot.primaryPressed) {
 			this.resourcePanel.setHoverIndex(-1);
+		}
+		const problemsBounds = this.getProblemsPanelBounds();
+		if (this.problemsPanel.isVisible() && problemsBounds) {
+			const insideProblems = this.pointInRect(snapshot.viewportX, snapshot.viewportY, problemsBounds);
+			if (insideProblems) {
+				if (this.problemsPanel.handlePointer(snapshot, justPressed, justReleased, problemsBounds)) {
+					this.pointerSelecting = false;
+					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+					this.resetPointerClickTracking();
+					this.clearHoverTooltip();
+					this.clearGotoHoverHighlight();
+					return;
+				}
+			} else if (justPressed) {
+				this.problemsPanel.setFocused(false);
+			}
 		}
 		if (this.isResourceViewActive()) {
 			this.resetPointerClickTracking();
@@ -4140,6 +4256,10 @@ export class ConsoleCartEditor {
 			this.handleTopBarButtonPress('resources');
 			return true;
 		}
+		if (this.pointInRect(x, y, this.topBarButtonBounds.problems)) {
+			this.handleTopBarButtonPress('problems');
+			return true;
+		}
 		if (this.resourcePanelVisible && this.pointInRect(x, y, this.topBarButtonBounds.filter)) {
 			this.handleTopBarButtonPress('filter');
 			return true;
@@ -4270,6 +4390,21 @@ export class ConsoleCartEditor {
 			playerInput.consumeAction('pointer_wheel');
 			return;
 		}
+		if (this.problemsPanel.isVisible()) {
+			const bounds = this.getProblemsPanelBounds();
+			if (bounds) {
+				let allowScroll = false;
+				if (!pointer) {
+					allowScroll = this.problemsPanel.isFocused();
+				} else if (pointer.valid && pointer.insideViewport && this.pointInRect(pointer.viewportX, pointer.viewportY, bounds)) {
+					allowScroll = true;
+				}
+				if (allowScroll && this.problemsPanel.handlePointerWheel(direction, steps)) {
+					playerInput.consumeAction('pointer_wheel');
+					return;
+				}
+			}
+		}
 		if (this.isResourceViewActive()) {
 			this.scrollResourceViewer(direction * steps);
 			playerInput.consumeAction('pointer_wheel');
@@ -4289,6 +4424,9 @@ export class ConsoleCartEditor {
 
 	private handleTopBarButtonPress(button: TopBarButtonId): void {
 		switch (button) {
+			case 'problems':
+				this.toggleProblemsPanel();
+				return;
 			case 'filter':
 				this.toggleResourcePanelFilterMode();
 				return;
@@ -6123,6 +6261,7 @@ export class ConsoleCartEditor {
 			dirty: this.dirty,
 			resourcePanelVisible: this.resourcePanelVisible,
 			resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
+			problemsPanelVisible: this.problemsPanel.isVisible(),
 			topBarButtonBounds: this.topBarButtonBounds,
 		};
 		renderTopBar(api, host);
@@ -6741,6 +6880,24 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	private toggleResourcePanel(): void {
 		// Keep editor/controller visibility in sync by delegating to controller
 		this.resourcePanel.togglePanel();
+	}
+
+	private toggleProblemsPanel(): void {
+		if (this.problemsPanel.isVisible()) {
+			this.hideProblemsPanel();
+			return;
+		}
+		this.showProblemsPanel();
+	}
+
+	private showProblemsPanel(): void {
+		this.problemsPanel.show();
+		this.markDiagnosticsDirty();
+	}
+
+	private hideProblemsPanel(): void {
+		this.problemsPanel.hide();
+		this.focusEditorFromProblemsPanel();
 	}
 
 	private toggleResourcePanelFilterMode(): void {
@@ -8406,7 +8563,7 @@ private handleCompletionKeybindings(
 		const host = {
 			viewportWidth: this.viewportWidth,
 			viewportHeight: this.viewportHeight,
-			bottomMargin: this.bottomMargin,
+			bottomMargin: this.statusAreaHeight(),
 			lineHeight: this.lineHeight,
 			measureText: (text: string) => this.measureText(text),
 			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => this.drawText(api2, text, x, y, color),
@@ -8424,6 +8581,28 @@ private handleCompletionKeybindings(
 			statusLeftInfo: `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`,
 		};
 		renderStatusBar(api, host);
+	}
+
+	private drawProblemsPanel(api: BmsxConsoleApi): void {
+		const bounds = this.getProblemsPanelBounds();
+		if (!bounds) {
+			return;
+		}
+		this.problemsPanel.draw(api, bounds);
+	}
+
+	private getProblemsPanelBounds(): RectBounds | null {
+		const panelHeight = this.getVisibleProblemsPanelHeight();
+		if (panelHeight <= 0) {
+			return null;
+		}
+		const statusHeight = this.statusAreaHeight();
+		const bottom = this.viewportHeight - statusHeight;
+		const top = bottom - panelHeight;
+		if (bottom <= top) {
+			return null;
+		}
+		return { left: 0, top, right: this.viewportWidth, bottom };
 	}
 
 	private drawActionPromptOverlay(api: BmsxConsoleApi): void {

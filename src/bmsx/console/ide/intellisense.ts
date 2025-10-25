@@ -29,6 +29,7 @@ import {
 	type LuaFunctionExpression,
 	type LuaTableConstructorExpression,
 	type LuaAssignableExpression,
+	type LuaStringLiteralExpression,
 } from '../../lua/ast.ts';
 import { LuaTableFieldKind } from '../../lua/ast.ts';
 import type { LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast.ts';
@@ -209,6 +210,7 @@ export type LuaDiagnosticOptions = {
 
 export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnostic[] {
 	const diagnostics: LuaDiagnostic[] = [];
+	const functionSignatures = new Map<string, FunctionSignatureInfo>();
 	let chunk: LuaChunk;
 	try {
 		const lexer = new LuaLexer(options.source, options.chunkName);
@@ -289,29 +291,14 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 
 	const analyzeCallExpression = (call: LuaCallExpression): void => {
 		const metadata = resolveCallSignature(call, builtinLookup, options.apiSignatures);
-		if (!metadata) {
+		if (metadata) {
+			validateCallArity(call, metadata, diagnostics);
 			return;
 		}
-		const requirement = determineParameterRequirements(metadata.params);
-		const actualCount = call.arguments.length;
-		if (actualCount >= requirement.required) {
-			return;
+		const userMetadata = resolveUserFunctionSignature(call, functionSignatures);
+		if (userMetadata) {
+			validateCallArity(call, userMetadata, diagnostics);
 		}
-		const row = call.range.start.line > 0 ? call.range.start.line - 1 : 0;
-		const startColumn = call.range.start.column > 0 ? call.range.start.column - 1 : 0;
-		const endColumnCandidate = call.range.end.column;
-		const endColumn = endColumnCandidate > startColumn ? endColumnCandidate : startColumn + 1;
-		const missing = requirement.required - actualCount;
-		const expectedLabel = requirement.required === 1 ? 'argument' : 'arguments';
-		const providedLabel = actualCount === 1 ? 'was' : 'were';
-		const message = `${metadata.label} expects ${requirement.required} ${expectedLabel}, but ${actualCount} ${providedLabel} provided${missing > 0 ? ` (${missing} missing)` : ''}.`;
-		diagnostics.push({
-			row,
-			startColumn,
-			endColumn,
-			message,
-			severity: 'error',
-		});
 	};
 
 	const visitExpression = (expression: LuaExpression, allowIdentifierCheck: boolean): void => {
@@ -353,10 +340,10 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 				visitExpression(unary.operand, true);
 				break;
 			}
-			case LuaSyntaxKind.FunctionExpression: {
-				visitFunctionExpression(expression as LuaFunctionExpression, false);
-				break;
-			}
+		case LuaSyntaxKind.FunctionExpression: {
+			visitFunctionExpression(expression as LuaFunctionExpression, false, null);
+			break;
+		}
 			case LuaSyntaxKind.TableConstructorExpression: {
 				const tableExpression = expression as LuaTableConstructorExpression;
 				for (let i = 0; i < tableExpression.fields.length; i += 1) {
@@ -382,7 +369,14 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 		}
 	};
 
-	const visitFunctionExpression = (expression: LuaFunctionExpression, implicitSelf: boolean): void => {
+	const visitFunctionExpression = (
+		expression: LuaFunctionExpression,
+		implicitSelf: boolean,
+		binding: { path: string; style: 'function' | 'method' } | null,
+	): void => {
+		if (binding) {
+			registerFunctionFromExpression(functionSignatures, binding.path, expression, binding.style);
+		}
 		pushScope();
 		if (implicitSelf) {
 			declareInCurrentScope('self');
@@ -418,18 +412,36 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 		switch (statement.kind) {
 			case LuaSyntaxKind.LocalAssignmentStatement: {
 				const localAssignment = statement as LuaLocalAssignmentStatement;
-				for (let index = 0; index < localAssignment.values.length; index += 1) {
-					visitExpression(localAssignment.values[index], true);
-				}
+				const mappedValues = mapAssignmentValues(localAssignment.names.length, localAssignment.values);
+				const processed = new Set<LuaExpression>();
 				for (let index = 0; index < localAssignment.names.length; index += 1) {
-					declareInCurrentScope(localAssignment.names[index].name);
+					const identifier = localAssignment.names[index];
+					declareInCurrentScope(identifier.name);
+					const value = mappedValues[index];
+					if (!value) {
+						continue;
+					}
+					if (value.kind === LuaSyntaxKind.FunctionExpression) {
+						visitFunctionExpression(value as LuaFunctionExpression, false, { path: identifier.name, style: 'function' });
+						processed.add(value);
+						continue;
+					}
+					visitExpression(value, true);
+					processed.add(value);
+				}
+				for (let index = 0; index < localAssignment.values.length; index += 1) {
+					const value = localAssignment.values[index];
+					if (!value || processed.has(value)) {
+						continue;
+					}
+					visitExpression(value, true);
 				}
 				break;
 			}
 			case LuaSyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement as LuaLocalFunctionStatement;
 				declareInCurrentScope(localFunction.name.name);
-				visitFunctionExpression(localFunction.functionExpression, false);
+				visitFunctionExpression(localFunction.functionExpression, false, { path: localFunction.name.name, style: 'function' });
 				break;
 			}
 			case LuaSyntaxKind.FunctionDeclarationStatement: {
@@ -441,22 +453,52 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 						globalKnownNames.add(declaredName);
 					}
 				}
-				const implicitSelf = functionDeclaration.name.methodName !== null;
-				visitFunctionExpression(functionDeclaration.functionExpression, implicitSelf);
+				const methodName = functionDeclaration.name.methodName;
+				const basePath = identifiers.join('.');
+				if (methodName) {
+					const colonPath = basePath.length > 0 ? `${basePath}:${methodName}` : methodName;
+					visitFunctionExpression(functionDeclaration.functionExpression, true, { path: colonPath, style: 'method' });
+				} else {
+					const path = basePath;
+					visitFunctionExpression(functionDeclaration.functionExpression, false, { path, style: 'function' });
+				}
 				break;
 			}
 			case LuaSyntaxKind.AssignmentStatement: {
 				const assignment = statement as LuaAssignmentStatement;
-				for (let index = 0; index < assignment.right.length; index += 1) {
-					visitExpression(assignment.right[index], true);
-				}
+				const mappedValues = mapAssignmentValues(assignment.left.length, assignment.right);
+				const processed = new Set<LuaExpression>();
 				for (let index = 0; index < assignment.left.length; index += 1) {
-					visitAssignmentTarget(assignment.left[index]);
-					if (assignment.left[index].kind === LuaSyntaxKind.IdentifierExpression) {
-						const identifier = assignment.left[index] as LuaIdentifierExpression;
+					const target = assignment.left[index];
+					visitAssignmentTarget(target);
+					if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+						const identifier = target as LuaIdentifierExpression;
 						globalKnownNames.add(identifier.name);
 						declareInCurrentScope(identifier.name);
 					}
+					const value = mappedValues[index];
+					if (!value) {
+						continue;
+					}
+					if (value.kind === LuaSyntaxKind.FunctionExpression) {
+						const path = buildAssignmentPath(target);
+						if (path) {
+							visitFunctionExpression(value as LuaFunctionExpression, false, { path, style: 'function' });
+						} else {
+							visitFunctionExpression(value as LuaFunctionExpression, false, null);
+						}
+						processed.add(value);
+						continue;
+					}
+					visitExpression(value, true);
+					processed.add(value);
+				}
+				for (let index = 0; index < assignment.right.length; index += 1) {
+					const value = assignment.right[index];
+					if (!value || processed.has(value)) {
+						continue;
+					}
+					visitExpression(value, true);
 				}
 				break;
 			}
@@ -563,6 +605,10 @@ function buildGlobalKnownNameSet(
 ): Set<string> {
 	const names = new Set<string>();
 	names.add('api');
+	const defaultGlobals = ['math', 'string', 'table', 'os', 'coroutine', 'debug', 'io', 'utf8', 'bit32'];
+	for (let i = 0; i < defaultGlobals.length; i += 1) {
+		names.add(defaultGlobals[i]);
+	}
 	for (let index = 0; index < localSymbols.length; index += 1) {
 		const entry = localSymbols[index];
 		if (entry && entry.name.length > 0) {
@@ -609,6 +655,9 @@ function buildBuiltinLookup(builtinDescriptors: readonly ConsoleLuaBuiltinDescri
 type CallSignatureMetadata = {
 	params: readonly string[];
 	label: string;
+	callStyle?: 'function' | 'method';
+	declarationStyle?: 'function' | 'method';
+	hasVararg?: boolean;
 };
 
 function resolveCallSignature(
@@ -624,7 +673,13 @@ function resolveCallSignature(
 		if (qualified && qualified.parts.length > 0 && qualified.parts[0] === 'api') {
 			const apiMeta = apiSignatures.get(call.methodName);
 			if (apiMeta) {
-				return { params: apiMeta.params, label: `api.${call.methodName}` };
+				return {
+					params: apiMeta.params,
+					label: `api.${call.methodName}`,
+					callStyle: 'method',
+					declarationStyle: 'function',
+					hasVararg: apiMeta.params.some(param => param === '...' || param.endsWith('...')),
+				};
 			}
 		}
 		return null;
@@ -637,19 +692,36 @@ function resolveCallSignature(
 		const method = qualified.parts[qualified.parts.length - 1];
 		const apiMeta = apiSignatures.get(method);
 		if (apiMeta) {
-			return { params: apiMeta.params, label: `api.${method}` };
+			return {
+				params: apiMeta.params,
+				label: `api.${method}`,
+				callStyle: 'function',
+				declarationStyle: 'function',
+				hasVararg: apiMeta.params.some(param => param === '...' || param.endsWith('...')),
+			};
 		}
 	}
 	const key = qualified.parts.join('.').toLowerCase();
 	const builtin = builtinLookup.get(key);
 	if (builtin) {
-		return { params: builtin.params, label: builtin.name };
+		return {
+			params: builtin.params,
+			label: builtin.name,
+			callStyle: 'function',
+			declarationStyle: 'function',
+			hasVararg: builtin.params.some(param => param === '...' || param.endsWith('...')),
+		};
 	}
 	return null;
 }
 
 type QualifiedName = {
 	parts: string[];
+};
+
+type FunctionCallInfo = {
+	path: string;
+	style: 'function' | 'method';
 };
 
 function resolveQualifiedName(expression: LuaExpression): QualifiedName | null {
@@ -685,6 +757,12 @@ type ParameterRequirement = {
 	required: number;
 };
 
+type FunctionSignatureInfo = {
+	params: string[];
+	hasVararg: boolean;
+	declarationStyle: 'function' | 'method';
+};
+
 function determineParameterRequirements(params: readonly string[]): ParameterRequirement {
 	let required = 0;
 	for (let index = 0; index < params.length; index += 1) {
@@ -705,4 +783,222 @@ function determineParameterRequirements(params: readonly string[]): ParameterReq
 		}
 	}
 	return { required };
+}
+
+function mapAssignmentValues<T>(targetCount: number, values: ReadonlyArray<T>): Array<T | null> {
+	const mapped: Array<T | null> = [];
+	if (targetCount <= 0) {
+		return mapped;
+	}
+	for (let index = 0; index < targetCount; index += 1) {
+		mapped.push(index < values.length ? values[index] : null);
+	}
+	return mapped;
+}
+
+function registerFunctionSignatureExplicit(
+	signatures: Map<string, FunctionSignatureInfo>,
+	path: string | null,
+	params: string[],
+	hasVararg: boolean,
+	declarationStyle: 'function' | 'method',
+): void {
+	if (!path || path.length === 0) {
+		return;
+	}
+	signatures.set(path, { params, hasVararg, declarationStyle });
+}
+
+function registerFunctionFromExpression(
+	signatures: Map<string, FunctionSignatureInfo>,
+	path: string | null,
+	expression: LuaFunctionExpression,
+	declarationStyle: 'function' | 'method',
+): void {
+	if (!path || path.length === 0) {
+		return;
+	}
+	const params: string[] = [];
+	for (let index = 0; index < expression.parameters.length; index += 1) {
+		const parameter = expression.parameters[index];
+		if (parameter.name.length > 0) {
+			params.push(parameter.name);
+		}
+	}
+	registerFunctionSignatureExplicit(signatures, path, params, expression.hasVararg, declarationStyle);
+	if (declarationStyle === 'method') {
+		const dotPath = convertMethodPathToProperty(path);
+		if (dotPath) {
+			const extended = ['self', ...params];
+			registerFunctionSignatureExplicit(signatures, dotPath, extended, expression.hasVararg, 'function');
+		}
+	}
+}
+
+function buildMemberBasePath(expression: LuaExpression): string | null {
+	if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+		const identifier = expression as LuaIdentifierExpression;
+		return identifier.name;
+	}
+	if (expression.kind === LuaSyntaxKind.MemberExpression) {
+		const member = expression as LuaMemberExpression;
+		const parent = buildMemberBasePath(member.base);
+		if (parent === null) {
+			return null;
+		}
+		return parent.length === 0 ? member.identifier : `${parent}.${member.identifier}`;
+	}
+	if (expression.kind === LuaSyntaxKind.IndexExpression) {
+		const indexExpression = expression as LuaIndexExpression;
+		if (indexExpression.index.kind === LuaSyntaxKind.StringLiteralExpression) {
+			const literal = indexExpression.index as LuaStringLiteralExpression;
+			const base = buildMemberBasePath(indexExpression.base);
+			if (base === null) {
+				return null;
+			}
+			return `${base}.${literal.value}`;
+		}
+		return null;
+	}
+	return null;
+}
+
+function buildAssignmentPath(target: LuaAssignableExpression): string | null {
+	if (target.kind === LuaSyntaxKind.IdentifierExpression) {
+		return (target as LuaIdentifierExpression).name;
+	}
+	if (target.kind === LuaSyntaxKind.MemberExpression || target.kind === LuaSyntaxKind.IndexExpression) {
+		return buildMemberBasePath(target as unknown as LuaExpression);
+	}
+	return null;
+}
+
+function convertMethodPathToProperty(path: string): string | null {
+	const index = path.lastIndexOf(':');
+	if (index === -1) {
+		return null;
+	}
+	const prefix = path.slice(0, index);
+	const suffix = path.slice(index + 1);
+	return prefix.length > 0 ? `${prefix}.${suffix}` : suffix;
+}
+
+function convertPropertyPathToMethod(path: string): string | null {
+	const index = path.lastIndexOf('.');
+	if (index === -1) {
+		return null;
+	}
+	const prefix = path.slice(0, index);
+	const suffix = path.slice(index + 1);
+	return prefix.length > 0 ? `${prefix}:${suffix}` : suffix;
+}
+
+function buildCallInfo(call: LuaCallExpression): FunctionCallInfo | null {
+	if (call.methodName !== null) {
+		const basePath = buildMemberBasePath(call.callee);
+		if (!basePath) {
+			return null;
+		}
+		const path = basePath.length > 0 ? `${basePath}:${call.methodName}` : call.methodName;
+		return { path, style: 'method' };
+	}
+	const qualified = resolveQualifiedName(call.callee);
+	if (!qualified) {
+		return null;
+	}
+	const path = qualified.parts.join('.');
+	return { path, style: 'function' };
+}
+
+function resolveUserFunctionSignature(
+	call: LuaCallExpression,
+	signatures: Map<string, FunctionSignatureInfo>,
+): CallSignatureMetadata | null {
+	const callInfo = buildCallInfo(call);
+	if (!callInfo) {
+		return null;
+	}
+	const direct = signatures.get(callInfo.path);
+	if (direct) {
+		return {
+			params: direct.params,
+			label: callInfo.path,
+			callStyle: callInfo.style,
+			declarationStyle: direct.declarationStyle,
+			hasVararg: direct.hasVararg,
+		};
+	}
+	if (callInfo.style === 'method') {
+		const dotPath = convertMethodPathToProperty(callInfo.path);
+		if (dotPath) {
+			const fallback = signatures.get(dotPath);
+			if (fallback) {
+				return {
+					params: fallback.params,
+					label: dotPath,
+					callStyle: callInfo.style,
+					declarationStyle: fallback.declarationStyle,
+					hasVararg: fallback.hasVararg,
+				};
+			}
+		}
+	} else {
+		const colonPath = convertPropertyPathToMethod(callInfo.path);
+		if (colonPath) {
+			const fallback = signatures.get(colonPath);
+			if (fallback) {
+				return {
+					params: fallback.params,
+					label: colonPath,
+					callStyle: callInfo.style,
+					declarationStyle: fallback.declarationStyle,
+					hasVararg: fallback.hasVararg,
+				};
+			}
+		}
+	}
+	return null;
+}
+
+function isSelfParameter(name: string | undefined): boolean {
+	if (!name) {
+		return false;
+	}
+	const normalized = name.trim().toLowerCase();
+	return normalized === 'self' || normalized === 'this';
+}
+
+function validateCallArity(
+	call: LuaCallExpression,
+	metadata: CallSignatureMetadata,
+	diagnostics: LuaDiagnostic[],
+): void {
+	const requirement = determineParameterRequirements(metadata.params);
+	let required = requirement.required;
+	const actualCount = call.arguments.length;
+	if (metadata.declarationStyle === 'method' && metadata.callStyle === 'function') {
+		required += 1;
+	} else if (metadata.declarationStyle === 'function' && metadata.callStyle === 'method') {
+		if (isSelfParameter(metadata.params[0])) {
+			required = Math.max(0, required - 1);
+		}
+	}
+	if (actualCount >= required) {
+		return;
+	}
+	const row = call.range.start.line > 0 ? call.range.start.line - 1 : 0;
+	const startColumn = call.range.start.column > 0 ? call.range.start.column - 1 : 0;
+	const endColumnCandidate = call.range.end.column;
+	const endColumn = endColumnCandidate > startColumn ? endColumnCandidate : startColumn + 1;
+	const missing = required - actualCount;
+	const expectedLabel = required === 1 ? 'argument' : 'arguments';
+	const providedLabel = actualCount === 1 ? 'was' : 'were';
+	const message = `${metadata.label} expects ${required} ${expectedLabel}, but ${actualCount} ${providedLabel} provided${missing > 0 ? ` (${missing} missing)` : ''}.`;
+	diagnostics.push({
+		row,
+		startColumn,
+		endColumn,
+		message,
+		severity: 'error',
+	});
 }

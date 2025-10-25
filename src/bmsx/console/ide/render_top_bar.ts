@@ -15,6 +15,7 @@ export interface TopBarHost {
 	dirty: boolean;
 	resourcePanelVisible: boolean;
 	resourcePanelFilterMode: 'lua_only' | 'all';
+	problemsPanelVisible: boolean;
 	topBarButtonBounds: Record<TopBarButtonId, RectBounds>;
 }
 
@@ -36,6 +37,7 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 	host.topBarButtonBounds.reboot = { left: 0, top: 0, right: 0, bottom: 0 };
 	host.topBarButtonBounds.save = { left: 0, top: 0, right: 0, bottom: 0 };
 	host.topBarButtonBounds.resources = { left: 0, top: 0, right: 0, bottom: 0 };
+	host.topBarButtonBounds.problems = { left: 0, top: 0, right: 0, bottom: 0 };
 	host.topBarButtonBounds.filter = { left: 0, top: 0, right: 0, bottom: 0 };
 	let buttonX = 4;
 	const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
@@ -44,6 +46,7 @@ export function renderTopBar(api: BmsxConsoleApi, host: TopBarHost): void {
 		{ id: 'save', label: 'SAVE', disabled: !host.dirty },
 		{ id: 'resources', label: 'FILES', disabled: false, active: host.resourcePanelVisible },
 	];
+	buttonEntries.push({ id: 'problems', label: 'PROBLEMS', disabled: false, active: host.problemsPanelVisible });
 	if (host.resourcePanelVisible) {
 		const filterLabel = host.resourcePanelFilterMode === 'lua_only' ? 'LUA' : 'ALL';
 		buttonEntries.push({

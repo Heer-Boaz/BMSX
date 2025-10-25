@@ -194,7 +194,7 @@ export type VisualLineSegment = {
 	endColumn: number;
 };
 
-export type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'filter' | 'resolution' | 'wrap';
+export type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'problems' | 'filter' | 'resolution' | 'wrap';
 
 export type EditorTabId = `resource:${string}` | `lua:${string}`;
 export type EditorTabKind = 'resource_view' | 'lua_editor';
