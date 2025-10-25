@@ -134,6 +134,12 @@ export type ConsoleLuaSymbolEntry = {
 	location: ConsoleLuaDefinitionLocation;
 };
 
+export type ConsoleLuaBuiltinDescriptor = {
+	name: string;
+	params: string[];
+	signature: string;
+};
+
 export type ConsoleLuaHoverRequest = {
 	assetId: string | null;
 	expression: string;

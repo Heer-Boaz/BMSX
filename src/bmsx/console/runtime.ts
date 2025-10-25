@@ -5,7 +5,7 @@ import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
 import { Physics2DManager } from '../physics/physics2d';
-import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry } from './types';
+import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
 import { LuaLexer } from '../lua/lexer.ts';
@@ -105,11 +105,33 @@ export class BmsxConsoleRuntime extends Service {
 	private static readonly MAX_FRAME_DELTA_MS = 250;
 	private static readonly HOVER_VALUE_MAX_LINE_LENGTH = 160;
 	private static readonly HOVER_VALUE_MAX_SERIALIZED_LINES = 200;
-	private static readonly LUA_BUILTIN_FUNCTIONS = new Set<string>([
-		'assert', 'collectgarbage', 'dofile', 'error', 'getmetatable', 'ipairs', 'load',
-		'next', 'pairs', 'pcall', 'print', 'rawequal', 'rawget', 'rawset', 'require',
-		'select', 'setmetatable', 'tonumber', 'tostring', 'type', 'xpcall'
-	]);
+private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaBuiltinDescriptor> = [
+	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
+	{ name: 'collectgarbage', params: ['opt?', 'arg?'], signature: 'collectgarbage([opt [, arg]])' },
+	{ name: 'dofile', params: ['filename?'], signature: 'dofile([filename])' },
+	{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
+	{ name: 'getmetatable', params: ['object'], signature: 'getmetatable(object)' },
+	{ name: 'ipairs', params: ['table'], signature: 'ipairs(t)' },
+	{ name: 'load', params: ['chunk', 'chunkname?', 'mode?', 'env?'], signature: 'load(chunk [, chunkname [, mode [, env]]])' },
+	{ name: 'next', params: ['table', 'index?'], signature: 'next(table [, index])' },
+	{ name: 'pairs', params: ['table'], signature: 'pairs(t)' },
+	{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
+	{ name: 'print', params: ['...'], signature: 'print(...)' },
+	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
+	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
+	{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },
+	{ name: 'require', params: ['modname'], signature: 'require(modname)' },
+	{ name: 'select', params: ['index', '...'], signature: 'select(index, ...)' },
+	{ name: 'setmetatable', params: ['table', 'metatable'], signature: 'setmetatable(table, metatable)' },
+	{ name: 'tonumber', params: ['value', 'base?'], signature: 'tonumber(value [, base])' },
+	{ name: 'tostring', params: ['value'], signature: 'tostring(value)' },
+	{ name: 'type', params: ['value'], signature: 'type(value)' },
+	{ name: 'xpcall', params: ['func', 'msgh', 'arg...'], signature: 'xpcall(f, msgh, ...)' },
+	{ name: 'table.concat', params: ['list', 'separator?', 'start?', 'end?'], signature: 'table.concat(list [, sep [, i [, j]]])' },
+	{ name: 'table.pack', params: ['...'], signature: 'table.pack(...)' },
+	{ name: 'table.unpack', params: ['list', 'i?', 'j?'], signature: 'table.unpack(list [, i [, j]])' },
+	{ name: 'table.sort', params: ['list', 'comp?'], signature: 'table.sort(list [, comp])' },
+];
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
@@ -177,6 +199,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly colliders: ConsoleColliderManager;
 	private readonly physics: Physics2DManager;
 	private readonly apiFunctionNames = new Set<string>();
+	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
 	private luaProgram: BmsxConsoleLuaProgram | null;
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
@@ -233,6 +256,7 @@ export class BmsxConsoleRuntime extends Service {
 			physics: this.physics,
 		});
 		this.luaProgram = this.cart.luaProgram ?? null;
+		this.seedDefaultLuaBuiltins();
 		this.initializeEditor();
 		this.attachFrameListener();
 		this.boot();
@@ -1421,6 +1445,10 @@ export class BmsxConsoleRuntime extends Service {
 				if (typeof methodDescriptor.value !== 'function') {
 					continue;
 				}
+				const params = this.extractFunctionParameters(methodDescriptor.value as (...args: unknown[]) => unknown);
+				const signature = params.length > 0
+					? `${name}(${params.join(', ')})`
+					: `${name}()`;
 				const native = createLuaNativeFunction(`api.${name}`, interpreter, (_lua, args) => {
 					const jsArgs = Array.from(args, (arg) => this.luaValueToJs(arg));
 					try {
@@ -1443,6 +1471,7 @@ export class BmsxConsoleRuntime extends Service {
 				env.set(name, native);
 				apiTable.set(name, native);
 				this.apiFunctionNames.add(name);
+				this.registerLuaBuiltin({ name, params, signature });
 				continue;
 			}
 
@@ -1476,6 +1505,11 @@ export class BmsxConsoleRuntime extends Service {
 	private registerLuaTableLibrary(env: LuaEnvironment, interpreter: LuaInterpreter): void {
 		const tableLibrary = new LuaTable();
 
+		this.registerLuaBuiltin({
+			name: 'table.insert',
+			params: ['list', 'pos?', 'value'],
+			signature: 'table.insert(list [, pos], value)',
+		});
 		tableLibrary.set('insert', createLuaNativeFunction('table.insert', interpreter, (_lua, args) => {
 			if (args.length < 2) {
 				throw this.createApiRuntimeError(interpreter, '[table.insert] requires at least 2 arguments.');
@@ -1501,6 +1535,11 @@ export class BmsxConsoleRuntime extends Service {
 			return [];
 		}));
 
+		this.registerLuaBuiltin({
+			name: 'table.remove',
+			params: ['list', 'pos?'],
+			signature: 'table.remove(list [, pos])',
+		});
 		tableLibrary.set('remove', createLuaNativeFunction('table.remove', interpreter, (_lua, args) => {
 			if (args.length === 0) {
 				throw this.createApiRuntimeError(interpreter, '[table.remove] requires a table argument.');
@@ -1523,6 +1562,98 @@ export class BmsxConsoleRuntime extends Service {
 
 		env.set('table', tableLibrary);
 		this.apiFunctionNames.add('table');
+	}
+
+	private registerLuaBuiltin(metadata: ConsoleLuaBuiltinDescriptor): void {
+		if (!metadata || typeof metadata.name !== 'string') {
+			return;
+		}
+		const normalizedName = metadata.name.trim();
+		if (normalizedName.length === 0) {
+			return;
+		}
+		const params = Array.isArray(metadata.params) ? metadata.params.slice() : [];
+		const signature = typeof metadata.signature === 'string' ? metadata.signature : normalizedName;
+		this.luaBuiltinMetadata.set(normalizedName, {
+			name: normalizedName,
+			params,
+			signature,
+		});
+	}
+
+	private extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
+		const source = Function.prototype.toString.call(fn);
+		const openIndex = source.indexOf('(');
+		if (openIndex === -1) {
+			return [];
+		}
+		let index = openIndex + 1;
+		let depth = 1;
+		let closeIndex = source.length;
+		while (index < source.length) {
+			const ch = source.charAt(index);
+			if (ch === '(') {
+				depth += 1;
+			} else if (ch === ')') {
+				depth -= 1;
+				if (depth === 0) {
+					closeIndex = index;
+					break;
+				}
+			}
+			index += 1;
+		}
+		if (depth !== 0 || closeIndex <= openIndex) {
+			return [];
+		}
+		const slice = source.slice(openIndex + 1, closeIndex);
+		const withoutBlockComments = slice.replace(/\/\*[\s\S]*?\*\//g, '');
+		const withoutLineComments = withoutBlockComments.replace(/\/\/.*$/gm, '');
+		const rawTokens = withoutLineComments.split(',');
+		const names: string[] = [];
+		for (let i = 0; i < rawTokens.length; i += 1) {
+			const token = rawTokens[i].trim();
+			if (token.length === 0) {
+				continue;
+			}
+			names.push(this.sanitizeParameterName(token, i));
+		}
+		return names;
+	}
+
+	private sanitizeParameterName(token: string, index: number): string {
+		let candidate = token.trim();
+		if (candidate.length === 0) {
+			return `arg${index + 1}`;
+		}
+		if (candidate.startsWith('...')) {
+			return '...';
+		}
+		const equalsIndex = candidate.indexOf('=');
+		if (equalsIndex >= 0) {
+			candidate = candidate.slice(0, equalsIndex).trim();
+		}
+		const colonIndex = candidate.indexOf(':');
+		if (colonIndex >= 0) {
+			candidate = candidate.slice(0, colonIndex).trim();
+		}
+		const bracketIndex = Math.max(candidate.indexOf('{'), candidate.indexOf('['));
+		if (bracketIndex !== -1) {
+			return `arg${index + 1}`;
+		}
+		const sanitized = candidate.replace(/[^A-Za-z0-9_]/g, '');
+		if (sanitized.length === 0) {
+			return `arg${index + 1}`;
+		}
+		return sanitized;
+	}
+
+	private seedDefaultLuaBuiltins(): void {
+		this.luaBuiltinMetadata.clear();
+		const defaults = BmsxConsoleRuntime.DEFAULT_LUA_BUILTIN_FUNCTIONS;
+		for (let i = 0; i < defaults.length; i += 1) {
+			this.registerLuaBuiltin(defaults[i]);
+		}
 	}
 
 	private ensureFsmLuaInterpreter(): LuaInterpreter {
@@ -3088,8 +3219,17 @@ export class BmsxConsoleRuntime extends Service {
 		return symbols;
 	}
 
-	public listLuaBuiltinFunctions(): string[] {
-		return Array.from(BmsxConsoleRuntime.LUA_BUILTIN_FUNCTIONS);
+	public listLuaBuiltinFunctions(): ConsoleLuaBuiltinDescriptor[] {
+		const result: ConsoleLuaBuiltinDescriptor[] = [];
+		for (const metadata of this.luaBuiltinMetadata.values()) {
+			result.push({
+				name: metadata.name,
+				params: Array.isArray(metadata.params) ? metadata.params.slice() : [],
+				signature: metadata.signature,
+			});
+		}
+		result.sort((a, b) => a.name.localeCompare(b.name));
+		return result;
 	}
 
 	public listAllLuaSymbols(): ConsoleLuaSymbolEntry[] {
@@ -3594,7 +3734,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!name || name.length === 0) {
 			return false;
 		}
-		return BmsxConsoleRuntime.LUA_BUILTIN_FUNCTIONS.has(name);
+		return this.luaBuiltinMetadata.has(name);
 	}
 
 	private luaTableInsert(table: LuaTable, value: LuaValue, position: number | null): void {

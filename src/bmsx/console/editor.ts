@@ -3,7 +3,7 @@ import type { KeyboardInput } from '../input/keyboardinput';
 import type { ButtonState, BGamepadButton } from '../input/inputtypes';
 import type { ClipboardService, ViewportMetrics } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
-import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry } from './types';
+import type { BmsxConsoleMetadata, ConsoleViewport, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaHoverValueState, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor } from './types';
 import { ConsoleEditorFont } from './editor_font';
 import { Msx1Colors } from '../systems/msx';
 import { clamp } from '../utils/utils';
@@ -85,7 +85,7 @@ export type ConsoleEditorOptions = {
 	primaryAssetId: string | null;
 	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
-	listBuiltinLuaFunctions: () => string[];
+	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
 };
 
 export type Position = { row: number; column: number };
@@ -244,7 +244,7 @@ type VisualLineSegment = {
 	endColumn: number;
 };
 
-type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'resolution' | 'wrap';
+type TopBarButtonId = 'resume' | 'reboot' | 'save' | 'resources' | 'filter' | 'resolution' | 'wrap';
 
 type EditorTabId = `resource:${string}` | `lua:${string}`;
 type EditorTabKind = 'resource_view' | 'lua_editor';
@@ -742,7 +742,7 @@ export class ConsoleCartEditor {
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
-	private readonly listBuiltinLuaFunctionsFn: () => string[];
+	private readonly listBuiltinLuaFunctionsFn: () => ConsoleLuaBuiltinDescriptor[];
 	private readonly primaryAssetId: string | null;
 	private hoverTooltip: CodeHoverTooltip | null = null;
 	private lastPointerSnapshot: PointerSnapshot | null = null;
@@ -804,6 +804,7 @@ export class ConsoleCartEditor {
 		reboot: { left: 0, top: 0, right: 0, bottom: 0 },
 		save: { left: 0, top: 0, right: 0, bottom: 0 },
 		resources: { left: 0, top: 0, right: 0, bottom: 0 },
+		filter: { left: 0, top: 0, right: 0, bottom: 0 },
 		resolution: { left: 0, top: 0, right: 0, bottom: 0 },
 		wrap: { left: 0, top: 0, right: 0, bottom: 0 },
 	};
@@ -825,6 +826,7 @@ export class ConsoleCartEditor {
 	private blinkTimer = 0;
 	private cursorVisible = true;
 	private desiredColumn = 0;
+	private desiredDisplayOffset = 0;
 	private selectionAnchor: Position | null = null;
 	private warnNonMonospace = false;
 	private undoStack: EditorSnapshot[] = [];
@@ -864,6 +866,8 @@ export class ConsoleCartEditor {
 	private pendingEditContext: EditContext | null = null;
 	private cursorScreenInfo: CursorScreenInfo | null = null;
 	private parameterHint: ParameterHintState | null = null;
+	private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
+	private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
 	private lineJumpActive = false;
 	private symbolSearchActive = false;
 	private symbolSearchVisible = false;
@@ -906,6 +910,8 @@ export class ConsoleCartEditor {
 	private resourceBrowserHoverIndex = -1;
 	private resourcePanelVisible = false;
 	private resourcePanelFocused = false;
+	private resourcePanelFilterMode: 'lua_only' | 'all' = 'lua_only';
+	private resourcePanelResourceCount = 0;
 	private pendingResourceSelectionAssetId: string | null = null;
 	private resourcePanelWidthRatio: number | null = null;
 	private resourcePanelResizing = false;
@@ -916,7 +922,7 @@ export class ConsoleCartEditor {
 	private cachedVisibleRowCount = 1;
 	private cachedVisibleColumnCount = 1;
 	private dimCrtInEditor: boolean = false; // Default value; can be changed via settings
-	private wordWrapEnabled = false;
+	private wordWrapEnabled = true;
 	private visualLines: VisualLineSegment[] = [];
 	private rowToFirstVisualLine: number[] = [];
 	private visualLinesDirty = true;
@@ -1415,6 +1421,28 @@ export class ConsoleCartEditor {
 			return byAssetId;
 		}
 		throw new Error(`[ConsoleCartEditor] Unable to resolve chunk '${normalizedTarget}' to a resource.`);
+	}
+
+	private resourceDescriptorMatchesFilter(descriptor: ConsoleResourceDescriptor): boolean {
+		if (this.resourcePanelFilterMode === 'all') {
+			return true;
+		}
+		if (descriptor.type === 'lua') {
+			return true;
+		}
+		const path = descriptor.path;
+		if (typeof path === 'string' && path.length > 0) {
+			if (path.toLowerCase().endsWith('.lua')) {
+				return true;
+			}
+		}
+		const assetId = descriptor.assetId;
+		if (typeof assetId === 'string' && assetId.length > 0) {
+			if (assetId.toLowerCase().endsWith('.lua')) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
@@ -2322,6 +2350,11 @@ export class ConsoleCartEditor {
 		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyR')) {
 			this.consumeKey(keyboard, 'KeyR');
 			this.toggleResolutionMode();
+			return;
+		}
+		if ((ctrlDown || metaDown) && shiftDown && this.isKeyJustPressed(keyboard, 'KeyL')) {
+			this.consumeKey(keyboard, 'KeyL');
+			this.toggleResourcePanelFilterMode();
 			return;
 		}
 		if ((ctrlDown || metaDown) && !altDown && this.isKeyJustPressed(keyboard, 'Comma')) {
@@ -3851,7 +3884,7 @@ export class ConsoleCartEditor {
 			const visualCount = this.getVisualLineCount();
 			const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
 			const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
-			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn);
+			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageUp');
 			moved = true;
@@ -3862,7 +3895,7 @@ export class ConsoleCartEditor {
 			const visualCount = this.getVisualLineCount();
 			const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
 			const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
-			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn);
+			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
 			this.resetBlink();
 			this.consumeKey(keyboard, 'PageDown');
 			moved = true;
@@ -4992,6 +5025,10 @@ export class ConsoleCartEditor {
 			this.handleTopBarButtonPress('resources');
 			return true;
 		}
+		if (this.resourcePanelVisible && this.pointInRect(x, y, this.topBarButtonBounds.filter)) {
+			this.handleTopBarButtonPress('filter');
+			return true;
+		}
 		if (this.pointInRect(x, y, this.topBarButtonBounds.wrap)) {
 			this.handleTopBarButtonPress('wrap');
 			return true;
@@ -5137,33 +5174,33 @@ export class ConsoleCartEditor {
 	}
 
 	private handleTopBarButtonPress(button: TopBarButtonId): void {
-		if (button === 'wrap') {
-			this.toggleWordWrap();
-			return;
-		}
-		if (button === 'resolution') {
-			this.toggleResolutionMode();
-			return;
-		}
-		if (button === 'resources') {
-			this.toggleResourcePanel();
-			return;
-		}
-		if (button === 'save') {
-			if (!this.dirty) {
+		switch (button) {
+			case 'filter':
+				this.toggleResourcePanelFilterMode();
 				return;
-			}
-			void this.save();
-			return;
-		}
-		this.activateCodeTab();
-		if (this.dirty) {
-			this.openActionPrompt(button);
-			return;
-		}
-		const success = this.performAction(button);
-		if (!success) {
-			return;
+			case 'wrap':
+				this.toggleWordWrap();
+				return;
+			case 'resolution':
+				this.toggleResolutionMode();
+				return;
+			case 'resources':
+				this.toggleResourcePanel();
+				return;
+			case 'save':
+				if (this.dirty) {
+					void this.save();
+				}
+				return;
+			case 'resume':
+			case 'reboot':
+				this.activateCodeTab();
+				if (this.dirty) {
+					this.openActionPrompt(button);
+					return;
+				}
+				this.performAction(button);
+				return;
 		}
 	}
 
@@ -5811,7 +5848,8 @@ export class ConsoleCartEditor {
 		const currentIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
 		const targetIndex = clamp(currentIndex + delta, 0, visualCount - 1);
 		const desired = this.desiredColumn;
-		this.setCursorFromVisualIndex(targetIndex, desired);
+		const desiredDisplay = this.desiredDisplayOffset;
+		this.setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
 		this.resetBlink();
 		this.revealCursor();
 		this.onCursorMoved();
@@ -6638,6 +6676,27 @@ export class ConsoleCartEditor {
 
 	private updateDesiredColumn(): void {
 		this.desiredColumn = this.cursorColumn;
+		this.desiredDisplayOffset = 0;
+		if (this.cursorRow < 0 || this.cursorRow >= this.lines.length) {
+			return;
+		}
+		const entry = this.getCachedHighlight(this.cursorRow);
+		const highlight = entry.hi;
+		const cursorDisplay = this.columnToDisplay(highlight, this.cursorColumn);
+		let segmentStartColumn = 0;
+		if (this.wordWrapEnabled) {
+			this.ensureVisualLines();
+			const visualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+			const segment = this.visualIndexToSegment(visualIndex);
+			if (segment) {
+				segmentStartColumn = segment.startColumn;
+			}
+		}
+		const segmentDisplayStart = this.columnToDisplay(highlight, segmentStartColumn);
+		this.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+		if (this.desiredDisplayOffset < 0) {
+			this.desiredDisplayOffset = 0;
+		}
 	}
 
 	private isKeyTyped(keyboard: KeyboardInput, code: string): boolean {
@@ -7416,6 +7475,7 @@ export class ConsoleCartEditor {
 		this.topBarButtonBounds.reboot = { left: 0, top: 0, right: 0, bottom: 0 };
 		this.topBarButtonBounds.save = { left: 0, top: 0, right: 0, bottom: 0 };
 		this.topBarButtonBounds.resources = { left: 0, top: 0, right: 0, bottom: 0 };
+		this.topBarButtonBounds.filter = { left: 0, top: 0, right: 0, bottom: 0 };
 		let buttonX = 4;
 		const buttonEntries: Array<{ id: TopBarButtonId; label: string; disabled: boolean; active?: boolean }> = [
 			{ id: 'resume', label: 'RESUME', disabled: false },
@@ -7423,6 +7483,15 @@ export class ConsoleCartEditor {
 			{ id: 'save', label: 'SAVE', disabled: !this.dirty },
 			{ id: 'resources', label: 'FILES', disabled: false, active: this.resourcePanelVisible },
 		];
+		if (this.resourcePanelVisible) {
+			const filterLabel = this.resourcePanelFilterMode === 'lua_only' ? 'LUA' : 'ALL';
+			buttonEntries.push({
+				id: 'filter',
+				label: filterLabel,
+				disabled: false,
+				active: this.resourcePanelFilterMode === 'lua_only',
+			});
+		}
 		const availableRight = wrapLeft - HEADER_BUTTON_SPACING;
 		for (let i = 0; i < buttonEntries.length; i++) {
 			const entry = buttonEntries[i];
@@ -8334,6 +8403,15 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		this.showResourcePanel();
 	}
 
+	private toggleResourcePanelFilterMode(): void {
+		this.resourcePanelFilterMode = this.resourcePanelFilterMode === 'lua_only' ? 'all' : 'lua_only';
+		if (this.resourcePanelVisible) {
+			this.refreshResourcePanelContents();
+		}
+		const modeLabel = this.resourcePanelFilterMode === 'lua_only' ? 'Lua resources' : 'all resources';
+		this.showMessage(`Files panel: showing ${modeLabel}`, COLOR_STATUS_TEXT, 2.5);
+	}
+
 	private toggleResolutionMode(): void {
 		this.resolutionMode = this.resolutionMode === 'offscreen' ? 'viewport' : 'offscreen';
 		this.refreshViewportDimensions(true);
@@ -8375,10 +8453,11 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		} else {
 			this.scrollColumn = clamp(anchorColumnForUnwrap, 0, this.computeMaximumScrollColumn());
 			const anchorVisualIndex = this.positionToVisualIndex(anchorRow, this.scrollColumn);
-			this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
+		this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
 		}
 		this.lastPointerRowResolution = null;
 		this.ensureCursorVisible();
+		this.updateDesiredColumn();
 		const message = this.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
 		this.showMessage(message, COLOR_STATUS_TEXT, 2.5);
 	}
@@ -8704,6 +8783,7 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.showWarningBanner(`Failed to enumerate resources: ${message}`);
+			this.resourcePanelResourceCount = 0;
 			this.resourceBrowserItems = [{
 				line: `<failed to load resources: ${message}>`,
 				contentStartColumn: 0,
@@ -8725,7 +8805,15 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 				augmented.push({ path: `atlas/${key}`, type: 'atlas', assetId: key });
 			}
 		}
-		this.resourceBrowserItems = this.buildResourceBrowserItems(augmented);
+		const filteredDescriptors: ConsoleResourceDescriptor[] = [];
+		for (let index = 0; index < augmented.length; index += 1) {
+			const descriptor = augmented[index];
+			if (this.resourceDescriptorMatchesFilter(descriptor)) {
+				filteredDescriptors.push(descriptor);
+			}
+		}
+		this.resourcePanelResourceCount = filteredDescriptors.length;
+		this.resourceBrowserItems = this.buildResourceBrowserItems(filteredDescriptors);
 		this.updateResourceBrowserMetrics();
 		const targetAssetId = this.pendingResourceSelectionAssetId ?? previousAssetId;
 		let selectionIndex = -1;
@@ -8778,8 +8866,9 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): ResourceBrowserItem[] {
 		const items: ResourceBrowserItem[] = [];
 		if (!entries || entries.length === 0) {
+			const placeholder = this.resourcePanelFilterMode === 'lua_only' ? '<no lua resources>' : '<no resources>';
 			items.push({
-				line: '<no resources>',
+				line: placeholder,
 				contentStartColumn: 0,
 				descriptor: null,
 			});
@@ -10453,37 +10542,6 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		if (methodName.length === 0) {
 			return null;
 		}
-		let operatorIndex = scan;
-		while (operatorIndex >= 0 && this.isWhitespace(prefix.charAt(operatorIndex))) {
-			operatorIndex -= 1;
-		}
-		if (operatorIndex < 0) {
-			return null;
-		}
-		const operatorChar = prefix.charAt(operatorIndex);
-		if (operatorChar !== '.' && operatorChar !== ':') {
-			return null;
-		}
-		let objectEnd = operatorIndex;
-		let objectIndex = objectEnd - 1;
-		while (objectIndex >= 0 && this.isWhitespace(prefix.charAt(objectIndex))) {
-			objectIndex -= 1;
-		}
-		if (objectIndex < 0) {
-			return null;
-		}
-		let objectStart = objectIndex;
-		while (objectStart >= 0 && this.isWordChar(prefix.charAt(objectStart))) {
-			objectStart -= 1;
-		}
-	const objectName = prefix.slice(objectStart + 1, objectIndex + 1);
-	if (objectName.toLowerCase() !== 'api') {
-		return null;
-	}
-		const meta = ConsoleCartEditor.API_COMPLETION_DATA.signatures.get(methodName);
-		if (!meta) {
-			return null;
-		}
 		const inner = line.slice(lastOpen + 1, safeColumn);
 		let argumentIndex = 0;
 		let nested = 0;
@@ -10499,16 +10557,56 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 				argumentIndex += 1;
 			}
 		}
-		const params = meta.params.slice();
-		return {
-			methodName,
-			params,
-			signatureLabel: meta.signature,
-			anchorRow: safeRow,
-			anchorColumn: lastOpen,
-			argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
-		};
-	}
+		let operatorIndex = scan;
+		while (operatorIndex >= 0 && this.isWhitespace(prefix.charAt(operatorIndex))) {
+			operatorIndex -= 1;
+		}
+		let objectName: string | null = null;
+		if (operatorIndex >= 0) {
+			const candidateOperator = prefix.charAt(operatorIndex);
+			if (candidateOperator === '.' || candidateOperator === ':') {
+				let objectEnd = operatorIndex;
+				let objectIndex = objectEnd - 1;
+				while (objectIndex >= 0 && this.isWhitespace(prefix.charAt(objectIndex))) {
+					objectIndex -= 1;
+				}
+				if (objectIndex >= 0) {
+					let objectStart = objectIndex;
+					while (objectStart >= 0 && this.isWordChar(prefix.charAt(objectStart))) {
+						objectStart -= 1;
+					}
+					objectName = prefix.slice(objectStart + 1, objectIndex + 1);
+				}
+			}
+		}
+		if (objectName && objectName.toLowerCase() === 'api') {
+			const apiMeta = ConsoleCartEditor.API_COMPLETION_DATA.signatures.get(methodName);
+			if (apiMeta) {
+				const params = apiMeta.params.slice();
+				return {
+					methodName,
+					params,
+					signatureLabel: apiMeta.signature,
+					anchorRow: safeRow,
+					anchorColumn: lastOpen,
+					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+				};
+			}
+		}
+		const builtin = this.findBuiltinDescriptor(objectName, methodName);
+		if (builtin) {
+			const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
+			return {
+				methodName: builtin.name,
+				params,
+				signatureLabel: builtin.signature,
+				anchorRow: safeRow,
+				anchorColumn: lastOpen,
+				argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
+			};
+		}
+		return null;
+ 	}
 
 	private analyzeCompletionContext(): CompletionContext | null {
 		if (!this.isCodeTabActive()) {
@@ -10654,33 +10752,21 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 	}
 
 	private getBuiltinCompletionItems(): LuaCompletionItem[] {
-		let names: string[];
-		try {
-			names = this.listBuiltinLuaFunctionsFn();
-		} catch {
-			return [];
-		}
-		if (!Array.isArray(names) || names.length === 0) {
-			return [];
-		}
-		const seen = new Set<string>();
+		this.ensureBuiltinDescriptorCache();
 		const items: LuaCompletionItem[] = [];
-		for (let i = 0; i < names.length; i += 1) {
-			const name = names[i];
-			if (typeof name !== 'string' || name.length === 0) {
-				continue;
-			}
-			const normalized = name.trim();
-			if (normalized.length === 0 || seen.has(normalized)) {
-				continue;
-			}
-			seen.add(normalized);
+		for (const descriptor of this.builtinDescriptorMap.values()) {
+			const label = descriptor.name;
+			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
+			const detail = descriptor.signature && descriptor.signature.length > 0
+				? descriptor.signature
+				: 'Lua builtin';
 			items.push({
-				label: normalized,
-				insertText: normalized,
-				sortKey: `builtin:${normalized}`,
+				label,
+				insertText: label,
+				sortKey: `builtin:${label.toLowerCase()}`,
 				kind: 'builtin',
-				detail: 'Lua builtin',
+				detail,
+				parameters: params,
 			});
 		}
 		items.sort((a, b) => a.label.localeCompare(b.label));
@@ -10738,6 +10824,70 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		}
 	}
 
+	private ensureBuiltinDescriptorCache(force = false): void {
+		if (!force && this.builtinDescriptors !== null) {
+			return;
+		}
+		let descriptors: ConsoleLuaBuiltinDescriptor[];
+		try {
+			descriptors = this.listBuiltinLuaFunctionsFn();
+		} catch {
+			descriptors = [];
+		}
+		if (!Array.isArray(descriptors)) {
+			descriptors = [];
+		}
+		this.builtinDescriptors = descriptors;
+		this.builtinDescriptorMap.clear();
+		const registerDescriptor = (descriptor: ConsoleLuaBuiltinDescriptor): void => {
+			if (!descriptor || typeof descriptor.name !== 'string') {
+				return;
+			}
+			const normalized = descriptor.name.trim();
+			if (normalized.length === 0) {
+				return;
+			}
+			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
+			const signature = descriptor.signature && descriptor.signature.length > 0
+				? descriptor.signature
+				: normalized;
+			const entry: ConsoleLuaBuiltinDescriptor = {
+				name: normalized,
+				params,
+				signature,
+			};
+			this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
+		};
+		for (let i = 0; i < descriptors.length; i += 1) {
+			registerDescriptor(descriptors[i]);
+		}
+	}
+
+	private findBuiltinDescriptor(objectName: string | null, methodName: string): ConsoleLuaBuiltinDescriptor | null {
+		this.ensureBuiltinDescriptorCache();
+		const methodKey = methodName.toLowerCase();
+		if (objectName) {
+			const compositeKey = `${objectName.toLowerCase()}.${methodKey}`;
+			const composite = this.builtinDescriptorMap.get(compositeKey);
+			if (composite) {
+				return {
+					name: composite.name,
+					params: composite.params.slice(),
+					signature: composite.signature,
+				};
+			}
+		}
+		const direct = this.builtinDescriptorMap.get(methodKey);
+		if (direct) {
+			return {
+				name: direct.name,
+				params: direct.params.slice(),
+				signature: direct.signature,
+			};
+		}
+		return null;
+	}
+
 	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
 		if (!edit || edit.kind === 'delete') {
 			return null;
@@ -10774,6 +10924,11 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		if (this.completionSession) {
 			this.cancelPendingCompletion();
 			if (!analyzed) {
+				this.closeCompletionSession();
+				return;
+			}
+			const previousChar = this.charAt(this.cursorRow, this.cursorColumn - 1);
+			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !this.isWordChar(previousChar)) {
 				this.closeCompletionSession();
 				return;
 			}
@@ -10872,15 +11027,13 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		const prefix = session.context.prefix;
 		const filtered = this.filterCompletionItems(session.items, prefix);
 		if (filtered.length === 0) {
-			session.filteredItems = session.items.slice();
-		} else {
-			session.filteredItems = filtered;
-		}
-		if (session.filteredItems.length === 0) {
+			session.filteredItems = [];
 			session.selectionIndex = -1;
 			session.displayOffset = 0;
+			this.closeCompletionSession();
 			return;
 		}
+		session.filteredItems = filtered;
 		if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) {
 			session.selectionIndex = 0;
 		}
@@ -10888,24 +11041,37 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 	}
 
 	private filterCompletionItems(items: LuaCompletionItem[], prefix: string): LuaCompletionItem[] {
-		if (prefix.length === 0) {
-			return items.slice();
-		}
 		const lower = prefix.toLowerCase();
-		const matches: Array<{ item: LuaCompletionItem; score: number }> = [];
+		const matches: Array<{ item: LuaCompletionItem; score: number; exact: boolean }> = [];
 		for (let i = 0; i < items.length; i += 1) {
 			const item = items[i];
 			const labelLower = item.label.toLowerCase();
-			const index = labelLower.indexOf(lower);
-			if (index === -1) {
+			let score: number | null = null;
+			let exact = false;
+			if (labelLower.startsWith(lower)) {
+				score = 0;
+				exact = labelLower === lower;
+			} else if (lower.length > 0) {
+				const index = labelLower.indexOf(lower);
+				if (index !== -1) {
+					score = index + 10;
+				}
+			}
+			if (score === null) {
 				continue;
 			}
-			matches.push({ item, score: index });
+			matches.push({ item, score, exact });
+		}
+		if (lower.length === 0) {
+			return items.slice();
 		}
 		if (matches.length === 0) {
 			return [];
 		}
 		matches.sort((a, b) => {
+			if (a.exact !== b.exact) {
+				return a.exact ? -1 : 1;
+			}
 			if (a.score !== b.score) {
 				return a.score - b.score;
 			}
@@ -11107,21 +11273,23 @@ private handleCompletionKeybindings(
 		this.moveCompletionSelection(-session.maxVisibleItems);
 		handled = true;
 	}
-	if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-		this.consumeKey(keyboard, 'Home');
-		if (session.filteredItems.length > 0) {
-			session.selectionIndex = 0;
-			this.ensureCompletionSelectionVisible(session);
+	if (ctrlDown || metaDown) {
+		if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+			this.consumeKey(keyboard, 'Home');
+			if (session.filteredItems.length > 0) {
+				session.selectionIndex = 0;
+				this.ensureCompletionSelectionVisible(session);
+			}
+			handled = true;
 		}
-		handled = true;
-	}
-	if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-		this.consumeKey(keyboard, 'End');
-		if (session.filteredItems.length > 0) {
-			session.selectionIndex = session.filteredItems.length - 1;
-			this.ensureCompletionSelectionVisible(session);
+		if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+			this.consumeKey(keyboard, 'End');
+			if (session.filteredItems.length > 0) {
+				session.selectionIndex = session.filteredItems.length - 1;
+				this.ensureCompletionSelectionVisible(session);
+			}
+			handled = true;
 		}
-		handled = true;
 	}
 	if (handled) {
 		return true;
@@ -11321,7 +11489,7 @@ private handleCompletionKeybindings(
 		return Math.min(this.visualLines.length - 1, index - 1);
 	}
 
-	private setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number): void {
+	private setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 		this.ensureVisualLines();
 		if (this.visualLines.length === 0) {
 			this.cursorRow = 0;
@@ -11334,18 +11502,37 @@ private handleCompletionKeybindings(
 		if (!segment) {
 			return;
 		}
+		const entry = this.getCachedHighlight(segment.row);
+		const highlight = entry.hi;
 		const line = this.lines[segment.row] ?? '';
-		let targetColumn = desiredColumnHint !== undefined ? desiredColumnHint : this.cursorColumn;
+		const hasDesiredHint = desiredColumnHint !== undefined;
+		const hasOffsetHint = desiredOffsetHint !== undefined;
+		let targetColumn = hasDesiredHint ? desiredColumnHint! : this.cursorColumn;
 		if (this.wordWrapEnabled) {
-			targetColumn = clamp(Math.round(targetColumn), segment.startColumn, Math.max(segment.endColumn, segment.startColumn));
-			if (targetColumn > line.length) {
-				targetColumn = line.length;
+			const segmentEndColumn = Math.max(segment.endColumn, segment.startColumn);
+			const segmentDisplayStart = this.columnToDisplay(highlight, segment.startColumn);
+			const segmentDisplayEnd = this.columnToDisplay(highlight, segmentEndColumn);
+			const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
+			if (hasOffsetHint) {
+				const clampedOffset = clamp(Math.round(desiredOffsetHint!), 0, segmentWidth);
+				const targetDisplay = clamp(segmentDisplayStart + clampedOffset, segmentDisplayStart, segmentDisplayEnd);
+				let columnFromOffset = entry.displayToColumn[targetDisplay];
+				if (columnFromOffset === undefined) {
+					columnFromOffset = this.lines[segment.row].length;
+				}
+				targetColumn = clamp(columnFromOffset, segment.startColumn, segmentEndColumn);
+			} else {
+				targetColumn = clamp(Math.round(targetColumn), segment.startColumn, segmentEndColumn);
+				if (targetColumn > line.length) {
+					targetColumn = line.length;
+				}
 			}
 		} else {
 			targetColumn = clamp(Math.round(targetColumn), 0, line.length);
 		}
 		this.cursorRow = segment.row;
 		this.cursorColumn = clamp(targetColumn, 0, line.length);
+		const cursorDisplay = this.columnToDisplay(highlight, this.cursorColumn);
 		if (this.wordWrapEnabled) {
 			const hasNextSegmentSameRow = (clampedIndex + 1 < this.visualLines.length)
 				&& this.visualLines[clampedIndex + 1].row === segment.row;
@@ -11359,8 +11546,19 @@ private handleCompletionKeybindings(
 			if (hasNextSegmentSameRow && this.cursorColumn >= segmentEnd) {
 				this.cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
 			}
+			const segmentDisplayStart = this.columnToDisplay(highlight, segment.startColumn);
+			this.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
+		} else {
+			this.desiredDisplayOffset = cursorDisplay;
 		}
-		this.updateDesiredColumn();
+		if (hasDesiredHint) {
+			this.desiredColumn = Math.max(0, desiredColumnHint!);
+		} else {
+			this.desiredColumn = this.cursorColumn;
+		}
+		if (this.desiredDisplayOffset < 0) {
+			this.desiredDisplayOffset = 0;
+		}
 	}
 
 
@@ -11460,9 +11658,9 @@ private handleCompletionKeybindings(
 		}
 
 		if (this.resourcePanelVisible) {
-			const totalEntries = this.resourceBrowserItems.length;
-			const fileInfo = `FILES ${totalEntries}`;
-			const hint = 'SCROLL WHEEL/ARROWS';
+			const filterLabel = this.resourcePanelFilterMode === 'lua_only' ? 'LUA' : 'ALL';
+			const fileInfo = `FILES ${this.resourcePanelResourceCount} (${filterLabel})`;
+			const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
 			this.drawText(api, fileInfo, 4, statusTop + 2, COLOR_STATUS_TEXT);
 			this.drawText(api, hint, this.viewportWidth - this.measureText(hint) - 4, statusTop + 2, COLOR_STATUS_TEXT);
 		} else if (this.isResourceViewActive()) {
