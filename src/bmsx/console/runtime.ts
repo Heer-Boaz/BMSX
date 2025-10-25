@@ -1,6 +1,5 @@
 import type { StorageService } from '../platform/platform';
 import { BmsxConsoleApi } from './api';
-import { ConsoleCartEditor } from './editor';
 import { BmsxConsoleInput } from './input';
 import { BmsxConsoleStorage } from './storage';
 import { ConsoleColliderManager } from './collision';
@@ -26,6 +25,7 @@ import { registerBehaviorTreeDefinition, unregisterBehaviorTreeBuilder, setup_bt
 import type { BehaviorTreeDefinition } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
+import { ConsoleCartEditor } from './ide/console_cart_editor.ts';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';

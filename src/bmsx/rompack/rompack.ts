@@ -18,7 +18,7 @@ export interface RomPack {
 	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources.
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem' | 'lua';
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem' | 'lua' | 'rommanifest';
 export type asset_id = string;
 
 export interface RomResourcePath {

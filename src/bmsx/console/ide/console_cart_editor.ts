@@ -14,7 +14,8 @@ import type {
 	ConsoleResourceDescriptor,
 } from '../types';
 import { ConsoleEditorFont } from '../editor_font';
-import { Msx1Colors } from '../../systems/msx';
+import { Msx1Colors } from 'bmsx';
+import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
@@ -36,7 +37,8 @@ import { expandTabs as expandTabsExternal, measureTextGeneric, truncateTextToWid
 import { ConsoleScrollbar } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderStatusBar } from './render_status_bar';
-import { renderCreateResourceBar } from './render_inline_bars';
+import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderLineJumpBar } from './render_inline_bars';
+import { renderResourcePanel, type ResourcePanelHost } from './render_resource_panel';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -6092,6 +6094,7 @@ export class ConsoleCartEditor {
 			tabBarHeight: this.tabBarHeight,
 			lineHeight: this.lineHeight,
 			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
 			measureText: (t: string) => this.measureText(t),
 			drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => this.drawText(api2, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
@@ -6102,6 +6105,10 @@ export class ConsoleCartEditor {
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (api4: BmsxConsoleApi, err: string) => this.drawCreateResourceErrorDialog(api4, err),
 			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				api3: BmsxConsoleApi,
 				field: InlineTextField,
@@ -6122,292 +6129,193 @@ export class ConsoleCartEditor {
 	}
 
 	private drawSearchBar(api: BmsxConsoleApi): void {
-		const height = this.getSearchBarHeight();
-		if (height <= 0) {
-			return;
-		}
-		const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight();
-		const barTop = baseTop;
-		const barBottom = barTop + height;
-		api.rectfill(0, barTop, this.viewportWidth, barBottom, constants.COLOR_SEARCH_BACKGROUND);
-		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, constants.COLOR_SEARCH_OUTLINE);
-		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, constants.COLOR_SEARCH_OUTLINE);
-
-		const field = this.searchField;
-		const label = 'SEARCH:';
-		const labelX = 4;
-		const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
-		this.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
-
-		let queryText = field.text;
-		let queryColor = constants.COLOR_SEARCH_TEXT;
-		if (queryText.length === 0 && !this.searchActive) {
-			queryText = 'TYPE TO SEARCH';
-			queryColor = constants.COLOR_SEARCH_PLACEHOLDER;
-		}
-		const queryX = labelX + this.measureText(label + ' ');
-
-		const selection = inlineFieldSelectionRange(field);
-		if (selection && field.text.length > 0) {
-			const selectionLeft = queryX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
-			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
-			if (selectionWidth > 0) {
-				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
-			}
-		}
-
-		this.drawText(api, queryText, queryX, labelY, queryColor);
-
-		const caretX = inlineFieldCaretX(field, queryX, this.measureText.bind(this));
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + this.lineHeight;
-		this.drawInlineCaret(api, this.searchField, caretLeft, caretTop, caretRight, caretBottom, caretX, this.searchActive, constants.INLINE_CARET_COLOR, queryColor);
-
-		if (this.searchQuery.length > 0) {
-			const total = this.searchMatches.length;
-			const current = this.searchCurrentIndex >= 0 ? this.searchCurrentIndex + 1 : 0;
-			const infoText = total === 0 ? '0/0' : `${current}/${total}`;
-			const infoColor = total === 0 ? constants.COLOR_STATUS_WARNING : constants.COLOR_SEARCH_TEXT;
-			const infoWidth = this.measureText(infoText);
-			this.drawText(api, infoText, this.viewportWidth - infoWidth - 4, labelY, infoColor);
-		}
+		const host: import('./render_inline_bars').InlineBarsHost = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			tabBarHeight: this.tabBarHeight,
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			inlineFieldMetrics: () => this.inlineFieldMetrics(),
+			createResourceActive: this.createResourceActive,
+			createResourceVisible: this.createResourceVisible,
+			createResourceField: this.createResourceField,
+			createResourceWorking: this.createResourceWorking,
+			createResourceError: this.createResourceError,
+			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			drawInlineCaret: (
+				a: BmsxConsoleApi,
+				f: InlineTextField,
+				l: number,
+				t: number,
+				r: number,
+				b: number,
+				bx: number,
+				ac: boolean,
+				cc: { r: number; g: number; b: number; a: number },
+				tc: number,
+			) => this.drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
+			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			searchActive: this.searchActive,
+			searchField: this.searchField,
+			searchQuery: this.searchQuery,
+			searchMatchesCount: this.searchMatches.length,
+			searchCurrentIndex: this.searchCurrentIndex,
+		};
+		renderSearchBar(api, host);
 	}
 
 	private drawResourceSearchBar(api: BmsxConsoleApi): void {
-		const height = this.getResourceSearchBarHeight();
-		if (height <= 0) {
-			return;
-		}
-		const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight() + this.getSearchBarHeight();
-		const barTop = baseTop;
-		const barBottom = barTop + height;
-		api.rectfill(0, barTop, this.viewportWidth, barBottom, constants.COLOR_QUICK_OPEN_BACKGROUND);
-		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, constants.COLOR_QUICK_OPEN_OUTLINE);
-		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, constants.COLOR_QUICK_OPEN_OUTLINE);
-
-		const field = this.resourceSearchField;
-		const label = 'FILE :';
-		const labelX = 4;
-		const labelY = barTop + constants.QUICK_OPEN_BAR_MARGIN_Y;
-		this.drawText(api, label, labelX, labelY, constants.COLOR_QUICK_OPEN_TEXT);
-
-		let queryText = field.text;
-		let queryColor = constants.COLOR_QUICK_OPEN_TEXT;
-		if (queryText.length === 0 && !this.resourceSearchActive) {
-			queryText = 'TYPE TO FILTER (@/# PREFIX)';
-			queryColor = constants.COLOR_QUICK_OPEN_PLACEHOLDER;
-		}
-		const queryX = labelX + this.measureText(label + ' ');
-
-		const selection = inlineFieldSelectionRange(field);
-		if (selection && field.text.length > 0) {
-			const selectionLeft = queryX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
-			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
-			if (selectionWidth > 0) {
-				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
-			}
-		}
-
-		this.drawText(api, queryText, queryX, labelY, queryColor);
-
-		const caretX = inlineFieldCaretX(field, queryX, this.measureText.bind(this));
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + this.lineHeight;
-		this.drawInlineCaret(api, this.resourceSearchField, caretLeft, caretTop, caretRight, caretBottom, caretX, this.resourceSearchActive, constants.INLINE_CARET_COLOR, queryColor);
-
-		const resultCount = this.resourceSearchVisibleResultCount();
-		if (resultCount <= 0) {
-			return;
-		}
-		const baseHeight = this.lineHeight + constants.QUICK_OPEN_BAR_MARGIN_Y * 2;
-		const separatorTop = barTop + baseHeight;
-		api.rectfill(0, separatorTop, this.viewportWidth, separatorTop + constants.QUICK_OPEN_RESULT_SPACING, constants.COLOR_QUICK_OPEN_OUTLINE);
-		const resultsTop = separatorTop + constants.QUICK_OPEN_RESULT_SPACING;
-		const rowHeight = this.resourceSearchEntryHeight();
-		const compactMode = this.isResourceSearchCompactMode();
-		for (let i = 0; i < resultCount; i += 1) {
-			const matchIndex = this.resourceSearchDisplayOffset + i;
-			const match = this.resourceSearchMatches[matchIndex];
-			const rowTop = resultsTop + i * rowHeight;
-			const rowBottom = rowTop + rowHeight;
-			const isSelected = matchIndex === this.resourceSearchSelectionIndex;
-			const isHover = matchIndex === this.resourceSearchHoverIndex;
-			if (isSelected) {
-				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
-			} else if (isHover) {
-				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
-			}
-			let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
-			const kindText = match.entry.typeLabel;
-			const descriptorAssetId = match.entry.descriptor.assetId ?? '';
-			const detail = match.entry.assetLabel ?? (descriptorAssetId !== match.entry.displayPath ? descriptorAssetId : '');
-			if (kindText.length > 0) {
-				this.drawText(api, kindText, textX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
-				textX += this.measureText(kindText + ' ');
-			}
-			this.drawText(api, match.entry.displayPath, textX, rowTop, constants.COLOR_QUICK_OPEN_TEXT);
-			if (compactMode) {
-				const secondaryY = rowTop + this.lineHeight;
-				if (detail.length > 0) {
-					this.drawText(api, detail, constants.QUICK_OPEN_RESULT_PADDING_X, secondaryY, constants.COLOR_QUICK_OPEN_KIND);
-				}
-			} else if (detail.length > 0) {
-				const detailWidth = this.measureText(detail);
-				const detailX = this.viewportWidth - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-				this.drawText(api, detail, detailX, rowTop, constants.COLOR_QUICK_OPEN_KIND);
-			}
-		}
+		const host: import('./render_inline_bars').InlineBarsHost = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			tabBarHeight: this.tabBarHeight,
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			inlineFieldMetrics: () => this.inlineFieldMetrics(),
+			createResourceActive: this.createResourceActive,
+			createResourceVisible: this.createResourceVisible,
+			createResourceField: this.createResourceField,
+			createResourceWorking: this.createResourceWorking,
+			createResourceError: this.createResourceError,
+			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			drawInlineCaret: (
+				a: BmsxConsoleApi,
+				f: InlineTextField,
+				l: number,
+				t: number,
+				r: number,
+				b: number,
+				bx: number,
+				ac: boolean,
+				cc: { r: number; g: number; b: number; a: number },
+				tc: number,
+			) => this.drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
+			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			resourceSearchActive: this.resourceSearchActive,
+			resourceSearchField: this.resourceSearchField,
+			resourceSearchVisibleResultCount: () => this.resourceSearchVisibleResultCount(),
+			resourceSearchEntryHeight: () => this.resourceSearchEntryHeight(),
+			isResourceSearchCompactMode: () => this.isResourceSearchCompactMode(),
+			resourceSearchMatches: this.resourceSearchMatches,
+			resourceSearchSelectionIndex: this.resourceSearchSelectionIndex,
+			resourceSearchHoverIndex: this.resourceSearchHoverIndex,
+			resourceSearchDisplayOffset: this.resourceSearchDisplayOffset,
+		};
+		renderResourceSearchBar(api, host);
 	}
 
 	private drawSymbolSearchBar(api: BmsxConsoleApi): void {
-		const height = this.getSymbolSearchBarHeight();
-		if (height <= 0) {
-			return;
-		}
-		const baseTop = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight() + this.getSearchBarHeight() + this.getResourceSearchBarHeight();
-		const barTop = baseTop;
-		const barBottom = barTop + height;
-		api.rectfill(0, barTop, this.viewportWidth, barBottom, constants.COLOR_SYMBOL_SEARCH_BACKGROUND);
-		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-
-		const field = this.symbolSearchField;
-		const label = this.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
-		const labelX = 4;
-		const labelY = barTop + constants.SYMBOL_SEARCH_BAR_MARGIN_Y;
-		this.drawText(api, label, labelX, labelY, constants.COLOR_SYMBOL_SEARCH_TEXT);
-
-		let queryText = field.text;
-		let queryColor = constants.COLOR_SYMBOL_SEARCH_TEXT;
-		if (queryText.length === 0 && !this.symbolSearchActive) {
-			queryText = 'TYPE TO FILTER';
-			queryColor = constants.COLOR_SYMBOL_SEARCH_PLACEHOLDER;
-		}
-		const queryX = labelX + this.measureText(label + ' ');
-
-		const selection = inlineFieldSelectionRange(field);
-		if (selection && field.text.length > 0) {
-			const selectionLeft = queryX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
-			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
-			if (selectionWidth > 0) {
-				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
-			}
-		}
-
-		this.drawText(api, queryText, queryX, labelY, queryColor);
-
-		const caretX = inlineFieldCaretX(field, queryX, this.measureText.bind(this));
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + this.lineHeight;
-		this.drawInlineCaret(api, this.symbolSearchField, caretLeft, caretTop, caretRight, caretBottom, caretX, this.symbolSearchActive, constants.INLINE_CARET_COLOR, queryColor);
-
-		const resultCount = this.symbolSearchVisibleResultCount();
-		if (resultCount <= 0) {
-			return;
-		}
-		const baseHeight = this.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-		const separatorTop = barTop + baseHeight;
-		api.rectfill(0, separatorTop, this.viewportWidth, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
-		const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
-	const entryHeight = this.symbolSearchEntryHeight();
-	const compactMode = this.symbolSearchGlobal && this.isSymbolSearchCompactMode();
-		for (let i = 0; i < resultCount; i += 1) {
-			const matchIndex = this.symbolSearchDisplayOffset + i;
-			const match = this.symbolSearchMatches[matchIndex];
-			const rowTop = resultsTop + i * entryHeight;
-			const rowBottom = rowTop + entryHeight;
-			const isSelected = matchIndex === this.symbolSearchSelectionIndex;
-			const isHover = matchIndex === this.symbolSearchHoverIndex;
-			if (isSelected) {
-				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
-			} else if (isHover) {
-				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
-			}
-			let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-			const kindText = match.entry.kindLabel;
-			const lineText = `:${match.entry.line}`;
-			const lineWidth = this.measureText(lineText);
-			if (compactMode) {
-				if (kindText.length > 0) {
-					this.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-					textX += this.measureText(kindText + ' ');
-				}
-				this.drawText(api, match.entry.displayName, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
-				const secondaryY = rowTop + this.lineHeight;
-				const lineX = this.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-				this.drawText(api, lineText, lineX, secondaryY, constants.COLOR_SYMBOL_SEARCH_TEXT);
-				if (match.entry.sourceLabel) {
-					this.drawText(api, match.entry.sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, constants.COLOR_SYMBOL_SEARCH_KIND);
-				}
-			} else {
-				if (kindText.length > 0) {
-					this.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-					textX += this.measureText(kindText + ' ');
-				}
-				this.drawText(api, match.entry.displayName, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
-				const lineX = this.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
-				this.drawText(api, lineText, lineX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
-				if (match.entry.sourceLabel) {
-					const sourceWidth = this.measureText(match.entry.sourceLabel);
-					const sourceX = Math.max(textX, lineX - this.spaceAdvance - sourceWidth);
-					this.drawText(api, match.entry.sourceLabel, sourceX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-				}
-			}
-		}
+		const host: import('./render_inline_bars').InlineBarsHost = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			tabBarHeight: this.tabBarHeight,
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			inlineFieldMetrics: () => this.inlineFieldMetrics(),
+			createResourceActive: this.createResourceActive,
+			createResourceVisible: this.createResourceVisible,
+			createResourceField: this.createResourceField,
+			createResourceWorking: this.createResourceWorking,
+			createResourceError: this.createResourceError,
+			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			drawInlineCaret: (
+				a: BmsxConsoleApi,
+				f: InlineTextField,
+				l: number,
+				t: number,
+				r: number,
+				b: number,
+				bx: number,
+				ac: boolean,
+				cc: { r: number; g: number; b: number; a: number },
+				tc: number,
+			) => this.drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
+			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			symbolSearchGlobal: this.symbolSearchGlobal,
+			symbolSearchActive: this.symbolSearchActive,
+			symbolSearchField: this.symbolSearchField,
+			symbolSearchVisibleResultCount: () => this.symbolSearchVisibleResultCount(),
+			symbolSearchEntryHeight: () => this.symbolSearchEntryHeight(),
+			isSymbolSearchCompactMode: () => this.isSymbolSearchCompactMode(),
+			symbolSearchMatches: this.symbolSearchMatches,
+			symbolSearchSelectionIndex: this.symbolSearchSelectionIndex,
+			symbolSearchHoverIndex: this.symbolSearchHoverIndex,
+			symbolSearchDisplayOffset: this.symbolSearchDisplayOffset,
+		};
+		renderSymbolSearchBar(api, host);
 	}
 
 	private drawLineJumpBar(api: BmsxConsoleApi): void {
-		const height = this.getLineJumpBarHeight();
-		if (height <= 0) {
-			return;
-		}
-		const barTop = this.headerHeight + this.tabBarHeight
-			+ this.getCreateResourceBarHeight()
-			+ this.getSearchBarHeight()
-			+ this.getResourceSearchBarHeight()
-			+ this.getSymbolSearchBarHeight();
-		const barBottom = barTop + height;
-		api.rectfill(0, barTop, this.viewportWidth, barBottom, constants.COLOR_LINE_JUMP_BACKGROUND);
-		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, constants.COLOR_LINE_JUMP_OUTLINE);
-		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, constants.COLOR_LINE_JUMP_OUTLINE);
-
-		const label = 'LINE #:';
-		const labelX = 4;
-		const labelY = barTop + constants.LINE_JUMP_BAR_MARGIN_Y;
-		this.drawText(api, label, labelX, labelY, constants.COLOR_LINE_JUMP_TEXT);
-
-		const field = this.lineJumpField;
-		let valueText = field.text;
-		let valueColor = constants.COLOR_LINE_JUMP_TEXT;
-		if (valueText.length === 0 && !this.lineJumpActive) {
-			valueText = 'ENTER LINE NUMBER';
-			valueColor = constants.COLOR_LINE_JUMP_PLACEHOLDER;
-		}
-		const valueX = labelX + this.measureText(label + ' ');
-
-		const selection = inlineFieldSelectionRange(field);
-		if (selection && field.text.length > 0) {
-			const selectionLeft = valueX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
-			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
-			if (selectionWidth > 0) {
-				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
-			}
-		}
-
-		this.drawText(api, valueText, valueX, labelY, valueColor);
-
-		const caretX = inlineFieldCaretX(field, valueX, this.measureText.bind(this));
-		const caretLeft = Math.floor(caretX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + this.lineHeight;
-		this.drawInlineCaret(api, this.lineJumpField, caretLeft, caretTop, caretRight, caretBottom, caretX, this.lineJumpActive, constants.INLINE_CARET_COLOR, valueColor);
+		const host: import('./render_inline_bars').InlineBarsHost = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			tabBarHeight: this.tabBarHeight,
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			inlineFieldMetrics: () => this.inlineFieldMetrics(),
+			createResourceActive: this.createResourceActive,
+			createResourceVisible: this.createResourceVisible,
+			createResourceField: this.createResourceField,
+			createResourceWorking: this.createResourceWorking,
+			createResourceError: this.createResourceError,
+			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			getSearchBarHeight: () => this.getSearchBarHeight(),
+			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			drawInlineCaret: (
+				a: BmsxConsoleApi,
+				f: InlineTextField,
+				l: number,
+				t: number,
+				r: number,
+				b: number,
+				bx: number,
+				ac: boolean,
+				cc: { r: number; g: number; b: number; a: number },
+				tc: number,
+			) => this.drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
+			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			lineJumpActive: this.lineJumpActive,
+			lineJumpField: this.lineJumpField,
+		};
+		renderLineJumpBar(api, host);
 	}
 
 	private drawCreateResourceErrorDialog(api: BmsxConsoleApi, message: string): void {
@@ -6601,172 +6509,65 @@ export class ConsoleCartEditor {
 	}
 
 	private drawCodeArea(api: BmsxConsoleApi): void {
-		this.ensureVisualLines();
-		const bounds = this.getCodeAreaBounds();
-		const gutterOffset = bounds.textLeft - bounds.codeLeft;
-		const advance = this.warnNonMonospace ? this.spaceAdvance : this.charAdvance;
-		const wrapEnabled = this.wordWrapEnabled;
-
-		let horizontalVisible = !wrapEnabled && this.codeHorizontalScrollbarVisible;
-		let verticalVisible = this.codeVerticalScrollbarVisible;
-		let rowCapacity = 1;
-		let columnCapacity = 1;
-		const visualCount = this.getVisualLineCount();
-
-		for (let i = 0; i < 3; i += 1) {
-			const availableHeight = Math.max(0, (bounds.codeBottom - bounds.codeTop) - (horizontalVisible ? constants.SCROLLBAR_WIDTH : 0));
-			rowCapacity = Math.max(1, Math.floor(availableHeight / this.lineHeight));
-			verticalVisible = visualCount > rowCapacity;
-			const availableWidth = Math.max(0, (bounds.codeRight - bounds.codeLeft) - (verticalVisible ? constants.SCROLLBAR_WIDTH : 0) - gutterOffset);
-			columnCapacity = Math.max(1, Math.floor(availableWidth / advance));
-			if (wrapEnabled) {
-				horizontalVisible = false;
-			} else {
-				horizontalVisible = this.maximumLineLength() > columnCapacity;
-			}
-		}
-
-		this.codeVerticalScrollbarVisible = verticalVisible;
-		this.codeHorizontalScrollbarVisible = !wrapEnabled && horizontalVisible;
-		this.cachedVisibleRowCount = rowCapacity;
-		this.cachedVisibleColumnCount = columnCapacity;
-
-		const contentRight = bounds.codeRight - (this.codeVerticalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
-		const contentBottom = bounds.codeBottom - (this.codeHorizontalScrollbarVisible ? constants.SCROLLBAR_WIDTH : 0);
-
-		api.rectfill(bounds.codeLeft, bounds.codeTop, bounds.codeRight, bounds.codeBottom, constants.COLOR_CODE_BACKGROUND);
-		if (bounds.gutterRight > bounds.gutterLeft) {
-			api.rectfill(bounds.gutterLeft, bounds.codeTop, bounds.gutterRight, contentBottom, constants.COLOR_GUTTER_BACKGROUND);
-		}
-
-		const activeGotoHighlight = this.gotoHoverHighlight;
-		const gotoVisualIndex = activeGotoHighlight
-			? this.positionToVisualIndex(activeGotoHighlight.row, activeGotoHighlight.startColumn)
-			: null;
-		const cursorVisualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-	let cursorEntry: CachedHighlight | null = null;
-	let cursorInfo: CursorScreenInfo | null = null;
-		const sliceWidth = columnCapacity + 2;
-
-		for (let i = 0; i < rowCapacity; i += 1) {
-			const visualIndex = this.scrollRow + i;
-			const rowY = bounds.codeTop + i * this.lineHeight;
-			if (rowY >= contentBottom) {
-				break;
-			}
-			if (visualIndex >= visualCount) {
-				this.drawColoredText(api, '~', [constants.COLOR_CODE_DIM], bounds.textLeft, rowY);
-				continue;
-			}
-			const segment = this.visualIndexToSegment(visualIndex);
-			if (!segment) {
-				this.drawColoredText(api, '~', [constants.COLOR_CODE_DIM], bounds.textLeft, rowY);
-				continue;
-			}
-			const lineIndex = segment.row;
-			const entry = this.getCachedHighlight(lineIndex);
-			const isExecutionStopRow = this.executionStopRow !== null && lineIndex === this.executionStopRow;
-			const isCursorLine = lineIndex === this.cursorRow;
-			if (isExecutionStopRow) {
-				api.rectfillColor(bounds.gutterRight, rowY, contentRight, rowY + this.lineHeight, constants.EXECUTION_STOP_OVERLAY);
-			} else if (isCursorLine) {
-				api.rectfillColor(bounds.gutterRight, rowY, contentRight, rowY + this.lineHeight, constants.HIGHLIGHT_OVERLAY);
-			}
-			const highlight = entry.hi;
-			let columnStart = wrapEnabled ? segment.startColumn : this.scrollColumn;
-			if (wrapEnabled) {
-				if (columnStart < segment.startColumn || columnStart > segment.endColumn) {
-					columnStart = segment.startColumn;
-				}
-			}
-			const maxColumn = wrapEnabled ? segment.endColumn : this.lines[lineIndex].length;
-			const columnCount = wrapEnabled ? Math.max(0, maxColumn - columnStart) : sliceWidth;
-			const slice = this.sliceHighlightedLine(highlight, columnStart, columnCount);
-			const sliceStartDisplay = slice.startDisplay;
-			const sliceEndLimit = wrapEnabled ? this.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
-			const sliceEndDisplay = wrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-			this.drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
-			const selectionSlice = this.computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
-			if (selectionSlice) {
-				const selectionStartX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, selectionSlice.startDisplay);
-				const selectionEndX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, selectionSlice.endDisplay);
-				const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
-				const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
-				if (clampedRight > clampedLeft) {
-					api.rectfillColor(clampedLeft, rowY, clampedRight, rowY + this.lineHeight, constants.SELECTION_OVERLAY);
-				}
-			}
-			this.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);
-			if (activeGotoHighlight && gotoVisualIndex !== null && visualIndex === gotoVisualIndex && activeGotoHighlight.row === lineIndex) {
-				const startDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.startColumn);
-				const endDisplayFull = this.columnToDisplay(highlight, activeGotoHighlight.endColumn);
-				const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
-				const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
-				if (clampedEndDisplay > clampedStartDisplay) {
-					const underlineStartX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
-					const underlineEndX = bounds.textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
-					let drawLeft = Math.floor(underlineStartX);
-					let drawRight = Math.ceil(underlineEndX);
-					if (drawRight <= drawLeft) {
-						drawRight = drawLeft + Math.max(1, Math.floor(this.charAdvance));
-					}
-					if (drawRight > drawLeft) {
-						const underlineY = Math.min(contentBottom - 1, rowY + this.lineHeight - 1);
-						if (underlineY >= rowY && underlineY < contentBottom) {
-							api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, constants.COLOR_GOTO_UNDERLINE);
-						}
-					}
-				}
-			}
-		if (visualIndex === cursorVisualIndex) {
-			cursorEntry = entry;
-			cursorInfo = this.computeCursorScreenInfo(entry, bounds.textLeft, rowY, sliceStartDisplay);
-		}
-	}
-
-	this.cursorScreenInfo = cursorInfo;
-
-	const verticalTrack: RectBounds = {
-		left: contentRight,
-		top: bounds.codeTop,
-		right: contentRight + constants.SCROLLBAR_WIDTH,
-		bottom: contentBottom,
-	};
-	this.scrollbars.codeVertical.layout(verticalTrack, Math.max(visualCount, 1), rowCapacity, this.scrollRow);
-	this.scrollRow = clamp(Math.round(this.scrollbars.codeVertical.getScroll()), 0, Math.max(0, visualCount - rowCapacity));
-	this.codeVerticalScrollbarVisible = this.scrollbars.codeVertical.isVisible();
-
-	if (!wrapEnabled) {
-		const horizontalTrack: RectBounds = {
-			left: bounds.codeLeft,
-			top: contentBottom,
-			right: contentRight,
-			bottom: contentBottom + constants.SCROLLBAR_WIDTH,
+		const host: import('./render_code_area').CodeAreaHost = {
+			// Geometry and metrics
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
+			warnNonMonospace: this.warnNonMonospace,
+			// Editor state
+			wordWrapEnabled: this.wordWrapEnabled,
+			codeHorizontalScrollbarVisible: this.codeHorizontalScrollbarVisible,
+			codeVerticalScrollbarVisible: this.codeVerticalScrollbarVisible,
+			cachedVisibleRowCount: this.cachedVisibleRowCount,
+			cachedVisibleColumnCount: this.cachedVisibleColumnCount,
+			scrollRow: this.scrollRow,
+			scrollColumn: this.scrollColumn,
+			cursorRow: this.cursorRow,
+			cursorColumn: this.cursorColumn,
+			cursorVisible: this.cursorVisible,
+			cursorScreenInfo: this.cursorScreenInfo,
+			gotoHoverHighlight: this.gotoHoverHighlight,
+			executionStopRow: this.executionStopRow,
+			lines: this.lines,
+			// Helpers
+			ensureVisualLines: () => this.ensureVisualLines(),
+			getCodeAreaBounds: () => this.getCodeAreaBounds(),
+			maximumLineLength: () => this.maximumLineLength(),
+			getVisualLineCount: () => this.getVisualLineCount(),
+			positionToVisualIndex: (r: number, c: number) => this.positionToVisualIndex(r, c),
+			visualIndexToSegment: (v: number) => this.visualIndexToSegment(v),
+			getCachedHighlight: (r: number) => this.getCachedHighlight(r),
+			sliceHighlightedLine: (hi, start, count) => this.sliceHighlightedLine(hi, start, count),
+			columnToDisplay: (hi, c) => this.columnToDisplay(hi, c),
+			drawColoredText: (a, t, cols, x, y) => this.drawColoredText(a, t, cols, x, y),
+			drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => this.drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
+			computeSelectionSlice: (ri, hi, s, e) => this.computeSelectionSlice(ri, hi, s, e),
+			measureRangeFast: (entry, from, to) => this.measureRangeFast(entry, from, to),
+			scrollbars: {
+				codeVertical: this.scrollbars.codeVertical,
+				codeHorizontal: this.scrollbars.codeHorizontal,
+			},
+			computeMaximumScrollColumn: () => this.computeMaximumScrollColumn(),
+			// Overlays
+			drawRuntimeErrorOverlay: (a, ct, cr, tl) => this.drawRuntimeErrorOverlay(a, ct, cr, tl),
+			drawHoverTooltip: (a, ct, cb, tl) => this.drawHoverTooltip(a, ct, cb, tl),
+			drawCursor: (a, info, tx) => this.drawCursor(a, info, tx),
+			computeCursorScreenInfo: (entry, tl, rt, ssd) => this.computeCursorScreenInfo(entry, tl, rt, ssd),
+			drawCompletionPopup: (a, b) => this.drawCompletionPopup(a, b),
+			drawParameterHintOverlay: (a, b) => this.drawParameterHintOverlay(a, b),
 		};
-		const maxColumns = columnCapacity + this.computeMaximumScrollColumn();
-		this.scrollbars.codeHorizontal.layout(horizontalTrack, maxColumns, columnCapacity, this.scrollColumn);
-		this.scrollColumn = clamp(Math.round(this.scrollbars.codeHorizontal.getScroll()), 0, this.computeMaximumScrollColumn());
-		this.codeHorizontalScrollbarVisible = this.scrollbars.codeHorizontal.isVisible();
-	} else {
-		this.scrollColumn = 0;
-		this.codeHorizontalScrollbarVisible = false;
+		renderCodeArea(api, host);
+		// write back mutable state possibly changed by renderer
+		this.wordWrapEnabled = host.wordWrapEnabled;
+		this.codeHorizontalScrollbarVisible = host.codeHorizontalScrollbarVisible;
+		this.codeVerticalScrollbarVisible = host.codeVerticalScrollbarVisible;
+		this.cachedVisibleRowCount = host.cachedVisibleRowCount;
+		this.cachedVisibleColumnCount = host.cachedVisibleColumnCount;
+		this.scrollRow = host.scrollRow;
+		this.scrollColumn = host.scrollColumn;
+		this.cursorScreenInfo = host.cursorScreenInfo;
 	}
-
-	this.drawRuntimeErrorOverlay(api, bounds.codeTop, contentRight, bounds.textLeft);
-	this.drawHoverTooltip(api, bounds.codeTop, contentBottom, bounds.textLeft);
-
-	if (this.cursorVisible && cursorEntry && cursorInfo) {
-		this.drawCursor(api, cursorInfo, bounds.textLeft);
-	}
-	this.drawCompletionPopup(api, bounds);
-	this.drawParameterHintOverlay(api, bounds);
-	if (this.codeVerticalScrollbarVisible) {
-		this.scrollbars.codeVertical.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-	}
-	if (this.codeHorizontalScrollbarVisible) {
-		this.scrollbars.codeHorizontal.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-	}
-}
 
 private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight: number, textLeft: number): void {
 		const overlay = this.runtimeErrorOverlay;
@@ -8435,107 +8236,50 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	}
 
 	private drawResourcePanel(api: BmsxConsoleApi): void {
-		if (!this.resourcePanelVisible) {
-			return;
-		}
-		const bounds = this.getResourcePanelBounds();
-		if (!bounds) {
-			return;
-		}
-		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-		const dividerLeft = bounds.right - 1;
-		const capacity = this.resourcePanelLineCapacity();
-		const itemCount = this.resourceBrowserItems.length;
-
-		const maxVerticalScroll = Math.max(0, itemCount - capacity);
-		this.resourceBrowserScroll = clamp(this.resourceBrowserScroll, 0, maxVerticalScroll);
-		this.clampResourceBrowserHorizontalScroll();
-
-		const verticalTrack: RectBounds = {
-			left: dividerLeft - constants.SCROLLBAR_WIDTH,
-			top: bounds.top,
-			right: dividerLeft,
-			bottom: bounds.bottom,
-		};
-		const verticalScrollbar = this.scrollbars.resourceVertical;
-		verticalScrollbar.layout(verticalTrack, itemCount, capacity, this.resourceBrowserScroll);
-		this.resourceBrowserScroll = Math.round(verticalScrollbar.getScroll());
-		const verticalVisible = verticalScrollbar.isVisible();
-		const contentRight = verticalVisible ? verticalTrack.left : bounds.right;
-
-		const availableWidth = Math.max(0, contentRight - contentLeft);
-		const horizontalTrack: RectBounds = {
-			left: contentLeft,
-			top: bounds.bottom - constants.SCROLLBAR_WIDTH,
-			right: contentRight,
-			bottom: bounds.bottom,
-		};
-		const horizontalScrollbar = this.scrollbars.resourceHorizontal;
-		horizontalScrollbar.layout(horizontalTrack, Math.max(this.resourceBrowserMaxLineWidth, availableWidth), availableWidth, this.resourceBrowserHorizontalScroll);
-		const horizontalVisible = horizontalScrollbar.isVisible();
-		const effectiveBottom = horizontalVisible ? horizontalTrack.top : bounds.bottom;
-
-		this.resourceBrowserHorizontalScroll = horizontalScrollbar.getScroll();
-
-		api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_RESOURCE_PANEL_BACKGROUND);
-
-		const contentTop = bounds.top + 2;
-		const scrollStart = Math.floor(this.resourceBrowserScroll);
-		const scrollEnd = Math.min(itemCount, scrollStart + capacity);
-		const highlightIndex = this.resourceBrowserHoverIndex >= 0 ? this.resourceBrowserHoverIndex : this.resourceBrowserSelectionIndex;
-		const panelActive = this.resourcePanelFocused;
-		const scrollX = this.resourceBrowserHorizontalScroll;
-		const highlightColor = Msx1Colors[constants.COLOR_RESOURCE_PANEL_HIGHLIGHT];
-
-		for (let itemIndex = scrollStart, drawIndex = 0; itemIndex < scrollEnd; itemIndex += 1, drawIndex += 1) {
-			const item = this.resourceBrowserItems[itemIndex];
-			const y = contentTop + drawIndex * this.lineHeight;
-			if (y >= effectiveBottom) {
-				break;
-			}
-			const indentText = item.line.slice(0, item.contentStartColumn);
-			const contentText = item.line.slice(item.contentStartColumn);
-			const indentX = contentLeft - scrollX;
-			if (indentText.length > 0) {
-				this.drawText(api, indentText, indentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
-			}
-			const indentWidth = this.measureText(indentText);
-			const contentX = indentX + indentWidth;
-			const isHighlighted = itemIndex === highlightIndex;
-			if (isHighlighted) {
-				const highlightWidth = this.measureText(contentText);
-				const caretLeft = Math.floor(contentX);
-				const caretRight = Math.max(caretLeft + 1, Math.floor(contentX + highlightWidth));
-				const visibleLeft = clamp(caretLeft, contentLeft, contentRight);
-				const visibleRight = clamp(caretRight, visibleLeft, contentRight);
-				const caretTop = Math.floor(y);
-				const caretBottom = caretTop + this.lineHeight;
-				if (panelActive) {
-					if (visibleRight > visibleLeft) {
-						api.rectfillColor(visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
-					}
-					const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
-					if (contentText.length > 0) {
-						this.drawColoredText(api, contentText, colors, contentX, y);
-					}
-				} else if (visibleRight > visibleLeft) {
-					this.drawRectOutlineColor(api, visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
-				}
-			}
-			if (!isHighlighted || contentText.length === 0 || !panelActive) {
-				this.drawText(api, contentText, contentX, y, constants.COLOR_RESOURCE_PANEL_TEXT);
-			}
-		}
-
-		if (verticalScrollbar.isVisible()) {
-			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-		}
-		if (horizontalScrollbar.isVisible()) {
-			horizontalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-		}
-		if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
-			api.rectfill(dividerLeft, bounds.top, bounds.right, bounds.bottom, constants.RESOURCE_PANEL_DIVIDER_COLOR);
-		}
+		// Delegate rendering to external module for better separation of concerns
+		const host = {
+			resourcePanelVisible: this.resourcePanelVisible,
+			getResourcePanelBounds: () => this.getResourcePanelBounds(),
+			lineHeight: this.lineHeight,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (a: BmsxConsoleApi, t: string, x: number, y: number, c: number) => this.drawText(a, t, x, y, c),
+			drawColoredText: (a: BmsxConsoleApi, t: string, colors: number[], x: number, y: number) => this.drawColoredText(a, t, colors, x, y),
+			drawRectOutlineColor: (a: BmsxConsoleApi, l: number, t: number, r: number, b: number, col: { r: number; g: number; b: number; a: number }) => this.drawRectOutlineColor(a, l, t, r, b, col),
+			resourceBrowserItems: this.resourceBrowserItems,
+			resourceBrowserScroll: this.resourceBrowserScroll,
+			resourceBrowserHorizontalScroll: this.resourceBrowserHorizontalScroll,
+			resourcePanelFocused: this.resourcePanelFocused,
+			resourceBrowserSelectionIndex: this.resourceBrowserSelectionIndex,
+			resourceBrowserHoverIndex: this.resourceBrowserHoverIndex,
+			resourceBrowserMaxLineWidth: this.resourceBrowserMaxLineWidth,
+			clampResourceBrowserHorizontalScroll: () => this.clampResourceBrowserHorizontalScroll(),
+			resourceVertical: this.scrollbars.resourceVertical,
+			resourceHorizontal: this.scrollbars.resourceHorizontal,
+		} as const;
+		// Mutating properties need to be written back after render
+		const proxyHost: ResourcePanelHost = new (class implements ResourcePanelHost {
+			resourcePanelVisible = host.resourcePanelVisible;
+			getResourcePanelBounds = host.getResourcePanelBounds;
+			lineHeight = host.lineHeight;
+			measureText = host.measureText;
+			drawText = host.drawText;
+			drawColoredText = host.drawColoredText;
+			drawRectOutlineColor = host.drawRectOutlineColor;
+			resourceBrowserItems = host.resourceBrowserItems;
+			resourceBrowserScroll = host.resourceBrowserScroll;
+			resourceBrowserHorizontalScroll = host.resourceBrowserHorizontalScroll;
+			resourcePanelFocused = host.resourcePanelFocused;
+			resourceBrowserSelectionIndex = host.resourceBrowserSelectionIndex;
+			resourceBrowserHoverIndex = host.resourceBrowserHoverIndex;
+			resourceBrowserMaxLineWidth = host.resourceBrowserMaxLineWidth;
+			clampResourceBrowserHorizontalScroll = host.clampResourceBrowserHorizontalScroll;
+			resourceVertical = host.resourceVertical;
+			resourceHorizontal = host.resourceHorizontal;
+		})();
+		renderResourcePanel(api, proxyHost);
+		// Sync back possible scroll updates from the renderer
+		this.resourceBrowserScroll = proxyHost.resourceBrowserScroll;
+		this.resourceBrowserHorizontalScroll = proxyHost.resourceBrowserHorizontalScroll;
 	}
 
 	private drawResourceViewer(api: BmsxConsoleApi): void {

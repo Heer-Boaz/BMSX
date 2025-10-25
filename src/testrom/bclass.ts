@@ -61,7 +61,7 @@ export class bclass extends SpriteObject {
 	public static bouw(): StateMachineBlueprint {
 		function blarun(this: bclass) {
 			const speed = 2;
-			if (this.sc.current_state.def_id === '#blap') {
+			if (this.sc.matches_state_path('#blap')) {
 				this.tickTree('bclass_tree');
 			}
 

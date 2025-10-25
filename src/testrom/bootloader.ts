@@ -15,7 +15,6 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 	if (!platform) {
 		throw new Error('[Bootloader:testrom] Platform instance not provided. Ensure the host supplies it in BootArgs.');
 	}
-	const startingGamepadIndex = args.startingGamepadIndex ?? null;
 	let viewHost = args.viewHost ?? platform.gameviewHost;
 	if (!viewHost) {
 		throw new Error('[Bootloader:testrom] View host not provided by Platform.');
@@ -28,7 +27,7 @@ globalTarget.h406A = (args: BootArgs): Promise<any> => {
 		sndcontext: args.sndcontext,
 		gainnode: args.gainnode,
 		debug: args.debug,
-		startingGamepadIndex,
+		startingGamepadIndex: args.startingGamepadIndex,
 		enableOnscreenGamepad: args.enableOnscreenGamepad,
 		platform,
 		viewHost,
