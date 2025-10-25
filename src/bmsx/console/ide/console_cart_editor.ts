@@ -19,6 +19,35 @@ import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { getApiCompletionData, getKeywordCompletions, KEYWORDS } from './intellisense';
+import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
+import type { InlineFieldMetrics } from './inline_text_field';
+import {
+	caretX as inlineFieldCaretX,
+	createInlineTextField,
+	clampCursor as inlineFieldClampCursor,
+	clampSelectionAnchor as inlineFieldClampSelectionAnchor,
+	deleteForward as inlineFieldDeleteForward,
+	deleteSelection as inlineFieldDeleteSelection,
+	deleteWordBackward as inlineFieldDeleteWordBackward,
+	deleteWordForward as inlineFieldDeleteWordForward,
+	insertValue as inlineFieldInsert,
+	measureRange as inlineFieldMeasureRange,
+	moveCursor as inlineFieldMoveCursor,
+	moveCursorRelative as inlineFieldMoveCursorRelative,
+	moveToEnd as inlineFieldMoveToEnd,
+	moveToStart as inlineFieldMoveToStart,
+	moveWordLeft as inlineFieldMoveWordLeft,
+	moveWordRight as inlineFieldMoveWordRight,
+	registerPointerClick as inlineFieldRegisterPointerClick,
+	resolveColumn as inlineFieldResolveColumn,
+	selectAll as inlineFieldSelectAll,
+	selectedText as inlineFieldGetSelectedText,
+	selectWordAt as inlineFieldSelectWordAt,
+	selectionLength as inlineFieldSelectionLength,
+	selectionRange as inlineFieldSelectionRange,
+	setFieldText,
+	backspace as inlineFieldBackspace,
+} from './inline_text_field';
 import { ConsoleScrollbar } from './scrollbar';
 import type {
 	CachedHighlight,
@@ -186,6 +215,7 @@ export class ConsoleCartEditor {
 	private readonly resourceSearchField: InlineTextField;
 	private readonly lineJumpField: InlineTextField;
 	private readonly createResourceField: InlineTextField;
+	private readonly inlineFieldMetricsRef: InlineFieldMetrics;
 	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	private activeScrollbarDrag: { kind: ScrollbarKind; pointerOffset: number } | null = null;
 	private toggleInputLatch = false;
@@ -293,11 +323,11 @@ export class ConsoleCartEditor {
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
 		this.font = new ConsoleEditorFont();
-		this.searchField = this.createInlineField();
-		this.symbolSearchField = this.createInlineField();
-		this.resourceSearchField = this.createInlineField();
-		this.lineJumpField = this.createInlineField();
-		this.createResourceField = this.createInlineField();
+		this.searchField = createInlineTextField();
+		this.symbolSearchField = createInlineTextField();
+		this.resourceSearchField = createInlineTextField();
+		this.lineJumpField = createInlineTextField();
+		this.createResourceField = createInlineTextField();
 		this.applySearchFieldText(this.searchQuery, true);
 		this.applySymbolSearchFieldText(this.symbolSearchQuery, true);
 		this.applyResourceSearchFieldText(this.resourceSearchQuery, true);
@@ -306,6 +336,12 @@ export class ConsoleCartEditor {
 		this.lineHeight = this.font.lineHeight();
 		this.charAdvance = this.font.advance('M');
 		this.spaceAdvance = this.font.advance(' ');
+		this.inlineFieldMetricsRef = {
+			measureText: (text: string) => this.measureText(text),
+			advanceChar: (ch: string) => this.font.advance(ch),
+			spaceAdvance: this.spaceAdvance,
+			tabSpaces: constants.TAB_SPACES,
+		};
 		this.gutterWidth = 2;
 		const primaryBarHeight = this.lineHeight + 4;
 		this.headerHeight = primaryBarHeight;
@@ -3951,11 +3987,11 @@ export class ConsoleCartEditor {
 		}
 		const clampedColumn = Math.min(Math.max(column, 0), Math.max(0, line.length - 1));
 		let probe = clampedColumn;
-		if (!this.isIdentifierChar(line.charCodeAt(probe))) {
+		if (!isIdentifierChar(line.charCodeAt(probe))) {
 			if (line.charCodeAt(probe) === 46 && probe > 0) {
 				probe -= 1;
 			}
-			else if (probe > 0 && this.isIdentifierChar(line.charCodeAt(probe - 1))) {
+			else if (probe > 0 && isIdentifierChar(line.charCodeAt(probe - 1))) {
 				probe -= 1;
 			}
 			else {
@@ -3963,14 +3999,14 @@ export class ConsoleCartEditor {
 			}
 		}
 		let expressionStart = probe;
-		while (expressionStart > 0 && this.isIdentifierChar(line.charCodeAt(expressionStart - 1))) {
+		while (expressionStart > 0 && isIdentifierChar(line.charCodeAt(expressionStart - 1))) {
 			expressionStart -= 1;
 		}
-		if (!this.isIdentifierStartChar(line.charCodeAt(expressionStart))) {
+		if (!isIdentifierStartChar(line.charCodeAt(expressionStart))) {
 			return null;
 		}
 		let expressionEnd = probe + 1;
-		while (expressionEnd < line.length && this.isIdentifierChar(line.charCodeAt(expressionEnd))) {
+		while (expressionEnd < line.length && isIdentifierChar(line.charCodeAt(expressionEnd))) {
 			expressionEnd += 1;
 		}
 		// extend to include preceding segments (left of initial segment)
@@ -3981,14 +4017,14 @@ export class ConsoleCartEditor {
 				break;
 			}
 			let segmentStart = dotIndex - 1;
-			while (segmentStart >= 0 && this.isIdentifierChar(line.charCodeAt(segmentStart))) {
+			while (segmentStart >= 0 && isIdentifierChar(line.charCodeAt(segmentStart))) {
 				segmentStart -= 1;
 			}
 			segmentStart += 1;
 			if (segmentStart >= dotIndex) {
 				break;
 			}
-			if (!this.isIdentifierStartChar(line.charCodeAt(segmentStart))) {
+			if (!isIdentifierStartChar(line.charCodeAt(segmentStart))) {
 				break;
 			}
 			left = segmentStart;
@@ -4003,11 +4039,11 @@ export class ConsoleCartEditor {
 			if (identifierStart >= line.length) {
 				break;
 			}
-			if (!this.isIdentifierStartChar(line.charCodeAt(identifierStart))) {
+			if (!isIdentifierStartChar(line.charCodeAt(identifierStart))) {
 				break;
 			}
 			let identifierEnd = identifierStart + 1;
-			while (identifierEnd < line.length && this.isIdentifierChar(line.charCodeAt(identifierEnd))) {
+			while (identifierEnd < line.length && isIdentifierChar(line.charCodeAt(identifierEnd))) {
 				identifierEnd += 1;
 			}
 			right = identifierEnd;
@@ -4171,23 +4207,6 @@ export class ConsoleCartEditor {
 	this.cursorRevealSuspended = false;
 	this.ensureCursorVisible();
 }
-
-	private isIdentifierStartChar(code: number): boolean {
-		if (code >= 65 && code <= 90) {
-			return true;
-		}
-		if (code >= 97 && code <= 122) {
-			return true;
-		}
-		return code === 95;
-	}
-
-	private isIdentifierChar(code: number): boolean {
-		if (this.isIdentifierStartChar(code)) {
-			return true;
-		}
-		return code >= 48 && code <= 57;
-	}
 
 	private handleActionPromptPointer(snapshot: PointerSnapshot): void {
 		if (!this.pendingActionPrompt) {
@@ -5152,7 +5171,7 @@ export class ConsoleCartEditor {
 		currentRow = step.row;
 		currentColumn = step.column;
 		let currentChar = this.charAt(currentRow, currentColumn);
-		while (this.isWhitespace(currentChar)) {
+		while (isWhitespace(currentChar)) {
 			const previous = this.stepLeft(currentRow, currentColumn);
 			if (!previous) {
 				return { row: currentRow, column: currentColumn };
@@ -5161,14 +5180,14 @@ export class ConsoleCartEditor {
 			currentColumn = previous.column;
 			currentChar = this.charAt(currentRow, currentColumn);
 		}
-		const word = this.isWordChar(currentChar);
+		const word = isWordChar(currentChar);
 		while (true) {
 			const previous = this.stepLeft(currentRow, currentColumn);
 			if (!previous) {
 				break;
 			}
 			const previousChar = this.charAt(previous.row, previous.column);
-			if (this.isWhitespace(previousChar) || this.isWordChar(previousChar) !== word) {
+			if (isWhitespace(previousChar) || isWordChar(previousChar) !== word) {
 				break;
 			}
 			currentRow = previous.row;
@@ -5188,7 +5207,7 @@ export class ConsoleCartEditor {
 		currentRow = step.row;
 		currentColumn = step.column;
 		let currentChar = this.charAt(currentRow, currentColumn);
-		while (this.isWhitespace(currentChar)) {
+		while (isWhitespace(currentChar)) {
 			const next = this.stepRight(currentRow, currentColumn);
 			if (!next) {
 				const lastRow = this.lines.length - 1;
@@ -5198,7 +5217,7 @@ export class ConsoleCartEditor {
 			currentColumn = next.column;
 			currentChar = this.charAt(currentRow, currentColumn);
 		}
-		const word = this.isWordChar(currentChar);
+		const word = isWordChar(currentChar);
 		while (true) {
 			const next = this.stepRight(currentRow, currentColumn);
 			if (!next) {
@@ -5208,7 +5227,7 @@ export class ConsoleCartEditor {
 				break;
 			}
 			const nextChar = this.charAt(next.row, next.column);
-			if (this.isWhitespace(nextChar) || this.isWordChar(nextChar) !== word) {
+			if (isWhitespace(nextChar) || isWordChar(nextChar) !== word) {
 				currentRow = next.row;
 				currentColumn = next.column;
 				break;
@@ -5216,7 +5235,7 @@ export class ConsoleCartEditor {
 			currentRow = next.row;
 			currentColumn = next.column;
 		}
-		while (this.isWhitespace(this.charAt(currentRow, currentColumn))) {
+		while (isWhitespace(this.charAt(currentRow, currentColumn))) {
 			const next = this.stepRight(currentRow, currentColumn);
 			if (!next) {
 				const lastRow = this.lines.length - 1;
@@ -5257,404 +5276,33 @@ export class ConsoleCartEditor {
 		resetKeyPressRecords();
 	}
 
-	private createInlineField(): InlineTextField {
-		return {
-			text: '',
-			cursor: 0,
-			selectionAnchor: null,
-			desiredColumn: 0,
-			pointerSelecting: false,
-			lastPointerClickTimeMs: 0,
-			lastPointerClickColumn: -1,
-		};
-	}
-
-	private inlineFieldClampCursor(field: InlineTextField): void {
-		if (field.cursor < 0) {
-			field.cursor = 0;
-		}
-		const length = field.text.length;
-		if (field.cursor > length) {
-			field.cursor = length;
-		}
-	}
-
-	private inlineFieldSelectionRange(field: InlineTextField): { start: number; end: number } | null {
-		const anchor = field.selectionAnchor;
-		if (anchor === null) {
-			return null;
-		}
-		const cursor = field.cursor;
-		if (anchor === cursor) {
-			return null;
-		}
-		if (anchor < cursor) {
-			return { start: Math.max(0, anchor), end: Math.min(field.text.length, cursor) };
-		}
-		return { start: Math.max(0, cursor), end: Math.min(field.text.length, anchor) };
-	}
-
-	private inlineFieldClampSelectionAnchor(field: InlineTextField): void {
-		if (field.selectionAnchor === null) {
-			return;
-		}
-		const length = field.text.length;
-		if (field.selectionAnchor < 0) {
-			field.selectionAnchor = 0;
-			return;
-		}
-		if (field.selectionAnchor > length) {
-			field.selectionAnchor = length;
-		}
-	}
-
-	private inlineFieldDeleteSelection(field: InlineTextField): boolean {
-		const range = this.inlineFieldSelectionRange(field);
-		if (!range) {
-			return false;
-		}
-		const text = field.text;
-		field.text = text.slice(0, range.start) + text.slice(range.end);
-		field.cursor = range.start;
-		field.selectionAnchor = null;
-		field.desiredColumn = field.cursor;
-		return true;
-	}
-
-	private inlineFieldSelectionLength(field: InlineTextField): number {
-		const range = this.inlineFieldSelectionRange(field);
-		if (!range) {
-			return 0;
-		}
-		return range.end - range.start;
-	}
-
-	private inlineFieldInsert(field: InlineTextField, value: string): boolean {
-		if (value.length === 0) {
-			return false;
-		}
-		this.inlineFieldDeleteSelection(field);
-		const text = field.text;
-		const before = text.slice(0, field.cursor);
-		const after = text.slice(field.cursor);
-		field.text = before + value + after;
-		field.cursor += value.length;
-		field.desiredColumn = field.cursor;
-		return true;
-	}
-
-	private inlineFieldBackspace(field: InlineTextField): boolean {
-		if (this.inlineFieldDeleteSelection(field)) {
-			return true;
-		}
-		if (field.cursor === 0) {
-			return false;
-		}
-		const text = field.text;
-		field.text = text.slice(0, field.cursor - 1) + text.slice(field.cursor);
-		field.cursor -= 1;
-		field.desiredColumn = field.cursor;
-		return true;
-	}
-
-	private inlineFieldDeleteForward(field: InlineTextField): boolean {
-		if (this.inlineFieldDeleteSelection(field)) {
-			return true;
-		}
-		if (field.cursor >= field.text.length) {
-			return false;
-		}
-		const text = field.text;
-		field.text = text.slice(0, field.cursor) + text.slice(field.cursor + 1);
-		field.desiredColumn = field.cursor;
-		return true;
-	}
-
-	private inlineFieldDeleteWordBackward(field: InlineTextField): boolean {
-		if (this.inlineFieldDeleteSelection(field)) {
-			return true;
-		}
-		if (field.cursor === 0) {
-			return false;
-		}
-		const text = field.text;
-		let index = field.cursor;
-		while (index > 0 && this.isWhitespace(text.charAt(index - 1))) {
-			index -= 1;
-		}
-		while (index > 0 && !this.isWhitespace(text.charAt(index - 1)) && !this.isWordChar(text.charAt(index - 1))) {
-			index -= 1;
-		}
-		while (index > 0 && this.isWordChar(text.charAt(index - 1))) {
-			index -= 1;
-		}
-		if (index === field.cursor) {
-			return false;
-		}
-		field.text = text.slice(0, index) + text.slice(field.cursor);
-		field.cursor = index;
-		field.desiredColumn = field.cursor;
-		field.selectionAnchor = null;
-		return true;
-	}
-
-	private inlineFieldDeleteWordForward(field: InlineTextField): boolean {
-		if (this.inlineFieldDeleteSelection(field)) {
-			return true;
-		}
-		const length = field.text.length;
-		if (field.cursor >= length) {
-			return false;
-		}
-		const text = field.text;
-		let index = field.cursor;
-		while (index < length && this.isWhitespace(text.charAt(index))) {
-			index += 1;
-		}
-		while (index < length && !this.isWhitespace(text.charAt(index)) && !this.isWordChar(text.charAt(index))) {
-			index += 1;
-		}
-		while (index < length && this.isWordChar(text.charAt(index))) {
-			index += 1;
-		}
-		if (index === field.cursor) {
-			return false;
-		}
-		field.text = text.slice(0, field.cursor) + text.slice(index);
-		field.desiredColumn = field.cursor;
-		field.selectionAnchor = null;
-		return true;
-	}
-
-	private inlineFieldMoveCursor(field: InlineTextField, column: number, extendSelection: boolean): void {
-		const clamped = Math.max(0, Math.min(field.text.length, column));
-		if (extendSelection) {
-			if (field.selectionAnchor === null) {
-				field.selectionAnchor = field.cursor;
-			}
-		} else {
-			field.selectionAnchor = null;
-		}
-		field.cursor = clamped;
-		field.desiredColumn = clamped;
-	}
-
-	private inlineFieldMoveCursorRelative(field: InlineTextField, delta: number, extendSelection: boolean): void {
-		this.inlineFieldMoveCursor(field, field.cursor + delta, extendSelection);
-	}
-
-	private inlineFieldMoveWordLeft(field: InlineTextField, extendSelection: boolean): void {
-		if (field.cursor === 0) {
-			if (!extendSelection) {
-				field.selectionAnchor = null;
-			}
-			return;
-		}
-		const text = field.text;
-		let index = field.cursor;
-		while (index > 0 && this.isWhitespace(text.charAt(index - 1))) {
-			index -= 1;
-		}
-		while (index > 0 && !this.isWhitespace(text.charAt(index - 1)) && !this.isWordChar(text.charAt(index - 1))) {
-			index -= 1;
-		}
-		while (index > 0 && this.isWordChar(text.charAt(index - 1))) {
-			index -= 1;
-		}
-		this.inlineFieldMoveCursor(field, index, extendSelection);
-	}
-
-	private inlineFieldMoveWordRight(field: InlineTextField, extendSelection: boolean): void {
-		const length = field.text.length;
-		if (field.cursor >= length) {
-			if (!extendSelection) {
-				field.selectionAnchor = null;
-			}
-			return;
-		}
-		const text = field.text;
-		let index = field.cursor;
-		while (index < length && this.isWhitespace(text.charAt(index))) {
-			index += 1;
-		}
-		while (index < length && !this.isWhitespace(text.charAt(index)) && !this.isWordChar(text.charAt(index))) {
-			index += 1;
-		}
-		while (index < length && this.isWordChar(text.charAt(index))) {
-			index += 1;
-		}
-		this.inlineFieldMoveCursor(field, index, extendSelection);
-	}
-
-	private inlineFieldMoveToStart(field: InlineTextField, extendSelection: boolean): void {
-		this.inlineFieldMoveCursor(field, 0, extendSelection);
-	}
-
-	private inlineFieldMoveToEnd(field: InlineTextField, extendSelection: boolean): void {
-		this.inlineFieldMoveCursor(field, field.text.length, extendSelection);
-	}
-
-	private inlineFieldSelectAll(field: InlineTextField): void {
-		field.selectionAnchor = 0;
-		field.cursor = field.text.length;
-		field.desiredColumn = field.cursor;
-	}
-
-	private inlineFieldGetSelectedText(field: InlineTextField): string | null {
-		const range = this.inlineFieldSelectionRange(field);
-		if (!range) {
-			return null;
-		}
-		return field.text.slice(range.start, range.end);
-	}
-
-	private inlineFieldSelectWordAt(field: InlineTextField, column: number): void {
-		const text = field.text;
-		if (text.length === 0) {
-			field.selectionAnchor = null;
-			field.cursor = 0;
-			field.desiredColumn = 0;
-			return;
-		}
-		let index = column;
-		if (index >= text.length) {
-			index = text.length - 1;
-		}
-		if (index < 0) {
-			index = 0;
-		}
-		const ch = text.charAt(index);
-		let start = index;
-		let end = index + 1;
-		if (this.isWordChar(ch)) {
-			while (start > 0 && this.isWordChar(text.charAt(start - 1))) {
-				start -= 1;
-			}
-			while (end < text.length && this.isWordChar(text.charAt(end))) {
-				end += 1;
-			}
-		} else if (this.isWhitespace(ch)) {
-			while (start > 0 && this.isWhitespace(text.charAt(start - 1))) {
-				start -= 1;
-			}
-			while (end < text.length && this.isWhitespace(text.charAt(end))) {
-				end += 1;
-			}
-		} else {
-			while (start > 0) {
-				const previous = text.charAt(start - 1);
-				if (this.isWordChar(previous) || this.isWhitespace(previous)) {
-					break;
-				}
-				start -= 1;
-			}
-			while (end < text.length) {
-				const next = text.charAt(end);
-				if (this.isWordChar(next) || this.isWhitespace(next)) {
-					break;
-				}
-				end += 1;
-			}
-		}
-		field.selectionAnchor = start;
-		field.cursor = end;
-		field.desiredColumn = field.cursor;
-	}
-
-	private inlineFieldMeasureRange(field: InlineTextField, start: number, end: number): number {
-		const clampedStart = Math.max(0, Math.min(start, field.text.length));
-		const clampedEnd = Math.max(clampedStart, Math.min(end, field.text.length));
-		if (clampedEnd <= clampedStart) {
-			return 0;
-		}
-		const slice = field.text.slice(clampedStart, clampedEnd);
-		return this.measureText(slice);
-	}
-
-	private inlineFieldResolveColumn(field: InlineTextField, textLeft: number, pointerX: number): number {
-		const relative = pointerX - textLeft;
-		if (relative <= 0) {
-			return 0;
-		}
-		let advance = 0;
-		const length = field.text.length;
-		for (let index = 0; index < length; index += 1) {
-			const ch = field.text.charAt(index);
-			const width = ch === '\t' ? this.spaceAdvance * constants.TAB_SPACES : this.font.advance(ch);
-			const midpoint = advance + width * 0.5;
-			if (relative < midpoint) {
-				return index;
-			}
-			advance += width;
-			if (relative < advance) {
-				return index + 1;
-			}
-		}
-		return length;
-	}
-
-	private inlineFieldCaretX(field: InlineTextField, textLeft: number): number {
-		if (field.cursor <= 0) {
-			return textLeft;
-		}
-		const slice = field.text.slice(0, field.cursor);
-		return textLeft + this.measureText(slice);
-	}
-
-	private inlineFieldRegisterPointerClick(field: InlineTextField, column: number): boolean {
-		const now = $.platform.clock.now();
-		const interval = now - field.lastPointerClickTimeMs;
-		const sameColumn = column === field.lastPointerClickColumn;
-		const isDouble = field.lastPointerClickTimeMs > 0
-			&& interval <= constants.DOUBLE_CLICK_MAX_INTERVAL_MS
-			&& sameColumn;
-		field.lastPointerClickTimeMs = now;
-		field.lastPointerClickColumn = column;
-		return isDouble;
-	}
-
-	private setInlineFieldText(field: InlineTextField, value: string, moveCursorToEnd: boolean): void {
-		field.text = value;
-		if (moveCursorToEnd) {
-			field.cursor = value.length;
-		} else {
-			if (field.cursor > value.length) {
-				field.cursor = value.length;
-			}
-			if (field.cursor < 0) {
-				field.cursor = 0;
-			}
-		}
-		field.selectionAnchor = null;
-		field.desiredColumn = field.cursor;
-		field.pointerSelecting = false;
-		field.lastPointerClickTimeMs = 0;
-		field.lastPointerClickColumn = -1;
-	}
-
 	private applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
 		this.searchQuery = value;
-		this.setInlineFieldText(this.searchField, value, moveCursorToEnd);
+		setFieldText(this.searchField, value, moveCursorToEnd);
 	}
 
 	private applySymbolSearchFieldText(value: string, moveCursorToEnd: boolean): void {
 		this.symbolSearchQuery = value;
-		this.setInlineFieldText(this.symbolSearchField, value, moveCursorToEnd);
+		setFieldText(this.symbolSearchField, value, moveCursorToEnd);
 	}
 
 	private applyResourceSearchFieldText(value: string, moveCursorToEnd: boolean): void {
 		this.resourceSearchQuery = value;
-		this.setInlineFieldText(this.resourceSearchField, value, moveCursorToEnd);
+		setFieldText(this.resourceSearchField, value, moveCursorToEnd);
 	}
 
 	private applyLineJumpFieldText(value: string, moveCursorToEnd: boolean): void {
 		this.lineJumpValue = value;
-		this.setInlineFieldText(this.lineJumpField, value, moveCursorToEnd);
+		setFieldText(this.lineJumpField, value, moveCursorToEnd);
 	}
 
 	private applyCreateResourceFieldText(value: string, moveCursorToEnd: boolean): void {
 		this.createResourcePath = value;
-		this.setInlineFieldText(this.createResourceField, value, moveCursorToEnd);
+		setFieldText(this.createResourceField, value, moveCursorToEnd);
+	}
+
+	private inlineFieldMetrics(): InlineFieldMetrics {
+		return this.inlineFieldMetricsRef;
 	}
 
 	private handleInlineFieldEditing(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean {
@@ -5668,11 +5316,11 @@ export class ConsoleCartEditor {
 
 		if (useCtrl && isKeyJustPressedGlobal(this.playerIndex, 'KeyA')) {
 			consumeKeyboardKey(keyboard, 'KeyA');
-			this.inlineFieldSelectAll(field);
+			inlineFieldSelectAll(field);
 		}
 
 		if (useCtrl && isKeyJustPressedGlobal(this.playerIndex, 'KeyC')) {
-			const selected = this.inlineFieldGetSelectedText(field);
+			const selected = inlineFieldGetSelectedText(field);
 			const payload = selected && selected.length > 0 ? selected : field.text;
 			if (payload.length > 0) {
 				void this.writeClipboard(payload, 'Copied to editor clipboard');
@@ -5681,17 +5329,17 @@ export class ConsoleCartEditor {
 		}
 
 		if (useCtrl && isKeyJustPressedGlobal(this.playerIndex, 'KeyX')) {
-			const selected = this.inlineFieldGetSelectedText(field);
+			const selected = inlineFieldGetSelectedText(field);
 			let payload = selected;
 			if (!payload || payload.length === 0) {
 				payload = field.text;
 				if (payload.length > 0) {
-					this.inlineFieldSelectAll(field);
+					inlineFieldSelectAll(field);
 				}
 			}
 			if (payload && payload.length > 0) {
 				void this.writeClipboard(payload, 'Cut to editor clipboard');
-				this.inlineFieldDeleteSelection(field);
+				inlineFieldDeleteSelection(field);
 			}
 			consumeKeyboardKey(keyboard, 'KeyX');
 		}
@@ -5706,7 +5354,7 @@ export class ConsoleCartEditor {
 					if (filtered.length > 0) {
 						let insertion = filtered;
 						if (maxLength !== null) {
-							const remaining = Math.max(0, maxLength - (field.text.length - this.inlineFieldSelectionLength(field)));
+							const remaining = Math.max(0, maxLength - (field.text.length - inlineFieldSelectionLength(field)));
 							if (remaining <= 0) {
 								insertion = '';
 							} else if (insertion.length > remaining) {
@@ -5714,7 +5362,7 @@ export class ConsoleCartEditor {
 							}
 						}
 						if (insertion.length > 0) {
-							this.inlineFieldInsert(field, insertion);
+							inlineFieldInsert(field, insertion);
 						}
 					}
 				}
@@ -5727,56 +5375,56 @@ export class ConsoleCartEditor {
 		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'Backspace');
 			if (useCtrl) {
-				this.inlineFieldDeleteWordBackward(field);
+				inlineFieldDeleteWordBackward(field);
 			} else {
-				this.inlineFieldBackspace(field);
+				inlineFieldBackspace(field);
 			}
 		}
 
 		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'Delete');
 			if (useCtrl) {
-				this.inlineFieldDeleteWordForward(field);
+				inlineFieldDeleteWordForward(field);
 			} else {
-				this.inlineFieldDeleteForward(field);
+				inlineFieldDeleteForward(field);
 			}
 		}
 
 		if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'ArrowLeft');
 			if (useCtrl) {
-				this.inlineFieldMoveWordLeft(field, shiftDown);
+				inlineFieldMoveWordLeft(field, shiftDown);
 			} else {
-				this.inlineFieldMoveCursorRelative(field, -1, shiftDown);
+				inlineFieldMoveCursorRelative(field, -1, shiftDown);
 			}
 		}
 
 		if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'ArrowRight');
 			if (useCtrl) {
-				this.inlineFieldMoveWordRight(field, shiftDown);
+				inlineFieldMoveWordRight(field, shiftDown);
 			} else {
-				this.inlineFieldMoveCursorRelative(field, 1, shiftDown);
+				inlineFieldMoveCursorRelative(field, 1, shiftDown);
 			}
 		}
 
 		if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'Home');
-			this.inlineFieldMoveToStart(field, shiftDown);
+			inlineFieldMoveToStart(field, shiftDown);
 		}
 
 		if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'End');
-			this.inlineFieldMoveToEnd(field, shiftDown);
+			inlineFieldMoveToEnd(field, shiftDown);
 		}
 
 		if (allowSpace && !useCtrl && !metaDown && !altDown && this.shouldFireRepeat(keyboard, 'Space', deltaSeconds)) {
 			consumeKeyboardKey(keyboard, 'Space');
 			const remaining = maxLength !== null
-				? Math.max(0, maxLength - (field.text.length - this.inlineFieldSelectionLength(field)))
+				? Math.max(0, maxLength - (field.text.length - inlineFieldSelectionLength(field)))
 				: undefined;
 			if (remaining === undefined || remaining > 0) {
-				this.inlineFieldInsert(field, ' ');
+				inlineFieldInsert(field, ' ');
 			}
 		}
 
@@ -5797,19 +5445,19 @@ export class ConsoleCartEditor {
 					continue;
 				}
 				if (maxLength !== null) {
-					const available = maxLength - (field.text.length - this.inlineFieldSelectionLength(field));
+					const available = maxLength - (field.text.length - inlineFieldSelectionLength(field));
 					if (available <= 0) {
 						consumeKeyboardKey(keyboard, code);
 						continue;
 					}
 				}
-				this.inlineFieldInsert(field, value);
+				inlineFieldInsert(field, value);
 				consumeKeyboardKey(keyboard, code);
 			}
 		}
 
-		this.inlineFieldClampCursor(field);
-		this.inlineFieldClampSelectionAnchor(field);
+		inlineFieldClampCursor(field);
+		inlineFieldClampSelectionAnchor(field);
 		const textChanged = field.text !== initialText;
 		if (!textChanged && field.cursor === initialCursor && field.selectionAnchor === initialAnchor) {
 			return false;
@@ -5818,11 +5466,11 @@ export class ConsoleCartEditor {
 	}
 
 	private handleInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
-		const column = this.inlineFieldResolveColumn(field, textLeft, pointerX);
+		const column = inlineFieldResolveColumn(field, this.inlineFieldMetrics(), textLeft, pointerX);
 		if (justPressed) {
-			const isDouble = this.inlineFieldRegisterPointerClick(field, column);
+			const isDouble = inlineFieldRegisterPointerClick(field, column, () => $.platform.clock.now(), constants.DOUBLE_CLICK_MAX_INTERVAL_MS);
 			if (isDouble) {
-				this.inlineFieldSelectWordAt(field, column);
+				inlineFieldSelectWordAt(field, column);
 				field.pointerSelecting = false;
 			} else {
 				field.selectionAnchor = column;
@@ -5830,8 +5478,8 @@ export class ConsoleCartEditor {
 				field.desiredColumn = column;
 				field.pointerSelecting = true;
 			}
-			this.inlineFieldClampCursor(field);
-			this.inlineFieldClampSelectionAnchor(field);
+			inlineFieldClampCursor(field);
+			inlineFieldClampSelectionAnchor(field);
 			this.resetBlink();
 			return;
 		}
@@ -5840,9 +5488,9 @@ export class ConsoleCartEditor {
 			return;
 		}
 		if (field.pointerSelecting) {
-			this.inlineFieldMoveCursor(field, column, true);
-			this.inlineFieldClampCursor(field);
-			this.inlineFieldClampSelectionAnchor(field);
+			inlineFieldMoveCursor(field, column, true);
+			inlineFieldClampCursor(field);
+			inlineFieldClampSelectionAnchor(field);
 		}
 	}
 
@@ -6143,19 +5791,6 @@ export class ConsoleCartEditor {
 		return line.charAt(column);
 	}
 
-	private isWhitespace(ch: string): boolean {
-		return ch === '' || ch === ' ' || ch === '\t';
-	}
-
-	private isWordChar(ch: string): boolean {
-		if (!ch) return false;
-		const code = ch.charCodeAt(0);
-		return (code >= 48 && code <= 57)
-			|| (code >= 65 && code <= 90)
-			|| (code >= 97 && code <= 122)
-			|| ch === '_';
-	}
-
 	private hasSelection(): boolean {
 		return this.getSelectionRange() !== null;
 	}
@@ -6304,31 +5939,31 @@ export class ConsoleCartEditor {
 		let start = index;
 		let end = index + 1;
 		const current = line.charAt(index);
-		if (this.isWordChar(current)) {
-			while (start > 0 && this.isWordChar(line.charAt(start - 1))) {
+		if (isWordChar(current)) {
+			while (start > 0 && isWordChar(line.charAt(start - 1))) {
 				start -= 1;
 			}
-			while (end < line.length && this.isWordChar(line.charAt(end))) {
+			while (end < line.length && isWordChar(line.charAt(end))) {
 				end += 1;
 			}
-		} else if (this.isWhitespace(current)) {
-			while (start > 0 && this.isWhitespace(line.charAt(start - 1))) {
+		} else if (isWhitespace(current)) {
+			while (start > 0 && isWhitespace(line.charAt(start - 1))) {
 				start -= 1;
 			}
-			while (end < line.length && this.isWhitespace(line.charAt(end))) {
+			while (end < line.length && isWhitespace(line.charAt(end))) {
 				end += 1;
 			}
 		} else {
 			while (start > 0) {
 				const previous = line.charAt(start - 1);
-				if (this.isWordChar(previous) || this.isWhitespace(previous)) {
+				if (isWordChar(previous) || isWhitespace(previous)) {
 					break;
 				}
 				start -= 1;
 			}
 			while (end < line.length) {
 				const next = line.charAt(end);
-				if (this.isWordChar(next) || this.isWhitespace(next)) {
+				if (isWordChar(next) || isWhitespace(next)) {
 					break;
 				}
 				end += 1;
@@ -6757,10 +6392,10 @@ export class ConsoleCartEditor {
 			pathColor = constants.COLOR_CREATE_RESOURCE_PLACEHOLDER;
 		}
 
-		const selection = this.inlineFieldSelectionRange(field);
+		const selection = inlineFieldSelectionRange(field);
 		if (selection && field.text.length > 0) {
-			const selectionLeft = pathX + this.inlineFieldMeasureRange(field, 0, selection.start);
-			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			const selectionLeft = pathX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
+			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
 			if (selectionWidth > 0) {
 				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
 			}
@@ -6768,7 +6403,7 @@ export class ConsoleCartEditor {
 
 		this.drawText(api, displayPath, pathX, labelY, pathColor);
 
-		const caretBaseX = this.inlineFieldCaretX(field, pathX);
+		const caretBaseX = inlineFieldCaretX(field, pathX, this.measureText.bind(this));
 		const caretLeft = Math.floor(caretBaseX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
@@ -6811,10 +6446,10 @@ export class ConsoleCartEditor {
 		}
 		const queryX = labelX + this.measureText(label + ' ');
 
-		const selection = this.inlineFieldSelectionRange(field);
+		const selection = inlineFieldSelectionRange(field);
 		if (selection && field.text.length > 0) {
-			const selectionLeft = queryX + this.inlineFieldMeasureRange(field, 0, selection.start);
-			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			const selectionLeft = queryX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
+			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
 			if (selectionWidth > 0) {
 				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
 			}
@@ -6822,7 +6457,7 @@ export class ConsoleCartEditor {
 
 		this.drawText(api, queryText, queryX, labelY, queryColor);
 
-		const caretX = this.inlineFieldCaretX(field, queryX);
+		const caretX = inlineFieldCaretX(field, queryX, this.measureText.bind(this));
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
@@ -6865,10 +6500,10 @@ export class ConsoleCartEditor {
 		}
 		const queryX = labelX + this.measureText(label + ' ');
 
-		const selection = this.inlineFieldSelectionRange(field);
+		const selection = inlineFieldSelectionRange(field);
 		if (selection && field.text.length > 0) {
-			const selectionLeft = queryX + this.inlineFieldMeasureRange(field, 0, selection.start);
-			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			const selectionLeft = queryX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
+			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
 			if (selectionWidth > 0) {
 				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
 			}
@@ -6876,7 +6511,7 @@ export class ConsoleCartEditor {
 
 		this.drawText(api, queryText, queryX, labelY, queryColor);
 
-		const caretX = this.inlineFieldCaretX(field, queryX);
+		const caretX = inlineFieldCaretX(field, queryX, this.measureText.bind(this));
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
@@ -6953,10 +6588,10 @@ export class ConsoleCartEditor {
 		}
 		const queryX = labelX + this.measureText(label + ' ');
 
-		const selection = this.inlineFieldSelectionRange(field);
+		const selection = inlineFieldSelectionRange(field);
 		if (selection && field.text.length > 0) {
-			const selectionLeft = queryX + this.inlineFieldMeasureRange(field, 0, selection.start);
-			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			const selectionLeft = queryX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
+			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
 			if (selectionWidth > 0) {
 				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
 			}
@@ -6964,7 +6599,7 @@ export class ConsoleCartEditor {
 
 		this.drawText(api, queryText, queryX, labelY, queryColor);
 
-		const caretX = this.inlineFieldCaretX(field, queryX);
+		const caretX = inlineFieldCaretX(field, queryX, this.measureText.bind(this));
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
@@ -7055,10 +6690,10 @@ export class ConsoleCartEditor {
 		}
 		const valueX = labelX + this.measureText(label + ' ');
 
-		const selection = this.inlineFieldSelectionRange(field);
+		const selection = inlineFieldSelectionRange(field);
 		if (selection && field.text.length > 0) {
-			const selectionLeft = valueX + this.inlineFieldMeasureRange(field, 0, selection.start);
-			const selectionWidth = this.inlineFieldMeasureRange(field, selection.start, selection.end);
+			const selectionLeft = valueX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
+			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
 			if (selectionWidth > 0) {
 				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
 			}
@@ -7066,7 +6701,7 @@ export class ConsoleCartEditor {
 
 		this.drawText(api, valueText, valueX, labelY, valueColor);
 
-		const caretX = this.inlineFieldCaretX(field, valueX);
+		const caretX = inlineFieldCaretX(field, valueX, this.measureText.bind(this));
 		const caretLeft = Math.floor(caretX);
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + this.charAdvance));
 		const caretTop = Math.floor(labelY);
@@ -9692,14 +9327,14 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		}
 		const prefix = line.slice(0, lastOpen);
 		let scan = prefix.length - 1;
-		while (scan >= 0 && this.isWhitespace(prefix.charAt(scan))) {
+		while (scan >= 0 && isWhitespace(prefix.charAt(scan))) {
 			scan -= 1;
 		}
 		if (scan < 0) {
 			return null;
 		}
 		let nameEnd = scan + 1;
-		while (scan >= 0 && this.isWordChar(prefix.charAt(scan))) {
+		while (scan >= 0 && isWordChar(prefix.charAt(scan))) {
 			scan -= 1;
 		}
 		const methodName = prefix.slice(scan + 1, nameEnd);
@@ -9722,7 +9357,7 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 			}
 		}
 		let operatorIndex = scan;
-		while (operatorIndex >= 0 && this.isWhitespace(prefix.charAt(operatorIndex))) {
+		while (operatorIndex >= 0 && isWhitespace(prefix.charAt(operatorIndex))) {
 			operatorIndex -= 1;
 		}
 		let objectName: string | null = null;
@@ -9731,12 +9366,12 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 			if (candidateOperator === '.' || candidateOperator === ':') {
 				let objectEnd = operatorIndex;
 				let objectIndex = objectEnd - 1;
-				while (objectIndex >= 0 && this.isWhitespace(prefix.charAt(objectIndex))) {
+				while (objectIndex >= 0 && isWhitespace(prefix.charAt(objectIndex))) {
 					objectIndex -= 1;
 				}
 				if (objectIndex >= 0) {
 					let objectStart = objectIndex;
-					while (objectStart >= 0 && this.isWordChar(prefix.charAt(objectStart))) {
+					while (objectStart >= 0 && isWordChar(prefix.charAt(objectStart))) {
 						objectStart -= 1;
 					}
 					objectName = prefix.slice(objectStart + 1, objectIndex + 1);
@@ -9783,14 +9418,14 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		const line = this.lines[row];
 		const column = clamp(this.cursorColumn, 0, line.length);
 		let start = column;
-		while (start > 0 && this.isWordChar(line.charAt(start - 1))) {
+		while (start > 0 && isWordChar(line.charAt(start - 1))) {
 			start -= 1;
 		}
 		const prefix = line.slice(start, column);
 		const replaceFromColumn = start;
 		const replaceToColumn = column;
 		let probe = start - 1;
-		while (probe >= 0 && this.isWhitespace(line.charAt(probe))) {
+		while (probe >= 0 && isWhitespace(line.charAt(probe))) {
 			probe -= 1;
 		}
 		if (probe >= 0) {
@@ -9798,14 +9433,14 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 			if (operator === '.' || operator === ':') {
 				let objectEnd = probe;
 				let objectProbe = objectEnd - 1;
-				while (objectProbe >= 0 && this.isWhitespace(line.charAt(objectProbe))) {
+				while (objectProbe >= 0 && isWhitespace(line.charAt(objectProbe))) {
 					objectProbe -= 1;
 				}
 				if (objectProbe < 0) {
 					return null;
 				}
 				let objectStart = objectProbe;
-				while (objectStart >= 0 && this.isWordChar(line.charAt(objectStart))) {
+				while (objectStart >= 0 && isWordChar(line.charAt(objectStart))) {
 					objectStart -= 1;
 				}
 				const objectName = line.slice(objectStart + 1, objectProbe + 1);
@@ -10064,13 +9699,13 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 			if (lastChar === '.' || lastChar === ':') {
 				return 'punctuation';
 			}
-			if (this.isWordChar(lastChar)) {
+			if (isWordChar(lastChar)) {
 				return 'typing';
 			}
 			return null;
 		}
 		// Global context
-		if (!this.isWordChar(lastChar)) {
+		if (!isWordChar(lastChar)) {
 			return null;
 		}
 		if (context.prefix.length === 0) {
@@ -10092,7 +9727,7 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 				return;
 			}
 			const previousChar = this.charAt(this.cursorRow, this.cursorColumn - 1);
-			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !this.isWordChar(previousChar)) {
+			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !isWordChar(previousChar)) {
 				this.closeCompletionSession();
 				return;
 			}
@@ -11464,14 +11099,4 @@ private handleCompletionKeybindings(
 			input.setKeyboardCapture(this.captureKeys[i], active);
 		}
 	}
-
-	// @ts-ignore
-	private countCharacters(): number {
-		let total = 0;
-		for (let i = 0; i < this.lines.length; i++) {
-			total += this.lines[i].length;
-		}
-		return total;
-	}
-
 }
