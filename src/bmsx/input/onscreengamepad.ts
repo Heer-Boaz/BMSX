@@ -199,8 +199,6 @@ export class OnscreenGamepad implements InputHandler {
 		'y_knop': { buttons: ['y' satisfies BGamepadButton] },
 		'ls_knop': { buttons: ['ls' satisfies BGamepadButton] },
 		'rs_knop': { buttons: ['rs' satisfies BGamepadButton] },
-		'lt_knop': { buttons: ['lt' satisfies BGamepadButton] },
-		'rt_knop': { buttons: ['rt' satisfies BGamepadButton] },
 		'select_knop': { buttons: ['select' satisfies BGamepadButton] },
 		'start_knop': { buttons: ['start' satisfies BGamepadButton] },
 	};
@@ -238,6 +236,7 @@ export class OnscreenGamepad implements InputHandler {
 	private static readonly ONSCREEN_BUTTON_ELEMENT_NAMES = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
 
 	public init(): void {
+		this.reset();
 		if (this.session !== null) {
 			this.session.dispose();
 			this.session = null;
@@ -251,11 +250,6 @@ export class OnscreenGamepad implements InputHandler {
 			pointerOut: () => this.reset(),
 		};
 		this.session = this.platform.attach(hooks);
-		this.reset();
-		const view = $.view;
-		if (view) {
-			view.handleResize();
-		}
 	}
 
 	private onPointerDown(kind: OnscreenGamepadControlKind, event: OnscreenPointerEvent): void {
@@ -264,6 +258,9 @@ export class OnscreenGamepad implements InputHandler {
 	}
 
 	private onPointerMove(kind: OnscreenGamepadControlKind, event: OnscreenPointerEvent): void {
+		if (event.buttons === 0 && event.pressure === 0) {
+			return;
+		}
 		const hit = this.hitTest(kind, event.clientX, event.clientY);
 		this.updateForPointer(event.pointerId, hit.elements, hit.buttons, event);
 	}
@@ -313,24 +310,15 @@ export class OnscreenGamepad implements InputHandler {
 			normalized.add(base);
 		}
 		if (kind === 'action') {
-			const elements: string[] = [];
-			const buttons: string[] = [];
 			const iterator = normalized.values();
 			for (let current = iterator.next(); !current.done; current = iterator.next()) {
 				const id = current.value;
 				const entry = OnscreenGamepad.ACTION_BUTTON_MAP[id];
-				if (!entry) {
-					continue;
-				}
-				elements.push(id);
-				for (let i = 0; i < entry.buttons.length; i++) {
-					const button = entry.buttons[i];
-					if (buttons.indexOf(button) === -1) {
-						buttons.push(button);
-					}
+				if (entry) {
+					return { elements: [id], buttons: entry.buttons };
 				}
 			}
-			return { elements, buttons };
+			return { elements: [], buttons: [] };
 		}
 		const iterator = normalized.values();
 		for (let current = iterator.next(); !current.done; current = iterator.next()) {
