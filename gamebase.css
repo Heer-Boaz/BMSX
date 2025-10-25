@@ -508,7 +508,7 @@ svg.d-pad {
 }
 
 svg.action-buttons {
-	position: absolute;
+	position: static; /* Changed from absolute to static to fix positioning issue where the action buttons were positioned such that the center of the svg was at the bottom of the browser window */
 	z-index: 2000;
 	pointer-events: auto;
 	touch-action: none;

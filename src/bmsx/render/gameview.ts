@@ -488,7 +488,9 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const viewportWidth = innerWidth > 0 ? innerWidth : screenWidth;
 		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
 		const visualViewport = window.visualViewport!;
-		const viewportBottomInset = Math.max(0, innerHeight - (visualViewport.height + visualViewport.offsetTop));
+		const visibleViewportHeight = visualViewport.height;
+		const visibleViewportBottom = visualViewport.offsetTop + visibleViewportHeight;
+		const viewportBottomInset = Math.max(0, viewportHeight - visibleViewportBottom);
 
 		const self = $.view || this;
 		self.calculateSize();
@@ -536,6 +538,13 @@ export class GameView implements RegisterablePersistent, RenderContext {
 						newScale = maxSvgWidth / widthAttr;
 					}
 				}
+				const heightAttr = control.getNumericAttribute('height');
+				if (heightAttr !== null && heightAttr > 0 && visibleViewportHeight > 0) {
+					const maxScaleByHeight = visibleViewportHeight / heightAttr;
+					if (maxScaleByHeight > 0 && newScale > maxScaleByHeight) {
+						newScale = maxScaleByHeight;
+					}
+				}
 				control.setScale(newScale);
 			};
 
@@ -543,22 +552,19 @@ export class GameView implements RegisterablePersistent, RenderContext {
 			updateScale(actionButtons, true);
 			const dpadSize = dpad.measure();
 			const actionSize = actionButtons.measure();
-			const centeredSpan = Math.max(
-				visualViewport.height,
-				canvasRect.height,
-				actionSize.height,
-				dpadSize.height,
-			);
+			const centeredSpan = visibleViewportHeight;
 			const clampBottom = (value: number): number => value > 0 ? Math.round(value) : 0;
 			const updateBottomPosition = (control: typeof dpad, size: { height: number; }, isRightSide: boolean): void => {
 				let newBottom: number;
 				if (isLandscape) {
-					newBottom = bottomInset + (centeredSpan - size.height) / 2;
+					const verticalRoom = Math.max(centeredSpan - size.height, 0);
+					newBottom = bottomInset + verticalRoom / 2;
 				} else if (isRightSide) {
 					newBottom = bottomInset;
 				} else {
 					const referenceHeight = Math.max(actionSize.height, size.height);
-					newBottom = bottomInset + (referenceHeight - size.height) / 2;
+					const verticalRoom = Math.max(referenceHeight - size.height, 0);
+					newBottom = bottomInset + verticalRoom / 2;
 				}
 				control.setBottom(clampBottom(newBottom));
 			};
