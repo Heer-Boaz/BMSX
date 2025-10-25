@@ -1,12 +1,13 @@
+import { $ } from '../../core/game';
 import type { KeyboardInput } from '../../input/keyboardinput';
-import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal, isKeyTyped as isKeyTypedGlobal, consumeKey as consumeKeyboardKey } from './input_helpers';
+import { isKeyJustPressed as isKeyJustPressedGlobal, isModifierPressed as isModifierPressedGlobal, isKeyTyped as isKeyTypedGlobal, consumeKey as consumeKeyboardKey, getKeyboardButtonState, shouldAcceptKeyPress as shouldAcceptKeyPressGlobal, clearKeyPressRecord } from './input_helpers';
+import * as constants from './constants';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 
 export interface InputHost {
   // State queries
   getPlayerIndex(): number;
   isCodeTabActive(): boolean;
-  shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
   // Text buffer
   getLines(): string[];
   setLines(lines: string[]): void;
@@ -47,6 +48,7 @@ export interface InputHost {
 
 export class InputController {
   private readonly host: InputHost;
+  private readonly repeatState: Map<string, { cooldown: number }> = new Map();
 
   constructor(host: InputHost) {
     this.host = host;
@@ -79,12 +81,12 @@ export class InputController {
     // Alt+Arrow: move selection lines up/down
     if (altDown) {
       let movedAlt = false;
-      if (this.shouldRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+      if (this.shouldRepeat('ArrowUp', deltaSeconds)) {
         consumeKeyboardKey(keyboard, 'ArrowUp');
         this.host.moveSelectionLines(-1);
         movedAlt = true;
       }
-      if (this.shouldRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+      if (this.shouldRepeat('ArrowDown', deltaSeconds)) {
         consumeKeyboardKey(keyboard, 'ArrowDown');
         this.host.moveSelectionLines(1);
         movedAlt = true;
@@ -96,44 +98,44 @@ export class InputController {
       }
     }
     // Arrow keys
-    if (this.shouldRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
+    if (this.shouldRepeat('ArrowLeft', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'ArrowLeft');
       this.host.moveCursorLeft(ctrlDown || altDown, shiftDown);
       return;
     }
-    if (this.shouldRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
+    if (this.shouldRepeat('ArrowRight', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'ArrowRight');
       this.host.moveCursorRight(ctrlDown || altDown, shiftDown);
       return;
     }
-    if (this.shouldRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+    if (this.shouldRepeat('ArrowUp', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'ArrowUp');
       this.host.moveCursorUp(shiftDown);
       return;
     }
-    if (this.shouldRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+    if (this.shouldRepeat('ArrowDown', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'ArrowDown');
       this.host.moveCursorDown(shiftDown);
       return;
     }
     // Home/End
-    if (this.shouldRepeat(keyboard, 'Home', deltaSeconds)) {
+    if (this.shouldRepeat('Home', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'Home');
       this.host.moveCursorHome(shiftDown);
       return;
     }
-    if (this.shouldRepeat(keyboard, 'End', deltaSeconds)) {
+    if (this.shouldRepeat('End', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'End');
       this.host.moveCursorEnd(shiftDown);
       return;
     }
     // PageUp/PageDown
-    if (this.shouldRepeat(keyboard, 'PageDown', deltaSeconds)) {
+    if (this.shouldRepeat('PageDown', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'PageDown');
       this.host.pageDown(shiftDown);
       return;
     }
-    if (this.shouldRepeat(keyboard, 'PageUp', deltaSeconds)) {
+    if (this.shouldRepeat('PageUp', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'PageUp');
       this.host.pageUp(shiftDown);
       return;
@@ -148,7 +150,7 @@ export class InputController {
       return;
     }
     // Backspace/Delete
-    if (this.shouldRepeat(keyboard, 'Backspace', deltaSeconds)) {
+    if (this.shouldRepeat('Backspace', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'Backspace');
       if (ctrlDown) {
         this.host.deleteWordBackward();
@@ -159,7 +161,7 @@ export class InputController {
       }
       return;
     }
-    if (this.shouldRepeat(keyboard, 'Delete', deltaSeconds)) {
+    if (this.shouldRepeat('Delete', deltaSeconds)) {
       consumeKeyboardKey(keyboard, 'Delete');
       if (shiftDown && !ctrlDown) {
         this.host.deleteActiveLines();
@@ -193,7 +195,42 @@ export class InputController {
   }
 
   // Repeat helper bridged to editor's repeat system via shouldAccept logic
-  private shouldRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
-    return this.host.shouldFireRepeat(keyboard, code, deltaSeconds);
+  private shouldRepeat(code: string, deltaSeconds: number): boolean {
+    const state = getKeyboardButtonState(this.host.getPlayerIndex(), code);
+    if (!state || state.pressed !== true) {
+      this.repeatState.delete(code);
+      clearKeyPressRecord(code);
+      return false;
+    }
+    let entry = this.repeatState.get(code);
+    if (!entry) {
+      entry = { cooldown: constants.INITIAL_REPEAT_DELAY };
+      this.repeatState.set(code, entry);
+    }
+    if (shouldAcceptKeyPressGlobal(code, state)) {
+      entry.cooldown = constants.INITIAL_REPEAT_DELAY;
+      return true;
+    }
+    entry.cooldown -= deltaSeconds;
+    if (entry.cooldown <= 0) {
+      entry.cooldown = constants.REPEAT_INTERVAL;
+      return true;
+    }
+    this.repeatState.set(code, entry);
+    return false;
+  }
+
+  // Expose repeat for other controllers (e.g. completion controller)
+  public shouldRepeatPublic(_keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
+    return this.shouldRepeat(code, deltaSeconds);
+  }
+
+  // Apply input overrides (debug hotkeys + keyboard capture)
+  public applyOverrides(active: boolean, captureKeys: readonly string[]): void {
+    const input = $.input;
+    input.setDebugHotkeysPaused(active);
+    for (let i = 0; i < captureKeys.length; i++) {
+      input.setKeyboardCapture(captureKeys[i], active);
+    }
   }
 }

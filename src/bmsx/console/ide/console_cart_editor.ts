@@ -87,7 +87,6 @@ import {
 	isModifierPressed as isModifierPressedGlobal,
 	resetKeyPressRecords,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
-	clearKeyPressRecord,
 } from './input_helpers';
 
 const EDITOR_TOGGLE_KEY = 'Escape';
@@ -381,13 +380,12 @@ export class ConsoleCartEditor {
 			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
 			charAt: (r, c) => this.charAt(r, c),
 			getTextVersion: () => this.textVersion,
-			shouldFireRepeat: (kb, code, dt) => this.shouldFireRepeat(kb, code, dt),
+			shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
 		});
 		// Initialize input controller
 		this.input = new InputController({
 			getPlayerIndex: () => this.playerIndex,
 			isCodeTabActive: () => this.isCodeTabActive(),
-			shouldFireRepeat: (kb, code, dt) => this.shouldFireRepeat(kb, code, dt),
 			getLines: () => this.lines,
 			setLines: (lines) => { this.lines = lines; },
 			getCursorRow: () => this.cursorRow,
@@ -1266,7 +1264,7 @@ export class ConsoleCartEditor {
 
 	public restoreState(state: ConsoleEditorSerializedState): void { // NOTE: UNUSED AS WE DON'T SAVE EDITOR STATE ANYMORE
 		if (!state) return;
-		this.applyInputOverrides(false);
+		this.input.applyOverrides(false, this.captureKeys);
 		this.codeTabContexts.clear();
 		const entryContext = this.createEntryTabContext();
 		if (entryContext) {
@@ -1291,7 +1289,7 @@ export class ConsoleCartEditor {
 			this.activateCodeTab();
 		}
 		if (this.active) {
-			this.applyInputOverrides(true);
+			this.input.applyOverrides(true, this.captureKeys);
 		}
 		this.restoreSnapshot(state.snapshot);
 		this.applySearchFieldText(state.searchQuery, true);
@@ -1346,7 +1344,7 @@ export class ConsoleCartEditor {
 	public shutdown(): void {
 		this.clearExecutionStopHighlights();
 		this.storeActiveCodeTabContext();
-		this.applyInputOverrides(false);
+		this.input.applyOverrides(false, this.captureKeys);
 		this.active = false;
 		this.repeatState.clear();
 		this.resetKeyPressGuards();
@@ -1466,7 +1464,7 @@ export class ConsoleCartEditor {
 	}
 
 	private activate(): void {
-		this.applyInputOverrides(true);
+		this.input.applyOverrides(true, this.captureKeys);
 		this.applyResolutionModeToRuntime();
 		if (this.activeCodeTabContextId) {
 			const existingTab = this.tabs.find(candidate => candidate.id === this.activeCodeTabContextId);
@@ -1566,7 +1564,7 @@ export class ConsoleCartEditor {
 	this.completion.closeSession();
 	this.repeatState.clear();
 		this.resetKeyPressGuards();
-		this.applyInputOverrides(false);
+		this.input.applyOverrides(false, this.captureKeys);
 		this.selectionAnchor = null;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
@@ -5244,7 +5242,7 @@ export class ConsoleCartEditor {
 		return {
 			isKeyJustPressed: (code) => isKeyJustPressedGlobal(this.playerIndex, code),
 			isKeyTyped: (code) => isKeyTypedGlobal(this.playerIndex, code),
-			shouldFireRepeat: (code, deltaSeconds) => this.shouldFireRepeat(keyboard, code, deltaSeconds),
+			shouldFireRepeat: (code, deltaSeconds) => this.input.shouldRepeatPublic(keyboard, code, deltaSeconds),
 			consumeKey: (code) => consumeKeyboardKey(keyboard, code),
 			readClipboard: () => ConsoleCartEditor.customClipboard,
 			writeClipboard: (payload, action) => {
@@ -8681,36 +8679,9 @@ private handleCompletionKeybindings(
 		this.cursorVisible = true;
 	}
 
-	private shouldFireRepeat(_keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
-		const state = getKeyboardButtonState(this.playerIndex, code);
-		if (!state || state.pressed !== true) {
-			this.repeatState.delete(code);
-			clearKeyPressRecord(code);
-			return false;
-		}
-		let entry = this.repeatState.get(code);
-		if (!entry) {
-			entry = { cooldown: constants.INITIAL_REPEAT_DELAY };
-			this.repeatState.set(code, entry);
-		}
-		if (shouldAcceptKeyPressGlobal(code, state)) {
-			entry.cooldown = constants.INITIAL_REPEAT_DELAY;
-			return true;
-		}
-		entry.cooldown -= deltaSeconds;
-		if (entry.cooldown <= 0) {
-			entry.cooldown = constants.REPEAT_INTERVAL;
-			return true;
-		}
-		this.repeatState.set(code, entry);
-		return false;
+	private shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean {
+		return this.input.shouldRepeatPublic(keyboard, code, deltaSeconds);
 	}
 
-	private applyInputOverrides(active: boolean): void {
-		const input = $.input;
-		input.setDebugHotkeysPaused(active);
-		for (let i = 0; i < this.captureKeys.length; i++) {
-			input.setKeyboardCapture(this.captureKeys[i], active);
-		}
-	}
+// Input overrides moved to InputController
 }
