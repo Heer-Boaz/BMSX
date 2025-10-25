@@ -580,6 +580,7 @@ export class BmsxConsoleRuntime extends Service {
 			primaryAssetId,
 			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
 			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
+			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
 		});
 		this.flushLuaWarnings();
 	}
@@ -3085,6 +3086,10 @@ export class BmsxConsoleRuntime extends Service {
 			return a.path.localeCompare(b.path);
 		});
 		return symbols;
+	}
+
+	public listLuaBuiltinFunctions(): string[] {
+		return Array.from(BmsxConsoleRuntime.LUA_BUILTIN_FUNCTIONS);
 	}
 
 	public listAllLuaSymbols(): ConsoleLuaSymbolEntry[] {

@@ -85,6 +85,7 @@ export type ConsoleEditorOptions = {
 	primaryAssetId: string | null;
 	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
+	listBuiltinLuaFunctions: () => string[];
 };
 
 export type Position = { row: number; column: number };
@@ -159,7 +160,7 @@ type ResourceSearchResult = {
 	matchIndex: number;
 };
 
-type LuaCompletionKind = 'keyword' | 'local' | 'global' | 'api_method' | 'api_property';
+type LuaCompletionKind = 'keyword' | 'local' | 'global' | 'builtin' | 'api_method' | 'api_property';
 
 type LuaCompletionItem = {
 	label: string;
@@ -727,6 +728,7 @@ const COLOR_PARAMETER_HINT_BACKGROUND = COLOR_SEARCH_BACKGROUND;
 const COLOR_PARAMETER_HINT_BORDER = COLOR_SEARCH_OUTLINE;
 const COLOR_PARAMETER_HINT_TEXT = COLOR_SEARCH_TEXT;
 const COLOR_PARAMETER_HINT_ACTIVE = COLOR_STATUS_WARNING;
+const COMPLETION_AUTO_TRIGGER_DELAY_SECONDS = 0.16;
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -740,6 +742,7 @@ export class ConsoleCartEditor {
 	private readonly inspectLuaExpressionFn: (request: ConsoleLuaHoverRequest) => ConsoleLuaHoverResult | null;
 	private readonly listLuaSymbolsFn: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	private readonly listGlobalLuaSymbolsFn: () => ConsoleLuaSymbolEntry[];
+	private readonly listBuiltinLuaFunctionsFn: () => string[];
 	private readonly primaryAssetId: string | null;
 	private hoverTooltip: CodeHoverTooltip | null = null;
 	private lastPointerSnapshot: PointerSnapshot | null = null;
@@ -875,6 +878,8 @@ export class ConsoleCartEditor {
 	private createResourceError: string | null = null;
 	private createResourceWorking = false;
 	private lastCreateResourceDirectory: string | null = null;
+	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
+	private suppressNextAutoCompletion = false;
 	private symbolCatalog: SymbolCatalogEntry[] = [];
 	private symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
 	private symbolSearchMatches: SymbolSearchResult[] = [];
@@ -1062,12 +1067,13 @@ export class ConsoleCartEditor {
 		this.saveSourceFn = options.saveSource;
 		this.listResourcesFn = options.listResources;
 		this.loadLuaResourceFn = options.loadLuaResource;
-		this.saveLuaResourceFn = options.saveLuaResource;
-		this.createLuaResourceFn = options.createLuaResource;
-		this.inspectLuaExpressionFn = options.inspectLuaExpression;
-		this.listLuaSymbolsFn = options.listLuaSymbols;
-		this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
-		this.primaryAssetId = options.primaryAssetId;
+	this.saveLuaResourceFn = options.saveLuaResource;
+	this.createLuaResourceFn = options.createLuaResource;
+	this.inspectLuaExpressionFn = options.inspectLuaExpression;
+	this.listLuaSymbolsFn = options.listLuaSymbols;
+	this.listGlobalLuaSymbolsFn = options.listGlobalLuaSymbols;
+	this.listBuiltinLuaFunctionsFn = options.listBuiltinLuaFunctions;
+	this.primaryAssetId = options.primaryAssetId;
 		if ($.debug) {
 			this.listResourcesFn();
 		}
@@ -1637,6 +1643,7 @@ export class ConsoleCartEditor {
 			return;
 		}
 		this.handleEditorInput(keyboard, deltaSeconds);
+		this.processPendingCompletion(deltaSeconds);
 		if (this.searchQuery.length === 0) {
 			this.lastSearchVersion = this.textVersion;
 		} else if (this.searchActive && this.textVersion !== this.lastSearchVersion) {
@@ -5835,8 +5842,12 @@ export class ConsoleCartEditor {
 					if (prevSegment && prevSegment.row === segment.row) {
 						this.cursorRow = prevSegment.row;
 						const prevLine = this.lines[prevSegment.row] ?? '';
-						const endColumn = Math.max(prevSegment.endColumn, prevSegment.startColumn);
-						this.cursorColumn = clamp(endColumn, 0, prevLine.length);
+						const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
+						const hasMoreBefore = prevEnd > prevSegment.startColumn;
+						const targetColumn = hasMoreBefore && prevEnd < prevLine.length
+							? Math.max(prevSegment.startColumn, prevEnd - 1)
+							: Math.min(prevEnd, prevLine.length);
+						this.cursorColumn = clamp(targetColumn, 0, prevLine.length);
 						moved = true;
 					}
 				}
@@ -5856,7 +5867,8 @@ export class ConsoleCartEditor {
 					const nextSegment = this.visualIndexToSegment(visualIndex + 1);
 					if (nextSegment && nextSegment.row === segment.row) {
 						this.cursorRow = nextSegment.row;
-						this.cursorColumn = clamp(nextSegment.startColumn, 0, (this.lines[nextSegment.row] ?? '').length);
+						const nextLine = this.lines[nextSegment.row] ?? '';
+						this.cursorColumn = clamp(nextSegment.startColumn, 0, nextLine.length);
 						moved = true;
 					}
 				}
@@ -7442,7 +7454,7 @@ export class ConsoleCartEditor {
 		const wrapBounds = this.topBarButtonBounds.wrap;
 		api.rectfill(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, wrapFill);
 		api.rect(wrapBounds.left, wrapBounds.top, wrapBounds.right, wrapBounds.bottom, COLOR_HEADER_BUTTON_BORDER);
-		const wrapLabel = 'WW';
+		const wrapLabel = 'w';
 		const wrapLabelWidth = this.measureText(wrapLabel);
 		const wrapLabelX = wrapBounds.left + Math.max(1, Math.floor((iconButtonSize - wrapLabelWidth) / 2));
 		const wrapLabelY = wrapBounds.top + HEADER_BUTTON_PADDING_Y;
@@ -8333,13 +8345,40 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	}
 
 	private toggleWordWrap(): void {
-		this.wordWrapEnabled = !this.wordWrapEnabled;
-		this.scrollColumn = 0;
+		this.ensureVisualLines();
+		const previousWrap = this.wordWrapEnabled;
+		const previousTopIndex = clamp(this.scrollRow, 0, this.visualLines.length > 0 ? this.visualLines.length - 1 : 0);
+		const previousTopSegment = this.visualIndexToSegment(previousTopIndex);
+		const anchorRow = previousTopSegment ? previousTopSegment.row : this.cursorRow;
+		const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
+		const anchorColumnForUnwrap = previousTopSegment
+			? (previousWrap ? previousTopSegment.startColumn : this.scrollColumn)
+			: this.scrollColumn;
+		const previousCursorRow = this.cursorRow;
+		const previousCursorColumn = this.cursorColumn;
+		const previousDesiredColumn = this.desiredColumn;
+
+		this.wordWrapEnabled = !previousWrap;
 		this.cursorRevealSuspended = false;
 		this.invalidateVisualLines();
 		this.ensureVisualLines();
-		this.ensureCursorVisible();
+
+		this.cursorRow = clamp(previousCursorRow, 0, this.lines.length > 0 ? this.lines.length - 1 : 0);
+		const currentLine = this.lines[this.cursorRow] ?? '';
+		this.cursorColumn = clamp(previousCursorColumn, 0, currentLine.length);
+		this.desiredColumn = previousDesiredColumn;
+
+		if (this.wordWrapEnabled) {
+			this.scrollColumn = 0;
+			const anchorVisualIndex = this.positionToVisualIndex(anchorRow, anchorColumnForWrap);
+			this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
+		} else {
+			this.scrollColumn = clamp(anchorColumnForUnwrap, 0, this.computeMaximumScrollColumn());
+			const anchorVisualIndex = this.positionToVisualIndex(anchorRow, this.scrollColumn);
+			this.scrollRow = clamp(anchorVisualIndex, 0, Math.max(0, this.getVisualLineCount() - this.visibleRowCount()));
+		}
 		this.lastPointerRowResolution = null;
+		this.ensureCursorVisible();
 		const message = this.wordWrapEnabled ? 'Word wrap enabled' : 'Word wrap disabled';
 		this.showMessage(message, COLOR_STATUS_TEXT, 2.5);
 	}
@@ -10327,10 +10366,17 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 	}
 
 	private handlePostEditMutation(): void {
-	this.invalidateLocalCompletionCacheForActiveContext();
-	this.cachedGlobalCompletionItems = null;
-	this.updateCompletionSessionAfterMutation(this.pendingEditContext);
+		const editContext = this.pendingEditContext;
 		this.pendingEditContext = null;
+		this.invalidateLocalCompletionCacheForActiveContext();
+		this.cachedGlobalCompletionItems = null;
+		if (this.suppressNextAutoCompletion) {
+			this.suppressNextAutoCompletion = false;
+			this.cancelPendingCompletion();
+			this.refreshParameterHint();
+			return;
+		}
+		this.updateCompletionSessionAfterMutation(editContext);
 		this.refreshParameterHint();
 	}
 
@@ -10525,12 +10571,12 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 	}
 
 	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
-	if (context.kind === 'member') {
-		if (context.objectName.toLowerCase() === 'api') {
-			return ConsoleCartEditor.API_COMPLETION_DATA.items.slice();
+		if (context.kind === 'member') {
+			if (context.objectName.toLowerCase() === 'api') {
+				return ConsoleCartEditor.API_COMPLETION_DATA.items.slice();
+			}
+			return [];
 		}
-		return [];
-	}
 		const registry = new Map<string, LuaCompletionItem>();
 		const register = (item: LuaCompletionItem): void => {
 			if (!registry.has(item.sortKey)) {
@@ -10548,6 +10594,10 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		const globalItems = this.getGlobalCompletionItems();
 		for (let i = 0; i < globalItems.length; i += 1) {
 			register(globalItems[i]);
+		}
+		const builtinItems = this.getBuiltinCompletionItems();
+		for (let i = 0; i < builtinItems.length; i += 1) {
+			register(builtinItems[i]);
 		}
 		const combined = Array.from(registry.values());
 		combined.sort((a, b) => a.label.localeCompare(b.label));
@@ -10603,6 +10653,40 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		return items;
 	}
 
+	private getBuiltinCompletionItems(): LuaCompletionItem[] {
+		let names: string[];
+		try {
+			names = this.listBuiltinLuaFunctionsFn();
+		} catch {
+			return [];
+		}
+		if (!Array.isArray(names) || names.length === 0) {
+			return [];
+		}
+		const seen = new Set<string>();
+		const items: LuaCompletionItem[] = [];
+		for (let i = 0; i < names.length; i += 1) {
+			const name = names[i];
+			if (typeof name !== 'string' || name.length === 0) {
+				continue;
+			}
+			const normalized = name.trim();
+			if (normalized.length === 0 || seen.has(normalized)) {
+				continue;
+			}
+			seen.add(normalized);
+			items.push({
+				label: normalized,
+				insertText: normalized,
+				sortKey: `builtin:${normalized}`,
+				kind: 'builtin',
+				detail: 'Lua builtin',
+			});
+		}
+		items.sort((a, b) => a.label.localeCompare(b.label));
+		return items;
+	}
+
 	private buildSymbolCompletionItems(entries: ConsoleLuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
 		if (entries.length === 0) {
 			return [];
@@ -10654,46 +10738,66 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		}
 	}
 
-	private shouldAutoTriggerCompletion(text: string): boolean {
-		if (text.length !== 1) {
-			return false;
+	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
+		if (!edit || edit.kind === 'delete') {
+			return null;
 		}
-		const ch = text;
-		if (ch === '.' || ch === ':') {
-			return true;
+		if (edit.text.length === 0) {
+			return null;
 		}
-		return this.isWordChar(ch);
+		const lastChar = edit.text.charAt(edit.text.length - 1);
+		if (context.kind === 'member') {
+			if (lastChar === '.' || lastChar === ':') {
+				return 'punctuation';
+			}
+			if (this.isWordChar(lastChar)) {
+				return 'typing';
+			}
+			return null;
+		}
+		// Global context
+		if (!this.isWordChar(lastChar)) {
+			return null;
+		}
+		if (context.prefix.length === 0) {
+			return null;
+		}
+		return 'typing';
 	}
 
-	private updateCompletionSessionAfterMutation(context: EditContext | null): void {
+	private updateCompletionSessionAfterMutation(edit: EditContext | null): void {
 		if (!this.isCodeTabActive()) {
 			this.closeCompletionSession();
 			return;
 		}
 		const analyzed = this.analyzeCompletionContext();
-	if (!this.completionSession) {
-		if (!context || !analyzed) {
+		if (this.completionSession) {
+			this.cancelPendingCompletion();
+			if (!analyzed) {
+				this.closeCompletionSession();
+				return;
+			}
+			this.refreshCompletionSessionFromContext(analyzed);
 			return;
 		}
-		if (!this.shouldAutoTriggerCompletion(context.text)) {
+		if (!edit || !analyzed) {
+			this.cancelPendingCompletion();
 			return;
 		}
-		const trigger: CompletionTrigger = (context.text === '.' || context.text === ':') ? 'punctuation' : 'typing';
-		this.openCompletionSessionFromContext(analyzed, trigger);
-		return;
+		const trigger = this.determineAutoCompletionTrigger(analyzed, edit);
+		if (!trigger) {
+			this.cancelPendingCompletion();
+			return;
+		}
+		this.pendingCompletionRequest = {
+			context: analyzed,
+			trigger,
+			elapsed: 0,
+		};
 	}
-	if (context && context.kind === 'insert' && !this.shouldAutoTriggerCompletion(context.text)) {
-		this.closeCompletionSession();
-		return;
-	}
-	if (!analyzed) {
-		this.closeCompletionSession();
-		return;
-	}
-	this.refreshCompletionSessionFromContext(analyzed);
-}
 
 	private openCompletionSessionFromContext(context: CompletionContext, _trigger: CompletionTrigger): void {
+		this.cancelPendingCompletion();
 		const items = this.collectCompletionItems(context);
 		if (items.length === 0) {
 			this.completionSession = null;
@@ -10814,9 +10918,14 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 		return filtered;
 	}
 
-private closeCompletionSession(): void {
-	this.completionSession = null;
-}
+	private closeCompletionSession(): void {
+		this.completionSession = null;
+		this.cancelPendingCompletion();
+	}
+
+	private cancelPendingCompletion(): void {
+		this.pendingCompletionRequest = null;
+	}
 
 private moveCompletionSelection(delta: number): void {
 	const session = this.completionSession;
@@ -10838,11 +10947,11 @@ private moveCompletionSelection(delta: number): void {
 	this.ensureCompletionSelectionVisible(session);
 }
 
-private ensureCompletionSelectionVisible(session: CompletionSession): void {
-	if (session.selectionIndex < 0) {
-		session.displayOffset = 0;
-		return;
-	}
+	private ensureCompletionSelectionVisible(session: CompletionSession): void {
+		if (session.selectionIndex < 0) {
+			session.displayOffset = 0;
+			return;
+		}
 	const visible = session.maxVisibleItems;
 	let offset = session.displayOffset;
 	if (session.selectionIndex < offset) {
@@ -10862,6 +10971,55 @@ private ensureCompletionSelectionVisible(session: CompletionSession): void {
 	session.displayOffset = offset;
 }
 
+	private completionContextsCompatible(expected: CompletionContext, actual: CompletionContext): boolean {
+		if (expected.kind !== actual.kind) {
+			return false;
+		}
+		if (expected.kind === 'member' && actual.kind === 'member') {
+			if (expected.operator !== actual.operator) {
+				return false;
+			}
+			if (expected.objectName.toLowerCase() !== actual.objectName.toLowerCase()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private processPendingCompletion(deltaSeconds: number): void {
+		const pending = this.pendingCompletionRequest;
+		if (!pending) {
+			return;
+		}
+		if (!this.isCodeTabActive()) {
+			this.cancelPendingCompletion();
+			return;
+		}
+		if (this.completionSession) {
+			this.cancelPendingCompletion();
+			return;
+		}
+		pending.elapsed += deltaSeconds;
+		if (pending.elapsed < COMPLETION_AUTO_TRIGGER_DELAY_SECONDS) {
+			return;
+		}
+		const analyzed = this.analyzeCompletionContext();
+		if (!analyzed) {
+			this.cancelPendingCompletion();
+			return;
+		}
+		if (!this.completionContextsCompatible(pending.context, analyzed)) {
+			this.cancelPendingCompletion();
+			return;
+		}
+		if (pending.trigger === 'typing' && analyzed.kind === 'global' && analyzed.prefix.length === 0) {
+			this.cancelPendingCompletion();
+			return;
+		}
+		this.openCompletionSessionFromContext(analyzed, pending.trigger);
+		this.pendingCompletionRequest = null;
+	}
+
 private acceptSelectedCompletion(): void {
 	const session = this.completionSession;
 	if (!session) {
@@ -10877,32 +11035,38 @@ private acceptSelectedCompletion(): void {
 	}
 	const item = session.filteredItems[index];
 	const addParentheses = item.kind === 'api_method';
-	this.applyCompletionItem(session, item, addParentheses);
+	const freshContext = this.analyzeCompletionContext();
+	const effectiveContext = freshContext && this.completionContextsCompatible(session.context, freshContext)
+		? freshContext
+		: session.context;
+	this.applyCompletionItemForContext(effectiveContext, item, addParentheses);
 	this.closeCompletionSession();
 }
 
-private applyCompletionItem(session: CompletionSession, item: LuaCompletionItem, addParentheses: boolean): void {
-	const row = session.context.row;
-	if (row < 0 || row >= this.lines.length) {
-		return;
-	}
-	const replaceStart = session.context.replaceFromColumn;
-	const replaceEnd = session.context.replaceToColumn;
+private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
+	const row = clamp(context.row, 0, Math.max(0, this.lines.length - 1));
+	const line = this.lines[row] ?? '';
+	const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
+	const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
 	this.cursorRow = row;
 	this.cursorColumn = replaceEnd;
 	this.selectionAnchor = { row, column: replaceStart };
+	this.suppressNextAutoCompletion = true;
 	let insertion = item.insertText;
 	if (addParentheses) {
 		insertion = `${item.insertText}()`;
 	}
 	this.replaceSelectionWith(insertion);
 	if (addParentheses) {
+		this.cursorRow = row;
 		this.cursorColumn = replaceStart + item.insertText.length + 1;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.revealCursor();
+	} else {
+		this.cursorRow = row;
+		this.cursorColumn = replaceStart + insertion.length;
 	}
-	this.onCursorMoved();
+	this.updateDesiredColumn();
+	this.resetBlink();
+	this.revealCursor();
 }
 
 private handleCompletionKeybindings(
@@ -10995,11 +11159,12 @@ private handleCompletionKeybindings(
 	return false;
 }
 
-private onCursorMoved(): void {
-	if (this.completionSession) {
-		const context = this.analyzeCompletionContext();
-		if (!context) {
-			this.closeCompletionSession();
+	private onCursorMoved(): void {
+		this.cancelPendingCompletion();
+		if (this.completionSession) {
+			const context = this.analyzeCompletionContext();
+			if (!context) {
+				this.closeCompletionSession();
 			} else {
 				this.refreshCompletionSessionFromContext(context);
 			}
@@ -11182,11 +11347,17 @@ private onCursorMoved(): void {
 		this.cursorRow = segment.row;
 		this.cursorColumn = clamp(targetColumn, 0, line.length);
 		if (this.wordWrapEnabled) {
+			const hasNextSegmentSameRow = (clampedIndex + 1 < this.visualLines.length)
+				&& this.visualLines[clampedIndex + 1].row === segment.row;
+			const segmentEnd = Math.max(segment.endColumn, segment.startColumn);
 			if (this.cursorColumn < segment.startColumn) {
 				this.cursorColumn = segment.startColumn;
 			}
-			if (segment.endColumn >= segment.startColumn && this.cursorColumn > segment.endColumn) {
-				this.cursorColumn = Math.min(segment.endColumn, line.length);
+			if (segmentEnd >= segment.startColumn && this.cursorColumn > segmentEnd) {
+				this.cursorColumn = Math.min(segmentEnd, line.length);
+			}
+			if (hasNextSegmentSameRow && this.cursorColumn >= segmentEnd) {
+				this.cursorColumn = Math.max(segment.startColumn, segmentEnd - 1);
 			}
 		}
 		this.updateDesiredColumn();
