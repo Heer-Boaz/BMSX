@@ -1141,6 +1141,11 @@ export class ConsoleCartEditor {
 
 	private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
 		this.selectResourceInPanel(descriptor);
+		if (descriptor.type === 'atlas') {
+			this.showMessage('Atlas resources cannot be previewed in the console editor.', COLOR_STATUS_WARNING, 3.2);
+			this.focusEditorFromResourcePanel();
+			return;
+		}
 		if (descriptor.type === 'lua') {
 			this.openLuaCodeTab(descriptor);
 		} else {
