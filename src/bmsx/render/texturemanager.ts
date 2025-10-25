@@ -213,6 +213,9 @@ export class TextureManager implements RegisterablePersistent {
 				if (firstProvidedIndex >= 0) {
 					// await the first provided to know size (it's safe to await promises multiple times)
 					const firstImg = await (faceLoaders[firstProvidedIndex]) as TextureSource;
+					if (firstImg.width !== firstImg.height) {
+						throw new Error(`[TextureManager] Cubemap first face not square: ${firstImg.width}x${firstImg.height}`);
+					}
 					targetSize = Math.max(1, firstImg.width, firstImg.height);
 				}
 
@@ -221,6 +224,15 @@ export class TextureManager implements RegisterablePersistent {
 
 				const faces = await Promise.all(promises) as
 					[TextureSource, TextureSource, TextureSource, TextureSource, TextureSource, TextureSource];
+				for (let i = 0; i < 6; i++) {
+					const f = faces[i];
+					if (f.width !== f.height) {
+						throw new Error(`[TextureManager] Cubemap face ${i} not square: ${f.width}x${f.height}`);
+					}
+					if (f.width !== targetSize || f.height !== targetSize) {
+						throw new Error(`[TextureManager] Cubemap face ${i} size mismatch. Expected ${targetSize}x${targetSize}, got ${f.width}x${f.height}`);
+					}
+				}
 				return this.backend!.createCubemapFromSources(faces, desc);
 			}, assetBarrier, `cubemap:${name}`);
 		} else {
@@ -232,6 +244,9 @@ export class TextureManager implements RegisterablePersistent {
 				let size = 1;
 				if (firstProvidedIndex >= 0) {
 					const firstImg = await (faceLoaders[firstProvidedIndex] as Promise<TextureSource>);
+					if (firstImg.width !== firstImg.height) {
+						throw new Error(`[TextureManager] Cubemap first face not square: ${firstImg.width}x${firstImg.height}`);
+					}
 					size = Math.max(1, firstImg.width, firstImg.height);
 				}
 
@@ -241,6 +256,9 @@ export class TextureManager implements RegisterablePersistent {
 				const uploadPromises: Promise<void>[] = faceLoaders.map((p, idx) => {
 					if (p != null) {
 						return (p as Promise<TextureSource>).then(img => {
+							if (img.width !== size || img.height !== size) {
+								throw new Error(`[TextureManager] Cubemap face ${idx} size mismatch. Expected ${size}x${size}, got ${img.width}x${img.height}`);
+							}
 							this.backend!.uploadCubemapFace(cubemap, idx, img);
 						});
 					} else {
@@ -308,7 +326,7 @@ export class TextureManager implements RegisterablePersistent {
 
 	public async loadModelTextureFromBuffer(buffer: ArrayBuffer, identifier: ModelTextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
 		const key = this.makeModelBufferKey(identifier);
-		return this.loadAndCacheTexture(key, () => this.fromBuffer('', buffer), desc);
+		return this.loadAndCacheTexture(key, () => this.fromBuffer(key, buffer), desc);
 	}
 
 	public async fetchModelTextureFromUri(uri: string, _identifier: ModelTextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
@@ -324,7 +342,14 @@ export class TextureManager implements RegisterablePersistent {
 	async fromBuffer(uri: string, buffer?: ArrayBuffer, options?: { flipY?: boolean; }): Promise<TextureSource> {
 		let entry = this.imageCache.get(uri);
 		if (entry) {
-			if (entry.bitmap) return entry.bitmap;
+			if (entry.bitmap) {
+				// Closed ImageBitmaps report zero dimensions; drop them so we can re-decode.
+				if (entry.bitmap.width === 0 || entry.bitmap.height === 0) {
+					entry.bitmap = undefined;
+				} else {
+					return entry.bitmap;
+				}
+			}
 			if (entry.promise) return entry.promise;
 		} else {
 			entry = { bitmap: undefined, promise: undefined, refCount: 0 };

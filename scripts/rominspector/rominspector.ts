@@ -9,7 +9,7 @@ import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer } from '../bootrom/bootresources';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, loadModelFromBuffer as loadGLTFModelFromBuffer, parseMetaFromBuffer, loadResources } from '../bootrom/bootresources';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 
@@ -567,7 +567,50 @@ async function main() {
 						metadataLines.push(`${key}: ${JSON.stringify(value)}`);
 					}
 				} else {
-					asciiArt = generateAsciiArtFromImageBuffer(selected.buffer, getModalWidth());
+					// Prefer embedded PNG slice for non-atlassed images
+					const hasRange = Number.isFinite(selected.start as any) && Number.isFinite(selected.end as any) && selected.end > selected.start;
+					let rendered = false;
+					if (hasRange) {
+						try {
+							// @ts-ignore
+							const buf: Buffer = Buffer.from((rombin as any).slice(selected.start, selected.end));
+							const png = PNG.sync.read(buf);
+							const sizeString = `Size: ${png.width}x${png.height}\n`;
+							if (png.width <= PER_PIXEL_RENDERING_THRESHOLD && png.height <= PER_PIXEL_RENDERING_THRESHOLD) {
+								asciiArt = sizeString + generatePixelPerfectAsciiArt(png.data, png.width, png.height);
+							} else {
+								asciiArt = sizeString + generateBrailleAsciiArt(png.data, png.width, png.height, getModalWidth());
+							}
+							rendered = true;
+						} catch { /* fall back below */ }
+					}
+					if (!rendered) {
+						// Fallback: reconstruct via bootrom loader (populates RomImgAsset._imgbin)
+						try {
+							const rom = await loadResources(
+								// @ts-ignore
+								rombin as any,
+								{ loadImageFromBuffer: async (ab: ArrayBuffer) => PNG.sync.read(Buffer.from(ab.slice(0))) }
+							);
+							const imgAsset = rom.img[String(selected.resid)];
+							// @ts-ignore
+							const png = imgAsset?._imgbin as { width: number, height: number, data: Buffer } | undefined;
+							if (png && png.data) {
+								const sizeString = `Size: ${png.width}x${png.height}\n`;
+								if (png.width <= PER_PIXEL_RENDERING_THRESHOLD && png.height <= PER_PIXEL_RENDERING_THRESHOLD) {
+									asciiArt = sizeString + generatePixelPerfectAsciiArt(png.data, png.width, png.height);
+								} else {
+									asciiArt = sizeString + generateBrailleAsciiArt(png.data, png.width, png.height, getModalWidth());
+								}
+								rendered = true;
+							}
+						} catch (e: any) {
+							asciiArt = `[Error generating ASCII art from image: ${e?.message ?? e}]`;
+						}
+					}
+					if (!rendered) {
+						asciiArt = '[No PNG buffer in ROM for this image and fallback decode failed.]';
+					}
 					if (imgmeta.hitpolygons?.original && imgmeta.width && imgmeta.height) {
 						asciiArt += `\n{yellow-fg}HitPolygons (convex pieces) overlay:{/yellow-fg}\n`;
 						asciiArt += generateOverlayAscii(imgmeta.width, imgmeta.height, imgmeta.hitpolygons.original, getModalWidth());

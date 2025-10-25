@@ -1003,7 +1003,9 @@ export async function generateRomAssets(resources: Resource[]) {
 				const imgmeta = buildImgMeta(res);
 				let baseAsset: RomAsset;
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-					baseAsset = { resid, type, imgmeta, buffer: undefined, sourcePath };
+					// Preserve raw image buffer for images explicitly marked to skip atlas (@noatlas)
+					const keepOriginal = !!(res as any).skipAtlas;
+					baseAsset = { resid, type, imgmeta, buffer: keepOriginal ? buffer : undefined, sourcePath };
 				} else {
 					baseAsset = { resid, type, imgmeta, buffer, sourcePath };
 				}
