@@ -39,7 +39,8 @@ import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderStatusBar } from './render_status_bar';
 import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderLineJumpBar } from './render_inline_bars';
-import { renderResourcePanel, type ResourcePanelHost } from './render_resource_panel';
+// Resource panel rendering is handled via ResourcePanelController
+import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
 import type {
 	CachedHighlight,
@@ -260,18 +261,16 @@ export class ConsoleCartEditor {
 	private tabs: EditorTabDescriptor[] = [];
 	private activeTabId: string | null = null;
 	private resourceBrowserItems: ResourceBrowserItem[] = [];
-	private resourceBrowserScroll = 0;
 	private resourceBrowserSelectionIndex = -1;
-	private resourceBrowserHoverIndex = -1;
+	// removed legacy hover field; hover state is owned by ResourcePanelController
 	private resourcePanelVisible = false;
 	private resourcePanelFocused = false;
-	private resourcePanelFilterMode: 'lua_only' | 'all' = 'lua_only';
 	private resourcePanelResourceCount = 0;
 	private pendingResourceSelectionAssetId: string | null = null;
 	private resourcePanelWidthRatio: number | null = null;
 	private resourcePanelResizing = false;
-	private resourceBrowserHorizontalScroll = 0;
-	private resourceBrowserMaxLineWidth = 0;
+	// max line width computed by ResourcePanelController
+	private readonly resourcePanel: ResourcePanelController;
 	private codeVerticalScrollbarVisible = false;
 	private codeHorizontalScrollbarVisible = false;
 	private cachedVisibleRowCount = 1;
@@ -337,6 +336,25 @@ export class ConsoleCartEditor {
 			viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
 		};
 		this.scrollbarController = new ScrollbarController(this.scrollbars as any);
+			// Initialize resource panel controller
+			this.resourcePanel = new ResourcePanelController({
+				getViewportWidth: () => this.viewportWidth,
+				getViewportHeight: () => this.viewportHeight,
+				getBottomMargin: () => this.bottomMargin,
+				codeViewportTop: () => this.codeViewportTop(),
+				lineHeight: this.lineHeight,
+				charAdvance: this.charAdvance,
+				measureText: (t) => this.measureText(t),
+				drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+				drawColoredText: (a, t, colors, x, y) => this.drawColoredText(a, t, colors, x, y),
+				drawRectOutlineColor: (a, l, t, r, b, col) => this.drawRectOutlineColor(a, l, t, r, b, col),
+				playerIndex: this.playerIndex,
+				listResources: () => this.listResourcesStrict(),
+				openLuaCodeTab: (d) => this.openLuaCodeTab(d),
+				openResourceViewerTab: (d) => this.openResourceViewerTab(d),
+				focusEditorFromResourcePanel: () => this.focusEditorFromResourcePanel(),
+				showMessage: (text, color, duration) => this.showMessage(text, color, duration),
+			}, { resourceVertical: this.scrollbars.resourceVertical, resourceHorizontal: this.scrollbars.resourceHorizontal });
 		// Initialize completion/intellisense controller
 		this.completion = new CompletionController({
 			getPlayerIndex: () => this.playerIndex,
@@ -714,27 +732,7 @@ export class ConsoleCartEditor {
 		throw new Error(`[ConsoleCartEditor] Unable to resolve chunk '${normalizedTarget}' to a resource.`);
 	}
 
-	private resourceDescriptorMatchesFilter(descriptor: ConsoleResourceDescriptor): boolean {
-		if (this.resourcePanelFilterMode === 'all') {
-			return true;
-		}
-		if (descriptor.type === 'lua') {
-			return true;
-		}
-		const path = descriptor.path;
-		if (typeof path === 'string' && path.length > 0) {
-			if (path.toLowerCase().endsWith('.lua')) {
-				return true;
-			}
-		}
-		const assetId = descriptor.assetId;
-		if (typeof assetId === 'string' && assetId.length > 0) {
-			if (assetId.toLowerCase().endsWith('.lua')) {
-				return true;
-			}
-		}
-		return false;
-	}
+	// resourceDescriptorMatchesFilter removed; controller owns filtering
 
 	private openResourceDescriptor(descriptor: ConsoleResourceDescriptor): void {
 		this.selectResourceInPanel(descriptor);
@@ -1160,7 +1158,6 @@ export class ConsoleCartEditor {
 			}
 		}
 		if (this.resourcePanelVisible) {
-			this.updateResourceBrowserMetrics();
 			this.resourceBrowserEnsureSelectionVisible();
 		}
 	}
@@ -1621,7 +1618,9 @@ export class ConsoleCartEditor {
 
 	private handleEditorInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 		if (this.resourcePanelVisible && this.resourcePanelFocused) {
-			this.handleResourceBrowserKeyboard(keyboard, deltaSeconds);
+			this.resourcePanel.handleKeyboard(keyboard, deltaSeconds);
+			const st = this.resourcePanel.getStateForRender();
+			this.resourcePanelFocused = st.focused;
 			return;
 		}
 		if (this.isResourceViewActive()) {
@@ -3156,7 +3155,6 @@ export class ConsoleCartEditor {
 			return;
 		}
 		if (!snapshot.valid) {
-			this.resourceBrowserHoverIndex = -1;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearHoverTooltip();
 			this.clearGotoHoverHighlight();
@@ -3167,19 +3165,13 @@ export class ConsoleCartEditor {
 				this.resourcePanelResizing = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			} else {
-				const viewportWidth = this.viewportWidth > 0 ? this.viewportWidth : 1;
-				const requestedRatio = snapshot.viewportX / viewportWidth;
-				const clampedRatio = this.clampResourcePanelRatio(requestedRatio);
-				const pixelWidth = this.computePanelPixelWidth(clampedRatio);
-				if (pixelWidth <= 0) {
+				const ok = this.resourcePanel.setRatioFromViewportX(snapshot.viewportX, this.viewportWidth);
+				if (!ok) {
 					this.hideResourcePanel();
 				} else {
-					this.resourcePanelWidthRatio = clampedRatio;
 					this.invalidateVisualLines();
-					this.clampResourceBrowserHorizontalScroll();
-					this.resourceBrowserEnsureSelectionVisible();
+					/* hscroll handled inside controller */
 				}
-				this.resourceBrowserHoverIndex = -1;
 				this.resourcePanelFocused = true;
 				this.pointerSelecting = false;
 				this.resetPointerClickTracking();
@@ -3202,7 +3194,6 @@ export class ConsoleCartEditor {
 				this.resourcePanelResizing = true;
 				this.resourcePanelFocused = true;
 				this.pointerSelecting = false;
-				this.resourceBrowserHoverIndex = -1;
 				this.resetPointerClickTracking();
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			}
@@ -3230,48 +3221,47 @@ export class ConsoleCartEditor {
 				return;
 			}
 		}
-		const panelBounds = this.getResourcePanelBounds();
+		const panelBounds = this.resourcePanel.getBounds();
 		const pointerInPanel = this.resourcePanelVisible
 			&& panelBounds !== null
 			&& this.pointInRect(snapshot.viewportX, snapshot.viewportY, panelBounds);
 		if (pointerInPanel) {
-			this.resourcePanelFocused = true;
+			this.resourcePanel.setFocused(true);
 			this.resetPointerClickTracking();
 			this.clearHoverTooltip();
 			const margin = Math.max(4, this.lineHeight);
 			if (snapshot.viewportY < panelBounds.top + margin) {
-				this.scrollResourceBrowser(-1);
+				this.resourcePanel.scrollBy(-1);
 			} else if (snapshot.viewportY >= panelBounds.bottom - margin) {
-				this.scrollResourceBrowser(1);
+				this.resourcePanel.scrollBy(1);
 			}
-			const hoverIndex = this.resourceBrowserIndexAtPosition(snapshot.viewportX, snapshot.viewportY);
-			this.resourceBrowserHoverIndex = hoverIndex;
+			const hoverIndex = this.resourcePanel.indexAtPosition(snapshot.viewportX, snapshot.viewportY);
+			this.resourcePanel.setHoverIndex(hoverIndex);
 			if (hoverIndex >= 0) {
 				if (hoverIndex !== this.resourceBrowserSelectionIndex) {
-					this.resourceBrowserSelectionIndex = hoverIndex;
-					this.resourceBrowserEnsureSelectionVisible();
+					this.resourcePanel.setSelectionIndex(hoverIndex);
 				}
 				if (justPressed) {
-					const item = this.resourceBrowserItems[hoverIndex];
-					if (item && item.descriptor) {
-						this.openResourceDescriptor(item.descriptor);
-						this.resourcePanelFocused = false;
-					}
+					this.resourcePanel.openSelected();
+					this.resourcePanel.setFocused(false);
 				}
 			}
 			if (!snapshot.primaryPressed && hoverIndex === -1) {
-				this.resourceBrowserHoverIndex = -1;
+				this.resourcePanel.setHoverIndex(-1);
 			}
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearGotoHoverHighlight();
+			const s = this.resourcePanel.getStateForRender();
+			this.resourcePanelFocused = s.focused;
+			this.resourceBrowserSelectionIndex = s.selectionIndex;
 			return;
 		}
 		if (justPressed && !pointerInPanel) {
-			this.resourcePanelFocused = false;
+			this.resourcePanel.setFocused(false);
 		}
 		if (this.resourcePanelVisible && !snapshot.primaryPressed) {
-			this.resourceBrowserHoverIndex = -1;
+			this.resourcePanel.setHoverIndex(-1);
 		}
 		if (this.isResourceViewActive()) {
 			this.resetPointerClickTracking();
@@ -3675,18 +3665,17 @@ export class ConsoleCartEditor {
 				break;
 			}
 			case 'resourceVertical': {
-				const capacity = this.resourcePanelLineCapacity();
-				const itemCount = this.resourceBrowserItems.length;
-				const maxScroll = Math.max(0, itemCount - capacity);
-				this.resourceBrowserScroll = clamp(Math.round(scroll), 0, maxScroll);
-				this.resourcePanelFocused = true;
+				this.resourcePanel.setScroll(scroll);
+				this.resourcePanel.setFocused(true);
+				const s = this.resourcePanel.getStateForRender();
+				this.resourcePanelFocused = s.focused;
 				break;
 			}
 			case 'resourceHorizontal': {
-				const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
-				this.resourceBrowserHorizontalScroll = clamp(scroll, 0, maxScroll);
-				this.clampResourceBrowserHorizontalScroll();
-				this.resourcePanelFocused = true;
+				this.resourcePanel.setHScroll(scroll);
+				this.resourcePanel.setFocused(true);
+				const s = this.resourcePanel.getStateForRender();
+				this.resourcePanelFocused = s.focused;
 				break;
 			}
 			case 'viewerVertical': {
@@ -4161,7 +4150,7 @@ export class ConsoleCartEditor {
 				return;
 			}
 		}
-		const panelBounds = this.getResourcePanelBounds();
+		const panelBounds = this.resourcePanel.getBounds();
 		const pointerInPanel = this.resourcePanelVisible
 			&& panelBounds !== null
 			&& pointer
@@ -6030,7 +6019,7 @@ export class ConsoleCartEditor {
 			metadata: this.metadata,
 			dirty: this.dirty,
 			resourcePanelVisible: this.resourcePanelVisible,
-			resourcePanelFilterMode: this.resourcePanelFilterMode,
+			resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
 			topBarButtonBounds: this.topBarButtonBounds,
 		};
 		renderTopBar(api, host);
@@ -6646,20 +6635,13 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	}
 
 	private toggleResourcePanel(): void {
-		if (this.resourcePanelVisible) {
-			this.hideResourcePanel();
-			return;
-		}
-		this.showResourcePanel();
+		// Keep editor/controller visibility in sync by delegating to controller
+		this.resourcePanel.togglePanel();
 	}
 
 	private toggleResourcePanelFilterMode(): void {
-		this.resourcePanelFilterMode = this.resourcePanelFilterMode === 'lua_only' ? 'all' : 'lua_only';
-		if (this.resourcePanelVisible) {
-			this.refreshResourcePanelContents();
-		}
-		const modeLabel = this.resourcePanelFilterMode === 'lua_only' ? 'Lua resources' : 'all resources';
-		this.showMessage(`Files panel: showing ${modeLabel}`, constants.COLOR_STATUS_TEXT, 2.5);
+		// Controller owns filter state and messaging
+		this.resourcePanel.toggleFilterMode();
 	}
 
 	private toggleResolutionMode(): void {
@@ -6720,27 +6702,11 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		runtime.setEditorOverlayResolution(this.resolutionMode);
 	}
 
-	private showResourcePanel(): void {
-		const desiredRatio = this.resourcePanelWidthRatio ?? this.defaultResourcePanelRatio();
-		const clampedRatio = this.clampResourcePanelRatio(desiredRatio);
-		const widthPx = this.computePanelPixelWidth(clampedRatio);
-		if (clampedRatio <= 0 || widthPx <= 0) {
-			this.showMessage('Viewport too small for resource panel.', constants.COLOR_STATUS_WARNING, 3.0);
-			return;
-		}
-		this.resourcePanelWidthRatio = clampedRatio;
-		this.resourcePanelVisible = true;
-		this.resourcePanelResizing = false;
-		this.resourcePanelFocused = true;
-		this.refreshResourcePanelContents();
-		this.invalidateVisualLines();
-	}
+	// showResourcePanel removed; controller handles visibility via toggle/show()
 
 	private hideResourcePanel(): void {
-		if (!this.resourcePanelVisible) {
-			return;
-		}
-		this.resourcePanelVisible = false;
+		// Forward to controller; it resets its internal state
+		this.resourcePanel.hide();
 		this.resourcePanelFocused = false;
 		this.resourcePanelResizing = false;
 		this.resetResourcePanelState();
@@ -7012,93 +6978,19 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 
 	private resetResourcePanelState(): void {
 		this.resourceBrowserItems = [];
-		this.resourceBrowserScroll = 0;
 		this.resourceBrowserSelectionIndex = -1;
-		this.resourceBrowserHoverIndex = -1;
-		this.resourceBrowserHorizontalScroll = 0;
-		this.resourceBrowserMaxLineWidth = 0;
+		// max line width handled by controller
 		this.pendingResourceSelectionAssetId = null;
 		this.resourcePanelResizing = false;
 	}
 
 	private refreshResourcePanelContents(): void {
-		this.resourceBrowserHoverIndex = -1;
-		const previousDescriptor = this.getSelectedResourceDescriptor();
-		const previousAssetId = previousDescriptor ? previousDescriptor.assetId : null;
-		const previousIndex = this.resourceBrowserSelectionIndex;
-		const previousScroll = this.resourceBrowserScroll;
-		let descriptors: ConsoleResourceDescriptor[];
-		try {
-			descriptors = this.listResourcesFn();
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			this.showWarningBanner(`Failed to enumerate resources: ${message}`);
-			this.resourcePanelResourceCount = 0;
-			this.resourceBrowserItems = [{
-				line: `<failed to load resources: ${message}>`,
-				contentStartColumn: 0,
-				descriptor: null,
-			}];
-			this.resourceBrowserScroll = 0;
-			this.resourceBrowserSelectionIndex = 0;
-			this.pendingResourceSelectionAssetId = null;
-			return;
-		}
-		const augmented = descriptors.slice();
-		const rompack = $.rompack;
-		if (rompack && rompack.img) {
-			const atlasKeys = Object.keys(rompack.img).filter(key => key === '_atlas' || key.startsWith('atlas'));
-			for (const key of atlasKeys) {
-				if (augmented.some(entry => entry.assetId === key)) {
-					continue;
-				}
-				augmented.push({ path: `atlas/${key}`, type: 'atlas', assetId: key });
-			}
-		}
-		const filteredDescriptors: ConsoleResourceDescriptor[] = [];
-		for (let index = 0; index < augmented.length; index += 1) {
-			const descriptor = augmented[index];
-			if (this.resourceDescriptorMatchesFilter(descriptor)) {
-				filteredDescriptors.push(descriptor);
-			}
-		}
-		this.resourcePanelResourceCount = filteredDescriptors.length;
-		this.resourceBrowserItems = this.buildResourceBrowserItems(filteredDescriptors);
-		this.updateResourceBrowserMetrics();
-		const targetAssetId = this.pendingResourceSelectionAssetId ?? previousAssetId;
-		let selectionIndex = -1;
-		if (targetAssetId) {
-			const resolved = this.findResourcePanelIndexByAssetId(targetAssetId);
-			if (resolved !== -1) {
-				selectionIndex = resolved;
-				if (this.pendingResourceSelectionAssetId === targetAssetId) {
-					this.pendingResourceSelectionAssetId = null;
-				}
-			}
-		}
-		if (selectionIndex === -1 && previousIndex >= 0 && previousIndex < this.resourceBrowserItems.length) {
-			selectionIndex = previousIndex;
-		}
-		if (selectionIndex === -1 && this.resourceBrowserItems.length > 0) {
-			selectionIndex = 0;
-		}
-		this.resourceBrowserSelectionIndex = selectionIndex;
-		this.updateResourceBrowserMetrics();
-		if (selectionIndex < 0) {
-			this.resourceBrowserScroll = 0;
-			this.resourceBrowserHorizontalScroll = 0;
-			return;
-		}
-		const capacity = this.resourcePanelLineCapacity();
-		if (capacity <= 0) {
-			this.resourceBrowserScroll = 0;
-			this.clampResourceBrowserHorizontalScroll();
-			return;
-		}
-		const maxScroll = Math.max(0, this.resourceBrowserItems.length - capacity);
-		this.resourceBrowserScroll = clamp(previousScroll, 0, maxScroll);
-		this.resourceBrowserEnsureSelectionVisible();
-		this.applyPendingResourceSelection();
+		// New path owned by ResourcePanelController
+		this.resourcePanel.refresh();
+		const s = this.resourcePanel.getStateForRender();
+		this.resourcePanelResourceCount = s.items.length;
+		this.resourceBrowserItems = s.items;
+		this.resourceBrowserSelectionIndex = s.selectionIndex;
 	}
 
 	private enterResourceViewer(tab: EditorTabDescriptor): void {
@@ -7106,110 +6998,16 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		this.closeLineJump(false);
 		this.cursorRevealSuspended = false;
 		tab.dirty = false;
-		this.resourceBrowserHoverIndex = -1;
+		// hover state handled by controller; no-op here
 		if (!tab.resource) {
 			return;
 		}
 		this.resourceViewerClampScroll(tab.resource);
 	}
 
-	private buildResourceBrowserItems(entries: ConsoleResourceDescriptor[]): ResourceBrowserItem[] {
-		const items: ResourceBrowserItem[] = [];
-		if (!entries || entries.length === 0) {
-			const placeholder = this.resourcePanelFilterMode === 'lua_only' ? '<no lua resources>' : '<no resources>';
-			items.push({
-				line: placeholder,
-				contentStartColumn: 0,
-				descriptor: null,
-			});
-			return items;
-		}
-		type ResourceTreeDirectory = {
-			name: string;
-			children: Map<string, ResourceTreeDirectory>;
-			files: ResourceTreeFile[];
-		};
-		type ResourceTreeFile = {
-			name: string;
-			descriptor: ConsoleResourceDescriptor;
-		};
-		const root: ResourceTreeDirectory = { name: '.', children: new Map(), files: [] };
-		for (const entry of entries) {
-			const normalized = entry.path.replace(/\\\\/g, '/');
-			const parts = normalized.split('/').filter(part => part.length > 0 && part !== '.');
-			if (parts.length === 0) {
-				root.files.push({ name: entry.path || entry.assetId, descriptor: entry });
-				continue;
-			}
-			let current = root;
-			for (let index = 0; index < parts.length; index++) {
-				const part = parts[index];
-				const isLeaf = index === parts.length - 1;
-				if (isLeaf) {
-					current.files.push({ name: part, descriptor: entry });
-				} else {
-					let child = current.children.get(part);
-					if (!child) {
-						child = { name: part, children: new Map(), files: [] };
-						current.children.set(part, child);
-					}
-					current = child;
-				}
-			}
-		}
-		items.push({ line: './', contentStartColumn: 0, descriptor: null });
-		const traverse = (directory: ResourceTreeDirectory, prefix: string) => {
-			const childDirs = Array.from(directory.children.values()).sort((a, b) => a.name.localeCompare(b.name));
-			const files = directory.files.slice().sort((a, b) => a.name.localeCompare(b.name));
-			const combined: Array<{ kind: 'dir'; node: ResourceTreeDirectory } | { kind: 'file'; node: ResourceTreeFile }> = [];
-			for (const dir of childDirs) {
-				combined.push({ kind: 'dir', node: dir });
-			}
-			for (const file of files) {
-				combined.push({ kind: 'file', node: file });
-			}
-			for (let index = 0; index < combined.length; index++) {
-				const entry = combined[index];
-				const isLast = index === combined.length - 1;
-				const connector = prefix.length === 0 ? (isLast ? '`-- ' : '|-- ') : (isLast ? '`-- ' : '|-- ');
-				const linePrefix = prefix + connector;
-				const nextPrefix = prefix + (isLast ? '    ' : '|   ');
-				if (entry.kind === 'dir') {
-					const line = `${linePrefix}${entry.node.name}/`;
-					items.push({
-						line,
-						contentStartColumn: linePrefix.length,
-						descriptor: null,
-					});
-					traverse(entry.node, nextPrefix);
-				} else {
-					const descriptor = entry.node.descriptor;
-					const line = `${linePrefix}${entry.node.name}`;
-					items.push({
-						line,
-						contentStartColumn: linePrefix.length,
-						descriptor,
-					});
-				}
-			}
-		};
-		traverse(root, '');
-		return items;
-	}
+	// buildResourceBrowserItems removed; ResourcePanelController owns item tree construction
 
-	private updateResourceBrowserMetrics(): void {
-		let maxWidth = 0;
-		for (const item of this.resourceBrowserItems) {
-			const indent = item.line.slice(0, item.contentStartColumn);
-			const content = item.line.slice(item.contentStartColumn);
-			const width = this.measureText(indent) + this.measureText(content);
-			if (width > maxWidth) {
-				maxWidth = width;
-			}
-		}
-		this.resourceBrowserMaxLineWidth = maxWidth;
-		this.clampResourceBrowserHorizontalScroll();
-	}
+// updateResourceBrowserMetrics removed; controller computes metrics
 
 	private selectResourceInPanel(descriptor: ConsoleResourceDescriptor): void {
 		if (!descriptor.assetId || descriptor.assetId.length === 0) {
@@ -7249,36 +7047,11 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		return -1;
 	}
 
-	private getSelectedResourceDescriptor(): ConsoleResourceDescriptor | null {
-		if (this.resourceBrowserSelectionIndex < 0 || this.resourceBrowserSelectionIndex >= this.resourceBrowserItems.length) {
-			return null;
-		}
-		const item = this.resourceBrowserItems[this.resourceBrowserSelectionIndex];
-		return item.descriptor ?? null;
-	}
+	// getSelectedResourceDescriptor removed; controller + local state provide selection
 
-	private computeResourceBrowserMaxHorizontalScroll(): number {
-		const bounds = this.getResourcePanelBounds();
-		if (!bounds) {
-			return 0;
-		}
-		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-		const capacity = this.resourcePanelLineCapacity();
-		const needsScrollbar = this.resourceBrowserItems.length > capacity;
-		const availableRight = needsScrollbar ? bounds.right - 1 - constants.SCROLLBAR_WIDTH : bounds.right - 1;
-		const availableWidth = Math.max(0, availableRight - contentLeft);
-		if (availableWidth <= 0) {
-			return 0;
-		}
-		const maxScroll = this.resourceBrowserMaxLineWidth - availableWidth;
-		return maxScroll > 0 ? maxScroll : 0;
-	}
+// computeResourceBrowserMaxHorizontalScroll removed; use controller.computeMaxHScroll()
 
-	private clampResourceBrowserHorizontalScroll(): void {
-		const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
-		const current = Number.isFinite(this.resourceBrowserHorizontalScroll) ? this.resourceBrowserHorizontalScroll : 0;
-		this.resourceBrowserHorizontalScroll = clamp(current, 0, maxScroll);
-	}
+	// clampResourceBrowserHorizontalScroll removed; use controller.clampHScroll()
 
 	private createEntryTabContext(): CodeTabContext | null {
 		const assetId = (typeof this.primaryAssetId === 'string' && this.primaryAssetId.length > 0)
@@ -7744,39 +7517,18 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	}
 
 	private getResourcePanelWidth(): number {
-		if (!this.resourcePanelVisible) {
-			return 0;
-		}
-		const ratio = this.clampResourcePanelRatio(this.resourcePanelWidthRatio ?? this.defaultResourcePanelRatio());
-		const width = this.computePanelPixelWidth(ratio);
-		if (width <= 0) {
-			return 0;
-		}
-		this.resourcePanelWidthRatio = ratio;
-		return width;
+		if (!this.resourcePanelVisible) return 0;
+		const bounds = this.resourcePanel.getBounds();
+		return bounds ? Math.max(0, bounds.right - bounds.left) : 0;
 	}
 
-	private getResourcePanelBounds(): RectBounds | null {
-		if (!this.resourcePanelVisible) {
-			return null;
-		}
-		const width = this.getResourcePanelWidth();
-		if (width <= 0) {
-			return null;
-		}
-		const top = this.codeViewportTop();
-		const bottom = this.viewportHeight - this.bottomMargin;
-		if (bottom <= top) {
-			return null;
-		}
-		return { left: 0, top, right: width, bottom };
-	}
+// getResourcePanelBounds removed; use this.resourcePanel.getBounds()
 
 	private isPointerOverResourcePanelDivider(x: number, y: number): boolean {
 		if (!this.resourcePanelVisible) {
 			return false;
 		}
-		const bounds = this.getResourcePanelBounds();
+		const bounds = this.resourcePanel.getBounds();
 		if (!bounds) {
 			return false;
 		}
@@ -7786,172 +7538,48 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		return y >= bounds.top && y <= bounds.bottom && x >= left && x <= right;
 	}
 
-	private resourcePanelLineCapacity(): number {
-		const bounds = this.getResourcePanelBounds();
-		const overlayTop = bounds ? bounds.top : this.codeViewportTop();
-		const overlayBottom = bounds ? bounds.bottom : (this.viewportHeight - this.bottomMargin);
-		let contentHeight = Math.max(0, overlayBottom - overlayTop);
-		let initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
-		if (bounds) {
-			const needsVerticalScrollbar = this.resourceBrowserItems.length > initialCapacity;
-			const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-			const dividerLeft = bounds.right - 1;
-			const availableRight = needsVerticalScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft;
-			const availableWidth = Math.max(0, availableRight - contentLeft);
-			const needsHorizontalScrollbar = this.resourceBrowserMaxLineWidth > availableWidth;
-			if (needsHorizontalScrollbar) {
-				contentHeight = Math.max(0, contentHeight - constants.SCROLLBAR_WIDTH);
-				initialCapacity = Math.max(1, Math.floor(contentHeight / this.lineHeight));
-			}
-		}
-		return initialCapacity;
-	}
+// resourcePanelLineCapacity removed; use this.resourcePanel.lineCapacity()
 
 	private scrollResourceBrowser(amount: number): void {
-		if (!this.resourcePanelVisible) {
-			return;
-		}
-		const capacity = this.resourcePanelLineCapacity();
-		if (capacity <= 0) {
-			this.resourceBrowserScroll = 0;
-			return;
-		}
-		const itemCount = this.resourceBrowserItems.length;
-		const maxScroll = Math.max(0, itemCount - capacity);
-		const next = clamp(this.resourceBrowserScroll + amount, 0, maxScroll);
-		if (next === this.resourceBrowserScroll) {
-			return;
-		}
-		this.resourceBrowserScroll = next;
-		this.resourceBrowserEnsureSelectionVisible();
-		this.clampResourceBrowserHorizontalScroll();
+		if (!this.resourcePanelVisible) return;
+		this.resourcePanel.scrollBy(amount);
+		// controller owns scroll; no local mirror required
 	}
 
-	private scrollResourceBrowserHorizontal(amount: number): void {
-		if (!this.resourcePanelVisible) {
-			return;
-		}
-		if (!Number.isFinite(amount) || amount === 0) {
-			return;
-		}
-		const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
-		if (maxScroll <= 0) {
-			this.resourceBrowserHorizontalScroll = 0;
-			return;
-		}
-		const next = clamp(this.resourceBrowserHorizontalScroll + amount, 0, maxScroll);
-		if (next === this.resourceBrowserHorizontalScroll) {
-			return;
-		}
-		this.resourceBrowserHorizontalScroll = next;
-		this.clampResourceBrowserHorizontalScroll();
-	}
-
-	private resourceBrowserEnsureSelectionVisible(): void {
-		if (!this.resourcePanelVisible) {
-			return;
-		}
-		const index = this.resourceBrowserSelectionIndex;
-		if (index < 0) {
-			return;
-		}
-		const capacity = this.resourcePanelLineCapacity();
-		if (capacity <= 0) {
-			this.resourceBrowserScroll = 0;
-			this.clampResourceBrowserHorizontalScroll();
-			return;
-		}
-		const maxScroll = Math.max(0, this.resourceBrowserItems.length - capacity);
-		if (index < this.resourceBrowserScroll) {
-			this.resourceBrowserScroll = index;
-			this.ensureResourceBrowserSelectionHorizontal(index);
-			return;
-		}
-		const overflow = index - (this.resourceBrowserScroll + capacity - 1);
-		if (overflow > 0) {
-			this.resourceBrowserScroll = Math.min(this.resourceBrowserScroll + overflow, maxScroll);
-		}
-		this.ensureResourceBrowserSelectionHorizontal(index);
-	}
-
-	private ensureResourceBrowserSelectionHorizontal(index: number): void {
-		const bounds = this.getResourcePanelBounds();
-		if (!bounds) {
-			this.resourceBrowserHorizontalScroll = 0;
-			return;
-		}
-		const item = this.resourceBrowserItems[index];
-		if (!item) {
-			return;
-		}
-		const capacity = this.resourcePanelLineCapacity();
-		const needsScrollbar = this.resourceBrowserItems.length > capacity;
-		const contentLeft = bounds.left + constants.RESOURCE_PANEL_PADDING_X;
-		const dividerLeft = bounds.right - 1;
-		const availableRight = Math.max(contentLeft, needsScrollbar ? dividerLeft - constants.SCROLLBAR_WIDTH : dividerLeft);
-		const availableWidth = Math.max(0, availableRight - contentLeft);
-		if (availableWidth <= 0) {
-			this.resourceBrowserHorizontalScroll = 0;
-			return;
-		}
-		const indentText = item.line.slice(0, item.contentStartColumn);
-		const contentText = item.line.slice(item.contentStartColumn);
-		const indentWidth = this.measureText(indentText);
-		const contentWidth = this.measureText(contentText);
-		const textStart = 0;
-		const textEnd = indentWidth + contentWidth;
-		let nextScroll = this.resourceBrowserHorizontalScroll;
-		const margin = this.charAdvance * 2;
-		if (textStart - nextScroll < 0) {
-			nextScroll = Math.max(0, textStart - margin);
-		}
-		if (textEnd - nextScroll > availableWidth) {
-			nextScroll = textEnd - availableWidth + margin;
-		}
-		if (nextScroll < 0 || !Number.isFinite(nextScroll)) {
-			nextScroll = 0;
-		}
-		const maxScroll = this.computeResourceBrowserMaxHorizontalScroll();
-		if (nextScroll > maxScroll) {
-			nextScroll = maxScroll;
-		}
-		this.resourceBrowserHorizontalScroll = nextScroll;
-	}
-
-	private resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
-		const info = viewer.image;
-		if (!info) {
-			return null;
-		}
-		const width = Math.max(1, info.width);
-		const height = Math.max(1, info.height);
-		const bounds = this.getCodeAreaBounds();
-		const totalHeight = Math.max(0, bounds.codeBottom - bounds.codeTop);
-		if (totalHeight <= 0) {
-			return null;
-		}
-		const paddingX = constants.RESOURCE_PANEL_PADDING_X;
-		const contentTop = bounds.codeTop + 2;
-		const availableWidth = Math.max(1, bounds.codeRight - bounds.codeLeft - paddingX * 2);
-		const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
-		const reservedTextHeight = Math.min(totalHeight * 0.45, this.lineHeight * estimatedTextLines);
-		const maxImageHeight = Math.max(this.lineHeight * 2, totalHeight - reservedTextHeight);
-		let scale = Math.min(availableWidth / width, maxImageHeight / height);
-		if (!Number.isFinite(scale) || scale <= 0) {
-			scale = Math.min(availableWidth / width, totalHeight / height);
-			if (!Number.isFinite(scale) || scale <= 0) {
+		private resourceViewerImageLayout(viewer: ResourceViewerState): { left: number; top: number; width: number; height: number; bottom: number; scale: number } | null {
+			const info = viewer.image;
+			if (!info) {
 				return null;
 			}
+			const width = Math.max(1, info.width);
+			const height = Math.max(1, info.height);
+			const bounds = this.getCodeAreaBounds();
+			const totalHeight = Math.max(0, bounds.codeBottom - bounds.codeTop);
+			if (totalHeight <= 0) {
+				return null;
+			}
+			const paddingX = constants.RESOURCE_PANEL_PADDING_X;
+			const contentTop = bounds.codeTop + 2;
+			const availableWidth = Math.max(1, bounds.codeRight - bounds.codeLeft - paddingX * 2);
+			const estimatedTextLines = Math.max(3, Math.min(8, viewer.lines.length + (viewer.error ? 1 : 0)));
+			const reservedTextHeight = Math.min(totalHeight * 0.45, this.lineHeight * estimatedTextLines);
+			const maxImageHeight = Math.max(this.lineHeight * 2, totalHeight - reservedTextHeight);
+			let scale = Math.min(availableWidth / width, maxImageHeight / height);
+			if (!Number.isFinite(scale) || scale <= 0) {
+				scale = Math.min(availableWidth / width, totalHeight / height);
+				if (!Number.isFinite(scale) || scale <= 0) {
+					return null;
+				}
+			}
+			const drawWidth = width * scale;
+			const drawHeight = height * scale;
+			const leftMargin = bounds.codeLeft + paddingX;
+			const centeredOffset = Math.max(0, Math.floor((availableWidth - drawWidth) * 0.5));
+			const left = leftMargin + centeredOffset;
+			const top = contentTop;
+			const bottom = top + drawHeight;
+			return { left, top, width: drawWidth, height: drawHeight, bottom, scale };
 		}
-		const drawWidth = width * scale;
-		const drawHeight = height * scale;
-		const leftMargin = bounds.codeLeft + paddingX;
-		const centeredOffset = Math.max(0, Math.floor((availableWidth - drawWidth) * 0.5));
-		const left = leftMargin + centeredOffset;
-		const top = contentTop;
-		const bottom = top + drawHeight;
-		return { left, top, width: drawWidth, height: drawHeight, bottom, scale };
-	}
 
 	private resourceViewerTextCapacity(viewer: ResourceViewerState): number {
 		const bounds = this.getCodeAreaBounds();
@@ -7984,33 +7612,20 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		}
 	}
 
-	private resourceBrowserMoveSelection(delta: number): void {
-		if (!this.resourcePanelVisible) {
-			return;
-		}
-		const count = this.resourceBrowserItems.length;
-		if (count === 0) {
-			this.resourceBrowserSelectionIndex = -1;
-			return;
-		}
-		let next: number;
-		if (delta === Number.NEGATIVE_INFINITY) {
-			next = 0;
-		} else if (delta === Number.POSITIVE_INFINITY) {
-			next = count - 1;
-		} else {
-			const current = this.resourceBrowserSelectionIndex >= 0 ? this.resourceBrowserSelectionIndex : 0;
-			const step = Math.trunc(delta);
-			next = current + step;
-		}
-		next = clamp(next, 0, count - 1);
-		if (next === this.resourceBrowserSelectionIndex) {
-			return;
-		}
-		this.resourceBrowserSelectionIndex = next;
-		this.resourceBrowserHoverIndex = -1;
-		this.resourceBrowserEnsureSelectionVisible();
+	// Bridge wrappers to the ResourcePanelController (temporary during migration)
+	private resourceBrowserEnsureSelectionVisible(): void {
+		if (!this.resourcePanelVisible) return;
+		this.resourcePanel.ensureSelectionVisiblePublic();
+		// controller owns scroll; no local mirror required
 	}
+
+	private scrollResourceBrowserHorizontal(delta: number): void {
+		if (!this.resourcePanelVisible) return;
+		const s = this.resourcePanel.getStateForRender();
+		this.resourcePanel.setHScroll(s.hscroll + delta);
+	}
+
+// moved to ResourcePanelController
 
 	private scrollResourceViewer(amount: number): void {
 		const viewer = this.getActiveResourceViewer();
@@ -8027,121 +7642,8 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		this.resourceViewerClampScroll(viewer);
 	}
 
-	private resourceBrowserIndexAtPosition(x: number, y: number): number {
-		const bounds = this.getResourcePanelBounds();
-		if (!bounds) {
-			return -1;
-		}
-		if (x < bounds.left || x >= bounds.right) {
-			return -1;
-		}
-		const contentTop = bounds.top + 2;
-		const relativeY = y - contentTop;
-		if (relativeY < 0) {
-			return -1;
-		}
-		const index = this.resourceBrowserScroll + Math.floor(relativeY / this.lineHeight);
-		if (index < 0 || index >= this.resourceBrowserItems.length) {
-			return -1;
-		}
-		return index;
-	}
+// moved to ResourcePanelController
 
-	private openSelectedResourceItem(): void {
-		if (this.resourceBrowserSelectionIndex < 0 || this.resourceBrowserSelectionIndex >= this.resourceBrowserItems.length) {
-			return;
-		}
-		const item = this.resourceBrowserItems[this.resourceBrowserSelectionIndex];
-		if (!item.descriptor) {
-			return;
-		}
-		this.openResourceDescriptor(item.descriptor);
-	}
-
-	private handleResourceBrowserKeyboard(keyboard: KeyboardInput, deltaSeconds: number): void {
-		if (!this.resourcePanelVisible) {
-			return;
-		}
-		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
-		const metaDown = isModifierPressedGlobal(this.playerIndex, 'MetaLeft') || isModifierPressedGlobal(this.playerIndex, 'MetaRight');
-		const shiftDown = isModifierPressedGlobal(this.playerIndex, 'ShiftLeft') || isModifierPressedGlobal(this.playerIndex, 'ShiftRight');
-		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyR')) {
-			consumeKeyboardKey(keyboard, 'KeyR');
-			this.toggleResolutionMode();
-			return;
-		}
-		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'KeyB')) {
-			consumeKeyboardKey(keyboard, 'KeyB');
-			this.toggleResourcePanel();
-			return;
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
-			consumeKeyboardKey(keyboard, 'Escape');
-			this.hideResourcePanel();
-			return;
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
-			consumeKeyboardKey(keyboard, 'Tab');
-			this.resourcePanelFocused = false;
-			this.activateCodeTab();
-			return;
-		}
-		if (this.resourceBrowserItems.length === 0) {
-			return;
-		}
-		const horizontalStep = this.charAdvance * 4;
-		const horizontalMoves: Array<{ key: string; predicate: boolean; delta: number }> = [
-			{ key: 'ArrowLeft', predicate: isKeyJustPressedGlobal(this.playerIndex, 'ArrowLeft') || this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds), delta: -horizontalStep },
-			{ key: 'ArrowRight', predicate: isKeyJustPressedGlobal(this.playerIndex, 'ArrowRight') || this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds), delta: horizontalStep },
-		];
-		for (const entry of horizontalMoves) {
-			if (entry.predicate) {
-				consumeKeyboardKey(keyboard, entry.key);
-				this.scrollResourceBrowserHorizontal(entry.delta);
-				this.resourceBrowserEnsureSelectionVisible();
-				return;
-			}
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
-			consumeKeyboardKey(keyboard, 'Enter');
-			this.openSelectedResourceItem();
-			return;
-		}
-		const moves: Array<{ code: string; action: () => void }> = [
-			{
-				code: 'ArrowUp',
-				action: () => this.resourceBrowserMoveSelection(-1),
-			},
-			{
-				code: 'ArrowDown',
-				action: () => this.resourceBrowserMoveSelection(1),
-			},
-			{
-				code: 'PageUp',
-				action: () => this.resourceBrowserMoveSelection(-this.resourcePanelLineCapacity()),
-			},
-			{
-				code: 'PageDown',
-				action: () => this.resourceBrowserMoveSelection(this.resourcePanelLineCapacity()),
-			},
-			{
-				code: 'Home',
-				action: () => this.resourceBrowserMoveSelection(Number.NEGATIVE_INFINITY),
-			},
-			{
-				code: 'End',
-				action: () => this.resourceBrowserMoveSelection(Number.POSITIVE_INFINITY),
-			},
-		];
-		for (const entry of moves) {
-			const triggered = isKeyJustPressedGlobal(this.playerIndex, entry.code) || this.shouldFireRepeat(keyboard, entry.code, deltaSeconds);
-			if (triggered) {
-				consumeKeyboardKey(keyboard, entry.code);
-				entry.action();
-				return;
-			}
-		}
-	}
 
 	private handleResourceViewerInput(keyboard: KeyboardInput, deltaSeconds: number): void {
 		const viewer = this.getActiveResourceViewer();
@@ -8185,50 +7687,15 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	}
 
 	private drawResourcePanel(api: BmsxConsoleApi): void {
-		// Delegate rendering to external module for better separation of concerns
-		const host = {
-			resourcePanelVisible: this.resourcePanelVisible,
-			getResourcePanelBounds: () => this.getResourcePanelBounds(),
-			lineHeight: this.lineHeight,
-			measureText: (t: string) => this.measureText(t),
-			drawText: (a: BmsxConsoleApi, t: string, x: number, y: number, c: number) => this.drawText(a, t, x, y, c),
-			drawColoredText: (a: BmsxConsoleApi, t: string, colors: number[], x: number, y: number) => this.drawColoredText(a, t, colors, x, y),
-			drawRectOutlineColor: (a: BmsxConsoleApi, l: number, t: number, r: number, b: number, col: { r: number; g: number; b: number; a: number }) => this.drawRectOutlineColor(a, l, t, r, b, col),
-			resourceBrowserItems: this.resourceBrowserItems,
-			resourceBrowserScroll: this.resourceBrowserScroll,
-			resourceBrowserHorizontalScroll: this.resourceBrowserHorizontalScroll,
-			resourcePanelFocused: this.resourcePanelFocused,
-			resourceBrowserSelectionIndex: this.resourceBrowserSelectionIndex,
-			resourceBrowserHoverIndex: this.resourceBrowserHoverIndex,
-			resourceBrowserMaxLineWidth: this.resourceBrowserMaxLineWidth,
-			clampResourceBrowserHorizontalScroll: () => this.clampResourceBrowserHorizontalScroll(),
-			resourceVertical: this.scrollbars.resourceVertical,
-			resourceHorizontal: this.scrollbars.resourceHorizontal,
-		} as const;
-		// Mutating properties need to be written back after render
-		const proxyHost: ResourcePanelHost = new (class implements ResourcePanelHost {
-			resourcePanelVisible = host.resourcePanelVisible;
-			getResourcePanelBounds = host.getResourcePanelBounds;
-			lineHeight = host.lineHeight;
-			measureText = host.measureText;
-			drawText = host.drawText;
-			drawColoredText = host.drawColoredText;
-			drawRectOutlineColor = host.drawRectOutlineColor;
-			resourceBrowserItems = host.resourceBrowserItems;
-			resourceBrowserScroll = host.resourceBrowserScroll;
-			resourceBrowserHorizontalScroll = host.resourceBrowserHorizontalScroll;
-			resourcePanelFocused = host.resourcePanelFocused;
-			resourceBrowserSelectionIndex = host.resourceBrowserSelectionIndex;
-			resourceBrowserHoverIndex = host.resourceBrowserHoverIndex;
-			resourceBrowserMaxLineWidth = host.resourceBrowserMaxLineWidth;
-			clampResourceBrowserHorizontalScroll = host.clampResourceBrowserHorizontalScroll;
-			resourceVertical = host.resourceVertical;
-			resourceHorizontal = host.resourceHorizontal;
-		})();
-		renderResourcePanel(api, proxyHost);
-		// Sync back possible scroll updates from the renderer
-		this.resourceBrowserScroll = proxyHost.resourceBrowserScroll;
-		this.resourceBrowserHorizontalScroll = proxyHost.resourceBrowserHorizontalScroll;
+		// Delegate full drawing to controller and then mirror back minimal state used elsewhere
+		this.resourcePanel.draw(api);
+		const s = this.resourcePanel.getStateForRender();
+		this.resourcePanelVisible = s.visible;
+		this.resourceBrowserItems = s.items;
+		this.resourcePanelFocused = s.focused;
+		this.resourceBrowserSelectionIndex = s.selectionIndex;
+		this.resourcePanelResourceCount = s.items.length;
+		// max line width handled by controller
 	}
 
 	private drawResourceViewer(api: BmsxConsoleApi): void {
@@ -8838,7 +8305,7 @@ private handleCompletionKeybindings(
 			symbolSearchVisible: this.symbolSearchVisible,
 			getActiveSymbolSearchMatch: () => this.getActiveSymbolSearchMatch(),
 			resourcePanelVisible: this.resourcePanelVisible,
-			resourcePanelFilterMode: this.resourcePanelFilterMode,
+			resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
 			resourcePanelResourceCount: this.resourcePanelResourceCount,
 			isResourceViewActive: () => this.isResourceViewActive(),
 			getActiveResourceViewer: () => this.getActiveResourceViewer(),

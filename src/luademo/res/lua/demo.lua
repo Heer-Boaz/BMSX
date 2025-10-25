@@ -90,7 +90,6 @@ local function idle_action(self, blackboard)
 	self:setCurrentInterval(interval)
 	self:setBehaviorStatus('Waiting for celebration in ~' .. tostring(interval) .. ' frames')
 	self:adjustPulse(-0.01)
-	print('sadfsf', 12, 13, 15)
 	return 'SUCCESS'
 end
 
