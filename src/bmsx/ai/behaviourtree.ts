@@ -1,8 +1,10 @@
 import { $ } from '../core/game';
 import { normalizeDecoratedClassName } from '../utils/decorators';
+import { deepClone } from '../utils/utils';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import type { WorldObject } from '../core/object/worldobject';
+import { HandlerRegistry } from '../fsm/fsmlibrary';
 
 /** Node specification used to compose a behaviour tree. */
 export type BehaviorTreeNodeSpec =
@@ -76,6 +78,25 @@ export function setup_btdef_library(): void {
  */
 let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTreeDefinition } = {};
 
+export function registerBehaviorTreeBuilder(id: BehaviorTreeID, builder: () => BehaviorTreeDefinition): void {
+	const trimmed = id.trim();
+	if (trimmed.length === 0) {
+		throw new Error('[BehaviorTree] Builder id must be a non-empty string.');
+	}
+	behaviorTreeDefinitionsBuilders[trimmed] = builder;
+}
+
+export function registerBehaviorTreeDefinition(id: BehaviorTreeID, definition: BehaviorTreeDefinition): void {
+	const snapshot = deepClone(definition);
+	registerBehaviorTreeBuilder(id, () => deepClone(snapshot));
+}
+
+export function unregisterBehaviorTreeBuilder(id: BehaviorTreeID): void {
+	delete behaviorTreeDefinitionsBuilders[id];
+	delete BehaviorTreeDefinitions[id];
+	delete BehaviorTrees[id];
+}
+
 /**
  * Builds a behavior tree based on the provided configuration.
  * Note the recursive nature of this function, which allows for the construction of complex behavior trees,
@@ -102,22 +123,48 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 		});
 	};
 	const ensureDecorator = (decorator: NodeDecorator | undefined, nodeType: string): NodeDecorator => {
-		if (typeof decorator !== 'function') {
-			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a decorator function.`);
+		if (typeof decorator === 'function') {
+			return decorator;
 		}
-		return decorator;
+		if (typeof decorator === 'string') {
+			const handler = HandlerRegistry.instance.get(decorator);
+			if (!handler) {
+				throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' references unknown decorator handler '${decorator}'.`);
+			}
+			return handler as NodeDecorator;
+		}
+		throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a decorator function.`);
 	};
 	const ensureCondition = (condition: NodeCondition | undefined, nodeType: string): NodeCondition => {
-		if (typeof condition !== 'function') {
-			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a condition function.`);
+		if (typeof condition === 'function') {
+			return condition;
 		}
-		return condition;
+		if (typeof condition === 'string') {
+			const handler = HandlerRegistry.instance.get(condition);
+			if (!handler) {
+				throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' references unknown condition handler '${condition}'.`);
+			}
+			return handler as NodeCondition;
+		}
+		throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires a condition function.`);
 	};
 	const ensureConditions = (conditions: NodeCondition[] | undefined, nodeType: string): NodeCondition[] => {
 		if (!Array.isArray(conditions) || conditions.length === 0) {
 			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires one or more condition functions.`);
 		}
-		return conditions;
+		return conditions.map((condition, index) => {
+			if (typeof condition === 'function') {
+				return condition;
+			}
+			if (typeof condition === 'string') {
+				const handler = HandlerRegistry.instance.get(condition);
+				if (!handler) {
+					throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' references unknown condition handler '${condition}' at index ${index}.`);
+				}
+				return handler as NodeCondition;
+			}
+			throw new Error(`[BehaviorTree:${id}] Node '${nodeType}' requires condition functions and received ${typeof condition}.`);
+		});
 	};
 	const ensureCompositeModifier = (modifier: NodeCompositeConditionModifier | undefined, nodeType: string): NodeCompositeConditionModifier => {
 		if (modifier !== 'AND' && modifier !== 'OR') {
@@ -183,10 +230,22 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 			return new WaitNode(id, config.wait_time, config.wait_propname, config.priority);
 		case 'action':
 		case 'Action':
-			if (typeof config.action !== 'function') {
-				throw new Error(`[BehaviorTree:${id}] Action node requires an action function.`);
+			{
+				const actionCandidate = config.action;
+				let action: NodeAction;
+				if (typeof actionCandidate === 'function') {
+					action = actionCandidate;
+				} else if (typeof actionCandidate === 'string') {
+					const handler = HandlerRegistry.instance.get(actionCandidate);
+					if (!handler) {
+						throw new Error(`[BehaviorTree:${id}] Node 'action' references unknown action handler '${actionCandidate}'.`);
+					}
+					action = handler as NodeAction;
+				} else {
+					throw new Error(`[BehaviorTree:${id}] Action node requires an action function.`);
+				}
+				return new ActionNode(id, action, config.priority, config.parameters);
 			}
-			return new ActionNode(id, config.action, config.priority, config.parameters);
 		case 'compositeaction':
 		case 'CompositeAction':
 			if (!Array.isArray(config.actions) || config.actions.length === 0) {
@@ -261,7 +320,7 @@ export function build_bt(bt_id?: BehaviorTreeID) {
 			if (!key || key.length === 0) {
 				throw new Error('[BehaviorTree] Behavior tree id resolved to an empty string.');
 			}
-			behaviorTreeDefinitionsBuilders[key] = value as () => BehaviorTreeDefinition;
+			registerBehaviorTreeBuilder(key, value as () => BehaviorTreeDefinition);
 		};
 		if (context.static) {
 			context.addInitializer(function () { register(this); });

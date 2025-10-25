@@ -22,6 +22,8 @@ import { consoleEditorSpec } from '../core/pipelines/console_editor';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
+import { registerBehaviorTreeDefinition, unregisterBehaviorTreeBuilder, setup_btdef_library, setup_bt_library } from '../ai/behaviourtree';
+import type { BehaviorTreeDefinition } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 
@@ -207,6 +209,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByAssetId: Map<string, LuaEnvironment> = new Map();
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
+	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
 	private readonly luaServices: Map<string, LuaServiceBinding> = new Map();
 	private hasBooted = false;
 
@@ -434,6 +437,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.fsmLuaInterpreter = null;
 			const fsmInterpreter = this.ensureFsmLuaInterpreter();
 			this.loadLuaStateMachineScripts(fsmInterpreter);
+			this.loadLuaBehaviorTreeScripts(fsmInterpreter);
 			this.loadLuaServiceScripts(fsmInterpreter);
 			this.cart.init(this.api);
 		}
@@ -1152,6 +1156,7 @@ export class BmsxConsoleRuntime extends Service {
 			this.registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
 			this.loadLuaStateMachineScripts(interpreter);
+			this.loadLuaBehaviorTreeScripts(interpreter);
 			this.loadLuaServiceScripts(interpreter);
 			interpreter.execute(source, chunkName);
 			let programAssetId: string | null = null;
@@ -1594,6 +1599,102 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	private loadLuaBehaviorTreeScripts(interpreter: LuaInterpreter): void {
+		let libraryDirty = false;
+		if (this.luaBehaviorTreeIds.size > 0) {
+			for (const existing of this.luaBehaviorTreeIds) {
+				unregisterBehaviorTreeBuilder(existing);
+				libraryDirty = true;
+			}
+			this.luaBehaviorTreeIds.clear();
+		}
+		const rompack = this.api.rompack();
+		if (!rompack || !rompack.lua) {
+			if (libraryDirty) {
+				setup_btdef_library();
+				setup_bt_library();
+			}
+			return;
+		}
+		const luaSources = rompack.lua;
+		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
+		for (const assetId of Object.keys(luaSources)) {
+			if (!this.assetIdRepresentsBehaviorTree(assetId)) {
+				continue;
+			}
+			const source = luaSources[assetId];
+			if (typeof source !== 'string') {
+				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua asset '${assetId}' is not a string source.`);
+			}
+			const sourcePathRaw = sourcePaths[assetId];
+			let pathHint: string | null = null;
+			if (typeof sourcePathRaw === 'string' && sourcePathRaw.length > 0) {
+				pathHint = sourcePathRaw;
+			} else {
+				const resolvedPath = this.resolveResourcePath(assetId);
+				if (resolvedPath) {
+					pathHint = resolvedPath;
+				}
+			}
+			const chunkName = this.resolveLuaBehaviorTreeChunkName(assetId, typeof sourcePathRaw === 'string' ? sourcePathRaw : null);
+			const btInfo: { assetId: string | null; path?: string | null } = { assetId };
+			if (pathHint) {
+				btInfo.path = pathHint;
+			}
+			this.registerLuaChunkResource(chunkName, btInfo);
+			let executionResults: LuaValue[];
+			try {
+				executionResults = interpreter.execute(source, chunkName);
+				this.cacheCurrentChunkEnvironment(chunkName, assetId);
+			}
+			catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(`[BmsxConsoleRuntime] Failed to execute Behavior tree Lua script '${assetId}': ${message}`);
+			}
+			if (executionResults.length === 0) {
+				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' returned no value.`);
+			}
+			const descriptorValue = executionResults[0];
+			const descriptor = this.luaValueToJs(descriptorValue);
+			if (!this.isPlainObject(descriptor)) {
+				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must return a table.`);
+			}
+			const descriptorRecord = descriptor as Record<string, unknown>;
+			const idValue = descriptorRecord.id;
+			if (typeof idValue !== 'string' || idValue.trim().length === 0) {
+				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' is missing a valid id.`);
+			}
+			const treeId = idValue.trim();
+			let definitionSource: unknown;
+			if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'definition')) {
+				definitionSource = descriptorRecord['definition'];
+			} else if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'tree')) {
+				definitionSource = descriptorRecord['tree'];
+			} else if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'root')) {
+				definitionSource = { root: descriptorRecord['root'] };
+			} else if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'type')) {
+				const copy: Record<string, unknown> = {};
+				for (const [key, entry] of Object.entries(descriptorRecord)) {
+					if (key === 'id') {
+						continue;
+					}
+					copy[key] = entry;
+				}
+				definitionSource = copy;
+			} else {
+				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must provide a 'definition' or 'tree' entry.`);
+			}
+			const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, interpreter, assetId);
+			registerBehaviorTreeDefinition(treeId, prepared);
+			this.luaBehaviorTreeIds.add(treeId);
+			libraryDirty = true;
+		}
+		if (libraryDirty) {
+			setup_btdef_library();
+			setup_bt_library();
+		}
+	}
+
 	private loadLuaServiceScripts(interpreter: LuaInterpreter): void {
 		this.disposeLuaServices();
 		const rompack = this.api.rompack();
@@ -1807,6 +1908,17 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	private prepareLuaBehaviorTreeDefinition(treeId: string, definitionValue: unknown, interpreter: LuaInterpreter, assetId: string): BehaviorTreeDefinition {
+		if (definitionValue === null || definitionValue === undefined) {
+			throw new Error(`[BmsxConsoleRuntime] Behavior tree '${treeId}' definition in asset '${assetId}' cannot be nil.`);
+		}
+		if (!this.isPlainObject(definitionValue) && !Array.isArray(definitionValue)) {
+			throw new Error(`[BmsxConsoleRuntime] Behavior tree '${treeId}' definition in asset '${assetId}' must be a table.`);
+		}
+		const sanitized = this.cloneLuaBlueprintValue(treeId, ['definition'], definitionValue, interpreter);
+		return sanitized as BehaviorTreeDefinition;
+	}
+
 	private tickLuaServices(deltaSeconds: number): void {
 		if (this.luaServices.size === 0) {
 			return;
@@ -1859,6 +1971,14 @@ export class BmsxConsoleRuntime extends Service {
 		}
 	}
 
+	private assetIdRepresentsBehaviorTree(assetId: string): boolean {
+		if (!assetId) {
+			return false;
+		}
+		const lower = assetId.toLowerCase();
+		return lower.includes('.bt.') || lower.endsWith('.bt') || lower.includes('.behaviortree') || lower.includes('.behaviourtree') || lower.includes('.behavior_tree') || lower.includes('.behaviour_tree');
+	}
+
 	private assetIdRepresentsFsm(assetId: string): boolean {
 		if (!assetId) {
 			return false;
@@ -1871,6 +1991,13 @@ export class BmsxConsoleRuntime extends Service {
 			return false;
 		}
 		return assetId.indexOf('.service') !== -1;
+	}
+
+	private resolveLuaBehaviorTreeChunkName(assetId: string, sourcePath: string | null): string {
+		if (sourcePath && sourcePath.length > 0) {
+			return `@${sourcePath}`;
+		}
+		return `@bt/${assetId}`;
 	}
 
 	private resolveLuaFsmChunkName(assetId: string, sourcePath: string | null): string {
