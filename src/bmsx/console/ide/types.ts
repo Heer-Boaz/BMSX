@@ -172,6 +172,16 @@ export type ParameterHintState = {
 	argumentIndex: number;
 };
 
+export type EditorDiagnosticSeverity = 'error' | 'warning';
+
+export type EditorDiagnostic = {
+	row: number;
+	startColumn: number;
+	endColumn: number;
+	message: string;
+	severity: EditorDiagnosticSeverity;
+};
+
 export type ApiCompletionMetadata = {
 	params: string[];
 	signature: string;

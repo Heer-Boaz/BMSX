@@ -172,8 +172,6 @@ export class Game {
 
 	public get view(): GameView { return this._view; }
 
-	public get hasView(): boolean { return true; }
-
 	public get aem(): AudioEventManager { return AudioEventManager.instance!; }
 
 	public get event_emitter(): EventEmitter { return EventEmitter.instance!; }

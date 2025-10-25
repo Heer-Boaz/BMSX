@@ -1,6 +1,6 @@
 import type { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
-import type { CachedHighlight, CursorScreenInfo, RectBounds } from './types';
+import type { CachedHighlight, CursorScreenInfo, RectBounds, EditorDiagnostic } from './types';
 import { clamp } from '../../utils/utils';
 
 export type CodeAreaBounds = { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; gutterLeft: number; gutterRight: number; textLeft: number };
@@ -46,6 +46,7 @@ export interface CodeAreaHost {
     drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void;
     computeSelectionSlice(rowIndex: number, highlight: CachedHighlight['hi'], sliceStartDisplay: number, sliceEndDisplay: number): { startDisplay: number; endDisplay: number } | null;
     measureRangeFast(entry: CachedHighlight, fromDisplay: number, toDisplay: number): number;
+    getDiagnosticsForRow(rowIndex: number): readonly EditorDiagnostic[];
     // Scrollbars
     readonly scrollbars: {
         codeVertical: { layout(track: RectBounds, content: number, viewport: number, scroll: number): void; getScroll(): number; isVisible(): boolean; draw(api: BmsxConsoleApi, trackColor: number, thumbColor: number): void };
@@ -159,6 +160,55 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 			}
 		}
 		host.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);
+		const rowDiagnostics = host.getDiagnosticsForRow(lineIndex);
+		for (let i = 0; i < rowDiagnostics.length; i += 1) {
+			const diagnostic = rowDiagnostics[i];
+			let diagStartColumn = diagnostic.startColumn;
+			let diagEndColumn = diagnostic.endColumn;
+			if (diagEndColumn <= diagStartColumn) {
+				diagEndColumn = diagStartColumn + 1;
+			}
+			if (diagEndColumn <= columnStart) {
+				continue;
+			}
+			if (diagStartColumn >= maxColumn) {
+				continue;
+			}
+			if (diagStartColumn < columnStart) {
+				diagStartColumn = columnStart;
+			}
+			if (diagEndColumn > maxColumn) {
+				diagEndColumn = maxColumn;
+			}
+			if (diagEndColumn <= diagStartColumn) {
+				continue;
+			}
+			const startDisplayFull = host.columnToDisplay(highlight, diagStartColumn);
+			const endDisplayFull = host.columnToDisplay(highlight, diagEndColumn);
+			const clampedStartDisplay = clamp(startDisplayFull, sliceStartDisplay, sliceEndDisplay);
+			const clampedEndDisplay = clamp(endDisplayFull, clampedStartDisplay, sliceEndDisplay);
+			if (clampedEndDisplay <= clampedStartDisplay) {
+				continue;
+			}
+			const underlineStartX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedStartDisplay);
+			const underlineEndX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, clampedEndDisplay);
+			let drawLeft = Math.floor(underlineStartX);
+			let drawRight = Math.ceil(underlineEndX);
+			if (drawRight <= drawLeft) {
+				drawRight = drawLeft + Math.max(1, Math.floor(host.charAdvance));
+			}
+			if (drawRight <= drawLeft) {
+				continue;
+			}
+			const underlineY = Math.min(contentBottom - 1, rowY + host.lineHeight - 1);
+			if (underlineY < rowY || underlineY >= contentBottom) {
+				continue;
+			}
+			const underlineColor = diagnostic.severity === 'warning'
+				? constants.COLOR_DIAGNOSTIC_WARNING
+				: constants.COLOR_DIAGNOSTIC_ERROR;
+			api.rectfill(drawLeft, underlineY, drawRight, underlineY + 1, underlineColor);
+		}
 		if (activeGotoHighlight && gotoVisualIndex !== null && visualIndex === gotoVisualIndex && activeGotoHighlight.row === lineIndex) {
 			const startDisplayFull = host.columnToDisplay(highlight, activeGotoHighlight.startColumn);
 			const endDisplayFull = host.columnToDisplay(highlight, activeGotoHighlight.endColumn);

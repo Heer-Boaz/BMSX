@@ -21,6 +21,7 @@ import { CHARACTER_CODES } from './character_map';
 import * as constants from './constants';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
+import { computeLuaDiagnostics, getApiCompletionData, type LuaDiagnostic } from './intellisense';
 import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
@@ -57,6 +58,7 @@ import type {
 	EditorTabId,
 	EditorTabKind,
 	EditContext,
+	EditorDiagnostic,
 	HighlightLine,
 	InlineInputOptions,
 	InlineTextField,
@@ -131,6 +133,9 @@ export class ConsoleCartEditor {
 	private deferredMessageDuration: number | null = null;
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private executionStopRow: number | null = null;
+	private diagnostics: EditorDiagnostic[] = [];
+	private diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
+	private diagnosticsDirty = true;
 	private readonly codeTabContexts: Map<string, CodeTabContext> = new Map();
 	private activeCodeTabContextId: string | null = null;
 	private entryTabId: string | null = null;
@@ -155,6 +160,7 @@ export class ConsoleCartEditor {
 		...CHARACTER_CODES,
 	])];
 
+	private static readonly EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
 	private static customClipboard: string | null = null;
 
 	private readonly topBarButtonBounds: Record<TopBarButtonId, RectBounds> = {
@@ -387,7 +393,7 @@ export class ConsoleCartEditor {
 			getPlayerIndex: () => this.playerIndex,
 			isCodeTabActive: () => this.isCodeTabActive(),
 			getLines: () => this.lines,
-			setLines: (lines) => { this.lines = lines; },
+			setLines: (lines) => { this.lines = lines; this.markDiagnosticsDirty(); },
 			getCursorRow: () => this.cursorRow,
 			getCursorColumn: () => this.cursorColumn,
 			setCursorPosition: (row, column) => { this.cursorRow = row; this.cursorColumn = column; },
@@ -965,9 +971,107 @@ export class ConsoleCartEditor {
 			this.updateSearchMatches();
 			this.lastSearchVersion = this.textVersion;
 		}
+		if (this.diagnosticsDirty) {
+			this.recomputeDiagnostics();
+		}
 		if (this.isCodeTabActive() && !this.cursorRevealSuspended) {
 			this.ensureCursorVisible();
 		}
+	}
+
+	private recomputeDiagnostics(): void {
+		this.diagnosticsDirty = false;
+		if (!this.isCodeTabActive()) {
+			this.diagnostics = [];
+			this.diagnosticsByRow.clear();
+			return;
+		}
+		const context = this.getActiveCodeTabContext();
+		if (!context) {
+			this.diagnostics = [];
+			this.diagnosticsByRow.clear();
+			return;
+		}
+		const source = this.lines.join('\n');
+		if (source.length === 0) {
+			this.diagnostics = [];
+			this.diagnosticsByRow.clear();
+			return;
+		}
+		const assetId = this.resolveHoverAssetId(context);
+		const chunkNameCandidate = this.resolveHoverChunkName(context);
+		let chunkName = chunkNameCandidate && chunkNameCandidate.length > 0 ? chunkNameCandidate : null;
+		if (!chunkName && context.descriptor) {
+			if (context.descriptor.path && context.descriptor.path.length > 0) {
+				chunkName = context.descriptor.path;
+			} else if (context.descriptor.assetId && context.descriptor.assetId.length > 0) {
+				chunkName = context.descriptor.assetId;
+			}
+		}
+		if (!chunkName || chunkName.length === 0) {
+			chunkName = context.title;
+		}
+		let localSymbols: ConsoleLuaSymbolEntry[] = [];
+		try {
+			localSymbols = this.listLuaSymbolsFn(assetId, chunkName);
+		} catch {
+			localSymbols = [];
+		}
+		let globalSymbols: ConsoleLuaSymbolEntry[] = [];
+		try {
+			globalSymbols = this.listGlobalLuaSymbolsFn();
+		} catch {
+			globalSymbols = [];
+		}
+		let builtinDescriptors: ConsoleLuaBuiltinDescriptor[] = [];
+		try {
+			builtinDescriptors = this.listBuiltinLuaFunctionsFn();
+		} catch {
+			builtinDescriptors = [];
+		}
+		const apiData = getApiCompletionData();
+		let diagnostics: LuaDiagnostic[];
+		try {
+			diagnostics = computeLuaDiagnostics({
+				source,
+				chunkName,
+				localSymbols,
+				globalSymbols,
+				builtinDescriptors,
+				apiSignatures: apiData.signatures,
+			});
+		} catch {
+			diagnostics = [];
+		}
+		this.diagnostics = [];
+		this.diagnosticsByRow.clear();
+		for (let index = 0; index < diagnostics.length; index += 1) {
+			const diagnostic = diagnostics[index];
+			if (diagnostic.row < 0 || diagnostic.row >= this.lines.length) {
+				continue;
+			}
+			const startColumn = diagnostic.startColumn > 0 ? diagnostic.startColumn : 0;
+			const adjustedEnd = diagnostic.endColumn > startColumn ? diagnostic.endColumn : startColumn + 1;
+			const editorDiagnostic: EditorDiagnostic = {
+				row: diagnostic.row,
+				startColumn,
+				endColumn: adjustedEnd,
+				message: diagnostic.message,
+				severity: diagnostic.severity,
+			};
+			this.diagnostics.push(editorDiagnostic);
+			let bucket = this.diagnosticsByRow.get(editorDiagnostic.row);
+			if (!bucket) {
+				bucket = [];
+				this.diagnosticsByRow.set(editorDiagnostic.row, bucket);
+			}
+			bucket.push(editorDiagnostic);
+		}
+	}
+
+	private getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
+		const bucket = this.diagnosticsByRow.get(row);
+		return bucket ?? ConsoleCartEditor.EMPTY_DIAGNOSTICS;
 	}
 
 	public isActive(): boolean {
@@ -5887,6 +5991,7 @@ export class ConsoleCartEditor {
 		this.lines = snapshot.lines.slice();
 		this.invalidateVisualLines();
 		this.invalidateAllHighlights();
+		this.markDiagnosticsDirty();
 		this.cursorRow = snapshot.cursorRow;
 		this.cursorColumn = snapshot.cursorColumn;
 		this.scrollRow = snapshot.scrollRow;
@@ -6480,6 +6585,7 @@ export class ConsoleCartEditor {
 			drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => this.drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
 			computeSelectionSlice: (ri, hi, s, e) => this.computeSelectionSlice(ri, hi, s, e),
 			measureRangeFast: (entry, from, to) => this.measureRangeFast(entry, from, to),
+			getDiagnosticsForRow: (row) => this.getDiagnosticsForRow(row),
 			scrollbars: {
 				codeVertical: this.scrollbars.codeVertical,
 				codeHorizontal: this.scrollbars.codeHorizontal,
@@ -6958,6 +7064,7 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	private resetEditorContent(): void {
 		this.lines = [''];
 		this.invalidateVisualLines();
+		this.markDiagnosticsDirty();
 		this.cursorRow = 0;
 		this.cursorColumn = 0;
 		this.scrollRow = 0;
@@ -7164,6 +7271,7 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 			context.lastSavedSource = source;
 			this.lines = this.splitLines(source);
 			this.invalidateVisualLines();
+		this.markDiagnosticsDirty();
 		if (this.lines.length === 0) {
 			this.lines.push('');
 		}
@@ -7969,8 +8077,13 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.textVersion += 1;
 	}
 
+	private markDiagnosticsDirty(): void {
+		this.diagnosticsDirty = true;
+	}
+
 	private markTextMutated(): void {
 		this.dirty = true;
+		this.markDiagnosticsDirty();
 		this.bumpTextVersion();
 		this.updateActiveContextDirtyFlag();
 		this.invalidateVisualLines();
