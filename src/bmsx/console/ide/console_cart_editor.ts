@@ -17,7 +17,7 @@ import { ConsoleEditorFont } from '../editor_font';
 import { Msx1Colors } from 'bmsx';
 import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
-import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
+import { CHARACTER_CODES } from './character_map';
 import * as constants from './constants';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
@@ -40,6 +40,7 @@ import { renderTopBar } from './render_top_bar';
 import { renderStatusBar } from './render_status_bar';
 import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderLineJumpBar } from './render_inline_bars';
 import { renderResourcePanel, type ResourcePanelHost } from './render_resource_panel';
+import { InputController } from './input_controller';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -81,7 +82,6 @@ import {
 	consumeKey as consumeKeyboardKey,
 	getKeyboardButtonState,
 	isKeyJustPressed as isKeyJustPressedGlobal,
-	isKeyPressed as isKeyPressedGlobal,
 	isKeyTyped as isKeyTypedGlobal,
 	isModifierPressed as isModifierPressedGlobal,
 	resetKeyPressRecords,
@@ -202,6 +202,7 @@ export class ConsoleCartEditor {
 	private readonly inlineFieldMetricsRef: InlineFieldMetrics;
 	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
 	private readonly scrollbarController: ScrollbarController;
+	private readonly input: InputController;
 	private toggleInputLatch = false;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
@@ -363,6 +364,44 @@ export class ConsoleCartEditor {
 			charAt: (r, c) => this.charAt(r, c),
 			getTextVersion: () => this.textVersion,
 			shouldFireRepeat: (kb, code, dt) => this.shouldFireRepeat(kb, code, dt),
+		});
+		// Initialize input controller
+		this.input = new InputController({
+			getPlayerIndex: () => this.playerIndex,
+			isCodeTabActive: () => this.isCodeTabActive(),
+			shouldFireRepeat: (kb, code, dt) => this.shouldFireRepeat(kb, code, dt),
+			getLines: () => this.lines,
+			setLines: (lines) => { this.lines = lines; },
+			getCursorRow: () => this.cursorRow,
+			getCursorColumn: () => this.cursorColumn,
+			setCursorPosition: (row, column) => { this.cursorRow = row; this.cursorColumn = column; },
+			setSelectionAnchor: (row, column) => { this.selectionAnchor = { row, column }; },
+			getSelection: () => this.getSelectionRange(),
+			clearSelection: () => { this.selectionAnchor = null; },
+			updateDesiredColumn: () => this.updateDesiredColumn(),
+			resetBlink: () => this.resetBlink(),
+			revealCursor: () => this.revealCursor(),
+			ensureCursorVisible: () => this.ensureCursorVisible(),
+			recordPreMutationSnapshot: (key) => this.recordSnapshotPre(key),
+			pushPostMutationSnapshot: (key) => this.recordSnapshotPost(key),
+			deleteSelection: () => this.deleteSelection(),
+			deleteCharLeft: () => this.deleteCharLeft(),
+			deleteCharRight: () => this.deleteCharRight(),
+			deleteActiveLines: () => this.deleteActiveLines(),
+			deleteWordBackward: () => this.deleteWordBackward(),
+			insertNewline: () => this.insertNewline(),
+			insertText: (text) => this.insertText(text),
+			moveCursorLeft: (byWord, select) => this.moveCursorLeft(byWord, select),
+			moveCursorRight: (byWord, select) => this.moveCursorRight(byWord, select),
+			moveCursorUp: (select) => this.moveCursorUp(select),
+			moveCursorDown: (select) => this.moveCursorDown(select),
+			moveCursorHome: (select) => this.moveCursorHome(select),
+			moveCursorEnd: (select) => this.moveCursorEnd(select),
+			pageDown: (select) => this.pageDown(select),
+			pageUp: (select) => this.pageUp(select),
+			moveSelectionLines: (delta) => this.moveSelectionLines(delta),
+			indentSelectionOrLine: () => this.indentSelectionOrLine(),
+			unindentSelectionOrLine: () => this.unindentSelectionOrLine(),
 		});
 		this.codeVerticalScrollbarVisible = false;
 		this.codeHorizontalScrollbarVisible = false;
@@ -1770,16 +1809,11 @@ export class ConsoleCartEditor {
 	if (this.handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
 		return;
 	}
-	this.handleNavigationKeys(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown);
-	this.handleEditingKeys(keyboard, deltaSeconds, shiftDown, ctrlDown);
+		this.input.handleEditorInput(keyboard, deltaSeconds);
 	if (ctrlDown || metaDown || altDown) {
 		return;
 	}
-		this.handleCharacterInput(keyboard, shiftDown);
-		if (isKeyJustPressedGlobal(this.playerIndex, 'Space')) {
-			this.insertText(' ');
-			consumeKeyboardKey(keyboard, 'Space');
-		}
+		// Remaining character input after controller handled modifiers is no-op here
 	}
 
 	private handleCreateResourceInput(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, metaDown: boolean): void {
@@ -3024,166 +3058,9 @@ export class ConsoleCartEditor {
 		this.focusSearchResult(this.searchCurrentIndex);
 	}
 
-	private handleNavigationKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean, altDown: boolean): void {
-		const previousPosition: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (shiftDown) {
-			this.ensureSelectionAnchor(previousPosition);
-		}
 
-		if (altDown) {
-			let movedAlt = false;
-			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'ArrowUp');
-				this.moveSelectionLines(-1);
-				movedAlt = true;
-			}
-			if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'ArrowDown');
-				this.moveSelectionLines(1);
-				movedAlt = true;
-			}
-			if (movedAlt) {
-				return;
-			}
-			if (isKeyPressedGlobal(this.playerIndex, 'ArrowUp') || isKeyPressedGlobal(this.playerIndex, 'ArrowDown')) {
-				return;
-			}
-		}
 
-		if (!shiftDown && this.collapseSelectionOnNavigation(keyboard)) {
-			return;
-		}
 
-		let moved = false;
-
-		if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-			this.moveCursorVertical(-1);
-			consumeKeyboardKey(keyboard, 'ArrowUp');
-			moved = true;
-		}
-		if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-			this.moveCursorVertical(1);
-			consumeKeyboardKey(keyboard, 'ArrowDown');
-			moved = true;
-		}
-		if (ctrlDown) {
-			if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
-				this.moveWordLeft();
-				consumeKeyboardKey(keyboard, 'ArrowLeft');
-				moved = true;
-			}
-			if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
-				this.moveWordRight();
-				consumeKeyboardKey(keyboard, 'ArrowRight');
-				moved = true;
-			}
-		}
-		else {
-			if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
-				this.moveCursorHorizontal(-1);
-				consumeKeyboardKey(keyboard, 'ArrowLeft');
-				moved = true;
-			}
-			if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
-				this.moveCursorHorizontal(1);
-				consumeKeyboardKey(keyboard, 'ArrowRight');
-				moved = true;
-			}
-		}
-
-		if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-			if (ctrlDown) {
-				this.cursorRow = 0;
-				this.cursorColumn = 0;
-			} else {
-				this.cursorColumn = 0;
-			}
-			this.updateDesiredColumn();
-			this.resetBlink();
-			consumeKeyboardKey(keyboard, 'Home');
-			moved = true;
-		}
-		if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-			if (ctrlDown) {
-				const lastRow = this.lines.length - 1;
-				if (lastRow < 0) {
-					this.cursorRow = 0;
-					this.cursorColumn = 0;
-				} else {
-					this.cursorRow = lastRow;
-					this.cursorColumn = this.lines[lastRow].length;
-				}
-			} else {
-				this.cursorColumn = this.currentLine().length;
-			}
-			this.updateDesiredColumn();
-			this.resetBlink();
-			consumeKeyboardKey(keyboard, 'End');
-			moved = true;
-		}
-		if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-			const rows = this.visibleRowCount();
-			this.ensureVisualLines();
-			const visualCount = this.getVisualLineCount();
-			const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-			const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
-			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
-			this.resetBlink();
-			consumeKeyboardKey(keyboard, 'PageUp');
-			moved = true;
-		}
-		if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-			const rows = this.visibleRowCount();
-			this.ensureVisualLines();
-			const visualCount = this.getVisualLineCount();
-			const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-			const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
-			this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
-			this.resetBlink();
-			consumeKeyboardKey(keyboard, 'PageDown');
-			moved = true;
-		}
-
-		if (!shiftDown && moved) {
-			this.clearSelection();
-		}
-		if (moved) {
-			this.breakUndoSequence();
-			this.revealCursor();
-		}
-
-		if (shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
-			this.unindentSelectionOrLine();
-			consumeKeyboardKey(keyboard, 'Tab');
-		}
-	}
-
-	private handleEditingKeys(keyboard: KeyboardInput, deltaSeconds: number, shiftDown: boolean, ctrlDown: boolean): void {
-		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
-			if (ctrlDown) {
-				this.deleteWordBackward();
-			} else {
-				this.backspace();
-			}
-			consumeKeyboardKey(keyboard, 'Backspace');
-		}
-		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'Delete');
-			if (shiftDown && !ctrlDown) {
-				this.deleteActiveLines();
-			} else {
-				this.deleteForward();
-			}
-		}
-		if (!shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
-			this.insertTab();
-			consumeKeyboardKey(keyboard, 'Tab');
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) {
-			this.insertLineBreak();
-			consumeKeyboardKey(keyboard, 'Enter');
-		}
-	}
 
 	private handlePointerInput(_deltaSeconds: number): void {
 		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
@@ -5181,18 +5058,165 @@ export class ConsoleCartEditor {
 		this.onCursorMoved();
 	}
 
-	private handleCharacterInput(keyboard: KeyboardInput, shiftDown: boolean): void {
-		for (let i = 0; i < CHARACTER_CODES.length; i++) {
-			const code = CHARACTER_CODES[i];
-			if (!isKeyTypedGlobal(this.playerIndex, code)) {
-				continue;
-			}
-			const entry = CHARACTER_MAP[code];
-			const value = shiftDown ? entry.shift : entry.normal;
-			this.insertText(value);
-			consumeKeyboardKey(keyboard, code);
-		}
+	// === InputController host wrappers ===
+	// Snapshot helpers used by controllers to bracket mutations
+	private recordSnapshotPre(key: string): void {
+		// Use non-coalesced snapshot to ensure distinct undo step
+		this.prepareUndo(key, false);
 	}
+
+	private recordSnapshotPost(_key: string): void {
+		// Break coalescing to avoid merging unrelated edits
+		this.breakUndoSequence();
+	}
+
+	private deleteSelection(): void {
+		if (!this.hasSelection()) return;
+		this.prepareUndo('delete-selection', false);
+		this.replaceSelectionWith('');
+	}
+
+	private deleteCharLeft(): void {
+		this.backspace();
+	}
+
+	private deleteCharRight(): void {
+		this.deleteForward();
+	}
+
+	private insertNewline(): void {
+		this.insertLineBreak();
+	}
+
+	private moveCursorLeft(byWord: boolean, select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) {
+			this.ensureSelectionAnchor(previous);
+		} else if (this.hasSelection()) {
+			this.collapseSelectionTo('start');
+			this.breakUndoSequence();
+			return;
+		}
+		if (byWord) this.moveWordLeft(); else this.moveCursorHorizontal(-1);
+		if (!select) this.clearSelection();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+	private moveCursorRight(byWord: boolean, select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) {
+			this.ensureSelectionAnchor(previous);
+		} else if (this.hasSelection()) {
+			this.collapseSelectionTo('end');
+			this.breakUndoSequence();
+			return;
+		}
+		if (byWord) this.moveWordRight(); else this.moveCursorHorizontal(1);
+		if (!select) this.clearSelection();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+	private moveCursorUp(select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) {
+			this.ensureSelectionAnchor(previous);
+		} else if (this.hasSelection()) {
+			// Match existing behavior: collapse to start on Up
+			this.collapseSelectionTo('start');
+			this.breakUndoSequence();
+			return;
+		}
+		this.moveCursorVertical(-1);
+		if (!select) this.clearSelection();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+	private moveCursorDown(select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) {
+			this.ensureSelectionAnchor(previous);
+		} else if (this.hasSelection()) {
+			// Match existing behavior: collapse to end on Down
+			this.collapseSelectionTo('end');
+			this.breakUndoSequence();
+			return;
+		}
+		this.moveCursorVertical(1);
+		if (!select) this.clearSelection();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+	private moveCursorHome(select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
+		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
+		if (ctrlDown) {
+			this.cursorRow = 0;
+			this.cursorColumn = 0;
+		} else {
+			this.cursorColumn = 0;
+		}
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+	private moveCursorEnd(select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
+		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
+		if (ctrlDown) {
+			const lastRow = this.lines.length - 1;
+			if (lastRow < 0) {
+				this.cursorRow = 0;
+				this.cursorColumn = 0;
+			} else {
+				this.cursorRow = lastRow;
+				this.cursorColumn = this.lines[lastRow].length;
+			}
+		} else {
+			this.cursorColumn = this.currentLine().length;
+		}
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+	private pageUp(select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
+		const rows = this.visibleRowCount();
+		this.ensureVisualLines();
+		const visualCount = this.getVisualLineCount();
+		const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+		const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
+		this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
+		this.resetBlink();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+	private pageDown(select: boolean): void {
+		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
+		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
+		const rows = this.visibleRowCount();
+		this.ensureVisualLines();
+		const visualCount = this.getVisualLineCount();
+		const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+		const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
+		this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
+		this.resetBlink();
+		this.breakUndoSequence();
+		this.revealCursor();
+	}
+
+
 
 	private resetKeyPressGuards(): void {
 		resetKeyPressRecords();
@@ -5288,10 +5312,6 @@ export class ConsoleCartEditor {
 		if (this.desiredDisplayOffset < 0) {
 			this.desiredDisplayOffset = 0;
 		}
-	}
-
-	private insertTab(): void {
-		this.insertText('\t');
 	}
 
 	private insertText(text: string): void {
@@ -5612,36 +5632,7 @@ export class ConsoleCartEditor {
 		this.revealCursor();
 	}
 
-	private collapseSelectionOnNavigation(keyboard: KeyboardInput): boolean {
-		if (!this.hasSelection()) {
-			return false;
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'ArrowLeft')) {
-			consumeKeyboardKey(keyboard, 'ArrowLeft');
-			this.collapseSelectionTo('start');
-			this.breakUndoSequence();
-			return true;
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'ArrowUp')) {
-			consumeKeyboardKey(keyboard, 'ArrowUp');
-			this.collapseSelectionTo('start');
-			this.breakUndoSequence();
-			return true;
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'ArrowRight')) {
-			consumeKeyboardKey(keyboard, 'ArrowRight');
-			this.collapseSelectionTo('end');
-			this.breakUndoSequence();
-			return true;
-		}
-		if (isKeyJustPressedGlobal(this.playerIndex, 'ArrowDown')) {
-			consumeKeyboardKey(keyboard, 'ArrowDown');
-			this.collapseSelectionTo('end');
-			this.breakUndoSequence();
-			return true;
-		}
-		return false;
-	}
+
 
 	private deleteSelectionIfPresent(): boolean {
 		if (!this.hasSelection()) {
