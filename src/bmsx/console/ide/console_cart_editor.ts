@@ -18,7 +18,7 @@ import { Msx1Colors } from '../../systems/msx';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
-import { getApiCompletionData, getKeywordCompletions, KEYWORDS } from './intellisense';
+import { getApiCompletionData, getKeywordCompletions } from './intellisense';
 import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
@@ -30,6 +30,9 @@ import {
 	selectionRange as inlineFieldSelectionRange,
 	setFieldText,
 } from './inline_text_field';
+import { highlightLine as highlightLineExternal } from './syntax_highlight';
+import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
+import { expandTabs as expandTabsExternal, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
 import { ConsoleScrollbar } from './scrollbar';
 import type {
 	CachedHighlight,
@@ -3746,33 +3749,7 @@ export class ConsoleCartEditor {
 	}
 
 	private buildHoverContentLines(result: ConsoleLuaHoverResult): string[] {
-		const lines: string[] = [];
-		const push = (value: string) => {
-			lines.push(this.truncateHoverLine(value));
-		};
-		if (result.state === 'not_defined') {
-			push(`${result.expression} = not defined`);
-			return lines;
-		}
-		const valueLines = result.lines.length > 0 ? result.lines : [''];
-		if (valueLines.length === 1) {
-			const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
-			push(`${result.expression} = ${valueLines[0]}${suffix}`);
-			return lines;
-		}
-		const suffix = result.valueType && result.valueType !== 'unknown' ? ` (${result.valueType})` : '';
-		push(`${result.expression}${suffix}`);
-		for (const line of valueLines) {
-			push(`  ${line}`);
-		}
-		return lines;
-	}
-
-	private truncateHoverLine(text: string): string {
-		if (text.length <= constants.HOVER_TOOLTIP_MAX_LINE_LENGTH) {
-			return text;
-		}
-		return text.slice(0, constants.HOVER_TOOLTIP_MAX_LINE_LENGTH - 3) + '...';
+		return buildHoverContentLinesExternal(result);
 	}
 
 	private clearHoverTooltip(): void {
@@ -10404,114 +10381,7 @@ private handleCompletionKeybindings(
 	}
 
 	private highlightLine(line: string): HighlightLine {
-		const length = line.length;
-		const columnColors: number[] = new Array(length).fill(constants.COLOR_CODE_TEXT);
-		let i = 0;
-		while (i < length) {
-			const ch = line.charAt(i);
-			if (line.startsWith('--[[', i)) {
-				const closeIndex = line.indexOf(']]', i + 4);
-				const end = closeIndex !== -1 ? closeIndex + 2 : length;
-				for (let j = i; j < end; j++) {
-					columnColors[j] = constants.COLOR_COMMENT;
-				}
-				i = end;
-				continue;
-			}
-			const longStringMatch = line.slice(i).match(/^\[=*\[/);
-			if (longStringMatch) {
-				const equalsCount = longStringMatch[0].length - 2;
-				const terminator = ']' + '='.repeat(equalsCount) + ']';
-				const closeIndex = line.indexOf(terminator, i + longStringMatch[0].length);
-				const end = closeIndex !== -1 ? closeIndex + terminator.length : length;
-				for (let j = i; j < end; j++) {
-					columnColors[j] = constants.COLOR_STRING;
-				}
-				i = end;
-				continue;
-			}
-			if (ch === '"' || ch === '\'') {
-				const delimiter = ch;
-				columnColors[i] = constants.COLOR_STRING;
-				i += 1;
-				while (i < length) {
-					columnColors[i] = constants.COLOR_STRING;
-					const current = line.charAt(i);
-					if (current === '\\' && i + 1 < length) {
-						columnColors[i + 1] = constants.COLOR_STRING;
-						i += 2;
-						continue;
-					}
-					if (current === delimiter) {
-						i += 1;
-						break;
-					}
-					i += 1;
-				}
-				continue;
-			}
-			if (line.startsWith('--', i)) {
-				for (let j = i; j < length; j++) columnColors[j] = constants.COLOR_COMMENT;
-				break;
-			}
-			if (i + 2 <= length && line.slice(i, i + 3) === '...') {
-				columnColors[i] = constants.COLOR_OPERATOR;
-				columnColors[i + 1] = constants.COLOR_OPERATOR;
-				columnColors[i + 2] = constants.COLOR_OPERATOR;
-				i += 3;
-				continue;
-			}
-			if (i + 1 < length) {
-				const pair = line.slice(i, i + 2);
-				if (pair === '==' || pair === '~=' || pair === '<=' || pair === '>=' || pair === '..') {
-					columnColors[i] = constants.COLOR_OPERATOR;
-					columnColors[i + 1] = constants.COLOR_OPERATOR;
-					i += 2;
-					continue;
-				}
-			}
-			if (this.isNumberStart(line, i)) {
-				const end = this.readNumber(line, i);
-				for (let j = i; j < end; j++) columnColors[j] = constants.COLOR_NUMBER;
-				i = end;
-				continue;
-			}
-			if (this.isIdentifierStart(ch)) {
-				const end = this.readIdentifier(line, i);
-				const word = line.slice(i, end);
-				const color = KEYWORDS.has(word.toLowerCase()) ? constants.COLOR_KEYWORD : constants.COLOR_CODE_TEXT;
-				if (color !== constants.COLOR_CODE_TEXT) {
-					for (let j = i; j < end; j++) columnColors[j] = color;
-				}
-				i = end;
-				continue;
-			}
-			if (this.isOperatorChar(ch)) {
-				columnColors[i] = constants.COLOR_OPERATOR;
-			}
-			i += 1;
-		}
-
-		const chars: string[] = [];
-		const colors: number[] = [];
-		const columnToDisplay: number[] = [];
-		for (let column = 0; column < length; column++) {
-			columnToDisplay.push(chars.length);
-			const ch = line.charAt(column);
-			const color = columnColors[column];
-			if (ch === '\t') {
-				for (let j = 0; j < constants.TAB_SPACES; j++) {
-					chars.push(' ');
-					colors.push(color);
-				}
-			}
-			else {
-				chars.push(ch);
-				colors.push(color);
-			}
-		}
-		columnToDisplay.push(chars.length);
-		return { chars, colors, columnToDisplay };
+		return highlightLineExternal(line);
 	}
 
 	private columnToDisplay(highlight: HighlightLine, column: number): number {
@@ -10524,68 +10394,6 @@ private handleCompletionKeybindings(
 		return highlight.columnToDisplay[column];
 	}
 
-	private isNumberStart(line: string, index: number): boolean {
-		const ch = line.charAt(index);
-		if (ch >= '0' && ch <= '9') {
-			return true;
-		}
-		if (ch === '.' && index + 1 < line.length) {
-			const next = line.charAt(index + 1);
-			return next >= '0' && next <= '9';
-		}
-		return false;
-	}
-
-	private readNumber(line: string, start: number): number {
-		let index = start;
-		const length = line.length;
-		if (line.startsWith('0x', index) || line.startsWith('0X', index)) {
-			index += 2;
-			while (index < length && this.isHexDigit(line.charAt(index))) index += 1;
-			return index;
-		}
-		while (index < length && this.isDigit(line.charAt(index))) index += 1;
-		if (index < length && line.charAt(index) === '.') {
-			index += 1;
-			while (index < length && this.isDigit(line.charAt(index))) index += 1;
-		}
-		if (index < length && (line.charAt(index) === 'e' || line.charAt(index) === 'E')) {
-			index += 1;
-			if (index < length && (line.charAt(index) === '+' || line.charAt(index) === '-')) {
-				index += 1;
-			}
-			while (index < length && this.isDigit(line.charAt(index))) index += 1;
-		}
-		return index;
-	}
-
-	private readIdentifier(line: string, start: number): number {
-		let index = start;
-		while (index < line.length && this.isIdentifierPart(line.charAt(index))) {
-			index += 1;
-		}
-		return index;
-	}
-
-	private isIdentifierStart(ch: string): boolean {
-		return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch === '_';
-	}
-
-	private isIdentifierPart(ch: string): boolean {
-		return this.isIdentifierStart(ch) || this.isDigit(ch);
-	}
-
-	private isDigit(ch: string): boolean {
-		return ch >= '0' && ch <= '9';
-	}
-
-	private isHexDigit(ch: string): boolean {
-		return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f');
-	}
-
-	private isOperatorChar(ch: string): boolean {
-		return '+-*/%<>=#(){}[]:,.;'.includes(ch);
-	}
 
 	private resolvePaletteIndex(color: { r: number; g: number; b: number; a: number }): number | null {
 		const index = Msx1Colors.indexOf(color);
@@ -10690,7 +10498,7 @@ private handleCompletionKeybindings(
 		let cursorY = Math.floor(originY);
 		const lines = text.split('\n');
 		for (let i = 0; i < lines.length; i++) {
-			const expanded = this.expandTabs(lines[i]);
+			const expanded = expandTabsExternal(lines[i]);
 			if (expanded.length > 0) {
 				api.print(expanded, baseX, cursorY, color);
 			}
@@ -10700,66 +10508,12 @@ private handleCompletionKeybindings(
 		}
 	}
 
-	private expandTabs(source: string): string {
-		if (source.indexOf('\t') === -1) {
-			return source;
-		}
-		let result = '';
-		for (let i = 0; i < source.length; i++) {
-			const ch = source.charAt(i);
-			if (ch === '\t') {
-				for (let j = 0; j < constants.TAB_SPACES; j++) {
-					result += ' ';
-				}
-			} else {
-				result += ch;
-			}
-		}
-		return result;
-	}
-
 	private truncateTextToWidth(text: string, maxWidth: number): string {
-		if (maxWidth <= 0) {
-			return '';
-		}
-		if (this.measureText(text) <= maxWidth) {
-			return text;
-		}
-		const ellipsis = '...';
-		const ellipsisWidth = this.measureText(ellipsis);
-		if (ellipsisWidth > maxWidth) {
-			return '';
-		}
-		let low = 0;
-		let high = text.length;
-		let best = '';
-		while (low <= high) {
-			const mid = Math.floor((low + high) / 2);
-			const candidate = text.slice(0, mid) + ellipsis;
-			if (this.measureText(candidate) <= maxWidth) {
-				best = candidate;
-				low = mid + 1;
-			} else {
-				high = mid - 1;
-			}
-		}
-		return best;
+		return truncateTextToWidthExternal(text, maxWidth, (ch) => this.font.advance(ch), this.spaceAdvance);
 	}
 
 	private measureText(text: string): number {
-		let width = 0;
-		for (let i = 0; i < text.length; i++) {
-			const ch = text.charAt(i);
-			if (ch === '\t') {
-				width += this.spaceAdvance * constants.TAB_SPACES;
-				continue;
-			}
-			if (ch === '\n') {
-				continue;
-			}
-			width += this.font.advance(ch);
-		}
-		return width;
+		return measureTextGeneric(text, (ch) => this.font.advance(ch), this.spaceAdvance);
 	}
 
 	private assertMonospace(): void {
