@@ -20,33 +20,15 @@ import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
 import { getApiCompletionData, getKeywordCompletions, KEYWORDS } from './intellisense';
 import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
-import type { InlineFieldMetrics } from './inline_text_field';
+import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
+	applyInlineFieldEditing,
+	applyInlineFieldPointer,
 	caretX as inlineFieldCaretX,
 	createInlineTextField,
-	clampCursor as inlineFieldClampCursor,
-	clampSelectionAnchor as inlineFieldClampSelectionAnchor,
-	deleteForward as inlineFieldDeleteForward,
-	deleteSelection as inlineFieldDeleteSelection,
-	deleteWordBackward as inlineFieldDeleteWordBackward,
-	deleteWordForward as inlineFieldDeleteWordForward,
-	insertValue as inlineFieldInsert,
 	measureRange as inlineFieldMeasureRange,
-	moveCursor as inlineFieldMoveCursor,
-	moveCursorRelative as inlineFieldMoveCursorRelative,
-	moveToEnd as inlineFieldMoveToEnd,
-	moveToStart as inlineFieldMoveToStart,
-	moveWordLeft as inlineFieldMoveWordLeft,
-	moveWordRight as inlineFieldMoveWordRight,
-	registerPointerClick as inlineFieldRegisterPointerClick,
-	resolveColumn as inlineFieldResolveColumn,
-	selectAll as inlineFieldSelectAll,
-	selectedText as inlineFieldGetSelectedText,
-	selectWordAt as inlineFieldSelectWordAt,
-	selectionLength as inlineFieldSelectionLength,
 	selectionRange as inlineFieldSelectionRange,
 	setFieldText,
-	backspace as inlineFieldBackspace,
 } from './inline_text_field';
 import { ConsoleScrollbar } from './scrollbar';
 import type {
@@ -1797,7 +1779,7 @@ export class ConsoleCartEditor {
 		if (this.createResourceWorking) {
 			return;
 		}
-		const textChanged = this.handleInlineFieldEditing(this.createResourceField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(this.createResourceField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -2058,7 +2040,7 @@ export class ConsoleCartEditor {
 			return;
 		}
 
-		const textChanged = this.handleInlineFieldEditing(this.searchField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(this.searchField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -2099,7 +2081,7 @@ export class ConsoleCartEditor {
 		}
 
 		const digitFilter = (value: string): boolean => value >= '0' && value <= '9';
-		const textChanged = this.handleInlineFieldEditing(this.lineJumpField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(this.lineJumpField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -2576,7 +2558,7 @@ export class ConsoleCartEditor {
 			this.ensureSymbolSearchSelectionVisible();
 			return;
 		}
-		const textChanged = this.handleInlineFieldEditing(this.symbolSearchField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(this.symbolSearchField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -2834,7 +2816,7 @@ export class ConsoleCartEditor {
 			this.ensureResourceSearchSelectionVisible();
 			return;
 		}
-		const textChanged = this.handleInlineFieldEditing(this.resourceSearchField, keyboard, {
+		const textChanged = this.processInlineFieldEditing(this.resourceSearchField, keyboard, {
 			ctrlDown,
 			metaDown,
 			shiftDown,
@@ -3428,7 +3410,7 @@ export class ConsoleCartEditor {
 				const label = 'NEW FILE:';
 				const labelX = 4;
 				const textLeft = labelX + this.measureText(label + ' ');
-				this.handleInlineFieldPointer(this.createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				this.processInlineFieldPointer(this.createResourceField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
@@ -3460,7 +3442,7 @@ export class ConsoleCartEditor {
 					const label = 'FILE :';
 					const labelX = 4;
 					const textLeft = labelX + this.measureText(label + ' ');
-					this.handleInlineFieldPointer(this.resourceSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+					this.processInlineFieldPointer(this.resourceSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
 					this.pointerSelecting = false;
 					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
@@ -3521,7 +3503,7 @@ export class ConsoleCartEditor {
 					const label = this.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 					const labelX = 4;
 					const textLeft = labelX + this.measureText(label + ' ');
-					this.handleInlineFieldPointer(this.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+					this.processInlineFieldPointer(this.symbolSearchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
 					this.pointerSelecting = false;
 					this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 					this.clearHoverTooltip();
@@ -3575,7 +3557,7 @@ export class ConsoleCartEditor {
 				const label = 'LINE #:';
 				const labelX = 4;
 				const textLeft = labelX + this.measureText(label + ' ');
-				this.handleInlineFieldPointer(this.lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				this.processInlineFieldPointer(this.lineJumpField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
@@ -3601,7 +3583,7 @@ export class ConsoleCartEditor {
 				const label = 'SEARCH:';
 				const labelX = 4;
 				const textLeft = labelX + this.measureText(label + ' ');
-				this.handleInlineFieldPointer(this.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				this.processInlineFieldPointer(this.searchField, textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
 				this.pointerSelecting = false;
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 				this.clearHoverTooltip();
@@ -5305,192 +5287,41 @@ export class ConsoleCartEditor {
 		return this.inlineFieldMetricsRef;
 	}
 
-	private handleInlineFieldEditing(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean {
-		const { ctrlDown, metaDown, shiftDown, altDown, deltaSeconds, allowSpace } = options;
-		const characterFilter = options.characterFilter;
-		const maxLength = options.maxLength !== undefined ? options.maxLength : null;
-		const useCtrl = ctrlDown || metaDown;
-		const initialText = field.text;
-		const initialCursor = field.cursor;
-		const initialAnchor = field.selectionAnchor;
-
-		if (useCtrl && isKeyJustPressedGlobal(this.playerIndex, 'KeyA')) {
-			consumeKeyboardKey(keyboard, 'KeyA');
-			inlineFieldSelectAll(field);
-		}
-
-		if (useCtrl && isKeyJustPressedGlobal(this.playerIndex, 'KeyC')) {
-			const selected = inlineFieldGetSelectedText(field);
-			const payload = selected && selected.length > 0 ? selected : field.text;
-			if (payload.length > 0) {
-				void this.writeClipboard(payload, 'Copied to editor clipboard');
-			}
-			consumeKeyboardKey(keyboard, 'KeyC');
-		}
-
-		if (useCtrl && isKeyJustPressedGlobal(this.playerIndex, 'KeyX')) {
-			const selected = inlineFieldGetSelectedText(field);
-			let payload = selected;
-			if (!payload || payload.length === 0) {
-				payload = field.text;
-				if (payload.length > 0) {
-					inlineFieldSelectAll(field);
-				}
-			}
-			if (payload && payload.length > 0) {
-				void this.writeClipboard(payload, 'Cut to editor clipboard');
-				inlineFieldDeleteSelection(field);
-			}
-			consumeKeyboardKey(keyboard, 'KeyX');
-		}
-
-		if (useCtrl && isKeyJustPressedGlobal(this.playerIndex, 'KeyV')) {
-			const clipboard = ConsoleCartEditor.customClipboard;
-			if (clipboard && clipboard.length > 0) {
-				const normalized = clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-				const merged = normalized.split('\n').join('');
-				if (merged.length > 0) {
-					const filtered = characterFilter ? merged.split('').filter(characterFilter).join('') : merged;
-					if (filtered.length > 0) {
-						let insertion = filtered;
-						if (maxLength !== null) {
-							const remaining = Math.max(0, maxLength - (field.text.length - inlineFieldSelectionLength(field)));
-							if (remaining <= 0) {
-								insertion = '';
-							} else if (insertion.length > remaining) {
-								insertion = insertion.slice(0, remaining);
-							}
-						}
-						if (insertion.length > 0) {
-							inlineFieldInsert(field, insertion);
-						}
-					}
-				}
-			} else {
+	private createInlineFieldEditingHandlers(keyboard: KeyboardInput): InlineFieldEditingHandlers {
+		return {
+			isKeyJustPressed: (code) => isKeyJustPressedGlobal(this.playerIndex, code),
+			isKeyTyped: (code) => isKeyTypedGlobal(this.playerIndex, code),
+			shouldFireRepeat: (code, deltaSeconds) => this.shouldFireRepeat(keyboard, code, deltaSeconds),
+			consumeKey: (code) => consumeKeyboardKey(keyboard, code),
+			readClipboard: () => ConsoleCartEditor.customClipboard,
+			writeClipboard: (payload, action) => {
+				const message = action === 'copy'
+					? 'Copied to editor clipboard'
+					: 'Cut to editor clipboard';
+				void this.writeClipboard(payload, message);
+			},
+			onClipboardEmpty: () => {
 				this.showMessage('Editor clipboard is empty', constants.COLOR_STATUS_WARNING, 1.5);
-			}
-			consumeKeyboardKey(keyboard, 'KeyV');
-		}
-
-		if (this.shouldFireRepeat(keyboard, 'Backspace', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'Backspace');
-			if (useCtrl) {
-				inlineFieldDeleteWordBackward(field);
-			} else {
-				inlineFieldBackspace(field);
-			}
-		}
-
-		if (this.shouldFireRepeat(keyboard, 'Delete', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'Delete');
-			if (useCtrl) {
-				inlineFieldDeleteWordForward(field);
-			} else {
-				inlineFieldDeleteForward(field);
-			}
-		}
-
-		if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowLeft');
-			if (useCtrl) {
-				inlineFieldMoveWordLeft(field, shiftDown);
-			} else {
-				inlineFieldMoveCursorRelative(field, -1, shiftDown);
-			}
-		}
-
-		if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'ArrowRight');
-			if (useCtrl) {
-				inlineFieldMoveWordRight(field, shiftDown);
-			} else {
-				inlineFieldMoveCursorRelative(field, 1, shiftDown);
-			}
-		}
-
-		if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'Home');
-			inlineFieldMoveToStart(field, shiftDown);
-		}
-
-		if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'End');
-			inlineFieldMoveToEnd(field, shiftDown);
-		}
-
-		if (allowSpace && !useCtrl && !metaDown && !altDown && this.shouldFireRepeat(keyboard, 'Space', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'Space');
-			const remaining = maxLength !== null
-				? Math.max(0, maxLength - (field.text.length - inlineFieldSelectionLength(field)))
-				: undefined;
-			if (remaining === undefined || remaining > 0) {
-				inlineFieldInsert(field, ' ');
-			}
-		}
-
-		if (!altDown) {
-			for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
-				const code = CHARACTER_CODES[i];
-				if (!isKeyTypedGlobal(this.playerIndex, code)) {
-					continue;
-				}
-				const entry = CHARACTER_MAP[code];
-				const value = shiftDown ? entry.shift : entry.normal;
-				if (value.length === 0) {
-					consumeKeyboardKey(keyboard, code);
-					continue;
-				}
-				if (characterFilter && !characterFilter(value)) {
-					consumeKeyboardKey(keyboard, code);
-					continue;
-				}
-				if (maxLength !== null) {
-					const available = maxLength - (field.text.length - inlineFieldSelectionLength(field));
-					if (available <= 0) {
-						consumeKeyboardKey(keyboard, code);
-						continue;
-					}
-				}
-				inlineFieldInsert(field, value);
-				consumeKeyboardKey(keyboard, code);
-			}
-		}
-
-		inlineFieldClampCursor(field);
-		inlineFieldClampSelectionAnchor(field);
-		const textChanged = field.text !== initialText;
-		if (!textChanged && field.cursor === initialCursor && field.selectionAnchor === initialAnchor) {
-			return false;
-		}
-		return textChanged;
+			},
+		};
 	}
 
-	private handleInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
-		const column = inlineFieldResolveColumn(field, this.inlineFieldMetrics(), textLeft, pointerX);
-		if (justPressed) {
-			const isDouble = inlineFieldRegisterPointerClick(field, column, () => $.platform.clock.now(), constants.DOUBLE_CLICK_MAX_INTERVAL_MS);
-			if (isDouble) {
-				inlineFieldSelectWordAt(field, column);
-				field.pointerSelecting = false;
-			} else {
-				field.selectionAnchor = column;
-				field.cursor = column;
-				field.desiredColumn = column;
-				field.pointerSelecting = true;
-			}
-			inlineFieldClampCursor(field);
-			inlineFieldClampSelectionAnchor(field);
+	private processInlineFieldEditing(field: InlineTextField, keyboard: KeyboardInput, options: InlineInputOptions): boolean {
+		return applyInlineFieldEditing(field, options, this.createInlineFieldEditingHandlers(keyboard));
+	}
+
+	private processInlineFieldPointer(field: InlineTextField, textLeft: number, pointerX: number, justPressed: boolean, pointerPressed: boolean): void {
+		const result = applyInlineFieldPointer(field, {
+			metrics: this.inlineFieldMetrics(),
+			textLeft,
+			pointerX,
+			justPressed,
+			pointerPressed,
+			now: () => $.platform.clock.now(),
+			doubleClickInterval: constants.DOUBLE_CLICK_MAX_INTERVAL_MS,
+		});
+		if (result.requestBlinkReset) {
 			this.resetBlink();
-			return;
-		}
-		if (!pointerPressed) {
-			field.pointerSelecting = false;
-			return;
-		}
-		if (field.pointerSelecting) {
-			inlineFieldMoveCursor(field, column, true);
-			inlineFieldClampCursor(field);
-			inlineFieldClampSelectionAnchor(field);
 		}
 	}
 

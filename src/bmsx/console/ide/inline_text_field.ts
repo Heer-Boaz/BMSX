@@ -1,5 +1,6 @@
+import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import { isWhitespace, isWordChar } from './text_utils';
-import type { InlineTextField } from './types';
+import type { InlineInputOptions, InlineTextField } from './types';
 
 export type InlineFieldMetrics = {
 	measureText: (text: string) => number;
@@ -386,4 +387,224 @@ export function setFieldText(field: InlineTextField, value: string, moveCursorTo
 	field.pointerSelecting = false;
 	field.lastPointerClickTimeMs = 0;
 	field.lastPointerClickColumn = -1;
+}
+
+export type InlineFieldClipboardAction = 'copy' | 'cut';
+
+export type InlineFieldEditingHandlers = {
+	isKeyJustPressed(code: string): boolean;
+	isKeyTyped(code: string): boolean;
+	shouldFireRepeat(code: string, deltaSeconds: number): boolean;
+	consumeKey(code: string): void;
+	readClipboard(): string | null;
+	writeClipboard(payload: string, action: InlineFieldClipboardAction): void | Promise<void>;
+	onClipboardEmpty(): void;
+};
+
+export function applyInlineFieldEditing(
+	field: InlineTextField,
+	options: InlineInputOptions,
+	handlers: InlineFieldEditingHandlers,
+): boolean {
+	const { ctrlDown, metaDown, shiftDown, altDown, deltaSeconds, allowSpace } = options;
+	const characterFilter = options.characterFilter;
+	const maxLength = options.maxLength !== undefined ? options.maxLength : null;
+	const useCtrl = ctrlDown || metaDown;
+	const initialText = field.text;
+	const initialCursor = field.cursor;
+	const initialAnchor = field.selectionAnchor;
+
+	if (useCtrl && handlers.isKeyJustPressed('KeyA')) {
+		handlers.consumeKey('KeyA');
+		selectAll(field);
+	}
+
+	if (useCtrl && handlers.isKeyJustPressed('KeyC')) {
+		const selected = selectedText(field);
+		const payload = selected && selected.length > 0 ? selected : field.text;
+		if (payload.length > 0) {
+			void handlers.writeClipboard(payload, 'copy');
+		}
+		handlers.consumeKey('KeyC');
+	}
+
+	if (useCtrl && handlers.isKeyJustPressed('KeyX')) {
+		const selected = selectedText(field);
+		let payload = selected;
+		if (!payload || payload.length === 0) {
+			payload = field.text;
+			if (payload.length > 0) {
+				selectAll(field);
+			}
+		}
+		if (payload && payload.length > 0) {
+			void handlers.writeClipboard(payload, 'cut');
+			deleteSelection(field);
+		}
+		handlers.consumeKey('KeyX');
+	}
+
+	if (useCtrl && handlers.isKeyJustPressed('KeyV')) {
+		const clipboard = handlers.readClipboard();
+		if (clipboard && clipboard.length > 0) {
+			const normalized = clipboard.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+			const merged = normalized.split('\n').join('');
+			if (merged.length > 0) {
+				const filtered = characterFilter ? merged.split('').filter(characterFilter).join('') : merged;
+				if (filtered.length > 0) {
+					let insertion = filtered;
+					if (maxLength !== null) {
+						const remaining = Math.max(0, maxLength - (field.text.length - selectionLength(field)));
+						if (remaining <= 0) {
+							insertion = '';
+						} else if (insertion.length > remaining) {
+							insertion = insertion.slice(0, remaining);
+						}
+					}
+					if (insertion.length > 0) {
+						insertValue(field, insertion);
+					}
+				}
+			}
+		} else {
+			handlers.onClipboardEmpty();
+		}
+		handlers.consumeKey('KeyV');
+	}
+
+	if (handlers.shouldFireRepeat('Backspace', deltaSeconds)) {
+		handlers.consumeKey('Backspace');
+		if (useCtrl) {
+			deleteWordBackward(field);
+		} else {
+			backspace(field);
+		}
+	}
+
+	if (handlers.shouldFireRepeat('Delete', deltaSeconds)) {
+		handlers.consumeKey('Delete');
+		if (useCtrl) {
+			deleteWordForward(field);
+		} else {
+			deleteForward(field);
+		}
+	}
+
+	if (handlers.shouldFireRepeat('ArrowLeft', deltaSeconds)) {
+		handlers.consumeKey('ArrowLeft');
+		if (useCtrl) {
+			moveWordLeft(field, shiftDown);
+		} else {
+			moveCursorRelative(field, -1, shiftDown);
+		}
+	}
+
+	if (handlers.shouldFireRepeat('ArrowRight', deltaSeconds)) {
+		handlers.consumeKey('ArrowRight');
+		if (useCtrl) {
+			moveWordRight(field, shiftDown);
+		} else {
+			moveCursorRelative(field, 1, shiftDown);
+		}
+	}
+
+	if (handlers.shouldFireRepeat('Home', deltaSeconds)) {
+		handlers.consumeKey('Home');
+		moveToStart(field, shiftDown);
+	}
+
+	if (handlers.shouldFireRepeat('End', deltaSeconds)) {
+		handlers.consumeKey('End');
+		moveToEnd(field, shiftDown);
+	}
+
+	if (allowSpace && !useCtrl && !metaDown && !altDown && handlers.shouldFireRepeat('Space', deltaSeconds)) {
+		handlers.consumeKey('Space');
+		const remaining = maxLength !== null
+			? Math.max(0, maxLength - (field.text.length - selectionLength(field)))
+			: undefined;
+		if (remaining === undefined || remaining > 0) {
+			insertValue(field, ' ');
+		}
+	}
+
+	if (!altDown) {
+		for (let i = 0; i < CHARACTER_CODES.length; i += 1) {
+			const code = CHARACTER_CODES[i];
+			if (!handlers.isKeyTyped(code)) {
+				continue;
+			}
+			const entry = CHARACTER_MAP[code];
+			const value = shiftDown ? entry.shift : entry.normal;
+			if (value.length === 0) {
+				handlers.consumeKey(code);
+				continue;
+			}
+			if (characterFilter && !characterFilter(value)) {
+				handlers.consumeKey(code);
+				continue;
+			}
+			if (maxLength !== null) {
+				const available = maxLength - (field.text.length - selectionLength(field));
+				if (available <= 0) {
+					handlers.consumeKey(code);
+					continue;
+				}
+			}
+			insertValue(field, value);
+			handlers.consumeKey(code);
+		}
+	}
+
+	clampCursor(field);
+	clampSelectionAnchor(field);
+	const textChanged = field.text !== initialText;
+	if (!textChanged && field.cursor === initialCursor && field.selectionAnchor === initialAnchor) {
+		return false;
+	}
+	return textChanged;
+}
+
+export type InlineFieldPointerOptions = {
+	metrics: InlineFieldMetrics;
+	textLeft: number;
+	pointerX: number;
+	justPressed: boolean;
+	pointerPressed: boolean;
+	now: () => number;
+	doubleClickInterval: number;
+};
+
+export type InlineFieldPointerResult = {
+	requestBlinkReset: boolean;
+};
+
+export function applyInlineFieldPointer(field: InlineTextField, options: InlineFieldPointerOptions): InlineFieldPointerResult {
+	const { metrics, textLeft, pointerX, justPressed, pointerPressed, now, doubleClickInterval } = options;
+	const column = resolveColumn(field, metrics, textLeft, pointerX);
+	if (justPressed) {
+		const isDouble = registerPointerClick(field, column, now, doubleClickInterval);
+		if (isDouble) {
+			selectWordAt(field, column);
+			field.pointerSelecting = false;
+		} else {
+			field.selectionAnchor = column;
+			field.cursor = column;
+			field.desiredColumn = column;
+			field.pointerSelecting = true;
+		}
+		clampCursor(field);
+		clampSelectionAnchor(field);
+		return { requestBlinkReset: true };
+	}
+	if (!pointerPressed) {
+		field.pointerSelecting = false;
+		return { requestBlinkReset: false };
+	}
+	if (field.pointerSelecting) {
+		moveCursor(field, column, true);
+		clampCursor(field);
+		clampSelectionAnchor(field);
+	}
+	return { requestBlinkReset: false };
 }
