@@ -1086,14 +1086,12 @@ export class BrowserGameViewHost implements GameViewHost {
 		}
 		this.surface = new BrowserGameViewCanvas(canvas);
 		if (!BrowserGameViewHost.visualViewportForwardingInstalled) {
-			const visualViewport = window.visualViewport;
-			if (visualViewport) {
-				const handler = BrowserGameViewHost.forwardViewportChange;
-				visualViewport.addEventListener('resize', handler);
-				visualViewport.addEventListener('scroll', handler);
-				visualViewport.addEventListener('geometrychange', handler as EventListener);
-				BrowserGameViewHost.visualViewportForwardingInstalled = true;
-			}
+			const visualViewport = window.visualViewport!;
+			const handler = BrowserGameViewHost.forwardViewportChange;
+			visualViewport.addEventListener('resize', handler);
+			visualViewport.addEventListener('scroll', handler);
+			visualViewport.addEventListener('geometrychange', handler as EventListener);
+			BrowserGameViewHost.visualViewportForwardingInstalled = true;
 		}
 		this.viewportCapability = {
 			getViewportMetrics: () => this.computeViewportMetrics(),
@@ -1149,23 +1147,18 @@ export class BrowserGameViewHost implements GameViewHost {
 	}
 
 	private computeViewportMetrics(): ViewportMetrics {
-		const documentElement = document.documentElement;
-		const visualViewport = window.visualViewport;
-		const visualWidth = visualViewport && typeof visualViewport.width === 'number' ? visualViewport.width : null;
-		const visualHeight = visualViewport && typeof visualViewport.height === 'number' ? visualViewport.height : null;
-		const innerWidth = typeof window.innerWidth === 'number' ? window.innerWidth : 0;
-		const innerHeight = typeof window.innerHeight === 'number' ? window.innerHeight : 0;
+		const documentElement = document.documentElement!;
 		const documentDimensions: ViewportDimensions = {
-			width: documentElement ? documentElement.clientWidth : 0,
-			height: documentElement ? documentElement.clientHeight : 0,
+			width: documentElement.clientWidth,
+			height: documentElement.clientHeight,
 		};
 		const windowDimensions: ViewportDimensions = {
-			width: visualWidth !== null ? visualWidth : innerWidth,
-			height: visualHeight !== null ? visualHeight : innerHeight,
+			width: window.innerWidth,
+			height: window.innerHeight,
 		};
 		const screenDimensions: ViewportDimensions = {
-			width: typeof window.screen?.width === 'number' ? window.screen.width : 0,
-			height: typeof window.screen?.height === 'number' ? window.screen.height : 0,
+			width: window.screen.width,
+			height: window.screen.height,
 		};
 		return {
 			document: documentDimensions,

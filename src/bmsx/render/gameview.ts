@@ -487,10 +487,8 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		const screenHeight = metrics.screen.height;
 		const viewportWidth = innerWidth > 0 ? innerWidth : screenWidth;
 		const viewportHeight = innerHeight > 0 ? innerHeight : screenHeight;
-		const visualViewport = typeof window !== 'undefined' ? window.visualViewport : undefined;
-		const viewportBottomInset = visualViewport && typeof visualViewport.height === 'number' && typeof visualViewport.offsetTop === 'number'
-			? Math.max(0, innerHeight - (visualViewport.height + visualViewport.offsetTop))
-			: 0;
+		const visualViewport = window.visualViewport!;
+		const viewportBottomInset = Math.max(0, innerHeight - (visualViewport.height + visualViewport.offsetTop));
 
 		const self = $.view || this;
 		self.calculateSize();
@@ -515,56 +513,57 @@ export class GameView implements RegisterablePersistent, RenderContext {
 		this.surface.setDisplayPosition(displayLeft, displayTop);
 
 		if (onscreenGamepadEnabled) {
-			const handlesProvider = this.getOnscreenGamepadHandleProvider();
-			const handles = handlesProvider?.getHandles();
-			if (handles) {
-				const { dpad, actionButtons } = handles;
-				const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
-				const bottomInset = viewportBottomInset;
-				const canvasRect = this.surface.measureDisplay();
-				const verticalSpan = Math.max(verticalContainer, canvasRect.height);
+			const handles = this.getOnscreenGamepadHandleProvider()!.getHandles()!;
+			const { dpad, actionButtons } = handles;
+			const referenceDimension = viewportWidth > viewportHeight ? viewportWidth : viewportHeight;
+			const bottomInset = viewportBottomInset;
+			const canvasRect = this.surface.measureDisplay();
 
-				const clampBottom = (value: number): number => value > 0 ? Math.round(value) : 0;
-
-				const updateBottomPosition = (control: typeof dpad, size: { height: number; }, isRightSide: boolean, referenceActionSize: { height: number; }): void => {
-					let newBottom: number;
-					if (isLandscape) {
-						newBottom = (verticalSpan - size.height) / 2;
-					} else if (isRightSide) {
-						newBottom = bottomInset;
+			const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
+				let newScale = referenceDimension * 0.20 / 100;
+				if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
+					let maxSvgWidth: number;
+					if (isRightSide) {
+						maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
 					} else {
-						newBottom = bottomInset + ((referenceActionSize.height - size.height) / 2);
+						maxSvgWidth = canvasRect.left;
 					}
-					control.setBottom(clampBottom(newBottom));
-				};
-
-				const updateScale = (control: typeof dpad, isRightSide: boolean): void => {
-					let newScale = referenceDimension * 0.20 / 100;
-					if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
-						let maxSvgWidth: number;
-						if (isRightSide) {
-							maxSvgWidth = viewportWidth - (canvasRect.left + canvasRect.width);
-						} else {
-							maxSvgWidth = canvasRect.left;
-						}
-						if (maxSvgWidth < 0) {
-							maxSvgWidth = 0;
-						}
-						const widthAttr = control.getNumericAttribute('width');
-						if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
-							newScale = maxSvgWidth / widthAttr;
-						}
+					if (maxSvgWidth < 0) {
+						maxSvgWidth = 0;
 					}
-					control.setScale(newScale);
-				};
+					const widthAttr = control.getNumericAttribute('width');
+					if (widthAttr !== null && widthAttr > 0 && widthAttr * newScale > maxSvgWidth) {
+						newScale = maxSvgWidth / widthAttr;
+					}
+				}
+				control.setScale(newScale);
+			};
 
-				updateScale(dpad, false);
-				updateScale(actionButtons, true);
-				const dpadSize = dpad.measure();
-				const actionSize = actionButtons.measure();
-				updateBottomPosition(dpad, dpadSize, false, actionSize);
-				updateBottomPosition(actionButtons, actionSize, true, actionSize);
-			}
+			updateScale(dpad, false);
+			updateScale(actionButtons, true);
+			const dpadSize = dpad.measure();
+			const actionSize = actionButtons.measure();
+			const centeredSpan = Math.max(
+				visualViewport.height,
+				canvasRect.height,
+				actionSize.height,
+				dpadSize.height,
+			);
+			const clampBottom = (value: number): number => value > 0 ? Math.round(value) : 0;
+			const updateBottomPosition = (control: typeof dpad, size: { height: number; }, isRightSide: boolean): void => {
+				let newBottom: number;
+				if (isLandscape) {
+					newBottom = bottomInset + (centeredSpan - size.height) / 2;
+				} else if (isRightSide) {
+					newBottom = bottomInset;
+				} else {
+					const referenceHeight = Math.max(actionSize.height, size.height);
+					newBottom = bottomInset + (referenceHeight - size.height) / 2;
+				}
+				control.setBottom(clampBottom(newBottom));
+			};
+			updateBottomPosition(dpad, dpadSize, false);
+			updateBottomPosition(actionButtons, actionSize, true);
 		}
 	}
 
