@@ -1,4 +1,5 @@
 const child = require('child_process');
+const fs = require('fs');
 
 const args = process.argv.slice(2);
 if (args.length === 0) {
@@ -26,7 +27,13 @@ if (result.status !== 0) {
 }
 
 // Run the headless debug runner with computed paths
-result = child.spawnSync('node', ['dist/headless_debug.js', '--rom', romPath, '--input-timeline', timelinePath], { stdio: 'inherit' });
+const headlessArgs = ['dist/headless_debug.js', '--rom', romPath];
+if (fs.existsSync(timelinePath)) {
+	headlessArgs.push('--input-timeline', timelinePath);
+} else {
+	console.warn(`[headless-run] Optional input timeline not found at ${timelinePath}. Running without a timeline.`);
+}
+result = child.spawnSync('node', headlessArgs, { stdio: 'inherit' });
 if (result.status !== 0) {
 	console.error('Error: headless runner failed.');
 	process.exit(result.status || 1);
