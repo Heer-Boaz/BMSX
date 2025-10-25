@@ -36,6 +36,7 @@ import { expandTabs as expandTabsExternal, measureTextGeneric, truncateTextToWid
 import { ConsoleScrollbar } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderStatusBar } from './render_status_bar';
+import { renderCreateResourceBar } from './render_inline_bars';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -6085,56 +6086,39 @@ export class ConsoleCartEditor {
 	}
 
 	private drawCreateResourceBar(api: BmsxConsoleApi): void {
-		const height = this.getCreateResourceBarHeight();
-		if (height <= 0) {
-			return;
-		}
-		const barTop = this.headerHeight + this.tabBarHeight;
-		const barBottom = barTop + height;
-		api.rectfill(0, barTop, this.viewportWidth, barBottom, constants.COLOR_CREATE_RESOURCE_BACKGROUND);
-		api.rectfill(0, barTop, this.viewportWidth, barTop + 1, constants.COLOR_CREATE_RESOURCE_OUTLINE);
-		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, constants.COLOR_CREATE_RESOURCE_OUTLINE);
-
-		const label = 'NEW FILE:';
-		const labelX = 4;
-		const labelY = barTop + constants.CREATE_RESOURCE_BAR_MARGIN_Y;
-		this.drawText(api, label, labelX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
-
-		const field = this.createResourceField;
-		const pathX = labelX + this.measureText(label + ' ');
-		let displayPath = field.text;
-		let pathColor = constants.COLOR_CREATE_RESOURCE_TEXT;
-		if (displayPath.length === 0 && !this.createResourceActive) {
-			displayPath = 'ENTER LUA PATH';
-			pathColor = constants.COLOR_CREATE_RESOURCE_PLACEHOLDER;
-		}
-
-		const selection = inlineFieldSelectionRange(field);
-		if (selection && field.text.length > 0) {
-			const selectionLeft = pathX + inlineFieldMeasureRange(field, this.inlineFieldMetrics(), 0, selection.start);
-			const selectionWidth = inlineFieldMeasureRange(field, this.inlineFieldMetrics(), selection.start, selection.end);
-			if (selectionWidth > 0) {
-				api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + this.lineHeight, constants.SELECTION_OVERLAY);
-			}
-		}
-
-		this.drawText(api, displayPath, pathX, labelY, pathColor);
-
-		const caretBaseX = inlineFieldCaretX(field, pathX, this.measureText.bind(this));
-		const caretLeft = Math.floor(caretBaseX);
-		const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + this.charAdvance));
-		const caretTop = Math.floor(labelY);
-		const caretBottom = caretTop + this.lineHeight;
-		this.drawInlineCaret(api, this.createResourceField, caretLeft, caretTop, caretRight, caretBottom, caretBaseX, this.createResourceActive, constants.INLINE_CARET_COLOR, pathColor);
-
-		if (this.createResourceWorking) {
-			const status = 'CREATING...';
-			const statusWidth = this.measureText(status);
-			const statusX = Math.max(pathX + this.measureText(displayPath) + this.spaceAdvance, this.viewportWidth - statusWidth - 4);
-			this.drawText(api, status, statusX, labelY, constants.COLOR_CREATE_RESOURCE_TEXT);
-		} else if (this.createResourceError && this.createResourceError.length > 0) {
-			this.drawCreateResourceErrorDialog(api, this.createResourceError);
-		}
+		const host = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			tabBarHeight: this.tabBarHeight,
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => this.drawText(api2, t, x, y, c),
+			inlineFieldMetrics: () => this.inlineFieldMetrics(),
+			createResourceActive: this.createResourceActive,
+			createResourceVisible: this.createResourceVisible,
+			createResourceField: this.createResourceField,
+			createResourceWorking: this.createResourceWorking,
+			createResourceError: this.createResourceError,
+			drawCreateResourceErrorDialog: (api4: BmsxConsoleApi, err: string) => this.drawCreateResourceErrorDialog(api4, err),
+			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+			drawInlineCaret: (
+				api3: BmsxConsoleApi,
+				field: InlineTextField,
+				l: number,
+				t: number,
+				r: number,
+				b: number,
+				baseX: number,
+				active: boolean,
+				caretColor: { r: number; g: number; b: number; a: number },
+				textColor: number,
+			) => this.drawInlineCaret(api3, field, l, t, r, b, baseX, active, caretColor, textColor),
+			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
+			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+		};
+			renderCreateResourceBar(api, host);
 	}
 
 	private drawSearchBar(api: BmsxConsoleApi): void {
