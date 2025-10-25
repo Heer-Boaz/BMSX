@@ -1835,6 +1835,14 @@ export class ConsoleCartEditor {
 			this.closeCreateResourcePrompt(true);
 			return true;
 		}
+		if (this.symbolSearchActive || this.symbolSearchVisible) {
+			this.closeSymbolSearch(false);
+			return true;
+		}
+		if (this.resourceSearchActive || this.resourceSearchVisible) {
+			this.closeResourceSearch(false);
+			return true;
+		}
 		if (this.lineJumpActive || this.lineJumpVisible) {
 			this.closeLineJump(false);
 			return true;
@@ -3069,9 +3077,7 @@ export class ConsoleCartEditor {
 		const query = this.resourceSearchQuery.trim().toLowerCase();
 		if (query.length === 0) {
 			this.resourceSearchMatches = this.resourceCatalog.map(entry => ({ entry, matchIndex: 0 }));
-			if (this.resourceSearchMatches.length > 0) {
-				this.resourceSearchSelectionIndex = 0;
-			}
+			this.resourceSearchSelectionIndex = -1;
 			return;
 		}
 		const tokens = query.split(/\s+/).filter(token => token.length > 0);
@@ -3111,7 +3117,7 @@ export class ConsoleCartEditor {
 			return a.entry.displayPath.localeCompare(b.entry.displayPath);
 		});
 		this.resourceSearchMatches = matches;
-		this.resourceSearchSelectionIndex = 0;
+		this.resourceSearchSelectionIndex = matches.length > 0 ? 0 : -1;
 	}
 
 	private isResourceSearchCompactMode(): boolean {
@@ -3203,14 +3209,22 @@ export class ConsoleCartEditor {
 			}
 			if (this.resourceSearchSelectionIndex >= 0) {
 				this.applyResourceSearchSelection(this.resourceSearchSelectionIndex);
+				return;
 			} else {
-				this.showMessage('No resource selected', COLOR_STATUS_WARNING, 1.5);
+				const trimmed = this.resourceSearchQuery.trim();
+				if (trimmed.length === 0) {
+					this.closeResourceSearch(true);
+					this.focusEditorFromResourceSearch();
+				} else {
+					this.showMessage('No resource selected', COLOR_STATUS_WARNING, 1.5);
+				}
 			}
 			return;
 		}
 		if (this.isKeyJustPressed(keyboard, 'Escape')) {
 			this.consumeKey(keyboard, 'Escape');
 			this.closeResourceSearch(true);
+			this.focusEditorFromResourceSearch();
 			return;
 		}
 		if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
@@ -3267,6 +3281,16 @@ export class ConsoleCartEditor {
 				const query = this.resourceSearchQuery.slice(1).trimStart();
 				this.closeResourceSearch(true);
 				this.openGlobalSymbolSearch(query);
+				return;
+			}
+			if (this.resourceSearchQuery.startsWith(':')) {
+				const query = this.resourceSearchQuery.slice(1).trimStart();
+				this.closeResourceSearch(true);
+				this.openLineJump();
+				if (query.length > 0) {
+					this.applyLineJumpFieldText(query, true);
+					this.lineJumpValue = query;
+				}
 				return;
 			}
 			this.updateResourceSearchMatches();
@@ -7231,46 +7255,42 @@ export class ConsoleCartEditor {
 		const baseHeight = this.lineHeight + QUICK_OPEN_BAR_MARGIN_Y * 2;
 		const separatorTop = barTop + baseHeight;
 		api.rectfill(0, separatorTop, this.viewportWidth, separatorTop + QUICK_OPEN_RESULT_SPACING, COLOR_QUICK_OPEN_OUTLINE);
-	const resultsTop = separatorTop + QUICK_OPEN_RESULT_SPACING;
-	const rowHeight = this.resourceSearchEntryHeight();
-	const compactMode = this.isResourceSearchCompactMode();
-	for (let i = 0; i < resultCount; i += 1) {
-		const matchIndex = this.resourceSearchDisplayOffset + i;
-		const match = this.resourceSearchMatches[matchIndex];
-		const rowTop = resultsTop + i * rowHeight;
-		const rowBottom = rowTop + rowHeight;
-		const isSelected = matchIndex === this.resourceSearchSelectionIndex;
+		const resultsTop = separatorTop + QUICK_OPEN_RESULT_SPACING;
+		const rowHeight = this.resourceSearchEntryHeight();
+		const compactMode = this.isResourceSearchCompactMode();
+		for (let i = 0; i < resultCount; i += 1) {
+			const matchIndex = this.resourceSearchDisplayOffset + i;
+			const match = this.resourceSearchMatches[matchIndex];
+			const rowTop = resultsTop + i * rowHeight;
+			const rowBottom = rowTop + rowHeight;
+			const isSelected = matchIndex === this.resourceSearchSelectionIndex;
 			const isHover = matchIndex === this.resourceSearchHoverIndex;
 			if (isSelected) {
 				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, HIGHLIGHT_OVERLAY);
 			} else if (isHover) {
 				api.rectfillColor(0, rowTop, this.viewportWidth, rowBottom, SELECTION_OVERLAY);
 			}
-		let textX = QUICK_OPEN_RESULT_PADDING_X;
-		const kindText = match.entry.typeLabel;
-		const detail = match.entry.assetLabel ?? match.entry.descriptor.assetId ?? '';
-		if (kindText.length > 0) {
-			this.drawText(api, kindText, textX, rowTop, COLOR_QUICK_OPEN_KIND);
-			textX += this.measureText(kindText + ' ');
-		}
-		this.drawText(api, match.entry.displayPath, textX, rowTop, COLOR_QUICK_OPEN_TEXT);
-		if (compactMode) {
-			const secondaryY = rowTop + this.lineHeight;
-			if (detail.length > 0) {
-				this.drawText(api, detail, QUICK_OPEN_RESULT_PADDING_X, secondaryY, COLOR_QUICK_OPEN_KIND);
-			}
+			let textX = QUICK_OPEN_RESULT_PADDING_X;
+			const kindText = match.entry.typeLabel;
+			const descriptorAssetId = match.entry.descriptor.assetId ?? '';
+			const detail = match.entry.assetLabel ?? (descriptorAssetId !== match.entry.displayPath ? descriptorAssetId : '');
 			if (kindText.length > 0) {
-				const summaryWidth = this.measureText(kindText);
-				const summaryX = this.viewportWidth - summaryWidth - QUICK_OPEN_RESULT_PADDING_X;
-				this.drawText(api, kindText, summaryX, secondaryY, COLOR_QUICK_OPEN_KIND);
+				this.drawText(api, kindText, textX, rowTop, COLOR_QUICK_OPEN_KIND);
+				textX += this.measureText(kindText + ' ');
 			}
-		} else if (detail.length > 0) {
-			const detailWidth = this.measureText(detail);
-			const detailX = this.viewportWidth - detailWidth - QUICK_OPEN_RESULT_PADDING_X;
-			this.drawText(api, detail, detailX, rowTop, COLOR_QUICK_OPEN_KIND);
+			this.drawText(api, match.entry.displayPath, textX, rowTop, COLOR_QUICK_OPEN_TEXT);
+			if (compactMode) {
+				const secondaryY = rowTop + this.lineHeight;
+				if (detail.length > 0) {
+					this.drawText(api, detail, QUICK_OPEN_RESULT_PADDING_X, secondaryY, COLOR_QUICK_OPEN_KIND);
+				}
+			} else if (detail.length > 0) {
+				const detailWidth = this.measureText(detail);
+				const detailX = this.viewportWidth - detailWidth - QUICK_OPEN_RESULT_PADDING_X;
+				this.drawText(api, detail, detailX, rowTop, COLOR_QUICK_OPEN_KIND);
+			}
 		}
 	}
-}
 
 	private drawSymbolSearchBar(api: BmsxConsoleApi): void {
 		const height = this.getSymbolSearchBarHeight();
