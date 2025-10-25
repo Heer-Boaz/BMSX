@@ -1,0 +1,724 @@
+import { BmsxConsoleApi } from '../api';
+import { clamp } from '../../utils/utils';
+import { getApiCompletionData, getKeywordCompletions } from './intellisense';
+import {
+    CompletionContext,
+    CompletionSession,
+    CompletionTrigger,
+    CursorScreenInfo,
+    EditContext,
+    LuaCompletionItem,
+    ParameterHintState,
+} from './types';
+import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaSymbolEntry } from '../types';
+import * as constants from './constants';
+import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
+import type { KeyboardInput } from '../../input/keyboardinput';
+import { isWhitespace, isWordChar } from './text_utils';
+
+export interface CompletionHost {
+    // Editor state accessors
+    getPlayerIndex(): number;
+    isCodeTabActive(): boolean;
+    getLines(): string[];
+    getCursorRow(): number;
+    getCursorColumn(): number;
+    setCursorPosition(row: number, column: number): void;
+    setSelectionAnchor(row: number, column: number): void;
+    // Text operations
+    replaceSelectionWith(text: string): void;
+    updateDesiredColumn(): void;
+    resetBlink(): void;
+    revealCursor(): void;
+    // Geometry/metrics
+    measureText(text: string): number;
+    drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
+    getCursorScreenInfo(): CursorScreenInfo | null;
+    getLineHeight(): number;
+    getSpaceAdvance(): number;
+    // Symbol/source helpers
+    getActiveCodeTabContext(): unknown | null;
+    resolveHoverAssetId(context: unknown | null): string | null;
+    resolveHoverChunkName(context: unknown | null): string | null;
+    listLuaSymbols(assetId: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[];
+    listGlobalLuaSymbols(): ConsoleLuaSymbolEntry[];
+    listBuiltinLuaFunctions(): ConsoleLuaBuiltinDescriptor[];
+    // Utilities
+    charAt(row: number, column: number): string;
+    getTextVersion(): number;
+    shouldFireRepeat(keyboard: KeyboardInput, code: string, deltaSeconds: number): boolean;
+}
+
+const keywordCompletions = getKeywordCompletions();
+const apiCompletionData = getApiCompletionData();
+
+export class CompletionController {
+    private readonly host: CompletionHost;
+
+    private completionSession: CompletionSession | null = null;
+    private readonly localCompletionCache: Map<string, { version: number; items: LuaCompletionItem[] }> = new Map();
+    private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
+    private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
+    private suppressNextAutoCompletion = false;
+    private parameterHint: ParameterHintState | null = null;
+    private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
+    private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
+
+    constructor(host: CompletionHost) {
+        this.host = host;
+    }
+
+    // Public API for editor integration
+    public closeSession(): void {
+        this.completionSession = null;
+        this.cancelPendingCompletion();
+    }
+
+    public processPending(deltaSeconds: number): void {
+        const pending = this.pendingCompletionRequest;
+        if (!pending) return;
+        if (!this.host.isCodeTabActive()) { this.cancelPendingCompletion(); return; }
+        if (this.completionSession) { this.cancelPendingCompletion(); return; }
+        pending.elapsed += deltaSeconds;
+        if (pending.elapsed < constants.COMPLETION_AUTO_TRIGGER_DELAY_SECONDS) return;
+        const analyzed = this.analyzeCompletionContext();
+        if (!analyzed) { this.cancelPendingCompletion(); return; }
+        if (!this.completionContextsCompatible(pending.context, analyzed)) { this.cancelPendingCompletion(); return; }
+        if (pending.trigger === 'typing' && analyzed.kind === 'global' && analyzed.prefix.length === 0) { this.cancelPendingCompletion(); return; }
+        this.openCompletionSessionFromContext(analyzed, pending.trigger);
+        this.pendingCompletionRequest = null;
+    }
+
+    public onCursorMoved(): void {
+        this.cancelPendingCompletion();
+        if (this.completionSession) {
+            const context = this.analyzeCompletionContext();
+            if (!context) this.closeSession();
+            else this.refreshCompletionSessionFromContext(context);
+        }
+        this.refreshParameterHint();
+    }
+
+    public updateAfterEdit(edit: EditContext | null): void {
+        // Invalidate caches upon edit
+        this.invalidateLocalCompletionCacheForActiveContext();
+        this.cachedGlobalCompletionItems = null;
+        if (this.suppressNextAutoCompletion) {
+            this.suppressNextAutoCompletion = false;
+            this.cancelPendingCompletion();
+            this.refreshParameterHint();
+            return;
+        }
+        this.updateCompletionSessionAfterMutation(edit);
+        this.refreshParameterHint();
+    }
+
+    public handleKeybindings(
+        keyboard: KeyboardInput,
+        deltaSeconds: number,
+        shiftDown: boolean,
+        ctrlDown: boolean,
+        altDown: boolean,
+        metaDown: boolean,
+    ): boolean {
+        // Allow manual open via Ctrl/Cmd+Space
+        if ((ctrlDown || metaDown) && !altDown && this.completionSession === null && this.host.isCodeTabActive() && isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Space')) {
+            consumeKeyboardKey(keyboard, 'Space');
+            const context = this.analyzeCompletionContext();
+            if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
+            return true;
+        }
+
+        const session = this.completionSession;
+        if (!session) return false;
+        if (isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Escape')) {
+            consumeKeyboardKey(keyboard, 'Escape');
+            this.closeSession();
+            return true;
+        }
+        let handled = false;
+        if (this.host.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+            consumeKeyboardKey(keyboard, 'ArrowDown');
+            this.moveCompletionSelection(1);
+            handled = true;
+        }
+        if (this.host.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+            consumeKeyboardKey(keyboard, 'ArrowUp');
+            this.moveCompletionSelection(-1);
+            handled = true;
+        }
+        if (this.host.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+            consumeKeyboardKey(keyboard, 'PageDown');
+            this.moveCompletionSelection(session.maxVisibleItems);
+            handled = true;
+        }
+        if (this.host.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+            consumeKeyboardKey(keyboard, 'PageUp');
+            this.moveCompletionSelection(-session.maxVisibleItems);
+            handled = true;
+        }
+        if (ctrlDown || metaDown) {
+            if (this.host.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'Home');
+                if (session.filteredItems.length > 0) {
+                    session.selectionIndex = 0;
+                    this.ensureCompletionSelectionVisible(session);
+                }
+                handled = true;
+            }
+            if (this.host.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'End');
+                if (session.filteredItems.length > 0) {
+                    session.selectionIndex = session.filteredItems.length - 1;
+                    this.ensureCompletionSelectionVisible(session);
+                }
+                handled = true;
+            }
+        }
+        if (handled) return true;
+        const enterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Enter');
+        const numpadEnterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'NumpadEnter');
+        if (enterPressed || numpadEnterPressed) {
+            if (enterPressed) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+            this.acceptSelectedCompletion();
+            return true;
+        }
+        if (isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Tab')) {
+            consumeKeyboardKey(keyboard, 'Tab');
+            if (shiftDown) this.moveCompletionSelection(-1); else this.acceptSelectedCompletion();
+            return true;
+        }
+        if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Space')) {
+            consumeKeyboardKey(keyboard, 'Space');
+            const context = this.analyzeCompletionContext();
+            if (context) this.openCompletionSessionFromContext(context, 'manual'); else this.closeSession();
+            return true;
+        }
+        return false;
+    }
+
+    public drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+        const session = this.completionSession;
+        const cursorInfo = this.host.getCursorScreenInfo();
+        if (!session || !cursorInfo) return;
+        if (session.filteredItems.length === 0) return;
+        const startIndex = session.displayOffset;
+        const endIndex = Math.min(session.filteredItems.length, startIndex + session.maxVisibleItems);
+        const visibleCount = endIndex - startIndex;
+        if (visibleCount <= 0) return;
+        let maxLineWidth = constants.COMPLETION_POPUP_MIN_WIDTH;
+        const detailSpacing = this.host.getSpaceAdvance();
+        for (let i = startIndex; i < endIndex; i += 1) {
+            const item = session.filteredItems[i];
+            const labelWidth = this.host.measureText(item.label);
+            const detailText = item.detail ?? '';
+            const detailWidth = detailText.length > 0 ? this.host.measureText(detailText) : 0;
+            const totalWidth = detailWidth > 0 ? labelWidth + detailSpacing + detailWidth : labelWidth;
+            if (totalWidth > maxLineWidth) maxLineWidth = totalWidth;
+        }
+        const popupWidth = Math.max(constants.COMPLETION_POPUP_MIN_WIDTH, Math.floor(maxLineWidth + constants.COMPLETION_POPUP_PADDING_X * 2));
+        const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * this.host.getLineHeight() + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
+        let popupLeft = Math.floor(cursorInfo.x);
+        if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
+        if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;
+        let popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
+        if (popupTop + popupHeight > bounds.codeBottom) popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
+        if (popupTop < bounds.codeTop) {
+            popupTop = bounds.codeTop;
+            if (popupTop + popupHeight > bounds.codeBottom) popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
+        }
+        const popupRight = popupLeft + popupWidth;
+        const popupBottom = popupTop + popupHeight;
+        api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BACKGROUND);
+        api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BORDER);
+        for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
+            const itemIndex = startIndex + drawIndex;
+            const item = session.filteredItems[itemIndex];
+            const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (this.host.getLineHeight() + constants.COMPLETION_POPUP_ITEM_SPACING);
+            const isSelected = itemIndex === session.selectionIndex;
+            const labelColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_TEXT;
+            const detailColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_DETAIL;
+            if (isSelected) {
+                const highlightTop = lineTop - 1;
+                const highlightBottom = highlightTop + this.host.getLineHeight() + 2;
+                api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, constants.COLOR_COMPLETION_HIGHLIGHT);
+            }
+            let textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
+            const labelWidth = this.host.measureText(item.label);
+            this.host.drawText(api, item.label, textX, lineTop, labelColor);
+            textX += labelWidth + detailSpacing;
+            const detailText = item.detail ?? '';
+            if (detailText.length > 0) {
+                this.host.drawText(api, detailText, textX, lineTop, detailColor);
+            }
+        }
+    }
+
+    public drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
+        const hint = this.parameterHint;
+        const cursorInfo = this.host.getCursorScreenInfo();
+        if (!hint || !cursorInfo) return;
+        const params = hint.params;
+        const baseColor = constants.COLOR_PARAMETER_HINT_TEXT;
+        const segments: Array<{ text: string; color: number }> = [];
+        segments.push({ text: `api.${hint.methodName}(`, color: baseColor });
+        for (let i = 0; i < params.length; i += 1) {
+            if (i > 0) segments.push({ text: ', ', color: baseColor });
+            const color = i === hint.argumentIndex ? constants.COLOR_PARAMETER_HINT_ACTIVE : baseColor;
+            segments.push({ text: params[i], color });
+        }
+        segments.push({ text: ')', color: baseColor });
+        let textWidth = 0;
+        for (let i = 0; i < segments.length; i += 1) {
+            const part = segments[i];
+            if (part.text.length === 0) continue;
+            textWidth += this.host.measureText(part.text);
+        }
+        const popupWidth = Math.floor(textWidth + constants.PARAMETER_HINT_PADDING_X * 2);
+        const popupHeight = Math.floor(this.host.getLineHeight() + constants.PARAMETER_HINT_PADDING_Y * 2);
+        let popupLeft = Math.floor(cursorInfo.x);
+        if (popupLeft + popupWidth > bounds.codeRight) popupLeft = bounds.codeRight - popupWidth;
+        if (popupLeft < bounds.textLeft) popupLeft = bounds.textLeft;
+        let popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
+        if (popupTop < bounds.codeTop) {
+            popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
+            if (popupTop + popupHeight > bounds.codeBottom) popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
+        }
+        const popupRight = popupLeft + popupWidth;
+        const popupBottom = popupTop + popupHeight;
+        api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
+        api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
+        let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
+        const textY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
+        for (let i = 0; i < segments.length; i += 1) {
+            const part = segments[i];
+            if (part.text.length === 0) continue;
+            this.host.drawText(api, part.text, textX, textY, part.color);
+            textX += this.host.measureText(part.text);
+        }
+    }
+
+    // Internal helpers and logic
+    private analyzeCompletionContext(): CompletionContext | null {
+        if (!this.host.isCodeTabActive()) return null;
+        const lines = this.host.getLines();
+        if (lines.length === 0) return null;
+        const row = clamp(this.host.getCursorRow(), 0, lines.length - 1);
+        const line = lines[row];
+        const column = clamp(this.host.getCursorColumn(), 0, line.length);
+        let start = column;
+        while (start > 0 && isWordChar(line.charAt(start - 1))) start -= 1;
+        const prefix = line.slice(start, column);
+        const replaceFromColumn = start;
+        const replaceToColumn = column;
+        let probe = start - 1;
+        while (probe >= 0 && isWhitespace(line.charAt(probe))) probe -= 1;
+        if (probe >= 0) {
+            const operator = line.charAt(probe);
+            if (operator === '.' || operator === ':') {
+                let objectEnd = probe;
+                let objectProbe = objectEnd - 1;
+                while (objectProbe >= 0 && isWhitespace(line.charAt(objectProbe))) objectProbe -= 1;
+                if (objectProbe < 0) return null;
+                let objectStart = objectProbe;
+                while (objectStart >= 0 && isWordChar(line.charAt(objectStart))) objectStart -= 1;
+                const objectName = line.slice(objectStart + 1, objectProbe + 1);
+                if (objectName.length === 0) return null;
+                return { kind: 'member', objectName, operator: operator as '.' | ':', prefix, row, replaceFromColumn, replaceToColumn };
+            }
+        }
+        return { kind: 'global', prefix, row, replaceFromColumn, replaceToColumn };
+    }
+
+    private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
+        if (context.kind === 'member') {
+            if (context.objectName.toLowerCase() === 'api') {
+                return apiCompletionData.items.slice();
+            }
+            return [];
+        }
+        const registry = new Map<string, LuaCompletionItem>();
+        const register = (item: LuaCompletionItem): void => {
+            if (!registry.has(item.sortKey)) registry.set(item.sortKey, item);
+        };
+        for (let i = 0; i < keywordCompletions.length; i += 1) register(keywordCompletions[i]);
+        const localItems = this.getLocalCompletionItems();
+        for (let i = 0; i < localItems.length; i += 1) register(localItems[i]);
+        const globalItems = this.getGlobalCompletionItems();
+        for (let i = 0; i < globalItems.length; i += 1) register(globalItems[i]);
+        const builtinItems = this.getBuiltinCompletionItems();
+        for (let i = 0; i < builtinItems.length; i += 1) register(builtinItems[i]);
+        const combined = Array.from(registry.values());
+        combined.sort((a, b) => a.label.localeCompare(b.label));
+        return combined;
+    }
+
+    private getLocalCompletionItems(): LuaCompletionItem[] {
+        const key = this.activeCompletionCacheKey();
+        if (!key) return [];
+        const cached = this.localCompletionCache.get(key);
+        if (cached && cached.version === this.host.getTextVersion()) return cached.items;
+        const context = this.host.getActiveCodeTabContext();
+        const assetId = this.host.resolveHoverAssetId(context);
+        const chunkName = this.host.resolveHoverChunkName(context);
+        let entries: ConsoleLuaSymbolEntry[] = [];
+        try { entries = this.host.listLuaSymbols(assetId, chunkName); } catch { this.localCompletionCache.delete(key); return []; }
+        const items = this.buildSymbolCompletionItems(entries, 'local');
+        this.localCompletionCache.set(key, { version: this.host.getTextVersion(), items });
+        return items;
+    }
+
+    private getGlobalCompletionItems(): LuaCompletionItem[] {
+        if (this.cachedGlobalCompletionItems) return this.cachedGlobalCompletionItems;
+        let entries: ConsoleLuaSymbolEntry[] = [];
+        try { entries = this.host.listGlobalLuaSymbols(); } catch { this.cachedGlobalCompletionItems = []; return this.cachedGlobalCompletionItems; }
+        const items = this.buildSymbolCompletionItems(entries, 'global');
+        const apiItem: LuaCompletionItem = { label: 'api', insertText: 'api', sortKey: 'global:api', kind: 'global', detail: 'Console API root' };
+        items.push(apiItem);
+        items.sort((a, b) => a.label.localeCompare(b.label));
+        this.cachedGlobalCompletionItems = items;
+        return items;
+    }
+
+    private getBuiltinCompletionItems(): LuaCompletionItem[] {
+        this.ensureBuiltinDescriptorCache();
+        const items: LuaCompletionItem[] = [];
+        for (const descriptor of this.builtinDescriptorMap.values()) {
+            const label = descriptor.name;
+            const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
+            const detail = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : 'Lua builtin';
+            items.push({ label, insertText: label, sortKey: `builtin:${label.toLowerCase()}`, kind: 'builtin', detail, parameters: params });
+        }
+        items.sort((a, b) => a.label.localeCompare(b.label));
+        return items;
+    }
+
+    private buildSymbolCompletionItems(entries: ConsoleLuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
+        if (entries.length === 0) return [];
+        const items: LuaCompletionItem[] = [];
+        for (let i = 0; i < entries.length; i += 1) {
+            const entry = entries[i];
+            const origin = (() => {
+                if (entry.location.path && entry.location.path.length > 0) return entry.location.path;
+                if (entry.location.assetId && entry.location.assetId.length > 0) return entry.location.assetId;
+                if (entry.location.chunkName && entry.location.chunkName.length > 0) return entry.location.chunkName;
+                return '';
+            })();
+            const kindLabel = this.formatSymbolKind(entry.kind);
+            const detail = origin.length > 0 ? `${kindLabel} • ${origin}` : kindLabel;
+            const sortKey = `${scope}:${origin}:${entry.path}:${entry.name}:${entry.kind}`;
+            items.push({ label: entry.name, insertText: entry.name, sortKey, kind: scope, detail });
+        }
+        items.sort((a, b) => a.label.localeCompare(b.label));
+        return items;
+    }
+
+    private formatSymbolKind(kind: ConsoleLuaSymbolEntry['kind']): string {
+        switch (kind) {
+            case 'function': return 'function';
+            case 'variable': return 'variable';
+            case 'parameter': return 'parameter';
+            case 'table_field': return 'table field';
+            case 'assignment': return 'assignment';
+            default: return kind;
+        }
+    }
+
+    private ensureBuiltinDescriptorCache(force = false): void {
+        if (!force && this.builtinDescriptors !== null) return;
+        let descriptors: ConsoleLuaBuiltinDescriptor[];
+        try { descriptors = this.host.listBuiltinLuaFunctions(); } catch { descriptors = []; }
+        if (!Array.isArray(descriptors)) descriptors = [];
+        this.builtinDescriptors = descriptors;
+        this.builtinDescriptorMap.clear();
+        const registerDescriptor = (descriptor: ConsoleLuaBuiltinDescriptor): void => {
+            if (!descriptor || typeof descriptor.name !== 'string') return;
+            const normalized = descriptor.name.trim();
+            if (normalized.length === 0) return;
+            const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
+            const signature = descriptor.signature && descriptor.signature.length > 0 ? descriptor.signature : normalized;
+            const entry: ConsoleLuaBuiltinDescriptor = { name: normalized, params, signature };
+            this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
+        };
+        for (let i = 0; i < descriptors.length; i += 1) registerDescriptor(descriptors[i]);
+    }
+
+    private findBuiltinDescriptor(objectName: string | null, methodName: string): ConsoleLuaBuiltinDescriptor | null {
+        this.ensureBuiltinDescriptorCache();
+        const methodKey = methodName.toLowerCase();
+        if (objectName) {
+            const compositeKey = `${objectName.toLowerCase()}.${methodKey}`;
+            const composite = this.builtinDescriptorMap.get(compositeKey);
+            if (composite) return { name: composite.name, params: composite.params.slice(), signature: composite.signature };
+        }
+        const direct = this.builtinDescriptorMap.get(methodKey);
+        if (direct) return { name: direct.name, params: direct.params.slice(), signature: direct.signature };
+        return null;
+    }
+
+    private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
+        if (!edit || edit.kind === 'delete') return null;
+        if (edit.text.length === 0) return null;
+        const lastChar = edit.text.charAt(edit.text.length - 1);
+        if (context.kind === 'member') {
+            if (lastChar === '.' || lastChar === ':') return 'punctuation';
+            if (isWordChar(lastChar)) return 'typing';
+            return null;
+        }
+        if (!isWordChar(lastChar)) return null;
+        if (context.prefix.length === 0) return null;
+        return 'typing';
+    }
+
+    private updateCompletionSessionAfterMutation(edit: EditContext | null): void {
+        if (!this.host.isCodeTabActive()) { this.closeSession(); return; }
+        const analyzed = this.analyzeCompletionContext();
+        if (this.completionSession) {
+            this.cancelPendingCompletion();
+            if (!analyzed) { this.closeSession(); return; }
+            const previousChar = this.host.charAt(this.host.getCursorRow(), this.host.getCursorColumn() - 1);
+            if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !isWordChar(previousChar)) { this.closeSession(); return; }
+            this.refreshCompletionSessionFromContext(analyzed);
+            return;
+        }
+        if (!edit || !analyzed) { this.cancelPendingCompletion(); return; }
+        const trigger = this.determineAutoCompletionTrigger(analyzed, edit);
+        if (!trigger) { this.cancelPendingCompletion(); return; }
+        this.pendingCompletionRequest = { context: analyzed, trigger, elapsed: 0 };
+    }
+
+    private openCompletionSessionFromContext(context: CompletionContext, _trigger: CompletionTrigger): void {
+        this.cancelPendingCompletion();
+        const items = this.collectCompletionItems(context);
+        if (items.length === 0) { this.completionSession = null; return; }
+        const session: CompletionSession = {
+            context: context.kind === 'member'
+                ? { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn }
+                : { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
+            items,
+            filteredItems: [],
+            selectionIndex: -1,
+            displayOffset: 0,
+            anchorRow: this.host.getCursorRow(),
+            anchorColumn: this.host.getCursorColumn(),
+            maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+        };
+        this.completionSession = session;
+        this.applyCompletionFilter(session);
+    }
+
+    private refreshCompletionSessionFromContext(context: CompletionContext): void {
+        const session = this.completionSession;
+        if (!session) return;
+        const items = this.collectCompletionItems(context);
+        if (items.length === 0) { this.closeSession(); return; }
+        session.context = context.kind === 'member'
+            ? { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn }
+            : { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
+        session.items = items;
+        session.anchorRow = this.host.getCursorRow();
+        session.anchorColumn = this.host.getCursorColumn();
+        this.applyCompletionFilter(session);
+    }
+
+    private applyCompletionFilter(session: CompletionSession): void {
+        const prefix = session.context.prefix;
+        const filtered = this.filterCompletionItems(session.items, prefix);
+        if (filtered.length === 0) {
+            session.filteredItems = [];
+            session.selectionIndex = -1;
+            session.displayOffset = 0;
+            this.closeSession();
+            return;
+        }
+        session.filteredItems = filtered;
+        if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) session.selectionIndex = 0;
+        this.ensureCompletionSelectionVisible(session);
+    }
+
+    private filterCompletionItems(items: LuaCompletionItem[], prefix: string): LuaCompletionItem[] {
+        const lower = prefix.toLowerCase();
+        const matches: Array<{ item: LuaCompletionItem; score: number; exact: boolean }> = [];
+        for (let i = 0; i < items.length; i += 1) {
+            const item = items[i];
+            const labelLower = item.label.toLowerCase();
+            let score: number | null = null;
+            let exact = false;
+            if (labelLower.startsWith(lower)) { score = 0; exact = labelLower === lower; }
+            else if (lower.length > 0) {
+                const index = labelLower.indexOf(lower);
+                if (index !== -1) score = index + 10;
+            }
+            if (score === null) continue;
+            matches.push({ item, score, exact });
+        }
+        if (lower.length === 0) return items.slice();
+        if (matches.length === 0) return [];
+        matches.sort((a, b) => {
+            if (a.exact !== b.exact) return a.exact ? -1 : 1;
+            if (a.score !== b.score) return a.score - b.score;
+            return a.item.label.localeCompare(b.item.label);
+        });
+        const filtered: LuaCompletionItem[] = [];
+        for (let i = 0; i < matches.length; i += 1) filtered.push(matches[i].item);
+        return filtered;
+    }
+
+    private moveCompletionSelection(delta: number): void {
+        const session = this.completionSession;
+        if (!session) return;
+        const total = session.filteredItems.length;
+        if (total === 0) return;
+        let index = session.selectionIndex;
+        if (index < 0) index = delta > 0 ? 0 : total - 1; else { index += delta; index = ((index % total) + total) % total; }
+        session.selectionIndex = index;
+        this.ensureCompletionSelectionVisible(session);
+    }
+
+    private ensureCompletionSelectionVisible(session: CompletionSession): void {
+        if (session.selectionIndex < 0) { session.displayOffset = 0; return; }
+        const visible = session.maxVisibleItems;
+        let offset = session.displayOffset;
+        if (session.selectionIndex < offset) offset = session.selectionIndex;
+        const upperBound = offset + visible - 1;
+        if (session.selectionIndex > upperBound) offset = session.selectionIndex - visible + 1;
+        if (offset < 0) offset = 0;
+        const maxOffset = Math.max(0, session.filteredItems.length - visible);
+        if (offset > maxOffset) offset = maxOffset;
+        session.displayOffset = offset;
+    }
+
+    private completionContextsCompatible(expected: CompletionContext, actual: CompletionContext): boolean {
+        if (expected.kind !== actual.kind) return false;
+        if (expected.kind === 'member' && actual.kind === 'member') {
+            if (expected.operator !== actual.operator) return false;
+            if (expected.objectName.toLowerCase() !== actual.objectName.toLowerCase()) return false;
+        }
+        return true;
+    }
+
+    private acceptSelectedCompletion(): void {
+        const session = this.completionSession;
+        if (!session) return;
+        if (session.filteredItems.length === 0) { this.closeSession(); return; }
+        let index = session.selectionIndex;
+        if (index < 0 || index >= session.filteredItems.length) index = 0;
+        const item = session.filteredItems[index];
+        const addParentheses = item.kind === 'api_method';
+        const freshContext = this.analyzeCompletionContext();
+        const effectiveContext = freshContext && this.completionContextsCompatible(session.context, freshContext) ? freshContext : session.context;
+        this.applyCompletionItemForContext(effectiveContext, item, addParentheses);
+        this.closeSession();
+    }
+
+    private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
+        const lines = this.host.getLines();
+        const row = clamp(context.row, 0, Math.max(0, lines.length - 1));
+        const line = lines[row] ?? '';
+        const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
+        const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
+        this.host.setCursorPosition(row, replaceEnd);
+        this.host.setSelectionAnchor(row, replaceStart);
+        this.suppressNextAutoCompletion = true;
+        let insertion = item.insertText;
+        if (addParentheses) insertion = `${item.insertText}()`;
+        this.host.replaceSelectionWith(insertion);
+        if (addParentheses) {
+            this.host.setCursorPosition(row, replaceStart + item.insertText.length + 1);
+        } else {
+            this.host.setCursorPosition(row, replaceStart + insertion.length);
+        }
+        this.host.updateDesiredColumn();
+        this.host.resetBlink();
+        this.host.revealCursor();
+    }
+
+    private cancelPendingCompletion(): void {
+        this.pendingCompletionRequest = null;
+    }
+
+    private refreshParameterHint(): void {
+        const info = this.resolveParameterHintContext();
+        this.parameterHint = info;
+    }
+
+    private resolveParameterHintContext(): ParameterHintState | null {
+        if (!this.host.isCodeTabActive()) return null;
+        const lines = this.host.getLines();
+        if (lines.length === 0) return null;
+        const safeRow = clamp(this.host.getCursorRow(), 0, lines.length - 1);
+        const line = lines[safeRow];
+        if (line.length === 0) return null;
+        const safeColumn = clamp(this.host.getCursorColumn(), 0, line.length);
+        let depth = 0;
+        let lastOpen = -1;
+        for (let index = 0; index < safeColumn; index += 1) {
+            const ch = line.charAt(index);
+            if (ch === '(') { depth += 1; lastOpen = index; }
+            else if (ch === ')') { if (depth > 0) { depth -= 1; if (depth === 0) lastOpen = -1; } }
+        }
+        if (depth <= 0 || lastOpen < 0) return null;
+        const prefix = line.slice(0, lastOpen);
+        let scan = prefix.length - 1;
+        while (scan >= 0 && isWhitespace(prefix.charAt(scan))) scan -= 1;
+        if (scan < 0) return null;
+        let nameEnd = scan + 1;
+        while (scan >= 0 && isWordChar(prefix.charAt(scan))) scan -= 1;
+        const methodName = prefix.slice(scan + 1, nameEnd);
+        if (methodName.length === 0) return null;
+        const inner = line.slice(lastOpen + 1, safeColumn);
+        let argumentIndex = 0;
+        let nested = 0;
+        for (let i = 0; i < inner.length; i += 1) {
+            const ch = inner.charAt(i);
+            if (ch === '(') nested += 1;
+            else if (ch === ')') { if (nested > 0) nested -= 1; }
+            else if (ch === ',' && nested === 0) argumentIndex += 1;
+        }
+        let operatorIndex = scan;
+        while (operatorIndex >= 0 && isWhitespace(prefix.charAt(operatorIndex))) operatorIndex -= 1;
+        let objectName: string | null = null;
+        if (operatorIndex >= 0) {
+            const candidateOperator = prefix.charAt(operatorIndex);
+            if (candidateOperator === '.' || candidateOperator === ':') {
+                let objectEnd = operatorIndex;
+                let objectIndex = objectEnd - 1;
+                while (objectIndex >= 0 && isWhitespace(prefix.charAt(objectIndex))) objectIndex -= 1;
+                if (objectIndex >= 0) {
+                    let objectStart = objectIndex;
+                    while (objectStart >= 0 && isWordChar(prefix.charAt(objectStart))) objectStart -= 1;
+                    objectName = prefix.slice(objectStart + 1, objectIndex + 1);
+                }
+            }
+        }
+        if (objectName && objectName.toLowerCase() === 'api') {
+            const apiMeta = apiCompletionData.signatures.get(methodName);
+            if (apiMeta) {
+                const params = apiMeta.params.slice();
+                return { methodName, params, signatureLabel: apiMeta.signature, anchorRow: safeRow, anchorColumn: lastOpen, argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)) };
+            }
+        }
+        const builtin = this.findBuiltinDescriptor(objectName, methodName);
+        if (builtin) {
+            const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
+            return { methodName: builtin.name, params, signatureLabel: builtin.signature, anchorRow: safeRow, anchorColumn: lastOpen, argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)) };
+        }
+        return null;
+    }
+
+    private activeCompletionCacheKey(): string | null {
+        const context = this.host.getActiveCodeTabContext();
+        const assetId = this.host.resolveHoverAssetId(context);
+        const chunkName = this.host.resolveHoverChunkName(context);
+        if (!assetId && !chunkName) return null;
+        const safeAssetId = assetId ?? '';
+        const safeChunk = chunkName ?? '';
+        return `${safeAssetId}|${safeChunk}`;
+    }
+
+    private invalidateLocalCompletionCacheForActiveContext(): void {
+        const key = this.activeCompletionCacheKey();
+        if (!key) return;
+        this.localCompletionCache.delete(key);
+    }
+}

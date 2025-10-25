@@ -19,7 +19,8 @@ import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES, CHARACTER_MAP } from './character_map';
 import * as constants from './constants';
-import { getApiCompletionData, getKeywordCompletions } from './intellisense';
+// Intellisense data is handled by CompletionController
+import { CompletionController } from './completion_controller';
 import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
@@ -34,7 +35,7 @@ import {
 import { highlightLine as highlightLineExternal } from './syntax_highlight';
 import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
 import { expandTabs as expandTabsExternal, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
-import { ConsoleScrollbar } from './scrollbar';
+import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderStatusBar } from './render_status_bar';
 import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderLineJumpBar } from './render_inline_bars';
@@ -43,10 +44,6 @@ import type {
 	CachedHighlight,
 	CodeHoverTooltip,
 	CodeTabContext,
-	CompletionCacheEntry,
-	CompletionContext,
-	CompletionSession,
-	CompletionTrigger,
 	ConsoleEditorOptions,
 	ConsoleEditorSerializedState,
 	ConsoleRuntimeBridge,
@@ -61,7 +58,6 @@ import type {
 	HighlightLine,
 	InlineInputOptions,
 	InlineTextField,
-	LuaCompletionItem,
 	MessageState,
 	PendingActionPrompt,
 	PointerSnapshot,
@@ -80,7 +76,6 @@ import type {
 	TabDragState,
 	TopBarButtonId,
 	VisualLineSegment,
-	ParameterHintState,
 } from './types';
 import {
 	consumeKey as consumeKeyboardKey,
@@ -97,8 +92,7 @@ import {
 const EDITOR_TOGGLE_KEY = 'Escape';
 const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
 
-const keywordCompletions = getKeywordCompletions();
-const apiCompletionData = getApiCompletionData();
+// Intellisense data is handled by CompletionController
 
 export class ConsoleCartEditor {
 	private readonly playerIndex: number;
@@ -207,7 +201,7 @@ export class ConsoleCartEditor {
 	private readonly createResourceField: InlineTextField;
 	private readonly inlineFieldMetricsRef: InlineFieldMetrics;
 	private readonly scrollbars: Record<ScrollbarKind, ConsoleScrollbar>;
-	private activeScrollbarDrag: { kind: ScrollbarKind; pointerOffset: number } | null = null;
+	private readonly scrollbarController: ScrollbarController;
 	private toggleInputLatch = false;
 	private lastPointerClickTimeMs = 0;
 	private lastPointerClickRow = -1;
@@ -225,14 +219,10 @@ export class ConsoleCartEditor {
 	private searchQuery = '';
 	private symbolSearchQuery = '';
 	private resourceSearchQuery = '';
-	private completionSession: CompletionSession | null = null;
-	private readonly localCompletionCache: Map<string, CompletionCacheEntry> = new Map();
-	private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
+	// Completion session state is fully handled by CompletionController
 	private pendingEditContext: EditContext | null = null;
 	private cursorScreenInfo: CursorScreenInfo | null = null;
-	private parameterHint: ParameterHintState | null = null;
-	private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
-	private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
+	// parameter hints managed by completion controller
 	private lineJumpActive = false;
 	private symbolSearchActive = false;
 	private symbolSearchVisible = false;
@@ -247,8 +237,7 @@ export class ConsoleCartEditor {
 	private createResourceError: string | null = null;
 	private createResourceWorking = false;
 	private lastCreateResourceDirectory: string | null = null;
-	private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
-	private suppressNextAutoCompletion = false;
+	// completion session auto-trigger handled by completion controller
 	private symbolCatalog: SymbolCatalogEntry[] = [];
 	private symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
 	private symbolSearchMatches: SymbolSearchResult[] = [];
@@ -292,6 +281,7 @@ export class ConsoleCartEditor {
 	private rowToFirstVisualLine: number[] = [];
 	private visualLinesDirty = true;
 	private lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
+	private readonly completion: CompletionController;
 
 	constructor(options: ConsoleEditorOptions) {
 		this.playerIndex = options.playerIndex;
@@ -345,6 +335,35 @@ export class ConsoleCartEditor {
 			resourceHorizontal: new ConsoleScrollbar('resourceHorizontal', 'horizontal'),
 			viewerVertical: new ConsoleScrollbar('viewerVertical', 'vertical'),
 		};
+		this.scrollbarController = new ScrollbarController(this.scrollbars as any);
+		// Initialize completion/intellisense controller
+		this.completion = new CompletionController({
+			getPlayerIndex: () => this.playerIndex,
+			isCodeTabActive: () => this.isCodeTabActive(),
+			getLines: () => this.lines,
+			getCursorRow: () => this.cursorRow,
+			getCursorColumn: () => this.cursorColumn,
+			setCursorPosition: (row, column) => { this.cursorRow = row; this.cursorColumn = column; },
+			setSelectionAnchor: (row, column) => { this.selectionAnchor = { row, column }; },
+			replaceSelectionWith: (text) => this.replaceSelectionWith(text),
+			updateDesiredColumn: () => this.updateDesiredColumn(),
+			resetBlink: () => this.resetBlink(),
+			revealCursor: () => this.revealCursor(),
+			measureText: (text) => this.measureText(text),
+			drawText: (api, text, x, y, color) => this.drawText(api, text, x, y, color),
+			getCursorScreenInfo: () => this.cursorScreenInfo,
+			getLineHeight: () => this.lineHeight,
+			getSpaceAdvance: () => this.spaceAdvance,
+			getActiveCodeTabContext: () => this.getActiveCodeTabContext(),
+			resolveHoverAssetId: (ctx) => this.resolveHoverAssetId(ctx as any),
+			resolveHoverChunkName: (ctx) => this.resolveHoverChunkName(ctx as any),
+			listLuaSymbols: (assetId, chunk) => this.listLuaSymbolsFn(assetId, chunk),
+			listGlobalLuaSymbols: () => this.listGlobalLuaSymbolsFn(),
+			listBuiltinLuaFunctions: () => this.listBuiltinLuaFunctionsFn(),
+			charAt: (r, c) => this.charAt(r, c),
+			getTextVersion: () => this.textVersion,
+			shouldFireRepeat: (kb, code, dt) => this.shouldFireRepeat(kb, code, dt),
+		});
 		this.codeVerticalScrollbarVisible = false;
 		this.codeHorizontalScrollbarVisible = false;
 		this.cachedVisibleRowCount = 1;
@@ -494,7 +513,7 @@ export class ConsoleCartEditor {
 		this.selectionAnchor = null;
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = false;
-		this.activeScrollbarDrag = null;
+		this.scrollbarController.cancel();
 		this.cursorRevealSuspended = false;
 		this.centerCursorVertically();
 		this.updateDesiredColumn();
@@ -904,7 +923,7 @@ export class ConsoleCartEditor {
 			return;
 		}
 		this.handleEditorInput(keyboard, deltaSeconds);
-		this.processPendingCompletion(deltaSeconds);
+		this.completion.processPending(deltaSeconds);
 		if (this.searchQuery.length === 0) {
 			this.lastSearchVersion = this.textVersion;
 		} else if (this.searchActive && this.textVersion !== this.lastSearchVersion) {
@@ -1508,7 +1527,7 @@ export class ConsoleCartEditor {
 	if (this.dimCrtInEditor) {
 		this.restoreCrtOptions();
 	}
-	this.closeCompletionSession();
+	this.completion.closeSession();
 	this.repeatState.clear();
 		this.resetKeyPressGuards();
 		this.applyInputOverrides(false);
@@ -1518,7 +1537,7 @@ export class ConsoleCartEditor {
 		this.pointerAuxWasPressed = false;
 		this.tabDragState = null;
 		this.clearGotoHoverHighlight();
-		this.activeScrollbarDrag = null;
+		this.scrollbarController.cancel();
 		this.cursorRevealSuspended = false;
 		this.undoStack = [];
 		this.redoStack = [];
@@ -1747,16 +1766,7 @@ export class ConsoleCartEditor {
 		this.unindentSelectionOrLine();
 		return;
 	}
-	if ((ctrlDown || metaDown) && !altDown && this.completionSession === null && this.isCodeTabActive() && isKeyJustPressedGlobal(this.playerIndex, 'Space')) {
-		consumeKeyboardKey(keyboard, 'Space');
-		const context = this.analyzeCompletionContext();
-		if (context) {
-			this.openCompletionSessionFromContext(context, 'manual');
-		} else {
-			this.closeCompletionSession();
-		}
-		return;
-	}
+		// Manual completion open/close handled by CompletionController via handleCompletionKeybindings
 	if (this.handleCompletionKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown)) {
 		return;
 	}
@@ -3188,20 +3198,20 @@ export class ConsoleCartEditor {
 		this.lastPointerSnapshot = snapshot && snapshot.valid ? snapshot : null;
 	if (!snapshot) {
 		this.pointerPrimaryWasPressed = false;
-		this.activeScrollbarDrag = null;
+		this.scrollbarController.cancel();
 		this.lastPointerRowResolution = null;
 		this.clearHoverTooltip();
 		this.clearGotoHoverHighlight();
 		return;
 	}
 	if (!snapshot.valid) {
-		this.activeScrollbarDrag = null;
+		this.scrollbarController.cancel();
 		this.clearGotoHoverHighlight();
 		this.lastPointerRowResolution = null;
-	} else if (this.activeScrollbarDrag && !snapshot.primaryPressed) {
-			this.activeScrollbarDrag = null;
-		} else if (this.activeScrollbarDrag && snapshot.primaryPressed) {
-			if (this.updateScrollbarDrag(snapshot)) {
+	} else if (this.scrollbarController.hasActiveDrag() && !snapshot.primaryPressed) {
+			this.scrollbarController.cancel();
+		} else if (this.scrollbarController.hasActiveDrag() && snapshot.primaryPressed) {
+			if (this.scrollbarController.update(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, (k, s) => this.applyScrollbarScroll(k, s))) {
 				this.pointerSelecting = false;
 				this.clearHoverTooltip();
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -3255,7 +3265,7 @@ export class ConsoleCartEditor {
 			this.clearHoverTooltip();
 			return;
 		}
-		if (justPressed && this.tryStartScrollbarDrag(snapshot)) {
+		if (justPressed && this.scrollbarController.begin(snapshot.viewportX, snapshot.viewportY, snapshot.primaryPressed, this.bottomMargin, (k, s) => this.applyScrollbarScroll(k, s))) {
 			this.pointerSelecting = false;
 			this.clearHoverTooltip();
 			this.clearGotoHoverHighlight();
@@ -3614,7 +3624,7 @@ export class ConsoleCartEditor {
 			this.focusEditorFromSearch();
 			this.focusEditorFromResourceSearch();
 			this.focusEditorFromSymbolSearch();
-			this.closeCompletionSession();
+			this.completion.closeSession();
 			const targetRow = this.resolvePointerRow(snapshot.viewportY);
 			const targetColumn = this.resolvePointerColumn(targetRow, snapshot.viewportX);
 			if (gotoModifierActive && this.tryGotoDefinitionAt(targetRow, targetColumn)) {
@@ -3762,59 +3772,7 @@ export class ConsoleCartEditor {
 		this.lastInspectorResult = null;
 	}
 
-	private tryStartScrollbarDrag(snapshot: PointerSnapshot): boolean {
-		if (!snapshot.valid || !snapshot.primaryPressed) {
-			return false;
-		}
-		const order: ScrollbarKind[] = ['codeVertical', 'codeHorizontal', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
-		for (let i = 0; i < order.length; i += 1) {
-			const kind = order[i];
-			const scrollbar = this.scrollbars[kind];
-			const track = scrollbar.getTrack();
-			if (!track) {
-				continue;
-			}
-			const pointerX = snapshot.viewportX;
-			const pointerY = snapshot.viewportY;
-			const thumb = scrollbar.getThumb();
-			const pointerCoord = scrollbar.orientation === 'vertical' ? pointerY : pointerX;
-			const hitsThumb = thumb !== null && this.pointInRect(pointerX, pointerY, thumb);
-			const hitsTrack = this.pointInRect(pointerX, pointerY, track);
-			const extendedHorizontalHit = scrollbar.orientation === 'horizontal'
-				&& pointerX >= track.left
-				&& pointerX < track.right
-				&& pointerY >= track.top
-				&& pointerY < track.top + this.bottomMargin;
-			if (!hitsThumb && !hitsTrack && !extendedHorizontalHit) {
-				continue;
-			}
-			const pointerOffset = scrollbar.beginDrag(pointerCoord);
-			if (pointerOffset === null) {
-				continue;
-			}
-			if (!hitsThumb) {
-				this.applyScrollbarScroll(kind, scrollbar.getScroll());
-			}
-			this.activeScrollbarDrag = { kind, pointerOffset };
-			return true;
-		}
-		return false;
-	}
-
-	private updateScrollbarDrag(snapshot: PointerSnapshot): boolean {
-		if (!this.activeScrollbarDrag) {
-			return false;
-		}
-		const scrollbar = this.scrollbars[this.activeScrollbarDrag.kind];
-		if (!scrollbar.isVisible()) {
-			this.activeScrollbarDrag = null;
-			return false;
-		}
-		const pointerCoord = scrollbar.orientation === 'vertical' ? snapshot.viewportY : snapshot.viewportX;
-		const newScroll = scrollbar.drag(pointerCoord, this.activeScrollbarDrag.pointerOffset);
-		this.applyScrollbarScroll(this.activeScrollbarDrag.kind, newScroll);
-		return true;
-	}
+	// Scrollbar drag is handled via this.scrollbarController
 
 	private applyScrollbarScroll(kind: ScrollbarKind, scroll: number): void {
 		if (Number.isNaN(scroll)) {
@@ -6554,8 +6512,8 @@ export class ConsoleCartEditor {
 			drawHoverTooltip: (a, ct, cb, tl) => this.drawHoverTooltip(a, ct, cb, tl),
 			drawCursor: (a, info, tx) => this.drawCursor(a, info, tx),
 			computeCursorScreenInfo: (entry, tl, rt, ssd) => this.computeCursorScreenInfo(entry, tl, rt, ssd),
-			drawCompletionPopup: (a, b) => this.drawCompletionPopup(a, b),
-			drawParameterHintOverlay: (a, b) => this.drawParameterHintOverlay(a, b),
+			drawCompletionPopup: (a, b) => this.completion.drawCompletionPopup(a, b),
+			drawParameterHintOverlay: (a, b) => this.completion.drawParameterHintOverlay(a, b),
 		};
 		renderCodeArea(api, host);
 		// write back mutable state possibly changed by renderer
@@ -8437,138 +8395,7 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 	}
 }
 
-private drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
-	const session = this.completionSession;
-	const cursorInfo = this.cursorScreenInfo;
-	if (!session || !cursorInfo) {
-		return;
-	}
-	if (session.filteredItems.length === 0) {
-		return;
-	}
-	const startIndex = session.displayOffset;
-	const endIndex = Math.min(session.filteredItems.length, startIndex + session.maxVisibleItems);
-	const visibleCount = endIndex - startIndex;
-	if (visibleCount <= 0) {
-		return;
-	}
-	let maxLineWidth = constants.COMPLETION_POPUP_MIN_WIDTH;
-	const detailSpacing = this.spaceAdvance;
-	for (let i = startIndex; i < endIndex; i += 1) {
-		const item = session.filteredItems[i];
-		const labelWidth = this.measureText(item.label);
-		const detailText = item.detail ?? '';
-		const detailWidth = detailText.length > 0 ? this.measureText(detailText) : 0;
-		const totalWidth = detailWidth > 0
-			? labelWidth + detailSpacing + detailWidth
-			: labelWidth;
-		if (totalWidth > maxLineWidth) {
-			maxLineWidth = totalWidth;
-		}
-	}
-	const popupWidth = Math.max(constants.COMPLETION_POPUP_MIN_WIDTH, Math.floor(maxLineWidth + constants.COMPLETION_POPUP_PADDING_X * 2));
-	const popupHeight = Math.floor(constants.COMPLETION_POPUP_PADDING_Y * 2 + visibleCount * this.lineHeight + Math.max(0, visibleCount - 1) * constants.COMPLETION_POPUP_ITEM_SPACING);
-	let popupLeft = Math.floor(cursorInfo.x);
-	if (popupLeft + popupWidth > bounds.codeRight) {
-		popupLeft = bounds.codeRight - popupWidth;
-	}
-	if (popupLeft < bounds.textLeft) {
-		popupLeft = bounds.textLeft;
-	}
-	let popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
-	if (popupTop + popupHeight > bounds.codeBottom) {
-		popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
-	}
-	if (popupTop < bounds.codeTop) {
-		popupTop = bounds.codeTop;
-		if (popupTop + popupHeight > bounds.codeBottom) {
-			popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
-		}
-	}
-	const popupRight = popupLeft + popupWidth;
-	const popupBottom = popupTop + popupHeight;
-	api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BACKGROUND);
-	api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BORDER);
-	for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
-		const itemIndex = startIndex + drawIndex;
-		const item = session.filteredItems[itemIndex];
-		const lineTop = popupTop + constants.COMPLETION_POPUP_PADDING_Y + drawIndex * (this.lineHeight + constants.COMPLETION_POPUP_ITEM_SPACING);
-		const isSelected = itemIndex === session.selectionIndex;
-		const labelColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_TEXT;
-		const detailColor = isSelected ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT : constants.COLOR_COMPLETION_DETAIL;
-		if (isSelected) {
-			const highlightTop = lineTop - 1;
-			const highlightBottom = highlightTop + this.lineHeight + 2;
-			api.rectfill(popupLeft + 1, highlightTop, popupRight - 1, highlightBottom, constants.COLOR_COMPLETION_HIGHLIGHT);
-		}
-		let textX = popupLeft + constants.COMPLETION_POPUP_PADDING_X;
-		const labelWidth = this.measureText(item.label);
-		this.drawText(api, item.label, textX, lineTop, labelColor);
-		textX += labelWidth + detailSpacing;
-		const detailText = item.detail ?? '';
-		if (detailText.length > 0) {
-			this.drawText(api, detailText, textX, lineTop, detailColor);
-		}
-	}
-}
-
-private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
-	const hint = this.parameterHint;
-	const cursorInfo = this.cursorScreenInfo;
-	if (!hint || !cursorInfo) {
-		return;
-	}
-	const params = hint.params;
-	const baseColor = constants.COLOR_PARAMETER_HINT_TEXT;
-	const segments: Array<{ text: string; color: number }> = [];
-	segments.push({ text: `api.${hint.methodName}(`, color: baseColor });
-	for (let i = 0; i < params.length; i += 1) {
-		if (i > 0) {
-			segments.push({ text: ', ', color: baseColor });
-		}
-		const color = i === hint.argumentIndex ? constants.COLOR_PARAMETER_HINT_ACTIVE : baseColor;
-		segments.push({ text: params[i], color });
-	}
-	segments.push({ text: ')', color: baseColor });
-	let textWidth = 0;
-	for (let i = 0; i < segments.length; i += 1) {
-		const part = segments[i];
-		if (part.text.length === 0) {
-			continue;
-		}
-		textWidth += this.measureText(part.text);
-	}
-	const popupWidth = Math.floor(textWidth + constants.PARAMETER_HINT_PADDING_X * 2);
-	const popupHeight = Math.floor(this.lineHeight + constants.PARAMETER_HINT_PADDING_Y * 2);
-	let popupLeft = Math.floor(cursorInfo.x);
-	if (popupLeft + popupWidth > bounds.codeRight) {
-		popupLeft = bounds.codeRight - popupWidth;
-	}
-	if (popupLeft < bounds.textLeft) {
-		popupLeft = bounds.textLeft;
-	}
-	let popupTop = Math.floor(cursorInfo.y - popupHeight - 2);
-	if (popupTop < bounds.codeTop) {
-		popupTop = Math.floor(cursorInfo.y + cursorInfo.height + 2);
-		if (popupTop + popupHeight > bounds.codeBottom) {
-			popupTop = Math.max(bounds.codeTop, bounds.codeBottom - popupHeight);
-		}
-	}
-	const popupRight = popupLeft + popupWidth;
-	const popupBottom = popupTop + popupHeight;
-	api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BACKGROUND);
-	api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_PARAMETER_HINT_BORDER);
-	let textX = popupLeft + constants.PARAMETER_HINT_PADDING_X;
-	const textY = popupTop + constants.PARAMETER_HINT_PADDING_Y;
-	for (let i = 0; i < segments.length; i += 1) {
-		const part = segments[i];
-		if (part.text.length === 0) {
-			continue;
-		}
-		this.drawText(api, part.text, textX, textY, part.color);
-		textX += this.measureText(part.text);
-	}
-}
+// Removed local completion popup and parameter hint drawers; delegated to CompletionController
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 		if (highlight.chars.length === 0) {
@@ -8701,783 +8528,8 @@ private drawParameterHintOverlay(api: BmsxConsoleApi, bounds: { codeTop: number;
 	private handlePostEditMutation(): void {
 		const editContext = this.pendingEditContext;
 		this.pendingEditContext = null;
-		this.invalidateLocalCompletionCacheForActiveContext();
-		this.cachedGlobalCompletionItems = null;
-		if (this.suppressNextAutoCompletion) {
-			this.suppressNextAutoCompletion = false;
-			this.cancelPendingCompletion();
-			this.refreshParameterHint();
-			return;
-		}
-		this.updateCompletionSessionAfterMutation(editContext);
-		this.refreshParameterHint();
+		this.completion.updateAfterEdit(editContext);
 	}
-
-	private invalidateLocalCompletionCacheForActiveContext(): void {
-		const key = this.activeCompletionCacheKey();
-		if (!key) {
-			return;
-		}
-		this.localCompletionCache.delete(key);
-	}
-
-	private activeCompletionCacheKey(): string | null {
-		const context = this.getActiveCodeTabContext();
-		const assetId = this.resolveHoverAssetId(context);
-		const chunkName = this.resolveHoverChunkName(context);
-		if (!assetId && !chunkName) {
-			return null;
-		}
-		const safeAssetId = assetId ?? '';
-		const safeChunk = chunkName ?? '';
-		return `${safeAssetId}|${safeChunk}`;
-	}
-
-	private refreshParameterHint(): void {
-		const info = this.resolveParameterHintContext();
-		this.parameterHint = info;
-	}
-
-	private resolveParameterHintContext(): ParameterHintState | null {
-		if (!this.isCodeTabActive()) {
-			return null;
-		}
-		if (this.lines.length === 0) {
-			return null;
-		}
-		const safeRow = clamp(this.cursorRow, 0, this.lines.length - 1);
-		const line = this.lines[safeRow];
-		if (line.length === 0) {
-			return null;
-		}
-		const safeColumn = clamp(this.cursorColumn, 0, line.length);
-		let depth = 0;
-		let lastOpen = -1;
-		for (let index = 0; index < safeColumn; index += 1) {
-			const ch = line.charAt(index);
-			if (ch === '(') {
-				depth += 1;
-				lastOpen = index;
-			} else if (ch === ')') {
-				if (depth > 0) {
-					depth -= 1;
-					if (depth === 0) {
-						lastOpen = -1;
-					}
-				}
-			}
-		}
-		if (depth <= 0 || lastOpen < 0) {
-			return null;
-		}
-		const prefix = line.slice(0, lastOpen);
-		let scan = prefix.length - 1;
-		while (scan >= 0 && isWhitespace(prefix.charAt(scan))) {
-			scan -= 1;
-		}
-		if (scan < 0) {
-			return null;
-		}
-		let nameEnd = scan + 1;
-		while (scan >= 0 && isWordChar(prefix.charAt(scan))) {
-			scan -= 1;
-		}
-		const methodName = prefix.slice(scan + 1, nameEnd);
-		if (methodName.length === 0) {
-			return null;
-		}
-		const inner = line.slice(lastOpen + 1, safeColumn);
-		let argumentIndex = 0;
-		let nested = 0;
-		for (let i = 0; i < inner.length; i += 1) {
-			const ch = inner.charAt(i);
-			if (ch === '(') {
-				nested += 1;
-			} else if (ch === ')') {
-				if (nested > 0) {
-					nested -= 1;
-				}
-			} else if (ch === ',' && nested === 0) {
-				argumentIndex += 1;
-			}
-		}
-		let operatorIndex = scan;
-		while (operatorIndex >= 0 && isWhitespace(prefix.charAt(operatorIndex))) {
-			operatorIndex -= 1;
-		}
-		let objectName: string | null = null;
-		if (operatorIndex >= 0) {
-			const candidateOperator = prefix.charAt(operatorIndex);
-			if (candidateOperator === '.' || candidateOperator === ':') {
-				let objectEnd = operatorIndex;
-				let objectIndex = objectEnd - 1;
-				while (objectIndex >= 0 && isWhitespace(prefix.charAt(objectIndex))) {
-					objectIndex -= 1;
-				}
-				if (objectIndex >= 0) {
-					let objectStart = objectIndex;
-					while (objectStart >= 0 && isWordChar(prefix.charAt(objectStart))) {
-						objectStart -= 1;
-					}
-					objectName = prefix.slice(objectStart + 1, objectIndex + 1);
-				}
-			}
-		}
-		if (objectName && objectName.toLowerCase() === 'api') {
-			const apiMeta = apiCompletionData.signatures.get(methodName);
-			if (apiMeta) {
-				const params = apiMeta.params.slice();
-				return {
-					methodName,
-					params,
-					signatureLabel: apiMeta.signature,
-					anchorRow: safeRow,
-					anchorColumn: lastOpen,
-					argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
-				};
-			}
-		}
-		const builtin = this.findBuiltinDescriptor(objectName, methodName);
-		if (builtin) {
-			const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];
-			return {
-				methodName: builtin.name,
-				params,
-				signatureLabel: builtin.signature,
-				anchorRow: safeRow,
-				anchorColumn: lastOpen,
-				argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)),
-			};
-		}
-		return null;
- 	}
-
-	private analyzeCompletionContext(): CompletionContext | null {
-		if (!this.isCodeTabActive()) {
-			return null;
-		}
-		if (this.lines.length === 0) {
-			return null;
-		}
-		const row = clamp(this.cursorRow, 0, this.lines.length - 1);
-		const line = this.lines[row];
-		const column = clamp(this.cursorColumn, 0, line.length);
-		let start = column;
-		while (start > 0 && isWordChar(line.charAt(start - 1))) {
-			start -= 1;
-		}
-		const prefix = line.slice(start, column);
-		const replaceFromColumn = start;
-		const replaceToColumn = column;
-		let probe = start - 1;
-		while (probe >= 0 && isWhitespace(line.charAt(probe))) {
-			probe -= 1;
-		}
-		if (probe >= 0) {
-			const operator = line.charAt(probe);
-			if (operator === '.' || operator === ':') {
-				let objectEnd = probe;
-				let objectProbe = objectEnd - 1;
-				while (objectProbe >= 0 && isWhitespace(line.charAt(objectProbe))) {
-					objectProbe -= 1;
-				}
-				if (objectProbe < 0) {
-					return null;
-				}
-				let objectStart = objectProbe;
-				while (objectStart >= 0 && isWordChar(line.charAt(objectStart))) {
-					objectStart -= 1;
-				}
-				const objectName = line.slice(objectStart + 1, objectProbe + 1);
-				if (objectName.length === 0) {
-					return null;
-				}
-				return {
-					kind: 'member',
-					objectName,
-					operator: operator as '.' | ':',
-					prefix,
-					row,
-					replaceFromColumn,
-					replaceToColumn,
-				};
-			}
-		}
-		return {
-			kind: 'global',
-			prefix,
-			row,
-			replaceFromColumn,
-			replaceToColumn,
-		};
-	}
-
-	private collectCompletionItems(context: CompletionContext): LuaCompletionItem[] {
-		if (context.kind === 'member') {
-			if (context.objectName.toLowerCase() === 'api') {
-				return apiCompletionData.items.slice();
-			}
-			return [];
-		}
-		const registry = new Map<string, LuaCompletionItem>();
-		const register = (item: LuaCompletionItem): void => {
-			if (!registry.has(item.sortKey)) {
-				registry.set(item.sortKey, item);
-			}
-		};
-		const keywordItems = keywordCompletions;
-		for (let i = 0; i < keywordItems.length; i += 1) {
-			register(keywordItems[i]);
-		}
-		const localItems = this.getLocalCompletionItems();
-		for (let i = 0; i < localItems.length; i += 1) {
-			register(localItems[i]);
-		}
-		const globalItems = this.getGlobalCompletionItems();
-		for (let i = 0; i < globalItems.length; i += 1) {
-			register(globalItems[i]);
-		}
-		const builtinItems = this.getBuiltinCompletionItems();
-		for (let i = 0; i < builtinItems.length; i += 1) {
-			register(builtinItems[i]);
-		}
-		const combined = Array.from(registry.values());
-		combined.sort((a, b) => a.label.localeCompare(b.label));
-		return combined;
-	}
-
-	private getLocalCompletionItems(): LuaCompletionItem[] {
-		const key = this.activeCompletionCacheKey();
-		if (!key) {
-			return [];
-		}
-		const cached = this.localCompletionCache.get(key);
-		if (cached && cached.version === this.textVersion) {
-			return cached.items;
-		}
-		const context = this.getActiveCodeTabContext();
-		const assetId = this.resolveHoverAssetId(context);
-		const chunkName = this.resolveHoverChunkName(context);
-		let entries: ConsoleLuaSymbolEntry[] = [];
-		try {
-			entries = this.listLuaSymbolsFn(assetId, chunkName);
-		} catch {
-			this.localCompletionCache.delete(key);
-			return [];
-		}
-		const items = this.buildSymbolCompletionItems(entries, 'local');
-		this.localCompletionCache.set(key, { version: this.textVersion, items });
-		return items;
-	}
-
-	private getGlobalCompletionItems(): LuaCompletionItem[] {
-		if (this.cachedGlobalCompletionItems) {
-			return this.cachedGlobalCompletionItems;
-		}
-		let entries: ConsoleLuaSymbolEntry[] = [];
-		try {
-			entries = this.listGlobalLuaSymbolsFn();
-		} catch {
-			this.cachedGlobalCompletionItems = [];
-			return this.cachedGlobalCompletionItems;
-		}
-		const items = this.buildSymbolCompletionItems(entries, 'global');
-		const apiItem: LuaCompletionItem = {
-			label: 'api',
-			insertText: 'api',
-			sortKey: 'global:api',
-			kind: 'global',
-			detail: 'Console API root',
-		};
-		items.push(apiItem);
-		items.sort((a, b) => a.label.localeCompare(b.label));
-		this.cachedGlobalCompletionItems = items;
-		return items;
-	}
-
-	private getBuiltinCompletionItems(): LuaCompletionItem[] {
-		this.ensureBuiltinDescriptorCache();
-		const items: LuaCompletionItem[] = [];
-		for (const descriptor of this.builtinDescriptorMap.values()) {
-			const label = descriptor.name;
-			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
-			const detail = descriptor.signature && descriptor.signature.length > 0
-				? descriptor.signature
-				: 'Lua builtin';
-			items.push({
-				label,
-				insertText: label,
-				sortKey: `builtin:${label.toLowerCase()}`,
-				kind: 'builtin',
-				detail,
-				parameters: params,
-			});
-		}
-		items.sort((a, b) => a.label.localeCompare(b.label));
-		return items;
-	}
-
-	private buildSymbolCompletionItems(entries: ConsoleLuaSymbolEntry[], scope: 'local' | 'global'): LuaCompletionItem[] {
-		if (entries.length === 0) {
-			return [];
-		}
-		const items: LuaCompletionItem[] = [];
-		for (let i = 0; i < entries.length; i += 1) {
-			const entry = entries[i];
-			const origin = (() => {
-				if (entry.location.path && entry.location.path.length > 0) {
-					return entry.location.path;
-				}
-				if (entry.location.assetId && entry.location.assetId.length > 0) {
-					return entry.location.assetId;
-				}
-				if (entry.location.chunkName && entry.location.chunkName.length > 0) {
-					return entry.location.chunkName;
-				}
-				return '';
-			})();
-			const kindLabel = this.formatSymbolKind(entry.kind);
-			const detail = origin.length > 0 ? `${kindLabel} • ${origin}` : kindLabel;
-			const sortKey = `${scope}:${origin}:${entry.path}:${entry.name}:${entry.kind}`;
-			items.push({
-				label: entry.name,
-				insertText: entry.name,
-				sortKey,
-				kind: scope,
-				detail,
-			});
-		}
-		items.sort((a, b) => a.label.localeCompare(b.label));
-		return items;
-	}
-
-	private formatSymbolKind(kind: ConsoleLuaSymbolEntry['kind']): string {
-		switch (kind) {
-			case 'function':
-				return 'function';
-			case 'variable':
-				return 'variable';
-			case 'parameter':
-				return 'parameter';
-			case 'table_field':
-				return 'table field';
-			case 'assignment':
-				return 'assignment';
-			default:
-				return kind;
-		}
-	}
-
-	private ensureBuiltinDescriptorCache(force = false): void {
-		if (!force && this.builtinDescriptors !== null) {
-			return;
-		}
-		let descriptors: ConsoleLuaBuiltinDescriptor[];
-		try {
-			descriptors = this.listBuiltinLuaFunctionsFn();
-		} catch {
-			descriptors = [];
-		}
-		if (!Array.isArray(descriptors)) {
-			descriptors = [];
-		}
-		this.builtinDescriptors = descriptors;
-		this.builtinDescriptorMap.clear();
-		const registerDescriptor = (descriptor: ConsoleLuaBuiltinDescriptor): void => {
-			if (!descriptor || typeof descriptor.name !== 'string') {
-				return;
-			}
-			const normalized = descriptor.name.trim();
-			if (normalized.length === 0) {
-				return;
-			}
-			const params = Array.isArray(descriptor.params) ? descriptor.params.slice() : [];
-			const signature = descriptor.signature && descriptor.signature.length > 0
-				? descriptor.signature
-				: normalized;
-			const entry: ConsoleLuaBuiltinDescriptor = {
-				name: normalized,
-				params,
-				signature,
-			};
-			this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
-		};
-		for (let i = 0; i < descriptors.length; i += 1) {
-			registerDescriptor(descriptors[i]);
-		}
-	}
-
-	private findBuiltinDescriptor(objectName: string | null, methodName: string): ConsoleLuaBuiltinDescriptor | null {
-		this.ensureBuiltinDescriptorCache();
-		const methodKey = methodName.toLowerCase();
-		if (objectName) {
-			const compositeKey = `${objectName.toLowerCase()}.${methodKey}`;
-			const composite = this.builtinDescriptorMap.get(compositeKey);
-			if (composite) {
-				return {
-					name: composite.name,
-					params: composite.params.slice(),
-					signature: composite.signature,
-				};
-			}
-		}
-		const direct = this.builtinDescriptorMap.get(methodKey);
-		if (direct) {
-			return {
-				name: direct.name,
-				params: direct.params.slice(),
-				signature: direct.signature,
-			};
-		}
-		return null;
-	}
-
-	private determineAutoCompletionTrigger(context: CompletionContext, edit: EditContext): CompletionTrigger | null {
-		if (!edit || edit.kind === 'delete') {
-			return null;
-		}
-		if (edit.text.length === 0) {
-			return null;
-		}
-		const lastChar = edit.text.charAt(edit.text.length - 1);
-		if (context.kind === 'member') {
-			if (lastChar === '.' || lastChar === ':') {
-				return 'punctuation';
-			}
-			if (isWordChar(lastChar)) {
-				return 'typing';
-			}
-			return null;
-		}
-		// Global context
-		if (!isWordChar(lastChar)) {
-			return null;
-		}
-		if (context.prefix.length === 0) {
-			return null;
-		}
-		return 'typing';
-	}
-
-	private updateCompletionSessionAfterMutation(edit: EditContext | null): void {
-		if (!this.isCodeTabActive()) {
-			this.closeCompletionSession();
-			return;
-		}
-		const analyzed = this.analyzeCompletionContext();
-		if (this.completionSession) {
-			this.cancelPendingCompletion();
-			if (!analyzed) {
-				this.closeCompletionSession();
-				return;
-			}
-			const previousChar = this.charAt(this.cursorRow, this.cursorColumn - 1);
-			if (analyzed.prefix.length === 0 && previousChar !== '.' && previousChar !== ':' && !isWordChar(previousChar)) {
-				this.closeCompletionSession();
-				return;
-			}
-			this.refreshCompletionSessionFromContext(analyzed);
-			return;
-		}
-		if (!edit || !analyzed) {
-			this.cancelPendingCompletion();
-			return;
-		}
-		const trigger = this.determineAutoCompletionTrigger(analyzed, edit);
-		if (!trigger) {
-			this.cancelPendingCompletion();
-			return;
-		}
-		this.pendingCompletionRequest = {
-			context: analyzed,
-			trigger,
-			elapsed: 0,
-		};
-	}
-
-	private openCompletionSessionFromContext(context: CompletionContext, _trigger: CompletionTrigger): void {
-		this.cancelPendingCompletion();
-		const items = this.collectCompletionItems(context);
-		if (items.length === 0) {
-			this.completionSession = null;
-			return;
-		}
-		const session: CompletionSession = {
-			context: context.kind === 'member'
-				? {
-					kind: 'member',
-					objectName: context.objectName,
-					operator: context.operator,
-					prefix: context.prefix,
-					row: context.row,
-					replaceFromColumn: context.replaceFromColumn,
-					replaceToColumn: context.replaceToColumn,
-				}
-				: {
-					kind: 'global',
-					prefix: context.prefix,
-					row: context.row,
-					replaceFromColumn: context.replaceFromColumn,
-					replaceToColumn: context.replaceToColumn,
-				},
-			items,
-			filteredItems: [],
-			selectionIndex: -1,
-			displayOffset: 0,
-			anchorRow: this.cursorRow,
-			anchorColumn: this.cursorColumn,
-			maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
-		};
-		this.completionSession = session;
-		this.applyCompletionFilter(session);
-	}
-
-	private refreshCompletionSessionFromContext(context: CompletionContext): void {
-		const session = this.completionSession;
-		if (!session) {
-			return;
-		}
-		const items = this.collectCompletionItems(context);
-		if (items.length === 0) {
-			this.closeCompletionSession();
-			return;
-		}
-		if (context.kind === 'member') {
-			session.context = {
-				kind: 'member',
-				objectName: context.objectName,
-				operator: context.operator,
-				prefix: context.prefix,
-				row: context.row,
-				replaceFromColumn: context.replaceFromColumn,
-				replaceToColumn: context.replaceToColumn,
-			};
-		} else {
-			session.context = {
-				kind: 'global',
-				prefix: context.prefix,
-				row: context.row,
-				replaceFromColumn: context.replaceFromColumn,
-				replaceToColumn: context.replaceToColumn,
-			};
-		}
-		session.items = items;
-		session.anchorRow = this.cursorRow;
-		session.anchorColumn = this.cursorColumn;
-		this.applyCompletionFilter(session);
-	}
-
-	private applyCompletionFilter(session: CompletionSession): void {
-		const prefix = session.context.prefix;
-		const filtered = this.filterCompletionItems(session.items, prefix);
-		if (filtered.length === 0) {
-			session.filteredItems = [];
-			session.selectionIndex = -1;
-			session.displayOffset = 0;
-			this.closeCompletionSession();
-			return;
-		}
-		session.filteredItems = filtered;
-		if (session.selectionIndex < 0 || session.selectionIndex >= session.filteredItems.length) {
-			session.selectionIndex = 0;
-		}
-		this.ensureCompletionSelectionVisible(session);
-	}
-
-	private filterCompletionItems(items: LuaCompletionItem[], prefix: string): LuaCompletionItem[] {
-		const lower = prefix.toLowerCase();
-		const matches: Array<{ item: LuaCompletionItem; score: number; exact: boolean }> = [];
-		for (let i = 0; i < items.length; i += 1) {
-			const item = items[i];
-			const labelLower = item.label.toLowerCase();
-			let score: number | null = null;
-			let exact = false;
-			if (labelLower.startsWith(lower)) {
-				score = 0;
-				exact = labelLower === lower;
-			} else if (lower.length > 0) {
-				const index = labelLower.indexOf(lower);
-				if (index !== -1) {
-					score = index + 10;
-				}
-			}
-			if (score === null) {
-				continue;
-			}
-			matches.push({ item, score, exact });
-		}
-		if (lower.length === 0) {
-			return items.slice();
-		}
-		if (matches.length === 0) {
-			return [];
-		}
-		matches.sort((a, b) => {
-			if (a.exact !== b.exact) {
-				return a.exact ? -1 : 1;
-			}
-			if (a.score !== b.score) {
-				return a.score - b.score;
-			}
-			return a.item.label.localeCompare(b.item.label);
-		});
-		const filtered: LuaCompletionItem[] = [];
-		for (let i = 0; i < matches.length; i += 1) {
-			filtered.push(matches[i].item);
-		}
-		return filtered;
-	}
-
-	private closeCompletionSession(): void {
-		this.completionSession = null;
-		this.cancelPendingCompletion();
-	}
-
-	private cancelPendingCompletion(): void {
-		this.pendingCompletionRequest = null;
-	}
-
-private moveCompletionSelection(delta: number): void {
-	const session = this.completionSession;
-	if (!session) {
-		return;
-	}
-	const total = session.filteredItems.length;
-	if (total === 0) {
-		return;
-	}
-	let index = session.selectionIndex;
-	if (index < 0) {
-		index = delta > 0 ? 0 : total - 1;
-	} else {
-		index += delta;
-		index = ((index % total) + total) % total;
-	}
-	session.selectionIndex = index;
-	this.ensureCompletionSelectionVisible(session);
-}
-
-	private ensureCompletionSelectionVisible(session: CompletionSession): void {
-		if (session.selectionIndex < 0) {
-			session.displayOffset = 0;
-			return;
-		}
-	const visible = session.maxVisibleItems;
-	let offset = session.displayOffset;
-	if (session.selectionIndex < offset) {
-		offset = session.selectionIndex;
-	}
-	const upperBound = offset + visible - 1;
-	if (session.selectionIndex > upperBound) {
-		offset = session.selectionIndex - visible + 1;
-	}
-	if (offset < 0) {
-		offset = 0;
-	}
-	const maxOffset = Math.max(0, session.filteredItems.length - visible);
-	if (offset > maxOffset) {
-		offset = maxOffset;
-	}
-	session.displayOffset = offset;
-}
-
-	private completionContextsCompatible(expected: CompletionContext, actual: CompletionContext): boolean {
-		if (expected.kind !== actual.kind) {
-			return false;
-		}
-		if (expected.kind === 'member' && actual.kind === 'member') {
-			if (expected.operator !== actual.operator) {
-				return false;
-			}
-			if (expected.objectName.toLowerCase() !== actual.objectName.toLowerCase()) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	private processPendingCompletion(deltaSeconds: number): void {
-		const pending = this.pendingCompletionRequest;
-		if (!pending) {
-			return;
-		}
-		if (!this.isCodeTabActive()) {
-			this.cancelPendingCompletion();
-			return;
-		}
-		if (this.completionSession) {
-			this.cancelPendingCompletion();
-			return;
-		}
-		pending.elapsed += deltaSeconds;
-		if (pending.elapsed < constants.COMPLETION_AUTO_TRIGGER_DELAY_SECONDS) {
-			return;
-		}
-		const analyzed = this.analyzeCompletionContext();
-		if (!analyzed) {
-			this.cancelPendingCompletion();
-			return;
-		}
-		if (!this.completionContextsCompatible(pending.context, analyzed)) {
-			this.cancelPendingCompletion();
-			return;
-		}
-		if (pending.trigger === 'typing' && analyzed.kind === 'global' && analyzed.prefix.length === 0) {
-			this.cancelPendingCompletion();
-			return;
-		}
-		this.openCompletionSessionFromContext(analyzed, pending.trigger);
-		this.pendingCompletionRequest = null;
-	}
-
-private acceptSelectedCompletion(): void {
-	const session = this.completionSession;
-	if (!session) {
-		return;
-	}
-	if (session.filteredItems.length === 0) {
-		this.closeCompletionSession();
-		return;
-	}
-	let index = session.selectionIndex;
-	if (index < 0 || index >= session.filteredItems.length) {
-		index = 0;
-	}
-	const item = session.filteredItems[index];
-	const addParentheses = item.kind === 'api_method';
-	const freshContext = this.analyzeCompletionContext();
-	const effectiveContext = freshContext && this.completionContextsCompatible(session.context, freshContext)
-		? freshContext
-		: session.context;
-	this.applyCompletionItemForContext(effectiveContext, item, addParentheses);
-	this.closeCompletionSession();
-}
-
-private applyCompletionItemForContext(context: CompletionContext, item: LuaCompletionItem, addParentheses: boolean): void {
-	const row = clamp(context.row, 0, Math.max(0, this.lines.length - 1));
-	const line = this.lines[row] ?? '';
-	const replaceStart = clamp(context.replaceFromColumn, 0, line.length);
-	const replaceEnd = clamp(context.replaceToColumn, replaceStart, line.length);
-	this.cursorRow = row;
-	this.cursorColumn = replaceEnd;
-	this.selectionAnchor = { row, column: replaceStart };
-	this.suppressNextAutoCompletion = true;
-	let insertion = item.insertText;
-	if (addParentheses) {
-		insertion = `${item.insertText}()`;
-	}
-	this.replaceSelectionWith(insertion);
-	if (addParentheses) {
-		this.cursorRow = row;
-		this.cursorColumn = replaceStart + item.insertText.length + 1;
-	} else {
-		this.cursorRow = row;
-		this.cursorColumn = replaceStart + insertion.length;
-	}
-	this.updateDesiredColumn();
-	this.resetBlink();
-	this.revealCursor();
-}
 
 private handleCompletionKeybindings(
 	keyboard: KeyboardInput,
@@ -9487,101 +8539,11 @@ private handleCompletionKeybindings(
 	altDown: boolean,
 	metaDown: boolean,
 ): boolean {
-	const session = this.completionSession;
-	if (!session) {
-		return false;
-	}
-	if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
-		consumeKeyboardKey(keyboard, 'Escape');
-		this.closeCompletionSession();
-		return true;
-	}
-	let handled = false;
-	if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowDown');
-		this.moveCompletionSelection(1);
-		handled = true;
-	}
-	if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'ArrowUp');
-		this.moveCompletionSelection(-1);
-		handled = true;
-	}
-	if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageDown');
-		this.moveCompletionSelection(session.maxVisibleItems);
-		handled = true;
-	}
-	if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-		consumeKeyboardKey(keyboard, 'PageUp');
-		this.moveCompletionSelection(-session.maxVisibleItems);
-		handled = true;
-	}
-	if (ctrlDown || metaDown) {
-		if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'Home');
-			if (session.filteredItems.length > 0) {
-				session.selectionIndex = 0;
-				this.ensureCompletionSelectionVisible(session);
-			}
-			handled = true;
-		}
-		if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-			consumeKeyboardKey(keyboard, 'End');
-			if (session.filteredItems.length > 0) {
-				session.selectionIndex = session.filteredItems.length - 1;
-				this.ensureCompletionSelectionVisible(session);
-			}
-			handled = true;
-		}
-	}
-	if (handled) {
-		return true;
-	}
-	const enterPressed = isKeyJustPressedGlobal(this.playerIndex, 'Enter');
-	const numpadEnterPressed = isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter');
-	if (enterPressed || numpadEnterPressed) {
-		if (enterPressed) {
-			consumeKeyboardKey(keyboard, 'Enter');
-		} else {
-			consumeKeyboardKey(keyboard, 'NumpadEnter');
-		}
-		this.acceptSelectedCompletion();
-		return true;
-	}
-	if (isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
-		consumeKeyboardKey(keyboard, 'Tab');
-		if (shiftDown) {
-			this.moveCompletionSelection(-1);
-		} else {
-			this.acceptSelectedCompletion();
-		}
-		return true;
-	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressedGlobal(this.playerIndex, 'Space')) {
-		consumeKeyboardKey(keyboard, 'Space');
-		const context = this.analyzeCompletionContext();
-		if (context) {
-			this.openCompletionSessionFromContext(context, 'manual');
-		} else {
-			this.closeCompletionSession();
-		}
-		return true;
-	}
-	return false;
+	return this.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
 }
 
 	private onCursorMoved(): void {
-		this.cancelPendingCompletion();
-		if (this.completionSession) {
-			const context = this.analyzeCompletionContext();
-			if (!context) {
-				this.closeCompletionSession();
-			} else {
-				this.refreshCompletionSessionFromContext(context);
-			}
-		}
-		this.refreshParameterHint();
+		this.completion.onCursorMoved();
 	}
 
 	private invalidateVisualLines(): void {

@@ -150,3 +150,78 @@ export class ConsoleScrollbar {
 		return this.scrollValue;
 	}
 }
+
+export type ScrollbarMap = Record<ScrollbarKind, ConsoleScrollbar>;
+
+export class ScrollbarController {
+	private active: { kind: ScrollbarKind; pointerOffset: number } | null = null;
+
+	constructor(private readonly scrollbars: ScrollbarMap) { }
+
+	public hasActiveDrag(): boolean {
+		return this.active !== null;
+	}
+
+	public getActive(): { kind: ScrollbarKind; pointerOffset: number } | null {
+		return this.active;
+	}
+
+	public cancel(): void {
+		this.active = null;
+	}
+
+	/**
+	 * Try to begin a drag on any visible scrollbar.
+	 * Returns true when a drag session starts. Invokes apply(kind, scroll) when paging via track clicks.
+	 */
+	public begin(pointerX: number, pointerY: number, primaryPressed: boolean, bottomMargin: number, apply: (kind: ScrollbarKind, scroll: number) => void): boolean {
+		if (!primaryPressed) return false;
+		const order: ScrollbarKind[] = ['codeVertical', 'codeHorizontal', 'resourceVertical', 'resourceHorizontal', 'viewerVertical'];
+		for (let i = 0; i < order.length; i += 1) {
+			const kind = order[i];
+			const scrollbar = this.scrollbars[kind];
+			const track = scrollbar.getTrack();
+			if (!track) continue;
+			const thumb = scrollbar.getThumb();
+			const pointerCoord = scrollbar.orientation === 'vertical' ? pointerY : pointerX;
+			const hitsThumb = !!thumb && this.pointInRect(pointerX, pointerY, thumb);
+			const hitsTrack = this.pointInRect(pointerX, pointerY, track);
+			const extendedHorizontalHit = scrollbar.orientation === 'horizontal'
+				&& pointerX >= track.left && pointerX < track.right
+				&& pointerY >= track.top && pointerY < track.top + bottomMargin;
+			if (!hitsThumb && !hitsTrack && !extendedHorizontalHit) continue;
+			const pointerOffset = scrollbar.beginDrag(pointerCoord);
+			if (pointerOffset === null) continue;
+			if (!hitsThumb) {
+				apply(kind, scrollbar.getScroll());
+			}
+			this.active = { kind, pointerOffset };
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Update the active drag session. Returns true if it updated scrolling.
+	 */
+	public update(pointerX: number, pointerY: number, primaryPressed: boolean, apply: (kind: ScrollbarKind, scroll: number) => void): boolean {
+		if (!this.active) return false;
+		if (!primaryPressed) {
+			this.active = null;
+			return false;
+		}
+		const scrollbar = this.scrollbars[this.active.kind];
+		if (!scrollbar.isVisible()) {
+			this.active = null;
+			return false;
+		}
+		const pointerCoord = scrollbar.orientation === 'vertical' ? pointerY : pointerX;
+		const newScroll = scrollbar.drag(pointerCoord, this.active.pointerOffset);
+		apply(this.active.kind, newScroll);
+		return true;
+	}
+
+	private pointInRect(x: number, y: number, r: RectBounds): boolean {
+		return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+	}
+}
