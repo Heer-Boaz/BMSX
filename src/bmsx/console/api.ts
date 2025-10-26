@@ -247,6 +247,22 @@ export class BmsxConsoleApi {
 		}
 	}
 
+	public printWithFont(text: string, x: number, y: number, colorIndex: number, font: ConsoleFont): void {
+		const color = this.paletteColor(colorIndex);
+		const baseX = Math.floor(x);
+		let cursorY = Math.floor(y);
+		const lines = text.split('\n');
+		for (let i = 0; i < lines.length; i++) {
+			const expanded = this.expandTabs(lines[i]);
+			if (expanded.length > 0) {
+				this.renderBackend.drawText({ kind: 'print', text: expanded, x: baseX, y: cursorY, color }, font);
+			}
+			if (i < lines.length - 1) {
+				cursorY += font.lineHeight();
+			}
+		}
+	}
+
 	public spr(sprite: number | string, x: number, y: number, options?: { id?: string; scale?: number; layer?: RenderLayer; flipH?: boolean; flipV?: boolean }): void {
 		const scale = options?.scale ?? 1;
 		const flipH = options?.flipH ?? false;

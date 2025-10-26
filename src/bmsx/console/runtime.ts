@@ -26,6 +26,7 @@ import type { BehaviorTreeDefinition } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
+import type { ConsoleFontVariant } from './font';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -40,6 +41,9 @@ const DEFAULT_LUA_FAILURE_POLICY: LuaPersistenceFailurePolicy = {
 	apply: 'error',
 	restore: 'error',
 };
+
+// Flip back to 'msx' to restore the legacy editor font.
+const EDITOR_FONT_VARIANT: ConsoleFontVariant = 'tiny';
 
 export type BmsxConsoleRuntimeOptions = {
 	cart: BmsxConsoleCartridge;
@@ -608,6 +612,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
         			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
         			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
         			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
+        			fontVariant: EDITOR_FONT_VARIANT,
         		});
 		this.flushLuaWarnings();
 	}

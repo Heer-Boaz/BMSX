@@ -10,6 +10,7 @@ import type {
 	ConsoleResourceDescriptor,
 	ConsoleViewport,
 } from '../types';
+import type { ConsoleFontVariant } from '../font';
 
 export type ConsoleEditorOptions = {
 	playerIndex: number;
@@ -26,6 +27,7 @@ export type ConsoleEditorOptions = {
 	listLuaSymbols: (assetId: string | null, chunkName: string | null) => ConsoleLuaSymbolEntry[];
 	listGlobalLuaSymbols: () => ConsoleLuaSymbolEntry[];
 	listBuiltinLuaFunctions: () => ConsoleLuaBuiltinDescriptor[];
+	fontVariant?: ConsoleFontVariant;
 };
 
 export type Position = { row: number; column: number };

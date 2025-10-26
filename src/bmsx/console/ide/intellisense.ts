@@ -1061,10 +1061,9 @@ function validateCallArity(
 	const startColumn = call.range.start.column > 0 ? call.range.start.column - 1 : 0;
 	const endColumnCandidate = call.range.end.column;
 	const endColumn = endColumnCandidate > startColumn ? endColumnCandidate : startColumn + 1;
-	const missing = required - actualCount;
 	const expectedLabel = required === 1 ? 'argument' : 'arguments';
 	const providedLabel = actualCount === 1 ? 'was' : 'were';
-	const message = `${metadata.label} expects ${required} ${expectedLabel}, but ${actualCount} ${providedLabel} provided${missing > 0 ? ` (${missing} missing)` : ''}.`;
+	const message = `${metadata.label} expects ${required} ${expectedLabel}, but ${actualCount} ${providedLabel} provided.`;
 	diagnostics.push({
 		row,
 		startColumn,

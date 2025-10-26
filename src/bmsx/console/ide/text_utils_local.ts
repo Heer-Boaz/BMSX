@@ -64,17 +64,22 @@ export function wrapTextDynamic(
 	let remaining = text;
 	let width = firstLineWidth;
 	for (let i = 0; i < maxLines; i += 1) {
-		if (remaining.length === 0) { lines.push(''); continue; }
+		if (remaining.length === 0) break;
 		const sliceIndex = findMaxFittingIndexMeasure(remaining, width, measure);
 		const lineText = remaining.slice(0, sliceIndex).trimEnd();
 		lines.push(lineText);
 		remaining = remaining.slice(sliceIndex).trimStart();
 		width = subsequentWidth;
 	}
+	if (lines.length === 0) {
+		lines.push('');
+		return lines;
+	}
 	if (remaining.length > 0) {
 		const lastIndex = lines.length - 1;
 		const last = `${lines[lastIndex]}…`;
-		lines[lastIndex] = truncateWithMeasure(last, width, measure);
+		const lastLineWidth = lines.length === 1 ? firstLineWidth : subsequentWidth;
+		lines[lastIndex] = truncateWithMeasure(last, lastLineWidth, measure);
 	}
 	return lines;
 }
@@ -164,6 +169,7 @@ function findMaxFittingIndexMeasure(text: string, maxWidth: number, measure: (t:
 		else { high = mid - 1; }
 	}
 	if (best <= 0) return 1;
+	if (best >= text.length) return text.length;
 	let breakIndex = best;
 	for (let i = best - 1; i >= 0; i -= 1) {
 		const ch = text.charAt(i);

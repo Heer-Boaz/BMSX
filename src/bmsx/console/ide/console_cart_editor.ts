@@ -14,6 +14,7 @@ import type {
 	ConsoleResourceDescriptor,
 } from '../types';
 import { ConsoleEditorFont } from '../editor_font';
+import { ConsoleFont, DEFAULT_CONSOLE_FONT_VARIANT, getConsoleFontPreset, type ConsoleFontVariant } from '../font';
 import { Msx1Colors } from 'bmsx';
 import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
@@ -101,6 +102,7 @@ const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'sta
 export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	protected readonly playerIndex: number;
 	private readonly metadata: BmsxConsoleMetadata;
+	private readonly fontVariant: ConsoleFontVariant;
 	private readonly loadSourceFn: () => string;
 	private readonly saveSourceFn: (source: string) => Promise<void>;
 	private readonly loadLuaResourceFn: (assetId: string) => string;
@@ -207,7 +209,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private tabDragState: TabDragState | null = null;
 	private crtOptionsSnapshot: CrtOptionsSnapshot | null = null;
 	private resolutionMode: EditorResolutionMode = 'viewport';
-	private readonly tabDirtyMarkerAssetId = 'msx_6b_font_ctrl_bel';
+	private readonly tabDirtyMarkerAssetId: string;
 	private tabDirtyMarkerWidth: number | null = null;
 	private tabDirtyMarkerHeight: number | null = null;
 	protected cursorRevealSuspended = false;
@@ -280,6 +282,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		super();
 		this.playerIndex = options.playerIndex;
 		this.metadata = options.metadata;
+		this.fontVariant = options.fontVariant ?? DEFAULT_CONSOLE_FONT_VARIANT;
 		this.loadSourceFn = options.loadSource;
 		this.saveSourceFn = options.saveSource;
 		this.listResourcesFn = options.listResources;
@@ -296,7 +299,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		this.viewportWidth = options.viewport.width;
 		this.viewportHeight = options.viewport.height;
-		this.font = new ConsoleEditorFont();
+		this.font = new ConsoleEditorFont(this.fontVariant);
+		this.tabDirtyMarkerAssetId = getConsoleFontPreset(this.fontVariant).tabDirtyMarkerAssetId;
 		this.searchField = createInlineTextField();
 		this.symbolSearchField = createInlineTextField();
 		this.resourceSearchField = createInlineTextField();
@@ -7051,6 +7055,8 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 	private drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], originX: number, originY: number): void {
 		let cursorX = Math.floor(originX);
 		const cursorY = Math.floor(originY);
+		const renderFont = this.font.getRenderFont();
+		const apiAny = api as BmsxConsoleApi & { printWithFont?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void };
 		let index = 0;
 		while (index < text.length) {
 			const colorIndex = colors[index] ?? constants.COLOR_CODE_TEXT;
@@ -7064,7 +7070,11 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 			}
 			const segment = text.slice(index, end);
 			if (segment.length > 0) {
-				api.print(segment, cursorX, cursorY, colorIndex);
+				if (typeof apiAny.printWithFont === 'function') {
+					apiAny.printWithFont(segment, cursorX, cursorY, colorIndex, renderFont);
+				} else {
+					api.print(segment, cursorX, cursorY, colorIndex);
+				}
 				cursorX += this.font.measure(segment);
 			}
 			index = end;
@@ -7608,11 +7618,17 @@ private handleCompletionKeybindings(
 	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {
 		const baseX = Math.floor(originX);
 		let cursorY = Math.floor(originY);
+		const renderFont = this.font.getRenderFont();
+		const apiAny = api as BmsxConsoleApi & { printWithFont?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void };
 		const lines = text.split('\n');
 		for (let i = 0; i < lines.length; i++) {
 			const expanded = expandTabsExternal(lines[i]);
 			if (expanded.length > 0) {
-				api.print(expanded, baseX, cursorY, color);
+				if (typeof apiAny.printWithFont === 'function') {
+					apiAny.printWithFont(expanded, baseX, cursorY, color, renderFont);
+				} else {
+					api.print(expanded, baseX, cursorY, color);
+				}
 			}
 			if (i < lines.length - 1) {
 				cursorY += this.lineHeight;
