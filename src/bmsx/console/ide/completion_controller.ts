@@ -52,17 +52,25 @@ export interface CompletionHost {
 const keywordCompletions = getKeywordCompletions();
 const apiCompletionData = getApiCompletionData();
 
+type LocalCompletionCacheEntry = {
+    parsedVersion: number;
+    chunkName: string | null;
+    symbols: LuaScopedSymbol[];
+};
+
 export class CompletionController {
     private readonly host: CompletionHost;
 
     private completionSession: CompletionSession | null = null;
-    private readonly localCompletionCache: Map<string, { version: number; symbols: LuaScopedSymbol[]; chunkName: string | null }> = new Map();
+    private readonly localCompletionCache: Map<string, LocalCompletionCacheEntry> = new Map();
     private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
     private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
     private suppressNextAutoCompletion = false;
     private parameterHint: ParameterHintState | null = null;
     private builtinDescriptors: ConsoleLuaBuiltinDescriptor[] | null = null;
     private readonly builtinDescriptorMap: Map<string, ConsoleLuaBuiltinDescriptor> = new Map();
+    private completionPopupBounds: { left: number; top: number; right: number; bottom: number } | null = null;
+    private enterCommitsCompletion = false;
 
     constructor(host: CompletionHost) {
         this.host = host;
@@ -71,7 +79,59 @@ export class CompletionController {
     // Public API for editor integration
     public closeSession(): void {
         this.completionSession = null;
+        this.completionPopupBounds = null;
         this.cancelPendingCompletion();
+    }
+
+    public setEnterCommitsEnabled(enabled: boolean): void {
+        this.enterCommitsCompletion = enabled;
+    }
+
+    public handlePointerWheel(direction: number, steps: number, pointer: { x: number; y: number } | null): boolean {
+        const session = this.completionSession;
+        if (!session || session.filteredItems.length === 0) {
+            return false;
+        }
+        if (pointer && !this.pointInCompletionPopup(pointer.x, pointer.y)) {
+            return false;
+        }
+        const total = session.filteredItems.length;
+        if (total === 0) {
+            return pointer !== null;
+        }
+        const unit = direction >= 0 ? 1 : -1;
+        const stepCount = Math.max(1, steps);
+        let moved = false;
+        for (let i = 0; i < stepCount; i += 1) {
+            let nextIndex = session.selectionIndex;
+            if (nextIndex < 0) {
+                nextIndex = unit > 0 ? 0 : total - 1;
+            } else {
+                const candidate = nextIndex + unit;
+                if (candidate < 0) {
+                    if (nextIndex === 0) {
+                        continue;
+                    }
+                    nextIndex = 0;
+                } else if (candidate >= total) {
+                    if (nextIndex === total - 1) {
+                        continue;
+                    }
+                    nextIndex = total - 1;
+                } else {
+                    nextIndex = candidate;
+                }
+            }
+            if (nextIndex !== session.selectionIndex) {
+                session.selectionIndex = nextIndex;
+                this.ensureCompletionSelectionVisible(session);
+                moved = true;
+            }
+        }
+        if (moved) {
+            return true;
+        }
+        return pointer !== null;
     }
 
     public processPending(deltaSeconds: number): void {
@@ -176,12 +236,14 @@ export class CompletionController {
             }
         }
         if (handled) return true;
-        const enterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Enter');
-        const numpadEnterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'NumpadEnter');
-        if (enterPressed || numpadEnterPressed) {
-            if (enterPressed) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
-            this.acceptSelectedCompletion();
-            return true;
+        if (this.enterCommitsCompletion) {
+            const enterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Enter');
+            const numpadEnterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'NumpadEnter');
+            if (enterPressed || numpadEnterPressed) {
+                if (enterPressed) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+                this.acceptSelectedCompletion();
+                return true;
+            }
         }
         if (isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Tab')) {
             consumeKeyboardKey(keyboard, 'Tab');
@@ -200,6 +262,7 @@ export class CompletionController {
     public drawCompletionPopup(api: BmsxConsoleApi, bounds: { codeTop: number; codeBottom: number; codeLeft: number; codeRight: number; textLeft: number }): void {
         const session = this.completionSession;
         const cursorInfo = this.host.getCursorScreenInfo();
+        this.completionPopupBounds = null;
         if (!session || !cursorInfo) return;
         if (session.filteredItems.length === 0) return;
         const startIndex = session.displayOffset;
@@ -231,6 +294,7 @@ export class CompletionController {
         const popupBottom = popupTop + popupHeight;
         api.rectfill(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BACKGROUND);
         api.rect(popupLeft, popupTop, popupRight, popupBottom, constants.COLOR_COMPLETION_BORDER);
+        this.completionPopupBounds = { left: popupLeft, top: popupTop, right: popupRight, bottom: popupBottom };
         for (let drawIndex = 0; drawIndex < visibleCount; drawIndex += 1) {
             const itemIndex = startIndex + drawIndex;
             const item = session.filteredItems[itemIndex];
@@ -311,6 +375,9 @@ export class CompletionController {
         const prefix = line.slice(start, column);
         const replaceFromColumn = start;
         const replaceToColumn = column;
+        if (this.isCommentContext(lines, row, replaceFromColumn)) {
+            return null;
+        }
         let probe = start - 1;
         while (probe >= 0 && isWhitespace(line.charAt(probe))) probe -= 1;
         if (probe >= 0) {
@@ -356,30 +423,48 @@ export class CompletionController {
     private getLocalCompletionItems(context: CompletionContext): LuaCompletionItem[] {
         const key = this.activeCompletionCacheKey();
         if (!key) return [];
+        const activeCodeContext = this.host.getActiveCodeTabContext();
+        const chunkName = this.host.resolveHoverChunkName(activeCodeContext);
         const currentVersion = this.host.getTextVersion();
-        let cached = this.localCompletionCache.get(key);
-        if (!cached || cached.version !== currentVersion) {
+        let cached = this.localCompletionCache.get(key) ?? null;
+        const needsParse = !cached || cached.chunkName !== chunkName || cached.parsedVersion !== currentVersion;
+        if (needsParse) {
             const lines = this.host.getLines();
             const source = lines.join('\n');
-            const activeContext = this.host.getActiveCodeTabContext();
-            let chunkName = this.host.resolveHoverChunkName(activeContext);
             const parseChunkName = chunkName && chunkName.length > 0 ? chunkName : 'lua_chunk';
-            let symbols: LuaScopedSymbol[];
+            let symbols: LuaScopedSymbol[] | null;
             try {
                 symbols = collectLuaScopedSymbols({ source, chunkName: parseChunkName });
             } catch {
-                this.localCompletionCache.delete(key);
-                return [];
+                symbols = null;
             }
-            cached = { version: currentVersion, symbols, chunkName };
-            this.localCompletionCache.set(key, cached);
+            if (symbols !== null) {
+                cached = {
+                    parsedVersion: currentVersion,
+                    chunkName,
+                    symbols,
+                };
+                this.localCompletionCache.set(key, cached);
+            } else {
+                if (cached && cached.chunkName !== chunkName) {
+                    this.localCompletionCache.delete(key);
+                    cached = null;
+                }
+                if (!cached) {
+                    return [];
+                }
+            }
         }
+        if (!cached) {
+            cached = this.localCompletionCache.get(key) ?? null;
+        }
+        if (!cached) return [];
         const column = context.replaceToColumn;
         const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, context.row, column);
         if (filtered.length === 0) {
             return [];
         }
-        return this.buildLocalCompletionItems(filtered, cached.chunkName);
+        return this.buildLocalCompletionItems(filtered, cached.chunkName ?? chunkName ?? null);
     }
 
     private getGlobalCompletionItems(): LuaCompletionItem[] {
@@ -516,6 +601,92 @@ export class CompletionController {
         return candidate.endColumn > other.endColumn;
     }
 
+    private isCommentContext(lines: string[], targetRow: number, targetColumn: number): boolean {
+        if (targetRow < 0 || targetRow >= lines.length) {
+            return false;
+        }
+        let blockComment = false;
+        let stringDelimiter: '\'' | '"' | null = null;
+        for (let row = 0; row <= targetRow; row += 1) {
+            const line = lines[row] ?? '';
+            let index = 0;
+            let lineComment = false;
+            while (index <= line.length) {
+                if (row === targetRow && index >= targetColumn) {
+                    return blockComment || lineComment;
+                }
+                if (index === line.length) {
+                    break;
+                }
+                const ch = line.charAt(index);
+                const next = index + 1 < line.length ? line.charAt(index + 1) : '';
+                if (lineComment) {
+                    index += 1;
+                    continue;
+                }
+                if (stringDelimiter !== null) {
+                    if (ch === '\\') {
+                        index += 2;
+                    } else if (ch === stringDelimiter) {
+                        stringDelimiter = null;
+                        index += 1;
+                    } else {
+                        index += 1;
+                    }
+                    continue;
+                }
+                if (blockComment) {
+                    if (ch === ']' && next === ']') {
+                        blockComment = false;
+                        index += 2;
+                    } else {
+                        index += 1;
+                    }
+                    continue;
+                }
+                if (ch === '-' && next === '-') {
+                    const next2 = index + 2 < line.length ? line.charAt(index + 2) : '';
+                    const next3 = index + 3 < line.length ? line.charAt(index + 3) : '';
+                    if (next2 === '[' && next3 === '[') {
+                        blockComment = true;
+                        index += 4;
+                        continue;
+                    }
+                    lineComment = true;
+                    index += 2;
+                    continue;
+                }
+                if (ch === '\'' || ch === '"') {
+                    stringDelimiter = ch as '\'' | '"';
+                    index += 1;
+                    continue;
+                }
+                index += 1;
+            }
+        }
+        return blockComment;
+    }
+
+    private isIdentifierTriggerPrefix(prefix: string): boolean {
+        if (prefix.length === 0) {
+            return false;
+        }
+        const code = prefix.charCodeAt(0);
+        return this.isIdentifierStartChar(code);
+    }
+
+    private isIdentifierStartChar(code: number): boolean {
+        return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
+    }
+
+    private pointInCompletionPopup(x: number, y: number): boolean {
+        const bounds = this.completionPopupBounds;
+        if (!bounds) {
+            return false;
+        }
+        return x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom;
+    }
+
     private formatSymbolKind(kind: ConsoleLuaSymbolEntry['kind']): string {
         switch (kind) {
             case 'function': return 'function';
@@ -574,17 +745,13 @@ export class CompletionController {
         if (!edit || edit.kind === 'delete') return null;
         if (edit.text.length === 0) return null;
         const lastChar = edit.text.charAt(edit.text.length - 1);
-		switch (context.kind) {
-			case 'local':
-				if (isWordChar(lastChar)) return 'typing';
-				return null;
-			case 'member':
-				if (lastChar === '.' || lastChar === ':') return 'punctuation';
-				if (isWordChar(lastChar)) return 'typing';
-				return null;
-		}
+        if (context.kind === 'member') {
+            if (lastChar === '.' || lastChar === ':') return 'punctuation';
+            if (!isWordChar(lastChar)) return null;
+            return context.prefix.length === 0 ? null : 'typing';
+        }
         if (!isWordChar(lastChar)) return null;
-		if (context.prefix.length === 0) return null;
+        if (!this.isIdentifierTriggerPrefix(context.prefix)) return null;
         return 'typing';
     }
 

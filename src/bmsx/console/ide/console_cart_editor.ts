@@ -378,6 +378,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			getTextVersion: () => this.textVersion,
 			shouldFireRepeat: (kb, code, dt) => this.input.shouldRepeatPublic(kb, code, dt),
 		});
+		this.completion.setEnterCommitsEnabled(false);
 		// Initialize input controller
 		this.input = new InputController({
 			getPlayerIndex: () => this.playerIndex,
@@ -4291,6 +4292,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 					return;
 				}
 			}
+		}
+		if (this.completion.handlePointerWheel(direction, steps, pointer && pointer.valid && pointer.insideViewport ? { x: pointer.viewportX, y: pointer.viewportY } : null)) {
+			playerInput.consumeAction('pointer_wheel');
+			return;
 		}
 		if (this.isResourceViewActive()) {
 			this.scrollResourceViewer(direction * steps);
