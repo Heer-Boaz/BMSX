@@ -34,7 +34,6 @@ import {
 	selectionRange as inlineFieldSelectionRange,
 	setFieldText,
 } from './inline_text_field';
-import { highlightLine as highlightLineExternal } from './syntax_highlight';
 import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
 import { expandTabs as expandTabsExternal, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
@@ -44,6 +43,7 @@ import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, rend
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
+import { ConsoleCodeLayout } from './code_layout';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -122,8 +122,6 @@ export class ConsoleCartEditor {
 	private readonly lineHeight: number;
 	private readonly charAdvance: number;
 	private readonly spaceAdvance: number;
-	private readonly highlightCache: Map<number, CachedHighlight> = new Map();
-	private readonly maxHighlightCache = 2048;
 	private readonly gutterWidth: number;
 	private readonly headerHeight: number;
 	private readonly tabBarHeight: number;
@@ -280,15 +278,13 @@ export class ConsoleCartEditor {
 	private resourcePanelResizing = false;
 	// max line width computed by ResourcePanelController
 	private readonly resourcePanel: ResourcePanelController;
+	private readonly layout: ConsoleCodeLayout;
 	private codeVerticalScrollbarVisible = false;
 	private codeHorizontalScrollbarVisible = false;
 	private cachedVisibleRowCount = 1;
 	private cachedVisibleColumnCount = 1;
 	private dimCrtInEditor: boolean = false; // Default value; can be changed via settings
 	private wordWrapEnabled = true;
-	private visualLines: VisualLineSegment[] = [];
-	private rowToFirstVisualLine: number[] = [];
-	private visualLinesDirty = true;
 	private lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
 	private readonly completion: CompletionController;
 
@@ -325,6 +321,7 @@ export class ConsoleCartEditor {
 		this.lineHeight = this.font.lineHeight();
 		this.charAdvance = this.font.advance('M');
 		this.spaceAdvance = this.font.advance(' ');
+		this.layout = new ConsoleCodeLayout(this.font);
 		this.inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
 			advanceChar: (ch: string) => this.font.advance(ch),
@@ -6900,7 +6897,8 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 	private toggleWordWrap(): void {
 		this.ensureVisualLines();
 		const previousWrap = this.wordWrapEnabled;
-		const previousTopIndex = clamp(this.scrollRow, 0, this.visualLines.length > 0 ? this.visualLines.length - 1 : 0);
+		const visualLineCount = this.getVisualLineCount();
+		const previousTopIndex = clamp(this.scrollRow, 0, visualLineCount > 0 ? visualLineCount - 1 : 0);
 		const previousTopSegment = this.visualIndexToSegment(previousTopIndex);
 		const anchorRow = previousTopSegment ? previousTopSegment.row : this.cursorRow;
 		const anchorColumnForWrap = previousTopSegment ? previousTopSegment.startColumn : 0;
@@ -8102,22 +8100,7 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 // Removed local completion popup and parameter hint drawers; delegated to CompletionController
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
-		if (highlight.chars.length === 0) {
-			return { text: '', colors: [], startDisplay: 0, endDisplay: 0 };
-		}
-		const columnToDisplay = highlight.columnToDisplay;
-		const clampedStart = Math.min(columnStart, columnToDisplay.length - 1);
-		const clampedEndColumn = Math.min(columnStart + columnCount, columnToDisplay.length - 1);
-		const startDisplay = columnToDisplay[clampedStart];
-		const endDisplay = columnToDisplay[clampedEndColumn];
-		const sliceChars = highlight.chars.slice(startDisplay, endDisplay);
-		const sliceColors = highlight.colors.slice(startDisplay, endDisplay);
-		return {
-			text: sliceChars.join(''),
-			colors: sliceColors,
-			startDisplay,
-			endDisplay,
-		};
+		return this.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
 	}
 
 	private drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], originX: number, originY: number): void {
@@ -8144,59 +8127,19 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 	}
 
 	private getCachedHighlight(row: number): CachedHighlight {
-		const source = this.lines[row] ?? '';
-		const cached = this.highlightCache.get(row);
-		if (cached && cached.src === source) {
-			return cached;
-		}
-		const highlight = this.highlightLine(source);
-		const displayToColumn = new Array<number>(highlight.chars.length + 1).fill(0);
-		for (let column = 0; column < source.length; column++) {
-			const startDisplay = highlight.columnToDisplay[column];
-			const endDisplay = highlight.columnToDisplay[column + 1];
-			for (let display = startDisplay; display < endDisplay; display++) {
-				displayToColumn[display] = column;
-			}
-		}
-		displayToColumn[highlight.chars.length] = source.length;
-		const advancePrefix: number[] = new Array(highlight.chars.length + 1);
-		advancePrefix[0] = 0;
-		for (let i = 0; i < highlight.chars.length; i++) {
-			advancePrefix[i + 1] = advancePrefix[i] + this.font.advance(highlight.chars[i]);
-		}
-		const entry: CachedHighlight = {
-			src: source,
-			hi: highlight,
-			displayToColumn,
-			advancePrefix,
-		};
-		this.highlightCache.set(row, entry);
-		while (this.highlightCache.size > this.maxHighlightCache) {
-			const firstKey = this.highlightCache.keys().next().value as number | undefined;
-			if (firstKey === undefined) {
-				break;
-			}
-			this.highlightCache.delete(firstKey);
-		}
-		return entry;
+		return this.layout.getCachedHighlight(this.lines, row);
 	}
 
 	private invalidateLine(row: number): void {
-		this.highlightCache.delete(row);
+		this.layout.invalidateHighlight(row);
 	}
 
 	private invalidateAllHighlights(): void {
-		this.highlightCache.clear();
+		this.layout.invalidateAllHighlights();
 	}
 
 	private measureRangeFast(entry: CachedHighlight, startDisplay: number, endDisplay: number): number {
-		const length = entry.hi.chars.length;
-		if (length === 0) {
-			return 0;
-		}
-		const clampedStart = clamp(startDisplay, 0, length);
-		const clampedEnd = clamp(endDisplay, clampedStart, length);
-		return entry.advancePrefix[clampedEnd] - entry.advancePrefix[clampedStart];
+		return this.layout.measureRangeFast(entry, startDisplay, endDisplay);
 	}
 
 	private lowerBound(values: number[], target: number, lo = 0, hi = values.length): number {
@@ -8256,64 +8199,16 @@ private handleCompletionKeybindings(
 	}
 
 	private invalidateVisualLines(): void {
-		this.visualLinesDirty = true;
+		this.layout.markVisualLinesDirty();
 	}
 
 	private ensureVisualLines(): void {
-		if (!this.visualLinesDirty) {
-			return;
-		}
-		this.rebuildVisualLines();
-	}
-
-	private rebuildVisualLines(): void {
-		const wrapEnabled = this.wordWrapEnabled;
-		const lineCount = this.lines.length;
-		if (lineCount === 0) {
-			this.visualLines = [{
-				row: 0,
-				startColumn: 0,
-				endColumn: 0,
-			}];
-			this.rowToFirstVisualLine = [0];
-			this.visualLinesDirty = false;
-			this.scrollRow = 0;
-			return;
-		}
-		const segments: VisualLineSegment[] = [];
-		const rowIndexLookup: number[] = new Array(lineCount).fill(-1);
-		const wrapWidth = wrapEnabled ? this.computeWrapWidth() : Number.POSITIVE_INFINITY;
-		for (let row = 0; row < lineCount; row += 1) {
-			const line = this.lines[row];
-			const entry = this.getCachedHighlight(row);
-			const lineLength = line.length;
-			if (rowIndexLookup[row] === -1) {
-				rowIndexLookup[row] = segments.length;
-			}
-			if (lineLength === 0) {
-				segments.push({ row, startColumn: 0, endColumn: 0 });
-				continue;
-			}
-			let column = 0;
-			while (column < lineLength) {
-				const nextBreak = wrapEnabled
-					? this.findWrapBreak(row, entry, column, wrapWidth)
-					: lineLength;
-				const endColumn = Math.max(column + 1, Math.min(lineLength, nextBreak));
-				segments.push({ row, startColumn: column, endColumn });
-				column = endColumn;
-			}
-		}
-		if (segments.length === 0) {
-			segments.push({ row: 0, startColumn: 0, endColumn: 0 });
-		}
-		this.visualLines = segments;
-		this.rowToFirstVisualLine = rowIndexLookup;
-		this.visualLinesDirty = false;
-		const maxScrollRow = Math.max(0, this.visualLines.length - 1);
-		if (this.scrollRow > maxScrollRow) {
-			this.scrollRow = maxScrollRow;
-		}
+		this.scrollRow = this.layout.ensureVisualLines({
+			lines: this.lines,
+			wordWrapEnabled: this.wordWrapEnabled,
+			scrollRow: this.scrollRow,
+			computeWrapWidth: () => this.computeWrapWidth(),
+		});
 		if (this.scrollRow < 0) {
 			this.scrollRow = 0;
 		}
@@ -8327,93 +8222,32 @@ private handleCompletionKeybindings(
 		return Math.max(this.charAdvance, available - 2);
 	}
 
-	private findWrapBreak(row: number, entry: CachedHighlight, startColumn: number, wrapWidth: number): number {
-		const line = this.lines[row];
-		const lineLength = line.length;
-		if (wrapWidth === Number.POSITIVE_INFINITY) {
-			return lineLength;
-		}
-		let column = startColumn + 1;
-		let lastBreak = startColumn;
-		let lastBreakEnd = startColumn + 1;
-		while (column <= lineLength) {
-			const width = this.measureColumns(entry, startColumn, column);
-			if (width > wrapWidth) {
-				if (lastBreak > startColumn) {
-					return lastBreakEnd;
-				}
-				return column - 1;
-			}
-			if (column < lineLength) {
-				const ch = line.charAt(column);
-				if (ch === ' ' || ch === '\t' || ch === '-') {
-					lastBreak = column;
-					let skip = column + 1;
-					while (skip < lineLength && line.charAt(skip) === ' ') {
-						skip += 1;
-					}
-					lastBreakEnd = skip;
-				}
-			}
-			column += 1;
-		}
-		return lineLength;
-	}
-
-	private measureColumns(entry: CachedHighlight, startColumn: number, endColumn: number): number {
-		const highlight = entry.hi;
-		const startDisplay = this.columnToDisplay(highlight, startColumn);
-		const endDisplay = this.columnToDisplay(highlight, endColumn);
-		return this.measureRangeFast(entry, startDisplay, endDisplay);
-	}
-
 	private getVisualLineCount(): number {
 		this.ensureVisualLines();
-		return this.visualLines.length;
+		return this.layout.getVisualLineCount();
 	}
 
 	private visualIndexToSegment(index: number): VisualLineSegment | null {
 		this.ensureVisualLines();
-		if (index < 0 || index >= this.visualLines.length) {
-			return null;
-		}
-		return this.visualLines[index];
+		return this.layout.visualIndexToSegment(index);
 	}
 
 	private positionToVisualIndex(row: number, column: number): number {
 		this.ensureVisualLines();
-		if (this.visualLines.length === 0) {
-			return 0;
-		}
-		const safeRow = clamp(row, 0, this.lines.length - 1);
-		const baseIndex = this.rowToFirstVisualLine[safeRow];
-		if (!Number.isFinite(baseIndex) || baseIndex === undefined || baseIndex === -1) {
-			return 0;
-		}
-		let index = baseIndex;
-		while (index < this.visualLines.length) {
-			const segment = this.visualLines[index];
-			if (segment.row !== safeRow) {
-				break;
-			}
-			if (column < segment.endColumn || segment.startColumn === segment.endColumn) {
-				return index;
-			}
-			index += 1;
-		}
-		return Math.min(this.visualLines.length - 1, index - 1);
+		return this.layout.positionToVisualIndex(this.lines, row, column);
 	}
 
 	private setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 		this.ensureVisualLines();
-		if (this.visualLines.length === 0) {
+		const visualLines = this.layout.getVisualLines();
+		if (visualLines.length === 0) {
 			this.cursorRow = 0;
 			this.cursorColumn = 0;
 			this.updateDesiredColumn();
 			return;
 		}
-		const clampedIndex = clamp(visualIndex, 0, this.visualLines.length - 1);
-		const segment = this.visualLines[clampedIndex];
+		const clampedIndex = clamp(visualIndex, 0, visualLines.length - 1);
+		const segment = visualLines[clampedIndex];
 		if (!segment) {
 			return;
 		}
@@ -8449,8 +8283,8 @@ private handleCompletionKeybindings(
 		this.cursorColumn = clamp(targetColumn, 0, line.length);
 		const cursorDisplay = this.columnToDisplay(highlight, this.cursorColumn);
 		if (this.wordWrapEnabled) {
-			const hasNextSegmentSameRow = (clampedIndex + 1 < this.visualLines.length)
-				&& this.visualLines[clampedIndex + 1].row === segment.row;
+			const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
+				&& visualLines[clampedIndex + 1].row === segment.row;
 			const segmentEnd = Math.max(segment.endColumn, segment.startColumn);
 			if (this.cursorColumn < segment.startColumn) {
 				this.cursorColumn = segment.startColumn;
@@ -8724,20 +8558,9 @@ private handleCompletionKeybindings(
 		this.actionPromptButtons.cancel = cancelBounds;
 	}
 
-	private highlightLine(line: string): HighlightLine {
-		return highlightLineExternal(line);
-	}
-
 	private columnToDisplay(highlight: HighlightLine, column: number): number {
-		if (column <= 0) {
-			return 0;
-		}
-		if (column >= highlight.columnToDisplay.length) {
-			return highlight.chars.length;
-		}
-		return highlight.columnToDisplay[column];
+		return this.layout.columnToDisplay(highlight, column);
 	}
-
 
 	private resolvePaletteIndex(color: { r: number; g: number; b: number; a: number }): number | null {
 		const index = Msx1Colors.indexOf(color);
