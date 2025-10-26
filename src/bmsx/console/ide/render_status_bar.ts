@@ -21,6 +21,8 @@ export interface StatusBarHost {
 	getActiveResourceViewer: () => { descriptor: { type: string; assetId: string; path: string } } | null;
 	metadata: BmsxConsoleMetadata;
 	statusLeftInfo?: string | null;
+	// When the problems panel is focused, override status bar left text
+	problemsPanelFocused?: boolean;
 }
 
 export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void {
@@ -36,6 +38,12 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 			host.drawText(api, lines[i], textX, textY, constants.COLOR_STATUS_ALERT);
 			textY += host.lineHeight;
 		}
+		return;
+	}
+
+	// When Problems panel owns the status (focused), show its info and stop
+	if (host.problemsPanelFocused && host.statusLeftInfo && host.statusLeftInfo.length > 0) {
+		host.drawText(api, host.statusLeftInfo, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
 		return;
 	}
 

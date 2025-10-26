@@ -16,6 +16,7 @@ export interface ProblemsPanelHost {
 	lineHeight: number;
 	measureText(text: string): number;
 	drawText(api: BmsxConsoleApi, text: string, x: number, y: number, color: number): void;
+	drawRectOutlineColor(api: BmsxConsoleApi, left: number, top: number, right: number, bottom: number, color: { r: number; g: number; b: number; a: number }): void;
 	truncateTextToWidth(text: string, maxWidth: number): string;
 	gotoDiagnostic(diagnostic: EditorDiagnostic): void;
 }
@@ -40,6 +41,11 @@ export class ProblemsPanelController {
 	public isFocused(): boolean {
 		return this.focused;
 	}
+
+    public getSelectedDiagnostic(): EditorDiagnostic | null {
+        if (this.selectionIndex < 0 || this.selectionIndex >= this.diagnostics.length) return null;
+        return this.diagnostics[this.selectionIndex];
+    }
 
     public getVisibleHeight(): number {
         if (!this.visible) return 0;
@@ -66,7 +72,10 @@ export class ProblemsPanelController {
         if (this.visible) return;
         this.visible = true;
         this.focused = false; // do not steal caret focus
-        this.ensureSelectionValidity();
+        this.scrollIndex = 0; // open at top
+        this.hoverIndex = -1;
+        this.selectionIndex = -1; // no implicit selection on open
+        this.cachedLayout = null;
     }
 
 	public hide(): void {
@@ -107,32 +116,17 @@ export class ProblemsPanelController {
 		api.rectfill(bounds.left, layout.headerTop, bounds.right, layout.headerBottom, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 		api.rectfill(bounds.left, layout.headerBottom - 1, bounds.right, layout.headerBottom, constants.COLOR_PROBLEMS_PANEL_BORDER);
 		const count = this.diagnostics.length;
-		let errorCount = 0;
-		for (let i = 0; i < this.diagnostics.length; i += 1) {
-			if (this.diagnostics[i].severity === 'error') {
-				errorCount += 1;
-			}
-		}
-		const warningCount = count - errorCount;
 		const headerLabel = `PROBLEMS (${count})`;
 		const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
 		const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
 		this.host.drawText(api, headerLabel, headerX, headerY, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
-		const summaryParts: string[] = [];
-		if (errorCount > 0) summaryParts.push(`${errorCount} ERR`);
-		if (warningCount > 0) summaryParts.push(`${warningCount} WARN`);
-		const summary = summaryParts.join('  ');
-		if (summary.length > 0) {
-			const summaryWidth = this.host.measureText(summary);
-			const summaryX = bounds.right - constants.PROBLEMS_PANEL_HEADER_PADDING_X - summaryWidth;
-			this.host.drawText(api, summary, summaryX, headerY, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
-		}
+        // Right-aligned ERR/WARN summary removed per requirement
 
 		const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
         const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
         const availableWidth = Math.max(0, contentRight - contentLeft);
         this.lastAvailableWidth = availableWidth;
-        this.ensureSelectionWithinView(layout, availableWidth);
+        if (this.focused && this.selectionIndex >= 0) this.ensureSelectionWithinView(layout, availableWidth);
         const lineHeight = this.host.lineHeight;
 
 		if (this.diagnostics.length === 0) {
@@ -150,46 +144,43 @@ export class ProblemsPanelController {
             const rowTop = cursorY;
             const diagnostic = this.diagnostics[diagIndex];
             const severity = diagnostic.severity;
-            const line = diagnostic.row + 1;
-            const column = diagnostic.startColumn + 1;
-            const locationText = `Ln ${line}, Col ${column}`;
-            const sourceText = diagnostic.sourceLabel ?? '';
+            // line/column displayed in status bar when focused; not drawn in list
             const baseMessage = diagnostic.message.length > 0 ? diagnostic.message : '(no details)';
             const isSelected = diagIndex === this.selectionIndex;
+            // Hover highlight should show regardless of focus
             const isHovered = diagIndex === this.hoverIndex;
             const severityLabel = this.renderSeverityLabel(severity);
             const severityWidth = severityLabel ? this.host.measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
-            const locationWidth = locationText.length > 0 ? this.host.measureText(locationText) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
-            const sourceMax = Math.floor(availableWidth * 0.33);
-            const sourceLabel = sourceText.length > 0 ? this.host.truncateTextToWidth(sourceText, sourceMax) : '';
-            const sourceWidth = sourceLabel.length > 0 ? this.host.measureText(sourceLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
-            const firstLineMessageWidth = Math.max(0, availableWidth - severityWidth - locationWidth - sourceWidth);
+            // Only severity label is drawn; message uses remaining width
+            const firstLineMessageWidth = Math.max(0, availableWidth - severityWidth);
 
             // Wrap message across variable lines
             const wrapped = wrapMessageLinesGeneric(baseMessage, firstLineMessageWidth, availableWidth, (t) => this.host.measureText(t), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
             const rowHeight = Math.max(lineHeight, wrapped.length * lineHeight);
             const rowBottom = rowTop + rowHeight;
-            if (isSelected || isHovered) {
-                const overlay = constants.SELECTION_OVERLAY;
-                api.rectfillColor(bounds.left, rowTop, bounds.right, rowBottom, overlay);
+            // Selection presentation depends on focus
+            if (isSelected) {
+                if (this.focused) {
+                    const overlay = constants.SELECTION_OVERLAY;
+                    api.rectfillColor(bounds.left, rowTop, bounds.right, rowBottom, overlay);
+                } else {
+                    this.host.drawRectOutlineColor(api, bounds.left, rowTop, bounds.right, rowBottom, { r: 1, g: 1, b: 1, a: 1 });
+                }
             }
             let textCursorX = contentLeft;
             if (severityLabel) {
-                this.host.drawText(api, severityLabel, textCursorX, rowTop, this.severityColor(severity));
+                const sevColor = isHovered && !isSelected ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : this.severityColor(severity);
+                this.host.drawText(api, severityLabel, textCursorX, rowTop, sevColor);
                 textCursorX += severityWidth;
             }
-            if (locationText.length > 0) {
-                this.host.drawText(api, locationText, textCursorX, rowTop, constants.COLOR_PROBLEMS_PANEL_LOCATION);
-                textCursorX += locationWidth;
-            }
-            if (sourceLabel.length > 0) {
-                this.host.drawText(api, sourceLabel, textCursorX, rowTop, constants.COLOR_PROBLEMS_PANEL_LOCATION);
-                textCursorX += sourceWidth;
-            }
+            // Do not display location/source in the list; leave space for message
+            const messageColor = isSelected && this.focused
+                ? constants.COLOR_COMPLETION_HIGHLIGHT_TEXT
+                : (isHovered ? constants.COLOR_PROBLEMS_PANEL_HOVER_TEXT : constants.COLOR_PROBLEMS_PANEL_TEXT);
             for (let li = 0; li < wrapped.length; li += 1) {
                 const y = rowTop + li * this.host.lineHeight;
                 const x = li === 0 ? textCursorX : contentLeft;
-                this.host.drawText(api, wrapped[li], x, y, constants.COLOR_PROBLEMS_PANEL_TEXT);
+                this.host.drawText(api, wrapped[li], x, y, messageColor);
             }
             cursorY = rowBottom;
         }
@@ -220,10 +211,11 @@ export class ProblemsPanelController {
 			}
 			return false;
 		}
-		this.setFocused(true);
-		if (snapshot.viewportY < layout.headerBottom) {
-			return true;
-		}
+        // Do not take focus on hover; only on click inside the panel
+        if (justPressed) this.setFocused(true);
+        if (snapshot.viewportY < layout.headerBottom) {
+            return true;
+        }
 		if (this.diagnostics.length === 0) {
 			this.hoverIndex = -1;
 			if (justPressed) {
@@ -255,11 +247,33 @@ export class ProblemsPanelController {
         return true;
     }
 
-	public handlePointerWheel(direction: number, steps: number): boolean {
-		if (!this.visible || !this.cachedLayout) {
-			return false;
-		}
-        const newScroll = clamp(this.scrollIndex + direction * steps, 0, Math.max(0, this.diagnostics.length - 1));
+    public handlePointerWheel(direction: number, steps: number): boolean {
+        if (!this.visible || !this.cachedLayout) {
+            return false;
+        }
+        // Advance by approximately 'steps' rows worth of pixels, accounting for variable heights
+        const panelWidth = this.cachedPanelWidth();
+        let advance = 0;
+        let pixels = Math.max(1, steps) * this.host.lineHeight;
+        if (direction > 0) {
+            let idx = this.scrollIndex;
+            while (idx < this.diagnostics.length - 1 && pixels > 0) {
+                const h = this.computeItemHeight(this.diagnostics[idx], panelWidth);
+                pixels -= Math.max(1, h);
+                idx += 1;
+                advance += 1;
+            }
+        } else if (direction < 0) {
+            let idx = this.scrollIndex - 1;
+            while (idx >= 0 && pixels > 0) {
+                const h = this.computeItemHeight(this.diagnostics[idx], panelWidth);
+                pixels -= Math.max(1, h);
+                idx -= 1;
+                advance += 1;
+            }
+        }
+        if (advance === 0) advance = 1;
+        const newScroll = clamp(this.scrollIndex + (direction > 0 ? advance : -advance), 0, Math.max(0, this.diagnostics.length - 1));
         if (newScroll === this.scrollIndex) {
             return false;
         }
@@ -399,13 +413,7 @@ export class ProblemsPanelController {
         const lineHeight = this.host.lineHeight;
         const severityLabel = this.renderSeverityLabel(d.severity);
         const severityWidth = severityLabel ? this.host.measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
-        const locationText = `Ln ${d.row + 1}, Col ${d.startColumn + 1}`;
-        const locationWidth = this.host.measureText(locationText) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS;
-        const sourceText = d.sourceLabel ?? '';
-        const sourceMax = Math.floor(availableWidth * 0.33);
-        const sourceLabel = sourceText.length > 0 ? this.host.truncateTextToWidth(sourceText, sourceMax) : '';
-        const sourceWidth = sourceLabel.length > 0 ? this.host.measureText(sourceLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS : 0;
-        const firstLineWidth = Math.max(0, availableWidth - severityWidth - locationWidth - sourceWidth);
+        const firstLineWidth = Math.max(0, availableWidth - severityWidth);
         const msg = d.message.length > 0 ? d.message : '(no details)';
         const lines = wrapMessageLinesGeneric(msg, firstLineWidth, availableWidth, (t) => this.host.measureText(t), constants.PROBLEMS_PANEL_MAX_WRAP_LINES);
         return Math.max(lineHeight, lines.length * lineHeight);

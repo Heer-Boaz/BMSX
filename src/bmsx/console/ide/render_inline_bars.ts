@@ -39,6 +39,10 @@ export interface InlineBarsHost {
 	inlineFieldMeasureRange: (field: unknown, metrics: { spaceAdvance: number }, start: number, end: number) => number;
 	inlineFieldCaretX: (field: unknown, originX: number, measureText: (text: string) => number) => number;
 
+	// When true, all inline carets should render as outlines (not active),
+	// e.g. when another panel has focus (Problems panel).
+	blockActiveCarets?: boolean;
+
 	// Search bar state
 	searchActive?: boolean;
 	searchField?: unknown;
@@ -113,7 +117,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 	const caretRight = Math.max(caretLeft + 1, Math.floor(caretBaseX + host.spaceAdvance));
 	const caretTop = Math.floor(labelY);
 	const caretBottom = caretTop + host.lineHeight;
-	host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretBaseX, host.createResourceActive, constants.INLINE_CARET_COLOR, pathColor);
+	host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretBaseX, (host.createResourceActive && !host.blockActiveCarets), constants.INLINE_CARET_COLOR, pathColor);
 
 	// Status or error overlay on the right
 	if (host.createResourceWorking) {
@@ -141,7 +145,7 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
 
-	const active = !!host.searchActive;
+    const active = !!host.searchActive && !host.blockActiveCarets;
 	let queryText = field?.text ?? '';
 	let queryColor = constants.COLOR_SEARCH_TEXT;
 	if (queryText.length === 0 && !active) {
@@ -167,7 +171,7 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + host.lineHeight;
-		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
+    host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
 	const total = host.searchMatchesCount ?? 0;
@@ -195,7 +199,7 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 	const labelY = barTop + constants.QUICK_OPEN_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_QUICK_OPEN_TEXT);
 
-	const active = !!host.resourceSearchActive;
+    const active = !!host.resourceSearchActive && !host.blockActiveCarets;
 	let queryText = field?.text ?? '';
 	let queryColor = constants.COLOR_QUICK_OPEN_TEXT;
 	if (queryText.length === 0 && !active) {
@@ -221,7 +225,7 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
 		const caretTop = Math.floor(labelY);
 		const caretBottom = caretTop + host.lineHeight;
-		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
+	host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, queryColor);
 	}
 
 	const visible = host.resourceSearchVisibleResultCount ? host.resourceSearchVisibleResultCount() : 0;

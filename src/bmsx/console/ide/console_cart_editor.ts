@@ -429,13 +429,14 @@ export class ConsoleCartEditor {
 			indentSelectionOrLine: () => this.indentSelectionOrLine(),
 			unindentSelectionOrLine: () => this.unindentSelectionOrLine(),
 		});
-		this.problemsPanel = new ProblemsPanelController({
-			lineHeight: this.lineHeight,
-			measureText: (text) => this.measureText(text),
-			drawText: (api, text, x, y, color) => this.drawText(api, text, x, y, color),
-			truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
-			gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
-		});
+        this.problemsPanel = new ProblemsPanelController({
+            lineHeight: this.lineHeight,
+            measureText: (text) => this.measureText(text),
+            drawText: (api, text, x, y, color) => this.drawText(api, text, x, y, color),
+            drawRectOutlineColor: (api, l, t, r, b, col) => this.drawRectOutlineColor(api, l, t, r, b, col),
+            truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
+            gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
+        });
 		this.codeVerticalScrollbarVisible = false;
 		this.codeHorizontalScrollbarVisible = false;
 		this.cachedVisibleRowCount = 1;
@@ -1746,17 +1747,16 @@ export class ConsoleCartEditor {
 			this.toggleResourcePanel();
 			return;
 		}
-		if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyM')) {
-			consumeKeyboardKey(keyboard, 'KeyM');
-			this.toggleProblemsPanel();
-			if (this.problemsPanel.isVisible()) {
-				this.problemsPanel.setFocused(true);
-				this.markDiagnosticsDirty();
-			} else {
-				this.focusEditorFromProblemsPanel();
-			}
-			return;
-		}
+        if ((ctrlDown || metaDown) && shiftDown && isKeyJustPressedGlobal(this.playerIndex, 'KeyM')) {
+            consumeKeyboardKey(keyboard, 'KeyM');
+            this.toggleProblemsPanel();
+            if (this.problemsPanel.isVisible()) {
+                this.markDiagnosticsDirty();
+            } else {
+                this.focusEditorFromProblemsPanel();
+            }
+            return;
+        }
 		if (!ctrlDown && !metaDown && altDown && isKeyJustPressedGlobal(this.playerIndex, 'Comma')) {
 			consumeKeyboardKey(keyboard, 'Comma');
 			this.openGlobalSymbolSearch();
@@ -1822,39 +1822,40 @@ export class ConsoleCartEditor {
 			this.handleSearchInput(keyboard, deltaSeconds, shiftDown, ctrlDown, metaDown);
 			return;
 		}
-		if (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()) {
-			let handled = false;
-			if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'ArrowUp');
-				handled = this.problemsPanel.handleKeyboardCommand('up');
-			} else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'ArrowDown');
-				handled = this.problemsPanel.handleKeyboardCommand('down');
-			} else if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'PageUp');
-				handled = this.problemsPanel.handleKeyboardCommand('page-up');
-			} else if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'PageDown');
-				handled = this.problemsPanel.handleKeyboardCommand('page-down');
-			} else if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'Home');
-				handled = this.problemsPanel.handleKeyboardCommand('home');
-			} else if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
-				consumeKeyboardKey(keyboard, 'End');
-				handled = this.problemsPanel.handleKeyboardCommand('end');
-			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Enter') || isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter')) {
-				if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
-				handled = this.problemsPanel.handleKeyboardCommand('activate');
-			} else if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
-				consumeKeyboardKey(keyboard, 'Escape');
-				this.hideProblemsPanel();
-				this.focusEditorFromProblemsPanel();
-				return;
-			}
-			if (handled) {
-				return;
-			}
-		}
+        if (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()) {
+            let handled = false;
+            if (this.shouldFireRepeat(keyboard, 'ArrowUp', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'ArrowUp');
+                handled = this.problemsPanel.handleKeyboardCommand('up');
+            } else if (this.shouldFireRepeat(keyboard, 'ArrowDown', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'ArrowDown');
+                handled = this.problemsPanel.handleKeyboardCommand('down');
+            } else if (this.shouldFireRepeat(keyboard, 'PageUp', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'PageUp');
+                handled = this.problemsPanel.handleKeyboardCommand('page-up');
+            } else if (this.shouldFireRepeat(keyboard, 'PageDown', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'PageDown');
+                handled = this.problemsPanel.handleKeyboardCommand('page-down');
+            } else if (this.shouldFireRepeat(keyboard, 'Home', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'Home');
+                handled = this.problemsPanel.handleKeyboardCommand('home');
+            } else if (this.shouldFireRepeat(keyboard, 'End', deltaSeconds)) {
+                consumeKeyboardKey(keyboard, 'End');
+                handled = this.problemsPanel.handleKeyboardCommand('end');
+            } else if (isKeyJustPressedGlobal(this.playerIndex, 'Enter') || isKeyJustPressedGlobal(this.playerIndex, 'NumpadEnter')) {
+                if (isKeyJustPressedGlobal(this.playerIndex, 'Enter')) consumeKeyboardKey(keyboard, 'Enter'); else consumeKeyboardKey(keyboard, 'NumpadEnter');
+                handled = this.problemsPanel.handleKeyboardCommand('activate');
+            } else if (isKeyJustPressedGlobal(this.playerIndex, 'Escape')) {
+                consumeKeyboardKey(keyboard, 'Escape');
+                this.hideProblemsPanel();
+                this.focusEditorFromProblemsPanel();
+                return;
+            }
+            // Always swallow caret movement while problems panel is focused
+            if (this.shouldFireRepeat(keyboard, 'ArrowLeft', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowLeft');
+            if (this.shouldFireRepeat(keyboard, 'ArrowRight', deltaSeconds)) consumeKeyboardKey(keyboard, 'ArrowRight');
+            if (handled) return; else return;
+        }
 		if (this.searchQuery.length > 0 && isKeyJustPressedGlobal(this.playerIndex, 'F3')) {
 			consumeKeyboardKey(keyboard, 'F3');
 			if (shiftDown) {
@@ -6271,6 +6272,7 @@ export class ConsoleCartEditor {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
 		};
 			renderCreateResourceBar(api, host);
 	}
@@ -6312,6 +6314,7 @@ export class ConsoleCartEditor {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
 			searchActive: this.searchActive,
 			searchField: this.searchField,
 			searchQuery: this.searchQuery,
@@ -6358,6 +6361,7 @@ export class ConsoleCartEditor {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
 			resourceSearchActive: this.resourceSearchActive,
 			resourceSearchField: this.resourceSearchField,
 			resourceSearchVisibleResultCount: () => this.resourceSearchVisibleResultCount(),
@@ -6408,6 +6412,7 @@ export class ConsoleCartEditor {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
 			symbolSearchGlobal: this.symbolSearchGlobal,
 			symbolSearchActive: this.symbolSearchActive,
 			symbolSearchField: this.symbolSearchField,
@@ -6459,6 +6464,7 @@ export class ConsoleCartEditor {
 			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
 			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
 			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
 			lineJumpActive: this.lineJumpActive,
 			lineJumpField: this.lineJumpField,
 		};
@@ -8063,7 +8069,8 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 	const caretRight = Math.max(caretLeft + 1, Math.floor(cursorX + info.width));
 	const caretTop = Math.floor(cursorY);
 	const caretBottom = caretTop + info.height;
-	if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive) {
+	const problemsPanelHasFocus = this.problemsPanel.isVisible() && this.problemsPanel.isFocused();
+	if (this.searchActive || this.lineJumpActive || this.resourcePanelFocused || this.createResourceActive || problemsPanelHasFocus) {
 		const innerLeft = caretLeft + 1;
 		const innerRight = caretRight - 1;
 		const innerTop = caretTop + 1;
@@ -8527,28 +8534,47 @@ private handleCompletionKeybindings(
 	}
 
 	private drawStatusBar(api: BmsxConsoleApi): void {
-		const host = {
-			viewportWidth: this.viewportWidth,
-			viewportHeight: this.viewportHeight,
-			bottomMargin: this.statusAreaHeight(),
-			lineHeight: this.lineHeight,
-			measureText: (text: string) => this.measureText(text),
-			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => this.drawText(api2, text, x, y, color),
-			truncateTextToWidth: (text: string, maxWidth: number) => this.truncateTextToWidth(text, maxWidth),
-			message: this.message,
-			getStatusMessageLines: () => this.getStatusMessageLines(),
-			symbolSearchVisible: this.symbolSearchVisible,
-			getActiveSymbolSearchMatch: () => this.getActiveSymbolSearchMatch(),
-			resourcePanelVisible: this.resourcePanelVisible,
-			resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
-			resourcePanelResourceCount: this.resourcePanelResourceCount,
-			isResourceViewActive: () => this.isResourceViewActive(),
-			getActiveResourceViewer: () => this.getActiveResourceViewer(),
-			metadata: this.metadata,
-			statusLeftInfo: `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`,
-		};
-		renderStatusBar(api, host);
-	}
+        const host = {
+            viewportWidth: this.viewportWidth,
+            viewportHeight: this.viewportHeight,
+            bottomMargin: this.statusAreaHeight(),
+            lineHeight: this.lineHeight,
+            measureText: (text: string) => this.measureText(text),
+            drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => this.drawText(api2, text, x, y, color),
+            truncateTextToWidth: (text: string, maxWidth: number) => this.truncateTextToWidth(text, maxWidth),
+            message: this.message,
+            getStatusMessageLines: () => this.getStatusMessageLines(),
+            symbolSearchVisible: this.symbolSearchVisible,
+            getActiveSymbolSearchMatch: () => this.getActiveSymbolSearchMatch(),
+            resourcePanelVisible: this.resourcePanelVisible,
+            resourcePanelFilterMode: this.resourcePanel.getFilterMode(),
+            resourcePanelResourceCount: this.resourcePanelResourceCount,
+            isResourceViewActive: () => this.isResourceViewActive(),
+            getActiveResourceViewer: () => this.getActiveResourceViewer(),
+            metadata: this.metadata,
+            statusLeftInfo: this.buildStatusLeftInfo(),
+            problemsPanelFocused: this.problemsPanel.isVisible() && this.problemsPanel.isFocused(),
+        };
+        renderStatusBar(api, host);
+    }
+
+    private buildStatusLeftInfo(): string {
+        if (this.problemsPanel.isVisible()) {
+            if (this.problemsPanel.isFocused()) {
+            const sel = this.problemsPanel.getSelectedDiagnostic();
+            if (sel) {
+                const file = sel.sourceLabel ?? (sel.chunkName ?? '');
+                const parts: string[] = [];
+                parts.push(`Ln ${sel.row + 1}, Col ${sel.startColumn + 1}`);
+                if (file.length > 0) parts.push(file);
+                return parts.join(' • ');
+            }
+            }
+            // When Problems panel is visible but not focused or no selection, don't render default editor position
+            return '';
+        }
+        return `LINE ${this.cursorRow + 1}/${this.lines.length} COL ${this.cursorColumn + 1}`;
+    }
 
 	private drawProblemsPanel(api: BmsxConsoleApi): void {
 		const bounds = this.getProblemsPanelBounds();
