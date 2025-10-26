@@ -14,7 +14,8 @@ import type {
 	ConsoleResourceDescriptor,
 } from '../types';
 import { ConsoleEditorFont } from '../editor_font';
-import { ConsoleFont, DEFAULT_CONSOLE_FONT_VARIANT, getConsoleFontPreset, type ConsoleFontVariant } from '../font';
+import { DEFAULT_CONSOLE_FONT_VARIANT, getConsoleFontPreset, type ConsoleFontVariant } from '../font';
+import { drawEditorColoredText, drawEditorText } from './text_renderer';
 import { Msx1Colors } from 'bmsx';
 import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
@@ -36,7 +37,7 @@ import {
 	setFieldText,
 } from './inline_text_field';
 import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
-import { expandTabs as expandTabsExternal, isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
+import { isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderStatusBar } from './render_status_bar';
@@ -336,16 +337,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 		this.scrollbarController = new ScrollbarController(this.scrollbars as any);
 			// Initialize resource panel controller
-			this.resourcePanel = new ResourcePanelController({
-				getViewportWidth: () => this.viewportWidth,
-				getViewportHeight: () => this.viewportHeight,
-				getBottomMargin: () => this.bottomMargin,
-				codeViewportTop: () => this.codeViewportTop(),
-				lineHeight: this.lineHeight,
-				charAdvance: this.charAdvance,
-				measureText: (t) => this.measureText(t),
-				drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
-				drawColoredText: (a, t, colors, x, y) => this.drawColoredText(a, t, colors, x, y),
+		this.resourcePanel = new ResourcePanelController({
+			getViewportWidth: () => this.viewportWidth,
+			getViewportHeight: () => this.viewportHeight,
+			getBottomMargin: () => this.bottomMargin,
+			codeViewportTop: () => this.codeViewportTop(),
+			lineHeight: this.lineHeight,
+			charAdvance: this.charAdvance,
+			measureText: (t) => this.measureText(t),
+			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
+			drawColoredText: (a, t, colors, x, y) => drawEditorColoredText(a, this.font, t, colors, x, y, constants.COLOR_CODE_TEXT),
 				drawRectOutlineColor: (a, l, t, r, b, col) => this.drawRectOutlineColor(a, l, t, r, b, col),
 				playerIndex: this.playerIndex,
 				listResources: () => this.listResourcesStrict(),
@@ -368,7 +369,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			resetBlink: () => this.resetBlink(),
 			revealCursor: () => this.revealCursor(),
 			measureText: (text) => this.measureText(text),
-			drawText: (api, text, x, y, color) => this.drawText(api, text, x, y, color),
+			drawText: (api, text, x, y, color) => drawEditorText(api, this.font, text, x, y, color),
 			getCursorScreenInfo: () => this.cursorScreenInfo,
 			getLineHeight: () => this.lineHeight,
 			getSpaceAdvance: () => this.spaceAdvance,
@@ -423,10 +424,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
         this.problemsPanel = new ProblemsPanelController({
             lineHeight: this.lineHeight,
             measureText: (text) => this.measureText(text),
-            drawText: (api, text, x, y, color) => this.drawText(api, text, x, y, color),
-            drawRectOutlineColor: (api, l, t, r, b, col) => this.drawRectOutlineColor(api, l, t, r, b, col),
-            truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
-            gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
+			drawText: (api, text, x, y, color) => drawEditorText(api, this.font, text, x, y, color),
+			drawRectOutlineColor: (api, l, t, r, b, col) => this.drawRectOutlineColor(api, l, t, r, b, col),
+			truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
+			gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
         });
 		this.codeVerticalScrollbarVisible = false;
 		this.codeHorizontalScrollbarVisible = false;
@@ -533,7 +534,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BORDER);
 		for (let i = 0; i < visibleLines.length; i += 1) {
 			const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * this.lineHeight;
-			this.drawText(api, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
+			drawEditorText(api, this.font, visibleLines[i], bubbleLeft + constants.HOVER_TOOLTIP_PADDING_X, lineY, constants.COLOR_STATUS_TEXT);
 		}
 		tooltip.bubbleBounds = { left: bubbleLeft, top: bubbleTop, right: bubbleLeft + bubbleWidth, bottom: bubbleTop + bubbleHeight };
 	}
@@ -1055,11 +1056,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
 			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
 			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_TAB_BORDER);
-			const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
+		const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
 			const showCloseButton = tab.closable && hovered;
 			const indicatorLeft = bounds.right - indicatorWidth;
 			const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
-			this.drawText(api, tab.title, textX, textY, textColor);
+		drawEditorText(api, this.font, tab.title, textX, textY, textColor);
 			if (tab.closable) {
 				const closeBounds: RectBounds = {
 					left: bounds.right - closeWidth,
@@ -1069,9 +1070,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				};
 				if (showCloseButton) {
 					this.tabCloseButtonBounds.set(tab.id, closeBounds);
-					const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
-					const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
-					this.drawText(api, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
+				const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
+				const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
+				drawEditorText(api, this.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
 				} else {
 					this.tabCloseButtonBounds.delete(tab.id);
 					if (dirty && markerMetrics) {
@@ -5172,12 +5173,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private drawTopBar(api: BmsxConsoleApi): void {
-		const host = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
-			lineHeight: this.lineHeight,
-			measureText: (text: string) => this.measureText(text),
-			drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => this.drawText(api2, text, x, y, color),
+	const host = {
+		viewportWidth: this.viewportWidth,
+		headerHeight: this.headerHeight,
+		lineHeight: this.lineHeight,
+		measureText: (text: string) => this.measureText(text),
+		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
 			wordWrapEnabled: this.wordWrapEnabled,
 			resolutionMode: this.resolutionMode,
 			metadata: this.metadata,
@@ -5191,15 +5192,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private drawCreateResourceBar(api: BmsxConsoleApi): void {
-		const host = {
-			viewportWidth: this.viewportWidth,
-			headerHeight: this.headerHeight,
-			tabBarHeight: this.tabBarHeight,
-			lineHeight: this.lineHeight,
-			spaceAdvance: this.spaceAdvance,
-			charAdvance: this.charAdvance,
-			measureText: (t: string) => this.measureText(t),
-			drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => this.drawText(api2, t, x, y, c),
+	const host = {
+		viewportWidth: this.viewportWidth,
+		headerHeight: this.headerHeight,
+		tabBarHeight: this.tabBarHeight,
+		lineHeight: this.lineHeight,
+		spaceAdvance: this.spaceAdvance,
+		charAdvance: this.charAdvance,
+		measureText: (t: string) => this.measureText(t),
+		drawText: (api2: BmsxConsoleApi, t: string, x: number, y: number, c: number) => drawEditorText(api2, this.font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
 			createResourceActive: this.createResourceActive,
 			createResourceVisible: this.createResourceVisible,
@@ -5241,7 +5242,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
 			createResourceActive: this.createResourceActive,
 			createResourceVisible: this.createResourceVisible,
@@ -5288,7 +5289,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
 			createResourceActive: this.createResourceActive,
 			createResourceVisible: this.createResourceVisible,
@@ -5339,7 +5340,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
 			createResourceActive: this.createResourceActive,
 			createResourceVisible: this.createResourceVisible,
@@ -5391,7 +5392,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
 			measureText: (t: string) => this.measureText(t),
-			drawText: (a, t, x, y, c) => this.drawText(a, t, x, y, c),
+			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
 			inlineFieldMetrics: () => this.inlineFieldMetrics(),
 			createResourceActive: this.createResourceActive,
 			createResourceVisible: this.createResourceVisible,
@@ -5453,12 +5454,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const bottom = top + dialogHeight;
 		api.rectfill(left, top, right, bottom, constants.COLOR_STATUS_BACKGROUND);
 		api.rect(left, top, right, bottom, constants.COLOR_CREATE_RESOURCE_ERROR);
-		let textY = top + constants.ERROR_OVERLAY_PADDING_Y + 6;
-		for (let i = 0; i < lines.length; i += 1) {
-			const textX = left + constants.ERROR_OVERLAY_PADDING_X + 6;
-			this.drawText(api, lines[i], textX, textY, constants.COLOR_STATUS_TEXT);
-			textY += this.lineHeight;
-		}
+	let textY = top + constants.ERROR_OVERLAY_PADDING_Y + 6;
+	for (let i = 0; i < lines.length; i += 1) {
+		const textX = left + constants.ERROR_OVERLAY_PADDING_X + 6;
+		drawEditorText(api, this.font, lines[i], textX, textY, constants.COLOR_STATUS_TEXT);
+		textY += this.lineHeight;
+	}
 	}
 
 	private simplifyRuntimeErrorMessage(message: string): string {
@@ -5648,7 +5649,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			getCachedHighlight: (r: number) => this.getCachedHighlight(r),
 			sliceHighlightedLine: (hi, start, count) => this.sliceHighlightedLine(hi, start, count),
 			columnToDisplay: (hi, c) => this.columnToDisplay(hi, c),
-			drawColoredText: (a, t, cols, x, y) => this.drawColoredText(a, t, cols, x, y),
+			drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, this.font, t, cols, x, y, constants.COLOR_CODE_TEXT),
 			drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => this.drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
 			computeSelectionSlice: (ri, hi, s, e) => this.computeSelectionSlice(ri, hi, s, e),
 			measureRangeFast: (entry, from, to) => this.measureRangeFast(entry, from, to),
@@ -5747,10 +5748,10 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		const bubbleRight = bubbleLeft + bubbleWidth;
 		const bubbleBottom = bubbleTop + bubbleHeight;
 		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, constants.ERROR_OVERLAY_BACKGROUND);
-		for (let i = 0; i < lines.length; i += 1) {
-			const lineY = bubbleTop + constants.ERROR_OVERLAY_PADDING_Y + i * this.lineHeight;
-			this.drawText(api, lines[i], bubbleLeft + constants.ERROR_OVERLAY_PADDING_X, lineY, constants.COLOR_STATUS_ERROR);
-		}
+	for (let i = 0; i < lines.length; i += 1) {
+		const lineY = bubbleTop + constants.ERROR_OVERLAY_PADDING_Y + i * this.lineHeight;
+		drawEditorText(api, this.font, lines[i], bubbleLeft + constants.ERROR_OVERLAY_PADDING_X, lineY, constants.COLOR_STATUS_ERROR);
+	}
 		const connectorLeft = Math.max(textLeft, anchorX);
 		const connectorRight = Math.min(bubbleLeft, connectorLeft + 3);
 		if (connectorRight > connectorLeft) {
@@ -6921,13 +6922,13 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 			textTop = Math.floor(layout.bottom + this.lineHeight);
 		}
 		if (capacity <= 0) {
-			if (viewer.lines.length > 0) {
-				const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
-				const fallbackY = Math.min(textTop, bounds.codeBottom - this.lineHeight);
-				this.drawText(api, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
-			} else {
-				this.drawText(api, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
-			}
+		if (viewer.lines.length > 0) {
+			const line = viewer.lines[Math.min(viewer.lines.length - 1, Math.max(0, Math.floor(viewer.scroll)))] ?? '';
+			const fallbackY = Math.min(textTop, bounds.codeBottom - this.lineHeight);
+			drawEditorText(api, this.font, line, contentLeft, fallbackY, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		} else {
+			drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		}
 			if (verticalVisible) {
 				verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
 			}
@@ -6936,17 +6937,17 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		const maxScroll = Math.max(0, totalLines - capacity);
 		viewer.scroll = clamp(viewer.scroll, 0, maxScroll);
 		const end = Math.min(totalLines, Math.floor(viewer.scroll) + capacity);
-		if (viewer.lines.length === 0) {
-			this.drawText(api, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
-		} else {
-			for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
-				const line = viewer.lines[lineIndex] ?? '';
-				const y = textTop + drawIndex * this.lineHeight;
-				if (y >= bounds.codeBottom) {
-					break;
-				}
-				this.drawText(api, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
+	if (viewer.lines.length === 0) {
+	drawEditorText(api, this.font, '<empty>', contentLeft, textTop, constants.COLOR_RESOURCE_VIEWER_TEXT);
+	} else {
+		for (let lineIndex = Math.floor(viewer.scroll), drawIndex = 0; lineIndex < end; lineIndex += 1, drawIndex += 1) {
+			const line = viewer.lines[lineIndex] ?? '';
+			const y = textTop + drawIndex * this.lineHeight;
+			if (y >= bounds.codeBottom) {
+				break;
 			}
+			drawEditorText(api, this.font, line, contentLeft, y, constants.COLOR_RESOURCE_VIEWER_TEXT);
+		}
 		}
 		if (verticalVisible) {
 			verticalScrollbar.draw(api, constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
@@ -7035,14 +7036,14 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 			api.rectfill(innerLeft, innerTop, innerRight, innerBottom, constants.COLOR_CODE_BACKGROUND);
 		}
 		this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
-		this.drawColoredText(api, info.baseChar, [info.baseColor], cursorX, cursorY);
+		drawEditorColoredText(api, this.font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
 	} else {
 		api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
 		const caretPaletteIndex = this.resolvePaletteIndex(constants.CARET_COLOR);
 		const caretInverseColor = caretPaletteIndex !== null
 			? this.invertColorIndex(caretPaletteIndex)
 			: this.invertColorIndex(info.baseColor);
-		this.drawColoredText(api, info.baseChar, [caretInverseColor], cursorX, cursorY);
+		drawEditorColoredText(api, this.font, info.baseChar, [caretInverseColor], cursorX, cursorY, caretInverseColor);
 	}
 }
 
@@ -7050,35 +7051,6 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 
 	private sliceHighlightedLine(highlight: HighlightLine, columnStart: number, columnCount: number): { text: string; colors: number[]; startDisplay: number; endDisplay: number } {
 		return this.layout.sliceHighlightedLine(highlight, columnStart, columnCount);
-	}
-
-	private drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], originX: number, originY: number): void {
-		let cursorX = Math.floor(originX);
-		const cursorY = Math.floor(originY);
-		const renderFont = this.font.getRenderFont();
-		const apiAny = api as BmsxConsoleApi & { printWithFont?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void };
-		let index = 0;
-		while (index < text.length) {
-			const colorIndex = colors[index] ?? constants.COLOR_CODE_TEXT;
-			let end = index + 1;
-			while (end < text.length) {
-				const nextColor = colors[end] ?? constants.COLOR_CODE_TEXT;
-				if (nextColor !== colorIndex) {
-					break;
-				}
-				end++;
-			}
-			const segment = text.slice(index, end);
-			if (segment.length > 0) {
-				if (typeof apiAny.printWithFont === 'function') {
-					apiAny.printWithFont(segment, cursorX, cursorY, colorIndex, renderFont);
-				} else {
-					api.print(segment, cursorX, cursorY, colorIndex);
-				}
-				cursorX += this.font.measure(segment);
-			}
-			index = end;
-		}
 	}
 
 	private getCachedHighlight(row: number): CachedHighlight {
@@ -7287,10 +7259,10 @@ private handleCompletionKeybindings(
 			const inverseColor = caretIndex !== null
 				? this.invertColorIndex(caretIndex)
 				: this.invertColorIndex(baseTextColor);
-			const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
-			this.drawText(api, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
-			return;
-		}
+		const glyph = field.cursor < field.text.length ? field.text.charAt(field.cursor) : ' ';
+		drawEditorText(api, this.font, glyph.length > 0 ? glyph : ' ', cursorX, top, inverseColor);
+		return;
+	}
 		this.drawRectOutlineColor(api, left, top, right, bottom, caretColor);
 	}
 
@@ -7332,13 +7304,13 @@ private handleCompletionKeybindings(
 	}
 
 	private drawStatusBar(api: BmsxConsoleApi): void {
-        const host = {
-            viewportWidth: this.viewportWidth,
-            viewportHeight: this.viewportHeight,
-            bottomMargin: this.statusAreaHeight(),
-            lineHeight: this.lineHeight,
-            measureText: (text: string) => this.measureText(text),
-            drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => this.drawText(api2, text, x, y, color),
+	const host = {
+		viewportWidth: this.viewportWidth,
+		viewportHeight: this.viewportHeight,
+		bottomMargin: this.statusAreaHeight(),
+		lineHeight: this.lineHeight,
+		measureText: (text: string) => this.measureText(text),
+		drawText: (api2: BmsxConsoleApi, text: string, x: number, y: number, color: number) => drawEditorText(api2, this.font, text, x, y, color),
             truncateTextToWidth: (text: string, maxWidth: number) => this.truncateTextToWidth(text, maxWidth),
             message: this.message,
             getStatusMessageLines: () => this.getStatusMessageLines(),
@@ -7485,31 +7457,31 @@ private handleCompletionKeybindings(
 
 		let textY = top + paddingY;
 		const textX = left + paddingX;
-		for (let i = 0; i < messageLines.length; i++) {
-			this.drawText(api, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
-			textY += messageSpacing;
-		}
+	for (let i = 0; i < messageLines.length; i++) {
+		drawEditorText(api, this.font, messageLines[i], textX, textY, constants.ACTION_DIALOG_TEXT_COLOR);
+		textY += messageSpacing;
+	}
 
 		const buttonY = bottom - paddingY - buttonHeight;
 		let buttonX = left + paddingX;
 		const saveBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + primaryWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 		api.rect(saveBounds.left, saveBounds.top, saveBounds.right, saveBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-		this.drawText(api, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+	drawEditorText(api, this.font, primaryLabel, saveBounds.left + constants.HEADER_BUTTON_PADDING_X, saveBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
 		this.actionPromptButtons.saveAndContinue = saveBounds;
 		buttonX = saveBounds.right + buttonSpacing;
 
 		const continueBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + secondaryWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_BUTTON_BACKGROUND);
 		api.rect(continueBounds.left, continueBounds.top, continueBounds.right, continueBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-		this.drawText(api, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
+	drawEditorText(api, this.font, secondaryLabel, continueBounds.left + constants.HEADER_BUTTON_PADDING_X, continueBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.ACTION_BUTTON_TEXT);
 		this.actionPromptButtons.continue = continueBounds;
 		buttonX = continueBounds.right + buttonSpacing;
 
 		const cancelBounds: RectBounds = { left: buttonX, top: buttonY, right: buttonX + cancelWidth, bottom: buttonY + buttonHeight };
 		api.rectfill(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.COLOR_HEADER_BUTTON_DISABLED_BACKGROUND);
 		api.rect(cancelBounds.left, cancelBounds.top, cancelBounds.right, cancelBounds.bottom, constants.ACTION_DIALOG_BORDER_COLOR);
-		this.drawText(api, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
+	drawEditorText(api, this.font, cancelLabel, cancelBounds.left + constants.HEADER_BUTTON_PADDING_X, cancelBounds.top + constants.HEADER_BUTTON_PADDING_Y, constants.COLOR_HEADER_BUTTON_TEXT);
 		this.actionPromptButtons.cancel = cancelBounds;
 	}
 
@@ -7613,27 +7585,6 @@ private handleCompletionKeybindings(
 		$.paused = true;
 		this.activate();
 		this.showMessage(`${fallbackMessage}: ${message}`, constants.COLOR_STATUS_ERROR, 4.0);
-	}
-
-	private drawText(api: BmsxConsoleApi, text: string, originX: number, originY: number, color: number): void {
-		const baseX = Math.floor(originX);
-		let cursorY = Math.floor(originY);
-		const renderFont = this.font.getRenderFont();
-		const apiAny = api as BmsxConsoleApi & { printWithFont?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void };
-		const lines = text.split('\n');
-		for (let i = 0; i < lines.length; i++) {
-			const expanded = expandTabsExternal(lines[i]);
-			if (expanded.length > 0) {
-				if (typeof apiAny.printWithFont === 'function') {
-					apiAny.printWithFont(expanded, baseX, cursorY, color, renderFont);
-				} else {
-					api.print(expanded, baseX, cursorY, color);
-				}
-			}
-			if (i < lines.length - 1) {
-				cursorY += this.lineHeight;
-			}
-		}
 	}
 
 	private truncateTextToWidth(text: string, maxWidth: number): string {

@@ -14,6 +14,7 @@ type ConsoleFontPreset = {
 	prefix: string;
 	fallbackSprite: string;
 	tabDirtyMarkerAssetId: string;
+	buildCharMap(): CharMap;
 };
 
 type CharMap = Record<string, string>;
@@ -28,11 +29,17 @@ const FONT_PRESETS: Record<ConsoleFontVariant, ConsoleFontPreset> = {
 		prefix: 'msx_6b_font',
 		fallbackSprite: 'msx_6b_font_question',
 		tabDirtyMarkerAssetId: 'msx_6b_font_ctrl_bel',
+		buildCharMap(): CharMap {
+			return buildMsxCharMap('msx_6b_font');
+		},
 	},
 	tiny: {
 		prefix: 'tiny_3b_font',
 		fallbackSprite: 'tiny_3b_font_question',
 		tabDirtyMarkerAssetId: 'tiny_3b_font_ctrl_bel',
+		buildCharMap(): CharMap {
+			return buildTinyCharMap('tiny_3b_font');
+		},
 	},
 } as const;
 
@@ -40,7 +47,7 @@ export function getConsoleFontPreset(variant: ConsoleFontVariant): ConsoleFontPr
 	return FONT_PRESETS[variant];
 }
 
-function buildCharMap(prefix: string): CharMap {
+function buildMsxCharMap(prefix: string): CharMap {
 	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
 	const map: CharMap = {
 		' ': withPrefix('space'),
@@ -92,6 +99,68 @@ function buildCharMap(prefix: string): CharMap {
 		const lower = upper.toLowerCase();
 		map[upper] = withPrefix(lower);
 	}
+	return map;
+}
+
+function buildTinyCharMap(prefix: string): CharMap {
+	const withPrefix = (suffix: string): string => `${prefix}_${suffix}`;
+	const map: CharMap = {
+		' ': withPrefix('space'),
+		'!': withPrefix('exclamation'),
+		'"': withPrefix('quote'),
+		'#': withPrefix('hash'),
+		'$': withPrefix('dollar'),
+		'%': withPrefix('percent'),
+		'&': withPrefix('ampersand'),
+		'\'': withPrefix('apostroph'),
+		'(': withPrefix('parenopen'),
+		')': withPrefix('parenclose'),
+		'*': withPrefix('asterisk'),
+		'+': withPrefix('plus'),
+		',': withPrefix('comma'),
+		'-': withPrefix('streep'),
+		'.': withPrefix('dot'),
+		'/': withPrefix('slash'),
+		':': withPrefix('colon'),
+		';': withPrefix('semicolon'),
+		'<': withPrefix('lessthan'),
+		'=': withPrefix('equals'),
+		'>': withPrefix('greaterthan'),
+		'?': withPrefix('question'),
+		'@': withPrefix('empty'),
+		'[': withPrefix('bracketopen'),
+		'\\': withPrefix('backslash'),
+		']': withPrefix('bracketclose'),
+		'^': withPrefix('caret'),
+		'_': withPrefix('line'),
+		'`': withPrefix('backtick'),
+		'{': withPrefix('braceopen'),
+		'|': withPrefix('pipe'),
+		'}': withPrefix('braceclose'),
+	};
+	for (let i = 0; i < 10; i += 1) {
+		const digit = String.fromCharCode(48 + i);
+		map[digit] = withPrefix(digit);
+	}
+	const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+	for (let i = 0; i < lowercase.length; i += 1) {
+		const ch = lowercase.charAt(i);
+		map[ch] = withPrefix(`low_${ch}`);
+	}
+	const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+	for (let i = 0; i < uppercase.length; i += 1) {
+		const upper = uppercase.charAt(i);
+		const lower = upper.toLowerCase();
+		map[upper] = withPrefix(lower);
+	}
+	map['¡'] = withPrefix('inverted_exclamation');
+	map['¤'] = withPrefix('flower');
+	map['¦'] = withPrefix('brokenbar');
+	map['§'] = withPrefix('section');
+	map['£'] = withPrefix('pound');
+	map['¥'] = withPrefix('yen');
+	map['€'] = withPrefix('euro');
+	map['µ'] = withPrefix('euler');
 	return map;
 }
 
@@ -185,7 +254,7 @@ export class ConsoleFont extends BFont {
 		for (let i = 0; i < keys.length; i++) {
 			delete target[keys[i]];
 		}
-		const map = buildCharMap(this.preset.prefix);
+	const map = this.preset.buildCharMap();
 		const entries = Object.keys(map);
 		for (let i = 0; i < entries.length; i++) {
 			const ch = entries[i];
