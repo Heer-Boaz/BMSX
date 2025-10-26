@@ -1,6 +1,6 @@
 import { BmsxConsoleApi } from '../api';
 import { clamp } from '../../utils/utils';
-import { getApiCompletionData, getKeywordCompletions } from './intellisense';
+import { collectLuaScopedSymbols, getApiCompletionData, getKeywordCompletions, type LuaScopedSymbol } from './intellisense';
 import {
     CompletionContext,
     CompletionSession,
@@ -10,7 +10,7 @@ import {
     LuaCompletionItem,
     ParameterHintState,
 } from './types';
-import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaSymbolEntry } from '../types';
+import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
 import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
 import type { KeyboardInput } from '../../input/keyboardinput';
@@ -56,7 +56,7 @@ export class CompletionController {
     private readonly host: CompletionHost;
 
     private completionSession: CompletionSession | null = null;
-    private readonly localCompletionCache: Map<string, { version: number; items: LuaCompletionItem[] }> = new Map();
+    private readonly localCompletionCache: Map<string, { version: number; symbols: LuaScopedSymbol[]; chunkName: string | null }> = new Map();
     private cachedGlobalCompletionItems: LuaCompletionItem[] | null = null;
     private pendingCompletionRequest: { context: CompletionContext; trigger: CompletionTrigger; elapsed: number } | null = null;
     private suppressNextAutoCompletion = false;
@@ -342,7 +342,7 @@ export class CompletionController {
             if (!registry.has(item.sortKey)) registry.set(item.sortKey, item);
         };
         for (let i = 0; i < keywordCompletions.length; i += 1) register(keywordCompletions[i]);
-        const localItems = this.getLocalCompletionItems();
+        const localItems = this.getLocalCompletionItems(context);
         for (let i = 0; i < localItems.length; i += 1) register(localItems[i]);
         const globalItems = this.getGlobalCompletionItems();
         for (let i = 0; i < globalItems.length; i += 1) register(globalItems[i]);
@@ -353,19 +353,33 @@ export class CompletionController {
         return combined;
     }
 
-    private getLocalCompletionItems(): LuaCompletionItem[] {
+    private getLocalCompletionItems(context: CompletionContext): LuaCompletionItem[] {
         const key = this.activeCompletionCacheKey();
         if (!key) return [];
-        const cached = this.localCompletionCache.get(key);
-        if (cached && cached.version === this.host.getTextVersion()) return cached.items;
-        const context = this.host.getActiveCodeTabContext();
-        const assetId = this.host.resolveHoverAssetId(context);
-        const chunkName = this.host.resolveHoverChunkName(context);
-        let entries: ConsoleLuaSymbolEntry[] = [];
-        try { entries = this.host.listLuaSymbols(assetId, chunkName); } catch { this.localCompletionCache.delete(key); return []; }
-        const items = this.buildSymbolCompletionItems(entries, 'local');
-        this.localCompletionCache.set(key, { version: this.host.getTextVersion(), items });
-        return items;
+        const currentVersion = this.host.getTextVersion();
+        let cached = this.localCompletionCache.get(key);
+        if (!cached || cached.version !== currentVersion) {
+            const lines = this.host.getLines();
+            const source = lines.join('\n');
+            const activeContext = this.host.getActiveCodeTabContext();
+            let chunkName = this.host.resolveHoverChunkName(activeContext);
+            const parseChunkName = chunkName && chunkName.length > 0 ? chunkName : 'lua_chunk';
+            let symbols: LuaScopedSymbol[];
+            try {
+                symbols = collectLuaScopedSymbols({ source, chunkName: parseChunkName });
+            } catch {
+                this.localCompletionCache.delete(key);
+                return [];
+            }
+            cached = { version: currentVersion, symbols, chunkName };
+            this.localCompletionCache.set(key, cached);
+        }
+        const column = context.replaceToColumn;
+        const filtered = this.filterLocalSymbolsAtPosition(cached.symbols, context.row, column);
+        if (filtered.length === 0) {
+            return [];
+        }
+        return this.buildLocalCompletionItems(filtered, cached.chunkName);
     }
 
     private getGlobalCompletionItems(): LuaCompletionItem[] {
@@ -411,6 +425,95 @@ export class CompletionController {
         }
         items.sort((a, b) => a.label.localeCompare(b.label));
         return items;
+    }
+
+    private filterLocalSymbolsAtPosition(symbols: readonly LuaScopedSymbol[], row: number, column: number): LuaScopedSymbol[] {
+        if (symbols.length === 0) return [];
+        const row1Based = row + 1;
+        const column1Based = column + 1;
+        const selected = new Map<string, LuaScopedSymbol>();
+        for (let index = 0; index < symbols.length; index += 1) {
+            const symbol = symbols[index];
+            if (!this.isLocalDefinitionKind(symbol.kind)) {
+                continue;
+            }
+            if (!this.isPositionWithinRange(row1Based, column1Based, symbol.scopeRange)) {
+                continue;
+            }
+            if (!this.isDefinitionBeforePosition(symbol.definitionRange, row1Based, column1Based)) {
+                continue;
+            }
+            const existing = selected.get(symbol.name);
+            if (!existing || this.definitionOccursAfter(symbol.definitionRange, existing.definitionRange)) {
+                selected.set(symbol.name, symbol);
+            }
+        }
+        return Array.from(selected.values());
+    }
+
+    private buildLocalCompletionItems(symbols: readonly LuaScopedSymbol[], chunkLabel: string | null): LuaCompletionItem[] {
+        const items: LuaCompletionItem[] = [];
+        for (let index = 0; index < symbols.length; index += 1) {
+            const symbol = symbols[index];
+            const label = symbol.name;
+            const kindLabel = this.formatSymbolKind(symbol.kind as ConsoleLuaSymbolEntry['kind']);
+            const detailParts: string[] = [kindLabel];
+            if (chunkLabel && chunkLabel.length > 0) {
+                detailParts.push(chunkLabel);
+            }
+            detailParts.push(`line ${symbol.definitionRange.startLine}`);
+            const detail = detailParts.join(' • ');
+            const sortKey = `local:${symbol.definitionRange.startLine.toString().padStart(6, '0')}:${label}`;
+            items.push({ label, insertText: label, sortKey, kind: 'local', detail });
+        }
+        items.sort((a, b) => a.label.localeCompare(b.label));
+        return items;
+    }
+
+    private isLocalDefinitionKind(kind: LuaScopedSymbol['kind']): boolean {
+        return kind === 'variable' || kind === 'function' || kind === 'parameter';
+    }
+
+    private isPositionWithinRange(row: number, column: number, range: ConsoleLuaDefinitionRange): boolean {
+        if (row < range.startLine || row > range.endLine) {
+            return false;
+        }
+        if (row === range.startLine && column < range.startColumn) {
+            return false;
+        }
+        if (row === range.endLine && column > range.endColumn) {
+            return false;
+        }
+        return true;
+    }
+
+    private isDefinitionBeforePosition(range: ConsoleLuaDefinitionRange, row: number, column: number): boolean {
+        if (row < range.startLine) {
+            return false;
+        }
+        if (row > range.endLine) {
+            return true;
+        }
+        if (row === range.endLine) {
+            return column > range.endColumn;
+        }
+        if (row === range.startLine) {
+            return column > range.endColumn;
+        }
+        return true;
+    }
+
+    private definitionOccursAfter(candidate: ConsoleLuaDefinitionRange, other: ConsoleLuaDefinitionRange): boolean {
+        if (candidate.startLine !== other.startLine) {
+            return candidate.startLine > other.startLine;
+        }
+        if (candidate.startColumn !== other.startColumn) {
+            return candidate.startColumn > other.startColumn;
+        }
+        if (candidate.endLine !== other.endLine) {
+            return candidate.endLine > other.endLine;
+        }
+        return candidate.endColumn > other.endColumn;
     }
 
     private formatSymbolKind(kind: ConsoleLuaSymbolEntry['kind']): string {

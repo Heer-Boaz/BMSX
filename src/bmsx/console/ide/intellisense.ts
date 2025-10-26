@@ -30,10 +30,12 @@ import {
 	type LuaTableConstructorExpression,
 	type LuaAssignableExpression,
 	type LuaStringLiteralExpression,
+	type LuaDefinitionKind,
+	type LuaSourceRange,
 } from '../../lua/ast.ts';
 import { LuaTableFieldKind } from '../../lua/ast.ts';
 import type { LuaTableArrayField, LuaTableExpressionField, LuaTableIdentifierField } from '../../lua/ast.ts';
-import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaSymbolEntry } from '../types';
+import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import type { ApiCompletionMetadata, LuaCompletionItem } from './types';
 
 export const KEYWORDS = new Set([
@@ -49,6 +51,52 @@ export function getKeywordCompletions(): readonly LuaCompletionItem[] {
 
 export function getApiCompletionData(): { items: LuaCompletionItem[]; signatures: Map<string, ApiCompletionMetadata> } {
 	return apiCompletionData;
+}
+
+export type LuaScopedSymbol = {
+	name: string;
+	path: string;
+	kind: LuaDefinitionKind;
+	definitionRange: ConsoleLuaDefinitionRange;
+	scopeRange: ConsoleLuaDefinitionRange;
+};
+
+export type LuaScopedSymbolOptions = {
+	source: string;
+	chunkName: string;
+};
+
+export function collectLuaScopedSymbols(options: LuaScopedSymbolOptions): LuaScopedSymbol[] {
+	let chunk: LuaChunk;
+	try {
+		chunk = parseLuaChunk(options.source, options.chunkName);
+	} catch (error) {
+		if (error instanceof LuaSyntaxError) {
+			return [];
+		}
+		throw error;
+	}
+	const definitions = chunk.definitions;
+	if (definitions.length === 0) {
+		return [];
+	}
+	const scopedSymbols: LuaScopedSymbol[] = [];
+	for (let index = 0; index < definitions.length; index += 1) {
+		const definition = definitions[index];
+		const name = definition.name;
+		if (name.length === 0) {
+			continue;
+		}
+		const path = definition.namePath.length > 0 ? definition.namePath.join('.') : name;
+		scopedSymbols.push({
+			name,
+			path,
+			kind: definition.kind,
+			definitionRange: convertRange(definition.definition),
+			scopeRange: convertRange(definition.scope),
+		});
+	}
+	return scopedSymbols;
 }
 
 function buildKeywordCompletionsInternal(): LuaCompletionItem[] {
@@ -213,10 +261,7 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 	const functionSignatures = new Map<string, FunctionSignatureInfo>();
 	let chunk: LuaChunk;
 	try {
-		const lexer = new LuaLexer(options.source, options.chunkName);
-		const tokens = lexer.scanTokens();
-		const parser = new LuaParser(tokens, options.chunkName, options.source);
-		chunk = parser.parseChunk();
+		chunk = parseLuaChunk(options.source, options.chunkName);
 	} catch (error) {
 		if (error instanceof LuaSyntaxError) {
 			const row = error.line > 0 ? error.line - 1 : 0;
@@ -1019,4 +1064,20 @@ function validateCallArity(
 		message,
 		severity: 'error',
 	});
+}
+
+function parseLuaChunk(source: string, chunkName: string): LuaChunk {
+	const lexer = new LuaLexer(source, chunkName);
+	const tokens = lexer.scanTokens();
+	const parser = new LuaParser(tokens, chunkName, source);
+	return parser.parseChunk();
+}
+
+function convertRange(range: LuaSourceRange): ConsoleLuaDefinitionRange {
+	return {
+		startLine: range.start.line,
+		startColumn: range.start.column,
+		endLine: range.end.line,
+		endColumn: range.end.column,
+	};
 }
