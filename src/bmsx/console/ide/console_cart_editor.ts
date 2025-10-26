@@ -35,7 +35,7 @@ import {
 	setFieldText,
 } from './inline_text_field';
 import { buildHoverContentLines as buildHoverContentLinesExternal } from './hover_content';
-import { expandTabs as expandTabsExternal, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
+import { expandTabs as expandTabsExternal, isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderStatusBar } from './render_status_bar';
@@ -3867,6 +3867,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return null;
 		}
 		const line = this.lines[row] ?? '';
+		const safeColumn = Math.min(Math.max(column, 0), Math.max(0, line.length));
+		if (isLuaCommentContext(this.lines, row, safeColumn)) {
+			return null;
+		}
 		if (line.length === 0) {
 			return null;
 		}

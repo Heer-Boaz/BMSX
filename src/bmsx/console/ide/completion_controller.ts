@@ -15,6 +15,7 @@ import * as constants from './constants';
 import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal } from './input_helpers';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import { isWhitespace, isWordChar } from './text_utils';
+import { isLuaCommentContext } from './text_utils_local';
 
 export interface CompletionHost {
     // Editor state accessors
@@ -406,7 +407,7 @@ export class CompletionController {
         const prefix = line.slice(start, column);
         const replaceFromColumn = start;
         const replaceToColumn = column;
-        if (this.isCommentContext(lines, row, replaceFromColumn)) {
+        if (isLuaCommentContext(lines, row, replaceFromColumn)) {
             return null;
         }
         let probe = start - 1;
@@ -630,72 +631,6 @@ export class CompletionController {
             return candidate.endLine > other.endLine;
         }
         return candidate.endColumn > other.endColumn;
-    }
-
-    private isCommentContext(lines: string[], targetRow: number, targetColumn: number): boolean {
-        if (targetRow < 0 || targetRow >= lines.length) {
-            return false;
-        }
-        let blockComment = false;
-        let stringDelimiter: '\'' | '"' | null = null;
-        for (let row = 0; row <= targetRow; row += 1) {
-            const line = lines[row] ?? '';
-            let index = 0;
-            let lineComment = false;
-            while (index <= line.length) {
-                if (row === targetRow && index >= targetColumn) {
-                    return blockComment || lineComment;
-                }
-                if (index === line.length) {
-                    break;
-                }
-                const ch = line.charAt(index);
-                const next = index + 1 < line.length ? line.charAt(index + 1) : '';
-                if (lineComment) {
-                    index += 1;
-                    continue;
-                }
-                if (stringDelimiter !== null) {
-                    if (ch === '\\') {
-                        index += 2;
-                    } else if (ch === stringDelimiter) {
-                        stringDelimiter = null;
-                        index += 1;
-                    } else {
-                        index += 1;
-                    }
-                    continue;
-                }
-                if (blockComment) {
-                    if (ch === ']' && next === ']') {
-                        blockComment = false;
-                        index += 2;
-                    } else {
-                        index += 1;
-                    }
-                    continue;
-                }
-                if (ch === '-' && next === '-') {
-                    const next2 = index + 2 < line.length ? line.charAt(index + 2) : '';
-                    const next3 = index + 3 < line.length ? line.charAt(index + 3) : '';
-                    if (next2 === '[' && next3 === '[') {
-                        blockComment = true;
-                        index += 4;
-                        continue;
-                    }
-                    lineComment = true;
-                    index += 2;
-                    continue;
-                }
-                if (ch === '\'' || ch === '"') {
-                    stringDelimiter = ch as '\'' | '"';
-                    index += 1;
-                    continue;
-                }
-                index += 1;
-            }
-        }
-        return blockComment;
     }
 
     private isIdentifierTriggerPrefix(prefix: string): boolean {
@@ -1009,6 +944,7 @@ export class CompletionController {
             else if (ch === ')') { if (depth > 0) { depth -= 1; if (depth === 0) lastOpen = -1; } }
         }
         if (depth <= 0 || lastOpen < 0) return null;
+        if (isLuaCommentContext(lines, safeRow, lastOpen)) return null;
         const prefix = line.slice(0, lastOpen);
         let scan = prefix.length - 1;
         while (scan >= 0 && isWhitespace(prefix.charAt(scan))) scan -= 1;

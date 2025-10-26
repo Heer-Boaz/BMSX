@@ -79,6 +79,77 @@ export function wrapTextDynamic(
 	return lines;
 }
 
+export function isLuaCommentContext(
+	lines: readonly string[],
+	targetRow: number,
+	targetColumn: number,
+): boolean {
+	if (targetRow < 0 || targetRow >= lines.length) {
+		return false;
+	}
+	let blockComment = false;
+	let stringDelimiter: '\'' | '"' | null = null;
+	for (let row = 0; row <= targetRow; row += 1) {
+		const line = lines[row] ?? '';
+		let index = 0;
+		let lineComment = false;
+		const limitColumn = row === targetRow ? targetColumn : line.length;
+		while (index <= line.length) {
+			if (row === targetRow && index >= limitColumn) {
+				return blockComment || lineComment;
+			}
+			if (index === line.length) {
+				break;
+			}
+			const ch = line.charAt(index);
+			const next = index + 1 < line.length ? line.charAt(index + 1) : '';
+			if (lineComment) {
+				index += 1;
+				continue;
+			}
+			if (stringDelimiter !== null) {
+				if (ch === '\\') {
+					index += 2;
+				} else if (ch === stringDelimiter) {
+					stringDelimiter = null;
+					index += 1;
+				} else {
+					index += 1;
+				}
+				continue;
+			}
+			if (blockComment) {
+				if (ch === ']' && next === ']') {
+					blockComment = false;
+					index += 2;
+				} else {
+					index += 1;
+				}
+				continue;
+			}
+			if (ch === '-' && next === '-') {
+				const next2 = index + 2 < line.length ? line.charAt(index + 2) : '';
+				const next3 = index + 3 < line.length ? line.charAt(index + 3) : '';
+				if (next2 === '[' && next3 === '[') {
+					blockComment = true;
+					index += 4;
+					continue;
+				}
+				lineComment = true;
+				index += 2;
+				continue;
+			}
+			if (ch === '\'' || ch === '"') {
+				stringDelimiter = ch as '\'' | '"';
+				index += 1;
+				continue;
+			}
+			index += 1;
+		}
+	}
+	return blockComment;
+}
+
 function findMaxFittingIndexMeasure(text: string, maxWidth: number, measure: (t: string) => number): number {
 	if (text.length === 0) return 0;
 	if (maxWidth <= 0) return 1;
