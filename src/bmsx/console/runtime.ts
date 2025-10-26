@@ -1173,14 +1173,15 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		this.resetLuaInteroperabilityState();
 		this.luaSnapshotSave = null;
 		this.luaSnapshotLoad = null;
-		this.luaInterpreter = createLuaInterpreter();
+		const interpreter = createLuaInterpreter();
+		interpreter.clearLastFaultEnvironment();
+		this.luaInterpreter = interpreter;
 		this.luaInitFunction = null;
 		this.luaUpdateFunction = null;
 		this.luaDrawFunction = null;
 		this.luaChunkName = chunkName;
 		this.luaRuntimeFailed = false;
 
-		const interpreter = this.luaInterpreter;
 		try {
 			this.registerProgramChunk(program, chunkName);
 			this.registerApiBuiltins(interpreter);
@@ -1429,6 +1430,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	}
 
 	private createApiRuntimeError(interpreter: LuaInterpreter, message: string): LuaRuntimeError {
+		interpreter.markFaultEnvironment();
 		const range = interpreter.getCurrentCallRange();
 		const chunkName = range ? range.chunkName : (this.luaChunkName ?? 'lua');
 		const line = range ? range.start.line : 0;
@@ -3576,11 +3578,23 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		let found = false;
 		let definitionEnv: LuaEnvironment | null = null;
 		let definitionRange: LuaSourceRange | null = null;
-		if (assetId) {
+		const globalEnv = interpreter.getGlobalEnvironment();
+
+		const frameEnv = interpreter.getLastFaultEnvironment();
+		if (frameEnv) {
+			const resolved = this.resolveIdentifierThroughChain(frameEnv, root, interpreter);
+			if (resolved) {
+				value = resolved.value;
+				scope = resolved.scope;
+				found = true;
+				definitionEnv = resolved.environment;
+			}
+		}
+		if (!found && assetId) {
 			const env = this.luaChunkEnvironmentsByAssetId.get(assetId) ?? null;
 			if (env && env.hasLocal(root)) {
 				value = env.get(root);
-				scope = 'chunk';
+				scope = env === globalEnv ? 'global' : 'chunk';
 				found = true;
 				definitionEnv = env;
 			}
@@ -3592,19 +3606,18 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 				const envByChunk = this.luaChunkEnvironmentsByChunkName.get(normalized) ?? null;
 				if (envByChunk && envByChunk.hasLocal(root)) {
 					value = envByChunk.get(root);
-					scope = 'chunk';
+					scope = envByChunk === globalEnv ? 'global' : 'chunk';
 					found = true;
 					definitionEnv = envByChunk;
 				}
 			}
 		}
 		if (!found) {
-			const globals = interpreter.getGlobalEnvironment();
-			if (globals.hasLocal(root)) {
-				value = globals.get(root);
+			if (globalEnv.hasLocal(root)) {
+				value = globalEnv.get(root);
 				scope = 'global';
 				found = true;
-				definitionEnv = globals;
+				definitionEnv = globalEnv;
 			}
 		}
 		if (!found) {
@@ -3630,6 +3643,20 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			definitionRange = null;
 		}
 		return { kind: 'value', value: current, scope, definitionRange };
+	}
+
+	private resolveIdentifierThroughChain(environment: LuaEnvironment, name: string, interpreter: LuaInterpreter): { environment: LuaEnvironment; value: LuaValue | null; scope: ConsoleLuaHoverScope } | null {
+		let current: LuaEnvironment | null = environment;
+		const globalEnv = interpreter.getGlobalEnvironment();
+		while (current) {
+			if (current.hasLocal(name)) {
+				const value = current.get(name);
+				const scope: ConsoleLuaHoverScope = current === globalEnv ? 'global' : 'chunk';
+				return { environment: current, value, scope };
+			}
+			current = current.getParent();
+		}
+		return null;
 	}
 
 	private describeLuaValueForInspector(value: LuaValue): { lines: string[]; valueType: string; isFunction: boolean } {

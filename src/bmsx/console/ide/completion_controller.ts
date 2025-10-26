@@ -471,13 +471,17 @@ export class CompletionController {
         if (!edit || edit.kind === 'delete') return null;
         if (edit.text.length === 0) return null;
         const lastChar = edit.text.charAt(edit.text.length - 1);
-        if (context.kind === 'member') {
-            if (lastChar === '.' || lastChar === ':') return 'punctuation';
-            if (isWordChar(lastChar)) return 'typing';
-            return null;
-        }
+		switch (context.kind) {
+			case 'local':
+				if (isWordChar(lastChar)) return 'typing';
+				return null;
+			case 'member':
+				if (lastChar === '.' || lastChar === ':') return 'punctuation';
+				if (isWordChar(lastChar)) return 'typing';
+				return null;
+		}
         if (!isWordChar(lastChar)) return null;
-        if (context.prefix.length === 0) return null;
+		if (context.prefix.length === 0) return null;
         return 'typing';
     }
 
@@ -502,18 +506,45 @@ export class CompletionController {
         this.cancelPendingCompletion();
         const items = this.collectCompletionItems(context);
         if (items.length === 0) { this.completionSession = null; return; }
-        const session: CompletionSession = {
-            context: context.kind === 'member'
-                ? { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn }
-                : { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
-            items,
-            filteredItems: [],
-            selectionIndex: -1,
-            displayOffset: 0,
-            anchorRow: this.host.getCursorRow(),
-            anchorColumn: this.host.getCursorColumn(),
-            maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
-        };
+		let session: CompletionSession;
+		switch (context.kind) {
+			case 'member':
+				session = {
+					context: { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
+					items,
+					filteredItems: [],
+					selectionIndex: -1,
+					displayOffset: 0,
+					anchorRow: this.host.getCursorRow(),
+					anchorColumn: this.host.getCursorColumn(),
+					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+				};
+				break;
+			case 'global':
+				session = {
+					context: { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
+					items,
+					filteredItems: [],
+					selectionIndex: -1,
+					displayOffset: 0,
+					anchorRow: this.host.getCursorRow(),
+					anchorColumn: this.host.getCursorColumn(),
+					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+				};
+				break;
+			case 'local':
+				session = {
+					context: { kind: 'local', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn },
+					items,
+					filteredItems: [],
+					selectionIndex: -1,
+					displayOffset: 0,
+					anchorRow: this.host.getCursorRow(),
+					anchorColumn: this.host.getCursorColumn(),
+					maxVisibleItems: constants.COMPLETION_POPUP_MAX_VISIBLE,
+				};
+				break;
+		}
         this.completionSession = session;
         this.applyCompletionFilter(session);
     }
@@ -523,9 +554,17 @@ export class CompletionController {
         if (!session) return;
         const items = this.collectCompletionItems(context);
         if (items.length === 0) { this.closeSession(); return; }
-        session.context = context.kind === 'member'
-            ? { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn }
-            : { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
+		switch (context.kind) {
+			case 'member':
+				session.context = { kind: 'member', objectName: context.objectName, operator: context.operator, prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
+				break;
+			case 'global':
+				session.context = { kind: 'global', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
+				break;
+			case 'local':
+				session.context = { kind: 'local', prefix: context.prefix, row: context.row, replaceFromColumn: context.replaceFromColumn, replaceToColumn: context.replaceToColumn };
+				break;
+		}
         session.items = items;
         session.anchorRow = this.host.getCursorRow();
         session.anchorColumn = this.host.getCursorColumn();
@@ -702,13 +741,13 @@ export class CompletionController {
                 }
             }
         }
-        if (objectName && objectName.toLowerCase() === 'api') {
-            const apiMeta = apiCompletionData.signatures.get(methodName);
-            if (apiMeta) {
-                const params = apiMeta.params.slice();
-                return { methodName, params, signatureLabel: apiMeta.signature, anchorRow: safeRow, anchorColumn: lastOpen, argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)) };
-            }
-        }
+        // if (objectName && objectName.toLowerCase() === 'api') {
+        //     const apiMeta = apiCompletionData.signatures.get(methodName);
+        //     if (apiMeta) {
+        //         const params = apiMeta.params.slice();
+        //         return { methodName, params, signatureLabel: apiMeta.signature, anchorRow: safeRow, anchorColumn: lastOpen, argumentIndex: Math.min(argumentIndex, Math.max(0, params.length - 1)) };
+        //     }
+        // }
         const builtin = this.findBuiltinDescriptor(objectName, methodName);
         if (builtin) {
             const params = Array.isArray(builtin.params) ? builtin.params.slice() : [];

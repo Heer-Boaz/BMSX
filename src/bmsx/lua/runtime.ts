@@ -119,13 +119,15 @@ type LabelScope = {
 };
 
 export class LuaInterpreter {
-	 private readonly globals: LuaEnvironment;
-	 private currentChunk: string;
-	 private randomSeedValue: number;
-	 private reservedIdentifiers: Set<string> = new Set<string>();
-	 private currentCallRange: LuaSourceRange | null = null;
-	 private chunkEnvironment: LuaEnvironment | null = null;
-	 private readonly chunkDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
+	private readonly globals: LuaEnvironment;
+	private currentChunk: string;
+	private randomSeedValue: number;
+	private reservedIdentifiers: Set<string> = new Set<string>();
+	private currentCallRange: LuaSourceRange | null = null;
+	private chunkEnvironment: LuaEnvironment | null = null;
+	private readonly chunkDefinitions: Map<string, ReadonlyArray<LuaDefinitionInfo>> = new Map();
+	private readonly envStack: LuaEnvironment[] = [];
+	private lastFaultEnvironment: LuaEnvironment | null = null;
 
 	 constructor(globals: LuaEnvironment | null) {
 	 	 if (globals === null) {
@@ -177,9 +179,9 @@ export class LuaInterpreter {
 		return this.globals.entries();
 	}
 
-public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): void {
-	this.globals.set(name, value, range);
-}
+	public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): void {
+		this.globals.set(name, value, range);
+	}
 
 	public getRandomSeed(): number {
 		return this.randomSeedValue;
@@ -195,18 +197,20 @@ public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): 
 		this.currentChunk = chunk.range.chunkName;
 		const chunkScope = LuaEnvironment.createChild(this.globals);
 		this.chunkEnvironment = chunkScope;
-		const signal = this.executeStatements(chunk.body, chunkScope, [], null);
-		if (signal.kind === 'return') {
-			return Array.from(signal.values);
-		}
-		if (signal.kind === 'break') {
-			const breakStatement = signal.origin as LuaBreakStatement;
-			throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
-		}
-		if (signal.kind === 'goto') {
-			throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
-		}
-		return [];
+		return this.withEnv(chunkScope, () => {
+			const signal = this.executeStatements(chunk.body, chunkScope, [], null);
+			if (signal.kind === 'return') {
+				return Array.from(signal.values);
+			}
+			if (signal.kind === 'break') {
+				const breakStatement = signal.origin as LuaBreakStatement;
+				throw this.runtimeErrorAt(breakStatement.range, 'Unexpected break outside of loop.');
+			}
+			if (signal.kind === 'goto') {
+				throw this.runtimeErrorAt(signal.origin.range, `Label '${signal.label}' not found.`);
+			}
+			return [];
+		});
 	}
 
 	public enumerateChunkEntries(): ReadonlyArray<[string, LuaValue]> {
@@ -249,6 +253,28 @@ public setGlobal(name: string, value: LuaValue, range?: LuaSourceRange | null): 
 			normalized = normalized.slice(1);
 		}
 		return normalized.replace(/\\/g, '/');
+	}
+
+	private withEnv<T>(environment: LuaEnvironment, callback: () => T): T {
+		this.envStack.push(environment);
+		try {
+			return callback();
+		}
+		finally {
+			this.envStack.pop();
+		}
+	}
+
+	public getLastFaultEnvironment(): LuaEnvironment | null {
+		return this.lastFaultEnvironment;
+	}
+
+	public clearLastFaultEnvironment(): void {
+		this.lastFaultEnvironment = null;
+	}
+
+	public markFaultEnvironment(): void {
+		this.lastFaultEnvironment = this.envStack.length > 0 ? this.envStack[this.envStack.length - 1] : null;
 	}
 
 	private executeStatements(statements: ReadonlyArray<LuaStatement>, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope | null): ExecutionSignal {
@@ -447,25 +473,27 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 
 	private executeWhile(statement: LuaWhileStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
 		const loopEnvironment = LuaEnvironment.createChild(environment);
-		while (this.isTruthy(this.evaluateSingleExpression(statement.condition, loopEnvironment, varargs))) {
-			const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
-			if (signal.kind === 'return') {
-				return signal;
+		return this.withEnv(loopEnvironment, () => {
+			while (this.isTruthy(this.evaluateSingleExpression(statement.condition, loopEnvironment, varargs))) {
+				const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
+				if (signal.kind === 'return') {
+					return signal;
+				}
+				if (signal.kind === 'break') {
+					return NORMAL_SIGNAL;
+				}
+				if (signal.kind === 'goto') {
+					return signal;
+				}
 			}
-			if (signal.kind === 'break') {
-				return NORMAL_SIGNAL;
-			}
-			if (signal.kind === 'goto') {
-				return signal;
-			}
-		}
-		return NORMAL_SIGNAL;
+			return NORMAL_SIGNAL;
+		});
 	}
 
 	private executeRepeat(statement: LuaRepeatStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
 		while (true) {
 			const iterationEnvironment = LuaEnvironment.createChild(environment);
-			const signal = this.executeStatements(statement.block.body, iterationEnvironment, varargs, scope);
+			const signal = this.withEnv(iterationEnvironment, () => this.executeStatements(statement.block.body, iterationEnvironment, varargs, scope));
 			if (signal.kind === 'return') {
 				return signal;
 			}
@@ -475,7 +503,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			if (signal.kind === 'goto') {
 				return signal;
 			}
-			const condition = this.evaluateSingleExpression(statement.condition, iterationEnvironment, varargs);
+			const condition = this.withEnv(iterationEnvironment, () => this.evaluateSingleExpression(statement.condition, iterationEnvironment, varargs));
 			if (this.isTruthy(condition)) {
 				return NORMAL_SIGNAL;
 			}
@@ -491,6 +519,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}
 	const loopEnvironment = LuaEnvironment.createChild(environment);
 	loopEnvironment.set(statement.variable.name, startValue, statement.variable.range);
+	return this.withEnv(loopEnvironment, () => {
 		let current = startValue;
 		const ascending = stepValue >= 0;
 		while ((ascending && current <= limitValue) || (!ascending && current >= limitValue)) {
@@ -508,7 +537,8 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			current += stepValue;
 		}
 		return NORMAL_SIGNAL;
-	}
+	});
+}
 
 	private executeForGeneric(statement: LuaForGenericStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
 		const iteratorValues = this.evaluateExpressionList(statement.iterators, environment, varargs);
@@ -524,29 +554,31 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		loopEnvironment.set(variable.name, null, variable.range);
 	}
 
-		while (true) {
-			const callArgs: LuaValue[] = [state, control];
-			const results = iteratorFunction.call(callArgs);
-			if (results.length === 0 || results[0] === null || results[0] === false) {
-				return NORMAL_SIGNAL;
+		return this.withEnv(loopEnvironment, () => {
+			while (true) {
+				const callArgs: LuaValue[] = [state, control];
+				const results = iteratorFunction.call(callArgs);
+				if (results.length === 0 || results[0] === null || results[0] === false) {
+					return NORMAL_SIGNAL;
+				}
+				control = results[0];
+				for (let index = 0; index < statement.variables.length; index += 1) {
+					const variable = statement.variables[index];
+					const value = index < results.length ? results[index] : null;
+					loopEnvironment.assignExisting(variable.name, value);
+				}
+				const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
+				if (signal.kind === 'return') {
+					return signal;
+				}
+				if (signal.kind === 'break') {
+					return NORMAL_SIGNAL;
+				}
+				if (signal.kind === 'goto') {
+					return signal;
+				}
 			}
-			control = results[0];
-			for (let index = 0; index < statement.variables.length; index += 1) {
-				const variable = statement.variables[index];
-				const value = index < results.length ? results[index] : null;
-				loopEnvironment.assignExisting(variable.name, value);
-			}
-			const signal = this.executeBlock(statement.block, loopEnvironment, varargs, scope);
-			if (signal.kind === 'return') {
-				return signal;
-			}
-			if (signal.kind === 'break') {
-				return NORMAL_SIGNAL;
-			}
-			if (signal.kind === 'goto') {
-				return signal;
-			}
-		}
+		});
 	}
 
 	private executeDo(statement: LuaDoStatement, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, scope: LabelScope): ExecutionSignal {
@@ -555,7 +587,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 
 	private executeBlock(block: LuaBlock, parentEnvironment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>, parentScope: LabelScope): ExecutionSignal {
 		const blockEnvironment = LuaEnvironment.createChild(parentEnvironment);
-		return this.executeStatements(block.body, blockEnvironment, varargs, parentScope);
+		return this.withEnv(blockEnvironment, () => this.executeStatements(block.body, blockEnvironment, varargs, parentScope));
 	}
 
 	private buildLabelMap(statements: ReadonlyArray<LuaStatement>): Map<string, LabelMetadata> {
@@ -1516,7 +1548,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			}
 			varargValues = extras;
 		}
-		const signal = this.executeBlock(expression.body, activationEnvironment, varargValues, null);
+		const signal = this.withEnv(activationEnvironment, () => this.executeBlock(expression.body, activationEnvironment, varargValues, null));
 		if (signal.kind === 'return') {
 			return Array.from(signal.values);
 		}
@@ -2315,6 +2347,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private runtimeError(message: string): LuaRuntimeError {
+		this.markFaultEnvironment();
 		const range = this.currentCallRange;
 		if (range !== null) {
 			return new LuaRuntimeError(message, range.chunkName, range.start.line, range.start.column);
@@ -2323,6 +2356,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private runtimeErrorAt(range: LuaSourceRange, message: string): LuaRuntimeError {
+		this.markFaultEnvironment();
 		return new LuaRuntimeError(message, range.chunkName, range.start.line, range.start.column);
 	}
 }

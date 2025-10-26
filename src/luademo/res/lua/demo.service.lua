@@ -35,12 +35,12 @@ return {
 			self.mode = 'running'
 			self.toggleCount = self.toggleCount + 1
 			self.status = 'Service switched to running (#' .. self.toggleCount .. ')'
-			events:emit('start', actor)
+			events:emit('start', actor or 'dummy')
 		else
 			self.mode = 'idle'
 			self.toggleCount = self.toggleCount + 1
 			self.status = 'Service switched to idle (#' .. self.toggleCount .. ')'
-			events:emit('stop', actor)
+			events:emit('stop', actor or 'dummy')
 		end
 	end,
 	get_state = function(self)

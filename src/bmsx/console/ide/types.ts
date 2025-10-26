@@ -129,7 +129,15 @@ export type CompletionContext =
 		row: number;
 		replaceFromColumn: number;
 		replaceToColumn: number;
-	};
+	}
+	| {
+		kind: 'local';
+		prefix: string;
+		row: number;
+		replaceFromColumn: number;
+		replaceToColumn: number;
+	}
+	;
 
 export type CompletionSession = {
 	context: CompletionContext;
@@ -140,11 +148,6 @@ export type CompletionSession = {
 	anchorRow: number;
 	anchorColumn: number;
 	maxVisibleItems: number;
-};
-
-export type CompletionCacheEntry = {
-	version: number;
-	items: LuaCompletionItem[];
 };
 
 export type EditContext = {
