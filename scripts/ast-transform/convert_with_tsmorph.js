@@ -226,6 +226,10 @@ function main() {
   // Initialize project
   if (tsconfigPath) {
     global.__tsmorph_project = new Project({ tsConfigFilePath: tsconfigPath });
+    // Ensure we load source files for rewiring across the project
+    try {
+      global.__tsmorph_project.addSourceFilesAtPaths('src/**/*.ts');
+    } catch {}
   } else {
     global.__tsmorph_project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
   }
@@ -258,9 +262,16 @@ function rewireProjectImports(project, conversions, options) {
   project.getSourceFiles().forEach(sf => {
     sf.getImportDeclarations().forEach(imp => {
       const spec = imp.getModuleSpecifierValue();
-      const resolved = imp.getModuleSpecifierSourceFile();
-      if (!resolved) return;
-      const origNoExt = path.normalize(resolved.getFilePath().replace(/\.[tj]sx?$/, ''));
+      let resolved = imp.getModuleSpecifierSourceFile();
+      let origNoExt;
+      if (resolved) {
+        origNoExt = path.normalize(resolved.getFilePath().replace(/\.[tj]sx?$/, ''));
+      } else if (spec.startsWith('.')) {
+        const guessed = path.resolve(sf.getDirectoryPath(), spec);
+        origNoExt = path.normalize(guessed);
+      } else {
+        return;
+      }
       const info = byFile.get(origNoExt);
       if (!info) return;
 
@@ -444,6 +455,30 @@ function rewireProjectImports(project, conversions, options) {
       if (imp.getNamedImports().length === 0 && !imp.getDefaultImport()) {
         imp.remove();
       }
+    });
+
+    // Update export declarations that re-export from the converted module
+    sf.getExportDeclarations().forEach(exp => {
+      const specVal = exp.getModuleSpecifierValue();
+      let resolved = exp.getModuleSpecifierSourceFile();
+      let origNoExt;
+      if (resolved) {
+        origNoExt = path.normalize(resolved.getFilePath().replace(/\.[tj]sx?$/, ''));
+      } else if (specVal && specVal.startsWith('.')) {
+        const guessed = path.resolve(sf.getDirectoryPath(), specVal);
+        origNoExt = path.normalize(guessed);
+      } else {
+        return;
+      }
+      const info = byFile.get(origNoExt);
+      if (!info) return;
+
+      const exporterDir = sf.getDirectoryPath();
+      const targetMorph = info.morphPath;
+      let rel = path.relative(exporterDir, targetMorph).replace(/\\/g, '/');
+      if (!rel.startsWith('.')) rel = './' + rel;
+      rel = rel.replace(/\.[tj]sx?$/, '');
+      exp.setModuleSpecifier(rel);
     });
   });
 }
