@@ -12,7 +12,7 @@ import {
 } from './types';
 import type { ConsoleLuaBuiltinDescriptor, ConsoleLuaDefinitionRange, ConsoleLuaSymbolEntry } from '../types';
 import * as constants from './constants';
-import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal } from './input_helpers';
+import { consumeKey as consumeKeyboardKey, isKeyJustPressed as isKeyJustPressedGlobal, isKeyPressed as isKeyPressedGlobal } from './input_helpers';
 import type { KeyboardInput } from '../../input/keyboardinput';
 import { isWhitespace, isWordChar } from './text_utils';
 
@@ -236,6 +236,37 @@ export class CompletionController {
             }
         }
         if (handled) return true;
+        if (session.filteredItems.length > 0) {
+            const playerIndex = this.host.getPlayerIndex();
+            let suppressed = false;
+            if (isKeyPressedGlobal(playerIndex, 'ArrowDown')) {
+                consumeKeyboardKey(keyboard, 'ArrowDown');
+                suppressed = true;
+            }
+            if (isKeyPressedGlobal(playerIndex, 'ArrowUp')) {
+                consumeKeyboardKey(keyboard, 'ArrowUp');
+                suppressed = true;
+            }
+            if (isKeyPressedGlobal(playerIndex, 'PageDown')) {
+                consumeKeyboardKey(keyboard, 'PageDown');
+                suppressed = true;
+            }
+            if (isKeyPressedGlobal(playerIndex, 'PageUp')) {
+                consumeKeyboardKey(keyboard, 'PageUp');
+                suppressed = true;
+            }
+            if (isKeyPressedGlobal(playerIndex, 'Home')) {
+                consumeKeyboardKey(keyboard, 'Home');
+                suppressed = true;
+            }
+            if (isKeyPressedGlobal(playerIndex, 'End')) {
+                consumeKeyboardKey(keyboard, 'End');
+                suppressed = true;
+            }
+            if (suppressed) {
+                return true;
+            }
+        }
         if (this.enterCommitsCompletion) {
             const enterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'Enter');
             const numpadEnterPressed = isKeyJustPressedGlobal(this.host.getPlayerIndex(), 'NumpadEnter');
@@ -1030,15 +1061,32 @@ export class CompletionController {
         const context = this.host.getActiveCodeTabContext();
         const assetId = this.host.resolveHoverAssetId(context);
         const chunkName = this.host.resolveHoverChunkName(context);
-        if (!assetId && !chunkName) return null;
-        const safeAssetId = assetId ?? '';
-        const safeChunk = chunkName ?? '';
-        return `${safeAssetId}|${safeChunk}`;
+        if (assetId || chunkName) {
+            const safeAssetId = assetId ?? '';
+            const safeChunk = chunkName ?? '';
+            return `${safeAssetId}|${safeChunk}`;
+        }
+        let contextId = '';
+        if (context && typeof context === 'object') {
+            const candidate = (context as { id?: unknown }).id;
+            if (candidate !== undefined && candidate !== null) {
+                contextId = String(candidate);
+            }
+        }
+        if (contextId.length > 0) {
+            return `ctx:${contextId}`;
+        }
+        return `player:${this.host.getPlayerIndex()}`;
     }
 
     private invalidateLocalCompletionCacheForActiveContext(): void {
         const key = this.activeCompletionCacheKey();
         if (!key) return;
+        const cached = this.localCompletionCache.get(key);
+        if (cached) {
+            cached.parsedVersion = -1;
+            return;
+        }
         this.localCompletionCache.delete(key);
     }
 }
