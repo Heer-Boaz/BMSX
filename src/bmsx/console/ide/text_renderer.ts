@@ -2,6 +2,13 @@ import type { BmsxConsoleApi } from '../api';
 import type { ConsoleEditorFont } from '../editor_font';
 import type { ConsoleFont } from '../font';
 import { expandTabs as expandTabsExternal } from './text_utils_local';
+import { COLOR_STRING } from './constants';
+
+let CASE_INSENSITIVE_EDITOR = true;
+
+export function setEditorCaseInsensitivity(enabled: boolean): void {
+	CASE_INSENSITIVE_EDITOR = enabled;
+}
 
 type ConsoleApiWithCustomFont = BmsxConsoleApi & {
 	printWithFont?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void;
@@ -12,14 +19,16 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 	let cursorY = Math.floor(originY);
 	const lines = text.split('\n');
 	const renderFont = font.getRenderFont();
+	const useUppercase = CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
 	const apiWithFont = api as ConsoleApiWithCustomFont;
 	for (let i = 0; i < lines.length; i += 1) {
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
+			const display = useUppercase ? expanded.toUpperCase() : expanded;
 			if (typeof apiWithFont.printWithFont === 'function') {
-				apiWithFont.printWithFont(expanded, baseX, cursorY, color, renderFont);
+				apiWithFont.printWithFont(display, baseX, cursorY, color, renderFont);
 			} else {
-				api.print(expanded, baseX, cursorY, color);
+				api.print(display, baseX, cursorY, color);
 			}
 		}
 		if (i < lines.length - 1) {
@@ -33,18 +42,20 @@ export function drawEditorColoredText(api: BmsxConsoleApi, font: ConsoleEditorFo
 	const cursorY = Math.floor(originY);
 	const renderFont = font.getRenderFont();
 	const apiWithFont = api as ConsoleApiWithCustomFont;
+	const useUppercase = CASE_INSENSITIVE_EDITOR && font.getVariant() === 'tiny';
+	const renderText = useUppercase ? toUpperExceptStrings(text, colors, fallbackColor) : text;
 	let index = 0;
-	while (index < text.length) {
+	while (index < renderText.length) {
 		const colorIndex = colors[index] ?? fallbackColor;
 		let end = index + 1;
-		while (end < text.length) {
+		while (end < renderText.length) {
 			const nextColor = colors[end] ?? fallbackColor;
 			if (nextColor !== colorIndex) {
 				break;
 			}
 			end += 1;
 		}
-		const segment = text.slice(index, end);
+		const segment = renderText.slice(index, end);
 		if (segment.length > 0) {
 			if (typeof apiWithFont.printWithFont === 'function') {
 				apiWithFont.printWithFont(segment, cursorX, cursorY, colorIndex, renderFont);
@@ -55,4 +66,17 @@ export function drawEditorColoredText(api: BmsxConsoleApi, font: ConsoleEditorFo
 		}
 		index = end;
 	}
+}
+
+function toUpperExceptStrings(text: string, colors: readonly number[], fallbackColor: number): string {
+	if (text.length === 0) {
+		return text;
+	}
+	const buffer: string[] = new Array(text.length);
+	for (let i = 0; i < text.length; i += 1) {
+		const ch = text.charAt(i);
+		const color = colors[i] ?? fallbackColor;
+		buffer[i] = color === COLOR_STRING ? ch : ch.toUpperCase();
+	}
+	return buffer.join('');
 }

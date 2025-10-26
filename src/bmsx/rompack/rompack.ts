@@ -16,6 +16,7 @@ export interface RomPack {
 	lua: Record<asset_id, string>; // Loaded Lua sources bundled with the ROM pack.
 	luaSourcePaths: Record<asset_id, string>; // Relative filesystem paths for Lua sources, keyed by Lua asset id.
 	resourcePaths: RomResourcePath[]; // Filesystem metadata for packed resources.
+	caseInsensitiveLua?: boolean;
 }
 
 export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model' | 'fsm' | 'aem' | 'lua' | 'rommanifest';
@@ -84,6 +85,7 @@ export interface BootArgs {
 	enableOnscreenGamepad?: boolean;
 	platform: Platform;
 	viewHost?: GameViewHost;
+	caseInsensitiveLua?: boolean;
 }
 
 export type Constructor<T> = new (...args: any[]) => T;

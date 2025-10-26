@@ -5,6 +5,7 @@ import {
 	isModifierPressed as isModifierPressedGlobal,
 	resetKeyPressRecords,
 } from './input_helpers';
+import { CaretNavigationState, resolveIndentAwareHome, resolveSegmentEnd } from './caret_navigation';
 import type { EditorSnapshot, Position, VisualLineSegment } from './types';
 
 /**
@@ -25,6 +26,19 @@ export abstract class ConsoleCartEditorTextOps {
 	protected redoStack: EditorSnapshot[] = [];
 	protected lastHistoryKey: string | null = null;
 	protected lastHistoryTimestamp = 0;
+	protected readonly caretNavigation = new CaretNavigationState();
+
+	protected clearCursorVisualOverride(): void {
+		this.caretNavigation.clear();
+	}
+
+	protected setCursorVisualOverride(row: number, column: number, visualIndex: number, segmentStartColumn: number): void {
+		this.caretNavigation.capture(row, column, visualIndex, segmentStartColumn);
+	}
+
+	protected getCursorVisualOverride(row: number, column: number): { visualIndex: number; segmentStartColumn: number } | null {
+		return this.caretNavigation.peek(row, column);
+	}
 
 	protected abstract readonly playerIndex: number;
 	protected abstract wordWrapEnabled: boolean;
@@ -72,6 +86,7 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected setCursorPosition(row: number, column: number): void {
+		this.caretNavigation.clear();
 		let targetRow = row;
 		if (targetRow < 0) {
 			targetRow = 0;
@@ -97,6 +112,7 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected moveCursorVertical(delta: number): void {
+		this.caretNavigation.clear();
 		this.ensureVisualLines();
 		const visualCount = this.getVisualLineCount();
 		if (visualCount === 0) {
@@ -116,6 +132,7 @@ export abstract class ConsoleCartEditorTextOps {
 		if (delta === 0) {
 			return;
 		}
+		this.caretNavigation.clear();
 		this.ensureVisualLines();
 		const visualCount = this.getVisualLineCount();
 		if (visualCount === 0) {
@@ -178,6 +195,7 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected moveWordLeft(): void {
+		this.clearCursorVisualOverride();
 		const destination = this.findWordLeft(this.cursorRow, this.cursorColumn);
 		this.cursorRow = destination.row;
 		this.cursorColumn = destination.column;
@@ -188,6 +206,7 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected moveWordRight(): void {
+		this.clearCursorVisualOverride();
 		const destination = this.findWordRight(this.cursorRow, this.cursorColumn);
 		this.cursorRow = destination.row;
 		this.cursorColumn = destination.column;
@@ -364,6 +383,8 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected moveCursorHome(select: boolean): void {
+		const previousOverride = this.getCursorVisualOverride(this.cursorRow, this.cursorColumn);
+		this.clearCursorVisualOverride();
 		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
 		if (select) {
 			this.ensureSelectionAnchor(previous);
@@ -375,7 +396,17 @@ export abstract class ConsoleCartEditorTextOps {
 			this.cursorRow = 0;
 			this.cursorColumn = 0;
 		} else {
-			this.cursorColumn = 0;
+			this.ensureVisualLines();
+			const visualIndex = previousOverride?.visualIndex ?? this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+			const segment = this.visualIndexToSegment(visualIndex);
+			if (segment) {
+				this.cursorRow = segment.row;
+				const line = this.lines[segment.row] ?? '';
+				this.cursorColumn = resolveIndentAwareHome(line, segment, this.cursorColumn);
+				this.setCursorVisualOverride(segment.row, this.cursorColumn, visualIndex, segment.startColumn);
+			} else {
+				this.cursorColumn = 0;
+			}
 		}
 		this.updateDesiredColumn();
 		this.resetBlink();
@@ -384,6 +415,8 @@ export abstract class ConsoleCartEditorTextOps {
 	}
 
 	protected moveCursorEnd(select: boolean): void {
+		const previousOverride = this.getCursorVisualOverride(this.cursorRow, this.cursorColumn);
+		this.clearCursorVisualOverride();
 		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
 		if (select) {
 			this.ensureSelectionAnchor(previous);
@@ -401,7 +434,17 @@ export abstract class ConsoleCartEditorTextOps {
 				this.cursorColumn = this.lines[lastRow].length;
 			}
 		} else {
-			this.cursorColumn = this.currentLine().length;
+			this.ensureVisualLines();
+			const visualIndex = previousOverride?.visualIndex ?? this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+			const segment = this.visualIndexToSegment(visualIndex);
+			if (segment) {
+				this.cursorRow = segment.row;
+				const line = this.lines[segment.row] ?? '';
+				this.cursorColumn = resolveSegmentEnd(line, segment);
+				this.setCursorVisualOverride(segment.row, this.cursorColumn, visualIndex, segment.startColumn);
+			} else {
+				this.cursorColumn = this.currentLine().length;
+			}
 		}
 		this.updateDesiredColumn();
 		this.resetBlink();

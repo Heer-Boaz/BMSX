@@ -26,6 +26,7 @@ import type { BehaviorTreeDefinition } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
+import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
@@ -50,6 +51,7 @@ export type BmsxConsoleRuntimeOptions = {
 	playerIndex: number;
 	storage?: StorageService;
 	luaSourceFailurePolicy?: Partial<LuaPersistenceFailurePolicy>;
+	caseInsensitiveLua?: boolean;
 };
 
 export type BmsxConsoleState = {
@@ -202,6 +204,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	private readonly physics: Physics2DManager;
 	private readonly apiFunctionNames = new Set<string>();
 	private readonly luaBuiltinMetadata = new Map<string, ConsoleLuaBuiltinDescriptor>();
+	private readonly caseInsensitiveLua: boolean;
 	private luaProgram: BmsxConsoleLuaProgram | null;
 	private playerIndex: number;
 	private editor: ConsoleCartEditor | null = null;
@@ -245,6 +248,10 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 
 	private constructor(options: BmsxConsoleRuntimeOptions) {
 		super({ id: 'bmsx_console_runtime' });
+		const rompack = $.rompack;
+		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
+		LuaTable.setCaseInsensitiveKeys(this.caseInsensitiveLua);
+		setEditorCaseInsensitivity(this.caseInsensitiveLua);
 		this.enableEvents();
 		const policyOverride = options.luaSourceFailurePolicy ?? {};
 		this.luaFailurePolicy = { ...DEFAULT_LUA_FAILURE_POLICY, ...policyOverride };
@@ -287,6 +294,11 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		}
 		if (options.storage && options.storage !== this.storageService) {
 			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different storage service.');
+		}
+		const rompack = $.rompack;
+		const nextCaseInsensitive = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
+		if (nextCaseInsensitive !== this.caseInsensitiveLua) {
+			throw new Error('[BmsxConsoleRuntime] Runtime already initialised with a different Lua case-sensitivity setting.');
 		}
 	}
 
@@ -1211,11 +1223,14 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		}
 
 		const env = interpreter.getGlobalEnvironment();
-		this.luaInitFunction = this.resolveLuaFunction(env.get(program.entry?.init ?? 'init'));
-		this.luaUpdateFunction = this.resolveLuaFunction(env.get(program.entry?.update ?? 'update'));
-		this.luaDrawFunction = this.resolveLuaFunction(env.get(program.entry?.draw ?? 'draw'));
-		this.luaSnapshotSave = this.resolveLuaFunction(env.get('__bmsx_snapshot_save'));
-		this.luaSnapshotLoad = this.resolveLuaFunction(env.get('__bmsx_snapshot_load'));
+		const initName = program.entry?.init ?? 'init';
+		const updateName = program.entry?.update ?? 'update';
+		const drawName = program.entry?.draw ?? 'draw';
+		this.luaInitFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, initName));
+		this.luaUpdateFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, updateName));
+		this.luaDrawFunction = this.resolveLuaFunction(this.getLuaGlobalValue(env, drawName));
+		this.luaSnapshotSave = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_save'));
+		this.luaSnapshotLoad = this.resolveLuaFunction(this.getLuaGlobalValue(env, '__bmsx_snapshot_load'));
 
 		if (runInit && this.luaInitFunction !== null) {
 			try {
@@ -1480,8 +1495,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 						throw this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
 					}
 				});
-				env.set(name, native);
-				this.apiFunctionNames.add(name);
+				this.registerLuaGlobal(env, name, native);
 				this.registerLuaBuiltin({ name, params, signature });
 				continue;
 			}
@@ -1501,8 +1515,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 						throw this.createApiRuntimeError(interpreter, `[api.${name}] ${message}`);
 					}
 				});
-				env.set(name, native);
-				this.apiFunctionNames.add(name);
+				this.registerLuaGlobal(env, name, native);
 			}
 		}
 
@@ -1525,6 +1538,104 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			params,
 			signature,
 		});
+	}
+
+	private registerLuaGlobal(env: LuaEnvironment, name: string, value: LuaValue): void {
+		env.set(name, value);
+		this.apiFunctionNames.add(name);
+		if (!this.caseInsensitiveLua) {
+			return;
+		}
+		const normalized = name.toLowerCase();
+		if (normalized !== name) {
+			env.set(normalized, value);
+			this.apiFunctionNames.add(normalized);
+		}
+	}
+
+	private getLuaGlobalValue(env: LuaEnvironment, name: string | null | undefined): LuaValue | null {
+		if (!name) {
+			return null;
+		}
+		const direct = env.get(name);
+		if (direct !== null) {
+			return direct;
+		}
+		if (!this.caseInsensitiveLua) {
+			return null;
+		}
+		const normalized = name.toLowerCase();
+		if (normalized !== name) {
+			const fallback = env.get(normalized);
+			if (fallback !== null) {
+				return fallback;
+			}
+		}
+		return null;
+	}
+
+	private getLuaTableEntry(table: LuaTable, keys: readonly string[]): LuaValue | null {
+		for (let index = 0; index < keys.length; index += 1) {
+			const key = keys[index];
+			let candidate = table.get(key);
+			if (candidate !== null) {
+				return candidate;
+			}
+			if (this.caseInsensitiveLua) {
+				const normalized = key.toLowerCase();
+				if (normalized !== key) {
+					candidate = table.get(normalized);
+					if (candidate !== null) {
+						return candidate;
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	private getLuaRecordEntry<T>(record: Record<string, unknown> | null | undefined, keys: readonly string[]): T | undefined {
+		if (!record) {
+			return undefined;
+		}
+		for (let index = 0; index < keys.length; index += 1) {
+			const key = keys[index];
+			if (Object.prototype.hasOwnProperty.call(record, key)) {
+				return record[key] as T;
+			}
+			if (this.caseInsensitiveLua) {
+				const normalized = key.toLowerCase();
+				if (normalized !== key && Object.prototype.hasOwnProperty.call(record, normalized)) {
+					return record[normalized] as T;
+				}
+			}
+		}
+		return undefined;
+	}
+
+	private resolveHandlePropertyName(instance: object, propertyName: string): string | null {
+		if (propertyName in instance) {
+			return propertyName;
+		}
+		if (!this.caseInsensitiveLua) {
+			return null;
+		}
+		const lower = propertyName.toLowerCase();
+		let prototype: object | null = instance;
+		while (prototype && prototype !== Object.prototype) {
+			const names = Object.getOwnPropertyNames(prototype);
+			for (let index = 0; index < names.length; index += 1) {
+				const candidate = names[index];
+				if (candidate === propertyName) {
+					return candidate;
+				}
+				if (candidate.toLowerCase() === lower) {
+					return candidate;
+				}
+			}
+			prototype = Object.getPrototypeOf(prototype);
+		}
+		return null;
 	}
 
 	private extractFunctionParameters(fn: (...args: unknown[]) => unknown): string[] {
@@ -1836,56 +1947,55 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 
 			let autoActivate = true;
-			if (typeof descriptor.auto_activate === 'boolean') {
-				autoActivate = descriptor.auto_activate;
-			} else if (typeof (descriptor as { autoActivate?: unknown }).autoActivate === 'boolean') {
-				autoActivate = (descriptor as { autoActivate: boolean }).autoActivate;
+			const autoActivateRaw = this.getLuaRecordEntry<boolean>(descriptor, ['auto_activate', 'autoActivate']);
+			if (typeof autoActivateRaw === 'boolean') {
+				autoActivate = autoActivateRaw;
 			}
 
 			const hooks: LuaServiceHooks = {};
-			const bootCandidate = table.get('on_boot') ?? table.get('boot') ?? table.get('initialize');
+			const bootCandidate = this.getLuaTableEntry(table, ['on_boot', 'boot', 'initialize']);
 			if (bootCandidate !== undefined && bootCandidate !== null) {
 				if (!this.isLuaFunctionValue(bootCandidate)) {
 					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_boot' must be a function.`);
 				}
 				hooks.boot = bootCandidate;
 			}
-			const activateCandidate = table.get('on_activate') ?? table.get('activate');
+			const activateCandidate = this.getLuaTableEntry(table, ['on_activate', 'activate']);
 			if (activateCandidate !== undefined && activateCandidate !== null) {
 				if (!this.isLuaFunctionValue(activateCandidate)) {
 					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_activate' must be a function.`);
 				}
 				hooks.activate = activateCandidate;
 			}
-			const deactivateCandidate = table.get('on_deactivate') ?? table.get('deactivate');
+			const deactivateCandidate = this.getLuaTableEntry(table, ['on_deactivate', 'deactivate']);
 			if (deactivateCandidate !== undefined && deactivateCandidate !== null) {
 				if (!this.isLuaFunctionValue(deactivateCandidate)) {
 					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_deactivate' must be a function.`);
 				}
 				hooks.deactivate = deactivateCandidate;
 			}
-			const disposeCandidate = table.get('on_dispose') ?? table.get('dispose');
+			const disposeCandidate = this.getLuaTableEntry(table, ['on_dispose', 'dispose']);
 			if (disposeCandidate !== undefined && disposeCandidate !== null) {
 				if (!this.isLuaFunctionValue(disposeCandidate)) {
 					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_dispose' must be a function.`);
 				}
 				hooks.dispose = disposeCandidate;
 			}
-			const tickCandidate = table.get('on_tick') ?? table.get('tick') ?? table.get('update');
+			const tickCandidate = this.getLuaTableEntry(table, ['on_tick', 'tick', 'update']);
 			if (tickCandidate !== undefined && tickCandidate !== null) {
 				if (!this.isLuaFunctionValue(tickCandidate)) {
 					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'on_tick' must be a function.`);
 				}
 				hooks.tick = tickCandidate;
 			}
-			const getStateCandidate = table.get('get_state') ?? table.get('getState') ?? table.get('serialize');
+			const getStateCandidate = this.getLuaTableEntry(table, ['get_state', 'getState', 'serialize']);
 			if (getStateCandidate !== undefined && getStateCandidate !== null) {
 				if (!this.isLuaFunctionValue(getStateCandidate)) {
 					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'get_state' must be a function.`);
 				}
 				hooks.getState = getStateCandidate;
 			}
-			const setStateCandidate = table.get('set_state') ?? table.get('setState') ?? table.get('deserialize');
+			const setStateCandidate = this.getLuaTableEntry(table, ['set_state', 'setState', 'deserialize']);
 			if (setStateCandidate !== undefined && setStateCandidate !== null) {
 				if (!this.isLuaFunctionValue(setStateCandidate)) {
 					throw new Error(`[BmsxConsoleRuntime] Service '${serviceId}' hook 'set_state' must be a function.`);
@@ -1894,7 +2004,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 
 			const events = new Map<string, LuaFunctionValue>();
-			const eventsValue = table.get('events');
+			const eventsValue = this.getLuaTableEntry(table, ['events']);
 			if (eventsValue instanceof LuaTable) {
 				for (const [rawKey, handler] of eventsValue.entriesArray()) {
 					const eventName = typeof rawKey === 'string' ? rawKey.trim() : '';
@@ -1909,7 +2019,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 
 			const machines: Identifier[] = [];
-			const machinesValue = descriptor.machines ?? descriptor.state_machines ?? descriptor.stateMachines;
+			const machinesValue = this.getLuaRecordEntry<unknown>(descriptor, ['machines', 'state_machines', 'stateMachines']);
 			if (Array.isArray(machinesValue)) {
 				for (let index = 0; index < machinesValue.length; index += 1) {
 					const value = machinesValue[index];
@@ -2229,8 +2339,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 				continue;
 			}
 			const luaValue = this.jsToLua(object, interpreter);
-			env.set(name, luaValue);
-			this.apiFunctionNames.add(name);
+			this.registerLuaGlobal(env, name, luaValue);
 		}
 	}
 
@@ -2352,20 +2461,20 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 				return [cached];
 			}
 			const instance = this.expectHandleObject(handle, typeName, propertyName, interpreter);
-			const target = instance as Record<string, unknown>;
-			if (!(propertyName in target)) {
+			const resolvedName = this.resolveHandlePropertyName(instance, propertyName);
+			if (!resolvedName) {
 				return [null];
 			}
 			let property: unknown;
 			try {
-				property = Reflect.get(target, propertyName);
+				property = Reflect.get(instance as Record<string, unknown>, resolvedName);
 			}
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				throw this.createApiRuntimeError(interpreter, `[${typeName}.${propertyName}] ${message}`);
 			}
 			if (typeof property === 'function') {
-				const fn = this.createHandleMethod(handle, propertyName, typeName, interpreter);
+				const fn = this.createHandleMethod(handle, resolvedName, propertyName, typeName, interpreter);
 				this.storeHandleMethod(handle, propertyName, fn);
 				table.set(propertyName, fn);
 				return [fn];
@@ -2392,8 +2501,9 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			const propertyName = typeof keyValue === 'number' ? String(keyValue) : keyValue;
 			const instance = this.expectHandleObject(handle, typeName, propertyName, interpreter);
 			const jsValue = this.luaValueToJs(args[2]);
+			const resolvedName = this.resolveHandlePropertyName(instance, propertyName) ?? propertyName;
 			try {
-				Reflect.set(instance as Record<string, unknown>, propertyName, jsValue);
+				Reflect.set(instance as Record<string, unknown>, resolvedName, jsValue);
 			}
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -2428,9 +2538,9 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		return table;
 	}
 
-	private createHandleMethod(handle: number, methodName: string, typeName: string, interpreter: LuaInterpreter): LuaFunctionValue {
-		return createLuaNativeFunction(`${typeName}.${methodName}`, interpreter, (_lua, args) => {
-			const instance = this.expectHandleObject(handle, typeName, methodName, interpreter);
+	private createHandleMethod(handle: number, resolvedName: string, displayName: string, typeName: string, interpreter: LuaInterpreter): LuaFunctionValue {
+		return createLuaNativeFunction(`${typeName}.${displayName}`, interpreter, (_lua, args) => {
+			const instance = this.expectHandleObject(handle, typeName, displayName, interpreter);
 			const jsArgs: unknown[] = [];
 			if (args.length > 0) {
 				const maybeSelf = this.luaValueToJs(args[0]);
@@ -2443,9 +2553,9 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 				}
 			}
 			try {
-				const method = (instance as Record<string, unknown>)[methodName];
+				const method = Reflect.get(instance as Record<string, unknown>, resolvedName);
 				if (typeof method !== 'function') {
-					throw new Error(`Property '${methodName}' is not callable.`);
+					throw new Error(`Property '${displayName}' is not callable.`);
 				}
 				const result = Reflect.apply(method as Function, instance, jsArgs);
 				return this.wrapResultValue(result, interpreter);
@@ -2455,7 +2565,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 					throw error;
 				}
 				const message = error instanceof Error ? error.message : String(error);
-				throw this.createApiRuntimeError(interpreter, `[${typeName}.${methodName}] ${message}`);
+				throw this.createApiRuntimeError(interpreter, `[${typeName}.${displayName}] ${message}`);
 			}
 		});
 	}

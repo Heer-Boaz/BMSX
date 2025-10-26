@@ -45,6 +45,11 @@ export function setAtlasFlag(enabled: boolean): void {
 	GENERATE_AND_USE_TEXTURE_ATLAS = enabled;
 }
 
+let CASE_INSENSITIVE_LUA = true;
+export function setCaseInsensitiveLua(enabled: boolean): void {
+	CASE_INSENSITIVE_LUA = enabled;
+}
+
 export function getAtlasFlag(): boolean {
 	return GENERATE_AND_USE_TEXTURE_ATLAS;
 }
@@ -819,6 +824,131 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 	return result;
 }
 
+type LuaLowercaseState =
+	| { kind: 'normal' }
+	| { kind: 'shortString'; delimiter: '\'' | '"'; escaped: boolean }
+	| { kind: 'lineComment' }
+	| { kind: 'longString'; closing: string }
+	| { kind: 'longComment'; closing: string };
+
+type LuaLongBracketMatch = { length: number; closing: string } | null;
+
+function matchLuaLongBracket(source: string, start: number): LuaLongBracketMatch {
+	if (source.charCodeAt(start) !== 91) {
+		return null;
+	}
+	const length = source.length;
+	let index = start + 1;
+	let equalsCount = 0;
+	while (index < length && source.charCodeAt(index) === 61) {
+		equalsCount += 1;
+		index += 1;
+	}
+	if (index >= length || source.charCodeAt(index) !== 91) {
+		return null;
+	}
+	const openingLength = index - start + 1;
+	const closing = `]${'='.repeat(equalsCount)}]`;
+	return { length: openingLength, closing };
+}
+
+function lowercaseLuaSourceExceptStrings(source: string): string {
+	if (source.length === 0) {
+		return source;
+	}
+	const builder: string[] = [];
+	let state: LuaLowercaseState = { kind: 'normal' };
+	let index = 0;
+	while (index < source.length) {
+		const current = source.charAt(index);
+		switch (state.kind) {
+			case 'shortString': {
+				builder.push(current);
+				index += 1;
+				if (!state.escaped) {
+					if (current === '\\') {
+						state = { kind: 'shortString', delimiter: state.delimiter, escaped: true };
+						break;
+					}
+					if (current === state.delimiter) {
+						state = { kind: 'normal' };
+					}
+					break;
+				}
+				state = { kind: 'shortString', delimiter: state.delimiter, escaped: false };
+				break;
+			}
+			case 'longString': {
+				if (source.startsWith(state.closing, index)) {
+					builder.push(state.closing);
+					index += state.closing.length;
+					state = { kind: 'normal' };
+					break;
+				}
+				builder.push(current);
+				index += 1;
+				break;
+			}
+			case 'longComment': {
+				if (source.startsWith(state.closing, index)) {
+					builder.push(state.closing);
+					index += state.closing.length;
+					state = { kind: 'normal' };
+					break;
+				}
+				builder.push(current.toLowerCase());
+				index += 1;
+				break;
+			}
+			case 'lineComment': {
+				builder.push(current.toLowerCase());
+				index += 1;
+				if (current === '\n' || current === '\r') {
+					state = { kind: 'normal' };
+				}
+				break;
+			}
+			default: {
+				if (current === '\'' || current === '"') {
+					builder.push(current);
+					index += 1;
+					state = { kind: 'shortString', delimiter: current as '\'' | '"', escaped: false };
+					break;
+				}
+				if (current === '-' && index + 1 < source.length && source.charAt(index + 1) === '-') {
+					builder.push('-');
+					builder.push('-');
+					index += 2;
+					if (index < source.length && source.charAt(index) === '[') {
+						const longComment = matchLuaLongBracket(source, index);
+						if (longComment) {
+							builder.push(source.slice(index, index + longComment.length));
+							index += longComment.length;
+							state = { kind: 'longComment', closing: longComment.closing };
+							break;
+						}
+					}
+					state = { kind: 'lineComment' };
+					break;
+				}
+				if (current === '[') {
+					const longString = matchLuaLongBracket(source, index);
+					if (longString) {
+						builder.push(source.slice(index, index + longString.length));
+						index += longString.length;
+						state = { kind: 'longString', closing: longString.closing };
+						break;
+					}
+				}
+				builder.push(current.toLowerCase());
+				index += 1;
+				break;
+			}
+		}
+	}
+	return builder.join('');
+}
+
 /**
  * Builds a list of resources located at `respath` for the specified `romname`.
  * @param rom_name The name of the ROM pack to build the list for.
@@ -866,6 +996,24 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 					...meta,
 					buffer,
 				};
+			case 'lua': {
+				if (!buffer) {
+					throw new Error(`[RomPacker] Lua resource "${meta.name}" is missing its source file payload.`);
+				}
+				if (!CASE_INSENSITIVE_LUA) {
+					return {
+						...meta,
+						buffer,
+					};
+				}
+				const source = buffer.toString('utf8');
+				const lowered = lowercaseLuaSourceExceptStrings(source);
+				const loweredBuffer = Buffer.from(lowered, 'utf8');
+				return {
+					...meta,
+					buffer: loweredBuffer,
+				};
+			}
 			default:
 				return {
 					...meta,
@@ -1364,9 +1512,10 @@ export interface BootromBuildOptions {
 	forceBuild: boolean;
 	platform: RomPackerTarget;
 	romName: string;
+	caseInsensitiveLua: boolean;
 }
 
-async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; }): Promise<void> {
+async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolean; caseInsensitiveLua: boolean; }): Promise<void> {
 	const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
 	const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
 
@@ -1390,6 +1539,10 @@ async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolea
 		return;
 	}
 
+	const define = {
+		'__BOOTROM_CASE_INSENSITIVE_LUA__': options.caseInsensitiveLua ? 'true' : 'false',
+	};
+
 	const esbuildOptions: any = {
 		entryPoints: [romTsPath],
 		bundle: true,
@@ -1400,6 +1553,7 @@ async function buildBrowserBootrom(options: { debug: boolean; forceBuild: boolea
 		minify: !options.debug,
 		keepNames: true,
 		outfile: romJsPath,
+		define,
 	};
 	if (options.debug) {
 		esbuildOptions['sourcemap'] = 'inline';
@@ -1451,6 +1605,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 		'__BOOTROM_TARGET__': JSON.stringify(options.platform),
 		'__BOOTROM_ROM_NAME__': JSON.stringify(options.romName),
 		'__BOOTROM_DEBUG__': options.debug ? 'true' : 'false',
+		'__BOOTROM_CASE_INSENSITIVE_LUA__': options.caseInsensitiveLua ? 'true' : 'false',
 	};
 
 	const esbuildOptions: any = {
@@ -1478,7 +1633,7 @@ async function buildNodeBootrom(options: BootromBuildOptions): Promise<void> {
 
 export async function buildBootromScriptIfNewer(options: BootromBuildOptions): Promise<void> {
 	if (options.platform === 'browser') {
-		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild });
+		await buildBrowserBootrom({ debug: options.debug, forceBuild: options.forceBuild, caseInsensitiveLua: options.caseInsensitiveLua });
 		return;
 	}
 	if (options.platform === 'cli' || options.platform === 'headless') {

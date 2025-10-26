@@ -24,6 +24,8 @@ export interface RomPackerOptions {
 	usePkgTsconfig?: boolean;
 	/** When true, skip type-checking for the game. */
 	skipTypecheck?: boolean;
+	/** When true (default), rompacker folds Lua identifiers to lowercase for case-insensitive mode. */
+	caseInsensitiveLua: boolean;
 }
 
 export type resourcetype = asset_type | 'rommanifest';

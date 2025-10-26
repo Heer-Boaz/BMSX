@@ -4972,10 +4972,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		let segmentStartColumn = 0;
 		if (this.wordWrapEnabled) {
 			this.ensureVisualLines();
-			const visualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-			const segment = this.visualIndexToSegment(visualIndex);
-			if (segment) {
-				segmentStartColumn = segment.startColumn;
+			const override = this.getCursorVisualOverride(this.cursorRow, this.cursorColumn);
+			if (override) {
+				segmentStartColumn = override.segmentStartColumn;
+			} else {
+				const visualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
+				const segment = this.visualIndexToSegment(visualIndex);
+				if (segment) {
+					segmentStartColumn = segment.startColumn;
+				}
 			}
 		}
 		const segmentDisplayStart = this.columnToDisplay(highlight, segmentStartColumn);
@@ -7161,11 +7166,16 @@ private handleCompletionKeybindings(
 
 	protected positionToVisualIndex(row: number, column: number): number {
 		this.ensureVisualLines();
+		const override = this.getCursorVisualOverride(row, column);
+		if (override) {
+			return override.visualIndex;
+		}
 		return this.layout.positionToVisualIndex(this.lines, row, column);
 	}
 
 	protected setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 		this.ensureVisualLines();
+		this.clearCursorVisualOverride();
 		const visualLines = this.layout.getVisualLines();
 		if (visualLines.length === 0) {
 			this.cursorRow = 0;

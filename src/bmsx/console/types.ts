@@ -86,6 +86,7 @@ export type ConsoleModuleOptions = {
 	playerIndex: number;
 	viewport: ConsoleViewport;
 	moduleId: string;
+	caseInsensitiveLua?: boolean;
 };
 
 export type Vector2 = vec2;

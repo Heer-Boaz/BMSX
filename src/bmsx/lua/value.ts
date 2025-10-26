@@ -8,13 +8,16 @@ export interface LuaFunctionValue {
 }
 
 export class LuaTable {
+	private static caseInsensitiveKeys = true;
 	private readonly entries: Map<LuaValue, LuaValue>;
 	private readonly numericKeyCache: Map<number, LuaValue>;
+	private readonly stringKeyIndex: Map<string, string>;
 	private metatable: LuaTable | null;
 
 	constructor() {
 		this.entries = new Map<LuaValue, LuaValue>();
 		this.numericKeyCache = new Map<number, LuaValue>();
+		this.stringKeyIndex = new Map<string, string>();
 		this.metatable = null;
 	}
 
@@ -23,14 +26,16 @@ export class LuaTable {
 			this.delete(key);
 			return;
 		}
-		this.entries.set(key, value);
-		if (typeof key === 'number') {
-			this.numericKeyCache.set(key, value);
+		const canonicalKey = this.normalizeKeyForWrite(key);
+		this.entries.set(canonicalKey, value);
+		if (typeof canonicalKey === 'number') {
+			this.numericKeyCache.set(canonicalKey, value);
 		}
 	}
 
 	public get(key: LuaValue): LuaValue | null {
-		const value = this.entries.get(key);
+		const canonicalKey = this.normalizeKeyForRead(key);
+		const value = this.entries.get(canonicalKey);
 		if (value === undefined) {
 			return null;
 		}
@@ -38,14 +43,19 @@ export class LuaTable {
 	}
 
 	public delete(key: LuaValue): void {
-		if (typeof key === 'number') {
-			this.numericKeyCache.delete(key);
+		const canonicalKey = this.normalizeKeyForDelete(key);
+		if (typeof canonicalKey === 'number') {
+			this.numericKeyCache.delete(canonicalKey);
 		}
-		this.entries.delete(key);
+		this.entries.delete(canonicalKey);
+		if (LuaTable.caseInsensitiveKeys && typeof canonicalKey === 'string') {
+			this.stringKeyIndex.delete(canonicalKey.toLowerCase());
+		}
 	}
 
 	public has(key: LuaValue): boolean {
-		return this.entries.has(key);
+		const canonicalKey = this.normalizeKeyForRead(key);
+		return this.entries.has(canonicalKey);
 	}
 
 	public entriesArray(): ReadonlyArray<[LuaValue, LuaValue]> {
@@ -68,5 +78,59 @@ export class LuaTable {
 
 	public getMetatable(): LuaTable | null {
 		return this.metatable;
+	}
+
+	public static setCaseInsensitiveKeys(enabled: boolean): void {
+		LuaTable.caseInsensitiveKeys = enabled;
+	}
+
+	public static isCaseInsensitiveKeys(): boolean {
+		return LuaTable.caseInsensitiveKeys;
+	}
+
+	private normalizeKeyForWrite(key: LuaValue): LuaValue {
+		if (typeof key !== 'string') {
+			return key;
+		}
+		if (!LuaTable.caseInsensitiveKeys) {
+			return key;
+		}
+		const normalized = key.toLowerCase();
+		const existing = this.stringKeyIndex.get(normalized);
+		if (existing !== undefined) {
+			return existing;
+		}
+		this.stringKeyIndex.set(normalized, key);
+		return key;
+	}
+
+	private normalizeKeyForRead(key: LuaValue): LuaValue {
+		if (typeof key !== 'string') {
+			return key;
+		}
+		if (!LuaTable.caseInsensitiveKeys) {
+			return key;
+		}
+		const normalized = key.toLowerCase();
+		const existing = this.stringKeyIndex.get(normalized);
+		if (existing !== undefined) {
+			return existing;
+		}
+		return key;
+	}
+
+	private normalizeKeyForDelete(key: LuaValue): LuaValue {
+		if (typeof key !== 'string') {
+			return key;
+		}
+		if (!LuaTable.caseInsensitiveKeys) {
+			return key;
+		}
+		const normalized = key.toLowerCase();
+		const existing = this.stringKeyIndex.get(normalized);
+		if (existing !== undefined) {
+			return existing;
+		}
+		return key;
 	}
 }

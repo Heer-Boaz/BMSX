@@ -14,6 +14,7 @@ import type { Platform, InputEvt } from '../../../src/bmsx_hostplatform/platform
 declare const __BOOTROM_TARGET__: 'cli' | 'headless';
 declare const __BOOTROM_ROM_NAME__: string;
 declare const __BOOTROM_DEBUG__: boolean;
+declare const __BOOTROM_CASE_INSENSITIVE_LUA__: boolean;
 
 interface LaunchOptions {
 	romPath?: string;
@@ -243,14 +244,16 @@ async function readRomFile(filePath: string): Promise<ArrayBuffer> {
 async function loadRomPack(arrayBuffer: ArrayBuffer): Promise<RomPack> {
 	const zipped = await getZippedRomAndRomLabelFromBlob(arrayBuffer);
 	const zippedView = new Uint8Array(zipped.zipped_rom);
-const inflatedBytes = inflate(zippedView);
-const romBuffer = inflatedBytes.buffer.slice(inflatedBytes.byteOffset, inflatedBytes.byteOffset + inflatedBytes.byteLength);
-return loadResources(romBuffer, {
-	loadImageFromBuffer: async (buffer: ArrayBuffer): Promise<TextureSource> => {
-		const image = await loadImage(Buffer.from(buffer));
+	const inflatedBytes = inflate(zippedView);
+	const romBuffer = inflatedBytes.buffer.slice(inflatedBytes.byteOffset, inflatedBytes.byteOffset + inflatedBytes.byteLength);
+	const rompack = await loadResources(romBuffer, {
+		loadImageFromBuffer: async (buffer: ArrayBuffer): Promise<TextureSource> => {
+			const image = await loadImage(Buffer.from(buffer));
 			return image as TextureSource;
 		},
 	});
+	rompack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+	return rompack;
 }
 
 async function scheduleInputTimelineFromFile(filePath: string, frameIntervalMs: number, postInput: (evt: InputEvt) => void, logger: (msg: string) => void): Promise<void> {
@@ -434,6 +437,7 @@ async function main(): Promise<void> {
 		rompack,
 		platform,
 		viewHost: platform.gameviewHost,
+		caseInsensitiveLua: __BOOTROM_CASE_INSENSITIVE_LUA__,
 	};
 	if (debugFlag) {
 		bootArgs.debug = true;

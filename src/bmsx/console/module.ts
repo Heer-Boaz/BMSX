@@ -8,10 +8,13 @@ export function createBmsxConsoleModule(cart: BmsxConsoleCartridge, options: Con
 		id: options.moduleId,
 		ecs: { systems: [], nodes: [] },
 		onBoot(_world: World) {
+			const rompack = $.rompack;
+			const caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
 			BmsxConsoleRuntime.ensure({
 				cart,
 				playerIndex: options.playerIndex,
 				storage: $.platform.storage,
+				caseInsensitiveLua,
 			});
 		},
 		onTick(_world: World, _deltaMilliseconds: number) {

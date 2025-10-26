@@ -5,6 +5,7 @@ import { createAudioContext, startAudioOnIos } from './bootaudio';
 import { getSubBufferFromBufferWithMeta, getZippedRomAndRomLabelFromBlob, loadAssetList, loadResources, parseMetaFromBuffer } from './bootresources';
 
 const HAS_DOM_ENVIRONMENT = typeof document !== 'undefined' && document !== null;
+declare const __BOOTROM_CASE_INSENSITIVE_LUA__: boolean;
 const initialStartingGamepadIndex: number | null = null;
 
 declare global {
@@ -83,6 +84,7 @@ export const bootrom = {
 	enableOnscreenGamepad: false as BootArgs['enableOnscreenGamepad'],
 	platform: null as BootArgs['platform'],
 	viewHost: null as BootArgs['viewHost'],
+	caseInsensitiveLua: __BOOTROM_CASE_INSENSITIVE_LUA__,
 
 	/**
 	 * Sets the boot ROM pack.
@@ -174,6 +176,7 @@ export const bootrom = {
 			enableOnscreenGamepad: bootrom.enableOnscreenGamepad,
 			platform,
 			viewHost: bootrom.viewHost ?? undefined,
+			caseInsensitiveLua: __BOOTROM_CASE_INSENSITIVE_LUA__,
 		} as BootArgs).then(() => {
 			wrapup();
 			bootrom.rom = undefined;
@@ -265,10 +268,11 @@ export const bootrom = {
 					// @ts-ignore
 					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
-				.then(rom => loadResources(rom))
-				.then((loadResult: any) => {
-					loadedRomPack = loadResult;
-					return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
+			.then(rom => loadResources(rom))
+			.then((loadResult: any) => {
+				loadedRomPack = loadResult;
+				loadedRomPack.caseInsensitiveLua = __BOOTROM_CASE_INSENSITIVE_LUA__;
+				return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
 						replaceBMSXImgWithRomLabel();
 					});
 				})

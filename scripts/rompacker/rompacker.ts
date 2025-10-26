@@ -1,7 +1,7 @@
 // IMPORTANT: IMPORTS TO `bmsx/blabla` ARE NOT ALLOWED!!!!!! THIS WILL CAUSE PROBLEMS WITH .GLSL FILES BEING INCLUDED AND THE ROMPACKER CANNOT HANDLE THIS!!!!!
 
 import { validateAudioEventReferences } from './audioeventvalidator';
-import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
+import { buildBootromScriptIfNewer, buildGameHtmlAndManifest, buildResourceList, createAtlasses, deployToServer, esbuild, finalizeRompack, generateRomAssets, getNodeLauncherFilename, getResMetaList, getResourcesList, getRomManifest, isRebuildRequired, setAtlasFlag, setCaseInsensitiveLua, typecheckBeforeBuild, typecheckGameWithDts } from './rompacker-core';
 import type { RomManifest, RomPackerOptions, RomPackerTarget } from './rompacker.rompack';
 const term = require('terminal-kit').terminal;
 const _colors = require('colors');
@@ -23,6 +23,7 @@ const KNOWN_FLAGS = new Set<string>([
 	'--enginedts',
 	'--usepkgtsconfig',
 	'--platform',
+	'--preserve-lua-case',
 	'-h',
 	'--help',
 ]);
@@ -159,6 +160,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		writeOut(`  --buildreslist         Build resource list`, 'warning');
 		writeOut(`  --nodeploy             Skip deployment`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
+		writeOut(`  --preserve-lua-case      Disable Lua case folding (default: enabled)`, 'warning');
 		writeOut(`  --enginedts <dir>        Use engine declarations from <dir> to type-check the game`, 'warning');
 		writeOut(`  --usepkgtsconfig         Use per-game tsconfig.pkg.json for bundling/type-checking`, 'warning');
 		writeOut(`  --platform <target>      Target platform: browser (default), cli, or headless`, 'warning');
@@ -209,6 +211,25 @@ function parseOptions(args: string[]): RomPackerOptions {
 			throw new Error(`Unsupported platform target "${platformRaw}". Expected one of: browser, cli, headless.`);
 	}
 
+	const preserveLuaCase = seenFlags.has('--preserve-lua-case');
+	const caseInsensitiveEnv = process.env.ROM_CASE_INSENSITIVE_LUA;
+	let caseInsensitiveLua = true;
+	if (caseInsensitiveEnv && caseInsensitiveEnv.length > 0) {
+		const normalized = caseInsensitiveEnv.toLowerCase();
+		if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+			caseInsensitiveLua = false;
+		}
+		else if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+			caseInsensitiveLua = true;
+		}
+		else {
+			throw new Error(`Unsupported value "${caseInsensitiveEnv}" for ROM_CASE_INSENSITIVE_LUA. Expected one of: yes, no, true, false, 1, 0.`);
+		}
+	}
+	else if (preserveLuaCase) {
+		caseInsensitiveLua = false;
+	}
+
 	return {
 		rom_name,
 		title,
@@ -223,6 +244,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		usePkgTsconfig,
 		skipTypecheck,
 		platform,
+		caseInsensitiveLua,
 	};
 }
 
@@ -324,9 +346,10 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n'));
 
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas, enginedts, usePkgTsconfig, skipTypecheck, platform, caseInsensitiveLua } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 		setAtlasFlag(useTextureAtlas);
+		setCaseInsensitiveLua(caseInsensitiveLua);
 
 		// Define common assets path
 		const commonResPath = `./src/bmsx/res`
@@ -401,6 +424,11 @@ async function main() {
 		}
 		else {
 			writeOut(`Note: Texture atlas generation disabled via ${_colors.brightRed.bold('--textureatlas no')} \n`);
+		}
+		if (caseInsensitiveLua) {
+			writeOut(`Note: Lua case folding enabled (engine expects lowercase Lua identifiers).\n`);
+		} else {
+			writeOut(`Note: Lua case folding disabled via ${_colors.brightRed.bold('--preserve-lua-case')} or ROM_CASE_INSENSITIVE_LUA.\n`);
 		}
 		if (!deploy) {
 			writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')} \n`);
@@ -484,7 +512,7 @@ async function main() {
 				await progress?.taskCompleted();
 			}
 
-			await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name });
+		await buildBootromScriptIfNewer({ debug, forceBuild: force, platform, romName: rom_name, caseInsensitiveLua });
 			await progress?.taskCompleted();
 			if (platform === 'browser') {
 				await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
