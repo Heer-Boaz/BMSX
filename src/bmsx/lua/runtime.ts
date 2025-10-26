@@ -108,10 +108,6 @@ type ResolvedAssignmentTarget =
 	| { readonly kind: 'member'; readonly table: LuaTable; readonly key: string }
 	| { readonly kind: 'index'; readonly table: LuaTable; readonly index: LuaValue };
 
-type IteratorState = {
-	readonly entries: ReadonlyArray<[LuaValue, LuaValue]>;
-};
-
 type LabelMetadata = {
 	readonly index: number;
 	readonly statement: LuaLabelStatement;
@@ -160,6 +156,17 @@ export class LuaInterpreter {
 				this.reservedIdentifiers.add(name);
 			}
 		}
+	}
+
+	public parseChunk(source: string, chunkName: string): LuaChunk {
+		const lexer = new LuaLexer(source, chunkName);
+		const tokens = lexer.scanTokens();
+		const parser = new LuaParser(tokens, chunkName, source);
+		return parser.parseChunk();
+	}
+
+	public validateChunkIdentifiers(chunk: LuaChunk): void {
+		this.validateReservedIdentifiers(chunk.body);
 	}
 
 	public getGlobalEnvironment(): LuaEnvironment {
@@ -1425,6 +1432,16 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		throw this.runtimeError(message);
 	}
 
+	private formatErrorMessage(error: unknown): string {
+		if (error instanceof LuaRuntimeError || error instanceof LuaSyntaxError) {
+			return error.message;
+		}
+		if (error instanceof Error) {
+			return error.message;
+		}
+		return String(error);
+	}
+
 	private expectString(value: LuaValue, message: string, range: LuaSourceRange | null): string {
 		if (typeof value === 'string') {
 			return value;
@@ -1661,7 +1678,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			return [interpreter.toLuaString(value)];
 		}));
 
-		this.globals.set('tonumber', new LuaNativeFunction('tonumber', this, (_interpreter, args) => {
+		this.globals.set('tonumber', new LuaNativeFunction('tonumber', this, (interpreter, args) => {
 			if (args.length === 0) {
 				return [null];
 			}
@@ -1670,11 +1687,15 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				return [value];
 			}
 			if (typeof value === 'string') {
-				const converted = Number(value);
-				if (Number.isFinite(converted)) {
-					return [converted];
+				if (args.length >= 2) {
+					const baseValue = Math.floor(interpreter.expectNumber(args[1], 'tonumber base must be a number.', null));
+					if (baseValue >= 2 && baseValue <= 36) {
+						const parsed = parseInt(value.trim(), baseValue);
+						return Number.isFinite(parsed) ? [parsed] : [null];
+					}
 				}
-				return [null];
+				const converted = Number(value);
+				return Number.isFinite(converted) ? [converted] : [null];
 			}
 			return [null];
 		}));
@@ -1708,6 +1729,112 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				return [null];
 			}
 			return [metatable];
+		}));
+
+		this.globals.set('rawequal', new LuaNativeFunction('rawequal', this, (_interpreter, args) => {
+			if (args.length < 2) {
+				return [false];
+			}
+			return [args[0] === args[1]];
+		}));
+
+		this.globals.set('rawget', new LuaNativeFunction('rawget', this, (interpreter, args) => {
+			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+				throw interpreter.runtimeError('rawget expects a table as the first argument.');
+			}
+			const table = args[0] as LuaTable;
+			const key = args.length > 1 ? args[1] : null;
+			return [table.get(key)];
+		}));
+
+		this.globals.set('rawset', new LuaNativeFunction('rawset', this, (interpreter, args) => {
+			if (args.length < 2 || !(args[0] instanceof LuaTable)) {
+				throw interpreter.runtimeError('rawset expects a table as the first argument.');
+			}
+			const table = args[0] as LuaTable;
+			const key = args[1];
+			const value = args.length >= 3 ? args[2] : null;
+			table.set(key, value);
+			return [table];
+		}));
+
+		this.globals.set('pcall', new LuaNativeFunction('pcall', this, (interpreter, args) => {
+			const fn = interpreter.expectFunction(args.length > 0 ? args[0] : null, 'pcall expects a function.', null);
+			const functionArgs = args.slice(1);
+			try {
+				const result = fn.call(functionArgs);
+				return [true, ...result];
+			}
+			catch (error) {
+				const message = interpreter.formatErrorMessage(error);
+				return [false, message];
+			}
+		}));
+
+		this.globals.set('xpcall', new LuaNativeFunction('xpcall', this, (interpreter, args) => {
+			const fn = interpreter.expectFunction(args.length > 0 ? args[0] : null, 'xpcall expects a function.', null);
+			const messageHandler = interpreter.expectFunction(args.length > 1 ? args[1] : null, 'xpcall expects a message handler.', null);
+			const functionArgs = args.slice(2);
+			try {
+				const result = fn.call(functionArgs);
+				return [true, ...result];
+			}
+			catch (error) {
+				const formatted = interpreter.formatErrorMessage(error);
+				const handlerResult = messageHandler.call([formatted]);
+				const first = handlerResult.length > 0 ? handlerResult[0] : null;
+				return [false, first ?? null];
+			}
+		}));
+
+		this.globals.set('select', new LuaNativeFunction('select', this, (interpreter, args) => {
+			if (args.length === 0) {
+				throw interpreter.runtimeError('select expects at least one argument.');
+			}
+			const selector = args[0];
+			const valueCount = args.length - 1;
+			if (selector === '#') {
+				return [valueCount];
+			}
+			const index = Math.floor(interpreter.expectNumber(selector, 'select index must be a number.', null));
+			let start = index;
+			if (index < 0) {
+				start = valueCount + index + 1;
+			}
+			if (start < 1) {
+				start = 1;
+			}
+			const result: LuaValue[] = [];
+			for (let i = start; i <= valueCount; i += 1) {
+				result.push(args[i]);
+			}
+			return result;
+		}));
+
+		this.globals.set('next', new LuaNativeFunction('next', this, (interpreter, args) => {
+			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+				throw interpreter.runtimeError('next expects a table as the first argument.');
+			}
+			const table = args[0] as LuaTable;
+			const lastKey = args.length > 1 ? args[1] : null;
+			const entries = table.entriesArray();
+			if (entries.length === 0) {
+				return [null];
+			}
+			if (lastKey === null) {
+				const [firstKey, firstValue] = entries[0];
+				return [firstKey, firstValue];
+			}
+			let returnNext = false;
+			for (const [key, value] of entries) {
+				if (returnNext) {
+					return [key, value];
+				}
+				if (key === lastKey) {
+					returnNext = true;
+				}
+			}
+			return [null];
 		}));
 
 		const mathTable = new LuaTable();
@@ -1810,16 +1937,31 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		stringTable.set('sub', new LuaNativeFunction('string.sub', this, (interpreter, args) => {
 			const source = args.length > 0 ? args[0] : '';
 			const str = interpreter.expectString(source, 'string.sub expects a string.', null);
+			const length = str.length;
+			const normalizeIndex = (value: number): number => {
+				const integer = Math.floor(value);
+				if (integer > 0) {
+					return integer;
+				}
+				if (integer < 0) {
+					return length + integer + 1;
+				}
+				return 1;
+			};
 			const startArg = args.length > 1 ? interpreter.expectNumber(args[1], 'string.sub expects numeric indices.', null) : 1;
-			const endArg = args.length > 2 ? interpreter.expectNumber(args[2], 'string.sub expects numeric indices.', null) : str.length;
-			const startIndex = Math.max(1, Math.floor(startArg));
-			const endIndex = Math.floor(endArg);
+			const endArg = args.length > 2 ? interpreter.expectNumber(args[2], 'string.sub expects numeric indices.', null) : length;
+			let startIndex = normalizeIndex(startArg);
+			let endIndex = normalizeIndex(endArg);
+			if (startIndex < 1) {
+				startIndex = 1;
+			}
+			if (endIndex > length) {
+				endIndex = length;
+			}
 			if (endIndex < startIndex) {
 				return [''];
 			}
-			const zeroBasedStart = startIndex - 1;
-			const slice = str.substring(zeroBasedStart, endIndex);
-			return [slice];
+			return [str.substring(startIndex - 1, endIndex)];
 		}));
 		stringTable.set('find', new LuaNativeFunction('string.find', this, (interpreter, args) => {
 			const source = args.length > 0 ? args[0] : '';
@@ -1857,6 +1999,138 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			return [result];
 		}));
 		this.globals.set('string', stringTable);
+
+		const tableLibrary = new LuaTable();
+		tableLibrary.set('insert', new LuaNativeFunction('table.insert', this, (interpreter, args) => {
+			if (args.length < 2) {
+				throw interpreter.runtimeError('table.insert expects at least two arguments.');
+			}
+			const target = args[0];
+			if (!(target instanceof LuaTable)) {
+				throw interpreter.runtimeError('table.insert expects a table as the first argument.');
+			}
+			let position: number | null = null;
+			let value: LuaValue;
+			if (args.length === 2) {
+				value = args[1];
+			}
+			else {
+				position = Math.floor(interpreter.expectNumber(args[1], 'table.insert position must be a number.', null));
+				value = args[2];
+			}
+			interpreter.tableInsert(target, value, position);
+			return [];
+		}));
+
+		tableLibrary.set('remove', new LuaNativeFunction('table.remove', this, (interpreter, args) => {
+			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+				throw interpreter.runtimeError('table.remove expects a table as the first argument.');
+			}
+			const target = args[0] as LuaTable;
+			const position = args.length > 1 ? Math.floor(interpreter.expectNumber(args[1], 'table.remove position must be a number.', null)) : null;
+			const removed = interpreter.tableRemove(target, position);
+			return removed === null ? [] : [removed];
+		}));
+
+		tableLibrary.set('concat', new LuaNativeFunction('table.concat', this, (interpreter, args) => {
+			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+				throw interpreter.runtimeError('table.concat expects a table as the first argument.');
+			}
+			const target = args[0] as LuaTable;
+			const separator = args.length > 1 && typeof args[1] === 'string' ? args[1] : '';
+			const startIndexRaw = args.length > 2 ? interpreter.expectNumber(args[2], 'table.concat expects numeric start index.', null) : 1;
+			const endIndexRaw = args.length > 3 ? interpreter.expectNumber(args[3], 'table.concat expects numeric end index.', null) : target.numericLength();
+			const length = target.numericLength();
+			const normalizeIndex = (value: number, fallback: number): number => {
+				const integer = Math.floor(value);
+				if (integer > 0) {
+					return integer;
+				}
+				if (integer < 0) {
+					return length + integer + 1;
+				}
+				return fallback;
+			};
+			const startIndex = Math.max(1, Math.min(length, normalizeIndex(startIndexRaw, 1)));
+			const endIndex = Math.max(0, Math.min(length, normalizeIndex(endIndexRaw, length)));
+			if (endIndex < startIndex) {
+				return [''];
+			}
+			const parts: string[] = [];
+			for (let index = startIndex; index <= endIndex; index += 1) {
+				const value = target.get(index);
+				parts.push(value === null ? '' : interpreter.toLuaString(value));
+			}
+			return [parts.join(separator)];
+		}));
+
+		tableLibrary.set('pack', new LuaNativeFunction('table.pack', this, (_interpreter, args) => {
+			const table = new LuaTable();
+			for (let index = 0; index < args.length; index += 1) {
+				table.set(index + 1, args[index]);
+			}
+			table.set('n', args.length);
+			return [table];
+		}));
+
+		tableLibrary.set('unpack', new LuaNativeFunction('table.unpack', this, (interpreter, args) => {
+			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+				throw interpreter.runtimeError('table.unpack expects a table as the first argument.');
+			}
+			const target = args[0] as LuaTable;
+			const length = target.numericLength();
+			const startIndexRaw = args.length > 1 ? interpreter.expectNumber(args[1], 'table.unpack expects numeric start index.', null) : 1;
+			const endIndexRaw = args.length > 2 ? interpreter.expectNumber(args[2], 'table.unpack expects numeric end index.', null) : length;
+			const normalizeIndex = (value: number, fallback: number): number => {
+				const integer = Math.floor(value);
+				if (integer > 0) {
+					return integer;
+				}
+				if (integer < 0) {
+					return length + integer + 1;
+				}
+				return fallback;
+			};
+			const startIndex = Math.max(1, Math.min(length, normalizeIndex(startIndexRaw, 1)));
+			const endIndex = Math.max(0, Math.min(length, normalizeIndex(endIndexRaw, length)));
+			if (endIndex < startIndex) {
+				return [];
+			}
+			const result: LuaValue[] = [];
+			for (let index = startIndex; index <= endIndex; index += 1) {
+				result.push(target.get(index));
+			}
+			return result;
+		}));
+
+		tableLibrary.set('sort', new LuaNativeFunction('table.sort', this, (interpreter, args) => {
+			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+				throw interpreter.runtimeError('table.sort expects a table as the first argument.');
+			}
+			const target = args[0] as LuaTable;
+			const comparator = args.length > 1 && args[1] !== null
+				? interpreter.expectFunction(args[1], 'table.sort comparator must be a function.', null)
+				: null;
+			const length = target.numericLength();
+			const values: LuaValue[] = [];
+			for (let index = 1; index <= length; index += 1) {
+				values.push(target.get(index));
+			}
+			values.sort((left, right) => {
+				if (comparator) {
+					const response = comparator.call([left, right]);
+					const first = response.length > 0 ? response[0] : null;
+					return first === true ? -1 : 1;
+				}
+				return interpreter.defaultSortCompare(left, right);
+			});
+			for (let index = 1; index <= length; index += 1) {
+				target.set(index, values[index - 1] ?? null);
+			}
+			return [target];
+		}));
+
+		this.globals.set('table', tableLibrary);
 
 		const osTable = new LuaTable();
 		osTable.set('time', new LuaNativeFunction('os.time', this, (interpreter, args) => {
@@ -1928,28 +2202,8 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				}
 				return Array.from(result);
 			}
-			const state: IteratorState = {
-				entries: table.entriesArray(),
-			};
-			const iterator = new LuaNativeFunction('pairs_iterator', interpreter, (_selfInterpreter, iteratorArgs) => {
-				const [, lastKey] = iteratorArgs;
-				let startIndex = 0;
-				const entries = state.entries;
-				if (lastKey !== null) {
-					for (let index = 0; index < entries.length; index += 1) {
-						const entry = entries[index];
-						if (entry[0] === lastKey) {
-							startIndex = index + 1;
-							break;
-						}
-					}
-				}
-				if (startIndex >= entries.length) {
-					return [null];
-				}
-				const entry = entries[startIndex];
-				return [entry[0], entry[1]];
-			});
+			const nextBuiltin = this.globals.get('next');
+			const iterator = this.expectFunction(nextBuiltin, 'next function unavailable.', null);
 			return [iterator, table, null];
 		}));
 
@@ -2015,6 +2269,49 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				throw interpreter.runtimeError(`deserialize failed: ${message}`);
 			}
 		}));
+	}
+
+	private tableInsert(table: LuaTable, value: LuaValue, position: number | null): void {
+		const length = table.numericLength();
+		let targetIndex = position === null ? length + 1 : Math.max(1, Math.min(length + 1, position));
+		for (let index = length; index >= targetIndex; index -= 1) {
+			const current = table.get(index);
+			table.set(index + 1, current);
+		}
+		table.set(targetIndex, value);
+	}
+
+	private tableRemove(table: LuaTable, position: number | null): LuaValue {
+		const length = table.numericLength();
+		if (length === 0) {
+			return null;
+		}
+		let targetIndex = position === null ? length : position!;
+		if (targetIndex < 1 || targetIndex > length) {
+			return null;
+		}
+		const removed = table.get(targetIndex);
+		for (let index = targetIndex; index < length; index += 1) {
+			const next = table.get(index + 1);
+			table.set(index, next);
+		}
+		table.delete(length);
+		return removed;
+	}
+
+	private defaultSortCompare(left: LuaValue, right: LuaValue): number {
+		if (typeof left === 'number' && typeof right === 'number') {
+			if (left === right) {
+				return 0;
+			}
+			return left < right ? -1 : 1;
+		}
+		const leftText = this.toLuaString(left);
+		const rightText = this.toLuaString(right);
+		if (leftText === rightText) {
+			return 0;
+		}
+		return leftText < rightText ? -1 : 1;
 	}
 
 	private runtimeError(message: string): LuaRuntimeError {
