@@ -4367,7 +4367,16 @@ export class ConsoleCartEditor {
 				} else if (pointer.valid && pointer.insideViewport && this.pointInRect(pointer.viewportX, pointer.viewportY, bounds)) {
 					allowScroll = true;
 				}
-				if (allowScroll && this.problemsPanel.handlePointerWheel(direction, steps)) {
+				const stepsAbs = Math.max(1, Math.round(Math.abs(steps)));
+				if (this.problemsPanel.isFocused()) {
+					// Match quick-open/symbol behavior: focused wheel moves selection
+					for (let i = 0; i < stepsAbs; i += 1) {
+						void this.problemsPanel.handleKeyboardCommand(direction > 0 ? 'down' : 'up');
+					}
+					playerInput.consumeAction('pointer_wheel');
+					return;
+				}
+				if (allowScroll && this.problemsPanel.handlePointerWheel(direction, stepsAbs)) {
 					playerInput.consumeAction('pointer_wheel');
 					return;
 				}

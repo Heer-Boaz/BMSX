@@ -278,10 +278,7 @@ export class ProblemsPanelController {
             return false;
         }
         this.scrollIndex = newScroll;
-        if (this.selectionIndex !== -1) {
-            const bounds = this.cachedLayout!;
-            this.ensureSelectionWithinView(bounds, this.cachedPanelWidth());
-        }
+        // Do not force selection into view on wheel scroll; allow free scrolling
         return true;
     }
 
