@@ -23,7 +23,7 @@ import * as constants from './constants';
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
 import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput } from './diagnostics';
-import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
+import { isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
 	applyInlineFieldEditing,
@@ -43,6 +43,7 @@ import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, rend
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
+import { ConsoleCartEditorTextOps } from './console_cart_editor_textops';
 import { ConsoleCodeLayout } from './code_layout';
 import type {
 	CachedHighlight,
@@ -88,7 +89,6 @@ import {
 	isKeyJustPressed as isKeyJustPressedGlobal,
 	isKeyTyped as isKeyTypedGlobal,
 	isModifierPressed as isModifierPressedGlobal,
-	resetKeyPressRecords,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
 
@@ -97,8 +97,8 @@ const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'sta
 
 // Intellisense data is handled by CompletionController
 
-export class ConsoleCartEditor {
-	private readonly playerIndex: number;
+export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
+	protected readonly playerIndex: number;
 	private readonly metadata: BmsxConsoleMetadata;
 	private readonly loadSourceFn: () => string;
 	private readonly saveSourceFn: (source: string) => Promise<void>;
@@ -183,22 +183,9 @@ export class ConsoleCartEditor {
 	};
 	private pendingActionPrompt: PendingActionPrompt | null = null;
 	private active = false;
-	private lines: string[] = [''];
-	private cursorRow = 0;
-	private cursorColumn = 0;
-	private scrollRow = 0;
-	private scrollColumn = 0;
-	private dirty = false;
 	private blinkTimer = 0;
 	private cursorVisible = true;
-	private desiredColumn = 0;
-	private desiredDisplayOffset = 0;
-	private selectionAnchor: Position | null = null;
 	private warnNonMonospace = false;
-	private undoStack: EditorSnapshot[] = [];
-	private redoStack: EditorSnapshot[] = [];
-	private lastHistoryKey: string | null = null;
-	private lastHistoryTimestamp = 0;
 	private pointerSelecting = false;
 	private pointerPrimaryWasPressed = false;
 	private pointerAuxWasPressed = false;
@@ -222,7 +209,7 @@ export class ConsoleCartEditor {
 	private readonly tabDirtyMarkerAssetId = 'msx_6b_font_ctrl_bel';
 	private tabDirtyMarkerWidth: number | null = null;
 	private tabDirtyMarkerHeight: number | null = null;
-	private cursorRevealSuspended = false;
+	protected cursorRevealSuspended = false;
 	private searchActive = false;
 	private searchVisible = false;
 	private searchQuery = '';
@@ -284,11 +271,12 @@ export class ConsoleCartEditor {
 	private cachedVisibleRowCount = 1;
 	private cachedVisibleColumnCount = 1;
 	private dimCrtInEditor: boolean = false; // Default value; can be changed via settings
-	private wordWrapEnabled = true;
+	protected wordWrapEnabled = true;
 	private lastPointerRowResolution: { visualIndex: number; segment: VisualLineSegment | null } | null = null;
 	private readonly completion: CompletionController;
 
 	constructor(options: ConsoleEditorOptions) {
+		super();
 		this.playerIndex = options.playerIndex;
 		this.metadata = options.metadata;
 		this.loadSourceFn = options.loadSource;
@@ -794,22 +782,6 @@ export class ConsoleCartEditor {
 		for (const context of this.codeTabContexts.values()) {
 			context.executionStopRow = null;
 		}
-	}
-
-	private adjustExecutionStopHighlightAfterDeletion(startRow: number, endRow: number): void {
-		const existingRow = this.executionStopRow;
-		if (existingRow === null) {
-			return;
-		}
-		if (existingRow < startRow) {
-			return;
-		}
-		if (existingRow <= endRow) {
-			this.setExecutionStopHighlight(null);
-			return;
-		}
-		const shift = endRow - startRow + 1;
-		this.setExecutionStopHighlight(existingRow - shift);
 	}
 
 	private syncRuntimeErrorOverlayFromContext(context: CodeTabContext | null): void {
@@ -4551,91 +4523,8 @@ export class ConsoleCartEditor {
 		return true;
 	}
 
-	private indentSelectionOrLine(): void {
-		const range = this.getLineRangeForMovement();
-		this.adjustIndentationRange(range.startRow, range.endRow, 'increase');
-	}
+	// Indentation adjustments delegated to base class implementation.
 
-	private unindentSelectionOrLine(): void {
-		const range = this.getLineRangeForMovement();
-		this.adjustIndentationRange(range.startRow, range.endRow, 'decrease');
-	}
-
-	private adjustIndentationRange(startRow: number, endRow: number, direction: 'increase' | 'decrease'): void {
-		if (startRow < 0 || endRow < startRow || this.lines.length === 0) {
-			return;
-		}
-		if (direction === 'decrease') {
-			let canDeindent = false;
-			for (let row = startRow; row <= endRow; row++) {
-				const indentMatch = this.lines[row].match(/^[\t ]+/);
-				if (indentMatch && indentMatch[0].length > 0) {
-					canDeindent = true;
-					break;
-				}
-			}
-			if (!canDeindent) {
-				return;
-			}
-		}
-		const undoKey = direction === 'increase' ? 'indent-lines' : 'unindent-lines';
-		this.prepareUndo(undoKey, false);
-		let changed = false;
-		for (let row = startRow; row <= endRow; row++) {
-			const line = this.lines[row];
-			if (direction === 'increase') {
-				this.lines[row] = '\t' + line;
-				this.invalidateLine(row);
-				if (this.cursorRow === row) {
-					this.cursorColumn += 1;
-				}
-				if (this.selectionAnchor && this.selectionAnchor.row === row) {
-					this.selectionAnchor.column += 1;
-				}
-				changed = true;
-				continue;
-			}
-			const indentMatch = line.match(/^[\t ]+/);
-			if (!indentMatch) {
-				continue;
-			}
-			const indent = indentMatch[0];
-			if (indent.length === 0) {
-				continue;
-			}
-			const removal = indent.charAt(0) === '\t' ? 1 : Math.min(constants.TAB_SPACES, indent.length);
-			if (removal <= 0) {
-				continue;
-			}
-			this.lines[row] = line.slice(removal);
-			this.invalidateLine(row);
-			if (this.cursorRow === row) {
-				this.cursorColumn = Math.max(0, this.cursorColumn - removal);
-			}
-			if (this.selectionAnchor && this.selectionAnchor.row === row) {
-				this.selectionAnchor.column = Math.max(0, this.selectionAnchor.column - removal);
-			}
-			changed = true;
-		}
-		if (!changed) {
-			return;
-		}
-		this.clampCursorColumn();
-		if (this.selectionAnchor) {
-			if (this.selectionAnchor.row < 0 || this.selectionAnchor.row >= this.lines.length) {
-				this.selectionAnchor = null;
-			} else {
-				const anchorLineLength = this.lines[this.selectionAnchor.row].length;
-				if (this.selectionAnchor.column > anchorLineLength) {
-					this.selectionAnchor.column = anchorLineLength;
-				}
-			}
-		}
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.revealCursor();
-	}
 
 	private toggleLineComments(): void {
 		const range = this.getLineRangeForMovement();
@@ -4779,7 +4668,7 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private revealCursor(): void {
+	protected revealCursor(): void {
 		this.cursorRevealSuspended = false;
 		this.ensureCursorVisible();
 	}
@@ -5019,247 +4908,9 @@ export class ConsoleCartEditor {
 		this.scrollRow = targetRow;
 	}
 
-	private maximumLineLength(): number {
-		let maxLength = 0;
-		for (let i = 0; i < this.lines.length; i += 1) {
-			const length = this.lines[i].length;
-			if (length > maxLength) {
-				maxLength = length;
-			}
-		}
-		return maxLength;
-	}
+	// Cursor movement handled in ConsoleCartEditorTextOps base class.
 
-	private computeMaximumScrollColumn(): number {
-		const maxLength = this.maximumLineLength();
-		const visible = this.visibleColumnCount();
-		const limit = maxLength - visible;
-		if (limit <= 0) {
-			return 0;
-		}
-		return limit;
-	}
-
-	private setCursorPosition(row: number, column: number): void {
-		let targetRow = row;
-		if (targetRow < 0) {
-			targetRow = 0;
-		}
-		const lastRow = this.lines.length - 1;
-		if (targetRow > lastRow) {
-			targetRow = lastRow >= 0 ? lastRow : 0;
-		}
-		let targetColumn = column;
-		if (targetColumn < 0) {
-			targetColumn = 0;
-		}
-		const lineLength = this.lines[targetRow].length;
-		if (targetColumn > lineLength) {
-			targetColumn = lineLength;
-		}
-		this.cursorRow = targetRow;
-		this.cursorColumn = targetColumn;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.revealCursor();
-		this.onCursorMoved();
-	}
-
-	private moveCursorVertical(delta: number): void {
-		this.ensureVisualLines();
-		const visualCount = this.getVisualLineCount();
-		if (visualCount === 0) {
-			return;
-		}
-		const currentIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-		const targetIndex = clamp(currentIndex + delta, 0, visualCount - 1);
-		const desired = this.desiredColumn;
-		const desiredDisplay = this.desiredDisplayOffset;
-		this.setCursorFromVisualIndex(targetIndex, desired, desiredDisplay);
-		this.resetBlink();
-		this.revealCursor();
-		this.onCursorMoved();
-	}
-
-	private moveCursorHorizontal(delta: number): void {
-		if (delta === 0) {
-			return;
-		}
-		this.ensureVisualLines();
-		const visualCount = this.getVisualLineCount();
-		if (visualCount === 0) {
-			return;
-		}
-		const visualIndex = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-		const segment = this.visualIndexToSegment(visualIndex);
-		if (!segment) {
-			return;
-		}
-		const line = this.lines[segment.row] ?? '';
-		if (delta < 0) {
-			if (this.cursorColumn > segment.startColumn) {
-				this.cursorColumn -= 1;
-			} else {
-				let moved = false;
-				if (this.wordWrapEnabled && visualIndex > 0) {
-					const prevSegment = this.visualIndexToSegment(visualIndex - 1);
-					if (prevSegment && prevSegment.row === segment.row) {
-						this.cursorRow = prevSegment.row;
-						const prevLine = this.lines[prevSegment.row] ?? '';
-						const prevEnd = Math.max(prevSegment.endColumn, prevSegment.startColumn);
-						const hasMoreBefore = prevEnd > prevSegment.startColumn;
-						const targetColumn = hasMoreBefore && prevEnd < prevLine.length
-							? Math.max(prevSegment.startColumn, prevEnd - 1)
-							: Math.min(prevEnd, prevLine.length);
-						this.cursorColumn = clamp(targetColumn, 0, prevLine.length);
-						moved = true;
-					}
-				}
-				if (!moved) {
-					if (segment.row > 0) {
-						this.cursorRow = segment.row - 1;
-						this.cursorColumn = this.lines[this.cursorRow].length;
-					}
-				}
-			}
-		} else { // delta > 0
-			if (this.cursorColumn < segment.endColumn && this.cursorColumn < line.length) {
-				this.cursorColumn += 1;
-			} else {
-				let moved = false;
-				if (this.wordWrapEnabled && visualIndex < visualCount - 1) {
-					const nextSegment = this.visualIndexToSegment(visualIndex + 1);
-					if (nextSegment && nextSegment.row === segment.row) {
-						this.cursorRow = nextSegment.row;
-						const nextLine = this.lines[nextSegment.row] ?? '';
-						this.cursorColumn = clamp(nextSegment.startColumn, 0, nextLine.length);
-						moved = true;
-					}
-				}
-				if (!moved) {
-					if (segment.row < this.lines.length - 1) {
-						this.cursorRow = segment.row + 1;
-						this.cursorColumn = 0;
-					}
-				}
-			}
-		}
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.revealCursor();
-		this.onCursorMoved();
-	}
-
-	private moveWordLeft(): void {
-		const destination = this.findWordLeft(this.cursorRow, this.cursorColumn);
-		this.cursorRow = destination.row;
-		this.cursorColumn = destination.column;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.revealCursor();
-		this.onCursorMoved();
-	}
-
-	private findWordLeft(row: number, column: number): { row: number; column: number } {
-		if (this.lines.length === 0) {
-			return { row: 0, column: 0 };
-		}
-		let currentRow = row;
-		let currentColumn = column;
-		let step = this.stepLeft(currentRow, currentColumn);
-		if (!step) {
-			return { row: 0, column: 0 };
-		}
-		currentRow = step.row;
-		currentColumn = step.column;
-		let currentChar = this.charAt(currentRow, currentColumn);
-		while (isWhitespace(currentChar)) {
-			const previous = this.stepLeft(currentRow, currentColumn);
-			if (!previous) {
-				return { row: currentRow, column: currentColumn };
-			}
-			currentRow = previous.row;
-			currentColumn = previous.column;
-			currentChar = this.charAt(currentRow, currentColumn);
-		}
-		const word = isWordChar(currentChar);
-		while (true) {
-			const previous = this.stepLeft(currentRow, currentColumn);
-			if (!previous) {
-				break;
-			}
-			const previousChar = this.charAt(previous.row, previous.column);
-			if (isWhitespace(previousChar) || isWordChar(previousChar) !== word) {
-				break;
-			}
-			currentRow = previous.row;
-			currentColumn = previous.column;
-		}
-		return { row: currentRow, column: currentColumn };
-	}
-
-	private findWordRight(row: number, column: number): { row: number; column: number } {
-		let currentRow = row;
-		let currentColumn = column;
-		let step = this.stepRight(currentRow, currentColumn);
-		if (!step) {
-			const lastRow = this.lines.length - 1;
-			return { row: lastRow, column: this.lines[lastRow].length };
-		}
-		currentRow = step.row;
-		currentColumn = step.column;
-		let currentChar = this.charAt(currentRow, currentColumn);
-		while (isWhitespace(currentChar)) {
-			const next = this.stepRight(currentRow, currentColumn);
-			if (!next) {
-				const lastRow = this.lines.length - 1;
-				return { row: lastRow, column: this.lines[lastRow].length };
-			}
-			currentRow = next.row;
-			currentColumn = next.column;
-			currentChar = this.charAt(currentRow, currentColumn);
-		}
-		const word = isWordChar(currentChar);
-		while (true) {
-			const next = this.stepRight(currentRow, currentColumn);
-			if (!next) {
-				const lastRow = this.lines.length - 1;
-				currentRow = lastRow;
-				currentColumn = this.lines[lastRow].length;
-				break;
-			}
-			const nextChar = this.charAt(next.row, next.column);
-			if (isWhitespace(nextChar) || isWordChar(nextChar) !== word) {
-				currentRow = next.row;
-				currentColumn = next.column;
-				break;
-			}
-			currentRow = next.row;
-			currentColumn = next.column;
-		}
-		while (isWhitespace(this.charAt(currentRow, currentColumn))) {
-			const next = this.stepRight(currentRow, currentColumn);
-			if (!next) {
-				const lastRow = this.lines.length - 1;
-				currentRow = lastRow;
-				currentColumn = this.lines[lastRow].length;
-				break;
-			}
-			currentRow = next.row;
-			currentColumn = next.column;
-		}
-		return { row: currentRow, column: currentColumn };
-	}
-
-	private moveWordRight(): void {
-		const destination = this.findWordRight(this.cursorRow, this.cursorColumn);
-		this.cursorRow = destination.row;
-		this.cursorColumn = destination.column;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.revealCursor();
-		this.onCursorMoved();
-	}
+	// Word navigation implemented in base class.
 
 	// === InputController host wrappers ===
 	// Snapshot helpers used by controllers to bracket mutations
@@ -5271,12 +4922,6 @@ export class ConsoleCartEditor {
 	private recordSnapshotPost(_key: string): void {
 		// Break coalescing to avoid merging unrelated edits
 		this.breakUndoSequence();
-	}
-
-	private deleteSelection(): void {
-		if (!this.hasSelection()) return;
-		this.prepareUndo('delete-selection', false);
-		this.replaceSelectionWith('');
 	}
 
 	private deleteCharLeft(): void {
@@ -5291,139 +4936,7 @@ export class ConsoleCartEditor {
 		this.insertLineBreak();
 	}
 
-	private moveCursorLeft(byWord: boolean, select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) {
-			this.ensureSelectionAnchor(previous);
-		} else if (this.hasSelection()) {
-			this.collapseSelectionTo('start');
-			this.breakUndoSequence();
-			return;
-		}
-		if (byWord) this.moveWordLeft(); else this.moveCursorHorizontal(-1);
-		if (!select) this.clearSelection();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-	private moveCursorRight(byWord: boolean, select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) {
-			this.ensureSelectionAnchor(previous);
-		} else if (this.hasSelection()) {
-			this.collapseSelectionTo('end');
-			this.breakUndoSequence();
-			return;
-		}
-		if (byWord) this.moveWordRight(); else this.moveCursorHorizontal(1);
-		if (!select) this.clearSelection();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-	private moveCursorUp(select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) {
-			this.ensureSelectionAnchor(previous);
-		} else if (this.hasSelection()) {
-			// Match existing behavior: collapse to start on Up
-			this.collapseSelectionTo('start');
-			this.breakUndoSequence();
-			return;
-		}
-		this.moveCursorVertical(-1);
-		if (!select) this.clearSelection();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-	private moveCursorDown(select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) {
-			this.ensureSelectionAnchor(previous);
-		} else if (this.hasSelection()) {
-			// Match existing behavior: collapse to end on Down
-			this.collapseSelectionTo('end');
-			this.breakUndoSequence();
-			return;
-		}
-		this.moveCursorVertical(1);
-		if (!select) this.clearSelection();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-	private moveCursorHome(select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
-		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
-		if (ctrlDown) {
-			this.cursorRow = 0;
-			this.cursorColumn = 0;
-		} else {
-			this.cursorColumn = 0;
-		}
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-	private moveCursorEnd(select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
-		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
-		if (ctrlDown) {
-			const lastRow = this.lines.length - 1;
-			if (lastRow < 0) {
-				this.cursorRow = 0;
-				this.cursorColumn = 0;
-			} else {
-				this.cursorRow = lastRow;
-				this.cursorColumn = this.lines[lastRow].length;
-			}
-		} else {
-			this.cursorColumn = this.currentLine().length;
-		}
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-	private pageUp(select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
-		const rows = this.visibleRowCount();
-		this.ensureVisualLines();
-		const visualCount = this.getVisualLineCount();
-		const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-		const targetVisual = clamp(currentVisual - rows, 0, Math.max(0, visualCount - 1));
-		this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
-		this.resetBlink();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-	private pageDown(select: boolean): void {
-		const previous: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (select) this.ensureSelectionAnchor(previous); else this.clearSelection();
-		const rows = this.visibleRowCount();
-		this.ensureVisualLines();
-		const visualCount = this.getVisualLineCount();
-		const currentVisual = this.positionToVisualIndex(this.cursorRow, this.cursorColumn);
-		const targetVisual = clamp(currentVisual + rows, 0, Math.max(0, visualCount - 1));
-		this.setCursorFromVisualIndex(targetVisual, this.desiredColumn, this.desiredDisplayOffset);
-		this.resetBlink();
-		this.breakUndoSequence();
-		this.revealCursor();
-	}
-
-
-
-	private resetKeyPressGuards(): void {
-		resetKeyPressRecords();
-	}
+	// cursor/grid manipulation now resides in ConsoleCartEditorTextOps base class.
 
 	private applySearchFieldText(value: string, moveCursorToEnd: boolean): void {
 		this.searchQuery = value;
@@ -5492,7 +5005,7 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private updateDesiredColumn(): void {
+	protected updateDesiredColumn(): void {
 		this.desiredColumn = this.cursorColumn;
 		this.desiredDisplayOffset = 0;
 		if (this.cursorRow < 0 || this.cursorRow >= this.lines.length) {
@@ -5515,182 +5028,6 @@ export class ConsoleCartEditor {
 		if (this.desiredDisplayOffset < 0) {
 			this.desiredDisplayOffset = 0;
 		}
-	}
-
-	private insertText(text: string): void {
-		if (text.length === 0) {
-			return;
-		}
-		const coalesce = text.length === 1;
-		this.prepareUndo('insert-text', coalesce);
-		if (this.deleteSelectionIfPresent()) {
-			// Selection replaced; proceed to insert at new caret.
-		}
-		const line = this.currentLine();
-		const before = line.slice(0, this.cursorColumn);
-		const after = line.slice(this.cursorColumn);
-		this.lines[this.cursorRow] = before + text + after;
-		this.invalidateLine(this.cursorRow);
-		this.recordEditContext('insert', text);
-		this.cursorColumn += text.length;
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.clearSelection();
-		this.revealCursor();
-	}
-
-	private insertLineBreak(): void {
-		this.prepareUndo('insert-line-break', false);
-		this.deleteSelectionIfPresent();
-		const line = this.currentLine();
-		const before = line.slice(0, this.cursorColumn);
-		const after = line.slice(this.cursorColumn);
-		this.lines[this.cursorRow] = before;
-		const indentation = this.extractIndentation(before);
-		const newLine = indentation + after;
-		this.lines.splice(this.cursorRow + 1, 0, newLine);
-		this.invalidateAllHighlights();
-		this.cursorRow += 1;
-		this.cursorColumn = indentation.length;
-		this.recordEditContext('insert', '\n');
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.clearSelection();
-		this.revealCursor();
-	}
-
-	private extractIndentation(value: string): string {
-		let result = '';
-		for (let i = 0; i < value.length; i++) {
-			const ch = value.charAt(i);
-			if (ch === ' ' || ch === '\t') {
-				result += ch;
-			} else {
-				break;
-			}
-		}
-		return result;
-	}
-
-	private backspace(): void {
-		if (!this.hasSelection() && this.cursorColumn === 0 && this.cursorRow === 0) {
-			return;
-		}
-		this.prepareUndo('backspace', true);
-		if (this.deleteSelectionIfPresent()) {
-			return;
-		}
-		if (this.cursorColumn > 0) {
-			const line = this.currentLine();
-			const removedChar = line.charAt(this.cursorColumn - 1);
-			const before = line.slice(0, this.cursorColumn - 1);
-			const after = line.slice(this.cursorColumn);
-			this.lines[this.cursorRow] = before + after;
-			this.invalidateLine(this.cursorRow);
-			this.cursorColumn -= 1;
-			this.recordEditContext('delete', removedChar);
-			this.markTextMutated();
-			this.resetBlink();
-			this.updateDesiredColumn();
-			this.revealCursor();
-			return;
-		}
-		if (this.cursorRow === 0) {
-			return;
-		}
-		const previousLine = this.lines[this.cursorRow - 1];
-		const current = this.currentLine();
-		this.lines[this.cursorRow - 1] = previousLine + current;
-		this.lines.splice(this.cursorRow, 1);
-		this.invalidateAllHighlights();
-		this.recordEditContext('delete', '\n');
-		this.cursorRow -= 1;
-		this.cursorColumn = previousLine.length;
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.revealCursor();
-	}
-
-	private deleteActiveLines(): void {
-		if (this.lines.length === 0) {
-			return;
-		}
-		const range = this.getLineRangeForMovement();
-		const maxRowIndex = this.lines.length - 1;
-		const startRow = clamp(range.startRow, 0, maxRowIndex);
-		const endRow = clamp(range.endRow, startRow, maxRowIndex);
-		const deleteCount = endRow - startRow + 1;
-		if (deleteCount <= 0) {
-			return;
-		}
-		this.prepareUndo('delete-active-lines', false);
-		this.lines.splice(startRow, deleteCount);
-		if (this.lines.length === 0) {
-			this.lines.push('');
-		}
-		this.adjustExecutionStopHighlightAfterDeletion(startRow, endRow);
-		this.invalidateAllHighlights();
-		this.cursorRow = Math.min(startRow, this.lines.length - 1);
-		this.cursorColumn = 0;
-		this.selectionAnchor = null;
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.ensureCursorVisible();
-	}
-
-	private deleteForward(): void {
-		const line = this.currentLine();
-		if (!this.hasSelection() && this.cursorColumn >= line.length && this.cursorRow >= this.lines.length - 1) {
-			return;
-		}
-		this.prepareUndo('delete-forward', true);
-		if (this.deleteSelectionIfPresent()) {
-			return;
-		}
-		const updatedLine = this.currentLine();
-		if (this.cursorColumn < updatedLine.length) {
-			const before = updatedLine.slice(0, this.cursorColumn);
-			const after = updatedLine.slice(this.cursorColumn + 1);
-			const removedChar = updatedLine.charAt(this.cursorColumn);
-			this.lines[this.cursorRow] = before + after;
-			this.invalidateLine(this.cursorRow);
-			this.recordEditContext('delete', removedChar);
-			this.markTextMutated();
-			this.updateDesiredColumn();
-			this.revealCursor();
-			return;
-		}
-		if (this.cursorRow >= this.lines.length - 1) {
-			return;
-		}
-		const nextLine = this.lines[this.cursorRow + 1];
-		this.lines[this.cursorRow] = updatedLine + nextLine;
-		this.lines.splice(this.cursorRow + 1, 1);
-		this.invalidateAllHighlights();
-		this.recordEditContext('delete', '\n');
-		this.markTextMutated();
-		this.updateDesiredColumn();
-		this.revealCursor();
-	}
-
-	private deleteWordBackward(): void {
-		this.prepareUndo('delete-word-backward', false);
-		if (this.deleteSelectionIfPresent()) {
-			return;
-		}
-		if (this.cursorRow === 0 && this.cursorColumn === 0) {
-			return;
-		}
-		const target = this.findWordLeft(this.cursorRow, this.cursorColumn);
-		if (target.row === this.cursorRow && target.column === this.cursorColumn) {
-			return;
-		}
-		this.selectionAnchor = { row: target.row, column: target.column };
-		this.replaceSelectionWith('');
 	}
 
 	private async save(): Promise<void> {
@@ -5722,7 +5059,7 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private showMessage(text: string, color: number, durationSeconds: number): void {
+	protected showMessage(text: string, color: number, durationSeconds: number): void {
 		this.message.text = text;
 		this.message.color = color;
 		this.message.timer = durationSeconds;
@@ -5751,216 +5088,6 @@ export class ConsoleCartEditor {
 		if (overlay.timer <= 0) {
 			this.setActiveRuntimeErrorOverlay(null);
 		}
-	}
-
-	private stepLeft(row: number, column: number): { row: number; column: number } | null {
-		if (column > 0) {
-			return { row, column: column - 1 };
-		}
-		if (row > 0) {
-			return { row: row - 1, column: this.lines[row - 1].length };
-		}
-		return null;
-	}
-
-	private stepRight(row: number, column: number): { row: number; column: number } | null {
-		const length = this.lines[row].length;
-		if (column < length) {
-			return { row, column: column + 1 };
-		}
-		if (row < this.lines.length - 1) {
-			return { row: row + 1, column: 0 };
-		}
-		return null;
-	}
-
-	private charAt(row: number, column: number): string {
-		if (row < 0 || row >= this.lines.length) {
-			return '';
-		}
-		const line = this.lines[row];
-		if (column < 0 || column >= line.length) {
-			return '';
-		}
-		return line.charAt(column);
-	}
-
-	private hasSelection(): boolean {
-		return this.getSelectionRange() !== null;
-	}
-
-	private ensureSelectionAnchor(anchor: Position): void {
-		if (!this.selectionAnchor) {
-			this.selectionAnchor = { row: anchor.row, column: anchor.column };
-		}
-	}
-
-	private clearSelection(): void {
-		this.selectionAnchor = null;
-	}
-
-	private comparePositions(a: Position, b: Position): number {
-		if (a.row !== b.row) {
-			return a.row - b.row;
-		}
-		return a.column - b.column;
-	}
-
-	private getSelectionRange(): { start: Position; end: Position } | null {
-		const anchor = this.selectionAnchor;
-		if (!anchor) {
-			return null;
-		}
-		const cursor: Position = { row: this.cursorRow, column: this.cursorColumn };
-		if (anchor.row === cursor.row && anchor.column === cursor.column) {
-			return null;
-		}
-		if (this.comparePositions(cursor, anchor) < 0) {
-			return { start: cursor, end: anchor };
-		}
-		return { start: anchor, end: cursor };
-	}
-
-	private collapseSelectionTo(target: 'start' | 'end'): void {
-		const range = this.getSelectionRange();
-		if (!range) {
-			return;
-		}
-		const destination = target === 'start' ? range.start : range.end;
-		this.cursorRow = destination.row;
-		this.cursorColumn = destination.column;
-		this.selectionAnchor = null;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.revealCursor();
-	}
-
-
-
-	private deleteSelectionIfPresent(): boolean {
-		if (!this.hasSelection()) {
-			return false;
-		}
-		this.replaceSelectionWith('');
-		return true;
-	}
-
-	private replaceSelectionWith(text: string): void {
-		const range = this.getSelectionRange();
-		if (!range) {
-			return;
-		}
-		this.recordEditContext(text.length === 0 ? 'delete' : 'replace', text);
-		const { start, end } = range;
-		const startLine = this.lines[start.row];
-		const endLine = this.lines[end.row];
-		const leading = startLine.slice(0, start.column);
-		const trailing = endLine.slice(end.column);
-		const fragments = text.split('\n');
-		if (fragments.length === 1) {
-			const combined = leading + fragments[0] + trailing;
-			this.lines.splice(start.row, end.row - start.row + 1, combined);
-			this.cursorRow = start.row;
-			this.cursorColumn = leading.length + fragments[0].length;
-		}
-		else {
-			const firstLine = leading + fragments[0];
-			const lastFragment = fragments[fragments.length - 1];
-			const lastLine = lastFragment + trailing;
-			const middle = fragments.slice(1, -1);
-			this.lines.splice(start.row, end.row - start.row + 1, firstLine, ...middle, lastLine);
-			this.cursorRow = start.row + fragments.length - 1;
-			this.cursorColumn = lastFragment.length;
-		}
-		this.invalidateAllHighlights();
-		this.selectionAnchor = null;
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.revealCursor();
-	}
-
-	private selectWordAtPosition(row: number, column: number): void {
-		if (row < 0 || row >= this.lines.length) {
-			return;
-		}
-		const line = this.lines[row];
-		if (line.length === 0) {
-			this.selectionAnchor = null;
-			this.cursorRow = row;
-			this.cursorColumn = 0;
-			this.updateDesiredColumn();
-			this.resetBlink();
-			this.revealCursor();
-			return;
-		}
-		let index = column;
-		if (index >= line.length) {
-			index = line.length - 1;
-		}
-		if (index < 0) {
-			index = 0;
-		}
-		let start = index;
-		let end = index + 1;
-		const current = line.charAt(index);
-		if (isWordChar(current)) {
-			while (start > 0 && isWordChar(line.charAt(start - 1))) {
-				start -= 1;
-			}
-			while (end < line.length && isWordChar(line.charAt(end))) {
-				end += 1;
-			}
-		} else if (isWhitespace(current)) {
-			while (start > 0 && isWhitespace(line.charAt(start - 1))) {
-				start -= 1;
-			}
-			while (end < line.length && isWhitespace(line.charAt(end))) {
-				end += 1;
-			}
-		} else {
-			while (start > 0) {
-				const previous = line.charAt(start - 1);
-				if (isWordChar(previous) || isWhitespace(previous)) {
-					break;
-				}
-				start -= 1;
-			}
-			while (end < line.length) {
-				const next = line.charAt(end);
-				if (isWordChar(next) || isWhitespace(next)) {
-					break;
-				}
-				end += 1;
-			}
-		}
-		if (end < start) {
-			end = start;
-		}
-		this.selectionAnchor = { row, column: start };
-		this.cursorRow = row;
-		this.cursorColumn = end;
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.revealCursor();
-	}
-
-	private getSelectionText(): string | null {
-		const range = this.getSelectionRange();
-		if (!range) {
-			return null;
-		}
-		const { start, end } = range;
-		if (start.row === end.row) {
-			return this.lines[start.row].slice(start.column, end.column);
-		}
-		const parts: string[] = [];
-		parts.push(this.lines[start.row].slice(start.column));
-		for (let row = start.row + 1; row < end.row; row++) {
-			parts.push(this.lines[row]);
-		}
-		parts.push(this.lines[end.row].slice(0, end.column));
-		return parts.join('\n');
 	}
 
 	private async copySelectionToClipboard(): Promise<void> {
@@ -6043,43 +5170,7 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private insertClipboardText(text: string): void {
-		const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-		const fragments = normalized.split('\n');
-		const currentLine = this.currentLine();
-		const before = currentLine.slice(0, this.cursorColumn);
-		const after = currentLine.slice(this.cursorColumn);
-		if (fragments.length === 1) {
-			const fragment = fragments[0];
-			this.lines[this.cursorRow] = before + fragment + after;
-			this.invalidateLine(this.cursorRow);
-			this.cursorColumn = before.length + fragment.length;
-			this.recordEditContext('insert', fragment);
-		} else {
-			const firstLine = before + fragments[0];
-			const lastIndex = fragments.length - 1;
-			const lastFragment = fragments[lastIndex];
-			const newLines: string[] = [];
-			newLines.push(firstLine);
-			for (let i = 1; i < lastIndex; i++) {
-				newLines.push(fragments[i]);
-			}
-			newLines.push(lastFragment + after);
-			const insertionRow = this.cursorRow;
-			this.lines.splice(insertionRow, 1, ...newLines);
-			this.invalidateAllHighlights();
-			this.cursorRow = insertionRow + lastIndex;
-			this.cursorColumn = lastFragment.length;
-			this.recordEditContext('insert', normalized);
-		}
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.clearSelection();
-		this.revealCursor();
-	}
-
-	private captureSnapshot(): EditorSnapshot {
+	protected captureSnapshot(): EditorSnapshot {
 		const linesCopy = this.lines.slice();
 		let selectionCopy: Position | null = null;
 		if (this.selectionAnchor) {
@@ -6096,7 +5187,7 @@ export class ConsoleCartEditor {
 		};
 	}
 
-	private restoreSnapshot(snapshot: EditorSnapshot, preserveSelection: boolean = false): void {
+	protected restoreSnapshot(snapshot: EditorSnapshot, preserveSelection: boolean = false): void {
 		const preservedSelection = preserveSelection && this.selectionAnchor
 			? { row: this.selectionAnchor.row, column: this.selectionAnchor.column }
 			: null;
@@ -6124,102 +5215,6 @@ export class ConsoleCartEditor {
 		this.cursorRevealSuspended = false;
 		this.updateActiveContextDirtyFlag();
 		this.ensureCursorVisible();
-	}
-
-	private prepareUndo(key: string, allowMerge: boolean): void {
-		const now = Date.now();
-		const shouldMerge = allowMerge
-			&& this.lastHistoryKey === key
-			&& now - this.lastHistoryTimestamp <= constants.UNDO_COALESCE_INTERVAL_MS;
-		if (shouldMerge) {
-			this.lastHistoryTimestamp = now;
-			return;
-		}
-		const snapshot = this.captureSnapshot();
-		if (this.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-			this.undoStack.shift();
-		}
-		this.undoStack.push(snapshot);
-		this.redoStack.length = 0;
-		this.lastHistoryTimestamp = now;
-		if (allowMerge) {
-			this.lastHistoryKey = key;
-		} else {
-			this.lastHistoryKey = null;
-		}
-	}
-
-	private undo(): void {
-		if (this.undoStack.length === 0) {
-			return;
-		}
-		const snapshot = this.undoStack.pop();
-		if (!snapshot) {
-			return;
-		}
-		const current = this.captureSnapshot();
-		if (this.redoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-			this.redoStack.shift();
-		}
-		this.redoStack.push(current);
-		this.restoreSnapshot(snapshot, true);
-		this.breakUndoSequence();
-	}
-
-	private redo(): void {
-		if (this.redoStack.length === 0) {
-			return;
-		}
-		const snapshot = this.redoStack.pop();
-		if (!snapshot) {
-			return;
-		}
-		const current = this.captureSnapshot();
-		if (this.undoStack.length >= constants.UNDO_HISTORY_LIMIT) {
-			this.undoStack.shift();
-		}
-		this.undoStack.push(current);
-		this.restoreSnapshot(snapshot, true);
-		this.breakUndoSequence();
-	}
-
-	private breakUndoSequence(): void {
-		this.lastHistoryKey = null;
-		this.lastHistoryTimestamp = 0;
-	}
-
-	private moveSelectionLines(delta: number): void {
-		if (delta === 0) return;
-		const range = this.getLineRangeForMovement();
-		if (delta < 0 && range.startRow === 0) return;
-		if (delta > 0 && range.endRow >= this.lines.length - 1) return;
-		this.prepareUndo('move-lines', false);
-		const count = range.endRow - range.startRow + 1;
-		const block = this.lines.splice(range.startRow, count);
-		const targetIndex = range.startRow + delta;
-		this.lines.splice(targetIndex, 0, ...block);
-		this.invalidateAllHighlights();
-		this.cursorRow += delta;
-		if (this.selectionAnchor) {
-			this.selectionAnchor = { row: this.selectionAnchor.row + delta, column: this.selectionAnchor.column };
-		}
-		this.clampCursorColumn();
-		this.markTextMutated();
-		this.resetBlink();
-		this.updateDesiredColumn();
-		this.revealCursor();
-	}
-
-	private getLineRangeForMovement(): { startRow: number; endRow: number } {
-		const range = this.getSelectionRange();
-		if (!range) {
-			return { startRow: this.cursorRow, endRow: this.cursorRow };
-		}
-		let endRow = range.end.row;
-		if (range.end.column === 0 && endRow > range.start.row) {
-			endRow -= 1;
-		}
-		return { startRow: range.start.row, endRow };
 	}
 
 	private drawTopBar(api: BmsxConsoleApi): void {
@@ -8130,11 +7125,11 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		return this.layout.getCachedHighlight(this.lines, row);
 	}
 
-	private invalidateLine(row: number): void {
+	protected invalidateLine(row: number): void {
 		this.layout.invalidateHighlight(row);
 	}
 
-	private invalidateAllHighlights(): void {
+	protected invalidateAllHighlights(): void {
 		this.layout.invalidateAllHighlights();
 	}
 
@@ -8160,11 +7155,11 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.textVersion += 1;
 	}
 
-	private markDiagnosticsDirty(): void {
+	protected markDiagnosticsDirty(): void {
 		this.diagnosticsDirty = true;
 	}
 
-	private markTextMutated(): void {
+	protected markTextMutated(): void {
 		this.dirty = true;
 		this.markDiagnosticsDirty();
 		this.bumpTextVersion();
@@ -8173,7 +7168,7 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.handlePostEditMutation();
 	}
 
-	private recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
+	protected recordEditContext(kind: 'insert' | 'delete' | 'replace', text: string): void {
 		this.pendingEditContext = { kind, text };
 	}
 
@@ -8194,7 +7189,7 @@ private handleCompletionKeybindings(
 	return this.completion.handleKeybindings(keyboard, deltaSeconds, shiftDown, ctrlDown, altDown, metaDown);
 }
 
-	private onCursorMoved(): void {
+	protected onCursorMoved(): void {
 		this.completion.onCursorMoved();
 	}
 
@@ -8202,7 +7197,7 @@ private handleCompletionKeybindings(
 		this.layout.markVisualLinesDirty();
 	}
 
-	private ensureVisualLines(): void {
+	protected ensureVisualLines(): void {
 		this.scrollRow = this.layout.ensureVisualLines({
 			lines: this.lines,
 			wordWrapEnabled: this.wordWrapEnabled,
@@ -8222,22 +7217,22 @@ private handleCompletionKeybindings(
 		return Math.max(this.charAdvance, available - 2);
 	}
 
-	private getVisualLineCount(): number {
+	protected getVisualLineCount(): number {
 		this.ensureVisualLines();
 		return this.layout.getVisualLineCount();
 	}
 
-	private visualIndexToSegment(index: number): VisualLineSegment | null {
+	protected visualIndexToSegment(index: number): VisualLineSegment | null {
 		this.ensureVisualLines();
 		return this.layout.visualIndexToSegment(index);
 	}
 
-	private positionToVisualIndex(row: number, column: number): number {
+	protected positionToVisualIndex(row: number, column: number): number {
 		this.ensureVisualLines();
 		return this.layout.positionToVisualIndex(this.lines, row, column);
 	}
 
-	private setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
+	protected setCursorFromVisualIndex(visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
 		this.ensureVisualLines();
 		const visualLines = this.layout.getVisualLines();
 		if (visualLines.length === 0) {
@@ -8758,63 +7753,15 @@ private handleCompletionKeybindings(
 		}
 	}
 
-	private visibleRowCount(): number {
+	protected visibleRowCount(): number {
 		return this.cachedVisibleRowCount > 0 ? this.cachedVisibleRowCount : 1;
 	}
 
-	private visibleColumnCount(): number {
+	protected visibleColumnCount(): number {
 		return this.cachedVisibleColumnCount > 0 ? this.cachedVisibleColumnCount : 1;
 	}
 
-	private currentLine(): string {
-		if (this.cursorRow < 0 || this.cursorRow >= this.lines.length) {
-			return '';
-		}
-		return this.lines[this.cursorRow];
-	}
-
-	private clampCursorRow(): void {
-		if (this.cursorRow < 0) {
-			this.cursorRow = 0;
-		}
-		if (this.cursorRow >= this.lines.length) {
-			this.cursorRow = this.lines.length - 1;
-		}
-	}
-
-	private clampCursorColumn(): void {
-		const line = this.currentLine();
-		if (this.cursorColumn < 0) {
-			this.cursorColumn = 0;
-			return;
-		}
-		const length = line.length;
-		if (this.cursorColumn > length) {
-			this.cursorColumn = length;
-		}
-	}
-
-	private clampSelectionPosition(position: Position | null): Position | null {
-		if (!position || this.lines.length === 0) {
-			return null;
-		}
-		let row = position.row;
-		if (row < 0) {
-			row = 0;
-		} else if (row >= this.lines.length) {
-			row = this.lines.length - 1;
-		}
-		const line = this.lines[row] ?? '';
-		let column = position.column;
-		if (column < 0) {
-			column = 0;
-		} else if (column > line.length) {
-			column = line.length;
-		}
-		return { row, column };
-	}
-
-	private resetBlink(): void {
+	protected resetBlink(): void {
 		this.blinkTimer = 0;
 		this.cursorVisible = true;
 	}
