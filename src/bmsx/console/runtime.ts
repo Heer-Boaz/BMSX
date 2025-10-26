@@ -25,7 +25,7 @@ import { registerBehaviorTreeDefinition, unregisterBehaviorTreeBuilder, setup_bt
 import type { BehaviorTreeDefinition } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
-import { ConsoleCartEditor } from './ide/console_cart_editor.ts';
+import { ConsoleCartEditor } from './ide/console_cart_editor';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -107,12 +107,9 @@ export class BmsxConsoleRuntime extends Service {
 	private static readonly HOVER_VALUE_MAX_SERIALIZED_LINES = 200;
 private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaBuiltinDescriptor> = [
 	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
-	{ name: 'collectgarbage', params: ['opt?', 'arg?'], signature: 'collectgarbage([opt [, arg]])' },
-	{ name: 'dofile', params: ['filename?'], signature: 'dofile([filename])' },
 	{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
 	{ name: 'getmetatable', params: ['object'], signature: 'getmetatable(object)' },
 	{ name: 'ipairs', params: ['table'], signature: 'ipairs(t)' },
-	{ name: 'load', params: ['chunk', 'chunkname?', 'mode?', 'env?'], signature: 'load(chunk [, chunkname [, mode [, env]]])' },
 	{ name: 'next', params: ['table', 'index?'], signature: 'next(table [, index])' },
 	{ name: 'pairs', params: ['table'], signature: 'pairs(t)' },
 	{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
@@ -120,7 +117,6 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
 	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
 	{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },
-	{ name: 'require', params: ['modname'], signature: 'require(modname)' },
 	{ name: 'select', params: ['index', '...'], signature: 'select(index, ...)' },
 	{ name: 'setmetatable', params: ['table', 'metatable'], signature: 'setmetatable(table, metatable)' },
 	{ name: 'tonumber', params: ['value', 'base?'], signature: 'tonumber(value [, base])' },
@@ -128,9 +124,11 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	{ name: 'type', params: ['value'], signature: 'type(value)' },
 	{ name: 'xpcall', params: ['func', 'msgh', 'arg...'], signature: 'xpcall(f, msgh, ...)' },
 	{ name: 'table.concat', params: ['list', 'separator?', 'start?', 'end?'], signature: 'table.concat(list [, sep [, i [, j]]])' },
+	{ name: 'table.insert', params: ['list', 'pos?', 'value'], signature: 'table.insert(list [, pos], value)' },
 	{ name: 'table.pack', params: ['...'], signature: 'table.pack(...)' },
-	{ name: 'table.unpack', params: ['list', 'i?', 'j?'], signature: 'table.unpack(list [, i [, j]])' },
+	{ name: 'table.remove', params: ['list', 'pos?'], signature: 'table.remove(list [, pos])' },
 	{ name: 'table.sort', params: ['list', 'comp?'], signature: 'table.sort(list [, comp])' },
+	{ name: 'table.unpack', params: ['list', 'i?', 'j?'], signature: 'table.unpack(list [, i [, j]])' },
 ];
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
@@ -213,11 +211,16 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	private luaDrawFunction: LuaFunctionValue | null = null;
 	private luaChunkName: string | null = null;
 	private frameCounter = 0;
-	private luaHandleToObject = new Map<number, unknown>();
+	private luaHandleToObject = new Map<number, WeakRef<object>>();
 	private luaObjectToHandle = new WeakMap<object, number>();
 	private luaObjectWrapperCache: WeakMap<object, LuaTable> = new WeakMap<object, LuaTable>();
 	private handleMethodCache = new Map<number, Map<string, LuaFunctionValue>>();
 	private nextLuaHandleId = 1;
+	private freeHandles: number[] = [];
+	private readonly freeHandleSet: Set<number> = new Set<number>();
+	private readonly handleFinalizer: FinalizationRegistry<number> | null = typeof FinalizationRegistry !== 'undefined'
+		? new FinalizationRegistry<number>((handle) => { this.releaseHandle(handle); })
+		: null;
 	private luaSnapshotSave: LuaFunctionValue | null = null;
 	private luaSnapshotLoad: LuaFunctionValue | null = null;
 	private luaRuntimeFailed = false;
@@ -591,21 +594,21 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			? (typeof this.luaProgram.assetId === 'string' ? this.luaProgram.assetId : null)
 			: null;
 		this.editor = new ConsoleCartEditor({
-			playerIndex: this.playerIndex,
-			metadata: this.cart.meta,
-			viewport,
-			loadSource: () => this.getEditorSource(),
-			saveSource: (source: string) => this.saveLuaProgram(source),
-			listResources: () => this.getResourceDescriptors(),
-			loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
-			saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
-			createLuaResource: (request) => this.createLuaResource(request),
-			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
-			primaryAssetId,
-			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
-			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
-			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
-		});
+        			playerIndex: this.playerIndex,
+        			metadata: this.cart.meta,
+        			viewport,
+        			loadSource: () => this.getEditorSource(),
+        			saveSource: (source: string) => this.saveLuaProgram(source),
+        			listResources: () => this.getResourceDescriptors(),
+        			loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
+        			saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
+        			createLuaResource: (request) => this.createLuaResource(request),
+        			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
+        			primaryAssetId,
+        			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
+        			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
+        			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
+        		});
 		this.flushLuaWarnings();
 	}
 
@@ -1150,6 +1153,8 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		this.luaObjectToHandle = new WeakMap<object, number>();
 		this.luaObjectWrapperCache = new WeakMap<object, LuaTable>();
 		this.nextLuaHandleId = 1;
+		this.freeHandles = [];
+		this.freeHandleSet.clear();
 		this.disposeLuaServices();
 	}
 
@@ -1188,7 +1193,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			if ('assetId' in program && typeof program.assetId === 'string' && program.assetId.length > 0) {
 				programAssetId = program.assetId;
 			}
-			this.cacheCurrentChunkEnvironment(chunkName, programAssetId);
+			this.cacheChunkEnvironment(interpreter, chunkName, programAssetId);
 		}
 		catch (error) {
 			if (debugTiming) {
@@ -1347,7 +1352,8 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			const interpreter = createLuaInterpreter();
 			this.registerApiBuiltins(interpreter);
 			interpreter.setReservedIdentifiers(this.apiFunctionNames);
-			interpreter.execute(source, chunkName);
+			const chunk = interpreter.parseChunk(source, chunkName);
+			interpreter.validateChunkIdentifiers(chunk);
 		}
 		finally {
 			this.luaChunkName = previousChunk;
@@ -1434,7 +1440,6 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		this.apiFunctionNames.clear();
 
 		const env = interpreter.getGlobalEnvironment();
-		const apiTable = new LuaTable();
 		const members = this.collectApiMembers();
 		for (const { name, kind, descriptor } of members) {
 			if (descriptor === undefined) {
@@ -1469,7 +1474,6 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 					}
 				});
 				env.set(name, native);
-				apiTable.set(name, native);
 				this.apiFunctionNames.add(name);
 				this.registerLuaBuiltin({ name, params, signature });
 				continue;
@@ -1491,77 +1495,12 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 					}
 				});
 				env.set(name, native);
-				apiTable.set(name, native);
 				this.apiFunctionNames.add(name);
 			}
 		}
-		env.set('api', apiTable);
 
 		this.exposeEngineObjects(env, interpreter);
 
-		this.registerLuaTableLibrary(env, interpreter);
-	}
-
-	private registerLuaTableLibrary(env: LuaEnvironment, interpreter: LuaInterpreter): void {
-		const tableLibrary = new LuaTable();
-
-		this.registerLuaBuiltin({
-			name: 'table.insert',
-			params: ['list', 'pos?', 'value'],
-			signature: 'table.insert(list [, pos], value)',
-		});
-		tableLibrary.set('insert', createLuaNativeFunction('table.insert', interpreter, (_lua, args) => {
-			if (args.length < 2) {
-				throw this.createApiRuntimeError(interpreter, '[table.insert] requires at least 2 arguments.');
-			}
-			const target = args[0];
-			if (!(target instanceof LuaTable)) {
-				throw this.createApiRuntimeError(interpreter, '[table.insert] target must be a table.');
-			}
-			let position: number | null = null;
-			let value: LuaValue;
-			if (args.length === 2) {
-				value = args[1];
-			}
-			else {
-				const positionValue = args[1];
-				if (typeof positionValue !== 'number' || !Number.isInteger(positionValue)) {
-					throw this.createApiRuntimeError(interpreter, '[table.insert] position must be an integer.');
-				}
-				position = positionValue;
-				value = args[2];
-			}
-			this.luaTableInsert(target, value, position);
-			return [];
-		}));
-
-		this.registerLuaBuiltin({
-			name: 'table.remove',
-			params: ['list', 'pos?'],
-			signature: 'table.remove(list [, pos])',
-		});
-		tableLibrary.set('remove', createLuaNativeFunction('table.remove', interpreter, (_lua, args) => {
-			if (args.length === 0) {
-				throw this.createApiRuntimeError(interpreter, '[table.remove] requires a table argument.');
-			}
-			const target = args[0];
-			if (!(target instanceof LuaTable)) {
-				throw this.createApiRuntimeError(interpreter, '[table.remove] target must be a table.');
-			}
-			let position: number | null = null;
-			if (args.length >= 2) {
-				const positionValue = args[1];
-				if (typeof positionValue !== 'number' || !Number.isInteger(positionValue)) {
-					throw this.createApiRuntimeError(interpreter, '[table.remove] position must be an integer.');
-				}
-				position = positionValue;
-			}
-			const removed = this.luaTableRemove(target, position);
-			return removed === null ? [] : [removed];
-		}));
-
-		env.set('table', tableLibrary);
-		this.apiFunctionNames.add('table');
 	}
 
 	private registerLuaBuiltin(metadata: ConsoleLuaBuiltinDescriptor): void {
@@ -1702,7 +1641,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			let results: LuaValue[];
 			try {
 				results = interpreter.execute(source, chunkName);
-				this.cacheCurrentChunkEnvironment(chunkName, assetId);
+				this.cacheChunkEnvironment(interpreter, chunkName, assetId);
 			}
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -1777,7 +1716,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			let executionResults: LuaValue[];
 			try {
 				executionResults = interpreter.execute(source, chunkName);
-				this.cacheCurrentChunkEnvironment(chunkName, assetId);
+				this.cacheChunkEnvironment(interpreter, chunkName, assetId);
 			}
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -1862,7 +1801,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			let executionResults: LuaValue[];
 			try {
 				executionResults = interpreter.execute(source, chunkName);
-				this.cacheCurrentChunkEnvironment(chunkName, assetId);
+				this.cacheChunkEnvironment(interpreter, chunkName, assetId);
 			}
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -2311,9 +2250,14 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (existing !== undefined) {
 			return existing;
 		}
-		const handle = this.nextLuaHandleId++;
+		const recycled = this.freeHandles.pop();
+		const handle = recycled !== undefined ? recycled : this.nextLuaHandleId++;
+		if (recycled !== undefined) {
+			this.freeHandleSet.delete(handle);
+		}
 		this.luaObjectToHandle.set(value, handle);
-		this.luaHandleToObject.set(handle, value);
+		this.luaHandleToObject.set(handle, new WeakRef<object>(value));
+		this.handleFinalizer?.register(value, handle);
 		return handle;
 	}
 
@@ -2349,6 +2293,22 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		}
 	}
 
+	private releaseHandle(handle: number): void {
+		const reference = this.luaHandleToObject.get(handle);
+		if (reference) {
+			const target = typeof reference.deref === 'function' ? reference.deref() : null;
+			if (target) {
+				return;
+			}
+		}
+		this.luaHandleToObject.delete(handle);
+		this.handleMethodCache.delete(handle);
+		if (!this.freeHandleSet.has(handle)) {
+			this.freeHandles.push(handle);
+			this.freeHandleSet.add(handle);
+		}
+	}
+
 	private resolveObjectTypeName(value: object): string {
 		const descriptor = (value as { constructor?: unknown }).constructor;
 		if (typeof descriptor === 'function') {
@@ -2361,14 +2321,13 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	}
 
 	private expectHandleObject(handle: number, typeName: string, member: string, interpreter: LuaInterpreter): object {
-		const instance = this.luaHandleToObject.get(handle);
-		if (instance === undefined) {
+		const reference = this.luaHandleToObject.get(handle);
+		const instance = reference && typeof reference.deref === 'function' ? reference.deref() : null;
+		if (!instance) {
+			this.releaseHandle(handle);
 			throw this.createApiRuntimeError(interpreter, `[${typeName}.${member}] Object handle is no longer valid.`);
 		}
-		if (typeof instance !== 'object' || instance === null) {
-			throw this.createApiRuntimeError(interpreter, `[${typeName}.${member}] Object handle resolved to an invalid target.`);
-		}
-		return instance as object;
+		return instance;
 	}
 
 	private attachHandleMetatable(table: LuaTable, handle: number, typeName: string, interpreter: LuaInterpreter): void {
@@ -2529,10 +2488,12 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (value instanceof LuaTable) {
 			const handleValue = value.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
 			if (typeof handleValue === 'number') {
-				const instance = this.luaHandleToObject.get(handleValue);
-				if (instance !== undefined) {
+				const reference = this.luaHandleToObject.get(handleValue);
+				const instance = reference && typeof reference.deref === 'function' ? reference.deref() : null;
+				if (instance) {
 					return instance;
 				}
+				this.releaseHandle(handleValue);
 			}
 			const entries = value.entriesArray();
 			if (entries.length === 0) {
@@ -2597,17 +2558,24 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		}
 		if (typeof value === 'object') {
 			const ensured = this.ensureInterpreter(interpreter);
-			if (this.isPlainObject(value)) {
+			if (value instanceof Map) {
 				const table = new LuaTable();
-				for (const key of Object.keys(value as Record<string, unknown>)) {
-					const descriptor = Object.getOwnPropertyDescriptor(value, key);
-					if (descriptor && typeof descriptor.get === 'function' && descriptor.value === undefined) {
-						continue;
-					}
-					const entryValue = (value as Record<string, unknown>)[key];
-					table.set(key, this.jsToLua(entryValue, ensured));
+				for (const [key, entry] of value.entries()) {
+					table.set(this.jsToLua(key, ensured), this.jsToLua(entry, ensured));
 				}
 				return table;
+			}
+			if (value instanceof Set) {
+				const table = new LuaTable();
+				let index = 1;
+				for (const entry of value.values()) {
+					table.set(index, this.jsToLua(entry, ensured));
+					index += 1;
+				}
+				return table;
+			}
+			if (this.isPlainObject(value)) {
+				return this.wrapEngineObject(value as object, ensured);
 			}
 			return this.wrapEngineObject(value as object, ensured);
 		}
@@ -2960,11 +2928,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		this.luaChunkResourceMap.set(key, info);
 	}
 
-	private cacheCurrentChunkEnvironment(chunkName: string, assetId: string | null): void {
-		const interpreter = this.luaInterpreter;
-		if (!interpreter) {
-			return;
-		}
+	private cacheChunkEnvironment(interpreter: LuaInterpreter, chunkName: string, assetId: string | null): void {
 		const environment = interpreter.getChunkEnvironment();
 		if (!environment) {
 			return;
@@ -3737,56 +3701,4 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		return this.luaBuiltinMetadata.has(name);
 	}
 
-	private luaTableInsert(table: LuaTable, value: LuaValue, position: number | null): void {
-		const sequence = this.getLuaTableSequence(table);
-		if (position === null) {
-			sequence.push(value);
-		}
-		else {
-			const index = Math.max(1, position);
-			const zeroBased = Math.min(index, sequence.length + 1) - 1;
-			sequence.splice(zeroBased, 0, value);
-		}
-		this.setLuaTableSequence(table, sequence);
-	}
-
-	private luaTableRemove(table: LuaTable, position: number | null): LuaValue | null {
-		const sequence = this.getLuaTableSequence(table);
-		if (sequence.length === 0) {
-			return null;
-		}
-		let index: number;
-		if (position === null) {
-			index = sequence.length - 1;
-		}
-		else {
-			if (position < 1 || position > sequence.length) {
-				return null;
-			}
-			index = position - 1;
-		}
-		const [removed] = sequence.splice(index, 1);
-		this.setLuaTableSequence(table, sequence);
-		return removed ?? null;
-	}
-
-	private getLuaTableSequence(table: LuaTable): LuaValue[] {
-		const length = table.numericLength();
-		const values: LuaValue[] = [];
-		for (let i = 1; i <= length; i += 1) {
-			values.push(table.get(i));
-		}
-		return values;
-	}
-
-	private setLuaTableSequence(table: LuaTable, values: LuaValue[]): void {
-		for (const [key] of table.entriesArray()) {
-			if (typeof key === 'number') {
-				table.delete(key);
-			}
-		}
-		for (let index = 0; index < values.length; index += 1) {
-			table.set(index + 1, values[index] ?? null);
-		}
-	}
 }
