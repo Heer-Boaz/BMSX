@@ -180,7 +180,7 @@ export class ProblemsPanelController {
 		api.rectfill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, constants.COLOR_PROBLEMS_PANEL_BORDER);
 	}
 
-	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, justReleased: boolean, bounds: RectBounds): boolean {
+	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, _justReleased: boolean, bounds: RectBounds): boolean {
 		if (!this.visible) {
 			return false;
 		}
