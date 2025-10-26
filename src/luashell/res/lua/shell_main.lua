@@ -1,4 +1,4 @@
-local background_color = 1
+local background_color = 4
 local text_color = 15
 
 local instructions = {
@@ -7,6 +7,8 @@ local instructions = {
 	'Press ESC to toggle the console editor.',
 	'Edit this file to execute ad-hoc Lua code.',
 	'Choose REBOOT/RESUME to run your changes.',
+	'Boaz is trouwens stoer',
+	'Heel erg stoer',
 }
 
 function init()

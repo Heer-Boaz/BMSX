@@ -45,6 +45,7 @@ import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
 import { ConsoleCartEditorTextOps } from './console_cart_editor_textops';
 import { ConsoleCodeLayout } from './code_layout';
+import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine as wrapRuntimeErrorLineUtil } from './runtime_error_utils';
 import type {
 	CachedHighlight,
 	CodeHoverTooltip,
@@ -790,68 +791,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private buildRuntimeErrorLines(message: string): string[] {
-		const sanitized = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-		const rawLines = sanitized.split('\n');
-		const maxWidth = this.runtimeErrorOverlayMaxTextWidth();
-		const result: string[] = [];
-		for (let i = 0; i < rawLines.length; i++) {
-			const segments = this.wrapRuntimeErrorLine(rawLines[i], maxWidth);
-			if (segments.length === 0) {
-				result.push('');
-				continue;
-			}
-			for (let s = 0; s < segments.length; s++) {
-				result.push(segments[s]);
-			}
-		}
-		if (result.length === 0) {
-			result.push('');
-		}
-		return result;
-	}
-
-	private wrapRuntimeErrorLine(line: string, maxWidth: number): string[] {
-		if (line.length === 0) {
-			return [''];
-		}
-		const segments: string[] = [];
-		let current = '';
-		for (let index = 0; index < line.length; index++) {
-			const ch = line.charAt(index);
-			const candidate = current + ch;
-			const candidateWidth = this.measureText(candidate);
-			if (current.length > 0 && candidateWidth > maxWidth) {
-				segments.push(current);
-				current = ch;
-				if (this.measureText(current) > maxWidth) {
-					segments.push(current);
-					current = '';
-				}
-				continue;
-			}
-			if (current.length === 0 && candidateWidth > maxWidth) {
-				segments.push(ch);
-				current = '';
-				continue;
-			}
-			current = candidate;
-		}
-		if (current.length > 0) {
-			segments.push(current);
-		}
-		if (segments.length === 0) {
-			segments.push('');
-		}
-		return segments;
-	}
-
-	private runtimeErrorOverlayMaxTextWidth(): number {
-		const horizontalMargin = this.gutterWidth + constants.ERROR_OVERLAY_CONNECTOR_OFFSET + constants.ERROR_OVERLAY_PADDING_X * 2 + 2;
-		const available = this.viewportWidth - horizontalMargin;
-		if (available <= this.charAdvance) {
-			return this.charAdvance;
-		}
-		return available;
+		const maxWidth = computeRuntimeErrorOverlayMaxWidth(this.viewportWidth, this.charAdvance, this.gutterWidth);
+		return buildRuntimeErrorLinesUtil(message, maxWidth, (text) => this.measureText(text));
 	}
 
 	private statusAreaHeight(): number {
@@ -892,9 +833,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			: '';
 		const rawLines = sanitized.length > 0 ? sanitized.split('\n') : [''];
 		const maxWidth = Math.max(this.viewportWidth - 8, this.charAdvance);
-		const lines: string[] = [];
-		for (let i = 0; i < rawLines.length; i += 1) {
-			const wrapped = this.wrapRuntimeErrorLine(rawLines[i], maxWidth);
+	const lines: string[] = [];
+	for (let i = 0; i < rawLines.length; i += 1) {
+		const wrapped = wrapRuntimeErrorLineUtil(rawLines[i], maxWidth, (text) => this.measureText(text));
 			for (let j = 0; j < wrapped.length; j += 1) {
 				lines.push(wrapped[j]);
 			}
@@ -5479,7 +5420,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const lines: string[] = [];
 		for (let i = 0; i < segments.length; i += 1) {
 			const segment = segments[i].trim();
-			const wrapped = this.wrapRuntimeErrorLine(segment.length === 0 ? '' : segment, wrapWidth);
+			const wrapped = wrapRuntimeErrorLineUtil(segment.length === 0 ? '' : segment, wrapWidth, (text) => this.measureText(text));
 			for (let j = 0; j < wrapped.length; j += 1) {
 				lines.push(wrapped[j]);
 			}
