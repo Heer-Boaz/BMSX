@@ -234,7 +234,7 @@ export function computeLuaDiagnostics(options: LuaDiagnosticOptions): LuaDiagnos
 		throw error;
 	}
 
-	const globalKnownNames = buildGlobalKnownNameSet(options.localSymbols, options.globalSymbols, options.builtinDescriptors);
+	const globalKnownNames = buildGlobalKnownNameSet(options.localSymbols, options.globalSymbols, options.builtinDescriptors, options.apiSignatures);
 	const builtinLookup = buildBuiltinLookup(options.builtinDescriptors);
 	const scopeStack: Array<Set<string>> = [new Set<string>()];
 
@@ -602,6 +602,7 @@ function buildGlobalKnownNameSet(
 	localSymbols: readonly ConsoleLuaSymbolEntry[],
 	globalSymbols: readonly ConsoleLuaSymbolEntry[],
 	builtinDescriptors: readonly ConsoleLuaBuiltinDescriptor[],
+	apiSignatures: Map<string, ApiCompletionMetadata>,
 ): Set<string> {
 	const names = new Set<string>();
 	names.add('api');
@@ -634,6 +635,12 @@ function buildGlobalKnownNameSet(
 			}
 		} else {
 			names.add(descriptor.name);
+		}
+	}
+	// Also expose API method names as globals, since the runtime registers them globally
+	for (const [name] of apiSignatures) {
+		if (name && name.length > 0) {
+			names.add(name);
 		}
 	}
 	names.add('self');
@@ -710,6 +717,17 @@ function resolveCallSignature(
 			callStyle: 'function',
 			declarationStyle: 'function',
 			hasVararg: builtin.params.some(param => param === '...' || param.endsWith('...')),
+		};
+	}
+	// Fallback: treat API methods as global functions (runtime registers them globally)
+	const apiMetaAsGlobal = apiSignatures.get(key);
+	if (apiMetaAsGlobal) {
+		return {
+			params: apiMetaAsGlobal.params,
+			label: key,
+			callStyle: 'function',
+			declarationStyle: 'function',
+			hasVararg: apiMetaAsGlobal.params.some(param => param === '...' || param.endsWith('...')),
 		};
 	}
 	return null;

@@ -441,6 +441,17 @@ export class CompletionController {
             this.builtinDescriptorMap.set(normalized.toLowerCase(), entry);
         };
         for (let i = 0; i < descriptors.length; i += 1) registerDescriptor(descriptors[i]);
+
+        // Also expose API methods as global built-ins if not already present,
+        // since the runtime registers them globally too.
+        for (const [name, meta] of apiCompletionData.signatures) {
+            const key = name.toLowerCase();
+            if (!this.builtinDescriptorMap.has(key)) {
+                const params = Array.isArray(meta.params) ? meta.params.slice() : [];
+                const signature = meta.signature && meta.signature.length > 0 ? meta.signature : name;
+                this.builtinDescriptorMap.set(key, { name, params, signature });
+            }
+        }
     }
 
     private findBuiltinDescriptor(objectName: string | null, methodName: string): ConsoleLuaBuiltinDescriptor | null {

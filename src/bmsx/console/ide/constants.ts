@@ -82,6 +82,9 @@ export const PROBLEMS_PANEL_CONTENT_PADDING_Y = 4;
 export const PROBLEMS_PANEL_MIN_VISIBLE_ROWS = 3;
 export const PROBLEMS_PANEL_MAX_VISIBLE_ROWS = 8;
 export const PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS = 10;
+// Maximum wrapped lines per problem row in the problems panel
+export const PROBLEMS_PANEL_MAX_WRAP_LINES = 3;
+export const PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN = 4;
 export const DEFAULT_NEW_LUA_RESOURCE_CONTENT = '-- New Lua resource\n';
 export const DEFAULT_NEW_FSM_RESOURCE_CONTENT = `return {
 \tid = '<MACHINE_ID>',

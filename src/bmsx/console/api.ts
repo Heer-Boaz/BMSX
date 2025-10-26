@@ -71,7 +71,7 @@ export class BmsxConsoleApi {
 	private frameIndex: number = 0;
 	private deltaSecondsValue: number = 0;
 	private spriteInstanceSerial = 0;
-private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
+	private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 
 	constructor(options: BmsxConsoleApiOptions) {
 		const view = $.view;
@@ -574,36 +574,44 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 		return $.event_emitter;
 	}
 
-	public emit(eventName: string, payload?: EventPayload, emitterId?: Identifier): void {
+	private getEmitter(emitterOrId: Identifier | null): Registerable | null {
+		if (typeof emitterOrId === 'string') {
+			return $.registry.get(emitterOrId);
+		}
+		return emitterOrId;
+	}
+
+	private validateEmitter(emitterOrId: Identifier | Registerable, emitter?: Registerable): void {
+		if (emitterOrId && !emitter) {
+			throw new Error(`[BmsxConsoleApi] Emitter '${emitterOrId}' not found.`);
+		}
+		if (!emitterOrId) throw new Error('[BmsxConsoleApi] emit requires a non-empty emitter or emitter id.');
+	}
+
+	public emit(eventName: string, emitterOrId?: Identifier, payload?: EventPayload): void {
 		if (typeof eventName !== 'string' || eventName.length === 0) {
 			throw new Error('[BmsxConsoleApi] emit requires a non-empty event name.');
 		}
-		let emitter: Registerable | null = null;
-		if (typeof emitterId === 'string' && emitterId.length > 0) {
-			emitter = $.registry.get(emitterId);
-		}
-		$.emit(eventName, (emitter as any) ?? null, payload);
+		const emitter: Registerable | null = this.getEmitter(emitterOrId);
+		this.validateEmitter(emitterOrId, emitter);
+		$.emit(eventName, emitter, payload);
 	}
 
-	public emitGameplay(eventName: string, emitterId: Identifier, payload?: EventPayload): void {
+	public emitGameplay(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
 		if (typeof eventName !== 'string' || eventName.length === 0) {
 			throw new Error('[BmsxConsoleApi] emitGameplay requires a non-empty event name.');
 		}
-		if (typeof emitterId !== 'string' || emitterId.length === 0) {
-			throw new Error('[BmsxConsoleApi] emitGameplay requires a non-empty emitter id.');
-		}
-		const emitter = $.registry.get(emitterId);
-		if (!emitter) {
-			throw new Error(`[BmsxConsoleApi] Emitter '${emitterId}' not found.`);
-		}
+		const emitter = this.getEmitter(emitterOrId);
+		this.validateEmitter(emitterOrId, emitter);
 		$.emitGameplay(eventName, emitter as any, payload);
 	}
 
-	public emitPresentation(eventName: string, emitterId: Identifier | null, payload?: EventPayload): void {
+	public emitPresentation(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
 		if (typeof eventName !== 'string' || eventName.length === 0) {
 			throw new Error('[BmsxConsoleApi] emitPresentation requires a non-empty event name.');
 		}
-		const emitter = emitterId ? $.registry.get(emitterId) : null;
+		const emitter = this.getEmitter(emitterOrId);
+		this.validateEmitter(emitterOrId, emitter);
 		$.emitPresentation(eventName, emitter, payload);
 	}
 
@@ -696,13 +704,13 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 	}
 
 	private resolveWorldObjectConstructor(classRef: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
-	if (typeof classRef !== 'string' || classRef.trim().length === 0) {
-		throw new Error('[BmsxConsoleApi] spawnWorldObject requires a non-empty class reference.');
-	}
-	if (classRef === 'WorldObject') {
-		return WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
-	}
-	const ctorUnknown = this.resolveConstructor(classRef.trim());
+		if (typeof classRef !== 'string' || classRef.trim().length === 0) {
+			throw new Error('[BmsxConsoleApi] spawnWorldObject requires a non-empty class reference.');
+		}
+		if (classRef === 'WorldObject') {
+			return WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
+		}
+		const ctorUnknown = this.resolveConstructor(classRef.trim());
 		if (typeof ctorUnknown !== 'function') {
 			throw new Error(`[BmsxConsoleApi] World object constructor '${classRef}' not found.`);
 		}
@@ -1049,24 +1057,24 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 		const build = this.buildSpriteCollider(definition, command, config);
 		command.width = build.width;
 		command.height = build.height;
-	const collider = this.colliders.upsert(command.colliderId, build.options);
-	if (build.geometry) {
-		collider.setGeometry(build.geometry.area, build.geometry.polygons);
+		const collider = this.colliders.upsert(command.colliderId, build.options);
+		if (build.geometry) {
+			collider.setGeometry(build.geometry.area, build.geometry.polygons);
+		}
+		const existing = command.positionDirty ? null : this.colliders.get(command.colliderId);
+		if (existing) {
+			const state = this.colliders.getState(command.colliderId);
+			command.baseX = state.centerX - build.width / 2;
+			command.baseY = state.centerY - build.height / 2;
+			command.drawX = command.baseX + command.originX * command.scale;
+			command.drawY = command.baseY + command.originY * command.scale;
+		}
+		const centerX = command.baseX + build.width / 2;
+		const centerY = command.baseY + build.height / 2;
+		this.colliders.setPosition(command.colliderId, centerX, centerY);
+		command.positionDirty = false;
+		this.configurePhysicsBody(command, definition);
 	}
-	const existing = command.positionDirty ? null : this.colliders.get(command.colliderId);
-	if (existing) {
-		const state = this.colliders.getState(command.colliderId);
-		command.baseX = state.centerX - build.width / 2;
-		command.baseY = state.centerY - build.height / 2;
-		command.drawX = command.baseX + command.originX * command.scale;
-		command.drawY = command.baseY + command.originY * command.scale;
-	}
-	const centerX = command.baseX + build.width / 2;
-	const centerY = command.baseY + build.height / 2;
-	this.colliders.setPosition(command.colliderId, centerX, centerY);
-	command.positionDirty = false;
-	this.configurePhysicsBody(command, definition);
-}
 
 	private buildSpriteCollider(definition: SpriteDefinition, command: SpriteCommand, config: SpriteColliderConfig): { options: ColliderCreateOptions; width: number; height: number; geometry: { area: Area | null; polygons: Polygon[] | null } | null } {
 		const scale = command.scale;
@@ -1236,7 +1244,7 @@ private renderBackend: ConsoleRenderBackend = new DirectConsoleRenderBackend();
 		});
 	}
 
-private expandTabs(text: string): string {
+	private expandTabs(text: string): string {
 		if (text.indexOf('\t') === -1) {
 			return text;
 		}

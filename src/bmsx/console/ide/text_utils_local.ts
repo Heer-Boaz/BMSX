@@ -45,3 +45,74 @@ export function truncateTextToWidth(text: string, maxWidth: number, advance: Adv
 	}
 	return best;
 }
+
+// Generic measurement-based wrapper using a callback measure(string)->width
+export function wrapTextDynamic(
+	text: string,
+	firstLineWidth: number,
+	subsequentWidth: number,
+	measure: (text: string) => number,
+	maxLines: number,
+): string[] {
+	const lines: string[] = [];
+	if (maxLines <= 1) {
+		if (firstLineWidth <= 0) return [''];
+		const truncated = truncateWithMeasure(text, firstLineWidth, measure);
+		lines.push(truncated);
+		return lines;
+	}
+	let remaining = text;
+	let width = firstLineWidth;
+	for (let i = 0; i < maxLines; i += 1) {
+		if (remaining.length === 0) { lines.push(''); continue; }
+		const sliceIndex = findMaxFittingIndexMeasure(remaining, width, measure);
+		const lineText = remaining.slice(0, sliceIndex).trimEnd();
+		lines.push(lineText);
+		remaining = remaining.slice(sliceIndex).trimStart();
+		width = subsequentWidth;
+	}
+	if (remaining.length > 0) {
+		const lastIndex = lines.length - 1;
+		const last = `${lines[lastIndex]}…`;
+		lines[lastIndex] = truncateWithMeasure(last, width, measure);
+	}
+	return lines;
+}
+
+function findMaxFittingIndexMeasure(text: string, maxWidth: number, measure: (t: string) => number): number {
+	if (text.length === 0) return 0;
+	if (maxWidth <= 0) return 1;
+	let low = 1;
+	let high = text.length;
+	let best = 0;
+	while (low <= high) {
+		const mid = (low + high) >> 1;
+		const candidate = text.slice(0, mid);
+		const w = measure(candidate);
+		if (w <= maxWidth) { best = mid; low = mid + 1; }
+		else { high = mid - 1; }
+	}
+	if (best <= 0) return 1;
+	let breakIndex = best;
+	for (let i = best - 1; i >= 0; i -= 1) {
+		const ch = text.charAt(i);
+		if (ch === ' ' || ch === '\t') { breakIndex = i + 1; break; }
+	}
+	return breakIndex;
+}
+
+function truncateWithMeasure(text: string, maxWidth: number, measure: (t: string) => number): string {
+	if (maxWidth <= 0) return '';
+	if (measure(text) <= maxWidth) return text;
+	const ellipsis = '...';
+	const ellipsisWidth = measure(ellipsis);
+	if (ellipsisWidth > maxWidth) return '';
+	let low = 0, high = text.length, best = '';
+	while (low <= high) {
+		const mid = Math.floor((low + high) / 2);
+		const candidate = text.slice(0, mid) + ellipsis;
+		if (measure(candidate) <= maxWidth) { best = candidate; low = mid + 1; }
+		else { high = mid - 1; }
+	}
+	return best;
+}

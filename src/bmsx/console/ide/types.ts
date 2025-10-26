@@ -175,11 +175,16 @@ export type ParameterHintState = {
 export type EditorDiagnosticSeverity = 'error' | 'warning';
 
 export type EditorDiagnostic = {
-	row: number;
-	startColumn: number;
-	endColumn: number;
-	message: string;
-	severity: EditorDiagnosticSeverity;
+    row: number;
+    startColumn: number;
+    endColumn: number;
+    message: string;
+    severity: EditorDiagnosticSeverity;
+    // Optional metadata to identify the originating tab/source
+    contextId?: string;
+    sourceLabel?: string | null;
+    assetId?: string | null;
+    chunkName?: string | null;
 };
 
 export type ApiCompletionMetadata = {

@@ -22,7 +22,7 @@ import * as constants from './constants';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
-import { computeLuaDiagnostics, getApiCompletionData, type LuaDiagnostic } from './intellisense';
+import { computeAggregatedEditorDiagnostics, type DiagnosticContextInput } from './diagnostics';
 import { isWhitespace, isWordChar, isIdentifierChar, isIdentifierStartChar } from './text_utils';
 import type { InlineFieldEditingHandlers, InlineFieldMetrics } from './inline_text_field';
 import {
@@ -135,6 +135,7 @@ export class ConsoleCartEditor {
 	private runtimeErrorOverlay: RuntimeErrorOverlay | null = null;
 	private executionStopRow: number | null = null;
 	private readonly problemsPanel: ProblemsPanelController;
+	private problemsPanelResizing = false;
 	private diagnostics: EditorDiagnostic[] = [];
 	private diagnosticsByRow: Map<number, EditorDiagnostic[]> = new Map();
 	private diagnosticsDirty = true;
@@ -1009,99 +1010,40 @@ export class ConsoleCartEditor {
 		}
 	}
 
-	private recomputeDiagnostics(): void {
-		this.diagnosticsDirty = false;
-		if (!this.isCodeTabActive()) {
-			this.diagnostics = [];
-			this.diagnosticsByRow.clear();
-			this.problemsPanel.setDiagnostics(this.diagnostics);
-			return;
-		}
-		const context = this.getActiveCodeTabContext();
-		if (!context) {
-			this.diagnostics = [];
-			this.diagnosticsByRow.clear();
-			this.problemsPanel.setDiagnostics(this.diagnostics);
-			return;
-		}
-		const source = this.lines.join('\n');
-		if (source.length === 0) {
-			this.diagnostics = [];
-			this.diagnosticsByRow.clear();
-			this.problemsPanel.setDiagnostics(this.diagnostics);
-			return;
-		}
-		const assetId = this.resolveHoverAssetId(context);
-		const chunkNameCandidate = this.resolveHoverChunkName(context);
-		let chunkName = chunkNameCandidate && chunkNameCandidate.length > 0 ? chunkNameCandidate : null;
-		if (!chunkName && context.descriptor) {
-			if (context.descriptor.path && context.descriptor.path.length > 0) {
-				chunkName = context.descriptor.path;
-			} else if (context.descriptor.assetId && context.descriptor.assetId.length > 0) {
-				chunkName = context.descriptor.assetId;
-			}
-		}
-		if (!chunkName || chunkName.length === 0) {
-			chunkName = context.title;
-		}
-		let localSymbols: ConsoleLuaSymbolEntry[] = [];
-		try {
-			localSymbols = this.listLuaSymbolsFn(assetId, chunkName);
-		} catch {
-			localSymbols = [];
-		}
-		let globalSymbols: ConsoleLuaSymbolEntry[] = [];
-		try {
-			globalSymbols = this.listGlobalLuaSymbolsFn();
-		} catch {
-			globalSymbols = [];
-		}
-		let builtinDescriptors: ConsoleLuaBuiltinDescriptor[] = [];
-		try {
-			builtinDescriptors = this.listBuiltinLuaFunctionsFn();
-		} catch {
-			builtinDescriptors = [];
-		}
-		const apiData = getApiCompletionData();
-		let diagnostics: LuaDiagnostic[];
-		try {
-			diagnostics = computeLuaDiagnostics({
-				source,
-				chunkName,
-				localSymbols,
-				globalSymbols,
-				builtinDescriptors,
-				apiSignatures: apiData.signatures,
-			});
-		} catch {
-			diagnostics = [];
-		}
-		this.diagnostics = [];
-		this.diagnosticsByRow.clear();
-		for (let index = 0; index < diagnostics.length; index += 1) {
-			const diagnostic = diagnostics[index];
-			if (diagnostic.row < 0 || diagnostic.row >= this.lines.length) {
-				continue;
-			}
-			const startColumn = diagnostic.startColumn > 0 ? diagnostic.startColumn : 0;
-			const adjustedEnd = diagnostic.endColumn > startColumn ? diagnostic.endColumn : startColumn + 1;
-			const editorDiagnostic: EditorDiagnostic = {
-				row: diagnostic.row,
-				startColumn,
-				endColumn: adjustedEnd,
-				message: diagnostic.message,
-				severity: diagnostic.severity,
-			};
-			this.diagnostics.push(editorDiagnostic);
-			let bucket = this.diagnosticsByRow.get(editorDiagnostic.row);
-			if (!bucket) {
-				bucket = [];
-				this.diagnosticsByRow.set(editorDiagnostic.row, bucket);
-			}
-			bucket.push(editorDiagnostic);
-		}
-		this.problemsPanel.setDiagnostics(this.diagnostics);
-	}
+    private recomputeDiagnostics(): void {
+        this.diagnosticsDirty = false;
+
+        const activeId = this.activeCodeTabContextId ?? null;
+        const inputs: DiagnosticContextInput[] = [];
+        for (const context of this.codeTabContexts.values()) {
+            const assetId = this.resolveHoverAssetId(context);
+            const chunkName = this.resolveHoverChunkName(context);
+            let source = '';
+            if (activeId && context.id === activeId) source = this.lines.join('\n');
+            else {
+                try { source = this.getSourceForChunk(assetId, chunkName); } catch { source = ''; }
+            }
+            inputs.push({ id: context.id, title: context.title, descriptor: context.descriptor, assetId, chunkName, source });
+        }
+        const diagnostics = computeAggregatedEditorDiagnostics(inputs, {
+            listLocalSymbols: (assetId, chunk) => { try { return this.listLuaSymbolsFn(assetId, chunk); } catch { return []; } },
+            listGlobalSymbols: () => { try { return this.listGlobalLuaSymbolsFn(); } catch { return []; } },
+            listBuiltins: () => { try { return this.listBuiltinLuaFunctionsFn(); } catch { return []; } },
+        });
+
+        this.diagnosticsByRow.clear();
+        if (activeId) {
+            for (let i = 0; i < diagnostics.length; i += 1) {
+                const d = diagnostics[i];
+                if (d.contextId !== activeId) continue;
+                let bucket = this.diagnosticsByRow.get(d.row);
+                if (!bucket) { bucket = []; this.diagnosticsByRow.set(d.row, bucket); }
+                bucket.push(d);
+            }
+        }
+        this.diagnostics = diagnostics;
+        this.problemsPanel.setDiagnostics(this.diagnostics);
+    }
 
 	private getDiagnosticsForRow(row: number): readonly EditorDiagnostic[] {
 		const bucket = this.diagnosticsByRow.get(row);
@@ -3212,6 +3154,10 @@ export class ConsoleCartEditor {
 	}
 
 	private gotoDiagnostic(diagnostic: EditorDiagnostic): void {
+		// Switch to the originating tab if provided
+		if (diagnostic.contextId && diagnostic.contextId.length > 0 && diagnostic.contextId !== this.activeCodeTabContextId) {
+			this.setActiveTab(diagnostic.contextId);
+		}
 		if (!this.isCodeTabActive()) {
 			this.activateCodeTab();
 		}
@@ -3382,6 +3328,19 @@ export class ConsoleCartEditor {
 			this.clearGotoHoverHighlight();
 			return;
 		}
+		if (this.problemsPanelResizing) {
+			if (!snapshot.primaryPressed) {
+				this.problemsPanelResizing = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			} else {
+				this.setProblemsPanelHeightFromViewportY(snapshot.viewportY);
+				this.pointerSelecting = false;
+				this.resetPointerClickTracking();
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+			}
+			this.clearGotoHoverHighlight();
+			return;
+		}
 		if (justPressed && snapshot.viewportY >= 0 && snapshot.viewportY < this.headerHeight) {
 			if (this.handleTopBarPointer(snapshot)) {
 				this.pointerSelecting = false;
@@ -3399,6 +3358,14 @@ export class ConsoleCartEditor {
 				this.resetPointerClickTracking();
 				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			}
+			this.clearGotoHoverHighlight();
+			return;
+		}
+		if (justPressed && this.problemsPanel.isVisible() && this.isPointerOverProblemsPanelDivider(snapshot.viewportX, snapshot.viewportY)) {
+			this.problemsPanelResizing = true;
+			this.pointerSelecting = false;
+			this.resetPointerClickTracking();
+			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 			this.clearGotoHoverHighlight();
 			return;
 		}
@@ -8603,6 +8570,29 @@ private handleCompletionKeybindings(
 			return null;
 		}
 		return { left: 0, top, right: this.viewportWidth, bottom };
+	}
+
+	private isPointerOverProblemsPanelDivider(x: number, y: number): boolean {
+		const bounds = this.getProblemsPanelBounds();
+		if (!bounds) {
+			return false;
+		}
+		const margin = constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+		const dividerTop = bounds.top;
+		return y >= dividerTop - margin && y <= dividerTop + margin && x >= bounds.left && x <= bounds.right;
+	}
+
+	private setProblemsPanelHeightFromViewportY(viewportY: number): void {
+		const statusHeight = this.statusAreaHeight();
+		const bottom = this.viewportHeight - statusHeight;
+		const minTop = this.headerHeight + this.tabBarHeight + 1;
+		const headerH = this.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
+		const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * this.lineHeight;
+		const minHeight = headerH + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2 + minContent;
+		const maxTop = Math.max(minTop, bottom - minHeight);
+		const top = clamp(viewportY, minTop, maxTop);
+		const height = clamp(bottom - top, minHeight, Math.max(minHeight, bottom - minTop));
+		this.problemsPanel.setFixedHeightPx(height);
 	}
 
 	private drawActionPromptOverlay(api: BmsxConsoleApi): void {
