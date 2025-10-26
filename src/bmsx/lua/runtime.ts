@@ -49,8 +49,8 @@ import { LuaEnvironment } from './environment.ts';
 import { LuaRuntimeError, LuaSyntaxError } from './errors.ts';
 import { LuaLexer } from './lexer.ts';
 import { LuaParser } from './parser.ts';
-import type { LuaFunctionValue, LuaValue } from './value.ts';
-import { LuaTable } from './value.ts';
+import type { LuaFunctionValue, LuaValue, LuaTable } from './value.ts';
+import { createLuaTable, isLuaTable } from './value.ts';
 
 type ExecutionSignal =
 	| { readonly kind: 'normal' }
@@ -414,13 +414,13 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			throw this.runtimeErrorAt(range, `Invalid table path for function '${displayName}'.`);
 		}
 		let currentValue: LuaValue | null = this.lookupIdentifier(parts[0], environment);
-		if (!(currentValue instanceof LuaTable)) {
+		if (!(isLuaTable(currentValue))) {
 			throw this.runtimeErrorAt(range, `Expected table for '${parts[0]}' when declaring function '${displayName}'.`);
 		}
 		let currentTable: LuaTable = currentValue;
 		for (let index = 1; index < parts.length; index += 1) {
 			const fieldValue = currentTable.get(parts[index]);
-			if (!(fieldValue instanceof LuaTable)) {
+			if (!(isLuaTable(fieldValue))) {
 				throw this.runtimeErrorAt(range, `Expected table for '${parts[index]}' when declaring function '${displayName}'.`);
 			}
 			currentTable = fieldValue;
@@ -697,7 +697,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 
 	private evaluateMemberExpression(expression: LuaMemberExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
 		const baseValue = this.evaluateSingleExpression(expression.base, environment, varargs);
-		if (!(baseValue instanceof LuaTable)) {
+		if (!(isLuaTable(baseValue))) {
 			throw this.runtimeErrorAt(expression.range, 'Attempted to index field on a non-table value.');
 		}
 		return this.getTableValueWithMetamethod(baseValue, expression.identifier, expression.range);
@@ -705,7 +705,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 
 	private evaluateIndexExpression(expression: LuaIndexExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue {
 		const baseValue = this.evaluateSingleExpression(expression.base, environment, varargs);
-		if (!(baseValue instanceof LuaTable)) {
+		if (!(isLuaTable(baseValue))) {
 			throw this.runtimeErrorAt(expression.range, 'Attempted to index on a non-table value.');
 		}
 		const indexValues = this.evaluateExpression(expression.index, environment, varargs);
@@ -792,7 +792,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				if (typeof operand === 'string') {
 					return operand.length;
 				}
-				if (operand instanceof LuaTable) {
+				if (isLuaTable(operand)) {
 					const metamethodResult = this.invokeMetamethod(operand, '__len', [operand]);
 					if (metamethodResult !== null) {
 						const first = metamethodResult.length > 0 ? metamethodResult[0] : null;
@@ -820,7 +820,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	private evaluateCallExpression(expression: LuaCallExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaValue[] {
 		const calleeValue = this.evaluateSingleExpression(expression.callee, environment, varargs);
 		if (expression.methodName !== null) {
-			if (!(calleeValue instanceof LuaTable)) {
+			if (!(isLuaTable(calleeValue))) {
 				throw this.runtimeErrorAt(expression.range, 'Method call requires a table instance.');
 			}
 			const methodValue = this.getTableValueWithMetamethod(calleeValue, expression.methodName, expression.range);
@@ -828,7 +828,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
 			return this.invokeFunction(functionValue, args, expression.range);
 		}
-		if (calleeValue instanceof LuaTable) {
+		if (isLuaTable(calleeValue)) {
 			const callMetamethod = this.extractMetamethodFunction(calleeValue, '__call', expression.range);
 			if (callMetamethod !== null) {
 				const args = this.buildCallArguments(expression, environment, varargs, calleeValue);
@@ -854,7 +854,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private evaluateTableConstructor(expression: LuaTableConstructorExpression, environment: LuaEnvironment, varargs: ReadonlyArray<LuaValue>): LuaTable {
-		const table = new LuaTable();
+		const table = createLuaTable();
 		let arrayIndex = 1;
 		for (const field of expression.fields) {
 			if (field.kind === LuaTableFieldKind.Array) {
@@ -903,7 +903,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		if (target.kind === LuaSyntaxKind.MemberExpression) {
 			const member = target as LuaMemberExpression;
 			const tableValue = this.evaluateSingleExpression(member.base, environment, varargs);
-			if (!(tableValue instanceof LuaTable)) {
+			if (!(isLuaTable(tableValue))) {
 				throw this.runtimeErrorAt(member.base.range, 'Attempted to assign to a member of a non-table value.');
 			}
 			return {
@@ -915,7 +915,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		if (target.kind === LuaSyntaxKind.IndexExpression) {
 			const indexExpression = target as LuaIndexExpression;
 			const tableValue = this.evaluateSingleExpression(indexExpression.base, environment, varargs);
-			if (!(tableValue instanceof LuaTable)) {
+			if (!(isLuaTable(tableValue))) {
 				throw this.runtimeErrorAt(indexExpression.base.range, 'Attempted to assign to an index of a non-table value.');
 			}
 			const indexValues = this.evaluateExpression(indexExpression.index, environment, varargs);
@@ -988,7 +988,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			visited.delete(table);
 			return null;
 		}
-		if (handler instanceof LuaTable) {
+		if (isLuaTable(handler)) {
 			const result = this.getTableValueWithMetamethodInternal(handler, key, range, visited);
 			visited.delete(table);
 			return result;
@@ -1024,7 +1024,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			visited.delete(table);
 			return;
 		}
-		if (handler instanceof LuaTable) {
+		if (isLuaTable(handler)) {
 			this.setTableValueWithMetamethodInternal(handler, key, value, range, visited);
 			visited.delete(table);
 			return;
@@ -1104,7 +1104,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			if (visited.has(value)) {
 				throw this.runtimeError('Cannot serialize cyclic table structures.');
 			}
@@ -1139,7 +1139,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			if (!Array.isArray(entriesData)) {
 				throw this.runtimeError('Invalid serialized table entries.');
 			}
-			const table = new LuaTable();
+			const table = createLuaTable();
 			for (const entry of entriesData) {
 				if (typeof entry !== 'object' || entry === null) {
 					throw this.runtimeError('Invalid serialized table entry.');
@@ -1154,7 +1154,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			}
 			if ('metatable' in record && record.metatable !== null) {
 				const deserializedMetatable = this.deserializeValueInternal(record.metatable);
-				if (!(deserializedMetatable instanceof LuaTable)) {
+				if (!(isLuaTable(deserializedMetatable))) {
 					throw this.runtimeError('Serialized metatable must resolve to a table.');
 				}
 				table.setMetatable(deserializedMetatable);
@@ -1191,13 +1191,13 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			throw this.runtimeError(`Function '${name}' not found during deserialization.`);
 		}
 		for (let index = 1; index < segments.length; index += 1) {
-			if (!(value instanceof LuaTable)) {
+			if (!(isLuaTable(value))) {
 				throw this.runtimeError(`Function '${name}' not found during deserialization.`);
 			}
 			value = value.get(segments[index]);
 		}
 		if (methodName !== null) {
-			if (!(value instanceof LuaTable)) {
+			if (!(isLuaTable(value))) {
 				throw this.runtimeError(`Function '${name}' not found during deserialization.`);
 			}
 			value = value.get(methodName);
@@ -1354,7 +1354,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private extractMetamethodFunction(value: LuaValue, name: string, range: LuaSourceRange | null): LuaFunctionValue | null {
-		if (!(value instanceof LuaTable)) {
+		if (!(isLuaTable(value))) {
 			return null;
 		}
 		const metatable = value.getMetatable();
@@ -1369,7 +1369,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 	}
 
 	private extractSharedMetamethodFunction(left: LuaValue, right: LuaValue, name: string, range: LuaSourceRange): LuaFunctionValue | null {
-		if (!(left instanceof LuaTable) || !(right instanceof LuaTable)) {
+		if (!(isLuaTable(left)) || !(isLuaTable(right))) {
 			return null;
 		}
 		const leftMetatable = left.getMetatable();
@@ -1417,7 +1417,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		if (typeof value === 'string') {
 			return 'a string value';
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			return 'a table value';
 		}
 		return 'a non-callable value';
@@ -1497,7 +1497,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		if (typeof value === 'string') {
 			return value;
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			return 'table';
 		}
 		return 'function';
@@ -1696,7 +1696,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			else if (typeof value === 'string') {
 				result = 'string';
 			}
-			else if (value instanceof LuaTable) {
+			else if (isLuaTable(value)) {
 				result = 'table';
 			}
 			else {
@@ -1733,17 +1733,17 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		this.globals.set('setmetatable', new LuaNativeFunction('setmetatable', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('setmetatable expects a table as the first argument.');
 			}
 			const targetTable = args[0] as LuaTable;
 			let metatable: LuaTable | null = null;
 			if (args.length >= 2) {
 				const metaArg = args[1];
-				if (metaArg !== null && !(metaArg instanceof LuaTable)) {
+				if (metaArg !== null && !(isLuaTable(metaArg))) {
 					throw interpreter.runtimeError('setmetatable expects a table or nil as the second argument.');
 				}
-				if (metaArg instanceof LuaTable) {
+				if (isLuaTable(metaArg)) {
 					metatable = metaArg;
 				}
 			}
@@ -1752,7 +1752,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		this.globals.set('getmetatable', new LuaNativeFunction('getmetatable', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('getmetatable expects a table as the first argument.');
 			}
 			const targetTable = args[0] as LuaTable;
@@ -1771,7 +1771,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		this.globals.set('rawget', new LuaNativeFunction('rawget', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('rawget expects a table as the first argument.');
 			}
 			const table = args[0] as LuaTable;
@@ -1780,7 +1780,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		this.globals.set('rawset', new LuaNativeFunction('rawset', this, (interpreter, args) => {
-			if (args.length < 2 || !(args[0] instanceof LuaTable)) {
+			if (args.length < 2 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('rawset expects a table as the first argument.');
 			}
 			const table = args[0] as LuaTable;
@@ -1844,7 +1844,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		this.globals.set('next', new LuaNativeFunction('next', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('next expects a table as the first argument.');
 			}
 			const table = args[0] as LuaTable;
@@ -1869,7 +1869,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			return [null];
 		}));
 
-		const mathTable = new LuaTable();
+		const mathTable = createLuaTable();
 		mathTable.set('abs', new LuaNativeFunction('math.abs', this, (interpreter, args) => {
 			const value = args.length > 0 ? args[0] : null;
 			const number = interpreter.expectNumber(value, 'math.abs expects a number.', null);
@@ -1950,7 +1950,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		mathTable.set('pi', Math.PI);
 		this.globals.set('math', mathTable);
 
-		const stringTable = new LuaTable();
+		const stringTable = createLuaTable();
 		stringTable.set('len', new LuaNativeFunction('string.len', this, (interpreter, args) => {
 			const value = args.length > 0 ? args[0] : '';
 			const str = interpreter.expectString(value, 'string.len expects a string.', null);
@@ -2032,13 +2032,13 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 		this.globals.set('string', stringTable);
 
-		const tableLibrary = new LuaTable();
+		const tableLibrary = createLuaTable();
 		tableLibrary.set('insert', new LuaNativeFunction('table.insert', this, (interpreter, args) => {
 			if (args.length < 2) {
 				throw interpreter.runtimeError('table.insert expects at least two arguments.');
 			}
 			const target = args[0];
-			if (!(target instanceof LuaTable)) {
+			if (!(isLuaTable(target))) {
 				throw interpreter.runtimeError('table.insert expects a table as the first argument.');
 			}
 			let position: number | null = null;
@@ -2055,7 +2055,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		tableLibrary.set('remove', new LuaNativeFunction('table.remove', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('table.remove expects a table as the first argument.');
 			}
 			const target = args[0] as LuaTable;
@@ -2065,7 +2065,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		tableLibrary.set('concat', new LuaNativeFunction('table.concat', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('table.concat expects a table as the first argument.');
 			}
 			const target = args[0] as LuaTable;
@@ -2097,7 +2097,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		tableLibrary.set('pack', new LuaNativeFunction('table.pack', this, (_interpreter, args) => {
-			const table = new LuaTable();
+			const table = createLuaTable();
 			for (let index = 0; index < args.length; index += 1) {
 				table.set(index + 1, args[index]);
 			}
@@ -2106,7 +2106,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		tableLibrary.set('unpack', new LuaNativeFunction('table.unpack', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('table.unpack expects a table as the first argument.');
 			}
 			const target = args[0] as LuaTable;
@@ -2136,7 +2136,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 		}));
 
 		tableLibrary.set('sort', new LuaNativeFunction('table.sort', this, (interpreter, args) => {
-			if (args.length === 0 || !(args[0] instanceof LuaTable)) {
+			if (args.length === 0 || !(isLuaTable(args[0]))) {
 				throw interpreter.runtimeError('table.sort expects a table as the first argument.');
 			}
 			const target = args[0] as LuaTable;
@@ -2164,13 +2164,13 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 
 		this.globals.set('table', tableLibrary);
 
-		const osTable = new LuaTable();
+		const osTable = createLuaTable();
 		osTable.set('time', new LuaNativeFunction('os.time', this, (interpreter, args) => {
 			if (args.length === 0) {
 				return [Math.floor(Date.now() / 1000)];
 			}
 			const tableArg = args[0];
-			if (!(tableArg instanceof LuaTable)) {
+			if (!(isLuaTable(tableArg))) {
 				throw this.runtimeError('os.time expects a table or no arguments.');
 			}
 			const year = tableArg.get('year');
@@ -2199,7 +2199,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			}
 			const format = interpreter.expectString(formatValue, 'os.date expects a format string.', null);
 			if (format === '*t') {
-				const table = new LuaTable();
+				const table = createLuaTable();
 				table.set('year', date.getUTCFullYear());
 				table.set('month', date.getUTCMonth() + 1);
 				table.set('day', date.getUTCDate());
@@ -2223,7 +2223,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				throw interpreter.runtimeError('pairs expects a table argument.');
 			}
 			const table = args[0];
-			if (!(table instanceof LuaTable)) {
+			if (!(isLuaTable(table))) {
 				throw interpreter.runtimeError('pairs expects a table argument.');
 			}
 			const pairsMetamethod = this.extractMetamethodFunction(table, '__pairs', null);
@@ -2244,7 +2244,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 				throw interpreter.runtimeError('ipairs expects a table argument.');
 			}
 			const table = args[0];
-			if (!(table instanceof LuaTable)) {
+			if (!(isLuaTable(table))) {
 				throw interpreter.runtimeError('ipairs expects a table argument.');
 			}
 			const ipairsMetamethod = this.extractMetamethodFunction(table, '__ipairs', null);
@@ -2258,7 +2258,7 @@ private executeLocalFunction(statement: LuaLocalFunctionStatement, environment: 
 			const iterator = new LuaNativeFunction('ipairs_iterator', interpreter, (_selfInterpreter, iteratorArgs) => {
 				const tableArg = iteratorArgs.length > 0 ? iteratorArgs[0] : null;
 				const indexValue = iteratorArgs.length > 1 ? iteratorArgs[1] : null;
-				if (!(tableArg instanceof LuaTable)) {
+				if (!(isLuaTable(tableArg))) {
 					return [null];
 				}
 				const index = typeof indexValue === 'number' ? indexValue + 1 : 1;

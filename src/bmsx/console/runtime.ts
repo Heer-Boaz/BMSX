@@ -10,8 +10,8 @@ import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '.
 import { LuaLexer } from '../lua/lexer.ts';
 import { LuaParser } from '../lua/parser.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
-import type { LuaFunctionValue, LuaValue } from '../lua/value.ts';
-import { LuaTable } from '../lua/value.ts';
+import type { LuaFunctionValue, LuaValue, LuaTable } from '../lua/value.ts';
+import { createLuaTable, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
 import { LuaRuntimeError, LuaError } from '../lua/errors.ts';
 import { $ } from '../core/game';
 import { Service } from '../core/service';
@@ -250,7 +250,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		super({ id: 'bmsx_console_runtime' });
 		const rompack = $.rompack;
 		this.caseInsensitiveLua = options.caseInsensitiveLua ?? (rompack?.caseInsensitiveLua ?? true);
-		LuaTable.setCaseInsensitiveKeys(this.caseInsensitiveLua);
+		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
 		setEditorCaseInsensitivity(this.caseInsensitiveLua);
 		this.enableEvents();
 		const policyOverride = options.luaSourceFailurePolicy ?? {};
@@ -977,7 +977,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (this.isLuaFunctionValue(value)) {
 			return true;
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			const handle = value.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
 			if (typeof handle === 'number') {
 				return true;
@@ -997,7 +997,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			if (visited.has(value)) {
 				throw new Error('Cyclic Lua table structures are not supported by the console snapshot.');
 			}
@@ -1022,7 +1022,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 					if (this.isLuaFunctionValue(entryValue)) {
 						continue;
 					}
-					if (entryValue instanceof LuaTable) {
+					if (isLuaTable(entryValue)) {
 						const nestedHandle = entryValue.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
 						if (typeof nestedHandle === 'number') {
 							// Resume ignores engine-backed objects; their lifetime is controlled
@@ -1929,7 +1929,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' returned no value.`);
 			}
 			const table = executionResults[0];
-			if (!(table instanceof LuaTable)) {
+			if (!(isLuaTable(table))) {
 				throw new Error(`[BmsxConsoleRuntime] Service Lua script '${assetId}' must return a table.`);
 			}
 			const descriptorRaw = this.luaValueToJs(table);
@@ -2005,7 +2005,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 
 			const events = new Map<string, LuaFunctionValue>();
 			const eventsValue = this.getLuaTableEntry(table, ['events']);
-			if (eventsValue instanceof LuaTable) {
+			if (isLuaTable(eventsValue)) {
 				for (const [rawKey, handler] of eventsValue.entriesArray()) {
 					const eventName = typeof rawKey === 'string' ? rawKey.trim() : '';
 					if (eventName.length === 0) {
@@ -2493,7 +2493,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			const keyValue = args[1];
 			if (typeof keyValue !== 'string' && typeof keyValue !== 'number') {
 				const targetTable = args[0];
-				if (targetTable instanceof LuaTable) {
+				if (isLuaTable(targetTable)) {
 					targetTable.set(keyValue, args[2]);
 				}
 				return [];
@@ -2511,13 +2511,13 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 			this.evictCachedHandleMethod(handle, propertyName);
 			const targetTable = args[0];
-			if (targetTable instanceof LuaTable) {
+			if (isLuaTable(targetTable)) {
 				targetTable.delete(propertyName);
 			}
 			return [];
 		});
 
-		const metatable = new LuaTable();
+		const metatable = createLuaTable();
 		metatable.set('__index', indexFn);
 		metatable.set('__newindex', newIndexFn);
 		table.setMetatable(metatable);
@@ -2529,7 +2529,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			return cached;
 		}
 		const handle = this.getOrCreateHandle(value);
-		const table = new LuaTable();
+		const table = createLuaTable();
 		table.set(BmsxConsoleRuntime.LUA_HANDLE_FIELD, handle);
 		const typeName = this.resolveObjectTypeName(value);
 		table.set(BmsxConsoleRuntime.LUA_TYPE_FIELD, typeName);
@@ -2592,7 +2592,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			case 'string':
 				return true;
 			case 'object':
-				return value instanceof LuaTable;
+				return isLuaTable(value);
 			default:
 				return typeof value === 'object' && value !== null && 'call' in (value as Record<string, unknown>);
 		}
@@ -2602,7 +2602,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			const handleValue = value.get(BmsxConsoleRuntime.LUA_HANDLE_FIELD);
 			if (typeof handleValue === 'number') {
 				const reference = this.luaHandleToObject.get(handleValue);
@@ -2662,12 +2662,12 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') {
 			return value;
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			return value;
 		}
 		if (Array.isArray(value)) {
 			const ensured = this.ensureInterpreter(interpreter);
-			const table = new LuaTable();
+			const table = createLuaTable();
 			for (let index = 0; index < value.length; index += 1) {
 				table.set(index + 1, this.jsToLua(value[index], ensured));
 			}
@@ -2676,14 +2676,14 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (typeof value === 'object') {
 			const ensured = this.ensureInterpreter(interpreter);
 			if (value instanceof Map) {
-				const table = new LuaTable();
+				const table = createLuaTable();
 				for (const [key, entry] of value.entries()) {
 					table.set(this.jsToLua(key, ensured), this.jsToLua(entry, ensured));
 				}
 				return table;
 			}
 			if (value instanceof Set) {
-				const table = new LuaTable();
+				const table = createLuaTable();
 				let index = 1;
 				for (const entry of value.values()) {
 					table.set(index, this.jsToLua(entry, ensured));
@@ -3747,7 +3747,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		let current: LuaValue = value;
 		for (let index = 1; index < parts.length; index += 1) {
 			const part = parts[index];
-			if (!(current instanceof LuaTable)) {
+			if (!(isLuaTable(current))) {
 				return { kind: 'not_defined', scope };
 			}
 			const nextValue = current.get(part);
@@ -3792,7 +3792,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			const fnName = value.name && value.name.length > 0 ? value.name : '<anonymous>';
 			return { lines: [`<function ${fnName}>`], valueType: 'function', isFunction: true };
 		}
-		if (value instanceof LuaTable) {
+		if (isLuaTable(value)) {
 			try {
 				const serialized = this.serializeLuaValueForSnapshot(value, new Set<LuaTable>());
 				const json = JSON.stringify(serialized, null, 2) ?? 'null';
