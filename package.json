@@ -55,7 +55,8 @@
 	"terminal-kit": "*",
 	"tslib": "*",
 	"tsx": "^4.20.5",
-	"typescript": "^5.8.3"
+	"typescript": "^5.8.3",
+	"ts-morph": "^22.0.0"
   },
   "scripts": {
 	"headless:game": "node scripts/headless-run.js",
@@ -77,7 +78,12 @@
 	"fix:indent": "node scripts/fix-ts-indentation-safe.js",
 	"check:indent": "node scripts/fix-ts-indentation-safe.js --check",
 	"build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
-	"Watch!": "npx tsc -b -w"
+	"Watch!": "npx tsc -b -w",
+	"ast-transform:convert": "node scripts/ast-transform/convert_class_members.js",
+	"ast-transform:morph": "node scripts/ast-transform/convert_with_tsmorph.js",
+	"ast-transform:morph:project": "node scripts/ast-transform/convert_with_tsmorph.js --project tsconfig.json",
+	"test:ast-transform": "node scripts/ast-transform/test/run_test.js",
+	"test:ast-transform:project": "node scripts/ast-transform/test/run_project_test.js"
   },
 
   "repository": {
