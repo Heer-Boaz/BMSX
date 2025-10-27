@@ -2,6 +2,23 @@ import { BmsxConsoleApi } from '../api';
 import * as constants from './constants';
 import type { EditorTabDescriptor, RectBounds } from './types';
 
+type TabMetrics = {
+	tab: EditorTabDescriptor;
+	textWidth: number;
+	closeWidth: number;
+	indicatorWidth: number;
+	dirty: boolean;
+	markerMetrics: { width: number; height: number } | null;
+	closable: boolean;
+	tabWidth: number;
+};
+
+type LayoutEntry = TabMetrics & {
+	left: number;
+	right: number;
+	rowIndex: number;
+};
+
 export interface TabBarHost {
 	viewportWidth: number;
 	headerHeight: number;
@@ -18,18 +35,6 @@ export interface TabBarHost {
 	tabCloseButtonBounds: Map<string, RectBounds>;
 }
 
-type LayoutEntry = {
-	tab: EditorTabDescriptor;
-	left: number;
-	right: number;
-	rowIndex: number;
-	textWidth: number;
-	closeWidth: number;
-	indicatorWidth: number;
-	dirty: boolean;
-	markerMetrics: { width: number; height: number } | null;
-};
-
 const LEFT_MARGIN = 4;
 const RIGHT_MARGIN = 4;
 
@@ -38,8 +43,6 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 	host.tabCloseButtonBounds.clear();
 
 	const rowHeight = Math.max(1, host.rowHeight);
-	const layout: LayoutEntry[] = [];
-
 	let markerMetricsCache: { width: number; height: number } | null = null;
 	const resolveMarkerMetrics = (): { width: number; height: number } => {
 		if (!markerMetricsCache) {
@@ -48,12 +51,7 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 		return markerMetricsCache;
 	};
 
-	let cursorX = LEFT_MARGIN;
-	let currentRow = 0;
-	let maxRowIndex = 0;
-
-	for (let index = 0; index < host.tabs.length; index += 1) {
-		const tab = host.tabs[index];
+	const metrics: TabMetrics[] = host.tabs.map((tab) => {
 		const textWidth = host.measureText(tab.title);
 		const dirty = tab.dirty === true;
 		const closable = tab.closable === true;
@@ -68,40 +66,95 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 			indicatorWidth = markerMetrics.width + constants.TAB_DIRTY_MARKER_SPACING;
 		}
 		const tabWidth = textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
-		const rowWrapThreshold = host.viewportWidth - RIGHT_MARGIN;
-		if (cursorX > LEFT_MARGIN && cursorX + tabWidth > rowWrapThreshold) {
-			currentRow += 1;
-			cursorX = LEFT_MARGIN;
-		}
-		const left = cursorX;
-		const right = left + tabWidth;
-		layout.push({
+		return {
 			tab,
-			left,
-			right,
-			rowIndex: currentRow,
 			textWidth,
 			closeWidth,
 			indicatorWidth,
 			dirty,
 			markerMetrics,
-		});
-		cursorX = right + constants.TAB_BUTTON_SPACING;
-		if (currentRow > maxRowIndex) {
-			maxRowIndex = currentRow;
-		}
+			closable,
+			tabWidth,
+		};
+	});
+
+	const rowHeightTotal = rowHeight;
+	if (metrics.length === 0) {
+		const barTop = host.headerHeight;
+		const barBottom = barTop + rowHeightTotal;
+		api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_TAB_BAR_BACKGROUND);
+		api.rectfill(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, constants.COLOR_TAB_BORDER);
+		return 1;
 	}
 
-	const totalRows = Math.max(maxRowIndex + 1, 1);
+	const n = metrics.length;
+	const spacing = constants.TAB_BUTTON_SPACING;
+	const maxWidth = Math.max(LEFT_MARGIN + RIGHT_MARGIN + 1, host.viewportWidth - RIGHT_MARGIN);
+	const costs: number[] = new Array(n + 1).fill(0);
+	const nextBreak: number[] = new Array(n).fill(n);
+
+	for (let i = n - 1; i >= 0; i -= 1) {
+		let bestRows = Number.POSITIVE_INFINITY;
+		let bestPenalty = Number.POSITIVE_INFINITY;
+		let bestBreak = i + 1;
+		let cursor = LEFT_MARGIN;
+		for (let j = i; j < n; j += 1) {
+			const entry = metrics[j];
+			const candidateRight = cursor + entry.tabWidth;
+			if (cursor > LEFT_MARGIN && candidateRight > maxWidth) {
+				break;
+			}
+			const fits = candidateRight <= maxWidth || cursor === LEFT_MARGIN;
+			if (!fits) {
+				break;
+			}
+			const rows = 1 + costs[j + 1];
+			const usedWidth = candidateRight;
+			const leftover = Math.max(0, maxWidth - usedWidth);
+			const penalty = leftover * leftover;
+			if (rows < bestRows || (rows === bestRows && penalty < bestPenalty)) {
+				bestRows = rows;
+				bestPenalty = penalty;
+				bestBreak = j + 1;
+			}
+			cursor = candidateRight + spacing;
+		}
+		if (!Number.isFinite(bestRows)) {
+			bestRows = 1 + costs[i + 1];
+			bestBreak = Math.min(n, i + 1);
+		}
+		costs[i] = bestRows;
+		nextBreak[i] = Math.min(n, bestBreak);
+	}
+
+	const layout: LayoutEntry[] = [];
+	let rowStart = 0;
+	let rowIndex = 0;
+	while (rowStart < n) {
+		const rowEnd = Math.max(rowStart + 1, nextBreak[rowStart] ?? rowStart + 1);
+		let cursor = LEFT_MARGIN;
+		for (let i = rowStart; i < rowEnd; i += 1) {
+			const entry = metrics[i];
+			const left = cursor;
+			const right = left + entry.tabWidth;
+			layout.push({
+				...entry,
+				left,
+				right,
+				rowIndex,
+			});
+			cursor = right + spacing;
+		}
+		rowStart = rowEnd;
+		rowIndex += 1;
+	}
+
+	const totalRows = Math.max(rowIndex, 1);
 	const barTop = host.headerHeight;
-	const totalHeight = totalRows * rowHeight;
+	const totalHeight = totalRows * rowHeightTotal;
 	const barBottom = barTop + totalHeight;
 
 	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_TAB_BAR_BACKGROUND);
-	for (let row = 1; row < totalRows; row += 1) {
-		const separatorTop = barTop + row * rowHeight;
-		api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + 1, constants.COLOR_TAB_BORDER);
-	}
 	api.rectfill(0, Math.max(barTop, barBottom - 1), host.viewportWidth, barBottom, constants.COLOR_TAB_BORDER);
 
 	if (layout.length === 0) {
@@ -110,9 +163,9 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 
 	for (const entry of layout) {
 		const tab = entry.tab;
-		const rowTop = barTop + entry.rowIndex * rowHeight;
+		const rowTop = barTop + entry.rowIndex * rowHeightTotal;
 		const boundsTop = rowTop + 1;
-		const boundsBottom = rowTop + rowHeight - 1;
+		const boundsBottom = rowTop + rowHeightTotal - 1;
 		const bounds: RectBounds = {
 			left: entry.left,
 			top: boundsTop,
@@ -136,7 +189,7 @@ export function renderTabBar(api: BmsxConsoleApi, host: TabBarHost): number {
 		const indicatorWidth = entry.indicatorWidth;
 		const hovered = tab.id === host.tabHoverId;
 
-		if (tab.closable) {
+		if (entry.closable) {
 			const closeBounds: RectBounds = {
 				left: bounds.right - entry.closeWidth,
 				top: bounds.top,
