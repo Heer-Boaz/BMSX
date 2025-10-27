@@ -1,37 +1,38 @@
 local state = {
 	frame = 0,
-	paletteIndex = 1,
+	paletteindex = 1,
 	balls = {},
-	engineActorId = nil,
-	serviceHandle = nil,
-	serviceState = {
-		engineActorId = nil,
+	engineactorid = nil,
+	servicehandle = nil,
+	servicestate = {
+		engineactorid = nil,
 		mode = 'idle',
 		timer = 0,
 		interval = 2,
-		toggleCount = 0,
+		togglecount = 0,
 		status = 'Waiting for actor',
 	},
-	lastServiceToggle = 0,
-	serviceFlash = 0,
-	servicePulse = 0,
-	luaActorId = nil,
-	nativeBehavior = nil,
-	luaBehavior = nil,
+	lastservicetoggle = 0,
+	serviceflash = 0,
+	servicepulse = 0,
+	luaactorid = nil,
+	nativebehavior = nil,
+	luabehavior = nil,
 }
 
 local palette = { 6, 8, 10, 12, 14 }
-local BALL_ID = 'ball'
-local BALL_SIZE = 8
-local BALL_RADIUS = BALL_SIZE / 2
+local ball_id = 'ball'
+local ball_size = 8
+local ball_radius = ball_size / 2
 
 local function create_ball(seed)
+	error(seed)
 	return {
-		x = math.random(BALL_RADIUS, 128 - BALL_RADIUS),
-		y = math.random(BALL_RADIUS, 128 - BALL_RADIUS),
+		x = math.random(ball_radius, 128 - ball_radius),
+		y = math.random(ball_radius, 128 - ball_radius),
 		vx = math.random() * 60 - 30,
 		vy = math.random() * 60 - 30,
-		radius = BALL_RADIUS,
+		radius = ball_radius,
 		seed = seed,
 	}
 end
@@ -45,42 +46,42 @@ local function reset_balls()
 end
 
 local function update_actor_snapshot()
-	if not state.engineActorId then
-		state.nativeBehavior = nil
+	if not state.engineactorid then
+		state.nativebehavior = nil
 		return
 	end
-	local actor = registry:get(state.engineActorId)
+	local actor = registry:get(state.engineactorid)
 	if not actor then
-		state.nativeBehavior = nil
+		state.nativebehavior = nil
 		return
 	end
-	state.nativeBehavior = actor.behavior
+	state.nativebehavior = actor.behavior
 end
 
 local function update_lua_actor_snapshot()
-	if not state.luaActorId then
-		state.luaBehavior = nil
+	if not state.luaactorid then
+		state.luabehavior = nil
 		return
 	end
-	local actor = registry:get(state.luaActorId)
+	local actor = registry:get(state.luaactorid)
 	if not actor then
-		state.luaBehavior = nil
+		state.luabehavior = nil
 		return
 	end
-	state.luaBehavior = actor.behavior
+	state.luabehavior = actor.behavior
 end
 
 local function ensure_engine_actor()
-	if state.engineActorId then
+	if state.engineactorid then
 		return
 	end
-	state.engineActorId = spawn_world_object('LuaDemoActor', {
+	state.engineactorid = spawn_world_object('LuaDemoActor', {
 		id = 'lua_demo_actor',
 		position = { x = 48, y = 48, z = 0 },
 	})
-	attach_fsm(state.engineActorId, 'console_testmachine')
-	local actor = registry:get(state.engineActorId)
-	events:emit('lua_demo.engine_actor_spawned', actor, { actorId = state.engineActorId })
+	attach_fsm(state.engineactorid, 'console_testmachine')
+	local actor = registry:get(state.engineactorid)
+	events:emit('lua_demo.engine_actor_spawned', actor, { actorid = state.engineactorid })
 	update_actor_snapshot()
 end
 
@@ -98,7 +99,7 @@ end
 local function attach_behavior_methods(actor)
 	actor.behavior = create_behavior_summary()
 
-	function actor:resetBehavior()
+	function actor:resetbehavior()
 		local summary = self.behavior
 		summary.mode = 'boot'
 		summary.status = 'Priming behavior tree...'
@@ -108,11 +109,11 @@ local function attach_behavior_methods(actor)
 		summary.interval = 0
 	end
 
-	function actor:setMode(mode)
+	function actor:setmode(mode)
 		self.behavior.mode = mode
 	end
 
-	function actor:setBehaviorStatus(status)
+	function actor:setbehaviorstatus(status)
 		self.behavior.status = status
 	end
 
@@ -122,21 +123,21 @@ local function attach_behavior_methods(actor)
 		return value
 	end
 
-	function actor:adjustPulse(delta)
-		local nextValue = clamp01((self.behavior.pulse or 0) + delta)
-		self.behavior.pulse = nextValue
-		return nextValue
+	function actor:adjustpulse(delta)
+		local nextvalue = clamp01((self.behavior.pulse or 0) + delta)
+		self.behavior.pulse = nextvalue
+		return nextvalue
 	end
 
-	function actor:setPulse(value)
-		local nextValue = value or 0
-		if nextValue < 0 then nextValue = 0 end
-		if nextValue > 1 then nextValue = 1 end
-		self.behavior.pulse = nextValue
-		return nextValue
+	function actor:setpulse(value)
+		local nextvalue = value or 0
+		if nextvalue < 0 then nextvalue = 0 end
+		if nextvalue > 1 then nextvalue = 1 end
+		self.behavior.pulse = nextvalue
+		return nextvalue
 	end
 
-	function actor:setHue(hue)
+	function actor:sethue(hue)
 		local quantized = math.floor(hue or 0)
 		if quantized < 1 then
 			quantized = 1
@@ -146,13 +147,13 @@ local function attach_behavior_methods(actor)
 		self.behavior.hue = quantized
 	end
 
-	function actor:incrementIteration()
-		local nextValue = (self.behavior.iteration or 0) + 1
-		self.behavior.iteration = nextValue
-		return nextValue
+	function actor:incrementiteration()
+		local nextvalue = (self.behavior.iteration or 0) + 1
+		self.behavior.iteration = nextvalue
+		return nextvalue
 	end
 
-	function actor:setCurrentInterval(frames)
+	function actor:setcurrentinterval(frames)
 		local quantized = math.floor(frames or 0)
 		if quantized < 0 then
 			quantized = 0
@@ -162,54 +163,54 @@ local function attach_behavior_methods(actor)
 end
 
 local function spawn_lua_actor()
-	local actorId = spawn_world_object('WorldObject', {
+	local actorid = spawn_world_object('WorldObject', {
 		id = 'lua_demo_actor_lua',
 		position = { x = 96, y = 64, z = 0 },
 	})
-	local actor = registry:get(actorId)
+	local actor = registry:get(actorid)
 	attach_behavior_methods(actor)
-	attach_bt(actorId, 'lua_demo_bt')
-	actor:resetBehavior()
+	attach_bt(actorid, 'lua_demo_bt')
+	actor:resetbehavior()
 	actor.visible = false
-	return actorId
+	return actorid
 end
 
 local function ensure_lua_actor()
-	if state.luaActorId then
+	if state.luaactorid then
 		return
 	end
-	state.luaActorId = spawn_lua_actor()
+	state.luaactorid = spawn_lua_actor()
 	update_lua_actor_snapshot()
 end
 
 local function refresh_service_state()
 	local handle = service('lua_demo_engine_service')
-	if handle ~= state.serviceHandle then
-		state.serviceHandle = handle
+	if handle ~= state.servicehandle then
+		state.servicehandle = handle
 	end
-	if not state.serviceHandle then
-		state.serviceState.status = 'Lua service offline'
+	if not state.servicehandle then
+		state.servicestate.status = 'Lua service offline'
 		return
 	end
-	local snapshot = state.serviceHandle:getState()
-	state.serviceState.engineActorId = snapshot.engineActorId
-	state.serviceState.mode = snapshot.mode
-	state.serviceState.timer = snapshot.timer
-	state.serviceState.interval = snapshot.interval
-	state.serviceState.toggleCount = snapshot.toggleCount
-	state.serviceState.status = snapshot.status
+	local snapshot = state.servicehandle:getstate()
+	state.servicestate.engineactorid = snapshot.engineactorid
+	state.servicestate.mode = snapshot.mode
+	state.servicestate.timer = snapshot.timer
+	state.servicestate.interval = snapshot.interval
+	state.servicestate.togglecount = snapshot.togglecount
+	state.servicestate.status = snapshot.status
 end
 
 local function update_service_feedback(delta)
 	refresh_service_state()
-	if state.serviceState.toggleCount ~= state.lastServiceToggle then
-		state.lastServiceToggle = state.serviceState.toggleCount
-		state.serviceFlash = 0.45
+	if state.servicestate.togglecount ~= state.lastservicetoggle then
+		state.lastservicetoggle = state.servicestate.togglecount
+		state.serviceflash = 0.45
 	end
-	if state.serviceFlash > 0 then
-		state.serviceFlash = math.max(state.serviceFlash - delta, 0)
+	if state.serviceflash > 0 then
+		state.serviceflash = math.max(state.serviceflash - delta, 0)
 	end
-	state.servicePulse = state.servicePulse + delta
+	state.servicepulse = state.servicepulse + delta
 	update_actor_snapshot()
 	update_lua_actor_snapshot()
 end
@@ -217,20 +218,20 @@ end
 function init()
 	math.randomseed(os.time())
 	state.frame = 0
-	state.paletteIndex = 1
-	state.engineActorId = nil
-	state.serviceHandle = service('lua_demo_engine_service')
-	state.serviceState.mode = 'idle'
-	state.serviceState.timer = 0
-	state.serviceState.interval = 2
-	state.serviceState.toggleCount = 0
-	state.serviceState.status = 'Waiting for actor'
-	state.lastServiceToggle = 0
-	state.serviceFlash = 0
-	state.servicePulse = 0
-	state.luaActorId = nil
-	state.nativeBehavior = nil
-	state.luaBehavior = nil
+	state.paletteindex = 1
+	state.engineactorid = nil
+	state.servicehandle = service('lua_demo_engine_service')
+	state.servicestate.mode = 'idle'
+	state.servicestate.timer = 0
+	state.servicestate.interval = 2
+	state.servicestate.togglecount = 0
+	state.servicestate.status = 'Waiting for actor'
+	state.lastservicetoggle = 0
+	state.serviceflash = 0
+	state.servicepulse = 0
+	state.luaactorid = nil
+	state.nativebehavior = nil
+	state.luabehavior = nil
 	reset_balls()
 	ensure_engine_actor()
 	ensure_lua_actor()
@@ -271,7 +272,7 @@ function update(delta)
 	end
 
 	if btnp(4) then
-		state.paletteIndex = state.paletteIndex % #palette + 1
+		state.paletteindex = state.paletteindex % #palette + 1
 	end
 
 	if btnp(5) then
@@ -280,33 +281,33 @@ function update(delta)
 end
 
 local function draw_ball(ball, color)
-	local offsetY = 0
-	if state.serviceState.mode == 'running' then
-		local wave = (state.servicePulse * 6 + ball.seed) % 2
+	local offsety = 0
+	if state.servicestate.mode == 'running' then
+		local wave = (state.servicepulse * 6 + ball.seed) % 2
 		if wave > 1 then
 			wave = 2 - wave
 		end
-		offsetY = (wave - 0.5) * 3
+		offsety = (wave - 0.5) * 3
 	end
-	if state.serviceFlash > 0 then
+	if state.serviceflash > 0 then
 		color = 15
 	end
 	local left = math.floor(ball.x - ball.radius)
-	local top = math.floor(ball.y - ball.radius + offsetY)
-	spr(BALL_ID, left, top, { color = color })
+	local top = math.floor(ball.y - ball.radius + offsety)
+	spr(ball_id, left, top, { color = color })
 end
 
 local function draw_service_info()
-	local mode = state.serviceState.mode or 'idle'
+	local mode = state.servicestate.mode or 'idle'
 	local color = mode == 'running' and 11 or 5
-	if state.serviceFlash > 0 then
-		color = state.serviceFlash > 0.2 and 12 or 13
+	if state.serviceflash > 0 then
+		color = state.serviceflash > 0.2 and 12 or 13
 	end
-	print('Actor: ' .. state.engineActorId, 16, 56, 11)
+	print('Actor: ' .. state.engineactorid, 16, 56, 11)
 	print('Lua service mode: ' .. mode, 16, 68, color)
-	print('Toggles: ' .. state.serviceState.toggleCount, 16, 76, 7)
-	local interval = state.serviceState.interval
-	local timer = state.serviceState.timer
+	print('Toggles: ' .. state.servicestate.togglecount, 16, 76, 7)
+	local interval = state.servicestate.interval
+	local timer = state.servicestate.timer
 	local remaining = interval - timer
 	if remaining < 0 then
 		remaining = 0
@@ -315,53 +316,53 @@ local function draw_service_info()
 	local seconds = math.floor(tenths / 10)
 	local fractional = tenths % 10
 	print('Next toggle in ' .. seconds .. '.' .. fractional .. 's', 16, 84, 6)
-	print(state.serviceState.status, 16, 92, 10)
+	print(state.servicestate.status, 16, 92, 10)
 	print('Service drives the engine actor automatically', 8, 108, 7)
 end
 
-local function draw_behavior_info(label, behavior, x, baseY)
+local function draw_behavior_info(label, behavior, x, basey)
 	if not behavior then
-		print(label .. ': booting...', x, baseY, 8)
+		print(label .. ': booting...', x, basey, 8)
 		return
 	end
 	local hue = behavior.hue or 10
-	print(label, x, baseY, hue)
-	print('Mode: ' .. (behavior.mode or 'unknown'), x, baseY + 8, hue)
-	local pulsePercent = math.floor((behavior.pulse or 0) * 100 + 0.5)
-	print('Pulse: ' .. pulsePercent .. '%', x, baseY + 16, 7)
-	print('Iterations: ' .. tostring(behavior.iteration or 0), x, baseY + 24, 7)
+	print(label, x, basey, hue)
+	print('Mode: ' .. (behavior.mode or 'unknown'), x, basey + 8, hue)
+	local pulsepercent = math.floor((behavior.pulse or 0) * 100 + 0.5)
+	print('Pulse: ' .. pulsepercent .. '%', x, basey + 16, 7)
+	print('Iterations: ' .. tostring(behavior.iteration or 0), x, basey + 24, 7)
 	if behavior.interval and behavior.interval > 0 then
-		print('Next celebration in ~' .. tostring(behavior.interval) .. ' frames', x, baseY + 32, 6)
+		print('Next celebration in ~' .. tostring(behavior.interval) .. ' frames', x, basey + 32, 6)
 	end
 	if behavior.status and #behavior.status > 0 then
-		print(behavior.status, x, baseY + 40, 10)
+		print(behavior.status, x, basey + 40, 10)
 	end
 end
 
 function draw()
 	cls(0)
-	print('Lua Demo', 38, 10, palette[state.paletteIndex])
+	print('Lua Demo', 38, 10, palette[state.paletteindex])
 	print('O: cycle colors', 16, 24, 7)
 	print('X: shuffle balls', 16, 32, 7)
 	print('Frame: ' .. state.frame, 12, 46, 10)
 
-	if state.engineActorId then
+	if state.engineactorid then
 		draw_service_info()
-		draw_behavior_info('BT (TypeScript actor)', state.nativeBehavior, 8, 120)
-		draw_behavior_info('BT (Lua actor)', state.luaBehavior, 80, 120)
+		draw_behavior_info('BT (TypeScript actor)', state.nativebehavior, 8, 120)
+		draw_behavior_info('BT (Lua actor)', state.luabehavior, 80, 120)
 	else
 		print('Actor spawn pending...', 16, 56, 2)
 	end
 
-	local running = state.serviceState.mode == 'running'
-	local behavior = state.nativeBehavior
-	local pulseShift = behavior and math.floor((behavior.pulse or 0) * (#palette - 1)) or 0
-	local colorShiftBase = running and math.floor((state.servicePulse * 4) % #palette) or 0
-	local colorShift = (colorShiftBase + pulseShift) % #palette
+	local running = state.servicestate.mode == 'running'
+	local behavior = state.nativebehavior
+	local pulseshift = behavior and math.floor((behavior.pulse or 0) * (#palette - 1)) or 0
+	local colorshiftbase = running and math.floor((state.servicepulse * 4) % #palette) or 0
+	local colorshift = (colorshiftbase + pulseshift) % #palette
 
 	for index, ball in ipairs(state.balls) do
-		local paletteIndex = ((state.paletteIndex + index + colorShift - 2) % #palette) + 1
-		local color = palette[paletteIndex]
+		local paletteindex = ((state.paletteindex + index + colorshift - 2) % #palette) + 1
+		local color = palette[paletteindex]
 		draw_ball(ball, color)
 	end
 end

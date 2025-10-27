@@ -75,9 +75,20 @@ export class StateMachineController {
 	private registerActiveMachine(machine: State): void {
 		const machineId = machine.localdef_id;
 		const existing = ActiveStateMachines.get(machineId) ?? [];
-		if (!existing.includes(machine)) {
-			ActiveStateMachines.set(machineId, [...existing, machine]);
+		if (existing.includes(machine)) return;
+		ActiveStateMachines.set(machineId, [...existing, machine]);
+	}
+
+	public unregisterActiveMachine(machine: State): void {
+		const machineId = machine.localdef_id;
+		const existing = ActiveStateMachines.get(machineId);
+		if (!existing) return;
+		const next = existing.filter(entry => entry !== machine);
+		if (next.length === 0) {
+			ActiveStateMachines.delete(machineId);
+			return;
 		}
+		ActiveStateMachines.set(machineId, next);
 	}
 
 	private bindMachine(machine: State): void {
@@ -156,7 +167,9 @@ export class StateMachineController {
 		this._started = false;
 		// Deregister all machines
 		for (let id in this.statemachines) {
-			this.statemachines[id].dispose();
+			const machine = this.statemachines[id];
+			this.unregisterActiveMachine(machine);
+			machine.dispose();
 		}
 		this.unbind();
 	}
@@ -195,7 +208,10 @@ export class StateMachineController {
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
 			const events = machine.definition.event_list;
-			if (!events) continue;
+			if (!events) {
+				this.unregisterActiveMachine(machine);
+				continue;
+			}
 			events.forEach(event => {
 				let scope = event.scope;
 				switch (scope) {
@@ -206,6 +222,7 @@ export class StateMachineController {
 				// Pass undefined explicitly for global scope so EventEmitter.off removes global listeners
 				EventEmitter.instance.off(event.name, this.auto_dispatch, scope, true);
 			});
+			this.unregisterActiveMachine(machine);
 		}
 	}
 

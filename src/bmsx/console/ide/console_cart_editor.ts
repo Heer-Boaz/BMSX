@@ -590,8 +590,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.updateDesiredColumn();
 		this.revealCursor();
 		this.resetBlink();
-		const normalizedMessage = (message && message.length > 0) ? message.trim() : 'Runtime error';
-		const overlayMessage = processedLine !== null ? `Line ${processedLine}: ${normalizedMessage}` : normalizedMessage;
+		const normalizedMessage = (message?.length > 0) ? message.trim() : 'Runtime error';
+		const overlayMessage = processedLine !== null ? `Line ${processedLine}:${normalizedMessage}` : normalizedMessage;
 		const overlayLines = this.buildRuntimeErrorLines(overlayMessage);
 		const overlay: RuntimeErrorOverlay = {
 			row: targetRow,

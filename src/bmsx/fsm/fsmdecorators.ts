@@ -15,7 +15,9 @@ export const StateDefinitionBuilders: Record<string, () => StateMachineBlueprint
 export function assign_fsm(...fsms: FSMName[]) {
 	return function (value: any, _context: ClassDecoratorContext) {
 		const ctor = value as ConstructorWithFSMProperty;
-		ctor.linkedFSMs ??= new Set<FSMName>();
+		if (!Object.prototype.hasOwnProperty.call(ctor, 'linkedFSMs') || !ctor.linkedFSMs) {
+			ctor.linkedFSMs = new Set<FSMName>();
+		}
 		fsms.forEach(fsm => ctor.linkedFSMs!.add(fsm));
 		updateAssignedFSMs(ctor);
 		// no class replacement

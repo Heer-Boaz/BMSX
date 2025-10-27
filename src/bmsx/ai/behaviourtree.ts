@@ -303,7 +303,9 @@ export type ConstructorWithBTProperty = Function & {
 export function assign_bt(...bts: BehaviorTreeID[]) {
 	return function (value: any, _context: ClassDecoratorContext) {
 		const constructor = value as ConstructorWithBTProperty;
-		constructor.linkedBTs ??= new Set<BehaviorTreeID>();
+		if (!Object.prototype.hasOwnProperty.call(constructor, 'linkedBTs') || !constructor.linkedBTs) {
+			constructor.linkedBTs = new Set<BehaviorTreeID>();
+		}
 		bts.forEach(bt => constructor.linkedBTs!.add(bt));
 		updateAllAssignedBTs(constructor);
 		// no class replacement

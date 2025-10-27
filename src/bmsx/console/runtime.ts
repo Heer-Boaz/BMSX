@@ -1808,9 +1808,6 @@ export class BmsxConsoleRuntime extends Service {
 		const controllers = new Set<StateMachineController>();
 
 		for (const machineId of machineIds) {
-			if (!ActiveStateMachines.has(machineId)) {
-				continue;
-			}
 			const instances = ActiveStateMachines.get(machineId);
 			if (!instances) {
 				throw new Error(`[BmsxConsoleRuntime] Active state machines map has no entry for '${machineId}'.`);
@@ -1833,10 +1830,8 @@ export class BmsxConsoleRuntime extends Service {
 				}
 				controllers.add(controller);
 				const cache = controller._subscribedCache;
-				if (!oldDefinition.event_list) {
-					throw new Error(`[BmsxConsoleRuntime] State machine '${machineId}' previous definition has no event list.`);
-				}
-				for (const event of oldDefinition.event_list) {
+				const events = oldDefinition.event_list ?? [];
+				for (const event of events) {
 					let emitter: Identifier | undefined;
 					switch (event.scope) {
 						case 'self':
@@ -1859,9 +1854,6 @@ export class BmsxConsoleRuntime extends Service {
 
 	private refreshStateMachines(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>, controllersToRebind: ReadonlySet<StateMachineController>): void {
 		for (const machineId of machineIds) {
-			if (!ActiveStateMachines.has(machineId)) {
-				continue;
-			}
 			const instances = ActiveStateMachines.get(machineId);
 			if (!instances) {
 				throw new Error(`[BmsxConsoleRuntime] Active state machines map has no entry for '${machineId}'.`);

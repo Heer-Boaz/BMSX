@@ -243,9 +243,13 @@ function reconcileStateTree(node: State<Stateful>, oldDef: StateDefinition | und
 			}
 			reconcileStateTree(childInst, oldChildDef, newChildDef);
 
-			// Fix child's currentid if needed
-			if (!childInst.states || !childInst.states[childInst.currentid]) {
-				childInst.currentid = safeStartStateId(newChildDef);
+			const hasChildStates = !!newChildDef.states && Object.keys(newChildDef.states).length > 0;
+			if (hasChildStates) {
+				if (!childInst.states || !childInst.states[childInst.currentid]) {
+					childInst.currentid = safeStartStateId(newChildDef);
+				}
+			} else {
+				childInst.states = undefined;
 			}
 			clampTape(childInst);
 		}

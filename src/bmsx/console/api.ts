@@ -510,11 +510,14 @@ export class BmsxConsoleApi {
 		}
 		const object = this.requireWorldObject(objectId, 'attach_bt');
 		const ctor = object.constructor as ConstructorWithBTProperty;
-		const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
-		if (!linked.has(trimmed)) {
-			const next = new Set(linked);
-			next.add(trimmed);
-			ctor.linkedBTs = next;
+		const hasOwnLinkedSet = Object.prototype.hasOwnProperty.call(ctor, 'linkedBTs');
+		if (hasOwnLinkedSet) {
+			const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
+			if (!linked.has(trimmed)) {
+				const next = new Set(linked);
+				next.add(trimmed);
+				ctor.linkedBTs = next;
+			}
 		}
 		const contexts = (object as { btreecontexts?: Record<string, BehaviorTreeContext> }).btreecontexts;
 		if (contexts && !contexts[trimmed]) {
