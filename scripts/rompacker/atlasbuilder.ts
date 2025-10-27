@@ -15,61 +15,67 @@ export function generateAtlasName(atlasIndex: number): string {
 }
 
 /**
- * Splits a free rectangle into smaller rectangles based on the position and size of a used rectangle.
+ * Splits a free rectangle into smaller rectangles based on the position and size of a used rectangle
  * @param freeRect The free rectangle to split.
  * @param usedRect The used rectangle to use as a reference for splitting the free rectangle.
- * @returns An array of new free rectangles created by splitting the original free rectangle.
+ * @returns An array of new free rectangles created by splitting the original free rectangle, or null when the rectangles do not overlap.
  */
-function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
+function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] | null {
+	const overlapMinX = Math.max(freeRect.x, usedRect.x);
+	const overlapMinY = Math.max(freeRect.y, usedRect.y);
+	const overlapMaxX = Math.min(freeRect.x + freeRect.width, usedRect.x + usedRect.width);
+	const overlapMaxY = Math.min(freeRect.y + freeRect.height, usedRect.y + usedRect.height);
+
+	// If there is no intersection between the rectangles, keep the original free rectangle.
+	if (overlapMinX >= overlapMaxX || overlapMinY >= overlapMaxY) {
+		return null;
+	}
+
 	const newFreeRects: Bin[] = [];
 
-	// Check for overlap on the horizontal axis
-	if (usedRect.x < freeRect.x + freeRect.width && usedRect.x + usedRect.width > freeRect.x) {
-		if (usedRect.y > freeRect.y && usedRect.y < freeRect.y + freeRect.height) {
-			// Split the free rectangle horizontally (top)
-			newFreeRects.push({
-				x: freeRect.x,
-				y: freeRect.y,
-				width: freeRect.width,
-				height: usedRect.y - freeRect.y,
-			});
-		}
-
-		if (usedRect.y + usedRect.height < freeRect.y + freeRect.height) {
-			// Split the free rectangle horizontally (bottom)
-			newFreeRects.push({
-				x: freeRect.x,
-				y: usedRect.y + usedRect.height,
-				width: freeRect.width,
-				height: (freeRect.y + freeRect.height) - (usedRect.y + usedRect.height),
-			});
-		}
+	// Region above the placed rectangle
+	if (overlapMinY > freeRect.y) {
+		newFreeRects.push({
+			x: freeRect.x,
+			y: freeRect.y,
+			width: freeRect.width,
+			height: overlapMinY - freeRect.y,
+		});
 	}
 
-	// Check for overlap on the vertical axis
-	if (usedRect.y < freeRect.y + freeRect.height && usedRect.y + usedRect.height > freeRect.y) {
-		if (usedRect.x > freeRect.x && usedRect.x < freeRect.x + freeRect.width) {
-			// Split the free rectangle vertically (left)
-			newFreeRects.push({
-				x: freeRect.x,
-				y: freeRect.y,
-				width: usedRect.x - freeRect.x,
-				height: freeRect.height,
-			});
-		}
-
-		if (usedRect.x + usedRect.width < freeRect.x + freeRect.width) {
-			// Split the free rectangle vertically (right)
-			newFreeRects.push({
-				x: usedRect.x + usedRect.width,
-				y: freeRect.y,
-				width: (freeRect.x + freeRect.width) - (usedRect.x + usedRect.width),
-				height: freeRect.height,
-			});
-		}
+	// Region below the placed rectangle
+	if (overlapMaxY < freeRect.y + freeRect.height) {
+		newFreeRects.push({
+			x: freeRect.x,
+			y: overlapMaxY,
+			width: freeRect.width,
+			height: (freeRect.y + freeRect.height) - overlapMaxY,
+		});
 	}
 
-	return newFreeRects;
+	const verticalSpan = overlapMaxY - overlapMinY;
+
+	// Region to the left of the placed rectangle, aligned to the intersection band
+	if (overlapMinX > freeRect.x && verticalSpan > 0) {
+		newFreeRects.push({
+			x: freeRect.x,
+			y: overlapMinY,
+			width: overlapMinX - freeRect.x,
+			height: verticalSpan,
+		});
+	}
+
+	// Region to the right of the placed rectangle, aligned to the intersection band
+	if (overlapMaxX < freeRect.x + freeRect.width && verticalSpan > 0) {
+		newFreeRects.push({
+			x: overlapMaxX,
+			y: overlapMinY,
+			width: (freeRect.x + freeRect.width) - overlapMaxX,
+			height: verticalSpan,
+		});
+	}
+
+	return newFreeRects.filter(rect => rect.width > 0 && rect.height > 0);
 }
 
 /**
@@ -159,7 +165,11 @@ function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: num
 			const newFreeRectangles: Bin[] = [];
 			for (const freeRect of freeRectangles) {
 				const splitRects = splitFreeRectangle(freeRect, bestPlacement.bin);
-				newFreeRectangles.push(...splitRects);
+				if (splitRects) {
+					newFreeRectangles.push(...splitRects);
+				} else {
+					newFreeRectangles.push(freeRect);
+				}
 			}
 			freeRectangles.length = 0;
 			pruneFreeRectangles(newFreeRectangles, freeRectangles);
