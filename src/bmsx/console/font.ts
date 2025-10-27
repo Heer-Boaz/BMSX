@@ -123,6 +123,7 @@ function buildTinyCharMap(prefix: string): CharMap {
 		'/': withPrefix('slash'),
 		':': withPrefix('colon'),
 		';': withPrefix('semicolon'),
+		'~': withPrefix('tilde'),
 		'<': withPrefix('lessthan'),
 		'=': withPrefix('equals'),
 		'>': withPrefix('greaterthan'),
