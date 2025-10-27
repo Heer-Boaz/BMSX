@@ -106,7 +106,7 @@ export function unregisterBehaviorTreeBuilder(id: BehaviorTreeID): void {
 	behaviorTreeSignatures.delete(id);
 }
 
-export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: BehaviorTreeDefinition): { changed: boolean; previousDefinition?: BehaviorTreeDefinition } {
+export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: BehaviorTreeDefinition, options?: { force?: boolean }): { changed: boolean; previousDefinition?: BehaviorTreeDefinition } {
 	const trimmed = id.trim();
 	if (trimmed.length === 0) {
 		throw new Error('[BehaviorTree] Definition id must be a non-empty string.');
@@ -114,7 +114,7 @@ export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: Behavi
 	const signature = computeBlueprintSignature(definition);
 	const previousSignature = behaviorTreeSignatures.get(trimmed);
 	const previousDefinition = BehaviorTreeDefinitions[trimmed];
-	if (previousSignature === signature) {
+	if (!options?.force && previousSignature === signature) {
 		return { changed: false, previousDefinition };
 	}
 	behaviorTreeSignatures.set(trimmed, signature);

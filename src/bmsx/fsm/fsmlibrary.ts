@@ -379,11 +379,11 @@ export function rebuildStateMachine(machineName: Identifier, blueprint: StateMac
 	return built;
 }
 
-export function applyPreparedStateMachine(machineName: Identifier, blueprint: StateMachineBlueprint): { changed: boolean; previousDefinition?: StateDefinition } {
+export function applyPreparedStateMachine(machineName: Identifier, blueprint: StateMachineBlueprint, options?: { force?: boolean }): { changed: boolean; previousDefinition?: StateDefinition } {
 	const signature = computeBlueprintSignature(blueprint);
 	const previousSignature = stateMachineBlueprintSignatures.get(machineName);
 	const previousDefinition = StateDefinitions[machineName];
-	if (previousSignature === signature) {
+	if (!options?.force && previousSignature === signature) {
 		return { changed: false, previousDefinition };
 	}
 	stateMachineBlueprintSignatures.set(machineName, signature);

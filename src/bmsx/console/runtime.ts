@@ -1971,7 +1971,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must provide a 'definition' or 'tree' entry.`);
 			}
 			const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, interpreter, assetId);
-			const result = applyPreparedBehaviorTree(treeId, prepared);
+			const result = applyPreparedBehaviorTree(treeId, prepared, { force: true });
 			this.luaBehaviorTreeIds.add(treeId);
 			previousTreeIds.delete(treeId);
 			if (result.changed) {
