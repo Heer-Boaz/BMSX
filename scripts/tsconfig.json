@@ -14,5 +14,5 @@
 	"**/*.ts",
 	"../src/bmsx/**/*.d.ts"
   ],
-  "exclude": ["../bmsx/bmsx.js", "../bmsx/bmsx.d.ts"]
+  "exclude": ["../bmsx/bmsx.js", "../bmsx/bmsx.d.ts", "../tests/**.*", "./scripts/**.*"]
 }

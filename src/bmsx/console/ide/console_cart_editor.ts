@@ -43,6 +43,12 @@ import { renderTopBar } from './render_top_bar';
 import { renderTabBar } from './render_tab_bar';
 import { renderStatusBar } from './render_status_bar';
 import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderLineJumpBar } from './render_inline_bars';
+import {
+	computeErrorOverlayBounds,
+	renderErrorOverlay,
+	renderErrorOverlayText,
+	type ErrorOverlayRenderConfig
+} from './render_error_overlay';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
@@ -5394,12 +5400,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const bottom = top + dialogHeight;
 		api.rectfill(left, top, right, bottom, constants.COLOR_STATUS_BACKGROUND);
 		api.rect(left, top, right, bottom, constants.COLOR_CREATE_RESOURCE_ERROR);
-	let textY = top + constants.ERROR_OVERLAY_PADDING_Y + 6;
-	for (let i = 0; i < lines.length; i += 1) {
-		const textX = left + constants.ERROR_OVERLAY_PADDING_X + 6;
-		drawEditorText(api, this.font, lines[i], textX, textY, constants.COLOR_STATUS_TEXT);
-		textY += this.lineHeight;
-	}
+	const dialogPaddingX = constants.ERROR_OVERLAY_PADDING_X + 6;
+	const dialogPaddingY = constants.ERROR_OVERLAY_PADDING_Y + 6;
+	renderErrorOverlayText(
+		api,
+		this.font,
+		lines,
+		left + dialogPaddingX,
+		top + dialogPaddingY,
+		this.lineHeight,
+		constants.COLOR_STATUS_TEXT
+	);
 	}
 
 	private simplifyRuntimeErrorMessage(message: string): string {
@@ -5655,57 +5666,56 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		const anchorX = textLeft + this.measureRangeFast(entry, sliceStartDisplay, clampedAnchorDisplay);
 		const rowTop = codeTop + relativeRow * this.lineHeight;
 		const lines = overlay.lines.length > 0 ? overlay.lines : ['Runtime error'];
-		let maxLineWidth = 0;
-		for (let i = 0; i < lines.length; i += 1) {
-			const width = this.measureText(lines[i]);
-			if (width > maxLineWidth) {
-				maxLineWidth = width;
-			}
-		}
-		const bubbleWidth = maxLineWidth + constants.ERROR_OVERLAY_PADDING_X * 2;
-		const bubbleHeight = lines.length * this.lineHeight + constants.ERROR_OVERLAY_PADDING_Y * 2;
-		let bubbleLeft = anchorX + constants.ERROR_OVERLAY_CONNECTOR_OFFSET;
-		if (bubbleLeft + bubbleWidth > codeRight - 1) {
-			bubbleLeft = Math.max(textLeft, codeRight - 1 - bubbleWidth);
-		}
 		const availableBottom = this.viewportHeight - this.bottomMargin;
 		const belowTop = rowTop + this.lineHeight + 2;
-		let bubbleTop = belowTop;
-		if (bubbleTop + bubbleHeight > availableBottom) {
-			let aboveTop = rowTop - bubbleHeight - 2;
-			if (aboveTop < codeTop) {
-				aboveTop = Math.max(codeTop, availableBottom - bubbleHeight);
-			}
-			bubbleTop = aboveTop;
-		}
-		if (bubbleTop + bubbleHeight > availableBottom) {
-			bubbleTop = Math.max(codeTop, availableBottom - bubbleHeight);
-		}
-		if (bubbleTop < codeTop) {
-			bubbleTop = codeTop;
-		}
-		const placedBelow = bubbleTop >= belowTop - 1;
-		const bubbleRight = bubbleLeft + bubbleWidth;
-		const bubbleBottom = bubbleTop + bubbleHeight;
-		api.rectfill_color(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, constants.ERROR_OVERLAY_BACKGROUND);
-	for (let i = 0; i < lines.length; i += 1) {
-		const lineY = bubbleTop + constants.ERROR_OVERLAY_PADDING_Y + i * this.lineHeight;
-		drawEditorText(api, this.font, lines[i], bubbleLeft + constants.ERROR_OVERLAY_PADDING_X, lineY, constants.COLOR_STATUS_ERROR);
-	}
+		const bubbleBounds = computeErrorOverlayBounds(
+			anchorX,
+			rowTop,
+			lines,
+			(text) => this.measureText(text),
+			{
+				left: textLeft,
+				top: codeTop,
+				right: codeRight,
+				bottom: availableBottom
+			},
+			this.lineHeight
+		);
+
+		const placedBelow = bubbleBounds.top >= belowTop - 1;
 		const connectorLeft = Math.max(textLeft, anchorX);
-		const connectorRight = Math.min(bubbleLeft, connectorLeft + 3);
+		const connectorRight = Math.min(bubbleBounds.left, connectorLeft + 3);
+
+		let connector: ErrorOverlayRenderConfig['connector'] = undefined;
 		if (connectorRight > connectorLeft) {
 			if (placedBelow) {
 				const connectorStartY = rowTop + this.lineHeight;
-				if (bubbleTop > connectorStartY) {
-					api.rectfill_color(connectorLeft, connectorStartY, connectorRight, bubbleTop, constants.ERROR_OVERLAY_BACKGROUND);
+				if (bubbleBounds.top > connectorStartY) {
+					connector = {
+						left: connectorLeft,
+						right: connectorRight,
+						startY: connectorStartY,
+						endY: bubbleBounds.top
+					};
 				}
-			} else {
-				if (bubbleBottom < rowTop) {
-					api.rectfill_color(connectorLeft, bubbleBottom, connectorRight, rowTop, constants.ERROR_OVERLAY_BACKGROUND);
-				}
+			} else if (bubbleBounds.bottom < rowTop) {
+				connector = {
+					left: connectorLeft,
+					right: connectorRight,
+					startY: bubbleBounds.bottom,
+					endY: rowTop
+				};
 			}
 		}
+
+		renderErrorOverlay(api, lines, this.font, this.lineHeight, {
+			bounds: bubbleBounds,
+			background: constants.ERROR_OVERLAY_BACKGROUND,
+			textColor: constants.ERROR_OVERLAY_TEXT_COLOR,
+			paddingX: constants.ERROR_OVERLAY_PADDING_X,
+			paddingY: constants.ERROR_OVERLAY_PADDING_Y,
+			connector
+		});
 	}
 
 	private isCodeTabActive(): boolean {

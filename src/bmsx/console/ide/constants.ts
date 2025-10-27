@@ -76,7 +76,7 @@ const THEME_BASE = {
 		text: PALETTE.black,
 		warning: PALETTE.lightRedAlt,
 		success: PALETTE.darkBlue,
-		error: PALETTE.darkRed,
+		error: PALETTE.white,
 		alert: PALETTE.red
 	},
 	input: {
@@ -232,6 +232,7 @@ export const ERROR_OVERLAY_BACKGROUND = { r: 0.6, g: 0, b: 0, a: 1 };
 export const ERROR_OVERLAY_PADDING_X = 4;
 export const ERROR_OVERLAY_PADDING_Y = 2;
 export const ERROR_OVERLAY_CONNECTOR_OFFSET = 6;
+export const ERROR_OVERLAY_TEXT_COLOR = THEME_BASE.text.primary;
 export const EXECUTION_STOP_OVERLAY = { r: 0.95, g: 0.45, b: 0.1, a: 0.45 };
 export const HOVER_TOOLTIP_PADDING_X = 4;
 export const HOVER_TOOLTIP_PADDING_Y = 2;
