@@ -49,12 +49,12 @@ registerStubModule(consoleApiPath, {
 			void payload;
 			void emitterId;
 		}
-		public emitGameplay(eventName: string, emitterId: string, payload?: unknown): void {
+		public emit_gameplay(eventName: string, emitterId: string, payload?: unknown): void {
 			void eventName;
 			void emitterId;
 			void payload;
 		}
-		public emitPresentation(eventName: string, emitterId: string | null, payload?: unknown): void {
+		public emit_presentation(eventName: string, emitterId: string | null, payload?: unknown): void {
 			void eventName;
 			void emitterId;
 			void payload;
@@ -110,10 +110,10 @@ tracker:add()
 test('detects missing emitter id for gameplay emit', async () => {
 	const diagnostics = await runDiagnostics(`
 local function send()
-	api.emitGameplay('start')
+	emit_gameplay('start')
 end
 send()
 `);
 	assert.equal(diagnostics.length, 1);
-	assert.match(diagnostics[0].message, /api\.emitGameplay/);
+	assert.match(diagnostics[0].message, /api\.emit_gameplay/);
 });

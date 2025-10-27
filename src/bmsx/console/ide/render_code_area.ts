@@ -131,9 +131,9 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 		const isExecutionStopRow = host.executionStopRow !== null && lineIndex === host.executionStopRow;
 		const isCursorLine = lineIndex === host.cursorRow;
 		if (isExecutionStopRow) {
-			api.rectfillColor(bounds.gutterRight, rowY, contentRight, rowY + host.lineHeight, constants.EXECUTION_STOP_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + host.lineHeight, constants.EXECUTION_STOP_OVERLAY);
 		} else if (isCursorLine) {
-			api.rectfillColor(bounds.gutterRight, rowY, contentRight, rowY + host.lineHeight, constants.HIGHLIGHT_OVERLAY);
+			api.rectfill_color(bounds.gutterRight, rowY, contentRight, rowY + host.lineHeight, constants.HIGHLIGHT_OVERLAY);
 		}
 		const highlight = entry.hi;
 		let columnStart = wrapEnabled ? segment.startColumn : host.scrollColumn;
@@ -156,7 +156,7 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 			const clampedLeft = clamp(selectionStartX, bounds.textLeft, contentRight);
 			const clampedRight = clamp(selectionEndX, clampedLeft, contentRight);
 			if (clampedRight > clampedLeft) {
-				api.rectfillColor(clampedLeft, rowY, clampedRight, rowY + host.lineHeight, constants.SELECTION_OVERLAY);
+				api.rectfill_color(clampedLeft, rowY, clampedRight, rowY + host.lineHeight, constants.SELECTION_OVERLAY);
 			}
 		}
 		host.drawColoredText(api, slice.text, slice.colors, bounds.textLeft, rowY);

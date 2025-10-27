@@ -11,7 +11,7 @@ export function setEditorCaseInsensitivity(enabled: boolean): void {
 }
 
 type ConsoleApiWithCustomFont = BmsxConsoleApi & {
-	printWithFont?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void;
+	print_with_font?: (text: string, x: number, y: number, colorIndex: number, font: ConsoleFont) => void;
 };
 
 export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, text: string, originX: number, originY: number, color: number): void {
@@ -25,8 +25,8 @@ export function drawEditorText(api: BmsxConsoleApi, font: ConsoleEditorFont, tex
 		const expanded = expandTabsExternal(lines[i]);
 		if (expanded.length > 0) {
 			const display = useUppercase ? expanded.toUpperCase() : expanded;
-			if (typeof apiWithFont.printWithFont === 'function') {
-				apiWithFont.printWithFont(display, baseX, cursorY, color, renderFont);
+			if (typeof apiWithFont.print_with_font === 'function') {
+				apiWithFont.print_with_font(display, baseX, cursorY, color, renderFont);
 			} else {
 				api.print(display, baseX, cursorY, color);
 			}
@@ -57,8 +57,8 @@ export function drawEditorColoredText(api: BmsxConsoleApi, font: ConsoleEditorFo
 		}
 		const segment = renderText.slice(index, end);
 		if (segment.length > 0) {
-			if (typeof apiWithFont.printWithFont === 'function') {
-				apiWithFont.printWithFont(segment, cursorX, cursorY, colorIndex, renderFont);
+			if (typeof apiWithFont.print_with_font === 'function') {
+				apiWithFont.print_with_font(segment, cursorX, cursorY, colorIndex, renderFont);
 			} else {
 				api.print(segment, cursorX, cursorY, colorIndex);
 			}

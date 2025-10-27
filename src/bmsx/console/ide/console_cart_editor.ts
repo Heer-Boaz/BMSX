@@ -530,7 +530,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (bubbleTop + bubbleHeight > codeBottom) {
 			bubbleTop = Math.max(codeTop, codeBottom - bubbleHeight);
 		}
-		api.rectfillColor(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BACKGROUND);
+		api.rectfill_color(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BACKGROUND);
 		api.rect(bubbleLeft, bubbleTop, bubbleLeft + bubbleWidth, bubbleTop + bubbleHeight, constants.HOVER_TOOLTIP_BORDER);
 		for (let i = 0; i < visibleLines.length; i += 1) {
 			const lineY = bubbleTop + constants.HOVER_TOOLTIP_PADDING_Y + i * this.lineHeight;
@@ -979,7 +979,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.codeVerticalScrollbarVisible = false;
 		this.codeHorizontalScrollbarVisible = false;
 		const frameColor = Msx1Colors[constants.COLOR_FRAME];
-		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
+		api.rectfill_color(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 		this.drawTopBar(api);
 		this.drawTabBar(api);
 		this.drawResourcePanel(api);
@@ -5752,7 +5752,7 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		const placedBelow = bubbleTop >= belowTop - 1;
 		const bubbleRight = bubbleLeft + bubbleWidth;
 		const bubbleBottom = bubbleTop + bubbleHeight;
-		api.rectfillColor(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, constants.ERROR_OVERLAY_BACKGROUND);
+		api.rectfill_color(bubbleLeft, bubbleTop, bubbleRight, bubbleBottom, constants.ERROR_OVERLAY_BACKGROUND);
 	for (let i = 0; i < lines.length; i += 1) {
 		const lineY = bubbleTop + constants.ERROR_OVERLAY_PADDING_Y + i * this.lineHeight;
 		drawEditorText(api, this.font, lines[i], bubbleLeft + constants.ERROR_OVERLAY_PADDING_X, lineY, constants.COLOR_STATUS_ERROR);
@@ -5763,11 +5763,11 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 			if (placedBelow) {
 				const connectorStartY = rowTop + this.lineHeight;
 				if (bubbleTop > connectorStartY) {
-					api.rectfillColor(connectorLeft, connectorStartY, connectorRight, bubbleTop, constants.ERROR_OVERLAY_BACKGROUND);
+					api.rectfill_color(connectorLeft, connectorStartY, connectorRight, bubbleTop, constants.ERROR_OVERLAY_BACKGROUND);
 				}
 			} else {
 				if (bubbleBottom < rowTop) {
-					api.rectfillColor(connectorLeft, bubbleBottom, connectorRight, rowTop, constants.ERROR_OVERLAY_BACKGROUND);
+					api.rectfill_color(connectorLeft, bubbleBottom, connectorRight, rowTop, constants.ERROR_OVERLAY_BACKGROUND);
 				}
 			}
 		}
@@ -6979,7 +6979,7 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 			const startX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleStart);
 			const endX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
 			const overlay = i === this.searchCurrentIndex ? constants.SEARCH_MATCH_ACTIVE_OVERLAY : constants.SEARCH_MATCH_OVERLAY;
-			api.rectfillColor(startX, originY, endX, originY + this.lineHeight, overlay);
+			api.rectfill_color(startX, originY, endX, originY + this.lineHeight, overlay);
 		}
 	}
 
@@ -7043,7 +7043,7 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.drawRectOutlineColor(api, caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
 		drawEditorColoredText(api, this.font, info.baseChar, [info.baseColor], cursorX, cursorY, info.baseColor);
 	} else {
-		api.rectfillColor(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
+		api.rectfill_color(caretLeft, caretTop, caretRight, caretBottom, constants.CARET_COLOR);
 		const caretPaletteIndex = this.resolvePaletteIndex(constants.CARET_COLOR);
 		const caretInverseColor = caretPaletteIndex !== null
 			? this.invertColorIndex(caretPaletteIndex)
@@ -7264,7 +7264,7 @@ private handleCompletionKeybindings(
 			return;
 		}
 		if (active) {
-			api.rectfillColor(left, top, right, bottom, caretColor);
+			api.rectfill_color(left, top, right, bottom, caretColor);
 			const caretIndex = this.resolvePaletteIndex(caretColor);
 			const inverseColor = caretIndex !== null
 				? this.invertColorIndex(caretIndex)
@@ -7280,10 +7280,10 @@ private handleCompletionKeybindings(
 		if (right <= left || bottom <= top) {
 			return;
 		}
-		api.rectfillColor(left, top, right, top + 1, color);
-		api.rectfillColor(left, bottom - 1, right, bottom, color);
-		api.rectfillColor(left, top, left + 1, bottom, color);
-		api.rectfillColor(right - 1, top, right, bottom, color);
+		api.rectfill_color(left, top, right, top + 1, color);
+		api.rectfill_color(left, bottom - 1, right, bottom, color);
+		api.rectfill_color(left, top, left + 1, bottom, color);
+		api.rectfill_color(right - 1, top, right, bottom, color);
 	}
 
 	private computeSelectionSlice(lineIndex: number, highlight: HighlightLine, sliceStart: number, sliceEnd: number): { startDisplay: number; endDisplay: number } | null {
@@ -7406,7 +7406,7 @@ private handleCompletionKeybindings(
 		if (!prompt) {
 			return;
 		}
-		api.rectfillColor(0, 0, this.viewportWidth, this.viewportHeight, constants.ACTION_OVERLAY_COLOR);
+		api.rectfill_color(0, 0, this.viewportWidth, this.viewportHeight, constants.ACTION_OVERLAY_COLOR);
 
 		let messageLines: string[];
 		let primaryLabel: string;

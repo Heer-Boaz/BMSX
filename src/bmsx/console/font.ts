@@ -137,6 +137,7 @@ function buildTinyCharMap(prefix: string): CharMap {
 		'{': withPrefix('braceopen'),
 		'|': withPrefix('pipe'),
 		'}': withPrefix('braceclose'),
+		'•': withPrefix('bullet'),
 	};
 	for (let i = 0; i < 10; i += 1) {
 		const digit = String.fromCharCode(48 + i);
@@ -161,6 +162,8 @@ function buildTinyCharMap(prefix: string): CharMap {
 	map['¥'] = withPrefix('yen');
 	map['€'] = withPrefix('euro');
 	map['µ'] = withPrefix('euler');
+	map['ĳ'] = withPrefix('low_ij');
+	map['Ĳ'] = withPrefix('ij');
 	return map;
 }
 

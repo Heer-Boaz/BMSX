@@ -162,7 +162,7 @@ export class ProblemsPanelController {
             if (isSelected) {
                 if (this.focused) {
                     const overlay = constants.SELECTION_OVERLAY;
-                    api.rectfillColor(bounds.left, rowTop, bounds.right, rowBottom, overlay);
+                    api.rectfill_color(bounds.left, rowTop, bounds.right, rowBottom, overlay);
                 } else {
                     this.host.drawRectOutlineColor(api, bounds.left, rowTop, bounds.right, rowBottom, { r: 1, g: 1, b: 1, a: 1 });
                 }

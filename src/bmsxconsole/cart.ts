@@ -227,8 +227,8 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		this.clampAll();
 		this.demoBalls = (snapshot.demoBalls as DemoBall[]).map(ball => ({ ...ball }));
 		for (const ball of this.demoBalls) {
-			api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
-			api.spriteSetVelocity(ball.colliderId, ball.vx, ball.vy);
+			api.sprite_set_position(ball.colliderId, ball.x, ball.y);
+			api.sprite_set_velocity(ball.colliderId, ball.vx, ball.vy);
 		}
 	}
 
@@ -261,9 +261,9 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 	}
 
 	private initializeDemo(api: BmsxConsoleApi): void {
-		api.colliderClear();
+		api.collider_clear();
 		const radius = 3;
-		api.defineSprite(1, BitmapId.ball, {
+		api.define_sprite(1, BitmapId.ball, {
 			width: 6,
 			height: 6,
 			originX: 3,
@@ -279,8 +279,8 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 			{ id: WALL_IDS[3], kind: 'box' as const, width: bounds.width, height: 1, x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height + 0.5 },
 		];
 		for (const wall of wallSpecs) {
-			api.colliderCreate(wall.id, { kind: 'box', width: wall.width, height: wall.height, isTrigger: false });
-			api.colliderSetPosition(wall.id, wall.x, wall.y);
+			api.collider_create(wall.id, { kind: 'box', width: wall.width, height: wall.height, isTrigger: false });
+			api.collider_set_position(wall.id, wall.x, wall.y);
 		}
 		const initial = [
 			{ id: 0, colliderId: 'console_ball_0', x: bounds.x + radius + 6, y: bounds.y + radius + 3, vx: 48, vy: 28, radius, color: COLOR_HEADER },
@@ -288,8 +288,8 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		];
 		this.demoBalls = initial.map(ball => ({ ...ball }));
 		for (const ball of this.demoBalls) {
-			api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
-			api.spriteSetVelocity(ball.colliderId, ball.vx, ball.vy);
+			api.sprite_set_position(ball.colliderId, ball.x, ball.y);
+			api.sprite_set_velocity(ball.colliderId, ball.vx, ball.vy);
 		}
 	}
 
@@ -297,12 +297,12 @@ class CharacterManagerCart implements BmsxConsoleCartridge {
 		if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) return;
 		if (deltaSeconds === 0) {
 			for (const ball of this.demoBalls) {
-				api.spriteSetPosition(ball.colliderId, ball.x, ball.y);
-				api.spriteSetVelocity(ball.colliderId, ball.vx, ball.vy);
+				api.sprite_set_position(ball.colliderId, ball.x, ball.y);
+				api.sprite_set_velocity(ball.colliderId, ball.vx, ball.vy);
 			}
 		}
 		for (const ball of this.demoBalls) {
-			const center = api.spriteCenter(ball.colliderId);
+			const center = api.sprite_center(ball.colliderId);
 			if (!center) continue;
 			ball.x = center.x;
 			ball.y = center.y;

@@ -106,7 +106,7 @@ export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHos
 		const selectionLeft = pathX + host.inlineFieldMeasureRange(field, host.inlineFieldMetrics(), 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field, host.inlineFieldMetrics(), selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -159,7 +159,7 @@ export function renderSearchBar(api: BmsxConsoleApi, host: InlineBarsHost): void
 		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -213,7 +213,7 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -244,9 +244,9 @@ export function renderResourceSearchBar(api: BmsxConsoleApi, host: InlineBarsHos
 		const isSelected = matchIndex === (host.resourceSearchSelectionIndex ?? -1);
 		const isHover = matchIndex === (host.resourceSearchHoverIndex ?? -1);
 		if (isSelected) {
-			api.rectfillColor(0, rowTop, host.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
+			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
 		} else if (isHover) {
-			api.rectfillColor(0, rowTop, host.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
+			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
 		}
 		let textX = constants.QUICK_OPEN_RESULT_PADDING_X;
 		const kindText = match?.entry.typeLabel ?? '';
@@ -298,7 +298,7 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 		const selectionLeft = queryX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
 	}
 
@@ -329,9 +329,9 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 		const isSelected = matchIndex === (host.symbolSearchSelectionIndex ?? -1);
 		const isHover = matchIndex === (host.symbolSearchHoverIndex ?? -1);
 		if (isSelected) {
-			api.rectfillColor(0, rowTop, host.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
+			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.HIGHLIGHT_OVERLAY);
 		} else if (isHover) {
-			api.rectfillColor(0, rowTop, host.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
+			api.rectfill_color(0, rowTop, host.viewportWidth, rowBottom, constants.SELECTION_OVERLAY);
 		}
 		let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 		const kindText = match?.entry.kindLabel ?? '';
@@ -401,7 +401,7 @@ export function renderLineJumpBar(api: BmsxConsoleApi, host: InlineBarsHost): vo
 		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
 		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
 		if (selectionWidth > 0) {
-			api.rectfillColor(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
 		}
 	}
 

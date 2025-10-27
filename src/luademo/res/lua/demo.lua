@@ -74,11 +74,11 @@ local function ensure_engine_actor()
 	if state.engineActorId then
 		return
 	end
-	state.engineActorId = spawnWorldObject('LuaDemoActor', {
+	state.engineActorId = spawn_world_object('LuaDemoActor', {
 		id = 'lua_demo_actor',
 		position = { x = 48, y = 48, z = 0 },
 	})
-	attachFsm(state.engineActorId, 'console_testmachine')
+	attach_fsm(state.engineActorId, 'console_testmachine')
 	local actor = registry:get(state.engineActorId)
 	events:emit('lua_demo.engine_actor_spawned', actor, { actorId = state.engineActorId })
 	update_actor_snapshot()
@@ -162,13 +162,13 @@ local function attach_behavior_methods(actor)
 end
 
 local function spawn_lua_actor()
-	local actorId = spawnWorldObject('WorldObject', {
+	local actorId = spawn_world_object('WorldObject', {
 		id = 'lua_demo_actor_lua',
 		position = { x = 96, y = 64, z = 0 },
 	})
 	local actor = registry:get(actorId)
 	attach_behavior_methods(actor)
-	attachBehaviorTree(actorId, 'lua_demo_bt')
+	attach_bt(actorId, 'lua_demo_bt')
 	actor:resetBehavior()
 	actor.visible = false
 	return actorId

@@ -339,7 +339,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	}
 
 	private endFrameAndFlush(editorActive: boolean): void {
-		this.api.endFrame();
+		this.api.end_frame();
 		this.flushEditorOverlayFrame(editorActive);
 	}
 
@@ -435,11 +435,11 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		}
 		this.editorPipelineActive = active;
 		if (active) {
-			this.api.setRenderBackend(this.editorRenderBackend);
+			this.api.set_render_backend(this.editorRenderBackend);
 			$.setPipelineOverride(consoleEditorSpec());
 			return;
 		}
-		this.api.setRenderBackend(null);
+		this.api.set_render_backend(null);
 		$.setPipelineOverride(null);
 		publishOverlayFrame(null);
 	}
@@ -471,7 +471,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		}
 		this.physics.clear();
 		this.api.cartdata(this.cart.meta.persistentId);
-		this.api.colliderClear();
+		this.api.collider_clear();
 		if (this.hasLuaProgram()) {
 			this.bootLuaProgram(true);
 		}
@@ -510,14 +510,14 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		this.setEditorPipelineActive(editorActive);
 		const paused = $.paused === true;
 		if (paused) {
-			this.api.beginPausedFrame(this.frameCounter);
+			this.api.begin_paused_frame(this.frameCounter);
 			if (editorActive && editor) {
 				editor.draw(this.api);
 			}
 			this.endFrameAndFlush(editorActive);
 			return;
 		}
-		this.api.beginFrame(this.frameCounter, deltaSeconds);
+		this.api.begin_frame(this.frameCounter, deltaSeconds);
 		if (editorActive && editor) {
 			editor.draw(this.api);
 			this.endFrameAndFlush(editorActive);
@@ -713,7 +713,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (this.editor) {
 			this.editor.clearRuntimeErrorOverlay();
 		}
-		this.api.colliderClear();
+		this.api.collider_clear();
 		this.frameCounter = savedFrameCounter;
 
 		if (this.hasLuaProgram()) {
@@ -769,7 +769,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			if (this.luaRuntimeFailed) {
 				return;
 			}
-			this.api.beginFrame(this.frameCounter, 0);
+			this.api.begin_frame(this.frameCounter, 0);
 			if (this.luaDrawFunction !== null) {
 				try {
 					this.invokeLuaFunction(this.luaDrawFunction, []);
@@ -780,7 +780,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 			return;
 		}
-		this.api.beginFrame(this.frameCounter, 0);
+		this.api.begin_frame(this.frameCounter, 0);
 		this.cart.draw(this.api);
 	}
 
@@ -1779,7 +1779,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 			const machineId = machineIdRaw.trim();
 			const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
-			this.api.registerPreparedFsm(machineId, prepared, { setup: false });
+			this.api.register_prepared_fsm(machineId, prepared, { setup: false });
 			this.luaFsmMachineIds.add(machineId);
 			loadedMachines.push(machineId);
 		}

@@ -92,11 +92,11 @@ export class BmsxConsoleApi {
 		this.physics.bindColliders(this.colliders);
 	}
 
-	public setRenderBackend(backend: ConsoleRenderBackend | null): void {
+	public set_render_backend(backend: ConsoleRenderBackend | null): void {
 		this.renderBackend = backend ?? new DirectConsoleRenderBackend();
 	}
 
-	public beginFrame(frame: number, deltaSeconds: number): void {
+	public begin_frame(frame: number, deltaSeconds: number): void {
 		if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) {
 			throw new Error('[BmsxConsoleApi] Delta seconds must be a finite non-negative number.');
 		}
@@ -105,29 +105,29 @@ export class BmsxConsoleApi {
 		this.renderBackend.beginFrame();
 	}
 
-	public beginPausedFrame(frame: number): void {
+	public begin_paused_frame(frame: number): void {
 		this.frameIndex = frame;
 		this.deltaSecondsValue = 0;
 		this.renderBackend.beginFrame();
 	}
 
-	public endFrame(): void {
+	public end_frame(): void {
 		this.renderBackend.endFrame();
 	}
 
-	public frameNumber(): number {
+	public frame_number(): number {
 		return this.frameIndex;
 	}
 
-	public deltaSeconds(): number {
+	public delta_seconds(): number {
 		return this.deltaSecondsValue;
 	}
 
-	public get displayWidth(): number {
+	public get display_width(): number {
 		return $.view.viewportSize.x;
 	}
 
-	public get displayHeight(): number {
+	public get display_height(): number {
 		return $.view.viewportSize.y;
 	}
 
@@ -152,18 +152,18 @@ export class BmsxConsoleApi {
 	}
 
 	public mousepos(): ConsolePointerViewport {
-		return this.pointerViewportPosition();
+		return this.pointer_viewport_position();
 	}
 
-	public pointerScreenPosition(): ConsolePointerVector {
+	public pointer_screen_position(): ConsolePointerVector {
 		return this.input.pointerPosition();
 	}
 
-	public pointerDelta(): ConsolePointerVector {
+	public pointer_delta(): ConsolePointerVector {
 		return this.input.pointerDelta();
 	}
 
-	public pointerViewportPosition(): ConsolePointerViewport {
+	public pointer_viewport_position(): ConsolePointerViewport {
 		return this.pointerViewportPositionInternal();
 	}
 
@@ -212,8 +212,8 @@ export class BmsxConsoleApi {
 			kind: 'fill',
 			x0: 0,
 			y0: 0,
-			x1: this.displayWidth,
-			y1: this.displayHeight,
+			x1: this.display_width,
+			y1: this.display_height,
 			color,
 			layer: DRAW_LAYER,
 		});
@@ -227,7 +227,7 @@ export class BmsxConsoleApi {
 		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: this.paletteColor(colorIndex), layer: DRAW_LAYER });
 	}
 
-	public rectfillColor(x0: number, y0: number, x1: number, y1: number, colorValue: color): void {
+	public rectfill_color(x0: number, y0: number, x1: number, y1: number, colorValue: color): void {
 		this.renderBackend.drawRect({ kind: 'fill', x0, y0, x1, y1, color: colorValue, layer: DRAW_LAYER });
 	}
 
@@ -247,7 +247,7 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public printWithFont(text: string, x: number, y: number, colorIndex: number, font: ConsoleFont): void {
+	public print_with_font(text: string, x: number, y: number, colorIndex: number, font: ConsoleFont): void {
 		const color = this.paletteColor(colorIndex);
 		const baseX = Math.floor(x);
 		let cursorY = Math.floor(y);
@@ -327,14 +327,14 @@ export class BmsxConsoleApi {
 		this.syncSpriteCollider(command);
 	}
 
-	public spriteExists(id: string): boolean {
+	public sprite_exists(id: string): boolean {
 		if (!id) {
 			throw new Error('[BmsxConsoleApi] Sprite id must be a non-empty string.');
 		}
 		return this.spriteCommandsById.has(id);
 	}
 
-	public spriteSetPosition(id: string, x: number, y: number): void {
+	public sprite_set_position(id: string, x: number, y: number): void {
 		if (!id) {
 			throw new Error('[BmsxConsoleApi] Sprite id must be a non-empty string.');
 		}
@@ -361,36 +361,36 @@ export class BmsxConsoleApi {
 		return this.storage.getValue(index);
 	}
 
-	public colliderCreate(id: string, opts: ColliderCreateOptions): void {
+	public collider_create(id: string, opts: ColliderCreateOptions): void {
 		this.colliders.create(id, opts);
 		this.physics.ensureBody(id, { isStatic: true, restitution: 1, mass: Infinity });
 	}
 
-	public colliderDestroy(id: string): void {
+	public collider_destroy(id: string): void {
 		this.colliders.remove(id);
 		this.physics.removeBody(id);
 		this.pendingVelocities.delete(id);
 	}
 
-	public colliderClear(): void {
+	public collider_clear(): void {
 		this.colliders.clear();
 		this.physics.clear();
 		this.pendingVelocities.clear();
 	}
 
-	public colliderSetPosition(id: string, x: number, y: number): void {
+	public collider_set_position(id: string, x: number, y: number): void {
 		this.colliders.setPosition(id, x, y);
 	}
 
-	public colliderOverlap(aId: string, bId: string): boolean {
+	public collider_overlap(aId: string, bId: string): boolean {
 		return this.colliders.overlap(aId, bId);
 	}
 
-	public colliderContact(aId: string, bId: string): ColliderContactInfo | null {
+	public collider_contact(aId: string, bId: string): ColliderContactInfo | null {
 		return this.colliders.contact(aId, bId);
 	}
 
-	public spriteSetVelocity(id: string, vx: number, vy: number): void {
+	public sprite_set_velocity(id: string, vx: number, vy: number): void {
 		if (!Number.isFinite(vx) || !Number.isFinite(vy)) {
 			throw new Error('[BmsxConsoleApi] Velocity components must be finite.');
 		}
@@ -400,11 +400,11 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public spriteVelocity(id: string): { vx: number; vy: number } {
+	public sprite_velocity(id: string): { vx: number; vy: number } {
 		return this.physics.getVelocity(id);
 	}
 
-	public spriteCenter(id: string): { x: number; y: number } | null {
+	public sprite_center(id: string): { x: number; y: number } | null {
 		if (!this.colliders.has(id)) return null;
 		if (!this.physics.hasBody(id)) return null;
 		return this.physics.getCenter(id);
@@ -414,7 +414,7 @@ export class BmsxConsoleApi {
 		$.playAudio(id, options);
 	}
 
-	public stopSfx(): void {
+	public stop_sfx(): void {
 		$.sndmaster.stopEffect();
 	}
 
@@ -427,19 +427,19 @@ export class BmsxConsoleApi {
 		void $.sndmaster.play(id, options as SoundMasterPlayRequest | ModulationParams | RandomModulationParams | undefined);
 	}
 
-	public stopMusic(): void {
+	public stop_music(): void {
 		$.sndmaster.stopMusic();
 	}
 
-	public setMasterVolume(volume: number): void {
+	public set_master_volume(volume: number): void {
 		$.sndmaster.volume = volume;
 	}
 
-	public pauseAudio(): void {
+	public pause_audio(): void {
 		$.sndmaster.pause();
 	}
 
-	public resumeAudio(): void {
+	public resume_audio(): void {
 		$.sndmaster.resume();
 	}
 
@@ -447,22 +447,22 @@ export class BmsxConsoleApi {
 		return $.world;
 	}
 
-	public worldObject(id: Identifier): WorldObject | null {
+	public world_object(id: Identifier): WorldObject | null {
 		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('[BmsxConsoleApi] worldObject id must be a non-empty string.');
+			throw new Error('[BmsxConsoleApi] world_object id must be a non-empty string.');
 		}
 		return $.world.getFromCurrentSpace(id);
 	}
 
-	public worldObjects(): WorldObject[] {
+	public world_objects(): WorldObject[] {
 		return $.world.allObjectsFromSpaces;
 	}
 
-	public spawnWorldObject(classRef: string, options?: Record<string, unknown>): string {
+	public spawn_world_object(classRef: string, options?: Record<string, unknown>): string {
 		const ctor = this.resolveWorldObjectConstructor(classRef);
 		const rawOptions = options ? this.cloneStateMachineData(options) : {};
 		if (rawOptions && !this.isPlainObject(rawOptions)) {
-			throw new Error('[BmsxConsoleApi] spawnWorldObject options must be a table/object.');
+			throw new Error('[BmsxConsoleApi] spawn_world_object options must be a table/object.');
 		}
 		const normalized = this.normalizeSpawnOptions(rawOptions as Record<string, unknown>);
 		if (normalized.id && $.world.exists(normalized.id)) {
@@ -486,29 +486,29 @@ export class BmsxConsoleApi {
 		return instance.id;
 	}
 
-	public despawnWorldObject(id: Identifier, options?: { dispose?: boolean }): void {
-		const object = this.requireWorldObject(id, 'despawnWorldObject');
+	public despawn(id: Identifier, options?: { dispose?: boolean }): void {
+		const object = this.requireWorldObject(id, 'despawn');
 		$.exile(object);
 		if (options && options.dispose === true) {
 			object.dispose();
 		}
 	}
 
-	public attachFsm(objectId: Identifier, machineId: Identifier): void {
-		const object = this.requireWorldObject(objectId, 'attachFsm');
+	public attach_fsm(objectId: Identifier, machineId: Identifier): void {
+		const object = this.requireWorldObject(objectId, 'attach_fsm');
 		object.sc.ensureStatemachine(machineId, object.id);
 	}
 
-	public attachBehaviorTree(objectId: Identifier, treeId: BehaviorTreeID): void {
+	public attach_bt(objectId: Identifier, treeId: BehaviorTreeID): void {
 		const trimmed = typeof treeId === 'string' ? treeId.trim() : '';
 		if (trimmed.length === 0) {
-			throw new Error('[BmsxConsoleApi] attachBehaviorTree requires a non-empty behavior tree id.');
+			throw new Error('[BmsxConsoleApi] attach_bt requires a non-empty behavior tree id.');
 		}
 		const definition = BehaviorTrees[trimmed];
 		if (!definition) {
 			throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
 		}
-		const object = this.requireWorldObject(objectId, 'attachBehaviorTree');
+		const object = this.requireWorldObject(objectId, 'attach_bt');
 		const ctor = object.constructor as ConstructorWithBTProperty;
 		const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
 		if (!linked.has(trimmed)) {
@@ -526,11 +526,11 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public addComponent(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {
-		const object = this.requireWorldObject(objectId, 'addComponent');
+	public add_component(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {
+		const object = this.requireWorldObject(objectId, 'add_component');
 		const rawOptions = options ? this.cloneStateMachineData(options) : {};
 		if (rawOptions && !this.isPlainObject(rawOptions)) {
-			throw new Error('[BmsxConsoleApi] addComponent options must be a table/object.');
+			throw new Error('[BmsxConsoleApi] add_component options must be a table/object.');
 		}
 		const descriptor: ConsoleComponentDescriptor = {
 			className: componentRef,
@@ -540,11 +540,11 @@ export class BmsxConsoleApi {
 		return component.id;
 	}
 
-	public removeComponent(objectId: Identifier, componentId: string): void {
+	public remove_component(objectId: Identifier, componentId: string): void {
 		if (typeof componentId !== 'string' || componentId.length === 0) {
-			throw new Error('[BmsxConsoleApi] removeComponent componentId must be a non-empty string.');
+			throw new Error('[BmsxConsoleApi] remove_component componentId must be a non-empty string.');
 		}
-		const object = this.requireWorldObject(objectId, 'removeComponent');
+		const object = this.requireWorldObject(objectId, 'remove_component');
 		const component = object.getComponentById(componentId);
 		if (!component) {
 			throw new Error(`[BmsxConsoleApi] Component '${componentId}' not found on object '${objectId}'.`);
@@ -556,13 +556,13 @@ export class BmsxConsoleApi {
 		return $.registry;
 	}
 
-	public registryIds(): Identifier[] {
+	public registry_ids(): Identifier[] {
 		return $.registry.getRegisteredEntityIds();
 	}
 
-	public registryGet(id: Identifier): Registerable | null {
+	public rget(id: Identifier): Registerable | null {
 		if (typeof id !== 'string' || id.length === 0) {
-			throw new Error('[BmsxConsoleApi] registryGet id must be a non-empty string.');
+			throw new Error('[BmsxConsoleApi] rget id must be a non-empty string.');
 		}
 		return $.registry.get(id);
 	}
@@ -613,18 +613,18 @@ export class BmsxConsoleApi {
 		$.emit(eventName, emitter, payload);
 	}
 
-	public emitGameplay(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
+	public emit_gameplay(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
 		if (typeof eventName !== 'string' || eventName.length === 0) {
-			throw new Error('[BmsxConsoleApi] emitGameplay requires a non-empty event name.');
+			throw new Error('[BmsxConsoleApi] emit_gameplay requires a non-empty event name.');
 		}
 		const emitter = this.getEmitter(emitterOrId);
 		this.validateEmitter(emitterOrId, emitter);
 		$.emitGameplay(eventName, emitter as any, payload);
 	}
 
-	public emitPresentation(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
+	public emit_presentation(eventName: string, emitterOrId: Identifier | null, payload?: EventPayload): void {
 		if (typeof eventName !== 'string' || eventName.length === 0) {
-			throw new Error('[BmsxConsoleApi] emitPresentation requires a non-empty event name.');
+			throw new Error('[BmsxConsoleApi] emit_presentation requires a non-empty event name.');
 		}
 		const emitter = this.getEmitter(emitterOrId);
 		this.validateEmitter(emitterOrId, emitter);
@@ -642,29 +642,29 @@ export class BmsxConsoleApi {
 		return taskGate.group(name);
 	}
 
-	public runGate(): GateGroup {
+	public rungate(): GateGroup {
 		return runGate;
 	}
 
-	public registerFsm(id: string, blueprint: Record<string, unknown>): void {
+	public register_fsm(id: string, blueprint: Record<string, unknown>): void {
 		const trimmed = typeof id === 'string' ? id.trim() : '';
 		if (trimmed.length === 0) {
-			throw new Error('[BmsxConsoleApi] registerFsm id must be a non-empty string.');
+			throw new Error('[BmsxConsoleApi] register_fsm id must be a non-empty string.');
 		}
 		if (typeof blueprint !== 'object' || blueprint === null) {
-			throw new Error('[BmsxConsoleApi] registerFsm blueprint must be a table/object.');
+			throw new Error('[BmsxConsoleApi] register_fsm blueprint must be a table/object.');
 		}
 		const prepared = this.cloneStateMachineData(blueprint);
-		this.registerPreparedFsm(trimmed, prepared);
+		this.register_prepared_fsm(trimmed, prepared);
 	}
 
-	public registerPreparedFsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
+	public register_prepared_fsm(id: string, blueprint: StateMachineBlueprint, options?: { setup?: boolean }): void {
 		const trimmed = typeof id === 'string' ? id.trim() : '';
 		if (trimmed.length === 0) {
-			throw new Error('[BmsxConsoleApi] registerPreparedFsm id must be a non-empty string.');
+			throw new Error('[BmsxConsoleApi] register_prepared_fsm id must be a non-empty string.');
 		}
 		if (typeof blueprint !== 'object' || blueprint === null) {
-			throw new Error('[BmsxConsoleApi] registerPreparedFsm blueprint must be an object.');
+			throw new Error('[BmsxConsoleApi] register_prepared_fsm blueprint must be an object.');
 		}
 		this.setFsmBlueprintFactory(trimmed, blueprint);
 		if (!options || options.setup !== false) {
@@ -672,7 +672,7 @@ export class BmsxConsoleApi {
 		}
 	}
 
-	public defineSprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: number; collider?: SpriteColliderConfig | null; physics?: SpritePhysicsConfig | null }): void {
+	public define_sprite(index: number, bitmapId: string, opts?: { width?: number; height?: number; originX?: number; originY?: number; flags?: number; collider?: SpriteColliderConfig | null; physics?: SpritePhysicsConfig | null }): void {
 		this.spriteRegistry.defineSprite(index, bitmapId, opts);
 	}
 
@@ -684,11 +684,11 @@ export class BmsxConsoleApi {
 		return this.spriteRegistry.fget(index, flag);
 	}
 
-	public loadMap(data: number[], width: number, height: number, tileSize?: { width: number; height: number }): void {
+	public load_map(data: number[], width: number, height: number, tileSize?: { width: number; height: number }): void {
 		this.tilemap.load(data, width, height, tileSize);
 	}
 
-	public setTileSize(width: number, height: number): void {
+	public set_tile_size(width: number, height: number): void {
 		this.tilemap.setTileSize(width, height);
 	}
 
@@ -706,11 +706,11 @@ export class BmsxConsoleApi {
 		});
 	}
 
-	public mapCollidesRect(x: number, y: number, width: number, height: number, flagBit: number = 0): boolean {
+	public map_collides_rect(x: number, y: number, width: number, height: number, flagBit: number = 0): boolean {
 		return this.tilemap.isRectFlagged(x, y, width, height, flagBit);
 	}
 
-	public getTileDimensions(): { width: number; height: number; } {
+	public get_tile_dimensions(): { width: number; height: number; } {
 		return { width: this.tilemap.tileWidthPixels, height: this.tilemap.tileHeightPixels };
 	}
 
@@ -721,7 +721,7 @@ export class BmsxConsoleApi {
 
 	private resolveWorldObjectConstructor(classRef: string): new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject {
 		if (typeof classRef !== 'string' || classRef.trim().length === 0) {
-			throw new Error('[BmsxConsoleApi] spawnWorldObject requires a non-empty class reference.');
+			throw new Error('[BmsxConsoleApi] spawn_world_object requires a non-empty class reference.');
 		}
 		if (classRef === 'WorldObject') {
 			return WorldObject as new (opts: RevivableObjectArgs & { id?: string; fsm_id?: string }) => WorldObject;
@@ -779,7 +779,7 @@ export class BmsxConsoleApi {
 		if (typeof raw.id === 'string') {
 			const trimmed = raw.id.trim();
 			if (trimmed.length === 0) {
-				throw new Error('[BmsxConsoleApi] spawnWorldObject options.id must be a non-empty string.');
+				throw new Error('[BmsxConsoleApi] spawn_world_object options.id must be a non-empty string.');
 			}
 			normalized.id = trimmed;
 		}
@@ -787,39 +787,39 @@ export class BmsxConsoleApi {
 		if (typeof fsmCandidate === 'string') {
 			const trimmedFsm = fsmCandidate.trim();
 			if (trimmedFsm.length === 0) {
-				throw new Error('[BmsxConsoleApi] spawnWorldObject options.fsmId must be a non-empty string when provided.');
+				throw new Error('[BmsxConsoleApi] spawn_world_object options.fsmId must be a non-empty string when provided.');
 			}
 			normalized.fsmId = trimmedFsm;
 		}
 		if (raw.space !== undefined) {
 			if (typeof raw.space !== 'string' || raw.space.trim().length === 0) {
-				throw new Error('[BmsxConsoleApi] spawnWorldObject options.space must be a non-empty string when provided.');
+				throw new Error('[BmsxConsoleApi] spawn_world_object options.space must be a non-empty string when provided.');
 			}
 			normalized.space = raw.space.trim();
 		}
 		if (raw.reason !== undefined) {
 			if (typeof raw.reason !== 'string' || raw.reason.trim().length === 0) {
-				throw new Error('[BmsxConsoleApi] spawnWorldObject options.reason must be a non-empty string when provided.');
+				throw new Error('[BmsxConsoleApi] spawn_world_object options.reason must be a non-empty string when provided.');
 			}
 			const reason = raw.reason.trim();
 			if (reason !== 'fresh' && reason !== 'transfer' && reason !== 'revive') {
-				throw new Error('[BmsxConsoleApi] spawnWorldObject options.reason must be one of fresh, transfer, or revive.');
+				throw new Error('[BmsxConsoleApi] spawn_world_object options.reason must be one of fresh, transfer, or revive.');
 			}
 			normalized.reason = reason as SpawnReason;
 		}
 		if (raw.position !== undefined) {
-			normalized.position = this.normalizeVector3(raw.position, 'spawnWorldObject options.position', false, 0);
+			normalized.position = this.normalizeVector3(raw.position, 'spawn_world_object options.position', false, 0);
 		}
 		const orientationSource = raw.rotation !== undefined ? raw.rotation : raw.orientation;
 		if (orientationSource !== undefined) {
-			normalized.orientation = this.normalizeVector3(orientationSource, 'spawnWorldObject options.orientation', true, 0);
+			normalized.orientation = this.normalizeVector3(orientationSource, 'spawn_world_object options.orientation', true, 0);
 		}
 		if (raw.scale !== undefined) {
-			normalized.scale = this.normalizeVector3(raw.scale, 'spawnWorldObject options.scale', true, 1);
+			normalized.scale = this.normalizeVector3(raw.scale, 'spawn_world_object options.scale', true, 1);
 		}
 		if (raw.components !== undefined) {
 			if (!Array.isArray(raw.components)) {
-				throw new Error('[BmsxConsoleApi] spawnWorldObject options.components must be an array.');
+				throw new Error('[BmsxConsoleApi] spawn_world_object options.components must be an array.');
 			}
 			const entries = raw.components;
 			for (let index = 0; index < entries.length; index += 1) {
@@ -827,7 +827,7 @@ export class BmsxConsoleApi {
 				if (typeof entry === 'string') {
 					const trimmed = entry.trim();
 					if (trimmed.length === 0) {
-						throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}] must be a non-empty string.`);
+						throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a non-empty string.`);
 					}
 					normalized.components.push({ className: trimmed, options: {} });
 					continue;
@@ -839,12 +839,12 @@ export class BmsxConsoleApi {
 							: descriptor.type !== undefined ? descriptor.type
 								: descriptor.name;
 					if (typeof classCandidate !== 'string' || classCandidate.trim().length === 0) {
-						throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}] requires a non-empty 'class' field.`);
+						throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] requires a non-empty 'class' field.`);
 					}
 					let optionsObject: Record<string, unknown>;
 					if (descriptor.options !== undefined) {
 						if (!this.isPlainObject(descriptor.options)) {
-							throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}].options must be a table/object.`);
+							throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}].options must be a table/object.`);
 						}
 						optionsObject = this.cloneStateMachineData(descriptor.options as Record<string, unknown>);
 					} else {
@@ -859,7 +859,7 @@ export class BmsxConsoleApi {
 					normalized.components.push({ className: classCandidate.trim(), options: optionsObject });
 					continue;
 				}
-				throw new Error(`[BmsxConsoleApi] spawnWorldObject components[${index}] must be a string or table/object.`);
+				throw new Error(`[BmsxConsoleApi] spawn_world_object components[${index}] must be a string or table/object.`);
 			}
 		}
 		return normalized;
@@ -1024,8 +1024,8 @@ export class BmsxConsoleApi {
 		const relativeX = screen.x - rect.left;
 		const relativeY = screen.y - rect.top;
 		const inside = relativeX >= 0 && relativeX < width && relativeY >= 0 && relativeY < height;
-		const viewportX = (relativeX / width) * this.displayWidth;
-		const viewportY = (relativeY / height) * this.displayHeight;
+		const viewportX = (relativeX / width) * this.display_width;
+		const viewportY = (relativeY / height) * this.display_height;
 		return { x: viewportX, y: viewportY, valid: true, inside };
 	}
 

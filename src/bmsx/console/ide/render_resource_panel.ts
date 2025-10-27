@@ -115,7 +115,7 @@ export function renderResourcePanel(api: BmsxConsoleApi, host: ResourcePanelHost
 			const caretBottom = caretTop + host.lineHeight;
 			if (panelActive) {
 				if (visibleRight > visibleLeft) {
-					api.rectfillColor(visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
+					api.rectfill_color(visibleLeft, caretTop, visibleRight, caretBottom, highlightColor);
 				}
 				const colors = new Array<number>(contentText.length).fill(constants.COLOR_RESOURCE_PANEL_HIGHLIGHT_TEXT);
 				if (contentText.length > 0) {

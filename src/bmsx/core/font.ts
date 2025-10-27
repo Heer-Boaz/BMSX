@@ -136,6 +136,7 @@ export class BFont {
 		if (c in this.letter_to_img) {
 			letter = this.letter_to_img[c];
 		} else {
+			console.warn(`[BFont]: Character '${c}' not found in letter_to_img map.`);
 			letter = 'letter_question'; // Default to question mark if character is not found
 		}
 		return letter;
