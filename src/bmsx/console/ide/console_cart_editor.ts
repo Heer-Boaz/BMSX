@@ -40,6 +40,7 @@ import { buildHoverContentLines as buildHoverContentLinesExternal } from './hove
 import { isLuaCommentContext, measureTextGeneric, truncateTextToWidth as truncateTextToWidthExternal } from './text_utils_local';
 import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
+import { renderTabBar } from './render_tab_bar';
 import { renderStatusBar } from './render_status_bar';
 import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderLineJumpBar } from './render_inline_bars';
 // Resource panel rendering is handled via ResourcePanelController
@@ -129,7 +130,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private readonly gutterWidth: number;
 	private readonly headerHeight: number;
 	private readonly tabBarHeight: number;
-	private readonly topMargin: number;
+	private tabBarRowCount = 1;
 	private readonly baseBottomMargin: number;
 	private readonly repeatState: Map<string, RepeatEntry> = new Map();
 	private readonly message: MessageState = { text: '', color: constants.COLOR_STATUS_TEXT, timer: 0, visible: false };
@@ -326,7 +327,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const primaryBarHeight = this.lineHeight + 4;
 		this.headerHeight = primaryBarHeight;
 		this.tabBarHeight = this.lineHeight + 3;
-		this.topMargin = this.headerHeight + this.tabBarHeight + 2;
 		this.baseBottomMargin = this.lineHeight + 6;
 		this.scrollbars = {
 			codeVertical: new ConsoleScrollbar('codeVertical', 'vertical'),
@@ -801,6 +801,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return buildRuntimeErrorLinesUtil(message, maxWidth, (text) => this.measureText(text));
 	}
 
+	private getTabBarTotalHeight(): number {
+		return this.tabBarHeight * Math.max(1, this.tabBarRowCount);
+	}
+
+	private get topMargin(): number {
+		return this.headerHeight + this.getTabBarTotalHeight() + 2;
+	}
+
 	private statusAreaHeight(): number {
 		if (!this.message.visible) {
 			return this.baseBottomMargin;
@@ -823,7 +831,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return 0;
 		}
 		const statusHeight = this.statusAreaHeight();
-		const maxAvailable = Math.max(0, this.viewportHeight - statusHeight - (this.headerHeight + this.tabBarHeight));
+		const maxAvailable = Math.max(0, this.viewportHeight - statusHeight - (this.headerHeight + this.getTabBarTotalHeight()));
 		if (maxAvailable <= 0) {
 			return 0;
 		}
@@ -981,7 +989,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const frameColor = Msx1Colors[constants.COLOR_FRAME];
 		api.rectfill_color(0, 0, this.viewportWidth, this.viewportHeight, { r: frameColor.r, g: frameColor.g, b: frameColor.b, a: frameColor.a });
 		this.drawTopBar(api);
-		this.drawTabBar(api);
+		this.tabBarRowCount = renderTabBar(api, {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			rowHeight: this.tabBarHeight,
+			lineHeight: this.lineHeight,
+			tabs: this.tabs,
+			activeTabId: this.activeTabId,
+			tabHoverId: this.tabHoverId,
+			measureText: (text: string) => this.measureText(text),
+			drawText: (api2, text, x, y, color) => drawEditorText(api2, this.font, text, x, y, color),
+			getDirtyMarkerMetrics: () => this.getTabDirtyMarkerMetrics(),
+			tabDirtyMarkerAssetId: this.tabDirtyMarkerAssetId,
+			tabButtonBounds: this.tabButtonBounds,
+			tabCloseButtonBounds: this.tabCloseButtonBounds,
+		});
 		this.drawResourcePanel(api);
 		if (this.isResourceViewActive()) {
 			this.drawResourceViewer(api);
@@ -990,11 +1012,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.drawSearchBar(api);
 			this.drawResourceSearchBar(api);
 			this.drawSymbolSearchBar(api);
-		this.drawLineJumpBar(api);
-		this.drawCodeArea(api);
-	}
-	this.drawProblemsPanel(api);
-	this.drawStatusBar(api);
+			this.drawLineJumpBar(api);
+			this.drawCodeArea(api);
+		}
+		this.drawProblemsPanel(api);
+		this.drawStatusBar(api);
 		if (this.pendingActionPrompt) {
 			this.drawActionPromptOverlay(api);
 		}
@@ -1015,93 +1037,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return context.lastSavedSource;
 		}
 		return context.load();
-	}
-
-	private drawTabBar(api: BmsxConsoleApi): void {
-		const barTop = this.headerHeight;
-		const barBottom = barTop + this.tabBarHeight;
-		api.rectfill(0, barTop, this.viewportWidth, barBottom, constants.COLOR_TAB_BAR_BACKGROUND);
-		api.rectfill(0, barBottom - 1, this.viewportWidth, barBottom, constants.COLOR_TAB_BORDER);
-		this.tabButtonBounds.clear();
-		this.tabCloseButtonBounds.clear();
-		let tabX = 4;
-		for (let index = 0; index < this.tabs.length; index += 1) {
-			const tab = this.tabs[index];
-			const textWidth = this.measureText(tab.title);
-			const dirty = tab.dirty === true;
-			const hovered = tab.id === this.tabHoverId;
-			let markerMetrics: { width: number; height: number } | null = null;
-			if (dirty) {
-				markerMetrics = this.getTabDirtyMarkerMetrics();
-			}
-			let closeWidth = 0;
-			if (tab.closable) {
-				closeWidth = this.measureText(constants.TAB_CLOSE_BUTTON_SYMBOL) + constants.TAB_CLOSE_BUTTON_PADDING_X * 2;
-			}
-			let indicatorWidth = 0;
-			if (tab.closable) {
-				indicatorWidth = closeWidth;
-			} else if (markerMetrics) {
-				indicatorWidth = markerMetrics.width + constants.TAB_DIRTY_MARKER_SPACING;
-			}
-			const tabWidth = textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
-			const left = tabX;
-			const right = left + tabWidth;
-			const top = barTop + 1;
-			const bottom = barBottom - 1;
-			const bounds: RectBounds = { left, top, right, bottom };
-			this.tabButtonBounds.set(tab.id, bounds);
-			const active = this.activeTabId === tab.id;
-			const fillColor = active ? constants.COLOR_TAB_ACTIVE_BACKGROUND : constants.COLOR_TAB_INACTIVE_BACKGROUND;
-			const textColor = active ? constants.COLOR_TAB_ACTIVE_TEXT : constants.COLOR_TAB_INACTIVE_TEXT;
-			api.rectfill(bounds.left, bounds.top, bounds.right, bounds.bottom, fillColor);
-			api.rect(bounds.left, bounds.top, bounds.right, bounds.bottom, constants.COLOR_TAB_BORDER);
-		const textY = bounds.top + constants.TAB_BUTTON_PADDING_Y;
-			const showCloseButton = tab.closable && hovered;
-			const indicatorLeft = bounds.right - indicatorWidth;
-			const textX = bounds.left + constants.TAB_BUTTON_PADDING_X;
-		drawEditorText(api, this.font, tab.title, textX, textY, textColor);
-			if (tab.closable) {
-				const closeBounds: RectBounds = {
-					left: bounds.right - closeWidth,
-					top: bounds.top,
-					right: bounds.right,
-					bottom: bounds.bottom,
-				};
-				if (showCloseButton) {
-					this.tabCloseButtonBounds.set(tab.id, closeBounds);
-				const closeX = closeBounds.left + constants.TAB_CLOSE_BUTTON_PADDING_X;
-				const closeY = closeBounds.top + constants.TAB_CLOSE_BUTTON_PADDING_Y;
-				drawEditorText(api, this.font, constants.TAB_CLOSE_BUTTON_SYMBOL, closeX, closeY, textColor);
-				} else {
-					this.tabCloseButtonBounds.delete(tab.id);
-					if (dirty && markerMetrics) {
-						const markerX = closeBounds.left + Math.floor((closeWidth - markerMetrics.width) / 2);
-						const markerY = bounds.top + Math.floor(((bounds.bottom - bounds.top) - markerMetrics.height) / 2);
-						api.spr(this.tabDirtyMarkerAssetId, markerX, markerY);
-					}
-				}
-			} else {
-				this.tabCloseButtonBounds.delete(tab.id);
-				if (dirty && markerMetrics) {
-					const indicatorAreaWidth = indicatorWidth;
-					const spacing = Math.max(0, constants.TAB_DIRTY_MARKER_SPACING);
-					const markerX = indicatorAreaWidth > 0
-						? indicatorLeft + Math.floor(Math.max(0, (indicatorAreaWidth - markerMetrics.width) / 2))
-						: bounds.right - markerMetrics.width - spacing;
-					const markerY = bounds.top + Math.floor(((bounds.bottom - bounds.top) - markerMetrics.height) / 2);
-					api.spr(this.tabDirtyMarkerAssetId, markerX, markerY);
-				}
-			}
-			if (active) {
-				api.rectfill(bounds.left, bounds.bottom - 1, bounds.right, bounds.bottom, fillColor);
-			}
-			tabX = right + constants.TAB_BUTTON_SPACING;
-		}
-		const remainingTop = barBottom - 1;
-		if (tabX < this.viewportWidth) {
-			api.rectfill(tabX, remainingTop, this.viewportWidth, barBottom, constants.COLOR_TAB_BAR_BACKGROUND);
-		}
 	}
 
 	private getTabDirtyMarkerMetrics(): { width: number; height: number } {
@@ -3198,7 +3133,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				return;
 			}
 			if (snapshot.valid) {
-				this.updateTabDrag(snapshot.viewportX);
+				this.updateTabDrag(snapshot.viewportX, snapshot.viewportY);
 			}
 			this.pointerSelecting = false;
 			this.pointerPrimaryWasPressed = snapshot.primaryPressed;
@@ -3287,7 +3222,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		const tabTop = this.headerHeight;
-		const tabBottom = tabTop + this.tabBarHeight;
+		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		if (pointerAuxJustPressed && this.handleTabBarMiddleClick(snapshot)) {
 			if (playerInput) {
 				playerInput.consumeAction('pointer_aux');
@@ -3648,7 +3583,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		const tabTop = this.headerHeight;
-		const tabBottom = tabTop + this.tabBarHeight;
+		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		const y = snapshot.viewportY;
 		if (y < tabTop || y >= tabBottom) {
 			this.tabHoverId = null;
@@ -4165,7 +4100,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private handleTabBarPointer(snapshot: PointerSnapshot): boolean {
 		const tabTop = this.headerHeight;
-		const tabBottom = tabTop + this.tabBarHeight;
+		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		const y = snapshot.viewportY;
 		if (y < tabTop || y >= tabBottom) {
 			return false;
@@ -4192,7 +4127,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private handleTabBarMiddleClick(snapshot: PointerSnapshot): boolean {
 		const tabTop = this.headerHeight;
-		const tabBottom = tabTop + this.tabBarHeight;
+		const tabBottom = tabTop + this.getTabBarTotalHeight();
 		const y = snapshot.viewportY;
 		if (y < tabTop || y >= tabBottom) {
 			return false;
@@ -5200,7 +5135,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	const host = {
 		viewportWidth: this.viewportWidth,
 		headerHeight: this.headerHeight,
-		tabBarHeight: this.tabBarHeight,
+		tabBarHeight: this.getTabBarTotalHeight(),
 		lineHeight: this.lineHeight,
 		spaceAdvance: this.spaceAdvance,
 		charAdvance: this.charAdvance,
@@ -5242,7 +5177,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const host: import('./render_inline_bars').InlineBarsHost = {
 			viewportWidth: this.viewportWidth,
 			headerHeight: this.headerHeight,
-			tabBarHeight: this.tabBarHeight,
+			tabBarHeight: this.getTabBarTotalHeight(),
 			lineHeight: this.lineHeight,
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
@@ -5289,7 +5224,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const host: import('./render_inline_bars').InlineBarsHost = {
 			viewportWidth: this.viewportWidth,
 			headerHeight: this.headerHeight,
-			tabBarHeight: this.tabBarHeight,
+			tabBarHeight: this.getTabBarTotalHeight(),
 			lineHeight: this.lineHeight,
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
@@ -5340,7 +5275,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const host: import('./render_inline_bars').InlineBarsHost = {
 			viewportWidth: this.viewportWidth,
 			headerHeight: this.headerHeight,
-			tabBarHeight: this.tabBarHeight,
+			tabBarHeight: this.getTabBarTotalHeight(),
 			lineHeight: this.lineHeight,
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
@@ -5392,7 +5327,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const host: import('./render_inline_bars').InlineBarsHost = {
 			viewportWidth: this.viewportWidth,
 			headerHeight: this.headerHeight,
-			tabBarHeight: this.tabBarHeight,
+			tabBarHeight: this.getTabBarTotalHeight(),
 			lineHeight: this.lineHeight,
 			spaceAdvance: this.spaceAdvance,
 			charAdvance: this.charAdvance,
@@ -5550,7 +5485,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.tabBarHeight;
+		const top = this.headerHeight + this.getTabBarTotalHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -5564,7 +5499,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight();
+		const top = this.headerHeight + this.getTabBarTotalHeight() + this.getCreateResourceBarHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -5578,7 +5513,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.tabBarHeight + this.getCreateResourceBarHeight() + this.getSearchBarHeight();
+		const top = this.headerHeight + this.getTabBarTotalHeight() + this.getCreateResourceBarHeight() + this.getSearchBarHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -5592,7 +5527,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.tabBarHeight
+		const top = this.headerHeight + this.getTabBarTotalHeight()
 			+ this.getCreateResourceBarHeight()
 			+ this.getSearchBarHeight()
 			+ this.getResourceSearchBarHeight()
@@ -5610,7 +5545,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.tabBarHeight
+		const top = this.headerHeight + this.getTabBarTotalHeight()
 			+ this.getCreateResourceBarHeight()
 			+ this.getSearchBarHeight()
 			+ this.getResourceSearchBarHeight();
@@ -6069,16 +6004,38 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		return textWidth + constants.TAB_BUTTON_PADDING_X * 2 + indicatorWidth;
 	}
 
-	private computeTabLayout(): Array<{ id: string; left: number; right: number; width: number }> {
-		const layout: Array<{ id: string; left: number; right: number; width: number }> = [];
-		let cursor = 4;
+	private computeTabLayout(): Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> {
+		const layout: Array<{ id: string; left: number; right: number; width: number; center: number; rowIndex: number }> = [];
 		for (let index = 0; index < this.tabs.length; index += 1) {
 			const tab = this.tabs[index];
+			const bounds = this.tabButtonBounds.get(tab.id) ?? null;
+			if (bounds) {
+				const left = bounds.left;
+				const right = bounds.right;
+				const width = Math.max(0, right - left);
+				const rowIndex = Math.max(0, Math.floor((bounds.top - this.headerHeight) / this.tabBarHeight));
+				layout.push({
+					id: tab.id,
+					left,
+					right,
+					width,
+					center: (left + right) * 0.5,
+					rowIndex,
+				});
+				continue;
+			}
 			const width = this.measureTabWidth(tab);
-			const left = cursor;
+			const previous = layout.length > 0 ? layout[layout.length - 1] : null;
+			const left = previous ? previous.right + constants.TAB_BUTTON_SPACING : 4;
 			const right = left + width;
-			layout.push({ id: tab.id, left, right, width });
-			cursor = right + constants.TAB_BUTTON_SPACING;
+			layout.push({
+				id: tab.id,
+				left,
+				right,
+				width,
+				center: (left + right) * 0.5,
+				rowIndex: previous ? previous.rowIndex : 0,
+			});
 		}
 		return layout;
 	}
@@ -6098,7 +6055,7 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		};
 	}
 
-	private updateTabDrag(pointerX: number): void {
+	private updateTabDrag(pointerX: number, pointerY: number): void {
 		const state = this.tabDragState;
 		if (!state) {
 			return;
@@ -6118,12 +6075,20 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		}
 		const dragged = layout[currentIndex];
 		const pointerLeft = pointerX - state.pointerOffset;
-		const pointerCenter = pointerLeft + dragged.width * 0.5;
-		let desiredIndex = 0;
+		const pointerCenter = pointerLeft + Math.max(dragged.width, 1) * 0.5;
+		const totalTabHeight = this.getTabBarTotalHeight();
+		const withinTabBar = pointerY >= this.headerHeight && pointerY < this.headerHeight + totalTabHeight;
+		const maxRowIndex = Math.max(0, this.tabBarRowCount - 1);
+		const pointerRow = withinTabBar
+			? clamp(Math.floor((pointerY - this.headerHeight) / this.tabBarHeight), 0, maxRowIndex)
+			: dragged.rowIndex;
+		const rowStride = this.viewportWidth + constants.TAB_BUTTON_SPACING * 4;
+		const pointerValue = pointerRow * rowStride + pointerCenter;
+		let desiredIndex = currentIndex;
 		for (let i = 0; i < layout.length; i += 1) {
 			const item = layout[i];
-			const center = (item.left + item.right) * 0.5;
-			if (pointerCenter > center) {
+			const itemValue = item.rowIndex * rowStride + item.center;
+			if (pointerValue > itemValue) {
 				desiredIndex = i + 1;
 			}
 		}
@@ -7391,7 +7356,7 @@ private handleCompletionKeybindings(
 	private setProblemsPanelHeightFromViewportY(viewportY: number): void {
 		const statusHeight = this.statusAreaHeight();
 		const bottom = this.viewportHeight - statusHeight;
-		const minTop = this.headerHeight + this.tabBarHeight + 1;
+		const minTop = this.headerHeight + this.getTabBarTotalHeight() + 1;
 		const headerH = this.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2;
 		const minContent = Math.max(1, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS) * this.lineHeight;
 		const minHeight = headerH + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2 + minContent;
