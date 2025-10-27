@@ -3,4 +3,8 @@
   "references": [
 	{ "path": "./src/bmsx" }
   ],
+  "exclude": [
+	"./src/tests/**.*",
+	"./src/scripts/ast-transform/**.*",
+  ],
 }

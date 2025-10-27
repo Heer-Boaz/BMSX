@@ -35,7 +35,7 @@ const PALETTE = {
 	green: 2,
 	lightGreen: 3,
 	darkBlue: 4,
-	Blue: 5,
+	blue: 5,
 	darkRed: 6,
 	lightBlue: 7,
 	red: 8,
@@ -46,7 +46,7 @@ const PALETTE = {
 	magenta: 13,
 	grey: 14,
 	white: 15
-} as const;
+};
 
 const THEME_BASE = {
 	surfaces: {
@@ -90,7 +90,7 @@ const THEME_BASE = {
 		activeText: PALETTE.grey,
 		inactiveText: PALETTE.black
 	}
-} as const;
+};
 
 const PANEL_BASE = {
 	problems: {
@@ -110,7 +110,7 @@ const PANEL_BASE = {
 		viewerBackground: THEME_BASE.surfaces.resourceViewer,
 		viewerText: THEME_BASE.text.primary
 	}
-} as const;
+};
 
 const TAB_BASE = {
 	barBackground: THEME_BASE.status.background,
@@ -119,7 +119,7 @@ const TAB_BASE = {
 	activeBackground: THEME_BASE.surfaces.tabActive,
 	inactiveText: THEME_BASE.tab.inactiveText,
 	activeText: THEME_BASE.tab.activeText
-} as const;
+};
 
 const SEARCH_BASE = {
 	background: PALETTE.lightBlue,
@@ -127,7 +127,7 @@ const SEARCH_BASE = {
 	secondaryText: THEME_BASE.input.secondaryText,
 	placeholder: THEME_BASE.input.placeholder,
 	outline: THEME_BASE.input.outline
-} as const;
+};
 
 const COMPLETION_BASE = {
 	background: SEARCH_BASE.background,
@@ -136,7 +136,7 @@ const COMPLETION_BASE = {
 	detail: SEARCH_BASE.secondaryText,
 	highlight: TAB_BASE.activeBackground,
 	highlightText: TAB_BASE.activeText
-} as const;
+};
 
 const ACTION_BASE = {
 	dialogBackground: SEARCH_BASE.background,
@@ -144,7 +144,7 @@ const ACTION_BASE = {
 	dialogText: SEARCH_BASE.text,
 	buttonBackground: THEME_BASE.status.background,
 	buttonText: THEME_BASE.status.text
-} as const;
+};
 
 const HEADER_BUTTON_BASE = {
 	background: THEME_BASE.status.background,
@@ -154,7 +154,7 @@ const HEADER_BUTTON_BASE = {
 	disabledText: THEME_BASE.text.dim,
 	activeBackground: THEME_BASE.status.warning,
 	activeText: THEME_BASE.text.topBar
-} as const;
+};
 
 const SYMBOL_SEARCH_BASE = {
 	background: SEARCH_BASE.background,
@@ -162,7 +162,7 @@ const SYMBOL_SEARCH_BASE = {
 	placeholder: SEARCH_BASE.placeholder,
 	outline: SEARCH_BASE.outline,
 	kind: SEARCH_BASE.secondaryText
-} as const;
+};
 
 const QUICK_OPEN_BASE = {
 	background: SYMBOL_SEARCH_BASE.background,
@@ -170,14 +170,14 @@ const QUICK_OPEN_BASE = {
 	placeholder: SEARCH_BASE.placeholder,
 	outline: SEARCH_BASE.outline,
 	kind: SEARCH_BASE.secondaryText
-} as const;
+};
 
 const PARAMETER_HINT_BASE = {
 	background: SEARCH_BASE.background,
 	border: SEARCH_BASE.outline,
 	text: SEARCH_BASE.text,
 	active: THEME_BASE.status.warning
-} as const;
+};
 
 export const COLOR_FRAME = THEME_BASE.surfaces.frame;
 export const COLOR_TOP_BAR = THEME_BASE.surfaces.topBar;
