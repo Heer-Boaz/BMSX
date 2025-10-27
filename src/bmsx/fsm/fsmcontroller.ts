@@ -39,7 +39,7 @@ export class StateMachineController {
 	private _started: boolean = false;
 
 	@excludepropfromsavegame
-	private readonly _subscribedCache = new Set<string>();
+	public readonly _subscribedCache = new Set<string>();
 
 	// NOTE THAT THE STATE MACHINES ARE NOT STARTED AUTOMATICALLY
 	// THE TARGET OBJECT MUST CALL start() TO START THE STATE MACHINES
@@ -313,7 +313,7 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that emitted the event.
 	 * @param args - Additional arguments to pass to the event handler.
 	 */
-	private auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, payload?: EventPayload, lane?: EventLane): void {
+	public auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, payload?: EventPayload, lane?: EventLane): void {
 		if (this.eventhandling_enabled === false) return;
 		this.sc.dispatch_event(event_name, emitter, payload, lane);
 	}

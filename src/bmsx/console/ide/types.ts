@@ -297,6 +297,7 @@ export type ConsoleRuntimeBridge = {
 	boot(): void;
 	reloadLuaProgram(source: string): Promise<void>;
 	setEditorOverlayResolution(mode: EditorResolutionMode): void;
+	isLuaRuntimeFailed(): boolean;
 };
 
 export type ConsoleEditorSerializedState = {

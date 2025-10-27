@@ -113,31 +113,31 @@ export class BmsxConsoleRuntime extends Service {
 	private static readonly MAX_FRAME_DELTA_MS = 250;
 	private static readonly HOVER_VALUE_MAX_LINE_LENGTH = 160;
 	private static readonly HOVER_VALUE_MAX_SERIALIZED_LINES = 200;
-private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaBuiltinDescriptor> = [
-	{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
-	{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
-	{ name: 'getmetatable', params: ['object'], signature: 'getmetatable(object)' },
-	{ name: 'ipairs', params: ['table'], signature: 'ipairs(t)' },
-	{ name: 'next', params: ['table', 'index?'], signature: 'next(table [, index])' },
-	{ name: 'pairs', params: ['table'], signature: 'pairs(t)' },
-	{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
-	{ name: 'print', params: ['...'], signature: 'print(...)' },
-	{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
-	{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
-	{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },
-	{ name: 'select', params: ['index', '...'], signature: 'select(index, ...)' },
-	{ name: 'setmetatable', params: ['table', 'metatable'], signature: 'setmetatable(table, metatable)' },
-	{ name: 'tonumber', params: ['value', 'base?'], signature: 'tonumber(value [, base])' },
-	{ name: 'tostring', params: ['value'], signature: 'tostring(value)' },
-	{ name: 'type', params: ['value'], signature: 'type(value)' },
-	{ name: 'xpcall', params: ['func', 'msgh', 'arg...'], signature: 'xpcall(f, msgh, ...)' },
-	{ name: 'table.concat', params: ['list', 'separator?', 'start?', 'end?'], signature: 'table.concat(list [, sep [, i [, j]]])' },
-	{ name: 'table.insert', params: ['list', 'pos?', 'value'], signature: 'table.insert(list [, pos], value)' },
-	{ name: 'table.pack', params: ['...'], signature: 'table.pack(...)' },
-	{ name: 'table.remove', params: ['list', 'pos?'], signature: 'table.remove(list [, pos])' },
-	{ name: 'table.sort', params: ['list', 'comp?'], signature: 'table.sort(list [, comp])' },
-	{ name: 'table.unpack', params: ['list', 'i?', 'j?'], signature: 'table.unpack(list [, i [, j]])' },
-];
+	private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaBuiltinDescriptor> = [
+		{ name: 'assert', params: ['value', 'message?'], signature: 'assert(value [, message])' },
+		{ name: 'error', params: ['message', 'level?'], signature: 'error(message [, level])' },
+		{ name: 'getmetatable', params: ['object'], signature: 'getmetatable(object)' },
+		{ name: 'ipairs', params: ['table'], signature: 'ipairs(t)' },
+		{ name: 'next', params: ['table', 'index?'], signature: 'next(table [, index])' },
+		{ name: 'pairs', params: ['table'], signature: 'pairs(t)' },
+		{ name: 'pcall', params: ['func', 'arg...'], signature: 'pcall(f, ...)' },
+		{ name: 'print', params: ['...'], signature: 'print(...)' },
+		{ name: 'rawequal', params: ['v1', 'v2'], signature: 'rawequal(v1, v2)' },
+		{ name: 'rawget', params: ['table', 'index'], signature: 'rawget(table, index)' },
+		{ name: 'rawset', params: ['table', 'index', 'value'], signature: 'rawset(table, index, value)' },
+		{ name: 'select', params: ['index', '...'], signature: 'select(index, ...)' },
+		{ name: 'setmetatable', params: ['table', 'metatable'], signature: 'setmetatable(table, metatable)' },
+		{ name: 'tonumber', params: ['value', 'base?'], signature: 'tonumber(value [, base])' },
+		{ name: 'tostring', params: ['value'], signature: 'tostring(value)' },
+		{ name: 'type', params: ['value'], signature: 'type(value)' },
+		{ name: 'xpcall', params: ['func', 'msgh', 'arg...'], signature: 'xpcall(f, msgh, ...)' },
+		{ name: 'table.concat', params: ['list', 'separator?', 'start?', 'end?'], signature: 'table.concat(list [, sep [, i [, j]]])' },
+		{ name: 'table.insert', params: ['list', 'pos?', 'value'], signature: 'table.insert(list [, pos], value)' },
+		{ name: 'table.pack', params: ['...'], signature: 'table.pack(...)' },
+		{ name: 'table.remove', params: ['list', 'pos?'], signature: 'table.remove(list [, pos])' },
+		{ name: 'table.sort', params: ['list', 'comp?'], signature: 'table.sort(list [, comp])' },
+		{ name: 'table.unpack', params: ['list', 'i?', 'j?'], signature: 'table.unpack(list [, i [, j]])' },
+	];
 	private static readonly LUA_HANDLE_FIELD = '__js_handle__';
 	private static readonly LUA_TYPE_FIELD = '__js_type__';
 	private static readonly LUA_SNAPSHOT_EXCLUDED_GLOBALS = new Set<string>([
@@ -612,22 +612,22 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			? (typeof this.luaProgram.assetId === 'string' ? this.luaProgram.assetId : null)
 			: null;
 		this.editor = new ConsoleCartEditor({
-        			playerIndex: this.playerIndex,
-        			metadata: this.cart.meta,
-        			viewport,
-        			loadSource: () => this.getEditorSource(),
-        			saveSource: (source: string) => this.saveLuaProgram(source),
-        			listResources: () => this.getResourceDescriptors(),
-        			loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
-        			saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
-        			createLuaResource: (request) => this.createLuaResource(request),
-        			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
-        			primaryAssetId,
-        			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
-        			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
-        			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
-        			fontVariant: EDITOR_FONT_VARIANT,
-        		});
+			playerIndex: this.playerIndex,
+			metadata: this.cart.meta,
+			viewport,
+			loadSource: () => this.getEditorSource(),
+			saveSource: (source: string) => this.saveLuaProgram(source),
+			listResources: () => this.getResourceDescriptors(),
+			loadLuaResource: (assetId: string) => this.getLuaResourceSource(assetId),
+			saveLuaResource: (assetId: string, source: string) => this.saveLuaResourceSource(assetId, source),
+			createLuaResource: (request) => this.createLuaResource(request),
+			inspectLuaExpression: (request: ConsoleLuaHoverRequest) => this.inspectLuaExpression(request),
+			primaryAssetId,
+			listLuaSymbols: (assetId: string | null, chunkName: string | null) => this.listLuaSymbols(assetId, chunkName),
+			listGlobalLuaSymbols: () => this.listAllLuaSymbols(),
+			listBuiltinLuaFunctions: () => this.listLuaBuiltinFunctions(),
+			fontVariant: EDITOR_FONT_VARIANT,
+		});
 		this.flushLuaWarnings();
 	}
 
@@ -1175,6 +1175,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		this.freeHandles = [];
 		this.freeHandleSet.clear();
 		this.disposeLuaServices();
+		setLuaTableCaseInsensitiveKeys(this.caseInsensitiveLua);
 	}
 
 	private bootLuaProgram(runInit: boolean): void {
@@ -1285,42 +1286,42 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		if (shouldValidate) {
 			this.validateLuaSource(source, targetChunkName);
 		}
-	try {
-		this.luaProgramSourceOverride = source;
-		this.applyProgramSourceToCartridge(source, targetChunkName);
-	}
-	catch (error) {
-		this.luaProgramSourceOverride = previousOverride;
 		try {
-			this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+			this.luaProgramSourceOverride = source;
+			this.applyProgramSourceToCartridge(source, targetChunkName);
 		}
-		catch (restoreError) {
-			this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after apply failure', { error: restoreError });
+		catch (error) {
+			this.luaProgramSourceOverride = previousOverride;
+			try {
+				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+			}
+			catch (restoreError) {
+				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after apply failure', { error: restoreError });
+				return;
+			}
+			this.handleLuaPersistenceFailure('apply', '[BmsxConsoleRuntime] Failed to apply Lua source override', { error });
+			if (this.luaFailurePolicy.apply === 'warning') {
+				return;
+			}
 			return;
 		}
-		this.handleLuaPersistenceFailure('apply', '[BmsxConsoleRuntime] Failed to apply Lua source override', { error });
-		if (this.luaFailurePolicy.apply === 'warning') {
-			return;
-		}
-		return;
-	}
-	try {
-		await this.persistLuaSourceToFilesystem(savePath, source);
-	} catch (error) {
-		this.luaProgramSourceOverride = previousOverride;
 		try {
-			this.applyProgramSourceToCartridge(previousSource, previousChunkName);
-		} catch (restoreError) {
-			this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after persistence failure', { error: restoreError });
+			await this.persistLuaSourceToFilesystem(savePath, source);
+		} catch (error) {
+			this.luaProgramSourceOverride = previousOverride;
+			try {
+				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+			} catch (restoreError) {
+				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after persistence failure', { error: restoreError });
+				return;
+			}
+			this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to persist Lua source to '${savePath}'`, { error });
+			if (this.luaFailurePolicy.persist === 'warning') {
+				return;
+			}
 			return;
 		}
-		this.handleLuaPersistenceFailure('persist', `[BmsxConsoleRuntime] Failed to persist Lua source to '${savePath}'`, { error });
-		if (this.luaFailurePolicy.persist === 'warning') {
-			return;
-		}
-		return;
 	}
-}
 
 	public async reloadLuaProgram(source: string): Promise<void> {
 		if (!this.hasLuaProgram()) {
@@ -1343,22 +1344,22 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			await this.saveLuaProgram(source);
 			this.boot();
 		}
-	catch (error) {
-		this.luaProgramSourceOverride = previousOverride;
-		try {
-			this.applyProgramSourceToCartridge(previousSource, previousChunkName);
-			this.boot();
-		}
-		catch (restoreError) {
-			this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after reload failure', { error: restoreError });
-			return;
-		}
-		this.handleLuaPersistenceFailure('persist', '[BmsxConsoleRuntime] Reload failed', { error });
-		if (this.luaFailurePolicy.persist === 'warning') {
-			return;
+		catch (error) {
+			this.luaProgramSourceOverride = previousOverride;
+			try {
+				this.applyProgramSourceToCartridge(previousSource, previousChunkName);
+				this.boot();
+			}
+			catch (restoreError) {
+				this.handleLuaPersistenceFailure('restore', '[BmsxConsoleRuntime] Failed to restore Lua source after reload failure', { error: restoreError });
+				return;
+			}
+			this.handleLuaPersistenceFailure('persist', '[BmsxConsoleRuntime] Reload failed', { error });
+			if (this.luaFailurePolicy.persist === 'warning') {
+				return;
+			}
 		}
 	}
-}
 
 	private shouldValidateLuaSource(): boolean {
 		return this.validationStrategy === BmsxLuaValidationStrategy.FullExecution;
@@ -1411,15 +1412,15 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		else {
 			message = String(error);
 		}
-		let line = 1;
-		let column = 1;
+		let line: number | null = null;
+		let column: number | null = null;
 		let chunkName: string | null = null;
 		if (error instanceof LuaError) {
 			if (Number.isFinite(error.line) && error.line > 0) {
-				line = error.line;
+				line = Math.floor(error.line);
 			}
 			if (Number.isFinite(error.column) && error.column > 0) {
-				column = error.column;
+				column = Math.floor(error.column);
 			}
 			if (typeof error.chunkName === 'string' && error.chunkName.length > 0) {
 				chunkName = error.chunkName;
@@ -1440,7 +1441,7 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			catch (editorError) {
 				const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 				try {
-					this.editor.showRuntimeError(line, column, overlayMessage);
+				this.editor.showRuntimeError(line, column, overlayMessage);
 				}
 				catch (secondaryError) {
 					console.warn('[BmsxConsoleRuntime] Failed to display Lua error in console editor.', editorError, secondaryError);
@@ -1782,13 +1783,18 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 			const machineId = machineIdRaw.trim();
 			const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
-			const result = applyPreparedStateMachine(machineId, prepared);
+			const existingDefinition = StateDefinitions[machineId];
+			const result = applyPreparedStateMachine(machineId, prepared, { force: true });
 			this.api.register_prepared_fsm(machineId, prepared, { setup: false });
-			if (!result.changed) {
+			this.luaFsmMachineIds.add(machineId);
+			if (!result.changed || !existingDefinition) {
 				continue;
 			}
-			previousDefinitions.set(machineId, result.previousDefinition);
-			this.luaFsmMachineIds.add(machineId);
+			if (!ActiveStateMachines.has(machineId)) {
+				continue;
+			}
+			existingDefinition.event_list = existingDefinition.event_list ?? [];
+			previousDefinitions.set(machineId, existingDefinition);
 			changedMachines.push(machineId);
 		}
 
@@ -1800,57 +1806,51 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 
 	private unsubscribeStateMachineEvents(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>): Set<StateMachineController> {
 		const controllers = new Set<StateMachineController>();
-		if (machineIds.length === 0) {
-			return controllers;
-		}
 
 		for (const machineId of machineIds) {
-			const instances = ActiveStateMachines.get(machineId);
-			if (!instances || instances.length === 0) {
+			if (!ActiveStateMachines.has(machineId)) {
 				continue;
 			}
+			const instances = ActiveStateMachines.get(machineId);
+			if (!instances) {
+				throw new Error(`[BmsxConsoleRuntime] Active state machines map has no entry for '${machineId}'.`);
+			}
 			const oldDefinition = previousDefinitions.get(machineId);
+			if (!oldDefinition) {
+				throw new Error(`[BmsxConsoleRuntime] Previous definition missing for state machine '${machineId}'.`);
+			}
 			for (const instance of instances) {
 				if (!instance) {
-					continue;
+					throw new Error(`[BmsxConsoleRuntime] Active state machine list for '${machineId}' contains null entries.`);
 				}
 				const target = instance.target;
-				const controller = target ? target.sc : null;
-				if (!controller || typeof (controller as StateMachineController).bind !== 'function') {
-					continue;
+				if (!target) {
+					throw new Error(`[BmsxConsoleRuntime] State machine '${machineId}' has no target.`);
 				}
-				controllers.add(controller as StateMachineController);
-				if (!oldDefinition || !oldDefinition.event_list || oldDefinition.event_list.length === 0) {
-					continue;
+				const controller = target.sc;
+				if (!controller) {
+					throw new Error(`[BmsxConsoleRuntime] State machine '${machineId}' target '${target.id}' has no controller.`);
 				}
-				const cache = (controller as unknown as { _subscribedCache?: Set<string> })._subscribedCache;
+				controllers.add(controller);
+				const cache = controller._subscribedCache;
+				if (!oldDefinition.event_list) {
+					throw new Error(`[BmsxConsoleRuntime] State machine '${machineId}' previous definition has no event list.`);
+				}
 				for (const event of oldDefinition.event_list) {
-					if (event.scope === 'self' && (!target || typeof target.id !== 'string')) {
-						continue;
-					}
 					let emitter: Identifier | undefined;
 					switch (event.scope) {
 						case 'self':
-							emitter = target?.id;
+							emitter = target.id;
 							break;
 						case 'all':
 						default:
 							emitter = undefined;
 							break;
 					}
-					try {
-						const autoDispatch = (controller as any).auto_dispatch;
-						if (typeof autoDispatch === 'function') {
-							EventEmitter.instance.off(event.name, autoDispatch, emitter, true);
-						}
-					} catch (error) {
-						if ($.debug) {
-							console.warn(`[BmsxConsoleRuntime] Failed to unsubscribe FSM event '${event.name}' for machine '${machineId}':`, error);
-						}
-					}
+					EventEmitter.instance.off(event.name, controller.auto_dispatch, emitter, true);
 					const lane = event.lane ?? 'any';
 					const cacheKey = `${event.name}-${emitter ?? 'global'}-${lane}`;
-					cache?.delete(cacheKey);
+					cache.delete(cacheKey);
 				}
 			}
 		}
@@ -1859,32 +1859,27 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 
 	private refreshStateMachines(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>, controllersToRebind: ReadonlySet<StateMachineController>): void {
 		for (const machineId of machineIds) {
-			const instances = ActiveStateMachines.get(machineId);
-			if (!instances || instances.length === 0) {
+			if (!ActiveStateMachines.has(machineId)) {
 				continue;
+			}
+			const instances = ActiveStateMachines.get(machineId);
+			if (!instances) {
+				throw new Error(`[BmsxConsoleRuntime] Active state machines map has no entry for '${machineId}'.`);
 			}
 			const newDefinition = StateDefinitions[machineId];
 			if (!newDefinition) {
-				continue;
+				throw new Error(`[BmsxConsoleRuntime] New definition missing for state machine '${machineId}'.`);
 			}
 			const previousDefinition = previousDefinitions.get(machineId);
 			for (const instance of instances) {
 				if (!instance) {
-					continue;
+					throw new Error(`[BmsxConsoleRuntime] Active state machine list for '${machineId}' contains null entries.`);
 				}
-				try {
-					migrateMachineDiff(instance, previousDefinition, newDefinition);
-				} catch (error) {
-					console.error(`[BmsxConsoleRuntime] Failed to migrate FSM '${machineId}' for target '${instance.target_id}':`, error);
-				}
+				migrateMachineDiff(instance, previousDefinition, newDefinition);
 			}
 		}
 		for (const controller of controllersToRebind) {
-			try {
-				controller.bind();
-			} catch (error) {
-				console.error('[BmsxConsoleRuntime] Failed to rebind FSM controller after reload:', error);
-			}
+			controller.bind();
 		}
 	}
 
@@ -1999,10 +1994,6 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 					continue;
 				}
 				const updatedRoot = BehaviorTrees[treeId];
-				if (!updatedRoot) {
-					delete contexts[treeId];
-					continue;
-				}
 				const context = contexts[treeId];
 				const wasEnabled = context.root.enabled;
 				context.root = updatedRoot;
@@ -2014,17 +2005,11 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 	}
 
 	private handleRemovedBehaviorTrees(removed: Iterable<string>): void {
-		const world = $.world;
 		const removedSet = new Set(removed);
-		if (removedSet.size === 0) {
-			return;
-		}
-		for (const object of world.objects({ scope: 'all' })) {
+		for (const object of $.world.objects({ scope: 'all' })) {
 			const contexts = object.btreecontexts;
 			for (const treeId of removedSet) {
-				if (treeId in contexts) {
-					delete contexts[treeId];
-				}
+				delete contexts[treeId];
 			}
 		}
 	}
@@ -2279,6 +2264,10 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 		}
 		this.luaServices.clear();
+	}
+
+	public isLuaRuntimeFailed(): boolean {
+		return this.luaRuntimeFailed;
 	}
 
 	private registerLuaServiceEvents(binding: LuaServiceBinding): void {
@@ -3267,8 +3256,8 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			this.resourcePathCache.set(assetId, null);
 			return null;
 		}
-	const normalizedPath = entry.path.replace(/\\/g, '/');
-	this.resourcePathCache.set(assetId, normalizedPath);
+		const normalizedPath = entry.path.replace(/\\/g, '/');
+		this.resourcePathCache.set(assetId, normalizedPath);
 		return normalizedPath;
 	}
 

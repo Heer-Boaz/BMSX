@@ -411,20 +411,16 @@ function createMachine(machine_name: Identifier, machine_definition: StateMachin
  * @param machine - The StateMachineBlueprint object representing the machine definition.
  */
 function addEventsToDef(machine: StateMachineBlueprint): void {
-	// If the machine has events defined, add them to the event list of the machine definition
+	machine.event_list = [];
 	machine.on = rewriteOnBag(machine.on);
-	const eventMap = getMachineEvents(machine); // Get the events from the machine definition
-	if (eventMap && eventMap.size > 0) {
-		machine.event_list = []; // Create a new event list for the machine definition
-		eventMap.forEach(event_entry => { // Add the events to the event list of the machine definition
-			// Check for duplicate events and raise a warning if found
-			if (machine.event_list.some(e => e.name === event_entry.name && e.scope === event_entry.scope)) {
-				console.warn(`Duplicate event found in machine ${machine.id}: ${event_entry.name} with scope ${event_entry.scope}`);
-				debugger;
-			}
-			machine.event_list.push({ name: event_entry.name, scope: event_entry.scope, lane: event_entry.lane ?? 'any' }); // Add the event to the event list of the machine definition
-		});
-	}
+	const eventMap = getMachineEvents(machine);
+	eventMap?.forEach(event_entry => {
+		if (machine.event_list!.some(e => e.name === event_entry.name && e.scope === event_entry.scope)) {
+			console.warn(`Duplicate event found in machine ${machine.id}: ${event_entry.name} with scope ${event_entry.scope}`);
+			debugger;
+		}
+		machine.event_list!.push({ name: event_entry.name, scope: event_entry.scope, lane: event_entry.lane ?? 'any' });
+	});
 }
 
 /**

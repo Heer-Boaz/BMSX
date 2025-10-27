@@ -555,19 +555,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 	}
 
-	public showRuntimeErrorInChunk(chunkName: string | null, line: number, column: number, message: string, hint?: { assetId: string | null; path?: string | null }): void {
+	public showRuntimeErrorInChunk(chunkName: string | null, line: number | null, column: number | null, message: string, hint?: { assetId: string | null; path?: string | null }): void {
 		this.focusChunkSource(chunkName, hint);
 		const overlayMessage = chunkName && chunkName.length > 0 ? `${chunkName}: ${message}` : message;
 		this.showRuntimeError(line, column, overlayMessage);
 	}
 
-	public showRuntimeError(line: number, column: number, message: string): void {
+	public showRuntimeError(line: number | null, column: number | null, message: string): void {
 		if (!this.active) {
 			this.activate();
 		}
-		const hasLocation = Number.isFinite(line) && line >= 1;
-		const processedLine = hasLocation ? Math.max(1, Math.floor(line)) : null;
-		const baseColumn = Number.isFinite(column) ? Math.floor(column) - 1 : null;
+		const hasLocation = typeof line === 'number' && Number.isFinite(line) && line >= 1;
+		const processedLine = hasLocation ? Math.max(1, Math.floor(line!)) : null;
+		const processedColumn = typeof column === 'number' && Number.isFinite(column) ? Math.floor(column!) - 1 : null;
 		let targetRow = this.cursorRow;
 		if (processedLine !== null) {
 			targetRow = clamp(processedLine - 1, 0, this.lines.length - 1);
@@ -575,8 +575,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const currentLine = this.lines[targetRow] ?? '';
 		let targetColumn = this.cursorColumn;
-		if (baseColumn !== null) {
-			targetColumn = clamp(baseColumn, 0, currentLine.length);
+		if (processedColumn !== null) {
+			targetColumn = clamp(processedColumn, 0, currentLine.length);
 			this.cursorColumn = targetColumn;
 		}
 		this.clampCursorColumn();
@@ -600,7 +600,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			timer: Number.POSITIVE_INFINITY,
 		};
 		this.setActiveRuntimeErrorOverlay(overlay);
-		this.setExecutionStopHighlight(targetRow);
+		this.setExecutionStopHighlight(processedLine !== null ? targetRow : null);
 		const statusLine = overlayLines.length > 0 ? overlayLines[0] : 'Runtime error';
 		this.showMessage(statusLine, constants.COLOR_STATUS_ERROR, 8.0);
 	}
@@ -4365,6 +4365,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.showMessage('Console runtime unavailable.', constants.COLOR_STATUS_ERROR, 4.0);
 			return false;
 		}
+		if (!runtime.isLuaRuntimeFailed() && !this.hasPendingRuntimeReload()) {
+			this.clearExecutionStopHighlights();
+			this.deactivate();
+			$.paused = false;
+			return true;
+		}
 		let snapshot: unknown = null;
 		try {
 			snapshot = runtime.getState();
@@ -7526,6 +7532,9 @@ private handleCompletionKeybindings(
 			return null;
 		}
 		if (typeof runtime.reloadLuaProgram !== 'function') {
+			return null;
+		}
+		if (typeof runtime.isLuaRuntimeFailed !== 'function') {
 			return null;
 		}
 		return runtime;
