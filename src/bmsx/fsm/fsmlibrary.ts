@@ -1,6 +1,7 @@
 import type { EventLane, EventScope } from "../core/eventemitter";
 import { $ } from '../core/game';
 import { deepClone, deepEqual } from '../utils/utils';
+import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifier } from '../rompack/rompack';
 import { getDeclaredFsmHandlers, StateDefinitionBuilders } from "./fsmdecorators";
 import type {
@@ -27,6 +28,7 @@ import { assertClassicAuthoring } from './fsm_classic_linter';
  */
 export const StateDefinitions: Record<string, StateDefinition> = {};
 export const ActiveStateMachines: Map<string, State<Stateful>[]> = new Map();
+const stateMachineBlueprintSignatures: Map<Identifier, string> = new Map();
 
 function eventNameHasScope(name: string): boolean {
 	return name.startsWith('$');
@@ -359,6 +361,35 @@ export function setupFSMlibrary(): void {
 		addEventsToDef(built);
 	}
 
+}
+
+export function rebuildStateMachine(machineName: Identifier, blueprint: StateMachineBlueprint): StateDefinition {
+	const allowDsl = (blueprint as { allowDsl?: boolean }).allowDsl === true;
+	if (!allowDsl) {
+		assertClassicAuthoring(blueprint);
+	}
+
+	const built = createMachine(machineName, blueprint);
+	walkAndHoist(machineName, built, HandlerRegistry.instance, [], /*useProxyThunks=*/true);
+	compileMarkersTree(built);
+	validateStateMachine(built);
+	clearDefinitionsForMachine(machineName);
+	registerDefinitionTree(built);
+	addEventsToDef(built);
+	return built;
+}
+
+export function applyPreparedStateMachine(machineName: Identifier, blueprint: StateMachineBlueprint): { changed: boolean; previousDefinition?: StateDefinition } {
+	const signature = computeBlueprintSignature(blueprint);
+	const previousSignature = stateMachineBlueprintSignatures.get(machineName);
+	const previousDefinition = StateDefinitions[machineName];
+	if (previousSignature === signature) {
+		return { changed: false, previousDefinition };
+	}
+	stateMachineBlueprintSignatures.set(machineName, signature);
+	const clonedBlueprint = cloneBlueprint(blueprint) as StateMachineBlueprint;
+	rebuildStateMachine(machineName, clonedBlueprint);
+	return { changed: true, previousDefinition };
 }
 
 /**

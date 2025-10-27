@@ -1,6 +1,7 @@
 import { $ } from '../core/game';
 import { normalizeDecoratedClassName } from '../utils/decorators';
 import { deepClone } from '../utils/utils';
+import { computeBlueprintSignature, cloneBlueprint } from '../utils/blueprint';
 import type { Identifiable, Identifier } from '../rompack/rompack';
 import { excludeclassfromsavegame, insavegame, type RevivableObjectArgs } from '../serializer/serializationhooks';
 import type { WorldObject } from '../core/object/worldobject';
@@ -42,14 +43,21 @@ export let BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinit
  * @type {Object.<BehaviorTreeID, BTNode> | null}
  */
 export let BehaviorTrees: { [key: BehaviorTreeID]: BTNode } = {};
+const behaviorTreeSignatures: Map<BehaviorTreeID, string> = new Map();
 
 /**
  * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_bt_library(): void {
 	BehaviorTrees = {};
+	behaviorTreeSignatures.clear();
 	for (const bt_id of Object.keys(BehaviorTreeDefinitions)) {
+		const definition = BehaviorTreeDefinitions[bt_id];
+		if (!definition) {
+			continue;
+		}
 		BehaviorTrees[bt_id] = constructBehaviorTree(bt_id);
+		behaviorTreeSignatures.set(bt_id, computeBlueprintSignature(definition));
 	}
 }
 
@@ -95,6 +103,26 @@ export function unregisterBehaviorTreeBuilder(id: BehaviorTreeID): void {
 	delete behaviorTreeDefinitionsBuilders[id];
 	delete BehaviorTreeDefinitions[id];
 	delete BehaviorTrees[id];
+	behaviorTreeSignatures.delete(id);
+}
+
+export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: BehaviorTreeDefinition): { changed: boolean; previousDefinition?: BehaviorTreeDefinition } {
+	const trimmed = id.trim();
+	if (trimmed.length === 0) {
+		throw new Error('[BehaviorTree] Definition id must be a non-empty string.');
+	}
+	const signature = computeBlueprintSignature(definition);
+	const previousSignature = behaviorTreeSignatures.get(trimmed);
+	const previousDefinition = BehaviorTreeDefinitions[trimmed];
+	if (previousSignature === signature) {
+		return { changed: false, previousDefinition };
+	}
+	behaviorTreeSignatures.set(trimmed, signature);
+	const snapshot = cloneBlueprint(definition);
+	behaviorTreeDefinitionsBuilders[trimmed] = () => cloneBlueprint(snapshot);
+	BehaviorTreeDefinitions[trimmed] = cloneBlueprint(snapshot);
+	BehaviorTrees[trimmed] = constructBehaviorTree(trimmed);
+	return { changed: true, previousDefinition };
 }
 
 /**

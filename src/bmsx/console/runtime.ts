@@ -20,10 +20,12 @@ import type { Identifier, Identifiable } from '../rompack/rompack';
 import { consoleEditorSpec } from '../core/pipelines/console_editor';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
-import { HandlerRegistry, setupFSMlibrary } from '../fsm/fsmlibrary';
-import { registerBehaviorTreeDefinition, unregisterBehaviorTreeBuilder, setup_btdef_library, setup_bt_library } from '../ai/behaviourtree';
+import { HandlerRegistry, ActiveStateMachines, migrateMachineDiff, StateDefinitions, applyPreparedStateMachine } from '../fsm/fsmlibrary';
+import { BehaviorTrees, unregisterBehaviorTreeBuilder, applyPreparedBehaviorTree } from '../ai/behaviourtree';
 import type { BehaviorTreeDefinition } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
+import type { StateDefinition } from '../fsm/statedefinition';
+import type { StateMachineController } from '../fsm/fsmcontroller';
 import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lua/ast.ts';
 import { ConsoleCartEditor } from './ide/console_cart_editor';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
@@ -1731,7 +1733,8 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 		this.luaFsmMachineIds.clear();
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
-		const loadedMachines: string[] = [];
+		const previousDefinitions = new Map<string, StateDefinition | undefined>();
+		const changedMachines: string[] = [];
 		for (const assetId of Object.keys(luaSources)) {
 			if (!this.assetIdRepresentsFsm(assetId)) {
 				continue;
@@ -1779,32 +1782,126 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 			}
 			const machineId = machineIdRaw.trim();
 			const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
+			const result = applyPreparedStateMachine(machineId, prepared);
 			this.api.register_prepared_fsm(machineId, prepared, { setup: false });
+			if (!result.changed) {
+				continue;
+			}
+			previousDefinitions.set(machineId, result.previousDefinition);
 			this.luaFsmMachineIds.add(machineId);
-			loadedMachines.push(machineId);
+			changedMachines.push(machineId);
 		}
-		if (loadedMachines.length > 0) {
-			setupFSMlibrary();
+
+		if (changedMachines.length > 0) {
+			const controllersToRebind = this.unsubscribeStateMachineEvents(changedMachines, previousDefinitions);
+			this.refreshStateMachines(changedMachines, previousDefinitions, controllersToRebind);
+		}
+	}
+
+	private unsubscribeStateMachineEvents(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>): Set<StateMachineController> {
+		const controllers = new Set<StateMachineController>();
+		if (machineIds.length === 0) {
+			return controllers;
+		}
+
+		for (const machineId of machineIds) {
+			const instances = ActiveStateMachines.get(machineId);
+			if (!instances || instances.length === 0) {
+				continue;
+			}
+			const oldDefinition = previousDefinitions.get(machineId);
+			for (const instance of instances) {
+				if (!instance) {
+					continue;
+				}
+				const target = instance.target;
+				const controller = target ? target.sc : null;
+				if (!controller || typeof (controller as StateMachineController).bind !== 'function') {
+					continue;
+				}
+				controllers.add(controller as StateMachineController);
+				if (!oldDefinition || !oldDefinition.event_list || oldDefinition.event_list.length === 0) {
+					continue;
+				}
+				const cache = (controller as unknown as { _subscribedCache?: Set<string> })._subscribedCache;
+				for (const event of oldDefinition.event_list) {
+					if (event.scope === 'self' && (!target || typeof target.id !== 'string')) {
+						continue;
+					}
+					let emitter: Identifier | undefined;
+					switch (event.scope) {
+						case 'self':
+							emitter = target?.id;
+							break;
+						case 'all':
+						default:
+							emitter = undefined;
+							break;
+					}
+					try {
+						const autoDispatch = (controller as any).auto_dispatch;
+						if (typeof autoDispatch === 'function') {
+							EventEmitter.instance.off(event.name, autoDispatch, emitter, true);
+						}
+					} catch (error) {
+						if ($.debug) {
+							console.warn(`[BmsxConsoleRuntime] Failed to unsubscribe FSM event '${event.name}' for machine '${machineId}':`, error);
+						}
+					}
+					const lane = event.lane ?? 'any';
+					const cacheKey = `${event.name}-${emitter ?? 'global'}-${lane}`;
+					cache?.delete(cacheKey);
+				}
+			}
+		}
+		return controllers;
+	}
+
+	private refreshStateMachines(machineIds: readonly string[], previousDefinitions: ReadonlyMap<string, StateDefinition | undefined>, controllersToRebind: ReadonlySet<StateMachineController>): void {
+		for (const machineId of machineIds) {
+			const instances = ActiveStateMachines.get(machineId);
+			if (!instances || instances.length === 0) {
+				continue;
+			}
+			const newDefinition = StateDefinitions[machineId];
+			if (!newDefinition) {
+				continue;
+			}
+			const previousDefinition = previousDefinitions.get(machineId);
+			for (const instance of instances) {
+				if (!instance) {
+					continue;
+				}
+				try {
+					migrateMachineDiff(instance, previousDefinition, newDefinition);
+				} catch (error) {
+					console.error(`[BmsxConsoleRuntime] Failed to migrate FSM '${machineId}' for target '${instance.target_id}':`, error);
+				}
+			}
+		}
+		for (const controller of controllersToRebind) {
+			try {
+				controller.bind();
+			} catch (error) {
+				console.error('[BmsxConsoleRuntime] Failed to rebind FSM controller after reload:', error);
+			}
 		}
 	}
 
 	private loadLuaBehaviorTreeScripts(interpreter: LuaInterpreter): void {
-		let libraryDirty = false;
-		if (this.luaBehaviorTreeIds.size > 0) {
-			for (const existing of this.luaBehaviorTreeIds) {
-				unregisterBehaviorTreeBuilder(existing);
-				libraryDirty = true;
-			}
-			this.luaBehaviorTreeIds.clear();
-		}
+		const previousTreeIds = new Set(this.luaBehaviorTreeIds);
+		this.luaBehaviorTreeIds.clear();
 		const rompack = this.api.rompack();
 		if (!rompack || !rompack.lua) {
-			if (libraryDirty) {
-				setup_btdef_library();
-				setup_bt_library();
+			if (previousTreeIds.size > 0) {
+				for (const removed of previousTreeIds) {
+					unregisterBehaviorTreeBuilder(removed);
+				}
+				this.handleRemovedBehaviorTrees(previousTreeIds);
 			}
 			return;
 		}
+		const changedTrees: string[] = [];
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
 		for (const assetId of Object.keys(luaSources)) {
@@ -1874,13 +1971,61 @@ private static readonly DEFAULT_LUA_BUILTIN_FUNCTIONS: ReadonlyArray<ConsoleLuaB
 				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must provide a 'definition' or 'tree' entry.`);
 			}
 			const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, interpreter, assetId);
-			registerBehaviorTreeDefinition(treeId, prepared);
+			const result = applyPreparedBehaviorTree(treeId, prepared);
 			this.luaBehaviorTreeIds.add(treeId);
-			libraryDirty = true;
+			previousTreeIds.delete(treeId);
+			if (result.changed) {
+				changedTrees.push(treeId);
+			}
 		}
-		if (libraryDirty) {
-			setup_btdef_library();
-			setup_bt_library();
+		if (previousTreeIds.size > 0) {
+			for (const removed of previousTreeIds) {
+				unregisterBehaviorTreeBuilder(removed);
+			}
+			this.handleRemovedBehaviorTrees(previousTreeIds);
+		}
+		if (changedTrees.length > 0) {
+			this.refreshBehaviorTreeContexts(changedTrees);
+		}
+	}
+
+	private refreshBehaviorTreeContexts(treeIds?: readonly string[]): void {
+		const world = $.world;
+		const filter = treeIds ? new Set(treeIds) : null;
+		for (const object of world.objects({ scope: 'all' })) {
+			const contexts = object.btreecontexts;
+			for (const treeId in contexts) {
+				if (filter && !filter.has(treeId)) {
+					continue;
+				}
+				const updatedRoot = BehaviorTrees[treeId];
+				if (!updatedRoot) {
+					delete contexts[treeId];
+					continue;
+				}
+				const context = contexts[treeId];
+				const wasEnabled = context.root.enabled;
+				context.root = updatedRoot;
+				if (!wasEnabled) {
+					updatedRoot.stop();
+				}
+			}
+		}
+	}
+
+	private handleRemovedBehaviorTrees(removed: Iterable<string>): void {
+		const world = $.world;
+		const removedSet = new Set(removed);
+		if (removedSet.size === 0) {
+			return;
+		}
+		for (const object of world.objects({ scope: 'all' })) {
+			const contexts = object.btreecontexts;
+			for (const treeId of removedSet) {
+				if (treeId in contexts) {
+					delete contexts[treeId];
+				}
+			}
 		}
 	}
 
