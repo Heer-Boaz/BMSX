@@ -39,8 +39,10 @@ export function setLuaTableCaseInsensitiveKeys(enabled: boolean): void {
 	caseInsensitiveKeys = enabled;
 }
 
+const luaTablePrototype = Object.create(null) as LuaTableMethods & { [LUA_TABLE_BRAND]?: true };
+
 export function createLuaTable(): LuaTable {
-	const table = Object.create(null) as LuaTable;
+	const table = Object.create(luaTablePrototype) as LuaTable;
 	Object.defineProperty(table, LUA_TABLE_BRAND, {
 		value: true,
 		enumerable: false,
@@ -54,25 +56,11 @@ export function createLuaTable(): LuaTable {
 		nonPrimitiveKeys: undefined,
 		numericKeys: new Set(),
 	});
-	attachMethods(table);
 	return table;
 }
 
 export function isLuaTable(value: unknown): value is LuaTable {
 	return !!value && typeof value === 'object' && (value as LuaTable)[LUA_TABLE_BRAND] === true;
-}
-
-function attachMethods(table: LuaTable): void {
-	Object.defineProperties(table, {
-		get: { value: tableGet, enumerable: false, configurable: false },
-		set: { value: tableSet, enumerable: false, configurable: false },
-		delete: { value: tableDelete, enumerable: false, configurable: false },
-		has: { value: tableHas, enumerable: false, configurable: false },
-		entriesArray: { value: tableEntriesArray, enumerable: false, configurable: false },
-		numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
-		setMetatable: { value: tableSetMetatable, enumerable: false, configurable: false },
-		getMetatable: { value: tableGetMetatable, enumerable: false, configurable: false },
-	});
 }
 
 function getState(table: LuaTable): TableState {
@@ -266,3 +254,14 @@ function tableSetMetatable(this: LuaTable, table: LuaTable | null): void {
 function tableGetMetatable(this: LuaTable): LuaTable | null {
 	return getState(this).metatable;
 }
+
+Object.defineProperties(luaTablePrototype, {
+	get: { value: tableGet, enumerable: false, configurable: false },
+	set: { value: tableSet, enumerable: false, configurable: false },
+	delete: { value: tableDelete, enumerable: false, configurable: false },
+	has: { value: tableHas, enumerable: false, configurable: false },
+	entriesArray: { value: tableEntriesArray, enumerable: false, configurable: false },
+	numericLength: { value: tableNumericLength, enumerable: false, configurable: false },
+	setMetatable: { value: tableSetMetatable, enumerable: false, configurable: false },
+	getMetatable: { value: tableGetMetatable, enumerable: false, configurable: false },
+});
