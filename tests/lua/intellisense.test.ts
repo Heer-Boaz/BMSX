@@ -250,6 +250,12 @@ test('project reference catalog resolves globals across chunks', async () => {
 		'}',
 		'print(state.value)',
 	].join('\n');
+	const localSource = [
+		'local state = {',
+		'\tmode = "local"',
+		'}',
+		'return state',
+	].join('\n');
 	const parameterSource = [
 		'local function handler(self, state, payload)',
 		'\tprint(state)',
@@ -258,6 +264,7 @@ test('project reference catalog resolves globals across chunks', async () => {
 	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
 	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
 	const parameterDescriptor: ConsoleResourceDescriptor = { path: 'parameter.lua', type: 'lua', assetId: 'parameter' };
+	const localDescriptor: ConsoleResourceDescriptor = { path: 'local.lua', type: 'lua', assetId: 'local' };
 	const usageContext: CodeTabContext = {
 		id: 'usage',
 		title: 'usage.lua',
@@ -277,7 +284,7 @@ test('project reference catalog resolves globals across chunks', async () => {
 		activeContext: usageContext,
 		activeLines: usageLines,
 		codeTabContexts: [usageContext],
-		listResources: () => [usageDescriptor, globalDescriptor, parameterDescriptor],
+		listResources: () => [usageDescriptor, globalDescriptor, parameterDescriptor, localDescriptor],
 		loadLuaResource: (assetId: string) => {
 			if (assetId === 'usage') {
 				return usageSource;
@@ -287,6 +294,9 @@ test('project reference catalog resolves globals across chunks', async () => {
 			}
 			if (assetId === 'parameter') {
 				return parameterSource;
+			}
+			if (assetId === 'local') {
+				return localSource;
 			}
 			throw new Error(`Unexpected asset ${assetId}`);
 		},
@@ -319,6 +329,7 @@ test('project reference catalog resolves globals across chunks', async () => {
 	const usageEntries = catalog.filter(entry => entry.symbol.location.chunkName === 'usage.lua');
 	assert.equal(usageEntries.length, matches.length, 'usage matches retained');
 	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'parameter.lua'), 'local parameter file excluded from references');
+	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'local.lua'), 'local-scoped variable file excluded from references');
 });
 
 test('intellisense recognizes global variable from another file', async () => {

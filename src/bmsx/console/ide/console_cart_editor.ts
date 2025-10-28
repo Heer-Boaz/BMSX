@@ -93,8 +93,14 @@ import type {
 	TopBarButtonId,
 	VisualLineSegment,
 } from './types';
-import { ReferenceState, resolveReferenceLookup } from './reference_navigation';
-import { buildReferenceCatalog, filterReferenceCatalog, type ReferenceCatalogEntry, type ReferenceSymbolEntry } from './reference_symbol_search';
+import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation';
+import { filterReferenceCatalog, findExpressionMatches, definitionKeyFromDefinition, type ReferenceCatalogEntry, type ReferenceSymbolEntry } from './reference_symbol_search';
+import {
+	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
+	computeSourceLabel,
+	resolveDefinitionKeyForExpression,
+	type ProjectReferenceEnvironment,
+} from './reference_sources';
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_apply';
 import {
@@ -2277,12 +2283,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openSymbolSearch(initialQuery: string = ''): void {
-	this.clearReferenceHighlights();
-	this.closeSearch(false);
-	this.closeLineJump(false);
-	this.closeResourceSearch(false);
-	this.renameController.cancel();
-	this.symbolSearchMode = 'symbols';
+		this.clearReferenceHighlights();
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.closeResourceSearch(false);
+		this.renameController.cancel();
+		this.symbolSearchMode = 'symbols';
 		this.referenceCatalog = [];
 		this.symbolSearchGlobal = false;
 		this.symbolSearchVisible = true;
@@ -2295,12 +2301,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openGlobalSymbolSearch(initialQuery: string = ''): void {
-	this.clearReferenceHighlights();
-	this.closeSearch(false);
-	this.closeLineJump(false);
-	this.closeResourceSearch(false);
-	this.renameController.cancel();
-	this.symbolSearchMode = 'symbols';
+		this.clearReferenceHighlights();
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.closeResourceSearch(false);
+		this.renameController.cancel();
+		this.symbolSearchMode = 'symbols';
 		this.referenceCatalog = [];
 		this.symbolSearchGlobal = true;
 		this.symbolSearchVisible = true;
@@ -2313,12 +2319,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openReferenceSearchPopup(): void {
-	const context = this.getActiveCodeTabContext();
-	if (this.symbolSearchVisible || this.symbolSearchActive) {
-		this.closeSymbolSearch(false);
-	}
-	this.renameController.cancel();
-	const result = resolveReferenceLookup({
+		const context = this.getActiveCodeTabContext();
+		if (this.symbolSearchVisible || this.symbolSearchActive) {
+			this.closeSymbolSearch(false);
+		}
+		this.renameController.cancel();
+		const result = resolveReferenceLookup({
 			layout: this.layout,
 			lines: this.lines,
 			textVersion: this.textVersion,
@@ -2332,33 +2338,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const { info, initialIndex } = result;
 		this.referenceState.apply(info, initialIndex);
-		const descriptor = context?.descriptor ?? null;
-		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-		const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
-		const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
-		const sourceLabel = normalizedPath ?? chunkName ?? '<console>';
-		this.referenceCatalog = buildReferenceCatalog({
-			info,
-			lines: this.lines,
-			chunkName,
-			assetId,
-			path: normalizedPath,
-			sourceLabel,
-		});
+		this.referenceCatalog = this.buildReferenceCatalogForExpression(info, context);
 		if (this.referenceCatalog.length === 0) {
 			this.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
 			return;
 		}
 		this.symbolSearchMode = 'references';
-		this.symbolSearchGlobal = true;
-		this.symbolSearchVisible = true;
-		this.symbolSearchActive = true;
-		this.applySymbolSearchFieldText('', true);
-		this.symbolSearchQuery = '';
-		this.updateReferenceSearchMatches();
-		this.symbolSearchHoverIndex = -1;
-		this.ensureSymbolSearchSelectionVisible();
-		this.resetBlink();
+			this.symbolSearchGlobal = true;
+			this.symbolSearchVisible = true;
+			this.symbolSearchActive = true;
+			this.applySymbolSearchFieldText('', true);
+			this.symbolSearchQuery = '';
+			this.updateReferenceSearchMatches();
+			this.symbolSearchHoverIndex = -1;
+			this.ensureSymbolSearchSelectionVisible();
+			this.resetBlink();
 		this.showReferenceStatusMessage();
 	}
 
@@ -2550,16 +2544,35 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private symbolSourceLabel(entry: ConsoleLuaSymbolEntry): string | null {
-		let label = entry.location.path ?? entry.location.assetId ?? entry.location.chunkName ?? null;
-		if (!label) {
+		const path = entry.location.path ?? entry.location.assetId ?? null;
+		if (!path) {
 			return null;
 		}
-		label = label.replace(/\\/g, '/');
-		const lastSlash = label.lastIndexOf('/');
-		if (lastSlash !== -1 && lastSlash + 1 < label.length) {
-			label = label.slice(lastSlash + 1);
-		}
-		return label;
+		return computeSourceLabel(path, entry.location.chunkName ?? '<console>');
+	}
+
+	private buildReferenceCatalogForExpression(info: ReferenceMatchInfo, context: CodeTabContext | null): ReferenceCatalogEntry[] {
+		const descriptor = context?.descriptor ?? null;
+		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
+		const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
+		const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
+		const environment: ProjectReferenceEnvironment = {
+			activeContext: this.getActiveCodeTabContext(),
+			activeLines: this.lines,
+			codeTabContexts: Array.from(this.codeTabContexts.values()),
+			listResources: () => this.listResourcesStrict(),
+			loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
+		};
+		const sourceLabelPath = descriptor?.path ?? descriptor?.assetId ?? null;
+		return buildProjectReferenceCatalog({
+			info,
+			lines: this.lines,
+			normalizedPath,
+			chunkName,
+			assetId,
+			environment,
+			sourceLabelPath,
+		});
 	}
 
 	private updateSymbolSearchMatches(): void {
@@ -2723,12 +2736,19 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		}
 		const match = this.symbolSearchMatches[index];
 		if (this.symbolSearchMode === 'references') {
-			const symbol = match.entry.symbol as ReferenceSymbolEntry;
-			const referenceMatch = symbol.__referenceMatch;
-			this.referenceState.setActiveIndex(symbol.__referenceIndex ?? index);
+			const referenceEntry = match.entry as ReferenceCatalogEntry;
+			const symbol = referenceEntry.symbol as ReferenceSymbolEntry;
+			const entryIndex = this.referenceCatalog.indexOf(referenceEntry);
+			const expressionLabel = this.referenceState.getExpression() ?? symbol.name;
 			this.closeSymbolSearch(true);
-			this.applyReferenceSelection(referenceMatch);
-			this.showReferenceStatusMessage();
+			this.referenceState.clear();
+			this.navigateToLuaDefinition(symbol.location);
+			const total = this.referenceCatalog.length;
+			if (entryIndex >= 0 && total > 0) {
+				this.showMessage(`Reference ${entryIndex + 1}/${total} for ${expressionLabel}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+			} else {
+				this.showMessage('Jumped to reference', constants.COLOR_STATUS_SUCCESS, 1.6);
+			}
 			return;
 		}
 		this.closeSymbolSearch(true);
@@ -3270,7 +3290,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return false;
 		}
 		const context = this.getActiveCodeTabContext();
-		const result = resolveReferenceLookup({
+		const lookup = resolveReferenceLookup({
 			layout: this.layout,
 			lines: this.lines,
 			textVersion: this.textVersion,
@@ -3278,12 +3298,25 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			cursorColumn: this.cursorColumn,
 			extractExpression: (row: number, column: number) => this.extractHoverExpression(row, column),
 		});
-		if (result.kind === 'error') {
-			this.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
+		let info: ReferenceMatchInfo | null = null;
+		let initialIndex = 0;
+		if (lookup.kind === 'error') {
+			const fallback = this.tryResolveGlobalReferenceAtCursor(context);
+			if (!fallback) {
+				this.showMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
+				this.referenceState.clear();
+				return false;
+			}
+			info = fallback.info;
+			initialIndex = fallback.initialIndex;
+		} else {
+			info = lookup.info;
+			initialIndex = lookup.initialIndex;
+		}
+		if (!info) {
 			this.referenceState.clear();
 			return false;
 		}
-		const { info, initialIndex } = result;
 		if (this.referenceState.hasSameQuery(info)) {
 			const nextIndex = this.referenceState.advance(1);
 			if (nextIndex === -1) {
@@ -3302,33 +3335,109 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return true;
 		}
 	this.referenceState.apply(info, initialIndex);
-	const descriptor = context?.descriptor ?? null;
-	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-	const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
-	const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
-	const sourceLabel = normalizedPath ?? chunkName ?? '<console>';
-	this.referenceCatalog = buildReferenceCatalog({
-		info,
-		lines: this.lines,
-		chunkName,
-		assetId,
-		path: normalizedPath,
-		sourceLabel,
-	});
-		if (this.symbolSearchMode === 'references' && this.symbolSearchVisible) {
-			this.updateReferenceSearchMatches();
-			this.symbolSearchSelectionIndex = this.referenceState.getActiveIndex();
-			this.ensureSymbolSearchSelectionVisible();
-		}
-		const currentMatch = this.referenceState.getCurrentMatch();
-		if (!currentMatch) {
-			this.showMessage('No references found in this document', constants.COLOR_STATUS_WARNING, 1.6);
-			this.referenceState.clear();
-			return false;
-		}
+	this.referenceCatalog = this.buildReferenceCatalogForExpression(info, context);
+	if (this.referenceCatalog.length === 0) {
+		this.showMessage('No references found in this document', constants.COLOR_STATUS_WARNING, 1.6);
+		this.referenceState.clear();
+		return false;
+	}
+	if (this.symbolSearchMode === 'references' && this.symbolSearchVisible) {
+		this.updateReferenceSearchMatches();
+		this.ensureSymbolSearchSelectionVisible();
+	}
+	const currentMatch = this.referenceState.getCurrentMatch();
+	if (!currentMatch) {
+		this.showMessage('No references found in this document', constants.COLOR_STATUS_WARNING, 1.6);
+		this.referenceState.clear();
+		return false;
+	}
 		this.applyReferenceSelection(currentMatch);
 		this.showReferenceStatusMessage();
 		return true;
+	}
+
+	private tryResolveGlobalReferenceAtCursor(context: CodeTabContext | null): { info: ReferenceMatchInfo; initialIndex: number } | null {
+		const identifier = this.extractHoverExpression(this.cursorRow, this.cursorColumn);
+		if (!identifier) {
+			return null;
+		}
+		const matches = findExpressionMatches(identifier.expression, this.lines);
+		if (matches.length === 0) {
+			return null;
+		}
+		const namePath = identifier.expression.split('.').filter(part => part.length > 0);
+		if (namePath.length === 0) {
+			return null;
+		}
+		matches.sort((a, b) => {
+			if (a.row !== b.row) {
+				return a.row - b.row;
+			}
+			return a.start - b.start;
+		});
+		let initialIndex = -1;
+		for (let index = 0; index < matches.length; index += 1) {
+			const match = matches[index];
+			if (match.row === this.cursorRow && this.cursorColumn >= match.start && this.cursorColumn < match.end) {
+				initialIndex = index;
+				break;
+			}
+		}
+		if (initialIndex === -1) {
+			initialIndex = 0;
+		}
+		const descriptor = context?.descriptor ?? null;
+		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
+		const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
+		const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
+		const environment: ProjectReferenceEnvironment = {
+			activeContext: context,
+			activeLines: this.lines,
+			codeTabContexts: Array.from(this.codeTabContexts.values()),
+			listResources: () => this.listResourcesStrict(),
+			loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
+		};
+		const definitionKey = resolveDefinitionKeyForExpression({
+			expression: identifier.expression,
+			environment,
+			currentChunkName: chunkName,
+			currentPath: normalizedPath,
+		});
+		if (!definitionKey) {
+			return null;
+		}
+		const model = this.layout.getSemanticModel(this.lines, this.textVersion);
+		const filteredMatches: typeof matches = [];
+		for (let index = 0; index < matches.length; index += 1) {
+			const match = matches[index];
+			let keep = true;
+			if (model) {
+				const row = match.row + 1;
+				const column = match.start + 1;
+				const definition = model.lookupIdentifier(row, column, namePath);
+				if (definition && definitionKeyFromDefinition(definition) !== definitionKey) {
+					keep = false;
+				}
+			}
+			if (keep) {
+				filteredMatches.push(match);
+			}
+		}
+		if (filteredMatches.length === 0) {
+			return null;
+		}
+		const initialMatch = filteredMatches[Math.min(initialIndex, filteredMatches.length - 1)];
+		initialIndex = filteredMatches.indexOf(initialMatch);
+		if (initialIndex < 0) {
+			initialIndex = 0;
+		}
+		const info: ReferenceMatchInfo = {
+			matches: filteredMatches,
+			expression: identifier.expression,
+			definitionKey,
+			documentVersion: this.textVersion,
+		};
+		return { info, initialIndex };
 	}
 
 	private applyReferenceSelection(match: SearchMatch): void {

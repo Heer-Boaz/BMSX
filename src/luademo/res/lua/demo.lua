@@ -1,4 +1,4 @@
-local state = {
+state = {
 	frame = 0,
 	paletteindex = 1,
 	balls = {},

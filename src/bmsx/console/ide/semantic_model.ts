@@ -145,6 +145,13 @@ function resolveIdentifierDefinition(model: { annotations: LuaSemanticAnnotation
 		if (row !== null && positionWithinRange(row, column, definition.definition)) {
 			score += 250;
 		}
+		if (definition.kind === 'assignment'
+			&& row !== null
+			&& column !== null
+			&& row === definition.definition.start.line
+			&& column === definition.definition.start.column) {
+			score -= 500;
+		}
 		if (!best || score > bestScore || (score === bestScore && isDefinitionPreferred(definition, best))) {
 			best = definition;
 			bestScore = score;
@@ -234,7 +241,7 @@ function definitionOccursBeforeUsage(definition: LuaDefinitionInfo, usageRow: nu
 	if (usageRow < definition.definition.start.line) {
 		return false;
 	}
-	if (usageRow === definition.definition.start.line && usageColumn !== null && usageColumn <= definition.definition.start.column) {
+	if (usageRow === definition.definition.start.line && usageColumn !== null && usageColumn < definition.definition.start.column) {
 		return false;
 	}
 	return true;

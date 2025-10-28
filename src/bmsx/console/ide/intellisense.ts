@@ -671,8 +671,20 @@ function buildGlobalKnownNameSet(
 	}
 	for (let index = 0; index < globalSymbols.length; index += 1) {
 		const entry = globalSymbols[index];
-		if (entry && entry.name.length > 0) {
-			names.add(entry.name);
+		if (!entry || entry.name.length === 0) {
+			continue;
+		}
+		const symbolName = entry.name.trim();
+		if (symbolName.length === 0) {
+			continue;
+		}
+		names.add(symbolName);
+		const dotIndex = symbolName.indexOf('.');
+		if (dotIndex !== -1) {
+			const root = symbolName.slice(0, dotIndex);
+			if (root.length > 0) {
+				names.add(root);
+			}
 		}
 	}
 	for (let index = 0; index < builtinDescriptors.length; index += 1) {
