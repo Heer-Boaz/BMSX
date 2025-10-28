@@ -21,8 +21,8 @@ import { consoleEditorSpec } from '../core/pipelines/console_editor';
 import { EditorConsoleRenderBackend } from './render_backend';
 import { publishOverlayFrame } from '../render/editor/editor_overlay_queue';
 import { HandlerRegistry, ActiveStateMachines, migrateMachineDiff, StateDefinitions, applyPreparedStateMachine } from '../fsm/fsmlibrary';
-import { BehaviorTrees, unregisterBehaviorTreeBuilder, applyPreparedBehaviorTree } from '../ai/behaviourtree';
-import type { BehaviorTreeDefinition } from '../ai/behaviourtree';
+import { instantiateBehaviorTree, unregisterBehaviorTreeBuilder, applyPreparedBehaviorTree, getBehaviorTreeDiagnostics } from '../ai/behaviourtree';
+import type { BehaviorTreeDefinition, BehaviorTreeDiagnostic } from '../ai/behaviourtree';
 import type { Stateful, StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { StateDefinition } from '../fsm/statedefinition';
 import type { StateMachineController } from '../fsm/fsmcontroller';
@@ -245,6 +245,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
 	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
+	private readonly behaviorTreeDiagnostics: Map<string, BehaviorTreeDiagnostic[]> = new Map();
 	private readonly luaServices: Map<string, LuaServiceBinding> = new Map();
 	private hasBooted = false;
 
@@ -1959,6 +1960,14 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, interpreter, assetId);
 			const result = applyPreparedBehaviorTree(treeId, prepared, { force: true });
+			const diagnostics = getBehaviorTreeDiagnostics(treeId);
+			this.behaviorTreeDiagnostics.set(treeId, diagnostics);
+			for (let index = 0; index < diagnostics.length; index += 1) {
+				const diagnostic = diagnostics[index];
+				if (diagnostic.severity === 'warning') {
+					this.recordLuaWarning(`[BehaviorTree:${treeId}] ${diagnostic.message}`);
+				}
+			}
 			this.luaBehaviorTreeIds.add(treeId);
 			previousTreeIds.delete(treeId);
 			if (result.changed) {
@@ -1985,8 +1994,8 @@ export class BmsxConsoleRuntime extends Service {
 				if (filter && !filter.has(treeId)) {
 					continue;
 				}
-				const updatedRoot = BehaviorTrees[treeId];
 				const context = contexts[treeId];
+				const updatedRoot = instantiateBehaviorTree(context.treeId);
 				const wasEnabled = context.root.enabled;
 				context.root = updatedRoot;
 				if (!wasEnabled) {
@@ -1998,6 +2007,9 @@ export class BmsxConsoleRuntime extends Service {
 
 	private handleRemovedBehaviorTrees(removed: Iterable<string>): void {
 		const removedSet = new Set(removed);
+		for (const treeId of removedSet) {
+			this.behaviorTreeDiagnostics.delete(treeId);
+		}
 		for (const object of $.world.objects({ scope: 'all' })) {
 			const contexts = object.btreecontexts;
 			for (const treeId of removedSet) {
@@ -2260,6 +2272,10 @@ export class BmsxConsoleRuntime extends Service {
 
 	public isLuaRuntimeFailed(): boolean {
 		return this.luaRuntimeFailed;
+	}
+
+	public listBehaviorTreeDiagnostics(): ReadonlyMap<string, BehaviorTreeDiagnostic[]> {
+		return this.behaviorTreeDiagnostics;
 	}
 
 	private registerLuaServiceEvents(binding: LuaServiceBinding): void {

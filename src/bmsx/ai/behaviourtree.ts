@@ -35,29 +35,30 @@ export type BehaviorTreeDefinition = BehaviorTreeNodeSpec | { root: BehaviorTree
  * @type { { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null }
  */
 export let BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinition } = {};
-
-/**
- * Represents the collection of behavior trees that are constructed based on the definitions.
- * This happens when the game is initialized and is similar to how the state machines are constructed
- * from their definitions that are defined in a declarative way.
- * @type {Object.<BehaviorTreeID, BTNode> | null}
- */
-export let BehaviorTrees: { [key: BehaviorTreeID]: BTNode } = {};
 const behaviorTreeSignatures: Map<BehaviorTreeID, string> = new Map();
+const behaviorTreeDiagnostics: Map<BehaviorTreeID, BehaviorTreeDiagnostic[]> = new Map();
 
 /**
  * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_bt_library(): void {
-	BehaviorTrees = {};
 	behaviorTreeSignatures.clear();
 	for (const bt_id of Object.keys(BehaviorTreeDefinitions)) {
 		const definition = BehaviorTreeDefinitions[bt_id];
 		if (!definition) {
-			continue;
+			throw new Error(`[BehaviorTree] Definition '${bt_id}' is not registered.`);
 		}
-		BehaviorTrees[bt_id] = constructBehaviorTree(bt_id);
-		behaviorTreeSignatures.set(bt_id, computeBlueprintSignature(definition));
+		const signature = computeBlueprintSignature(definition);
+		behaviorTreeSignatures.set(bt_id, signature);
+		try {
+			constructBehaviorTree(bt_id);
+			behaviorTreeDiagnostics.set(bt_id, []);
+		}
+		catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			behaviorTreeDiagnostics.set(bt_id, [{ severity: 'error', message }]);
+			throw error;
+		}
 	}
 }
 
@@ -99,11 +100,28 @@ export function registerBehaviorTreeDefinition(id: BehaviorTreeID, definition: B
 	registerBehaviorTreeBuilder(id, () => deepClone(snapshot));
 }
 
+export function behaviorTreeExists(id: BehaviorTreeID): boolean {
+	return Object.prototype.hasOwnProperty.call(BehaviorTreeDefinitions, id);
+}
+
+export function instantiateBehaviorTree(id: BehaviorTreeID): BTNode {
+	return constructBehaviorTree(id);
+}
+
+export type BehaviorTreeDiagnostic = {
+	severity: 'error' | 'warning';
+	message: string;
+};
+
+export function getBehaviorTreeDiagnostics(id: BehaviorTreeID): BehaviorTreeDiagnostic[] {
+	return behaviorTreeDiagnostics.get(id) ?? [];
+}
+
 export function unregisterBehaviorTreeBuilder(id: BehaviorTreeID): void {
 	delete behaviorTreeDefinitionsBuilders[id];
 	delete BehaviorTreeDefinitions[id];
-	delete BehaviorTrees[id];
 	behaviorTreeSignatures.delete(id);
+	behaviorTreeDiagnostics.delete(id);
 }
 
 export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: BehaviorTreeDefinition, options?: { force?: boolean }): { changed: boolean; previousDefinition?: BehaviorTreeDefinition } {
@@ -115,13 +133,24 @@ export function applyPreparedBehaviorTree(id: BehaviorTreeID, definition: Behavi
 	const previousSignature = behaviorTreeSignatures.get(trimmed);
 	const previousDefinition = BehaviorTreeDefinitions[trimmed];
 	if (!options?.force && previousSignature === signature) {
+		if (!behaviorTreeDiagnostics.has(trimmed)) {
+			behaviorTreeDiagnostics.set(trimmed, []);
+		}
 		return { changed: false, previousDefinition };
 	}
 	behaviorTreeSignatures.set(trimmed, signature);
 	const snapshot = cloneBlueprint(definition);
 	behaviorTreeDefinitionsBuilders[trimmed] = () => cloneBlueprint(snapshot);
 	BehaviorTreeDefinitions[trimmed] = cloneBlueprint(snapshot);
-	BehaviorTrees[trimmed] = constructBehaviorTree(trimmed);
+	try {
+		constructBehaviorTree(trimmed);
+		behaviorTreeDiagnostics.set(trimmed, []);
+	}
+	catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		behaviorTreeDiagnostics.set(trimmed, [{ severity: 'error', message }]);
+		throw error;
+	}
 	return { changed: true, previousDefinition };
 }
 
@@ -490,6 +519,7 @@ export type BehaviorTreeID = string;
 
 // Represents the context for a behavior tree for a given world object.
 export type BehaviorTreeContext = {
+	treeId: BehaviorTreeID;
 	running: boolean; // Indicates if the behavior tree is currently running
 	root: BTNode; // The root node of the behavior tree
 	blackboard: Blackboard; // The blackboard associated with the behavior tree

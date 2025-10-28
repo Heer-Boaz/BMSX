@@ -18,7 +18,7 @@ local state = {
 	luaactorid = nil,
 	nativebehavior = nil,
 	luabehavior = nil,
-}
+} -- asdf
 
 local palette = { 6, 8, 10, 12, 14 }
 local ball_id = 'ball'
@@ -26,7 +26,6 @@ local ball_size = 8
 local ball_radius = ball_size / 2
 
 local function create_ball(seed)
-	error(seed)
 	return {
 		x = math.random(ball_radius, 128 - ball_radius),
 		y = math.random(ball_radius, 128 - ball_radius),

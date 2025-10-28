@@ -1,4 +1,4 @@
-import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../../ai/behaviourtree";
+import { BehaviorTreeContext, BehaviorTreeID, instantiateBehaviorTree, Blackboard, ConstructorWithBTProperty } from "../../ai/behaviourtree";
 import { Component, ComponentContainer, ComponentTag, ConstructorWithAutoAddComponents, KeyToComponentMap, ComponentConstructor } from "../../component/basecomponent";
 import { StateMachineController } from "../../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../../fsm/fsmtypes";
@@ -887,11 +887,12 @@ export class WorldObject implements vec3, ComponentContainer, Stateful {
 
 		// Iterate over the behavior tree names and create the behavior trees
 		constructor.linkedBTs?.forEach(bt_id => {
-			let blackboard = new Blackboard({ id: bt_id });
+			const blackboard = new Blackboard({ id: bt_id });
 			this._btreecontexts[bt_id] = {
-				root: BehaviorTrees[bt_id],
-				blackboard: blackboard,
+				treeId: bt_id,
 				running: true,
+				root: instantiateBehaviorTree(bt_id),
+				blackboard,
 			};
 		});
 	}

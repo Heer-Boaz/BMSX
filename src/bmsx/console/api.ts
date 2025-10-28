@@ -27,7 +27,7 @@ import { id_to_space_symbol, type Space } from '../core/space';
 import { Reviver } from '../serializer/gameserializer';
 import type { RevivableObjectArgs } from '../serializer/serializationhooks';
 import { Component } from '../component/basecomponent';
-import { BehaviorTrees, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
+import { instantiateBehaviorTree, behaviorTreeExists, Blackboard, type BehaviorTreeID, type BehaviorTreeContext, type ConstructorWithBTProperty } from '../ai/behaviourtree';
 
 type AudioPlayOptions = RandomModulationParams | ModulationParams | SoundMasterPlayRequest | undefined;
 
@@ -500,16 +500,15 @@ export class BmsxConsoleApi {
 	}
 
 	public attach_bt(objectId: Identifier, treeId: BehaviorTreeID): void {
-		const trimmed = typeof treeId === 'string' ? treeId.trim() : '';
-		if (trimmed.length === 0) {
-			throw new Error('[BmsxConsoleApi] attach_bt requires a non-empty behavior tree id.');
-		}
-		const definition = BehaviorTrees[trimmed];
-		if (!definition) {
-			throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
-		}
-		const object = this.requireWorldObject(objectId, 'attach_bt');
-		const ctor = object.constructor as ConstructorWithBTProperty;
+	const trimmed = typeof treeId === 'string' ? treeId.trim() : '';
+	if (trimmed.length === 0) {
+		throw new Error('[BmsxConsoleApi] attach_bt requires a non-empty behavior tree id.');
+	}
+	if (!behaviorTreeExists(trimmed)) {
+		throw new Error(`[BmsxConsoleApi] Behavior tree '${trimmed}' is not registered.`);
+	}
+	const object = this.requireWorldObject(objectId, 'attach_bt');
+	const ctor = object.constructor as ConstructorWithBTProperty;
 		const hasOwnLinkedSet = Object.prototype.hasOwnProperty.call(ctor, 'linkedBTs');
 		if (hasOwnLinkedSet) {
 			const linked = ctor.linkedBTs ?? new Set<BehaviorTreeID>();
@@ -519,15 +518,16 @@ export class BmsxConsoleApi {
 				ctor.linkedBTs = next;
 			}
 		}
-		const contexts = (object as { btreecontexts?: Record<string, BehaviorTreeContext> }).btreecontexts;
-		if (contexts && !contexts[trimmed]) {
-			contexts[trimmed] = {
-				running: true,
-				root: definition,
-				blackboard: new Blackboard({ id: trimmed }),
-			};
-		}
+	const contexts = (object as { btreecontexts?: Record<string, BehaviorTreeContext> }).btreecontexts;
+	if (contexts && !contexts[trimmed]) {
+		contexts[trimmed] = {
+			treeId: trimmed,
+			running: true,
+			root: instantiateBehaviorTree(trimmed),
+			blackboard: new Blackboard({ id: trimmed }),
+		};
 	}
+}
 
 	public add_component(objectId: Identifier, componentRef: string, options?: Record<string, unknown>): string {
 		const object = this.requireWorldObject(objectId, 'add_component');
