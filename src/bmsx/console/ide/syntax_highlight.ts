@@ -225,6 +225,7 @@ export function analyzeLuaSemantics(lines: readonly string[]): LuaSemanticAnnota
 	const structureStack: StructureKind[] = [];
 	let nextFunctionIsLocal = false;
 	let lastSignificant: LuaTokenType | null = null;
+	let tableConstructorDepth = 0;
 
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index];
@@ -394,6 +395,18 @@ export function analyzeLuaSemantics(lines: readonly string[]): LuaSemanticAnnota
 				lastSignificant = LuaTokenType.End;
 				continue;
 			}
+			case LuaTokenType.LeftBrace: {
+				tableConstructorDepth += 1;
+				lastSignificant = LuaTokenType.LeftBrace;
+				continue;
+			}
+			case LuaTokenType.RightBrace: {
+				if (tableConstructorDepth > 0) {
+					tableConstructorDepth -= 1;
+				}
+				lastSignificant = LuaTokenType.RightBrace;
+				continue;
+			}
 			case LuaTokenType.Vararg: {
 				if (functionStack.length > 0) {
 					const context = functionStack[functionStack.length - 1];
@@ -405,6 +418,15 @@ export function analyzeLuaSemantics(lines: readonly string[]): LuaSemanticAnnota
 				continue;
 			}
 			case LuaTokenType.Identifier: {
+				const nextToken = tokens[index + 1];
+				const isTableField = tableConstructorDepth > 0
+					&& nextToken?.type === LuaTokenType.Equal
+					&& (lastSignificant === LuaTokenType.LeftBrace || lastSignificant === LuaTokenType.Comma || lastSignificant === LuaTokenType.Semicolon);
+				if (isTableField) {
+					handledIndices.add(index);
+					lastSignificant = LuaTokenType.Identifier;
+					continue;
+				}
 				if (handledIndices.has(index)) {
 					lastSignificant = LuaTokenType.Identifier;
 					continue;
