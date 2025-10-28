@@ -1787,15 +1787,15 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			const machineId = machineIdRaw.trim();
 			this.disposeLuaStateMachineHandlers(machineId);
-		const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
-		const existingDefinition = StateDefinitions[machineId];
+			const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
+			const existingDefinition = StateDefinitions[machineId];
 			const result = applyPreparedStateMachine(machineId, prepared, { force: true });
 			this.api.register_prepared_fsm(machineId, prepared, { setup: false });
-		this.luaFsmMachineIds.add(machineId);
-		previousMachineIds.delete(machineId);
-		if (!result.changed || !existingDefinition) {
-			continue;
-		}
+			this.luaFsmMachineIds.add(machineId);
+			previousMachineIds.delete(machineId);
+			if (!result.changed || !existingDefinition) {
+				continue;
+			}
 			if (!ActiveStateMachines.has(machineId)) {
 				continue;
 			}

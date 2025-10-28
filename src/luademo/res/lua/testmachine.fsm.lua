@@ -21,9 +21,9 @@ return {
 		enable_tape_autotick = true,
 		ticks2advance_tape = 100,
         running = {
-            entering_state = dummy_handler,
-            tick = function(self, state, payload)
+            entering_state = function(self, state, payload)
             end,
+            tick = dummy_handler,
             tapemove = function(self, state, payload)
                 return '../_idle'
             end,
