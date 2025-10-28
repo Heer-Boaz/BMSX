@@ -18,7 +18,7 @@ local state = {
 	luaactorid = nil,
 	nativebehavior = nil,
 	luabehavior = nil,
-} -- asdf
+}
 
 local palette = { 6, 8, 10, 12, 14 }
 local ball_id = 'ball'
@@ -70,10 +70,7 @@ local function update_lua_actor_snapshot()
 	state.luabehavior = actor.behavior
 end
 
-local function ensure_engine_actor()
-	if state.engineactorid then
-		return
-	end
+local function create_engine_actor()
 	state.engineactorid = spawn_world_object('LuaDemoActor', {
 		id = 'lua_demo_actor',
 		position = { x = 48, y = 48, z = 0 },
@@ -174,10 +171,7 @@ local function spawn_lua_actor()
 	return actorid
 end
 
-local function ensure_lua_actor()
-	if state.luaactorid then
-		return
-	end
+local function create_lua_actor()
 	state.luaactorid = spawn_lua_actor()
 	update_lua_actor_snapshot()
 end
@@ -232,8 +226,8 @@ function init()
 	state.nativebehavior = nil
 	state.luabehavior = nil
 	reset_balls()
-	ensure_engine_actor()
-	ensure_lua_actor()
+	create_engine_actor()
+	create_lua_actor()
 	refresh_service_state()
 	cartdata('lua-demo')
 end
@@ -262,8 +256,6 @@ end
 function update(delta)
 	state.frame = state.frame + 1
 
-	ensure_engine_actor()
-	ensure_lua_actor()
 	update_service_feedback(delta)
 
 	for _, ball in ipairs(state.balls) do
