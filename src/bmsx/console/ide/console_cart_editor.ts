@@ -93,6 +93,7 @@ import type {
 	TopBarButtonId,
 	VisualLineSegment,
 } from './types';
+import { ReferenceState, resolveReferenceLookup } from './reference_navigation';
 import {
 	consumeKey as consumeKeyboardKey,
 	getKeyboardButtonState,
@@ -168,6 +169,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		'Space',
 		'Tab',
 		'F3',
+		'F12',
 		'NumpadDivide',
 		...CHARACTER_CODES,
 	])];
@@ -258,6 +260,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private resourceSearchHoverIndex = -1;
 	private searchMatches: SearchMatch[] = [];
 	private searchCurrentIndex = -1;
+	private readonly referenceState: ReferenceState = new ReferenceState();
 	private textVersion = 0;
 	private lastSearchVersion = 0;
 	private saveGeneration = 0;
@@ -1636,12 +1639,21 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.openSearch(true);
 			return;
 		}
-		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
-			consumeKeyboardKey(keyboard, 'Tab');
-			this.cycleTab(shiftDown ? -1 : 1);
-			return;
+	if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'Tab')) {
+		consumeKeyboardKey(keyboard, 'Tab');
+		this.cycleTab(shiftDown ? -1 : 1);
+		return;
+	}
+	const inlineFieldFocused = this.searchActive || this.symbolSearchActive || this.resourceSearchActive || this.lineJumpActive || this.createResourceActive;
+	if (!inlineFieldFocused && isKeyJustPressedGlobal(this.playerIndex, 'F12')) {
+		consumeKeyboardKey(keyboard, 'F12');
+		if (shiftDown) {
+			this.gotoReferencesAtCursor();
+		} else {
+			this.tryGotoDefinitionAt(this.cursorRow, this.cursorColumn);
 		}
-		const inlineFieldFocused = this.searchActive || this.symbolSearchActive || this.resourceSearchActive || this.lineJumpActive || this.createResourceActive;
+		return;
+	}
 		if ((ctrlDown || metaDown)
 			&& !inlineFieldFocused
 			&& !this.resourcePanelFocused
@@ -2130,6 +2142,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openSearch(useSelection: boolean): void {
+		this.clearReferenceHighlights();
 		this.closeSymbolSearch(false);
 		this.closeResourceSearch(false);
 		this.closeLineJump(false);
@@ -2186,6 +2199,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openResourceSearch(initialQuery: string = ''): void {
+		this.clearReferenceHighlights();
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.closeSymbolSearch(false);
@@ -2230,6 +2244,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openSymbolSearch(initialQuery: string = ''): void {
+		this.clearReferenceHighlights();
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
@@ -2244,6 +2259,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openGlobalSymbolSearch(initialQuery: string = ''): void {
+		this.clearReferenceHighlights();
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
@@ -2887,6 +2903,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openLineJump(): void {
+		this.clearReferenceHighlights();
 		this.closeSymbolSearch(false);
 		this.closeResourceSearch(false);
 		this.closeSearch(false);
@@ -3063,9 +3080,71 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.focusSearchResult(this.searchCurrentIndex);
 	}
 
+	private gotoReferencesAtCursor(): boolean {
+		if (!this.isCodeTabActive()) {
+			return false;
+		}
+		const result = resolveReferenceLookup({
+			layout: this.layout,
+			lines: this.lines,
+			textVersion: this.textVersion,
+			cursorRow: this.cursorRow,
+			cursorColumn: this.cursorColumn,
+			extractExpression: (row: number, column: number) => this.extractHoverExpression(row, column),
+		});
+		if (result.kind === 'error') {
+			this.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
+			this.referenceState.clear();
+			return false;
+		}
+		const { info, initialIndex } = result;
+		if (this.referenceState.hasSameQuery(info)) {
+			const nextIndex = this.referenceState.advance(1);
+			if (nextIndex === -1) {
+				return false;
+			}
+			const match = this.referenceState.getCurrentMatch();
+			if (!match) {
+				return false;
+			}
+			this.applyReferenceSelection(match);
+			this.showReferenceStatusMessage();
+			return true;
+		}
+		this.referenceState.apply(info, initialIndex);
+		const currentMatch = this.referenceState.getCurrentMatch();
+		if (!currentMatch) {
+			this.showMessage('No references found in this document', constants.COLOR_STATUS_WARNING, 1.6);
+			this.referenceState.clear();
+			return false;
+		}
+		this.applyReferenceSelection(currentMatch);
+		this.showReferenceStatusMessage();
+		return true;
+	}
 
+	private applyReferenceSelection(match: SearchMatch): void {
+		const line = this.lines[match.row] ?? '';
+		const startColumn = clamp(match.start, 0, line.length);
+		const endColumn = clamp(match.end, startColumn, line.length);
+		this.cursorRow = match.row;
+		this.cursorColumn = startColumn;
+		this.selectionAnchor = { row: match.row, column: endColumn };
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.cursorRevealSuspended = false;
+		this.ensureCursorVisible();
+	}
 
-
+	private showReferenceStatusMessage(): void {
+		const matches = this.referenceState.getMatches();
+		const activeIndex = this.referenceState.getActiveIndex();
+		if (matches.length === 0 || activeIndex < 0) {
+			return;
+		}
+		const label = this.referenceState.getExpression() ?? '';
+		this.showMessage(`Reference ${activeIndex + 1}/${matches.length} for ${label}`, constants.COLOR_STATUS_SUCCESS, 1.6);
+	}
 
 	private handlePointerInput(_deltaSeconds: number): void {
 		const ctrlDown = isModifierPressedGlobal(this.playerIndex, 'ControlLeft') || isModifierPressedGlobal(this.playerIndex, 'ControlRight');
@@ -3529,6 +3608,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			&& snapshot.viewportX >= bounds.codeLeft
 			&& snapshot.viewportX < bounds.codeRight;
 		if (justPressed && insideCodeArea) {
+			this.clearReferenceHighlights();
 			this.resourcePanelFocused = false;
 			this.focusEditorFromLineJump();
 			this.focusEditorFromSearch();
@@ -4022,6 +4102,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.gotoHoverHighlight = null;
 	}
 
+	private clearReferenceHighlights(): void {
+		this.referenceState.clear();
+	}
+
 	private tryGotoDefinitionAt(row: number, column: number): boolean {
 		const context = this.getActiveCodeTabContext();
 		const assetId = this.resolveHoverAssetId(context);
@@ -4053,6 +4137,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private navigateToLuaDefinition(definition: ConsoleLuaDefinitionLocation): void {
+		this.clearReferenceHighlights();
 		const hint: { assetId: string | null; path?: string | null } = { assetId: definition.assetId };
 		if (definition.path !== undefined) {
 			hint.path = definition.path;
@@ -4086,17 +4171,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		const startRow = clamp(range.startLine - 1, 0, lastRowIndex);
 		const startLine = this.lines[startRow] ?? '';
 		const startColumn = clamp(range.startColumn - 1, 0, startLine.length);
-	this.cursorRow = startRow;
-	this.cursorColumn = startColumn;
-	this.selectionAnchor = null;
-	this.pointerSelecting = false;
-	this.pointerPrimaryWasPressed = false;
-	this.pointerAuxWasPressed = false;
-	this.updateDesiredColumn();
-	this.resetBlink();
-	this.cursorRevealSuspended = false;
-	this.ensureCursorVisible();
-}
+		this.cursorRow = startRow;
+		this.cursorColumn = startColumn;
+		this.selectionAnchor = null;
+		this.pointerSelecting = false;
+		this.pointerPrimaryWasPressed = false;
+		this.pointerAuxWasPressed = false;
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.cursorRevealSuspended = false;
+		this.ensureCursorVisible();
+	}
 
 	private handleActionPromptPointer(snapshot: PointerSnapshot): void {
 		if (!this.pendingActionPrompt) {
@@ -5662,6 +5747,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			sliceHighlightedLine: (hi, start, count) => this.sliceHighlightedLine(hi, start, count),
 			columnToDisplay: (hi, c) => this.columnToDisplay(hi, c),
 			drawColoredText: (a, t, cols, x, y) => drawEditorColoredText(a, this.font, t, cols, x, y, constants.COLOR_CODE_TEXT),
+			drawReferenceHighlightsForRow: (a, ri, e, ox, oy, s, ed) => this.drawReferenceHighlightsForRow(a, ri, e, ox, oy, s, ed),
 			drawSearchHighlightsForRow: (a, ri, e, ox, oy, s, ed) => this.drawSearchHighlightsForRow(a, ri, e, ox, oy, s, ed),
 			computeSelectionSlice: (ri, hi, s, e) => this.computeSelectionSlice(ri, hi, s, e),
 			measureRangeFast: (entry, from, to) => this.measureRangeFast(entry, from, to),
@@ -6995,6 +7081,32 @@ private drawRuntimeErrorOverlay(api: BmsxConsoleApi, codeTop: number, codeRight:
 		}
 	}
 
+	private drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
+		const matches = this.referenceState.getMatches();
+		if (matches.length === 0) {
+			return;
+		}
+		const activeIndex = this.referenceState.getActiveIndex();
+		const highlight = entry.hi;
+		for (let i = 0; i < matches.length; i += 1) {
+			const match = matches[i];
+			if (match.row !== rowIndex) {
+				continue;
+			}
+			const startDisplay = this.columnToDisplay(highlight, match.start);
+			const endDisplay = this.columnToDisplay(highlight, match.end);
+			const visibleStart = Math.max(sliceStartDisplay, startDisplay);
+			const visibleEnd = Math.min(sliceEndDisplay, endDisplay);
+			if (visibleEnd <= visibleStart) {
+				continue;
+			}
+			const startX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleStart);
+			const endX = originX + this.measureRangeFast(entry, sliceStartDisplay, visibleEnd);
+			const overlay = i === activeIndex ? constants.REFERENCES_MATCH_ACTIVE_OVERLAY : constants.REFERENCES_MATCH_OVERLAY;
+			api.rectfill_color(startX, originY, endX, originY + this.lineHeight, overlay);
+		}
+	}
+
 	private drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void {
 		if (this.searchMatches.length === 0 || this.searchQuery.length === 0) {
 			return;
@@ -7136,6 +7248,7 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 		this.dirty = true;
 		this.markDiagnosticsDirty();
 		this.bumpTextVersion();
+		this.clearReferenceHighlights();
 		this.updateActiveContextDirtyFlag();
 		this.invalidateVisualLines();
 		this.handlePostEditMutation();

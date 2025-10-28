@@ -43,6 +43,7 @@ export interface CodeAreaHost {
     ): { text: string; colors: number[]; startDisplay: number; endDisplay: number };
     columnToDisplay(highlight: CachedHighlight['hi'], column: number): number;
     drawColoredText(api: BmsxConsoleApi, text: string, colors: number[], x: number, y: number): void;
+    drawReferenceHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void;
     drawSearchHighlightsForRow(api: BmsxConsoleApi, rowIndex: number, entry: CachedHighlight, originX: number, originY: number, sliceStartDisplay: number, sliceEndDisplay: number): void;
     computeSelectionSlice(rowIndex: number, highlight: CachedHighlight['hi'], sliceStartDisplay: number, sliceEndDisplay: number): { startDisplay: number; endDisplay: number } | null;
     measureRangeFast(entry: CachedHighlight, fromDisplay: number, toDisplay: number): number;
@@ -148,7 +149,8 @@ export function renderCodeArea(api: BmsxConsoleApi, host: CodeAreaHost): void {
 		const sliceStartDisplay = slice.startDisplay;
 		const sliceEndLimit = wrapEnabled ? host.columnToDisplay(highlight, segment.endColumn) : slice.endDisplay;
 		const sliceEndDisplay = wrapEnabled ? Math.min(slice.endDisplay, sliceEndLimit) : slice.endDisplay;
-		host.drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+        host.drawReferenceHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
+        host.drawSearchHighlightsForRow(api, lineIndex, entry, bounds.textLeft, rowY, sliceStartDisplay, sliceEndDisplay);
 		const selectionSlice = host.computeSelectionSlice(lineIndex, highlight, sliceStartDisplay, sliceEndDisplay);
 		if (selectionSlice) {
 			const selectionStartX = bounds.textLeft + host.measureRangeFast(entry, sliceStartDisplay, selectionSlice.startDisplay);

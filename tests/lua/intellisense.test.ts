@@ -178,3 +178,54 @@ state.count = state.count + 1
 	assert.equal(definition.definition.start.line, 3);
 	assert.equal(definitionAgain.definition.start.line, definition.definition.start.line);
 });
+
+test('semantic model reports references for locals', async () => {
+	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+	const source = [
+		'local counter = 0',
+		'counter = counter + 1',
+		'return counter',
+	].join('\n');
+	const model = buildLuaSemanticModel(source, 'testchunk');
+	const lines = source.split('\n');
+	const definitionColumn = lines[0].indexOf('counter') + 1;
+	const lookup = model.lookupReferences(1, definitionColumn, ['counter']);
+	assert.ok(lookup.definition, 'definition present');
+	assert.equal(lookup.references.length, 3);
+	const referenceKeys = lookup.references.map(range => `${range.start.line}:${range.start.column}`);
+	const expectedKeys = [
+		`${2}:${lines[1].indexOf('counter') + 1}`,
+		`${2}:${lines[1].indexOf('counter', lines[1].indexOf('counter') + 1) + 1}`,
+		`${3}:${lines[2].indexOf('counter') + 1}`,
+	];
+	assert.deepEqual(referenceKeys, expectedKeys);
+	const definitionReferences = model.getDefinitionReferences(lookup.definition!);
+	assert.equal(definitionReferences.length, lookup.references.length);
+});
+
+test('semantic model reports references for table fields', async () => {
+	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+	const source = [
+		'local state = { value = 0 }',
+		'state.value = state.value + 1',
+		'return state.value',
+	].join('\n');
+	const model = buildLuaSemanticModel(source, 'testchunk');
+	const lines = source.split('\n');
+	const definitionColumn = lines[0].indexOf('value') + 1;
+	const lookup = model.lookupReferences(1, definitionColumn, ['state', 'value']);
+	assert.ok(lookup.definition);
+	const referenceKeys = lookup.references.map(range => `${range.start.line}:${range.start.column}`);
+	const secondLine = lines[1];
+	const firstValueColumn = secondLine.indexOf('value') + 1;
+	const secondValueColumn = secondLine.indexOf('value', secondLine.indexOf('value') + 1) + 1;
+	const thirdLineColumn = lines[2].indexOf('value') + 1;
+	const expectedKeys = [
+		`${2}:${firstValueColumn}`,
+		`${2}:${secondValueColumn}`,
+		`${3}:${thirdLineColumn}`,
+	];
+	assert.deepEqual(referenceKeys, expectedKeys);
+	const roundTrip = model.getDefinitionReferences(lookup.definition!);
+	assert.equal(roundTrip.length, lookup.references.length);
+});
