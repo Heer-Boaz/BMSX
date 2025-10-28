@@ -245,6 +245,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
 	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
+	private readonly luaStateMachineHandlerIds: Map<string, Set<string>> = new Map();
 	private readonly luaBehaviorTreeHandlerIds: Map<string, Set<string>> = new Map();
 	private readonly behaviorTreeDiagnostics: Map<string, BehaviorTreeDiagnostic[]> = new Map();
 	private readonly luaServices: Map<string, LuaServiceBinding> = new Map();
@@ -1733,6 +1734,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!rompack || !rompack.lua) {
 			return;
 		}
+		const previousMachineIds = new Set(this.luaFsmMachineIds);
 		this.luaFsmMachineIds.clear();
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
@@ -1784,14 +1786,16 @@ export class BmsxConsoleRuntime extends Service {
 				throw new Error(`[BmsxConsoleRuntime] FSM Lua script '${assetId}' returned a blueprint without a valid 'id'.`);
 			}
 			const machineId = machineIdRaw.trim();
-			const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
-			const existingDefinition = StateDefinitions[machineId];
+			this.disposeLuaStateMachineHandlers(machineId);
+		const prepared = this.prepareLuaStateMachineBlueprint(machineId, blueprintValue, interpreter);
+		const existingDefinition = StateDefinitions[machineId];
 			const result = applyPreparedStateMachine(machineId, prepared, { force: true });
 			this.api.register_prepared_fsm(machineId, prepared, { setup: false });
-			this.luaFsmMachineIds.add(machineId);
-			if (!result.changed || !existingDefinition) {
-				continue;
-			}
+		this.luaFsmMachineIds.add(machineId);
+		previousMachineIds.delete(machineId);
+		if (!result.changed || !existingDefinition) {
+			continue;
+		}
 			if (!ActiveStateMachines.has(machineId)) {
 				continue;
 			}
@@ -1799,7 +1803,11 @@ export class BmsxConsoleRuntime extends Service {
 			previousDefinitions.set(machineId, existingDefinition);
 			changedMachines.push(machineId);
 		}
-
+		if (previousMachineIds.size > 0) {
+			for (const removed of previousMachineIds) {
+				this.disposeLuaStateMachineHandlers(removed);
+			}
+		}
 		if (changedMachines.length > 0) {
 			const controllersToRebind = this.unsubscribeStateMachineEvents(changedMachines, previousDefinitions);
 			this.refreshStateMachines(changedMachines, previousDefinitions, controllersToRebind);
@@ -1890,7 +1898,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			return;
 		}
-		const changedTrees: string[] = [];
+		const changedTrees: Set<string> = new Set();
 		const luaSources = rompack.lua;
 		const sourcePaths = rompack.luaSourcePaths ? rompack.luaSourcePaths : {};
 		for (const assetId of Object.keys(luaSources)) {
@@ -1972,9 +1980,7 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			this.luaBehaviorTreeIds.add(treeId);
 			previousTreeIds.delete(treeId);
-			if (result.changed) {
-				changedTrees.push(treeId);
-			}
+			changedTrees.add(treeId);
 		}
 		if (previousTreeIds.size > 0) {
 			for (const removed of previousTreeIds) {
@@ -1982,8 +1988,8 @@ export class BmsxConsoleRuntime extends Service {
 			}
 			this.handleRemovedBehaviorTrees(previousTreeIds);
 		}
-		if (changedTrees.length > 0) {
-			this.refreshBehaviorTreeContexts(changedTrees);
+		if (changedTrees.size > 0) {
+			this.refreshBehaviorTreeContexts(Array.from(changedTrees));
 		}
 	}
 
@@ -2405,6 +2411,12 @@ export class BmsxConsoleRuntime extends Service {
 			return runtime.executeLuaStateMachineHandler(handlerId, fn, interpreter, this, args);
 		};
 		HandlerRegistry.instance.register(handlerId, handler);
+		let set = this.luaStateMachineHandlerIds.get(machineId);
+		if (!set) {
+			set = new Set<string>();
+			this.luaStateMachineHandlerIds.set(machineId, set);
+		}
+		set.add(handlerId);
 		return handlerId;
 	}
 
@@ -2434,6 +2446,18 @@ export class BmsxConsoleRuntime extends Service {
 		}
 		this.luaBehaviorTreeHandlerIds.delete(treeId);
 	}
+
+	private disposeLuaStateMachineHandlers(machineId: string): void {
+		const entries = this.luaStateMachineHandlerIds.get(machineId);
+		if (!entries) {
+			return;
+		}
+		for (const handlerId of entries) {
+			HandlerRegistry.instance.unregister(handlerId);
+		}
+		this.luaStateMachineHandlerIds.delete(machineId);
+	}
+
 
 	private executeLuaStateMachineHandler(handlerId: string, fn: LuaFunctionValue, interpreter: LuaInterpreter, self: Stateful, args: unknown[]): unknown {
 		const callArgs: unknown[] = [self];
