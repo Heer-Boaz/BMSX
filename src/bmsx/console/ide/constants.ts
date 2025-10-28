@@ -75,7 +75,8 @@ const THEME_BASE = {
 		parameter: PALETTE.magenta,
 		label: PALETTE.darkRed,
 		localTop: PALETTE.green,
-		localFunction: PALETTE.blue
+		localFunction: PALETTE.blue,
+		functionHandle: PALETTE.lightGreen
 	},
 	status: {
 		background: PALETTE.grey,
@@ -203,6 +204,7 @@ export const COLOR_PARAMETER = THEME_BASE.text.parameter;
 export const COLOR_LABEL = THEME_BASE.text.label;
 export const COLOR_LOCAL_TOP = THEME_BASE.text.localTop;
 export const COLOR_LOCAL_FUNCTION = THEME_BASE.text.localFunction;
+export const COLOR_FUNCTION_HANDLE = THEME_BASE.text.functionHandle;
 export const HIGHLIGHT_OVERLAY = Msx1Colors[PALETTE.black]; //Msx1Colors[PALETTE.darkBlue];
 export const SELECTION_OVERLAY = Msx1Colors[PALETTE.magenta];
 export const CARET_COLOR = Msx1Colors[PALETTE.white];

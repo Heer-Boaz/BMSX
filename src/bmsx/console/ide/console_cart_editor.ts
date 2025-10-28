@@ -21,6 +21,7 @@ import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES } from './character_map';
 import * as constants from './constants';
+import type { LuaSemanticDefinition } from './syntax_highlight';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
@@ -3808,6 +3809,120 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return null;
 	}
 
+	private resolveSemanticDefinitionLocation(
+		context: CodeTabContext | null,
+		expression: string,
+		usageRow: number,
+		usageColumn: number,
+		assetId: string | null,
+		chunkName: string | null,
+	): ConsoleLuaDefinitionLocation | null {
+		if (!expression || expression.indexOf('.') !== -1) {
+			return null;
+		}
+		const definitions = this.layout.getSemanticDefinitions(this.lines, this.textVersion);
+		if (!definitions || definitions.length === 0) {
+			return null;
+		}
+		let best: LuaSemanticDefinition | null = null;
+		for (let index = 0; index < definitions.length; index += 1) {
+			const candidate = definitions[index];
+			if (candidate.name !== expression) {
+				continue;
+			}
+			if (!this.semanticPositionWithinScope(candidate, usageRow, usageColumn)) {
+				continue;
+			}
+			if (!this.semanticUsageAfterDefinition(candidate, usageRow, usageColumn)) {
+				continue;
+			}
+			if (!best || this.semanticDefinitionPreferred(candidate, best)) {
+				best = candidate;
+			}
+		}
+		if (!best) {
+			return null;
+		}
+		const resolvedAssetId = assetId ?? context?.descriptor?.assetId ?? this.primaryAssetId ?? null;
+		const resolvedChunk = chunkName
+			?? context?.descriptor?.path
+			?? context?.descriptor?.assetId
+			?? assetId
+			?? this.primaryAssetId
+			?? '<chunk>';
+		const location: ConsoleLuaDefinitionLocation = {
+			chunkName: resolvedChunk,
+			assetId: resolvedAssetId,
+			range: {
+				startLine: best.startLine,
+				startColumn: best.startColumn,
+				endLine: best.endLine,
+				endColumn: best.endColumn,
+			},
+		};
+		const descriptorPath = context?.descriptor?.path;
+		if (descriptorPath) {
+			location.path = descriptorPath;
+		}
+		return location;
+	}
+
+	private semanticPositionWithinScope(definition: LuaSemanticDefinition, row: number, column: number): boolean {
+		if (row < definition.scopeStartLine || row > definition.scopeEndLine) {
+			return false;
+		}
+		if (row === definition.scopeStartLine && column < definition.scopeStartColumn) {
+			return false;
+		}
+		if (row === definition.scopeEndLine && column > definition.scopeEndColumn) {
+			return false;
+		}
+		return true;
+	}
+
+	private semanticUsageAfterDefinition(definition: LuaSemanticDefinition, row: number, column: number): boolean {
+		if (row < definition.startLine) {
+			return false;
+		}
+		if (row === definition.startLine && column <= definition.startColumn) {
+			return false;
+		}
+		return true;
+	}
+
+	private semanticDefinitionPreferred(candidate: LuaSemanticDefinition, current: LuaSemanticDefinition): boolean {
+		const candidatePriority = this.semanticDefinitionPriority(candidate.kind);
+		const currentPriority = this.semanticDefinitionPriority(current.kind);
+		if (candidatePriority !== currentPriority) {
+			return candidatePriority > currentPriority;
+		}
+		if (candidate.startLine !== current.startLine) {
+			return candidate.startLine > current.startLine;
+		}
+		if (candidate.startColumn !== current.startColumn) {
+			return candidate.startColumn > current.startColumn;
+		}
+		if (candidate.scopeEndLine !== current.scopeEndLine) {
+			return candidate.scopeEndLine < current.scopeEndLine;
+		}
+		return candidate.scopeEndColumn <= current.scopeEndColumn;
+	}
+
+	private semanticDefinitionPriority(kind: LuaSemanticDefinition['kind']): number {
+		switch (kind) {
+			case 'parameter':
+				return 4;
+			case 'functionLocal':
+			case 'functionTop':
+				return 3;
+			case 'localFunction':
+				return 2;
+			case 'localTop':
+			default:
+				return 1;
+		}
+	}
+
 	private extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
 		if (row < 0 || row >= this.lines.length) {
 			return null;
@@ -3951,7 +4066,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			row: row + 1,
 			column: token.startColumn + 1,
 		});
-		if (!inspection || !inspection.definition) {
+		let definition = inspection?.definition ?? null;
+		if (!definition) {
+			definition = this.resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
+		}
+		if (!definition) {
 			this.clearGotoHoverHighlight();
 			return;
 		}
@@ -3983,17 +4102,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			row: row + 1,
 			column: token.startColumn + 1,
 		});
-		if (!inspection) {
+		let definition = inspection?.definition ?? null;
+		if (!definition) {
+			definition = this.resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
+		}
+		if (!definition) {
 			if (!this.inspectorRequestFailed) {
 				this.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 			}
 			return false;
 		}
-		if (!inspection.definition) {
-			this.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
-			return false;
-		}
-		this.navigateToLuaDefinition(inspection.definition);
+		this.navigateToLuaDefinition(definition);
 		return true;
 	}
 

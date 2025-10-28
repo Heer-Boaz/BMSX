@@ -1,6 +1,7 @@
 import { clamp } from '../../utils/utils';
 import type { ConsoleEditorFont } from '../editor_font';
 import { analyzeLuaSemantics, highlightLine as highlightLineExternal } from './syntax_highlight';
+import type { LuaSemanticDefinition } from './syntax_highlight';
 import type {
 	CachedHighlight,
 	HighlightLine,
@@ -183,6 +184,14 @@ export class ConsoleCodeLayout {
 
 	public getVisualLines(): readonly VisualLineSegment[] {
 		return this.visualLines;
+	}
+
+	public getSemanticDefinitions(lines: readonly string[], documentVersion: number): readonly LuaSemanticDefinition[] | null {
+		this.ensureSemanticAnnotations(lines, documentVersion);
+		if (!this.semanticAnnotations) {
+			return null;
+		}
+		return this.semanticAnnotations.definitions;
 	}
 
 	private clampScrollRow(scrollRow: number): number {
