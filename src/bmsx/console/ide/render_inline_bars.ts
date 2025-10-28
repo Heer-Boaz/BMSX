@@ -64,11 +64,12 @@ export interface InlineBarsHost {
 	// Symbol search bar state and helpers
 	symbolSearchGlobal?: boolean;
 	symbolSearchActive?: boolean;
+	symbolSearchMode?: 'symbols' | 'references';
 	symbolSearchField?: unknown;
 	symbolSearchVisibleResultCount?: () => number;
 	symbolSearchEntryHeight?: () => number;
 	isSymbolSearchCompactMode?: () => boolean;
-	symbolSearchMatches?: Array<{ entry: { kindLabel: string; displayName: string; line: number; sourceLabel?: string | null } }>;
+	symbolSearchMatches?: Array<{ entry: { kindLabel: string; displayName: string; line: number; sourceLabel?: string | null; symbol?: unknown } }>;
 	symbolSearchSelectionIndex?: number;
 	symbolSearchHoverIndex?: number;
 	symbolSearchDisplayOffset?: number;
@@ -279,7 +280,8 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 
 	const field = host.symbolSearchField as { text: string } | undefined;
-	const label = host.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
+	const mode = host.symbolSearchMode ?? 'symbols';
+	const label = mode === 'references' ? 'REFS :' : host.symbolSearchGlobal ? 'SYMBOL #:' : 'SYMBOL @:';
 	const labelX = 4;
 	const labelY = barTop + constants.SYMBOL_SEARCH_BAR_MARGIN_Y;
 	host.drawText(api, label, labelX, labelY, constants.COLOR_SYMBOL_SEARCH_TEXT);
@@ -287,8 +289,9 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	const active = !!host.symbolSearchActive;
 	let queryText = field?.text ?? '';
 	let queryColor = constants.COLOR_SYMBOL_SEARCH_TEXT;
+	const placeholder = mode === 'references' ? 'FILTER REFERENCES' : 'TYPE TO FILTER';
 	if (queryText.length === 0 && !active) {
-		queryText = 'TYPE TO FILTER';
+		queryText = placeholder;
 		queryColor = constants.COLOR_SYMBOL_SEARCH_PLACEHOLDER;
 	}
 	const queryX = labelX + host.measureText(label + ' ');
@@ -314,13 +317,17 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 	}
 
 	const visible = host.symbolSearchVisibleResultCount ? host.symbolSearchVisibleResultCount() : 0;
-	if (visible <= 0) return;
+	if (visible <= 0) {
+		return;
+	}
 	const baseHeight = host.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
 	const separatorTop = barTop + baseHeight;
 	api.rectfill(0, separatorTop, host.viewportWidth, separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING, constants.COLOR_SYMBOL_SEARCH_OUTLINE);
 	const resultsTop = separatorTop + constants.SYMBOL_SEARCH_RESULT_SPACING;
 	const entryHeight = host.symbolSearchEntryHeight ? host.symbolSearchEntryHeight() : host.lineHeight * 2;
-	const compactMode = (host.symbolSearchGlobal && host.isSymbolSearchCompactMode ? host.isSymbolSearchCompactMode() : false) as boolean;
+	const compactMode = mode === 'references'
+		? true
+		: (host.symbolSearchGlobal && host.isSymbolSearchCompactMode ? host.isSymbolSearchCompactMode() : false) as boolean;
 	for (let i = 0; i < visible; i += 1) {
 		const matchIndex = (host.symbolSearchDisplayOffset ?? 0) + i;
 		const match = host.symbolSearchMatches ? host.symbolSearchMatches[matchIndex] : undefined;
@@ -335,14 +342,19 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 		}
 		let textX = constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 		const kindText = match?.entry.kindLabel ?? '';
-		const lineText = `:${match?.entry.line ?? 0}`;
+		const symbol = match?.entry.symbol as { __referenceColumn?: number } | undefined;
+		const referenceColumn = symbol?.__referenceColumn;
+		const lineValue = match?.entry.line ?? 0;
+		const lineText = mode === 'references' && typeof referenceColumn === 'number'
+			? `:${lineValue}:${referenceColumn}`
+			: `:${lineValue}`;
 		const lineWidth = host.measureText(lineText);
+		if (kindText.length > 0) {
+			host.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
+			textX += host.measureText(kindText + ' ');
+		}
+		host.drawText(api, match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
 		if (compactMode) {
-			if (kindText.length > 0) {
-				host.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-				textX += host.measureText(kindText + ' ');
-			}
-			host.drawText(api, match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
 			const secondaryY = rowTop + host.lineHeight;
 			const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 			host.drawText(api, lineText, lineX, secondaryY, constants.COLOR_SYMBOL_SEARCH_TEXT);
@@ -351,11 +363,6 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 				host.drawText(api, sourceLabel, constants.SYMBOL_SEARCH_RESULT_PADDING_X, secondaryY, constants.COLOR_SYMBOL_SEARCH_KIND);
 			}
 		} else {
-			if (kindText.length > 0) {
-				host.drawText(api, kindText, textX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
-				textX += host.measureText(kindText + ' ');
-			}
-			host.drawText(api, match?.entry.displayName ?? '', textX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
 			const lineX = host.viewportWidth - lineWidth - constants.SYMBOL_SEARCH_RESULT_PADDING_X;
 			host.drawText(api, lineText, lineX, rowTop, constants.COLOR_SYMBOL_SEARCH_TEXT);
 			const sourceLabel = match?.entry.sourceLabel ?? '';

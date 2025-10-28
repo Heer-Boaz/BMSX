@@ -80,6 +80,22 @@ export class ReferenceState {
 		return this.activeIndex;
 	}
 
+	public setActiveIndex(index: number): void {
+		if (this.matches.length === 0) {
+			this.activeIndex = -1;
+			return;
+		}
+		if (index < 0) {
+			this.activeIndex = 0;
+			return;
+		}
+		if (index >= this.matches.length) {
+			this.activeIndex = this.matches.length - 1;
+			return;
+		}
+		this.activeIndex = index;
+	}
+
 	public getCurrentMatch(): SearchMatch | null {
 		if (this.activeIndex < 0 || this.activeIndex >= this.matches.length) {
 			return null;

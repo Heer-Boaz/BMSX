@@ -94,6 +94,7 @@ import type {
 	VisualLineSegment,
 } from './types';
 import { ReferenceState, resolveReferenceLookup } from './reference_navigation';
+import { buildReferenceCatalog, filterReferenceCatalog, type ReferenceCatalogEntry, type ReferenceSymbolEntry } from './reference_symbol_search';
 import {
 	consumeKey as consumeKeyboardKey,
 	getKeyboardButtonState,
@@ -236,6 +237,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private symbolSearchActive = false;
 	private symbolSearchVisible = false;
 	private symbolSearchGlobal = false;
+	private symbolSearchMode: 'symbols' | 'references' = 'symbols';
 	private resourceSearchActive = false;
 	private resourceSearchVisible = false;
 	private lineJumpVisible = false;
@@ -248,6 +250,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private lastCreateResourceDirectory: string | null = null;
 	// completion session auto-trigger handled by completion controller
 	private symbolCatalog: SymbolCatalogEntry[] = [];
+	private referenceCatalog: ReferenceCatalogEntry[] = [];
 	private symbolCatalogContext: { scope: 'local' | 'global'; assetId: string | null; chunkName: string | null } | null = null;
 	private symbolSearchMatches: SymbolSearchResult[] = [];
 	private symbolSearchSelectionIndex = -1;
@@ -1650,7 +1653,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (shiftDown) {
 			this.gotoReferencesAtCursor();
 		} else {
-			this.tryGotoDefinitionAt(this.cursorRow, this.cursorColumn);
+			this.openReferenceSearchPopup();
 		}
 		return;
 	}
@@ -2248,6 +2251,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
+		this.symbolSearchMode = 'symbols';
+		this.referenceCatalog = [];
 		this.symbolSearchGlobal = false;
 		this.symbolSearchVisible = true;
 		this.symbolSearchActive = true;
@@ -2263,6 +2268,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.closeSearch(false);
 		this.closeLineJump(false);
 		this.closeResourceSearch(false);
+		this.symbolSearchMode = 'symbols';
+		this.referenceCatalog = [];
 		this.symbolSearchGlobal = true;
 		this.symbolSearchVisible = true;
 		this.symbolSearchActive = true;
@@ -2273,6 +2280,55 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.resetBlink();
 	}
 
+	private openReferenceSearchPopup(): void {
+		const context = this.getActiveCodeTabContext();
+		if (this.symbolSearchVisible || this.symbolSearchActive) {
+			this.closeSymbolSearch(false);
+		}
+		const result = resolveReferenceLookup({
+			layout: this.layout,
+			lines: this.lines,
+			textVersion: this.textVersion,
+			cursorRow: this.cursorRow,
+			cursorColumn: this.cursorColumn,
+			extractExpression: (row, column) => this.extractHoverExpression(row, column),
+		});
+		if (result.kind === 'error') {
+			this.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
+			return;
+		}
+		const { info, initialIndex } = result;
+		this.referenceState.apply(info, initialIndex);
+		const descriptor = context?.descriptor ?? null;
+		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
+		const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
+		const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
+		const sourceLabel = normalizedPath ?? chunkName ?? '<console>';
+		this.referenceCatalog = buildReferenceCatalog({
+			info,
+			lines: this.lines,
+			chunkName,
+			assetId,
+			path: normalizedPath,
+			sourceLabel,
+		});
+		if (this.referenceCatalog.length === 0) {
+			this.showMessage('No references found', constants.COLOR_STATUS_WARNING, 1.6);
+			return;
+		}
+		this.symbolSearchMode = 'references';
+		this.symbolSearchGlobal = true;
+		this.symbolSearchVisible = true;
+		this.symbolSearchActive = true;
+		this.applySymbolSearchFieldText('', true);
+		this.symbolSearchQuery = '';
+		this.updateReferenceSearchMatches();
+		this.symbolSearchHoverIndex = -1;
+		this.ensureSymbolSearchSelectionVisible();
+		this.resetBlink();
+		this.showReferenceStatusMessage();
+	}
+
 	private closeSymbolSearch(clearQuery: boolean): void {
 		if (clearQuery) {
 			this.applySymbolSearchFieldText('', true);
@@ -2280,6 +2336,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.symbolSearchActive = false;
 		this.symbolSearchVisible = false;
 		this.symbolSearchGlobal = false;
+		this.symbolSearchMode = 'symbols';
+		this.referenceCatalog = [];
 		this.symbolSearchMatches = [];
 		this.symbolSearchSelectionIndex = -1;
 		this.symbolSearchDisplayOffset = 0;
@@ -2414,6 +2472,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private updateSymbolSearchMatches(): void {
+		if (this.symbolSearchMode === 'references') {
+			this.updateReferenceSearchMatches();
+			return;
+		}
 		this.refreshSymbolCatalog(false);
 		this.symbolSearchMatches = [];
 		this.symbolSearchSelectionIndex = -1;
@@ -2464,11 +2526,29 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.symbolSearchDisplayOffset = 0;
 	}
 
+	private updateReferenceSearchMatches(): void {
+		const { matches, selectionIndex, displayOffset } = filterReferenceCatalog({
+			catalog: this.referenceCatalog,
+			query: this.symbolSearchQuery,
+			state: this.referenceState,
+			pageSize: this.symbolSearchPageSize(),
+		});
+		this.symbolSearchMatches = matches;
+		this.symbolSearchSelectionIndex = selectionIndex;
+		this.symbolSearchDisplayOffset = displayOffset;
+		this.symbolSearchHoverIndex = -1;
+	}
+
+
+
 	private isSymbolSearchCompactMode(): boolean {
 		return this.viewportWidth <= constants.SYMBOL_SEARCH_COMPACT_WIDTH;
 	}
 
 	private symbolSearchEntryHeight(): number {
+		if (this.symbolSearchMode === 'references') {
+			return this.lineHeight * 2;
+		}
 		return (this.symbolSearchGlobal && this.isSymbolSearchCompactMode()) ? this.lineHeight * 2 : this.lineHeight;
 	}
 
@@ -2482,6 +2562,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private symbolSearchPageSize(): number {
+		if (this.symbolSearchMode === 'references') {
+			return constants.REFERENCE_SEARCH_MAX_RESULTS;
+		}
 		if (!this.symbolSearchGlobal) {
 			return constants.SYMBOL_SEARCH_MAX_RESULTS;
 		}
@@ -2547,6 +2630,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return;
 		}
 		const match = this.symbolSearchMatches[index];
+		if (this.symbolSearchMode === 'references') {
+			const symbol = match.entry.symbol as ReferenceSymbolEntry;
+			const referenceMatch = symbol.__referenceMatch;
+			this.referenceState.setActiveIndex(symbol.__referenceIndex ?? index);
+			this.closeSymbolSearch(true);
+			this.applyReferenceSelection(referenceMatch);
+			this.showReferenceStatusMessage();
+			return;
+		}
 		this.closeSymbolSearch(true);
 		const location = match.entry.symbol.location;
 		setTimeout(() => {
@@ -3084,6 +3176,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (!this.isCodeTabActive()) {
 			return false;
 		}
+		const context = this.getActiveCodeTabContext();
 		const result = resolveReferenceLookup({
 			layout: this.layout,
 			lines: this.lines,
@@ -3107,11 +3200,33 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			if (!match) {
 				return false;
 			}
+			if (this.symbolSearchMode === 'references' && this.symbolSearchVisible) {
+				this.symbolSearchSelectionIndex = nextIndex;
+				this.ensureSymbolSearchSelectionVisible();
+			}
 			this.applyReferenceSelection(match);
 			this.showReferenceStatusMessage();
 			return true;
 		}
-		this.referenceState.apply(info, initialIndex);
+	this.referenceState.apply(info, initialIndex);
+	const descriptor = context?.descriptor ?? null;
+	const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
+	const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
+	const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
+	const sourceLabel = normalizedPath ?? chunkName ?? '<console>';
+	this.referenceCatalog = buildReferenceCatalog({
+		info,
+		lines: this.lines,
+		chunkName,
+		assetId,
+		path: normalizedPath,
+		sourceLabel,
+	});
+		if (this.symbolSearchMode === 'references' && this.symbolSearchVisible) {
+			this.updateReferenceSearchMatches();
+			this.symbolSearchSelectionIndex = this.referenceState.getActiveIndex();
+			this.ensureSymbolSearchSelectionVisible();
+		}
 		const currentMatch = this.referenceState.getCurrentMatch();
 		if (!currentMatch) {
 			this.showMessage('No references found in this document', constants.COLOR_STATUS_WARNING, 1.6);
@@ -5463,6 +5578,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
 			symbolSearchGlobal: this.symbolSearchGlobal,
 			symbolSearchActive: this.symbolSearchActive,
+			symbolSearchMode: this.symbolSearchMode,
 			symbolSearchField: this.symbolSearchField,
 			symbolSearchVisibleResultCount: () => this.symbolSearchVisibleResultCount(),
 			symbolSearchEntryHeight: () => this.symbolSearchEntryHeight(),
