@@ -9,7 +9,7 @@ local state = {
 		mode = 'idle',
 		timer = 0,
 		interval = 2,
-		togglecount = 0,
+		togglecount = 0, -- asd
 		status = 'Waiting for actor',
 	},
 	lastservicetoggle = 0,
@@ -81,98 +81,15 @@ local function create_engine_actor()
 	update_actor_snapshot()
 end
 
-local function create_behavior_summary()
-	return {
-		mode = 'boot',
-		status = 'Priming behavior tree...',
-		pulse = 0,
-		iteration = 0,
-		hue = 9,
-		interval = 0,
-	}
-end
-
-local function attach_behavior_methods(actor)
-	actor.behavior = create_behavior_summary()
-
-	function actor:resetbehavior()
-		local summary = self.behavior
-		summary.mode = 'boot'
-		summary.status = 'Priming behavior tree...'
-		summary.pulse = 0
-		summary.iteration = 0
-		summary.hue = 9
-		summary.interval = 0
-	end
-
-	function actor:setmode(mode)
-		self.behavior.mode = mode
-	end
-
-	function actor:setbehaviorstatus(status)
-		self.behavior.status = status
-	end
-
-	local function clamp01(value)
-		if value < 0 then return 0 end
-		if value > 1 then return 1 end
-		return value
-	end
-
-	function actor:adjustpulse(delta)
-		local nextvalue = clamp01((self.behavior.pulse or 0) + delta)
-		self.behavior.pulse = nextvalue
-		return nextvalue
-	end
-
-	function actor:setpulse(value)
-		local nextvalue = value or 0
-		if nextvalue < 0 then nextvalue = 0 end
-		if nextvalue > 1 then nextvalue = 1 end
-		self.behavior.pulse = nextvalue
-		return nextvalue
-	end
-
-	function actor:sethue(hue)
-		local quantized = math.floor(hue or 0)
-		if quantized < 1 then
-			quantized = 1
-		elseif quantized > 15 then
-			quantized = 15
-		end
-		self.behavior.hue = quantized
-	end
-
-	function actor:incrementiteration()
-		local nextvalue = (self.behavior.iteration or 0) + 1
-		self.behavior.iteration = nextvalue
-		return nextvalue
-	end
-
-	function actor:setcurrentinterval(frames)
-		local quantized = math.floor(frames or 0)
-		if quantized < 0 then
-			quantized = 0
-		end
-		self.behavior.interval = quantized
-	end
-end
-
 local function spawn_lua_actor()
-	local actorid = spawn_world_object('WorldObject', {
+	state.luaactorid = spawn_world_object('LuaDemoActor', {
 		id = 'lua_demo_actor_lua',
 		position = { x = 96, y = 64, z = 0 },
 	})
-	local actor = registry:get(actorid)
-	attach_behavior_methods(actor)
-	attach_bt(actorid, 'lua_demo_bt')
-	actor:resetbehavior()
-	actor.visible = false
-	return actorid
-end
-
-local function create_lua_actor()
-	state.luaactorid = spawn_lua_actor()
+	local actor = registry:get(state.luaactorid)
+	if actor then
+		actor.visible = false
+	end
 	update_lua_actor_snapshot()
 end
 
@@ -227,7 +144,7 @@ function init()
 	state.luabehavior = nil
 	reset_balls()
 	create_engine_actor()
-	create_lua_actor()
+	spawn_lua_actor()
 	refresh_service_state()
 	cartdata('lua-demo')
 end

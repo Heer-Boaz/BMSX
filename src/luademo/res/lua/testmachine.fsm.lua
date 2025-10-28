@@ -1,3 +1,6 @@
+function dummy_handler(self, state, payload)
+end
+
 return {
     id = 'console_testmachine',
     enable_tape_autotick = true,
@@ -18,8 +21,7 @@ return {
 		enable_tape_autotick = true,
 		ticks2advance_tape = 100,
         running = {
-            entering_state = function(self, state, payload)
-            end,
+            entering_state = dummy_handler,
             tick = function(self, state, payload)
             end,
             tapemove = function(self, state, payload)

@@ -245,6 +245,7 @@ export class BmsxConsoleRuntime extends Service {
 	private readonly luaChunkEnvironmentsByChunkName: Map<string, LuaEnvironment> = new Map();
 	private readonly luaFsmMachineIds: Set<string> = new Set<string>();
 	private readonly luaBehaviorTreeIds: Set<string> = new Set<string>();
+	private readonly luaBehaviorTreeHandlerIds: Map<string, Set<string>> = new Map();
 	private readonly behaviorTreeDiagnostics: Map<string, BehaviorTreeDiagnostic[]> = new Map();
 	private readonly luaServices: Map<string, LuaServiceBinding> = new Map();
 	private hasBooted = false;
@@ -1939,6 +1940,7 @@ export class BmsxConsoleRuntime extends Service {
 				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' is missing a valid id.`);
 			}
 			const treeId = idValue.trim();
+			this.disposeLuaBehaviorTreeHandlers(treeId);
 			let definitionSource: unknown;
 			if (Object.prototype.hasOwnProperty.call(descriptorRecord, 'definition')) {
 				definitionSource = descriptorRecord['definition'];
@@ -2009,6 +2011,7 @@ export class BmsxConsoleRuntime extends Service {
 		const removedSet = new Set(removed);
 		for (const treeId of removedSet) {
 			this.behaviorTreeDiagnostics.delete(treeId);
+			this.disposeLuaBehaviorTreeHandlers(treeId);
 		}
 		for (const object of $.world.objects({ scope: 'all' })) {
 			const contexts = object.btreecontexts;
@@ -2237,7 +2240,7 @@ export class BmsxConsoleRuntime extends Service {
 		if (!this.isPlainObject(definitionValue) && !Array.isArray(definitionValue)) {
 			throw new Error(`[BmsxConsoleRuntime] Behavior tree '${treeId}' definition in asset '${assetId}' must be a table.`);
 		}
-		const sanitized = this.cloneLuaBlueprintValue(treeId, ['definition'], definitionValue, interpreter);
+		const sanitized = this.cloneLuaBehaviorTreeValue(treeId, ['definition'], definitionValue, interpreter);
 		return sanitized as BehaviorTreeDefinition;
 	}
 
@@ -2349,6 +2352,29 @@ export class BmsxConsoleRuntime extends Service {
 		return sanitized as StateMachineBlueprint;
 	}
 
+	private cloneLuaBehaviorTreeValue(treeId: string, path: string[], value: unknown, interpreter: LuaInterpreter): unknown {
+		if (this.isLuaFunctionValue(value)) {
+			return this.registerLuaBehaviorTreeHandler(treeId, path, value, interpreter);
+		}
+		if (Array.isArray(value)) {
+			const out: unknown[] = [];
+			for (let index = 0; index < value.length; index += 1) {
+				const nextPath = path.concat(String(index));
+				out.push(this.cloneLuaBehaviorTreeValue(treeId, nextPath, value[index], interpreter));
+			}
+			return out;
+		}
+		if (this.isPlainObject(value)) {
+			const out: Record<string, unknown> = {};
+			for (const [key, entry] of Object.entries(value)) {
+				const nextPath = path.concat(key);
+				out[key] = this.cloneLuaBehaviorTreeValue(treeId, nextPath, entry, interpreter);
+			}
+			return out;
+		}
+		return value;
+	}
+
 	private cloneLuaBlueprintValue(machineId: string, path: string[], value: unknown, interpreter: LuaInterpreter): unknown {
 		if (this.isLuaFunctionValue(value)) {
 			return this.registerLuaStateMachineHandler(machineId, path, value, interpreter);
@@ -2382,6 +2408,33 @@ export class BmsxConsoleRuntime extends Service {
 		return handlerId;
 	}
 
+	private registerLuaBehaviorTreeHandler(treeId: string, path: string[], fn: LuaFunctionValue, interpreter: LuaInterpreter): string {
+		const handlerId = this.makeLuaHandlerId(treeId, path);
+		const runtime = this;
+		const handler = function (this: Stateful, ...args: unknown[]) {
+			return runtime.executeLuaBehaviorTreeHandler(handlerId, fn, interpreter, this, args);
+		};
+		HandlerRegistry.instance.register(handlerId, handler);
+		let set = this.luaBehaviorTreeHandlerIds.get(treeId);
+		if (!set) {
+			set = new Set<string>();
+			this.luaBehaviorTreeHandlerIds.set(treeId, set);
+		}
+		set.add(handlerId);
+		return handlerId;
+	}
+
+	private disposeLuaBehaviorTreeHandlers(treeId: string): void {
+		const entries = this.luaBehaviorTreeHandlerIds.get(treeId);
+		if (!entries) {
+			return;
+		}
+		for (const handlerId of entries) {
+			HandlerRegistry.instance.unregister(handlerId);
+		}
+		this.luaBehaviorTreeHandlerIds.delete(treeId);
+	}
+
 	private executeLuaStateMachineHandler(handlerId: string, fn: LuaFunctionValue, interpreter: LuaInterpreter, self: Stateful, args: unknown[]): unknown {
 		const callArgs: unknown[] = [self];
 		for (let index = 0; index < args.length; index += 1) {
@@ -2404,6 +2457,39 @@ export class BmsxConsoleRuntime extends Service {
 			if (error instanceof LuaError) {
 				const wrapped = new LuaRuntimeError(prefix + baseMessage, error.chunkName, error.line, error.column);
 				// @ts-ignore - retain original error details for debugging where supported
+				wrapped.cause = error;
+				this.handleLuaError(wrapped);
+				return undefined;
+			}
+			const wrapped = new Error(prefix + baseMessage);
+			this.handleLuaError(wrapped);
+			return undefined;
+		}
+		return results.length > 0 ? results[0] : undefined;
+	}
+
+	private executeLuaBehaviorTreeHandler(handlerId: string, fn: LuaFunctionValue, interpreter: LuaInterpreter, self: Stateful, args: unknown[]): unknown {
+		const callArgs: unknown[] = [self];
+		for (let index = 0; index < args.length; index += 1) {
+			callArgs.push(args[index]);
+		}
+		let results: unknown[];
+		try {
+			results = this.callLuaFunctionWithInterpreter(fn, callArgs, interpreter);
+		}
+		catch (error) {
+			const baseMessage = error instanceof Error ? error.message : String(error);
+			const prefix = `[BmsxConsoleRuntime] Lua BT handler '${handlerId}' failed: `;
+			if (error instanceof LuaRuntimeError) {
+				const wrapped = new LuaRuntimeError(prefix + baseMessage, error.chunkName, error.line, error.column);
+				// @ts-ignore preserve cause
+				wrapped.cause = error;
+				this.handleLuaError(wrapped);
+				return undefined;
+			}
+			if (error instanceof LuaError) {
+				const wrapped = new LuaRuntimeError(prefix + baseMessage, error.chunkName, error.line, error.column);
+				// @ts-ignore preserve cause
 				wrapped.cause = error;
 				this.handleLuaError(wrapped);
 				return undefined;

@@ -19,7 +19,7 @@ export type BehaviorTreeNodeSpec =
 	| { type: 'limit' | 'Limit'; child: BehaviorTreeNodeSpec; limit: number; count_propname: string; priority?: number }
 	| { type: 'priorityselector' | 'PrioritySelector'; children: BehaviorTreeNodeSpec[]; priority?: number }
 	| { type: 'wait' | 'Wait'; wait_time: number; wait_propname: string; priority?: number }
-	| { type: 'action' | 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
+	| { type: 'action' | 'Action'; action: NodeActionRef; parameters?: any[]; priority?: number }
 	| { type: 'compositeaction' | 'CompositeAction'; actions: BehaviorTreeNodeSpec[]; parameters?: any[]; priority?: number };
 
 /**
@@ -285,24 +285,12 @@ function buildBehaviorTreeNode(config: BehaviorTreeNodeSpec, id: BehaviorTreeID)
 				throw new Error(`[BehaviorTree:${id}] Wait node requires 'wait_propname'.`);
 			}
 			return new WaitNode(id, config.wait_time, config.wait_propname, config.priority);
-		case 'action':
-		case 'Action':
-			{
-				const actionCandidate = config.action;
-				let action: NodeAction;
-				if (typeof actionCandidate === 'function') {
-					action = actionCandidate;
-				} else if (typeof actionCandidate === 'string') {
-					const handler = HandlerRegistry.instance.get(actionCandidate);
-					if (!handler) {
-						throw new Error(`[BehaviorTree:${id}] Node 'action' references unknown action handler '${actionCandidate}'.`);
-					}
-					action = handler as NodeAction;
-				} else {
-					throw new Error(`[BehaviorTree:${id}] Action node requires an action function.`);
-				}
-				return new ActionNode(id, action, config.priority, config.parameters);
-			}
+	case 'action':
+	case 'Action':
+		if (config.action === undefined || config.action === null) {
+			throw new Error(`[BehaviorTree:${id}] Action node requires an action handler.`);
+		}
+		return new ActionNode(id, config.action as NodeActionRef, config.priority, config.parameters);
 		case 'compositeaction':
 		case 'CompositeAction':
 			if (!Array.isArray(config.actions) || config.actions.length === 0) {
@@ -1021,19 +1009,37 @@ export class WaitNode extends BTNode {
  */
 
 export type NodeAction = (blackboard: Blackboard, ...parameters: any[]) => BTStatus;
+export type NodeActionRef = NodeAction | string;
 
 /**
  * Represents a node in a behavior tree that performs an action.
  */
 export class ActionNode extends ParametrizedBTNode {
-	public action: NodeAction;
+	private readonly actionRef: NodeActionRef;
+	private cachedAction: NodeAction | null = null;
 
-	constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0, parameters?: any[]) {
+	constructor(id: BehaviorTreeID, action: NodeActionRef, _priority = 0, parameters?: any[]) {
 		super(id, _priority, parameters);
-		if (typeof action !== 'function') {
-			throw new Error(`[BehaviorTree:${id}] ActionNode requires a callable action.`);
+		if (typeof action !== 'function' && typeof action !== 'string') {
+			throw new Error(`[BehaviorTree:${id}] ActionNode requires an action handler.`);
 		}
-		this.action = action;
+		this.actionRef = action;
+	}
+
+	private resolveAction(): NodeAction {
+		if (typeof this.actionRef === 'function') {
+			return this.actionRef;
+		}
+		if (this.cachedAction) {
+			return this.cachedAction;
+		}
+		const handler = HandlerRegistry.instance.get(this.actionRef);
+		if (!handler) {
+			throw new Error(`[BehaviorTree:${this.id}] Action handler '${this.actionRef}' is not registered.`);
+		}
+		const resolved = handler as NodeAction;
+		this.cachedAction = resolved;
+		return resolved;
 	}
 
 	/**
@@ -1041,8 +1047,8 @@ export class ActionNode extends ParametrizedBTNode {
 	 * @returns The feedback of the action execution.
 	 */
 	tick(targetId: Identifier, blackboard: Blackboard): BTNodeFeedback {
-		// Perform the action
-		const result = this.action.call(this.getTarget(targetId), blackboard, ...this.parameters);
+		const action = this.resolveAction();
+		const result = action.call(this.getTarget(targetId), blackboard, ...this.parameters);
 		return { status: result };
 	}
 }

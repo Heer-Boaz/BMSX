@@ -148,6 +148,7 @@ export class HandlerRegistry {
 	register(id: string, fn: GenericHandler) { this.map.set(id, fn); }
 	get(id: string): GenericHandler | undefined { return this.map.get(id); }
 	replaceBulk(entries: Record<string, GenericHandler>) { for (const k in entries) this.map.set(k, entries[k]); }
+	unregister(id: string): void { this.map.delete(id); }
 }
 
 // assign-fsm-augment.ts (unchanged logic, now gets keys from decorator)
