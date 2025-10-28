@@ -52,7 +52,7 @@ const THEME_BASE = {
 	surfaces: {
 		frame: PALETTE.white,
 		topBar: PALETTE.grey,
-		editor: PALETTE.darkBlue,
+		editor: PALETTE.black,
 		gutter: PALETTE.grey,
 		resourcePanel: PALETTE.grey,
 		resourcePanelHighlight: PALETTE.black,
@@ -92,7 +92,7 @@ const THEME_BASE = {
 		outline: PALETTE.black
 	},
 	tab: {
-		border: PALETTE.black,
+		border: PALETTE.darkBlue,
 		activeText: PALETTE.grey,
 		inactiveText: PALETTE.black
 	}
@@ -203,7 +203,7 @@ export const COLOR_PARAMETER = THEME_BASE.text.parameter;
 export const COLOR_LABEL = THEME_BASE.text.label;
 export const COLOR_LOCAL_TOP = THEME_BASE.text.localTop;
 export const COLOR_LOCAL_FUNCTION = THEME_BASE.text.localFunction;
-export const HIGHLIGHT_OVERLAY = Msx1Colors[PALETTE.darkBlue];
+export const HIGHLIGHT_OVERLAY = Msx1Colors[PALETTE.black]; //Msx1Colors[PALETTE.darkBlue];
 export const SELECTION_OVERLAY = Msx1Colors[PALETTE.magenta];
 export const CARET_COLOR = Msx1Colors[PALETTE.white];
 export const INLINE_CARET_COLOR = Msx1Colors[PALETTE.black];
