@@ -1969,7 +1969,7 @@ export class BmsxConsoleRuntime extends Service {
 				throw new Error(`[BmsxConsoleRuntime] Behavior tree Lua script '${assetId}' must provide a 'definition' or 'tree' entry.`);
 			}
 			const prepared = this.prepareLuaBehaviorTreeDefinition(treeId, definitionSource, interpreter, assetId);
-			const result = applyPreparedBehaviorTree(treeId, prepared, { force: true });
+			applyPreparedBehaviorTree(treeId, prepared, { force: true });
 			const diagnostics = getBehaviorTreeDiagnostics(treeId);
 			this.behaviorTreeDiagnostics.set(treeId, diagnostics);
 			for (let index = 0; index < diagnostics.length; index += 1) {
