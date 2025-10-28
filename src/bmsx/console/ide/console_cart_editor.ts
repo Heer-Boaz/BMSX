@@ -42,7 +42,7 @@ import { ConsoleScrollbar, ScrollbarController } from './scrollbar';
 import { renderTopBar } from './render_top_bar';
 import { renderTabBar } from './render_tab_bar';
 import { renderStatusBar } from './render_status_bar';
-import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderLineJumpBar } from './render_inline_bars';
+import { renderCreateResourceBar, renderSearchBar, renderResourceSearchBar, renderSymbolSearchBar, renderRenameBar, renderLineJumpBar } from './render_inline_bars';
 import {
 	computeErrorOverlayBounds,
 	renderErrorOverlay,
@@ -95,6 +95,8 @@ import type {
 } from './types';
 import { ReferenceState, resolveReferenceLookup } from './reference_navigation';
 import { buildReferenceCatalog, filterReferenceCatalog, type ReferenceCatalogEntry, type ReferenceSymbolEntry } from './reference_symbol_search';
+import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
+import { planRenameLineEdits } from './rename_apply';
 import {
 	consumeKey as consumeKeyboardKey,
 	getKeyboardButtonState,
@@ -282,6 +284,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	private resourcePanelResizing = false;
 	// max line width computed by ResourcePanelController
 	private readonly resourcePanel: ResourcePanelController;
+	private readonly renameController: RenameController;
 	private readonly layout: ConsoleCodeLayout;
 	private codeVerticalScrollbarVisible = false;
 	private codeHorizontalScrollbarVisible = false;
@@ -441,6 +444,15 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			truncateTextToWidth: (text, maxWidth) => this.truncateTextToWidth(text, maxWidth),
 			gotoDiagnostic: (diagnostic) => this.gotoDiagnostic(diagnostic),
         });
+		this.renameController = new RenameController({
+			processFieldEdit: (field, keyboard, options) => this.processInlineFieldEditing(field, keyboard, options),
+			shouldFireRepeat: (keyboard, code, deltaSeconds) => this.shouldFireRepeat(keyboard, code, deltaSeconds),
+			undo: () => this.undo(),
+			redo: () => this.redo(),
+			showMessage: (text, color, duration) => this.showMessage(text, color, duration),
+			commitRename: (payload) => this.commitRename(payload),
+			onRenameSessionClosed: () => this.focusEditorFromRename(),
+		}, this.referenceState, this.playerIndex);
 		this.codeVerticalScrollbarVisible = false;
 		this.codeHorizontalScrollbarVisible = false;
 		this.cachedVisibleRowCount = 1;
@@ -1024,6 +1036,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.drawSearchBar(api);
 			this.drawResourceSearchBar(api);
 			this.drawSymbolSearchBar(api);
+			this.drawRenameBar(api);
 			this.drawLineJumpBar(api);
 			this.drawCodeArea(api);
 		}
@@ -1647,7 +1660,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.cycleTab(shiftDown ? -1 : 1);
 		return;
 	}
-	const inlineFieldFocused = this.searchActive || this.symbolSearchActive || this.resourceSearchActive || this.lineJumpActive || this.createResourceActive;
+	const inlineFieldFocused = this.searchActive
+		|| this.symbolSearchActive
+		|| this.resourceSearchActive
+		|| this.lineJumpActive
+		|| this.createResourceActive
+		|| this.renameController.isActive();
 	if (!inlineFieldFocused && isKeyJustPressedGlobal(this.playerIndex, 'F12')) {
 		consumeKeyboardKey(keyboard, 'F12');
 		if (shiftDown) {
@@ -1655,6 +1673,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		} else {
 			this.openReferenceSearchPopup();
 		}
+		return;
+	}
+	if (!inlineFieldFocused && this.isCodeTabActive() && isKeyJustPressedGlobal(this.playerIndex, 'F2')) {
+		consumeKeyboardKey(keyboard, 'F2');
+		this.openRenamePrompt();
 		return;
 	}
 		if ((ctrlDown || metaDown)
@@ -1676,6 +1699,10 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if ((ctrlDown || metaDown) && isKeyJustPressedGlobal(this.playerIndex, 'KeyL')) {
 			consumeKeyboardKey(keyboard, 'KeyL');
 			this.openLineJump();
+			return;
+		}
+		if (this.renameController.isActive()) {
+			this.renameController.handleInput(keyboard, deltaSeconds, { ctrlDown, metaDown, shiftDown, altDown });
 			return;
 		}
 		if (this.resourceSearchActive) {
@@ -1844,11 +1871,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openCreateResourcePrompt(): void {
-		if (this.createResourceWorking) {
-			return;
-		}
-		this.resourcePanelFocused = false;
-		let defaultPath = this.createResourcePath.length === 0
+	if (this.createResourceWorking) {
+		return;
+	}
+	this.resourcePanelFocused = false;
+	this.renameController.cancel();
+	let defaultPath = this.createResourcePath.length === 0
 			? this.determineCreateResourceDefaultPath()
 			: this.createResourcePath;
 		if (defaultPath.length > constants.CREATE_RESOURCE_MAX_PATH_LENGTH) {
@@ -2149,6 +2177,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.closeSymbolSearch(false);
 		this.closeResourceSearch(false);
 		this.closeLineJump(false);
+		this.renameController.cancel();
 		this.searchVisible = true;
 		this.searchActive = true;
 		this.applySearchFieldText(this.searchQuery, true);
@@ -2202,11 +2231,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openResourceSearch(initialQuery: string = ''): void {
-		this.clearReferenceHighlights();
-		this.closeSearch(false);
-		this.closeLineJump(false);
-		this.closeSymbolSearch(false);
-		this.resourceSearchVisible = true;
+	this.clearReferenceHighlights();
+	this.closeSearch(false);
+	this.closeLineJump(false);
+	this.closeSymbolSearch(false);
+	this.renameController.cancel();
+	this.resourceSearchVisible = true;
 		this.resourceSearchActive = true;
 		this.applyResourceSearchFieldText(initialQuery, true);
 		this.refreshResourceCatalog();
@@ -2247,11 +2277,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openSymbolSearch(initialQuery: string = ''): void {
-		this.clearReferenceHighlights();
-		this.closeSearch(false);
-		this.closeLineJump(false);
-		this.closeResourceSearch(false);
-		this.symbolSearchMode = 'symbols';
+	this.clearReferenceHighlights();
+	this.closeSearch(false);
+	this.closeLineJump(false);
+	this.closeResourceSearch(false);
+	this.renameController.cancel();
+	this.symbolSearchMode = 'symbols';
 		this.referenceCatalog = [];
 		this.symbolSearchGlobal = false;
 		this.symbolSearchVisible = true;
@@ -2264,11 +2295,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openGlobalSymbolSearch(initialQuery: string = ''): void {
-		this.clearReferenceHighlights();
-		this.closeSearch(false);
-		this.closeLineJump(false);
-		this.closeResourceSearch(false);
-		this.symbolSearchMode = 'symbols';
+	this.clearReferenceHighlights();
+	this.closeSearch(false);
+	this.closeLineJump(false);
+	this.closeResourceSearch(false);
+	this.renameController.cancel();
+	this.symbolSearchMode = 'symbols';
 		this.referenceCatalog = [];
 		this.symbolSearchGlobal = true;
 		this.symbolSearchVisible = true;
@@ -2281,11 +2313,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openReferenceSearchPopup(): void {
-		const context = this.getActiveCodeTabContext();
-		if (this.symbolSearchVisible || this.symbolSearchActive) {
-			this.closeSymbolSearch(false);
-		}
-		const result = resolveReferenceLookup({
+	const context = this.getActiveCodeTabContext();
+	if (this.symbolSearchVisible || this.symbolSearchActive) {
+		this.closeSymbolSearch(false);
+	}
+	this.renameController.cancel();
+	const result = resolveReferenceLookup({
 			layout: this.layout,
 			lines: this.lines,
 			textVersion: this.textVersion,
@@ -2329,6 +2362,57 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.showReferenceStatusMessage();
 	}
 
+	private openRenamePrompt(): void {
+		if (!this.isCodeTabActive()) {
+			return;
+		}
+		this.closeSearch(false);
+		this.closeLineJump(false);
+		this.closeResourceSearch(false);
+		this.closeSymbolSearch(false);
+		this.createResourceActive = false;
+		const started = this.renameController.begin({
+			layout: this.layout,
+			lines: this.lines,
+			textVersion: this.textVersion,
+			cursorRow: this.cursorRow,
+			cursorColumn: this.cursorColumn,
+			extractExpression: (row, column) => this.extractHoverExpression(row, column),
+		});
+		if (started) {
+			this.cursorVisible = true;
+			this.resetBlink();
+		}
+	}
+
+	private commitRename(payload: RenameCommitPayload): RenameCommitResult {
+		const edits = planRenameLineEdits(this.lines, payload.matches, payload.newName);
+		if (edits.length === 0) {
+			return { updatedMatches: 0 };
+		}
+		this.prepareUndo('rename', false);
+		this.recordEditContext('replace', payload.newName);
+		for (let index = 0; index < edits.length; index += 1) {
+			const edit = edits[index];
+			this.lines[edit.row] = edit.text;
+			this.invalidateLine(edit.row);
+		}
+		this.markTextMutated();
+		const activeIndex = clamp(payload.activeIndex, 0, payload.matches.length - 1);
+		const match = payload.matches[activeIndex];
+		const line = this.lines[match.row] ?? '';
+		const startColumn = clamp(match.start, 0, line.length);
+		const endColumn = clamp(startColumn + payload.newName.length, startColumn, line.length);
+		this.cursorRow = match.row;
+		this.cursorColumn = startColumn;
+		this.selectionAnchor = { row: match.row, column: endColumn };
+		this.updateDesiredColumn();
+		this.resetBlink();
+		this.cursorRevealSuspended = false;
+		this.ensureCursorVisible();
+		return { updatedMatches: payload.matches.length };
+	}
+
 	private closeSymbolSearch(clearQuery: boolean): void {
 		if (clearQuery) {
 			this.applySymbolSearchFieldText('', true);
@@ -2361,6 +2445,13 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.symbolSearchField.selectionAnchor = null;
 		this.symbolSearchField.pointerSelecting = false;
 		this.resetBlink();
+	}
+
+	private focusEditorFromRename(): void {
+		this.cursorRevealSuspended = false;
+		this.resetBlink();
+		this.revealCursor();
+		this.cursorVisible = true;
 	}
 
 	private refreshSymbolCatalog(force: boolean): void {
@@ -2538,6 +2629,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.symbolSearchDisplayOffset = displayOffset;
 		this.symbolSearchHoverIndex = -1;
 	}
+
 
 
 
@@ -2995,10 +3087,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private openLineJump(): void {
-		this.clearReferenceHighlights();
-		this.closeSymbolSearch(false);
-		this.closeResourceSearch(false);
-		this.closeSearch(false);
+	this.clearReferenceHighlights();
+	this.closeSymbolSearch(false);
+	this.closeResourceSearch(false);
+	this.closeSearch(false);
+	this.renameController.cancel();
 		this.searchVisible = false;
 		this.lineJumpVisible = true;
 		this.lineJumpActive = true;
@@ -3665,6 +3758,30 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				this.symbolSearchActive = false;
 			}
 			this.symbolSearchHoverIndex = -1;
+		}
+
+		const renameBounds = this.getRenameBarBounds();
+		if (this.isRenameVisible() && renameBounds) {
+			const insideRename = this.pointInRect(snapshot.viewportX, snapshot.viewportY, renameBounds);
+			if (insideRename) {
+				if (justPressed) {
+					this.resourcePanelFocused = false;
+					this.cursorVisible = true;
+					this.resetBlink();
+				}
+				const label = 'RENAME:';
+				const labelX = 4;
+				const textLeft = labelX + this.measureText(label + ' ');
+				this.processInlineFieldPointer(this.renameController.getField(), textLeft, snapshot.viewportX, justPressed, snapshot.primaryPressed);
+				this.pointerSelecting = false;
+				this.pointerPrimaryWasPressed = snapshot.primaryPressed;
+				this.clearHoverTooltip();
+				this.clearGotoHoverHighlight();
+				return;
+			}
+			if (justPressed) {
+				this.renameController.cancel();
+			}
 		}
 
 		const lineJumpBounds = this.getLineJumpBarBounds();
@@ -5419,6 +5536,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			getSearchBarHeight: () => this.getSearchBarHeight(),
 			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
 			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getRenameBarHeight: () => this.getRenameBarHeight(),
 			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				api3: BmsxConsoleApi,
@@ -5457,11 +5575,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			createResourceWorking: this.createResourceWorking,
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
-			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
-			getSearchBarHeight: () => this.getSearchBarHeight(),
-			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
-			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
-			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+		getSearchBarHeight: () => this.getSearchBarHeight(),
+		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => this.getRenameBarHeight(),
+		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -5504,11 +5623,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			createResourceWorking: this.createResourceWorking,
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
-			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
-			getSearchBarHeight: () => this.getSearchBarHeight(),
-			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
-			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
-			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+		getSearchBarHeight: () => this.getSearchBarHeight(),
+		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => this.getRenameBarHeight(),
+		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -5555,11 +5675,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			createResourceWorking: this.createResourceWorking,
 			createResourceError: this.createResourceError,
 			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
-			getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
-			getSearchBarHeight: () => this.getSearchBarHeight(),
-			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
-			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
-			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+		getSearchBarHeight: () => this.getSearchBarHeight(),
+		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => this.getRenameBarHeight(),
+		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -5591,7 +5712,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		renderSymbolSearchBar(api, host);
 	}
 
-	private drawLineJumpBar(api: BmsxConsoleApi): void {
+	private drawRenameBar(api: BmsxConsoleApi): void {
 		const host: import('./render_inline_bars').InlineBarsHost = {
 			viewportWidth: this.viewportWidth,
 			headerHeight: this.headerHeight,
@@ -5612,7 +5733,56 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			getSearchBarHeight: () => this.getSearchBarHeight(),
 			getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
 			getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+			getRenameBarHeight: () => this.getRenameBarHeight(),
 			getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
+			drawInlineCaret: (
+				a: BmsxConsoleApi,
+				f: InlineTextField,
+				l: number,
+				t: number,
+				r: number,
+				b: number,
+				bx: number,
+				ac: boolean,
+				cc: { r: number; g: number; b: number; a: number },
+				tc: number,
+			) => this.drawInlineCaret(a, f, l, t, r, b, bx, ac, cc, tc),
+			inlineFieldSelectionRange: (f: InlineTextField) => inlineFieldSelectionRange(f),
+			inlineFieldMeasureRange: (f: InlineTextField, m: InlineFieldMetrics, s: number, e: number) => inlineFieldMeasureRange(f, m, s, e),
+			inlineFieldCaretX: (f: InlineTextField, ox: number, m: (tx: string) => number) => inlineFieldCaretX(f, ox, m),
+			blockActiveCarets: (this.problemsPanel.isVisible() && this.problemsPanel.isFocused()),
+			renameActive: this.renameController.isActive(),
+			renameField: this.renameController.getField(),
+			renameMatchCount: this.renameController.getMatchCount(),
+			renameExpression: this.renameController.getExpressionLabel(),
+			renameOriginalName: this.renameController.getOriginalName(),
+		};
+		renderRenameBar(api, host);
+	}
+
+	private drawLineJumpBar(api: BmsxConsoleApi): void {
+		const host: import('./render_inline_bars').InlineBarsHost = {
+			viewportWidth: this.viewportWidth,
+			headerHeight: this.headerHeight,
+			tabBarHeight: this.getTabBarTotalHeight(),
+			lineHeight: this.lineHeight,
+			spaceAdvance: this.spaceAdvance,
+			charAdvance: this.charAdvance,
+			measureText: (t: string) => this.measureText(t),
+			drawText: (a, t, x, y, c) => drawEditorText(a, this.font, t, x, y, c),
+			inlineFieldMetrics: () => this.inlineFieldMetrics(),
+			createResourceActive: this.createResourceActive,
+			createResourceVisible: this.createResourceVisible,
+			createResourceField: this.createResourceField,
+			createResourceWorking: this.createResourceWorking,
+			createResourceError: this.createResourceError,
+			drawCreateResourceErrorDialog: (a, m) => this.drawCreateResourceErrorDialog(a, m),
+		getCreateResourceBarHeight: () => this.getCreateResourceBarHeight(),
+		getSearchBarHeight: () => this.getSearchBarHeight(),
+		getResourceSearchBarHeight: () => this.getResourceSearchBarHeight(),
+		getSymbolSearchBarHeight: () => this.getSymbolSearchBarHeight(),
+		getRenameBarHeight: () => this.getRenameBarHeight(),
+		getLineJumpBarHeight: () => this.getLineJumpBarHeight(),
 			drawInlineCaret: (
 				a: BmsxConsoleApi,
 				f: InlineTextField,
@@ -5680,13 +5850,14 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private codeViewportTop(): number {
-		return this.topMargin
-			+ this.getCreateResourceBarHeight()
-			+ this.getSearchBarHeight()
-			+ this.getResourceSearchBarHeight()
-			+ this.getSymbolSearchBarHeight()
-			+ this.getLineJumpBarHeight();
-	}
+	return this.topMargin
+		+ this.getCreateResourceBarHeight()
+		+ this.getSearchBarHeight()
+		+ this.getResourceSearchBarHeight()
+		+ this.getSymbolSearchBarHeight()
+		+ this.getRenameBarHeight()
+		+ this.getLineJumpBarHeight();
+}
 
 	private getCreateResourceBarHeight(): number {
 		if (!this.isCreateResourceVisible()) {
@@ -5727,19 +5898,30 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private getSymbolSearchBarHeight(): number {
-		if (!this.isSymbolSearchVisible()) {
-			return 0;
-		}
-		const baseHeight = this.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
-		const visible = this.symbolSearchVisibleResultCount();
-		if (visible <= 0) {
-			return baseHeight;
-		}
-		return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * this.symbolSearchEntryHeight();
+	if (!this.isSymbolSearchVisible()) {
+		return 0;
 	}
+	const baseHeight = this.lineHeight + constants.SYMBOL_SEARCH_BAR_MARGIN_Y * 2;
+	const visible = this.symbolSearchVisibleResultCount();
+	if (visible <= 0) {
+		return baseHeight;
+	}
+	return baseHeight + constants.SYMBOL_SEARCH_RESULT_SPACING + visible * this.symbolSearchEntryHeight();
+}
 
 	private isSymbolSearchVisible(): boolean {
 		return this.symbolSearchVisible;
+	}
+
+	private getRenameBarHeight(): number {
+		if (!this.isRenameVisible()) {
+			return 0;
+		}
+		return this.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
+	}
+
+	private isRenameVisible(): boolean {
+		return this.renameController.isVisible();
 	}
 
 	private getLineJumpBarHeight(): number {
@@ -5800,11 +5982,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (height <= 0) {
 			return null;
 		}
-		const top = this.headerHeight + this.getTabBarTotalHeight()
-			+ this.getCreateResourceBarHeight()
-			+ this.getSearchBarHeight()
-			+ this.getResourceSearchBarHeight()
-			+ this.getSymbolSearchBarHeight();
+	const top = this.headerHeight + this.getTabBarTotalHeight()
+		+ this.getCreateResourceBarHeight()
+		+ this.getSearchBarHeight()
+		+ this.getResourceSearchBarHeight()
+		+ this.getSymbolSearchBarHeight()
+		+ this.getRenameBarHeight();
 		return {
 			top,
 			bottom: top + height,
@@ -5822,6 +6005,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			+ this.getCreateResourceBarHeight()
 			+ this.getSearchBarHeight()
 			+ this.getResourceSearchBarHeight();
+		return {
+			top,
+			bottom: top + height,
+			left: 0,
+			right: this.viewportWidth,
+		};
+	}
+
+	private getRenameBarBounds(): { top: number; bottom: number; left: number; right: number } | null {
+		const height = this.getRenameBarHeight();
+		if (height <= 0) {
+			return null;
+		}
+		const top = this.headerHeight + this.getTabBarTotalHeight()
+			+ this.getCreateResourceBarHeight()
+			+ this.getSearchBarHeight()
+			+ this.getResourceSearchBarHeight()
+			+ this.getSymbolSearchBarHeight();
 		return {
 			top,
 			bottom: top + height,

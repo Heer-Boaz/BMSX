@@ -22,6 +22,7 @@ export interface InlineBarsHost {
 	getSearchBarHeight: () => number;
 	getResourceSearchBarHeight: () => number;
 	getSymbolSearchBarHeight: () => number;
+	getRenameBarHeight: () => number;
 	getLineJumpBarHeight: () => number;
 	drawInlineCaret: (
 		api: BmsxConsoleApi,
@@ -77,6 +78,13 @@ export interface InlineBarsHost {
 	// Line jump bar state
 	lineJumpActive?: boolean;
 	lineJumpField?: unknown;
+
+	// Rename bar state
+	renameActive?: boolean;
+	renameField?: unknown;
+	renameMatchCount?: number;
+	renameExpression?: string | null;
+	renameOriginalName?: string | null;
 }
 
 export function renderCreateResourceBar(api: BmsxConsoleApi, host: InlineBarsHost): void {
@@ -372,6 +380,72 @@ export function renderSymbolSearchBar(api: BmsxConsoleApi, host: InlineBarsHost)
 				host.drawText(api, sourceLabel, sourceX, rowTop, constants.COLOR_SYMBOL_SEARCH_KIND);
 			}
 		}
+	}
+}
+
+export function renderRenameBar(api: BmsxConsoleApi, host: InlineBarsHost): void {
+	const height = host.getRenameBarHeight();
+	if (height <= 0) return;
+	const barTop = host.headerHeight + host.tabBarHeight
+		+ host.getCreateResourceBarHeight()
+		+ host.getSearchBarHeight()
+		+ host.getResourceSearchBarHeight()
+		+ host.getSymbolSearchBarHeight()
+		+ host.getRenameBarHeight();
+	const barBottom = barTop + height;
+	api.rectfill(0, barTop, host.viewportWidth, barBottom, constants.COLOR_SEARCH_BACKGROUND);
+	api.rectfill(0, barTop, host.viewportWidth, barTop + 1, constants.COLOR_SEARCH_OUTLINE);
+	api.rectfill(0, barBottom - 1, host.viewportWidth, barBottom, constants.COLOR_SEARCH_OUTLINE);
+
+	const field = host.renameField as { text: string } | undefined;
+	const label = 'RENAME:';
+	const labelX = 4;
+	const labelY = barTop + constants.SEARCH_BAR_MARGIN_Y;
+	host.drawText(api, label, labelX, labelY, constants.COLOR_SEARCH_TEXT);
+
+	const active = !!host.renameActive && !host.blockActiveCarets;
+	let valueText = field?.text ?? '';
+	let valueColor = constants.COLOR_SEARCH_TEXT;
+	if (valueText.length === 0 && !active) {
+		valueText = 'TYPE NEW NAME';
+		valueColor = constants.COLOR_SEARCH_PLACEHOLDER;
+	}
+	const valueX = labelX + host.measureText(label + ' ');
+
+	const selection = field ? host.inlineFieldSelectionRange(field) : null;
+	if (selection && field!.text.length > 0) {
+		const selectionLeft = valueX + host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), 0, selection.start);
+		const selectionWidth = host.inlineFieldMeasureRange(field!, host.inlineFieldMetrics(), selection.start, selection.end);
+		if (selectionWidth > 0) {
+			api.rectfill_color(selectionLeft, labelY, selectionLeft + selectionWidth, labelY + host.lineHeight, constants.SELECTION_OVERLAY);
+		}
+	}
+
+	host.drawText(api, valueText, valueX, labelY, valueColor);
+
+	if (field) {
+		const caretX = host.inlineFieldCaretX(field, valueX, host.measureText);
+		const caretLeft = Math.floor(caretX);
+		const caretRight = Math.max(caretLeft + 1, Math.floor(caretX + (host.charAdvance ?? host.spaceAdvance)));
+		const caretTop = Math.floor(labelY);
+		const caretBottom = caretTop + host.lineHeight;
+		host.drawInlineCaret(api, field, caretLeft, caretTop, caretRight, caretBottom, caretX, active, constants.INLINE_CARET_COLOR, valueColor);
+	}
+
+	const matchCount = host.renameMatchCount ?? 0;
+	const expression = host.renameExpression ?? host.renameOriginalName ?? '';
+	let status = '';
+	if (expression && expression.length > 0) {
+		status = expression;
+	}
+	if (matchCount > 0) {
+		const countLabel = matchCount === 1 ? '1 REF' : `${matchCount} REFS`;
+		status = status.length > 0 ? `${status} · ${countLabel}` : countLabel;
+	}
+	if (status.length > 0) {
+		const statusWidth = host.measureText(status);
+		const statusX = Math.max(valueX + host.measureText(valueText) + host.spaceAdvance, host.viewportWidth - statusWidth - 4);
+		host.drawText(api, status, statusX, labelY, constants.COLOR_SEARCH_TEXT);
 	}
 }
 
