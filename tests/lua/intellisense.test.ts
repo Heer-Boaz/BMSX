@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
+import { createRequire, register } from 'node:module';
 import { test } from 'node:test';
 
+register('./glsl-loader.mjs', import.meta.url);
+
 const require = createRequire(import.meta.url);
+
+require.extensions['.glsl'] = () => {};
 
 function registerStubModule(resolvedPath: string, exports: Record<string, unknown>): void {
 	require.cache[resolvedPath] = {
@@ -62,7 +66,19 @@ registerStubModule(consoleApiPath, {
 	},
 });
 
+function registerEmptyModule(relativePath: string): void {
+	const fileUrl = new URL(relativePath, import.meta.url);
+	registerStubModule(fileUrl.pathname, { default: '' });
+	registerStubModule(fileUrl.href, { default: '' });
+}
+
+registerEmptyModule('../../src/bmsx/render/2d/shaders/2d.frag.glsl');
+registerEmptyModule('../../src/bmsx/render/2d/shaders/2d.vert.glsl');
+registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.frag.glsl');
+registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.vert.glsl');
+
 const intellisenseModulePromise = import('../../src/bmsx/console/ide/intellisense.ts');
+const semanticModelModulePromise = import('../../src/bmsx/console/ide/semantic_model.ts');
 
 async function runDiagnostics(source: string) {
 	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
@@ -91,8 +107,8 @@ local function add(a, b)
 end
 return add(1)
 `);
-	assert.equal(diagnostics.length, 1);
-	assert.match(diagnostics[0].message, /add\(\) expects 2 arguments/i);
+assert.equal(diagnostics.length, 1);
+	assert.match(diagnostics[0].message, /add(?:\(\))? expects 2 arguments/i);
 });
 
 test('detects missing arguments for colon-defined methods', async () => {
@@ -114,6 +130,51 @@ local function send()
 end
 send()
 `);
-	assert.equal(diagnostics.length, 1);
-	assert.match(diagnostics[0].message, /api\.emit_gameplay/);
+assert.equal(diagnostics.length, 1);
+	assert.match(diagnostics[0].message, /emit_gameplay expects 3 arguments/i);
+});
+
+test('semantic model distinguishes table field and parameter', async () => {
+	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+	const source = `
+local function create_ball(seed)
+	return {
+		seed = seed,
+	}
+end
+`;
+	const model = buildLuaSemanticModel(source, 'testchunk');
+	const lines = source.replace(/\r\n/g, '\n').split('\n');
+	const targetLine = lines[3];
+	const leftZeroBased = targetLine.indexOf('seed');
+	const rightZeroBased = targetLine.indexOf('seed', leftZeroBased + 1);
+	const leftDefinition = model.lookupIdentifier(4, leftZeroBased + 1, ['seed']);
+	const rightDefinition = model.lookupIdentifier(4, rightZeroBased + 1, ['seed']);
+	assert.ok(leftDefinition, 'left seed definition');
+	assert.ok(rightDefinition, 'right seed definition');
+	assert.equal(leftDefinition.kind, 'table_field');
+	assert.equal(rightDefinition.kind, 'parameter');
+	assert.equal(rightDefinition.definition.start.line, 2);
+});
+
+test('semantic model resolves table property access', async () => {
+	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+	const source = `
+local state = {
+	count = 0,
+}
+state.count = state.count + 1
+`;
+	const model = buildLuaSemanticModel(source, 'testchunk');
+	const lines = source.replace(/\r\n/g, '\n').split('\n');
+	const assignmentLine = lines[4];
+	const firstZeroBased = assignmentLine.indexOf('count');
+	const secondZeroBased = assignmentLine.indexOf('count', firstZeroBased + 1);
+	const definition = model.lookupIdentifier(5, firstZeroBased + 1, ['state', 'count']);
+	const definitionAgain = model.lookupIdentifier(5, secondZeroBased + 1, ['state', 'count']);
+	assert.ok(definition, 'property definition found');
+	assert.ok(definitionAgain, 'property definition found for rhs');
+	assert.equal(definition.kind, 'table_field');
+	assert.equal(definition.definition.start.line, 3);
+	assert.equal(definitionAgain.definition.start.line, definition.definition.start.line);
 });

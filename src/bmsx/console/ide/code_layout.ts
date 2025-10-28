@@ -1,7 +1,8 @@
 import { clamp } from '../../utils/utils';
 import type { ConsoleEditorFont } from '../editor_font';
 import { highlightLine as highlightLineExternal } from './syntax_highlight';
-import { analyzeLuaSemanticsFromLines, type LuaSemantics, type LuaSemanticDefinition } from './lua_semantics';
+import { buildLuaSemanticModel, type LuaSemanticModel } from './semantic_model';
+import type { LuaDefinitionInfo } from '../../lua/ast.ts';
 import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 
 interface VisualLinesContext {
@@ -29,7 +30,7 @@ export class ConsoleCodeLayout {
 	private visualLines: VisualLineSegment[] = [];
 	private rowToFirstVisualLine: number[] = [];
 	private visualLinesDirty = true;
-	private semanticAnnotations: LuaSemantics | null = null;
+	private semanticModel: LuaSemanticModel | null = null;
 	private semanticLinesRef: readonly string[] | null = null;
 	private semanticVersion = -1;
 	private semanticSignature = 0;
@@ -45,22 +46,22 @@ export class ConsoleCodeLayout {
 
 	public invalidateAllHighlights(): void {
 		this.highlightCache.clear();
-		this.semanticAnnotations = null;
+		this.semanticModel = null;
 		this.semanticLinesRef = null;
 		this.semanticVersion = -1;
 		this.semanticSignature = 0;
 	}
 
 	public getCachedHighlight(lines: readonly string[], row: number, documentVersion: number): CachedHighlight {
-		this.ensureSemanticAnnotations(lines, documentVersion);
-		const semantics = this.semanticAnnotations;
+		this.ensureSemanticModel(lines, documentVersion);
+		const annotations = this.semanticModel?.annotations ?? null;
 		const semanticSignature = this.semanticSignature;
 		const source = lines[row] ?? '';
 		const cached = this.highlightCache.get(row);
 		if (cached && cached.src === source && cached.semanticSignature === semanticSignature) {
 			return cached;
 		}
-		const highlight = highlightLineExternal(lines, row, semantics);
+		const highlight = highlightLineExternal(lines, row, annotations);
 		const displayToColumn = new Array<number>(highlight.chars.length + 1).fill(0);
 		for (let column = 0; column < source.length; column += 1) {
 			const startDisplay = highlight.columnToDisplay[column];
@@ -182,12 +183,12 @@ export class ConsoleCodeLayout {
 		return this.visualLines;
 	}
 
-	public getSemanticDefinitions(lines: readonly string[], documentVersion: number): readonly LuaSemanticDefinition[] | null {
-		this.ensureSemanticAnnotations(lines, documentVersion);
-		if (!this.semanticAnnotations) {
+	public getSemanticDefinitions(lines: readonly string[], documentVersion: number): readonly LuaDefinitionInfo[] | null {
+		this.ensureSemanticModel(lines, documentVersion);
+		if (!this.semanticModel) {
 			return null;
 		}
-		return this.semanticAnnotations.definitions;
+		return this.semanticModel.definitions;
 	}
 
 	private clampScrollRow(scrollRow: number): number {
@@ -275,12 +276,22 @@ export class ConsoleCodeLayout {
 		return this.measureRangeFast(entry, startDisplay, endDisplay);
 	}
 
-	private ensureSemanticAnnotations(lines: readonly string[], version: number): void {
-		if (this.semanticLinesRef === lines && this.semanticVersion === version) {
+	public getSemanticModel(lines: readonly string[], documentVersion: number): LuaSemanticModel | null {
+		this.ensureSemanticModel(lines, documentVersion);
+		return this.semanticModel;
+	}
+
+	private ensureSemanticModel(lines: readonly string[], version: number): void {
+		if (this.semanticLinesRef === lines && this.semanticVersion === version && this.semanticModel) {
 			return;
 		}
-		const semantics = analyzeLuaSemanticsFromLines(lines);
-		this.semanticAnnotations = semantics;
+		const source = lines.join('\n');
+		try {
+			const model = buildLuaSemanticModel(source, '<console>');
+			this.semanticModel = model;
+		} catch {
+			this.semanticModel = null;
+		}
 		this.semanticLinesRef = lines;
 		this.semanticVersion = version;
 		this.semanticSignature = this.nextSemanticSignature;

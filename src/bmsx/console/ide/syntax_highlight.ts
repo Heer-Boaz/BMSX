@@ -1,6 +1,6 @@
 import * as constants from './constants';
 import { KEYWORDS } from './intellisense';
-import type { LuaSemantics, LuaSemanticAnnotations, SemanticKind } from './lua_semantics';
+import type { LuaSemanticAnnotations, SemanticKind } from './lua_semantics';
 import type { HighlightLine } from './types';
 
 // Lightweight Lua syntax highlighter used by the console editor.
@@ -261,7 +261,7 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	return labelEnd;
 }
 
-function applySemanticAnnotations(columnColors: number[], annotations: readonly LuaSemanticAnnotations[number] | undefined): void {
+function applySemanticAnnotations(columnColors: number[], annotations: LuaSemanticAnnotations[number] | undefined): void {
 	if (!annotations) {
 		return;
 	}
@@ -279,7 +279,26 @@ function applySemanticAnnotations(columnColors: number[], annotations: readonly 
 	}
 }
 
-export function highlightLine(lines: readonly string[], row: number, semantics: LuaSemantics | null): HighlightLine {
+export function highlightLine(
+	source: readonly string[] | string,
+	rowOrSemantics?: number | LuaSemanticAnnotations | null,
+	maybeSemantics?: LuaSemanticAnnotations | null,
+): HighlightLine {
+	let lines: readonly string[];
+	let row = 0;
+	let annotations: LuaSemanticAnnotations | null = null;
+	if (typeof source === 'string') {
+		lines = [source];
+		row = 0;
+	} else {
+		lines = source;
+		if (typeof rowOrSemantics === 'number') {
+			row = rowOrSemantics;
+			annotations = maybeSemantics ?? null;
+		} else {
+			annotations = rowOrSemantics ?? null;
+		}
+	}
 	const line = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
 	const length = line.length;
 	const columnColors: number[] = new Array(length).fill(constants.COLOR_CODE_TEXT);
@@ -381,9 +400,9 @@ export function highlightLine(lines: readonly string[], row: number, semantics: 
 		i += 1;
 	}
 
-	if (semantics) {
-		const annotations = row >= 0 && row < semantics.annotations.length ? semantics.annotations[row] : undefined;
-		applySemanticAnnotations(columnColors, annotations);
+	if (annotations) {
+		const lineAnnotations = row >= 0 && row < annotations.length ? annotations[row] : undefined;
+		applySemanticAnnotations(columnColors, lineAnnotations);
 	}
 
 	const chars: string[] = [];

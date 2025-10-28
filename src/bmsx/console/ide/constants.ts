@@ -39,20 +39,23 @@ const PALETTE = {
 	darkRed: 6,
 	lightBlue: 7,
 	red: 8,
-	lightRedAlt: 9,
+	lightRed: 9,
 	darkYellow: 10,
 	lightYellow: 11,
 	darkGreen: 12,
 	magenta: 13,
 	grey: 14,
-	white: 15
+	white: 15,
+	brown: 16, // Extended palette color
+	veryDarkBlue: 17 // Extended palette color
+
 };
 
 const THEME_BASE = {
 	surfaces: {
 		frame: PALETTE.white,
 		topBar: PALETTE.grey,
-		editor: PALETTE.black,
+		editor: PALETTE.darkBlue,
 		gutter: PALETTE.grey,
 		resourcePanel: PALETTE.grey,
 		resourcePanelHighlight: PALETTE.black,
@@ -65,23 +68,23 @@ const THEME_BASE = {
 		primary: PALETTE.white,
 		secondary: PALETTE.black,
 		keyword: PALETTE.lightYellow,
-		string: PALETTE.lightRedAlt,
+		string: PALETTE.lightRed,
 		number: PALETTE.darkYellow,
 		comment: PALETTE.darkGreen,
-		operator: PALETTE.lightGreen,
-		dim: PALETTE.lightRedAlt,
-		builtin: PALETTE.red,
-		functionName: PALETTE.lightBlue,
-		parameter: PALETTE.magenta,
+		operator: PALETTE.white,
+		dim: PALETTE.lightRed,
+		builtin: PALETTE.magenta,
+		functionName: PALETTE.white,
+		parameter: PALETTE.brown,
 		label: PALETTE.darkRed,
 		localTop: PALETTE.green,
-		localFunction: PALETTE.blue,
+		localFunction: PALETTE.grey,
 		functionHandle: PALETTE.lightGreen
 	},
 	status: {
 		background: PALETTE.grey,
 		text: PALETTE.black,
-		warning: PALETTE.lightRedAlt,
+		warning: PALETTE.lightRed,
 		success: PALETTE.darkBlue,
 		error: PALETTE.white,
 		alert: PALETTE.red
@@ -89,7 +92,7 @@ const THEME_BASE = {
 	input: {
 		text: PALETTE.black,
 		secondaryText: PALETTE.magenta,
-		placeholder: PALETTE.lightRedAlt,
+		placeholder: PALETTE.lightRed,
 		outline: PALETTE.black
 	},
 	tab: {

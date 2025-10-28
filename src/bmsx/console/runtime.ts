@@ -7,8 +7,6 @@ import { Physics2DManager } from '../physics/physics2d';
 import type { BmsxConsoleCartridge, BmsxConsoleLuaProgram, ConsoleResourceDescriptor, ConsoleLuaHoverRequest, ConsoleLuaHoverResult, ConsoleLuaHoverScope, ConsoleLuaResourceCreationRequest, ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleLuaBuiltinDescriptor } from './types';
 import type { RomResourcePath } from '../rompack/rompack';
 import { createLuaInterpreter, LuaInterpreter, createLuaNativeFunction } from '../lua/runtime.ts';
-import { LuaLexer } from '../lua/lexer.ts';
-import { LuaParser } from '../lua/parser.ts';
 import { LuaEnvironment } from '../lua/environment.ts';
 import type { LuaFunctionValue, LuaValue, LuaTable } from '../lua/value.ts';
 import { createLuaTable, isLuaTable, setLuaTableCaseInsensitiveKeys } from '../lua/value.ts';
@@ -30,7 +28,7 @@ import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lu
 import { ConsoleCartEditor } from './ide/console_cart_editor';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
-import { analyzeLuaSemanticsFromSource, type LuaSemanticDefinition, type SemanticKind } from './ide/lua_semantics';
+import { buildLuaSemanticModel, type LuaSemanticModel } from './ide/semantic_model';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -3501,10 +3499,11 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	public listLuaSymbols(assetId: string | null, chunkName: string | null): ConsoleLuaSymbolEntry[] {
-		const definitions = this.getStaticDefinitions(assetId, chunkName);
-		if (!definitions || definitions.length === 0) {
+		const bundle = this.getStaticDefinitions(assetId, chunkName);
+		if (!bundle || bundle.definitions.length === 0) {
 			return [];
 		}
+		const { definitions } = bundle;
 		const definitionPriority = (kind: LuaDefinitionKind): number => {
 			switch (kind) {
 				case 'table_field':
@@ -3670,8 +3669,8 @@ export class BmsxConsoleRuntime extends Service {
 		}
 
 		for (const candidate of candidates) {
-			const definitions = this.parseStaticDefinitionsForChunk(candidate.chunkName, candidate.info);
-			appendDefinitions(candidate.info, definitions);
+			const model = this.buildSemanticModelForChunk(candidate.chunkName, candidate.info);
+			appendDefinitions(candidate.info, model ? model.definitions : null);
 		}
 
 		const symbols: ConsoleLuaSymbolEntry[] = [];
@@ -3701,62 +3700,68 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private findStaticDefinitionLocation(assetId: string | null, chain: ReadonlyArray<string>, usageRow: number | null, usageColumn: number | null, preferredChunk: string | null): ConsoleLuaDefinitionLocation | null {
-		if (chain.length === 0) {
-			return null;
+	if (chain.length === 0) {
+		return null;
+	}
+	const bundle = this.getStaticDefinitions(assetId, preferredChunk);
+	if (!bundle || bundle.definitions.length === 0) {
+		return null;
+	}
+	const { definitions, chunks, models } = bundle;
+	if (usageRow !== null && usageColumn !== null) {
+		for (let index = 0; index < chunks.length; index += 1) {
+			const chunk = chunks[index];
+			let model = models.get(chunk.chunkName) ?? null;
+			if (!model) {
+				const source = this.resolveSourceForChunk(chunk.chunkName, chunk.info);
+				if (!source) {
+					continue;
+				}
+				model = buildLuaSemanticModel(source, chunk.chunkName);
+				models.set(chunk.chunkName, model);
+			}
+			const semanticDefinition = model.lookupIdentifier(usageRow, usageColumn, chain);
+			if (semanticDefinition) {
+				const targetAsset = chunk.info.assetId ?? assetId;
+				return this.buildDefinitionLocationFromRange(semanticDefinition.definition, targetAsset);
+			}
 		}
-		const definitions = this.getStaticDefinitions(assetId, preferredChunk);
-		if (!definitions) {
-			return null;
+	}
+	const identifier = chain[chain.length - 1];
+	const pathsMatch = (candidate: ReadonlyArray<string>): boolean => {
+		if (candidate.length !== chain.length) {
+			return false;
 		}
-		const identifier = chain[chain.length - 1];
-		const pathsMatch = (candidate: ReadonlyArray<string>): boolean => {
-			if (candidate.length !== chain.length) {
+		for (let index = 0; index < candidate.length; index += 1) {
+			if (candidate[index] !== chain[index]) {
 				return false;
 			}
-			for (let index = 0; index < candidate.length; index += 1) {
-				if (candidate[index] !== chain[index]) {
-					return false;
-				}
+		}
+		return true;
+	};
+	const definitionPriority = (info: LuaDefinitionInfo): number => {
+		switch (info.kind) {
+			case 'parameter':
+				return 5;
+			case 'table_field':
+				return 4;
+			case 'function':
+				return 3;
+			case 'variable':
+				return 2;
+			case 'assignment':
+			default:
+				return 1;
+		}
+	};
+	const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo | null): LuaDefinitionInfo | null => {
+		const candidatePriority = definitionPriority(candidate);
+		const currentPriority = current ? definitionPriority(current) : -1;
+		if (usageRow !== null) {
+			if (!this.positionWithinRange(usageRow, usageColumn, candidate.scope)) {
+				return current;
 			}
-			return true;
-		};
-		const definitionPriority = (info: LuaDefinitionInfo): number => {
-			switch (info.kind) {
-				case 'table_field':
-					return 5;
-				case 'parameter':
-					return 4;
-				case 'function':
-					return 3;
-				case 'variable':
-					return 2;
-				case 'assignment':
-				default:
-					return 1;
-			}
-		};
-		const selectPreferred = (candidate: LuaDefinitionInfo, current: LuaDefinitionInfo | null): LuaDefinitionInfo | null => {
-			const candidatePriority = definitionPriority(candidate);
-			const currentPriority = current ? definitionPriority(current) : -1;
-			if (usageRow !== null) {
-				if (!this.positionWithinRange(usageRow, usageColumn, candidate.scope)) {
-					return current;
-				}
-				if (usageRow < candidate.definition.start.line) {
-					return current;
-				}
-				if (
-					!current
-					|| candidatePriority > currentPriority
-					|| (candidatePriority === currentPriority
-						&& (
-							candidate.definition.start.line > current.definition.start.line
-							|| (candidate.definition.start.line === current.definition.start.line
-								&& candidate.definition.start.column >= current.definition.start.column)
-						))
-				) {
-					return candidate;
-				}
+			if (usageRow < candidate.definition.start.line) {
 				return current;
 			}
 			if (
@@ -3764,35 +3769,49 @@ export class BmsxConsoleRuntime extends Service {
 				|| candidatePriority > currentPriority
 				|| (candidatePriority === currentPriority
 					&& (
-						candidate.definition.start.line < current.definition.start.line
+						candidate.definition.start.line > current.definition.start.line
 						|| (candidate.definition.start.line === current.definition.start.line
-							&& candidate.definition.start.column < current.definition.start.column)
+							&& candidate.definition.start.column >= current.definition.start.column)
 					))
 			) {
 				return candidate;
 			}
 			return current;
-		};
-		let bestExact: LuaDefinitionInfo | null = null;
-		let bestPartial: LuaDefinitionInfo | null = null;
-		for (const definition of definitions) {
-			if (pathsMatch(definition.namePath)) {
-				bestExact = selectPreferred(definition, bestExact);
-				continue;
-			}
-			if (definition.name !== identifier) {
-				continue;
-			}
-			bestPartial = selectPreferred(definition, bestPartial);
 		}
-		const chosen = bestExact ?? bestPartial;
-		if (!chosen) {
-			return null;
+		if (
+			!current
+			|| candidatePriority > currentPriority
+			|| (candidatePriority === currentPriority
+				&& (
+					candidate.definition.start.line < current.definition.start.line
+					|| (candidate.definition.start.line === current.definition.start.line
+						&& candidate.definition.start.column < current.definition.start.column)
+				))
+		)
+			return candidate;
+		return current;
+	};
+	let bestExact: LuaDefinitionInfo | null = null;
+	let bestPartial: LuaDefinitionInfo | null = null;
+	for (let i = 0; i < definitions.length; i += 1) {
+		const definition = definitions[i];
+		if (pathsMatch(definition.namePath)) {
+			bestExact = selectPreferred(definition, bestExact);
+			continue;
 		}
-		return this.buildDefinitionLocationFromRange(chosen.definition, assetId);
+		if (definition.name !== identifier) {
+			continue;
+		}
+		bestPartial = selectPreferred(definition, bestPartial);
 	}
+	const chosen = bestExact ?? bestPartial;
+	if (!chosen) {
+		return null;
+	}
+	return this.buildDefinitionLocationFromRange(chosen.definition, assetId);
+}
 
-	private getStaticDefinitions(assetId: string | null, preferredChunk: string | null): ReadonlyArray<LuaDefinitionInfo> | null {
+	private getStaticDefinitions(assetId: string | null, preferredChunk: string | null): { definitions: ReadonlyArray<LuaDefinitionInfo>; chunks: Array<{ chunkName: string; info: { assetId: string | null; path?: string | null } }>; models: Map<string, LuaSemanticModel> } | null {
 		const interpreter = this.requireLuaInterpreter();
 		const normalizedPreferred = preferredChunk ? this.normalizeChunkName(preferredChunk) : null;
 		const normalizedPreferredPath = preferredChunk ? preferredChunk.replace(/\\/g, '/') : null;
@@ -3810,40 +3829,46 @@ export class BmsxConsoleRuntime extends Service {
 			return null;
 		}
 		const byKey = new Map<string, LuaDefinitionInfo>();
+		const models: Map<string, LuaSemanticModel> = new Map();
 		const recordDefinition = (definition: LuaDefinitionInfo) => {
 			const key = `${definition.namePath.join('.')}@${definition.definition.start.line}:${definition.definition.start.column}`;
 			if (!byKey.has(key)) {
 				byKey.set(key, definition);
 			}
 		};
-		for (const candidate of matchingChunks) {
+		for (let index = 0; index < matchingChunks.length; index += 1) {
+			const candidate = matchingChunks[index];
 			const chunkDefinitions = interpreter.getChunkDefinitions(candidate.chunkName);
 			if (chunkDefinitions && chunkDefinitions.length > 0) {
-				for (const definition of chunkDefinitions) {
-					recordDefinition(definition);
+				for (let defIndex = 0; defIndex < chunkDefinitions.length; defIndex += 1) {
+					recordDefinition(chunkDefinitions[defIndex]);
 				}
 			}
-		}
-		for (const candidate of matchingChunks) {
-			const parsedDefinitions = this.parseStaticDefinitionsForChunk(candidate.chunkName, candidate.info);
-			if (parsedDefinitions && parsedDefinitions.length > 0) {
-				for (const definition of parsedDefinitions) {
-					recordDefinition(definition);
+			const model = this.buildSemanticModelForChunk(candidate.chunkName, candidate.info);
+			if (model) {
+				models.set(candidate.chunkName, model);
+				for (let defIndex = 0; defIndex < model.definitions.length; defIndex += 1) {
+					recordDefinition(model.definitions[defIndex]);
 				}
 			}
 		}
 		if (byKey.size === 0) {
 			return null;
 		}
-		return Array.from(byKey.values());
+		return { definitions: Array.from(byKey.values()), chunks: matchingChunks, models };
 	}
 
-	private parseStaticDefinitionsForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): ReadonlyArray<LuaDefinitionInfo> | null {
+	private buildSemanticModelForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): LuaSemanticModel | null {
 		const source = this.resolveSourceForChunk(chunkName, info);
 		if (!source) {
 			return null;
 		}
-		return this.parseDefinitionsFromSource(chunkName, source);
+		try {
+			return buildLuaSemanticModel(source, chunkName);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
+		}
 	}
 
 	private resolveSourceForChunk(chunkName: string, info: { assetId: string | null; path?: string | null }): string | null {
@@ -3884,71 +3909,6 @@ export class BmsxConsoleRuntime extends Service {
 		return this.getLuaProgramSource(this.luaProgram);
 	}
 
-	private parseDefinitionsFromSource(chunkName: string, source: string): ReadonlyArray<LuaDefinitionInfo> | null {
-	try {
-		const lexer = new LuaLexer(source, chunkName);
-		const tokens = lexer.scanTokens();
-		const parser = new LuaParser(tokens, chunkName, source);
-		const chunk = parser.parseChunk();
-		const definitions: LuaDefinitionInfo[] = chunk.definitions.slice();
-		const semantics = analyzeLuaSemanticsFromSource(source);
-		if (semantics && semantics.definitions.length > 0) {
-			const semanticDefinitions = this.convertSemanticDefinitions(chunkName, semantics.definitions);
-			for (let i = 0; i < semanticDefinitions.length; i += 1) {
-				definitions.push(semanticDefinitions[i]);
-			}
-		}
-		return definitions;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
-	}
-}
-
-	private convertSemanticDefinitions(chunkName: string, definitions: readonly LuaSemanticDefinition[]): LuaDefinitionInfo[] {
-		if (definitions.length === 0) {
-			return [];
-		}
-		const result: LuaDefinitionInfo[] = [];
-		const clampLine = (value: number): number => (Number.isFinite(value) ? Math.max(1, Math.floor(value)) : Number.MAX_SAFE_INTEGER);
-		const clampColumn = (value: number): number => (Number.isFinite(value) ? Math.max(1, Math.floor(value)) : Number.MAX_SAFE_INTEGER);
-		for (let index = 0; index < definitions.length; index += 1) {
-			const semantic = definitions[index];
-			const kind = this.semanticKindToDefinitionKind(semantic.kind);
-			const definitionRange: LuaSourceRange = {
-				chunkName,
-				start: { line: clampLine(semantic.startLine), column: clampColumn(semantic.startColumn) },
-				end: { line: clampLine(semantic.endLine), column: clampColumn(semantic.endColumn) },
-			};
-			const scopeRange: LuaSourceRange = {
-				chunkName,
-				start: { line: clampLine(semantic.scopeStartLine), column: clampColumn(semantic.scopeStartColumn) },
-				end: { line: clampLine(semantic.scopeEndLine), column: clampColumn(semantic.scopeEndColumn) },
-			};
-			result.push({
-				name: semantic.name,
-				namePath: [semantic.name],
-				definition: definitionRange,
-				scope: scopeRange,
-				kind,
-			});
-		}
-		return result;
-	}
-
-	private semanticKindToDefinitionKind(kind: SemanticKind): LuaDefinitionKind {
-		switch (kind) {
-			case 'parameter':
-				return 'parameter';
-			case 'functionTop':
-			case 'functionLocal':
-				return 'function';
-			case 'localFunction':
-			case 'localTop':
-			default:
-				return 'variable';
-		}
-	}
 
 	private positionWithinRange(row: number, column: number | null, range: LuaSourceRange): boolean {
 		if (row < range.start.line || row > range.end.line) {

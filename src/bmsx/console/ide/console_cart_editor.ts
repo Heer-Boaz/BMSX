@@ -21,7 +21,6 @@ import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES } from './character_map';
 import * as constants from './constants';
-import type { LuaSemanticDefinition } from './lua_semantics';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
@@ -3817,110 +3816,47 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		assetId: string | null,
 		chunkName: string | null,
 	): ConsoleLuaDefinitionLocation | null {
-		if (!expression || expression.indexOf('.') !== -1) {
+		if (!expression) {
 			return null;
 		}
-		const definitions = this.layout.getSemanticDefinitions(this.lines, this.textVersion);
-		if (!definitions || definitions.length === 0) {
+		const namePath = expression.split('.');
+		if (namePath.length === 0) {
 			return null;
 		}
-		let best: LuaSemanticDefinition | null = null;
-		for (let index = 0; index < definitions.length; index += 1) {
-			const candidate = definitions[index];
-			if (candidate.name !== expression) {
-				continue;
-			}
-			if (!this.semanticPositionWithinScope(candidate, usageRow, usageColumn)) {
-				continue;
-			}
-			if (!this.semanticUsageAfterDefinition(candidate, usageRow, usageColumn)) {
-				continue;
-			}
-			if (!best || this.semanticDefinitionPreferred(candidate, best)) {
-				best = candidate;
-			}
-		}
-		if (!best) {
+		const model = this.layout.getSemanticModel(this.lines, this.textVersion);
+		if (!model) {
 			return null;
 		}
-		const resolvedAssetId = assetId ?? context?.descriptor?.assetId ?? this.primaryAssetId ?? null;
+		const definition = model.lookupIdentifier(usageRow, usageColumn, namePath);
+		if (!definition) {
+			return null;
+		}
+		const descriptor = context?.descriptor ?? null;
+		const descriptorPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
+		const descriptorAssetId = descriptor?.assetId ?? null;
+		const resolvedAssetId = descriptorAssetId ?? assetId ?? this.primaryAssetId ?? null;
 		const resolvedChunk = chunkName
-			?? context?.descriptor?.path
-			?? context?.descriptor?.assetId
+			?? descriptorPath
+			?? descriptorAssetId
 			?? assetId
 			?? this.primaryAssetId
-			?? '<chunk>';
+			?? '<console>';
 		const location: ConsoleLuaDefinitionLocation = {
 			chunkName: resolvedChunk,
 			assetId: resolvedAssetId,
 			range: {
-				startLine: best.startLine,
-				startColumn: best.startColumn,
-				endLine: best.endLine,
-				endColumn: best.endColumn,
+				startLine: definition.definition.start.line,
+				startColumn: definition.definition.start.column,
+				endLine: definition.definition.end.line,
+				endColumn: definition.definition.end.column,
 			},
 		};
-		const descriptorPath = context?.descriptor?.path;
 		if (descriptorPath) {
 			location.path = descriptorPath;
+		} else if (resolvedChunk && resolvedChunk !== '<console>') {
+			location.path = resolvedChunk;
 		}
 		return location;
-	}
-
-	private semanticPositionWithinScope(definition: LuaSemanticDefinition, row: number, column: number): boolean {
-		if (row < definition.scopeStartLine || row > definition.scopeEndLine) {
-			return false;
-		}
-		if (row === definition.scopeStartLine && column < definition.scopeStartColumn) {
-			return false;
-		}
-		if (row === definition.scopeEndLine && column > definition.scopeEndColumn) {
-			return false;
-		}
-		return true;
-	}
-
-	private semanticUsageAfterDefinition(definition: LuaSemanticDefinition, row: number, column: number): boolean {
-		if (row < definition.startLine) {
-			return false;
-		}
-		if (row === definition.startLine && column <= definition.startColumn) {
-			return false;
-		}
-		return true;
-	}
-
-	private semanticDefinitionPreferred(candidate: LuaSemanticDefinition, current: LuaSemanticDefinition): boolean {
-		const candidatePriority = this.semanticDefinitionPriority(candidate.kind);
-		const currentPriority = this.semanticDefinitionPriority(current.kind);
-		if (candidatePriority !== currentPriority) {
-			return candidatePriority > currentPriority;
-		}
-		if (candidate.startLine !== current.startLine) {
-			return candidate.startLine > current.startLine;
-		}
-		if (candidate.startColumn !== current.startColumn) {
-			return candidate.startColumn > current.startColumn;
-		}
-		if (candidate.scopeEndLine !== current.scopeEndLine) {
-			return candidate.scopeEndLine < current.scopeEndLine;
-		}
-		return candidate.scopeEndColumn <= current.scopeEndColumn;
-	}
-
-	private semanticDefinitionPriority(kind: LuaSemanticDefinition['kind']): number {
-		switch (kind) {
-			case 'parameter':
-				return 4;
-			case 'functionLocal':
-			case 'functionTop':
-				return 3;
-			case 'localFunction':
-				return 2;
-			case 'localTop':
-			default:
-				return 1;
-		}
 	}
 
 	private extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
