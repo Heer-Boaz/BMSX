@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { createRequire, register } from 'node:module';
 import { test } from 'node:test';
 
+import type { CodeTabContext } from '../../src/bmsx/console/ide/types';
+import type { ProjectReferenceEnvironment } from '../../src/bmsx/console/ide/reference_sources';
+import type { ConsoleResourceDescriptor } from '../../src/bmsx/console/types';
+
 register('./glsl-loader.mjs', import.meta.url);
 
 const require = createRequire(import.meta.url);
@@ -79,6 +83,8 @@ registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.vert.glsl');
 
 const intellisenseModulePromise = import('../../src/bmsx/console/ide/intellisense.ts');
 const semanticModelModulePromise = import('../../src/bmsx/console/ide/semantic_model.ts');
+const referenceSourcesModulePromise = import('../../src/bmsx/console/ide/reference_sources.ts');
+const referenceSearchModulePromise = import('../../src/bmsx/console/ide/reference_symbol_search.ts');
 
 async function runDiagnostics(source: string) {
 	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
@@ -228,4 +234,193 @@ test('semantic model reports references for table fields', async () => {
 	assert.deepEqual(referenceKeys, expectedKeys);
 	const roundTrip = model.getDefinitionReferences(lookup.definition!);
 	assert.equal(roundTrip.length, lookup.references.length);
+});
+
+test('project reference catalog resolves globals across chunks', async () => {
+	const { buildReferenceCatalogForExpression, resolveDefinitionKeyForExpression } = await referenceSourcesModulePromise;
+	const { findExpressionMatches } = await referenceSearchModulePromise;
+	const usageSource = [
+		'function dummy_handler()'
+		,	'\tprint(state, 10)'
+		,	'end',
+	].join('\n');
+	const globalSource = [
+		'state = {',
+		'\tvalue = 1',
+		'}',
+		'print(state.value)',
+	].join('\n');
+	const parameterSource = [
+		'local function handler(self, state, payload)',
+		'\tprint(state)',
+		'end',
+	].join('\n');
+	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
+	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
+	const parameterDescriptor: ConsoleResourceDescriptor = { path: 'parameter.lua', type: 'lua', assetId: 'parameter' };
+	const usageContext: CodeTabContext = {
+		id: 'usage',
+		title: 'usage.lua',
+		descriptor: usageDescriptor,
+		load: () => usageSource,
+		save: async () => {},
+		snapshot: null,
+		lastSavedSource: usageSource,
+		saveGeneration: 0,
+		appliedGeneration: 0,
+		dirty: false,
+		runtimeErrorOverlay: null,
+		executionStopRow: null,
+	};
+	const usageLines = usageSource.split('\n');
+	const environment: ProjectReferenceEnvironment = {
+		activeContext: usageContext,
+		activeLines: usageLines,
+		codeTabContexts: [usageContext],
+		listResources: () => [usageDescriptor, globalDescriptor, parameterDescriptor],
+		loadLuaResource: (assetId: string) => {
+			if (assetId === 'usage') {
+				return usageSource;
+			}
+			if (assetId === 'global') {
+				return globalSource;
+			}
+			if (assetId === 'parameter') {
+				return parameterSource;
+			}
+			throw new Error(`Unexpected asset ${assetId}`);
+		},
+	};
+	const definitionKey = resolveDefinitionKeyForExpression({
+		expression: 'state',
+		environment,
+		currentChunkName: 'usage.lua',
+		currentPath: 'usage.lua',
+	});
+	assert.ok(definitionKey, 'definition key resolved for global state');
+	const matches = findExpressionMatches('state', usageLines);
+	assert.ok(matches.length > 0, 'usage matches found');
+	const info = {
+		matches,
+		expression: 'state',
+		definitionKey: definitionKey!,
+		documentVersion: 1,
+	};
+	const catalog = buildReferenceCatalogForExpression({
+		info,
+		lines: usageLines,
+		normalizedPath: 'usage.lua',
+		chunkName: 'usage.lua',
+		assetId: 'usage',
+		environment,
+		sourceLabelPath: 'usage.lua',
+	});
+	assert.ok(catalog.some(entry => entry.symbol.location.chunkName === 'global.lua'), 'global chunk included in reference catalog');
+	const usageEntries = catalog.filter(entry => entry.symbol.location.chunkName === 'usage.lua');
+	assert.equal(usageEntries.length, matches.length, 'usage matches retained');
+	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'parameter.lua'), 'local parameter file excluded from references');
+});
+
+test('intellisense recognizes global variable from another file', async () => {
+	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
+	const { buildReferenceCatalogForExpression, resolveDefinitionKeyForExpression } = await referenceSourcesModulePromise;
+	const { findExpressionMatches } = await referenceSearchModulePromise;
+
+	const usageSource = [
+		'function dummy_handler()',
+		'\tprint(state, 10)',
+		'end',
+	].join('\n');
+
+	const globalSource = [
+		'state = {',
+		'\tvalue = 1',
+		'}',
+		'print(state.value)',
+	].join('\n');
+
+	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
+	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
+
+	const usageContext: CodeTabContext = {
+		id: 'usage',
+		title: 'usage.lua',
+		descriptor: usageDescriptor,
+		load: () => usageSource,
+		save: async () => {},
+		snapshot: null,
+		lastSavedSource: usageSource,
+		saveGeneration: 0,
+		appliedGeneration: 0,
+		dirty: false,
+		runtimeErrorOverlay: null,
+		executionStopRow: null,
+	};
+
+	const usageLines = usageSource.split('\n');
+
+	const environment: ProjectReferenceEnvironment = {
+		activeContext: usageContext,
+		activeLines: usageLines,
+		codeTabContexts: [usageContext],
+		listResources: () => [usageDescriptor, globalDescriptor],
+		loadLuaResource: (assetId: string) => {
+			if (assetId === 'usage') return usageSource;
+			if (assetId === 'global') return globalSource;
+			throw new Error(`Unexpected asset ${assetId}`);
+		},
+	};
+
+	// Resolve the definition key for 'state' (global)
+	const definitionKey = resolveDefinitionKeyForExpression({
+		expression: 'state',
+		environment,
+		currentChunkName: 'usage.lua',
+		currentPath: 'usage.lua',
+	});
+	assert.ok(definitionKey, 'definition key resolved for global state');
+
+	// Find matches for 'state' inside the usage lines
+	const matches = findExpressionMatches('state', usageLines);
+	assert.ok(matches.length > 0, 'usage matches found');
+
+	const info = {
+		matches,
+		expression: 'state',
+		definitionKey: definitionKey!,
+		documentVersion: 1,
+	};
+
+	// Build a reference catalog for the expression; this should include the global.lua entry
+	const catalog = buildReferenceCatalogForExpression({
+		info,
+		lines: usageLines,
+		normalizedPath: 'usage.lua',
+		chunkName: 'usage.lua',
+		assetId: 'usage',
+		environment,
+		sourceLabelPath: 'usage.lua',
+	});
+
+	// Extract symbol entries that correspond to the global chunk (global.lua)
+	const globalSymbols = catalog
+		.filter(entry => entry.symbol.location && entry.symbol.location.chunkName === 'global.lua')
+		.map(entry => entry.symbol);
+
+	// Ensure we have at least one global symbol to provide to the intellisense diagnostics
+	assert.ok(globalSymbols.length > 0, 'global symbol(s) found in catalog');
+
+	// Run diagnostics for the usage source while providing the discovered globalSymbols
+	const apiData = getApiCompletionData();
+	const diagnostics = computeLuaDiagnostics({
+		source: usageSource,
+		chunkName: 'usage.lua',
+		localSymbols: [],
+		globalSymbols,
+		builtinDescriptors: [],
+		apiSignatures: apiData.signatures,
+	});
+
+	// Expect no "undefined" errors for 'state' because it is defined in another file and provided as a global symbol
+	assert.ok(!diagnostics.some(d => /'state' is not defined/.test(d.message)), 'no "undefined" error for global "state"');
 });

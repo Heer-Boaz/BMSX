@@ -1,4 +1,5 @@
-function dummy_handler(self, state, payload)
+function dummy_handler(self)
+	print(state, 10, 10, 5)
 end
 
 return {
