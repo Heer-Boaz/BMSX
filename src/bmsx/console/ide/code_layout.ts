@@ -1,6 +1,6 @@
 import { clamp } from '../../utils/utils';
 import type { ConsoleEditorFont } from '../editor_font';
-import { highlightLine as highlightLineExternal } from './syntax_highlight';
+import { analyzeLuaSemantics, highlightLine as highlightLineExternal } from './syntax_highlight';
 import type {
 	CachedHighlight,
 	HighlightLine,
@@ -11,6 +11,7 @@ interface VisualLinesContext {
 	lines: readonly string[];
 	wordWrapEnabled: boolean;
 	scrollRow: number;
+	documentVersion: number;
 	computeWrapWidth(): number;
 }
 
@@ -31,6 +32,11 @@ export class ConsoleCodeLayout {
 	private visualLines: VisualLineSegment[] = [];
 	private rowToFirstVisualLine: number[] = [];
 	private visualLinesDirty = true;
+	private semanticAnnotations: ReturnType<typeof analyzeLuaSemantics> | null = null;
+	private semanticLinesRef: readonly string[] | null = null;
+	private semanticVersion = -1;
+	private semanticSignature = 0;
+	private nextSemanticSignature = 1;
 
 	constructor(private readonly font: ConsoleEditorFont, options?: { maxHighlightCache?: number }) {
 		this.maxHighlightCache = options?.maxHighlightCache ?? 2048;
@@ -42,15 +48,22 @@ export class ConsoleCodeLayout {
 
 	public invalidateAllHighlights(): void {
 		this.highlightCache.clear();
+		this.semanticAnnotations = null;
+		this.semanticLinesRef = null;
+		this.semanticVersion = -1;
+		this.semanticSignature = 0;
 	}
 
-	public getCachedHighlight(lines: readonly string[], row: number): CachedHighlight {
+	public getCachedHighlight(lines: readonly string[], row: number, documentVersion: number): CachedHighlight {
+		this.ensureSemanticAnnotations(lines, documentVersion);
+		const semantics = this.semanticAnnotations;
+		const semanticSignature = this.semanticSignature;
 		const source = lines[row] ?? '';
 		const cached = this.highlightCache.get(row);
-		if (cached && cached.src === source) {
+		if (cached && cached.src === source && cached.semanticSignature === semanticSignature) {
 			return cached;
 		}
-		const highlight = highlightLineExternal(source);
+		const highlight = highlightLineExternal(lines, row, semantics);
 		const displayToColumn = new Array<number>(highlight.chars.length + 1).fill(0);
 		for (let column = 0; column < source.length; column += 1) {
 			const startDisplay = highlight.columnToDisplay[column];
@@ -70,6 +83,7 @@ export class ConsoleCodeLayout {
 			hi: highlight,
 			displayToColumn,
 			advancePrefix,
+			semanticSignature,
 		};
 		this.highlightCache.set(row, entry);
 		while (this.highlightCache.size > this.maxHighlightCache) {
@@ -127,7 +141,7 @@ export class ConsoleCodeLayout {
 
 	public ensureVisualLines(context: VisualLinesContext): number {
 		if (this.visualLinesDirty) {
-			this.rebuildVisualLines(context.lines, context.wordWrapEnabled, context.computeWrapWidth());
+			this.rebuildVisualLines(context.lines, context.wordWrapEnabled, context.computeWrapWidth(), context.documentVersion);
 			this.visualLinesDirty = false;
 		}
 		return this.clampScrollRow(context.scrollRow);
@@ -176,7 +190,7 @@ export class ConsoleCodeLayout {
 		return clamp(scrollRow, 0, maxScrollRow);
 	}
 
-	private rebuildVisualLines(lines: readonly string[], wordWrapEnabled: boolean, wrapWidth: number): void {
+	private rebuildVisualLines(lines: readonly string[], wordWrapEnabled: boolean, wrapWidth: number, documentVersion: number): void {
 		const lineCount = lines.length;
 		if (lineCount === 0) {
 			this.visualLines = [{
@@ -192,7 +206,7 @@ export class ConsoleCodeLayout {
 		const effectiveWrapWidth = wordWrapEnabled ? wrapWidth : Number.POSITIVE_INFINITY;
 		for (let row = 0; row < lineCount; row += 1) {
 			const line = lines[row];
-			const entry = this.getCachedHighlight(lines, row);
+			const entry = this.getCachedHighlight(lines, row, documentVersion);
 			const lineLength = line.length;
 			if (rowIndexLookup[row] === -1) {
 				rowIndexLookup[row] = segments.length;
@@ -254,5 +268,18 @@ export class ConsoleCodeLayout {
 		const startDisplay = this.columnToDisplay(highlight, startColumn);
 		const endDisplay = this.columnToDisplay(highlight, endColumn);
 		return this.measureRangeFast(entry, startDisplay, endDisplay);
+	}
+
+	private ensureSemanticAnnotations(lines: readonly string[], version: number): void {
+		if (this.semanticLinesRef === lines && this.semanticVersion === version) {
+			return;
+		}
+		const annotations = analyzeLuaSemantics(lines);
+		this.semanticAnnotations = annotations;
+		this.semanticLinesRef = lines;
+		this.semanticVersion = version;
+		this.semanticSignature = this.nextSemanticSignature;
+		this.nextSemanticSignature += 1;
+		this.highlightCache.clear();
 	}
 }

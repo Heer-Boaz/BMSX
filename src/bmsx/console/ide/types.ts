@@ -50,6 +50,7 @@ export type CachedHighlight = {
 	hi: HighlightLine;
 	displayToColumn: number[];
 	advancePrefix: number[];
+	semanticSignature: number;
 };
 
 export type SearchMatch = {

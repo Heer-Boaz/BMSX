@@ -1,9 +1,31 @@
 import * as constants from './constants';
 import { KEYWORDS } from './intellisense';
+import { LuaLexer } from '../../lua/lexer.ts';
+import { LuaSyntaxError } from '../../lua/errors.ts';
+import { LuaTokenType } from '../../lua/token.ts';
+import type { LuaToken } from '../../lua/token.ts';
 import type { HighlightLine } from './types';
 
 // Lightweight Lua syntax highlighter used by the console editor.
-// Pure functions with no runtime/editor state dependencies.
+// Pure functions with no runtime/editor state dependencies beyond provided inputs.
+
+type SemanticKind = 'parameter' | 'localTop' | 'localFunction';
+
+type TokenAnnotation = {
+	start: number;
+	end: number;
+	kind: SemanticKind;
+};
+
+export type LuaSemanticAnnotations = Array<TokenAnnotation[] | undefined>;
+
+type FunctionContext = {
+	parameters: Set<string>;
+	locals: Set<string>;
+	hasVararg: boolean;
+};
+
+type StructureKind = 'function' | 'block' | 'repeat';
 
 function isDigit(ch: string): boolean {
 	return ch >= '0' && ch <= '9';
@@ -125,6 +147,285 @@ const BUILTIN_IDENTIFIERS = new Set([
 
 const COMMENT_ANNOTATIONS = ['TODO', 'FIXME', 'BUG', 'HACK', 'NOTE', 'WARNING'];
 
+function annotateToken(target: LuaSemanticAnnotations, token: LuaToken, kind: SemanticKind): void {
+	const row = token.line - 1;
+	if (row < 0 || row >= target.length) {
+		return;
+	}
+	const start = token.column - 1;
+	const end = start + token.lexeme.length;
+	if (end <= start) {
+		return;
+	}
+	let rowAnnotations = target[row];
+	if (!rowAnnotations) {
+		rowAnnotations = [];
+		target[row] = rowAnnotations;
+	}
+	rowAnnotations.push({ start, end, kind });
+}
+
+function resolveBinding(name: string, stack: readonly FunctionContext[], topLevel: Set<string>): SemanticKind | null {
+	for (let index = stack.length - 1; index >= 0; index -= 1) {
+		const context = stack[index];
+		if (context.parameters.has(name)) {
+			return 'parameter';
+		}
+		if (context.locals.has(name)) {
+			return 'localFunction';
+		}
+	}
+	if (topLevel.has(name)) {
+		return 'localTop';
+	}
+	return null;
+}
+
+function currentLocalSet(stack: readonly FunctionContext[], topLevel: Set<string>): Set<string> {
+	if (stack.length === 0) {
+		return topLevel;
+	}
+	return stack[stack.length - 1].locals;
+}
+
+function createFunctionContext(parameterTokens: number[], tokens: LuaToken[], annotations: LuaSemanticAnnotations, hasVararg: boolean): FunctionContext {
+	const context: FunctionContext = {
+		parameters: new Set<string>(),
+		locals: new Set<string>(),
+		hasVararg,
+	};
+	for (let i = 0; i < parameterTokens.length; i += 1) {
+		const tokenIndex = parameterTokens[i];
+		const token = tokens[tokenIndex];
+		context.parameters.add(token.lexeme);
+		annotateToken(annotations, token, 'parameter');
+	}
+	return context;
+}
+
+export function analyzeLuaSemantics(lines: readonly string[]): LuaSemanticAnnotations | null {
+	if (lines.length === 0) {
+		return [];
+	}
+	const source = lines.join('\n');
+	let tokens: LuaToken[];
+	try {
+		const lexer = new LuaLexer(source, '<console>');
+		tokens = lexer.scanTokens();
+	} catch (error) {
+		if (error instanceof LuaSyntaxError) {
+			return null;
+		}
+		throw error;
+	}
+	const annotations: LuaSemanticAnnotations = new Array(lines.length);
+	const handledIndices: Set<number> = new Set();
+	const topLevelLocals: Set<string> = new Set();
+	const functionStack: FunctionContext[] = [];
+	const structureStack: StructureKind[] = [];
+	let nextFunctionIsLocal = false;
+	let lastSignificant: LuaTokenType | null = null;
+
+	for (let index = 0; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		const type = token.type;
+		switch (type) {
+			case LuaTokenType.Local: {
+				const next = tokens[index + 1];
+				if (next && next.type === LuaTokenType.Function) {
+					nextFunctionIsLocal = true;
+					lastSignificant = LuaTokenType.Local;
+					continue;
+				}
+				const localKind: SemanticKind = functionStack.length > 0 ? 'localFunction' : 'localTop';
+				const targetSet = currentLocalSet(functionStack, topLevelLocals);
+				let scan = index + 1;
+				while (scan < tokens.length) {
+					const candidate = tokens[scan];
+					if (candidate.type === LuaTokenType.Identifier) {
+						targetSet.add(candidate.lexeme);
+						annotateToken(annotations, candidate, localKind);
+						handledIndices.add(scan);
+						scan += 1;
+						continue;
+					}
+					if (candidate.type === LuaTokenType.Comma) {
+						scan += 1;
+						continue;
+					}
+					break;
+				}
+				if (scan > index + 1) {
+					index = scan - 1;
+				}
+				lastSignificant = LuaTokenType.Local;
+				continue;
+			}
+			case LuaTokenType.Function: {
+				const nameTokenIndices: number[] = [];
+				let scan = index + 1;
+				while (scan < tokens.length) {
+					const part = tokens[scan];
+					if (part.type === LuaTokenType.Identifier) {
+						nameTokenIndices.push(scan);
+						scan += 1;
+						continue;
+					}
+					if (part.type === LuaTokenType.Dot || part.type === LuaTokenType.Colon) {
+						scan += 1;
+						continue;
+					}
+					break;
+				}
+				for (let i = 0; i < nameTokenIndices.length; i += 1) {
+					handledIndices.add(nameTokenIndices[i]);
+				}
+				if (nextFunctionIsLocal && nameTokenIndices.length === 1) {
+					const nameToken = tokens[nameTokenIndices[0]];
+					const localKind: SemanticKind = functionStack.length > 0 ? 'localFunction' : 'localTop';
+					const targetSet = currentLocalSet(functionStack, topLevelLocals);
+					targetSet.add(nameToken.lexeme);
+					annotateToken(annotations, nameToken, localKind);
+				}
+				nextFunctionIsLocal = false;
+				let hasVararg = false;
+				const parameterTokenIndices: number[] = [];
+				if (scan < tokens.length && tokens[scan].type === LuaTokenType.LeftParen) {
+					scan += 1;
+					while (scan < tokens.length) {
+						const part = tokens[scan];
+						if (part.type === LuaTokenType.RightParen || part.type === LuaTokenType.Eof) {
+							break;
+						}
+						if (part.type === LuaTokenType.Identifier) {
+							parameterTokenIndices.push(scan);
+							handledIndices.add(scan);
+							scan += 1;
+							continue;
+						}
+						if (part.type === LuaTokenType.Vararg) {
+							hasVararg = true;
+							annotateToken(annotations, part, 'parameter');
+							handledIndices.add(scan);
+						}
+						scan += 1;
+					}
+				}
+				const context = createFunctionContext(parameterTokenIndices, tokens, annotations, hasVararg);
+				functionStack.push(context);
+				structureStack.push('function');
+				if (scan > index) {
+					index = scan;
+				}
+				lastSignificant = LuaTokenType.Function;
+				continue;
+			}
+			case LuaTokenType.For: {
+				const localKind: SemanticKind = functionStack.length > 0 ? 'localFunction' : 'localTop';
+				const targetSet = currentLocalSet(functionStack, topLevelLocals);
+				let scan = index + 1;
+				while (scan < tokens.length) {
+					const part = tokens[scan];
+					if (part.type === LuaTokenType.Identifier) {
+						targetSet.add(part.lexeme);
+						annotateToken(annotations, part, localKind);
+						handledIndices.add(scan);
+						scan += 1;
+						continue;
+					}
+					if (part.type === LuaTokenType.Comma) {
+						scan += 1;
+						continue;
+					}
+					if (part.type === LuaTokenType.Equal || part.type === LuaTokenType.In) {
+						break;
+					}
+					break;
+				}
+				structureStack.push('block');
+				if (scan > index) {
+					index = scan - 1;
+				}
+				lastSignificant = LuaTokenType.For;
+				continue;
+			}
+			case LuaTokenType.While: {
+				structureStack.push('block');
+				lastSignificant = LuaTokenType.While;
+				continue;
+			}
+			case LuaTokenType.If: {
+				structureStack.push('block');
+				lastSignificant = LuaTokenType.If;
+				continue;
+			}
+			case LuaTokenType.Do: {
+				if (lastSignificant !== LuaTokenType.For && lastSignificant !== LuaTokenType.While) {
+					structureStack.push('block');
+				}
+				lastSignificant = LuaTokenType.Do;
+				continue;
+			}
+			case LuaTokenType.Repeat: {
+				structureStack.push('repeat');
+				lastSignificant = LuaTokenType.Repeat;
+				continue;
+			}
+			case LuaTokenType.Until: {
+				if (structureStack.length > 0) {
+					const popped = structureStack.pop();
+					if (popped === 'repeat') {
+						lastSignificant = LuaTokenType.Until;
+						continue;
+					}
+				}
+				lastSignificant = LuaTokenType.Until;
+				continue;
+			}
+			case LuaTokenType.End: {
+				if (structureStack.length > 0) {
+					const popped = structureStack.pop();
+					if (popped === 'function' && functionStack.length > 0) {
+						functionStack.pop();
+					}
+				} else if (functionStack.length > 0) {
+					functionStack.pop();
+				}
+				lastSignificant = LuaTokenType.End;
+				continue;
+			}
+			case LuaTokenType.Vararg: {
+				if (functionStack.length > 0) {
+					const context = functionStack[functionStack.length - 1];
+					if (context.hasVararg) {
+						annotateToken(annotations, token, 'parameter');
+					}
+				}
+				lastSignificant = LuaTokenType.Vararg;
+				continue;
+			}
+			case LuaTokenType.Identifier: {
+				if (handledIndices.has(index)) {
+					lastSignificant = LuaTokenType.Identifier;
+					continue;
+				}
+				const binding = resolveBinding(token.lexeme, functionStack, topLevelLocals);
+				if (binding) {
+					annotateToken(annotations, token, binding);
+				}
+				lastSignificant = LuaTokenType.Identifier;
+				continue;
+			}
+			default: {
+				if (type !== LuaTokenType.Eof) {
+					lastSignificant = type;
+				}
+			}
+		}
+	}
+	return annotations;
+}
+
 function highlightCommentAnnotations(line: string, start: number, end: number, columnColors: number[]): void {
 	const upper = line.toUpperCase();
 	for (let annotationIndex = 0; annotationIndex < COMMENT_ANNOTATIONS.length; annotationIndex += 1) {
@@ -244,7 +545,30 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	return labelEnd;
 }
 
-export function highlightLine(line: string): HighlightLine {
+function applySemanticAnnotations(columnColors: number[], annotations: readonly TokenAnnotation[] | undefined): void {
+	if (!annotations) {
+		return;
+	}
+	for (let index = 0; index < annotations.length; index += 1) {
+		const annotation = annotations[index];
+		let color: number;
+		if (annotation.kind === 'parameter') {
+			color = constants.COLOR_PARAMETER;
+		} else if (annotation.kind === 'localTop') {
+			color = constants.COLOR_LOCAL_TOP;
+		} else {
+			color = constants.COLOR_LOCAL_FUNCTION;
+		}
+		const start = Math.max(0, annotation.start);
+		const end = Math.max(start, annotation.end);
+		for (let column = start; column < end && column < columnColors.length; column += 1) {
+			columnColors[column] = color;
+		}
+	}
+}
+
+export function highlightLine(lines: readonly string[], row: number, semantics: LuaSemanticAnnotations | null): HighlightLine {
+	const line = row >= 0 && row < lines.length ? lines[row] ?? '' : '';
 	const length = line.length;
 	const columnColors: number[] = new Array(length).fill(constants.COLOR_CODE_TEXT);
 	let i = 0;
@@ -343,6 +667,11 @@ export function highlightLine(line: string): HighlightLine {
 			columnColors[i] = constants.COLOR_OPERATOR;
 		}
 		i += 1;
+	}
+
+	if (semantics) {
+		const lineAnnotations = row >= 0 && row < semantics.length ? semantics[row] : undefined;
+		applySemanticAnnotations(columnColors, lineAnnotations);
 	}
 
 	const chars: string[] = [];

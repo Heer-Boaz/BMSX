@@ -7040,7 +7040,7 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 	}
 
 	private getCachedHighlight(row: number): CachedHighlight {
-		return this.layout.getCachedHighlight(this.lines, row);
+		return this.layout.getCachedHighlight(this.lines, row, this.textVersion);
 	}
 
 	protected invalidateLine(row: number): void {
@@ -7120,6 +7120,7 @@ private handleCompletionKeybindings(
 			lines: this.lines,
 			wordWrapEnabled: this.wordWrapEnabled,
 			scrollRow: this.scrollRow,
+			documentVersion: this.textVersion,
 			computeWrapWidth: () => this.computeWrapWidth(),
 		});
 		if (this.scrollRow < 0) {
