@@ -99,6 +99,7 @@ import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	computeSourceLabel,
 	resolveDefinitionKeyForExpression,
+	resolveDefinitionLocationForExpression,
 	type ProjectReferenceEnvironment,
 } from './reference_sources';
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
@@ -4449,6 +4450,8 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 
 	private tryGotoDefinitionAt(row: number, column: number): boolean {
 		const context = this.getActiveCodeTabContext();
+		const descriptor = context?.descriptor ?? null;
+		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
 		const assetId = this.resolveHoverAssetId(context);
 		const token = this.extractHoverExpression(row, column);
 		if (!token) {
@@ -4468,6 +4471,29 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			definition = this.resolveSemanticDefinitionLocation(context, token.expression, row + 1, token.startColumn + 1, assetId, chunkName);
 		}
 		if (!definition) {
+			const resolvedChunkName = chunkName
+				?? normalizedPath
+				?? descriptor?.assetId
+				?? assetId
+				?? this.primaryAssetId
+				?? '<console>';
+			const environment: ProjectReferenceEnvironment = {
+				activeContext: context,
+				activeLines: this.lines,
+				codeTabContexts: Array.from(this.codeTabContexts.values()),
+				listResources: () => this.listResourcesStrict(),
+				loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
+			};
+			const projectDefinition = resolveDefinitionLocationForExpression({
+				expression: token.expression,
+				environment,
+				currentChunkName: resolvedChunkName,
+				currentPath: normalizedPath,
+			});
+			if (projectDefinition) {
+				this.navigateToLuaDefinition(projectDefinition);
+				return true;
+			}
 			if (!this.inspectorRequestFailed) {
 				this.showMessage(`Definition not found for ${token.expression}`, constants.COLOR_STATUS_WARNING, 1.8);
 			}

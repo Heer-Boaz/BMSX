@@ -1,7 +1,7 @@
 import { LuaLexer } from '../../lua/lexer.ts';
 import { LuaTokenType } from '../../lua/token.ts';
 import type { LuaSemanticModel } from './semantic_model';
-import type { ConsoleResourceDescriptor } from '../types';
+import type { ConsoleLuaDefinitionLocation, ConsoleResourceDescriptor } from '../types';
 import type { CodeTabContext } from './types';
 import type { LuaDefinitionInfo } from '../../lua/ast.ts';
 import type { ReferenceMatchInfo } from './reference_navigation';
@@ -292,4 +292,68 @@ function isDefinitionPreferred(candidate: LuaDefinitionInfo, current: LuaDefinit
 		return candidate.definition.start.column < current.definition.start.column;
 	}
 	return candidate.name.localeCompare(current.name) < 0;
+}
+
+type ResolveDefinitionLocationOptions = {
+	expression: string;
+	environment: ProjectReferenceEnvironment;
+	currentChunkName: string;
+	currentPath: string | null;
+};
+
+export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): ConsoleLuaDefinitionLocation | null {
+	const { expression, environment, currentChunkName, currentPath } = options;
+	const namePath = expression.split('.').filter(part => part.length > 0);
+	if (namePath.length === 0) {
+		return null;
+	}
+	const sources = collectProjectReferenceSources({
+		environment,
+		currentChunkName,
+		currentPath,
+	});
+	let bestDefinition: LuaDefinitionInfo | null = null;
+	let bestSource: ReferenceProjectSource | null = null;
+	let bestScore = -Infinity;
+	for (let index = 0; index < sources.length; index += 1) {
+		const source = sources[index];
+		const model = source.semanticModel;
+		if (!model) {
+			continue;
+		}
+		const definitions = model.definitions;
+		for (let defIndex = 0; defIndex < definitions.length; defIndex += 1) {
+			const definition = definitions[defIndex];
+			if (!definitionMatchesNamePath(definition, namePath)) {
+				continue;
+			}
+			const score = definitionPriority(definition);
+			if (!bestDefinition || score > bestScore || (score === bestScore && isDefinitionPreferred(definition, bestDefinition))) {
+				bestDefinition = definition;
+				bestSource = source;
+				bestScore = score;
+			}
+		}
+	}
+	if (!bestDefinition || !bestSource) {
+		return null;
+	}
+	const chunkName = bestSource.chunkName ?? currentChunkName;
+	const assetId = bestSource.assetId ?? null;
+	const location: ConsoleLuaDefinitionLocation = {
+		chunkName,
+		assetId,
+		range: {
+			startLine: bestDefinition.definition.start.line,
+			startColumn: bestDefinition.definition.start.column,
+			endLine: bestDefinition.definition.end.line,
+			endColumn: bestDefinition.definition.end.column,
+		},
+	};
+	if (bestSource.path) {
+		location.path = bestSource.path;
+	} else if (chunkName && chunkName !== '<console>') {
+		location.path = chunkName;
+	}
+	return location;
 }
