@@ -1,12 +1,8 @@
 import { clamp } from '../../utils/utils';
 import type { ConsoleEditorFont } from '../editor_font';
-import { analyzeLuaSemantics, highlightLine as highlightLineExternal } from './syntax_highlight';
-import type { LuaSemanticDefinition } from './syntax_highlight';
-import type {
-	CachedHighlight,
-	HighlightLine,
-	VisualLineSegment,
-} from './types';
+import { highlightLine as highlightLineExternal } from './syntax_highlight';
+import { analyzeLuaSemanticsFromLines, type LuaSemantics, type LuaSemanticDefinition } from './lua_semantics';
+import type { CachedHighlight, HighlightLine, VisualLineSegment } from './types';
 
 interface VisualLinesContext {
 	lines: readonly string[];
@@ -33,7 +29,7 @@ export class ConsoleCodeLayout {
 	private visualLines: VisualLineSegment[] = [];
 	private rowToFirstVisualLine: number[] = [];
 	private visualLinesDirty = true;
-	private semanticAnnotations: ReturnType<typeof analyzeLuaSemantics> | null = null;
+	private semanticAnnotations: LuaSemantics | null = null;
 	private semanticLinesRef: readonly string[] | null = null;
 	private semanticVersion = -1;
 	private semanticSignature = 0;
@@ -283,8 +279,8 @@ export class ConsoleCodeLayout {
 		if (this.semanticLinesRef === lines && this.semanticVersion === version) {
 			return;
 		}
-		const annotations = analyzeLuaSemantics(lines);
-		this.semanticAnnotations = annotations;
+		const semantics = analyzeLuaSemanticsFromLines(lines);
+		this.semanticAnnotations = semantics;
 		this.semanticLinesRef = lines;
 		this.semanticVersion = version;
 		this.semanticSignature = this.nextSemanticSignature;

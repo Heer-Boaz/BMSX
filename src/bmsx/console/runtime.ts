@@ -30,6 +30,7 @@ import type { LuaSourceRange, LuaDefinitionInfo, LuaDefinitionKind } from '../lu
 import { ConsoleCartEditor } from './ide/console_cart_editor';
 import { setEditorCaseInsensitivity } from './ide/text_renderer';
 import type { ConsoleFontVariant } from './font';
+import { analyzeLuaSemanticsFromSource, type LuaSemanticDefinition, type SemanticKind } from './ide/lua_semantics';
 
 type LuaPersistenceFailureMode = 'error' | 'warning';
 type LuaPersistenceFailureKind = 'fetch' | 'persist' | 'apply' | 'restore';
@@ -3884,15 +3885,68 @@ export class BmsxConsoleRuntime extends Service {
 	}
 
 	private parseDefinitionsFromSource(chunkName: string, source: string): ReadonlyArray<LuaDefinitionInfo> | null {
-		try {
-			const lexer = new LuaLexer(source, chunkName);
-			const tokens = lexer.scanTokens();
-			const parser = new LuaParser(tokens, chunkName, source);
-			const chunk = parser.parseChunk();
-			return chunk.definitions;
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
+	try {
+		const lexer = new LuaLexer(source, chunkName);
+		const tokens = lexer.scanTokens();
+		const parser = new LuaParser(tokens, chunkName, source);
+		const chunk = parser.parseChunk();
+		const definitions: LuaDefinitionInfo[] = chunk.definitions.slice();
+		const semantics = analyzeLuaSemanticsFromSource(source);
+		if (semantics && semantics.definitions.length > 0) {
+			const semanticDefinitions = this.convertSemanticDefinitions(chunkName, semantics.definitions);
+			for (let i = 0; i < semanticDefinitions.length; i += 1) {
+				definitions.push(semanticDefinitions[i]);
+			}
+		}
+		return definitions;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`[BmsxConsoleRuntime] Failed to parse '${chunkName}': ${message}`);
+	}
+}
+
+	private convertSemanticDefinitions(chunkName: string, definitions: readonly LuaSemanticDefinition[]): LuaDefinitionInfo[] {
+		if (definitions.length === 0) {
+			return [];
+		}
+		const result: LuaDefinitionInfo[] = [];
+		const clampLine = (value: number): number => (Number.isFinite(value) ? Math.max(1, Math.floor(value)) : Number.MAX_SAFE_INTEGER);
+		const clampColumn = (value: number): number => (Number.isFinite(value) ? Math.max(1, Math.floor(value)) : Number.MAX_SAFE_INTEGER);
+		for (let index = 0; index < definitions.length; index += 1) {
+			const semantic = definitions[index];
+			const kind = this.semanticKindToDefinitionKind(semantic.kind);
+			const definitionRange: LuaSourceRange = {
+				chunkName,
+				start: { line: clampLine(semantic.startLine), column: clampColumn(semantic.startColumn) },
+				end: { line: clampLine(semantic.endLine), column: clampColumn(semantic.endColumn) },
+			};
+			const scopeRange: LuaSourceRange = {
+				chunkName,
+				start: { line: clampLine(semantic.scopeStartLine), column: clampColumn(semantic.scopeStartColumn) },
+				end: { line: clampLine(semantic.scopeEndLine), column: clampColumn(semantic.scopeEndColumn) },
+			};
+			result.push({
+				name: semantic.name,
+				namePath: [semantic.name],
+				definition: definitionRange,
+				scope: scopeRange,
+				kind,
+			});
+		}
+		return result;
+	}
+
+	private semanticKindToDefinitionKind(kind: SemanticKind): LuaDefinitionKind {
+		switch (kind) {
+			case 'parameter':
+				return 'parameter';
+			case 'functionTop':
+			case 'functionLocal':
+				return 'function';
+			case 'localFunction':
+			case 'localTop':
+			default:
+				return 'variable';
 		}
 	}
 

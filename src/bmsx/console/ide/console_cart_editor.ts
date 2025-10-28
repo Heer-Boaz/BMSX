@@ -21,7 +21,7 @@ import { renderCodeArea } from './render_code_area';
 import { clamp } from '../../utils/utils';
 import { CHARACTER_CODES } from './character_map';
 import * as constants from './constants';
-import type { LuaSemanticDefinition } from './syntax_highlight';
+import type { LuaSemanticDefinition } from './lua_semantics';
 // Intellisense data is handled by CompletionController
 import { CompletionController } from './completion_controller';
 import { ProblemsPanelController } from './problems_panel';
