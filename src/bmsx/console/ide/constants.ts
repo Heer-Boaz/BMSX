@@ -69,7 +69,11 @@ const THEME_BASE = {
 		number: PALETTE.darkYellow,
 		comment: PALETTE.darkGreen,
 		operator: PALETTE.lightGreen,
-		dim: PALETTE.lightRedAlt
+		dim: PALETTE.lightRedAlt,
+		builtin: PALETTE.red,
+		functionName: PALETTE.lightBlue,
+		parameter: PALETTE.magenta,
+		label: PALETTE.darkRed
 	},
 	status: {
 		background: PALETTE.grey,
@@ -191,6 +195,10 @@ export const COLOR_NUMBER = THEME_BASE.text.number;
 export const COLOR_COMMENT = THEME_BASE.text.comment;
 export const COLOR_OPERATOR = THEME_BASE.text.operator;
 export const COLOR_CODE_DIM = THEME_BASE.text.dim;
+export const COLOR_BUILTIN = THEME_BASE.text.builtin;
+export const COLOR_FUNCTION_NAME = THEME_BASE.text.functionName;
+export const COLOR_PARAMETER = THEME_BASE.text.parameter;
+export const COLOR_LABEL = THEME_BASE.text.label;
 export const HIGHLIGHT_OVERLAY = Msx1Colors[PALETTE.darkBlue];
 export const SELECTION_OVERLAY = Msx1Colors[PALETTE.magenta];
 export const CARET_COLOR = Msx1Colors[PALETTE.white];

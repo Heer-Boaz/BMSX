@@ -22,7 +22,7 @@ function isIdentifierPart(ch: string): boolean {
 }
 
 function isOperatorChar(ch: string): boolean {
-	return '+-*/%<>=#(){}[]:,.;'.includes(ch);
+	return '+-*/%<>=#(){}[]:,.;&|~^'.includes(ch);
 }
 
 function isNumberStart(line: string, index: number): boolean {
@@ -41,6 +41,15 @@ function readNumber(line: string, start: number): number {
 	if (line.startsWith('0x', index) || line.startsWith('0X', index)) {
 		index += 2;
 		while (index < length && isHexDigit(line.charAt(index))) index += 1;
+		if (index < length && line.charAt(index) === '.') {
+			index += 1;
+			while (index < length && isHexDigit(line.charAt(index))) index += 1;
+		}
+		if (index < length && (line.charAt(index) === 'p' || line.charAt(index) === 'P')) {
+			index += 1;
+			if (index < length && (line.charAt(index) === '+' || line.charAt(index) === '-')) index += 1;
+			while (index < length && isDigit(line.charAt(index))) index += 1;
+		}
 		return index;
 	}
 	while (index < length && isDigit(line.charAt(index))) index += 1;
@@ -62,17 +71,195 @@ function readIdentifier(line: string, start: number): number {
 	return index;
 }
 
+function skipWhitespace(line: string, start: number): number {
+	let index = start;
+	while (index < line.length) {
+		const ch = line.charAt(index);
+		if (ch !== ' ' && ch !== '\t') break;
+		index += 1;
+	}
+	return index;
+}
+
+const MULTI_CHAR_OPERATORS = new Set(['==', '~=', '<=', '>=', '..', '//', '<<', '>>']);
+
+const BUILTIN_IDENTIFIERS = new Set([
+	'_g',
+	'_env',
+	'_version',
+	'assert',
+	'collectgarbage',
+	'coroutine',
+	'debug',
+	'dofile',
+	'error',
+	'getmetatable',
+	'io',
+	'ipairs',
+	'jit',
+	'load',
+	'loadfile',
+	'math',
+	'next',
+	'os',
+	'package',
+	'pairs',
+	'pcall',
+	'print',
+	'rawequal',
+	'rawget',
+	'rawlen',
+	'rawset',
+	'require',
+	'select',
+	'setmetatable',
+	'string',
+	'table',
+	'tonumber',
+	'tostring',
+	'type',
+	'utf8',
+	'xpcall',
+	'bit32'
+]);
+
+const COMMENT_ANNOTATIONS = ['TODO', 'FIXME', 'BUG', 'HACK', 'NOTE', 'WARNING'];
+
+function highlightCommentAnnotations(line: string, start: number, end: number, columnColors: number[]): void {
+	const upper = line.toUpperCase();
+	for (let annotationIndex = 0; annotationIndex < COMMENT_ANNOTATIONS.length; annotationIndex += 1) {
+		const annotation = COMMENT_ANNOTATIONS[annotationIndex];
+		let matchIndex = upper.indexOf(annotation, start);
+		while (matchIndex !== -1 && matchIndex < end) {
+			const limit = Math.min(end, matchIndex + annotation.length);
+			for (let column = matchIndex; column < limit; column += 1) columnColors[column] = constants.COLOR_KEYWORD;
+			matchIndex = upper.indexOf(annotation, matchIndex + annotation.length);
+		}
+	}
+}
+
+function highlightComment(line: string, start: number, columnColors: number[]): number {
+	const length = line.length;
+	if (line.startsWith('--[', start)) {
+		const blockMatch = line.slice(start + 2).match(/^\[=*\[/);
+		if (blockMatch) {
+			const equalsCount = blockMatch[0].length - 2;
+			const terminator = ']' + '='.repeat(equalsCount) + ']';
+			const searchStart = start + 2 + blockMatch[0].length;
+			const closeIndex = line.indexOf(terminator, searchStart);
+			const end = closeIndex !== -1 ? closeIndex + terminator.length : length;
+			for (let index = start; index < end; index += 1) columnColors[index] = constants.COLOR_COMMENT;
+			highlightCommentAnnotations(line, start, end, columnColors);
+			return end;
+		}
+	}
+	for (let index = start; index < length; index += 1) columnColors[index] = constants.COLOR_COMMENT;
+	highlightCommentAnnotations(line, start, length, columnColors);
+	return length;
+}
+
+function highlightScopedLabel(line: string, start: number, columnColors: number[]): number {
+	if (!line.startsWith('::', start)) return start;
+	let index = start + 2;
+	index = skipWhitespace(line, index);
+	if (index >= line.length || !isIdentifierStart(line.charAt(index))) return start;
+	const labelStart = index;
+	const labelEnd = readIdentifier(line, labelStart);
+	index = skipWhitespace(line, labelEnd);
+	if (!line.startsWith('::', index)) return start;
+	const end = index + 2;
+	for (let column = start; column < end; column += 1) columnColors[column] = constants.COLOR_LABEL;
+	return end;
+}
+
+function highlightFunctionNamePath(line: string, start: number, columnColors: number[]): number {
+	let index = start;
+	const segments: Array<{ start: number; end: number }> = [];
+	while (index < line.length && isIdentifierStart(line.charAt(index))) {
+		const segmentStart = index;
+		index = readIdentifier(line, index);
+		segments.push({ start: segmentStart, end: index });
+		if (index < line.length && (line.charAt(index) === '.' || line.charAt(index) === ':')) {
+			columnColors[index] = constants.COLOR_OPERATOR;
+			index += 1;
+			continue;
+		}
+		break;
+	}
+	for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+		const segment = segments[segmentIndex];
+		for (let column = segment.start; column < segment.end; column += 1) {
+			columnColors[column] = constants.COLOR_FUNCTION_NAME;
+		}
+	}
+	return index;
+}
+
+function highlightParameterList(line: string, openParenIndex: number, columnColors: number[]): number {
+	const length = line.length;
+	columnColors[openParenIndex] = constants.COLOR_OPERATOR;
+	let index = openParenIndex + 1;
+	while (index < length) {
+		index = skipWhitespace(line, index);
+		if (index >= length) break;
+		const ch = line.charAt(index);
+		if (ch === ')') {
+			columnColors[index] = constants.COLOR_OPERATOR;
+			return index + 1;
+		}
+		if (index + 3 <= length && line.slice(index, index + 3) === '...') {
+			columnColors[index] = constants.COLOR_PARAMETER;
+			columnColors[index + 1] = constants.COLOR_PARAMETER;
+			columnColors[index + 2] = constants.COLOR_PARAMETER;
+			index += 3;
+			continue;
+		}
+		if (isIdentifierStart(ch)) {
+			const end = readIdentifier(line, index);
+			for (let column = index; column < end; column += 1) columnColors[column] = constants.COLOR_PARAMETER;
+			index = end;
+			continue;
+		}
+		columnColors[index] = constants.COLOR_OPERATOR;
+		index += 1;
+	}
+	return length;
+}
+
+function highlightFunctionSignature(line: string, start: number, columnColors: number[]): number {
+	let index = skipWhitespace(line, start);
+	index = highlightFunctionNamePath(line, index, columnColors);
+	index = skipWhitespace(line, index);
+	if (index < line.length && line.charAt(index) === '(') {
+		return highlightParameterList(line, index, columnColors);
+	}
+	return index;
+}
+
+function highlightGotoLabel(line: string, start: number, columnColors: number[]): number {
+	let index = skipWhitespace(line, start);
+	if (index >= line.length || !isIdentifierStart(line.charAt(index))) return index;
+	const labelEnd = readIdentifier(line, index);
+	for (let column = index; column < labelEnd; column += 1) columnColors[column] = constants.COLOR_LABEL;
+	return labelEnd;
+}
+
 export function highlightLine(line: string): HighlightLine {
 	const length = line.length;
 	const columnColors: number[] = new Array(length).fill(constants.COLOR_CODE_TEXT);
 	let i = 0;
 	while (i < length) {
-		const ch = line.charAt(i);
-		if (line.startsWith('--[[', i)) {
-			const closeIndex = line.indexOf(']]', i + 4);
-			const end = closeIndex !== -1 ? closeIndex + 2 : length;
-			for (let j = i; j < end; j++) columnColors[j] = constants.COLOR_COMMENT;
-			i = end;
+		if (i === 0 && line.startsWith('#!')) {
+			for (let column = 0; column < length; column += 1) columnColors[column] = constants.COLOR_COMMENT;
+			break;
+		}
+		if (line.startsWith('--', i)) {
+			i = highlightComment(line, i, columnColors);
+			continue;
+		}
+		const labelEnd = highlightScopedLabel(line, i, columnColors);
+		if (labelEnd > i) {
+			i = labelEnd;
 			continue;
 		}
 		const longStringMatch = line.slice(i).match(/^\[=*\[/);
@@ -81,41 +268,41 @@ export function highlightLine(line: string): HighlightLine {
 			const terminator = ']' + '='.repeat(equalsCount) + ']';
 			const closeIndex = line.indexOf(terminator, i + longStringMatch[0].length);
 			const end = closeIndex !== -1 ? closeIndex + terminator.length : length;
-			for (let j = i; j < end; j++) columnColors[j] = constants.COLOR_STRING;
+			for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_STRING;
 			i = end;
 			continue;
 		}
+		const ch = line.charAt(i);
 		if (ch === '"' || ch === '\'') {
 			const delimiter = ch;
 			columnColors[i] = constants.COLOR_STRING;
 			i += 1;
 			while (i < length) {
-				columnColors[i] = constants.COLOR_STRING;
 				const current = line.charAt(i);
+				columnColors[i] = constants.COLOR_STRING;
 				if (current === '\\' && i + 1 < length) {
 					columnColors[i + 1] = constants.COLOR_STRING;
 					i += 2;
 					continue;
 				}
-				if (current === delimiter) { i += 1; break; }
+				if (current === delimiter) {
+					i += 1;
+					break;
+				}
 				i += 1;
 			}
 			continue;
 		}
-		if (line.startsWith('--', i)) {
-			for (let j = i; j < length; j++) columnColors[j] = constants.COLOR_COMMENT;
-			break;
-		}
-		if (i + 2 <= length && line.slice(i, i + 3) === '...') {
+		if (i + 3 <= length && line.slice(i, i + 3) === '...') {
 			columnColors[i] = constants.COLOR_OPERATOR;
 			columnColors[i + 1] = constants.COLOR_OPERATOR;
 			columnColors[i + 2] = constants.COLOR_OPERATOR;
 			i += 3;
 			continue;
 		}
-		if (i + 1 < length) {
+		if (i + 2 <= length) {
 			const pair = line.slice(i, i + 2);
-			if (pair === '==' || pair === '~=' || pair === '<=' || pair === '>=' || pair === '..') {
+			if (MULTI_CHAR_OPERATORS.has(pair)) {
 				columnColors[i] = constants.COLOR_OPERATOR;
 				columnColors[i + 1] = constants.COLOR_OPERATOR;
 				i += 2;
@@ -124,16 +311,30 @@ export function highlightLine(line: string): HighlightLine {
 		}
 		if (isNumberStart(line, i)) {
 			const end = readNumber(line, i);
-			for (let j = i; j < end; j++) columnColors[j] = constants.COLOR_NUMBER;
+			for (let column = i; column < end; column += 1) columnColors[column] = constants.COLOR_NUMBER;
 			i = end;
 			continue;
 		}
 		if (isIdentifierStart(ch)) {
 			const end = readIdentifier(line, i);
 			const word = line.slice(i, end);
-			const color = KEYWORDS.has(word.toLowerCase()) ? constants.COLOR_KEYWORD : constants.COLOR_CODE_TEXT;
+			const lowerWord = word.toLowerCase();
+			let color = constants.COLOR_CODE_TEXT;
+			if (KEYWORDS.has(lowerWord)) {
+				color = constants.COLOR_KEYWORD;
+			} else if (BUILTIN_IDENTIFIERS.has(lowerWord)) {
+				color = constants.COLOR_BUILTIN;
+			}
 			if (color !== constants.COLOR_CODE_TEXT) {
-				for (let j = i; j < end; j++) columnColors[j] = color;
+				for (let column = i; column < end; column += 1) columnColors[column] = color;
+			}
+			if (lowerWord === 'function') {
+				i = highlightFunctionSignature(line, end, columnColors);
+				continue;
+			}
+			if (lowerWord === 'goto') {
+				i = highlightGotoLabel(line, end, columnColors);
+				continue;
 			}
 			i = end;
 			continue;
@@ -147,17 +348,16 @@ export function highlightLine(line: string): HighlightLine {
 	const chars: string[] = [];
 	const colors: number[] = [];
 	const columnToDisplay: number[] = [];
-	for (let column = 0; column < length; column++) {
+	for (let column = 0; column < length; column += 1) {
 		columnToDisplay.push(chars.length);
 		const ch = line.charAt(column);
 		const color = columnColors[column];
 		if (ch === '\t') {
-			for (let j = 0; j < constants.TAB_SPACES; j++) {
+			for (let tab = 0; tab < constants.TAB_SPACES; tab += 1) {
 				chars.push(' ');
 				colors.push(color);
 			}
-		}
-		else {
+		} else {
 			chars.push(ch);
 			colors.push(color);
 		}
