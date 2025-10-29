@@ -463,7 +463,6 @@ class SemanticBuilder {
 	private readonly chunk: LuaChunk;
 	private readonly chunkName: string;
 	private readonly tokens: readonly LuaToken[];
-	private readonly lines: readonly string[];
 	private readonly annotations: SemanticAnnotations;
 	private readonly tokenMap: Map<string, TokenInfo>;
 	private readonly scopeStack: Scope[] = [];
@@ -483,7 +482,6 @@ class SemanticBuilder {
 		this.chunk = options.chunk;
 		this.chunkName = options.chunkName;
 		this.tokens = options.tokens;
-		this.lines = options.lines;
 		this.annotations = new Array(options.lines.length);
 		this.tokenMap = buildTokenMap(options.tokens);
 	}
@@ -528,8 +526,8 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.LocalFunctionStatement: {
 				const localFunction = statement;
-				const decl = this.declareLocal(localFunction.name, 'function', true);
-				this.visitFunctionExpression(localFunction.functionExpression, decl);
+				this.declareLocal(localFunction.name, 'function', true);
+				this.visitFunctionExpression(localFunction.functionExpression);
 				break;
 			}
 			case LuaSyntaxKind.FunctionDeclarationStatement: {
@@ -560,7 +558,7 @@ class SemanticBuilder {
 						this.globalsByKey.set(symbolKey, decl);
 					}
 				}
-				this.visitFunctionExpression(functionDeclaration.functionExpression, decl);
+				this.visitFunctionExpression(functionDeclaration.functionExpression);
 				break;
 			}
 			case LuaSyntaxKind.AssignmentStatement: {
@@ -625,7 +623,7 @@ class SemanticBuilder {
 					this.visitExpression(forNumeric.step, { tableBaseDecl: null, tableBasePath: null });
 				}
 				this.enterScope(forNumeric.block.range, 'loop');
-				const decl = this.declareLocal(forNumeric.variable, 'local', true);
+				this.declareLocal(forNumeric.variable, 'local', true);
 				this.visitBlock(forNumeric.block);
 				this.leaveScope();
 				break;
@@ -686,7 +684,7 @@ class SemanticBuilder {
 			case LuaSyntaxKind.MemberExpression:
 				return this.handleMemberExpression(expression, context, false);
 			case LuaSyntaxKind.IndexExpression:
-				return this.handleIndexExpression(expression, context, false);
+				return this.handleIndexExpression(expression, context);
 			case LuaSyntaxKind.CallExpression: {
 				const callExpression = expression;
 				const calleeInfo = this.visitExpression(callExpression.callee, context);
@@ -699,7 +697,7 @@ class SemanticBuilder {
 				return null;
 			}
 			case LuaSyntaxKind.FunctionExpression: {
-				this.visitFunctionExpression(expression, null);
+				this.visitFunctionExpression(expression);
 				return null;
 			}
 			case LuaSyntaxKind.TableConstructorExpression: {
@@ -756,7 +754,7 @@ class SemanticBuilder {
 		}
 	}
 
-	private visitFunctionExpression(expression: LuaFunctionExpression, ownerDecl: InternalDecl | null): void {
+	private visitFunctionExpression(expression: LuaFunctionExpression): void {
 		const block = expression.body;
 		const scopeRange = block.range;
 		this.enterScope(scopeRange, 'function');
@@ -909,7 +907,7 @@ class SemanticBuilder {
 		return { namePath, decl };
 	}
 
-	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext, isWrite: boolean): ResolvedNamePath | null {
+	private handleIndexExpression(indexExpression: LuaIndexExpression, context: ExpressionContext): ResolvedNamePath | null {
 		this.visitExpression(indexExpression.base, context);
 		return null;
 	}

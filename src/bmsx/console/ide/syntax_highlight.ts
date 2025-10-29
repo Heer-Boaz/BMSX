@@ -1,6 +1,6 @@
 import * as constants from './constants';
 import { KEYWORDS } from './intellisense';
-import type { LuaSemanticAnnotations, SemanticKind } from './lua_semantics';
+import type { SemanticAnnotations, SymbolKind } from './semantic_model.ts';
 import type { HighlightLine } from './types';
 
 // Lightweight Lua syntax highlighter used by the console editor.
@@ -126,17 +126,18 @@ const BUILTIN_IDENTIFIERS = new Set([
 
 const COMMENT_ANNOTATIONS = ['TODO', 'FIXME', 'BUG', 'HACK', 'NOTE', 'WARNING'];
 
-function resolveColorForSemanticKind(kind: SemanticKind): number {
+function resolveColorForSymbolKind(kind: SymbolKind): number {
 	switch (kind) {
 		case 'parameter':
 			return constants.COLOR_PARAMETER;
-		case 'localTop':
-			return constants.COLOR_LOCAL_TOP;
-		case 'localFunction':
+		case 'local':
 			return constants.COLOR_LOCAL_FUNCTION;
-		case 'functionTop':
-		case 'functionLocal':
+		case 'function':
 			return constants.COLOR_FUNCTION_HANDLE;
+		case 'global':
+			return constants.COLOR_LOCAL_TOP;
+		case 'tableField':
+			return constants.COLOR_LOCAL_TOP;
 		default:
 			return constants.COLOR_CODE_TEXT;
 	}
@@ -261,16 +262,16 @@ function highlightGotoLabel(line: string, start: number, columnColors: number[])
 	return labelEnd;
 }
 
-function applySemanticAnnotations(columnColors: number[], annotations: LuaSemanticAnnotations[number] | undefined): void {
+function applySemanticAnnotations(columnColors: number[], annotations: SemanticAnnotations[number] | undefined): void {
 	if (!annotations) {
 		return;
 	}
 	for (let index = 0; index < annotations.length; index += 1) {
 		const annotation = annotations[index];
-		if (annotation.role === 'definition' && (annotation.kind === 'functionTop' || annotation.kind === 'functionLocal')) {
+		if (annotation.role === 'definition' && annotation.kind === 'function') {
 			continue;
 		}
-		const color = resolveColorForSemanticKind(annotation.kind);
+		const color = resolveColorForSymbolKind(annotation.kind);
 		const start = Math.max(0, annotation.start);
 		const end = Math.max(start, annotation.end);
 		for (let column = start; column < end && column < columnColors.length; column += 1) {
@@ -281,12 +282,12 @@ function applySemanticAnnotations(columnColors: number[], annotations: LuaSemant
 
 export function highlightLine(
 	source: readonly string[] | string,
-	rowOrSemantics?: number | LuaSemanticAnnotations | null,
-	maybeSemantics?: LuaSemanticAnnotations | null,
+	rowOrSemantics?: number | SemanticAnnotations | null,
+	maybeSemantics?: SemanticAnnotations | null,
 ): HighlightLine {
 	let lines: readonly string[];
 	let row = 0;
-	let annotations: LuaSemanticAnnotations | null = null;
+	let annotations: SemanticAnnotations | null = null;
 	if (typeof source === 'string') {
 		lines = [source];
 		row = 0;

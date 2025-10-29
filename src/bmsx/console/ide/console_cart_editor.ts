@@ -4194,8 +4194,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return null;
 		}
 		const activeContext = this.getActiveCodeTabContext();
-		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
-		const model = this.layout.getSemanticModel(this.lines, this.textVersion, chunkName);
+		const hoverChunkName = this.resolveHoverChunkName(activeContext);
+		const modelChunkName = chunkName ?? hoverChunkName ?? '<console>';
+		const model = this.layout.getSemanticModel(this.lines, this.textVersion, modelChunkName);
 		if (!model) {
 			return null;
 		}
@@ -4215,6 +4216,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			?? descriptorAssetId
 			?? assetId
 			?? this.primaryAssetId
+			?? hoverChunkName
 			?? '<console>';
 		const location: ConsoleLuaDefinitionLocation = {
 			chunkName: resolvedChunk,

@@ -187,8 +187,8 @@ export class ConsoleCodeLayout {
 		return this.visualLines;
 	}
 
-	public getSemanticDefinitions(lines: readonly string[], documentVersion: number): readonly LuaDefinitionInfo[] | null {
-		this.ensureSemanticModel(lines, documentVersion);
+	public getSemanticDefinitions(lines: readonly string[], documentVersion: number, chunkName: string): readonly LuaDefinitionInfo[] | null {
+		this.ensureSemanticModel(lines, documentVersion, chunkName);
 		if (!this.semanticModel) {
 			return null;
 		}

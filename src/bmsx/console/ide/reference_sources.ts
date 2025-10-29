@@ -119,7 +119,7 @@ export function buildReferenceCatalogForExpression(options: BuildReferenceCatalo
 	if (baseMeta) {
 		for (let index = 0; index < info.matches.length; index += 1) {
 			const match = info.matches[index];
-			const range = matchToRange(chunkName, match);
+			const range = matchToRange(match);
 			const entry = createCatalogEntry({ meta: baseMeta, match, range, expression: info.expression, referenceIndex: nextIndex });
 			appendCatalogEntry(entries, existingKeys, entry);
 			nextIndex += 1;
@@ -514,7 +514,7 @@ function sortReferenceResults(matches: SymbolSearchResult[]): void {
 	});
 }
 
-function matchToRange(chunkName: string, match: SearchMatch): LuaSourceRangeLike {
+function matchToRange(match: SearchMatch): LuaSourceRangeLike {
 	return {
 		startLine: match.row + 1,
 		startColumn: match.start + 1,

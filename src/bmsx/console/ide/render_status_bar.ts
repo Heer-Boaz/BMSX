@@ -50,11 +50,16 @@ export function renderStatusBar(api: BmsxConsoleApi, host: StatusBarHost): void 
 	if (host.symbolSearchVisible) {
 		const match = host.getActiveSymbolSearchMatch();
 		if (!match) return;
-		const locationPath = match.entry.symbol.location.path;
-		if (!locationPath || locationPath.length === 0) {
-			throw new Error('[ConsoleCartEditor] Symbol location path unavailable.');
+		const symbol = match.entry.symbol;
+		const location = symbol.location;
+		let displayPath = location.path ?? symbol.path ?? location.chunkName ?? location.assetId ?? '';
+		if (!displayPath || displayPath.length === 0) {
+			displayPath = symbol.name;
 		}
-		const pathText = host.truncateTextToWidth(locationPath, Math.max(0, host.viewportWidth - 8));
+		const range = location.range;
+		const positionSuffix = range ? `:${range.startLine}:${range.startColumn}` : '';
+		const fullText = `${displayPath}${positionSuffix}`;
+		const pathText = host.truncateTextToWidth(fullText, Math.max(0, host.viewportWidth - 8));
 		host.drawText(api, pathText, 4, statusTop + 2, constants.COLOR_STATUS_TEXT);
 		return;
 	}
