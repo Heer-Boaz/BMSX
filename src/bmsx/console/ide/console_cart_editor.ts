@@ -12,7 +12,7 @@ import type {
 	ConsoleLuaResourceCreationRequest,
 	ConsoleLuaSymbolEntry,
 	ConsoleResourceDescriptor,
-} from '../types';
+} from '../types.ts';
 import { ConsoleEditorFont } from '../editor_font';
 import { DEFAULT_CONSOLE_FONT_VARIANT, getConsoleFontPreset, type ConsoleFontVariant } from '../font';
 import { drawEditorColoredText, drawEditorText } from './text_renderer';
@@ -54,6 +54,7 @@ import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
 import { ConsoleCartEditorTextOps } from './console_cart_editor_textops';
 import { ConsoleCodeLayout } from './code_layout';
+import { LuaSemanticWorkspace } from './semantic_workspace.ts';
 import { buildRuntimeErrorLines as buildRuntimeErrorLinesUtil, computeRuntimeErrorOverlayMaxWidth, wrapRuntimeErrorLine as wrapRuntimeErrorLineUtil } from './runtime_error_utils';
 import type {
 	CachedHighlight,
@@ -93,14 +94,15 @@ import type {
 	TopBarButtonId,
 	VisualLineSegment,
 } from './types';
-import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation';
-import { filterReferenceCatalog, findExpressionMatches, definitionKeyFromDefinition, type ReferenceCatalogEntry, type ReferenceSymbolEntry } from './reference_symbol_search';
+import { ReferenceState, resolveReferenceLookup, type ReferenceMatchInfo } from './reference_navigation.ts';
 import {
 	buildReferenceCatalogForExpression as buildProjectReferenceCatalog,
 	computeSourceLabel,
-	resolveDefinitionKeyForExpression,
 	resolveDefinitionLocationForExpression,
 	type ProjectReferenceEnvironment,
+	filterReferenceCatalog,
+	type ReferenceCatalogEntry,
+	type ReferenceSymbolEntry,
 } from './reference_sources';
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_apply';
@@ -112,6 +114,7 @@ import {
 	isModifierPressed as isModifierPressedGlobal,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
+import type { LuaDefinitionInfo } from '../../lua/ast.ts';
 
 const EDITOR_TOGGLE_KEY = 'Escape';
 const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
@@ -292,6 +295,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	// max line width computed by ResourcePanelController
 	private readonly resourcePanel: ResourcePanelController;
 	private readonly renameController: RenameController;
+	private readonly semanticWorkspace: LuaSemanticWorkspace = new LuaSemanticWorkspace();
 	private readonly layout: ConsoleCodeLayout;
 	private codeVerticalScrollbarVisible = false;
 	private codeHorizontalScrollbarVisible = false;
@@ -338,7 +342,7 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.lineHeight = this.font.lineHeight();
 		this.charAdvance = this.font.advance('M');
 		this.spaceAdvance = this.font.advance(' ');
-		this.layout = new ConsoleCodeLayout(this.font);
+		this.layout = new ConsoleCodeLayout(this.font, this.semanticWorkspace);
 		this.inlineFieldMetricsRef = {
 			measureText: (text: string) => this.measureText(text),
 			advanceChar: (ch: string) => this.font.advance(ch),
@@ -2325,13 +2329,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			this.closeSymbolSearch(false);
 		}
 		this.renameController.cancel();
+		const referenceContext = this.buildProjectReferenceContext(context);
 		const result = resolveReferenceLookup({
 			layout: this.layout,
+			workspace: this.semanticWorkspace,
 			lines: this.lines,
 			textVersion: this.textVersion,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
 			extractExpression: (row, column) => this.extractHoverExpression(row, column),
+			chunkName: referenceContext.chunkName,
 		});
 		if (result.kind === 'error') {
 			this.showMessage(result.message, constants.COLOR_STATUS_WARNING, result.duration);
@@ -2366,13 +2373,17 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.closeResourceSearch(false);
 		this.closeSymbolSearch(false);
 		this.createResourceActive = false;
+		const context = this.getActiveCodeTabContext();
+		const referenceContext = this.buildProjectReferenceContext(context);
 		const started = this.renameController.begin({
 			layout: this.layout,
+			workspace: this.semanticWorkspace,
 			lines: this.lines,
 			textVersion: this.textVersion,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
 			extractExpression: (row, column) => this.extractHoverExpression(row, column),
+			chunkName: referenceContext.chunkName,
 		});
 		if (started) {
 			this.cursorVisible = true;
@@ -2566,9 +2577,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 		const sourceLabelPath = descriptor?.path ?? descriptor?.assetId ?? null;
 		return buildProjectReferenceCatalog({
+			workspace: this.semanticWorkspace,
 			info,
 			lines: this.lines,
-			normalizedPath,
 			chunkName,
 			assetId,
 			environment,
@@ -3291,33 +3302,24 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			return false;
 		}
 		const context = this.getActiveCodeTabContext();
+		const referenceContext = this.buildProjectReferenceContext(context);
 		const lookup = resolveReferenceLookup({
 			layout: this.layout,
+			workspace: this.semanticWorkspace,
 			lines: this.lines,
 			textVersion: this.textVersion,
 			cursorRow: this.cursorRow,
 			cursorColumn: this.cursorColumn,
 			extractExpression: (row: number, column: number) => this.extractHoverExpression(row, column),
+			chunkName: referenceContext.chunkName,
 		});
-		let info: ReferenceMatchInfo | null = null;
-		let initialIndex = 0;
 		if (lookup.kind === 'error') {
-			const fallback = this.tryResolveGlobalReferenceAtCursor(context);
-			if (!fallback) {
-				this.showMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
-				this.referenceState.clear();
-				return false;
-			}
-			info = fallback.info;
-			initialIndex = fallback.initialIndex;
-		} else {
-			info = lookup.info;
-			initialIndex = lookup.initialIndex;
-		}
-		if (!info) {
+			this.showMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
 			this.referenceState.clear();
 			return false;
 		}
+		const info = lookup.info;
+		let initialIndex = lookup.initialIndex;
 		if (this.referenceState.hasSameQuery(info)) {
 			const nextIndex = this.referenceState.advance(1);
 			if (nextIndex === -1) {
@@ -3355,90 +3357,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.applyReferenceSelection(currentMatch);
 		this.showReferenceStatusMessage();
 		return true;
-	}
-
-	private tryResolveGlobalReferenceAtCursor(context: CodeTabContext | null): { info: ReferenceMatchInfo; initialIndex: number } | null {
-		const identifier = this.extractHoverExpression(this.cursorRow, this.cursorColumn);
-		if (!identifier) {
-			return null;
-		}
-		const matches = findExpressionMatches(identifier.expression, this.lines);
-		if (matches.length === 0) {
-			return null;
-		}
-		const namePath = identifier.expression.split('.').filter(part => part.length > 0);
-		if (namePath.length === 0) {
-			return null;
-		}
-		matches.sort((a, b) => {
-			if (a.row !== b.row) {
-				return a.row - b.row;
-			}
-			return a.start - b.start;
-		});
-		let initialIndex = -1;
-		for (let index = 0; index < matches.length; index += 1) {
-			const match = matches[index];
-			if (match.row === this.cursorRow && this.cursorColumn >= match.start && this.cursorColumn < match.end) {
-				initialIndex = index;
-				break;
-			}
-		}
-		if (initialIndex === -1) {
-			initialIndex = 0;
-		}
-		const descriptor = context?.descriptor ?? null;
-		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
-		const assetId = descriptor?.assetId ?? this.primaryAssetId ?? null;
-		const chunkName = this.resolveHoverChunkName(context) ?? normalizedPath ?? assetId ?? '<console>';
-		const environment: ProjectReferenceEnvironment = {
-			activeContext: context,
-			activeLines: this.lines,
-			codeTabContexts: Array.from(this.codeTabContexts.values()),
-			listResources: () => this.listResourcesStrict(),
-			loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
-		};
-		const definitionKey = resolveDefinitionKeyForExpression({
-			expression: identifier.expression,
-			environment,
-			currentChunkName: chunkName,
-			currentPath: normalizedPath,
-		});
-		if (!definitionKey) {
-			return null;
-		}
-		const model = this.layout.getSemanticModel(this.lines, this.textVersion);
-		const filteredMatches: typeof matches = [];
-		for (let index = 0; index < matches.length; index += 1) {
-			const match = matches[index];
-			let keep = true;
-			if (model) {
-				const row = match.row + 1;
-				const column = match.start + 1;
-				const definition = model.lookupIdentifier(row, column, namePath);
-				if (definition && definitionKeyFromDefinition(definition) !== definitionKey) {
-					keep = false;
-				}
-			}
-			if (keep) {
-				filteredMatches.push(match);
-			}
-		}
-		if (filteredMatches.length === 0) {
-			return null;
-		}
-		const initialMatch = filteredMatches[Math.min(initialIndex, filteredMatches.length - 1)];
-		initialIndex = filteredMatches.indexOf(initialMatch);
-		if (initialIndex < 0) {
-			initialIndex = 0;
-		}
-		const info: ReferenceMatchInfo = {
-			matches: filteredMatches,
-			expression: identifier.expression,
-			definitionKey,
-			documentVersion: this.textVersion,
-		};
-		return { info, initialIndex };
 	}
 
 	private applyReferenceSelection(match: SearchMatch): void {
@@ -4230,6 +4148,36 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		return null;
 	}
 
+	private buildProjectReferenceContext(context: CodeTabContext | null): {
+		environment: ProjectReferenceEnvironment;
+		chunkName: string;
+		normalizedPath: string | null;
+		assetId: string | null;
+	} {
+		const descriptor = context?.descriptor ?? null;
+		const normalizedPath = descriptor?.path ? descriptor.path.replace(/\\/g, '/') : null;
+		const descriptorAssetId = descriptor?.assetId ?? null;
+		const resolvedAssetId = descriptorAssetId ?? this.primaryAssetId ?? null;
+		const resolvedChunk = this.resolveHoverChunkName(context)
+			?? normalizedPath
+			?? descriptorAssetId
+			?? resolvedAssetId
+			?? '<console>';
+		const environment: ProjectReferenceEnvironment = {
+			activeContext: context,
+			activeLines: this.lines,
+			codeTabContexts: Array.from(this.codeTabContexts.values()),
+			listResources: () => this.listResourcesStrict(),
+			loadLuaResource: (resourceId: string) => this.loadLuaResourceFn(resourceId),
+		};
+		return {
+			environment,
+			chunkName: resolvedChunk,
+			normalizedPath,
+			assetId: resolvedAssetId,
+		};
+	}
+
 	private resolveSemanticDefinitionLocation(
 		context: CodeTabContext | null,
 		expression: string,
@@ -4245,11 +4193,16 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		if (namePath.length === 0) {
 			return null;
 		}
-		const model = this.layout.getSemanticModel(this.lines, this.textVersion);
+		const activeContext = this.getActiveCodeTabContext();
+		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
+		const model = this.layout.getSemanticModel(this.lines, this.textVersion, chunkName);
 		if (!model) {
 			return null;
 		}
-		const definition = model.lookupIdentifier(usageRow, usageColumn, namePath);
+		let definition = model.lookupIdentifier(usageRow, usageColumn, namePath);
+		if (!definition) {
+			definition = this.findDefinitionAtPosition(model.definitions, usageRow, usageColumn, namePath);
+		}
 		if (!definition) {
 			return null;
 		}
@@ -4279,6 +4232,39 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			location.path = resolvedChunk;
 		}
 		return location;
+	}
+
+	private findDefinitionAtPosition(
+		definitions: readonly LuaDefinitionInfo[],
+		row: number,
+		column: number,
+		namePath: readonly string[],
+	): LuaDefinitionInfo | null {
+		for (let index = 0; index < definitions.length; index += 1) {
+			const candidate = definitions[index];
+			if (candidate.namePath.length !== namePath.length) {
+				continue;
+			}
+			let matches = true;
+			for (let i = 0; i < namePath.length; i += 1) {
+				if (candidate.namePath[i] !== namePath[i]) {
+					matches = false;
+					break;
+				}
+			}
+			if (!matches) {
+				continue;
+			}
+			const range = candidate.definition;
+			if (row !== range.start.line) {
+				continue;
+			}
+			if (column < range.start.column || column > range.end.column) {
+				continue;
+			}
+			return candidate;
+		}
+		return null;
 	}
 
 	private extractHoverExpression(row: number, column: number): { expression: string; startColumn: number; endColumn: number } | null {
@@ -4487,8 +4473,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			const projectDefinition = resolveDefinitionLocationForExpression({
 				expression: token.expression,
 				environment,
+				workspace: this.semanticWorkspace,
 				currentChunkName: resolvedChunkName,
-				currentPath: normalizedPath,
+				currentLines: this.lines,
+				currentAssetId: assetId,
+				sourceLabelPath: normalizedPath ?? descriptor?.assetId ?? null,
 			});
 			if (projectDefinition) {
 				this.navigateToLuaDefinition(projectDefinition);
@@ -7659,7 +7648,9 @@ private drawCursor(api: BmsxConsoleApi, info: CursorScreenInfo, textX: number): 
 	}
 
 	private getCachedHighlight(row: number): CachedHighlight {
-		return this.layout.getCachedHighlight(this.lines, row, this.textVersion);
+		const activeContext = this.getActiveCodeTabContext();
+		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
+		return this.layout.getCachedHighlight(this.lines, row, this.textVersion, chunkName);
 	}
 
 	protected invalidateLine(row: number): void {
@@ -7736,11 +7727,14 @@ private handleCompletionKeybindings(
 	}
 
 	protected ensureVisualLines(): void {
+		const activeContext = this.getActiveCodeTabContext();
+		const chunkName = this.resolveHoverChunkName(activeContext) ?? '<console>';
 		this.scrollRow = this.layout.ensureVisualLines({
 			lines: this.lines,
 			wordWrapEnabled: this.wordWrapEnabled,
 			scrollRow: this.scrollRow,
 			documentVersion: this.textVersion,
+			chunkName,
 			computeWrapWidth: () => this.computeWrapWidth(),
 		});
 		if (this.scrollRow < 0) {

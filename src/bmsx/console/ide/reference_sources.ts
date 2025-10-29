@@ -1,19 +1,10 @@
-import { LuaLexer } from '../../lua/lexer.ts';
-import { LuaTokenType } from '../../lua/token.ts';
-import type { LuaSemanticModel } from './semantic_model';
-import type { ConsoleLuaDefinitionLocation, ConsoleResourceDescriptor } from '../types';
-import type { CodeTabContext } from './types';
-import type { LuaDefinitionInfo } from '../../lua/ast.ts';
-import type { ReferenceMatchInfo } from './reference_navigation';
-import {
-	buildReferenceCatalog,
-	buildReferenceCatalogForSources,
-	referenceEntryKey,
-	definitionKeyFromDefinition,
-	type ReferenceCatalogEntry,
-	type ReferenceProjectSource,
-} from './reference_symbol_search';
-import { buildLuaSemanticModel } from './semantic_model';
+import { clamp } from '../../utils/utils.ts';
+import type { ConsoleLuaDefinitionLocation, ConsoleLuaSymbolEntry, ConsoleResourceDescriptor } from '../types';
+import type { CodeTabContext, SearchMatch, SymbolSearchResult } from './types.ts';
+import type { ReferenceMatchInfo } from './reference_navigation.ts';
+import { ReferenceState } from './reference_navigation.ts';
+import { LuaSemanticWorkspace } from './semantic_workspace.ts';
+import type { Decl } from './semantic_model';
 
 export type ProjectReferenceEnvironment = {
 	activeContext: CodeTabContext | null;
@@ -21,6 +12,21 @@ export type ProjectReferenceEnvironment = {
 	codeTabContexts: Iterable<CodeTabContext>;
 	listResources(): readonly ConsoleResourceDescriptor[];
 	loadLuaResource(assetId: string): string;
+};
+
+export type ReferenceSymbolEntry = ConsoleLuaSymbolEntry & {
+	__referenceMatch: SearchMatch;
+	__referenceIndex: number;
+	__referenceColumn: number;
+};
+
+export type ReferenceCatalogEntry = {
+	symbol: ReferenceSymbolEntry;
+	displayName: string;
+	searchKey: string;
+	line: number;
+	kindLabel: string;
+	sourceLabel: string | null;
 };
 
 export function computeSourceLabel(path: string | null, fallback: string): string {
@@ -44,59 +50,258 @@ export function isLuaResourceDescriptor(descriptor: ConsoleResourceDescriptor): 
 	return normalizedPath.endsWith('.lua');
 }
 
-export function descriptorReferenceKey(descriptor: ConsoleResourceDescriptor | null): string | null {
-	if (!descriptor) {
-		return null;
-	}
-	if (descriptor.path && descriptor.path.length > 0) {
-		return descriptor.path.replace(/\\/g, '/');
-	}
-	if (descriptor.assetId && descriptor.assetId.length > 0) {
-		return `asset:${descriptor.assetId}`;
-	}
-	return null;
-}
-
-export function normalizeSourceLines(source: string): string[] {
-	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-}
-
-type CollectProjectSourcesOptions = {
-	environment: ProjectReferenceEnvironment;
-	currentChunkName: string;
-	currentPath: string | null;
+type FileMetadata = {
+	chunkName: string;
+	lines: readonly string[];
+	assetId: string | null;
+	path: string | null;
+	sourceLabel: string;
 };
 
-export function collectProjectReferenceSources(options: CollectProjectSourcesOptions): ReferenceProjectSource[] {
-	const { environment, currentChunkName, currentPath } = options;
-	const sources: ReferenceProjectSource[] = [];
-	const descriptors = environment.listResources();
-	const normalizedCurrentPath = currentPath ? currentPath.replace(/\\/g, '/') : null;
-	const contextByKey: Map<string, CodeTabContext> = new Map();
-	for (const ctx of environment.codeTabContexts) {
-		const key = descriptorReferenceKey(ctx.descriptor ?? null);
-		if (key) {
-			contextByKey.set(key, ctx);
+type CollectMetadataOptions = {
+	workspace: LuaSemanticWorkspace;
+	environment: ProjectReferenceEnvironment;
+	currentChunkName: string;
+	currentLines: readonly string[];
+	currentAssetId: string | null;
+	sourceLabelPath?: string | null;
+};
+
+type BuildReferenceCatalogOptions = {
+	workspace: LuaSemanticWorkspace;
+	info: ReferenceMatchInfo;
+	lines: readonly string[];
+	chunkName: string;
+	assetId: string | null;
+	environment: ProjectReferenceEnvironment;
+	sourceLabelPath?: string | null;
+};
+
+type ResolveDefinitionLocationOptions = {
+	expression: string;
+	environment: ProjectReferenceEnvironment;
+	workspace: LuaSemanticWorkspace;
+	currentChunkName: string;
+	currentLines: readonly string[];
+	currentAssetId: string | null;
+	sourceLabelPath?: string | null;
+};
+
+type LuaSourceRangeLike = {
+	startLine: number;
+	startColumn: number;
+	endLine: number;
+	endColumn: number;
+};
+
+type CatalogEntryArgs = {
+	meta: FileMetadata;
+	match: SearchMatch;
+	range: LuaSourceRangeLike;
+	expression: string;
+	referenceIndex: number;
+};
+
+export function buildReferenceCatalogForExpression(options: BuildReferenceCatalogOptions): ReferenceCatalogEntry[] {
+	const { workspace, info, lines, chunkName, assetId, environment, sourceLabelPath } = options;
+	const metadata = collectFileMetadata({
+		workspace,
+		environment,
+		currentChunkName: chunkName,
+		currentLines: lines,
+		currentAssetId: assetId,
+		sourceLabelPath,
+	});
+	const entries: ReferenceCatalogEntry[] = [];
+	const existingKeys: Set<string> = new Set();
+	let nextIndex = 0;
+	const baseMeta = metadata.get(chunkName);
+	if (baseMeta) {
+		for (let index = 0; index < info.matches.length; index += 1) {
+			const match = info.matches[index];
+			const range = matchToRange(chunkName, match);
+			const entry = createCatalogEntry({ meta: baseMeta, match, range, expression: info.expression, referenceIndex: nextIndex });
+			appendCatalogEntry(entries, existingKeys, entry);
+			nextIndex += 1;
 		}
 	}
-	for (let index = 0; index < descriptors.length; index += 1) {
-		const descriptor = descriptors[index];
-		if (!isLuaResourceDescriptor(descriptor)) {
+	const decl = workspace.getDecl(info.definitionKey);
+	if (decl) {
+		const meta = metadata.get(decl.file);
+		if (meta) {
+			const match = rangeToSearchMatch(decl.range, meta.lines);
+			if (match) {
+				const entry = createCatalogEntry({ meta, match, range: toRangeLike(decl.range), expression: info.expression, referenceIndex: nextIndex });
+				appendCatalogEntry(entries, existingKeys, entry);
+				nextIndex += 1;
+			}
+		}
+	}
+	const references = workspace.getReferences(info.definitionKey);
+	for (let index = 0; index < references.length; index += 1) {
+		const reference = references[index];
+		const meta = metadata.get(reference.file);
+		if (!meta) {
 			continue;
 		}
-		const normalizedPath = descriptor.path ? descriptor.path.replace(/\\/g, '/') : null;
-		const chunkName = descriptor.path ?? descriptor.assetId ?? '<lua>';
-		if ((normalizedPath && normalizedPath === normalizedCurrentPath) || chunkName === currentChunkName) {
+		const match = rangeToSearchMatch(reference.range, meta.lines);
+		if (!match) {
 			continue;
 		}
-		const key = descriptorReferenceKey(descriptor);
+		const entry = createCatalogEntry({ meta, match, range: toRangeLike(reference.range), expression: info.expression, referenceIndex: nextIndex });
+		appendCatalogEntry(entries, existingKeys, entry);
+		nextIndex += 1;
+	}
+	return entries;
+}
+
+export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): ConsoleLuaDefinitionLocation | null {
+	const { expression, environment, workspace, currentChunkName, currentLines, currentAssetId, sourceLabelPath } = options;
+	const namePath = expression.split('.').filter(part => part.length > 0);
+	if (namePath.length === 0) {
+		return null;
+	}
+	const metadata = collectFileMetadata({
+		workspace,
+		environment,
+		currentChunkName,
+		currentLines,
+		currentAssetId,
+		sourceLabelPath,
+	});
+	let bestDecl: Decl | null = null;
+	let bestMeta: FileMetadata | null = null;
+	let bestScore = -Infinity;
+	const files = workspace.listFiles();
+	for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+		const file = files[fileIndex];
+		const meta = metadata.get(file);
+		const model = workspace.getModel(file);
+		if (!model || !meta) {
+			continue;
+		}
+		const decls = model.decls;
+		for (let declIndex = 0; declIndex < decls.length; declIndex += 1) {
+			const decl = decls[declIndex];
+			if (!namePathMatches(decl.namePath, namePath)) {
+				continue;
+			}
+			const score = declarationPriority(decl);
+			if (!bestDecl || score > bestScore || (score === bestScore && isDeclarationPreferred(decl, bestDecl))) {
+				bestDecl = decl;
+				bestMeta = meta;
+				bestScore = score;
+			}
+		}
+	}
+	if (!bestDecl || !bestMeta) {
+		return null;
+	}
+	const range = bestDecl.range;
+	const location: ConsoleLuaDefinitionLocation = {
+		chunkName: bestMeta.chunkName,
+		assetId: bestMeta.assetId,
+		range: {
+			startLine: range.start.line,
+			startColumn: range.start.column,
+			endLine: range.end.line,
+			endColumn: range.end.column,
+		},
+	};
+	if (bestMeta.path) {
+		location.path = bestMeta.path;
+	} else if (bestMeta.chunkName && bestMeta.chunkName !== '<console>') {
+		location.path = bestMeta.chunkName;
+	}
+	return location;
+}
+
+export function referenceEntryKey(entry: ReferenceCatalogEntry): string {
+	const location = entry.symbol.location;
+	const range = location.range;
+	const chunk = location.chunkName ?? '<console>';
+	return `${chunk}:${range.startLine}:${range.startColumn}`;
+}
+
+export function filterReferenceCatalog(options: { catalog: readonly ReferenceCatalogEntry[]; query: string; state: ReferenceState; pageSize: number }): {
+	matches: SymbolSearchResult[];
+	selectionIndex: number;
+	displayOffset: number;
+} {
+	const { catalog, query, state, pageSize } = options;
+	const normalized = query.trim().toLowerCase();
+	const matches: SymbolSearchResult[] = [];
+	for (let index = 0; index < catalog.length; index += 1) {
+		const entry = catalog[index];
+		const key = entry.searchKey;
+		const matchIndex = normalized.length === 0 ? 0 : key.indexOf(normalized);
+		if (normalized.length === 0 || matchIndex !== -1) {
+			matches.push({ entry, matchIndex: matchIndex === -1 ? Number.MAX_SAFE_INTEGER : matchIndex });
+		}
+	}
+	if (matches.length === 0) {
+		state.setActiveIndex(-1);
+		return { matches: [], selectionIndex: -1, displayOffset: 0 };
+	}
+	sortReferenceResults(matches);
+	const activeIndex = state.getActiveIndex();
+	let selectionIndex = matches.length > 0 ? 0 : -1;
+	if (activeIndex >= 0 && activeIndex < matches.length) {
+		selectionIndex = activeIndex;
+	}
+	state.setActiveIndex(selectionIndex);
+	let displayOffset = 0;
+	if (selectionIndex >= 0) {
+		displayOffset = clamp(selectionIndex - Math.floor(pageSize / 2), 0, Math.max(0, matches.length - pageSize));
+		if (selectionIndex >= displayOffset + pageSize) {
+			displayOffset = selectionIndex - pageSize + 1;
+		}
+		if (displayOffset < 0) {
+			displayOffset = 0;
+		}
+	}
+	return { matches, selectionIndex, displayOffset };
+}
+
+function collectFileMetadata(options: CollectMetadataOptions): Map<string, FileMetadata> {
+	const { workspace, environment, currentChunkName, currentLines, currentAssetId, sourceLabelPath } = options;
+	const metadata: Map<string, FileMetadata> = new Map();
+	const register = (chunkName: string, lines: readonly string[], assetId: string | null, path: string | null, labelHint: string | null): void => {
+		if (metadata.has(chunkName)) {
+			return;
+		}
+		const sourceLabel = computeSourceLabel(labelHint ?? path ?? assetId ?? chunkName, chunkName);
+		try {
+			workspace.updateFile(chunkName, lines.join('\n'));
+		} catch {
+			// Ignore parse errors; we still register metadata so callers can inspect raw lines.
+		}
+		metadata.set(chunkName, {
+			chunkName,
+			lines,
+			assetId,
+			path,
+			sourceLabel,
+		});
+	};
+	register(currentChunkName, currentLines, currentAssetId, null, sourceLabelPath ?? null);
+	const activeContext = environment.activeContext;
+	const contexts = Array.from(environment.codeTabContexts);
+	for (let index = 0; index < contexts.length; index += 1) {
+		const context = contexts[index];
+		const descriptor = context.descriptor ?? null;
+		const chunkName = resolveChunkName(descriptor, null);
+		if (metadata.has(chunkName)) {
+			continue;
+		}
 		let lines: readonly string[] | null = null;
-		if (key && contextByKey.has(key)) {
-			const ctx = contextByKey.get(key)!;
-			lines = resolveContextLines(ctx, environment);
-		} else if (descriptor.assetId) {
+		if (activeContext && context === activeContext) {
+			lines = environment.activeLines;
+		} else if (context.snapshot) {
+			lines = context.snapshot.lines;
+		} else {
 			try {
-				const source = environment.loadLuaResource(descriptor.assetId);
+				const source = context.load();
 				lines = normalizeSourceLines(source);
 			} catch {
 				lines = null;
@@ -105,255 +310,215 @@ export function collectProjectReferenceSources(options: CollectProjectSourcesOpt
 		if (!lines) {
 			continue;
 		}
-		const sourceText = lines.join('\n');
-		let semanticModel: LuaSemanticModel | null = null;
-		try {
-			semanticModel = buildLuaSemanticModel(sourceText, chunkName);
-		} catch {
-			semanticModel = null;
-		}
-		const identifierPositions = collectIdentifierPositions(sourceText, chunkName);
-		const sourceLabelSource = descriptor.path ?? descriptor.assetId ?? chunkName;
-		const sourceLabel = computeSourceLabel(sourceLabelSource, chunkName);
-		sources.push({
-			semanticModel,
-			identifierPositions,
-			chunkName,
-			assetId: descriptor.assetId ?? null,
-			path: descriptor.path ?? null,
-			sourceLabel,
-			lines,
-		});
+		const assetId = descriptor && descriptor.assetId ? descriptor.assetId : null;
+		const path = descriptor && descriptor.path ? normalizePath(descriptor.path) : null;
+		register(chunkName, lines, assetId, path, null);
 	}
-	return sources;
-}
-
-type BuildReferenceCatalogOptions = {
-	info: ReferenceMatchInfo;
-	lines: readonly string[];
-	normalizedPath: string | null;
-	chunkName: string;
-	assetId: string | null;
-	environment: ProjectReferenceEnvironment;
-	sourceLabelPath?: string | null;
-};
-
-export function buildReferenceCatalogForExpression(options: BuildReferenceCatalogOptions): ReferenceCatalogEntry[] {
-	const { info, lines, normalizedPath, chunkName, assetId, environment, sourceLabelPath } = options;
-	const labelSource = sourceLabelPath ?? normalizedPath ?? assetId ?? '';
-	const sourceLabel = computeSourceLabel(labelSource, chunkName);
-	const baseEntries = buildReferenceCatalog({
-		info,
-		lines,
-		chunkName,
-		assetId,
-		path: normalizedPath,
-		sourceLabel,
-	});
-	const existingKeys: Set<string> = new Set();
-	for (let index = 0; index < baseEntries.length; index += 1) {
-		existingKeys.add(referenceEntryKey(baseEntries[index]));
-	}
-	const projectSources = collectProjectReferenceSources({
-		environment,
-		currentChunkName: chunkName,
-		currentPath: normalizedPath,
-	});
-	const externalEntries = buildReferenceCatalogForSources({
-		expression: info.expression,
-		sources: projectSources,
-		definitionKey: info.definitionKey,
-		existingKeys,
-	});
-	return baseEntries.concat(externalEntries);
-}
-
-function resolveContextLines(context: CodeTabContext, environment: ProjectReferenceEnvironment): readonly string[] | null {
-	if (environment.activeContext && context === environment.activeContext) {
-		return environment.activeLines;
-	}
-	const snapshot = context.snapshot;
-	if (snapshot) {
-		return snapshot.lines;
-	}
-	try {
-		const source = context.load();
-		return normalizeSourceLines(source);
-	} catch {
-		return null;
-	}
-}
-
-function collectIdentifierPositions(source: string, chunkName: string): Set<string> {
-	const positions: Set<string> = new Set();
-	try {
-		const lexer = new LuaLexer(source, chunkName);
-		const tokens = lexer.scanTokens();
-		for (let index = 0; index < tokens.length; index += 1) {
-			const token = tokens[index];
-			if (token.type === LuaTokenType.Identifier) {
-				positions.add(`${token.line}:${token.column}`);
-			}
-		}
-	} catch {
-		// Ignore lexing errors; fallback to empty set.
-	}
-	return positions;
-}
-
-type ResolveDefinitionKeyOptions = {
-	expression: string;
-	environment: ProjectReferenceEnvironment;
-	currentChunkName: string;
-	currentPath: string | null;
-};
-
-export function resolveDefinitionKeyForExpression(options: ResolveDefinitionKeyOptions): string | null {
-	const { expression, environment, currentChunkName, currentPath } = options;
-	const namePath = expression.split('.').filter(part => part.length > 0);
-	if (namePath.length === 0) {
-		return null;
-	}
-	const sources = collectProjectReferenceSources({
-		environment,
-		currentChunkName,
-		currentPath,
-	});
-	let best: LuaDefinitionInfo | null = null;
-	let bestScore = -Infinity;
-	for (let index = 0; index < sources.length; index += 1) {
-		const source = sources[index];
-		const model = source.semanticModel;
-		if (!model) {
+	const descriptors = environment.listResources();
+	for (let index = 0; index < descriptors.length; index += 1) {
+		const descriptor = descriptors[index];
+		if (!isLuaResourceDescriptor(descriptor)) {
 			continue;
 		}
-		const definitions = model.definitions;
-		for (let defIndex = 0; defIndex < definitions.length; defIndex += 1) {
-			const definition = definitions[defIndex];
-			if (!definitionMatchesNamePath(definition, namePath)) {
-				continue;
-			}
-			const score = definitionPriority(definition);
-			if (!best || score > bestScore || (score === bestScore && isDefinitionPreferred(definition, best))) {
-				best = definition;
-				bestScore = score;
-			}
+		const chunkName = resolveChunkName(descriptor, null);
+		if (metadata.has(chunkName)) {
+			continue;
 		}
+		if (!descriptor.assetId) {
+			continue;
+		}
+		let lines: readonly string[] | null = null;
+		try {
+			const source = environment.loadLuaResource(descriptor.assetId);
+			lines = normalizeSourceLines(source);
+		} catch {
+			lines = null;
+		}
+		if (!lines) {
+			continue;
+		}
+		register(chunkName, lines, descriptor.assetId, normalizePath(descriptor.path ?? null), null);
 	}
-	if (!best) {
-		return null;
-	}
-	return definitionKeyFromDefinition(best);
+	return metadata;
 }
 
-function definitionMatchesNamePath(definition: LuaDefinitionInfo, namePath: readonly string[]): boolean {
-	if (definition.namePath.length !== namePath.length) {
+function resolveChunkName(descriptor: ConsoleResourceDescriptor | null, fallback: string | null): string {
+	if (descriptor) {
+		if (descriptor.path && descriptor.path.length > 0) {
+			return normalizePath(descriptor.path) ?? descriptor.path;
+		}
+		if (descriptor.assetId && descriptor.assetId.length > 0) {
+			return descriptor.assetId;
+		}
+	}
+	if (fallback && fallback.length > 0) {
+		return fallback;
+	}
+	return '<console>';
+}
+
+function normalizeSourceLines(source: string): string[] {
+	return source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+}
+
+function normalizePath(path: string | null): string | null {
+	if (!path) {
+		return null;
+	}
+	return path.replace(/\\/g, '/');
+}
+
+
+function toRangeLike(range: { start: { line: number; column: number }; end: { line: number; column: number } }): LuaSourceRangeLike {
+	return {
+		startLine: range.start.line,
+		startColumn: range.start.column,
+		endLine: range.end.line,
+		endColumn: range.end.column,
+	};
+}
+
+function rangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): SearchMatch | null {
+	const rowIndex = range.start.line - 1;
+	if (rowIndex < 0 || rowIndex >= lines.length) {
+		return null;
+	}
+	const line = lines[rowIndex] ?? '';
+	const startColumn = Math.max(0, range.start.column - 1);
+	const endInclusive = Math.max(startColumn, range.end.column - 1);
+	const endExclusive = Math.min(line.length, endInclusive + 1);
+	const clampedStart = Math.min(startColumn, line.length);
+	const clampedEnd = Math.max(clampedStart, endExclusive);
+	if (clampedEnd <= clampedStart) {
+		return null;
+	}
+	return { row: rowIndex, start: clampedStart, end: clampedEnd };
+}
+
+function buildReferenceSnippet(lines: readonly string[], match: SearchMatch): string {
+	const line = lines[match.row] ?? '';
+	const start = Math.max(0, match.start - 20);
+	const end = Math.min(line.length, match.end + 20);
+	const snippet = line.slice(start, end).trim();
+	return snippet.length > 0 ? snippet : line.trim();
+}
+
+function createCatalogEntry(args: CatalogEntryArgs): ReferenceCatalogEntry {
+	const { meta, match, range, expression, referenceIndex } = args;
+	const snippet = buildReferenceSnippet(meta.lines, match);
+	const symbolName = expression.length > 0 ? expression : snippet;
+	const location: ConsoleLuaDefinitionLocation = {
+		chunkName: meta.chunkName,
+		assetId: meta.assetId,
+		range: {
+			startLine: range.startLine,
+			startColumn: range.startColumn,
+			endLine: range.endLine,
+			endColumn: range.endColumn,
+		},
+	};
+	if (meta.path) {
+		location.path = meta.path;
+	}
+	const referenceSymbol: ReferenceSymbolEntry = {
+		name: symbolName,
+		path: meta.sourceLabel,
+		kind: 'assignment',
+		location,
+		__referenceMatch: match,
+		__referenceIndex: referenceIndex,
+		__referenceColumn: match.start + 1,
+	};
+	const searchTokens: string[] = [snippet.toLowerCase()];
+	if (symbolName.length > 0) {
+		searchTokens.push(symbolName.toLowerCase());
+	}
+	if (meta.sourceLabel.length > 0) {
+		searchTokens.push(meta.sourceLabel.toLowerCase());
+	}
+	return {
+		symbol: referenceSymbol,
+		displayName: snippet,
+		searchKey: searchTokens.join(' ').trim(),
+		line: match.row + 1,
+		kindLabel: 'REF',
+		sourceLabel: meta.sourceLabel,
+	};
+}
+
+function appendCatalogEntry(entries: ReferenceCatalogEntry[], existingKeys: Set<string>, entry: ReferenceCatalogEntry): void {
+	const key = referenceEntryKey(entry);
+	if (existingKeys.has(key)) {
+		return;
+	}
+	entries.push(entry);
+	existingKeys.add(key);
+}
+
+function namePathMatches(candidate: readonly string[], desired: readonly string[]): boolean {
+	if (candidate.length !== desired.length) {
 		return false;
 	}
-	for (let index = 0; index < namePath.length; index += 1) {
-		if (definition.namePath[index] !== namePath[index]) {
+	for (let index = 0; index < desired.length; index += 1) {
+		if (candidate[index] !== desired[index]) {
 			return false;
 		}
 	}
 	return true;
 }
 
-function definitionPriority(definition: LuaDefinitionInfo): number {
-	const { kind, scope, namePath } = definition;
-	const isTopLevelScope = scope.start.line === 1 && scope.start.column === 1;
-	const isRootIdentifier = namePath.length === 1;
-	switch (kind) {
-		case 'assignment': {
-			if (isRootIdentifier && isTopLevelScope) {
-				return 1000;
-			}
-			if (isRootIdentifier) {
-				return 800;
-			}
-			return 300;
-		}
-		case 'table_field':
-			return 600;
-		case 'variable':
-			return isTopLevelScope ? 500 : 350;
+function declarationPriority(decl: Decl): number {
+	const isTopLevelScope = decl.scope.start.line === 1 && decl.scope.start.column === 1;
+	const isRootIdentifier = decl.namePath.length === 1;
+	switch (decl.kind) {
+		case 'tableField':
+			return 700;
 		case 'function':
-			return isTopLevelScope && isRootIdentifier ? 450 : 320;
+			return isTopLevelScope && isRootIdentifier ? 650 : 520;
 		case 'parameter':
+			return 400;
+		case 'global':
+			return isRootIdentifier ? 600 : 450;
+		case 'local':
 		default:
-			return 100;
+			return isTopLevelScope ? 500 : 350;
 	}
 }
 
-function isDefinitionPreferred(candidate: LuaDefinitionInfo, current: LuaDefinitionInfo): boolean {
-	if (candidate.definition.start.line !== current.definition.start.line) {
-		return candidate.definition.start.line < current.definition.start.line;
+function isDeclarationPreferred(candidate: Decl, current: Decl): boolean {
+	if (candidate.range.start.line !== current.range.start.line) {
+		return candidate.range.start.line < current.range.start.line;
 	}
-	if (candidate.definition.start.column !== current.definition.start.column) {
-		return candidate.definition.start.column < current.definition.start.column;
+	if (candidate.range.start.column !== current.range.start.column) {
+		return candidate.range.start.column < current.range.start.column;
 	}
 	return candidate.name.localeCompare(current.name) < 0;
 }
 
-type ResolveDefinitionLocationOptions = {
-	expression: string;
-	environment: ProjectReferenceEnvironment;
-	currentChunkName: string;
-	currentPath: string | null;
-};
-
-export function resolveDefinitionLocationForExpression(options: ResolveDefinitionLocationOptions): ConsoleLuaDefinitionLocation | null {
-	const { expression, environment, currentChunkName, currentPath } = options;
-	const namePath = expression.split('.').filter(part => part.length > 0);
-	if (namePath.length === 0) {
-		return null;
-	}
-	const sources = collectProjectReferenceSources({
-		environment,
-		currentChunkName,
-		currentPath,
+function sortReferenceResults(matches: SymbolSearchResult[]): void {
+	matches.sort((a, b) => {
+		if (a.matchIndex !== b.matchIndex) {
+			return a.matchIndex - b.matchIndex;
+		}
+		const symbolA = a.entry.symbol as ReferenceSymbolEntry;
+		const symbolB = b.entry.symbol as ReferenceSymbolEntry;
+		const lineDiff = symbolA.location.range.startLine - symbolB.location.range.startLine;
+		if (lineDiff !== 0) {
+			return lineDiff;
+		}
+		const columnDiff = symbolA.__referenceColumn - symbolB.__referenceColumn;
+		if (columnDiff !== 0) {
+			return columnDiff;
+		}
+		return a.entry.displayName.localeCompare(b.entry.displayName);
 	});
-	let bestDefinition: LuaDefinitionInfo | null = null;
-	let bestSource: ReferenceProjectSource | null = null;
-	let bestScore = -Infinity;
-	for (let index = 0; index < sources.length; index += 1) {
-		const source = sources[index];
-		const model = source.semanticModel;
-		if (!model) {
-			continue;
-		}
-		const definitions = model.definitions;
-		for (let defIndex = 0; defIndex < definitions.length; defIndex += 1) {
-			const definition = definitions[defIndex];
-			if (!definitionMatchesNamePath(definition, namePath)) {
-				continue;
-			}
-			const score = definitionPriority(definition);
-			if (!bestDefinition || score > bestScore || (score === bestScore && isDefinitionPreferred(definition, bestDefinition))) {
-				bestDefinition = definition;
-				bestSource = source;
-				bestScore = score;
-			}
-		}
-	}
-	if (!bestDefinition || !bestSource) {
-		return null;
-	}
-	const chunkName = bestSource.chunkName ?? currentChunkName;
-	const assetId = bestSource.assetId ?? null;
-	const location: ConsoleLuaDefinitionLocation = {
-		chunkName,
-		assetId,
-		range: {
-			startLine: bestDefinition.definition.start.line,
-			startColumn: bestDefinition.definition.start.column,
-			endLine: bestDefinition.definition.end.line,
-			endColumn: bestDefinition.definition.end.column,
-		},
+}
+
+function matchToRange(chunkName: string, match: SearchMatch): LuaSourceRangeLike {
+	return {
+		startLine: match.row + 1,
+		startColumn: match.start + 1,
+		endLine: match.row + 1,
+		endColumn: match.end,
 	};
-	if (bestSource.path) {
-		location.path = bestSource.path;
-	} else if (chunkName && chunkName !== '<console>') {
-		location.path = chunkName;
-	}
-	return location;
 }

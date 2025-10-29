@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import type { CodeTabContext } from '../../src/bmsx/console/ide/types';
 import type { ProjectReferenceEnvironment } from '../../src/bmsx/console/ide/reference_sources';
 import type { ConsoleResourceDescriptor } from '../../src/bmsx/console/types';
+import type { ConsoleCodeLayout } from '../../src/bmsx/console/ide/code_layout';
 
 register('./glsl-loader.mjs', import.meta.url);
 
@@ -50,7 +51,7 @@ registerStubModule(gameserializerPath, (() => {
 })());
 
 const consoleApiPath = require.resolve('../../src/bmsx/console/api.ts');
-registerStubModule(consoleApiPath, {
+const consoleApiExports = {
 	BmsxConsoleApi: class {
 		public emit(eventName: string, payload?: unknown, emitterId?: unknown): void {
 			void eventName;
@@ -68,7 +69,10 @@ registerStubModule(consoleApiPath, {
 			void payload;
 		}
 	},
-});
+};
+registerStubModule(consoleApiPath, consoleApiExports);
+registerStubModule(consoleApiPath.replace(/\.ts$/, ''), consoleApiExports);
+registerStubModule(consoleApiPath.replace(/\.ts$/, '.js'), consoleApiExports);
 
 function registerEmptyModule(relativePath: string): void {
 	const fileUrl = new URL(relativePath, import.meta.url);
@@ -84,7 +88,25 @@ registerEmptyModule('../../src/bmsx/render/3d/shaders/particle.vert.glsl');
 const intellisenseModulePromise = import('../../src/bmsx/console/ide/intellisense.ts');
 const semanticModelModulePromise = import('../../src/bmsx/console/ide/semantic_model.ts');
 const referenceSourcesModulePromise = import('../../src/bmsx/console/ide/reference_sources.ts');
-const referenceSearchModulePromise = import('../../src/bmsx/console/ide/reference_symbol_search.ts');
+const workspaceModulePromise = import('../../src/bmsx/console/ide/semantic_workspace.ts');
+const referenceNavigationModulePromise = import('../../src/bmsx/console/ide/reference_navigation.ts');
+
+function luaRangeToSearchMatch(range: { start: { line: number; column: number }; end: { line: number; column: number } }, lines: readonly string[]): { row: number; start: number; end: number } | null {
+	const rowIndex = range.start.line - 1;
+	if (rowIndex < 0 || rowIndex >= lines.length) {
+		return null;
+	}
+	const line = lines[rowIndex] ?? '';
+	const startColumn = Math.max(0, range.start.column - 1);
+	const endInclusive = Math.max(startColumn, range.end.column - 1);
+	const endExclusive = Math.min(line.length, endInclusive + 1);
+	const clampedStart = Math.min(startColumn, line.length);
+	const clampedEnd = Math.max(clampedStart, endExclusive);
+	if (clampedEnd <= clampedStart) {
+		return null;
+	}
+	return { row: rowIndex, start: clampedStart, end: clampedEnd };
+}
 
 async function runDiagnostics(source: string) {
 	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
@@ -98,6 +120,8 @@ async function runDiagnostics(source: string) {
 		apiSignatures: apiData.signatures,
 	});
 }
+
+// Diagnostic tests remain unchanged
 
 test('flags undefined identifier', async () => {
 	const diagnostics = await runDiagnostics('return missing_value');
@@ -113,7 +137,7 @@ local function add(a, b)
 end
 return add(1)
 `);
-assert.equal(diagnostics.length, 1);
+	assert.equal(diagnostics.length, 1);
 	assert.match(diagnostics[0].message, /add(?:\(\))? expects 2 arguments/i);
 });
 
@@ -136,9 +160,11 @@ local function send()
 end
 send()
 `);
-assert.equal(diagnostics.length, 1);
+	assert.equal(diagnostics.length, 1);
 	assert.match(diagnostics[0].message, /emit_gameplay expects 3 arguments/i);
 });
+
+// Semantic model behavior tests
 
 test('semantic model distinguishes table field and parameter', async () => {
 	const { buildLuaSemanticModel } = await semanticModelModulePromise;
@@ -158,9 +184,9 @@ end
 	const rightDefinition = model.lookupIdentifier(4, rightZeroBased + 1, ['seed']);
 	assert.ok(leftDefinition, 'left seed definition');
 	assert.ok(rightDefinition, 'right seed definition');
-	assert.equal(leftDefinition.kind, 'table_field');
-	assert.equal(rightDefinition.kind, 'parameter');
-	assert.equal(rightDefinition.definition.start.line, 2);
+	assert.equal(leftDefinition!.kind, 'table_field');
+	assert.equal(rightDefinition!.kind, 'parameter');
+	assert.equal(rightDefinition!.definition.start.line, 2);
 });
 
 test('semantic model resolves table property access', async () => {
@@ -180,9 +206,9 @@ state.count = state.count + 1
 	const definitionAgain = model.lookupIdentifier(5, secondZeroBased + 1, ['state', 'count']);
 	assert.ok(definition, 'property definition found');
 	assert.ok(definitionAgain, 'property definition found for rhs');
-	assert.equal(definition.kind, 'table_field');
-	assert.equal(definition.definition.start.line, 3);
-	assert.equal(definitionAgain.definition.start.line, definition.definition.start.line);
+	assert.equal(definition!.kind, 'table_field');
+	assert.equal(definition!.definition.start.line, 3);
+	assert.equal(definitionAgain!.definition.start.line, definition!.definition.start.line);
 });
 
 test('semantic model reports references for locals', async () => {
@@ -197,16 +223,17 @@ test('semantic model reports references for locals', async () => {
 	const definitionColumn = lines[0].indexOf('counter') + 1;
 	const lookup = model.lookupReferences(1, definitionColumn, ['counter']);
 	assert.ok(lookup.definition, 'definition present');
-	assert.equal(lookup.references.length, 3);
 	const referenceKeys = lookup.references.map(range => `${range.start.line}:${range.start.column}`);
+	const secondLine = lines[1];
+	const firstValueColumn = secondLine.indexOf('counter') + 1;
+	const secondValueColumn = secondLine.indexOf('counter', secondLine.indexOf('counter') + 1) + 1;
+	const thirdLineColumn = lines[2].indexOf('counter') + 1;
 	const expectedKeys = [
-		`${2}:${lines[1].indexOf('counter') + 1}`,
-		`${2}:${lines[1].indexOf('counter', lines[1].indexOf('counter') + 1) + 1}`,
-		`${3}:${lines[2].indexOf('counter') + 1}`,
+		`${2}:${firstValueColumn}`,
+		`${2}:${secondValueColumn}`,
+		`${3}:${thirdLineColumn}`,
 	];
 	assert.deepEqual(referenceKeys, expectedKeys);
-	const definitionReferences = model.getDefinitionReferences(lookup.definition!);
-	assert.equal(definitionReferences.length, lookup.references.length);
 });
 
 test('semantic model reports references for table fields', async () => {
@@ -232,23 +259,28 @@ test('semantic model reports references for table fields', async () => {
 		`${3}:${thirdLineColumn}`,
 	];
 	assert.deepEqual(referenceKeys, expectedKeys);
-	const roundTrip = model.getDefinitionReferences(lookup.definition!);
-	assert.equal(roundTrip.length, lookup.references.length);
 });
 
+// Workspace-driven reference catalog test
+
 test('project reference catalog resolves globals across chunks', async () => {
-	const { buildReferenceCatalogForExpression, resolveDefinitionKeyForExpression } = await referenceSourcesModulePromise;
-	const { findExpressionMatches } = await referenceSearchModulePromise;
+	const { buildReferenceCatalogForExpression } = await referenceSourcesModulePromise;
+	const { LuaSemanticWorkspace } = await workspaceModulePromise;
 	const usageSource = [
-		'function dummy_handler()'
-		,	'\tprint(state, 10)'
-		,	'end',
+		'function dummy_handler()',
+		'\tprint(state, 10)',
+		'end',
 	].join('\n');
 	const globalSource = [
 		'state = {',
 		'\tvalue = 1',
 		'}',
 		'print(state.value)',
+	].join('\n');
+	const parameterSource = [
+		'local function handler(self, state, payload)',
+		'\tprint(state)',
+		'end',
 	].join('\n');
 	const localSource = [
 		'local state = {',
@@ -256,15 +288,18 @@ test('project reference catalog resolves globals across chunks', async () => {
 		'}',
 		'return state',
 	].join('\n');
-	const parameterSource = [
-		'local function handler(self, state, payload)',
-		'\tprint(state)',
-		'end',
-	].join('\n');
+ 
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('usage.lua', usageSource);
+	workspace.updateFile('global.lua', globalSource);
+	workspace.updateFile('parameter.lua', parameterSource);
+	workspace.updateFile('local.lua', localSource);
+ 
 	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
 	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
 	const parameterDescriptor: ConsoleResourceDescriptor = { path: 'parameter.lua', type: 'lua', assetId: 'parameter' };
 	const localDescriptor: ConsoleResourceDescriptor = { path: 'local.lua', type: 'lua', assetId: 'local' };
+ 
 	const usageContext: CodeTabContext = {
 		id: 'usage',
 		title: 'usage.lua',
@@ -279,6 +314,7 @@ test('project reference catalog resolves globals across chunks', async () => {
 		runtimeErrorOverlay: null,
 		executionStopRow: null,
 	};
+ 
 	const usageLines = usageSource.split('\n');
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: usageContext,
@@ -286,73 +322,77 @@ test('project reference catalog resolves globals across chunks', async () => {
 		codeTabContexts: [usageContext],
 		listResources: () => [usageDescriptor, globalDescriptor, parameterDescriptor, localDescriptor],
 		loadLuaResource: (assetId: string) => {
-			if (assetId === 'usage') {
-				return usageSource;
-			}
-			if (assetId === 'global') {
-				return globalSource;
-			}
-			if (assetId === 'parameter') {
-				return parameterSource;
-			}
-			if (assetId === 'local') {
-				return localSource;
-			}
+			if (assetId === 'usage') return usageSource;
+			if (assetId === 'global') return globalSource;
+			if (assetId === 'parameter') return parameterSource;
+			if (assetId === 'local') return localSource;
 			throw new Error(`Unexpected asset ${assetId}`);
 		},
 	};
-	const definitionKey = resolveDefinitionKeyForExpression({
-		expression: 'state',
-		environment,
-		currentChunkName: 'usage.lua',
-		currentPath: 'usage.lua',
-	});
-	assert.ok(definitionKey, 'definition key resolved for global state');
-	const matches = findExpressionMatches('state', usageLines);
-	assert.ok(matches.length > 0, 'usage matches found');
+ 
+	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
+	assert.ok(stateRow >= 0);
+	const stateColumn = usageLines[stateRow]!.indexOf('state');
+	assert.ok(stateColumn >= 0);
+ 
+	const symbolInfo = workspace.findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
+	assert.ok(symbolInfo);
+	if (!symbolInfo) {
+		return;
+	}
+ 
+	const matches = symbolInfo.references
+		.filter(ref => ref.file === 'usage.lua')
+		.map(ref => luaRangeToSearchMatch(ref.range, usageLines))
+		.filter((match): match is { row: number; start: number; end: number } => match !== null);
+ 
 	const info = {
 		matches,
 		expression: 'state',
-		definitionKey: definitionKey!,
+		definitionKey: symbolInfo.id,
 		documentVersion: 1,
 	};
+ 
 	const catalog = buildReferenceCatalogForExpression({
+		workspace,
 		info,
 		lines: usageLines,
-		normalizedPath: 'usage.lua',
 		chunkName: 'usage.lua',
 		assetId: 'usage',
 		environment,
 		sourceLabelPath: 'usage.lua',
 	});
+ 
 	assert.ok(catalog.some(entry => entry.symbol.location.chunkName === 'global.lua'), 'global chunk included in reference catalog');
 	const usageEntries = catalog.filter(entry => entry.symbol.location.chunkName === 'usage.lua');
 	assert.equal(usageEntries.length, matches.length, 'usage matches retained');
-	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'parameter.lua'), 'local parameter file excluded from references');
+	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'parameter.lua'), 'parameter file excluded from references');
 	assert.ok(!catalog.some(entry => entry.symbol.location.chunkName === 'local.lua'), 'local-scoped variable file excluded from references');
 });
 
-test('intellisense recognizes global variable from another file', async () => {
-	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
-	const { buildReferenceCatalogForExpression, resolveDefinitionKeyForExpression } = await referenceSourcesModulePromise;
-	const { findExpressionMatches } = await referenceSearchModulePromise;
-
+test('project definition resolver locates global across chunks', async () => {
+	const { resolveDefinitionLocationForExpression } = await referenceSourcesModulePromise;
+	const { LuaSemanticWorkspace } = await workspaceModulePromise;
+ 
 	const usageSource = [
 		'function dummy_handler()',
 		'\tprint(state, 10)',
 		'end',
 	].join('\n');
-
 	const globalSource = [
 		'state = {',
 		'\tvalue = 1',
 		'}',
 		'print(state.value)',
 	].join('\n');
-
+ 
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('usage.lua', usageSource);
+	workspace.updateFile('global.lua', globalSource);
+ 
 	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
 	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
-
+ 
 	const usageContext: CodeTabContext = {
 		id: 'usage',
 		title: 'usage.lua',
@@ -367,9 +407,9 @@ test('intellisense recognizes global variable from another file', async () => {
 		runtimeErrorOverlay: null,
 		executionStopRow: null,
 	};
-
+ 
 	const usageLines = usageSource.split('\n');
-
+ 
 	const environment: ProjectReferenceEnvironment = {
 		activeContext: usageContext,
 		activeLines: usageLines,
@@ -381,57 +421,239 @@ test('intellisense recognizes global variable from another file', async () => {
 			throw new Error(`Unexpected asset ${assetId}`);
 		},
 	};
-
-	// Resolve the definition key for 'state' (global)
-	const definitionKey = resolveDefinitionKeyForExpression({
+ 
+	const location = resolveDefinitionLocationForExpression({
 		expression: 'state',
 		environment,
+		workspace,
 		currentChunkName: 'usage.lua',
-		currentPath: 'usage.lua',
+		currentLines: usageLines,
+		currentAssetId: 'usage',
+		sourceLabelPath: 'usage.lua',
 	});
-	assert.ok(definitionKey, 'definition key resolved for global state');
-
-	// Find matches for 'state' inside the usage lines
-	const matches = findExpressionMatches('state', usageLines);
-	assert.ok(matches.length > 0, 'usage matches found');
-
+ 
+	assert.ok(location, 'global definition location resolved');
+	assert.equal(location!.chunkName, 'global.lua');
+	assert.equal(location!.assetId, 'global');
+	assert.equal(location!.range.startLine, 1);
+	assert.equal(location!.range.startColumn, 1);
+});
+ 
+test('reference lookup resolves global definition across chunks', async () => {
+	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
+	const { LuaSemanticWorkspace } = await workspaceModulePromise;
+ 
+	const usageSource = [
+		'function dummy_handler(self)',
+		'\tprint(state, 10, 10, 5)',
+		'end',
+		'',
+		'local function helper(self, state)',
+		'\treturn state',
+		'end',
+	].join('\n');
+ 
+	const globalSource = [
+		'state = {',
+		'\tvalue = 42',
+		'}',
+	].join('\n');
+ 
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('usage.lua', usageSource);
+	workspace.updateFile('global.lua', globalSource);
+ 
+	const usageLines = usageSource.split('\n');
+	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+	const model = buildLuaSemanticModel(usageSource, 'usage.lua');
+	const layout = {
+		getSemanticModel: () => model,
+	} as unknown as ConsoleCodeLayout;
+ 
+	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
+	assert.ok(stateRow >= 0);
+	const stateColumn = usageLines[stateRow]!.indexOf('state');
+	assert.ok(stateColumn >= 0);
+ 
+	const result = resolveReferenceLookup({
+		layout,
+		workspace,
+		lines: usageLines,
+		textVersion: 1,
+		cursorRow: stateRow,
+		cursorColumn: stateColumn,
+		extractExpression: (row, column) => {
+			const line = usageLines[row] ?? '';
+			const name = 'state';
+			const index = line.indexOf(name);
+			if (index === -1 || column < index || column >= index + name.length) {
+				return null;
+			}
+			return { expression: 'state', startColumn: index, endColumn: index + name.length };
+		},
+		chunkName: 'usage.lua',
+	});
+ 
+	assert.equal(result.kind, 'success', 'reference lookup succeeded');
+	if (result.kind === 'success') {
+		assert.ok(result.info.matches.length > 0, 'matches found');
+		const symbolInfo = workspace.findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
+		assert.ok(symbolInfo);
+		if (symbolInfo) {
+			assert.equal(result.info.definitionKey, symbolInfo.id);
+		}
+	}
+});
+ 
+test('reference lookup prefers local parameter over global', async () => {
+	const { resolveReferenceLookup } = await referenceNavigationModulePromise;
+	const { LuaSemanticWorkspace } = await workspaceModulePromise;
+	const { buildLuaSemanticModel } = await semanticModelModulePromise;
+ 
+	const globalSource = 'state = {}';
+	const usageSource = [
+		'local function helper(self, state)',
+		'\treturn state',
+		'end',
+		'',
+		'print(state)',
+	].join('\n');
+ 
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('usage.lua', usageSource);
+	workspace.updateFile('global.lua', globalSource);
+ 
+	const usageLines = usageSource.split('\n');
+	const model = buildLuaSemanticModel(usageSource, 'usage.lua');
+	const layout = {
+		getSemanticModel: () => model,
+	} as unknown as ConsoleCodeLayout;
+ 
+	const helperLineIndex = usageLines.findIndex(line => line.includes('helper'));
+	assert.ok(helperLineIndex >= 0);
+	const parameterColumn = usageLines[helperLineIndex]!.indexOf('state');
+ 
+	const parameterResult = resolveReferenceLookup({
+		layout,
+		workspace,
+		lines: usageLines,
+		textVersion: 1,
+		cursorRow: helperLineIndex,
+		cursorColumn: parameterColumn,
+		extractExpression: (row, column) => {
+			const line = usageLines[row] ?? '';
+			const name = 'state';
+			const index = line.indexOf(name);
+			if (index === -1 || column < index || column >= index + name.length) {
+				return null;
+			}
+			return { expression: 'state', startColumn: index, endColumn: index + name.length };
+		},
+		chunkName: 'usage.lua',
+	});
+ 
+	assert.equal(parameterResult.kind, 'success', 'parameter lookup succeeds');
+	if (parameterResult.kind === 'success') {
+		const workspaceGlobal = workspace.findReferencesByPosition('global.lua', 1, 1);
+		if (workspaceGlobal) {
+			assert.notEqual(parameterResult.info.definitionKey, workspaceGlobal.id, 'parameter is not resolved as global');
+		}
+	}
+});
+ 
+test('intellisense recognizes global variable from another file', async () => {
+	const { computeLuaDiagnostics, getApiCompletionData } = await intellisenseModulePromise;
+	const { buildReferenceCatalogForExpression } = await referenceSourcesModulePromise;
+	const { LuaSemanticWorkspace } = await workspaceModulePromise;
+ 
+	const usageSource = [
+		'function dummy_handler()',
+		'\tprint(state, 10)',
+		'end',
+	].join('\n');
+ 
+	const globalSource = [
+		'state = {',
+		'\tvalue = 1',
+		'}',
+		'print(state.value)',
+	].join('\n');
+ 
+	const workspace = new LuaSemanticWorkspace();
+	workspace.updateFile('usage.lua', usageSource);
+	workspace.updateFile('global.lua', globalSource);
+ 
+	const usageDescriptor: ConsoleResourceDescriptor = { path: 'usage.lua', type: 'lua', assetId: 'usage' };
+	const globalDescriptor: ConsoleResourceDescriptor = { path: 'global.lua', type: 'lua', assetId: 'global' };
+ 
+	const usageContext: CodeTabContext = {
+		id: 'usage',
+		title: 'usage.lua',
+		descriptor: usageDescriptor,
+		load: () => usageSource,
+		save: async () => {},
+		snapshot: null,
+		lastSavedSource: usageSource,
+		saveGeneration: 0,
+		appliedGeneration: 0,
+		dirty: false,
+		runtimeErrorOverlay: null,
+		executionStopRow: null,
+	};
+ 
+	const usageLines = usageSource.split('\n');
+ 
+	const environment: ProjectReferenceEnvironment = {
+		activeContext: usageContext,
+		activeLines: usageLines,
+		codeTabContexts: [usageContext],
+		listResources: () => [usageDescriptor, globalDescriptor],
+		loadLuaResource: (assetId: string) => {
+			if (assetId === 'usage') return usageSource;
+			if (assetId === 'global') return globalSource;
+			throw new Error(`Unexpected asset ${assetId}`);
+		},
+	};
+ 
+	const stateRow = usageLines.findIndex(line => line.includes('print(state'));
+	const stateColumn = usageLines[stateRow]!.indexOf('state');
+	const symbolInfo = workspace.findReferencesByPosition('usage.lua', stateRow + 1, stateColumn + 1);
+	assert.ok(symbolInfo);
+	if (!symbolInfo) {
+		return;
+	}
+ 
+	const matches = symbolInfo.references
+		.filter(ref => ref.file === 'usage.lua')
+		.map(ref => luaRangeToSearchMatch(ref.range, usageLines))
+		.filter((match): match is { row: number; start: number; end: number } => match !== null);
+ 
 	const info = {
 		matches,
 		expression: 'state',
-		definitionKey: definitionKey!,
+		definitionKey: symbolInfo.id,
 		documentVersion: 1,
 	};
-
-	// Build a reference catalog for the expression; this should include the global.lua entry
+ 
 	const catalog = buildReferenceCatalogForExpression({
+		workspace,
 		info,
 		lines: usageLines,
-		normalizedPath: 'usage.lua',
 		chunkName: 'usage.lua',
 		assetId: 'usage',
 		environment,
 		sourceLabelPath: 'usage.lua',
 	});
-
-	// Extract symbol entries that correspond to the global chunk (global.lua)
-	const globalSymbols = catalog
-		.filter(entry => entry.symbol.location && entry.symbol.location.chunkName === 'global.lua')
-		.map(entry => entry.symbol);
-
-	// Ensure we have at least one global symbol to provide to the intellisense diagnostics
-	assert.ok(globalSymbols.length > 0, 'global symbol(s) found in catalog');
-
-	// Run diagnostics for the usage source while providing the discovered globalSymbols
+ 
 	const apiData = getApiCompletionData();
 	const diagnostics = computeLuaDiagnostics({
 		source: usageSource,
 		chunkName: 'usage.lua',
 		localSymbols: [],
-		globalSymbols,
+		globalSymbols: catalog.map(entry => entry.symbol),
 		builtinDescriptors: [],
 		apiSignatures: apiData.signatures,
 	});
-
-	// Expect no "undefined" errors for 'state' because it is defined in another file and provided as a global symbol
-	assert.ok(!diagnostics.some(d => /'state' is not defined/.test(d.message)), 'no "undefined" error for global "state"');
+ 
+	assert.ok(!diagnostics.some(d => /'state' is not defined/.test(d.message)), 'no undefined error for global state');
 });

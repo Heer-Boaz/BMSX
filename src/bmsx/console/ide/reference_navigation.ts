@@ -1,16 +1,19 @@
 import type { ConsoleCodeLayout } from './code_layout';
-import type { SearchMatch } from './types';
-import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
+import type { SearchMatch } from './types.ts';
+import { LuaSemanticWorkspace } from './semantic_workspace.ts';
+import type { LuaSourceRange } from '../../lua/ast.ts';
 
 export type ExtractIdentifierExpression = (row: number, column: number) => { expression: string; startColumn: number; endColumn: number } | null;
 
 export type ReferenceLookupOptions = {
 	layout: ConsoleCodeLayout;
+	workspace: LuaSemanticWorkspace;
 	lines: readonly string[];
 	textVersion: number;
 	cursorRow: number;
 	cursorColumn: number;
 	extractExpression: ExtractIdentifierExpression;
+	chunkName: string;
 };
 
 export type ReferenceMatchInfo = {
@@ -105,8 +108,17 @@ export class ReferenceState {
 }
 
 export function resolveReferenceLookup(options: ReferenceLookupOptions): ReferenceLookupResult {
-	const { layout, lines, textVersion, cursorRow, cursorColumn, extractExpression } = options;
-	const model = layout.getSemanticModel(lines, textVersion);
+	const {
+		layout,
+		workspace,
+		lines,
+		textVersion,
+		cursorRow,
+		cursorColumn,
+		extractExpression,
+		chunkName,
+	} = options;
+	const model = layout.getSemanticModel(lines, textVersion, chunkName);
 	if (!model) {
 		return { kind: 'error', message: 'References unavailable', duration: 1.6 };
 	}
@@ -114,28 +126,41 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 	if (!identifier) {
 		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
 	}
-	const namePath = identifier.expression.split('.').filter(part => part.length > 0);
-	if (namePath.length === 0) {
-		return { kind: 'error', message: 'No identifier at cursor', duration: 1.6 };
-	}
-	const definition = model.lookupIdentifier(cursorRow + 1, identifier.startColumn + 1, namePath);
-	if (!definition) {
+	const resolution = workspace.findReferencesByPosition(chunkName, cursorRow + 1, cursorColumn + 1);
+	if (!resolution) {
 		return {
 			kind: 'error',
 			message: `Definition not found for ${identifier.expression}`,
 			duration: 1.8,
 		};
 	}
-	const references = model.getDefinitionReferences(definition);
-	if (!references || references.length === 0) {
-		return { kind: 'error', message: 'No references found', duration: 1.6 };
-	}
 	const matches: SearchMatch[] = [];
-	for (let i = 0; i < references.length; i += 1) {
-		const match = rangeToSearchMatch(references[i], lines);
-		if (match) {
-			matches.push(match);
+	const seen = new Set<string>();
+	const definitionRange = resolution.decl.range;
+	if (definitionRange.chunkName === chunkName) {
+		const definitionMatch = rangeToSearchMatch(definitionRange, lines);
+		if (definitionMatch) {
+			const key = `${definitionMatch.row}:${definitionMatch.start}`;
+			seen.add(key);
+			matches.push(definitionMatch);
 		}
+	}
+	const references = resolution.references;
+	for (let index = 0; index < references.length; index += 1) {
+		const reference = references[index];
+		if (reference.file !== chunkName) {
+			continue;
+		}
+		const match = rangeToSearchMatch(reference.range, lines);
+		if (!match) {
+			continue;
+		}
+		const key = `${match.row}:${match.start}`;
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		matches.push(match);
 	}
 	if (matches.length === 0) {
 		return { kind: 'error', message: 'No references found in this document', duration: 1.6 };
@@ -146,29 +171,21 @@ export function resolveReferenceLookup(options: ReferenceLookupOptions): Referen
 		}
 		return a.start - b.start;
 	});
-	let initialIndex = -1;
-	for (let i = 0; i < matches.length; i += 1) {
-		const match = matches[i];
+	let initialIndex = 0;
+	for (let index = 0; index < matches.length; index += 1) {
+		const match = matches[index];
 		if (match.row === cursorRow && cursorColumn >= match.start && cursorColumn < match.end) {
-			initialIndex = i;
+			initialIndex = index;
 			break;
 		}
-	}
-	if (initialIndex === -1) {
-		initialIndex = 0;
 	}
 	const info: ReferenceMatchInfo = {
 		matches,
 		expression: identifier.expression,
-		definitionKey: buildDefinitionKey(definition),
+		definitionKey: resolution.id,
 		documentVersion: textVersion,
 	};
 	return { kind: 'success', info, initialIndex };
-}
-
-function buildDefinitionKey(definition: LuaDefinitionInfo): string {
-	const path = definition.namePath.join('.');
-	return `${definition.definition.start.line}:${definition.definition.start.column}:${definition.definition.end.line}:${definition.definition.end.column}:${definition.kind}:${path}`;
 }
 
 function rangeToSearchMatch(range: LuaSourceRange, lines: readonly string[]): SearchMatch | null {
