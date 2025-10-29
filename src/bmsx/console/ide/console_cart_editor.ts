@@ -106,6 +106,7 @@ import {
 } from './reference_sources';
 import { RenameController, type RenameCommitPayload, type RenameCommitResult } from './rename_controller';
 import { planRenameLineEdits } from './rename_apply';
+import { CrossFileRenameManager, type CrossFileRenameDependencies } from './rename_cross_file';
 import {
 	consumeKey as consumeKeyboardKey,
 	getKeyboardButtonState,
@@ -114,7 +115,7 @@ import {
 	isModifierPressed as isModifierPressedGlobal,
 	shouldAcceptKeyPress as shouldAcceptKeyPressGlobal,
 } from './input_helpers';
-import type { LuaDefinitionInfo } from '../../lua/ast.ts';
+import type { LuaDefinitionInfo, LuaSourceRange } from '../../lua/ast.ts';
 
 const EDITOR_TOGGLE_KEY = 'Escape';
 const EDITOR_TOGGLE_GAMEPAD_BUTTONS: readonly BGamepadButton[] = ['select', 'start'];
@@ -2391,31 +2392,108 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	}
 
 	private commitRename(payload: RenameCommitPayload): RenameCommitResult {
-		const edits = planRenameLineEdits(this.lines, payload.matches, payload.newName);
-		if (edits.length === 0) {
-			return { updatedMatches: 0 };
+		const { matches, newName, activeIndex, info } = payload;
+		const activeContext = this.getActiveCodeTabContext();
+		const referenceContext = this.buildProjectReferenceContext(activeContext);
+		const activeChunkName = referenceContext.chunkName;
+		const normalizedActiveChunk = this.normalizeChunkReference(activeChunkName) ?? activeChunkName;
+		const renameManager = new CrossFileRenameManager(this.getCrossFileRenameDependencies(), this.semanticWorkspace);
+		const sortedMatches = matches.slice();
+		sortedMatches.sort((a, b) => {
+			if (a.row !== b.row) {
+				return a.row - b.row;
+			}
+			return a.start - b.start;
+		});
+		let updatedTotal = 0;
+		let activeEditsApplied = false;
+		if (sortedMatches.length > 0) {
+			const edits = planRenameLineEdits(this.lines, sortedMatches, newName);
+			if (edits.length > 0) {
+				this.prepareUndo('rename', false);
+				this.recordEditContext('replace', newName);
+				for (let index = 0; index < edits.length; index += 1) {
+					const edit = edits[index];
+					this.lines[edit.row] = edit.text;
+					this.invalidateLine(edit.row);
+				}
+				this.markTextMutated();
+				activeEditsApplied = true;
+			}
+			const clampedIndex = clamp(activeIndex, 0, sortedMatches.length - 1);
+			const match = sortedMatches[clampedIndex];
+			const line = this.lines[match.row] ?? '';
+			const startColumn = clamp(match.start, 0, line.length);
+			const endColumn = clamp(startColumn + newName.length, startColumn, line.length);
+			this.cursorRow = match.row;
+			this.cursorColumn = startColumn;
+			this.selectionAnchor = { row: match.row, column: endColumn };
+			this.updateDesiredColumn();
+			this.resetBlink();
+			this.cursorRevealSuspended = false;
+			this.ensureCursorVisible();
+			updatedTotal += sortedMatches.length;
 		}
-		this.prepareUndo('rename', false);
-		this.recordEditContext('replace', payload.newName);
-		for (let index = 0; index < edits.length; index += 1) {
-			const edit = edits[index];
-			this.lines[edit.row] = edit.text;
-			this.invalidateLine(edit.row);
+		if (activeEditsApplied) {
+			this.semanticWorkspace.updateFile(activeChunkName, this.lines.join('\n'));
 		}
-		this.markTextMutated();
-		const activeIndex = clamp(payload.activeIndex, 0, payload.matches.length - 1);
-		const match = payload.matches[activeIndex];
-		const line = this.lines[match.row] ?? '';
-		const startColumn = clamp(match.start, 0, line.length);
-		const endColumn = clamp(startColumn + payload.newName.length, startColumn, line.length);
-		this.cursorRow = match.row;
-		this.cursorColumn = startColumn;
-		this.selectionAnchor = { row: match.row, column: endColumn };
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.cursorRevealSuspended = false;
-		this.ensureCursorVisible();
-		return { updatedMatches: payload.matches.length };
+		const decl = info.definitionKey ? this.semanticWorkspace.getDecl(info.definitionKey) : null;
+		const references = info.definitionKey ? this.semanticWorkspace.getReferences(info.definitionKey) : [];
+		type RangeBucket = { chunkName: string; ranges: LuaSourceRange[]; seen: Set<string> };
+		const rangeMap = new Map<string, RangeBucket>();
+		const addRange = (range: LuaSourceRange | null | undefined): void => {
+			if (!range || !range.start || !range.end) {
+				return;
+			}
+			const chunk = range.chunkName ?? activeChunkName;
+			const normalized = this.normalizeChunkReference(chunk) ?? chunk;
+			let bucket = rangeMap.get(normalized);
+			if (!bucket) {
+				bucket = { chunkName: chunk, ranges: [], seen: new Set<string>() };
+				rangeMap.set(normalized, bucket);
+			}
+			const key = `${range.start.line}:${range.start.column}:${range.end.line}:${range.end.column}`;
+			if (bucket.seen.has(key)) {
+				return;
+			}
+			bucket.seen.add(key);
+			bucket.ranges.push(range);
+		};
+		if (decl) {
+			addRange(decl.range);
+		}
+		for (let index = 0; index < references.length; index += 1) {
+			addRange(references[index].range);
+		}
+		if (normalizedActiveChunk) {
+			rangeMap.delete(normalizedActiveChunk);
+		}
+		for (const bucket of rangeMap.values()) {
+			const replacements = renameManager.applyRenameToChunk(bucket.chunkName, bucket.ranges, newName, normalizedActiveChunk);
+			updatedTotal += replacements;
+		}
+		return { updatedMatches: updatedTotal };
+	}
+
+	private getCrossFileRenameDependencies(): CrossFileRenameDependencies {
+		return {
+			normalizeChunkReference: (reference: string | null) => this.normalizeChunkReference(reference),
+			findResourceDescriptorForChunk: (chunk: string) => this.findResourceDescriptorForChunk(chunk),
+			createLuaCodeTabContext: (descriptor: ConsoleResourceDescriptor) => this.createLuaCodeTabContext(descriptor),
+			createEntryTabContext: () => this.createEntryTabContext(),
+			getEntryTabId: () => this.entryTabId,
+			setEntryTabId: (id: string | null) => {
+				this.entryTabId = id;
+			},
+			getPrimaryAssetId: () => this.primaryAssetId,
+			getCodeTabContext: (id: string) => this.codeTabContexts.get(id) ?? null,
+			setCodeTabContext: (context: CodeTabContext) => {
+				this.codeTabContexts.set(context.id, context);
+			},
+			listCodeTabContexts: () => this.codeTabContexts.values(),
+			splitLines: (source: string) => this.splitLines(source),
+			setTabDirty: (tabId: string, dirty: boolean) => this.setTabDirty(tabId, dirty),
+		};
 	}
 
 	private closeSymbolSearch(clearQuery: boolean): void {
