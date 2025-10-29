@@ -1680,10 +1680,9 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 	if (!inlineFieldFocused && isKeyJustPressedGlobal(this.playerIndex, 'F12')) {
 		consumeKeyboardKey(keyboard, 'F12');
 		if (shiftDown) {
-			this.gotoReferencesAtCursor();
-		} else {
-			this.openReferenceSearchPopup();
+			return;
 		}
+		this.openReferenceSearchPopup();
 		return;
 	}
 	if (!inlineFieldFocused && this.isCodeTabActive() && isKeyJustPressedGlobal(this.playerIndex, 'F2')) {
@@ -3295,81 +3294,6 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 			}
 		}
 		this.focusSearchResult(this.searchCurrentIndex);
-	}
-
-	private gotoReferencesAtCursor(): boolean {
-		if (!this.isCodeTabActive()) {
-			return false;
-		}
-		const context = this.getActiveCodeTabContext();
-		const referenceContext = this.buildProjectReferenceContext(context);
-		const lookup = resolveReferenceLookup({
-			layout: this.layout,
-			workspace: this.semanticWorkspace,
-			lines: this.lines,
-			textVersion: this.textVersion,
-			cursorRow: this.cursorRow,
-			cursorColumn: this.cursorColumn,
-			extractExpression: (row: number, column: number) => this.extractHoverExpression(row, column),
-			chunkName: referenceContext.chunkName,
-		});
-		if (lookup.kind === 'error') {
-			this.showMessage(lookup.message, constants.COLOR_STATUS_WARNING, lookup.duration);
-			this.referenceState.clear();
-			return false;
-		}
-		const info = lookup.info;
-		let initialIndex = lookup.initialIndex;
-		if (this.referenceState.hasSameQuery(info)) {
-			const nextIndex = this.referenceState.advance(1);
-			if (nextIndex === -1) {
-				return false;
-			}
-			const match = this.referenceState.getCurrentMatch();
-			if (!match) {
-				return false;
-			}
-			if (this.symbolSearchMode === 'references' && this.symbolSearchVisible) {
-				this.symbolSearchSelectionIndex = nextIndex;
-				this.ensureSymbolSearchSelectionVisible();
-			}
-			this.applyReferenceSelection(match);
-			this.showReferenceStatusMessage();
-			return true;
-		}
-	this.referenceState.apply(info, initialIndex);
-	this.referenceCatalog = this.buildReferenceCatalogForExpression(info, context);
-	if (this.referenceCatalog.length === 0) {
-		this.showMessage('No references found in this document', constants.COLOR_STATUS_WARNING, 1.6);
-		this.referenceState.clear();
-		return false;
-	}
-	if (this.symbolSearchMode === 'references' && this.symbolSearchVisible) {
-		this.updateReferenceSearchMatches();
-		this.ensureSymbolSearchSelectionVisible();
-	}
-	const currentMatch = this.referenceState.getCurrentMatch();
-	if (!currentMatch) {
-		this.showMessage('No references found in this document', constants.COLOR_STATUS_WARNING, 1.6);
-		this.referenceState.clear();
-		return false;
-	}
-		this.applyReferenceSelection(currentMatch);
-		this.showReferenceStatusMessage();
-		return true;
-	}
-
-	private applyReferenceSelection(match: SearchMatch): void {
-		const line = this.lines[match.row] ?? '';
-		const startColumn = clamp(match.start, 0, line.length);
-		const endColumn = clamp(match.end, startColumn, line.length);
-		this.cursorRow = match.row;
-		this.cursorColumn = startColumn;
-		this.selectionAnchor = { row: match.row, column: endColumn };
-		this.updateDesiredColumn();
-		this.resetBlink();
-		this.cursorRevealSuspended = false;
-		this.ensureCursorVisible();
 	}
 
 	private showReferenceStatusMessage(): void {
