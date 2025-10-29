@@ -56,8 +56,7 @@ export type RuntimeErrorOverlayClickResult =
 	| { kind: 'expand' }
 	| { kind: 'collapse' }
 	| { kind: 'navigate'; frame: RuntimeErrorStackFrame }
-	| { kind: 'noop' }
-	| { kind: 'none' };
+	| { kind: 'noop' };
 
 export function computeRuntimeErrorOverlayLayout(
 	host: RuntimeErrorOverlayLayoutHost,
@@ -202,14 +201,15 @@ export function evaluateRuntimeErrorOverlayClick(
 		return { kind: 'collapse' };
 	}
 	const descriptor = overlay.lineDescriptors[hoverLine];
-	if (descriptor.role === 'message' || descriptor.role === 'header' || descriptor.role === 'divider') {
-		return { kind: 'collapse' };
-	}
 	if (descriptor.role === 'frame' && descriptor.frame) {
+		console.log('[RuntimeErrorOverlay] Frame click', {
+			lineIndex: hoverLine,
+			frame: descriptor.frame,
+		});
 		if (descriptor.frame.origin === 'lua') {
 			return { kind: 'navigate', frame: descriptor.frame };
 		}
 		return { kind: 'noop' };
 	}
-	return { kind: 'none' };
+	return { kind: 'collapse' };
 }

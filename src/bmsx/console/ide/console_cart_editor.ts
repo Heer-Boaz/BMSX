@@ -56,11 +56,6 @@ import {
 	type RuntimeErrorOverlayLayoutHost,
 	type RuntimeErrorOverlayDrawOptions
 } from './runtime_error_overlay_view';
-import {
-	navigateToRuntimeErrorFrame,
-	type RuntimeErrorOverlayNavigationHost,
-	type RuntimeErrorOverlayNavigationOptions
-} from './runtime_error_overlay_navigation';
 // Resource panel rendering is handled via ResourcePanelController
 import { ResourcePanelController } from './resource_panel_controller';
 import { InputController } from './input_controller';
@@ -98,6 +93,7 @@ import type {
 	ResourceViewerState,
 	RuntimeErrorOverlay,
 	RuntimeErrorDetails,
+	RuntimeErrorStackFrame,
 	ScrollbarKind,
 	SearchMatch,
 	SymbolCatalogEntry,
@@ -6346,6 +6342,11 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		this.pointerSelecting = false;
 		this.pointerPrimaryWasPressed = snapshot.primaryPressed;
 		this.resetPointerClickTracking();
+		console.log('[RuntimeErrorOverlay] Click dispatch', {
+			hoverLine: overlay.hoverLine,
+			layoutLineCount: layout.lineRects.length,
+			lineDescriptorRoles: overlay.lineDescriptors.map(descriptor => descriptor.role),
+		});
 		const clickResult = evaluateRuntimeErrorOverlayClick(overlay, overlay.hoverLine);
 		switch (clickResult.kind) {
 			case 'expand': {
@@ -6359,19 +6360,12 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 				return true;
 			}
 			case 'navigate': {
-				const navigationHost = this.createRuntimeErrorOverlayNavigationHost();
-				const navigationOptions = this.runtimeErrorOverlayNavigationOptions();
-				navigateToRuntimeErrorFrame(navigationHost, clickResult.frame, navigationOptions);
-				return true;
-			}
-			case 'noop': {
-				return true;
-			}
-			case 'none': {
 				overlay.expanded = false;
 				rebuildRuntimeErrorOverlayView(overlay);
+				this.navigateToRuntimeErrorFrameTarget(clickResult.frame);
 				return true;
 			}
+			case 'noop':
 			default: {
 				return true;
 			}
@@ -6400,26 +6394,99 @@ export class ConsoleCartEditor extends ConsoleCartEditorTextOps {
 		};
 	}
 
-	private createRuntimeErrorOverlayNavigationHost(): RuntimeErrorOverlayNavigationHost {
-		return {
-			getLineCount: () => this.lines.length,
-			setCursorPosition: (row: number, column: number) => this.setCursorPosition(row, column),
-			centerCursorVertically: () => this.centerCursorVertically(),
-			revealCursor: () => this.revealCursor(),
-			resetBlink: () => this.resetBlink(),
-			setCursorRevealSuspended: (value: boolean) => { this.cursorRevealSuspended = value; },
-			focusChunkSource: (chunkName: string | null) => this.focusChunkSource(chunkName, undefined),
-			showMessage: (text: string, color: number, durationSeconds: number) => this.showMessage(text, color, durationSeconds),
-		};
+	private navigateToRuntimeErrorFrameTarget(frame: RuntimeErrorStackFrame): void {
+		if (frame.origin !== 'lua') {
+			return;
+		}
+		const source = frame.source ?? '';
+		if (source.length === 0) {
+			this.showMessage('Runtime frame is missing a chunk reference.', constants.COLOR_STATUS_ERROR, 3.0);
+			return;
+		}
+		let normalizedChunk: string;
+		try {
+			normalizedChunk = this.normalizeChunkName(source);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showMessage(`Unable to resolve runtime chunk name: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+			return;
+		}
+		const frameAssetId = typeof frame.chunkAssetId === 'string' && frame.chunkAssetId.length > 0 ? frame.chunkAssetId : null;
+		const framePath = typeof frame.chunkPath === 'string' && frame.chunkPath.length > 0 ? frame.chunkPath : null;
+		let descriptor: ConsoleResourceDescriptor | null = null;
+		if (!frameAssetId || !framePath) {
+			try {
+				descriptor = this.findResourceDescriptorForChunk(normalizedChunk);
+			} catch {
+				descriptor = null;
+			}
+		}
+		const chunkHintAssetId = frameAssetId ?? descriptor?.assetId ?? null;
+		const chunkHintPath = framePath ?? descriptor?.path ?? undefined;
+		try {
+			const hint = chunkHintAssetId !== null ? { assetId: chunkHintAssetId, path: chunkHintPath } : (descriptor ? { assetId: descriptor.assetId, path: descriptor.path } : undefined);
+			this.focusChunkSource(normalizedChunk, hint);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showMessage(`Failed to open runtime chunk: ${message}`, constants.COLOR_STATUS_ERROR, 3.0);
+			return;
+		}
+		const activeContext = this.getActiveCodeTabContext();
+		if (!activeContext) {
+			this.showMessage('Unable to activate editor context for runtime frame.', constants.COLOR_STATUS_ERROR, 3.0);
+			return;
+		}
+		const lastRowIndex = Math.max(0, this.lines.length - 1);
+		let targetRow: number | null = null;
+		if (typeof frame.line === 'number' && frame.line > 0) {
+			targetRow = clamp(frame.line - 1, 0, lastRowIndex);
+		}
+		if (targetRow === null && frame.functionName) {
+			targetRow = this.findFunctionDefinitionRowInActiveFile(frame.functionName);
+		}
+		if (targetRow === null) {
+			targetRow = 0;
+		}
+		const targetLine = this.lines[targetRow] ?? '';
+		let targetColumn = 0;
+		if (typeof frame.column === 'number' && frame.column > 0) {
+			targetColumn = clamp(frame.column - 1, 0, targetLine.length);
+		}
+		if (targetColumn === 0 && frame.functionName && frame.functionName.length > 0) {
+			const nameIndex = targetLine.indexOf(frame.functionName);
+			if (nameIndex >= 0) {
+				targetColumn = nameIndex;
+			}
+		}
+		this.selectionAnchor = null;
+		this.pointerSelecting = false;
+		this.resetPointerClickTracking();
+		this.setCursorPosition(targetRow, targetColumn);
+		this.cursorRevealSuspended = false;
+		this.centerCursorVertically();
+		this.ensureCursorVisible();
+		this.showMessage('Navigated to call site', constants.COLOR_STATUS_SUCCESS, 1.6);
 	}
 
-	private runtimeErrorOverlayNavigationOptions(): RuntimeErrorOverlayNavigationOptions {
-		return {
-			successColor: constants.COLOR_STATUS_SUCCESS,
-			successDuration: 1.6,
-			failureColor: constants.COLOR_STATUS_ERROR,
-			failureDuration: 3.0,
-		};
+	private findFunctionDefinitionRowInActiveFile(functionName: string): number | null {
+		if (typeof functionName !== 'string' || functionName.length === 0) {
+			return null;
+		}
+		const escaped = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		const patterns = [
+			new RegExp(`^\\s*function\\s+${escaped}\\b`),
+			new RegExp(`^\\s*local\\s+function\\s+${escaped}\\b`),
+			new RegExp(`\\b${escaped}\\s*=\\s*function\\b`),
+		];
+		for (let row = 0; row < this.lines.length; row += 1) {
+			const line = this.lines[row];
+			for (let index = 0; index < patterns.length; index += 1) {
+				if (patterns[index].test(line)) {
+					return row;
+				}
+			}
+		}
+		return null;
 	}
 
 	private isCodeTabActive(): boolean {
